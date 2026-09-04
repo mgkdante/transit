@@ -30,6 +30,108 @@ import sys
 import time
 
 
+DEFAULT_COMPOSE_HELP = "Usage: docker compose up [OPTIONS] [SERVICE...]\n      --wait"
+SCENARIO_BEHAVIORS = {
+    "missing-compose": {"compose_version_status": 1},
+    "missing-wait": {"compose_help": ""},
+    "wait-timeout-only": {
+        "compose_help": "Usage: docker compose up [OPTIONS]\n      --wait-timeout int"
+    },
+    "context-show-failure": {"context_show_status": 61},
+    "empty-current-context": {"context_name": ""},
+    "context-inspect-failure": {"context_inspect_status": 62},
+    "daemon-info-failure": {"daemon_info_status": 65},
+    "non-amd64-daemon": {"architecture": "arm64"},
+    "container-query-failure": {
+        "query_failures": {"precreation:container": 63}
+    },
+    "cleanup-container-query-failure": {
+        "query_failures": {"cleanup:container": 66}
+    },
+    "volume-query-failure": {
+        "query_failures": {"precreation:volume": 64}
+    },
+    "volume-list-failure": {
+        "query_failures": {"cleanup:volume": 52}
+    },
+    "alembic-and-volume-list-failure": {
+        "query_failures": {"cleanup:volume": 52},
+        "alembic_status": 41,
+    },
+    "network-query-failure": {
+        "query_failures": {
+            "precreation:network-label": 67,
+            "precreation:network-name": 67,
+        }
+    },
+    "network-name-query-failure": {
+        "query_failures": {"precreation:network-name": 67}
+    },
+    "cleanup-network-query-failure": {
+        "query_failures": {
+            "cleanup:network-label": 68,
+            "cleanup:network-name": 68,
+        }
+    },
+    "container-collision-once": {
+        "collisions": {"container": ("once", "existing-container-id")}
+    },
+    "container-collision-exhaustion": {
+        "collisions": {"container": ("always", "existing-container-id")}
+    },
+    "volume-collision-once": {
+        "collisions": {"volume": ("once", "$volume")}
+    },
+    "volume-collision-exhaustion": {
+        "collisions": {"volume": ("always", "$volume")}
+    },
+    "network-collision-once": {
+        "collisions": {"network-label": ("once", "existing-network-id")}
+    },
+    "network-label-collision-once": {
+        "collisions": {"network-label": ("once", "existing-labeled-network-id")}
+    },
+    "network-name-collision-once": {
+        "collisions": {"network-name": ("once", "existing-named-network-id")}
+    },
+    "network-collision-exhaustion": {
+        "collisions": {
+            "network-label": ("always", "existing-network-id"),
+            "network-name": ("always", "existing-network-id"),
+        }
+    },
+    "cleanup-container-residual": {
+        "cleanup_residue": {"container": "residual-container-id"}
+    },
+    "cleanup-network-residual": {
+        "cleanup_residue": {
+            "network-label": "residual-network-id",
+            "network-name": "residual-network-id",
+        }
+    },
+    "cleanup-network-label-residual": {
+        "cleanup_residue": {"network-label": "residual-labeled-network-id"}
+    },
+    "cleanup-network-name-residual": {
+        "cleanup_residue": {"network-name": "residual-named-network-id"}
+    },
+    "residual-volume": {"cleanup_residue": {"volume": "$volume"}},
+    "signal-during-startup": {"startup_signal": True},
+    "startup-failure": {"startup_status": 23},
+    "empty-port": {"port_output": ""},
+    "invalid-port": {"port_output": "127.0.0.1:70000"},
+    "non-loopback-port": {"port_output": "0.0.0.0:55432"},
+    "down-failure": {"down_status": 31},
+    "signal-during-alembic": {"alembic_signal": True},
+    "signal-ignoring-grandchild-during-alembic": {
+        "alembic_signal": True,
+        "ignoring_grandchild": True,
+    },
+    "alembic-failure": {"alembic_status": 41},
+    "pytest-failure": {"pytest_status": 42},
+}
+scenario = os.environ.get("FAKE_SCENARIO", "success")
+behavior = SCENARIO_BEHAVIORS.get(scenario, {})
 tool = Path(sys.argv[0]).name
 arguments = sys.argv[1:]
 password = os.environ.get("PGPASSWORD", "")
@@ -76,6 +178,59 @@ def recorded_events():
     ]
 
 
+def query_surface(command_arguments):
+    if command_arguments[:1] == ["ps"]:
+        return "container"
+    if command_arguments[:2] == ["volume", "ls"]:
+        return "volume"
+    if command_arguments[:2] != ["network", "ls"]:
+        return None
+    if any(
+        str(argument).startswith("label=com.docker.compose.project=")
+        for argument in command_arguments
+    ):
+        return "network-label"
+    if any(str(argument).startswith("name=^") for argument in command_arguments):
+        return "network-name"
+    return None
+
+
+def observed_identity(identity):
+    return os.environ["TRANSIT_REAL_DB_VOLUME"] if identity == "$volume" else identity
+
+
+def emit_query_behavior(surface):
+    recorded = recorded_events()
+    phase = (
+        "cleanup"
+        if any(
+            item.get("tool") == "docker" and "down" in item.get("argv", [])
+            for item in recorded
+        )
+        else "precreation"
+    )
+    failure_status = behavior.get("query_failures", {}).get(f"{phase}:{surface}")
+    if failure_status is not None:
+        raise SystemExit(failure_status)
+    if phase == "precreation":
+        collision = behavior.get("collisions", {}).get(surface)
+        if collision is not None:
+            frequency, identity = collision
+            query_count = sum(
+                1
+                for item in recorded
+                if item.get("tool") == "docker"
+                and query_surface(item.get("argv", [])) == surface
+            )
+            if frequency == "always" or query_count == 1:
+                print(observed_identity(identity))
+    else:
+        identity = behavior.get("cleanup_residue", {}).get(surface)
+        if identity is not None:
+            print(observed_identity(identity))
+    raise SystemExit(0)
+
+
 record(event)
 
 
@@ -88,7 +243,7 @@ def block_for_signal(label):
         if sigint_handler is signal.SIG_DFL
         else "handler"
     )
-    if scenario == "signal-ignoring-grandchild-during-alembic":
+    if behavior.get("ignoring_grandchild", False):
         grandchild_pid = os.fork()
         if grandchild_pid == 0:
             for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
@@ -108,174 +263,57 @@ def block_for_signal(label):
     })
     time.sleep(60)
 
-
-scenario = os.environ.get("FAKE_SCENARIO", "success")
 if tool == "docker":
     if arguments == ["compose", "version"]:
-        raise SystemExit(0 if scenario != "missing-compose" else 1)
+        raise SystemExit(behavior.get("compose_version_status", 0))
     if arguments == ["compose", "up", "--help"]:
-        if scenario == "wait-timeout-only":
-            print("Usage: docker compose up [OPTIONS]\n      --wait-timeout int")
-        elif scenario != "missing-wait":
-            print("Usage: docker compose up [OPTIONS] [SERVICE...]\n      --wait")
+        compose_help = behavior.get("compose_help", DEFAULT_COMPOSE_HELP)
+        if compose_help:
+            print(compose_help)
         raise SystemExit(0)
     if arguments == ["context", "show"]:
-        if scenario == "context-show-failure":
-            raise SystemExit(61)
-        print("" if scenario == "empty-current-context" else "default")
-        raise SystemExit(0)
+        context_show_status = behavior.get("context_show_status", 0)
+        if context_show_status == 0:
+            print(behavior.get("context_name", "default"))
+        raise SystemExit(context_show_status)
     if arguments[:3] == ["context", "inspect", "--format"]:
-        if scenario == "context-inspect-failure":
-            raise SystemExit(62)
-        print(os.environ.get("FAKE_CONTEXT_ENDPOINT", "unix:///var/run/docker.sock"))
-        raise SystemExit(0)
+        context_inspect_status = behavior.get("context_inspect_status", 0)
+        if context_inspect_status == 0:
+            print(os.environ.get("FAKE_CONTEXT_ENDPOINT", "unix:///var/run/docker.sock"))
+        raise SystemExit(context_inspect_status)
     if arguments == ["info", "--format", "{{.Architecture}}"]:
-        if scenario == "daemon-info-failure":
-            raise SystemExit(65)
-        print("arm64" if scenario == "non-amd64-daemon" else "x86_64")
-        raise SystemExit(0)
+        daemon_info_status = behavior.get("daemon_info_status", 0)
+        if daemon_info_status == 0:
+            print(behavior.get("architecture", "x86_64"))
+        raise SystemExit(daemon_info_status)
     if arguments[:1] == ["ps"]:
-        recorded = recorded_events()
-        after_down = any(
-            item.get("tool") == "docker" and "down" in item.get("argv", [])
-            for item in recorded
-        )
-        if scenario == "container-query-failure" and not after_down:
-            raise SystemExit(63)
-        if scenario == "cleanup-container-query-failure" and after_down:
-            raise SystemExit(66)
-        prior_container_queries = sum(
-            1
-            for item in recorded
-            if item.get("argv", [None])[0] == "ps"
-        )
-        if not after_down and (
-            scenario == "container-collision-exhaustion"
-            or (
-            scenario == "container-collision-once" and prior_container_queries == 1
-            )
-        ):
-            print("existing-container-id")
-        if after_down and scenario == "cleanup-container-residual":
-            print("residual-container-id")
-        raise SystemExit(0)
+        emit_query_behavior("container")
     if arguments[:2] == ["network", "ls"]:
-        recorded = recorded_events()
-        has_label_filter = any(
-            str(argument).startswith("label=com.docker.compose.project=")
-            for argument in arguments
-        )
-        has_name_filter = any(str(argument).startswith("name=^") for argument in arguments)
-        after_down = any(
-            item.get("tool") == "docker" and "down" in item.get("argv", [])
-            for item in recorded
-        )
-        if scenario == "network-query-failure" and not after_down:
-            raise SystemExit(67)
-        if (
-            scenario == "network-name-query-failure"
-            and not after_down
-            and has_name_filter
-            and not has_label_filter
-        ):
-            raise SystemExit(67)
-        if scenario == "cleanup-network-query-failure" and after_down:
-            raise SystemExit(68)
-        prior_network_queries = sum(
-            1
-            for item in recorded
-            if item.get("argv", [None])[:2] == ["network", "ls"]
-        )
-        if not after_down and (
-            scenario == "network-collision-exhaustion"
-            or (scenario == "network-collision-once" and prior_network_queries == 1)
-        ):
-            print("existing-network-id")
-        if not after_down and (
-            scenario == "network-label-collision-once"
-            and has_label_filter
-            and not has_name_filter
-            and prior_network_queries == 1
-        ):
-            print("existing-labeled-network-id")
-        if not after_down and (
-            scenario == "network-name-collision-once"
-            and has_name_filter
-            and not has_label_filter
-            and prior_network_queries == 2
-        ):
-            print("existing-named-network-id")
-        if after_down and scenario == "cleanup-network-residual":
-            print("residual-network-id")
-        if (
-            after_down
-            and scenario == "cleanup-network-label-residual"
-            and has_label_filter
-            and not has_name_filter
-        ):
-            print("residual-labeled-network-id")
-        if (
-            after_down
-            and scenario == "cleanup-network-name-residual"
-            and has_name_filter
-            and not has_label_filter
-        ):
-            print("residual-named-network-id")
-        raise SystemExit(0)
+        surface = query_surface(arguments)
+        assert surface is not None
+        emit_query_behavior(surface)
     if "up" in arguments and "--help" not in arguments:
-        if scenario == "signal-during-startup":
+        if behavior.get("startup_signal", False):
             block_for_signal("docker-up")
-        raise SystemExit(23 if scenario == "startup-failure" else 0)
+        raise SystemExit(behavior.get("startup_status", 0))
     if "logs" in arguments:
         print("bounded fake startup log")
         raise SystemExit(0)
     if "port" in arguments:
-        outputs = {
-            "empty-port": "",
-            "invalid-port": "127.0.0.1:70000",
-            "non-loopback-port": "0.0.0.0:55432",
-        }
-        print(outputs.get(scenario, "127.0.0.1:55432"))
+        print(behavior.get("port_output", "127.0.0.1:55432"))
         raise SystemExit(0)
     if "down" in arguments:
-        raise SystemExit(31 if scenario == "down-failure" else 0)
+        raise SystemExit(behavior.get("down_status", 0))
     if arguments[:2] == ["volume", "ls"]:
-        recorded = recorded_events()
-        after_down = any(
-            item.get("tool") == "docker" and "down" in item.get("argv", [])
-            for item in recorded
-        )
-        if scenario == "volume-query-failure" and not after_down:
-            raise SystemExit(64)
-        if after_down and scenario in (
-            "volume-list-failure",
-            "alembic-and-volume-list-failure",
-        ):
-            raise SystemExit(52)
-        prior_volume_queries = sum(
-            1 for item in recorded if item.get("argv", [None])[:2] == ["volume", "ls"]
-        )
-        if not after_down and (
-            scenario == "volume-collision-exhaustion"
-            or (scenario == "volume-collision-once" and prior_volume_queries == 1)
-        ):
-            print(os.environ["TRANSIT_REAL_DB_VOLUME"])
-        if after_down and scenario == "residual-volume":
-            print(os.environ["TRANSIT_REAL_DB_VOLUME"])
-        raise SystemExit(0)
+        emit_query_behavior("volume")
     raise SystemExit(97)
 
 if arguments == ["run", "alembic", "upgrade", "head"]:
-    if scenario in (
-        "signal-during-alembic",
-        "signal-ignoring-grandchild-during-alembic",
-    ):
+    if behavior.get("alembic_signal", False):
         block_for_signal("uv")
-    raise SystemExit(
-        41 if scenario in ("alembic-failure", "alembic-and-volume-list-failure") else 0
-    )
+    raise SystemExit(behavior.get("alembic_status", 0))
 if arguments == ["run", "pytest", "tests"]:
-    raise SystemExit(42 if scenario == "pytest-failure" else 0)
+    raise SystemExit(behavior.get("pytest_status", 0))
 raise SystemExit(98)
 '''
 
@@ -902,6 +940,12 @@ def test_script_fails_closed_when_identity_query_fails(
     assert result.returncode == 2
     assert expected_message in result.stderr
     operations = [_operation(event) for event in events]
+    assert operations[-4:] == [
+        "container-list",
+        "volume-list",
+        "network-list",
+        "network-list",
+    ]
     assert "up" not in operations
     assert "down" not in operations
 

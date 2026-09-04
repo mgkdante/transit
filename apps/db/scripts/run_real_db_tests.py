@@ -12,8 +12,10 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
+from typing import Literal
 from urllib.parse import urlsplit
 
 DATABASE_USER = "transit_ci"
@@ -38,6 +40,24 @@ LIBPQ_TARGET_VARIABLES = (
     "PGSERVICE",
     "PGSERVICEFILE",
 )
+InventorySurface = Literal[
+    "containers",
+    "volume",
+    "project_networks",
+    "default_network",
+]
+PRECREATION_INVENTORY_ORDER: tuple[InventorySurface, ...] = (
+    "containers",
+    "volume",
+    "project_networks",
+    "default_network",
+)
+CLEANUP_INVENTORY_ORDER: tuple[InventorySurface, ...] = (
+    "containers",
+    "project_networks",
+    "default_network",
+    "volume",
+)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DB_ROOT = SCRIPT_DIR.parent
@@ -48,6 +68,36 @@ class HandledSignal(Exception):
     def __init__(self, signal_number: int) -> None:
         self.signal_number = signal_number
         super().__init__(signal_number)
+
+
+@dataclass(frozen=True)
+class QueryObservation:
+    status: int
+    identities: tuple[str, ...]
+
+    @property
+    def failed(self) -> bool:
+        return self.status != 0
+
+
+@dataclass(frozen=True)
+class ResourceInventory:
+    containers: QueryObservation
+    volume: QueryObservation
+    project_networks: QueryObservation
+    default_network: QueryObservation
+
+    @property
+    def has_identities(self) -> bool:
+        return any(
+            observation.identities
+            for observation in (
+                self.containers,
+                self.volume,
+                self.project_networks,
+                self.default_network,
+            )
+        )
 
 
 def _message(text: str) -> None:
@@ -360,11 +410,62 @@ class Lifecycle:
             return 2
         return 0
 
-    def _query(self, arguments: Sequence[str]) -> tuple[int, list[str]]:
+    def _query(self, arguments: Sequence[str]) -> QueryObservation:
         result = self._run(arguments, capture_output=True)
         if result is None:
-            return 127, []
-        return result.returncode, [line for line in result.stdout.splitlines() if line]
+            return QueryObservation(status=127, identities=())
+        return QueryObservation(
+            status=result.returncode,
+            identities=tuple(line for line in result.stdout.splitlines() if line),
+        )
+
+    def _resource_inventory(
+        self,
+        query_order: Sequence[InventorySurface],
+    ) -> ResourceInventory:
+        commands: dict[InventorySurface, list[str]] = {
+            "containers": [
+                "docker",
+                "ps",
+                "--all",
+                "--quiet",
+                "--filter",
+                f"label=com.docker.compose.project={self.project_name}",
+            ],
+            "volume": [
+                "docker",
+                "volume",
+                "ls",
+                "--quiet",
+                "--filter",
+                f"name=^{self.volume_name}$",
+            ],
+            "project_networks": [
+                "docker",
+                "network",
+                "ls",
+                "--quiet",
+                "--filter",
+                f"label=com.docker.compose.project={self.project_name}",
+            ],
+            "default_network": [
+                "docker",
+                "network",
+                "ls",
+                "--quiet",
+                "--filter",
+                f"name=^{self.project_name}_default$",
+            ],
+        }
+        observations = {
+            surface: self._query(commands[surface]) for surface in query_order
+        }
+        return ResourceInventory(
+            containers=observations["containers"],
+            volume=observations["volume"],
+            project_networks=observations["project_networks"],
+            default_network=observations["default_network"],
+        )
 
     def select_resource_identity(self) -> int:
         for _attempt in range(IDENTITY_ATTEMPTS):
@@ -381,61 +482,17 @@ class Lifecycle:
             ]
             self.environment["TRANSIT_REAL_DB_VOLUME"] = self.volume_name
 
-            container_status, containers = self._query(
-                [
-                    "docker",
-                    "ps",
-                    "--all",
-                    "--quiet",
-                    "--filter",
-                    f"label=com.docker.compose.project={self.project_name}",
-                ]
-            )
-            if container_status != 0:
+            inventory = self._resource_inventory(PRECREATION_INVENTORY_ORDER)
+            if inventory.containers.failed:
                 _message("could not verify Compose project ownership.")
                 return 2
-            volume_status, volumes = self._query(
-                [
-                    "docker",
-                    "volume",
-                    "ls",
-                    "--quiet",
-                    "--filter",
-                    f"name=^{self.volume_name}$",
-                ]
-            )
-            if volume_status != 0:
+            if inventory.volume.failed:
                 _message("could not verify volume ownership.")
                 return 2
-            network_label_status, networks_by_label = self._query(
-                [
-                    "docker",
-                    "network",
-                    "ls",
-                    "--quiet",
-                    "--filter",
-                    f"label=com.docker.compose.project={self.project_name}",
-                ]
-            )
-            if network_label_status != 0:
+            if inventory.project_networks.failed or inventory.default_network.failed:
                 _message("could not verify network ownership.")
                 return 2
-            network_name_status, networks_by_name = self._query(
-                [
-                    "docker",
-                    "network",
-                    "ls",
-                    "--quiet",
-                    "--filter",
-                    f"name=^{self.project_name}_default$",
-                ]
-            )
-            if network_name_status != 0:
-                _message("could not verify network ownership.")
-                return 2
-            if not any(
-                (containers, volumes, networks_by_label, networks_by_name)
-            ):
+            if not inventory.has_identities:
                 return 0
         _message("could not prove a collision-free Docker resource identity.")
         return 2
@@ -522,71 +579,35 @@ class Lifecycle:
             _cleanup_message("Docker Compose teardown failed.")
             cleanup_failed = True
 
-        container_status, containers = self._query(
-            [
-                "docker",
-                "ps",
-                "--all",
-                "--quiet",
-                "--filter",
-                f"label=com.docker.compose.project={self.project_name}",
-            ]
-        )
-        if container_status != 0:
+        inventory = self._resource_inventory(CLEANUP_INVENTORY_ORDER)
+        if inventory.containers.failed:
             _cleanup_message("could not verify project container removal.")
             cleanup_failed = True
-        elif containers:
+        elif inventory.containers.identities:
             _cleanup_message("project container still exists.")
             cleanup_failed = True
 
-        network_label_status, networks_by_label = self._query(
-            [
-                "docker",
-                "network",
-                "ls",
-                "--quiet",
-                "--filter",
-                f"label=com.docker.compose.project={self.project_name}",
-            ]
-        )
-        if network_label_status != 0:
+        if inventory.project_networks.failed:
             _cleanup_message("could not verify project network removal.")
             cleanup_failed = True
-        network_name_status, networks_by_name = self._query(
-            [
-                "docker",
-                "network",
-                "ls",
-                "--quiet",
-                "--filter",
-                f"name=^{self.project_name}_default$",
-            ]
-        )
-        if network_name_status != 0:
+        if inventory.default_network.failed:
             _cleanup_message("could not verify project network removal.")
             cleanup_failed = True
         if (
-            network_label_status == 0
-            and network_name_status == 0
-            and (networks_by_label or networks_by_name)
+            not inventory.project_networks.failed
+            and not inventory.default_network.failed
+            and (
+                inventory.project_networks.identities
+                or inventory.default_network.identities
+            )
         ):
             _cleanup_message("project network still exists.")
             cleanup_failed = True
 
-        volume_status, volumes = self._query(
-            [
-                "docker",
-                "volume",
-                "ls",
-                "--quiet",
-                "--filter",
-                f"name=^{self.volume_name}$",
-            ]
-        )
-        if volume_status != 0:
+        if inventory.volume.failed:
             _cleanup_message("could not verify data volume removal.")
             cleanup_failed = True
-        elif volumes:
+        elif inventory.volume.identities:
             _cleanup_message("data volume still exists.")
             cleanup_failed = True
         return not cleanup_failed
