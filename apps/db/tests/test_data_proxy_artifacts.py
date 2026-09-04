@@ -116,7 +116,7 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
 
 
-def test_production_configs_publish_absolute_urls_to_direct_r2_custom_domain() -> None:
+def test_production_workflow_uses_opaque_public_base_and_web_config_exposes_origin() -> None:
     publish_env = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))["jobs"][
         "publish"
     ]["env"]

@@ -27,7 +27,7 @@ describe('production snapshot request budget', () => {
 		expect(slimEndpoint).not.toContain('bindingFetch(');
 	});
 
-	it('publishes absolute snapshot pointers on the same direct R2 origin', () => {
+	it('keeps the publisher base opaque while web config carries the reviewable origin', () => {
 		const wrangler = readRepo('apps/web/wrangler.toml');
 		const workflow = readRepo('.github/workflows/daily-warm-rollups.yml');
 		const publishJob = workflow.split('\n  publish:\n')[1]?.split('\n  retention:\n')[0];
