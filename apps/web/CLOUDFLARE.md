@@ -91,10 +91,12 @@ then deploys with one of these commands:
 ```
 
 Protected web CI dry-runs both the data-proxy and web configurations without
-credentials. It also installs `chromium-headless-shell` and runs
-`scripts/verify-browser-toolchain.mjs`, which reconciles the declared and
-installed Playwright versions, installed browser metadata, the poster receipt
-and generator constants, and the version reported by the launched browser.
+credentials. It downloads the Linux x64 `chromium-headless-shell` archive from
+the fixed source in `browser-toolchain.json`, checks its byte count and SHA-256
+before extraction, checks the extracted executable, and rejects Playwright
+browser-environment overrides or unsafe archive paths. `scripts/verify-browser-toolchain.mjs`
+rechecks the receipt and executable before launch, then reconciles Playwright
+metadata, the poster receipt, generator constants, and the launched version.
 
 Development deploys from `develop` or an explicit dev dispatch. Production
 deploys from `main` or an explicit production dispatch on `main`. After a

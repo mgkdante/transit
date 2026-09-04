@@ -20,8 +20,8 @@ in an issue before implementing them.
 Run the affected subset while iterating. Before handing off a release candidate,
 run this ordered clean-clone CI-equivalent command from the repository root.
 The tool contract is Bun 1.3.11, Node.js 22.23.2, Python 3.12, uv 0.11.15,
-Wrangler 4.115.0, playwright-core 1.62.0 with Chromium 151.0.7922.34, and
-Gitleaks 8.30.1.
+Wrangler 4.115.0, playwright-core 1.62.0 with the authenticated Linux x64
+Chromium 151.0.7922.34 archive, and Gitleaks 8.30.1.
 The final real-DB verification is supported on Linux and WSL with a local amd64
 Docker daemon and requires Python 3.12 and Docker Compose v2. Its one command
 creates a one-service, digest-pinned PostGIS container on a dynamic loopback
@@ -66,7 +66,10 @@ bun run --cwd apps/web format:check
 bun run --cwd apps/web check
 bun run --cwd apps/web build
 (cd apps/web && ../../node_modules/.bin/wrangler deploy --dry-run --env="")
-apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
+transit_browser_root="$transit_tool_dir/browser"
+install -d -m 0700 "$transit_browser_root"
+export TRANSIT_BROWSER_ROOT="$transit_browser_root"
+node apps/web/scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT" >/dev/null
 node apps/web/scripts/verify-browser-toolchain.mjs
 B9_REUSE_BUILD=1 bun run --cwd apps/web test:b9-display
 bun run --cwd apps/web test
@@ -104,8 +107,8 @@ used to verify it.
 
 `map-posters:check` verifies the checked-in dated posters and their source
 receipt entirely offline. To intentionally rebuild those assets, install the
-pinned browser with
-`apps/web/node_modules/.bin/playwright-core install chromium-headless-shell`,
+authenticated browser with `apps/web/scripts/install-browser-toolchain.mjs`,
+set `CHROME_PATH` to the executable path it prints, and
 replace the receipt's filenames with the new `YYYYMMDD`, update the matching
 `MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
 `bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,

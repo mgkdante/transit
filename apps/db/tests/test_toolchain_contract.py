@@ -18,6 +18,8 @@ UV_VERSION = "0.11.15"
 WRANGLER_VERSION = "4.115.0"
 PLAYWRIGHT_VERSION = "1.62.0"
 CHROMIUM_VERSION = "151.0.7922.34"
+CHROMIUM_ARCHIVE_SHA256 = "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14"
+CHROMIUM_EXECUTABLE_SHA256 = "e11fc9ce65c96313476f7ee9844b6fb6a9220fb048693cfe9eee00acf4170a9f"
 
 PYTHON_IMAGE = (
     "python:3.12.14-slim-bookworm@"
@@ -124,6 +126,11 @@ def test_wrangler_has_one_installed_owner_and_no_ad_hoc_versions() -> None:
             offenders.append(relative)
     assert offenders == []
 
+    b9 = (REPO_ROOT / "apps/web/scripts/b9-displayed-values.mjs").read_text(encoding="utf-8")
+    assert r"4\.115\.0" not in b9
+    assert "devDependencies?.wrangler" in b9
+    assert "../../node_modules/.bin/wrangler" in b9
+
 
 def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
     consumers: list[str] = []
@@ -162,6 +169,9 @@ def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
 def test_browser_runtime_is_verified_from_installed_playwright_metadata() -> None:
     web_package = _json("apps/web/package.json")
     receipt = _json("apps/web/static/map/basemap-montreal-posters.json")
+    browser_contract = _json("apps/web/browser-toolchain.json")
+    installer = REPO_ROOT / "apps/web/scripts/install-browser-toolchain.mjs"
+    artifact_verifier = REPO_ROOT / "apps/web/scripts/browser-toolchain.mjs"
     verifier = REPO_ROOT / "apps/web/scripts/verify-browser-toolchain.mjs"
 
     assert web_package["devDependencies"]["playwright-core"] == PLAYWRIGHT_VERSION
@@ -169,13 +179,31 @@ def test_browser_runtime_is_verified_from_installed_playwright_metadata() -> Non
         "playwright_core_version": PLAYWRIGHT_VERSION,
         "chromium_version": CHROMIUM_VERSION,
     }
+    assert browser_contract["playwrightCoreVersion"] == PLAYWRIGHT_VERSION
+    assert browser_contract["browser"]["version"] == CHROMIUM_VERSION
+    assert browser_contract["browser"]["revision"] == "1234"
+    assert browser_contract["browser"]["platform"] == "linux-x64"
+    assert browser_contract["browser"]["archiveBytes"] == 120_231_126
+    assert browser_contract["browser"]["archiveSha256"] == CHROMIUM_ARCHIVE_SHA256
+    assert browser_contract["browser"]["executableSha256"] == CHROMIUM_EXECUTABLE_SHA256
+    assert installer.is_file()
+    assert artifact_verifier.is_file()
     assert verifier.is_file()
 
     web_workflow = _yaml(WORKFLOWS / "web.yml")
     ci_runs = _step_runs(web_workflow["jobs"]["ci-work"])
-    assert "playwright-core/browsers.json" in verifier.read_text(encoding="utf-8")
-    assert "browser.version()" in verifier.read_text(encoding="utf-8")
+    assert "playwright-core/browsers.json" in artifact_verifier.read_text(encoding="utf-8")
+    assert "browser archive SHA-256 mismatch" in installer.read_text(encoding="utf-8")
+    assert "launchedBrowser.version()" in verifier.read_text(encoding="utf-8")
+    assert "playwright-core install" not in ci_runs
+    assert "install-browser-toolchain.test.mjs" in ci_runs
+    assert "install-browser-toolchain.mjs" in ci_runs
     assert "verify-browser-toolchain.mjs" in ci_runs
+
+    b9 = (REPO_ROOT / "apps/web/scripts/b9-displayed-values.mjs").read_text(encoding="utf-8")
+    assert "verifyInstalledBrowserArtifact" in b9
+    assert "chromium.executablePath()" not in b9
+    assert "/usr/bin/google-chrome" not in b9
 
 
 def test_external_container_images_are_readable_and_immutable() -> None:

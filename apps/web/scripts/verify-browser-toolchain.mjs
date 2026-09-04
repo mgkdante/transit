@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 
 const DEFAULT_REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -29,42 +30,28 @@ function sourceConstant(source, name) {
 	return match[1];
 }
 
-async function launchInstalledBrowser() {
+async function launchInstalledBrowser({ executablePath }) {
 	const { chromium } = await import('playwright-core');
-	return chromium.launch({ headless: true });
+	return chromium.launch({ headless: true, executablePath });
 }
 
 export async function verifyBrowserToolchain({
 	repoRoot = DEFAULT_REPO_ROOT,
+	browserRoot,
 	launchBrowser = launchInstalledBrowser,
 } = {}) {
-	const webRoot = resolve(repoRoot, 'apps/web');
-	const [webPackage, installedPackage, browsers, receipt, posterSource] = await Promise.all([
-		readJson(resolve(webRoot, 'package.json')),
-		readJson(resolve(webRoot, 'node_modules/playwright-core/package.json')),
-		readJson(resolve(webRoot, 'node_modules/playwright-core/browsers.json')),
+	const artifact = await verifyInstalledBrowserArtifact({ repoRoot, browserRoot });
+	const { browser, manifest, paths, webRoot } = artifact;
+	const [receipt, posterSource] = await Promise.all([
 		readJson(resolve(webRoot, 'static/map/basemap-montreal-posters.json')),
 		readFile(resolve(webRoot, 'scripts/build-map-posters.ts'), 'utf8'),
 	]);
 
 	const declaredPlaywright = requireString(
-		webPackage.devDependencies?.['playwright-core'],
-		'package playwright-core version',
+		manifest.playwrightCoreVersion,
+		'playwright-core version',
 	);
-	const installedPlaywright = requireString(
-		installedPackage.version,
-		'installed playwright-core version',
-	);
-	const metadata = browsers.browsers?.find(
-		(browser) => browser?.name === 'chromium-headless-shell' && browser.installByDefault === true,
-	);
-	if (!metadata) {
-		throw new Error('installed Playwright metadata is missing chromium-headless-shell');
-	}
-	const metadataChromium = requireString(
-		metadata.browserVersion,
-		'installed Chromium metadata version',
-	);
+	const metadataChromium = requireString(browser.version, 'Chromium version');
 	const receiptPlaywright = requireString(
 		receipt.reproduced_with?.playwright_core_version,
 		'poster receipt playwright-core version',
@@ -76,18 +63,17 @@ export async function verifyBrowserToolchain({
 	const constantPlaywright = sourceConstant(posterSource, 'PLAYWRIGHT_CORE_VERSION');
 	const constantChromium = sourceConstant(posterSource, 'PINNED_CHROMIUM_VERSION');
 
-	requireEqual(installedPlaywright, declaredPlaywright, 'installed playwright-core version');
 	requireEqual(receiptPlaywright, declaredPlaywright, 'poster receipt playwright-core version');
 	requireEqual(constantPlaywright, declaredPlaywright, 'poster playwright-core constant');
 	requireEqual(receiptChromium, metadataChromium, 'poster receipt Chromium version');
 	requireEqual(constantChromium, metadataChromium, 'poster Chromium constant');
 
-	const browser = await launchBrowser();
+	const launchedBrowser = await launchBrowser({ executablePath: paths.executablePath });
 	try {
-		const launchedChromium = requireString(browser.version(), 'launched Chromium version');
+		const launchedChromium = requireString(launchedBrowser.version(), 'launched Chromium version');
 		requireEqual(launchedChromium, metadataChromium, 'launched Chromium version');
 	} finally {
-		await browser.close();
+		await launchedBrowser.close();
 	}
 
 	return {

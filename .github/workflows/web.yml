@@ -55,7 +55,7 @@ jobs:
                   "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
                 "map-poster-check": {
-                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
+                  "paths": ["apps/web/browser-toolchain.json", "apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
                   "prefixes": ["apps/web/static/map/"]
                 }
               },
@@ -144,8 +144,16 @@ jobs:
       - name: Web Wrangler dry run
         run: ../../node_modules/.bin/wrangler deploy --dry-run --env=""
 
-      - name: Install pinned Chromium
-        run: ./node_modules/.bin/playwright-core install chromium-headless-shell
+      - name: Browser toolchain contract
+        run: node --test scripts/install-browser-toolchain.test.mjs scripts/verify-browser-toolchain.test.mjs
+
+      - name: Install authenticated Chromium
+        env:
+          TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
+          node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
       - name: Verify browser toolchain
         run: node scripts/verify-browser-toolchain.mjs

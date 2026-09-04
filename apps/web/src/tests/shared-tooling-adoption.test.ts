@@ -341,12 +341,11 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		);
 		const contributingPosterCheck = contributing.indexOf('map-posters:check');
 		expect(contributingPosterCheck).toBeGreaterThanOrEqual(0);
-		expect(contributing.slice(0, contributingPosterCheck)).not.toContain(
-			'playwright-core install chromium-headless-shell',
-		);
+		expect(contributing).not.toContain('playwright-core install chromium-headless-shell');
 		expect(contributingPosterCheck).toBeLessThan(
-			contributing.indexOf('playwright-core install chromium-headless-shell'),
+			contributing.indexOf('install-browser-toolchain.mjs'),
 		);
+		expect(contributing).toContain('TRANSIT_BROWSER_ROOT');
 		expect(contributing).toContain('node --test .github/scripts/refresh-basemap-r2.test.mjs');
 
 		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
@@ -381,17 +380,33 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		if (!work) return;
 		const proxyDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run');
 		const webDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run --env=""');
-		const chromiumInstall = work.indexOf('playwright-core install chromium-headless-shell');
+		const browserContract = work.indexOf('node --test scripts/install-browser-toolchain.test.mjs');
+		const chromiumInstall = work.indexOf('node scripts/install-browser-toolchain.mjs');
 		const browserProof = work.indexOf('verify-browser-toolchain.mjs');
 		expect(proxyDryRun).toBeGreaterThanOrEqual(0);
 		expect(webDryRun).toBeGreaterThan(proxyDryRun);
-		expect(chromiumInstall).toBeGreaterThan(webDryRun);
+		expect(browserContract).toBeGreaterThan(webDryRun);
+		expect(chromiumInstall).toBeGreaterThan(browserContract);
 		expect(browserProof).toBeGreaterThan(chromiumInstall);
+		expect(work).not.toContain('playwright-core install chromium-headless-shell');
+		expect(work).toContain('TRANSIT_BROWSER_ROOT');
 
 		const b9Runner = text('apps/web/scripts/b9-displayed-values.mjs');
 		expect(b9Runner).toContain("join(WEB_ROOT, '../../node_modules/.bin/wrangler')");
 		expect(b9Runner).not.toContain('../data-proxy/node_modules/.bin/wrangler');
+		expect(b9Runner).not.toContain('4\\.115\\.0');
+		expect(b9Runner).toContain('devDependencies?.wrangler');
+		expect(b9Runner).toContain('verifyInstalledBrowserArtifact');
+		expect(b9Runner).not.toContain('chromium.executablePath()');
+		expect(b9Runner).not.toContain('/usr/bin/google-chrome');
 		expect(existsSync(join(ROOT, 'node_modules/.bin/wrangler'))).toBe(true);
+
+		const browserManifest = JSON.parse(text('apps/web/browser-toolchain.json')) as {
+			browser: { archiveSha256: string; executableSha256: string; platform: string };
+		};
+		expect(browserManifest.browser.platform).toBe('linux-x64');
+		expect(browserManifest.browser.archiveSha256).toMatch(/^[0-9a-f]{64}$/u);
+		expect(browserManifest.browser.executableSha256).toMatch(/^[0-9a-f]{64}$/u);
 	});
 
 	it('makes an exact Node pin change exercise every affected owned lane', () => {
@@ -433,6 +448,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
 		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/browser-toolchain.json', webRules)).toEqual(posterWeb);
 		expect(classify('apps/web/package.json', webRules)).toEqual(posterWeb);
 		expect(classify('apps/web/static/map/basemap-montreal-posters.json', webRules)).toEqual(
 			posterWeb,

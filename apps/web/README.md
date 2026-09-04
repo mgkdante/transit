@@ -28,9 +28,13 @@ bun run og:build        # regenerate Open Graph cards (scripts/build-og.ts)
 
 `bun run test` is Vitest. Browser-level receipt and probe scripts under `scripts/`
 launch Chromium through `playwright-core` directly; there is no `@playwright/test`
-suite or config. After installing `chromium-headless-shell`, run
-`node scripts/verify-browser-toolchain.mjs` to prove that the installed browser
-matches Playwright metadata and the checked-in map-poster receipt.
+suite or config. On Linux x64, set
+`TRANSIT_BROWSER_ROOT="$(mktemp -d)"`, export it, run
+`node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"`, then run
+`node scripts/verify-browser-toolchain.mjs`. The installer checks the exact
+archive and executable SHA-256 values in `browser-toolchain.json` before any
+browser starts; the verifier also reconciles Playwright metadata and the
+checked-in map-poster receipt.
 
 Or from the repo root via turbo: `turbo run check`, `turbo run build`, `turbo run test`
 (spans the whole workspace). Deploy: `bun run deploy:web` (root) — `bun run build`
