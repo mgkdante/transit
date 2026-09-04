@@ -13,7 +13,8 @@ parity assertion then FAILS (the test would be worthless if it passed against a 
 
 Self-skips when TRANSIT_TEST_DATABASE_URL is unset (the `real-db-tests` job sets it):
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
         uv run pytest tests/test_habit_score_reconciliation_realdb.py -v
 """
 

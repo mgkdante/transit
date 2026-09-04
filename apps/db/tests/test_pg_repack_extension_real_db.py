@@ -11,6 +11,7 @@ transit schema applied. Whether pg_repack is installable depends on whether the
 local cluster shipped postgresql-16-repack; both branches are asserted. Never
 point this at production.
 
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
         uv run pytest tests/test_pg_repack_extension_real_db.py -v
 """

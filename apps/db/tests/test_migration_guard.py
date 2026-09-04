@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
+from sqlalchemy.dialects.postgresql.psycopg import PGDialect_psycopg
+from sqlalchemy.engine import make_url
 
 from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.db.target_safety import DatabaseTarget, parse_database_target
@@ -12,7 +14,7 @@ from transit_ops.db.target_safety import DatabaseTarget, parse_database_target
 _REMOTE = "postgresql+psycopg://transit:pw@db.transit.example.com:5432/transit?sslmode=require"
 
 
-def test_database_target_is_normalized_decoded_immutable_and_password_free() -> None:
+def test_database_target_is_normalized_immutable_and_password_free() -> None:
     target = parse_database_target(
         "postgres://Op%20User:super-secret@DB.Example.COM/my%2Fdb"
         "?sslmode=require&application_name=transit"
@@ -23,7 +25,7 @@ def test_database_target_is_normalized_decoded_immutable_and_password_free() -> 
         username="Op User",
         host="db.example.com",
         port=5432,
-        database="my/db",
+        database="my%2Fdb",
         query=(("application_name", "transit"), ("sslmode", "require")),
     )
     assert "super-secret" not in repr(target)
@@ -49,6 +51,31 @@ def test_query_database_override_is_decoded_exactly_once() -> None:
     target = parse_database_target("postgresql://transit@localhost/ignored?dbname=my%252Fdb")
 
     assert target.database == "my%2Fdb"
+
+
+def test_authority_database_matches_psycopg_and_distinct_dbnames_stay_distinct() -> None:
+    encoded_url = "postgresql+psycopg://transit@db.example/a%2Fb"
+    literal_url = "postgresql+psycopg://transit@db.example/a/b"
+    dialect = PGDialect_psycopg()
+
+    encoded_connect = dialect.create_connect_args(make_url(encoded_url))[1]
+    literal_connect = dialect.create_connect_args(make_url(literal_url))[1]
+    encoded_target = parse_database_target(encoded_url)
+    literal_target = parse_database_target(literal_url)
+
+    assert encoded_connect["dbname"] == "a%2Fb"
+    assert literal_connect["dbname"] == "a/b"
+    assert encoded_target.database == encoded_connect["dbname"]
+    assert literal_target.database == literal_connect["dbname"]
+    assert encoded_target != literal_target
+
+
+def test_remote_authority_database_must_match_the_process_dbname_exactly() -> None:
+    configured_url = "postgresql+psycopg://transit@db.example/transit%5Fci"
+    process_url = "postgresql+psycopg://transit@db.example/transit_ci"
+
+    with pytest.raises(RuntimeError, match="Migration database target policy failed"):
+        assert_explicit_remote_url(configured_url, {"DATABASE_URL": process_url})
 
 
 def test_implicit_remote_url_is_refused() -> None:
@@ -84,6 +111,52 @@ def test_matching_explicit_remote_url_is_driver_and_password_independent() -> No
             )
         },
     )
+
+
+def test_remote_target_uses_pgport_when_the_url_does_not_specify_one() -> None:
+    assert_explicit_remote_url(
+        "postgresql://transit@db.transit.example.com/transit",
+        {
+            "DATABASE_URL": "postgresql://transit@db.transit.example.com:6543/transit",
+            "PGPORT": "6543",
+        },
+    )
+
+
+def test_remote_hostless_target_uses_pghost() -> None:
+    assert_explicit_remote_url(
+        "postgresql://transit@/transit",
+        {
+            "DATABASE_URL": "postgresql://transit@db.transit.example.com/transit",
+            "PGHOST": "db.transit.example.com",
+        },
+    )
+
+
+def test_url_and_query_target_fields_override_ambient_libpq_fallbacks() -> None:
+    url = "postgresql://url_user@db.transit.example.com:5432/url_db?hostaddr=203.0.113.8"
+
+    assert_explicit_remote_url(
+        url,
+        {
+            "DATABASE_URL": url,
+            "PGHOST": "other.example.invalid",
+            "PGHOSTADDR": "203.0.113.99",
+            "PGPORT": "6543",
+            "PGDATABASE": "other_db",
+            "PGUSER": "other_user",
+            "PGPASSWORD": "ambient-secret",
+        },
+    )
+
+
+@pytest.mark.parametrize("variable", ["PGSERVICE", "PGSERVICEFILE"])
+def test_unresolved_libpq_service_environment_fails_closed(variable: str) -> None:
+    with pytest.raises(RuntimeError, match="Database target parsing policy failed"):
+        assert_explicit_remote_url(
+            "postgresql://transit_ci@localhost/transit_ci",
+            {variable: "production-service"},
+        )
 
 
 def test_matching_query_host_is_dns_case_independent() -> None:
@@ -216,4 +289,39 @@ def test_invalid_database_urls_fail_without_echoing_secrets(url: str) -> None:
 
     message = str(exc.value)
     assert "secret-password" not in message
+    assert url not in message
+
+
+def test_policy_diagnostics_escape_control_characters_and_ansi_sequences() -> None:
+    url = (
+        "postgresql://transit@localhost/transit"
+        "?host=remote.example%0Aevil&user=ops%1B%5B31m&dbname=prod%0Ddb"
+        "&password=query-secret"
+    )
+
+    with pytest.raises(RuntimeError, match="Migration database target policy failed") as exc:
+        assert_explicit_remote_url(url, {})
+
+    message = str(exc.value)
+    assert "remote.example" in message
+    assert "prod" in message
+    assert "ops" in message
+    assert "\n" not in message
+    assert "\r" not in message
+    assert "\x1b" not in message
+    assert "query-secret" not in message
+    assert url not in message
+
+
+def test_policy_diagnostics_bound_long_target_fields() -> None:
+    long_value = "x" * 500
+    url = f"postgresql://{long_value}@{long_value}.example/{long_value}"
+
+    with pytest.raises(RuntimeError, match="Migration database target policy failed") as exc:
+        assert_explicit_remote_url(url, {})
+
+    message = str(exc.value)
+    assert len(message) < 600
+    assert "x" * 80 in message
+    assert "x" * 121 not in message
     assert url not in message

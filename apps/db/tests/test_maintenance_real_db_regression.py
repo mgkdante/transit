@@ -16,6 +16,7 @@ gold schema (gold dims hold the FK at issue):
     pg_dump --schema-only -n core -n raw -n silver -n gold ... > schema.sql
     # apply schema.sql, then alembic upgrade head
 
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/dvprune" \
         uv run pytest tests/test_maintenance_real_db_regression.py -v
 

@@ -10,7 +10,8 @@ the FakeConn unit tests cannot prove the real DISTINCT/UNION over real tables.
 Runs ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres with
 the transit schema at head 0057, e.g.:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@localhost:5433/transit_ci" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://transit_ci@localhost:5433/transit_ci" \
         uv run pytest tests/test_routes_index_reliability_flag_real_db.py -v
 
 Each test runs inside one transaction and rolls back — nothing persists.

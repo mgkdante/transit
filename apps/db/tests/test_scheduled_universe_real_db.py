@@ -2,7 +2,8 @@
 
 Runs only against a disposable Postgres migrated to head (0073+):
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55437/transit_gc2" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55437/transit_test" \
         uv run pytest tests/test_scheduled_universe_real_db.py -v
 
 H1 (UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY): the canonical GTFS service-on-date rule

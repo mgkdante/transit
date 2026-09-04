@@ -4,6 +4,7 @@ These tests run only against a disposable Postgres 16 database with the Transit
 schema migrated to head. The throwaway schema must include gold tables because
 the trip-delay refresh writes gold.fact_trip_delay_snapshot directly:
 
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
         uv run pytest tests/test_gold_dst_real_db_regression.py -v
 

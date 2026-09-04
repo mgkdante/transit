@@ -10,12 +10,15 @@ committed source="fact" render, so the gate keeps working once the fact path is 
 Runs ONLY against a disposable Postgres migrated to head (incl. 0063); self-skips when
 TRANSIT_TEST_DATABASE_URL is unset:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
         uv run pytest tests/test_spine_cutover_gate.py -v
 
 Regenerate the frozen golden (after an INTENTIONAL, reviewed change to the fact output):
 
-    SPINE_GOLDEN_REGEN=1 TRANSIT_TEST_DATABASE_URL=... uv run pytest \
+    SPINE_GOLDEN_REGEN=1 \
+        TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL=... uv run pytest \
         tests/test_spine_cutover_gate.py::test_regenerate_golden -v
 
 Calendar stability (the seed is "now"-relative — Postgres now() can't be mocked):

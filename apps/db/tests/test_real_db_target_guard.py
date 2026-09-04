@@ -39,6 +39,10 @@ class _FakeEngine:
             "&password=query-secret",
             "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
         ),
+        (
+            "postgresql+psycopg://transit_ci@localhost/transit%5Fci",
+            "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+        ),
     ],
 )
 def test_real_db_fixture_refuses_unsafe_targets_before_engine_creation(
@@ -67,6 +71,30 @@ def test_real_db_fixture_refuses_unsafe_targets_before_engine_creation(
     assert "malformed-secret" not in message
     assert "query-secret" not in message
     assert database_url not in message
+
+
+def test_real_db_fixture_refuses_remote_ambient_pghostaddr_before_engine_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = "postgresql://transit_ci@localhost/transit_ci"
+    monkeypatch.setenv("TRANSIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE",
+        "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+    )
+    monkeypatch.setenv("PGHOSTADDR", "203.0.113.10")
+    engine_calls: list[str] = []
+    monkeypatch.setattr(
+        conftest,
+        "create_engine",
+        lambda url: engine_calls.append(url) or _FakeEngine(),
+    )
+
+    fixture = conftest.real_db_engine.__wrapped__()
+    with pytest.raises(RuntimeError, match="Disposable test database target policy failed"):
+        next(fixture)
+
+    assert engine_calls == []
 
 
 def test_real_db_fixture_without_url_preserves_offline_skip(
@@ -119,3 +147,63 @@ def test_real_db_fixture_yields_and_disposes_acknowledged_local_targets(
     assert engine_calls == [database_url]
     fixture.close()
     assert fake_engine.disposed is True
+
+
+@pytest.mark.parametrize(
+    ("database_url", "fallback_environment"),
+    [
+        ("postgresql://localhost/transit_ci", {"PGUSER": "transit_ci"}),
+        ("postgresql://transit_ci@localhost", {"PGDATABASE": "transit_ci"}),
+        (
+            "postgresql://transit_ci@/transit_ci",
+            {"PGHOST": "localhost", "PGPORT": "55432"},
+        ),
+    ],
+)
+def test_real_db_fixture_honors_libpq_identity_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    fallback_environment: dict[str, str],
+) -> None:
+    monkeypatch.setenv("TRANSIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE",
+        "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+    )
+    for key, value in fallback_environment.items():
+        monkeypatch.setenv(key, value)
+    fake_engine = _FakeEngine()
+    engine_calls: list[str] = []
+    monkeypatch.setattr(
+        conftest,
+        "create_engine",
+        lambda url: engine_calls.append(url) or fake_engine,
+    )
+
+    fixture: Iterator[object] = conftest.real_db_engine.__wrapped__()
+    assert next(fixture) is fake_engine
+    assert engine_calls == [database_url]
+    fixture.close()
+    assert fake_engine.disposed is True
+
+
+def test_real_db_fixture_explicit_identity_overrides_ambient_libpq_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = "postgresql://transit_ci@localhost:5432/transit_ci?hostaddr=127.0.0.1"
+    monkeypatch.setenv("TRANSIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE",
+        "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+    )
+    monkeypatch.setenv("PGHOST", "remote.example.invalid")
+    monkeypatch.setenv("PGHOSTADDR", "203.0.113.10")
+    monkeypatch.setenv("PGPORT", "6543")
+    monkeypatch.setenv("PGDATABASE", "production")
+    monkeypatch.setenv("PGUSER", "postgres")
+    fake_engine = _FakeEngine()
+    monkeypatch.setattr(conftest, "create_engine", lambda _url: fake_engine)
+
+    fixture: Iterator[object] = conftest.real_db_engine.__wrapped__()
+    assert next(fixture) is fake_engine
+    fixture.close()

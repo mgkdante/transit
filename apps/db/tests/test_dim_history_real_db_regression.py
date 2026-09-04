@@ -19,8 +19,8 @@ with the transit schema applied. Throwaway cluster recipe:
     #       uv run python -m transit_ops.cli init-db
     psql -h /tmp/dimhist_pg -p 55433 transit_repro < schema_only_dump.sql
 
-    TRANSIT_TEST_DATABASE_URL=\
-        "postgresql+psycopg://$USER@:55433/transit_repro?host=/tmp/dimhist_pg" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+    TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://repro@:55433/transit_repro?host=/tmp/dimhist_pg \
         uv run pytest tests/test_dim_history_real_db_regression.py -v
 
 Each test runs inside one transaction and rolls back — nothing persists.
