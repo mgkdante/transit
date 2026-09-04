@@ -282,6 +282,43 @@ def test_bomless_utf16_with_non_ascii_prefix_is_scanned(
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_with_stray_byte_before_vault_marker_is_scanned(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (
+        "valid prefix: ".encode(encoding)
+        + b"\xff"
+        + ("op" + "://Transit/item/field\n").encode(encoding)
+    )
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:1\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_keeps_distinct_vault_marker_locations(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (
+        "op" + "://Transit/first/field\npublic line\nop" + "://Transit/second/field\n"
+    ).encode(encoding)
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == [
+        "vault-reference: notes.txt:1",
+        "vault-reference: notes.txt:3",
+    ]
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
 def test_bomless_utf16_with_trailing_byte_is_scanned(
     indexed_repo: IndexedRepo, encoding: str
 ) -> None:

@@ -96,6 +96,13 @@ class IndexEntry:
     path: str
 
 
+@dataclass(frozen=True)
+class TextCandidate:
+    text: str
+    encoding: str | None = None
+    byte_offset: int = 0
+
+
 class GitQueryError(RuntimeError):
     """A Git command could not resolve the requested index state."""
 
@@ -198,50 +205,102 @@ def _tracked_ignored_paths(index_tree: Path, paths: list[str]) -> set[str]:
     return {os.fsdecode(path) for path in output.split(b"\0") if path}
 
 
-def _has_private_home(line: str) -> bool:
+def _private_home_column(line: str) -> int | None:
     normalized_line = unicodedata.normalize("NFC", line)
-    if ROOT_HOME_PATTERN.search(normalized_line):
-        return True
-    return any(
-        match.group("user").casefold() not in PLACEHOLDER_USERS
+    columns = [
+        match.start()
         for pattern in HOME_PATTERNS
         for match in pattern.finditer(normalized_line)
-    )
+        if match.group("user").casefold() not in PLACEHOLDER_USERS
+    ]
+    if root_match := ROOT_HOME_PATTERN.search(normalized_line):
+        columns.append(root_match.start())
+    return min(columns, default=None)
 
 
-def _decode_indexed_text_candidates(content: bytes) -> tuple[str, ...]:
+def _decode_indexed_text_candidates(content: bytes) -> tuple[TextCandidate, ...]:
     if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
-        return (content.decode("utf-32", errors="replace"),)
+        return (TextCandidate(content.decode("utf-32", errors="replace")),)
     if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
-        return (content.decode("utf-16", errors="replace"),)
+        return (TextCandidate(content.decode("utf-16", errors="replace")),)
     if content.startswith(codecs.BOM_UTF8):
-        return (content.decode("utf-8-sig", errors="replace"),)
+        return (TextCandidate(content.decode("utf-8-sig", errors="replace")),)
 
     if b"\0" in content:
-        candidates: list[str] = []
-        for encoding in ("utf-16-le", "utf-16-be"):
-            decoded = content.decode(encoding, errors="replace")
-            if decoded not in candidates:
-                candidates.append(decoded)
+        candidates: list[TextCandidate] = []
+        for byte_offset in (0, 1):
+            for encoding in ("utf-16-le", "utf-16-be"):
+                decoded = content[byte_offset:].decode(encoding, errors="replace")
+                if all(candidate.text != decoded for candidate in candidates):
+                    candidates.append(TextCandidate(decoded, encoding, byte_offset))
         return tuple(candidates)
-    return (content.decode("utf-8", errors="replace"),)
+    return (TextCandidate(content.decode("utf-8", errors="replace")),)
+
+
+def _candidate_findings(path: str, candidate: TextCandidate) -> dict[Finding, int | None]:
+    findings: dict[Finding, int | None] = {}
+    raw_line_start = candidate.byte_offset
+    lines = candidate.text.splitlines()
+    lines_with_endings = candidate.text.splitlines(keepends=True)
+
+    for line_number, (line, line_with_ending) in enumerate(
+        zip(lines, lines_with_endings, strict=True), start=1
+    ):
+        category_columns: list[tuple[str, int]] = []
+        if match := PEM_PATTERN.search(line):
+            category_columns.append(("pem-material", match.start()))
+        if match := VAULT_PATTERN.search(line):
+            category_columns.append(("vault-reference", match.start()))
+        vulnerability_matches = tuple(
+            match
+            for pattern in (VULNERABILITY_LABEL_PATTERN, SECURITY_REPORT_MARKER_PATTERN)
+            if (match := pattern.search(line)) is not None
+        )
+        if vulnerability_matches:
+            category_columns.append(
+                (
+                    "private-" + "vulnerability-marker",
+                    min(match.start() for match in vulnerability_matches),
+                )
+            )
+        if (column := _private_home_column(line)) is not None:
+            category_columns.append(("absolute-home-path", column))
+
+        for category, column in category_columns:
+            raw_position = None
+            if candidate.encoding is not None:
+                raw_position = raw_line_start + len(
+                    line[:column].encode(candidate.encoding, errors="replace")
+                )
+            findings[(category, path, line_number)] = raw_position
+
+        if candidate.encoding is not None:
+            raw_line_start += len(line_with_ending.encode(candidate.encoding, errors="replace"))
+
+    return findings
 
 
 def _content_findings(path: str, content: bytes) -> set[Finding]:
-    findings: set[Finding] = set()
-    for text in _decode_indexed_text_candidates(content):
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            if PEM_PATTERN.search(line):
-                findings.add(("pem-material", path, line_number))
-            if VAULT_PATTERN.search(line):
-                findings.add(("vault-reference", path, line_number))
-            if VULNERABILITY_LABEL_PATTERN.search(line) or SECURITY_REPORT_MARKER_PATTERN.search(
-                line
-            ):
-                findings.add(("private-" + "vulnerability-marker", path, line_number))
-            if _has_private_home(line):
-                findings.add(("absolute-home-path", path, line_number))
-    return findings
+    findings: dict[Finding, int | None] = {}
+    for candidate in _decode_indexed_text_candidates(content):
+        for finding, raw_position in _candidate_findings(path, candidate).items():
+            if finding in findings:
+                continue
+            category, finding_path, _ = finding
+            duplicate_marker = raw_position is not None and any(
+                existing_position is not None
+                and existing_category == category
+                and existing_path == finding_path
+                and abs(existing_position - raw_position) <= 1
+                for (
+                    existing_category,
+                    existing_path,
+                    _existing_line,
+                ), existing_position in findings.items()
+            )
+            if not duplicate_marker:
+                findings[finding] = raw_position
+    return set(findings)
 
 
 def _scan_index(root: Path) -> set[Finding]:
