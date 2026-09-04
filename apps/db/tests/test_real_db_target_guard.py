@@ -33,6 +33,12 @@ class _FakeEngine:
             "not a database url containing malformed-secret",
             "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
         ),
+        (
+            "postgresql+psycopg://transit_ci@localhost/transit_ci"
+            "?user=postgres&dbname=transit&hostaddr=203.0.113.10"
+            "&password=query-secret",
+            "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+        ),
     ],
 )
 def test_real_db_fixture_refuses_unsafe_targets_before_engine_creation(
@@ -59,6 +65,7 @@ def test_real_db_fixture_refuses_unsafe_targets_before_engine_creation(
     assert "remote-secret" not in message
     assert "local-secret" not in message
     assert "malformed-secret" not in message
+    assert "query-secret" not in message
     assert database_url not in message
 
 
@@ -87,6 +94,8 @@ def test_real_db_fixture_without_url_preserves_offline_skip(
         "postgresql+psycopg://transit_ci@localhost:5432/transit_ci",
         "postgresql://postgres@127.0.0.1/transit_test",
         "postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/transit-repro",
+        "postgresql+psycopg://transit_ci@/transit_ci?host=localhost:5432",
+        "postgresql+psycopg://ignored@localhost/ignored?user=transit_ci&dbname=transit_ci",
     ],
 )
 def test_real_db_fixture_yields_and_disposes_acknowledged_local_targets(
