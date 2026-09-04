@@ -28,10 +28,15 @@ describe('production snapshot request budget', () => {
 	});
 
 	it('publishes absolute snapshot pointers on the same direct R2 origin', () => {
-		const environment = readRepo('.env.example');
+		const wrangler = readRepo('apps/web/wrangler.toml');
+		const workflow = readRepo('.github/workflows/daily-warm-rollups.yml');
+		const publishJob = workflow.split('\n  publish:\n')[1]?.split('\n  retention:\n')[0];
 
-		expect(environment).toMatch(/^SNAPSHOT_PUBLIC_BASE_URL=https:\/\/data\.yesid\.dev$/m);
-		expect(environment).not.toContain('SNAPSHOT_PUBLIC_BASE_URL=https://transit.yesid.dev/data');
+		expect(wrangler.match(/PUBLIC_V1_BASE = "https:\/\/data\.yesid\.dev\/v1"/g)).toHaveLength(2);
+		expect(publishJob).toContain(
+			'SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}',
+		);
+		expect(publishJob).not.toContain('SNAPSHOT_PUBLIC_BASE_URL: https://transit.yesid.dev/data');
 	});
 
 	it('ships public read-only R2 CORS and applies it before each web deploy', () => {

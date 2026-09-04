@@ -28,11 +28,13 @@ target, and destructive-R2 confirmations before execution.
 ## Setup and checks
 
 Run Python commands from this directory. Start with the repository-root
-[`../../.env.example`](../../.env.example), and configure only the path being
-run.
+[`../../.env.example`](../../.env.example), whose local defaults cannot select a
+remote storage target. Configure only the path being run; CI and production
+jobs select remote storage explicitly.
 
 ```bash
 cd apps/db
+cp ../../.env.example .env
 uv sync --locked
 uv run transit-ops --help
 uv run ruff check src tests

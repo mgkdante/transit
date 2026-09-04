@@ -4,7 +4,7 @@ import os
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic.fields import FieldInfo
@@ -112,19 +112,17 @@ class Settings(BaseSettings):
     STM_RT_VEHICLE_POSITIONS_URL: str | None = None
     STM_I3_ALERTS_URL: str | None = None
 
-    BRONZE_STORAGE_BACKEND: str = "s3"
+    BRONZE_STORAGE_BACKEND: Literal["local", "s3"] = "local"
     BRONZE_LOCAL_ROOT: str = "./data/bronze"
-    BRONZE_S3_ENDPOINT: str | None = (
-        "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"
-    )
-    BRONZE_S3_BUCKET: str | None = "transit-raw"
+    BRONZE_S3_ENDPOINT: str | None = None
+    BRONZE_S3_BUCKET: str | None = None
     BRONZE_S3_ACCESS_KEY: str | None = None
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
 
     # --- /v1 snapshot publisher (reuses BRONZE_S3_* credentials) ---
-    SNAPSHOT_STORAGE_BACKEND: str = "s3"          # "s3" | "local"
-    SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
+    SNAPSHOT_STORAGE_BACKEND: Literal["local", "s3"] = "local"
+    SNAPSHOT_LOCAL_ROOT: str | None = "./data/snapshots"  # used when backend == "local"
     SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
     SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
     # Basemap pointer (slice-9.1.1r). Until the Quebec PMTiles archive is hosted

@@ -280,6 +280,7 @@ def test_env_example_documents_compose_runtime_contract() -> None:
         "POSTGRES_BIND_ADDRESS=127.0.0.1",
         "POSTGRES_HOST_PORT=5432",
         "CADDY_SITE_ADDRESS=:80",
+        "CADDY_BIND_ADDRESS=127.0.0.1",
         "CADDY_HTTP_PORT=8080",
         "CADDY_HTTPS_PORT=8443",
     }.issubset(assignments)
@@ -640,6 +641,36 @@ def test_compose_services_define_scoped_environment_without_env_file() -> None:
 def test_compose_caddy_environment_is_site_address_only() -> None:
     services = _compose()["services"]
     assert _environment_keys(services["caddy"]) == {"CADDY_SITE_ADDRESS"}
+
+
+def test_compose_caddy_host_ports_bind_to_loopback_by_default() -> None:
+    ports = _compose()["services"]["caddy"]["ports"]
+
+    assert ports == [
+        "${CADDY_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTP_PORT:-8080}:80",
+        "${CADDY_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTPS_PORT:-8443}:443",
+    ]
+
+
+def test_compose_storage_defaults_are_local_and_remote_targets_are_blank() -> None:
+    services = _compose()["services"]
+    worker_env = services["worker"]["environment"]
+    health_env = services["health"]["environment"]
+
+    for environment in (worker_env, health_env):
+        assert environment["BRONZE_STORAGE_BACKEND"] == "${BRONZE_STORAGE_BACKEND:-local}"
+        assert environment["BRONZE_LOCAL_ROOT"] == "${BRONZE_LOCAL_ROOT:-./data/bronze}"
+        assert environment["BRONZE_S3_ENDPOINT"] == "${BRONZE_S3_ENDPOINT:-}"
+        assert environment["BRONZE_S3_BUCKET"] == "${BRONZE_S3_BUCKET:-}"
+        assert environment["BRONZE_S3_ACCESS_KEY"] == "${BRONZE_S3_ACCESS_KEY:-}"
+        assert environment["BRONZE_S3_SECRET_KEY"] == "${BRONZE_S3_SECRET_KEY:-}"
+
+    assert worker_env["SNAPSHOT_STORAGE_BACKEND"] == "${SNAPSHOT_STORAGE_BACKEND:-local}"
+    assert worker_env["SNAPSHOT_LOCAL_ROOT"] == (
+        "${SNAPSHOT_LOCAL_ROOT:-./data/snapshots}"
+    )
+    assert worker_env["SNAPSHOT_R2_BUCKET"] == "${SNAPSHOT_R2_BUCKET:-}"
+    assert worker_env["SNAPSHOT_PUBLIC_BASE_URL"] == "${SNAPSHOT_PUBLIC_BASE_URL:-}"
 
 
 def test_compose_worker_environment_covers_pipeline_settings_only() -> None:

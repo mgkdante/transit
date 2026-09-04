@@ -709,6 +709,22 @@ def test_serial_daily_provider_extraction_propagates_failure_before_commands(
 def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> None:
     publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
 
+    assert publish["env"]["BRONZE_STORAGE_BACKEND"] == "s3"
+    assert publish["env"]["BRONZE_S3_BUCKET"] == "transit-raw"
+    assert publish["env"]["BRONZE_S3_ENDPOINT"] == (
+        "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"
+    )
+    assert publish["env"]["BRONZE_S3_ACCESS_KEY"] == (
+        "${{ secrets.BRONZE_S3_ACCESS_KEY }}"
+    )
+    assert publish["env"]["BRONZE_S3_SECRET_KEY"] == (
+        "${{ secrets.BRONZE_S3_SECRET_KEY }}"
+    )
+    assert publish["env"]["SNAPSHOT_STORAGE_BACKEND"] == "s3"
+    assert publish["env"]["SNAPSHOT_R2_BUCKET"] == "${{ secrets.SNAPSHOT_R2_BUCKET }}"
+    assert publish["env"]["SNAPSHOT_PUBLIC_BASE_URL"] == (
+        "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"
+    )
     assert publish["env"]["SNAPSHOT_BASEMAP_PMTILES_URL"] == (
         "${{ vars.SNAPSHOT_BASEMAP_PMTILES_URL }}"
     )

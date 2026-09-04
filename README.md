@@ -84,8 +84,12 @@ For the ordered clean-clone command that mirrors required web, data-proxy, and
 database CI, including the disposable PostGIS gates, see
 [CONTRIBUTING.md](CONTRIBUTING.md#verification).
 
-Copy `.env.example` to `.env` only for local work and provide the variables for
-the path you are exercising. Never commit credentials or production exports.
+For local work, copy `.env.example` to `.env` from the repository root. The
+example selects local Bronze and snapshot directories and leaves every remote
+target blank; provide only the variables for the path you are exercising. CI
+and deployment workflows select remote storage explicitly and receive their
+targets and credentials from deployment configuration. Never commit credentials
+or production exports.
 
 ## Repository guides
 
