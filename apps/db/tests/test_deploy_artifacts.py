@@ -273,6 +273,11 @@ def test_caddyfile_proxies_only_health_service() -> None:
 def test_env_example_documents_compose_runtime_contract() -> None:
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assignments = {line for line in _active_lines(env_example) if "=" in line}
+    assert env_example.startswith(
+        "# Transit DB/runtime dotenv template.\n"
+        "#\n"
+        "# From the repository root, copy this file to `apps/db/.env`."
+    )
     assert {
         "POSTGRES_DB=transit",
         "POSTGRES_USER=transit",
@@ -288,6 +293,28 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert not any(line.startswith("NE" "ON_") for line in assignments)
     assert not any(line.startswith("RAIL" "WAY_") for line in assignments)
     assert "Oracle VM Postgres" in env_example
+
+
+def test_root_readme_copies_the_db_runtime_template_to_the_db_app() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "cp .env.example apps/db/.env" in readme
+    assert "cp .env.example .env" not in readme
+    assert "to `.env` from the repository root" not in readme
+
+
+def test_db_readme_documents_loopback_caddy_health_access() -> None:
+    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "http://127.0.0.1:8080" in readme
+    assert "8443" in readme
+    assert "CADDY_SITE_ADDRESS" in readme
+    assert "TLS" in readme
+    assert "CADDY_BIND_ADDRESS" in readme
+    assert "non-loopback" in readme
+    assert "reviewed" in readme
+    assert "HEALTH_SSH_TARGET" in readme
+    assert "validate-oracle-cutover.sh" in readme
 
 
 def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:

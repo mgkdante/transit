@@ -78,6 +78,24 @@ uses the TLS, SCRAM, HBA, and least-privilege contracts in
 `transit-reporting` is Gold-only, while `transit-db` is read-only across the data
 schemas and is SSH-tunnel-first.
 
+## Operator health proxy
+
+Compose keeps Caddy on loopback by default. The default operator health endpoint
+is `http://127.0.0.1:8080`; the mapped host port `8443` is meaningful only when
+`CADDY_SITE_ADDRESS` enables TLS, because the default `:80` site serves HTTP
+only. Treat a non-loopback `CADDY_BIND_ADDRESS` as a deliberate, reviewed
+exposure change.
+
+For remote checks, keep the loopback bind and use the existing SSH mode in the
+cutover validator. The URL is resolved on the remote host when
+`HEALTH_SSH_TARGET` is set:
+
+```bash
+HEALTH_BASE_URL=http://127.0.0.1:8080 \
+HEALTH_SSH_TARGET=<ssh-target> \
+bash scripts/validate-oracle-cutover.sh
+```
+
 ## Data and failure invariants
 
 - Bronze is the durable replay source. Realtime Silver is intentionally thin;
