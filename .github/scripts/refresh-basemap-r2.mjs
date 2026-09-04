@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
 
-const WRANGLER_VERSION = "4.100.0";
 const CONTENT_TYPE = "application/octet-stream";
 const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
@@ -164,9 +163,7 @@ function errorMessage(error) {
 
 function wranglerCommand(args) {
   const override = process.env.WRANGLER_BIN?.trim();
-  return override
-    ? { command: override, args }
-    : { command: "bunx", args: [`wrangler@${WRANGLER_VERSION}`, ...args] };
+  return { command: override || "wrangler", args };
 }
 
 async function wrangler(args) {

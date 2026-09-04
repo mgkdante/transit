@@ -4,15 +4,18 @@ Public, anonymous, mobile-first STM citizen-accountability dashboard. SvelteKit 
 Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at
 `transit.yesid.dev`, styled with the **yesid.dev** design system.
 
-- **Package manager:** `bun` — `apps/web` is a member of the root **bun + turbo**
-  workspace (the Python pipeline in `../db` is uv-managed; `../data-proxy` shares the
-  root `bun.lock`). Run `bun install` once at the repo root.
+- **Toolchain:** the root `.nvmrc`, `.bun-version`, and `package.json` own Node
+  22.23.2, Bun 1.3.11, and Wrangler 4.115.0. `apps/web` is a member of the root **bun +
+  turbo** workspace (the Python pipeline in `../db` is uv-managed;
+  `../data-proxy` shares the root `bun.lock`). Run `bun install --frozen-lockfile`
+  once at the repo root.
 - **Reads only** the versioned `/v1` R2 snapshot contract (direct R2 custom
   domain in browsers, direct bucket binding in SSR; never the DB).
 
 ## Commands
 
-Run at the repo root once: `bun install`. Then, from `apps/web`:
+Run at the repo root once: `nvm install && bun install --frozen-lockfile`. Then,
+from `apps/web`:
 
 ```bash
 bun run tokens:build    # regenerate Transit CSS tokens (src/lib/styles/tokens.css, app.css @theme region)
@@ -25,12 +28,14 @@ bun run og:build        # regenerate Open Graph cards (scripts/build-og.ts)
 
 `bun run test` is Vitest. Browser-level receipt and probe scripts under `scripts/`
 launch Chromium through `playwright-core` directly; there is no `@playwright/test`
-suite or config.
+suite or config. After installing `chromium-headless-shell`, run
+`node scripts/verify-browser-toolchain.mjs` to prove that the installed browser
+matches Playwright metadata and the checked-in map-poster receipt.
 
 Or from the repo root via turbo: `turbo run check`, `turbo run build`, `turbo run test`
-(spans the whole workspace). Deploy: `bun run deploy:web` (root) — `bun run build` then
-`wrangler deploy` (the `transit.yesid.dev/data/*` route stays on the data-proxy worker
-by route specificity).
+(spans the whole workspace). Deploy: `bun run deploy:web` (root) — `bun run build`
+then the root-installed Wrangler (the `transit.yesid.dev/data/*` route stays on the
+data-proxy worker by route specificity).
 
 ## Design tokens
 

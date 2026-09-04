@@ -1,5 +1,5 @@
 name: Setup Transit JS workspace
-description: Install Bun and cache the Transit JavaScript workspace.
+description: Install and verify the pinned Node, Bun, and Wrangler workspace.
 
 inputs:
   cache-vitest:
@@ -10,6 +10,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+
     - name: Set up Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       with:
@@ -24,7 +30,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', '.bun-version') }}
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', '.bun-version', '.nvmrc') }}
         restore-keys: |
           ${{ runner.os }}-bun-
 
@@ -50,3 +56,19 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}
       run: bun install --frozen-lockfile
+
+    - name: Verify JavaScript toolchain
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        set -euo pipefail
+        expected_node="v$(tr -d '\r\n' < .nvmrc)"
+        expected_bun="$(tr -d '\r\n' < .bun-version)"
+        expected_wrangler="$(node -p "require('./package.json').devDependencies.wrangler")"
+        actual_node="$(node --version)"
+        actual_bun="$(bun --version)"
+        actual_wrangler="$(./node_modules/.bin/wrangler --version | tail -n 1 | tr -d '\r')"
+        printf 'Node %s\nBun %s\nWrangler %s\n' "${actual_node}" "${actual_bun}" "${actual_wrangler}"
+        test "${actual_node}" = "${expected_node}"
+        test "${actual_bun}" = "${expected_bun}"
+        test "${actual_wrangler}" = "${expected_wrangler}"

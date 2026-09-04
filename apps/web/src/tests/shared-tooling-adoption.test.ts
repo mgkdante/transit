@@ -175,6 +175,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 			'.github/scripts/**',
 			'.github/actions/**',
 			'.bun-version',
+			'.python-version',
 		]);
 		expect(nestedBlock(webEvents, 'push')).not.toMatch(/^\s*paths:/mu);
 		for (const workflow of [ci, web]) {
@@ -330,11 +331,12 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 		const contributing = text('CONTRIBUTING.md');
 		expect(contributing).toContain('Bun 1.3.11');
-		expect(contributing).toContain('Node.js 22');
+		expect(contributing).toContain('Node.js 22.23.2');
 		expect(contributing).toContain('Python 3.12');
 		expect(contributing).toContain('uv 0.11.15');
 		expect(contributing).toContain('Gitleaks 8.30.1');
-		expect(contributing).toContain(
+		expect(contributing).toContain('.github/scripts/install-gitleaks.sh');
+		expect(text('.github/scripts/install-gitleaks.sh')).toContain(
 			'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
 		);
 		const contributingPosterCheck = contributing.indexOf('map-posters:check');
@@ -350,15 +352,59 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
 		expect(refresh).toBeDefined();
 		if (!refresh) return;
-		const setupBun = refresh.indexOf('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
+		const setupWorkspace = refresh.indexOf('uses: ./.github/actions/setup');
 		const upload = refresh.indexOf('bun .github/scripts/refresh-basemap-r2.mjs');
-		expect(setupBun).toBeGreaterThanOrEqual(0);
-		expect(upload).toBeGreaterThan(setupBun);
+		expect(setupWorkspace).toBeGreaterThanOrEqual(0);
+		expect(upload).toBeGreaterThan(setupWorkspace);
 		expect(refresh).toContain('timeout-minutes: 45');
 		expect(refresh).toContain('timeout 5m pmtiles extract');
 		expect(refresh).toContain('timeout 2m pmtiles verify');
 		expect(refresh).toContain('${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}');
 		expect(refresh).not.toContain('cloudflare/wrangler-action@');
+	});
+
+	it('installs and proves the root-owned JavaScript toolchain before exercising both Workers', () => {
+		const setup = text('.github/actions/setup/action.yml');
+		const setupNode = setup.indexOf('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
+		const setupBun = setup.indexOf('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
+		const install = setup.indexOf('bun install --frozen-lockfile');
+		const verify = setup.indexOf('Verify JavaScript toolchain');
+		expect(setupNode).toBeGreaterThanOrEqual(0);
+		expect(setup).toContain('node-version-file: .nvmrc');
+		expect(setupBun).toBeGreaterThan(setupNode);
+		expect(install).toBeGreaterThan(setupBun);
+		expect(verify).toBeGreaterThan(install);
+		expect(setup.slice(verify)).toContain('./node_modules/.bin/wrangler --version');
+
+		const work = jobBlocks(text('.github/workflows/web.yml')).get('ci-work');
+		expect(work).toBeDefined();
+		if (!work) return;
+		const proxyDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run');
+		const webDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run --env=""');
+		const chromiumInstall = work.indexOf('playwright-core install chromium-headless-shell');
+		const browserProof = work.indexOf('verify-browser-toolchain.mjs');
+		expect(proxyDryRun).toBeGreaterThanOrEqual(0);
+		expect(webDryRun).toBeGreaterThan(proxyDryRun);
+		expect(chromiumInstall).toBeGreaterThan(webDryRun);
+		expect(browserProof).toBeGreaterThan(chromiumInstall);
+	});
+
+	it('makes an exact Node pin change exercise every affected owned lane', () => {
+		const webRules = classifierRules(text('.github/workflows/web.yml'));
+		expect(classify('.nvmrc', webRules)).toEqual({
+			'ci-work': true,
+			'map-poster-check': true,
+		});
+		for (const workflow of ['deploy-data-proxy.yml']) {
+			expect(text(`.github/workflows/${workflow}`)).toContain('      - ".nvmrc"');
+		}
+		for (const workflow of [
+			'deploy-data-proxy.yml',
+			'configure-data-edge.yml',
+			'refresh-basemap.yml',
+		]) {
+			expect(text(`.github/workflows/${workflow}`)).toContain('uses: ./.github/actions/setup');
+		}
 	});
 
 	it('classifies each product domain selectively while unknown paths fail safe', () => {
@@ -392,6 +438,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		);
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
 		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
+		expect(classify('.nvmrc', webRules)).toEqual(allWeb);
 		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);
 		expect(classify('README.md', webRules)).toEqual(noWeb);
 		expect(classify('new-root-surface.txt', webRules)).toEqual(allWeb);

@@ -67,16 +67,18 @@ applies that policy before either web lane is deployed.
 
 ## Build, deploy, and verify
 
-Install the shared workspace once from the repository root, then validate the
-web package:
+The root `.nvmrc`, `.bun-version`, and `package.json` own Node 22.23.2, Bun
+1.3.11, and Wrangler 4.115.0. Install the frozen shared workspace once from the
+repository root, then validate the web package with that installed Wrangler:
 
 ```bash
-bun install
+nvm install
+bun install --frozen-lockfile
 cd apps/web
 bun run check
 bun run test
 bun run build
-bunx wrangler@4.100.0 deploy --dry-run --env=""
+../../node_modules/.bin/wrangler deploy --dry-run --env=""
 ```
 
 [`../../.github/workflows/web.yml`](../../.github/workflows/web.yml) is the
@@ -84,9 +86,15 @@ release path. It applies R2 CORS, builds with the lane's public variables, and
 then deploys with one of these commands:
 
 ```bash
-bunx wrangler@4.100.0 deploy --env dev
-bunx wrangler@4.100.0 deploy --env=""
+../../node_modules/.bin/wrangler deploy --env dev
+../../node_modules/.bin/wrangler deploy --env=""
 ```
+
+Protected web CI dry-runs both the data-proxy and web configurations without
+credentials. It also installs `chromium-headless-shell` and runs
+`scripts/verify-browser-toolchain.mjs`, which reconciles the declared and
+installed Playwright versions, installed browser metadata, the poster receipt
+and generator constants, and the version reported by the launched browser.
 
 Development deploys from `develop` or an explicit dev dispatch. Production
 deploys from `main` or an explicit production dispatch on `main`. After a
