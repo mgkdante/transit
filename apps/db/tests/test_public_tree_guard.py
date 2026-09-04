@@ -26,6 +26,16 @@ class IndexedRepo:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 
+    def write_bytes(self, path: str, content: bytes) -> None:
+        target = self.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+
+    def symlink(self, path: str, target: str) -> None:
+        link = self.root / path
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(target)
+
     def stage(self, *paths: str, force: bool = False) -> None:
         args = ["add"]
         if force:
@@ -134,6 +144,12 @@ def test_renamed_pem_material_fails(indexed_repo: IndexedRepo, kind: str) -> Non
         "nested/.superpowers/session.md",
         "nested/.codex/transcript.jsonl",
         "nested/.claude/settings.json",
+        "nested/operational-receipts/session.json",
+        "nested/production-exports/export.csv",
+        "nested/db-dumps/transit.sql",
+        "nested/run-logs/worker.log",
+        "nested/security-reports/finding.md",
+        "nested/vulnerability-reports/finding.md",
     ],
 )
 def test_high_risk_raw_artifact_directory_fails(indexed_repo: IndexedRepo, path: str) -> None:
@@ -150,6 +166,8 @@ def test_high_risk_raw_artifact_directory_fails(indexed_repo: IndexedRepo, path:
     ("content", "category"),
     [
         ("op" + "://Transit/item/field\n", "vault-reference"),
+        ("1password" + "://Transit/item/field\n", "vault-reference"),
+        ("vault" + "://Transit/item/field\n", "vault-reference"),
         ("workspace=" + "/home/" + "real-user/project\n", "absolute-home-path"),
         ("workspace=" + "/Users/" + "real-user/project\n", "absolute-home-path"),
         (
@@ -164,6 +182,30 @@ def test_high_risk_raw_artifact_directory_fails(indexed_repo: IndexedRepo, path:
             "embargoed-" + "vulnerability: details\n",
             "private-" + "vulnerability-marker",
         ),
+        (
+            "CONFIDENTIAL " + "VULNERABILITY REPORT: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
+        (
+            "PRIVATE " + "VULNERABILITY REPORT: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
+        (
+            "EMBARGOED " + "VULNERABILITY REPORT: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
+        (
+            "PRIVATE " + "SECURITY FINDING: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
+        (
+            "CONFIDENTIAL " + "SECURITY FINDING: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
+        (
+            "EMBARGOED " + "SECURITY FINDING: do not publish\n",
+            "private-" + "vulnerability-marker",
+        ),
     ],
 )
 def test_private_content_marker_fails(
@@ -176,6 +218,52 @@ def test_private_content_marker_fails(
 
     assert result.returncode == 1
     assert result.stdout.splitlines() == [f"{category}: notes.txt:1"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "workspace=" + "/home/" + "Alice.Dev/project\n",
+        "workspace=" + "/Users/" + "Alice.Dev/project\n",
+        ("workspace=C:" + chr(92) + "Users" + chr(92) + "Alice.Dev" + chr(92) + "project\n"),
+    ],
+)
+def test_mixed_case_dotted_home_user_fails(indexed_repo: IndexedRepo, content: str) -> None:
+    indexed_repo.write("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: notes.txt:1\n"
+
+
+def test_indexed_symlink_blob_is_scanned(indexed_repo: IndexedRepo) -> None:
+    target = "/home/" + "Symlink.User/private-project"
+    indexed_repo.symlink("workspace-link", target)
+    indexed_repo.stage("workspace-link")
+    assert indexed_repo.git("ls-files", "--stage", "--", "workspace-link").stdout.startswith(
+        "120000 "
+    )
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: workspace-link:1\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be"])
+def test_utf16_indexed_blob_is_decoded_before_binary_detection(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = "heading\n" + "op" + "://Transit/item/field\n"
+    indexed_repo.write_bytes("notes.txt", content.encode(encoding))
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
 
 
 def test_diagnostics_never_echo_matched_content(indexed_repo: IndexedRepo) -> None:
@@ -241,6 +329,16 @@ def test_documented_placeholders_and_public_project_language_pass(
                 "DOC_ORIGIN=https://example.test",
                 "CACHE=/tmp/transit",
                 "WORKSPACE=/home/example-user/transit",
+                "MAC_WORKSPACE=/Users/Example-User/transit",
+                (
+                    "WINDOWS_WORKSPACE=C:"
+                    + chr(92)
+                    + "Users"
+                    + chr(92)
+                    + "Example-User"
+                    + chr(92)
+                    + "transit"
+                ),
                 "VALUE=obvious-dummy-test-token",
                 "NOTE=public production receipt proof secret token",
                 "SECURITY_DOC=private vulnerability reporting",
@@ -278,20 +376,28 @@ def test_secret_scan_runs_current_tree_checks_and_keeps_history_scans() -> None:
     steps = workflow["jobs"]["gitleaks"]["steps"]
     by_name = {step["name"]: step for step in steps}
 
+    failure_independent = "${{ success() || failure() }}"
     assert by_name["Check tracked public tree"] == {
         "name": "Check tracked public tree",
+        "if": failure_independent,
         "run": "python3 .github/scripts/check_public_tree.py",
     }
     assert by_name["Scan current tree"] == {
         "name": "Scan current tree",
+        "if": failure_independent,
         "run": "gitleaks dir --redact --config .gitleaks.toml .",
     }
-    assert by_name["Scan pull request diff"]["if"] == "github.event_name == 'pull_request'"
+    assert by_name["Scan pull request diff"]["if"] == (
+        "${{ (success() || failure()) && github.event_name == 'pull_request' }}"
+    )
     assert "origin/${{ github.base_ref }}..HEAD" in by_name["Scan pull request diff"]["run"]
-    assert by_name["Scan pushed commits"]["if"] == "github.event_name == 'push'"
+    assert by_name["Scan pushed commits"]["if"] == (
+        "${{ (success() || failure()) && github.event_name == 'push' }}"
+    )
     assert '"$before..$after"' in by_name["Scan pushed commits"]["run"]
     assert by_name["Scan HEAD history"]["if"] == (
-        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+        "${{ (success() || failure()) && "
+        "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
     )
     assert "gitleaks detect --redact" in by_name["Scan HEAD history"]["run"]
 

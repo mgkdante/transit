@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import codecs
 import os
 import re
-import stat
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 CRYPTO_SUFFIXES = {
@@ -23,7 +24,18 @@ CRYPTO_SUFFIXES = {
     ".pfx",
     ".pkcs12",
 }
-RAW_ARTIFACT_SEGMENTS = {"artifacts", ".claude", ".codex", ".superpowers"}
+RAW_ARTIFACT_SEGMENTS = {
+    "artifacts",
+    ".claude",
+    ".codex",
+    ".superpowers",
+    "db-dumps",
+    "operational-receipts",
+    "production-exports",
+    "run-logs",
+    "security-reports",
+    "vulnerability-reports",
+}
 PLACEHOLDER_USERS = {
     "example",
     "example-user",
@@ -37,25 +49,45 @@ PLACEHOLDER_USERS = {
 PEM_PATTERN = re.compile(
     re.escape("-----BEGIN ") + r"(?:CERTIFICATE|(?:[A-Z0-9]+ )?PRIVATE KEY)" + re.escape("-----")
 )
-VAULT_PATTERN = re.compile("op" + r"://", re.IGNORECASE)
-VULNERABILITY_MARKER_PATTERN = re.compile(
+VAULT_PATTERN = re.compile(r"\b(?:op|1password|vault)://", re.IGNORECASE)
+VULNERABILITY_LABEL_PATTERN = re.compile(
     r"\b(?:private|embargoed)[ _-]+vulnerabilit(?:y|ies)\s*(?=[:\]})])",
     re.IGNORECASE,
 )
+SECURITY_REPORT_MARKER_PATTERN = re.compile(
+    r"\b(?:confidential|private|embargoed)[ _-]+"
+    r"(?:vulnerabilit(?:y|ies)[ _-]+report|security[ _-]+finding)\b",
+    re.IGNORECASE,
+)
 HOME_PATTERNS = (
-    re.compile(re.escape("/" + "home" + "/") + r"(?P<user>[a-z0-9][a-z0-9_-]*)(?=/|[\s\"'`]|$)"),
-    re.compile(re.escape("/" + "Users" + "/") + r"(?P<user>[a-z0-9][a-z0-9_-]*)(?=/|[\s\"'`]|$)"),
+    re.compile(
+        r"(?<![A-Za-z0-9._$-])"
+        + re.escape("/" + "home" + "/")
+        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=/|[\s\"'`]|$)"
+    ),
+    re.compile(
+        r"(?<![A-Za-z0-9._$-])"
+        + re.escape("/" + "Users" + "/")
+        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=/|[\s\"'`]|$)"
+    ),
     re.compile(
         r"[A-Za-z]:"
         + re.escape("\\")
         + r"Users"
         + re.escape("\\")
-        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9_-]*)(?=\\|[\s\"'`]|$)",
+        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=\\|[\s\"'`]|$)",
         re.IGNORECASE,
     ),
 )
 
 Finding = tuple[str, str, int]
+
+
+@dataclass(frozen=True)
+class IndexEntry:
+    mode: str
+    object_id: str
+    path: str
 
 
 class GitQueryError(RuntimeError):
@@ -88,21 +120,59 @@ def _repository_root() -> Path:
     return root
 
 
-def _indexed_paths(root: Path) -> list[str]:
+def _indexed_entries(root: Path) -> list[IndexEntry]:
     output = _git(root, "ls-files", "--cached", "--stage", "-z", "--")
-    paths: list[str] = []
+    entries: list[IndexEntry] = []
     for entry in output.split(b"\0"):
         if not entry:
             continue
         try:
             metadata, raw_path = entry.split(b"\t", 1)
-            stage = metadata.rsplit(b" ", 1)[1]
+            raw_mode, raw_object_id, stage = metadata.split()
         except (IndexError, ValueError) as exc:
             raise GitQueryError from exc
         if stage != b"0":
             raise GitQueryError
-        paths.append(os.fsdecode(raw_path))
-    return sorted(set(paths))
+        entries.append(
+            IndexEntry(
+                mode=raw_mode.decode("ascii"),
+                object_id=raw_object_id.decode("ascii"),
+                path=os.fsdecode(raw_path),
+            )
+        )
+    return sorted(entries, key=lambda entry: entry.path)
+
+
+def _indexed_blobs(root: Path, entries: list[IndexEntry]) -> dict[str, bytes]:
+    blob_entries = [entry for entry in entries if entry.mode != "160000"]
+    requested = b"".join(entry.object_id.encode("ascii") + b"\n" for entry in blob_entries)
+    output = _git(root, "cat-file", "--batch", input_bytes=requested)
+
+    blobs: dict[str, bytes] = {}
+    cursor = 0
+    for entry in blob_entries:
+        header_end = output.find(b"\n", cursor)
+        if header_end < 0:
+            raise GitQueryError
+        header = output[cursor:header_end].split()
+        if len(header) != 3:
+            raise GitQueryError
+        object_id, object_type, raw_size = header
+        try:
+            size = int(raw_size)
+        except ValueError as exc:
+            raise GitQueryError from exc
+        if object_id.decode("ascii") != entry.object_id or object_type != b"blob":
+            raise GitQueryError
+        content_start = header_end + 1
+        content_end = content_start + size
+        if content_end >= len(output) or output[content_end : content_end + 1] != b"\n":
+            raise GitQueryError
+        blobs[entry.path] = output[content_start:content_end]
+        cursor = content_end + 1
+    if cursor != len(output):
+        raise GitQueryError
+    return blobs
 
 
 def _tracked_ignored_paths(index_tree: Path, paths: list[str]) -> set[str]:
@@ -130,32 +200,50 @@ def _has_private_home(line: str) -> bool:
     )
 
 
-def _content_findings(path: str, target: Path) -> set[Finding]:
+def _decode_indexed_text(content: bytes) -> str | None:
+    if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+        return content.decode("utf-32", errors="replace")
+    if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return content.decode("utf-16", errors="replace")
+    if content.startswith(codecs.BOM_UTF8):
+        return content.decode("utf-8-sig", errors="replace")
+
+    probe = content[:8192]
+    if b"\0" in probe:
+        even_bytes = probe[0::2]
+        odd_bytes = probe[1::2]
+        even_nul_ratio = even_bytes.count(0) / max(1, len(even_bytes))
+        odd_nul_ratio = odd_bytes.count(0) / max(1, len(odd_bytes))
+        if len(content) % 2 == 0 and odd_nul_ratio >= 0.3 and even_nul_ratio <= 0.05:
+            return content.decode("utf-16-le", errors="replace")
+        if len(content) % 2 == 0 and even_nul_ratio >= 0.3 and odd_nul_ratio <= 0.05:
+            return content.decode("utf-16-be", errors="replace")
+        return None
+    return content.decode("utf-8", errors="replace")
+
+
+def _content_findings(path: str, content: bytes) -> set[Finding]:
     findings: set[Finding] = set()
-    mode = target.lstat().st_mode
-    if not stat.S_ISREG(mode):
+    text = _decode_indexed_text(content)
+    if text is None:
         return findings
 
-    with target.open("rb") as stream:
-        probe = stream.read(8192)
-        if b"\0" in probe:
-            return findings
-        stream.seek(0)
-        for line_number, raw_line in enumerate(stream, start=1):
-            line = raw_line.decode("utf-8", errors="replace")
-            if PEM_PATTERN.search(line):
-                findings.add(("pem-material", path, line_number))
-            if VAULT_PATTERN.search(line):
-                findings.add(("vault-reference", path, line_number))
-            if VULNERABILITY_MARKER_PATTERN.search(line):
-                findings.add(("private-" + "vulnerability-marker", path, line_number))
-            if _has_private_home(line):
-                findings.add(("absolute-home-path", path, line_number))
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if PEM_PATTERN.search(line):
+            findings.add(("pem-material", path, line_number))
+        if VAULT_PATTERN.search(line):
+            findings.add(("vault-reference", path, line_number))
+        if VULNERABILITY_LABEL_PATTERN.search(line) or SECURITY_REPORT_MARKER_PATTERN.search(line):
+            findings.add(("private-" + "vulnerability-marker", path, line_number))
+        if _has_private_home(line):
+            findings.add(("absolute-home-path", path, line_number))
     return findings
 
 
 def _scan_index(root: Path) -> set[Finding]:
-    paths = _indexed_paths(root)
+    entries = _indexed_entries(root)
+    paths = [entry.path for entry in entries]
+    blobs = _indexed_blobs(root, entries)
     findings: set[Finding] = set()
 
     with tempfile.TemporaryDirectory(prefix="transit-public-tree-") as temp_dir:
@@ -166,13 +254,14 @@ def _scan_index(root: Path) -> set[Finding]:
         for path in _tracked_ignored_paths(index_tree, paths):
             findings.add(("tracked-ignored", path, 1))
 
-        for path in paths:
-            pure_path = PurePosixPath(path)
+        for entry in entries:
+            pure_path = PurePosixPath(entry.path)
             if pure_path.suffix.casefold() in CRYPTO_SUFFIXES:
-                findings.add(("crypto-material", path, 1))
+                findings.add(("crypto-material", entry.path, 1))
             if RAW_ARTIFACT_SEGMENTS.intersection(pure_path.parts[:-1]):
-                findings.add(("raw-artifact-path", path, 1))
-            findings.update(_content_findings(path, index_tree / path))
+                findings.add(("raw-artifact-path", entry.path, 1))
+            if entry.mode != "160000":
+                findings.update(_content_findings(entry.path, blobs[entry.path]))
 
     return findings
 
