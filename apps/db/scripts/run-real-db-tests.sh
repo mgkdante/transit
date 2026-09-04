@@ -12,11 +12,11 @@ cleanup_needed=0
 project_name=""
 volume_name=""
 compose_command=()
+active_command_pid=""
 active_command_group=""
+handshake_pending=0
 pending_signal_name=""
 pending_signal_status=""
-group_ready=0
-group_launch_failed=0
 
 fail() {
   echo "real-db verification: $*" >&2
@@ -26,13 +26,47 @@ fail() {
 cleanup() {
   local primary_status=$?
   local cleanup_failed=0
+  local listed_containers
+  local listed_networks_by_label
+  local listed_networks_by_name
   local listed_volume
   local listed_volumes
+  local network_query_failed=0
   trap - EXIT HUP INT TERM
 
   if ((cleanup_needed)); then
     if ! "${compose_command[@]}" down --volumes --remove-orphans; then
       echo "real-db cleanup failed: Docker Compose teardown failed." >&2
+      cleanup_failed=1
+    fi
+    if ! listed_containers="$(
+      docker ps --all --quiet \
+        --filter "label=com.docker.compose.project=${project_name}"
+    )"; then
+      echo "real-db cleanup failed: could not verify project container removal." >&2
+      cleanup_failed=1
+    elif [[ -n "${listed_containers}" ]]; then
+      echo "real-db cleanup failed: project container still exists." >&2
+      cleanup_failed=1
+    fi
+    if ! listed_networks_by_label="$(
+      docker network ls --quiet \
+        --filter "label=com.docker.compose.project=${project_name}"
+    )"; then
+      echo "real-db cleanup failed: could not verify project network removal." >&2
+      cleanup_failed=1
+      network_query_failed=1
+    fi
+    if ! listed_networks_by_name="$(
+      docker network ls --quiet --filter "name=^${project_name}_default$"
+    )"; then
+      echo "real-db cleanup failed: could not verify project network removal." >&2
+      cleanup_failed=1
+      network_query_failed=1
+    fi
+    if ((!network_query_failed)) &&
+      [[ -n "${listed_networks_by_label}" || -n "${listed_networks_by_name}" ]]; then
+      echo "real-db cleanup failed: project network still exists." >&2
       cleanup_failed=1
     fi
     if ! listed_volumes="$(
@@ -57,24 +91,60 @@ cleanup() {
   exit "${primary_status}"
 }
 
-on_signal() {
+isolated_command_group_exists() {
+  local command_pid="$1"
+  local process_group
+
+  process_group="$(ps -o pgid= -p "${command_pid}" 2>/dev/null)" || return 1
+  process_group="${process_group//[[:space:]]/}"
+  [[ "${process_group}" == "${command_pid}" ]]
+}
+
+terminate_active_command() {
   local signal_name="$1"
-  local signal_status="$2"
+  local command_pid="${active_command_pid}"
   local group="${active_command_group}"
   local killer_pid
-  trap - HUP INT TERM
+
+  [[ -n "${command_pid}" ]] || return 0
+  if [[ -z "${group}" ]] && isolated_command_group_exists "${command_pid}"; then
+    group="${command_pid}"
+  fi
   if [[ -n "${group}" ]]; then
     kill -s "${signal_name}" -- "-${group}" 2>/dev/null || true
-    (
-      sleep 1
+  else
+    kill -s "${signal_name}" -- "${command_pid}" 2>/dev/null || true
+  fi
+  (
+    sleep 1
+    if [[ -n "${group}" ]]; then
       if kill -0 -- "-${group}" 2>/dev/null; then
         kill -s KILL -- "-${group}" 2>/dev/null || true
       fi
-    ) &
-    killer_pid=$!
-    wait "${group}" 2>/dev/null || true
-    wait "${killer_pid}" 2>/dev/null || true
-    active_command_group=""
+    elif isolated_command_group_exists "${command_pid}"; then
+      kill -s KILL -- "-${command_pid}" 2>/dev/null || true
+    elif kill -0 -- "${command_pid}" 2>/dev/null; then
+      kill -s KILL -- "${command_pid}" 2>/dev/null || true
+    fi
+  ) &
+  killer_pid=$!
+  wait "${killer_pid}" 2>/dev/null || true
+  wait "${command_pid}" 2>/dev/null || true
+  active_command_pid=""
+  active_command_group=""
+}
+
+on_signal() {
+  local signal_name="$1"
+  local signal_status="$2"
+  if ((handshake_pending)); then
+    pending_signal_name="${signal_name}"
+    pending_signal_status="${signal_status}"
+    return
+  fi
+  trap - HUP INT TERM
+  if [[ -n "${active_command_pid}" ]]; then
+    terminate_active_command "${signal_name}"
   fi
   exit "${signal_status}"
 }
@@ -85,64 +155,53 @@ install_signal_traps() {
   trap 'on_signal TERM 143' TERM
 }
 
-queue_signal() {
-  pending_signal_name="$1"
-  pending_signal_status="$2"
-}
-
 run_tracked() {
-  local command_group
   local command_status
-  local launch_attempt
-  local parent_pid="${BASHPID}"
+  local command_stdout_fd
+  local handshake
+  local handshake_fd
+  local readiness_status
+
   pending_signal_name=""
   pending_signal_status=""
-  group_ready=0
-  group_launch_failed=0
-  trap 'queue_signal HUP 129' HUP
-  trap 'queue_signal INT 130' INT
-  trap 'queue_signal TERM 143' TERM
-  trap 'group_ready=1' USR1
-  trap 'group_launch_failed=1' USR2
-  python3 -c '
+  handshake_pending=1
+  exec {command_stdout_fd}>&1
+  exec {handshake_fd}< <(
+    exec python3 -c '
 import os
 import signal
 import sys
 
-parent_pid = int(sys.argv[1])
-try:
-    for signal_number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-        signal.signal(signal_number, signal.SIG_DFL)
-    os.setsid()
-except BaseException:
-    os.kill(parent_pid, signal.SIGUSR2)
-    raise
-os.kill(parent_pid, signal.SIGUSR1)
-os.execvp(sys.argv[2], sys.argv[2:])
-' "${parent_pid}" "$@" &
-  command_group=$!
-  for ((launch_attempt = 0; launch_attempt < 500; launch_attempt++)); do
-    ((group_ready || group_launch_failed)) && break
-    sleep 0.01
-  done
-  trap - USR1 USR2
-  if ((group_launch_failed || !group_ready)); then
-    kill -s KILL -- "${command_group}" 2>/dev/null || true
-    wait "${command_group}" 2>/dev/null || true
-    install_signal_traps
-    if [[ -n "${pending_signal_name}" ]]; then
-      on_signal "${pending_signal_name}" "${pending_signal_status}"
-    fi
+for signal_number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+    signal.signal(signal_number, signal.SIG_DFL)
+os.setsid()
+os.write(3, f"READY {os.getpid()}\n".encode("ascii"))
+os.close(3)
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@" 3>&1 1>&"${command_stdout_fd}"
+  )
+  active_command_pid="$!"
+  exec {command_stdout_fd}>&-
+
+  IFS= read -r -t 1 handshake <&"${handshake_fd}"
+  readiness_status=$?
+  handshake_pending=0
+  if [[ -n "${pending_signal_name}" ]]; then
+    exec {handshake_fd}<&-
+    on_signal "${pending_signal_name}" "${pending_signal_status}"
+  fi
+  if ((readiness_status)) || [[ "${handshake}" != "READY ${active_command_pid}" ]] ||
+    ! isolated_command_group_exists "${active_command_pid}"; then
+    exec {handshake_fd}<&-
+    terminate_active_command TERM
     fail "could not establish an isolated command process group."
     return 2
   fi
-  active_command_group="${command_group}"
-  install_signal_traps
-  if [[ -n "${pending_signal_name}" ]]; then
-    on_signal "${pending_signal_name}" "${pending_signal_status}"
-  fi
-  wait "${active_command_group}"
+  exec {handshake_fd}<&-
+  active_command_group="${active_command_pid}"
+  wait "${active_command_pid}"
   command_status=$?
+  active_command_pid=""
   active_command_group=""
   return "${command_status}"
 }
@@ -231,6 +290,8 @@ select_resource_identity() {
   local containers
   local listed_volume
   local listed_volumes
+  local networks_by_label
+  local networks_by_name
   local suffix
   local attempt
 
@@ -265,8 +326,22 @@ select_resource_identity() {
       fail "could not verify volume ownership."
       return 2
     }
+    networks_by_label="$(
+      docker network ls --quiet \
+        --filter "label=com.docker.compose.project=${project_name}"
+    )" || {
+      fail "could not verify network ownership."
+      return 2
+    }
+    networks_by_name="$(
+      docker network ls --quiet --filter "name=^${project_name}_default$"
+    )" || {
+      fail "could not verify network ownership."
+      return 2
+    }
     collision=0
     [[ -n "${containers}" ]] && collision=1
+    [[ -n "${networks_by_label}" || -n "${networks_by_name}" ]] && collision=1
     while IFS= read -r listed_volume; do
       [[ "${listed_volume}" == "${volume_name}" ]] && collision=1
     done <<<"${listed_volumes}"
@@ -279,7 +354,7 @@ select_resource_identity() {
 
 preflight() {
   local dependency
-  for dependency in docker uv od python3 sleep tr setsid; do
+  for dependency in docker uv od ps python3 sleep tr setsid; do
     command -v "${dependency}" >/dev/null 2>&1 || {
       fail "required command '${dependency}' was not found."
       return 2

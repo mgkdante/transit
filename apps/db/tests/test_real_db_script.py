@@ -67,6 +67,15 @@ def record(item):
         stream.write(json.dumps(item, sort_keys=True) + "\n")
 
 
+def recorded_events():
+    return [
+        json.loads(line)
+        for line in Path(os.environ["FAKE_COMMAND_LOG"]).read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+
+
 record(event)
 
 
@@ -126,19 +135,92 @@ if tool == "docker":
         print("arm64" if scenario == "non-amd64-daemon" else "x86_64")
         raise SystemExit(0)
     if arguments[:1] == ["ps"]:
-        if scenario == "container-query-failure":
+        recorded = recorded_events()
+        after_down = any(
+            item.get("tool") == "docker" and "down" in item.get("argv", [])
+            for item in recorded
+        )
+        if scenario == "container-query-failure" and not after_down:
             raise SystemExit(63)
+        if scenario == "cleanup-container-query-failure" and after_down:
+            raise SystemExit(66)
         prior_container_queries = sum(
             1
-            for line in Path(os.environ["FAKE_COMMAND_LOG"]).read_text(
-                encoding="utf-8"
-            ).splitlines()
-            if json.loads(line).get("argv", [None])[0] == "ps"
+            for item in recorded
+            if item.get("argv", [None])[0] == "ps"
         )
-        if scenario == "container-collision-exhaustion" or (
+        if not after_down and (
+            scenario == "container-collision-exhaustion"
+            or (
             scenario == "container-collision-once" and prior_container_queries == 1
+            )
         ):
             print("existing-container-id")
+        if after_down and scenario == "cleanup-container-residual":
+            print("residual-container-id")
+        raise SystemExit(0)
+    if arguments[:2] == ["network", "ls"]:
+        recorded = recorded_events()
+        has_label_filter = any(
+            str(argument).startswith("label=com.docker.compose.project=")
+            for argument in arguments
+        )
+        has_name_filter = any(str(argument).startswith("name=^") for argument in arguments)
+        after_down = any(
+            item.get("tool") == "docker" and "down" in item.get("argv", [])
+            for item in recorded
+        )
+        if scenario == "network-query-failure" and not after_down:
+            raise SystemExit(67)
+        if (
+            scenario == "network-name-query-failure"
+            and not after_down
+            and has_name_filter
+            and not has_label_filter
+        ):
+            raise SystemExit(67)
+        if scenario == "cleanup-network-query-failure" and after_down:
+            raise SystemExit(68)
+        prior_network_queries = sum(
+            1
+            for item in recorded
+            if item.get("argv", [None])[:2] == ["network", "ls"]
+        )
+        if not after_down and (
+            scenario == "network-collision-exhaustion"
+            or (scenario == "network-collision-once" and prior_network_queries == 1)
+        ):
+            print("existing-network-id")
+        if not after_down and (
+            scenario == "network-label-collision-once"
+            and has_label_filter
+            and not has_name_filter
+            and prior_network_queries == 1
+        ):
+            print("existing-labeled-network-id")
+        if not after_down and (
+            scenario == "network-name-collision-once"
+            and has_name_filter
+            and not has_label_filter
+            and prior_network_queries == 2
+        ):
+            print("existing-named-network-id")
+        if after_down and scenario == "cleanup-network-residual":
+            print("residual-network-id")
+        if (
+            after_down
+            and scenario == "cleanup-network-label-residual"
+            and has_label_filter
+            and not has_name_filter
+        ):
+            print("residual-labeled-network-id")
+        if (
+            after_down
+            and scenario == "cleanup-network-name-residual"
+            and has_name_filter
+            and not has_label_filter
+        ):
+            print("residual-named-network-id")
         raise SystemExit(0)
     if "up" in arguments and "--help" not in arguments:
         if scenario == "signal-during-startup":
@@ -158,12 +240,7 @@ if tool == "docker":
     if "down" in arguments:
         raise SystemExit(31 if scenario == "down-failure" else 0)
     if arguments[:2] == ["volume", "ls"]:
-        recorded = [
-            json.loads(line)
-            for line in Path(os.environ["FAKE_COMMAND_LOG"]).read_text(
-                encoding="utf-8"
-            ).splitlines()
-        ]
+        recorded = recorded_events()
         after_down = any(
             item.get("tool") == "docker" and "down" in item.get("argv", [])
             for item in recorded
@@ -212,10 +289,43 @@ import sys
 import time
 
 
+def record_wrapper(tool):
+    with Path(os.environ["FAKE_COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({
+            "tool": tool,
+            "pid": os.getpid(),
+            "pgid": os.getpgrp(),
+        }, sort_keys=True) + "\n")
+
+
+scenario = os.environ.get("FAKE_SCENARIO")
+tracked_tool = Path(sys.argv[3]).name if len(sys.argv) > 3 else ""
+if tracked_tool == "docker" and scenario in {
+    "handshake-at-timeout",
+    "handshake-late-readiness",
+    "handshake-eof",
+    "handshake-shim-failure",
+    "signal-during-pending-handshake",
+}:
+    record_wrapper("shim-pending")
+    if scenario == "handshake-at-timeout":
+        time.sleep(1.0)
+    elif scenario == "handshake-late-readiness":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(1.2)
+    elif scenario == "handshake-eof":
+        raise SystemExit(71)
+    elif scenario == "handshake-shim-failure":
+        os.setsid()
+        raise SystemExit(72)
+    elif scenario == "signal-during-pending-handshake":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(2)
+
 if (
-    os.environ.get("FAKE_SCENARIO") == "delayed-setsid-during-alembic"
-    and len(sys.argv) > 4
-    and Path(sys.argv[4]).name == "uv"
+    scenario == "delayed-setsid-during-alembic"
+    and len(sys.argv) > 3
+    and Path(sys.argv[3]).name == "uv"
 ):
     with Path(os.environ["FAKE_COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
         stream.write(json.dumps({
@@ -238,7 +348,7 @@ def _install_fakes(
     include_python: bool = True,
 ) -> None:
     fake_bin.mkdir()
-    tools = ["bash", "dirname", "od", "sleep", "tr"]
+    tools = ["bash", "dirname", "od", "ps", "sleep", "tr"]
     if include_setsid:
         tools.append("setsid")
     for name in tools:
@@ -353,7 +463,7 @@ def _run_scenario(
 
 
 def _operation(event: dict[str, object]) -> str:
-    if str(event["tool"]).endswith("-ready") or event["tool"] == "shim-before-setsid":
+    if "argv" not in event:
         return str(event["tool"])
     arguments = event["argv"]
     assert isinstance(arguments, list)
@@ -371,6 +481,8 @@ def _operation(event: dict[str, object]) -> str:
         return "daemon-info"
     if arguments[:1] == ["ps"]:
         return "container-list"
+    if arguments[:2] == ["network", "ls"]:
+        return "network-list"
     if arguments[:1] == ["volume"]:
         return "volume-list" if arguments[1] == "ls" else f"volume-{arguments[1]}"
     return next(
@@ -455,11 +567,16 @@ def test_script_owns_unique_happy_path_from_both_supported_directories(tmp_path:
         "daemon-info",
         "container-list",
         "volume-list",
+        "network-list",
+        "network-list",
         "up",
         "port",
         "uv-alembic",
         "uv-pytest",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
     assert operations == expected_run * 2
@@ -720,6 +837,9 @@ def test_script_fails_closed_for_unresolvable_or_malformed_context(
     [
         ("container-collision-once", "container-list"),
         ("volume-collision-once", "volume-list"),
+        ("network-collision-once", "network-list"),
+        ("network-label-collision-once", "network-list"),
+        ("network-name-collision-once", "network-list"),
     ],
 )
 def test_script_regenerates_identity_after_owned_resource_collision(
@@ -737,12 +857,15 @@ def test_script_regenerates_identity_after_owned_resource_collision(
     collision_events = [
         event for event in events if _operation(event) == collision_operation
     ]
-    collided_project = (
-        str(collision_events[0]["volume"])[: -len("-data")]
-        if collision_operation == "volume-list"
-        else str(collision_events[0]["argv"][-1]).split("=", 2)[-1]
-    )
+    collided_project = str(collision_events[0]["volume"])[: -len("-data")]
     assert selected_project != collided_project
+    up_index = events.index(up_event)
+    ownership_projects = {
+        str(event["volume"])[: -len("-data")]
+        for event in events[:up_index]
+        if _operation(event) == "container-list"
+    }
+    assert len(ownership_projects) == 2
     for event in events:
         arguments = event["argv"]
         assert isinstance(arguments, list)
@@ -763,12 +886,35 @@ def test_script_regenerates_identity_after_owned_resource_collision(
                 "--filter",
                 f"name=^{event['volume']}$",
             ]
+        elif _operation(event) == "network-list":
+            candidate = str(event["volume"])[: -len("-data")]
+            assert arguments in (
+                [
+                    "network",
+                    "ls",
+                    "--quiet",
+                    "--filter",
+                    f"label=com.docker.compose.project={candidate}",
+                ],
+                [
+                    "network",
+                    "ls",
+                    "--quiet",
+                    "--filter",
+                    f"name=^{candidate}_default$",
+                ],
+            )
     down_event = next(event for event in events if _operation(event) == "down")
     assert collided_project not in down_event["argv"]
 
 
 @pytest.mark.parametrize(
-    "scenario", ["container-collision-exhaustion", "volume-collision-exhaustion"]
+    "scenario",
+    [
+        "container-collision-exhaustion",
+        "volume-collision-exhaustion",
+        "network-collision-exhaustion",
+    ],
 )
 def test_script_fails_before_creation_when_identity_collisions_are_exhausted(
     tmp_path: Path, scenario: str
@@ -780,6 +926,7 @@ def test_script_fails_before_creation_when_identity_collisions_are_exhausted(
     operations = [_operation(event) for event in events]
     assert operations.count("container-list") == 8
     assert operations.count("volume-list") == 8
+    assert operations.count("network-list") == 16
     assert "up" not in operations
     assert "down" not in operations
 
@@ -789,6 +936,8 @@ def test_script_fails_before_creation_when_identity_collisions_are_exhausted(
     [
         ("container-query-failure", "could not verify Compose project ownership"),
         ("volume-query-failure", "could not verify volume ownership"),
+        ("network-query-failure", "could not verify network ownership"),
+        ("network-name-query-failure", "could not verify network ownership"),
     ],
 )
 def test_script_fails_closed_when_identity_query_fails(
@@ -838,9 +987,14 @@ def test_script_rejects_invalid_port_and_cleans_up(tmp_path: Path, scenario: str
         "daemon-info",
         "container-list",
         "volume-list",
+        "network-list",
+        "network-list",
         "up",
         "port",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
     assert all(event["tool"] != "uv" for event in events)
@@ -860,9 +1014,14 @@ def test_script_reports_startup_logs_then_cleans_up_without_uv(tmp_path: Path) -
         "daemon-info",
         "container-list",
         "volume-list",
+        "network-list",
+        "network-list",
         "up",
         "logs",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
     log_event = next(event for event in events if _operation(event) == "logs")
@@ -874,9 +1033,12 @@ def test_script_preserves_alembic_failure_and_skips_pytest(tmp_path: Path) -> No
     result, events = _run_scenario(tmp_path, "alembic-failure")
 
     assert result.returncode == 41
-    assert [_operation(event) for event in events][-3:] == [
+    assert [_operation(event) for event in events][-6:] == [
         "uv-alembic",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
     assert "uv-pytest" not in [_operation(event) for event in events]
@@ -886,10 +1048,13 @@ def test_script_preserves_pytest_failure_and_cleans_up(tmp_path: Path) -> None:
     result, events = _run_scenario(tmp_path, "pytest-failure")
 
     assert result.returncode == 42
-    assert [_operation(event) for event in events][-4:] == [
+    assert [_operation(event) for event in events][-7:] == [
         "uv-alembic",
         "uv-pytest",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
 
@@ -916,6 +1081,104 @@ def _live_process_group_members(group_id: int) -> list[int]:
         except (FileNotFoundError, IndexError, PermissionError, ValueError):
             continue
     return members
+
+
+def _process_is_live(process_id: int) -> bool:
+    try:
+        stat = Path(f"/proc/{process_id}/stat").read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError):
+        return False
+    return stat[stat.rfind(")") + 2 :].split()[0] != "Z"
+
+
+def _assert_recorded_processes_exit(events: list[dict[str, object]]) -> None:
+    process_ids = {
+        event["pid"]
+        for event in events
+        if event["tool"] == "shim-pending"
+    }
+    assert all(isinstance(process_id, int) for process_id in process_ids)
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and any(
+        _process_is_live(process_id) for process_id in process_ids
+    ):
+        time.sleep(0.02)
+    assert not any(_process_is_live(process_id) for process_id in process_ids)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "maximum_seconds"),
+    [
+        ("handshake-at-timeout", 4.0),
+        ("handshake-late-readiness", 7.0),
+        ("handshake-eof", 2.0),
+        ("handshake-shim-failure", 2.0),
+    ],
+)
+def test_script_handles_pipe_handshake_boundary_safely(
+    tmp_path: Path, scenario: str, maximum_seconds: float
+) -> None:
+    fake_bin = tmp_path / "bin"
+    log_path = tmp_path / "commands.jsonl"
+    _install_fakes(fake_bin)
+    started = time.monotonic()
+    result = subprocess.run(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=_script_environment(fake_bin, log_path, scenario),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=8,
+    )
+    elapsed = time.monotonic() - started
+    events = _events(log_path)
+
+    assert result.returncode in ({0, 2} if scenario == "handshake-at-timeout" else {2})
+    assert elapsed < maximum_seconds
+    if result.returncode == 2:
+        assert "could not establish an isolated command process group" in result.stderr
+        assert [_operation(event) for event in events][-5:] == [
+            "down",
+            "container-list",
+            "network-list",
+            "network-list",
+            "volume-list",
+        ]
+    _assert_recorded_processes_exit(events)
+
+
+def test_script_handles_wrapper_signal_while_pipe_handshake_is_pending(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    log_path = tmp_path / "commands.jsonl"
+    _install_fakes(fake_bin)
+    process = subprocess.Popen(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=_script_environment(fake_bin, log_path, "signal-during-pending-handshake"),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    _wait_for_event(log_path, "shim-pending")
+    started = time.monotonic()
+    os.kill(process.pid, signal.SIGTERM)
+    _, stderr = process.communicate(timeout=3)
+    events = _events(log_path)
+
+    assert process.returncode == 143, stderr
+    assert time.monotonic() - started < 2.8
+    assert "cleanup failed" not in stderr
+    assert [_operation(event) for event in events][-5:] == [
+        "down",
+        "container-list",
+        "network-list",
+        "network-list",
+        "volume-list",
+    ]
+    _assert_recorded_processes_exit(events)
 
 
 def _run_wrapper_signal_case(
@@ -984,13 +1247,29 @@ def _run_wrapper_signal_case(
             "startup",
             "signal-during-startup",
             "docker-up-ready",
-            ["up", "down", "volume-list"],
+            [
+                "up",
+                "down",
+                "container-list",
+                "network-list",
+                "network-list",
+                "volume-list",
+            ],
         ),
         (
             "alembic",
             "signal-during-alembic",
             "uv-ready",
-            ["up", "port", "uv-alembic", "down", "volume-list"],
+            [
+                "up",
+                "port",
+                "uv-alembic",
+                "down",
+                "container-list",
+                "network-list",
+                "network-list",
+                "volume-list",
+            ],
         ),
     ],
 )
@@ -1035,7 +1314,15 @@ def test_script_queues_signal_until_delayed_process_group_exists(tmp_path: Path)
         ready_tool="shim-before-setsid",
         signal_number=signal.SIGTERM,
         expected_status=143,
-        expected_operation_tail=["up", "port", "down", "volume-list"],
+        expected_operation_tail=[
+            "up",
+            "port",
+            "down",
+            "container-list",
+            "network-list",
+            "network-list",
+            "volume-list",
+        ],
     )
 
     before_setsid = next(event for event in events if event["tool"] == "shim-before-setsid")
@@ -1050,7 +1337,16 @@ def test_script_kills_signal_ignoring_grandchild_before_cleanup(tmp_path: Path) 
         ready_tool="grandchild-ready",
         signal_number=signal.SIGTERM,
         expected_status=143,
-        expected_operation_tail=["up", "port", "uv-alembic", "down", "volume-list"],
+        expected_operation_tail=[
+            "up",
+            "port",
+            "uv-alembic",
+            "down",
+            "container-list",
+            "network-list",
+            "network-list",
+            "volume-list",
+        ],
     )
 
     grandchild = next(event for event in events if event["tool"] == "grandchild-ready")
@@ -1072,7 +1368,43 @@ def test_script_cleanup_defects_override_success(
 
     assert result.returncode == 90
     assert expected_message in result.stderr
-    assert [_operation(event) for event in events][-2:] == ["down", "volume-list"]
+    assert [_operation(event) for event in events][-5:] == [
+        "down",
+        "container-list",
+        "network-list",
+        "network-list",
+        "volume-list",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_message"),
+    [
+        ("cleanup-container-residual", "project container still exists"),
+        ("cleanup-network-residual", "project network still exists"),
+        ("cleanup-network-label-residual", "project network still exists"),
+        ("cleanup-network-name-residual", "project network still exists"),
+        (
+            "cleanup-container-query-failure",
+            "could not verify project container removal",
+        ),
+        ("cleanup-network-query-failure", "could not verify project network removal"),
+    ],
+)
+def test_script_fails_closed_for_container_or_network_cleanup_defect(
+    tmp_path: Path, scenario: str, expected_message: str
+) -> None:
+    result, events = _run_scenario(tmp_path, scenario)
+
+    assert result.returncode == 90
+    assert expected_message in result.stderr
+    assert [_operation(event) for event in events][-5:] == [
+        "down",
+        "container-list",
+        "network-list",
+        "network-list",
+        "volume-list",
+    ]
 
 
 def test_script_fails_closed_when_volume_absence_query_fails(tmp_path: Path) -> None:
@@ -1080,7 +1412,13 @@ def test_script_fails_closed_when_volume_absence_query_fails(tmp_path: Path) -> 
 
     assert result.returncode == 90
     assert "could not verify data volume removal" in result.stderr
-    assert [_operation(event) for event in events][-2:] == ["down", "volume-list"]
+    assert [_operation(event) for event in events][-5:] == [
+        "down",
+        "container-list",
+        "network-list",
+        "network-list",
+        "volume-list",
+    ]
     volume_event = events[-1]
     assert volume_event["argv"] == [
         "volume",
@@ -1096,8 +1434,11 @@ def test_volume_query_failure_overrides_primary_failure(tmp_path: Path) -> None:
 
     assert result.returncode == 90
     assert "could not verify data volume removal" in result.stderr
-    assert [_operation(event) for event in events][-3:] == [
+    assert [_operation(event) for event in events][-6:] == [
         "uv-alembic",
         "down",
+        "container-list",
+        "network-list",
+        "network-list",
         "volume-list",
     ]
