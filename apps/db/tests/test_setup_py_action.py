@@ -28,12 +28,12 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
     assert doc["inputs"]["working-directory"]["required"] is False
     assert set(doc["inputs"]) == {"working-directory"}
     steps = doc["runs"]["steps"]
-    assert len(steps) == 3
+    assert len(steps) == 4
     assert (
         steps[0]["uses"]
         == "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
     )
-    assert steps[0]["with"] == {"python-version": "3.12"}
+    assert steps[0]["with"] == {"python-version-file": ".python-version"}
     assert (
         steps[1]["uses"]
         == "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
@@ -45,6 +45,30 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
         "working-directory": "${{ inputs.working-directory }}",
         "run": "uv sync --locked",
     }
+    assert steps[3] == {
+        "name": "Verify Python toolchain",
+        "shell": "bash",
+        "working-directory": "${{ inputs.working-directory }}",
+        "run": (
+            "set -euo pipefail\n"
+            "uv run python --version\n"
+            "uv run python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))'\n"
+            'test "$(uv --version | cut -d\' \' -f1,2)" = "uv 0.11.15"\n'
+        ),
+    }
+
+
+def test_python_minor_line_is_selected_and_proved_by_ci() -> None:
+    assert (REPO_ROOT / ".python-version").read_text(encoding="utf-8") == "3.12\n"
+
+    workflow = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+    on = workflow.get("on", workflow.get(True, {}))
+    assert ".python-version" in on["push"]["paths"]
+
+    classifier = next(
+        step for step in workflow["jobs"]["classify"]["steps"] if step.get("id") == "classify"
+    )
+    assert '".python-version"' in classifier["with"]["rules-json"]
 
 
 def test_setup_py_composite_has_the_exact_workflow_job_map() -> None:
