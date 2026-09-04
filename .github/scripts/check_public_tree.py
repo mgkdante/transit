@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -198,20 +199,14 @@ def _tracked_ignored_paths(index_tree: Path, paths: list[str]) -> set[str]:
 
 
 def _has_private_home(line: str) -> bool:
-    if ROOT_HOME_PATTERN.search(line):
+    normalized_line = unicodedata.normalize("NFC", line)
+    if ROOT_HOME_PATTERN.search(normalized_line):
         return True
     return any(
         match.group("user").casefold() not in PLACEHOLDER_USERS
         for pattern in HOME_PATTERNS
-        for match in pattern.finditer(line)
+        for match in pattern.finditer(normalized_line)
     )
-
-
-def _credible_text(text: str) -> bool:
-    if not text:
-        return True
-    acceptable = sum(character.isprintable() or character in "\t\n\r\f" for character in text)
-    return acceptable / len(text) >= 0.85
 
 
 def _decode_indexed_text_candidates(content: bytes) -> tuple[str, ...]:
@@ -223,15 +218,10 @@ def _decode_indexed_text_candidates(content: bytes) -> tuple[str, ...]:
         return (content.decode("utf-8-sig", errors="replace"),)
 
     if b"\0" in content:
-        if len(content) % 2 != 0:
-            return ()
         candidates: list[str] = []
         for encoding in ("utf-16-le", "utf-16-be"):
-            try:
-                decoded = content.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-            if _credible_text(decoded) and decoded not in candidates:
+            decoded = content.decode(encoding, errors="replace")
+            if decoded not in candidates:
                 candidates.append(decoded)
         return tuple(candidates)
     return (content.decode("utf-8", errors="replace"),)

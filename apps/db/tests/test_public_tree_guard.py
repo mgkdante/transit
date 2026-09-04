@@ -281,6 +281,55 @@ def test_bomless_utf16_with_non_ascii_prefix_is_scanned(
     assert result.stdout == "vault-reference: notes.txt:2\n"
 
 
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_with_trailing_byte_is_scanned(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = ("heading\n" + "op" + "://Transit/item/field\n").encode(encoding) + b"\xff"
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
+
+
+@pytest.mark.parametrize(
+    ("encoding", "lone_surrogate"),
+    [("utf-16-le", b"\x00\xd8"), ("utf-16-be", b"\xd8\x00")],
+)
+def test_bomless_utf16_with_lone_surrogate_is_scanned(
+    indexed_repo: IndexedRepo, encoding: str, lone_surrogate: bytes
+) -> None:
+    content = (
+        "heading\n".encode(encoding)
+        + lone_surrogate
+        + ("\n" + "op" + "://Transit/item/field\n").encode(encoding)
+    )
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:3\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_with_many_controls_is_scanned(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (("\x01" * 64) + "\n" + "op" + "://Transit/item/field\n").encode(encoding)
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -291,6 +340,16 @@ def test_bomless_utf16_with_non_ascii_prefix_is_scanned(
 )
 def test_unicode_home_user_fails(indexed_repo: IndexedRepo, content: str) -> None:
     indexed_repo.write("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: notes.txt:1\n"
+
+
+def test_canonically_decomposed_unicode_home_user_fails(indexed_repo: IndexedRepo) -> None:
+    indexed_repo.write("notes.txt", "workspace=/" + "Users/E\u0301lodie/project\n")
     indexed_repo.stage("notes.txt")
 
     result = indexed_repo.run_guard()
