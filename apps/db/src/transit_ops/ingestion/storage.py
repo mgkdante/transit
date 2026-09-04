@@ -253,7 +253,7 @@ def _normalize_s3_endpoint(endpoint_url: str) -> str:
         raise BronzeStorageError(
             "BRONZE_S3_ENDPOINT must be a full http(s) account-level endpoint, "
             "for example "
-            "'https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com'."
+            "'https://account-id.r2.cloudflarestorage.com'."
         )
     if parts.path not in {"", "/"} or parts.query or parts.fragment:
         raise BronzeStorageError(

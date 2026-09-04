@@ -8,7 +8,7 @@
 name = "transit-data-proxy"
 main = "src/worker.js"
 compatibility_date = "2026-06-10"
-# R2 endpoint account hash already public in .env.example (BRONZE_S3_ENDPOINT).
+# Keep this production account aligned with the transit-web Wrangler config.
 account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
 workers_dev = false
 

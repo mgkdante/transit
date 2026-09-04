@@ -212,6 +212,8 @@ def test_compose_interpolation_rejects_missing_database_secret() -> None:
         pytest.skip("Docker Compose is unavailable in this environment")
 
     env = os.environ.copy()
+    env["BRONZE_STORAGE_BACKEND"] = "local"
+    env["SNAPSHOT_STORAGE_BACKEND"] = "local"
     for password in (None, ""):
         if password is None:
             env.pop("POSTGRES_PASSWORD", None)
@@ -256,6 +258,42 @@ def test_compose_interpolation_rejects_missing_database_secret() -> None:
     assert str(postgres_port["published"]) == "5432"
 
 
+@pytest.mark.parametrize(
+    ("selector", "message"),
+    [
+        ("BRONZE_STORAGE_BACKEND", "BRONZE_STORAGE_BACKEND is required"),
+        ("SNAPSHOT_STORAGE_BACKEND", "SNAPSHOT_STORAGE_BACKEND is required"),
+    ],
+)
+def test_compose_interpolation_rejects_missing_storage_selectors(
+    selector: str,
+    message: str,
+) -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker Compose is unavailable in this environment")
+
+    env = os.environ.copy()
+    env["POSTGRES_PASSWORD"] = "explicit-test-password"
+    env["BRONZE_STORAGE_BACKEND"] = "local"
+    env["SNAPSHOT_STORAGE_BACKEND"] = "local"
+    for value in (None, ""):
+        if value is None:
+            env.pop(selector, None)
+        else:
+            env[selector] = value
+        rejected = subprocess.run(
+            [docker, "compose", "-f", "docker-compose.yml", "config"],
+            cwd=DB_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rejected.returncode != 0
+        assert message in (rejected.stdout + rejected.stderr)
+
+
 def test_caddyfile_proxies_only_health_service() -> None:
     caddyfile = (DB_ROOT / "Caddyfile").read_text(encoding="utf-8")
     active_directives = _active_lines(caddyfile)
@@ -273,6 +311,11 @@ def test_caddyfile_proxies_only_health_service() -> None:
 def test_env_example_documents_compose_runtime_contract() -> None:
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assignments = {line for line in _active_lines(env_example) if "=" in line}
+    assert env_example.startswith(
+        "# Transit DB/runtime dotenv template.\n"
+        "#\n"
+        "# From the repository root, copy this file to `apps/db/.env`."
+    )
     assert {
         "POSTGRES_DB=transit",
         "POSTGRES_USER=transit",
@@ -280,6 +323,7 @@ def test_env_example_documents_compose_runtime_contract() -> None:
         "POSTGRES_BIND_ADDRESS=127.0.0.1",
         "POSTGRES_HOST_PORT=5432",
         "CADDY_SITE_ADDRESS=:80",
+        "CADDY_BIND_ADDRESS=127.0.0.1",
         "CADDY_HTTP_PORT=8080",
         "CADDY_HTTPS_PORT=8443",
     }.issubset(assignments)
@@ -287,6 +331,30 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert not any(line.startswith("NE" "ON_") for line in assignments)
     assert not any(line.startswith("RAIL" "WAY_") for line in assignments)
     assert "Oracle VM Postgres" in env_example
+    assert "local default does not require R2 credentials" in env_example
+    assert "S3/R2 deployment" in env_example
+
+
+def test_root_readme_copies_the_db_runtime_template_to_the_db_app() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "cp .env.example apps/db/.env" in readme
+    assert "cp .env.example .env" not in readme
+    assert "to `.env` from the repository root" not in readme
+
+
+def test_db_readme_documents_loopback_caddy_health_access() -> None:
+    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "http://127.0.0.1:8080" in readme
+    assert "8443" in readme
+    assert "CADDY_SITE_ADDRESS" in readme
+    assert "TLS" in readme
+    assert "CADDY_BIND_ADDRESS" in readme
+    assert "non-loopback" in readme
+    assert "reviewed" in readme
+    assert "HEALTH_SSH_TARGET" in readme
+    assert "validate-oracle-cutover.sh" in readme
 
 
 def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:
@@ -640,6 +708,40 @@ def test_compose_services_define_scoped_environment_without_env_file() -> None:
 def test_compose_caddy_environment_is_site_address_only() -> None:
     services = _compose()["services"]
     assert _environment_keys(services["caddy"]) == {"CADDY_SITE_ADDRESS"}
+
+
+def test_compose_caddy_host_ports_bind_to_loopback_by_default() -> None:
+    ports = _compose()["services"]["caddy"]["ports"]
+
+    assert ports == [
+        "${CADDY_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTP_PORT:-8080}:80",
+        "${CADDY_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTPS_PORT:-8443}:443",
+    ]
+
+
+def test_compose_requires_explicit_storage_selectors_and_blanks_remote_targets() -> None:
+    services = _compose()["services"]
+    worker_env = services["worker"]["environment"]
+    health_env = services["health"]["environment"]
+
+    for environment in (worker_env, health_env):
+        assert environment["BRONZE_STORAGE_BACKEND"] == (
+            "${BRONZE_STORAGE_BACKEND:?BRONZE_STORAGE_BACKEND is required}"
+        )
+        assert environment["BRONZE_LOCAL_ROOT"] == "${BRONZE_LOCAL_ROOT:-./data/bronze}"
+        assert environment["BRONZE_S3_ENDPOINT"] == "${BRONZE_S3_ENDPOINT:-}"
+        assert environment["BRONZE_S3_BUCKET"] == "${BRONZE_S3_BUCKET:-}"
+        assert environment["BRONZE_S3_ACCESS_KEY"] == "${BRONZE_S3_ACCESS_KEY:-}"
+        assert environment["BRONZE_S3_SECRET_KEY"] == "${BRONZE_S3_SECRET_KEY:-}"
+
+    assert worker_env["SNAPSHOT_STORAGE_BACKEND"] == (
+        "${SNAPSHOT_STORAGE_BACKEND:?SNAPSHOT_STORAGE_BACKEND is required}"
+    )
+    assert worker_env["SNAPSHOT_LOCAL_ROOT"] == (
+        "${SNAPSHOT_LOCAL_ROOT:-./data/snapshots}"
+    )
+    assert worker_env["SNAPSHOT_R2_BUCKET"] == "${SNAPSHOT_R2_BUCKET:-}"
+    assert worker_env["SNAPSHOT_PUBLIC_BASE_URL"] == "${SNAPSHOT_PUBLIC_BASE_URL:-}"
 
 
 def test_compose_worker_environment_covers_pipeline_settings_only() -> None:

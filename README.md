@@ -76,6 +76,7 @@ bun run test
 Set up the data pipeline from its lockfile:
 
 ```bash
+cp .env.example apps/db/.env
 cd apps/db
 uv sync --locked
 ```
@@ -84,8 +85,11 @@ For the ordered clean-clone command that mirrors required web, data-proxy, and
 database CI, including the disposable PostGIS gates, see
 [CONTRIBUTING.md](CONTRIBUTING.md#verification).
 
-Copy `.env.example` to `.env` only for local work and provide the variables for
-the path you are exercising. Never commit credentials or production exports.
+For local work, the DB/runtime template copied to `apps/db/.env` selects local
+Bronze and snapshot directories and leaves every remote target blank. Provide
+only the variables for the path you are exercising. CI and deployment workflows
+select remote storage explicitly and receive their targets and credentials from
+deployment configuration. Never commit credentials or production exports.
 
 ## Repository guides
 

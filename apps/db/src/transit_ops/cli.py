@@ -80,6 +80,8 @@ from transit_ops.validation.static_feeds import validate_static_feeds
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_SOURCE_FACTORY_REPORT_DIR = Path("artifacts/source-factory")
+
 app = typer.Typer(
     help=(
         "Transit Ops CLI for repository bootstrap, provider registry, "
@@ -200,16 +202,16 @@ def _read_json_object(path: Path, *, option_name: str) -> dict[str, object]:
     return payload
 
 
-def _preflight_report_dir(report_dir: Path) -> None:
+def _preflight_report_dir(report_dir: Path, *, create_parents: bool = False) -> None:
     if report_dir.exists() and not report_dir.is_dir():
         raise typer.BadParameter(f"--report-dir must be a directory, got file: {report_dir}")
-    if not report_dir.parent.exists():
+    if not create_parents and not report_dir.parent.exists():
         raise typer.BadParameter(
             f"--report-dir parent directory does not exist: {report_dir.parent}"
         )
 
     try:
-        report_dir.mkdir(exist_ok=True)
+        report_dir.mkdir(parents=create_parents, exist_ok=True)
     except OSError as exc:
         raise typer.BadParameter(f"--report-dir is not writable: {report_dir}") from exc
 
@@ -1653,7 +1655,7 @@ def rebuild_source_factory_command(
         help="Confirm active Bronze prefixes may be wiped.",
     ),
     report_dir: Path = typer.Option(  # noqa: B008
-        Path("artifacts/slice-8.6"),
+        _DEFAULT_SOURCE_FACTORY_REPORT_DIR,
         "--report-dir",
         help="Directory for source-factory proof artifacts.",
     ),
@@ -1662,7 +1664,10 @@ def rebuild_source_factory_command(
 
     settings = get_settings()
     try:
-        _preflight_report_dir(report_dir)
+        _preflight_report_dir(
+            report_dir,
+            create_parents=report_dir == _DEFAULT_SOURCE_FACTORY_REPORT_DIR,
+        )
         if execute and not destructive_r2_cleanup:
             raise typer.BadParameter("--destructive-r2-cleanup is required with --execute.")
         result = run_source_factory_rebuild(

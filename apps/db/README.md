@@ -28,11 +28,13 @@ target, and destructive-R2 confirmations before execution.
 ## Setup and checks
 
 Run Python commands from this directory. Start with the repository-root
-[`../../.env.example`](../../.env.example), and configure only the path being
-run.
+[`../../.env.example`](../../.env.example), whose local defaults cannot select a
+remote storage target. Configure only the path being run; CI and production
+jobs select remote storage explicitly.
 
 ```bash
 cd apps/db
+cp ../../.env.example .env
 uv sync --locked
 uv run transit-ops --help
 uv run ruff check src tests
@@ -75,6 +77,24 @@ uses the TLS, SCRAM, HBA, and least-privilege contracts in
 [`infra/postgres-serving-access`](infra/postgres-serving-access/README.md);
 `transit-reporting` is Gold-only, while `transit-db` is read-only across the data
 schemas and is SSH-tunnel-first.
+
+## Operator health proxy
+
+Compose keeps Caddy on loopback by default. The default operator health endpoint
+is `http://127.0.0.1:8080`; the mapped host port `8443` is meaningful only when
+`CADDY_SITE_ADDRESS` enables TLS, because the default `:80` site serves HTTP
+only. Treat a non-loopback `CADDY_BIND_ADDRESS` as a deliberate, reviewed
+exposure change.
+
+For remote checks, keep the loopback bind and use the existing SSH mode in the
+cutover validator. The URL is resolved on the remote host when
+`HEALTH_SSH_TARGET` is set:
+
+```bash
+HEALTH_BASE_URL=http://127.0.0.1:8080 \
+HEALTH_SSH_TARGET=<ssh-target> \
+bash scripts/validate-oracle-cutover.sh
+```
 
 ## Data and failure invariants
 

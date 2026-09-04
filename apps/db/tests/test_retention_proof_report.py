@@ -297,6 +297,7 @@ def test_retention_proof_report_propagates_static_validation_programming_errors(
             prune_gold=lambda provider_id, **kwargs: FakeDisplayResult("gold"),
             prune_bronze=lambda provider_id, **kwargs: FakeDisplayResult("bronze"),
             prune_warm_rollup=lambda provider_id, **kwargs: FakeDisplayResult("warm"),
+            prune_i3=lambda provider_id, **kwargs: FakeDisplayResult("i3"),
         )
 
 
@@ -321,6 +322,7 @@ def test_build_retention_proof_report_captures_expected_operational_failures() -
         prune_gold=failing_prune,
         prune_bronze=failing_prune,
         prune_warm_rollup=failing_prune,
+        prune_i3=failing_prune,
     ).display_dict()
     static_report = build_retention_proof_report(
         "bad-provider",
@@ -331,6 +333,7 @@ def test_build_retention_proof_report_captures_expected_operational_failures() -
         prune_gold=lambda provider_id, **kwargs: FakeDisplayResult("gold"),
         prune_bronze=lambda provider_id, **kwargs: FakeDisplayResult("bronze"),
         prune_warm_rollup=lambda provider_id, **kwargs: FakeDisplayResult("warm"),
+        prune_i3=lambda provider_id, **kwargs: FakeDisplayResult("i3"),
     ).display_dict()
 
     assert prune_report["dry_runs"]["silver"] == {

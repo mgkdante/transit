@@ -89,8 +89,20 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
     assert job["env"]["GC_MODE"] == (
         "${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}"
     )
+    assert job["env"]["BRONZE_STORAGE_BACKEND"] == "s3"
+    assert job["env"]["BRONZE_S3_ENDPOINT"] == (
+        "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"
+    )
     assert job["env"]["BRONZE_S3_BUCKET"] == "transit-raw"
     assert job["env"]["BRONZE_S3_REGION"] == "auto"
+    assert job["env"]["BRONZE_S3_ACCESS_KEY"] == (
+        "${{ secrets.BRONZE_S3_ACCESS_KEY }}"
+    )
+    assert job["env"]["BRONZE_S3_SECRET_KEY"] == (
+        "${{ secrets.BRONZE_S3_SECRET_KEY }}"
+    )
+    assert job["env"]["SNAPSHOT_STORAGE_BACKEND"] == "s3"
+    assert job["env"]["SNAPSHOT_R2_BUCKET"] == "${{ secrets.SNAPSHOT_R2_BUCKET }}"
     steps = job["steps"]
     initialize_index = next(
         index

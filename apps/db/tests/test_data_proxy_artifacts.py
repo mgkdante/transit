@@ -22,7 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PROXY_DIR = REPO_ROOT / "apps" / "data-proxy"
 WRANGLER_TOML = PROXY_DIR / "wrangler.toml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-data-proxy.yml"
-ENV_EXAMPLE = REPO_ROOT / ".env.example"
+PUBLISH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "daily-warm-rollups.yml"
+WEB_WRANGLER_TOML = REPO_ROOT / "apps" / "web" / "wrangler.toml"
 
 
 def _wrangler_config() -> dict:
@@ -54,8 +55,11 @@ def test_wrangler_config_disables_workers_dev_and_pins_account() -> None:
     config = _wrangler_config()
 
     assert config["workers_dev"] is False
-    # The R2 account hash already committed in .env.example / settings defaults.
+    # Both production Workers target the same Cloudflare account.
     assert config["account_id"] == "eccfb9bedd87d413eaf4cac6ae2285d3"
+    assert tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))["account_id"] == (
+        config["account_id"]
+    )
 
 
 def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
@@ -112,11 +116,16 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
 
 
-def test_env_example_publishes_absolute_urls_to_direct_r2_custom_domain() -> None:
-    lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
-    (base_url_line,) = [line for line in lines if line.startswith("SNAPSHOT_PUBLIC_BASE_URL=")]
-    base_url = base_url_line.split("=", 1)[1]
+def test_production_workflow_uses_opaque_public_base_and_web_config_exposes_origin() -> None:
+    publish_env = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))["jobs"][
+        "publish"
+    ]["env"]
+    web_config = tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))
+    base_url = web_config["vars"]["PUBLIC_V1_BASE"].removesuffix("/v1")
 
+    assert publish_env["SNAPSHOT_PUBLIC_BASE_URL"] == (
+        "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"
+    )
     assert base_url == "https://data.yesid.dev"
 
     compatibility_route = next(

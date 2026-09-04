@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from transit_ops.settings import (
     LEGACY_DATABASE_URL_KEY,
@@ -26,7 +27,22 @@ SETTINGS_DEFAULT_ENV_KEYS = (
     "BRONZE_PRUNE_MAX_BATCHES",
     "BRONZE_I3_RETENTION_DAYS",
     "SILVER_I3_CLOSED_RETENTION_DAYS",
+    "BRONZE_STORAGE_BACKEND",
+    "BRONZE_LOCAL_ROOT",
+    "BRONZE_S3_ENDPOINT",
+    "BRONZE_S3_BUCKET",
+    "BRONZE_S3_ACCESS_KEY",
+    "BRONZE_S3_SECRET_KEY",
+    "BRONZE_S3_REGION",
+    "SNAPSHOT_STORAGE_BACKEND",
+    "SNAPSHOT_LOCAL_ROOT",
+    "SNAPSHOT_R2_BUCKET",
+    "SNAPSHOT_PUBLIC_BASE_URL",
+    "SNAPSHOT_BASEMAP_PMTILES_URL",
+    "SNAPSHOT_BASEMAP_STYLE_URL",
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
@@ -50,12 +66,12 @@ def test_settings_defaults(clean_default_settings_env: None) -> None:
     assert settings.LOG_LEVEL == "INFO"
     assert settings.PROVIDER_TIMEZONE == "America/Toronto"
     assert settings.STM_PROVIDER_ID == "stm"
-    assert settings.BRONZE_STORAGE_BACKEND == "s3"
+    assert settings.BRONZE_STORAGE_BACKEND == "local"
     assert settings.BRONZE_LOCAL_ROOT == "./data/bronze"
-    assert settings.BRONZE_S3_ENDPOINT == (
-        "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"
-    )
-    assert settings.BRONZE_S3_BUCKET == "transit-raw"
+    assert settings.BRONZE_S3_ENDPOINT is None
+    assert settings.BRONZE_S3_BUCKET is None
+    assert settings.BRONZE_S3_ACCESS_KEY is None
+    assert settings.BRONZE_S3_SECRET_KEY is None
     assert settings.BRONZE_S3_REGION == "auto"
     assert settings.REALTIME_POLL_SECONDS == 30
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
@@ -65,6 +81,35 @@ def test_settings_defaults(clean_default_settings_env: None) -> None:
     assert settings.HEALTH_FEED_TIMEOUT_SECONDS == 10.0
     assert settings.HEALTH_MAX_PIPELINE_AGE_SECONDS == 900
     assert settings.DATABASE_URL is None
+
+
+def test_bronze_backend_rejects_values_without_an_adapter(
+    clean_default_settings_env: None,
+) -> None:
+    with pytest.raises(ValidationError, match="BRONZE_STORAGE_BACKEND"):
+        Settings(_env_file=None, BRONZE_STORAGE_BACKEND="remote")
+
+
+def test_repository_env_example_loads_local_storage_without_remote_targets(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=REPO_ROOT / ".env.example")
+
+    assert settings.BRONZE_STORAGE_BACKEND == "local"
+    assert settings.BRONZE_LOCAL_ROOT == "./data/bronze"
+    assert settings.SNAPSHOT_STORAGE_BACKEND == "local"
+    assert settings.SNAPSHOT_LOCAL_ROOT == "./data/snapshots"
+    for field_name in (
+        "BRONZE_S3_ENDPOINT",
+        "BRONZE_S3_BUCKET",
+        "BRONZE_S3_ACCESS_KEY",
+        "BRONZE_S3_SECRET_KEY",
+        "SNAPSHOT_R2_BUCKET",
+        "SNAPSHOT_PUBLIC_BASE_URL",
+        "SNAPSHOT_BASEMAP_PMTILES_URL",
+        "SNAPSHOT_BASEMAP_STYLE_URL",
+    ):
+        assert not getattr(settings, field_name)
 
 
 def test_retention_defaults_lock_clean_reporting_contract(
