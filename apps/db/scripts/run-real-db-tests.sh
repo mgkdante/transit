@@ -12,7 +12,7 @@ cleanup_needed=0
 project_name=""
 volume_name=""
 compose_command=()
-active_uv_group=""
+active_command_group=""
 pending_signal_name=""
 pending_signal_status=""
 
@@ -58,12 +58,12 @@ cleanup() {
 on_signal() {
   local signal_name="$1"
   local signal_status="$2"
-  local group="${active_uv_group}"
+  local group="${active_command_group}"
   trap - HUP INT TERM
   if [[ -n "${group}" ]]; then
     kill -s "${signal_name}" -- "-${group}" 2>/dev/null || true
     wait "${group}" 2>/dev/null || true
-    active_uv_group=""
+    active_command_group=""
   fi
   exit "${signal_status}"
 }
@@ -79,7 +79,7 @@ queue_signal() {
   pending_signal_status="$2"
 }
 
-run_uv() {
+run_tracked() {
   local command_status
   pending_signal_name=""
   pending_signal_status=""
@@ -87,14 +87,14 @@ run_uv() {
   trap 'queue_signal INT 130' INT
   trap 'queue_signal TERM 143' TERM
   setsid "$@" &
-  active_uv_group=$!
+  active_command_group=$!
   install_signal_traps
   if [[ -n "${pending_signal_name}" ]]; then
     on_signal "${pending_signal_name}" "${pending_signal_status}"
   fi
-  wait "${active_uv_group}"
+  wait "${active_command_group}"
   command_status=$?
-  active_uv_group=""
+  active_command_group=""
   return "${command_status}"
 }
 
@@ -154,7 +154,7 @@ main() {
   install_signal_traps
   cleanup_needed=1
 
-  "${compose_command[@]}" up --detach --wait --wait-timeout 120 postgres
+  run_tracked "${compose_command[@]}" up --detach --wait --wait-timeout 120 postgres
   local startup_status=$?
   if ((startup_status)); then
     "${compose_command[@]}" logs --no-color --tail 200 postgres >&2 || true
@@ -184,9 +184,9 @@ main() {
   unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
 
   cd -- "${DB_ROOT}" || return 1
-  run_uv uv run alembic upgrade head || return $?
+  run_tracked uv run alembic upgrade head || return $?
   export COLUMNS=200
-  run_uv uv run pytest tests || return $?
+  run_tracked uv run pytest tests || return $?
 }
 
 main

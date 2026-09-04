@@ -441,6 +441,7 @@ def test_real_db_ci_uses_the_disposable_script_interface() -> None:
         {
             "name": "Run disposable real-DB verification",
             "run": "bash scripts/run-real-db-tests.sh",
+            "working-directory": "apps/db",
         },
     ]
 

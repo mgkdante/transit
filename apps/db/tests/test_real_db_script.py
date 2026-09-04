@@ -69,6 +69,27 @@ def record(item):
 
 record(event)
 
+
+def block_for_signal(label):
+    def handle_signal(signum, _frame):
+        record({
+            "tool": f"{label}-signal",
+            "signal": signum,
+            "pid": os.getpid(),
+            "pgid": os.getpgrp(),
+        })
+        raise SystemExit(128 + signum)
+
+    for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(signum, handle_signal)
+    record({
+        "tool": f"{label}-ready",
+        "pid": os.getpid(),
+        "pgid": os.getpgrp(),
+    })
+    time.sleep(60)
+
+
 scenario = os.environ.get("FAKE_SCENARIO", "success")
 if tool == "docker":
     if arguments == ["compose", "version"]:
@@ -80,6 +101,8 @@ if tool == "docker":
             print("Usage: docker compose up [OPTIONS] [SERVICE...]\n      --wait")
         raise SystemExit(0)
     if "up" in arguments and "--help" not in arguments:
+        if scenario == "signal-during-startup":
+            block_for_signal("docker-up")
         raise SystemExit(23 if scenario == "startup-failure" else 0)
     if "logs" in arguments:
         print("bounded fake startup log")
@@ -104,23 +127,7 @@ if tool == "docker":
 
 if arguments == ["run", "alembic", "upgrade", "head"]:
     if scenario == "signal-during-alembic":
-        def handle_signal(signum, _frame):
-            record({
-                "tool": "uv-signal",
-                "signal": signum,
-                "pid": os.getpid(),
-                "pgid": os.getpgrp(),
-            })
-            raise SystemExit(128 + signum)
-
-        for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-            signal.signal(signum, handle_signal)
-        record({
-            "tool": "uv-ready",
-            "pid": os.getpid(),
-            "pgid": os.getpgrp(),
-        })
-        time.sleep(60)
+        block_for_signal("uv")
     raise SystemExit(
         41 if scenario in ("alembic-failure", "alembic-and-volume-list-failure") else 0
     )
@@ -239,7 +246,7 @@ def _run_scenario(
 
 
 def _operation(event: dict[str, object]) -> str:
-    if event["tool"] in ("uv-ready", "uv-signal"):
+    if str(event["tool"]).endswith(("-ready", "-signal")):
         return str(event["tool"])
     arguments = event["argv"]
     assert isinstance(arguments, list)
@@ -599,6 +606,87 @@ def test_script_forwards_wrapper_signal_and_promptly_cleans_up(
     assert signal_events == [
         {
             "tool": "uv-signal",
+            "signal": signal_number,
+            "pid": child_pid,
+            "pgid": child_pid,
+        }
+    ]
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert "cleanup failed" not in stderr
+
+
+@pytest.mark.parametrize(
+    ("signal_number", "expected_status"),
+    [
+        (signal.SIGHUP, 129),
+        (signal.SIGINT, 130),
+        (signal.SIGTERM, 143),
+    ],
+)
+def test_script_forwards_wrapper_signal_during_startup_and_cleans_up(
+    tmp_path: Path, signal_number: signal.Signals, expected_status: int
+) -> None:
+    fake_bin = tmp_path / "bin"
+    log_path = tmp_path / "commands.jsonl"
+    _install_fakes(fake_bin)
+    process = subprocess.Popen(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=_script_environment(fake_bin, log_path, "signal-during-startup"),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if log_path.exists() and '"tool": "docker-up-ready"' in log_path.read_text(
+            encoding="utf-8"
+        ):
+            break
+        time.sleep(0.02)
+    else:
+        process.kill()
+        pytest.fail("fake Compose startup did not become signal-ready")
+
+    up_event = next(event for event in _events(log_path) if _operation(event) == "up")
+    child_pid = up_event["pid"]
+    assert isinstance(child_pid, int)
+    started = time.monotonic()
+    os.kill(process.pid, signal_number)
+    try:
+        _, stderr = process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.kill()
+        process.communicate(timeout=3)
+        pytest.fail("wrapper did not promptly forward the startup signal and exit")
+    events = _events(log_path)
+    _assert_compose_prefixes(events)
+
+    assert time.monotonic() - started < 3
+    assert process.returncode == expected_status
+    operations = [
+        _operation(event)
+        for event in events
+        if event["tool"] not in ("docker-up-ready", "docker-up-signal")
+    ]
+    assert operations == [
+        "compose-version",
+        "compose-up-help",
+        "up",
+        "down",
+        "volume-list",
+    ]
+    assert [event for event in events if event["tool"] == "docker-up-ready"] == [
+        {"tool": "docker-up-ready", "pid": child_pid, "pgid": child_pid}
+    ]
+    assert [event for event in events if event["tool"] == "docker-up-signal"] == [
+        {
+            "tool": "docker-up-signal",
             "signal": signal_number,
             "pid": child_pid,
             "pgid": child_pid,

@@ -151,6 +151,7 @@ jobs:
 
       - name: Run disposable real-DB verification
         run: bash scripts/run-real-db-tests.sh
+        working-directory: apps/db
 
   required-contexts:
     needs: [classify, offline-tests-work, alembic-single-head-work, real-db-tests-work]
