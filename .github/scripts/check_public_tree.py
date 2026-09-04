@@ -59,26 +59,31 @@ SECURITY_REPORT_MARKER_PATTERN = re.compile(
     r"(?:vulnerabilit(?:y|ies)[ _-]+report|security[ _-]+finding)\b",
     re.IGNORECASE,
 )
+USER_SEGMENT = r"(?P<user>[^\W][\w.-]*)"
+USER_TERMINATOR = r"(?=/|\\|[\s\"'`]|$)"
 HOME_PATTERNS = (
+    re.compile(r"(?<![\w.$-])" + re.escape("/" + "home" + "/") + USER_SEGMENT + USER_TERMINATOR),
+    re.compile(r"(?<![\w.$-])" + re.escape("/" + "Users" + "/") + USER_SEGMENT + USER_TERMINATOR),
     re.compile(
-        r"(?<![A-Za-z0-9._$-])"
-        + re.escape("/" + "home" + "/")
-        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=/|[\s\"'`]|$)"
-    ),
-    re.compile(
-        r"(?<![A-Za-z0-9._$-])"
-        + re.escape("/" + "Users" + "/")
-        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=/|[\s\"'`]|$)"
-    ),
-    re.compile(
-        r"[A-Za-z]:"
+        r"(?<!\w)[A-Za-z]:"
         + re.escape("\\")
         + r"Users"
         + re.escape("\\")
-        + r"(?P<user>[A-Za-z0-9][A-Za-z0-9._-]*)(?=\\|[\s\"'`]|$)",
+        + USER_SEGMENT
+        + USER_TERMINATOR,
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![\w.$-])"
+        + re.escape("/mnt/")
+        + r"[A-Za-z]"
+        + re.escape("/Users/")
+        + USER_SEGMENT
+        + USER_TERMINATOR,
         re.IGNORECASE,
     ),
 )
+ROOT_HOME_PATTERN = re.compile(r"(?<![\w.$-])/root(?=/|[\s\"'`]|$)")
 
 Finding = tuple[str, str, int]
 
@@ -193,6 +198,8 @@ def _tracked_ignored_paths(index_tree: Path, paths: list[str]) -> set[str]:
 
 
 def _has_private_home(line: str) -> bool:
+    if ROOT_HOME_PATTERN.search(line):
+        return True
     return any(
         match.group("user").casefold() not in PLACEHOLDER_USERS
         for pattern in HOME_PATTERNS
@@ -200,43 +207,50 @@ def _has_private_home(line: str) -> bool:
     )
 
 
-def _decode_indexed_text(content: bytes) -> str | None:
-    if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
-        return content.decode("utf-32", errors="replace")
-    if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
-        return content.decode("utf-16", errors="replace")
-    if content.startswith(codecs.BOM_UTF8):
-        return content.decode("utf-8-sig", errors="replace")
+def _credible_text(text: str) -> bool:
+    if not text:
+        return True
+    acceptable = sum(character.isprintable() or character in "\t\n\r\f" for character in text)
+    return acceptable / len(text) >= 0.85
 
-    probe = content[:8192]
-    if b"\0" in probe:
-        even_bytes = probe[0::2]
-        odd_bytes = probe[1::2]
-        even_nul_ratio = even_bytes.count(0) / max(1, len(even_bytes))
-        odd_nul_ratio = odd_bytes.count(0) / max(1, len(odd_bytes))
-        if len(content) % 2 == 0 and odd_nul_ratio >= 0.3 and even_nul_ratio <= 0.05:
-            return content.decode("utf-16-le", errors="replace")
-        if len(content) % 2 == 0 and even_nul_ratio >= 0.3 and odd_nul_ratio <= 0.05:
-            return content.decode("utf-16-be", errors="replace")
-        return None
-    return content.decode("utf-8", errors="replace")
+
+def _decode_indexed_text_candidates(content: bytes) -> tuple[str, ...]:
+    if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+        return (content.decode("utf-32", errors="replace"),)
+    if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return (content.decode("utf-16", errors="replace"),)
+    if content.startswith(codecs.BOM_UTF8):
+        return (content.decode("utf-8-sig", errors="replace"),)
+
+    if b"\0" in content:
+        if len(content) % 2 != 0:
+            return ()
+        candidates: list[str] = []
+        for encoding in ("utf-16-le", "utf-16-be"):
+            try:
+                decoded = content.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            if _credible_text(decoded) and decoded not in candidates:
+                candidates.append(decoded)
+        return tuple(candidates)
+    return (content.decode("utf-8", errors="replace"),)
 
 
 def _content_findings(path: str, content: bytes) -> set[Finding]:
     findings: set[Finding] = set()
-    text = _decode_indexed_text(content)
-    if text is None:
-        return findings
-
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if PEM_PATTERN.search(line):
-            findings.add(("pem-material", path, line_number))
-        if VAULT_PATTERN.search(line):
-            findings.add(("vault-reference", path, line_number))
-        if VULNERABILITY_LABEL_PATTERN.search(line) or SECURITY_REPORT_MARKER_PATTERN.search(line):
-            findings.add(("private-" + "vulnerability-marker", path, line_number))
-        if _has_private_home(line):
-            findings.add(("absolute-home-path", path, line_number))
+    for text in _decode_indexed_text_candidates(content):
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if PEM_PATTERN.search(line):
+                findings.add(("pem-material", path, line_number))
+            if VAULT_PATTERN.search(line):
+                findings.add(("vault-reference", path, line_number))
+            if VULNERABILITY_LABEL_PATTERN.search(line) or SECURITY_REPORT_MARKER_PATTERN.search(
+                line
+            ):
+                findings.add(("private-" + "vulnerability-marker", path, line_number))
+            if _has_private_home(line):
+                findings.add(("absolute-home-path", path, line_number))
     return findings
 
 

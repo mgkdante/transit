@@ -266,6 +266,67 @@ def test_utf16_indexed_blob_is_decoded_before_binary_detection(
     assert result.stdout == "vault-reference: notes.txt:2\n"
 
 
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_with_non_ascii_prefix_is_scanned(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    non_ascii_prefix = "漢字東京地下鉄運行情報" * 8
+    content = non_ascii_prefix + "\n" + "op" + "://Transit/item/field\n"
+    indexed_repo.write_bytes("notes.txt", content.encode(encoding))
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "workspace=" + "/home/" + "Élodie.开发/project\n",
+        "workspace=" + "/Users/" + "Ålice.测试/project\n",
+        ("workspace=C:" + chr(92) + "Users" + chr(92) + "Жанна.测试" + chr(92) + "project\n"),
+    ],
+)
+def test_unicode_home_user_fails(indexed_repo: IndexedRepo, content: str) -> None:
+    indexed_repo.write("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: notes.txt:1\n"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "workspace=" + "/mnt/" + "c/Users/Alice.Dev/project\n",
+        "workspace=" + "/" + "root/private-project\n",
+    ],
+)
+def test_wsl_and_root_home_paths_fail(indexed_repo: IndexedRepo, content: str) -> None:
+    indexed_repo.write("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: notes.txt:1\n"
+
+
+def test_nul_bearing_non_utf16_binary_stays_ignored(indexed_repo: IndexedRepo) -> None:
+    content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"op" + b"://not-text" + b"\x00"
+    indexed_repo.write_bytes("image.bin", content)
+    indexed_repo.stage("image.bin")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
 def test_diagnostics_never_echo_matched_content(indexed_repo: IndexedRepo) -> None:
     private_value = "/home/" + "never-echo-this-user/private-project"
     indexed_repo.write("notes.txt", private_value + "\n")
@@ -330,6 +391,7 @@ def test_documented_placeholders_and_public_project_language_pass(
                 "CACHE=/tmp/transit",
                 "WORKSPACE=/home/example-user/transit",
                 "MAC_WORKSPACE=/Users/Example-User/transit",
+                "WSL_WORKSPACE=/mnt/c/Users/Example-User/transit",
                 (
                     "WINDOWS_WORKSPACE=C:"
                     + chr(92)
@@ -343,6 +405,8 @@ def test_documented_placeholders_and_public_project_language_pass(
                 "NOTE=public production receipt proof secret token",
                 "SECURITY_DOC=private vulnerability reporting",
                 "CATEGORY=private-vulnerability-marker",
+                "IMPORT=$lib/features/home/HomeExplore.svelte",
+                "COPY_IMPORT=$lib/features/home/home.copy",
                 "",
             ]
         ),
