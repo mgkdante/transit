@@ -135,39 +135,13 @@ jobs:
             exit 1
           fi
 
-  # 3. Real-DB suite — spin up a throwaway Postgres 16, replay the whole
-  #    migration chain (`alembic upgrade head`) against the empty DB to catch the
-  #    empty-DB-replay failure class, then export TRANSIT_TEST_DATABASE_URL so the
-  #    real-DB regression files run instead of self-skipping. The container is
-  #    discarded with the runner — never points at production.
+  # 3. Real-DB suite — use the contributor command to create a unique PostGIS
+  #    target, replay migrations, run the full suite, and prove complete cleanup.
   real-db-tests-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['real-db-tests-work'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        # postgis/postgis (not stock postgres:16) — the migration chain does
-        # CREATE EXTENSION postgis; pg_repack (0040) self-skips when absent.
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: transit_ci
-          POSTGRES_PASSWORD: "transit_ci@:/%"
-          POSTGRES_DB: transit_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U transit_ci -d transit_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      # alembic env.py resolves this through Settings.DATABASE_URL; the real-DB
-      # tests read TRANSIT_TEST_DATABASE_URL. Same disposable container for both.
-      DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
-      TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
-      TRANSIT_TEST_DATABASE_DISPOSABLE: I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE
-      PGPASSWORD: "transit_ci@:/%"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -175,11 +149,8 @@ jobs:
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
 
-      - name: Replay migration chain on empty Postgres
-        run: uv run alembic upgrade head
-
-      - name: Run real-DB regression suite
-        run: uv run pytest tests
+      - name: Run disposable real-DB verification
+        run: bash scripts/run-real-db-tests.sh
 
   required-contexts:
     needs: [classify, offline-tests-work, alembic-single-head-work, real-db-tests-work]

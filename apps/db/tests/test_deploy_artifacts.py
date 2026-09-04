@@ -418,24 +418,43 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
     assert set(on["push"]["paths"]) == expected_paths
 
 
-def test_real_db_ci_proves_reserved_character_password_support() -> None:
+def test_real_db_ci_uses_the_disposable_script_interface() -> None:
     document = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     )
     job = document["jobs"]["real-db-tests-work"]
-    postgres_password = job["services"]["postgres"]["env"]["POSTGRES_PASSWORD"]
 
-    assert "@" in postgres_password
-    assert ":" in postgres_password
-    assert "/" in postgres_password
-    assert "%" in postgres_password
-    assert job["env"]["PGPASSWORD"] == postgres_password
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == 20
+    assert "services" not in job
+    assert "env" not in job
+    assert job["steps"] == [
+        {
+            "name": "Check out repository",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        },
+        {
+            "name": "Set up Python workspace",
+            "uses": "./.github/actions/setup-py",
+        },
+        {
+            "name": "Run disposable real-DB verification",
+            "run": "bash scripts/run-real-db-tests.sh",
+        },
+    ]
 
-    for key in ("DATABASE_URL", "TRANSIT_TEST_DATABASE_URL"):
-        database_url = urlsplit(job["env"][key])
-        assert database_url.username == "transit_ci"
-        assert database_url.password is None
-        assert database_url.hostname == "localhost"
+    required_job = document["jobs"]["required-contexts"]
+    assert required_job["needs"] == [
+        "classify",
+        "offline-tests-work",
+        "alembic-single-head-work",
+        "real-db-tests-work",
+    ]
+    assert [entry["context"] for entry in required_job["strategy"]["matrix"]["include"]] == [
+        "offline-tests",
+        "alembic-single-head",
+        "real-db-tests",
+    ]
 
 
 def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None:
