@@ -264,7 +264,7 @@ def test_utf16_indexed_blob_is_decoded_before_binary_detection(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:2\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
@@ -279,7 +279,7 @@ def test_bomless_utf16_with_non_ascii_prefix_is_scanned(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:2\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
@@ -326,7 +326,7 @@ def test_utf16_bom_with_stray_byte_before_vault_marker_is_scanned(
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
-def test_bomless_utf16_stray_byte_after_newline_keeps_original_line(
+def test_bomless_utf16_stray_byte_after_newline_reports_file_level_location(
     indexed_repo: IndexedRepo, encoding: str
 ) -> None:
     content = (
@@ -340,11 +340,11 @@ def test_bomless_utf16_stray_byte_after_newline_keeps_original_line(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:2\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
-def test_bomless_utf16_markers_before_and_after_stray_byte_keep_locations(
+def test_bomless_utf16_markers_before_and_after_stray_byte_deduplicate_to_file_level(
     indexed_repo: IndexedRepo, encoding: str
 ) -> None:
     content = (
@@ -358,14 +358,11 @@ def test_bomless_utf16_markers_before_and_after_stray_byte_keep_locations(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout.splitlines() == [
-        "vault-reference: notes.txt:1",
-        "vault-reference: notes.txt:3",
-    ]
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
-def test_utf16_decomposed_prefix_before_home_marker_has_one_location(
+def test_utf16_decomposed_prefix_before_home_marker_has_file_level_location(
     indexed_repo: IndexedRepo, encoding: str
 ) -> None:
     content = (
@@ -377,17 +374,32 @@ def test_utf16_decomposed_prefix_before_home_marker_has_one_location(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "absolute-home-path: notes.txt:2\n"
+    assert result.stdout == "absolute-home-path: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
-def test_bomless_utf16_keeps_distinct_vault_marker_locations(
+def test_bomless_utf16_distinct_vault_markers_deduplicate_to_file_level(
     indexed_repo: IndexedRepo, encoding: str
 ) -> None:
     content = (
         "op" + "://Transit/first/field\npublic line\nop" + "://Transit/second/field\n"
     ).encode(encoding)
     indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:1\n"
+
+
+def test_utf8_keeps_distinct_vault_marker_locations(
+    indexed_repo: IndexedRepo,
+) -> None:
+    indexed_repo.write(
+        "notes.txt",
+        "op" + "://Transit/first/field\npublic line\nop" + "://Transit/second/field\n",
+    )
     indexed_repo.stage("notes.txt")
 
     result = indexed_repo.run_guard()
@@ -410,7 +422,7 @@ def test_bomless_utf16_with_trailing_byte_is_scanned(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:2\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize(
@@ -431,7 +443,7 @@ def test_bomless_utf16_with_lone_surrogate_is_scanned(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:3\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
@@ -445,7 +457,7 @@ def test_bomless_utf16_with_many_controls_is_scanned(
     result = indexed_repo.run_guard()
 
     assert result.returncode == 1
-    assert result.stdout == "vault-reference: notes.txt:2\n"
+    assert result.stdout == "vault-reference: notes.txt:1\n"
 
 
 @pytest.mark.parametrize(
