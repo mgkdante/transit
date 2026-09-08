@@ -14,8 +14,8 @@ Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at
 
 ## Commands
 
-Run at the repo root once: `nvm install && bun install --frozen-lockfile`. Then,
-from `apps/web`:
+Use the Node version in the root `.nvmrc` (`nvm install` if you use NVM), then run
+`bun install --frozen-lockfile` at the repository root. From `apps/web`:
 
 ```bash
 bun run tokens:build    # regenerate Transit CSS tokens (src/lib/styles/tokens.css, app.css @theme region)

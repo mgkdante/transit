@@ -61,10 +61,11 @@ is installed with the workspace. The root
 `.bun-version`, `.nvmrc`, and `.python-version` files own the supported
 executable lines; deployment images separately pin Python 3.12.14.
 
-Install the JavaScript workspace and start the dashboard:
+Install the JavaScript workspace and start the dashboard. If you use NVM,
+`nvm install` selects the version in `.nvmrc`; other installations must provide
+that same Node version.
 
 ```bash
-nvm install
 bun install --frozen-lockfile
 bun run dev
 ```

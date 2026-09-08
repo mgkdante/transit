@@ -32,7 +32,7 @@ daemon loss cannot guarantee cleanup.
 ```bash
 set -euo pipefail
 
-nvm install
+if command -v nvm >/dev/null 2>&1; then nvm install; fi
 test "$(node --version)" = "v$(tr -d '\r\n' < .nvmrc)"
 test "$(bun --version)" = "$(tr -d '\r\n' < .bun-version)"
 test "$(uv --version | cut -d' ' -f1,2)" = "uv 0.11.15"
@@ -108,8 +108,9 @@ used to verify it.
 `map-posters:check` verifies the checked-in dated posters and their source
 receipt entirely offline. To intentionally rebuild those assets, install the
 authenticated browser with `apps/web/scripts/install-browser-toolchain.mjs`,
-set `CHROME_PATH` to the executable path it prints, and
-replace the receipt's filenames with the new `YYYYMMDD`, update the matching
+keep `TRANSIT_BROWSER_ROOT` set to the installation root passed to that command,
+and set `CHROME_PATH` to the executable it prints for the poster generator.
+Replace the receipt's filenames with the new `YYYYMMDD` and update the matching
 `MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
 `bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,
 client filenames, copy, and tests together.
