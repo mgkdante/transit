@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-data-proxy
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'deploy-data-proxy' || format('deploy-data-proxy-{0}', github.event.pull_request.number || github.ref) }}
   cancel-in-progress: false
 
 jobs:

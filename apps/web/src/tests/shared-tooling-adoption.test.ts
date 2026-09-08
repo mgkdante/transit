@@ -409,6 +409,33 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(browserManifest.browser.executableSha256).toMatch(/^[0-9a-f]{64}$/u);
 	});
 
+	it('isolates proxy verification queues from pending production deployment', () => {
+		const workflow = text('.github/workflows/deploy-data-proxy.yml');
+		const concurrency = topLevelBlock(workflow, 'concurrency');
+		const group = concurrency.match(/^\s+group:\s*(.+)$/mu)![1]!;
+		const expression = group.startsWith('${{')
+			? group.replace(/^\$\{\{\s*|\s*\}\}$/gu, '')
+			: JSON.stringify(group);
+		const evaluate = new Function('github', 'format', `return (${expression});`);
+		const queue = (event: string, ref: string, number?: number) =>
+			evaluate(
+				{ event_name: event, ref, event: { pull_request: { number } } },
+				(pattern: string, value: unknown) => pattern.replace('{0}', String(value)),
+			);
+		const production = queue('push', 'refs/heads/main');
+		expect(production).toBe('deploy-data-proxy');
+		expect(queue('push', 'refs/heads/main')).toBe(production);
+		const development = queue('push', 'refs/heads/develop');
+		const firstPr = queue('pull_request', 'refs/pull/47/merge', 47);
+		const secondPr = queue('pull_request', 'refs/pull/48/merge', 48);
+		expect(new Set([production, development, firstPr, secondPr]).size).toBe(4);
+		expect(queue('pull_request', 'refs/pull/47/merge', 47)).toBe(firstPr);
+		expect(concurrency).toContain('cancel-in-progress: false');
+		const deploy = jobBlocks(workflow).get('deploy-data-proxy')!;
+		expect(nestedBlock(deploy, 'concurrency', 4)).toContain('group: transit-data-edge-production');
+		expect(deploy).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'");
+	});
+
 	it('makes an exact Node pin change exercise every affected owned lane', () => {
 		const webRules = classifierRules(text('.github/workflows/web.yml'));
 		expect(classify('.nvmrc', webRules)).toEqual({
