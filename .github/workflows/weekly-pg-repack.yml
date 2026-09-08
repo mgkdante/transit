@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   pg-repack-maintenance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Dry-run only: a fast eligibility + size-report pass (no table rewrite, no
     # long lock). Mostly the apt install; the dry-run itself is ~1-2 min.
     timeout-minutes: 30

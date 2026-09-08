@@ -30,7 +30,7 @@ defaults:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       classification: ${{ steps.classify.outputs.classification }}
@@ -46,7 +46,7 @@ jobs:
             {
               "schema": 1,
               "always": {
-                "paths": [".bun-version", ".github/scripts/materialize-shared-config.mjs", ".github/shared-tooling.json", ".github/workflows/web.yml", ".npmrc", "bun.lock", "package.json", "turbo.json"],
+                "paths": [".bun-version", ".nvmrc", ".github/scripts/materialize-shared-config.mjs", ".github/shared-tooling.json", ".github/workflows/web.yml", ".npmrc", "bun.lock", "package.json", "turbo.json"],
                 "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
               },
               "jobs": {
@@ -55,7 +55,7 @@ jobs:
                   "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
                 "map-poster-check": {
-                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
+                  "paths": ["apps/web/browser-toolchain.json", "apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
                   "prefixes": ["apps/web/static/map/"]
                 }
               },
@@ -74,7 +74,7 @@ jobs:
   ci-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['ci-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -100,6 +100,10 @@ jobs:
       - name: Data proxy unit tests
         working-directory: ${{ github.workspace }}
         run: bun run --cwd apps/data-proxy test
+
+      - name: Data proxy Wrangler dry run
+        working-directory: apps/data-proxy
+        run: ../../node_modules/.bin/wrangler deploy --dry-run
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -137,12 +141,27 @@ jobs:
       - name: Build (adapter-cloudflare)
         run: bun run build
 
+      - name: Web Wrangler dry run
+        run: ../../node_modules/.bin/wrangler deploy --dry-run --env=""
+
+      - name: Browser toolchain contract
+        run: node --test scripts/install-browser-toolchain.test.mjs scripts/verify-browser-toolchain.test.mjs
+
+      - name: Install authenticated Chromium
+        env:
+          TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
+          node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
+
+      - name: Verify browser toolchain
+        run: node scripts/verify-browser-toolchain.mjs
+
       - name: B9 displayed-value correctness
         env:
           B9_REUSE_BUILD: "1"
-        run: |
-          ./node_modules/.bin/playwright-core install chromium-headless-shell
-          bun run test:b9-display
+        run: bun run test:b9-display
 
       - name: Unit tests
         run: bun run test
@@ -150,7 +169,7 @@ jobs:
   map-poster-check:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['map-poster-check'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -166,7 +185,7 @@ jobs:
     name: ci
     needs: [classify, ci-work, map-poster-check]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
@@ -175,7 +194,7 @@ jobs:
 
   deploy_scope:
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       deploy_web: ${{ steps.scope.outputs.deploy_web }}
@@ -184,6 +203,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
 
       - name: Resolve deployable event diff
         id: scope
@@ -196,7 +221,7 @@ jobs:
 
   deploy-dev:
     name: deploy dev
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [ci, deploy_scope]
     if: >-
@@ -214,7 +239,7 @@ jobs:
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
 
       - name: Build dev Worker
         working-directory: apps/web
@@ -261,11 +286,11 @@ jobs:
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 deploy --env dev
+        run: ../../node_modules/.bin/wrangler deploy --env dev
 
   deploy-production:
     name: deploy production
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [ci, deploy_scope]
     if: >-
@@ -283,7 +308,7 @@ jobs:
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
 
       - name: Build production Worker
         working-directory: apps/web
@@ -297,7 +322,7 @@ jobs:
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 deploy --env=""
+        run: ../../node_modules/.bin/wrangler deploy --env=""
 
       - name: Verify shared production routes
         working-directory: apps/data-proxy

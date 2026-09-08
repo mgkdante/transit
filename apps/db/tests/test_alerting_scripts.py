@@ -1,7 +1,7 @@
 """PATH-stubbed bash tests for the alerting plane (slice-9.1.1o).
 
 Two pure-bash scripts live at the REPO ROOT under .github/scripts (no uv, no
-python — they run on ubuntu-latest with gh/curl/jq/psql preinstalled):
+python — they run on the Ubuntu 24.04 hosted image with gh/curl/jq/psql):
 
   alert-issue.sh    — open/close a labeled GitHub issue as the alert channel.
   freshness-probe.sh — live manifest age + DB heartbeat/capture ages +

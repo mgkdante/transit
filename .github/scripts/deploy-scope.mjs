@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const DEPLOYABLE_PATHS = new Set([
+	'.nvmrc',
 	'.bun-version',
 	'.github/scripts/materialize-shared-config.mjs',
 	'.github/shared-tooling.json',

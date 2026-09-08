@@ -1,9 +1,18 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
 	FIXTURES,
 	MARK_KINDS,
@@ -19,7 +28,9 @@ const args = new Set(process.argv.slice(2));
 const WEB_ROOT = new URL('..', import.meta.url).pathname;
 const OUTPUT = new URL('../.svelte-kit/output/server/index.js', import.meta.url).pathname;
 const BUILD_ROOT = join(WEB_ROOT, '.svelte-kit/cloudflare');
-const WRANGLER = join(WEB_ROOT, '../data-proxy/node_modules/.bin/wrangler');
+const WRANGLER = join(WEB_ROOT, '../../node_modules/.bin/wrangler');
+const EXPECTED_WRANGLER = JSON.parse(readFileSync(join(WEB_ROOT, '../../package.json'), 'utf8'))
+	.devDependencies?.wrangler;
 const REPLAY_PREFIX = '/v1/stm/';
 const CELLS = Object.freeze([
 	{
@@ -1442,7 +1453,10 @@ async function startPreview(replayBase) {
 		cwd: WEB_ROOT,
 		label: 'wrangler version',
 	});
-	invariant(/4\.115\.0/u.test(version), `unexpected wrangler version ${version.trim()}`);
+	invariant(
+		typeof EXPECTED_WRANGLER === 'string' && version.trim() === EXPECTED_WRANGLER,
+		`unexpected wrangler version ${version.trim()}`,
+	);
 	const child = spawn(
 		WRANGLER,
 		[
@@ -1687,13 +1701,11 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 	let preview;
 	let browser;
 	try {
-		const bundled = chromium.executablePath();
-		const executablePath = existsSync(bundled)
-			? bundled
-			: ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(
-					existsSync,
-				);
-		browser = await chromium.launch({ headless: true, executablePath });
+		const browserArtifact = await verifyInstalledBrowserArtifact();
+		browser = await chromium.launch({
+			headless: true,
+			executablePath: browserArtifact.paths.executablePath,
+		});
 		for (let run = 0; run < runs; run += 1) {
 			preview = await startPreview(replay.base);
 			const transcript = [];

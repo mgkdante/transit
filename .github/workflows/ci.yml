@@ -19,6 +19,7 @@ on:
       - ".github/scripts/**"
       - ".github/actions/**"
       - ".bun-version"
+      - ".python-version"
 
 permissions:
   contents: read
@@ -39,7 +40,7 @@ env:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
       run:
@@ -58,7 +59,7 @@ jobs:
             {
               "schema": 1,
               "always": {
-                "paths": [".bun-version", ".env.example", ".gitleaks.toml", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
+                "paths": [".bun-version", ".python-version", ".env.example", ".gitleaks.toml", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
                 "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
               },
               "jobs": {
@@ -92,7 +93,7 @@ jobs:
   offline-tests-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['offline-tests-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -116,7 +117,7 @@ jobs:
   alembic-single-head-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['alembic-single-head-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -140,8 +141,8 @@ jobs:
   real-db-tests-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['real-db-tests-work'] }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -149,12 +150,22 @@ jobs:
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
 
+      - name: Verify runtime container toolchain
+        run: bash scripts/verify-runtime-images.sh
+        working-directory: apps/db
+
       - name: Run disposable real-DB verification
         run: bash scripts/run-real-db-tests.sh
         working-directory: apps/db
 
   required-contexts:
-    needs: [classify, offline-tests-work, alembic-single-head-work, real-db-tests-work]
+    needs:
+      [
+        classify,
+        offline-tests-work,
+        alembic-single-head-work,
+        real-db-tests-work,
+      ]
     if: ${{ always() }}
     strategy:
       fail-fast: false
@@ -164,7 +175,7 @@ jobs:
           - context: alembic-single-head
           - context: real-db-tests
     name: ${{ matrix.context }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
       run:

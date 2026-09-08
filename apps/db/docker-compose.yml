@@ -167,9 +167,9 @@ services:
       - bronze_data:/app/data/bronze
 
   caddy:
-    image: caddy:2
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
-    # The third-party caddy:2 image gets ONLY its site address (mirrors the
+    # The third-party Caddy image gets ONLY its site address (mirrors the
     # Caddyfile fallback {$CADDY_SITE_ADDRESS::80}); no app or AI-tooling secrets.
     environment:
       CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:80}

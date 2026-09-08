@@ -70,6 +70,18 @@ THIRD_PARTY_SECRETS = {
     "ARCGIS_CLIENT_SECRET",
 }
 
+PYTHON_IMAGE = (
+    "python:3.12.14-slim-bookworm@"
+    "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
+)
+POSTGRES_IMAGE = (
+    "postgres:16.15-bookworm@"
+    "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825"
+)
+CADDY_IMAGE = (
+    "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+)
+
 # HEALTH_* knobs are read ONLY by transit_ops.health (verified: no usage outside
 # src/transit_ops/health/). They are the one slice of the Settings surface the
 # worker does NOT need, so the worker env = full Settings surface minus these.
@@ -129,7 +141,7 @@ def test_compose_defines_oracle_ready_runtime_services() -> None:
     assert services["worker"]["build"]["dockerfile"] == "Dockerfile"
     assert services["pruner"]["build"]["dockerfile"] == "Dockerfile"
     assert services["health"]["build"]["dockerfile"] == "Dockerfile.health"
-    assert services["caddy"]["image"].startswith("caddy:2")
+    assert services["caddy"]["image"] == CADDY_IMAGE
 
 
 def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
@@ -376,11 +388,28 @@ def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:
 def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
     dockerfile = (DB_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    # The compose postgres service is transit-postgres-postgis:16 (postgres:16
+    # The compose postgres service is transit-postgres-postgis:16 (PostgreSQL 16
     # base), and slim bookworm's stock client is 15, so the worker needs the
     # pgdg postgresql-client-16 to run pg_dump against it.
     assert "apt.postgresql.org.sh" in dockerfile
     assert "postgresql-client-16" in dockerfile
+
+
+def test_runtime_dockerfiles_pin_base_images_and_uv() -> None:
+    worker = (DB_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    health = (DB_ROOT / "Dockerfile.health").read_text(encoding="utf-8")
+    postgres = (DB_ROOT / "Dockerfile.postgis").read_text(encoding="utf-8")
+
+    assert worker.splitlines()[0] == f"FROM {PYTHON_IMAGE}"
+    assert health.splitlines()[0] == f"FROM {PYTHON_IMAGE}"
+    assert postgres.splitlines()[0] == f"FROM {POSTGRES_IMAGE}"
+    for dockerfile in (worker, health):
+        assert 'pip install --no-cache-dir "uv==0.11.15"' in dockerfile
+
+    # Debian patch packages intentionally remain moving above immutable bases;
+    # protected CI prints the versions resolved by each build.
+    assert "intentionally float" in worker
+    assert "intentionally float" in postgres
 
 
 def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
@@ -472,6 +501,7 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
     )
     on = document.get("on", document.get(True, {}))
     expected_paths = {
+        ".python-version",
         ".env.example",
         ".gitleaks.toml",
         "apps/db/**",
@@ -493,8 +523,8 @@ def test_real_db_ci_uses_the_disposable_script_interface() -> None:
     job = document["jobs"]["real-db-tests-work"]
 
     assert document["defaults"]["run"]["working-directory"] == "apps/db"
-    assert job["runs-on"] == "ubuntu-latest"
-    assert job["timeout-minutes"] == 20
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == 40
     assert "services" not in job
     assert "env" not in job
     assert job["steps"] == [
@@ -505,6 +535,11 @@ def test_real_db_ci_uses_the_disposable_script_interface() -> None:
         {
             "name": "Set up Python workspace",
             "uses": "./.github/actions/setup-py",
+        },
+        {
+            "name": "Verify runtime container toolchain",
+            "run": "bash scripts/verify-runtime-images.sh",
+            "working-directory": "apps/db",
         },
         {
             "name": "Run disposable real-DB verification",
@@ -559,7 +594,7 @@ def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None
     assert observed_unmapped == DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS
 
 
-def test_secret_scan_verifies_gitleaks_archive_before_extraction() -> None:
+def test_secret_scan_uses_the_shared_verified_gitleaks_installer() -> None:
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/secret-scan.yml").read_text(encoding="utf-8")
     )
@@ -567,20 +602,13 @@ def test_secret_scan_verifies_gitleaks_archive_before_extraction() -> None:
         step for step in workflow["jobs"]["gitleaks"]["steps"] if step["name"] == "Install gitleaks"
     )
 
-    assert install["env"] == {"GITLEAKS_VERSION": "8.30.1"}
+    assert "env" not in install
     expected_run = "\n".join(
         [
-            (
-                'curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/'
-                'v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" '
-                "-o /tmp/gitleaks.tar.gz"
-            ),
-            (
-                'echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
-                '  /tmp/gitleaks.tar.gz" | sha256sum -c -'
-            ),
-            "tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks",
-            "sudo install /tmp/gitleaks /usr/local/bin/gitleaks",
+            'installed="$(bash .github/scripts/install-gitleaks.sh '
+            '"${RUNNER_TEMP}/transit-gitleaks")"',
+            "printf 'GITLEAKS_BIN=%s\\n' \"${installed}\" >> \"${GITHUB_ENV}\"",
+            '"${installed}" version',
         ]
     )
     assert install["run"].strip() == expected_run
@@ -695,7 +723,7 @@ def _environment_keys(service: dict) -> set[str]:
 
 def test_compose_services_define_scoped_environment_without_env_file() -> None:
     # slice-9.1.1w: dropping the bulk `env_file: - .env` blocks stops every
-    # container (including the third-party caddy:2 image) from receiving the
+    # container (including the third-party Caddy image) from receiving the
     # operator's local AI-tooling secrets. Each service now enumerates only the
     # vars it needs via compose interpolation.
     services = _compose()["services"]

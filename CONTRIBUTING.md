@@ -19,8 +19,9 @@ in an issue before implementing them.
 
 Run the affected subset while iterating. Before handing off a release candidate,
 run this ordered clean-clone CI-equivalent command from the repository root.
-The tool contract is Bun 1.3.11, Node.js 22, Python 3.12, uv 0.11.15,
-playwright-core 1.62.0 with Chromium 151.0.7922.34, and Gitleaks 8.30.1.
+The tool contract is Bun 1.3.11, Node.js 22.23.2, Python 3.12, uv 0.11.15,
+Wrangler 4.115.0, playwright-core 1.62.0 with the authenticated Linux x64
+Chromium 151.0.7922.34 archive, and Gitleaks 8.30.1.
 The final real-DB verification is supported on Linux and WSL with a local amd64
 Docker daemon and requires Python 3.12 and Docker Compose v2. Its one command
 creates a one-service, digest-pinned PostGIS container on a dynamic loopback
@@ -31,19 +32,19 @@ daemon loss cannot guarantee cleanup.
 ```bash
 set -euo pipefail
 
-test "$(bun --version)" = "1.3.11"
-test "$(node --version | cut -d. -f1)" = "v22"
-test "$(python3 --version | cut -d. -f1,2)" = "Python 3.12"
+if command -v nvm >/dev/null 2>&1; then nvm install; fi
+test "$(node --version)" = "v$(tr -d '\r\n' < .nvmrc)"
+test "$(bun --version)" = "$(tr -d '\r\n' < .bun-version)"
 test "$(uv --version | cut -d' ' -f1,2)" = "uv 0.11.15"
 
-GITLEAKS_VERSION=8.30.1
-curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
-echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
-tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-GITLEAKS_BIN=/tmp/gitleaks
+transit_tool_dir="$(mktemp -d)"
+trap 'find -P "$transit_tool_dir" -depth -delete' EXIT
+GITLEAKS_BIN="$(bash .github/scripts/install-gitleaks.sh "$transit_tool_dir")"
+test "$("$GITLEAKS_BIN" version)" = "8.30.1"
 
 bun install --frozen-lockfile
 (cd apps/db && uv sync --locked)
+test "$(cd apps/db && uv run python -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')" = "3.12"
 
 node .github/scripts/materialize-shared-config.mjs
 git diff --exit-code -- turbo.json
@@ -59,11 +60,17 @@ bun run --cwd apps/web map-posters:check
 
 bun run --cwd apps/data-proxy check
 bun run --cwd apps/data-proxy test
+./node_modules/.bin/wrangler deploy --dry-run --config apps/data-proxy/wrangler.toml
 bun run --cwd apps/web lint
 bun run --cwd apps/web format:check
 bun run --cwd apps/web check
 bun run --cwd apps/web build
-apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
+(cd apps/web && ../../node_modules/.bin/wrangler deploy --dry-run --env="")
+transit_browser_root="$transit_tool_dir/browser"
+install -d -m 0700 "$transit_browser_root"
+export TRANSIT_BROWSER_ROOT="$transit_browser_root"
+node apps/web/scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT" >/dev/null
+node apps/web/scripts/verify-browser-toolchain.mjs
 B9_REUSE_BUILD=1 bun run --cwd apps/web test:b9-display
 bun run --cwd apps/web test
 
@@ -78,10 +85,21 @@ bun run --cwd apps/web test
 bun audit --audit-level=high
 python3 .github/scripts/check_public_tree.py
 "$GITLEAKS_BIN" dir --redact --config .gitleaks.toml .
-"$GITLEAKS_BIN" detect --redact --config .gitleaks.toml
+"$GITLEAKS_BIN" detect --redact --config .gitleaks.toml --log-opts HEAD
 
+bash apps/db/scripts/verify-runtime-images.sh
 bash apps/db/scripts/run-real-db-tests.sh
 ```
+
+The repository pins the Ubuntu 24.04 runner series and readable OCI tags plus
+multi-architecture index digests. It intentionally does not pretend every
+input is byte-frozen: GitHub services the runner's patch image; Debian Bookworm
+apt packages inside the pinned images receive security updates; local and CI
+select an available Python 3.12 patch; host Docker Engine and Compose are
+capability-checked; standard host tools, dependency and advisory registries,
+and the scheduled Protomaps data source continue to move. Protected CI prints
+the effective host and container versions; deployment images separately pin
+and assert Python 3.12.14.
 
 Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence
@@ -89,9 +107,10 @@ used to verify it.
 
 `map-posters:check` verifies the checked-in dated posters and their source
 receipt entirely offline. To intentionally rebuild those assets, install the
-pinned browser with
-`apps/web/node_modules/.bin/playwright-core install chromium-headless-shell`,
-replace the receipt's filenames with the new `YYYYMMDD`, update the matching
+authenticated browser with `apps/web/scripts/install-browser-toolchain.mjs`,
+keep `TRANSIT_BROWSER_ROOT` set to the installation root passed to that command,
+and set `CHROME_PATH` to the executable it prints for the poster generator.
+Replace the receipt's filenames with the new `YYYYMMDD` and update the matching
 `MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
 `bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,
 client filenames, copy, and tests together.

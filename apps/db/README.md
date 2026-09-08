@@ -7,15 +7,15 @@ PostgreSQL directly.
 
 ## Domain boundaries
 
-| Area | Owner |
+| Area                                                   | Owner                                                                                   |
 | --- | --- |
-| Provider identity, endpoints, bounds, and capabilities | [`config/providers/*.yaml`](config/providers/README.md) through `ProviderRegistry` |
-| Durable raw source data | `transit_ops.ingestion` and Bronze R2 |
-| Normalized relational data | `transit_ops.silver` |
-| Reporting facts, marts, and retained rollups | `transit_ops.gold` |
-| Public files and publication gates | `transit_ops.snapshots` |
-| Database lifecycle | Alembic under `transit_ops/db/migrations` |
-| VM services | [`docker-compose.yml`](docker-compose.yml): Postgres, worker, pruner, health, and Caddy |
+| Provider identity, endpoints, bounds, and capabilities | [`config/providers/*.yaml`](config/providers/README.md) through `ProviderRegistry`      |
+| Durable raw source data                                | `transit_ops.ingestion` and Bronze R2                                                   |
+| Normalized relational data                             | `transit_ops.silver`                                                                    |
+| Reporting facts, marts, and retained rollups           | `transit_ops.gold`                                                                      |
+| Public files and publication gates                     | `transit_ops.snapshots`                                                                 |
+| Database lifecycle                                     | Alembic under `transit_ops/db/migrations`                                               |
+| VM services                                            | [`docker-compose.yml`](docker-compose.yml): Postgres, worker, pruner, health, and Caddy |
 
 `stm.yaml` and `octranspo.yaml` are active manifests. `sto.yaml` remains an
 inactive template. Active-provider scheduling and publication come from the
@@ -27,10 +27,14 @@ target, and destructive-R2 confirmations before execution.
 
 ## Setup and checks
 
-Run Python commands from this directory. Start with the repository-root
-[`../../.env.example`](../../.env.example), whose local defaults cannot select a
-remote storage target. Configure only the path being run; CI and production
-jobs select remote storage explicitly.
+Run Python commands from this directory. The executable workspace contract is
+the Python 3.12 line from repository-root [`.python-version`](../../.python-version)
+and uv 0.11.15 from the shared setup action and both Python runtime images. CI
+prints the selected 3.12 patch; deployment images separately pin and assert
+Python 3.12.14. Project metadata stays compatible with `>=3.12,<3.13`. Start
+with the repository-root [`../../.env.example`](../../.env.example), whose local
+defaults cannot select a remote storage target. Configure only the path being
+run; CI and production jobs select remote storage explicitly.
 
 ```bash
 cd apps/db
@@ -54,6 +58,26 @@ The command uses a dynamic loopback port. It attempts cleanup on handled exits
 and returns success only after proving its generated data volume is absent;
 SIGKILL, host loss, and Docker daemon loss cannot guarantee cleanup. Without
 that command, real-database tests skip and the offline suite remains safe.
+
+Protected CI also builds the worker, health, and production Postgres recipes and
+probes only their version commands:
+
+```bash
+bash scripts/verify-runtime-images.sh
+```
+
+The script never starts an application process. It prints Docker Engine and
+Compose versions, then Python, uv, PostgreSQL, PostGIS, pg_repack, and Caddy
+versions from ephemeral containers. It removes only its unique local worker,
+health, and Postgres verification tags on handled exits.
+
+The Python, PostgreSQL, and Caddy base images are pinned by readable tag and OCI
+index digest. Debian Bookworm apt patch packages intentionally remain moving so
+image rebuilds receive security servicing; the verifier prints the resolved
+explicit package versions. The host Docker Engine and Compose installation are
+also moving CI substrates whose effective versions are printed, not fixed by
+this repository. Production image adoption and VM recreation remain separately
+owner-gated.
 
 ## Database lifecycle
 
@@ -126,17 +150,17 @@ raw inputs so lineage, idempotency, and failure telemetry remain intact.
 
 ## Retention defaults
 
-| Data | Default |
+| Data                     |           Default |
 | --- | ---: |
-| Silver static datasets | 1 current dataset |
-| Bronze static | 30 days |
-| Bronze realtime | 90 days |
-| Bronze i3 alerts | 30 days |
-| Silver realtime | 1 day |
-| Silver closed i3 history | 90 days |
-| Gold detail facts | 14 days |
-| Gold warm rollups | 730 days |
-| Logical database backups | 14 copies |
+| Silver static datasets   | 1 current dataset |
+| Bronze static            |           30 days |
+| Bronze realtime          |           90 days |
+| Bronze i3 alerts         |           30 days |
+| Silver realtime          |             1 day |
+| Silver closed i3 history |           90 days |
+| Gold detail facts        |           14 days |
+| Gold warm rollups        |          730 days |
+| Logical database backups |         14 copies |
 
 Gold detail facts 14 days is the fixed storage boundary; longer reporting
 horizons come from retained warm rollups.

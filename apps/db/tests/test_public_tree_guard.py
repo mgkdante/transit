@@ -697,8 +697,9 @@ def test_secret_scan_runs_current_tree_checks_and_keeps_history_scans() -> None:
     assert by_name["Scan current tree"] == {
         "name": "Scan current tree",
         "if": failure_independent,
-        "run": "gitleaks dir --redact --config .gitleaks.toml .",
+        "run": '"${GITLEAKS_BIN}" dir --redact --config .gitleaks.toml .',
     }
+    assert "install-gitleaks.sh" in by_name["Install gitleaks"]["run"]
     assert by_name["Scan pull request diff"]["if"] == (
         "${{ (success() || failure()) && github.event_name == 'pull_request' }}"
     )
@@ -711,7 +712,7 @@ def test_secret_scan_runs_current_tree_checks_and_keeps_history_scans() -> None:
         "${{ (success() || failure()) && "
         "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
     )
-    assert "gitleaks detect --redact" in by_name["Scan HEAD history"]["run"]
+    assert '"${GITLEAKS_BIN}" detect --redact' in by_name["Scan HEAD history"]["run"]
 
 
 def test_db_build_context_excludes_artifacts_and_crypto_material() -> None:
