@@ -1176,7 +1176,34 @@ describe('MapStage boot lifecycle', () => {
 		expect(map.setMaxBounds).not.toHaveBeenCalled();
 	});
 
-	it('requests a desynchronized canvas without overriding native DPR or WebGL fallback', async () => {
+	it('keeps WebGL1-only browsers out of the renderer and retries when WebGL2 is available', async () => {
+		const contexts: string[] = [];
+		vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation((contextId: string) => {
+			contexts.push(contextId);
+			return contextId === 'webgl'
+				? ({ getExtension: () => null } as unknown as RenderingContext)
+				: null;
+		});
+		const onerror = vi.fn();
+		const view = render(Stage, { props: { importers: harness.importers, onerror } });
+		releaseImports();
+		await waitFor(() => expect(onerror).toHaveBeenCalledOnce());
+
+		const failure = onerror.mock.calls[0][0] as Failure;
+		expect(failure.kind).toBe('construct');
+		expect(contexts).toEqual(['webgl2']);
+		expect(harness.state.constructorCalls).toBe(0);
+		expect(view.container.querySelector('[data-map-runtime]')).toBeNull();
+
+		vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+			getExtension: () => ({ loseContext: harness.state.loseContext }),
+		} as unknown as RenderingContext);
+		await failure.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
+		view.unmount();
+	});
+
+	it('requests a desynchronized canvas without overriding native DPR', async () => {
 		const { map } = await bootStage();
 
 		expect(map.options.canvasContextAttributes).toEqual({ desynchronized: true });

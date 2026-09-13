@@ -13,7 +13,7 @@
 //     DISAPPEAR (a real layer filter, not a dim).
 // Status × crowding × routes combine (AND). No clustering — ~600 GPU symbols.
 
-import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
+import type { Map as MapLibreMap, ExpressionSpecification, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
 import {
@@ -277,14 +277,14 @@ function badgeOffset(
 /** Global stale-dim multiplier: 45% when the WHOLE live tier is behind, else 1. */
 const GLOBAL_STALE_OPACITY = 0.45;
 
-const FEATURE_HOVERED = ['boolean', ['feature-state', 'hovered'], false];
-const FEATURE_SELECTED = ['boolean', ['feature-state', 'selected'], false];
+const FEATURE_HOVERED: ExpressionSpecification = ['boolean', ['feature-state', 'hovered'], false];
+const FEATURE_SELECTED: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false];
 
 /**
  * Hover and committed selection ride feature-state; the serialized `selected`
  * branch remains for URL/filter-only emphasis with no open detail.
  */
-function iconOpacityExpr(globalStale: boolean): unknown {
+function iconOpacityExpr(globalStale: boolean): ExpressionSpecification {
 	return [
 		'case',
 		FEATURE_HOVERED,
@@ -484,7 +484,7 @@ export function addVehicleLayers(map: MapLibreMap): void {
  * opacity 1 through a global stale so the per-bus not-reporting "!" flags remain
  * legible on top of the dimmed fleet. This is deliberate, NOT a missed layer. */
 export function setStale(map: MapLibreMap, stale: boolean): void {
-	const opacity = iconOpacityExpr(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
+	const opacity = iconOpacityExpr(stale);
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {
 		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', opacity);
 	}
