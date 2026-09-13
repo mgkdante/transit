@@ -3,7 +3,7 @@
 Run script tests from the repository root with the pinned Node version:
 
 ```sh
-node --test .github/scripts/web-build-artifact.test.mjs
+node --test .github/scripts/web-build-artifact.test.mjs .github/scripts/verify-web-build.test.mjs
 ```
 
 ## Web build transfer
@@ -36,3 +36,22 @@ An eligible deployment builds locally only when web CI was legitimately skipped.
 If a successful producer's artifact is missing, expired or invalid, deployment
 stops. Rerun the producer instead of selecting another artifact or bypassing its
 checks. A consumer rerun may use the original successful producer attempt.
+
+## Verify a restored build without deploying
+
+The existing web workflow accepts `verify-dev` and `verify-production` manual
+targets. They run the normal producer gates and upload, then a separate fresh
+runner installs the frozen dependencies and restores that exact artifact. No
+Cloudflare deployment credentials or deployment environment are attached to the
+consumer. Its local Worker probe checks the sealed build version, public data
+base, EN/FR canonical URLs, robots policy and sitemap, then verifies that the
+restored files stayed unchanged. Wrangler packages the restored Worker for local
+execution; the SvelteKit application is not rebuilt.
+
+The consumer depends on `ci` and `ci-work`; the existing required-context reporter
+is unchanged. Judge a verification run by the consumer and workflow conclusion.
+The data-independent page checks use empty local R2 and a missing-data fixture
+for the compatibility service. Outbound requests are blocked; these checks do not
+certify production feed health. After a successful run, rerun only the consumer
+within the one-day artifact lifetime to verify reuse of the original producer
+attempt. Manual deployment still requires the exact `dev` or `production` input.

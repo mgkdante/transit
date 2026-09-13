@@ -69,6 +69,8 @@ function targetFor(env) {
     if (env.GITHUB_REF === "refs/heads/develop") return "dev";
   }
   if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    if (env.TRANSIT_DEPLOY_TARGET === "verify-dev") return "dev";
+    if (env.TRANSIT_DEPLOY_TARGET === "verify-production") return "production";
     if (env.TRANSIT_DEPLOY_TARGET === "dev") return "dev";
     if (
       env.TRANSIT_DEPLOY_TARGET === "production" &&
@@ -142,7 +144,7 @@ function walk(root, path, files, directories) {
   }
 }
 
-function inventory(root, staging = false) {
+export function inventory(root, staging = false) {
   plainDirectories(root);
   const files = [];
   const directories = [];

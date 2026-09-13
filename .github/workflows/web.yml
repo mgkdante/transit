@@ -8,13 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       deploy_target:
-        description: "Manual deploy/smoke target"
+        description: "Deploy a target or verify its restored build without deploying"
         required: true
         default: "dev"
         type: choice
         options:
           - dev
           - production
+          - verify-dev
+          - verify-production
 
 permissions:
   contents: read
@@ -145,7 +147,7 @@ jobs:
 
       - name: Build artifact contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/web-build-artifact.test.mjs
+        run: node --test .github/scripts/web-build-artifact.test.mjs .github/scripts/verify-web-build.test.mjs
 
       - name: Select build target
         id: build_target
@@ -236,6 +238,42 @@ jobs:
       - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
         with:
           needs-json: ${{ toJSON(needs) }}
+
+  verify-build:
+    name: verify restored build
+    needs: [ci, ci-work]
+    if: >-
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.ci-work.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.deploy_target == 'verify-dev' || inputs.deploy_target == 'verify-production') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TRANSIT_BUILD_TARGET: ${{ needs.ci-work.outputs.build_target }}
+      TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+      TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+      PUBLIC_SITE_ORIGIN: ${{ needs.ci-work.outputs.build_target == 'production' && 'https://transit.yesid.dev' || 'https://dev.transit.yesid.dev' }}
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: ${{ needs.ci-work.outputs.build_target == 'production' && 'true' || 'false' }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Download the producer artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore and verify target HTTP behavior
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/verify-web-build.mjs "$RUNNER_TEMP/transit-web-build"
 
   deploy_scope:
     if: ${{ github.event_name != 'pull_request' }}

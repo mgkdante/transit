@@ -307,6 +307,51 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(jobs.get('deploy-production')).toContain('run: bash smoke.sh');
 	});
 
+	it('runs restored-build verification only for explicit manual verification targets', () => {
+		const jobs = jobBlocks(text('.github/workflows/web.yml'));
+		const proof = jobs.get('verify-build')!;
+		expect(directNeeds(proof)).toEqual(['ci', 'ci-work']);
+		expect(directNeeds(jobs.get('ci')!)).toEqual(['classify', ...WEB_WORK]);
+		expect(proof).not.toMatch(/secrets\.|CLOUDFLARE_API_TOKEN|environment:/u);
+		expect(proof).not.toContain('bun run build');
+		expect(proof).toContain('uses: ./.github/actions/setup');
+		expect(proof).toContain('artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}');
+		expect(proof).toContain('digest-mismatch: error');
+		expect(proof).toContain(
+			'TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}',
+		);
+		expect(proof).toContain(
+			'TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}',
+		);
+		expect(proof).toContain('node .github/scripts/verify-web-build.mjs');
+		const expression = proof
+			.match(/^ {4}if: >-\n((?:^ {6}.+\n)+)/mu)![1]
+			.trim()
+			.replace(/^\$\{\{\s*|\s*\}\}$/gu, '')
+			.replaceAll('needs.ci-work', 'needs.work');
+		const enabled = new Function(
+			'github',
+			'inputs',
+			'needs',
+			'cancelled',
+			`return (${expression});`,
+		);
+		for (const event of ['pull_request', 'push', 'workflow_dispatch']) {
+			for (const target of ['dev', 'production', 'verify-dev', 'verify-production']) {
+				for (const ref of ['main', 'develop', 'feature']) {
+					const github = { event_name: event, ref: `refs/heads/${ref}` };
+					const needs = { ci: { result: 'success' }, work: { result: 'success' } };
+					expect(enabled(github, { deploy_target: target }, needs, () => false)).toBe(
+						event === 'workflow_dispatch' && target.startsWith('verify-'),
+					);
+					expect(enabled(github, { deploy_target: target }, needs, () => true)).toBe(false);
+					needs.work.result = 'failure';
+					expect(enabled(github, { deploy_target: target }, needs, () => false)).toBe(false);
+				}
+			}
+		}
+	});
+
 	it('reuses successful CI builds and preserves eligible skipped-CI deployment', () => {
 		const jobs = jobBlocks(text('.github/workflows/web.yml'));
 		const work = jobs.get('ci-work')!;
@@ -377,6 +422,18 @@ describe('ST5 Transit shared-tooling adoption', () => {
 					() => false,
 				),
 			).toBe(target === 'dev');
+			for (const verification of ['verify-dev', 'verify-production']) {
+				for (const ref of ['main', 'develop', 'feature']) {
+					expect(
+						enabled(
+							event('workflow_dispatch', ref),
+							{ deploy_target: verification },
+							needs(),
+							() => false,
+						),
+					).toBe(false);
+				}
+			}
 			const failedGate = needs();
 			failedGate.ci.result = 'failure';
 			expect(enabled(event(), {}, failedGate, () => false)).toBe(false);
