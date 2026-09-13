@@ -132,12 +132,21 @@
 	{/if}
 {/snippet}
 
-{#if resource.settled && resource.error == null && resource.data == null && historyOnlyReliability != null && history.state !== 'current'}
-	{@render loaded(historyOnlyReliability)}
-{:else}
-	<ResourceBoundary {resource} lang={locale}>
-		{#snippet children(reliability)}
-			{@render loaded(reliability)}
-		{/snippet}
-	</ResourceBoundary>
-{/if}
+<div class="reliability-pane">
+	{#if resource.settled && resource.error == null && resource.data == null && historyOnlyReliability != null && history.state !== 'current'}
+		{@render loaded(historyOnlyReliability)}
+	{:else}
+		<ResourceBoundary {resource} lang={locale}>
+			{#snippet children(reliability)}
+				{@render loaded(reliability)}
+			{/snippet}
+		</ResourceBoundary>
+	{/if}
+</div>
+
+<style>
+	.reliability-pane {
+		/* Keep the footer below the viewport while the article loads. */
+		min-block-size: 100svh;
+	}
+</style>

@@ -1,3 +1,4 @@
+import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataRefresh } from '$lib/stores';
@@ -685,6 +686,7 @@ describe('RepeatOffenders retained date history', () => {
 			vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
 			reset('http://localhost/repeat-offenders?date=2026-06-22&campaign=walk');
 			harness.getRepeatOffendersHistoryDay.mockResolvedValue(parityPayload());
+			observeChartFrames(768, 400);
 			const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 			const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 			const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');

@@ -1,3 +1,4 @@
+import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import {
 	act,
 	fireEvent,
@@ -654,6 +655,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 
 	it('keeps a touch datum activation inside the card and exposes only the popover action', async () => {
 		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
+		observeChartFrames(768, 400);
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');

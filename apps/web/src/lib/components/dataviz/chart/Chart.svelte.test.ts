@@ -1,7 +1,8 @@
-import { tick } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Chart from './Chart.svelte';
+import ChartFrame from './ChartFrame.svelte';
 import type { ChartSpec, HeatmapSpec, MagnitudeBarsSpec, StackedShareSpec } from './ChartSpec';
 
 const fluidSpec: StackedShareSpec = {
@@ -51,8 +52,17 @@ class ResizeObserverStub {
 		resizeObservers.push(this);
 	}
 
-	trigger(): void {
-		this.callback([], this as unknown as ResizeObserver);
+	trigger(width = 0, height = 0): void {
+		this.callback(
+			[...this.targets].map(
+				(target) =>
+					({
+						target,
+						contentRect: new DOMRectReadOnly(0, 0, width, height),
+					}) as ResizeObserverEntry,
+			),
+			this as unknown as ResizeObserver,
+		);
 	}
 }
 
@@ -169,6 +179,8 @@ describe('Chart shared viewport', () => {
 		const { container } = renderChart(fluidSpec);
 		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
 		const table = container.querySelector<HTMLTableElement>('table.sr-only');
+		observerFor(frame!)?.trigger(768, 120);
+		await tick();
 
 		expect(frame).not.toBeNull();
 		expect(frame?.style.height).toBe('0.875rem');
@@ -194,37 +206,75 @@ describe('Chart shared viewport', () => {
 
 	it('waits for a hidden zero-size frame to recover after entering the viewport', async () => {
 		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
-		let width = 0;
-		let height = 0;
-		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
-		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => height);
+		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
+		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120);
 		const { container } = renderChart(fluidSpec);
 		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
 		const resizeObserver = observerFor(frame!);
 		const intersectionObserver = intersectionObserverFor(frame!);
 
+		resizeObserver?.trigger(0, 0);
 		intersectionObserver?.trigger(frame!, true);
 		await tick();
 		expect(frame?.querySelector('.lc-tooltip-context')).toBeNull();
 
-		width = 768;
-		height = 120;
-		resizeObserver?.trigger();
+		resizeObserver?.trigger(768, 120);
 		await vi.waitFor(() => {
 			expect(frame?.querySelector('.lc-tooltip-context')).not.toBeNull();
 		});
 	});
 
-	it('renders eagerly when IntersectionObserver is unavailable', async () => {
+	it('renders after the size observation when IntersectionObserver is unavailable', async () => {
 		vi.stubGlobal('IntersectionObserver', undefined);
 		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120);
 		const { container } = renderChart(fluidSpec);
 		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
+		expect(frame?.querySelector('.lc-tooltip-context')).toBeNull();
+		observerFor(frame!)?.trigger(768, 120);
 
 		await vi.waitFor(() => {
 			expect(frame?.querySelector('.lc-tooltip-context')).not.toBeNull();
 		});
+	});
+
+	it('mounts and recovers from observed boxes without synchronous frame geometry reads', async () => {
+		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+		for (const property of ['clientWidth', 'clientHeight'] as const) {
+			const nativeGetter =
+				Object.getOwnPropertyDescriptor(HTMLElement.prototype, property)?.get ??
+				Object.getOwnPropertyDescriptor(Element.prototype, property)?.get;
+			expect(nativeGetter).toBeDefined();
+			vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(function (
+				this: HTMLElement,
+			) {
+				if (this.matches('[data-slot="chart-frame"]')) {
+					throw new Error(`Synchronous ChartFrame ${property} read`);
+				}
+				return nativeGetter!.call(this);
+			});
+		}
+		const { container } = render(ChartFrame, {
+			props: {
+				children: createRawSnippet(() => ({
+					render: () => '<span data-testid="mark">Mark</span>',
+				})),
+			},
+		});
+		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]')!;
+		const resizeObserver = observerFor(frame)!;
+		intersectionObserverFor(frame)!.trigger(frame, true);
+
+		for (const [width, height, mounted] of [
+			[0, 0, false],
+			[768, 120, true],
+			[0, 0, false],
+			[640, 90, true],
+		] as const) {
+			resizeObserver.trigger(width, height);
+			await tick();
+			expect(frame.querySelector('[data-testid="mark"]') !== null).toBe(mounted);
+		}
 	});
 
 	it('disconnects both frame observers when an unentered chart unmounts', () => {

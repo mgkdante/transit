@@ -1,3 +1,4 @@
+import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -320,6 +321,7 @@ describe('HotspotsBoard article', () => {
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
 		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
+		observeChartFrames(768, 400);
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');

@@ -590,16 +590,18 @@
 						/>
 					{:else}
 						<div class="reliability-history-state" data-slot="history-state">
-							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
-								<p data-slot="history-loading">{copy.history.loading}</p>
-							{:else if history?.state === 'partial'}
-								<p data-slot="history-partial">{copy.history.partial}</p>
-							{:else if history?.state === 'error'}
-								<p data-slot="history-error">{copy.history.error}</p>
-								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
-									{copy.history.retry}
-								</Button>
-							{/if}
+							<div class="reliability-history-status">
+								{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+									<p data-slot="history-loading">{copy.history.loading}</p>
+								{:else if history?.state === 'partial'}
+									<p data-slot="history-partial">{copy.history.partial}</p>
+								{:else if history?.state === 'error'}
+									<p data-slot="history-error">{copy.history.error}</p>
+									<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+										{copy.history.retry}
+									</Button>
+								{/if}
+							</div>
 							<p data-slot="history-current-only">{copy.history.currentOnly}</p>
 						</div>
 					{/if}
@@ -762,6 +764,9 @@
 	}
 	.reliability-history-state p {
 		margin: 0;
+	}
+	.reliability-history-status {
+		min-block-size: 1lh;
 	}
 	.reliability-history-correction {
 		margin: 0;

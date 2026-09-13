@@ -1,3 +1,4 @@
+import { observeChartFrames } from '../__fixtures__/observeChartFrames';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TrendMark from './TrendMark.svelte';
@@ -66,6 +67,7 @@ describe('TrendMark datum formatting', () => {
 		'keeps raw values and distinguishes zero from missing in %s',
 		async (locale) => {
 			vi.stubGlobal('IntersectionObserver', undefined);
+			observeChartFrames(768, 144);
 			Object.defineProperty(Element.prototype, 'animate', {
 				configurable: true,
 				value: vi.fn(() => ({

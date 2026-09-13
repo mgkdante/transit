@@ -1,3 +1,4 @@
+import { observeChartFrames } from '../__fixtures__/observeChartFrames';
 import { render, waitFor, cleanup } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ServiceSpanMark from './ServiceSpanMark.svelte';
@@ -34,6 +35,7 @@ function example(locale: 'en' | 'fr'): ServiceSpanSpec {
 function mount(spec: ServiceSpanSpec) {
 	// Supply DOM dimensions; the real LayerChart context and scales still render the SVG.
 	vi.stubGlobal('IntersectionObserver', undefined);
+	observeChartFrames(800, 90);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
 	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(90);
 	return render(ServiceSpanMark, { props: { spec } });
