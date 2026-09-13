@@ -1,18 +1,4 @@
-// sql-highlight.ts — a tiny, dependency-free SQL tokenizer for CodeBlock.
-//
-// No syntax-highlighter dependency exists in the tree, and the prompt forbids
-// adding a heavy one. This is a single-pass tokenizer: an ordered list of regex
-// matchers run from the current offset; the first that matches at the offset
-// wins and advances. Anything unmatched is emitted as a one-char "plain" token.
-//
-// It is SQL-aware (the Defining SQL blocks are the consumers), with a few Python
-// keywords folded in because some blocks end with the publisher's reduction
-// helper. Comments cover both `--` (SQL) and `#` (Python) line comments plus
-// `/* ... */` block comments. Strings are single- or double-quoted with doubled-
-// quote escapes. Identifiers immediately followed by `(` are tagged as functions.
-//
-// Highlighting is presentational only; the verbatim text is never altered (the
-// concatenation of every token's `value` equals the input exactly).
+// SQL/Python tokens for CodeBlock. Token values preserve the source exactly.
 
 export type CodeTokenType =
 	| 'keyword'
@@ -191,6 +177,25 @@ export function tokenizeSql(source: string): CodeToken[] {
 	}
 
 	return mergeAdjacentPlain(tokens);
+}
+
+const HTML_TEXT: Readonly<Record<string, string>> = {
+	'&': '&amp;',
+	'<': '&lt;',
+	'>': '&gt;',
+	'"': '&quot;',
+	"'": '&#39;',
+	'\r': '&#13;',
+};
+
+/** Token classes are fixed; escape source text, including CR to preserve line endings. */
+export function highlightSqlHtml(source: string): string {
+	return tokenizeSql(source)
+		.map(({ type, value }) => {
+			const text = value.replace(/[&<>"'\r]/g, (character) => HTML_TEXT[character] ?? character);
+			return `<span class="tok tok--${type}">${text}</span>`;
+		})
+		.join('');
 }
 
 // Collapse runs of same-typed plain/punctuation neighbors to keep the DOM lean

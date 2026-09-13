@@ -1370,6 +1370,23 @@ async function verifyGeometry(page, seen) {
 	}
 }
 
+async function settleVisibleChartText(page) {
+	for (const frame of await page.locator('[data-slot="chart-frame"]').all()) {
+		await frame.scrollIntoViewIfNeeded();
+		await page.waitForFunction(
+			(element) => {
+				const box = element.querySelector('svg')?.getBoundingClientRect();
+				return box && box.width > 0 && box.height > 0;
+			},
+			await frame.elementHandle(),
+			{ timeout: 5000 },
+		);
+		await page.evaluate(
+			() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+		);
+	}
+}
+
 async function freePort() {
 	const server = createServer();
 	await new Promise((resolve, reject) => {
@@ -1761,6 +1778,10 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				const ssrHtml = await response.text();
 				await settleSurface(page, cell, fixture);
 				verifySsr(cell, fixture, ssrHtml);
+				// Open analyst content through its real control before reading its values.
+				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
+					if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+				}
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;
@@ -1777,6 +1798,8 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						{ cause: error },
 					);
 				}
+				// Both transcripts include the same opened, viewport-mounted chart text.
+				await settleVisibleChartText(page);
 				const initialHydrated = normalizeObservation(await page.locator('main').innerText());
 				await verifyAccessibleMirrors(page, cell);
 				observationCount += actual.length;

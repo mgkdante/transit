@@ -40,6 +40,12 @@
 		children?: Snippet;
 	} = $props();
 
+	// Closed analyst content mounts once; retain it for state and closing transitions.
+	let hasOpened = $state(false);
+	$effect(() => {
+		if (open) hasOpened = true;
+	});
+
 	const currentLabel = $derived(open ? (labelOpen ?? label) : label);
 </script>
 
@@ -55,7 +61,7 @@
 		</CollapsibleTrigger>
 		<CollapsibleContent>
 			<div class="detail__body" data-slot="detail-body">
-				{@render children?.()}
+				{#if open || hasOpened}{@render children?.()}{/if}
 			</div>
 		</CollapsibleContent>
 	</Collapsible>

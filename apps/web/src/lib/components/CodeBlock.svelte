@@ -1,20 +1,6 @@
-<!--
-  CodeBlock — yesid.dev code-snippet treatment for a verbatim SQL/code block.
-
-  Gives the explainer's Defining SQL the brand code chrome: a language tag, a
-  surface/border register, and dependency-free syntax highlighting (keywords /
-  strings / numbers / functions / comments). No highlighter dep is in the tree,
-  so the tokenizer is hand-rolled here (a keyword set + a single ordered regex).
-
-  DOCTRINE: the syntax palette is a set of theme-aware CSS custom properties
-  LOCAL to this component (a light + dark pair keyed off [data-theme]), NOT
-  global tokens — so the highlight reads correctly in both themes without
-  touching tokens.json/tokens.css. The chrome (border, --card surface, the mono
-  language tag) reuses existing global tokens. No data marks, no --primary on the
-  code itself; the block is keyboard-scrollable so overflow is pointer-free.
--->
+<!-- Verbatim, keyboard-scrollable code with local light/dark syntax colors. -->
 <script lang="ts">
-	import { tokenizeSql, type CodeToken } from './sql-highlight';
+	import { highlightSqlHtml } from './sql-highlight';
 
 	export interface CodeBlockProps {
 		/** The verbatim source to render. Language-neutral; highlighting is SQL-aware. */
@@ -37,7 +23,7 @@
 		class: className,
 	}: CodeBlockProps = $props();
 
-	const tokens: CodeToken[] = $derived(tokenizeSql(code));
+	const highlighted = $derived(highlightSqlHtml(code));
 </script>
 
 <figure class={`codeblock ${className ?? ''}`} class:codeblock--embedded={embedded}>
@@ -49,14 +35,15 @@
 	<!-- Scrollable code region: keyboard-focusable so the overflow is reachable
 	     without a pointer (mirrors the dataviz scrollable-region pattern). -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<!-- eslint-disable svelte/no-at-html-tags -- highlightSqlHtml escapes source text and emits only fixed token tags/classes. -->
 	<pre
 		class="codeblock__pre"
 		tabindex="0"
 		role="region"
 		aria-label={ariaLabel ?? `${lang} source`}><code class="codeblock__code"
-			>{#each tokens as token, i (i)}<span class={`tok tok--${token.type}`}>{token.value}</span
-				>{/each}</code
+			>{@html highlighted}</code
 		></pre>
+	<!-- eslint-enable svelte/no-at-html-tags -->
 </figure>
 
 <style>
@@ -129,27 +116,27 @@
 		font-family: inherit;
 	}
 
-	.tok--keyword {
+	.codeblock__code :global(.tok--keyword) {
 		color: var(--code-keyword);
 		font-weight: 600;
 	}
-	.tok--string {
+	.codeblock__code :global(.tok--string) {
 		color: var(--code-string);
 	}
-	.tok--number {
+	.codeblock__code :global(.tok--number) {
 		color: var(--code-number);
 	}
-	.tok--function {
+	.codeblock__code :global(.tok--function) {
 		color: var(--code-function);
 	}
-	.tok--comment {
+	.codeblock__code :global(.tok--comment) {
 		color: var(--code-comment);
 		font-style: italic;
 	}
-	.tok--punctuation {
+	.codeblock__code :global(.tok--punctuation) {
 		color: var(--code-punctuation);
 	}
-	.tok--plain {
+	.codeblock__code :global(.tok--plain) {
 		color: var(--code-plain);
 	}
 </style>

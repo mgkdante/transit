@@ -48,10 +48,13 @@ const rowsByState = (container: HTMLElement, prior: string): HTMLElement[] =>
 		(el) => el.getAttribute('data-prior') === prior,
 	) as HTMLElement[];
 
-const mount = (wait: WaitRegularityVM, mode: 'day' | 'week' | 'month' = 'week') =>
-	render(Section2TheWait, {
+const mount = async (wait: WaitRegularityVM, mode: 'day' | 'week' | 'month' = 'week') => {
+	const view = render(Section2TheWait, {
 		props: { wait, locale: 'en' as const, copy: reliabilityCopy.en, mode },
 	});
+	await fireEvent.click(view.getByRole('button', { name: reliabilityCopy.en.sections.detailShow }));
+	return view;
+};
 
 describe('Section2TheWait — reported gap comparisons', () => {
 	const headway: HeadwayPeriod[] = [
@@ -60,8 +63,8 @@ describe('Section2TheWait — reported gap comparisons', () => {
 		hw('night', 21, 30, 0.3, null, null), // no prior → honest absence
 	];
 
-	it('renders a reported gap increase as "+9.0 min vs prior week", flagged regression', () => {
-		const { container } = mount(waitVm(headway, true));
+	it('renders a reported gap increase as "+9.0 min vs prior week", flagged regression', async () => {
+		const { container } = await mount(waitVm(headway, true));
 		const changed = rowsByState(container, 'change');
 		const worse = changed.find((el) => el.textContent?.includes('+9.0'));
 		expect(worse?.textContent).toContain('+9.0 min');
@@ -70,23 +73,23 @@ describe('Section2TheWait — reported gap comparisons', () => {
 		expect(worse?.textContent).toContain('▲');
 	});
 
-	it('keeps a small measured difference without an unsupported noise verdict', () => {
-		const { container } = mount(waitVm(headway, true));
+	it('keeps a small measured difference without an unsupported noise verdict', async () => {
+		const { container } = await mount(waitVm(headway, true));
 		const row = rowsByState(container, 'change').find((el) => el.textContent?.includes('+0.2'));
 		expect(row?.textContent).toContain('+0.2 min');
 		expect(row?.textContent).toContain('vs prior week');
 		expect(container.textContent).not.toMatch(/within noise|significance|95%/);
 	});
 
-	it('renders an honest absence ("no prior week") when there is no prior window', () => {
-		const { container } = mount(waitVm(headway, true));
+	it('renders an honest absence ("no prior week") when there is no prior window', async () => {
+		const { container } = await mount(waitVm(headway, true));
 		const absent = rowsByState(container, 'absent');
 		expect(absent.length).toBe(1);
 		expect(absent[0].textContent).toContain('no prior week');
 	});
 
-	it('HIDES the comparison when the headway breakdown is not windowed', () => {
-		const { container } = mount(waitVm(headway, false));
+	it('HIDES the comparison when the headway breakdown is not windowed', async () => {
+		const { container } = await mount(waitVm(headway, false));
 		expect(container.querySelector('[data-slot="wait-vs-prior"]')).toBeNull();
 	});
 });
@@ -187,15 +190,22 @@ describe('Section2TheWait — reporting-shift summary', () => {
 		},
 	);
 
-	it.each(['en', 'fr'] as const)('compares the published medians, not means, in %s', (locale) => {
-		// [2,2,26] has median2 and mean10; [6,6,6] has median6 and mean6.
-		const wait = waitVm([hw('am_peak', 2, 3, 1.39, 6, 3)], true);
-		const { container } = render(Section2TheWait, {
-			props: { wait, locale, copy: reliabilityCopy[locale], mode: 'week' },
-		});
-		const row = rowsByState(container, 'change')[0];
-		expect(row?.textContent).toContain('-4.0 min');
-		expect(row?.textContent).toContain(reliabilityCopy[locale].priorDelta.vsPrior.week);
-		expect(container.textContent).not.toMatch(/95%|significan|within noise|dans le bruit/);
-	});
+	it.each(['en', 'fr'] as const)(
+		'compares the published medians, not means, in %s',
+		async (locale) => {
+			// [2,2,26] has median2 and mean10; [6,6,6] has median6 and mean6.
+			const wait = waitVm([hw('am_peak', 2, 3, 1.39, 6, 3)], true);
+			const view = render(Section2TheWait, {
+				props: { wait, locale, copy: reliabilityCopy[locale], mode: 'week' },
+			});
+			await fireEvent.click(
+				view.getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+			);
+			const { container } = view;
+			const row = rowsByState(container, 'change')[0];
+			expect(row?.textContent).toContain('-4.0 min');
+			expect(row?.textContent).toContain(reliabilityCopy[locale].priorDelta.vsPrior.week);
+			expect(container.textContent).not.toMatch(/95%|significan|within noise|dans le bruit/);
+		},
+	);
 });

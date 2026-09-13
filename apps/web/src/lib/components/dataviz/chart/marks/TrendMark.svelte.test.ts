@@ -64,7 +64,7 @@ describe('TrendMark primary-series voice', () => {
 
 describe('TrendMark datum formatting', () => {
 	it.each(['en', 'fr'] as const)(
-		'keeps raw values and distinguishes zero from missing in %s',
+		'preserves values and valid geometry across band/time transitions in %s',
 		async (locale) => {
 			vi.stubGlobal('IntersectionObserver', undefined);
 			observeChartFrames(768, 144);
@@ -106,7 +106,23 @@ describe('TrendMark datum formatting', () => {
 				minPointsForLine: 2,
 				minN: 0,
 			};
-			const { container } = render(TrendMark, { props: { spec } });
+			const invalidGeometry: { name: string; value: string }[] = [];
+			const setAttribute = Element.prototype.setAttribute;
+			vi.spyOn(Element.prototype, 'setAttribute').mockImplementation(function (
+				this: Element,
+				name,
+				value,
+			) {
+				if (
+					this.namespaceURI === 'http://www.w3.org/2000/svg' &&
+					['x', 'y', 'width', 'height'].includes(name) &&
+					(/NaN|Infinity/.test(String(value)) || (name === 'width' && Number(value) < 0))
+				)
+					invalidGeometry.push({ name, value: String(value) });
+				return setAttribute.call(this, name, value);
+			});
+			const view = render(TrendMark, { props: { spec } });
+			const { container } = view;
 			const overlays = await waitFor(() => {
 				const rows = [...container.querySelectorAll('rect.lc-tooltip-rect')].sort(
 					(a, b) => Number(a.getAttribute('x')) - Number(b.getAttribute('x')),
@@ -135,6 +151,23 @@ describe('TrendMark datum formatting', () => {
 			expect(points[0].y).toBe(200 / 3);
 			expect(points[0].y2).toBeNull();
 			expect(points[1].y).toBe(0);
+
+			const datedSpec: TrendSpec = {
+				...spec,
+				xScale: 'time',
+				points: points.map((point, index) => ({
+					...point,
+					x: Date.UTC(2026, 7, 28 + index),
+					xLabel: `2026-08-${28 + index}`,
+				})),
+			};
+			await view.rerender({ spec: datedSpec });
+			await waitFor(() =>
+				expect(container.querySelector('tbody th')).toHaveTextContent('2026-08-28'),
+			);
+			await view.rerender({ spec });
+			await waitFor(() => expect(container.querySelector('tbody th')).toHaveTextContent('Morning'));
+			expect(invalidGeometry).toEqual([]);
 		},
 	);
 });

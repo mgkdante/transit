@@ -55,12 +55,12 @@ const rowsByState = (container: HTMLElement, prior: string): HTMLElement[] =>
 		(el) => el.getAttribute('data-prior') === prior,
 	) as HTMLElement[];
 
-const mount = (
+const mount = async (
 	punctuality: PunctualityVM,
 	mode: 'day' | 'week' | 'month' = 'week',
 	locale: 'en' | 'fr' = 'en',
-) =>
-	render(Section1WhenToRide, {
+) => {
+	const view = render(Section1WhenToRide, {
 		props: {
 			punctuality,
 			habits: emptyHabits,
@@ -69,6 +69,11 @@ const mount = (
 			mode,
 		},
 	});
+	await fireEvent.click(
+		view.getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+	);
+	return view;
+};
 
 describe('Section1WhenToRide observed prior-window differences', () => {
 	const byShift: PeriodComparisonRow[] = [
@@ -78,8 +83,8 @@ describe('Section1WhenToRide observed prior-window differences', () => {
 		row('night', 90, 50, 45, null, null),
 	];
 
-	it('shows the same +5-point observation at large and small sample sizes', () => {
-		const { container } = mount(vm(byShift.slice(0, 2), [], true));
+	it('shows the same +5-point observation at large and small sample sizes', async () => {
+		const { container } = await mount(vm(byShift.slice(0, 2), [], true));
 		const changed = rowsByState(container, 'change');
 		expect(changed).toHaveLength(2);
 		for (const element of changed) {
@@ -92,15 +97,17 @@ describe('Section1WhenToRide observed prior-window differences', () => {
 		expect(container.textContent).not.toMatch(/95%|significan|within noise/i);
 	});
 
-	it('shows a decrease without requiring a significance verdict', () => {
-		const { container } = mount(vm([byShift[2]], [], true));
+	it('shows a decrease without requiring a significance verdict', async () => {
+		const { container } = await mount(vm([byShift[2]], [], true));
 		const change = rowsByState(container, 'change')[0];
 		expect(change?.textContent).toContain('-9 pts');
 		expect(change?.textContent).toContain('▼');
 	});
 
-	it('keeps measured zero distinct from an absent prior window, including accessible text', () => {
-		const { container } = mount(vm([row('midday', 90, 40, 36, 90, 40), byShift[3]], [], true));
+	it('keeps measured zero distinct from an absent prior window, including accessible text', async () => {
+		const { container } = await mount(
+			vm([row('midday', 90, 40, 36, 90, 40), byShift[3]], [], true),
+		);
 		const flat = rowsByState(container, 'flat')[0];
 		const absent = rowsByState(container, 'absent')[0];
 		expect(flat?.textContent).toContain('0 pts');
@@ -114,25 +121,28 @@ describe('Section1WhenToRide observed prior-window differences', () => {
 		expect(aria(absent)).toMatch(/night.*no prior week/i);
 	});
 
-	it.each(['day', 'week', 'month'] as const)('identifies the %s comparison window', (mode) => {
-		const { container } = mount(vm([byShift[0]], [], true), mode);
-		expect(rowsByState(container, 'change')[0]?.textContent).toContain(`vs prior ${mode}`);
-	});
+	it.each(['day', 'week', 'month'] as const)(
+		'identifies the %s comparison window',
+		async (mode) => {
+			const { container } = await mount(vm([byShift[0]], [], true), mode);
+			expect(rowsByState(container, 'change')[0]?.textContent).toContain(`vs prior ${mode}`);
+		},
+	);
 
-	it('uses singular percentage points on a one-point change', () => {
-		const { container } = mount(vm([row('am_peak', 86, 40, 34, 85, 40)], [], true));
+	it('uses singular percentage points on a one-point change', async () => {
+		const { container } = await mount(vm([row('am_peak', 86, 40, 34, 85, 40)], [], true));
 		const text = rowsByState(container, 'change')[0]?.textContent;
 		expect(text).toContain('+1 pt');
 		expect(text).not.toContain('+1 pts');
 	});
 
-	it('omits comparisons when the source breakdown is not windowed', () => {
-		const { container } = mount(vm(byShift, [], false));
+	it('omits comparisons when the source breakdown is not windowed', async () => {
+		const { container } = await mount(vm(byShift, [], false));
 		expect(container.querySelector('[data-slot="on-time-vs-prior"]')).toBeNull();
 	});
 
-	it('explains descriptive changes and absent prior windows in French', () => {
-		const { container } = mount(vm([byShift[1], byShift[3]], [], true), 'week', 'fr');
+	it('explains descriptive changes and absent prior windows in French', async () => {
+		const { container } = await mount(vm([byShift[1], byShift[3]], [], true), 'week', 'fr');
 		expect(rowsByState(container, 'change')[0]?.textContent).toContain('+5 pts');
 		expect(rowsByState(container, 'absent')[0]?.textContent).toContain('pas de semaine précédente');
 		expect(
