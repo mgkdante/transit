@@ -753,6 +753,19 @@ function peekText(container: HTMLElement): string {
 }
 
 describe('MapHero stage lifecycle', () => {
+	it('waits for each new map to reach first idle before resuming saved smooth motion', async () => {
+		mapHeroReceiptSignals.setMotionMode('smooth');
+		for (let visit = 0; visit < 2; visit += 1) {
+			const view = render(MapHero);
+			await tick();
+			expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: false });
+			expect(mapHeroReceiptSignals.motionMode).toBe('smooth');
+			await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+			expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: true });
+			await view.unmount();
+		}
+	});
+
 	it('forwards ready, first-idle, and failure lifecycle signals without replacing retry', async () => {
 		const onready = vi.fn();
 		const onidle = vi.fn();
@@ -1572,6 +1585,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				);
 				if (!operation) mapHeroReceiptSignals.setMotionMode('smooth');
 				const before = await openDetail(desktop);
+				await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 				if (operation === 'emphasis:removeFeatureState') {
 					await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
 					await tick();
@@ -1624,6 +1638,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		try {
 			mapHeroReceiptSignals.setMotionMode('smooth');
 			const before = await openDetail(true);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
 			await tick();
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
@@ -1894,6 +1909,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 	it('keeps a settled hover storm off every bulk feed and live-family lease', async () => {
 		mapHeroReceiptSignals.setMotionMode('smooth');
 		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 		await tick();
 		await settleAnimationFrames();
 		const controlUploadStart = harness.vehicleSourceSetData.mock.calls.length;
@@ -2354,6 +2370,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 	it('updates motion only on a live generation and never re-feeds on clock ticks', async () => {
 		mapHeroReceiptSignals.setMotionMode('smooth');
 		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 		await tick();
 		const beforeClock = bulkCounts();
 
@@ -2415,6 +2432,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		mapHeroReceiptSignals.setMotionMode('smooth');
 
 		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 		await tick();
 		expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: true });
 		const pendingHandle = [...frames.keys()][0];

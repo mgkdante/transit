@@ -258,6 +258,7 @@
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let mapFailure = $state<MapStageFailure | null>(null);
+	let hasFirstIdle = $state(false);
 	const shapeCache = createShapeCacheManager(getRoute);
 	const selectionController = createMapSelectionController();
 	const runtime = createMapRuntime({
@@ -673,12 +674,14 @@
 	}
 
 	function onMapReady(m: MapLibreMap): void {
+		hasFirstIdle = false;
 		runtime.ready(m);
 		nearMeController.refocus();
 		onready?.();
 	}
 
 	function onMapIdle(): void {
+		hasFirstIdle = true;
 		onidle?.();
 	}
 
@@ -728,7 +731,8 @@
 		// here registers it as an effect dependency so flipping the toggle re-feeds
 		// and the controller switches between project and snap without a poll.
 		const smoothMotion = motionMode.current === 'smooth';
-		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
+		// Continuous source updates can prevent the first idle that reveals the map.
+		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
 		// re-run by the per-second clock tick (the controller's rAF loop advances
 		// projection between polls). Used only for feed-time stale classification.
