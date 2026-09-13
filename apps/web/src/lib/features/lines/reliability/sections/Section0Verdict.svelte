@@ -42,6 +42,10 @@
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectBullet, otpTone } from '../selectors/bullet';
+	import {
+		dailyPercentileCaption,
+		type selectDailyPercentiles,
+	} from '$lib/features/reliability/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
@@ -54,8 +58,9 @@
 		copy: ReliabilityCopy;
 		/** Active window (day|week|month|range) — names the verdict window + drives the trend. */
 		mode?: 'day' | 'week' | 'month' | 'range';
+		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 	}
-	let { vm, locale, copy, mode = 'day' }: Section0VerdictProps = $props();
+	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
 	// A date range uses the retained dated series. Only the literal day mode uses
 	// the current time-of-day shift comparison.
@@ -295,6 +300,11 @@
 					</span>
 				</div>
 				<Chart spec={distSpec} />
+				{#if dailyPercentiles != null}
+					<p class="caption" data-slot="daily-percentile-spread">
+						{dailyPercentileCaption(dailyPercentiles, locale)}
+					</p>
+				{/if}
 				{#if isDayGrain && !hasDist}
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}

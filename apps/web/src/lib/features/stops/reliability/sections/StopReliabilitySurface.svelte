@@ -83,6 +83,7 @@
 		STOP_GRAINS,
 		type StopGrain,
 	} from '../data/presentGrains';
+	import { selectDailyPercentiles } from '$lib/features/reliability/dailyPercentiles';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';
@@ -254,7 +255,14 @@
 	const gradedPeriods = $derived(
 		selectGradedPeriods(data.periods, grain, (g) => copy.grain[g as StopGrain] ?? g),
 	);
-	const dayPercentiles = $derived(selectDayPercentiles(data.periods, grain));
+	const retainedPercentiles = $derived(
+		explicitHistory && retainedReady
+			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			: null,
+	);
+	const dayPercentiles = $derived(
+		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
+	);
 
 	// Stop otp_pct is the non-severe proxy. Its nominal bounds reconstruct a numerator
 	// from the rounded share; the stop copy identifies the population and dependence limit.
@@ -319,7 +327,7 @@
 	/* ── section ToC (P5.4 responsive left-rail wayfinding) ─────────────────────
 	   A vertical jump list of the PRESENT sections (built off the SAME conditions
 	   that mount each tile below, so the ToC never lists a stood-down section).
-	   Retained selection applies only to the trend and crowding sections; all other
+	   Retained selection applies to the trend, daily percentiles and crowding sections; all other
 	   sections keep their explicit current-only scope. The observer keys on each
 	   tile's [data-toc] anchor (minted below, locale-free). */
 	const sectionNav = $derived(
@@ -560,6 +568,7 @@
 								{/snippet}
 								<SectionPercentiles
 									percentiles={dayPercentiles}
+									dailyPercentiles={retainedPercentiles}
 									{locale}
 									{copy}
 									presentation="article-body"

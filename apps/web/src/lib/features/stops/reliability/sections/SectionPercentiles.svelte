@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import {
+		dailyPercentileCaption,
+		type selectDailyPercentiles,
+	} from '$lib/features/reliability/dailyPercentiles';
 	import { fmtDelayMin } from '$lib/utils';
 	import { MetricDisplay } from '$lib/components/brand';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
@@ -8,12 +12,14 @@
 	interface SectionPercentilesProps {
 		/** Daily predicted-delay percentiles; null fields remain unavailable. */
 		percentiles: { p50: number | null; p90: number | null };
+		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 		locale: Locale;
 		copy: StopReliabilityCopy;
 		presentation?: 'standalone' | 'article-body';
 	}
 	let {
 		percentiles,
+		dailyPercentiles = null,
 		locale,
 		copy,
 		presentation = 'standalone',
@@ -46,6 +52,9 @@
 			size="md"
 		/>
 	</div>
+	{#if dailyPercentiles != null}
+		<p data-slot="daily-percentile-spread">{dailyPercentileCaption(dailyPercentiles, locale)}</p>
+	{/if}
 </StopReliabilityPresenter>
 
 <style>

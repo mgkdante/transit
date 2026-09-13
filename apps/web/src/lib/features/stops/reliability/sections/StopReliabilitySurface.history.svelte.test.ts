@@ -340,6 +340,26 @@ afterEach(() => {
 });
 
 describe('StopReliabilitySurface retained Stop history', () => {
+	it.each(['en', 'fr'] as const)(
+		'shows the selected raw daily percentiles and their own sample in %s',
+		async (locale) => {
+			harness.page.url = explicitUrl();
+			harness.page.url.searchParams.set('to', WINDOW.from);
+			harness.loadStopHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+			const history = createHistory();
+			const view = renderSurface(history, locale);
+			await waitFor(() => expect(history.state).toBe('ready'));
+			const detail = view.container.querySelector('[data-slot="stop-percentiles"]');
+			expect(detail).toHaveTextContent('0.5 min');
+			expect(detail).toHaveTextContent('3.0 min');
+			expect(detail).toHaveTextContent(
+				locale === 'fr' ? 'Écart p90 − médiane : 2,5 min.' : 'p90 − median spread: 2.5 min.',
+			);
+			expect(detail).toHaveTextContent('2026-01-31 · 40');
+			expect(harness.loadStopHistoryRange).toHaveBeenCalledTimes(1);
+		},
+	);
+
 	it('keeps the current default untouched, discovers only the raw stop, and loads no partition', async () => {
 		const history = createHistory();
 		const view = renderSurface(history);

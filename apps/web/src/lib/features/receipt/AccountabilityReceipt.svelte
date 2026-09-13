@@ -37,6 +37,9 @@
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getAdvertisedReceipt, getReceiptsIndex } from '$lib/v1/repositories/historic';
 	import type { Receipt } from '$lib/v1';
+	import { getV1Context } from '$lib/v1/boot';
+	import { receiptObservation } from './selectors/observation';
+	import ObservationCopy from './ObservationCopy.svelte';
 	import {
 		availabilityFromReceiptsIndex,
 		datesForAvailability,
@@ -95,6 +98,7 @@
 	import SectionNotReported from './sections/SectionNotReported.svelte';
 
 	const locale: Locale = getLocale();
+	const manifest = getV1Context().manifest;
 	const t = $derived(COPY[locale]);
 	const railDisclosures = createRailDisclosureController({
 		controls: 'receipt-controls',
@@ -190,6 +194,11 @@
 	);
 	const currentReceipt = $derived(receiptReady ? receipt.data : null);
 	const generatedUtc = $derived(currentReceipt?.generated_utc ?? null);
+	const observationText = $derived(
+		currentReceipt && index.data
+			? receiptObservation(currentReceipt, index.data, manifest, locale, page.url.origin)
+			: null,
+	);
 
 	// ── Formatters (null on no-data → the styled honest-absence chip; a real 0 stays 0) ──
 	const fmtPct = (v: number | null | undefined) => sharedFmtPct(v, { suffix: t.units.pct });
@@ -588,6 +597,11 @@
 												</div>
 											</div>
 										</TerminalPanel>
+										{#if observationText != null}
+											{#key observationText}
+												<ObservationCopy text={observationText} {locale} />
+											{/key}
+										{/if}
 										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
 											<p>{t.caveat}</p>
 										</TypedInformationCard>

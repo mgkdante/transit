@@ -27,6 +27,7 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { selectDailyPercentiles } from '$lib/features/reliability/dailyPercentiles';
 	import { formatDateKey } from '$lib/utils/time';
 	import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 	import { page } from '$app/state';
@@ -333,6 +334,11 @@
 
 	// One mapping pass — every band reads its slice of this.
 	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
+	const dailyPercentiles = $derived(
+		explicitHistory && retainedReady && mode === 'range'
+			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			: null,
+	);
 
 	// Instance-unique id prefix so the mobile drawer's disabled-reason description ids never
 	// collide with another surface's controls on the same page.
@@ -601,7 +607,7 @@
 				<ArticleSectionStack>
 					<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
 					<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
-						<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
+						<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} {dailyPercentiles} />
 					</div>
 
 					<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->

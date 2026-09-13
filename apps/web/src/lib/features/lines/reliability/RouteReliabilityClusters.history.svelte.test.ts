@@ -284,6 +284,30 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('RouteReliabilityClusters retained Line history', () => {
+	it('adds a same-day percentile spread without loading another partition', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+		);
+		harness.loadLineHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+		const history = createHistory();
+		const view = render(RouteReliabilityClusters, {
+			props: { data: current, locale: 'en', history },
+		});
+		try {
+			await waitFor(() => expect(history.state).toBe('ready'));
+			const verdict = view.container.querySelector('[data-band="verdict"]') as HTMLElement;
+			await fireEvent.click(
+				within(verdict).getByRole('button', { name: reliabilityCopy.en.sections.detailShow }),
+			);
+			expect(verdict.querySelector('[data-slot="daily-percentile-spread"]')).toHaveTextContent(
+				'p90 − median spread: 2.0 min. 2026-01-31 · 10 eligible delay predictions.',
+			);
+			expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1);
+		} finally {
+			history.destroy();
+		}
+	});
+
 	it('keeps the current default untouched, discovers only this entity, and loads no partition', async () => {
 		const history = createHistory();
 		const view = render(RouteReliabilityClusters, {

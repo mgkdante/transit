@@ -5,6 +5,11 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/receipt'), state: {} },
+}));
+
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
 
 class ReconciliationIntersectionObserver {
@@ -102,6 +107,12 @@ const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
 	getAdvertisedReceipt: vi.fn(),
+}));
+
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
+	}),
 }));
 
 vi.mock('$lib/v1/repositories/historic', () => ({
