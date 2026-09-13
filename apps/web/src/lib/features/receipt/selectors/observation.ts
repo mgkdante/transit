@@ -27,7 +27,7 @@ export function receiptObservation(
 		['severe', t.metrics.severe, fmtPct(receipt.severe_pct, { rounding: 'fixed1' })],
 	];
 	return [
-		`Transit — ${t.heading}`,
+		`Transit: ${t.heading}`,
 		`${labels.provider}: ${manifest.display_name} (${manifest.provider})`,
 		`${labels.date}: ${receipt.date}${manifest.tz ? ` (${manifest.tz})` : ''}`,
 		...values.map(([, label, value]) => `${label}: ${value ?? labels.unknown}`),
@@ -46,7 +46,7 @@ export function receiptObservation(
 		`${labels.source}: ${absolute(entityUrl('historic', manifest.files.historic?.receipts_prefix ?? 'historic/receipts/', receipt.date))}`,
 		...values.map(
 			([key, label]) =>
-				`${labels.definitions} — ${label}: ${absolute(metricInfoFor(key, locale).href)}`,
+				`${labels.definitions} (${label}): ${absolute(metricInfoFor(key, locale).href)}`,
 		),
 	].join('\n');
 }

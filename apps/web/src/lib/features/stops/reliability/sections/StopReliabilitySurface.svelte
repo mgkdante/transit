@@ -83,7 +83,7 @@
 		STOP_GRAINS,
 		type StopGrain,
 	} from '../data/presentGrains';
-	import { selectDailyPercentiles } from '$lib/features/reliability/dailyPercentiles';
+	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';

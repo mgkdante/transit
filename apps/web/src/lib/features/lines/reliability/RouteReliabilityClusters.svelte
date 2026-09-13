@@ -27,7 +27,7 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { selectDailyPercentiles } from '$lib/features/reliability/dailyPercentiles';
+	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { formatDateKey } from '$lib/utils/time';
 	import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 	import { page } from '$app/state';

@@ -42,10 +42,7 @@
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectBullet, otpTone } from '../selectors/bullet';
-	import {
-		dailyPercentileCaption,
-		type selectDailyPercentiles,
-	} from '$lib/features/reliability/dailyPercentiles';
+	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
