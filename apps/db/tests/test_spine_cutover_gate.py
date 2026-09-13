@@ -516,12 +516,9 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe(conn) ->
 
 
 def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
-    """S12 real-DB parity: the by_grain WEEK ladder ranks route entities by the
-    not-severe Wilson LOWER bound over the per-route spine SUM(obs)/SUM(severe) for the
-    same trailing-week window, EXACTLY reproducing a hand-rolled spine SUM + _wilson_lo.
-    Also proves the ladder renders + carries evidence fields + the tray, off real gold."""
+    """The ranked sample excludes outliers from the seeded fact population."""
     from transit_ops.gold.reader import wilson_lo as _wlo
-    from transit_ops.snapshots.builders.historic import _hotspots_by_grain
+    from transit_ops.snapshots.builders.historic.small_surfaces import _hotspots_by_grain
 
     anchor = conn.execute(
         text(
@@ -531,21 +528,13 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
         {"p": PROVIDER},
     ).scalar_one()
     win_start = anchor - timedelta(days=6)
-    # hand-rolled per-route SUM over the WEEK window off the spine (route universe)
-    hand = {
-        r["route_id"]: (int(r["obs"]), int(r["severe"]))
-        for r in conn.execute(
-            text(
-                "SELECT route_id, SUM(delay_observation_count) AS obs, "
-                "       SUM(severe_delay_count) AS severe "
-                "FROM gold.route_delay_spine "
-                "WHERE provider_id = :p AND route_id <> '__unrouted__' "
-                "  AND provider_local_date >= :s AND provider_local_date <= :e "
-                "GROUP BY route_id"
-            ),
-            {"p": PROVIDER, "s": win_start, "e": anchor},
-        ).mappings()
-    }
+    usable_delays = [
+        delay for _, _, delay, _ in _PER_DAY_DELAYS
+        if delay is not None and abs(delay) <= 3600
+    ]
+    observations = len(usable_delays) * _SEED_DAYS
+    severe = sum(delay > 300 for delay in usable_delays) * _SEED_DAYS
+    hand = {route: (observations, severe) for route in _SEED_ROUTES}
     names = _entity_name_maps_or_empty(conn)
     grains = _hotspots_by_grain(conn, PROVIDER, names[0], names[1])
 

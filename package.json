@@ -1,37 +1,39 @@
 {
-	"name": "transit",
-	"private": true,
-	"type": "module",
-	"description": "Transit — STM transit operations analytics turborepo: apps/db (Python pipeline) + apps/web (SvelteKit citizen dashboard) + apps/data-proxy (Cloudflare /v1 snapshot worker).",
-	"packageManager": "bun@1.3.11",
-	"workspaces": [
-		"apps/*"
-	],
-	"scripts": {
-		"setup:hooks": "git config core.hooksPath .githooks",
-		"dev": "cd apps/web && bun run dev",
-		"build": "turbo run build",
-		"test": "turbo run test",
-		"check": "turbo run check",
-		"lint": "turbo run lint",
-		"tokens:build": "bun run --cwd apps/web tokens:build",
-		"deploy:web": "cd apps/web && bun run build && ../../node_modules/.bin/wrangler deploy",
-		"deploy:data-proxy": "bun run --cwd apps/data-proxy deploy",
-		"smoke": "bash apps/data-proxy/smoke.sh"
-	},
-	"devDependencies": {
-		"@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/config-v0.2.0/yesid-config-v0.2.0.tgz",
-		"turbo": "^2.5.0",
-		"wrangler": "4.115.0"
-	},
-	"engines": {
-		"bun": "1.3.11",
-		"node": ">=22.12.0 <23"
-	},
-	"overrides": {
-		"brace-expansion": "5.0.9",
-		"nanoid": "3.3.18",
-		"postcss": "8.5.26",
-		"undici": "7.29.0"
-	}
+  "name": "transit",
+  "private": true,
+  "type": "module",
+  "description": "Transit — STM transit operations analytics turborepo: apps/db (Python pipeline) + apps/web (SvelteKit citizen dashboard) + apps/data-proxy (Cloudflare /v1 snapshot worker).",
+  "packageManager": "bun@1.3.11",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "setup:hooks": "git config core.hooksPath .githooks",
+    "dev": "cd apps/web && bun run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "check": "turbo run check",
+    "lint": "turbo run lint",
+    "tokens:build": "bun run --cwd apps/web tokens:build",
+    "deploy:web": "cd apps/web && bun run build && ../../node_modules/.bin/wrangler deploy",
+    "deploy:data-proxy": "bun run --cwd apps/data-proxy deploy",
+    "smoke": "bash apps/data-proxy/smoke.sh"
+  },
+  "devDependencies": {
+    "@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/config-v0.2.0/yesid-config-v0.2.0.tgz",
+    "turbo": "^2.5.0",
+    "wrangler": "4.115.0"
+  },
+  "engines": {
+    "bun": "1.3.11",
+    "node": ">=22.12.0 <23"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.9",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26",
+    "undici": "7.29.0",
+    "cookie": "0.7.2",
+    "vite": "7.3.6"
+  }
 }

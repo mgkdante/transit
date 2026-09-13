@@ -113,13 +113,18 @@ const latestDated = (rows) =>
 		.slice()
 		.sort((a, b) => a.date.localeCompare(b.date))
 		.at(-1) ?? null;
-const montrealClock = (iso) =>
+const observedEndpoint = (iso, locale) =>
 	typeof iso === 'string'
-		? new Intl.DateTimeFormat('en-CA', {
+		? new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
 				timeZone: 'America/Toronto',
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric',
 				hour: '2-digit',
 				minute: '2-digit',
+				second: '2-digit',
 				hourCycle: 'h23',
+				timeZoneName: 'shortOffset',
 			}).format(new Date(iso))
 		: null;
 const observation = (id, value) => ({ id, value });
@@ -143,12 +148,13 @@ const TABLE_COPY = Object.freeze({
 		avgStop: 'Average delay',
 		severe: 'Severe-delay share',
 		scheduled: 'Scheduled gap',
-		observed: 'Observed gap',
+		observed: 'Feed-appearance gap',
 		excess: 'Excess wait',
 		cov: 'Spread (CoV)',
-		bunched: 'Clumped (bunched)',
+		bunched: 'Closely spaced appearances',
 		bin: 'bin (min)',
 		trips: 'trips',
+		observations: 'observations',
 		crowdingBand: 'Crowding band',
 		networkOtp: 'On-time %',
 		networkDelay: 'Slowest 10% (min)',
@@ -168,12 +174,13 @@ const TABLE_COPY = Object.freeze({
 		avgStop: 'Retard moyen',
 		severe: 'Part des retards graves',
 		scheduled: 'Intervalle prévu',
-		observed: 'Intervalle observé',
+		observed: 'Intervalle dans le flux',
 		excess: 'Attente excédentaire',
 		cov: 'Régularité (CV)',
-		bunched: 'Bus collés',
+		bunched: 'Apparitions rapprochées',
 		bin: 'intervalle (min)',
 		trips: 'voyages',
+		observations: 'relevés',
 		crowdingBand: "Niveau d'occupation",
 		networkOtp: 'Ponctualité %',
 		networkDelay: '10 % les plus lents (min)',
@@ -182,14 +189,18 @@ const TABLE_COPY = Object.freeze({
 });
 
 const TIER_TEXT = Object.freeze({
-	line: {
-		en: ['Rarely late', 'Sometimes late', 'Often late', '◆ Very unreliable'],
-		fr: ['Rarement en retard', 'Parfois en retard', 'Souvent en retard', '◆ Très peu fiable'],
-	},
-	stop: {
-		en: ['Rarely severe', 'Sometimes severe', 'Often severe', '◆ Very unreliable'],
-		fr: ['Rarement grave', 'Parfois grave', 'Souvent grave', '◆ Très peu fiable'],
-	},
+	en: [
+		'Low relative score',
+		'Moderate relative score',
+		'High relative score',
+		'◆ Very high relative score',
+	],
+	fr: [
+		'Score relatif faible',
+		'Score relatif modéré',
+		'Score relatif élevé',
+		'◆ Score relatif très élevé',
+	],
 });
 
 const noDataText = (locale) => (locale === 'fr' ? 'Aucune donnée' : 'No data');
@@ -204,8 +215,26 @@ const table = (headers, rows, suffixes = [], absent = '') => ({
 		...values.map((value, index) => cell(value, suffixes[index] ?? '', absent)),
 	]),
 });
+const trendTable = (headers, rows, locale, units) => ({
+	headers: rows.length ? headers : [],
+	rows: rows.map(([label, ...values]) => [
+		label,
+		...values.map((value, index) => {
+			const rounded = value == null ? null : Math.sign(value) * round(Math.abs(value), 1);
+			return {
+				value: rounded,
+				text:
+					rounded == null
+						? noDataText(locale)
+						: new Intl.NumberFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+								maximumFractionDigits: 1,
+							}).format(rounded) + units[index],
+			};
+		}),
+	]),
+});
 const shareTable = (rows) => table([], rows, ['%']);
-const heatmapTable = (tiers, surface, locale) => ({
+const heatmapTable = (tiers, locale) => ({
 	headers: tiers.length
 		? [
 				TABLE_COPY[locale].day,
@@ -215,19 +244,19 @@ const heatmapTable = (tiers, surface, locale) => ({
 	rows: tiers.map((row) =>
 		row.map((tier) => ({
 			tier,
-			text: tier == null ? noDataText(locale) : TIER_TEXT[surface][locale][tier],
+			text: tier == null ? noDataText(locale) : TIER_TEXT[locale][tier],
 		})),
 	),
 });
 
-function histogramTable(rows, locale, seconds = false) {
+function histogramTable(rows, locale, seconds = false, countLabel = TABLE_COPY[locale].trips) {
 	const rangeTo = locale === 'fr' ? 'à' : 'to';
 	const fmt = (value) =>
 		new Intl.NumberFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', { maximumFractionDigits: 1 }).format(
 			seconds ? value / 60 : value,
 		);
 	return {
-		headers: rows?.length ? [TABLE_COPY[locale].bin, TABLE_COPY[locale].trips] : [],
+		headers: rows?.length ? [TABLE_COPY[locale].bin, countLabel] : [],
 		rows: (rows ?? []).map((row) => {
 			const lo = finite(row.lo ?? row.lo_sec ?? row.lo_min ?? row[0]);
 			const hi = finite(row.hi ?? row.hi_sec ?? row.hi_min ?? row[1]);
@@ -270,7 +299,6 @@ const PRIOR_COPY = Object.freeze({
 		onTime: 'on-time',
 		wait: 'wait',
 		prior: 'vs prior day',
-		noise: 'within noise',
 		none: 'no prior day',
 		pts: 'pts',
 		pt: 'pt',
@@ -279,7 +307,6 @@ const PRIOR_COPY = Object.freeze({
 		onTime: 'ponctualité',
 		wait: 'attente',
 		prior: 'p/r à la veille',
-		noise: 'écart non significatif',
 		none: 'pas de veille',
 		pts: 'pts',
 		pt: 'pt',
@@ -307,77 +334,42 @@ const COMPARE_LABELS = Object.freeze({
 });
 
 function bestTimeText(habits, locale) {
-	const matrix = habits?.matrix ?? [];
-	let worst = null;
-	const means = [];
-	for (let row = 0; row < 7; row += 1) {
-		const values = (matrix[row] ?? []).flatMap((value, hour) => {
-			const n = finite(value);
-			if (n != null && (worst == null || n > worst.value)) worst = { row, hour, value: n };
-			return n == null ? [] : [n];
-		});
-		means[row] = values.length
-			? values.reduce((sum, value) => sum + value, 0) / values.length
-			: null;
-	}
-	if (worst == null) return null;
-	let calm = null;
-	for (let row = 0; row < 7; row += 1)
-		if (row !== worst.row && means[row] != null && (calm == null || means[row] < calm.value))
-			calm = { row, value: means[row] };
-	const day = FULL_WEEKDAYS[locale][worst.row];
-	const hour = `${String(worst.hour).padStart(2, '0')}:00`;
-	if (locale === 'fr')
-		return `Sur cette ligne, les retards récurrents culminent le ${day} vers ${hour}.${calm == null ? '' : ` Le ${FULL_WEEKDAYS.fr[calm.row]} est habituellement sa journée la plus calme.`}`;
-	return `On this line, repeat delays peak on ${day} around ${hour}.${calm == null ? '' : ` ${FULL_WEEKDAYS.en[calm.row]} is usually its calmest day.`}`;
-}
-
-function proportionDelta(row) {
-	const current = finite(row.otp_pct);
-	const prior = finite(row.prior_otp_pct);
-	if (current == null || prior == null) return { delta: null, state: 'absent' };
-	const delta = Math.round(current - prior);
-	const n1 = finite(row.observation_count);
-	const n2 = finite(row.prior_observation_count);
-	if (!(n1 > 0 && n2 > 0)) return { delta, state: 'noise' };
-	const k1 = finite(row.on_time) ?? Math.round((current / 100) * n1);
-	const p1 = k1 / n1;
-	const k2 = finite(row.prior_on_time);
-	const p2 =
-		k2 == null ? Math.min(Math.max(p1, (prior - 0.5) / 100), (prior + 0.5) / 100) : k2 / n2;
-	const pooled = (k1 + p2 * n2) / (n1 + n2);
-	const se = Math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2));
-	return {
-		delta,
-		state:
-			n1 >= 30 && n2 >= 30 && se > 0 && Math.abs((p1 - p2) / se) >= 1.96 && delta !== 0
-				? 'change'
-				: 'noise',
-	};
-}
-
-function meanDelta(row) {
-	const current = finite(row.observed_min);
-	const prior = finite(row.prior_observed_min);
-	if (current == null || prior == null) return { delta: null, state: 'absent' };
-	const delta = round(current - prior);
-	const n1 = finite(row.observation_count);
-	const n2 = finite(row.prior_observation_count);
-	const cov = finite(row.cov);
-	if (!(n1 >= 7 && n2 >= 7 && cov > 0)) return { delta, state: 'noise' };
-	const se = ((Math.abs(current) + Math.abs(prior)) / 2) * cov * Math.sqrt(1 / n1 + 1 / n2);
-	return {
-		delta,
-		state: se > 0 && Math.abs((current - prior) / se) >= 1.96 && delta !== 0 ? 'change' : 'noise',
-	};
+	const observed = (habits?.matrix ?? [])
+		.flatMap((row, day) =>
+			row.flatMap((value, hour) => {
+				const score = finite(value);
+				return score != null && score >= 0 && score <= 1 ? [{ day, hour, score }] : [];
+			}),
+		)
+		.sort((a, b) => b.score - a.score || a.day - b.day || a.hour - b.hour);
+	if (observed.length < 2 || observed[0].score === observed.at(-1).score) return null;
+	const peak = observed[0];
+	const day = FULL_WEEKDAYS[locale][peak.day];
+	const hour = `${String(peak.hour).padStart(2, '0')}:00`;
+	return locale === 'fr'
+		? `Un pic observé du score relatif de cette ligne : ${day}, ${hour}.`
+		: `An observed peak in this line’s relative score: ${day}, ${hour}.`;
 }
 
 function compareDisplay(row, key, locale, type) {
-	const result = type === 'onTime' ? proportionDelta(row) : meanDelta(row);
 	const copy = PRIOR_COPY[locale];
 	const noun = copy[type];
 	const ariaNoun = `${COMPARE_LABELS[locale][key] ?? key} ${noun}`;
 	const value = type === 'onTime' ? finite(row.otp_pct) : finite(row.observed_min);
+	const prior = type === 'onTime' ? finite(row.prior_otp_pct) : finite(row.prior_observed_min);
+	const difference = value == null || prior == null ? null : finite(value - prior);
+	// Intl supplies an independent decimal half-away oracle at each metric's precision.
+	const change =
+		difference == null
+			? null
+			: Number(
+					new Intl.NumberFormat('en', {
+						useGrouping: false,
+						maximumFractionDigits: type === 'onTime' ? 0 : 1,
+						roundingMode: 'halfExpand',
+					}).format(difference),
+				);
+	const state = change == null ? 'absent' : change === 0 ? 'flat' : 'change';
 	const text =
 		value == null
 			? noDataText(locale)
@@ -385,16 +377,15 @@ function compareDisplay(row, key, locale, type) {
 				? `${value}%`
 				: `${value.toFixed(1)} min`;
 	let delta;
-	if (result.state === 'absent') delta = `${ariaNoun} ${copy.none}`;
-	else if (result.state === 'noise') delta = `${ariaNoun} ${copy.noise}`;
+	if (state === 'absent') delta = `${ariaNoun} ${copy.none}`;
 	else {
 		const shown =
 			type === 'onTime'
-				? `${result.delta > 0 ? '+' : ''}${result.delta} ${Math.abs(result.delta) === 1 ? copy.pt : copy.pts}`
-				: `${result.delta > 0 ? '+' : ''}${result.delta.toFixed(1)} min`;
+				? `${change > 0 ? '+' : ''}${change} ${Math.abs(change) === 1 ? copy.pt : copy.pts}`
+				: `${change > 0 ? '+' : ''}${change.toFixed(1)} min`;
 		delta = `change ${shown} ${ariaNoun} ${copy.prior}`;
 	}
-	return { key, value: { value, text }, state: result.state, delta };
+	return { key, value: { value, text }, state, delta };
 }
 
 const countText = (value, locale) =>
@@ -853,8 +844,8 @@ function lineOracle(fixture, locale, view) {
 		completeness:
 			retained.length && finite(cancellation?.scheduled_trip_days) > 0
 				? locale === 'fr'
-					? `${countText(cancellation.delivered_trip_days, locale)} sur ${countText(cancellation.scheduled_trip_days, locale)} jours-trajets prévus assurés${cancellation.silent_trip_days == null ? '' : ` · ${countText(cancellation.silent_trip_days, locale)} silencieux`}`
-					: `${countText(cancellation.delivered_trip_days, locale)} of ${countText(cancellation.scheduled_trip_days, locale)} scheduled trip-days delivered${cancellation.silent_trip_days == null ? '' : ` · ${countText(cancellation.silent_trip_days, locale)} silent`}`
+					? `${countText(cancellation.delivered_trip_days, locale)} jours-trajets observés non annulés / ${countText(cancellation.scheduled_trip_days, locale)} prévus${cancellation.silent_trip_days == null ? '' : ` · écart de décompte : ${countText(cancellation.silent_trip_days, locale)}`}. Aucun rapprochement par identifiant.`
+					: `${countText(cancellation.delivered_trip_days, locale)} observed non-cancelled trip-days / ${countText(cancellation.scheduled_trip_days, locale)} scheduled${cancellation.silent_trip_days == null ? '' : ` · ${countText(cancellation.silent_trip_days, locale)} count shortfall`}. Trip identities are not matched.`
 				: null,
 		cancellation:
 			finite(cancellation?.total_trip_days) > 0
@@ -928,8 +919,8 @@ function lineOracle(fixture, locale, view) {
 		),
 		observation('line.service_span', {
 			date: span?.date ?? null,
-			first: hasSpanPair ? montrealClock(span.first_trip_utc) : null,
-			last: hasSpanPair ? montrealClock(span.last_trip_utc) : null,
+			first: hasSpanPair ? observedEndpoint(span.first_trip_utc, locale) : null,
+			last: hasSpanPair ? observedEndpoint(span.last_trip_utc, locale) : null,
 			minutes: finite(span?.service_span_min),
 			firstDelay: finite(span?.first_trip_delay_min),
 			lastDelay: finite(span?.last_trip_delay_min),
@@ -962,9 +953,12 @@ function lineOracle(fixture, locale, view) {
 		),
 		observation('line.weak_stops.raw_count', windowedStops.length),
 		observation('line.pane.freshness_iso', raw.generated_utc),
-		observation('line.trend.rows', table([c.x, `${c.otp}%`, `${c.avg} min`], displayedTrend)),
+		observation(
+			'line.trend.rows',
+			trendTable([c.x, c.otp, c.avg], displayedTrend, locale, ['%', ' min']),
+		),
 		observation('line.habits.tiers', {
-			table: heatmapTable(heatmapTiers(raw.habits), 'line', locale),
+			table: heatmapTable(heatmapTiers(raw.habits), locale),
 			bestTime: bestTimeText(raw.habits, locale),
 		}),
 		observation('line.time.rows', {
@@ -997,7 +991,9 @@ function lineOracle(fixture, locale, view) {
 		),
 		observation(
 			'line.week.histogram',
-			histogram == null ? null : histogramTable(histogram, locale, true),
+			histogram == null
+				? null
+				: histogramTable(histogram, locale, true, TABLE_COPY[locale].observations),
 		),
 	];
 }
@@ -1142,7 +1138,7 @@ function stopOracle(fixture, locale, view) {
 		),
 		observation(
 			'stop.daily.rows',
-			table([c.x, `${c.severe}%`, `${c.avgStop} min`], displayedDaily),
+			trendTable([c.x, c.severe, c.avgStop], displayedDaily, locale, ['%', ' min']),
 		),
 		observation(
 			'stop.range.severe_pct',
@@ -1151,7 +1147,7 @@ function stopOracle(fixture, locale, view) {
 		observation('stop.range.observations', totals.observations),
 		observation('stop.range.below_min_n', totals.observations > 0 && totals.observations < 30),
 		observation('stop.routes.ranked', rankedRoutes),
-		observation('stop.habits.tiers', heatmapTable(heatmapTiers(raw.habits), 'stop', locale)),
+		observation('stop.habits.tiers', heatmapTable(heatmapTiers(raw.habits), locale)),
 		observation('stop.weekday.rows', weekdayRows),
 		observation('stop.time.rows', {
 			shift: timeRank(SHIFTS),
@@ -1392,22 +1388,22 @@ function networkOracle(fixture, locale, view) {
 		),
 		observation(
 			'network.trend.rows',
-			table(
+			trendTable(
 				retardOnly
-					? [TABLE_COPY[locale].x, `${TABLE_COPY[locale].networkDelay} min`]
-					: [
-							TABLE_COPY[locale].x,
-							`${TABLE_COPY[locale].networkOtp}%`,
-							`${TABLE_COPY[locale].networkDelay} min`,
-						],
+					? [TABLE_COPY[locale].x, TABLE_COPY[locale].networkDelay]
+					: [TABLE_COPY[locale].x, TABLE_COPY[locale].networkOtp, TABLE_COPY[locale].networkDelay],
 				trendRows,
+				locale,
+				retardOnly ? [' min'] : ['%', ' min'],
 			),
 		),
 		observation('network.vehicles.rows', table([], vehicleRows, [''], '·')),
 		observation('network.cancellations.rows', {
-			table: table(
-				cancellationRows.length ? [TABLE_COPY[locale].x, `${TABLE_COPY[locale].canceled}%`] : [],
+			table: trendTable(
+				cancellationRows.length ? [TABLE_COPY[locale].x, TABLE_COPY[locale].canceled] : [],
 				cancellationRows,
+				locale,
+				['%'],
 			),
 			latest:
 				latestCancellation == null
@@ -1476,6 +1472,80 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	for (const [iso, locale, expected] of [
+		['2026-11-01T05:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-4'],
+		['2026-11-01T06:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-5'],
+		['2026-11-01T05:30:00Z', 'fr', '1 nov. 2026, 01 h 30 min 00 s UTC−4'],
+		['2026-11-01T06:30:00Z', 'fr', '1 nov. 2026, 01 h 30 min 00 s UTC−5'],
+	]) {
+		expectLiteral(observedEndpoint(iso, locale), expected, `distinct fall-hour endpoint ${locale}`);
+	}
+	for (const [matrix, locale, expected] of [
+		[[], 'en', null],
+		[
+			[
+				[0, 0],
+				[0, null],
+			],
+			'en',
+			null,
+		],
+		[
+			[
+				[0.4, 0.4],
+				[null, 0.4],
+			],
+			'fr',
+			null,
+		],
+		[[[null, 0.7]], 'en', null],
+		[
+			[
+				[0.25, 1],
+				[1, 0],
+			],
+			'en',
+			'An observed peak in this line’s relative score: Monday, 01:00.',
+		],
+		[
+			[
+				[0.25, 1],
+				[1, 0],
+			],
+			'fr',
+			'Un pic observé du score relatif de cette ligne : Lundi, 01:00.',
+		],
+		[[[Infinity, -1, 2]], 'en', null],
+	])
+		expectLiteral(bestTimeText({ matrix }, locale), expected, `relative peak ${locale}`);
+	for (const [type, locale, current, prior, state, delta] of [
+		['onTime', 'en', 90, 85, 'change', 'change +5 pts AM peak on-time vs prior day'],
+		['onTime', 'fr', 85, 90, 'change', 'change -5 pts Pointe AM ponctualité p/r à la veille'],
+		['onTime', 'en', 0, 0, 'flat', 'change 0 pts AM peak on-time vs prior day'],
+		['wait', 'fr', 0, 0, 'flat', 'change 0.0 min Pointe AM attente p/r à la veille'],
+		['onTime', 'fr', 80, null, 'absent', 'Pointe AM ponctualité pas de veille'],
+		['wait', 'en', 12, null, 'absent', 'AM peak wait no prior day'],
+		['wait', 'en', 12.25, 12, 'change', 'change +0.3 min AM peak wait vs prior day'],
+		['wait', 'fr', 12, 12.25, 'change', 'change -0.3 min Pointe AM attente p/r à la veille'],
+		['onTime', 'en', 1, 1.5, 'change', 'change -1 pt AM peak on-time vs prior day'],
+		['onTime', 'fr', 1.5, 1, 'change', 'change +1 pt Pointe AM ponctualité p/r à la veille'],
+		['wait', 'en', 1, 1.01, 'flat', 'change 0.0 min AM peak wait vs prior day'],
+		['wait', 'en', 12, Infinity, 'absent', 'AM peak wait no prior day'],
+	]) {
+		const [valueField, priorField] =
+			type === 'onTime' ? ['otp_pct', 'prior_otp_pct'] : ['observed_min', 'prior_observed_min'];
+		const actual = compareDisplay(
+			{ [valueField]: current, [priorField]: prior },
+			'am_peak',
+			locale,
+			type,
+		);
+		expectLiteral(
+			{ state: actual.state, delta: actual.delta },
+			{ state, delta },
+			`descriptive ${type} ${locale} ${current}/${prior}`,
+		);
+	}
 	const retainedStopFixture = structuredClone(FIXTURES.rich);
 	retainedStopFixture.files['historic/stop_reliability/52095.json'].occupancy_mix = {
 		empty: 0,

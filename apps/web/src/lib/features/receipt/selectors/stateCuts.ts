@@ -1,27 +1,10 @@
-// stateCuts — the receipt's scheduled→delivered→cancelled→silent split (S13, NEW).
-//
-// Consumes Receipt.service_states (GC2's scheduled/delivered/cancelled/silent trip-day
-// counts + the ONE completeness number, service_completeness_pct). Presents the day's
-// service-state cuts as share bars on the FIXED absolute [0,100] whole (CANCEL_RATE_DOMAIN
-// family — a share of scheduled trips, never the in-view max). The completeness figure is
-// HEROED from service_states.service_completeness_pct (DB1: one name per number — there is
-// no duplicate top-level scalar); the delivered/cancelled/silent shares are computed from
-// the trip-day counts over the scheduled denominator.
-//
-// HONEST RAMP-IN (WEB4 · S9 completeness family): service_states is additive-optional and
-// null across the retained window until GC2's scheduled-universe data accrues. So the VM
-// stands the whole section DOWN (hasData=false) unless the completeness number OR a
-// computed share is real — never a fabricated 0, never an empty "every trip delivered" card.
-// A silent trip is scheduled but never appears in the live feed (distinct from an explicit
-// cancellation) — that framing is COPY reused from the S9 completeness family.
-
 import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/domains';
 import type { ReceiptServiceStates, SeverityCode } from '$lib/v1/schemas';
 
 /** The state-cut kinds, in the canonical scheduled→delivered→cancelled→silent order. */
 export type ServiceStateKind = 'delivered' | 'cancelled' | 'silent';
 
-/** One state-cut share row (a share of scheduled trips on the absolute [0,100] whole). */
+/** Observed count relative to the scheduled count; added trips can exceed 100%. */
 export interface StateCutRow {
 	readonly key: ServiceStateKind;
 	readonly label: string;

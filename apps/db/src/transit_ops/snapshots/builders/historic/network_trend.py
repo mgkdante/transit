@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from transit_ops.gold.reader import round_half_away
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
     _avg_delay_min,
@@ -329,7 +330,7 @@ def _trend_points(
         for r in conn.execute(fact_sql, params).mappings():
             entry = points.setdefault(_iso_date(r["local_date"]), _blank_trend_point())
             entry["p90_min"] = (
-                round(float(r["p90_min"]), 1) if r["p90_min"] is not None else None
+                float(round_half_away(r["p90_min"], 1)) if r["p90_min"] is not None else None
             )
             entry["vehicles"] = _opt_int(r["vehicles"])
 
@@ -338,7 +339,7 @@ def _trend_points(
         total = r["total"]
         canceled = r["canceled"]
         entry["cancellation_rate"] = (
-            round(100.0 * float(canceled) / float(total), 2)
+            float(round_half_away(100.0 * float(canceled) / float(total), 2))
             if total and canceled is not None
             else None
         )
@@ -353,7 +354,7 @@ def _trend_points(
         scheduled = r.get("scheduled")
         delivered = r.get("delivered")
         entry["service_completeness_rate"] = (
-            min(100.0, round(100.0 * float(delivered) / float(scheduled), 2))
+            min(100.0, float(round_half_away(100.0 * float(delivered) / float(scheduled), 2)))
             if scheduled and delivered is not None
             else None
         )

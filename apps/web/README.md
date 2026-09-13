@@ -12,18 +12,62 @@ Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at
 - **Reads only** the versioned `/v1` R2 snapshot contract (direct R2 custom
   domain in browsers, direct bucket binding in SSR; never the DB).
 
+The root overrides pin one Vite 7.3.6 resolution for the app, Kit and Vitest.
+The cookie 0.7.2 override fixes the version requested by Kit while preserving
+its API/types; it also applies to Youch because Bun 1.3.11 supports only top-level
+overrides. Both consumers are checked in `src/tests/dependencyCookies.test.ts`.
+Revisit this cross-range override when Kit accepts a patched version or the
+approved Bun version supports narrower rules. After dependency changes, verify
+the installed graph as well as the lockfile and run `bun audit`.
+
+## Snapshot ownership
+
+`src/lib/v1/adapter` owns snapshot discovery, caching, and schema validation.
+Its port types follow the implemented methods; `AdapterCtx` carries request
+context. `http.ts` accepts `FetchFn`, and `binding.ts` supplies bucket and service
+fetch adapters. This is the transport seam used by browsers, SSR, and tests.
+Tier repositories own one-shot reads; `src/lib/v1/live/store.svelte.ts` owns
+reactive live polling.
+The `v1` entry point exposes shared contracts, context, and computations. Import
+runtime reads from their owning repository so network boundaries stay visible.
+
+For a component that reads one live family, `live/resource.ts` pairs its store
+with a `ResourceBoundary` view and owns mount/unmount polling. Trip and stop
+details use this shared path. Use the live store directly for multiple families
+or subscriptions; its clock, retention and pause/resume policies remain shared.
+
+`PUBLIC_V1_BASE` and `PUBLIC_V1_PROVIDER` select the snapshot base and provider at
+runtime, defaulting to `/data/v1` and `stm`. Manifest pointers include their tier;
+URL construction belongs to `src/lib/v1/config.ts`.
+
+Service-count cards share bilingual wording in
+`src/lib/v1/serviceComparison.ts`. They compare reported and
+scheduled counts without matching trip identities. The public field names remain
+compatible; their [definitions](../db/README.md#service-counts) belong to the
+pipeline. Live fleet coverage has a separate known-status denominator.
+
+## Page metadata
+
+`src/lib/seo/routeSeo.ts` owns bilingual route descriptions and section-level
+detail fallbacks. Describe the page's actual data, coverage and time window;
+use concise copy without padding to a minimum length. `SeoHead` emits the same
+description for document, Open Graph and Twitter metadata. Its development
+warnings flag blank descriptions and suggest shortening copy above 160 characters.
+Default social cards come from `scripts/build-og.ts`; they describe the product,
+not its current operating status. Regenerate both cards after changing that copy.
+
 ## Commands
 
-Run at the repo root once: `nvm install && bun install --frozen-lockfile`. Then,
-from `apps/web`:
+Use the Node version in the root `.nvmrc` (`nvm install` if you use NVM), then run
+`bun install --frozen-lockfile` at the repository root. From `apps/web`:
 
 ```bash
-bun run tokens:build    # regenerate Transit CSS tokens (src/lib/styles/tokens.css, app.css @theme region)
-bun run dev             # dev server
-bun run check           # svelte-check
-bun run build           # production build (adapter-cloudflare → .svelte-kit/cloudflare, workers mode)
-bun run test            # vitest (data + dom projects)
-bun run og:build        # regenerate Open Graph cards (scripts/build-og.ts)
+bun run tokens:build
+bun run dev
+bun run check
+bun run build
+bun run test
+bun run og:build
 ```
 
 `bun run test` is Vitest. Browser-level receipt and probe scripts under `scripts/`
@@ -36,12 +80,25 @@ archive and executable SHA-256 values in `browser-toolchain.json` before any
 browser starts; the verifier also reconciles Playwright metadata and the
 checked-in map-poster receipt.
 
+Keep `TRANSIT_BROWSER_ROOT` set to the directory passed to the installer. The
+printed executable is nested beneath it. If deployment `PUBLIC_*` variables are
+set in your shell, run unit tests with the isolated command in
+[CONTRIBUTING.md](../../CONTRIBUTING.md#verification).
+
 Or from the repo root via turbo: `turbo run check`, `turbo run build`, `turbo run test`
 (spans the whole workspace). Deploy: `bun run deploy:web` (root) — `bun run build`
 then the root-installed Wrangler (the `transit.yesid.dev/data/*` route stays on the
 data-proxy worker by route specificity).
 
 ## Design tokens
+
+Live vehicle and trip status comes from the publisher's raw-second calculation.
+Use the status helpers in `src/lib/site/delayPresentation.ts` for its color and
+band; rounded `delay_min` cannot reconstruct that status. A 30-second delay can
+display as one minute while remaining in the on-time band. Unknown status uses
+the neutral status color and never supplies a missing delay. Stop predictions
+retain their separate minute-based presentation. Keep the measured value,
+published classification, and absence state distinct.
 
 Source of truth: `tools/tokens/tokens.json` (DTCG). Generators run under `bun`
 (`bun tools/tokens/build.ts`) and emit checked-in artifacts; CI runs

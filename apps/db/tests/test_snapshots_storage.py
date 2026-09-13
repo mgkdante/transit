@@ -16,10 +16,10 @@ from botocore.exceptions import ClientError
 import transit_ops.snapshots.storage as storage_module
 from transit_ops.settings import Settings
 from transit_ops.snapshots.contract import VehiclesFile
-from transit_ops.snapshots.publish import _parallel_put
 from transit_ops.snapshots.storage import (
     CACHE_CONTROL,
     HashGatedStorage,
+    HistoricHashGatedStorage,
     ImmutableKeyCollisionError,
     LocalSnapshotStorage,
     SnapshotStorage,
@@ -27,6 +27,7 @@ from transit_ops.snapshots.storage import (
     StoredObjectVersionMismatchError,
     state_fingerprint,
 )
+from transit_ops.snapshots.uploads import put_batch as _parallel_put
 
 
 class FakeS3Client:
@@ -1080,7 +1081,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
     mutable_key = "historic/alerts/index.json"
     immutable_key = "historic/alerts/generations/abc/2026-07/page-0001.json"
 
-    first = HashGatedStorage(
+    first = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1095,7 +1096,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
     assert first.immutable_written == [immutable_key]
     assert first.immutable_skipped == []
 
-    second = HashGatedStorage(
+    second = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1115,7 +1116,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
 def test_concurrent_duplicate_immutable_attempts_put_once_and_account_atomically():
     client = FakeS3Client()
     inner = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
-    gated = HashGatedStorage(
+    gated = HistoricHashGatedStorage(
         inner,
         state_rel_key="_meta/publish_state_historic.json",
         fingerprint=state_fingerprint("historic"),
@@ -1544,7 +1545,7 @@ def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
         },
         tier="internal",
     )
-    gated = HashGatedStorage(
+    gated = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1558,7 +1559,7 @@ def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
         expected_version=version,
         tier="historic",
     )
-    second = HashGatedStorage(
+    second = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),

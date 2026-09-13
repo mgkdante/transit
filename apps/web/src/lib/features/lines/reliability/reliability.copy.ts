@@ -1,18 +1,4 @@
-// reliability.copy.ts — co-located bilingual copy for the slice-9.6 historic
-// Reliability surface (the clustered approach-B surface). FR is the canonical
-// product voice; EN mirrors it. Bands and the control spine read from here so
-// their markup stays string-free.
-//
-// Scope:
-//   - clusters[]   — the five numbered cluster overlines ('01 Punctuality' …).
-//   - strip{}      — the snapshot-strip metric labels + the two honest-state
-//                    notes (ramp-in / no-data) shared by every band.
-//   - windows{}    — per-band "when?" captions (the active window each band
-//                    covers), rendered under each band's primary label.
-//   - peak{}       — the peak/off-peak (by time of day) block labels.
-//   - regularity{} — plain-language microcopy for the wait-regularity terms.
-//   - controls{}   — the grain control-spine labels + the active-window caption.
-
+import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { VerdictCopy } from '$lib/v1/verdict';
@@ -30,7 +16,7 @@ export const reliabilityCopy = defineCopy({
 	fr: {
 		clusters: {
 			punctuality: 'Ponctualité',
-			serviceDelivered: 'Service assuré',
+			serviceDelivered: serviceComparisonCopy.fr.section,
 			crowding: 'Encombrement',
 			waitRegularity: 'Régularité des attentes',
 			habits: 'Habitudes horaires',
@@ -41,26 +27,24 @@ export const reliabilityCopy = defineCopy({
 			target: 'Cible',
 			avgDelayMin: 'Retard moyen',
 			p50Min: 'Retard médian',
-			p90Min: 'Pire des cas',
+			p90Min: 'Retard au 90e percentile',
 			headwayRegularityCov: 'Régularité (CV)',
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
-			serviceCompletenessPct: 'Service prévu assuré',
+			serviceCompletenessPct: serviceComparisonCopy.fr.label,
 			cancellationFraction: (c: string, total: string) => `${c} annulés sur ${total} jours-trajets`,
 			skippedFraction: (s: string, total: string) =>
 				`${s} ignorés sur ${total} mises à jour d'arrêt`,
-			serviceCompletenessFraction: (delivered: string, scheduled: string, silent: string | null) =>
-				`${delivered} sur ${scheduled} jours-trajets prévus assurés${
-					silent == null ? '' : ` · ${silent} silencieux`
-				}`,
-			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
-			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
-			delayDistHeading: 'Du retard médian au pire des cas',
+			serviceCompletenessFraction: serviceComparisonCopy.fr.fraction,
+			p50Caption: 'Médiane estimée des relevés de retard',
+			p90Caption: '90e percentile estimé des relevés de retard',
+			delayDistHeading: 'Retard médian et 90e percentile',
 			delayDistLabel: 'Retard, de tôt à tard (min)',
+			delayDistCount: 'Relevés',
 			delayDistCaption:
-				'Chaque barre est la part des trajets à ce retard (en avance à gauche de 0, à l’heure à 0, en retard à droite); plus c’est haut, plus il y a de trajets. Les lignes marquent le médian et le pire des cas (9 trajets sur 10 font mieux). Échelle fixe de -5 à +30 min.',
+				'L’aire de chaque barre représente le nombre de relevés dans cet intervalle de retard. Les intervalles ont des largeurs différentes : la hauteur indique la densité. Les traits marquent la médiane et le 90e percentile. Vue de -5 à +30 min.',
 			percentileNudge:
-				'Pas assez de trajets aujourd’hui pour l’écart typique → pire cas. Choisissez « Cette semaine » ou « Ce mois-ci » ci-dessus pour le voir.',
+				'Les estimations du retard médian et du 90e percentile sont indisponibles ici. Consultez une vue par semaine ou par mois.',
 			severePct: 'Part des retards graves',
 			severeCaption: 'Proportion de passages en retard grave',
 			weakStopsHeading: 'Les arrêts les plus en retard',
@@ -71,13 +55,12 @@ export const reliabilityCopy = defineCopy({
 			weakStopCi: 'IC 95 %',
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
-			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
 			wilsonBandCaption:
-				'La bande ombrée : on est sûr à 95 % que le vrai taux de ponctualité s’y trouve (plus la bande est large, moins l’échantillon est grand). Ligne pointillée : cible de 80 %.',
-			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
+				'Bande ombrée : intervalle de Wilson à 95 %. Plus il est large, moins l’estimation est précise. Les relevés répétés d’un même trajet peuvent le rendre trop étroit. Pointillés : cible de 80 %.',
+			rampInNote: 'Les signalements manquants peuvent masquer des interruptions de service.',
 			regularity: {
-				regular: 'Passages réguliers',
-				irregular: 'Passages irréguliers',
+				regular: 'Apparitions régulières',
+				irregular: 'Apparitions irrégulières',
 			},
 		},
 		windows: {
@@ -100,7 +83,7 @@ export const reliabilityCopy = defineCopy({
 			weekend: 'Fin de semaine',
 			strip: {
 				ariaLabel: 'Retards graves par période',
-				mean: (value: string) => `Moyenne journée : ${value}`,
+				mean: (value: string) => `Moyenne approx. des périodes affichées : ${value}`,
 			},
 		},
 		byDow: {
@@ -131,25 +114,25 @@ export const reliabilityCopy = defineCopy({
 		},
 		regularityTerms: {
 			scheduledGap: 'Intervalle prévu',
-			observedGap: 'Intervalle observé',
+			observedGap: 'Intervalle dans le flux',
 			excessWait: 'Attente excédentaire',
 			spread: 'Régularité (CV)',
-			clumped: 'Bus collés',
+			clumped: 'Apparitions rapprochées',
 			bunchingHelp:
-				'Les bus devraient être espacés régulièrement. « Bus collés » = deux arrivent presque ensemble, puis un long trou : votre attente réelle dépasse alors l’horaire. Chaque ligne va de l’intervalle prévu (●) à l’intervalle observé (●) ; plus l’écart est grand, plus l’attente est longue.',
+				'Chaque ligne compare l’intervalle médian prévu (●) à celui des premières apparitions de trajets dans le flux (●). La part d’apparitions rapprochées estime les intervalles inférieurs à la moitié de la médiane. Ces écarts ne mesurent ni les arrivées à votre arrêt ni votre attente réelle.',
 		},
 		serviceSpanTimeline: {
-			heading: 'Plage de service',
+			heading: 'Premières apparitions de trajets',
 			ariaLabel: (first: string, last: string) =>
-				`Plage de service, du premier départ à ${first} au dernier à ${last}`,
-			firstTrip: 'Premier départ',
-			lastTrip: 'Dernier départ',
-			span: (len: string) => `Durée ${len}`,
-			trips: (n: string) => `${n} voyages`,
-			firstDelay: 'Retard du premier départ',
-			lastDelay: 'Retard du dernier départ',
+				`Premières captures des trajets, du premier relevé le plus tôt à ${first} au premier relevé le plus tard à ${last}`,
+			firstTrip: 'Premier relevé le plus tôt',
+			lastTrip: 'Premier relevé le plus tard',
+			span: (len: string) => `Écart arrondi ${len}`,
+			trips: (n: string) => `${n} identifiants de trajet observés`,
+			firstDelay: 'Premier trajet : retard du premier relevé',
+			lastDelay: 'Dernier trajet : retard du dernier relevé',
 			caption:
-				"De l'heure du premier départ à celle du dernier sur une journée de 24 h. Le repère à chaque extrémité indique l'avance (▼) ou le retard (▲) du départ; ▲ signale un retard, jamais une absence de donnée.",
+				'Les extrémités marquent des premières captures. Les dates locales et décalages UTC accompagnent un axe en heures écoulées; l’écart affiché s’arrondit à la minute. Les retards viennent du premier relevé du premier trajet et du dernier relevé du dernier trajet, qui peut être postérieur à l’extrémité droite.',
 		},
 		units: { pct: '%', min: ' min' },
 		priorDelta: {
@@ -160,7 +143,6 @@ export const reliabilityCopy = defineCopy({
 				week: 'p/r à la sem. préc.',
 				month: 'p/r au mois préc.',
 			},
-			withinNoise: 'écart non significatif',
 			noPrior: {
 				day: 'pas de veille',
 				week: 'pas de semaine précédente',
@@ -171,12 +153,12 @@ export const reliabilityCopy = defineCopy({
 			pts: 'pts',
 			ptOne: 'pt',
 			caption:
-				'Écart par rapport à la fenêtre précédente, affiché seulement s’il passe un test de signification à 95 %; une variation dans le bruit reste neutre.',
+				'Écart observé pour la même période dans la fenêtre précédente. La couverture des données et les voyages représentés peuvent différer.',
 		},
 		controls: {
 			viewLabel: 'Vue',
 			grainLabel: 'Granularité',
-			today: "Aujourd'hui",
+			latestDay: 'Dernier jour',
 			thisWeek: 'Cette semaine',
 			thisMonth: 'Ce mois-ci',
 			dateRange: 'Plage de dates',
@@ -184,7 +166,10 @@ export const reliabilityCopy = defineCopy({
 			rangeStart: 'Du',
 			rangeEnd: 'Au',
 			activeWindow: {
-				day: "Fenêtre : aujourd'hui (dernière journée close)",
+				day: (date: string | null) =>
+					date
+						? `Bilan des retards : jour local de capture ${date}. Les comptes et les plages de service suivent les jours de service GTFS.`
+						: 'Jour de capture des retards indisponible. Les autres mesures conservent leurs propres fenêtres.',
 				week: 'Fenêtre : cette semaine (semaine la plus récente)',
 				month: 'Fenêtre : ce mois-ci (mois le plus récent)',
 				singleDay: (date: string) => `Fenêtre : ${date}`,
@@ -253,7 +238,7 @@ export const reliabilityCopy = defineCopy({
 	en: {
 		clusters: {
 			punctuality: 'Punctuality',
-			serviceDelivered: 'Service delivered',
+			serviceDelivered: serviceComparisonCopy.en.section,
 			crowding: 'Crowding',
 			waitRegularity: 'Wait regularity',
 			habits: 'Time-of-day habits',
@@ -263,26 +248,24 @@ export const reliabilityCopy = defineCopy({
 			otpPct: 'On-time',
 			target: 'Target',
 			avgDelayMin: 'Avg delay',
-			p50Min: 'Typical delay',
-			p90Min: 'Worst-case delay',
+			p50Min: 'Median delay',
+			p90Min: '90th-percentile delay',
 			headwayRegularityCov: 'Regularity (CoV)',
 			cancellationRatePct: 'Cancellation rate',
 			skippedStopRatePct: 'Skipped-stop rate',
-			serviceCompletenessPct: 'Scheduled service delivered',
+			serviceCompletenessPct: serviceComparisonCopy.en.label,
 			cancellationFraction: (c, total) => `${c} of ${total} trip-days canceled`,
 			skippedFraction: (s, total) => `${s} of ${total} stop updates skipped`,
-			serviceCompletenessFraction: (delivered, scheduled, silent) =>
-				`${delivered} of ${scheduled} scheduled trip-days delivered${
-					silent == null ? '' : ` · ${silent} silent`
-				}`,
-			p50Caption: 'Half of trips do better, half do worse',
-			p90Caption: '9 in 10 trips are better than this',
-			delayDistHeading: 'From typical to worst-case delay',
+			serviceCompletenessFraction: serviceComparisonCopy.en.fraction,
+			p50Caption: 'Estimated median of reported delays',
+			p90Caption: 'Estimated 90th percentile of reported delays',
+			delayDistHeading: 'Median and 90th-percentile delay',
 			delayDistLabel: 'Delay, early to late (min)',
+			delayDistCount: 'Observations',
 			delayDistCaption:
-				'Each bar is the share of trips at that delay (early left of 0, on time at 0, late right); taller means more trips there. The reference lines mark the typical (median) and the worst case (9 in 10 trips do better). Fixed -5 to +30 min scale.',
+				'Each bar’s area represents the number of observations in that delay range. Bins have different widths, so height shows density. Reference lines mark the median and 90th percentile. View: -5 to +30 min.',
 			percentileNudge:
-				'Not enough trips today for the typical→worst-case spread. Pick “This week” or “This month” above to see it.',
+				'Median and 90th-percentile delay estimates are unavailable here. Check a week or month view.',
 			severePct: 'Severe-delay share',
 			severeCaption: 'Share of arrivals that ran severely late',
 			weakStopsHeading: 'The stops with the most delay',
@@ -293,13 +276,12 @@ export const reliabilityCopy = defineCopy({
 			weakStopCi: '95% CI',
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
-			trendReadoutHint: 'Hover or tab the chart to read each day',
 			wilsonBandCaption:
-				'Shaded band: we’re 95% sure the true on-time rate sits inside it (a wider band = a smaller sample). Dashed line: the 80% target.',
-			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
+				'Shaded band: 95% Wilson interval. Wider means less precision; repeated updates from the same trip can make it too narrow. Dashed line: the 80% target.',
+			rampInNote: 'Missing feed reports can hide service gaps.',
 			regularity: {
-				regular: 'Regular arrivals',
-				irregular: 'Irregular arrivals',
+				regular: 'Regular feed gaps',
+				irregular: 'Irregular feed gaps',
 			},
 		},
 		windows: {
@@ -321,7 +303,7 @@ export const reliabilityCopy = defineCopy({
 			weekend: 'Weekend',
 			strip: {
 				ariaLabel: 'Severe delay by time of day',
-				mean: (value) => `All-day mean: ${value}`,
+				mean: (value) => `Approx. mean of displayed shifts: ${value}`,
 			},
 		},
 		byDow: {
@@ -352,25 +334,25 @@ export const reliabilityCopy = defineCopy({
 		},
 		regularityTerms: {
 			scheduledGap: 'Scheduled gap',
-			observedGap: 'Observed gap',
+			observedGap: 'Feed-appearance gap',
 			excessWait: 'Excess wait',
 			spread: 'Spread (CoV)',
-			clumped: 'Clumped (bunched)',
+			clumped: 'Closely spaced appearances',
 			bunchingHelp:
-				'Buses should be evenly spaced. “Bunching” = two arrive nose-to-tail, then a long gap, so your real wait runs longer than the schedule implies. Each row runs from the scheduled gap (●) to the observed gap (●); the wider that span, the longer the wait.',
+				'Each row compares the scheduled median gap (●) with the median gap between trips first appearing in the feed (●). The closely spaced share estimates gaps below half the median. These gaps measure neither arrivals at your stop nor your actual wait.',
 		},
 		serviceSpanTimeline: {
-			heading: 'Service span',
+			heading: 'Trip first appearances',
 			ariaLabel: (first, last) =>
-				`Service span, from the first trip at ${first} to the last at ${last}`,
-			firstTrip: 'First trip',
-			lastTrip: 'Last trip',
-			span: (len) => `Span ${len}`,
-			trips: (n) => `${n} trips`,
-			firstDelay: 'First-trip delay',
-			lastDelay: 'Last-trip delay',
+				`First captured trip reports, from the earliest at ${first} to the latest at ${last}`,
+			firstTrip: 'Earliest first report',
+			lastTrip: 'Latest first report',
+			span: (len) => `Rounded span ${len}`,
+			trips: (n) => `${n} trip IDs observed`,
+			firstDelay: 'First trip: delay in earliest report',
+			lastDelay: 'Last trip: delay in latest report',
 			caption:
-				'From the first departure clock time to the last across a 24-hour day. The marker at each end shows that departure running early (▼) or late (▲); ▲ is a real delay, never missing data.',
+				'Both endpoints mark first captured reports. Local dates and UTC offsets accompany an elapsed-hour axis; the span label rounds to whole minutes. Delay markers use the first trip’s earliest report and the last trip’s latest report, which may follow the right endpoint.',
 		},
 		units: { pct: '%', min: ' min' },
 		priorDelta: {
@@ -381,7 +363,6 @@ export const reliabilityCopy = defineCopy({
 				week: 'vs prior week',
 				month: 'vs prior month',
 			},
-			withinNoise: 'within noise',
 			noPrior: {
 				day: 'no prior day',
 				week: 'no prior week',
@@ -392,12 +373,12 @@ export const reliabilityCopy = defineCopy({
 			pts: 'pts',
 			ptOne: 'pt',
 			caption:
-				'Change vs the immediately prior window, shown only when it clears a 95% significance test, so a swing within noise never shouts.',
+				'Observed difference for the same time period in the previous window. Feed coverage and the trips represented can differ.',
 		},
 		controls: {
 			viewLabel: 'View',
 			grainLabel: 'Granularity',
-			today: 'Today',
+			latestDay: 'Latest day',
 			thisWeek: 'This week',
 			thisMonth: 'This month',
 			dateRange: 'Date range',
@@ -405,7 +386,10 @@ export const reliabilityCopy = defineCopy({
 			rangeStart: 'From',
 			rangeEnd: 'To',
 			activeWindow: {
-				day: 'Window: today (latest closed day)',
+				day: (date: string | null) =>
+					date
+						? `Delay summary: local capture day ${date}. Service counts and spans follow GTFS service days.`
+						: 'Delay capture day unavailable. Other measures retain their own windows.',
 				week: 'Window: this week (most recent week)',
 				month: 'Window: this month (most recent month)',
 				singleDay: (date) => `Window: ${date}`,

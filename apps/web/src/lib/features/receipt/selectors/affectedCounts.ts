@@ -1,11 +1,5 @@
-// affectedCounts — the receipt's affected-count cells (S13).
-//
-// Ports the AccountabilityReceipt `countCell` inputs into a PURE presenter: the
-// routes / stops / alerts touched on the day, each a MaybeValue-ready VM (null →
-// the styled 'no-observations' chip, a real measured 0 stays a real 0). `vehicles`
-// is structurally always-null on /v1 (the daily receipt carries no per-vehicle
-// count), so the cell is OMITTED from the VM entirely unless a real count surfaces —
-// never a permanent honest-absence row.
+// Distinct line/stop IDs with severe predictions and recorded alert-content versions.
+// Null counts remain unknown; zero remains zero. The producer supplies no vehicle count.
 
 import type { Receipt } from '$lib/v1/schemas';
 

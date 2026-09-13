@@ -298,13 +298,109 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 		for (const deploy of ['deploy-dev', 'deploy-production']) {
 			const deployJob = jobs.get(deploy)!;
-			expect(directNeeds(deployJob)).toEqual(['ci', 'deploy_scope']);
+			expect(directNeeds(deployJob)).toEqual(['ci', 'deploy_scope', 'ci-work']);
 			expect(deployJob).toContain('CLOUDFLARE_API_TOKEN');
 			expect([
 				...deployJob.matchAll(/needs\.deploy_scope\.outputs\.deploy_web\s*==\s*'true'/gu),
 			]).toHaveLength(1);
 		}
 		expect(jobs.get('deploy-production')).toContain('run: bash smoke.sh');
+	});
+
+	it('reuses successful CI builds and preserves eligible skipped-CI deployment', () => {
+		const jobs = jobBlocks(text('.github/workflows/web.yml'));
+		const work = jobs.get('ci-work')!;
+		const seal = work.indexOf('name: Seal deployment build');
+		const tests = work.indexOf('name: Unit tests');
+		const verify = work.indexOf('name: Verify sealed build after checks');
+		const upload = work.indexOf('name: Upload verified deployment build');
+		expect(seal).toBeGreaterThan(work.indexOf('name: Build (adapter-cloudflare)'));
+		expect(tests).toBeGreaterThan(seal);
+		expect(verify).toBeGreaterThan(tests);
+		expect(upload).toBeGreaterThan(verify);
+		expect(work).toContain(
+			'run: env -u PUBLIC_SITE_ORIGIN -u PUBLIC_V1_BASE -u PUBLIC_INDEXING bun run test',
+		);
+		expect(work).not.toContain('CLOUDFLARE_API_TOKEN');
+		expect(work).toContain('include-hidden-files: true');
+		expect(work).toContain('if-no-files-found: error');
+
+		for (const [job, target, branch] of [
+			['deploy-dev', 'dev', 'develop'],
+			['deploy-production', 'production', 'main'],
+		] as const) {
+			const block = jobs.get(job)!;
+			const expression = block
+				.match(/^ {4}if: >-\n((?:^ {6}.+\n)+)/mu)![1]
+				.trim()
+				.replace(/^\$\{\{\s*|\s*\}\}$/gu, '')
+				.replaceAll('needs.ci-work', 'needs.work');
+			const enabled = new Function(
+				'github',
+				'inputs',
+				'needs',
+				'cancelled',
+				`return (${expression});`,
+			);
+			const event = (name = 'push', ref: string = branch) => ({
+				event_name: name,
+				ref: `refs/heads/${ref}`,
+			});
+			const needs = (result = 'success', deploy = 'true') => ({
+				ci: { result: 'success' },
+				deploy_scope: { result: 'success', outputs: { deploy_web: deploy } },
+				work: { result },
+			});
+			for (const result of ['success', 'skipped']) {
+				expect(enabled(event(), {}, needs(result), () => false)).toBe(true);
+				expect(enabled(event(), {}, needs(result, 'false'), () => false)).toBe(false);
+				expect(enabled(event(), {}, needs(result), () => true)).toBe(false);
+				expect(
+					enabled(
+						event('workflow_dispatch', 'main'),
+						{ deploy_target: target },
+						needs(result, 'false'),
+						() => false,
+					),
+				).toBe(true);
+			}
+			for (const result of ['failure', 'cancelled']) {
+				expect(enabled(event(), {}, needs(result), () => false)).toBe(false);
+			}
+			expect(enabled(event('pull_request'), {}, needs(), () => false)).toBe(false);
+			expect(enabled(event('push', 'feature'), {}, needs(), () => false)).toBe(false);
+			expect(
+				enabled(
+					event('workflow_dispatch', 'feature'),
+					{ deploy_target: target },
+					needs(),
+					() => false,
+				),
+			).toBe(target === 'dev');
+			const failedGate = needs();
+			failedGate.ci.result = 'failure';
+			expect(enabled(event(), {}, failedGate, () => false)).toBe(false);
+			const skippedScope = needs();
+			skippedScope.deploy_scope.result = 'skipped';
+			expect(enabled(event(), {}, skippedScope, () => false)).toBe(false);
+
+			const required = block.indexOf('name: Require the producer artifact');
+			const download = block.indexOf('name: Download the producer artifact');
+			const restore = block.indexOf('name: Restore the verified deployment build');
+			const credentials = block.indexOf('secrets.CLOUDFLARE_API_TOKEN');
+			expect(required).toBeGreaterThanOrEqual(0);
+			expect(download).toBeGreaterThan(required);
+			expect(restore).toBeGreaterThan(download);
+			expect(credentials).toBeGreaterThan(restore);
+			expect(block).toContain('artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}');
+			expect(block).toContain('digest-mismatch: error');
+			expect(block).toContain('merge-multiple: true');
+			expect(block).toContain(`TRANSIT_BUILD_TARGET: ${target}`);
+			expect(block).toContain(
+				"if: ${{ needs.ci-work.result == 'skipped' }}\n        run: bun run build",
+			);
+			expect(block.match(/run: bun run build/gu)).toHaveLength(1);
+		}
 	});
 
 	it('owns the offline poster gate and prepares Bun before a verified basemap replacement', () => {
@@ -326,7 +422,8 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 		const posterScript = text('apps/web/scripts/build-map-posters.ts');
 		expect(posterScript).not.toContain('/usr/bin/google-chrome');
-		expect(posterScript).toContain("const PINNED_CHROMIUM_VERSION = '151.0.7922.34'");
+		expect(posterScript).not.toContain('CHROME_PATH');
+		expect(posterScript).toContain('verifyInstalledBrowserArtifact');
 		expect(posterScript).toContain('browser.version()');
 
 		const contributing = text('CONTRIBUTING.md');
@@ -379,7 +476,9 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(work).toBeDefined();
 		if (!work) return;
 		const proxyDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run');
-		const webDryRun = work.indexOf('../../node_modules/.bin/wrangler deploy --dry-run --env=""');
+		const webDryRun = work.indexOf(
+			'../../node_modules/.bin/wrangler deploy --dry-run --env="$TRANSIT_WRANGLER_ENV"',
+		);
 		const browserContract = work.indexOf('node --test scripts/install-browser-toolchain.test.mjs');
 		const chromiumInstall = work.indexOf('node scripts/install-browser-toolchain.mjs');
 		const browserProof = work.indexOf('verify-browser-toolchain.mjs');
@@ -401,12 +500,52 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(b9Runner).not.toContain('/usr/bin/google-chrome');
 		expect(existsSync(join(ROOT, 'node_modules/.bin/wrangler'))).toBe(true);
 
+		for (const path of [
+			'apps/web/scripts/footer-parity-probe.mjs',
+			'apps/web/scripts/live-resilience-probe.mjs',
+			'apps/web/scripts/mobile-geometry-runner.ts',
+		]) {
+			const launcher = text(path);
+			expect(launcher).toContain('verifyInstalledBrowserArtifact');
+			expect(launcher).not.toMatch(
+				/CHROME_PATH|CHROMIUM_EXECUTABLE|PLAYWRIGHT_CHROMIUM_EXECUTABLE/u,
+			);
+			expect(launcher).not.toContain('/usr/bin/google-chrome');
+		}
+
 		const browserManifest = JSON.parse(text('apps/web/browser-toolchain.json')) as {
 			browser: { archiveSha256: string; executableSha256: string; platform: string };
 		};
 		expect(browserManifest.browser.platform).toBe('linux-x64');
 		expect(browserManifest.browser.archiveSha256).toMatch(/^[0-9a-f]{64}$/u);
 		expect(browserManifest.browser.executableSha256).toMatch(/^[0-9a-f]{64}$/u);
+	});
+
+	it('isolates proxy verification queues from pending production deployment', () => {
+		const workflow = text('.github/workflows/deploy-data-proxy.yml');
+		const concurrency = topLevelBlock(workflow, 'concurrency');
+		const group = concurrency.match(/^\s+group:\s*(.+)$/mu)![1]!;
+		const expression = group.startsWith('${{')
+			? group.replace(/^\$\{\{\s*|\s*\}\}$/gu, '')
+			: JSON.stringify(group);
+		const evaluate = new Function('github', 'format', `return (${expression});`);
+		const queue = (event: string, ref: string, number?: number) =>
+			evaluate(
+				{ event_name: event, ref, event: { pull_request: { number } } },
+				(pattern: string, value: unknown) => pattern.replace('{0}', String(value)),
+			);
+		const production = queue('push', 'refs/heads/main');
+		expect(production).toBe('deploy-data-proxy');
+		expect(queue('push', 'refs/heads/main')).toBe(production);
+		const development = queue('push', 'refs/heads/develop');
+		const firstPr = queue('pull_request', 'refs/pull/47/merge', 47);
+		const secondPr = queue('pull_request', 'refs/pull/48/merge', 48);
+		expect(new Set([production, development, firstPr, secondPr]).size).toBe(4);
+		expect(queue('pull_request', 'refs/pull/47/merge', 47)).toBe(firstPr);
+		expect(concurrency).toContain('cancel-in-progress: false');
+		const deploy = jobBlocks(workflow).get('deploy-data-proxy')!;
+		expect(nestedBlock(deploy, 'concurrency', 4)).toContain('group: transit-data-edge-production');
+		expect(deploy).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'");
 	});
 
 	it('makes an exact Node pin change exercise every affected owned lane', () => {

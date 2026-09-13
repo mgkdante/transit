@@ -96,7 +96,7 @@ the fixed source in `browser-toolchain.json`, checks its byte count and SHA-256
 before extraction, checks the extracted executable, and rejects Playwright
 browser-environment overrides or unsafe archive paths. `scripts/verify-browser-toolchain.mjs`
 rechecks the receipt and executable before launch, then reconciles Playwright
-metadata, the poster receipt, generator constants, and the launched version.
+metadata, the poster receipt, and the launched version.
 
 Development deploys from `develop` or an explicit dev dispatch. Production
 deploys from `main` or an explicit production dispatch on `main`. After a

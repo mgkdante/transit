@@ -127,7 +127,9 @@ describe('MapFilterPill', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		const dialog = screen.getByRole('dialog', { name: 'Controls' });
-		const motionSwitch = within(dialog).getByRole('switch', { name: 'Motion' });
+		const motionSwitch = within(dialog).getByRole('switch', {
+			name: 'Animate estimated positions between reports',
+		});
 		expect(motionSwitch).toHaveAttribute('aria-checked', 'false');
 
 		await fireEvent.click(motionSwitch);

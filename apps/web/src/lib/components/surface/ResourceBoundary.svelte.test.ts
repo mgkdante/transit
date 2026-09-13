@@ -3,10 +3,11 @@
 // `no_results` variant (a filter excluded everything — distinct from no data at
 // all, which was previously rendered as a plain `empty`).
 
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ResourceBoundary from './ResourceBoundary.svelte';
+import SiblingResourcesHarness from './__fixtures__/SiblingResourcesHarness.svelte';
 import { DEFAULT_LOADING_SKELETON_DELAY_MS } from '$lib/components/edge';
 import type { Resource } from '$lib/v1/resource.svelte';
 
@@ -22,6 +23,52 @@ function variant(container: HTMLElement): string | null {
 }
 
 describe('ResourceBoundary — DataState render ladder', () => {
+	it.each([
+		['en', 'Data unavailable', 'We couldn’t load this data. Please try again.', 'Retry'],
+		[
+			'fr',
+			'Données indisponibles',
+			'Ces données n’ont pas pu être chargées. Veuillez réessayer.',
+			'Réessayer',
+		],
+	] as const)(
+		'keeps a failed resource and its retry separate from retained siblings (%s)',
+		async (lang, title, body, retryLabel) => {
+			const reload = vi.fn();
+			const retainedReload = vi.fn();
+			const { getByRole, rerender } = render(SiblingResourcesHarness, {
+				props: {
+					lang,
+					failed: res<string>({ error: new Error('unavailable'), reload }),
+					retained: res({
+						data: '24 · 5 min',
+						error: new Error('refresh failed'),
+						reload: retainedReload,
+					}),
+				},
+			});
+			const failed = within(getByRole('region', { name: 'Stop information' }));
+			const retained = within(getByRole('region', { name: 'Departures' }));
+			expect(failed.getByRole('alert')).toHaveAttribute('aria-live', 'assertive');
+			expect(failed.getByText(title)).toBeInTheDocument();
+			expect(failed.getByText(body)).toBeInTheDocument();
+			expect(retained.getByText('24 · 5 min')).toBeInTheDocument();
+			expect(retained.queryByRole('alert')).toBeNull();
+
+			const retry = failed.getByRole('button', { name: retryLabel });
+			retry.focus();
+			await fireEvent.click(retry);
+			expect(retry).toHaveFocus();
+			expect(reload).toHaveBeenCalledOnce();
+			expect(retainedReload).not.toHaveBeenCalled();
+
+			await rerender({ failed: res({ data: 'B9 Atwater' }) });
+			expect(failed.queryByRole('alert')).toBeNull();
+			expect(failed.getByText('B9 Atwater')).toBeInTheDocument();
+			expect(retained.getByText('24 · 5 min')).toBeInTheDocument();
+		},
+	);
+
 	it('renders children on ok (and no edge state)', () => {
 		const { container, getByTestId } = render(ResourceBoundary, {
 			props: { resource: res<number[]>({ data: [1, 2] }), lang: 'en', children: okChild },

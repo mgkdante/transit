@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import posixpath
 import re
+import shlex
+import subprocess
 import tomllib
+from functools import cache
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -36,6 +41,255 @@ DISPOSABLE_POSTGIS_IMAGE = (
     "postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5"
 )
 
+VERSION_OWNERS = {
+    ".nvmrc",
+    ".bun-version",
+    ".python-version",
+    "package.json",
+    "apps/db/pyproject.toml",
+    ".github/actions/setup-py/action.yml",
+    "apps/db/Dockerfile",
+    "apps/db/Dockerfile.health",
+    "apps/web/package.json",
+    "apps/web/browser-toolchain.json",
+    ".github/scripts/install-gitleaks.sh",
+}
+COMPATIBILITY_PROOFS = {
+    "apps/db/tests/test_toolchain_contract.py",
+    "apps/db/tests/test_deploy_artifacts.py",
+    "apps/db/tests/test_setup_py_action.py",
+    "apps/db/tests/test_data_proxy_artifacts.py",
+    "apps/db/tests/test_runtime_images_verifier.py",
+    "apps/db/tests/test_install_gitleaks_script.py",
+    "apps/db/tests/test_health_checks.py",
+    "apps/db/tests/test_snapshot_publish_typing_contract.py",
+    "apps/web/scripts/install-browser-toolchain.test.mjs",
+    "apps/web/scripts/verify-browser-toolchain.test.mjs",
+    "apps/web/src/tests/shared-tooling-adoption.test.ts",
+    "apps/web/src/tests/map-poster-assets.test.ts",
+}
+PUBLIC_RECEIPTS = {
+    "README.md",
+    "CONTRIBUTING.md",
+    "apps/db/README.md",
+    "apps/web/README.md",
+    "apps/web/CLOUDFLARE.md",
+    "apps/web/static/map/basemap-montreal-posters.json",
+    "apps/web/wrangler.toml",
+}
+TOOL_NAMES = r"node(?:js|\.js)?|python|bun|uv|wrangler|playwright(?:[-_]?core)?|chromium|gitleaks"
+TOOL_LITERAL = re.compile(
+    rf"\b(?:{TOOL_NAMES})(?:[-_ ]?version)?[\s\"':=@v<>~^/-]*\d+\.\d+",
+    re.IGNORECASE,
+)
+OWNED_LITERAL = re.compile(
+    r"(?<![\w.])(?:"
+    + "|".join(
+        re.escape(value)
+        for value in (
+            NODE_VERSION,
+            PRODUCTION_PYTHON_VERSION,
+            BUN_VERSION,
+            UV_VERSION,
+            WRANGLER_VERSION,
+            PLAYWRIGHT_VERSION,
+            CHROMIUM_VERSION,
+            "8.30.1",
+        )
+    )
+    + r")(?![\w.])"
+)
+
+
+@cache
+def _tracked_sources() -> dict[str, str]:
+    paths = subprocess.check_output(["git", "ls-files", "-z"], cwd=REPO_ROOT, text=True).split("\0")
+    sources = {}
+    for path in paths:
+        if (
+            not path
+            or path in {"bun.lock", "apps/db/uv.lock"}
+            or path.startswith(
+                (
+                    "apps/web/vendor/design/",
+                    "apps/db/src/transit_ops/db/migrations/versions/",
+                )
+            )
+        ):
+            continue
+        try:
+            sources[path] = (REPO_ROOT / path).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+    return sources
+
+
+def _external_docker_images(source: str) -> list[str]:
+    stages = {"scratch"}
+    images = []
+    for line in re.sub(r"\\\r?\n", " ", source).splitlines():
+        if not re.match(r"\s*FROM\s", line, re.IGNORECASE):
+            continue
+        words = [word for word in shlex.split(line, comments=True)[1:] if not word.startswith("--")]
+        image, *alias = words
+        if image.lower() not in stages:
+            images.append(image)
+        if alias:
+            assert len(alias) == 2 and alias[0].lower() == "as", line
+            stages.add(alias[1].lower())
+    return images
+
+
+def _mappings(document: object) -> list[dict[str, object]]:
+    if isinstance(document, list):
+        return [mapping for child in document for mapping in _mappings(child)]
+    if not isinstance(document, dict):
+        return []
+    return [document, *(mapping for child in document.values() for mapping in _mappings(child))]
+
+
+def _setup_version_literals(document: object) -> list[str]:
+    return [
+        str(value)
+        for row in _mappings(document)
+        if re.search(r"/setup-(?:node|python|bun|uv)@", str(row.get("uses", "")))
+        for key, value in row.get("with", {}).items()
+        if re.fullmatch(r"(?:node-|python-|bun-)?version", key) and re.search(r"\d", str(value))
+    ]
+
+
+def _inventory_violations(sources: dict[str, str]) -> list[str]:
+    violations = []
+    documents = {
+        path: yaml.safe_load(source)
+        for path, source in sources.items()
+        if Path(path).suffix in {".yml", ".yaml"}
+    }
+    dockerfiles = {
+        path
+        for path in sources
+        if Path(path).name.lower().startswith(("dockerfile", "containerfile"))
+        or path.lower().endswith(".dockerfile")
+    }
+    for path, document in documents.items():
+        for row in _mappings(document):
+            build = row.get("build")
+            if isinstance(build, dict) and "dockerfile" in build:
+                dockerfiles.add(
+                    posixpath.normpath(
+                        str(Path(path).parent / build.get("context", ".") / build["dockerfile"])
+                    )
+                )
+    violations.extend(
+        f"{path}: referenced Dockerfile must be tracked"
+        for path in sorted(dockerfiles - sources.keys())
+    )
+    for path, source in sources.items():
+        if path in COMPATIBILITY_PROOFS:
+            continue
+        document = documents.get(path)
+        if re.search(r"\bwrangler@(?:[^\s\"'`]+)", source, re.IGNORECASE) or re.search(
+            r"\b(?:npx|bunx|(?:npm|pnpm|yarn|bun)\s+(?:exec|dlx|add|install))"
+            r"[\s\"'`,\[\]]+(?:--?\S+[\s\"'`,\[\]]+)*wrangler\b",
+            source,
+        ):
+            violations.append(f"{path}: ad-hoc Wrangler executable")
+        if path not in VERSION_OWNERS | PUBLIC_RECEIPTS and (
+            TOOL_LITERAL.search(source)
+            or OWNED_LITERAL.search(source)
+            or _setup_version_literals(document)
+        ):
+            violations.append(f"{path}: tool version outside an owner, proof, or receipt")
+        images = []
+        name = Path(path).name.lower()
+        if path in dockerfiles:
+            images = _external_docker_images(source)
+        elif document is not None:
+            images = [
+                str(row["image"])
+                for row in _mappings(document)
+                if row.get("image") and "build" not in row
+            ]
+            images += [
+                image
+                for row in _mappings(document)
+                if "dockerfile_inline" in row
+                for image in _external_docker_images(row["dockerfile_inline"])
+            ]
+        if any(
+            not re.fullmatch(r"[^\s@$]+:[^\s@$]+@sha256:[0-9a-f]{64}", image) for image in images
+        ):
+            violations.append(f"{path}: external image requires a readable tag and SHA-256 digest")
+        if name == "package.json":
+            package = json.loads(source)
+            if path != "package.json" and any(
+                "wrangler" in package.get(section, {})
+                for section in ("dependencies", "devDependencies", "optionalDependencies")
+            ):
+                violations.append(f"{path}: Wrangler is owned by the root package")
+    return violations
+
+
+def test_tracked_toolchain_inventory_has_only_reviewed_owners_and_images() -> None:
+    assert _inventory_violations(_tracked_sources()) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "source", "failure"),
+    [
+        ("new/Dockerfile", f"FROM {PYTHON_IMAGE} AS build\nFROM node:22\n", "external image"),
+        ("new/worker.dockerfile", "FROM --platform=$BUILDPLATFORM python:3.12\n", "external image"),
+        (
+            "new/compose.yaml",
+            "services:\n  db:\n    image: transit-external:latest\n",
+            "external image",
+        ),
+        ("new/compose.yml", "services:\n  db:\n    image: '${DB_IMAGE}'\n", "external image"),
+        (
+            "new/compose.yml",
+            "services:\n  db:\n    build:\n      dockerfile_inline: FROM python:3.12\n",
+            "external image",
+        ),
+        ("new/deploy.sh", "npx wrangler deploy", "ad-hoc Wrangler"),
+        ("new/deploy.mjs", 'spawn("bunx", ["wrangler@latest", "deploy"]);', "ad-hoc Wrangler"),
+        ("new/deploy.js", 'spawn("npx", ["wrangler", "deploy"]);', "ad-hoc Wrangler"),
+        ("new/package.json", '{"devDependencies":{"wrangler":"4.999.0"}}', "root package"),
+        ("new/tool.mjs", "const NODE_VERSION = '20.18.0';", "tool version outside"),
+        ("new/setup.yml", "with:\n  python-version: '3.13'\n", "tool version outside"),
+        (
+            "new/setup-uv.yml",
+            "uses: astral-sh/setup-uv@v9\nwith:\n  version: '0.17.0'\n",
+            "tool version outside",
+        ),
+    ],
+)
+def test_inventory_rejects_new_unowned_executable_surfaces(
+    path: str, source: str, failure: str
+) -> None:
+    assert any(failure in issue for issue in _inventory_violations({path: source}))
+
+
+def test_inventory_accepts_local_stages_and_compose_builds() -> None:
+    assert (
+        _inventory_violations(
+            {
+                "new/Dockerfile": f"FROM {POSTGRES_IMAGE} AS build\nFROM build\nFROM scratch\n",
+                "new/compose.yml": "services:\n  app:\n    build: .\n    image: local-app:test\n",
+            }
+        )
+        == []
+    )
+
+
+def test_inventory_follows_compose_dockerfile_paths() -> None:
+    sources = {
+        "new/compose.yml": (
+            "services:\n  app:\n    build:\n      context: ..\n      dockerfile: custom.build\n"
+        ),
+        "custom.build": "FROM node:22\n",
+    }
+    assert any("custom.build: external image" in issue for issue in _inventory_violations(sources))
+
 
 def _json(path: str) -> dict[str, object]:
     return json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))
@@ -43,6 +297,14 @@ def _json(path: str) -> dict[str, object]:
 
 def _yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _workflow_paths() -> list[Path]:
+    return sorted(
+        REPO_ROOT / path
+        for path in _tracked_sources()
+        if Path(path).parent == Path(".github/workflows") and Path(path).suffix in {".yml", ".yaml"}
+    )
 
 
 def _step_uses(job: dict[str, object]) -> list[str]:
@@ -106,30 +368,7 @@ def test_python_and_uv_have_one_executable_workspace_contract() -> None:
 
 def test_wrangler_has_one_installed_owner_and_no_ad_hoc_versions() -> None:
     root_package = _json("package.json")
-    data_proxy_package = _json("apps/data-proxy/package.json")
-
     assert root_package["devDependencies"]["wrangler"] == WRANGLER_VERSION
-    assert "wrangler" not in data_proxy_package.get("devDependencies", {})
-
-    offenders: list[str] = []
-    for relative in [
-        "package.json",
-        "apps/data-proxy/package.json",
-        "apps/web/CLOUDFLARE.md",
-        ".github/workflows/web.yml",
-        ".github/workflows/configure-data-edge.yml",
-        ".github/workflows/deploy-data-proxy.yml",
-        ".github/scripts/refresh-basemap-r2.mjs",
-    ]:
-        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-        if re.search(r"wrangler@\d", text, flags=re.IGNORECASE):
-            offenders.append(relative)
-    assert offenders == []
-
-    b9 = (REPO_ROOT / "apps/web/scripts/b9-displayed-values.mjs").read_text(encoding="utf-8")
-    assert r"4\.115\.0" not in b9
-    assert "devDependencies?.wrangler" in b9
-    assert "../../node_modules/.bin/wrangler" in b9
 
 
 def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
@@ -137,13 +376,13 @@ def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
     missing_setup: list[str] = []
     literal_node_versions: list[str] = []
 
-    for workflow_path in sorted(WORKFLOWS.glob("*.yml")):
+    for workflow_path in _workflow_paths():
         workflow = _yaml(workflow_path)
         for job_name, job in workflow.get("jobs", {}).items():
             if not isinstance(job, dict):
                 continue
             runs = _step_runs(job)
-            if not re.search(r"(^|[\s;&|])(node|bun|bunx)(?=\s|$)", runs):
+            if not re.search(r"(^|[\s;&|])(node|bun|bunx|npm|npx|pnpm|yarn)(?=\s|$)", runs):
                 continue
             label = f"{workflow_path.name}:{job_name}"
             consumers.append(label)
@@ -192,46 +431,23 @@ def test_browser_runtime_is_verified_from_installed_playwright_metadata() -> Non
 
     web_workflow = _yaml(WORKFLOWS / "web.yml")
     ci_runs = _step_runs(web_workflow["jobs"]["ci-work"])
-    assert "playwright-core/browsers.json" in artifact_verifier.read_text(encoding="utf-8")
-    assert "browser archive SHA-256 mismatch" in installer.read_text(encoding="utf-8")
-    assert "launchedBrowser.version()" in verifier.read_text(encoding="utf-8")
     assert "playwright-core install" not in ci_runs
     assert "install-browser-toolchain.test.mjs" in ci_runs
     assert "install-browser-toolchain.mjs" in ci_runs
     assert "verify-browser-toolchain.mjs" in ci_runs
 
-    b9 = (REPO_ROOT / "apps/web/scripts/b9-displayed-values.mjs").read_text(encoding="utf-8")
-    assert "verifyInstalledBrowserArtifact" in b9
-    assert "chromium.executablePath()" not in b9
-    assert "/usr/bin/google-chrome" not in b9
-
 
 def test_external_container_images_are_readable_and_immutable() -> None:
-    assert (REPO_ROOT / "apps/db/Dockerfile").read_text(encoding="utf-8").splitlines()[
-        0
-    ] == f"FROM {PYTHON_IMAGE}"
+    sources = _tracked_sources()
+    assert _external_docker_images(sources["apps/db/Dockerfile"]) == [PYTHON_IMAGE]
     assert PRODUCTION_PYTHON_VERSION in PYTHON_IMAGE
-    assert (REPO_ROOT / "apps/db/Dockerfile.health").read_text(encoding="utf-8").splitlines()[
-        0
-    ] == f"FROM {PYTHON_IMAGE}"
-    assert (REPO_ROOT / "apps/db/Dockerfile.postgis").read_text(encoding="utf-8").splitlines()[
-        0
-    ] == f"FROM {POSTGRES_IMAGE}"
+    assert _external_docker_images(sources["apps/db/Dockerfile.health"]) == [PYTHON_IMAGE]
+    assert _external_docker_images(sources["apps/db/Dockerfile.postgis"]) == [POSTGRES_IMAGE]
 
     compose = _yaml(REPO_ROOT / "apps/db/docker-compose.yml")
     disposable = _yaml(REPO_ROOT / "apps/db/docker-compose.real-db.yml")
     assert compose["services"]["caddy"]["image"] == CADDY_IMAGE
     assert disposable["services"]["postgres"]["image"] == DISPOSABLE_POSTGIS_IMAGE
-
-    external_images: list[str] = []
-    for compose_path in sorted((REPO_ROOT / "apps/db").glob("docker-compose*.yml")):
-        document = _yaml(compose_path)
-        for service in document.get("services", {}).values():
-            image = str(service.get("image", ""))
-            if image and not image.startswith("transit-"):
-                external_images.append(image)
-    assert external_images
-    assert all(re.search(r":[^@\s]+@sha256:[0-9a-f]{64}$", image) for image in external_images)
 
 
 def test_protected_ci_executes_container_runtime_proof_without_renaming_contexts() -> None:
@@ -250,7 +466,7 @@ def test_protected_ci_executes_container_runtime_proof_without_renaming_contexts
 
 def test_hosted_runner_series_and_gitleaks_installer_are_explicit() -> None:
     wrong_runners: list[str] = []
-    for workflow_path in sorted(WORKFLOWS.glob("*.yml")):
+    for workflow_path in _workflow_paths():
         workflow = _yaml(workflow_path)
         for job_name, job in workflow.get("jobs", {}).items():
             if isinstance(job, dict) and job.get("runs-on") != "ubuntu-24.04":

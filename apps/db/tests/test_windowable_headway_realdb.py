@@ -16,7 +16,7 @@ from datetime import date
 from sqlalchemy import text
 
 from transit_ops.gold.rollups import HEADWAY_GAP_HISTOGRAM_EDGES as EDGES
-from transit_ops.snapshots.builders.historic import _headway_by_grain
+from transit_ops.snapshots.builders.historic._spine import _headway_by_grain
 
 _PROVIDER = "stm_dense_hw"
 _ROUTE = "H1"

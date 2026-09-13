@@ -15,12 +15,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 import pytest
+from snapshot_storage_fixtures import MemorySnapshotStore
 
-from transit_ops.snapshots.publish import (
-    _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
-    PublishResult,
-    publish_snapshot,
+from transit_ops.snapshots import envelope, historic_compatibility, historic_receipts, historic_tier
+from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+    _ROUTE_INVENTORY_SQL,
 )
+from transit_ops.snapshots.publish import PublishResult, publish_snapshot
 from transit_ops.sql_registry import query_name
 
 # ---------------------------------------------------------------------------
@@ -34,16 +35,19 @@ class FakeResult:
     Supports:
     - ``.mappings()`` — returns self (iterable, yields zero rows)
     - ``__iter__``     — yields nothing (empty result set)
-    - ``.scalar_one()``— returns 0  (scalar aggregates, e.g. non_responding)
+    - ``.scalar_one()``— returns 0  (scalar aggregates, e.g. freshness)
     - ``.scalar()``    — returns 0  (alternate scalar accessor)
 
-    build_network uses scalar_one() for non_responding and freshness queries;
+    build_network uses scalar_one() for its freshness query;
     all other builders iterate .mappings().  build_manifest iterates .mappings()
     via next(iter(...)) which safely returns None on an empty result.
     """
 
     def mappings(self) -> FakeResult:
         return self
+
+    def all(self):
+        return []
 
     def __iter__(self):
         return iter([])  # no rows -> builders produce empty/default models
@@ -58,7 +62,9 @@ class FakeResult:
 class FakeConn:
     """Connection that returns FakeResult for every execute() call."""
 
-    def execute(self, *args, **kwargs) -> FakeResult:  # noqa: ANN002, ANN003
+    def execute(self, statement, params=None):  # noqa: ANN001
+        if query_name(statement) == "publish.lock.try_acquire":
+            return NamedRowsResult([True])
         return FakeResult()
 
 
@@ -138,7 +144,7 @@ class CloseTrackingStore(FakeStore):
         self.close_calls += 1
 
 
-class StatefulFakeStore:
+class StatefulFakeStore(MemorySnapshotStore):
     """Hash-gate-compatible in-memory store (get_json / put_bytes / full_key).
 
     ``keys`` records put_json keys (compat with old assertions); ``store`` keeps
@@ -146,8 +152,9 @@ class StatefulFakeStore:
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self.keys: list[str] = []
-        self.store: dict[str, bytes] = {}
+        self.store = self.objects
         self.get_json_calls: list[str] = []
 
     def full_key(self, rel_key: str) -> str:
@@ -366,34 +373,38 @@ def test_full_historic_rebuild_rejects_non_historic_before_io(monkeypatch) -> No
             )
 
 
+@pytest.mark.parametrize(
+    ("evidence_available", "failure_at"),
+    [(False, None), (True, None), (True, "entry"), (True, "write"), (True, "release")],
+)
 def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
-    monkeypatch,
+    monkeypatch, evidence_available, failure_at,
 ) -> None:
     from types import SimpleNamespace
 
     from transit_ops.snapshots import publish as snapshot_publish
 
-    observation_fields = snapshot_publish._HistoricPartitionObservation.__dataclass_fields__
+    observation_fields = historic_receipts._HistoricPartitionObservation.__dataclass_fields__
     assert "partition" not in observation_fields
     assert {"ref", "raw_day_count", "detached_summary"} <= set(observation_fields)
 
-    empty_one_entity = snapshot_publish.HistoryScopeCardinality(
+    empty_one_entity = historic_receipts.HistoryScopeCardinality(
         entity_count=1,
         month_count=0,
         dense_scope_count=0,
         observed_scope_count=0,
     )
-    assert snapshot_publish._receipt_cardinality_mapping(
+    assert historic_receipts._receipt_cardinality_mapping(
         "network",
         empty_one_entity,
         (),
     )[1]
-    assert not snapshot_publish._receipt_cardinality_mapping(
+    assert not historic_receipts._receipt_cardinality_mapping(
         "lines",
         empty_one_entity,
         (),
     )[1]
-    assert not snapshot_publish._receipt_cardinality_mapping(
+    assert not historic_receipts._receipt_cardinality_mapping(
         "stops",
         empty_one_entity,
         (),
@@ -416,7 +427,7 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
             pass
         yield object(), object()
 
-    _, _, batch_scope_build_ns = snapshot_publish._next_historic_partition(
+    _, _, batch_scope_build_ns = historic_receipts._next_historic_partition(
         iter(lazy_batch()),
         batch_run,
     )
@@ -425,6 +436,12 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
     assert batch_scope_build_ns == 0
 
     class Result:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return list(self.rows)
+
         def __init__(self, rows=()):  # noqa: ANN001
             self.rows = list(rows)
 
@@ -452,8 +469,12 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         @contextmanager
         def begin_nested(self):
             events.append("savepoint_begin")
+            if failure_at == "entry":
+                raise RuntimeError("savepoint entry failed")
             try:
                 yield self
+                if failure_at == "release":
+                    raise RuntimeError("savepoint release failed")
             except Exception:
                 events.append("savepoint_rollback")
                 raise
@@ -484,8 +505,8 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         lambda: ledger,
     )
     monkeypatch.setattr(
-        snapshot_publish,
-        "_historic_stamp",
+        historic_tier,
+        "publication_stamp",
         lambda: "2026-07-29T00:00:00Z",
     )
 
@@ -512,10 +533,8 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
                 scope_metric="child_gate",
             ):
                 pass
-            _historic_run.observations["network"].append(
-                SimpleNamespace(scope_class=scope_class)
-            )
-        _historic_run.receipt_evidence_available = True
+            _historic_run.observations["network"].append(SimpleNamespace(scope_class=scope_class))
+        _historic_run.receipt_evidence_available = evidence_available
         _historic_run.receipt_cardinality_gate_passed = True
         _historic_run.receipt_scope_cardinality = {
             "network": {
@@ -535,15 +554,17 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         )
         return ["historic/phase-ledger-fixture.json"]
 
-    def fail_receipts(*_args, **_kwargs):  # noqa: ANN002, ANN003
+    def persist_receipts(*_args, **_kwargs):
         events.append("receipt_write")
-        raise RuntimeError("receipt write failed")
+        if failure_at == "write":
+            raise RuntimeError("receipt write failed")
+        return historic_receipts.HistoricReceiptPersistenceStats(1, 1, 100, 100, 7, 11)
 
-    monkeypatch.setattr(snapshot_publish, "_publish_historic", publish_historic)
+    monkeypatch.setattr(historic_tier, "publish", publish_historic)
     monkeypatch.setattr(
-        snapshot_publish,
+        historic_receipts,
         "persist_historic_receipts",
-        fail_receipts,
+        persist_receipts,
     )
 
     result = snapshot_publish.publish_snapshot(
@@ -570,21 +591,27 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         "settled_candidate": 1,
     }
     assert telemetry["receipt_rows_attempted"] == 1
-    assert telemetry["receipt_rows_changed"] == 0
+    changed = int(evidence_available and failure_at is None)
+    assert telemetry["receipt_rows_changed"] == changed
     assert telemetry["receipt_json_bytes_attempted"] == 100
-    assert telemetry["receipt_json_bytes_changed"] == 0
-    assert telemetry["receipt_persist_failed"] is True
+    assert telemetry["receipt_json_bytes_changed"] == changed * 100
+    assert telemetry["receipt_persist_failed"] is (failure_at is not None)
     assert telemetry["timing_complete"] is True
-    assert events.index("savepoint_begin") < events.index("receipt_write")
-    assert events.index("receipt_write") < events.index("savepoint_rollback")
-    assert events.index("savepoint_rollback") < events.index("state_upsert")
-    assert events.index("state_upsert") < events.index("outer_commit")
-    assert "savepoint_commit" not in events
+    receipt_events = {
+        None: ["savepoint_begin", "receipt_write", "savepoint_commit"],
+        "entry": ["savepoint_begin"],
+        "write": ["savepoint_begin", "receipt_write", "savepoint_rollback"],
+        "release": ["savepoint_begin", "receipt_write", "savepoint_rollback"],
+    }[failure_at] if evidence_available else []
+    assert events == ["outer_begin", *receipt_events, "state_upsert", "outer_commit"]
+    assigned_stats = evidence_available and failure_at not in {"entry", "write"}
+    assert telemetry["stale_receipt_entities_deleted"] == (7 if assigned_stats else 0)
+    assert telemetry["stale_receipt_months_deleted"] == (11 if assigned_stats else 0)
     assert "outer_rollback" not in events
     assert len(state_params) == 1
     assert state_params[0]["historic_phase_detail"]["timing_complete"] is False
     assert state_params[0]["historic_receipt_rows_attempted"] == 1
-    assert state_params[0]["historic_receipt_rows_changed"] == 0
+    assert state_params[0]["historic_receipt_rows_changed"] == changed
 
 
 def test_publish_accepts_registry_kwarg() -> None:
@@ -621,6 +648,9 @@ def test_publish_static_writes_expected_keys() -> None:
             class M:
                 def fetchone(self):
                     return outer._rows[0] if outer._rows else None
+
+                def all(self):
+                    return list(outer._rows)
 
                 def __iter__(self):
                     return iter(outer._rows)
@@ -662,12 +692,22 @@ def test_publish_static_writes_expected_keys() -> None:
         # reliability-availability set for build_routes_index; 165 has reliability history.
         "static.reliability_route_ids": [{"route_id": "165"}],
         "static.routes_index": [
-            {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
-             "route_color": "009EE0", "route_type": 3}
+            {
+                "route_id": "165",
+                "route_short_name": "165",
+                "route_long_name": "Côte-Vertu",
+                "route_color": "009EE0",
+                "route_type": 3,
+            }
         ],
         "static.stops_index": [
-            {"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu",
-             "stop_lat": 45.49, "stop_lon": -73.66}
+            {
+                "stop_id": "51234",
+                "stop_code": "51234",
+                "stop_name": "Côte-Vertu",
+                "stop_lat": 45.49,
+                "stop_lon": -73.66,
+            }
         ],
         "static.labels": [
             {"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}
@@ -729,6 +769,7 @@ def test_publish_static_writes_expected_keys() -> None:
     assert "_meta/publish_state_static.json" in store.store
     # all data files carry the dataset loaded_at stamp, not upload time
     import json as _json
+
     ri = _json.loads(store.store["static/routes_index.json"])
     assert ri["generated_utc"] == "2026-06-01T00:00:00Z"
     # 165 is in the reliability-availability set -> its entry carries reliability=True
@@ -925,7 +966,7 @@ def test_publish_historic_hoists_name_catalogs_for_two_routes(monkeypatch) -> No
         lambda *args, **kwargs: SimpleNamespace(page_items=[], index=object()),
     )
 
-    snapshot_publish._build_historic_items(
+    historic_compatibility._build_items(
         conn,
         provider_id="stm",
         settings=FakeSettings(),
@@ -950,7 +991,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     from contextlib import contextmanager
 
     from transit_ops.snapshots.contract import NetworkTrend
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
     from transit_ops.snapshots.storage import LocalSnapshotStorage
 
     class _FakeResult:
@@ -963,6 +1004,9 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
             class M:
                 def fetchone(self):
                     return outer._rows[0] if outer._rows else None
+
+                def all(self):
+                    return list(outer._rows)
 
                 def __iter__(self):
                     return iter(outer._rows)
@@ -1013,75 +1057,130 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "on_time_count": 7,
                 "severe_count": 1,
                 "sum_delay_seconds": 240,
-                "source_generated_utc": datetime.datetime(
-                    2026, 6, 2, 1, tzinfo=datetime.UTC
-                ),
+                "source_generated_utc": datetime.datetime(2026, 6, 2, 1, tzinfo=datetime.UTC),
             }
         ],
         "history.network.fact": [],
         "history.network.cancellation": [],
         "history.network.occupancy": [],
         "receipts.network_daily": [
-            {"local_date": datetime.date(2025, 1, 1), "known_obs": 80, "on_time": 68,
-             "severe": 4, "pooled_delay_sec": 4000, "inclamp_obs": 80},
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2025, 1, 1),
+                "known_obs": 80,
+                "on_time": 68,
+                "severe": 4,
+                "pooled_delay_sec": 4000,
+                "inclamp_obs": 80,
+            },
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "severe": 5,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ],
         # build_network_trend: WEEK + MONTH grain re-aggregation of the daily sources.
         "network.trend.week_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
-             "pooled_delay_sec": 12000, "inclamp_obs": 200},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 200,
+                "on_time": 180,
+                "pooled_delay_sec": 12000,
+                "inclamp_obs": 200,
+            },
         ],
         "network.trend.week_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
         ],
         "network.trend.week_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
-             "few_seats": 25, "standing": 10, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 0,
+                "many_seats": 60,
+                "few_seats": 25,
+                "standing": 10,
+                "full": 5,
+            },
         ],
         "network.trend.month_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
-             "pooled_delay_sec": 90000, "inclamp_obs": 1000},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 1000,
+                "on_time": 820,
+                "pooled_delay_sec": 90000,
+                "inclamp_obs": 1000,
+            },
         ],
         "network.trend.month_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
         ],
         "network.trend.month_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
-             "few_seats": 30, "standing": 15, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 10,
+                "many_seats": 40,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
         ],
         "hotspots.list": [
-            {"entity_kind": "route", "entity_id": "165", "issue_count": 5,
-             "severity_label": "high"},
+            {
+                "entity_kind": "route",
+                "entity_id": "165",
+                "issue_count": 5,
+                "severity_label": "high",
+            },
         ],
         "repeat.offenders": [
-            {"entity_kind": "route", "entity_id": "165", "route_id": "165",
-             "recurrence_days": 7, "window_days": 30, "avg_delay_seconds": 180,
-             "severity_label": "high"},
+            {
+                "entity_kind": "route",
+                "entity_id": "165",
+                "route_id": "165",
+                "recurrence_days": 7,
+                "window_days": 30,
+                "avg_delay_seconds": 180,
+                "severity_label": "high",
+            },
         ],
         "alerts.history": [
-            {"alert_header_text": "Votre ligne", "header_text_en": None,
-             "alert_id": None, "severity": "WARNING",
-             "routes": ["165"], "stops": ["51234"],
-             "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC),
-             "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.UTC)},
+            {
+                "alert_header_text": "Votre ligne",
+                "header_text_en": None,
+                "alert_id": None,
+                "severity": "WARNING",
+                "routes": ["165"],
+                "stops": ["51234"],
+                "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC),
+                "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.UTC),
+            },
         ],
         "alerts.archive.publish": [],
         "provenance.sources": [
-            {"dataset_kind": "static_schedule", "storage_backend": "s3",
-             "storage_path": "bucket/path", "source_url": None,
-             "loaded_at_utc": datetime.datetime(2026, 6, 1, 0, 0, tzinfo=datetime.UTC)},
+            {
+                "dataset_kind": "static_schedule",
+                "storage_backend": "s3",
+                "storage_path": "bucket/path",
+                "source_url": None,
+                "loaded_at_utc": datetime.datetime(2026, 6, 1, 0, 0, tzinfo=datetime.UTC),
+            },
         ],
         "provenance.freshness": [
-            {"endpoint_key": "vehicle_positions", "status": "ok",
-             "completed_age_seconds": 30},
+            {"endpoint_key": "vehicle_positions", "status": "ok", "completed_age_seconds": 30},
         ],
         "static.stop_names": [
             {"stop_id": "51234", "stop_name": "Côte-Vertu"},
@@ -1091,70 +1190,136 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         ],
         # build_stop_reliability: shift + day-type grains + weekday seasonality.
         "stop.reliability.by_grain": [
-            {"stop_id": "51234", "grain": "am_peak", "obs": 10, "severe": 1,
-             "weighted_delay_sec": 600.0},
-            {"stop_id": "51234", "grain": "weekday", "obs": 14, "severe": 1,
-             "weighted_delay_sec": 1080.0},
+            {
+                "stop_id": "51234",
+                "grain": "am_peak",
+                "obs": 10,
+                "severe": 1,
+                "weighted_delay_sec": 600.0,
+            },
+            {
+                "stop_id": "51234",
+                "grain": "weekday",
+                "obs": 14,
+                "severe": 1,
+                "weighted_delay_sec": 1080.0,
+            },
         ],
         "stop.reliability.dow": [
-            {"stop_id": "51234", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
-             "weighted_delay_sec": 1200.0},
-            {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
-             "weighted_delay_sec": None},
+            {
+                "stop_id": "51234",
+                "day_of_week_iso": 1,
+                "dow_obs": 20,
+                "severe": 2,
+                "weighted_delay_sec": 1200.0,
+            },
+            {
+                "stop_id": "51234",
+                "day_of_week_iso": 7,
+                "dow_obs": 0,
+                "severe": 0,
+                "weighted_delay_sec": None,
+            },
         ],
         # route IDs with history (per-route reliability enumerator).
         "route.spine.route_ids": [
-            ("101",), ("202",),
+            ("101",),
+            ("202",),
         ],
         "route.cancellation.daily": [
-            {"provider_local_date": datetime.date(2026, 6, 1),
-             "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
-             "total_trip_days": 120,
-             # GC2 H1 scheduled-universe split (delivered = total - canceled = 117).
-             "scheduled_trip_days": 130, "delivered_trip_days": 117,
-             "silent_trip_days": 10, "service_completeness_pct": 90.0},
+            {
+                "provider_local_date": datetime.date(2026, 6, 1),
+                "cancellation_rate_pct": 2.5,
+                "canceled_trip_days": 3,
+                "total_trip_days": 120,
+                # GC2 H1 scheduled-universe split (delivered = total - canceled = 117).
+                "scheduled_trip_days": 130,
+                "delivered_trip_days": 117,
+                "silent_trip_days": 10,
+                "service_completeness_pct": 90.0,
+            },
         ],
         # tier-3 2D shift×day_type crosstab: the windowed spine projector runs per grain
         # (S14 maps route.spine.anchor for the scalar habits read); its windowed reads are
         # unmapped here → [] → no crosstab rows, so the by-grain output stays empty.
         "route.delay.by_crowding": [
-            {"band": "many_seats", "delay_obs": 40, "sum_delay_sec": 3600.0,
-             "w_p50_sec": None, "p50_obs": 0, "day_count": 1},
+            {
+                "band": "many_seats",
+                "delay_obs": 40,
+                "sum_delay_sec": 3600.0,
+                "w_p50_sec": None,
+                "p50_obs": 0,
+                "day_count": 1,
+            },
         ],
         "route.occupancy.by_dow": [
-            {"day_of_week_iso": 1, "empty": 0, "many_seats": 50,
-             "few_seats": 30, "standing": 15, "full": 5},
-            {"day_of_week_iso": 6, "empty": 40, "many_seats": 30,
-             "few_seats": 20, "standing": 10, "full": 0},
+            {
+                "day_of_week_iso": 1,
+                "empty": 0,
+                "many_seats": 50,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
+            {
+                "day_of_week_iso": 6,
+                "empty": 40,
+                "many_seats": 30,
+                "few_seats": 20,
+                "standing": 10,
+                "full": 0,
+            },
         ],
         "route.occupancy.by_grain": [
-            {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
-             "few_seats": 30, "standing": 15, "full": 5},
+            {
+                "d": datetime.date(2026, 6, 1),
+                "empty": 0,
+                "many_seats": 50,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
         ],
         "route.occupancy.band_window": [
             {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
         ],
         "stop.occupancy.band_window": [
-            {"stop_id": "51234", "empty": 0, "many_seats": 50,
-             "few_seats": 30, "standing": 15, "full": 5},
+            {
+                "stop_id": "51234",
+                "empty": 0,
+                "many_seats": 50,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
         ],
         "route.service_span.daily": [
-            {"provider_local_date": datetime.date(2026, 6, 1),
-             "first_trip_start_utc": datetime.datetime(2026, 6, 1, 10, 0,
-                                                       tzinfo=datetime.UTC),
-             "last_trip_start_utc": datetime.datetime(2026, 6, 2, 1, 0,
-                                                      tzinfo=datetime.UTC),
-             "service_span_min": 900, "first_trip_delay_seconds": 30,
-             "last_trip_delay_seconds": 90, "trip_count": 120},
+            {
+                "provider_local_date": datetime.date(2026, 6, 1),
+                "first_trip_start_utc": datetime.datetime(2026, 6, 1, 10, 0, tzinfo=datetime.UTC),
+                "last_trip_start_utc": datetime.datetime(2026, 6, 2, 1, 0, tzinfo=datetime.UTC),
+                "service_span_min": 900,
+                "first_trip_delay_seconds": 30,
+                "last_trip_delay_seconds": 90,
+                "trip_count": 120,
+            },
         ],
         "route.skipped_stop.daily": [
-            {"provider_local_date": datetime.date(2026, 6, 1),
-             "skipped_stop_rate_pct": 3.94, "skipped_stop_count": 12,
-             "stop_time_update_count": 305},
+            {
+                "provider_local_date": datetime.date(2026, 6, 1),
+                "skipped_stop_rate_pct": 3.94,
+                "skipped_stop_count": 12,
+                "stop_time_update_count": 305,
+            },
         ],
         "route.reliability.daily": [
-            {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
-             "avg_delay_sec": 90, "severe": 5},
+            {
+                "d": datetime.date(2026, 6, 1),
+                "known_obs": 50,
+                "on_time": 45,
+                "avg_delay_sec": 90,
+                "severe": 5,
+            },
         ],
         # route.spine.weekly / .monthly / by_shift / by_daytype are the spine
         # projectors (h1..h21 histogram shape); the old publish dispatch fed them
@@ -1166,8 +1331,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         # _scheduled_headway_by_shift -> dataset version / rep dates / services / schedule.
         "static.dataset_version": [{"dataset_version_id": 1}],
         "static.rep_dates": [
-            {"weekday_date": datetime.date(2026, 6, 3),
-             "weekend_date": datetime.date(2026, 6, 6)},
+            {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)},
         ],
         "static.active_services": [("svc_wd",)],
         "static.route_schedule": [],
@@ -1176,14 +1340,17 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         # MIN_N so the same dispatch fed to habits_by_grain is suppressed there.
         "route.spine.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "route.habit.spine": [
-            {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7,
-             "known_obs": 0},
+            {
+                "day_of_week_iso": 1,
+                "hour_of_day_local": 8,
+                "repeat_problem_score": 0.7,
+                "known_obs": 0,
+            },
         ],
         # DB-0067: stop spine anchor drives the windowed weak-stop + stop-grain reads.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "stop.reliability.by_route": [
-            {"stop_id": "51234", "route_id": "101", "obs": 100,
-             "weighted_delay_sec": 9000},
+            {"stop_id": "51234", "route_id": "101", "obs": 100, "weighted_delay_sec": 9000},
         ],
         # build_stop_reliability weekly/monthly (GROUP BY stop_id) -> surviving stop.
         "stop.reliability.weekly": [
@@ -1201,22 +1368,35 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
             {"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
-            {"provider_local_date": datetime.date(2025, 1, 1),
-             "affected_route_count": 2, "affected_stop_count": 7,
-             "delayed_trip_count": 20, "severe_delay_count": 4,
-             "alert_count": 1, "rider_impact_score": 0.2},
-            {"provider_local_date": datetime.date(2026, 6, 1),
-             "affected_route_count": 3, "affected_stop_count": 12,
-             "delayed_trip_count": 45, "severe_delay_count": 5,
-             "alert_count": 2, "rider_impact_score": 0.35},
+            {
+                "provider_local_date": datetime.date(2025, 1, 1),
+                "affected_route_count": 2,
+                "affected_stop_count": 7,
+                "delayed_trip_count": 20,
+                "severe_delay_count": 4,
+                "alert_count": 1,
+                "rider_impact_score": 0.2,
+            },
+            {
+                "provider_local_date": datetime.date(2026, 6, 1),
+                "affected_route_count": 3,
+                "affected_stop_count": 12,
+                "delayed_trip_count": 45,
+                "severe_delay_count": 5,
+                "alert_count": 2,
+                "rider_impact_score": 0.35,
+            },
         ],
         "receipts.worst_route": [
-            {"d": datetime.date(2026, 6, 1), "route_id": "165",
-             "avg_delay_seconds": 200},
+            {"d": datetime.date(2026, 6, 1), "route_id": "165", "avg_delay_seconds": 200},
         ],
         "receipts.worst_stop": [
-            {"d": datetime.date(2026, 6, 1), "stop_id": "51234",
-             "avg_delay_seconds": 180, "max_delay_seconds": 600},
+            {
+                "d": datetime.date(2026, 6, 1),
+                "stop_id": "51234",
+                "avg_delay_seconds": 180,
+                "max_delay_seconds": 600,
+            },
         ],
     }
 
@@ -1281,7 +1461,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
     import pathlib
 
-    from transit_ops.snapshots import publish as snapshot_publish
     from transit_ops.snapshots.contract import Receipt, ReceiptsIndex, RouteReliabilityIndex
 
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
@@ -1296,7 +1475,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         )
         for date in ri.dates
     }
-    assert ri.collection_generation_id == snapshot_publish._receipts_collection_generation_id(
+    assert ri.collection_generation_id == historic_compatibility._receipts_collection_generation_id(
         published_receipts
     )
 
@@ -1428,8 +1607,13 @@ def test_publish_records_state_row_per_tier() -> None:
     assert len(inserts) == 1
     assert "ON CONFLICT (provider_id, tier)" in inserts[0]
     # S11: the state upsert now carries the gate-telemetry columns.
-    for col in ("gate_checks_run", "gate_errors", "gate_warnings",
-                "gate_verdict", "gate_generated_utc"):
+    for col in (
+        "gate_checks_run",
+        "gate_errors",
+        "gate_warnings",
+        "gate_verdict",
+        "gate_generated_utc",
+    ):
         assert col in inserts[0], f"{col} missing from state upsert SQL"
 
 
@@ -1453,13 +1637,19 @@ def test_gate_summary_verdict_pass_warn_fail() -> None:
     from transit_ops.snapshots.publish import _gate_summary
 
     # errors>0 -> fail (dominates warnings).
-    assert _gate_summary(
-        {"checks_run": 5, "errors": 2, "warnings": 3, "generated_utc": "t"}
-    )["gate_verdict"] == "fail"
+    assert (
+        _gate_summary({"checks_run": 5, "errors": 2, "warnings": 3, "generated_utc": "t"})[
+            "gate_verdict"
+        ]
+        == "fail"
+    )
     # warnings>0, no errors -> warn.
-    assert _gate_summary(
-        {"checks_run": 5, "errors": 0, "warnings": 3, "generated_utc": "t"}
-    )["gate_verdict"] == "warn"
+    assert (
+        _gate_summary({"checks_run": 5, "errors": 0, "warnings": 3, "generated_utc": "t"})[
+            "gate_verdict"
+        ]
+        == "warn"
+    )
     # clean -> pass.
     s = _gate_summary({"checks_run": 5, "errors": 0, "warnings": 0, "generated_utc": "t"})
     assert s["gate_verdict"] == "pass"
@@ -1475,7 +1665,7 @@ class _ParamRecordingConn(FakeConn):
     def execute(self, statement, params=None):  # noqa: ANN001
         if "INSERT INTO core.snapshot_publish_state" in str(statement):
             self.state_params.append(dict(params or {}))
-        return FakeResult()
+        return super().execute(statement, params)
 
 
 def test_publish_live_persists_state_with_gate_summary() -> None:
@@ -1544,15 +1734,15 @@ def test_publish_static_second_run_skips_unchanged() -> None:
 def test_publish_static_rewrites_when_fingerprint_changes() -> None:
     import json
 
-    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.storage import CACHE_CONTROL, _body
 
     store = StatefulFakeStore()
     res1 = _publish_static_once(store, _RecordingConn())
     run1_written = set(res1.keys_written)
 
-    # Corrupt the stored state fingerprint -> next run must rewrite everything.
+    # Prior static output must rebuild even when the cache headers are unchanged.
     state = json.loads(store.store["_meta/publish_state_static.json"])
-    state["fingerprint"] = "v1|cc:STALE-HEADER"
+    state["fingerprint"] = f"v1|cc:{CACHE_CONTROL['static']}"
     store.store["_meta/publish_state_static.json"] = _body(state)
 
     res2 = _publish_static_once(store, _RecordingConn())
@@ -1603,8 +1793,9 @@ def test_static_gate_blocks_sentinel_payload(monkeypatch) -> None:
     from transit_ops.snapshots import publish as _pub
 
     def _poison(conn, storage, *, provider_id, settings, stamp):  # noqa: ANN001, ARG001
-        storage.put_json("static/routes_index.json",
-                         {"generated_utc": stamp, "bad": 9999.9999}, tier="static")
+        storage.put_json(
+            "static/routes_index.json", {"generated_utc": stamp, "bad": 9999.9999}, tier="static"
+        )
 
     monkeypatch.setattr(_pub, "_publish_static", _poison)
 
@@ -1620,15 +1811,20 @@ def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
     from transit_ops.snapshots import publish as _pub
 
     def _poison(conn, storage, *, provider_id, settings, stamp):  # noqa: ANN001, ARG001
-        storage.put_json("static/routes_index.json",
-                         {"generated_utc": stamp, "bad": 9999.9999}, tier="static")
+        storage.put_json(
+            "static/routes_index.json", {"generated_utc": stamp, "bad": 9999.9999}, tier="static"
+        )
 
     monkeypatch.setattr(_pub, "_publish_static", _poison)
 
     store = StatefulFakeStore()
     res = publish_snapshot(
-        "stm", tier="static", settings=FakeSettings(),
-        engine=_RecordingEngine(_RecordingConn()), storage=store, force=True,
+        "stm",
+        tier="static",
+        settings=FakeSettings(),
+        engine=_RecordingEngine(_RecordingConn()),
+        storage=store,
+        force=True,
     )
     assert "static/routes_index.json" in res.keys_written
 
@@ -1650,6 +1846,7 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     res = _publish_static_once(store, _RecordingConn(), settings=BasemapSettings())
     assert "static/basemap.json" in res.keys_written
     import json
+
     bm = json.loads(store.store["static/basemap.json"])
     assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
     assert bm["format"] == "pmtiles"
@@ -1662,7 +1859,7 @@ def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
     route_id IS NOT NULL at build, so the '__unrouted__' sentinel never appears —
     the exclusion is a build-time invariant, not a SQL-level filter.
     """
-    sql = str(_DISTINCT_HISTORIC_ROUTE_IDS_SQL)
+    sql = str(_ROUTE_INVENTORY_SQL)
     assert "FROM gold.route_delay_spine" in sql
     assert "MAX(provider_local_date) AS spine_anchor" in sql
     assert "GROUP BY route_id" in sql
@@ -1756,13 +1953,16 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
 
     monkeypatch.setattr(_pub, "_publish_static", _spy)
 
-    good_fp = {"fingerprint": state_fingerprint("static"), "hashes": {"a": "b"}}
-    stale_fp = {"fingerprint": "v0|cc:stale", "hashes": {"a": "b"}}
+    good_fp = {"fingerprint": state_fingerprint("static"), "hashes": {"a": "0" * 32}}
+    stale_fp = {"fingerprint": "v0|cc:stale", "hashes": {"a": "0" * 32}}
 
     def _run(*, skip_row, fp_doc):
         return _pub.publish_snapshot(
-            "stm", tier="static", settings=FakeSettings(),
-            engine=_Engine(_Conn(skip_row=skip_row)), storage=_Store(fp_doc=fp_doc),
+            "stm",
+            tier="static",
+            settings=FakeSettings(),
+            engine=_Engine(_Conn(skip_row=skip_row)),
+            storage=_Store(fp_doc=fp_doc),
         )
 
     # 1) unchanged dataset + matching fingerprint -> SKIP (publisher never runs).
@@ -1828,7 +2028,7 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
         lambda *a, **k: SimpleNamespace(page_items=[], index=object()),
     )
 
-    items, route_items, stages, _archive = snapshot_publish._build_historic_items(
+    items, route_items, stages, _archive = historic_compatibility._build_items(
         RecordingNamedConn({}),
         provider_id="stm",
         settings=FakeSettings(),
@@ -1848,8 +2048,8 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
     assert stages[2][0] == [route_index_item]
 
     published_items = [*route_items, route_index_item]
-    snapshot_publish._stamp_envelope(published_items, provider_id="stm", stamp=stamp)
-    assert all(item[1].methodology_version == "reliability-1" for item in published_items)
+    envelope.stamp_envelope(published_items, provider_id="stm", stamp=stamp)
+    assert all(item[1].methodology_version == "reliability-2" for item in published_items)
     assert all(item[1].publish_generation_id == f"stm@{stamp}" for item in published_items)
 
     fingerprint = state_fingerprint("historic")
@@ -1872,8 +2072,7 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
     assert identical.skipped == [item[0] for item in published_items]
 
     changed_items = [
-        (rel_key, payload.model_copy(deep=True), tier)
-        for rel_key, payload, tier in published_items
+        (rel_key, payload.model_copy(deep=True), tier) for rel_key, payload, tier in published_items
     ]
     changed_items[0][1].name = "Changed Route One"
     changed = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)

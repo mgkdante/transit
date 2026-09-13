@@ -1,8 +1,9 @@
-import { render, within } from '@testing-library/svelte';
+import { render, within, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Footer from './Footer.svelte';
+import { tick } from 'svelte';
 
 const PROVIDER_NAME = 'Société de transport de Montréal';
 const MANIFEST_ATTRIBUTION = '© Agence exemple | Licence ouverte 2.0';
@@ -70,6 +71,7 @@ function resolveCssColor(value: string): string {
 }
 
 afterEach(() => {
+	vi.unstubAllGlobals();
 	vi.useRealTimers();
 	document.documentElement.removeAttribute('data-theme');
 	document.documentElement.style.removeProperty('--line-amber');
@@ -78,6 +80,32 @@ afterEach(() => {
 });
 
 describe('Footer', () => {
+	it('tracks footer visibility and releases its observer on unmount', async () => {
+		let notify: IntersectionObserverCallback;
+		const observe = vi.fn();
+		const disconnect = vi.fn();
+		vi.stubGlobal(
+			'IntersectionObserver',
+			class {
+				observe = observe;
+				disconnect = disconnect;
+				constructor(callback: IntersectionObserverCallback) {
+					notify = callback;
+				}
+			},
+		);
+		const view = render(Footer, { locale: 'en' });
+		const footer = view.getByTestId('footer');
+		await waitFor(() => expect(observe).toHaveBeenCalledWith(footer));
+		for (const isIntersecting of [true, false]) {
+			notify!([{ isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
+			await tick();
+			expect(footer).toHaveAttribute('data-in-view', String(isIntersecting));
+		}
+		view.unmount();
+		expect(disconnect).toHaveBeenCalledOnce();
+	});
+
 	it.each(localeCases)(
 		'renders the brand and three localized navigation landmarks in canonical order',
 		({ locale, exploreLabel, auditLabel, legalLabel, homeHref, tagline, links }) => {
@@ -128,7 +156,7 @@ describe('Footer', () => {
 			for (const nav of [explore, audit, legal]) {
 				const group = nav.querySelector<HTMLElement>('[data-slot="footer-group"]');
 				expect(group).not.toBeNull();
-				expect(group?.style.getPropertyValue('--size-tap-min')).toBe('0px');
+				expect(group?.style.getPropertyValue('--size-tap-min')).toBe('');
 			}
 
 			// The house link belongs to BrandCluster, not a third CONNECT group.

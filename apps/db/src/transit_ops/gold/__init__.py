@@ -31,9 +31,9 @@ from transit_ops.gold.marts import (
     GoldRealtimeRefreshResult,
     GoldStaticRefreshResult,
     build_gold_marts,
-    refresh_gold_realtime,
     refresh_gold_static,
 )
+from transit_ops.gold.realtime import initialize_realtime_serving, refresh_gold_realtime
 from transit_ops.gold.rollups import (
     REBUILDABLE_KINDS,
     WarmRollupBuildResult,
@@ -56,6 +56,7 @@ __all__ = [
     "alert_archive_default_bounds",
     "build_gold_marts",
     "build_warm_rollups",
+    "initialize_realtime_serving",
     "provider_is_seeded",
     "rebuild_warm_rollups",
     "refresh_gold_realtime",

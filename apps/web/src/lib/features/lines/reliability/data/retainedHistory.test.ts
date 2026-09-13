@@ -404,6 +404,39 @@ describe('buildRetainedLineHistory', () => {
 		]);
 	});
 
+	it.each([
+		['reversed', '2026-01-31T10:00:00Z', '2026-01-31T09:00:00Z', null],
+		['reversed before rounding', '2026-01-31T10:00:00Z', '2026-01-31T09:59:59.999Z', null],
+		['timezone-less first', '2026-01-31T10:00:00', '2026-01-31T11:00:00Z', null],
+		['timezone-less last', '2026-01-31T10:00:00Z', '2026-01-31T11:00:00', null],
+		['invalid last', '2026-01-31T10:00:00Z', 'invalid', null],
+		['missing first', null, '2026-01-31T11:00:00Z', null],
+		['equal instants', '2026-01-31T06:00:00-04:00', '2026-01-31T12:00:00+02:00', 0],
+		['75.5 seconds', '2026-01-31T10:00:15.250Z', '2026-01-31T10:01:30.750Z', 1],
+		['whole-minute half tie', '2026-01-31T10:00:00Z', '2026-01-31T10:01:30Z', 2],
+	] as const)(
+		'keeps retained span validity and rounding coherent for %s',
+		(_name, first, last, minutes) => {
+			const { index, partitions } = completeFixture();
+			const source = partitions
+				.flatMap((partition) => partition.days)
+				.find((day) => day.date === '2026-01-31')!.service_span!;
+			source.first_trip_utc = first;
+			source.last_trip_utc = last;
+			const value = buildRetainedLineHistory(ENTITY_ID, index, partitions, WINDOW).value!;
+			expect(value.serviceSpans[0]).toEqual({
+				date: '2026-01-31',
+				first_trip_utc: first,
+				last_trip_utc: last,
+				service_span_min: minutes,
+				first_trip_delay_min: 0,
+				last_trip_delay_min: 1,
+				trip_count: 3,
+			});
+			expect(value.serviceSpans[1]).toMatchObject({ date: '2026-02-01', service_span_min: 1050 });
+		},
+	);
+
 	it('returns a partial value when only delay is retained while preserving zero numerators', () => {
 		const date = '2026-02-01';
 		const ref = partitionRef(ENTITY_ID, '2026-02', 'd', date, date, 1);

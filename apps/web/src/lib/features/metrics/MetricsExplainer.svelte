@@ -194,6 +194,7 @@
 	// is a non-metric section, so it leads the ToC with an icon badge (not the
 	// metric number run); the same anchor is its data-toc hook + ToC entry id.
 	const PROVENANCE_ANCHOR = 'metrics-provenance';
+	const CONFIDENCE_INTERVALS_ANCHOR = 'confidence-intervals';
 
 	const tocEntries = $derived.by((): TocEntry[] => [
 		// The provenance preamble opens the page — a non-metric section, so it
@@ -322,7 +323,8 @@
 		if (anchor === requestedHash) return;
 		requestedHash = anchor;
 		const generation = ++navigationGeneration;
-		if (anchor && openableAnchors.has(anchor)) void navigate(anchor, generation);
+		if (anchor && (openableAnchors.has(anchor) || anchor === CONFIDENCE_INTERVALS_ANCHOR))
+			void navigate(anchor, generation);
 	}
 
 	onMount(() => {
@@ -362,7 +364,8 @@
 	// scroll clamping uses call-time geometry. Reduced-motion drops the smooth
 	// scroll and its transitions, so the settle is two frames there.
 	async function navigate(id: string, generation = ++navigationGeneration): Promise<void> {
-		if (openableAnchors.has(id)) openCard(id);
+		const card = id === CONFIDENCE_INTERVALS_ANCHOR ? PROVENANCE_ANCHOR : id;
+		if (openableAnchors.has(card)) openCard(card);
 		await tick();
 		const target = tocElement(id);
 		await settleLayout(target);
@@ -571,6 +574,17 @@
 									{t.provenance.howWeMeasure.serviceDay.heading}
 								</h3>
 								<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
+							</div>
+							<div class="metrics-measure__item" id={CONFIDENCE_INTERVALS_ANCHOR}>
+								<h3 class="metrics-measure__heading">
+									{t.provenance.howWeMeasure.confidenceInterval.heading}
+								</h3>
+								<p class="metric__prose">{t.provenance.howWeMeasure.confidenceInterval.body}</p>
+								<a
+									class="metric__top"
+									href="https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm"
+									>{t.provenance.howWeMeasure.confidenceInterval.reference}</a
+								>
 							</div>
 							<div class="metrics-measure__item">
 								<h3 class="metrics-measure__heading">

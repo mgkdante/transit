@@ -139,7 +139,7 @@ const VEHICLES: Vehicle[] = [
 		id: 'busLate',
 		lat: 45.5,
 		lon: -73.6,
-		status: 'late',
+		status: 'severe',
 		updated_utc: '2026-06-15T12:00:00Z',
 		route: '161',
 		trip: 'tLate',
@@ -392,7 +392,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => routeSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(36);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(39);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -703,7 +703,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
 		const error = await screen.findByRole('alert');
-		expect(error).toHaveTextContent('/v1 contract unreachable');
+		expect(error).toHaveTextContent('Data unavailable');
 		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
 
 		await fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
@@ -966,6 +966,19 @@ describe('RouteDetail Detail tab: service alerts affecting this route', () => {
 });
 
 describe('RouteDetail Detail tab: current-buses roster', () => {
+	it.each([
+		{ status: 'on_time', delay_min: 1, tone: 'on-time', trip: 'tRounded' },
+		{ status: 'late', delay_min: 5, tone: 'late', trip: undefined },
+		{ status: 'unknown', delay_min: 5, tone: 'unknown', trip: 'tUnknown' },
+	] as const)('uses published $status status when delay rounds to $delay_min minutes', (bus) => {
+		liveIndex = buildIndex([{ ...VEHICLES[0], ...bus }]);
+		renderRoute();
+		const bar = document.querySelector('[data-testid="route-roster"] [data-slot="severity-bar"]');
+		const fill = bar?.querySelector('.dv-severity-fill') as HTMLElement;
+		expect(fill.style.background).toContain(`--dataviz-status-${bus.tone}`);
+		expect(bar).toHaveAttribute('data-severity', 'watch');
+	});
+
 	it('renders one row per live vehicle on this route, each linking to its trip', () => {
 		renderRoute();
 

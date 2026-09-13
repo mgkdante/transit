@@ -4,11 +4,11 @@ import json
 import logging
 from collections import Counter
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from transit_ops.gold import rollups
+from transit_ops.gold import delay_cohorts, delay_days, delay_periods, rollups
 from transit_ops.gold.rollups import (
     REBUILDABLE_KINDS,
     WarmRollupBuildResult,
@@ -22,6 +22,14 @@ from transit_ops.maintenance.gold import (
     GOLD_APPEND_ONLY_DAILY_TABLES,
 )
 from transit_ops.settings import Settings
+
+
+@pytest.fixture(autouse=True)
+def fixed_rollup_clock(monkeypatch):
+    now = datetime(2026, 3, 26, 12, tzinfo=UTC)
+    monkeypatch.setattr(rollups, "utc_now", lambda: now)
+    monkeypatch.setattr(delay_periods, "utc_now", lambda: now)
+
 
 # Tables pruned by prune_warm_rollup_storage (maintenance.py retention registry).
 # These daily marts (route_headway_by_shift, repeat_offender) are full-rebuilt
@@ -45,13 +53,11 @@ BUILD_REPORTING_AGGREGATE_TABLES = (
 )
 
 REPORTING_AGGREGATE_ROWCOUNTS = {
-    table_name: index
-    for index, table_name in enumerate(REPORTING_AGGREGATE_TABLES, start=10)
+    table_name: index for index, table_name in enumerate(REPORTING_AGGREGATE_TABLES, start=10)
 }
 
 BUILD_REPORTING_AGGREGATE_ROWCOUNTS = {
-    table_name: index
-    for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
+    table_name: index for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
 }
 
 APPEND_ONLY_DAILY_STAGES = (
@@ -121,6 +127,22 @@ class IterableResult:
     def fetchall(self) -> list:
         return self.rows
 
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.rows[0] if self.rows else None
+
+    def one(self):
+        assert len(self.rows) == 1
+        return self.rows[0]
+
 
 class FakeRow:
     def __init__(self, period_start_utc: datetime) -> None:
@@ -160,6 +182,31 @@ class FakeConnection:
         sql = str(statement)
         self.executed.append(sql)
 
+        if statement in (
+            rollups.SELECT_AVAILABLE_CAPTURE_DAYS,
+            rollups.SELECT_MISSING_CAPTURE_DAYS,
+        ):
+            return IterableResult(
+                [
+                    row
+                    for row in self.rebuild_missing_days or []
+                    if params["floor_key"] <= row.date_key < params["today_key"]
+                ]
+            )
+        if statement is rollups._CAPTURE_DAY_BOUNDS:
+            start = datetime.combine(params["local_date"], datetime.min.time(), tzinfo=UTC)
+            return IterableResult([(start, start + timedelta(days=1))])
+        if statement in (delay_days._STATUS, delay_days._DAY_STATE):
+            return IterableResult([])
+        if statement is delay_cohorts._COMPLETE_WINDOW:
+            return ScalarResult(True)
+
+        if "SELECT clock_timestamp()" in sql:
+            return ScalarResult(datetime(2026, 3, 26, 12, tzinfo=UTC))
+        if "SELECT EXISTS" in sql and "FROM gold.trip_delay_summary_5m" in sql:
+            return ScalarResult(False)
+        if "SELECT c.hour FROM child" in sql:
+            return IterableResult([])
         # Cheap provider_is_seeded EXISTS probe (SELECT 1 ... LIMIT 1). Shares
         # the gold.dim_provider table but, unlike the calendar read below, has no
         # "AT TIME ZONE" — match it FIRST so it never falls through to that branch.
@@ -233,18 +280,10 @@ class FakeConnection:
                 return IterableResult(list(self.rebuild_missing_days))
             return IterableResult([])
 
-        if (
-            "fact_vehicle_snapshot" in sql
-            and "snapshot_date_key" in sql
-            and "INSERT" not in sql
-        ):
+        if "fact_vehicle_snapshot" in sql and "snapshot_date_key" in sql and "INSERT" not in sql:
             return IterableResult([])
 
-        if (
-            "fact_trip_delay_snapshot" in sql
-            and "snapshot_date_key" in sql
-            and "INSERT" not in sql
-        ):
+        if "fact_trip_delay_snapshot" in sql and "snapshot_date_key" in sql and "INSERT" not in sql:
             return IterableResult([])
 
         if (
@@ -332,9 +371,8 @@ class FakeConnection:
             if f"INSERT INTO gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
             if (
-                ("SELECT COUNT(*)" in sql or "SELECT count(*)" in sql)
-                and f"FROM gold.{table_name}" in sql
-            ):
+                "SELECT COUNT(*)" in sql or "SELECT count(*)" in sql
+            ) and f"FROM gold.{table_name}" in sql:
                 return ScalarResult(rowcount)
             if f"DELETE FROM gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
@@ -342,10 +380,7 @@ class FakeConnection:
         # Windowed watermark DELETE for rebuild_warm_rollups — MORE SPECIFIC than
         # the retention-prune's generic `DELETE FROM gold.warm_rollup_periods`
         # below, so it must be matched FIRST.
-        if (
-            "DELETE FROM gold.warm_rollup_periods" in sql
-            and "rollup_kind = :rollup_kind" in sql
-        ):
+        if "DELETE FROM gold.warm_rollup_periods" in sql and "rollup_kind = :rollup_kind" in sql:
             return RowcountResult(2)
 
         # Windowed watermark COUNT (rebuild dry-run) — same rollup_kind guard.
@@ -464,6 +499,7 @@ class FakeEngine:
 class SharedCalendarConnection(FakeConnection):
     """One trip day and one vehicle day with one trip-kind watermark."""
 
+    capture_day = FakeMissingDayRow(date(2026, 3, 23), 20260323)
     trip_day = FakeMissingDayRow(date(2026, 3, 24), 20260324)
     vehicle_day = FakeMissingDayRow(date(2026, 3, 25), 20260325)
 
@@ -475,6 +511,9 @@ class SharedCalendarConnection(FakeConnection):
         sql = str(statement)
         bound = dict(params or {})
         self.bound_calls.append((sql, bound))
+        if statement is rollups.SELECT_AVAILABLE_CAPTURE_DAYS:
+            self.executed.append(sql)
+            return IterableResult([self.capture_day])
 
         if (
             "FROM gold.warm_rollup_periods" in sql
@@ -483,7 +522,9 @@ class SharedCalendarConnection(FakeConnection):
             and "DATE_BIN" not in sql
             and "SELECT" in sql
         ):
-            rows = [self.trip_day] if bound.get("rollup_kind") == "route_percentile_daily" else []
+            rows = (
+                [self.capture_day] if bound.get("rollup_kind") == "route_percentile_daily" else []
+            )
             self.executed.append(sql)
             return IterableResult(rows)
 
@@ -756,9 +797,7 @@ def test_trip_delay_5m_interruption_keeps_completed_periods_and_rerun_resumes(
     with pytest.raises(RuntimeError, match="forced interruption during summary") as raised:
         build_warm_rollups("stm", engine=engine)
 
-    assert str(raised.value) == (
-        f"forced interruption during summary for {periods[3].isoformat()}"
-    )
+    assert str(raised.value) == (f"forced interruption during summary for {periods[3].isoformat()}")
     assert engine.committed_summaries == set(periods[:3])
     assert engine.committed_watermarks == set(periods[:3])
     error = _rollup_stage_events(caplog)[-1]
@@ -819,7 +858,7 @@ def test_trip_delay_5m_locked_recheck_skips_stale_missing_periods() -> None:
     period_transactions = [
         transaction
         for transaction in engine.transactions
-        if any("pg_advisory_xact_lock" in sql for sql in transaction["statements"])
+        if any("hashtextextended" in sql for sql in transaction["statements"])
     ]
     assert len(period_transactions) == 4
     assert all(transaction["status"] == "committed" for transaction in period_transactions)
@@ -829,9 +868,7 @@ def test_trip_delay_5m_locked_recheck_skips_stale_missing_periods() -> None:
         recheck_index = next(i for i, sql in enumerate(statements) if "SELECT EXISTS" in sql)
         assert lock_index < recheck_index
 
-    lock_keys = [
-        params["lock_key"] for sql, params in engine.calls if "pg_advisory_xact_lock" in sql
-    ]
+    lock_keys = [params["lock_key"] for sql, params in engine.calls if "hashtextextended" in sql]
     assert lock_keys == [
         "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:00:00+00:00",
         "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:05:00+00:00",
@@ -867,6 +904,20 @@ def test_build_warm_rollups_shares_source_calendars_without_sharing_watermarks()
     ]
     assert sum("FROM gold.fact_trip_delay_snapshot" in sql for sql in source_scans) == 1
     assert sum("FROM gold.fact_vehicle_snapshot" in sql for sql in source_scans) == 1
+    capture_reads = [
+        params
+        for sql, params in conn.bound_calls
+        if sql == str(rollups.SELECT_AVAILABLE_CAPTURE_DAYS)
+    ]
+    assert sum("retained_since_utc" in params for params in capture_reads) == 1
+    first_build_probes = [params for params in capture_reads if "retained_since_utc" not in params]
+    assert len(first_build_probes) == 6
+    assert all(
+        params["floor_key"] == conn.capture_day.date_key
+        and params["today_key"]
+        == int((conn.capture_day.local_date + timedelta(days=1)).strftime("%Y%m%d"))
+        for params in first_build_probes
+    )
 
     assert result.built_route_percentile_days == 0
     assert result.built_stop_percentile_days == 1
@@ -885,13 +936,111 @@ def test_build_warm_rollups_shares_source_calendars_without_sharing_watermarks()
     route_occupancy_params = next(
         params for sql, params in upserts if "gold.route_occupancy_band_daily" in sql
     )
-    assert stop_percentile_params["date_key"] == conn.trip_day.date_key
+    assert stop_percentile_params["date_key"] == conn.capture_day.date_key
     assert route_occupancy_params["date_key"] == conn.vehicle_day.date_key
+    for table in (
+        "route_cancellation_daily",
+        "route_service_span_daily",
+        "route_headway_shift_daily",
+    ):
+        params = next(params for sql, params in upserts if f"INSERT INTO gold.{table}" in sql)
+        assert params["date_key"] == conn.trip_day.date_key
 
     upsert_sql = [sql for sql, _params in upserts]
     scheduled = next(i for i, sql in enumerate(upsert_sql) if "route_scheduled_trips_daily" in sql)
     cancellation = next(i for i, sql in enumerate(upsert_sql) if "route_cancellation_daily" in sql)
     assert scheduled < cancellation
+
+
+def test_daily_program_uses_buffered_calendars_and_independent_watermarks() -> None:
+    conn = SharedCalendarConnection()
+    engine = TransactionTrackingEngine(conn)
+    receipts = rollups.build_daily_rollups(
+        engine,
+        "stm",
+        calendars=rollups.DailyRollupCalendars(
+            capture=[conn.capture_day], feed=[conn.trip_day], occupancy=[conn.vehicle_day]
+        ),
+        today_local=date(2026, 3, 26),
+        now=datetime(2026, 3, 26, 12, tzinfo=UTC),
+        retention_days=14,
+    )
+
+    assert [(item.kind, item.table) for item in receipts.values()] == list(APPEND_ONLY_DAILY_STAGES)
+    assert all(item.stage == "append_only_daily" for item in receipts.values())
+    assert receipts["route_percentile_daily"].rows == 0
+    assert all(
+        item.rows == 1 for name, item in receipts.items() if name != "route_percentile_daily"
+    )
+    watermark_dates = {
+        params["rollup_kind"]: params["period_start_utc"].date()
+        for sql, params in conn.bound_calls
+        if sql == str(rollups.UPSERT_WARM_ROLLUP_PERIOD)
+    }
+    assert len(watermark_dates) == 14
+    assert "route_percentile_daily" not in watermark_dates
+    assert watermark_dates["stop_percentile_daily"] == conn.capture_day.local_date
+    assert watermark_dates["route_scheduled_trips_daily"] == conn.trip_day.local_date
+    assert watermark_dates["route_cancellation_daily"] == conn.trip_day.local_date
+    assert watermark_dates["route_occupancy_band_daily"] == conn.vehicle_day.local_date
+    assert watermark_dates["stop_occupancy_band_daily"] == conn.vehicle_day.local_date
+    assert all(transaction["status"] == "committed" for transaction in engine.transactions)
+    for transaction in engine.transactions:
+        statements = transaction["statements"]
+        if str(rollups.UPSERT_WARM_ROLLUP_PERIOD) in statements:
+            upserts = [
+                str(kind.upsert)
+                for kind in REBUILDABLE_KINDS.values()
+                if str(kind.upsert) in statements
+            ]
+            assert len(upserts) == 1
+            assert statements.index(upserts[0]) < statements.index(
+                str(rollups.UPSERT_WARM_ROLLUP_PERIOD)
+            )
+
+
+def test_daily_program_failure_preserves_prior_day_commits_and_receipts(caplog) -> None:
+    class FailingDailyConnection(SharedCalendarConnection):
+        def execute(self, statement, params=None):
+            if statement is rollups.UPSERT_ROUTE_CANCELLATION_DAILY:
+                self.executed.append(str(statement))
+                raise RuntimeError("cancellation failed")
+            return super().execute(statement, params)
+
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    conn = FailingDailyConnection()
+    engine = TransactionTrackingEngine(conn)
+    with pytest.raises(RuntimeError, match="cancellation failed"):
+        rollups.build_daily_rollups(
+            engine,
+            "stm",
+            calendars=rollups.DailyRollupCalendars(
+                capture=[conn.capture_day], feed=[conn.trip_day], occupancy=[conn.vehicle_day]
+            ),
+            today_local=date(2026, 3, 26),
+            now=datetime(2026, 3, 26, 12, tzinfo=UTC),
+            retention_days=14,
+        )
+
+    events = _rollup_stage_events(caplog)
+    assert [item["kind"] for item in events if item["status"] == "completed"] == [
+        "route_percentile_daily",
+        "stop_percentile_daily",
+        "route_scheduled_trips_daily",
+    ]
+    assert events[-1]["status"] == "error"
+    assert events[-1]["kind"] == "route_cancellation_daily"
+    assert [transaction["status"] for transaction in engine.transactions] == [
+        *(["committed"] * 6),
+        "rolled_back",
+    ]
+    assert (
+        sum(
+            str(rollups.UPSERT_WARM_ROLLUP_PERIOD) in transaction["statements"]
+            for transaction in engine.transactions
+        )
+        == 2
+    )
 
 
 def test_provider_is_seeded_true_when_dim_provider_row_present() -> None:
@@ -968,8 +1117,7 @@ def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
     result = build_warm_rollups("stm", engine=engine)
 
     assert result.reporting_aggregate_row_counts == {
-        table_name: rowcount
-        for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
+        table_name: rowcount for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
     }
     for table_name in BUILD_REPORTING_AGGREGATE_TABLES:
         delete_index = next(
@@ -1025,8 +1173,7 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
     assert all(
-        "FROM gold.fact_vehicle_snapshot" not in statement
-        for statement in aggregate_inserts
+        "FROM gold.fact_vehicle_snapshot" not in statement for statement in aggregate_inserts
     )
     # GC1 / Step G1: the habit + accountability marts re-pointed onto gold.route_delay_spine
     # (network trend/receipts read the spine in the historic builders), so no reporting
@@ -1036,29 +1183,21 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("LEAST(" in statement for statement in aggregate_inserts)
     assert any(
-        "FROM gold.i3_alert_history_reporting" in statement
-        for statement in aggregate_inserts
+        "FROM gold.i3_alert_history_reporting" in statement for statement in aggregate_inserts
     )
     assert any("gold.dim_provider" in statement for statement in aggregate_inserts)
     assert all(
-        "FROM gold.public_alert_impact_daily" not in statement
-        for statement in aggregate_inserts
+        "FROM gold.public_alert_impact_daily" not in statement for statement in aggregate_inserts
     )
     assert all(
-        "gold.fact_stop_time_delay_observation" not in statement
-        for statement in aggregate_inserts
+        "gold.fact_stop_time_delay_observation" not in statement for statement in aggregate_inserts
     )
     assert all(
-        "gold.public_route_reliability_daily" not in statement
-        for statement in aggregate_inserts
+        "gold.public_route_reliability_daily" not in statement for statement in aggregate_inserts
     )
+    assert all("gold.public_stop_delay_daily" not in statement for statement in aggregate_inserts)
     assert all(
-        "gold.public_stop_delay_daily" not in statement
-        for statement in aggregate_inserts
-    )
-    assert all(
-        "gold.current_trip_delay_computed" not in statement
-        for statement in aggregate_inserts
+        "gold.current_trip_delay_computed" not in statement for statement in aggregate_inserts
     )
     # GC1 / Step G1: readers re-pointed off route_delay_hourly onto the spine; the mart +
     # its UPSERT stay built for the public_route_reliability_daily view (drop = GC1.5).
@@ -1104,10 +1243,7 @@ def test_trip_delay_summary_5m_persists_severe_count() -> None:
     assert "COUNT(*) FILTER" in compact
     assert f"delay_seconds > {severe_threshold} AND ABS(delay_seconds) <= 3600" in compact
     assert ")::integer" in compact
-    assert (
-        "severe_delay_observation_count = "
-        "EXCLUDED.severe_delay_observation_count"
-    ) in sql
+    assert ("severe_delay_observation_count = EXCLUDED.severe_delay_observation_count") in sql
 
 
 def test_route_delay_hourly_carries_observation_unit_counts() -> None:
@@ -1416,8 +1552,7 @@ def test_route_headway_by_shift_upsert_shape() -> None:
     assert "ABS(f.delay_seconds) <= 3600" in sql
     assert "COALESCE(f.start_date, f.snapshot_local_date)" in sql
     assert (
-        "EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5"
-        in sql
+        "EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5" in sql
     )
     assert "busiest_direction" in sql
     assert "ORDER BY COUNT(*) DESC, direction_id" in sql
@@ -1525,8 +1660,7 @@ def test_build_warm_rollups_result_display_dict() -> None:
     assert d["built_trip_delay_periods"] == 1
     assert d["since_utc"] is None
     assert d["reporting_aggregate_row_counts"] == {
-        table_name: rowcount
-        for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
+        table_name: rowcount for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
     }
     assert "completed_at_utc" in d
 
@@ -1548,6 +1682,7 @@ def test_build_warm_rollups_emits_machine_readable_stage_checkpoints(caplog) -> 
             ("reporting_aggregate", "reporting_aggregate", table)
             for table in BUILD_REPORTING_AGGREGATE_TABLES
         ],
+        ("changed_delay_hours", "changed_delay_hours", "route_delay_hourly"),
     ]
 
     assert [
@@ -1627,9 +1762,7 @@ def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
         )
     )
     statements = transaction["statements"]
-    workmem = next(
-        i for i, sql in enumerate(statements) if "SET LOCAL work_mem = '384MB'" in sql
-    )
+    workmem = next(i for i, sql in enumerate(statements) if "SET LOCAL work_mem = '384MB'" in sql)
     advisory = next(i for i, sql in enumerate(statements) if "pg_try_advisory_xact_lock" in sql)
     create = next(i for i, sql in enumerate(statements) if "CREATE TEMP TABLE" in sql)
     analyze = next(i for i, sql in enumerate(statements) if "ANALYZE stop_delay_hourly" in sql)
@@ -1659,8 +1792,7 @@ def test_stop_delay_refresh_fails_before_writes_when_advisory_lock_is_busy() -> 
     assert lock_transaction["status"] == "rolled_back"
     assert all("CREATE TEMP TABLE" not in sql for sql in lock_transaction["statements"])
     assert all(
-        "DELETE FROM gold.stop_delay_hourly" not in sql
-        for sql in lock_transaction["statements"]
+        "DELETE FROM gold.stop_delay_hourly" not in sql for sql in lock_transaction["statements"]
     )
 
 
@@ -1813,8 +1945,27 @@ def test_route_delay_spine_edges_are_the_21_contract_edges() -> None:
     from transit_ops.gold import rollups
 
     assert rollups.DELAY_HISTOGRAM_EDGES == (
-        -3600, -300, -180, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180,
-        240, 300, 420, 600, 900, 1800, 3600,
+        -3600,
+        -300,
+        -180,
+        -120,
+        -90,
+        -60,
+        -30,
+        0,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        240,
+        300,
+        420,
+        600,
+        900,
+        1800,
+        3600,
     )
     assert len(rollups.DELAY_HISTOGRAM_EDGES) == 21
 
@@ -1828,7 +1979,8 @@ def test_route_delay_spine_upsert_shape() -> None:
     assert "INSERT INTO gold.route_delay_spine" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "f.route_id IS NOT NULL" in sql
-    assert "f.snapshot_date_key = :date_key" in compact
+    assert "f.captured_at_utc >=" in compact
+    assert "f.captured_at_utc <" in compact
     # The fact scan reduces once at the 5m grain needed for distinct trips, then the
     # additive metrics fold to the stored hour x direction grain.
     assert ":local_date" in compact
@@ -1836,9 +1988,7 @@ def test_route_delay_spine_upsert_shape() -> None:
         "GROUP BY s.provider_id, s.route_id, s.hour_of_day_local, s.direction_id, "
         "s.bucket_5m" in compact
     )
-    assert (
-        "GROUP BY p.provider_id, p.route_id, p.hour_of_day_local, p.direction_id" in compact
-    )
+    assert "GROUP BY p.provider_id, p.route_id, p.hour_of_day_local, p.direction_id" in compact
     assert (
         "ON CONFLICT (provider_id, route_id, provider_local_date, "
         "hour_of_day_local, direction_id)" in compact
@@ -2001,8 +2151,8 @@ def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
         table_name: (column, date_only)
         for table_name, column, date_only in GOLD_AGGREGATE_RETENTION_COLUMNS
     }
-    for kind in REBUILDABLE_KINDS.values():
-        assert kind.rollup_kind == kind.rollup_kind  # key == field invariant
+    for name, kind in REBUILDABLE_KINDS.items():
+        assert kind.rollup_kind == name
         assert f"gold.{kind.table}" in GOLD_APPEND_ONLY_DAILY_TABLES
         column, _date_only = retention_columns[f"gold.{kind.table}"]
         assert kind.date_column == column
@@ -2262,7 +2412,24 @@ def test_rebuild_deletes_rows_then_watermarks_then_rebuilds() -> None:
     """Per kind: row DELETE < watermark DELETE < the rebuild upsert, and the
     _build_percentile_days SET LOCAL tuning precedes the rebuild upsert."""
     missing = [FakeMissingDayRow(date(2026, 3, 20), 20260320)]
-    conn = FakeConnection(rebuild_missing_days=missing)
+
+    class WindowedConnection(FakeConnection):
+        def execute(self, statement, params=None):
+            result = super().execute(statement, params)
+            if "DELETE FROM gold.route_delay_percentile_daily" in str(statement):
+                return RowcountResult(
+                    3 if params["from_date"] <= missing[0].local_date <= params["to_date"] else 0
+                )
+            if statement is rollups._REBUILD_WATERMARK_DELETE:
+                return RowcountResult(
+                    sum(
+                        params["from_utc"].date() <= day <= params["to_utc"].date()
+                        for day in (REBUILD_FROM, REBUILD_TO)
+                    )
+                )
+            return result
+
+    conn = WindowedConnection(rebuild_missing_days=missing)
     engine = FakeEngine(conn)
     result = rebuild_warm_rollups(
         "stm",
@@ -2276,7 +2443,8 @@ def test_rebuild_deletes_rows_then_watermarks_then_rebuilds() -> None:
     assert result.aborted is False
     assert result.deleted_row_counts == {"route_percentile_daily": 3}
     assert result.deleted_watermark_counts == {"route_percentile_daily": 2}
-    assert result.rebuilt_day_counts == {"route_percentile_daily": 1}
+    # The fixture proves all three requested days, including two empty completions.
+    assert result.rebuilt_day_counts == {"route_percentile_daily": 3}
 
     ex = conn.executed
     row_delete_idx = next(

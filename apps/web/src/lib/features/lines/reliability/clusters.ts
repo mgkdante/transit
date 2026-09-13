@@ -53,7 +53,7 @@ export interface SnapshotStripVM {
 	readonly avgDelayMin: number | null;
 	/** Typical (median) delay, minutes — daily grain only; null otherwise. */
 	readonly p50Min: number | null;
-	/** Worst-case (p90) delay, minutes — daily grain only; null otherwise. */
+	/** 90th-percentile delay, minutes; null when unavailable. */
 	readonly p90Min: number | null;
 	/** Busiest-direction headway CoV (first headway row carrying `cov`). */
 	readonly headwayRegularityCov: number | null;
@@ -95,19 +95,12 @@ export interface PeriodComparisonRow {
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
 	readonly severePct: number | null;
-	/**
-	 * S7-B comparison-vs-prior (PR-WEB-3): the OTP denominator (this window's known-delay
-	 * observations) + the exact on-time numerator, plus the SAME pair over the immediately-
-	 * prior equal-length window. Populated ONLY on the windowed `periods_by_grain` rows; the
-	 * scalar whole-history shift/day-type rows leave them null (no prior to compare). The §1
-	 * on-time-by-time-of-day comparison runs a two-proportion z-test off these.
-	 */
+	/** Current/prior known-delay counts and rates, preserved from windowed source rows. */
 	readonly observationCount: number | null;
 	readonly onTime: number | null;
 	readonly priorOtpPct: number | null;
 	readonly priorObservationCount: number | null;
-	/** Exact prior on-time numerator (FIX-4) — lets the two-proportion z-test pool real
-	 *  counts instead of the rounded prior_otp_pct. Null on pre-republish snapshots. */
+	/** Exact prior on-time count; nullable for older or unavailable windows. */
 	readonly priorOnTime: number | null;
 }
 
@@ -130,7 +123,7 @@ export interface PunctualityVM {
 	/**
 	 * The GRAIN-AWARE headline aggregate for the selected window (today / this week /
 	 * this month / range) — the SAME values the snapshot strip shows. §01's headline
-	 * tiles, the typical→worst-case Distribution, and the severe-share bar read this so
+	 * tiles, the median/p90 distribution, and the severe-share bar read this so
 	 * they answer for the picked grain; the trend (below) carries the daily detail.
 	 */
 	readonly headline: {
@@ -410,7 +403,7 @@ function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPer
 }
 
 /** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple
- *  + the comparison-vs-prior pair, kept verbatim for the §1 two-proportion delta). */
+ *  + the comparison-vs-prior pair, kept verbatim for the descriptive §1 comparison). */
 const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	grain: p.grain,
 	otpPct: num(p.otp_pct),
@@ -933,7 +926,7 @@ export function toReliabilityClusters(
 	);
 	const punctuality: PunctualityVM = {
 		// The GRAIN-AWARE headline aggregate (the same selected-grain values the strip
-		// computes): §01's headline tiles + the typical→worst-case Distribution + the
+		// computes): §01's headline tiles + the median/p90 distribution + the
 		// severe-share bar read THIS, so they answer for the picked window (today / this
 		// week / this month / range), while the trend shows the daily detail. Systematic:
 		// one aggregate, not the trend tail.

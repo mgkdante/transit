@@ -111,9 +111,7 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(productionTokenFingerprint()).toEqual([
 			'app.css:--size-tap-min: 44px;',
 			'app.css:--strip-h: 68px;',
-			'lib/components/layout/Footer.svelte:<FooterGroup label={t.auditLabel} style="--size-tap-min: 0px;">',
-			'lib/components/layout/Footer.svelte:<FooterGroup label={t.exploreLabel} style="--size-tap-min: 0px;">',
-			'lib/components/layout/Footer.svelte:<FooterGroup label={t.legalLabel} style="--size-tap-min: 0px;">',
+			'lib/components/edge/EdgeState.svelte:min-height: var(--size-tap-min);',
 			'lib/components/layout/ListingPageShell.svelte:min-height: var(--size-tap-min);',
 			'lib/components/surface/EntityDetail.svelte:min-height: var(--size-tap-min);',
 			'lib/components/surface/EntityDetail.svelte:padding-block: calc((var(--strip-h) - 3px - var(--size-tap-min)) / 2);',
@@ -122,6 +120,7 @@ describe('M6C-2 token and protected-surface contract', () => {
 			'lib/features/metrics/MetricInfo.svelte:HIT area is expanded to --size-tap-min via a centered transparent overlay.',
 			'lib/features/metrics/MetricInfo.svelte:min-block-size: var(--size-tap-min);',
 			'lib/features/metrics/MetricInfo.svelte:min-inline-size: var(--size-tap-min);',
+			'lib/features/stops/StopDetail.svelte:min-height: var(--size-tap-min);',
 			'lib/features/stops/StopsIndex.svelte:min-height: var(--size-tap-min);',
 			'lib/features/trips/TripDetail.svelte:min-height: var(--size-tap-min);',
 		]);

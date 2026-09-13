@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from transit_ops.snapshots import publish
+from transit_ops.snapshots import historic_tier
 from transit_ops.snapshots.builders.historic.alert_archive import _collection_generation_id
 from transit_ops.snapshots.builders.historic.history_common import (
     encode_history_entity_id,
@@ -981,7 +981,7 @@ def test_publish_clear_restarts_unreachable_age_after_a_generation_was_reference
             for path in parameters["object_keys"]:
                 marks.pop(path, None)
 
-    publish._clear_referenced_historic_gc_marks(  # noqa: SLF001
+    historic_tier._clear_referenced_historic_gc_marks(  # noqa: SLF001
         MarkConnection(), "stm", [paths["orphan"]]
     )
     later = NOW + timedelta(hours=49)

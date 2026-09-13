@@ -48,6 +48,8 @@
 	}: MetricInfoProps = $props();
 
 	let open = $state(false);
+	// Activation pins the explanation independently of automatic hover/focus opening.
+	let pinned = false;
 	let root = $state<HTMLSpanElement | null>(null);
 	let trigger = $state<HTMLButtonElement | null>(null);
 	let pop = $state<HTMLSpanElement | null>(null);
@@ -194,7 +196,7 @@
 		cancelGrace();
 		graceTimer = setTimeout(() => {
 			graceTimer = null;
-			open = false;
+			if (!pinned && !root?.contains(document.activeElement)) close();
 		}, GRACE_MS);
 	}
 
@@ -209,13 +211,15 @@
 
 	function close(returnFocus = false): void {
 		cancelGrace();
+		pinned = false;
 		open = false;
 		if (returnFocus) returnFocusToTrigger();
 	}
 
 	async function toggle(): Promise<void> {
 		cancelGrace();
-		open = !open;
+		pinned = !pinned;
+		open = pinned;
 		// Keep focus management predictable when toggled by keyboard.
 		if (!open) {
 			await tick();

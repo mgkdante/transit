@@ -21,7 +21,7 @@ Never point this at production.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -436,3 +436,216 @@ def test_migration_backfilled_superseded_seed_row(conn) -> None:
     assert row["valid_to"] is not None, "seed row must be superseded (valid_to set)"
     assert row["alert_header_text_en"] == "Old alert"
     assert row["description_text_en"] == "Closed text"
+
+
+@pytest.mark.parametrize("endpoint_key", ["i3_alerts", "service_alerts"])
+def test_exact_alert_capture_loads_a_when_newer_b_exists(conn, endpoint_key):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from transit_ops.settings import Settings
+    from transit_ops.silver.i3 import load_i3_to_silver
+
+    conn.execute(
+        text("UPDATE core.feed_endpoints SET endpoint_key=:endpoint WHERE feed_endpoint_id=:id"),
+        {"endpoint": endpoint_key, "id": ENDPOINT_ID},
+    )
+    conn.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET raw_payload_json=jsonb_build_object("
+            "'alerts', jsonb_build_array(jsonb_build_object('id', CAST(:alert AS text), "
+            "'header', CAST(:header AS text)))) "
+            "WHERE i3_alert_snapshot_id=:id"
+        ),
+        [
+            {"id": SNAP_IDS[0], "alert": "capture-A", "header": "Original capture"},
+            {"id": SNAP_IDS[1], "alert": "capture-B", "header": "Newer capture"},
+        ],
+    )
+    engine = SimpleNamespace(begin=lambda: nullcontext(conn))
+    result = load_i3_to_silver(
+        PROVIDER,
+        snapshot_id=SNAP_IDS[0],
+        endpoint_key=endpoint_key,
+        settings=Settings(_env_file=None),
+        engine=engine,
+    )
+    assert result.i3_alert_snapshot_id == SNAP_IDS[0]
+    assert result.alert_rows_inserted == 1
+    assert [row["alert_id"] for row in _active_rows(conn)] == ["capture-A"]
+    repeated = load_i3_to_silver(
+        PROVIDER,
+        snapshot_id=SNAP_IDS[0],
+        endpoint_key=endpoint_key,
+        settings=Settings(_env_file=None),
+        engine=engine,
+    )
+    assert repeated.i3_alert_snapshot_id == SNAP_IDS[0]
+    assert [row["alert_id"] for row in _active_rows(conn)] == ["capture-A"]
+
+
+@pytest.mark.parametrize("change", ["missing", "provider", "endpoint", "failed_run"])
+def test_exact_alert_capture_refuses_substitution(conn, change):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from transit_ops.settings import Settings
+    from transit_ops.silver.i3 import load_i3_to_silver
+
+    snapshot_id = SNAP_IDS[0]
+    provider = PROVIDER
+    endpoint = "i3_alerts"
+    if change == "missing":
+        snapshot_id = SNAP_IDS[-1] + 1
+    elif change == "provider":
+        provider = "absent_alert_capture_provider"
+    elif change == "endpoint":
+        endpoint = "service_alerts"
+    else:
+        conn.execute(
+            text("UPDATE raw.ingestion_runs SET status='failed' WHERE ingestion_run_id=:id"),
+            {"id": RUN_IDS[0]},
+        )
+    with pytest.raises(ValueError, match="snapshot"):
+        load_i3_to_silver(
+            provider,
+            snapshot_id=snapshot_id,
+            endpoint_key=endpoint,
+            settings=Settings(_env_file=None),
+            engine=SimpleNamespace(begin=lambda: nullcontext(conn)),
+        )
+    assert _active_rows(conn) == []
+
+
+def _temporal_state(connection):
+    state = {
+        table: connection.execute(
+            text(
+                f"SELECT to_jsonb(row) FROM {table} AS row WHERE provider_id=:p "
+                "ORDER BY to_jsonb(row)::text"
+            ),
+            {"p": PROVIDER},
+        )
+        .scalars()
+        .all()
+        for table in (
+            "silver.i3_alerts",
+            "silver.i3_alert_informed_entities",
+            "raw.alert_feed_observations",
+            "raw.alert_language_observations",
+        )
+    }
+    state["silver.i3_alert_active_periods"] = (
+        connection.execute(
+            text(
+                "SELECT to_jsonb(period) FROM silver.i3_alert_active_periods AS period "
+                "JOIN silver.i3_alerts AS alert USING (i3_alert_snapshot_id,alert_index) "
+                "WHERE alert.provider_id=:p ORDER BY to_jsonb(period)::text"
+            ),
+            {"p": PROVIDER},
+        )
+        .scalars()
+        .all()
+    )
+    return state
+
+
+@pytest.mark.parametrize("first_applied", ["newer", "older_then_newer", "newer_then_empty"])
+def test_older_alert_capture_cannot_rewind_current_or_historical_state(conn, first_applied):
+    period = {"start": T1.isoformat(), "end": T4.isoformat()}
+    older = [
+        {
+            **ALERT_BILINGUAL,
+            "url": {"fr": "https://example.test/old"},
+            "stops": ["S200", "S201", "S202"],
+            "activePeriod": period,
+        },
+        ALERT_B_V1,
+    ]
+    newer = [
+        {
+            **ALERT_BILINGUAL_EN_EDIT,
+            "url": {"fr": "https://example.test/new"},
+            "activePeriod": period,
+        },
+        ALERT_B_V2,
+        ALERT_C,
+    ]
+    if first_applied == "older_then_newer":
+        _load(conn, SNAP_IDS[0], older)
+    _load(conn, SNAP_IDS[1], newer)
+    if first_applied == "newer_then_empty":
+        _load(conn, SNAP_IDS[2], [])
+    before = _temporal_state(conn)
+
+    result = _load(conn, SNAP_IDS[0], older)
+
+    assert result.skipped_older_capture
+    assert result.alert_rows_inserted == result.alerts_superseded == 0
+    assert _temporal_state(conn) == before
+    assert conn.execute(
+        text("SELECT count(*) FROM raw.i3_alert_snapshots WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalar_one() == len(SNAP_IDS)
+
+
+def test_older_capture_retains_prior_day_language_evidence_without_reopening_alerts(conn):
+    _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_NO_EN, ALERT_C])
+    before = _temporal_state(conn)
+    historical_time = T1 - timedelta(days=1)
+    conn.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET captured_at_utc=:captured "
+            "WHERE i3_alert_snapshot_id=:snapshot"
+        ),
+        {"captured": historical_time, "snapshot": SNAP_IDS[0]},
+    )
+    result = load_i3_snapshot_to_silver(
+        conn,
+        snapshot=RawI3AlertSnapshot(
+            i3_alert_snapshot_id=SNAP_IDS[0],
+            provider_id=PROVIDER,
+            provider_timezone="America/Toronto",
+            captured_at_utc=historical_time,
+            raw_payload_json=[ALERT_BILINGUAL],
+        ),
+    )
+    after = _temporal_state(conn)
+    assert result.skipped_older_capture
+    for table in ("silver.i3_alerts", "silver.i3_alert_informed_entities"):
+        assert after[table] == before[table]
+    assert len(after["raw.alert_feed_observations"]) == 2
+    observations = conn.execute(
+        text(
+            "SELECT observation_date,has_explicit_en FROM raw.alert_language_observations "
+            "WHERE provider_id=:provider AND alert_logical_id='id:ALERT-BI' "
+            "ORDER BY observation_date"
+        ),
+        {"provider": PROVIDER},
+    ).all()
+    assert [row.has_explicit_en for row in observations] == [True, False]
+
+
+def test_failed_newer_load_does_not_prevent_an_older_capture_application(conn, monkeypatch):
+    import transit_ops.silver.i3 as i3_module
+
+    def reject_payload(snapshot):
+        raise ValueError("unusable alert payload")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(i3_module, "normalize_i3_alert_payload", reject_payload)
+        with pytest.raises(ValueError, match="unusable alert payload"), conn.begin_nested():
+            _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_EN_EDIT])
+    result = _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
+    assert not result.skipped_older_capture
+    assert result.alert_rows_inserted == 1
+    assert (
+        conn.execute(
+            text(
+                "SELECT max(observed_at_utc) FROM raw.alert_feed_observations "
+                "WHERE provider_id=:provider"
+            ),
+            {"provider": PROVIDER},
+        ).scalar_one()
+        == T1
+    )

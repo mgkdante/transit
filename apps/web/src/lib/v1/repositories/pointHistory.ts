@@ -325,7 +325,8 @@ async function getPointHistoryDay<F extends RetainedPointHistoryFamily>(
 	await verifyPartitionBytes(ref, raw);
 	if (
 		raw.value.date !== date ||
-		raw.value.methodology_version !== 'reliability-1' ||
+		(raw.value.methodology_version !== 'reliability-1' &&
+			raw.value.methodology_version !== 'reliability-2') ||
 		raw.value.publish_generation_id != null
 	) {
 		throw new HistoryArtifactContractError(ref.path, 'advertised point history payload mismatch');

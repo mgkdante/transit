@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from _sqlfakes import NamedQueryConn
 
 from transit_ops.snapshots import contract
@@ -95,12 +96,9 @@ def test_archive_query_is_named_provider_scoped_and_unlimited() -> None:
 
 
 def test_publish_state_uses_stable_baseline_and_pre_0081_coalesce() -> None:
-    from transit_ops.snapshots.publish import (
-        _PRIOR_FILES_TOTAL_SQL,
-        _record_publish_state,
-        _stable_item_total,
-        _stable_outcome_total,
-    )
+    from transit_ops.snapshots.publish import _PRIOR_FILES_TOTAL_SQL, _record_publish_state
+    from transit_ops.snapshots.uploads import stable_item_total as _stable_item_total
+    from transit_ops.snapshots.uploads import stable_outcome_total as _stable_outcome_total
 
     class _Connection:
         def __init__(self) -> None:
@@ -202,6 +200,57 @@ def test_archive_builder_packs_501_rows_as_250_250_1_without_loss() -> None:
     assert bundle.index.months[0].total_alerts == 501
 
 
+def test_archive_packing_serialization_work_is_linear(monkeypatch) -> None:
+    from transit_ops.snapshots.builders.historic import alert_archive as archive_module
+
+    serialize = archive_module.snapshot_json_bytes
+    serialized_entries = 0
+
+    def counted(payload):  # noqa: ANN001, ANN202
+        nonlocal serialized_entries
+        if isinstance(payload, contract.AlertArchivePage):
+            serialized_entries += len(payload.alerts)
+        elif isinstance(payload, contract.AlertArchiveEntry):
+            serialized_entries += 1
+        return serialize(payload)
+
+    monkeypatch.setattr(archive_module, "snapshot_json_bytes", counted)
+    rows = [_row(number) for number in range(501)]
+    bundle, _ = _build(rows)
+
+    assert [len(page.alerts) for _, page in bundle.page_items] == [250, 250, 1]
+    assert serialized_entries <= 2 * len(rows)
+
+
+@pytest.mark.parametrize("extra_bytes", [-1, 0, 1])
+def test_archive_packing_respects_exact_utf8_ceiling_and_latest_stamp(
+    monkeypatch, extra_bytes: int,
+) -> None:
+    from transit_ops.snapshots.builders.historic import alert_archive as archive_module
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    latest = datetime(2026, 7, 5, 1, 2, 3, 456789, tzinfo=UTC)
+    rows = [
+        _row(1, description_text='🚇 "État"\nCôte-Vertu', updated_at_utc=latest),
+        _row(2, description_text="<p>旅客 & accès</p>"),
+    ]
+    whole, _ = _build(rows)
+    whole_page = whole.page_items[0][1]
+    ceiling = len(snapshot_json_bytes(whole_page)) + extra_bytes
+    monkeypatch.setattr(archive_module, "ALERT_ARCHIVE_PAGE_BYTE_CEILING", ceiling)
+
+    bundle, _ = _build(rows)
+
+    assert [len(page.alerts) for _, page in bundle.page_items] == (
+        [1, 1] if extra_bytes < 0 else [2]
+    )
+    assert bundle.page_items[-1][1].generated_utc == "2026-07-05T01:02:03Z"
+    for (_, page), ref in zip(bundle.page_items, bundle.index.months[0].pages, strict=True):
+        body = snapshot_json_bytes(page)
+        assert ref.byte_size == len(body) <= ceiling
+        assert ref.sha256 == hashlib.sha256(body).hexdigest()
+
+
 def test_archive_builder_round_trips_long_unicode_html_and_splits_on_bytes(
     monkeypatch,
 ) -> None:
@@ -238,7 +287,7 @@ def test_archive_paths_reuse_same_sha_and_change_with_content() -> None:
 
 
 def test_run_envelope_stamping_never_mutates_content_addressed_page_bytes() -> None:
-    from transit_ops.snapshots.publish import _stamp_envelope
+    from transit_ops.snapshots.envelope import stamp_envelope as _stamp_envelope
     from transit_ops.snapshots.serialization import snapshot_json_bytes
 
     bundle, _ = _build([_row(1)])
@@ -253,12 +302,12 @@ def test_run_envelope_stamping_never_mutates_content_addressed_page_bytes() -> N
 
     assert snapshot_json_bytes(page) == before
     assert page.publish_generation_id is None
-    assert page.methodology_version == "alerts-1"
+    assert page.methodology_version == "alerts-2"
     assert bundle.index.publish_generation_id == "stm@2030-01-01T00:00:00Z"
 
 
 def test_all_content_addressed_partition_bytes_and_digests_ignore_run_stamps() -> None:
-    from transit_ops.snapshots.publish import _stamp_envelope
+    from transit_ops.snapshots.envelope import stamp_envelope as _stamp_envelope
     from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
     archive, _ = _build([_row(1)])
@@ -561,3 +610,31 @@ def test_archive_tie_break_is_id_ascending_and_coverage_uses_provider_local_date
         bundle.page_items,
         provider_timezone=bundle.provider_timezone,
     )
+
+
+@pytest.mark.parametrize("seconds, expected", [(None, None), (-1, None), (0, 0), (30, 1), (150, 3)])
+def test_alert_duration_rounding_matches_mutable_and_retained_windows(seconds, expected) -> None:
+    from transit_ops.snapshots.builders import build_alert_history
+
+    start = datetime(2026, 7, 1, tzinfo=UTC)
+    end = start + timedelta(seconds=seconds) if seconds is not None else None
+    bundle, _ = _build([_row(1, start_utc=start, end_utc=end)])
+    current = build_alert_history(NamedQueryConn({"alerts.history": [{
+        "alert_header_text": "Alert", "header_text_en": "Alert", "severity": "WARNING",
+        "routes": [], "stops": [], "start_utc": start, "end_utc": end,
+    }]}), generated_utc="t")
+    assert bundle.page_items[0][1].alerts[0].duration_min == expected
+    assert current.alerts[0].duration_min == expected
+
+
+def test_alert_breakdown_takes_median_of_published_whole_minutes() -> None:
+    from transit_ops.snapshots.builders import build_alert_history
+
+    start = datetime(2026, 7, 1, tzinfo=UTC)
+    current = build_alert_history(NamedQueryConn({"alerts.history": [{
+        "alert_header_text": f"Alert {seconds}", "header_text_en": None,
+        "severity": "WARNING", "routes": [], "stops": [],
+        "start_utc": start, "end_utc": start + timedelta(seconds=seconds),
+    } for seconds in (30, 150)]}), generated_utc="t")
+    assert [alert.duration_min for alert in current.alerts] == [1, 3]
+    assert current.breakdown.by_severity[0].median_duration_min == 2

@@ -1,22 +1,4 @@
-// build-og — standalone Open Graph card generator.
-//
-// Renders the two DEFAULT social cards (en + fr) at 1200×630 and writes them to
-// `static/og/{lang}.png`, where SeoHead.svelte points `og:image` / `twitter:image`.
-//
-// Run:  `bun scripts/build-og.ts`           (regenerate both cards)
-//       `bun scripts/build-og.ts --check`   (CI: fail if regenerating would change them)
-//
-// Pipeline: a plain-object element tree (Satori accepts the same shape
-// React.createElement emits — no JSX runtime needed) → Satori (SVG) →
-// @resvg/resvg-js (PNG). Fonts are vendored TTFs under scripts/og-fonts/
-// (Satori cannot read the WOFF2 that @fontsource ships; TrueType/OTF/WOFF only).
-//
-// Standalone by design: zero `$lib` / `$app` imports so it runs under bare tsx
-// without the SvelteKit module graph. Adapted from the yesid.dev OG renderer
-// (apps/web/src/lib/og/{template,render,fonts}.ts), re-themed to transit tokens
-// and collapsed into one file. Colors mirror the dark theme in
-// src/lib/styles/tokens.css; this is a brand/marketing graphic, so brand orange
-// (--primary) is used as the accent here — it is not a UI data mark.
+// Generate static/og/{en,fr}.png with `bun run og:build`; verify with `bun run og:check`.
 
 import { Resvg } from '@resvg/resvg-js';
 import { renderSatoriPng } from '@yesid/seo-kit/satori';
@@ -25,55 +7,51 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEPLOYMENT_IDENTITY } from '../src/lib/site/deployment';
 
-const here = dirname(fileURLToPath(import.meta.url)); // web/scripts
-const webRoot = resolve(here, '..'); // web/
+const here = dirname(fileURLToPath(import.meta.url));
+const webRoot = resolve(here, '..');
+// Satori requires TTF, OTF, or WOFF; it cannot read @fontsource's WOFF2 files.
 const FONT_DIR = resolve(here, 'og-fonts');
 const OUT_DIR = resolve(webRoot, 'static/og');
 
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-// ── Brand palette (mirrors src/lib/styles/tokens.css dark theme) ────────────
+// Mirrors the dark theme in src/lib/styles/tokens.css.
 const BG = '#141414'; // --background (dark)
 const BORDER = '#3A3A3A'; // --border
 const TEXT_PRIMARY = '#F5F5F0'; // --foreground
 const TEXT_MUTED = '#949494'; // --muted-foreground
 const ACCENT = '#E07800'; // --primary (brand orange; brand graphic, not a data mark)
 const ACCENT_TEXT = '#FFB627'; // --accent-text
-const STATUS_ON_TIME = '#28c840'; // --dataviz-status-on-time (live-network dot)
 
 const WORDMARK = 'transit';
 const SITE_HANDLE = 'transit.yesid.dev';
 const FOOTER_LOCATION = 'Montréal · QC';
 
-// ── Per-locale copy for the two default cards ───────────────────────────────
 type Locale = 'en' | 'fr';
 
 interface CardCopy {
-	eyebrow: string; // mono uppercase chip
-	tagline: string; // muted subtitle under the wordmark
-	statusLabel: string; // text beside the live dot
+	eyebrow: string;
+	tagline: string;
+	badgeLabel: string;
 }
 
-// Provider identity comes from the deployment seam (operator law 2026-07-09:
-// never a hardcoded provider string). Relative import keeps this script free of
-// $lib/$app aliases (it runs under bare bun, no vite resolver).
+// Provider identity stays deployment-owned; bare Bun requires a relative import.
 const PROVIDER = DEPLOYMENT_IDENTITY.providerShortName.toUpperCase();
 
 const COPY: Record<Locale, CardCopy> = {
 	en: {
 		eyebrow: `${PROVIDER} · NETWORK ANALYTICS`,
-		tagline: 'On-time performance, crowding and disruptions — measured, never invented.',
-		statusLabel: 'LIVE NETWORK',
+		tagline: 'Transit reports, from live observations to daily reliability.',
+		badgeLabel: 'PUBLIC REPORTS',
 	},
 	fr: {
 		eyebrow: `${PROVIDER} · ANALYSE DU RÉSEAU`,
-		tagline: 'Ponctualité, achalandage et perturbations — mesurés, jamais inventés.',
-		statusLabel: 'RÉSEAU EN DIRECT',
+		tagline: 'Le réseau en chiffres, des observations aux bilans quotidiens.',
+		badgeLabel: 'BILANS PUBLICS',
 	},
 };
 
-// ── Satori element-tree helper (React.createElement-shaped POJOs) ───────────
 type El = { type: string; props: Record<string, unknown> };
 
 function el(type: string, props: Record<string, unknown>, children?: unknown): El {
@@ -94,12 +72,10 @@ function buildTree(copy: CardCopy): El {
 				padding: '80px',
 				fontFamily: 'Inter',
 				color: TEXT_PRIMARY,
-				// Hairline inner frame (signage feel) — solid surface, no alpha.
 				border: `1px solid ${BORDER}`,
 			},
 		},
 		[
-			// Top rail: eyebrow chip (left) + live-network status dot (right).
 			el(
 				'div',
 				{
@@ -140,7 +116,7 @@ function buildTree(copy: CardCopy): El {
 							},
 						},
 						[
-							// On-time green dot = the network-healthy data hue (not orange).
+							// Static cards cannot report network health.
 							el(
 								'div',
 								{
@@ -148,18 +124,17 @@ function buildTree(copy: CardCopy): El {
 										width: '18px',
 										height: '18px',
 										borderRadius: '9999px',
-										backgroundColor: STATUS_ON_TIME,
+										backgroundColor: TEXT_MUTED,
 									},
 								},
 								'',
 							),
-							el('span', {}, copy.statusLabel),
+							el('span', {}, copy.badgeLabel),
 						],
 					),
 				],
 			),
 
-			// Middle: wordmark + accent dot, then the muted tagline.
 			el(
 				'div',
 				{
@@ -206,7 +181,6 @@ function buildTree(copy: CardCopy): El {
 				],
 			),
 
-			// Bottom rail: accent bar + handle (left) / location (right).
 			el(
 				'div',
 				{
@@ -250,7 +224,6 @@ function buildTree(copy: CardCopy): El {
 	);
 }
 
-// ── Fonts ───────────────────────────────────────────────────────────────────
 interface OgFont {
 	name: string;
 	data: Buffer;
@@ -281,7 +254,6 @@ function loadFonts(): OgFont[] {
 	];
 }
 
-// ── Render one card to PNG bytes ─────────────────────────────────────────────
 async function renderPng(copy: CardCopy, fonts: OgFont[]): Promise<Buffer> {
 	return Buffer.from(
 		await renderSatoriPng(
@@ -301,7 +273,6 @@ async function renderPng(copy: CardCopy, fonts: OgFont[]): Promise<Buffer> {
 	);
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
 	const checkOnly = process.argv.includes('--check');
 	const fonts = loadFonts();

@@ -1263,8 +1263,8 @@ def history_month_partition_ref[Day, Partition: BaseModel](
         month,
         [day_builder(local_date) for local_date in dates],
     )
-    digest = snapshot_sha256(partition)
-    return history_partition_ref(path_builder(digest, month), partition), partition
+    ref = _history_partition_ref(partition, lambda digest: path_builder(digest, month))
+    return ref, partition
 
 
 def prepare_history_row_batch_loader(
@@ -1358,16 +1358,23 @@ def history_metric_coverage(
 def history_partition_ref(path: str, partition: BaseModel) -> HistoricPartitionRef:
     """Build a ref from the exact canonical bytes used by immutable storage."""
 
+    return _history_partition_ref(partition, lambda _digest: path)
+
+
+def _history_partition_ref(
+    partition: BaseModel, path_builder: Callable[[str], str]
+) -> HistoricPartitionRef:
     days = getattr(partition, "days", None)
     if not isinstance(days, list) or not days:
         raise ValueError("history partition ref requires a nonempty days list")
     body = snapshot_json_bytes(partition)
+    digest = hashlib.sha256(body).hexdigest()
     return HistoricPartitionRef(
-        path=path,
+        path=path_builder(digest),
         coverage_start=days[0].date,
         coverage_end=days[-1].date,
         count=len(days),
-        sha256=hashlib.sha256(body).hexdigest(),
+        sha256=digest,
         byte_size=len(body),
     )
 
@@ -1387,8 +1394,8 @@ def history_point_ref(family: str, payload: BaseModel) -> HistoricPartitionRef:
     if not isinstance(payload, model):
         raise ValueError(f"point history payload does not match family {family!r}")
     local_date = history_date(getattr(payload, "date", None), field="date")
-    if getattr(payload, "methodology_version", None) != "reliability-1":
-        raise ValueError("point history payload methodology must be reliability-1")
+    if getattr(payload, "methodology_version", None) not in {"reliability-1", "reliability-2"}:
+        raise ValueError("unsupported point history payload methodology")
     if getattr(payload, "publish_generation_id", None) is not None:
         raise ValueError("point history payloads cannot carry a publish generation")
     body = snapshot_json_bytes(payload)

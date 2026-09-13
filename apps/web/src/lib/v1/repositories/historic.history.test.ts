@@ -324,14 +324,17 @@ interface PointArtifact<T> {
 function pointArtifact(
 	family: 'hotspots',
 	date: string,
+	methodology?: string,
 ): Promise<PointArtifact<HistoricHotspotsDay>>;
 function pointArtifact(
 	family: 'repeat_offenders',
 	date: string,
+	methodology?: string,
 ): Promise<PointArtifact<HistoricRepeatOffendersDay>>;
 async function pointArtifact(
 	family: PointFamily,
 	date: string,
+	methodology = 'reliability-1',
 ): Promise<PointArtifact<HistoricHotspotsDay | HistoricRepeatOffendersDay>> {
 	const value =
 		family === 'hotspots'
@@ -340,7 +343,7 @@ async function pointArtifact(
 					date,
 					hotspots: [],
 					by_grain: [],
-					methodology_version: 'reliability-1',
+					methodology_version: methodology,
 					publish_generation_id: null,
 				})
 			: HistoricRepeatOffendersDaySchema.parse({
@@ -348,7 +351,7 @@ async function pointArtifact(
 					date,
 					offenders: [],
 					by_grain: [],
-					methodology_version: 'reliability-1',
+					methodology_version: methodology,
 					publish_generation_id: null,
 				});
 	const bytes = new TextEncoder().encode(` ${JSON.stringify(value)}\n`);
@@ -1359,36 +1362,39 @@ describe('root-pinned point-family history', () => {
 		expect(dayPort).not.toHaveBeenCalled();
 	});
 
-	it('loads valid older published-empty artifacts from exact raw bytes', async () => {
-		const hotspots = [
-			await pointArtifact('hotspots', '2026-03-29'),
-			await pointArtifact('hotspots', '2026-03-31'),
-		];
-		const repeats = [
-			await pointArtifact('repeat_offenders', '2026-03-29'),
-			await pointArtifact('repeat_offenders', '2026-03-31'),
-		];
-		const hotspotsIndex = await pointCollectionIndex('hotspots', hotspots);
-		const repeatIndex = await pointCollectionIndex('repeat_offenders', repeats);
-		const ctx: AdapterCtx = { signal: new AbortController().signal };
-		const hotspotsPort = vi
-			.spyOn(adapter.historic, 'hotspotsHistoryDay')
-			.mockResolvedValue(hotspots[0]);
-		const repeatPort = vi
-			.spyOn(adapter.historic, 'repeatOffendersHistoryDay')
-			.mockResolvedValue(repeats[0]);
+	it.each(['reliability-1', 'reliability-2'])(
+		'loads %s artifacts from exact raw bytes',
+		async (methodology) => {
+			const hotspots = [
+				await pointArtifact('hotspots', '2026-03-29', methodology),
+				await pointArtifact('hotspots', '2026-03-31', methodology),
+			];
+			const repeats = [
+				await pointArtifact('repeat_offenders', '2026-03-29', methodology),
+				await pointArtifact('repeat_offenders', '2026-03-31', methodology),
+			];
+			const hotspotsIndex = await pointCollectionIndex('hotspots', hotspots);
+			const repeatIndex = await pointCollectionIndex('repeat_offenders', repeats);
+			const ctx: AdapterCtx = { signal: new AbortController().signal };
+			const hotspotsPort = vi
+				.spyOn(adapter.historic, 'hotspotsHistoryDay')
+				.mockResolvedValue(hotspots[0]);
+			const repeatPort = vi
+				.spyOn(adapter.historic, 'repeatOffendersHistoryDay')
+				.mockResolvedValue(repeats[0]);
 
-		await expect(getHotspotsHistoryDay('2026-03-29', hotspotsIndex, ctx)).resolves.toBe(
-			hotspots[0].value,
-		);
-		await expect(getRepeatOffendersHistoryDay('2026-03-29', repeatIndex, ctx)).resolves.toBe(
-			repeats[0].value,
-		);
-		expect(hotspots[0].value.hotspots).toEqual([]);
-		expect(repeats[0].value.offenders).toEqual([]);
-		expect(hotspotsPort).toHaveBeenCalledWith('2026-03-29', hotspots[0].ref.path, ctx);
-		expect(repeatPort).toHaveBeenCalledWith('2026-03-29', repeats[0].ref.path, ctx);
-	});
+			await expect(getHotspotsHistoryDay('2026-03-29', hotspotsIndex, ctx)).resolves.toBe(
+				hotspots[0].value,
+			);
+			await expect(getRepeatOffendersHistoryDay('2026-03-29', repeatIndex, ctx)).resolves.toBe(
+				repeats[0].value,
+			);
+			expect(hotspots[0].value.hotspots).toEqual([]);
+			expect(repeats[0].value.offenders).toEqual([]);
+			expect(hotspotsPort).toHaveBeenCalledWith('2026-03-29', hotspots[0].ref.path, ctx);
+			expect(repeatPort).toHaveBeenCalledWith('2026-03-29', repeats[0].ref.path, ctx);
+		},
+	);
 
 	it('fails closed for an advertised day 404, exact-byte drift, and payload date drift', async () => {
 		const artifacts = [
@@ -1453,6 +1459,20 @@ describe('root-pinned point-family history', () => {
 			HistoryArtifactContractError,
 		);
 	});
+
+	it.each(['reliability-3', 'live-2', ''])(
+		'rejects unsupported point methodology %s with valid bytes',
+		async (methodology) => {
+			const first = await pointArtifact('hotspots', '2026-03-29', methodology);
+			const latest = await pointArtifact('hotspots', '2026-03-31');
+			const index = await pointCollectionIndex('hotspots', [first, latest]);
+			vi.spyOn(adapter.historic, 'hotspotsHistoryDay').mockResolvedValue(first);
+			await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toMatchObject({
+				name: 'HistoryArtifactContractError',
+				path: first.ref.path,
+			});
+		},
+	);
 
 	it('rejects Repeat grain endpoints that disagree with the advertised date', async () => {
 		const artifacts = [

@@ -106,11 +106,23 @@ _FAMILY_MANIFEST_SHARED = (
     "snapshots/contract.py",
     "snapshots/serialization.py",
     "snapshots/publish.py",
+    "snapshots/historic_streams.py",
+    "snapshots/historic_graph.py",
+    "snapshots/historic_tier.py",
+    "snapshots/historic_compatibility.py",
+    "snapshots/envelope.py",
+    "snapshots/uploads.py",
     "settings.py",
     "sql_registry.py",
 )
 _GATE_MANIFEST = (
     "snapshots/gate.py",
+    "snapshots/historic_streams.py",
+    "snapshots/historic_graph.py",
+    "snapshots/historic_tier.py",
+    "snapshots/historic_compatibility.py",
+    "snapshots/envelope.py",
+    "snapshots/uploads.py",
     "snapshots/builders/historic/network_history.py",
     "snapshots/builders/historic/line_history.py",
     "snapshots/builders/historic/stop_history.py",
@@ -2719,10 +2731,7 @@ def _assemble_historic_receipt_envelopes(
     run.complete_receipt_families = _HISTORIC_FAMILIES
     run.receipt_rows_attempted = len(entity_receipts)
     run.receipt_json_bytes_attempted = sum(
-        len(cast(str, params["common_envelope"]).encode("utf-8"))
-        + len(cast(str, params["month_receipts"]).encode("utf-8"))
-        for receipt in entity_receipts
-        for params in (receipt.as_sql_params(),)
+        _receipt_json_bytes(receipt) for receipt in entity_receipts
     )
 
 
@@ -2747,14 +2756,28 @@ def _finalize_historic_receipt_run(
         )
 
 
-@contextmanager
-def _historic_receipt_persistence(
+def _persist_historic_receipt_run(
+    conn: Connection,
+    provider_id: str,
     run: _HistoricPublishRun,
-) -> Iterator[None]:
+) -> None:
+    if not run.receipt_evidence_available:
+        return
     try:
-        with run.ledger.phase("receipt_persist"):
-            yield
-    except Exception:  # noqa: BLE001 - the caller's SAVEPOINT isolates receipt-only failure
+        with run.ledger.phase("receipt_persist"), conn.begin_nested():
+            stats = persist_historic_receipts(
+                conn,
+                provider_id=provider_id,
+                receipts=run.entity_receipts,
+                complete_families=run.complete_receipt_families,
+            )
+            run.receipt_rows_attempted = stats.rows_attempted
+            run.receipt_rows_changed = stats.rows_changed
+            run.receipt_json_bytes_attempted = stats.json_bytes_attempted
+            run.receipt_json_bytes_changed = stats.json_bytes_changed
+            run.stale_receipt_entities_deleted = stats.stale_entities_deleted
+            run.stale_receipt_months_deleted = stats.stale_months_deleted
+    except Exception:
         run.receipt_persist_failed = True
         run.receipt_rows_changed = 0
         run.receipt_json_bytes_changed = 0
@@ -2762,26 +2785,6 @@ def _historic_receipt_persistence(
             "historic receipt persistence failed after root activation; "
             "SAVEPOINT rolled back and publish state will still advance"
         )
-
-
-def _persist_historic_receipt_run(
-    conn: Connection,
-    provider_id: str,
-    run: _HistoricPublishRun,
-    persist: Callable[..., HistoricReceiptPersistenceStats],
-) -> None:
-    stats = persist(
-        conn,
-        provider_id=provider_id,
-        receipts=run.entity_receipts,
-        complete_families=run.complete_receipt_families,
-    )
-    run.receipt_rows_attempted = stats.rows_attempted
-    run.receipt_rows_changed = stats.rows_changed
-    run.receipt_json_bytes_attempted = stats.json_bytes_attempted
-    run.receipt_json_bytes_changed = stats.json_bytes_changed
-    run.stale_receipt_entities_deleted = stats.stale_entities_deleted
-    run.stale_receipt_months_deleted = stats.stale_months_deleted
 
 
 def _snapshot_historic_telemetry(

@@ -124,32 +124,20 @@ const SEMANTIC_LABELS = Object.freeze({
 const tierMap = (labels) =>
 	Object.fromEntries(labels.map((label, index) => [label, index === 0 ? null : index - 1]));
 const HEATMAP_TIERS = Object.freeze({
-	line: {
-		en: tierMap(['No data', 'Rarely late', 'Sometimes late', 'Often late', '◆ Very unreliable']),
-		fr: tierMap([
-			'Aucune donnée',
-			'Rarement en retard',
-			'Parfois en retard',
-			'Souvent en retard',
-			'◆ Très peu fiable',
-		]),
-	},
-	stop: {
-		en: tierMap([
-			'No data',
-			'Rarely severe',
-			'Sometimes severe',
-			'Often severe',
-			'◆ Very unreliable',
-		]),
-		fr: tierMap([
-			'Aucune donnée',
-			'Rarement grave',
-			'Parfois grave',
-			'Souvent grave',
-			'◆ Très peu fiable',
-		]),
-	},
+	en: tierMap([
+		'No data',
+		'Low relative score',
+		'Moderate relative score',
+		'High relative score',
+		'◆ Very high relative score',
+	]),
+	fr: tierMap([
+		'Aucune donnée',
+		'Score relatif faible',
+		'Score relatif modéré',
+		'Score relatif élevé',
+		'◆ Score relatif très élevé',
+	]),
 });
 
 async function readTable(page, root) {
@@ -182,7 +170,7 @@ async function readSemanticTable(page, root, locale) {
 }
 
 async function readHeatmapTiers(page, root, surface, locale) {
-	const tiers = HEATMAP_TIERS[surface][locale];
+	const tiers = HEATMAP_TIERS[locale];
 	const rows = await readTable(page, root);
 	return {
 		headers: await readHeaders(page, root),
@@ -292,7 +280,9 @@ async function collectLine(page, cell) {
 		.first()
 		.innerText();
 	const observedN =
-		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:tracked trips|trajets suivis)/iu)?.[1] ?? null;
+		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		verdictText.match(/\((\d+)\)/u)?.[1] ??
+		null;
 	const runBulletText = async (slot) =>
 		(await readValues(page, `[data-slot="${slot}"]`, '.metric-bullet__value'))[0] ?? null;
 	const completenessValue = await runBulletText('service-completeness');
@@ -375,8 +365,8 @@ async function collectLine(page, cell) {
 						? 'Plage de dates'
 						: 'Date range'
 					: cell.locale === 'fr'
-						? "Aujourd'hui"
-						: 'Today',
+						? 'Dernier jour'
+						: 'Latest day',
 			})
 			.click();
 	}
@@ -542,14 +532,16 @@ async function collectStop(page) {
 					: (element.querySelector('.metric-value')?.textContent?.trim() ?? null),
 			})),
 		);
-	const otpMetric = periodMetrics.find((metric) => /on-time|ponctualité/iu.test(metric.label));
+	const notSevereMetric = periodMetrics.find((metric) =>
+		/not-severe predictions|prévisions sans retard grave/iu.test(metric.label),
+	);
 	const verdictText = await page
 		.locator('[data-slot="stop-reliability-sections"] [data-slot="verdict"]')
 		.first()
 		.innerText();
 	const observedN =
 		verdictText.match(/\bn=(\d+)/u)?.[1] ??
-		verdictText.match(/(\d+)\s+(?:arrivals|passages)/iu)?.[1];
+		verdictText.match(/(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1];
 	const summaryText = await readValues(
 		page,
 		'[data-slot="stop-reliability-summary"] [data-slot="metric-display"]',
@@ -573,12 +565,8 @@ async function collectStop(page) {
 		links.map((link) => ({
 			id: new URL(link.href).pathname.split('/').at(-1),
 			display:
-				[...link.querySelectorAll('span')]
-					.find(
-						(span) =>
-							span.classList.contains('shrink-0') && span.classList.contains('tabular-nums'),
-					)
-					?.textContent?.trim() ?? null,
+				link.querySelector('.dv-ranked-row .tabular-nums.text-foreground')?.textContent?.trim() ??
+				null,
 		})),
 	);
 	const rankedRoutes = routeRows.map((row) => [row.id, parseNumber(row.display)]);
@@ -606,8 +594,8 @@ async function collectStop(page) {
 	};
 	const stopScalars = {
 		otp: {
-			value: parseNumber(otpMetric?.value),
-			text: normalizeObservation(otpMetric?.value ?? ''),
+			value: parseNumber(notSevereMetric?.value),
+			text: normalizeObservation(notSevereMetric?.value ?? ''),
 		},
 		summary: summary.map((value, index) => ({
 			value,
@@ -623,7 +611,7 @@ async function collectStop(page) {
 		})),
 	};
 	return [
-		observation('stop.day.otp_pct', parseNumber(otpMetric?.value)),
+		observation('stop.day.otp_pct', parseNumber(notSevereMetric?.value)),
 		observation('stop.day.avg_delay_min', summary[1] ?? null),
 		observation('stop.day.p50_min', percentiles[0] ?? null),
 		observation('stop.day.p90_min', percentiles[1] ?? null),
@@ -863,7 +851,6 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'historic/stop_reliability/52095.json', 200, 1],
 			['browser', 'live/stop_departures.json', 200, 1],
 			['browser', 'live/alerts.json', 200, 1],
-			['browser', 'live/network.json', 200, 1],
 		],
 		network: [
 			['ssr', 'manifest.json', 200, 2],
@@ -1070,7 +1057,9 @@ async function verifyTextSemantics(page, cell, fixture) {
 		if (!cell.path.includes('from=')) {
 			invariant(/[−-]1[.,]5 min/u.test(text), `${cell.path} lost the signed minute value`);
 			invariant(
-				text.includes(cell.locale === 'fr' ? '77 voyages' : '77 trips'),
+				text.includes(
+					cell.locale === 'fr' ? '77 identifiants de trajet observés' : '77 trip IDs observed',
+				),
 				`${cell.path} lost the localized plural`,
 			);
 		}
@@ -1119,7 +1108,7 @@ async function verifyControls(page, cell) {
 			`${cell.path} multi-day percentiles did not stand down`,
 		);
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? "Aujourd'hui" : 'Today' })
+			.getByRole('radio', { name: cell.locale === 'fr' ? 'Dernier jour' : 'Latest day' })
 			.click();
 	} else if (cell.surface === 'stop') {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
@@ -1130,6 +1119,29 @@ async function verifyControls(page, cell) {
 		);
 		await grain.getByRole('radio', { name: cell.locale === 'fr' ? 'Jour' : 'Day' }).click();
 		await page.locator('[data-slot="stop-percentiles"]').waitFor({ state: 'attached' });
+	}
+}
+
+async function verifyResponsiveRailFocus(page, cell) {
+	const desktopViewport = page.viewportSize();
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		await page.setViewportSize({ width: 390, height: 844 });
+		const pill = page.locator('[data-slot="surface-rail-mobile"] > button[aria-expanded]');
+		await pill.focus();
+		await page.keyboard.press('Enter');
+		const sheet = page
+			.getByRole('dialog')
+			.filter({ has: page.locator('[data-slot="surface-rail"]') });
+		await sheet.waitFor();
+		await sheet.locator('button:visible:not([disabled])').first().focus();
+		await page.setViewportSize(desktopViewport);
+		await sheet.waitFor({ state: 'detached' });
+		invariant(
+			await page
+				.locator('[data-slot="surface-rail"]')
+				.evaluate((rail) => rail.contains(document.activeElement)),
+			`${cell.path} lost keyboard focus when the mobile controls moved to desktop`,
+		);
 	}
 }
 
@@ -1247,9 +1259,9 @@ const MARK_SIGNATURES = Object.freeze({
 	},
 	'stacked-share': { domain: [0, 100], unit: '%', axis: [] },
 	'service-span': {
-		domain: [0, 1800],
+		domain: [0, 1440],
 		unit: 'min',
-		axis: ['00h', '06h', '12h', '18h', '24h', '30h'],
+		axis: ['+0h', '+6h', '+12h', '+18h', '+24h'],
 	},
 });
 
@@ -1334,8 +1346,19 @@ async function verifyGeometry(page, seen) {
 			.locator('[data-slot="service-span-timeline"] .dv-span-end-clock')
 			.allTextContents();
 		invariant(
-			clocks[0] === '05:00' && clocks[1] === '01:30',
+			clocks[0] === 'Aug 29, 2026, 05:00:00 GMT-4' && clocks[1] === 'Aug 30, 2026, 01:30:00 GMT-4',
 			'service-span representative does not cross midnight',
+		);
+		const timeline = page.locator('[data-slot="service-span-timeline"]');
+		const barWidth = await timeline
+			.locator('rect.dv-span-bar')
+			.evaluate((element) => element.getBoundingClientRect().width);
+		const trackWidth = await timeline
+			.locator('line.dv-span-track')
+			.evaluate((element) => element.getBoundingClientRect().width);
+		invariant(
+			trackWidth > 0 && Math.abs(barWidth / trackWidth - 1230 / 1440) < 0.001,
+			`service-span must show 20.5 elapsed hours on its 24-hour axis: ${barWidth}/${trackWidth}`,
 		);
 	}
 	if ((await page.locator('[data-slot="weak-stops"] [data-slot="ci-whisker"]').count()) > 0) {
@@ -1786,6 +1809,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					await verifyGeometry(page, geometrySeen);
 				}
 				await verifyControls(page, cell);
+				await verifyResponsiveRailFocus(page, cell);
 				const expected404 = replay.state.ledger.some((entry) => entry.status === 404);
 				const svgViolations = await page.evaluate(() => window.__b9SvgViolations ?? []);
 				const geometryErrors = errors.filter((error) =>

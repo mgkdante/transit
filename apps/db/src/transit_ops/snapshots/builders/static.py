@@ -53,21 +53,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # Static labels
 # ---------------------------------------------------------------------------
 
-# Citizen-facing methodology / gap / attribution copy (slice-9.1.1t).
-# The methodology.* wording encodes thresholds that live in SQL/code — when those
-# move, this copy MUST move in the same PR (a cross-invariant test ties provenance
-# methodology keys to these label keys; an 'early' assertion locks the early band).
-# Threshold sources:
-#   - on-time band: migration 0020 status_band CASE — avg_delay < -60s => Early
-#     (NOT on time), < +60s => On time, < +300s => Late, else Severe; build_network
-#     counts only the on-time bucket against known, so early vehicles are excluded.
-#   - delayed = delay_seconds > 0 (gold/rollups.py); severe = > 300s (gold/rollups.py);
-#     daily public views report severe as the "delayed" surface.
-#   - retention constants mirror build_provenance: detail 14d (GOLD_FACT_RETENTION_DAYS),
-#     aggregate 730d (GOLD_WARM_ROLLUP_RETENTION_DAYS). Literals below are locked by
-#     the parity test; keep them in step with settings when those defaults move.
-# The fr/en key sets MUST stay identical (parity test) — manifest.attribution stays
-# the unlocalized English machine fallback; these labels are the citizen surface.
+# Keep both languages' keys aligned. Live OTP includes the on_time + late
+# status buckets [-60s, 300s); historical fields retain their own populations.
 _STATIC_LABELS_FR: dict[str, str] = {
     "status.early": "En avance",
     "status.on_time": "À l'heure",
@@ -83,26 +70,27 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "occupancy.standing": "Debout seulement",
     "occupancy.full": "Complet",
     "methodology.otp_definition": (
-        "À l'heure : en direct, un véhicule est à l'heure si son retard moyen se "
-        "situe entre une minute d'avance et moins de cinq minutes de retard; plus "
-        "tôt, il est compté « en avance », pas à l'heure, et cinq minutes de retard "
-        "ou plus sont « sévères ». Dans l'historique quotidien, un passage est "
-        "ponctuel s'il n'a aucun retard enregistré; les vues par ligne et par arrêt "
-        "comptent les retards sévères (plus de 5 minutes)."
+        "À l'heure : de une minute d'avance à moins de cinq minutes de retard. "
+        "En direct, le pourcentage porte sur les positions de véhicules admissibles "
+        "sur la carte dont le statut est connu. Dans l'historique des lignes et du "
+        "réseau, il porte sur les observations au retard connu dans cette même "
+        "bande. La part historique non sévère aux arrêts est un indicateur distinct."
     ),
     "methodology.delay_unit": (
-        "Les retards sont mesurés en secondes par rapport à l'horaire GTFS publié "
-        "par la STM, puis affichés en minutes."
+        "Les retards sont mesurés en secondes par rapport à l'horaire GTFS du "
+        "fournisseur, puis affichés en minutes."
     ),
     "methodology.percentiles": (
-        "Le p90 du réseau est mesuré à partir des véhicules suivis en ce moment, "
-        "et sur les 14 derniers jours dans la vue de tendance. Les percentiles par "
-        "ligne et par arrêt sont calculés chaque jour à partir des observations "
-        "et conservés 730 jours."
+        "Les p50/p90 du réseau en direct portent sur les retards moyens par trajet "
+        "actuellement rapportés, avec le même poids par trajet. Le p90 de tendance "
+        'utilise la fenêtre détaillée configurée (14 derniers jours par défaut). Les '
+        'percentiles quotidiens '
+        "par ligne et par arrêt portent sur les observations de leur jour de capture "
+        "local; les mises à jour répétées ne sont pas des voyageurs distincts."
     ),
     "methodology.retention": (
-        "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
-        "730 jours."
+        "Par défaut : données détaillées, 14 jours; agrégats quotidiens, "
+        "730 jours. La provenance indique la politique configurée."
     ),
 }
 
@@ -121,23 +109,25 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "occupancy.standing": "Standing room only",
     "occupancy.full": "Full",
     "methodology.otp_definition": (
-        "On time: live, a vehicle counts as on time when its average delay is "
-        "from one minute early to under five minutes late; earlier than that is "
-        "counted as early, not on time, and five minutes or more late is severe. "
-        "In daily history, a tracked passage counts as punctual when no delay was "
-        "recorded; route and stop views count severe delays (over 5 minutes)."
+        "On time: from one minute early to under five minutes late. Live OTP uses "
+        "map-eligible vehicle-position rows with a known status. Route and network "
+        "history use known-delay observations in the same band. The historical "
+        "not-severe share at stops is a different measure."
     ),
     "methodology.delay_unit": (
-        "Delays are measured in seconds against the STM's published GTFS schedule, "
-        "then shown in minutes."
+        "Delays are measured in seconds against the provider's published GTFS "
+        "schedule, then shown in minutes."
     ),
     "methodology.percentiles": (
-        "Network p90 is measured from the buses tracked right now, and over the "
-        "last 14 days in the trend view. Per-route and per-stop percentiles are "
-        "computed daily from observations and kept for 730 days."
+        "Live network p50/p90 summarize current trip-average delays, with each "
+        'trip weighted equally. Trend p90 uses the configured detailed window (last 14 '
+        'days by default). '
+        "Daily route and stop percentiles use observations from their local capture "
+        "day; repeated updates are not distinct passengers."
     ),
     "methodology.retention": (
-        "Detailed data is kept for 14 days; daily aggregates for 730 days."
+        'Default retention is 14 days for detailed data and 730 days for daily '
+        'aggregates; provenance reports the configured policy.'
     ),
 }
 
@@ -274,8 +264,8 @@ _ROUTES_INDEX_SQL = named_query(
 )
 
 # Routes that get a per-route historic/route_reliability/{id}.json file. MUST
-# mirror publish._DISTINCT_HISTORIC_ROUTE_IDS_SQL exactly so the published
-# `reliability` flag matches the set of files actually written. Sourced from the
+# match the route IDs in historic.route_reliability_batch._ROUTE_INVENTORY_SQL
+# so the `reliability` flag matches the files actually written. Sourced from the
 # route delay spine (S7-B), which filters route_id IS NOT NULL at build, so the
 # '__unrouted__' sentinel never appears.
 _RELIABILITY_ROUTE_IDS_SQL = named_query(

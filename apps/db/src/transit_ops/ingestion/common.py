@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import ssl
@@ -8,16 +9,19 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from urllib.error import HTTPError
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.core.models import AuthConfig, AuthType, SignatureScheme
+from transit_ops.ingestion.storage import BronzeStorage
 from transit_ops.settings import Settings
 
 CHUNK_SIZE_BYTES = 1024 * 1024
+logger = logging.getLogger(__name__)
 
 REDACTED_PLACEHOLDER = "<redacted>"
 
@@ -202,6 +206,7 @@ def download_to_tempfile(
     request = Request(source_url, headers=headers or {}, method="GET")
     temp_path = Path(temp_name)
     byte_size = 0
+    hasher = hashlib.sha256()
 
     try:
         with urlopen(request, timeout=120, context=ssl_context) as response, temp_path.open(
@@ -210,16 +215,24 @@ def download_to_tempfile(
             http_status_code = getattr(response, "status", 200) or 200
             for chunk in iter(lambda: response.read(CHUNK_SIZE_BYTES), b""):
                 handle.write(chunk)
+                hasher.update(chunk)
                 byte_size += len(chunk)
         return DownloadedArtifact(
             temp_path=temp_path,
             byte_size=byte_size,
-            checksum_sha256=compute_sha256_hex(temp_path),
+            checksum_sha256=hasher.hexdigest(),
             http_status_code=http_status_code,
             source_url=source_url,
         )
     except Exception:
-        temp_path.unlink(missing_ok=True)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            logger.warning(
+                "Cannot remove failed download %s (%s)",
+                temp_path.name,
+                type(cleanup_error).__name__,
+            )
         raise
 
 
@@ -346,6 +359,52 @@ def mark_ingestion_run_failed(
             "error_message": redact_error_message(error_message)[:2000],
         },
     )
+
+
+def finish_failed_capture(
+    *,
+    engine: Engine,
+    ingestion_run_id: int,
+    error: Exception,
+    artifact: DownloadedArtifact | None,
+    bronze_storage: BronzeStorage,
+    orphan_storage_path: str | None,
+) -> None:
+    """Attempt failure telemetry and each cleanup without replacing the capture error."""
+    http_status = error.code if isinstance(error, HTTPError) else (
+        artifact.http_status_code if artifact else None
+    )
+    message = f"HTTP {error.code}: {error.reason}" if isinstance(error, HTTPError) else str(error)
+    try:
+        with engine.begin() as connection:
+            mark_ingestion_run_failed(
+                connection,
+                ingestion_run_id=ingestion_run_id,
+                completed_at_utc=utc_now(),
+                http_status_code=http_status,
+                error_message=message,
+            )
+    except Exception as reporting_error:
+        logger.warning(
+            "Cannot record failed ingestion run %s (%s)",
+            ingestion_run_id, type(reporting_error).__name__,
+        )
+    if artifact is not None:
+        try:
+            artifact.temp_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            logger.warning(
+                "Cannot remove temporary download for ingestion run %s (%s)",
+                ingestion_run_id, type(cleanup_error).__name__,
+            )
+    if orphan_storage_path is not None:
+        try:
+            bronze_storage.delete_object(orphan_storage_path)
+        except Exception as cleanup_error:
+            logger.warning(
+                "Cannot delete orphaned Bronze object %s for ingestion run %s (%s)",
+                orphan_storage_path, ingestion_run_id, type(cleanup_error).__name__,
+            )
 
 
 def insert_failed_ingestion_run(

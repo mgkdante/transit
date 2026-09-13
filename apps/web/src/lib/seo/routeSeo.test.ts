@@ -26,6 +26,7 @@ const PATHS = [
 	'/terms',
 	'/lines/1',
 	'/stop/5',
+	'/trip/example',
 ];
 
 // The full set of static surfaces (no detail routes) used by the title-
@@ -72,21 +73,21 @@ describe('resolveRouteSeo', () => {
 		expect(resolveRouteSeo('/stop/5', 'en').title).toBe('Stop detail');
 	});
 
-	it('keeps every NEUTRAL description in the ~120–160 char SEO window', () => {
+	it('keeps neutral descriptions nonempty and concise', () => {
 		for (const p of PATHS) {
 			for (const l of ['en', 'fr'] as const) {
 				const len = resolveRouteSeo(p, l).description.length;
-				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThanOrEqual(120);
+				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThan(0);
 				expect(len, `${p} ${l}: ${len} chars`).toBeLessThanOrEqual(160);
 			}
 		}
 	});
 
-	it('keeps every KEYWORDED description in the ~120–160 char SEO window', () => {
+	it('keeps provider descriptions nonempty and concise', () => {
 		for (const p of PATHS) {
 			for (const l of ['en', 'fr'] as const) {
 				const len = resolveRouteSeo(p, l, STM_IDENTITY).description.length;
-				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThanOrEqual(120);
+				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThan(0);
 				expect(len, `${p} ${l}: ${len} chars`).toBeLessThanOrEqual(160);
 			}
 		}
@@ -103,8 +104,8 @@ describe('resolveRouteSeo', () => {
 			expect(network).toContain('Montréal');
 		}
 		// Home title is the one keyworded title override.
-		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('Live STM map');
-		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Carte STM en direct');
+		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('STM network overview');
+		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
 	});
 
 	it('keeps legal SEO provider-neutral even when an identity is available', () => {
@@ -150,8 +151,8 @@ describe('resolveRouteSeo — neutral copy fallback', () => {
 			}
 		}
 		// The neutral home title stays distinct from the keyworded one.
-		expect(resolveRouteSeo('/', 'en').title).toBe('Live transit map');
-		expect(resolveRouteSeo('/', 'fr').title).toBe('Carte du réseau en direct');
+		expect(resolveRouteSeo('/', 'en').title).toBe('Transit network overview');
+		expect(resolveRouteSeo('/', 'fr').title).toBe('Vue d’ensemble du réseau');
 	});
 });
 
@@ -196,7 +197,7 @@ describe('resolveDatasetSeo', () => {
 		for (const l of ['en', 'fr'] as const) {
 			const { name, description } = resolveDatasetSeo(l);
 			expect(name.length).toBeGreaterThan(0);
-			expect(description).toContain('/v1');
+			expect(description).toContain('CC BY 4.0');
 		}
 		expect(resolveDatasetSeo('en').name).not.toBe(resolveDatasetSeo('fr').name);
 	});

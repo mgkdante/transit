@@ -45,8 +45,8 @@ The three application domains have one-way responsibilities:
 | Domain                         | Responsibility                                                                                              |
 |---|---|
 | [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks                           |
-| `apps/data-proxy`              | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis`                                  |
-| `apps/web`                     | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
+| [`apps/data-proxy`](apps/data-proxy/README.md) | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis`                                  |
+| [`apps/web`](apps/web/README.md) | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
 
 The web app consumes an immutable `yesid.dev-design` Release under
 `apps/web/vendor/design`. The snapshot retains its accompanying MIT license and
@@ -61,10 +61,11 @@ is installed with the workspace. The root
 `.bun-version`, `.nvmrc`, and `.python-version` files own the supported
 executable lines; deployment images separately pin Python 3.12.14.
 
-Install the JavaScript workspace and start the dashboard:
+Install the JavaScript workspace and start the dashboard. If you use NVM,
+`nvm install` selects the version in `.nvmrc`; other installations must provide
+that same Node version.
 
 ```bash
-nvm install
 bun install --frozen-lockfile
 bun run dev
 ```
@@ -99,6 +100,7 @@ deployment configuration. Never commit credentials or production exports.
 ## Repository guides
 
 - [Data pipeline and database](apps/db/README.md)
+- [Snapshot proxy and KPI contract](apps/data-proxy/README.md)
 - [Web dashboard](apps/web/README.md) and [Cloudflare serving](apps/web/CLOUDFLARE.md)
 - [Contributing and verification](CONTRIBUTING.md)
 

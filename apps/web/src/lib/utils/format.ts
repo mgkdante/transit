@@ -1,24 +1,6 @@
-/**
- * Numeric value formatting for the transit web app — the ONE place the
- * null -> no-data honesty branch lives.
- *
- * The honesty doctrine: a null / undefined / NaN value is an ABSENCE, never a
- * fabricated 0, never a bare "·". Every formatter here funnels missing input
- * through a single `noData` branch. Callers choose what an absence renders as:
- *
- *   - `noData: null`   -> returns `null`, so the caller's own empty state takes
- *                         over (e.g. <MaybeValue reason>, "?? copy.noData").
- *   - `noData: 'text'` -> returns the localized no-data string inline.
- *
- * Rounding / suffix / locale are all parameterized so each call site reproduces
- * its EXACT prior output. Nothing here adds or removes localization — pass the
- * `locale` only where the original code localized the number, and pass the same
- * suffix the original concatenated (`'%'`, `' %'`, `' min'`, a `t.units.*`
- * token, ...).
- *
- * Pure + dependency-free: consumed by low-level components, features, and the
- * root route alike.
- */
+/** Finite values are formatted; missing values preserve the caller’s no-data sentinel. */
+
+import { roundHalfAwayFromZero } from './rounding';
 
 /** Supported UI languages. Mirrors `Locale` from `$lib/i18n` / `TimeLang`. */
 export type FormatLang = 'en' | 'fr';
@@ -36,30 +18,38 @@ function isPresent(v: number | null | undefined): v is number {
 /** How the integer/decimal part of the number is rendered. */
 type Rounding =
 	| 'raw' // String(v) — the value as-is (default)
-	| 'round' // Math.round(v) — nearest integer
-	| 'fixed1'; // v.toFixed(1) — exactly one decimal
+	| 'round' // nearest integer, decimal ties away from zero
+	| 'fixed1' // exactly one decimal, ties away from zero
+	| 'auto'; // integers stay integers, otherwise at most one decimal
+
+const numberFormats = new Map<string, Intl.NumberFormat>();
 
 /** Render the numeric core of a value per the chosen rounding + optional locale. */
 function core(v: number, rounding: Rounding, locale: FormatLang | undefined): string {
+	const rounded = rounding === 'raw' ? v : roundHalfAwayFromZero(v, rounding === 'round' ? 0 : 1);
 	if (locale) {
-		const tag = localeTag(locale);
-		switch (rounding) {
-			case 'round':
-				return Math.round(v).toLocaleString(tag);
-			case 'fixed1':
-				return v.toLocaleString(tag, {
-					minimumFractionDigits: 1,
-					maximumFractionDigits: 1,
-				});
-			default:
-				return v.toLocaleString(tag);
+		const key = `${locale}:${rounding}`;
+		let formatter = numberFormats.get(key);
+		if (!formatter) {
+			const options =
+				rounding === 'fixed1'
+					? { minimumFractionDigits: 1, maximumFractionDigits: 1 }
+					: rounding === 'auto'
+						? { maximumFractionDigits: 1 }
+						: undefined;
+			formatter = new Intl.NumberFormat(localeTag(locale), options);
+			numberFormats.set(key, formatter);
 		}
+		return formatter.format(rounded);
 	}
+
 	switch (rounding) {
 		case 'round':
-			return String(Math.round(v));
+			return String(rounded);
+		case 'auto':
+			return Number.isInteger(v) ? String(v) : rounded.toFixed(1);
 		case 'fixed1':
-			return v.toFixed(1);
+			return rounded.toFixed(1);
 		default:
 			return String(v);
 	}
@@ -95,7 +85,7 @@ export function fmtPct<NoData extends string | null = null>(
 }
 
 /**
- * Format a nullable count. No suffix; rounding `'raw'` by default. Pass
+ * Format a nullable number. No suffix; rounding `'raw'` by default. Pass
  * `locale` to get localized thousands separators. Absence -> `opts.noData`
  * (default `null`).
  *
@@ -103,13 +93,15 @@ export function fmtPct<NoData extends string | null = null>(
  * @example fmtCount(1234, { locale: 'en' })         // "1,234"
  * @example fmtCount(null, { noData: 'no data' })    // "no data"
  */
-export function fmtCount<NoData extends string | null = null>(
+export function fmtNumber<NoData extends string | null = null>(
 	v: number | null | undefined,
 	opts: BaseOpts<NoData> = {},
 ): string | NoData {
 	if (!isPresent(v)) return (opts.noData ?? null) as NoData;
 	return core(v, opts.rounding ?? 'raw', opts.locale);
 }
+
+export { fmtNumber as fmtCount };
 
 /**
  * Format a nullable minute value. Appends `suffix` (default `' min'`).
@@ -125,23 +117,10 @@ export function fmtCount<NoData extends string | null = null>(
  */
 export function fmtDelayMin<NoData extends string | null = null>(
 	v: number | null | undefined,
-	opts: Omit<BaseOpts<NoData>, 'rounding'> & {
-		rounding?: Rounding | 'auto';
-		suffix?: string;
-	} = {},
+	opts: BaseOpts<NoData> & { suffix?: string } = {},
 ): string | NoData {
 	if (!isPresent(v)) return (opts.noData ?? null) as NoData;
 	const suffix = opts.suffix ?? ' min';
-	if (opts.rounding === 'auto') {
-		// "integer stays integer, else <=1 decimal". With a `locale`, defer to Intl
-		// (grouping + locale decimal mark, max 1 fraction digit); without, the plain
-		// String/toFixed pair. Both keep an integer as an integer.
-		const n = opts.locale
-			? v.toLocaleString(localeTag(opts.locale), { maximumFractionDigits: 1 })
-			: Number.isInteger(v)
-				? String(v)
-				: v.toFixed(1);
-		return `${n}${suffix}`;
-	}
+
 	return `${core(v, opts.rounding ?? 'raw', opts.locale)}${suffix}`;
 }

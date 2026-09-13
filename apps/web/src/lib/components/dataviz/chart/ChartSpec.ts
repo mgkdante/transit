@@ -319,18 +319,12 @@ export interface HistogramSpec extends ChartSpecBase {
 	readonly kind: 'histogram';
 	/** Signed domain straddling 0 (e.g. [-300, 1800] sec or [-5, 30] min). */
 	readonly domain: AbsoluteDomain;
-	/**
-	 * The COUNT y-axis domain `[0, maxCount]`. A histogram is read by SHAPE within ONE
-	 * distribution — it is NOT a cross-view magnitude comparison (you never compare this
-	 * route's "30-60s bin" height to another's), so the Lie-Factor law (scoped to cross-view
-	 * length) does not bind it; the selector supplies the distribution's own max so the
-	 * shape is readable. Still zero-based, still explicit — the renderer never derives it.
-	 */
+	/** Bin-count range; the renderer scales density (count / bin width). */
 	readonly countDomain: AbsoluteDomain;
 	readonly unit: string;
 	/** Localized x-axis title (e.g. "Delay (min)"). */
 	readonly xLabel?: string;
-	/** Localized y-axis title (e.g. "Trips"). */
+	/** Population counted in bins (e.g. "Trips" or "Observations"). */
 	readonly yLabel?: string;
 	readonly bins: readonly HistogramBin[];
 	readonly medianRef?: number | null;
@@ -475,44 +469,34 @@ export interface HeatmapSpec extends ChartSpecBase {
 	readonly colTicks?: readonly HeatmapColTick[];
 }
 
-/** One sparse hour tick on the service-span 24h axis — its minute position + label. */
+/** One elapsed-minute tick on the service-span axis. */
 export interface ServiceSpanTick {
 	readonly min: number;
 	readonly label: string;
 }
 
-/**
- * P3 — the service-span timeline: the day's first→last departure window as a floating bar
- * on a FIXED 24h domain [0, 1440] minutes (the same literal axis on every route/refresh,
- * never normalised to the data). EXEMPT from the zero-based magnitude law: the bar is a
- * floating [first,last] RANGE, not a zero-anchored length. Each endpoint carries a signed
- * punctuality reading (early / late). Honest absence: when neither endpoint resolves, the
- * whole mark is absent. Rendered by ServiceSpanMark (LayerChart axis + a floating bar).
- */
+/** Elapsed time between the first and last observed trip instants. */
 export interface ServiceSpanSpec extends ChartSpecBase {
 	readonly kind: 'service-span';
-	/** Fixed 24h domain in minutes — [0, 1440]. */
+	/** Elapsed minutes from the first instant: at least [0,1440], extended for longer spans. */
 	readonly domain: AbsoluteDomain;
-	/** First / last departure as wall-clock minutes (0..1440); null ⇒ unresolved endpoint. */
-	readonly firstMin: number | null;
-	readonly lastMin: number | null;
-	/** Formatted clock strings for the two endpoints (e.g. "05:12"). */
+	/** Nonnegative elapsed minutes, including fractional minutes from timestamp seconds. */
+	readonly elapsedMin: number;
+	/** Provider-local date, clock and UTC-offset labels for the two instants. */
 	readonly firstClock: string;
 	readonly lastClock: string;
 	/** Signed first / last-trip delay (min; <0 early, >0 late); null ⇒ no marker. */
 	readonly firstDelayMin: number | null;
 	readonly lastDelayMin: number | null;
-	/** Pre-formatted span-length + trip-count annotations; null ⇒ omitted. */
+	/** Published span-length and trip-count annotations; null ⇒ omitted. */
 	readonly spanLabel: string | null;
 	readonly tripsLabel: string | null;
-	/** Endpoint + delay labels (localized). */
 	readonly firstLabel: string;
 	readonly lastLabel: string;
 	readonly firstDelayLabel: string;
 	readonly lastDelayLabel: string;
-	/** Localized "no data" text for an absent delay reading (a11y). */
 	readonly noDataLabel: string;
-	/** Sparse axis ticks (e.g. 00h / 06 / 12 / 18 / 24h). */
+	/** Sparse elapsed-hour offsets such as +0h, +6h and +24h. */
 	readonly hourTicks: readonly ServiceSpanTick[];
 }
 

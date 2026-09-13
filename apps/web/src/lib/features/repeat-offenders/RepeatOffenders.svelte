@@ -383,16 +383,10 @@
 	const tripEvidence = $derived(evidenceFor('trip'));
 	const vehicleEvidence = $derived(evidenceFor('vehicle'));
 
-	// §C5.12 #1-OFFENDER HERO: entries[] is DB-ranked worst-first by the Wilson lower
-	// bound, so entries[0] IS the #1 offender. The hero names it + shows its streak
-	// (recurrence natural frequency) + its Wilson-bounded severe rate. Honest: a null rate
-	// / absent bounds degrade the clause (never a fabricated confidence); no entries →
-	// the stand-down line. The bar's Wilson bracket the COMPLEMENTARY not-severe rate, so
-	// flip onto the severe scale ([100−hi, 100−lo]) exactly as the ladder selector does.
 	const topOffender = $derived<RepeatOffenderEntry | null>(activeLadder?.entries?.[0] ?? null);
 	const round1 = (x: number): number => Math.round(x * 10) / 10;
 	const heroName = $derived(topOffender ? (topOffender.route_name ?? unnamed(topOffender)) : null);
-	const heroStreak = $derived.by<string | null>(() => {
+	const heroRecurrence = $derived.by<string | null>(() => {
 		if (!topOffender) return null;
 		return topOffender.recurrence_days != null && topOffender.observed_days != null
 			? t.recurrence.naturalFrequency(topOffender.recurrence_days, topOffender.observed_days)
@@ -737,10 +731,12 @@
 												{#if heroRate}
 													<p class="offenders-hero-rate">{heroRate}</p>
 												{/if}
-												{#if heroStreak}
-													<p class="offenders-hero-streak">
-														<span class="offenders-hero-streak-label">{t.hero.streakLabel}</span>
-														{heroStreak}
+												{#if heroRecurrence}
+													<p class="offenders-hero-recurrence">
+														<span class="offenders-hero-recurrence-label"
+															>{t.hero.recurrenceLabel}</span
+														>
+														{heroRecurrence}
 													</p>
 												{/if}
 											{:else}
@@ -894,7 +890,7 @@
 		line-height: 1.65;
 	}
 	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
-	   entity's name, its Wilson-bounded severe rate + its streak. */
+	   entity's name, its Wilson-bounded severe rate and recurrence. */
 	.offenders-hero {
 		display: flex;
 		flex-direction: column;
@@ -940,7 +936,7 @@
 		line-height: 1.4;
 		color: var(--foreground);
 	}
-	.offenders-hero-streak,
+	.offenders-hero-recurrence,
 	.offenders-hero-none {
 		margin: 0;
 		font-family: var(--font-mono);
@@ -948,7 +944,7 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	.offenders-hero-streak-label {
+	.offenders-hero-recurrence-label {
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--accent-text);

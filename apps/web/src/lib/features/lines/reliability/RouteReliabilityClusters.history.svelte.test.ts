@@ -322,7 +322,7 @@ describe('RouteReliabilityClusters retained Line history', () => {
 
 		expect(view.container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
 		expect(
-			view.getAllByRole('radio', { name: /Today|This week|This month|Date range/ }),
+			view.getAllByRole('radio', { name: /Latest day|This week|This month|Date range/ }),
 		).toHaveLength(4);
 		await fireEvent.click(view.getByRole('radio', { name: reliabilityCopy.en.controls.dateRange }));
 		const rail = view.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;

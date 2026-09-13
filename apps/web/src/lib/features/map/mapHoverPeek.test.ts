@@ -93,6 +93,21 @@ const routeFile = {
 } as RouteFile;
 
 describe('resolveMapHoverPeek', () => {
+	it.each([null, undefined, ''])(
+		'does not infer completed service from next_stop %s',
+		(next_stop) => {
+			const vehicle = VehicleSchema.parse({ ...vehicles[0], next_stop });
+			const peek = resolveMapHoverPeek(
+				{ kind: 'vehicle', id: vehicle.id },
+				{
+					...context,
+					index: { ...context.index, byVehicleId: new Map([[vehicle.id, vehicle]]) },
+				},
+			);
+			expect(peek).toMatchObject({ nextStop: null, nextStopAbsence: 'not-reported' });
+		},
+	);
+
 	it('builds the vehicle peek from the vehicle index without requiring hover-only fetches', () => {
 		const peek = resolveMapHoverPeek({ kind: 'vehicle', id: 'bus-24' }, context);
 
@@ -228,6 +243,12 @@ describe('resolveMapHoverPeek', () => {
 			directionLabel: 'toward Sherbrooke / Saint-Denis',
 			alerts: [routeAlert],
 		});
+		expect(
+			resolveMapHoverPeek(
+				{ kind: 'route', id: '24', direction: 0 },
+				{ ...enrichedContext, locale: 'fr' },
+			),
+		).toMatchObject({ directionLabel: 'vers Sherbrooke / Saint-Denis' });
 		expect(resolveMapHoverPeek({ kind: 'stop', id: 'stop-2' }, enrichedContext)).toMatchObject({
 			kind: 'stop',
 			departureCount: 2,

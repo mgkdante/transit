@@ -242,6 +242,17 @@
 		position: relative;
 	}
 
+	/* Keep active controls and keyboard focus available while the footer is in view. */
+	:global(.app-shell-root:has([data-slot='footer'][data-in-view='true']))
+		:global(
+			:is([data-slot='surface-rail-mobile'], [data-testid='toc-pill']):not(:focus-within):not(
+					:has([aria-expanded='true'])
+				)
+		) {
+		opacity: 0;
+		pointer-events: none;
+	}
+
 	.app-shell-main {
 		position: absolute;
 		inset: 0;

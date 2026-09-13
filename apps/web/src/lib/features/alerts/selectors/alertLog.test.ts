@@ -215,7 +215,7 @@ describe('buildAlertRow', () => {
 				routes: ['10'],
 				stops: [],
 				duration_min: null,
-				impact_passages: null,
+				impact_passages: 1234,
 				active_periods: [
 					{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-02T00:00:00Z' },
 					{ start_utc: '2026-06-10T00:00:00Z', end_utc: null },
@@ -225,7 +225,7 @@ describe('buildAlertRow', () => {
 		);
 		expect(vm.severity).toBe('high');
 		expect(vm.durationMin).toBeNull();
-		expect(vm.impactPassages).toBeNull();
+		expect(vm).not.toHaveProperty('impactPassages');
 		expect(vm.periods).toHaveLength(2);
 		expect(vm.periods[1].until).toBeNull();
 		expect(vm.headline).toEqual({ text: 'Resolved', lang: 'en', isFallback: false });

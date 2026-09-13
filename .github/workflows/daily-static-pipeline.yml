@@ -92,6 +92,7 @@ jobs:
           exit "$aggregate_status"
 
       - name: Publish static /v1 snapshot to R2 (all active providers)
+        if: steps.run-static-providers.outcome == 'success'
         run: uv run python -m transit_ops.cli publish-all --tier static
 
       - name: Re-fail after provider pipeline failures

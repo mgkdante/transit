@@ -18,7 +18,7 @@
 	import { formatUtc } from '$lib/utils/time';
 	import {
 		delayLabel,
-		depTone,
+		delayTone,
 		rowGlyph,
 		rowColorVar,
 		type DelayLabelCopy,
@@ -138,7 +138,7 @@
 	{#if departure.delay_min == null}
 		<AbsentValue variant="row" reason="not-reported" {locale} />
 	{:else}
-		{@const tone = depTone(departure.delay_min)}
+		{@const tone = delayTone(departure.delay_min)}
 		<span class="stop-departure-delay" style:color={rowColorVar(tone)} data-tone={tone}>
 			{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true"
 					>{rowGlyph(tone)}</span

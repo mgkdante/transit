@@ -616,7 +616,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(repeatCopy.en.cards).toEqual({
 			worst: {
 				title: 'Worst repeat offender',
-				subtitle: 'The current worst repeat offender, its severe rate, and its streak',
+				subtitle: 'Severe-delay rate and recurrence',
 			},
 			trips: {
 				title: 'Trips',
@@ -630,7 +630,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(repeatCopy.fr.cards).toEqual({
 			worst: {
 				title: 'Pire récidiviste',
-				subtitle: 'Le pire récidiviste actuel, son taux de retards graves et sa série',
+				subtitle: 'Taux de retards graves et récurrence',
 			},
 			trips: {
 				title: 'Voyages',

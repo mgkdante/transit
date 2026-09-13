@@ -32,7 +32,7 @@ daemon loss cannot guarantee cleanup.
 ```bash
 set -euo pipefail
 
-nvm install
+if command -v nvm >/dev/null 2>&1; then nvm install; fi
 test "$(node --version)" = "v$(tr -d '\r\n' < .nvmrc)"
 test "$(bun --version)" = "$(tr -d '\r\n' < .bun-version)"
 test "$(uv --version | cut -d' ' -f1,2)" = "uv 0.11.15"
@@ -50,6 +50,7 @@ node .github/scripts/materialize-shared-config.mjs
 git diff --exit-code -- turbo.json
 node --test .github/scripts/deploy-scope.test.mjs
 node --test .github/scripts/refresh-basemap-r2.test.mjs
+node --test .github/scripts/web-build-artifact.test.mjs
 bun apps/web/vendor/design/tools/adopt.ts --check --dest apps/web/vendor/design
 
 bun run --cwd apps/web tokens:build
@@ -66,19 +67,20 @@ bun run --cwd apps/web format:check
 bun run --cwd apps/web check
 bun run --cwd apps/web build
 (cd apps/web && ../../node_modules/.bin/wrangler deploy --dry-run --env="")
+node --test apps/web/scripts/install-browser-toolchain.test.mjs apps/web/scripts/verify-browser-toolchain.test.mjs
 transit_browser_root="$transit_tool_dir/browser"
 install -d -m 0700 "$transit_browser_root"
 export TRANSIT_BROWSER_ROOT="$transit_browser_root"
 node apps/web/scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT" >/dev/null
 node apps/web/scripts/verify-browser-toolchain.mjs
 B9_REUSE_BUILD=1 bun run --cwd apps/web test:b9-display
-bun run --cwd apps/web test
+env -u PUBLIC_SITE_ORIGIN -u PUBLIC_V1_BASE -u PUBLIC_INDEXING bun run --cwd apps/web test
 
 (
   cd apps/db
   env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
   uv run ruff check src tests
-  uv run mypy src/transit_ops/snapshots/publish.py
+  uv run mypy
   test "$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)" = "1"
 )
 
@@ -105,11 +107,19 @@ Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence
 used to verify it.
 
+The web workflow reuses a verified build between CI and deployment. The local
+command above covers the helper and workflow contracts; hosted artifact transfer
+and environment protection still require GitHub Actions evidence. The
+[CI script guide](.github/scripts/README.md) explains target binding, integrity
+checks and retry behavior. Unit tests use their default data origin independently
+of the deployment target; the built Worker keeps its configured public values.
+
 `map-posters:check` verifies the checked-in dated posters and their source
 receipt entirely offline. To intentionally rebuild those assets, install the
 authenticated browser with `apps/web/scripts/install-browser-toolchain.mjs`,
-set `CHROME_PATH` to the executable path it prints, and
-replace the receipt's filenames with the new `YYYYMMDD`, update the matching
+keep `TRANSIT_BROWSER_ROOT` set to the installation root passed to that command,
+and replace the receipt's filenames
+with the new `YYYYMMDD`. Update the matching
 `MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
 `bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,
 client filenames, copy, and tests together.

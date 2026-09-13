@@ -5,6 +5,7 @@ import json
 import pytest
 from sqlalchemy.sql.elements import TextClause
 
+from transit_ops.gold.delay_days import DAILY_DELAY_STATE_KINDS
 from transit_ops.source_factory import catalog as catalog_module
 from transit_ops.source_factory.catalog import (
     SOURCE_FACTORY_RESET_TABLES,
@@ -38,8 +39,9 @@ class RecordingConnection:
     def __init__(self) -> None:
         self.statements: list[object] = []
 
-    def execute(self, statement: object) -> None:
+    def execute(self, statement: object):
         self.statements.append(statement)
+        return _ProviderScopedResult(None, rowcount=0)
 
 
 class _ProviderScopedResult:
@@ -167,9 +169,7 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.rt_trip_updates",
         "silver.rt_trip_update_stop_times",
     }.issubset(set(by_family["trip_updates"].silver_tables))
-    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(
-        by_family["trip_updates"].silver_tables
-    )
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(by_family["trip_updates"].silver_tables)
     assert "gold.fact_trip_delay_snapshot" in by_family["trip_updates"].gold_outputs
     assert "gold.trip_delay_summary_5m" in by_family["trip_updates"].gold_outputs
     assert "gold.route_delay_hourly" in by_family["trip_updates"].gold_outputs
@@ -187,9 +187,7 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.rt_entities",
         "silver.rt_vehicle_positions",
     }.issubset(set(by_family["vehicle_positions"].silver_tables))
-    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(
-        by_family["vehicle_positions"].silver_tables
-    )
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(by_family["vehicle_positions"].silver_tables)
     assert "gold.fact_vehicle_snapshot" in by_family["vehicle_positions"].gold_outputs
     assert "gold.current_vehicle_map" in by_family["vehicle_positions"].gold_outputs
 
@@ -224,12 +222,8 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
 def test_catalog_declares_clean_reporting_outputs_without_legacy_silver() -> None:
     catalog = build_source_factory_catalog("stm")
 
-    all_silver_tables = {
-        table for source in catalog.sources for table in source.silver_tables
-    }
-    all_gold_outputs = {
-        output for source in catalog.sources for output in source.gold_outputs
-    }
+    all_silver_tables = {table for source in catalog.sources for table in source.silver_tables}
+    all_gold_outputs = {output for source in catalog.sources for output in source.gold_outputs}
 
     assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(all_silver_tables)
     assert set(REPORTING_AGGREGATE_TABLES).issubset(all_gold_outputs)
@@ -280,20 +274,18 @@ def test_reset_table_list_matches_clean_reporting_foundation() -> None:
     )
     assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(SOURCE_FACTORY_RESET_TABLES)
     assert set(immutable_receipt_history).isdisjoint(SOURCE_FACTORY_RESET_TABLES)
-    assert (
-        set(REPORTING_AGGREGATE_TABLES) - set(immutable_receipt_history)
-    ).issubset(SOURCE_FACTORY_RESET_TABLES)
+    assert (set(REPORTING_AGGREGATE_TABLES) - set(immutable_receipt_history)).issubset(
+        SOURCE_FACTORY_RESET_TABLES
+    )
     assert "gold.route_delay_hourly" not in str(build_source_factory_reset_statement())
     assert "gold.stop_delay_hourly" not in str(build_source_factory_reset_statement())
-    assert "gold.citizen_accountability_daily" not in str(
-        build_source_factory_reset_statement()
-    )
+    assert "gold.citizen_accountability_daily" not in str(build_source_factory_reset_statement())
     assert SOURCE_FACTORY_RESET_TABLES.index("gold.report_labels") < (
         SOURCE_FACTORY_RESET_TABLES.index("gold.dim_date")
     )
 
 
-def test_reset_statement_truncates_all_source_factory_tables() -> None:
+def test_reset_statement_truncates_sources_and_preserves_daily_state_table() -> None:
     statement = build_source_factory_reset_statement()
     sql = str(statement)
 
@@ -301,7 +293,7 @@ def test_reset_statement_truncates_all_source_factory_tables() -> None:
     assert "TRUNCATE TABLE" in sql
     assert "RESTART IDENTITY CASCADE" in sql
     for table_name in SOURCE_FACTORY_RESET_TABLES:
-        assert table_name in sql
+        assert (table_name in sql) == (table_name != "gold.warm_rollup_periods")
     for table_name in LEGACY_SILVER_REALTIME_TABLES:
         assert table_name not in sql
 
@@ -311,8 +303,14 @@ def test_reset_all_providers_executes_the_truncate_statement() -> None:
 
     summary = reset_source_factory_tables(connection, all_providers=True)
 
-    assert connection.statements == [build_source_factory_reset_statement()]
+    assert connection.statements[0] is build_source_factory_reset_statement()
+    assert len(connection.statements) == 2
+    assert "DELETE FROM gold.warm_rollup_periods WHERE rollup_kind NOT IN" in str(
+        connection.statements[1]
+    )
+    assert all(f"'{kind}'" in str(connection.statements[1]) for kind in DAILY_DELAY_STATE_KINDS)
     assert summary["mode"] == "all_providers"
+    assert "gold.warm_rollup_periods" not in summary["truncated_tables"]
 
 
 def test_reset_requires_provider_id_without_all_providers() -> None:
@@ -327,9 +325,7 @@ def test_reset_requires_provider_id_without_all_providers() -> None:
 def test_reset_per_provider_deletes_only_scoped_rows_and_skips_shared_seeds() -> None:
     # gold.report_labels is the one reset table with no provider_id column; it is
     # a shared seed and must survive a single-provider rebuild.
-    connection = _ProviderScopedConnection(
-        tables_without_provider_id={"gold.report_labels"}
-    )
+    connection = _ProviderScopedConnection(tables_without_provider_id={"gold.report_labels"})
 
     summary = reset_source_factory_tables(connection, "sto")
 
@@ -347,3 +343,6 @@ def test_reset_per_provider_deletes_only_scoped_rows_and_skips_shared_seeds() ->
     assert all(params == {"provider_id": "sto"} for _, params in connection.deletes)
     assert not any("report_labels" in sql for sql in connection.delete_sql)
     assert all("WHERE provider_id = :provider_id" in sql for sql in connection.delete_sql)
+    warm = next(sql for sql in connection.delete_sql if "gold.warm_rollup_periods" in sql)
+    assert "AND rollup_kind NOT IN" in warm
+    assert all(f"'{kind}'" in warm for kind in DAILY_DELAY_STATE_KINDS)

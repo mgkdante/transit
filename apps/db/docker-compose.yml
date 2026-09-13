@@ -36,6 +36,7 @@ services:
     # instead of being embedded in the URL, so reserved URL characters remain
     # valid.
     environment:
+      PGAPPNAME: transit-worker
       DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       APP_ENV: ${APP_ENV:-local}
@@ -111,6 +112,7 @@ services:
     # prune_silver_storage also runs the static-dataset prune (DB-only) in its
     # second transaction.
     environment:
+      PGAPPNAME: transit-pruner
       DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       APP_ENV: ${APP_ENV:-local}
@@ -137,6 +139,7 @@ services:
     # values it reports. It deliberately has NO STM_API_KEY (run_health_checks
     # never calls check_stm_feed) and no third-party AI-tooling secrets.
     environment:
+      PGAPPNAME: transit-health
       DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       APP_ENV: ${APP_ENV:-local}

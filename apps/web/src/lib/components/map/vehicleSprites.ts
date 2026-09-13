@@ -27,9 +27,18 @@ import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/comp
 export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
 	box: 26,
 	bodyIconSize: Object.freeze({ z11: 0.78, z15: 1.3 }),
-	stateBadge: Object.freeze({ offset: Object.freeze([0, 20] as const), scale: 0.6 }),
-	silentBadge: Object.freeze({ offset: Object.freeze([0, -16] as const), scale: 0.75 }),
-	chevronAnnulus: Object.freeze({ inner: 4.9, outer: 10.8 }),
+	headingOffset: Object.freeze([0, -9] as const),
+	stateBadge: Object.freeze({
+		offset: Object.freeze([0, 30] as const),
+		pairedOffset: Object.freeze([-9, 30] as const),
+		scale: 0.6,
+	}),
+	silentBadge: Object.freeze({
+		offset: Object.freeze([0, 30] as const),
+		pairedOffset: Object.freeze([9, 30] as const),
+		scale: 0.75,
+	}),
+	chevronAnnulus: Object.freeze({ inner: 12.7, outer: 19.8 }),
 	plateMargin: 2.4,
 });
 

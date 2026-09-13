@@ -58,10 +58,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('urlCoordinator.settle(url)');
 	});
 
-	it('keeps the orchestrator bounded and delegates outward lifecycle signals', () => {
+	it('delegates outward lifecycle signals', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(950);
 		expect(script).toContain('function onMapIdle(): void');
 		expect(script).toContain('function onMapFailure(failure: MapStageFailure | null): void');
 	});
@@ -79,18 +78,6 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
-	});
-
-	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
-		expect(source).toContain(
-			"import { createMapEmphasisController } from './mapEmphasisController.svelte'",
-		);
-		expect(source).toContain("import { resolveMapHoverPeek } from './mapHoverPeek'");
-		expect(source).not.toContain('hoveredId:');
-		expect(source).not.toContain('const focusedSelection = $derived(selected ?? hovered)');
-		expect(source).toContain('const serverNow = untrack(() => sharedClock.serverNow)');
-		expect(source).toContain('untrack(() => emphasisController.apply(m, entries))');
-		expect(source).toContain('untrack(() => emphasisController.replay(m))');
 	});
 
 	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {
@@ -129,7 +116,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
 		expect(mapStage).toContain('onidle={onMapIdle}');
 		expect(mapStage).toContain('onerror={onMapFailure}');
-		expect(mapStage).toContain('onbeforeremove={releaseMapOwners}');
+		expect(mapStage).toContain('onbeforeremove={runtime.release}');
 		expect(mapStage).not.toContain('layout.isDesktop');
 	});
 

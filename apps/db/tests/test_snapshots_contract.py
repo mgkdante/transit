@@ -1054,8 +1054,8 @@ def test_shared_history_families_and_manifest_pointer_are_registered():
     )
     assert PAYLOAD_METHODOLOGY["historic_collection_index"] == "history-1"
     assert PAYLOAD_METHODOLOGY["historic_availability_index"] == "history-1"
-    assert PAYLOAD_METHODOLOGY["historic_hotspots_day"] == "reliability-1"
-    assert PAYLOAD_METHODOLOGY["historic_repeat_offenders_day"] == "reliability-1"
+    assert PAYLOAD_METHODOLOGY["historic_hotspots_day"] == "reliability-2"
+    assert PAYLOAD_METHODOLOGY["historic_repeat_offenders_day"] == "reliability-2"
 
     historic = ManifestHistoricFiles()
     assert historic.history_index == "historic/history/index.json"

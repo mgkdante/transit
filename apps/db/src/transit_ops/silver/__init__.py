@@ -10,6 +10,7 @@ from transit_ops.silver.i3 import (
     I3SilverLoadResult,
     RawI3AlertSnapshot,
     find_latest_i3_raw_snapshot,
+    load_i3_to_silver,
     load_latest_i3_to_silver,
 )
 from transit_ops.silver.realtime_gtfs import (
@@ -18,6 +19,7 @@ from transit_ops.silver.realtime_gtfs import (
     RealtimeSilverLoadResult,
     find_latest_realtime_bronze_snapshot,
     load_latest_realtime_to_silver,
+    load_realtime_to_silver,
     replay_realtime_silver_window,
 )
 from transit_ops.silver.static_gtfs import (
@@ -44,7 +46,9 @@ __all__ = [
     "find_latest_realtime_bronze_snapshot",
     "load_latest_gis_to_silver",
     "load_latest_i3_to_silver",
+    "load_i3_to_silver",
     "load_latest_realtime_to_silver",
+    "load_realtime_to_silver",
     "load_latest_static_to_silver",
     "replay_realtime_silver_window",
     "validate_required_static_members",

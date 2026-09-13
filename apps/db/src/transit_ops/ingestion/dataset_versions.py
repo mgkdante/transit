@@ -11,9 +11,61 @@ SUPPORTED_DATASET_KINDS = frozenset({"static_schedule", "gis_static"})
 
 @dataclass(frozen=True)
 class DatasetVersionResult:
-    dataset_version_id: int
+    dataset_version_id: int | None
     content_changed: bool
     status: str
+
+
+def _observe_static_capture(
+    connection,
+    *,
+    provider_id: str,
+    feed_endpoint_id: int,
+    checksum_sha256: str,
+    observed_at_utc: datetime,
+) -> DatasetVersionResult:
+    previous = connection.execute(
+        text(
+            """
+            SELECT io.checksum_sha256,
+                (
+                    SELECT dv.dataset_version_id
+                    FROM core.dataset_versions AS dv
+                    WHERE dv.provider_id = io.provider_id
+                      AND dv.feed_endpoint_id = ir.feed_endpoint_id
+                      AND dv.dataset_kind = 'static_schedule'
+                      AND dv.content_hash = io.checksum_sha256
+                      AND dv.is_current = true
+                      AND EXISTS (
+                          SELECT 1 FROM silver.routes AS r
+                          WHERE r.dataset_version_id = dv.dataset_version_id
+                      )
+                    ORDER BY dv.loaded_at_utc DESC, dv.dataset_version_id DESC
+                    LIMIT 1
+                ) AS dataset_version_id
+            FROM raw.ingestion_objects AS io
+            JOIN raw.ingestion_runs AS ir USING (ingestion_run_id)
+            WHERE io.provider_id = :provider_id
+              AND ir.feed_endpoint_id = :feed_endpoint_id
+              AND ir.run_kind = 'static_schedule'
+              AND ir.status = 'succeeded'
+            ORDER BY ir.started_at_utc DESC, io.ingestion_object_id DESC
+            LIMIT 1
+            """
+        ),
+        {"provider_id": provider_id, "feed_endpoint_id": feed_endpoint_id},
+    ).mappings().one_or_none()
+    if previous is None or previous["checksum_sha256"] != checksum_sha256:
+        return DatasetVersionResult(None, True, "changed")
+    dataset_version_id = previous["dataset_version_id"]
+    if dataset_version_id is not None:
+        dataset_version_id = int(dataset_version_id)
+        _touch_dataset_version(
+            connection,
+            dataset_version_id=dataset_version_id,
+            observed_at_utc=observed_at_utc,
+        )
+    return DatasetVersionResult(dataset_version_id, False, "skipped_unchanged")
 
 
 def _current_dataset_version(  # noqa: ANN202
@@ -222,6 +274,15 @@ def register_or_touch_dataset_version(
         )
     if source_ingestion_run_id is None:
         raise ValueError("source_ingestion_run_id is required to register a dataset version.")
+
+    if dataset_kind == "static_schedule":
+        return _observe_static_capture(
+            connection,
+            provider_id=provider_id,
+            feed_endpoint_id=feed_endpoint_id,
+            checksum_sha256=checksum_sha256,
+            observed_at_utc=observed_at_utc,
+        )
 
     current = _current_dataset_version(
         connection,

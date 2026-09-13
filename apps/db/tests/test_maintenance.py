@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -117,6 +118,9 @@ class IterableResult:
     def all(self) -> list[tuple]:
         return list(self.rows)
 
+    def scalars(self):
+        return (row[0] for row in self.rows)
+
 
 class RowcountResult:
     def __init__(self, rowcount: int) -> None:
@@ -135,6 +139,8 @@ class RecordingEngine:
 
 class RecordingConnection:
     def __init__(self, gold_referenced_rows: list[tuple] | None = None) -> None:
+        self.connection = SimpleNamespace(dbapi_connection=SimpleNamespace(autocommit=False))
+        self.bronze_objects: dict[int, int] = {}
         self.calls: list[str] = []
         self.executed: list[tuple[str, dict | None]] = []
         # Dataset version ids that gold dims still reference (FK holders). The
@@ -143,6 +149,16 @@ class RecordingConnection:
         self.gold_referenced_rows = (
             gold_referenced_rows if gold_referenced_rows is not None else [(7,)]
         )
+
+    def in_transaction(self) -> bool:
+        return True
+
+    def get_isolation_level(self) -> str:
+        return "READ COMMITTED"
+
+    def bronze_selection(self, rows):
+        self.bronze_objects = {row[4]: row[0] for row in rows}
+        return IterableResult(rows)
 
     def __enter__(self) -> RecordingConnection:
         return self
@@ -154,11 +170,19 @@ class RecordingConnection:
         sql_text = str(statement)
         self.calls.append(sql_text)
         self.executed.append((sql_text, params))
-        # PR-B / slice-9.8: per-endpoint keep_from_id resolution (the tiny snapshot
-        # table read that drives the id-range silver prune). Returns a non-NULL
-        # keep_from_id per endpoint so the downstream child id-range deletes run.
-        if "keep_from_id" in sql_text and "GROUP BY endpoint_key" in sql_text:
-            return IterableResult([("trip_updates", 1000), ("vehicle_positions", 1000)])
+        if "pg_try_advisory_xact_lock" in sql_text:
+            return ScalarResult(True)
+        if params and "locked_object_ids" in params:
+            return IterableResult([(object_id,) for object_id in params["locked_object_ids"]])
+        if params and "locked_snapshot_ids" in params:
+            ids = params["locked_snapshot_ids"]
+            if "SELECT io.ingestion_object_id" in sql_text:
+                return IterableResult([(self.bronze_objects[snapshot_id],) for snapshot_id in ids])
+            return IterableResult([(snapshot_id,) for snapshot_id in ids])
+        if "SELECT s.rt_feed_snapshot_id, s.source_realtime_snapshot_id" in sql_text:
+            return IterableResult([(1000, None), (1001, None)])
+        if "SELECT realtime_snapshot_id FROM raw.realtime_snapshot_index" in sql_text:
+            return IterableResult([])
         # Gold-reference lookup (UNION over gold.dim_route/stop/date/route_pattern)
         # MUST be routed before the generic 'SELECT dataset_version_id' branch.
         if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
@@ -172,9 +196,8 @@ class RecordingConnection:
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
             if (
-                ("SELECT COUNT(*)" in sql_text or "SELECT count(*)" in sql_text)
-                and f"FROM {table_name}" in sql_text
-            ):
+                "SELECT COUNT(*)" in sql_text or "SELECT count(*)" in sql_text
+            ) and f"FROM {table_name}" in sql_text:
                 return ScalarResult(rowcount)
         if "SELECT dataset_version_id" in sql_text:
             return IterableResult([(7,), (6,), (5,)])
@@ -288,10 +311,7 @@ class RecordingConnection:
             return RowcountResult(7)
         if "DELETE FROM silver.i3_alerts" in sql_text:
             return RowcountResult(4)
-        if (
-            "SELECT COUNT(*)" in sql_text
-            and "silver.i3_alert_informed_entities" in sql_text
-        ):
+        if "SELECT COUNT(*)" in sql_text and "silver.i3_alert_informed_entities" in sql_text:
             return ScalarResult(7)
         if "SELECT COUNT(*)" in sql_text and "silver.i3_alerts" in sql_text:
             return ScalarResult(4)
@@ -305,9 +325,9 @@ class RecordingConnection:
             # (i3_alert_snapshot_id, ingestion_run_id, ingestion_object_id, storage_path)
             return IterableResult(
                 [
-                    (5001, 6001, 7001, "stm/i3_alerts/captured_at_utc=2026-01-01/a.json"),
-                    (5002, 6002, 7002, "stm/i3_alerts/captured_at_utc=2026-01-02/b.json"),
-                    (5003, 6003, None, None),
+                    (5001, 6001, 7001, "stm/i3_alerts/captured_at_utc=2026-01-01/a.json", "s3"),
+                    (5002, 6002, 7002, "stm/i3_alerts/captured_at_utc=2026-01-02/b.json", "s3"),
+                    (5003, 6003, None, None, None),
                 ]
             )
         if "DELETE FROM raw.i3_alert_snapshots" in sql_text:
@@ -326,7 +346,7 @@ class RecordingConnection:
             and "SELECT" in sql_text
             and "DELETE" not in sql_text
         ):
-            return IterableResult(
+            return self.bronze_selection(
                 [
                     (10, 1, "stm/trip_updates/captured_at_utc=2026-01-01/key1.pb", "s3", 100),
                     (11, 2, "stm/vehicle_positions/captured_at_utc=2026-01-01/key2.pb", "s3", 101),
@@ -367,8 +387,7 @@ class FakeBronzeStorage:
         self.deleted.extend(path for path in paths if path not in failed_paths)
         return set(failed_paths)
 
-    def storage_backend(self) -> str:
-        return "local"
+    storage_backend = "s3"
 
 
 def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
@@ -412,7 +431,8 @@ def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
         if "DELETE FROM silver.gis_gtfs_matches" in sql
     )
     dataset_delete_index = next(
-        index for index, sql in enumerate(connection.calls)
+        index
+        for index, sql in enumerate(connection.calls)
         if "DELETE FROM core.dataset_versions" in sql
     )
     assert gis_match_delete_index < dataset_delete_index
@@ -475,13 +495,9 @@ def test_prune_static_silver_datasets_defers_versions_still_referenced_by_gold_d
     assert pruned == [5]
     # No executed statement may delete the gold-referenced version 6.
     delete_dataset_versions_params = [
-        params
-        for sql, params in connection.executed
-        if "DELETE FROM core.dataset_versions" in sql
+        params for sql, params in connection.executed if "DELETE FROM core.dataset_versions" in sql
     ]
-    assert delete_dataset_versions_params == [
-        {"provider_id": "stm", "dataset_version_ids": [5]}
-    ]
+    assert delete_dataset_versions_params == [{"provider_id": "stm", "dataset_version_ids": [5]}]
     for sql, params in connection.executed:
         if "DELETE" in sql and params and "dataset_version_ids" in params:
             assert 6 not in params["dataset_version_ids"]
@@ -499,10 +515,7 @@ def test_prune_static_silver_datasets_skips_gold_reference_lookup_when_no_candid
 
     def single_version_execute(statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
-        if (
-            "SELECT dataset_version_id" in sql_text
-            and "gold.dim_route" not in sql_text
-        ):
+        if "SELECT dataset_version_id" in sql_text and "gold.dim_route" not in sql_text:
             connection.calls.append(sql_text)
             connection.executed.append((sql_text, params))
             return IterableResult([(9,)])
@@ -686,15 +699,9 @@ def test_realtime_history_delete_is_bounded_per_cycle(table_name, statement) -> 
         ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
     ],
 )
-def test_realtime_history_child_delete_is_id_range_scoped(table_name, statement) -> None:  # noqa: ANN001
-    """PR-B / slice-9.8: child deletes prune by a PK-leading rt_feed_snapshot_id
-    range (no captured_at JOIN onto the 99GB child) and stay provider-scoped.
-    """
+def test_realtime_history_child_delete_uses_selected_snapshot_keys(table_name, statement) -> None:  # noqa: ANN001
     sql = str(statement)
-
-    assert "rt_feed_snapshot_id < :keep_from_" in sql, (
-        f"{table_name} must delete by an rt_feed_snapshot_id range"
-    )
+    assert "rt_feed_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))" in sql
     # Provider scoping preserved (multi-tenant safety; the old JOIN filtered it).
     assert "provider_id = :provider_id" in sql
     # The fast path must NOT re-introduce the slow captured_at JOIN on the child.
@@ -709,18 +716,11 @@ def test_realtime_history_child_delete_is_id_range_scoped(table_name, statement)
         ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
     ],
 )
-def test_realtime_history_endpoint_spanning_delete_uses_per_endpoint_keep_map(  # noqa: ANN001
+def test_realtime_history_endpoint_spanning_delete_uses_selected_snapshot_keys(
     table_name, statement
-) -> None:
-    """rt_entities / rt_feed_snapshots span all endpoints, so they apply each
-    endpoint_key's OWN keep_from_id via the rendered per-endpoint keep map — the
-    prior per-(provider, endpoint) latest-exclusion preserved exactly.
-    """
+) -> None:  # noqa: ANN001
     sql = str(statement)
-
-    assert "{keep_map}" in sql
-    assert "km.endpoint_key" in sql
-    assert "rt_feed_snapshot_id < km.keep_from_id" in sql
+    assert "rt_feed_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))" in sql
     assert "provider_id = :provider_id" in sql
 
 
@@ -741,20 +741,6 @@ def test_realtime_history_count_statements_report_unbounded_backlog(statement) -
     assert "SELECT COUNT(*)" in sql
     assert "LIMIT" not in sql
     assert ":batch" not in sql
-
-
-def test_select_keep_from_ids_resolves_per_endpoint_oldest_to_keep() -> None:
-    """The cutoff resolver computes, per endpoint_key, the oldest id to KEEP:
-    COALESCE(min(id) WHERE captured_at>=cutoff, max(id)) — the dead-feed fallback.
-    """
-    from transit_ops.maintenance.silver import SELECT_KEEP_FROM_IDS
-
-    sql = str(SELECT_KEEP_FROM_IDS)
-
-    assert "GROUP BY endpoint_key" in sql
-    assert "min(rt_feed_snapshot_id) FILTER (WHERE captured_at_utc >= :cutoff_utc)" in sql
-    assert "max(rt_feed_snapshot_id)" in sql
-    assert "provider_id = :provider_id" in sql
 
 
 def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
@@ -804,9 +790,7 @@ def test_prune_realtime_silver_history_binds_batch_param() -> None:
         now_utc=now_utc,
     )
 
-    delete_params = [
-        params for sql, params in connection.executed if "DELETE" in sql
-    ]
+    delete_params = [params for sql, params in connection.executed if "DELETE" in sql]
     assert delete_params, "expected live DELETE executions"
     assert all(params.get("batch") == 12345 for params in delete_params)
 
@@ -823,9 +807,7 @@ def test_prune_realtime_silver_history_floors_batch_at_one() -> None:
         now_utc=now_utc,
     )
 
-    delete_params = [
-        params for sql, params in connection.executed if "DELETE" in sql
-    ]
+    delete_params = [params for sql, params in connection.executed if "DELETE" in sql]
     assert delete_params
     # batch floored at 1 — a LIMIT 0 would never drain the backlog.
     assert all(params.get("batch") == 1 for params in delete_params)
@@ -849,9 +831,7 @@ def test_prune_silver_storage_threads_realtime_prune_batch_setting() -> None:
 
     realtime_conn = engine.connections[0]
     rt_delete_params = [
-        params
-        for sql, params in realtime_conn.executed
-        if "DELETE FROM silver.rt_" in sql
+        params for sql, params in realtime_conn.executed if "DELETE FROM silver.rt_" in sql
     ]
     assert rt_delete_params, "expected realtime DELETE executions in tx1"
     assert all(params.get("batch") == 7777 for params in rt_delete_params)
@@ -881,10 +861,18 @@ def test_bronze_realtime_eligibility_materializes_latest_and_splits_silver_guard
     anti_join_fragment = normalized[normalized.index("AND NOT EXISTS") :]
 
     assert "WITH latest_by_endpoint_key AS MATERIALIZED" in sql
-    assert "GROUP BY fe_latest.endpoint_key" in sql
-    assert sql.count("NOT EXISTS") == 2
+    assert "DISTINCT ON (fe_latest.endpoint_key)" in sql
+    assert "rsi_latest.captured_at_utc DESC, rsi_latest.realtime_snapshot_id DESC" in normalized
+    for table in (
+        "gold.fact_trip_delay_snapshot",
+        "gold.fact_vehicle_snapshot",
+        "gold.latest_trip_delay_snapshot",
+        "gold.latest_vehicle_snapshot",
+    ):
+        assert table in sql
     assert "rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id" in sql
-    assert "rfs.ingestion_object_id = io.ingestion_object_id" in sql
+    assert "io.ingestion_object_id NOT IN" in sql
+    assert "rfs.ingestion_object_id IS NOT NULL" in sql
     assert " OR " not in anti_join_fragment
     assert "rsi.captured_at_utc < :cutoff_utc" in sql
 
@@ -1092,9 +1080,7 @@ def test_vacuum_storage_uses_parallel_zero_for_non_full_mode() -> None:
         engine=VacuumRecordingEngine(connection),  # type: ignore[arg-type]
     )
 
-    assert connection.statements == [
-        "VACUUM (PARALLEL 0, ANALYZE) raw.ingestion_objects"
-    ]
+    assert connection.statements == ["VACUUM (PARALLEL 0, ANALYZE) raw.ingestion_objects"]
 
     full_connection = VacuumRecordingConnection()
 
@@ -1107,9 +1093,7 @@ def test_vacuum_storage_uses_parallel_zero_for_non_full_mode() -> None:
     )
 
     # PARALLEL is invalid alongside FULL — the full path stays unchanged.
-    assert full_connection.statements == [
-        "VACUUM (FULL, ANALYZE) raw.ingestion_objects"
-    ]
+    assert full_connection.statements == ["VACUUM (FULL, ANALYZE) raw.ingestion_objects"]
 
 
 class PerBeginRecordingEngine:
@@ -1156,23 +1140,13 @@ def test_prune_silver_storage_runs_realtime_and_static_in_separate_transactions(
 
     # tx1 (realtime first) ran only the silver.rt_* DELETEs — never touched
     # core.dataset_versions or the static silver tables.
-    assert any(
-        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in realtime_conn.calls
-    )
-    assert not any(
-        "DELETE FROM core.dataset_versions" in sql for sql in realtime_conn.calls
-    )
-    assert not any(
-        "DELETE FROM silver.stop_times" in sql for sql in realtime_conn.calls
-    )
+    assert any("DELETE FROM silver.rt_feed_snapshots" in sql for sql in realtime_conn.calls)
+    assert not any("DELETE FROM core.dataset_versions" in sql for sql in realtime_conn.calls)
+    assert not any("DELETE FROM silver.stop_times" in sql for sql in realtime_conn.calls)
 
     # tx2 ran the static-dataset statements and no rt_* DELETEs.
-    assert any(
-        "DELETE FROM core.dataset_versions" in sql for sql in static_conn.calls
-    )
-    assert not any(
-        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in static_conn.calls
-    )
+    assert any("DELETE FROM core.dataset_versions" in sql for sql in static_conn.calls)
+    assert not any("DELETE FROM silver.rt_feed_snapshots" in sql for sql in static_conn.calls)
 
 
 def test_prune_silver_storage_result_reports_deferred_dataset_version_ids() -> None:
@@ -1324,9 +1298,7 @@ def test_prune_gold_fact_history_binds_batch_param() -> None:
         now_utc=now_utc,
     )
 
-    delete_params = [
-        params for sql, params in connection.executed if "DELETE" in sql
-    ]
+    delete_params = [params for sql, params in connection.executed if "DELETE" in sql]
     assert delete_params, "expected live DELETE executions"
     assert all(params.get("batch") == 24680 for params in delete_params)
 
@@ -1343,9 +1315,7 @@ def test_prune_gold_fact_history_floors_batch_at_one() -> None:
         now_utc=now_utc,
     )
 
-    delete_params = [
-        params for sql, params in connection.executed if "DELETE" in sql
-    ]
+    delete_params = [params for sql, params in connection.executed if "DELETE" in sql]
     assert delete_params
     # batch floored at 1 — a LIMIT 0 would never drain the backlog.
     assert all(params.get("batch") == 1 for params in delete_params)
@@ -1367,9 +1337,7 @@ def test_prune_gold_storage_threads_gold_fact_prune_batch_setting() -> None:
     connection = engine.connections[0]
     assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
     fact_delete_params = [
-        params
-        for sql, params in connection.executed
-        if "DELETE FROM gold.fact_" in sql
+        params for sql, params in connection.executed if "DELETE FROM gold.fact_" in sql
     ]
     assert fact_delete_params, "expected live gold-fact DELETE executions"
     assert all(params.get("batch") == 9999 for params in fact_delete_params)
@@ -1681,9 +1649,7 @@ def test_prune_bronze_realtime_bulk_failures_never_delete_failed_metadata() -> N
     assert failed_object_ids == {10}
     assert object_counts == {"realtime": 2}
     metadata_delete_params = [
-        params
-        for sql, params in connection.executed
-        if "DELETE FROM raw.ingestion_objects" in sql
+        params for sql, params in connection.executed if "DELETE FROM raw.ingestion_objects" in sql
     ]
     assert metadata_delete_params == [{"ingestion_object_ids": [11, 12]}]
 
@@ -1704,9 +1670,7 @@ def test_prune_bronze_realtime_bulk_failures_emit_one_bounded_summary(
         now_utc=datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC),
     )
 
-    records = [
-        record for record in caplog.records if record.name == "transit_ops.maintenance"
-    ]
+    records = [record for record in caplog.records if record.name == "transit_ops.maintenance"]
     assert len(records) == 1
     message = records[0].getMessage()
     assert "3 of 3" in message
@@ -1714,9 +1678,7 @@ def test_prune_bronze_realtime_bulk_failures_emit_one_bounded_summary(
     assert "metadata" in message
     assert object_counts == {"realtime": 0}
     assert failed_object_ids == {10, 11, 12}
-    assert all(
-        "DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed
-    )
+    assert all("DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed)
 
 
 def test_prune_bronze_realtime_objects_disabled_when_zero_retention() -> None:
@@ -1806,9 +1768,7 @@ def test_prune_bronze_static_bulk_failures_never_delete_failed_metadata() -> Non
     assert storage.delete_batches == [[failed_path]]
     assert failed_object_ids == {20}
     assert object_counts == {"static": 0}
-    assert all(
-        "DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed
-    )
+    assert all("DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed)
 
 
 def test_prune_bronze_static_objects_disabled_when_zero_retention() -> None:
@@ -1867,13 +1827,13 @@ class SequencedBronzeConnection(RecordingConnection):
             and "SELECT" in sql_text
             and "DELETE" not in sql_text
         )
-        if is_realtime_select:
+        if is_realtime_select and "locked_snapshot_ids" not in (params or {}):
             self.calls.append(sql_text)
             self.executed.append((sql_text, params))
             batch_size = self.realtime_batch_sizes.pop(0)
             batch_number = self.realtime_selects
             self.realtime_selects += 1
-            return IterableResult(
+            return self.bronze_selection(
                 [
                     (
                         1000 + (batch_number * 10) + offset,
@@ -1885,7 +1845,7 @@ class SequencedBronzeConnection(RecordingConnection):
                     for offset in range(batch_size)
                 ]
             )
-        if is_static_select:
+        if is_static_select and "locked_object_ids" not in (params or {}):
             self.calls.append(sql_text)
             self.executed.append((sql_text, params))
             return IterableResult([])
@@ -1897,6 +1857,10 @@ def _patch_bronze_storage(monkeypatch, storage: FakeBronzeStorage) -> None:  # n
         maintenance_module,
         "get_bronze_storage",
         lambda settings, project_root=None: storage,
+    )
+    monkeypatch.setattr(
+        "transit_ops.maintenance.bronze.BronzeStorageScope.resolve",
+        lambda self, backend: storage,
     )
 
 
@@ -1956,9 +1920,10 @@ def test_prune_bronze_storage_bounds_every_batch_inside_postgres(monkeypatch) ->
     ]
     assert len(statement_deadlines) == engine.begin_calls
     assert len(lock_deadlines) == engine.begin_calls
-    assert all(statement_index + 1 == lock_index for statement_index, lock_index in zip(
-        statement_deadlines, lock_deadlines, strict=True
-    ))
+    assert all(
+        statement_index + 1 == lock_index
+        for statement_index, lock_index in zip(statement_deadlines, lock_deadlines, strict=True)
+    )
 
 
 def test_prune_bronze_storage_sets_exhausted_only_when_both_phases_under_limit(
@@ -2250,7 +2215,7 @@ def test_prune_i3_storage_syncs_archive_before_silver_and_raw(monkeypatch, dry_r
         return None, {"silver.i3_alerts": 4}
 
     def fake_raw(  # noqa: ANN001
-        connection, *, provider_id, retention_days, bronze_storage, dry_run
+        connection, *, provider_id, retention_days, bronze_storage_resolver, dry_run
     ):
         calls.append(("raw", dry_run))
         return None, {"i3_raw": 3}, {"raw.i3_alert_snapshots": 3}, set()
@@ -2319,9 +2284,8 @@ def test_prune_i3_raw_snapshots_sql_guards_silver_refs_and_latest() -> None:
     # FK-cascade trap guard: never delete a raw snapshot a silver row references.
     assert "NOT EXISTS" in sql
     assert "silver.i3_alerts" in sql
-    # find_latest_i3_raw_snapshot guard: keep the per-provider latest snapshot.
-    assert "<> COALESCE((" in sql
-    assert "max(s2.i3_alert_snapshot_id)" in sql
+    assert "s.i3_alert_snapshot_id NOT IN" in sql
+    assert "SELECT i3_alert_snapshot_id FROM latest_by_endpoint" in sql
 
 
 def test_prune_i3_raw_snapshots_dry_run_counts_without_deleting() -> None:
@@ -2369,16 +2333,13 @@ def test_prune_i3_raw_snapshots_live_deletes_r2_then_metadata_in_fk_order() -> N
     # Snapshots delete BEFORE ingestion_objects delete (FK order: snapshots ->
     # ingestion_objects -> ingestion_runs).
     snap_idx = next(
-        i for i, c in enumerate(connection.calls)
-        if "DELETE FROM raw.i3_alert_snapshots" in c
+        i for i, c in enumerate(connection.calls) if "DELETE FROM raw.i3_alert_snapshots" in c
     )
     obj_idx = next(
-        i for i, c in enumerate(connection.calls)
-        if "DELETE FROM raw.ingestion_objects" in c
+        i for i, c in enumerate(connection.calls) if "DELETE FROM raw.ingestion_objects" in c
     )
     run_idx = next(
-        i for i, c in enumerate(connection.calls)
-        if "DELETE FROM raw.ingestion_runs" in c
+        i for i, c in enumerate(connection.calls) if "DELETE FROM raw.ingestion_runs" in c
     )
     assert snap_idx < obj_idx < run_idx
     assert meta_counts["raw.i3_alert_snapshots"] == 3
@@ -2440,12 +2401,12 @@ def test_prune_i3_silver_closed_rows_deletes_entities_then_alerts() -> None:
         "silver.i3_alerts": 4,
     }
     ent_idx = next(
-        i for i, c in enumerate(connection.calls)
+        i
+        for i, c in enumerate(connection.calls)
         if "DELETE FROM silver.i3_alert_informed_entities" in c
     )
     alert_idx = next(
-        i for i, c in enumerate(connection.calls)
-        if "DELETE FROM silver.i3_alerts" in c
+        i for i, c in enumerate(connection.calls) if "DELETE FROM silver.i3_alerts" in c
     )
     assert ent_idx < alert_idx
 

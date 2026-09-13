@@ -16,6 +16,7 @@ from transit_ops.gold.reader import (
     ROUTE_HABIT_SPINE_SQL,
     all_time_window,
     current_date_trailing_clause,
+    round_half_away,
 )
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
@@ -397,7 +398,7 @@ def _route_headway(
         cov = float(cov_raw) if cov_raw is not None else None
         # bunched_pct honest-None when no gaps observed.
         bunched_pct = (
-            round(100.0 * float(bunched) / float(sample), 1)
+            float(round_half_away(100.0 * float(bunched) / float(sample), 1))
             if bunched is not None and sample
             else None
         )
@@ -414,13 +415,13 @@ def _route_headway(
         both = sched is not None and obs is not None
         # Excess wait is a rider-cost metric: early/frequent observed service
         # stays at zero rather than publishing negative wait.
-        excess = round(max(0.0, obs - sched), 1) if both else None
+        excess = float(round_half_away(max(0.0, obs - sched), 1)) if both else None
         cov, bunched_pct = regularity.get(shift, (None, None))
         headway.append(
             HeadwayPeriod(
                 shift=shift,
                 scheduled_min=sched,
-                observed_min=round(obs, 1) if obs is not None else None,
+                observed_min=obs,
                 excess_wait_min=excess,
                 cov=cov,
                 bunched_pct=bunched_pct,
@@ -439,7 +440,7 @@ def _route_headway(
                 direction_id=int(r["direction_id"]),
                 day_type=str(r["service_day_kind"]),
                 scheduled_min=None,
-                observed_min=round(float(dir_obs), 1) if dir_obs is not None else None,
+                observed_min=float(dir_obs) if dir_obs is not None else None,
                 excess_wait_min=None,
             )
         )

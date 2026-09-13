@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,6 @@ import pytest
 from transit_ops.core.models import ProviderManifest
 from transit_ops.gold.marts import (
     ACQUIRE_GOLD_BUILD_LOCK,
-    ANALYZE_REALTIME_SILVER_TABLES,
     CLOSE_DIM_ROUTE_HISTORY,
     CLOSE_DIM_STOP_HISTORY,
     INSERT_DIM_ROUTE,
@@ -20,8 +20,8 @@ from transit_ops.gold.marts import (
     OPEN_DIM_STOP_HISTORY,
     SELECT_REALTIME_ANALYZE_AGE_SECONDS,
     UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
+    _realtime_analyze_is_due,
     build_gold_marts,
-    refresh_gold_realtime,
     refresh_gold_static,
 )
 from transit_ops.settings import Settings
@@ -48,6 +48,12 @@ class FakeScalarResult:
         return self.scalar_value
 
     def scalar(self):  # noqa: ANN201
+        return self.scalar_value
+
+    def scalars(self):
+        return self
+
+    def all(self):
         return self.scalar_value
 
 
@@ -82,6 +88,13 @@ class RecordingConnection:
         sql_text = str(statement)
         self.calls.append((sql_text, params))
 
+        if "q:mart.rebuild.retained_trip_capture_ids\n" in sql_text:
+            return FakeScalarResult([2])
+        if "q:rollup.delay_day.capture_dates\n" in sql_text:
+            return FakeScalarResult([datetime(2026, 9, 4).date()])
+
+        if "AS captures ORDER BY 1" in sql_text:
+            return FakeScalarResult([datetime(2026, 9, 4, 12, tzinfo=UTC)])
         if "FROM core.dataset_versions" in sql_text:
             return FakeMappingResult(self.dataset_row)
         if "FROM pg_stat_user_tables" in sql_text:
@@ -92,15 +105,13 @@ class RecordingConnection:
         if "SELECT EXISTS" in sql_text and "FROM silver.routes" in sql_text:
             return FakeScalarResult(self.silver_routes_exists)
         if (
-            "SELECT max(source_realtime_snapshot_id)" in sql_text
-            and "silver.rt_feed_snapshots" in sql_text
-            and "endpoint_key = 'trip_updates'" in sql_text
+            "SELECT max(realtime_snapshot_id)" in sql_text
+            and "gold.latest_trip_delay_snapshot" in sql_text
         ):
             return FakeScalarResult(2)
         if (
-            "SELECT max(source_realtime_snapshot_id)" in sql_text
-            and "silver.rt_feed_snapshots" in sql_text
-            and "endpoint_key = 'vehicle_positions'" in sql_text
+            "SELECT max(realtime_snapshot_id)" in sql_text
+            and "gold.latest_vehicle_snapshot" in sql_text
         ):
             return FakeScalarResult(1)
         if "SELECT count(*)" in sql_text and "gold.dim_route_pattern" in sql_text:
@@ -131,14 +142,18 @@ class RecordingConnection:
             return FakeScalarResult(0)
         return FakeScalarResult(0)
 
+    def execution_options(self, *, isolation_level):
+        assert isolation_level == "REPEATABLE READ"
+        return self
 
-class NoRealtimeSnapshotConnection(RecordingConnection):
-    def execute(self, statement, params=None):  # noqa: ANN001
-        sql_text = str(statement)
-        if "SELECT max(source_realtime_snapshot_id)" in sql_text:
-            self.calls.append((sql_text, params))
-            return FakeScalarResult(None)
-        return super().execute(statement, params)
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def begin(self):
+        return _ContextManager(self)
 
 
 class _ContextManager:
@@ -158,6 +173,9 @@ class FakeEngine:
 
     def begin(self):  # noqa: ANN201
         return _ContextManager(self.connection)
+
+    def connect(self):
+        return self.connection
 
 
 class FakeRegistry:
@@ -267,6 +285,9 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         _assert_no_legacy_realtime_sql(sql)
     assert any("DELETE FROM gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)
+    assert not any(
+        "DELETE FROM gold.latest_" in sql or "INSERT INTO gold.latest_" in sql for sql in sql_calls
+    )
     fact_trip_insert = next(
         params
         for sql, params in connection.calls
@@ -420,170 +441,19 @@ def test_gold_build_locks_tables_before_rebuild() -> None:
     assert "ACCESS EXCLUSIVE MODE" in sql
 
 
-def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
-    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
-    engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
-
-    result = refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    assert result.latest_trip_updates_snapshot_id == 2
-    assert result.latest_vehicle_snapshot_id == 1
-    assert result.row_counts == {
-        "fact_vehicle_snapshot_upserted": 0,
-        "fact_trip_delay_snapshot_upserted": 0,
-        "latest_vehicle_snapshot": 883,
-        "latest_trip_delay_snapshot": 1998,
-    }
-    sql_calls = [call[0] for call in connection.calls]
-    for sql in sql_calls:
-        _assert_no_legacy_realtime_sql(sql)
-    assert any("DELETE FROM gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
-    assert any("INSERT INTO gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
-
-
-def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() -> None:
-    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
-    engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
-
-    refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    sql_calls = [call[0] for call in connection.calls]
-    analyze_index = next(
-        index
-        for index, sql in enumerate(sql_calls)
-        if "ANALYZE silver.rt_feed_snapshots" in sql
-    )
-    first_gold_upsert_index = next(
-        index
-        for index, sql in enumerate(sql_calls)
-        if "INSERT INTO gold.fact_vehicle_snapshot" in sql
-        or "INSERT INTO gold.fact_trip_delay_snapshot" in sql
-    )
-
-    assert analyze_index < first_gold_upsert_index
-    analyze_sql = sql_calls[analyze_index]
-    _assert_no_legacy_realtime_sql(analyze_sql)
-    _assert_normalized_realtime_tables(analyze_sql)
-    assert str(ANALYZE_REALTIME_SILVER_TABLES) == analyze_sql
-
-
-def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> None:
-    connection = NoRealtimeSnapshotConnection(dataset_row={"dataset_version_id": 2})
-    engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
-
-    result = refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    sql_calls = [call[0] for call in connection.calls]
-
-    assert result.latest_trip_updates_snapshot_id is None
-    assert result.latest_vehicle_snapshot_id is None
-    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
-    for sql in sql_calls:
-        _assert_no_legacy_realtime_sql(sql)
-    assert not any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
-    assert not any("INSERT INTO gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
-
-
-def test_refresh_gold_realtime_skips_analyze_when_recently_analyzed() -> None:
-    """The per-cycle realtime-silver ANALYZE is throttled (gold#2 / x-perf#0).
-
-    The full ANALYZE (incl. the ~500M-row rt_trip_update_stop_times) took SHARE
-    UPDATE EXCLUSIVE + heavy sampling I/O inside the advisory-locked gold-refresh
-    TX and ran unconditionally ~1500x/day. When the realtime tables were analyzed
-    less than GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS ago, the ANALYZE must be
-    SKIPPED — the upserts filter on a constant rt_feed_snapshot_id, so stale
-    stats barely move the plan.
-    """
-    connection = RecordingConnection(
-        dataset_row={"dataset_version_id": 2},
-        analyze_age_seconds=60.0,  # analyzed 60s ago, well inside the 1h window
-    )
-    engine = FakeEngine(connection)
-    settings = Settings(
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=3600,
-    )
-
-    refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    sql_calls = [call[0] for call in connection.calls]
-    # The throttle was consulted...
-    assert any("FROM pg_stat_user_tables" in sql for sql in sql_calls)
-    # ...and the heavy ANALYZE was skipped this cycle.
-    assert not any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
-    # The gold upserts still ran — throttling ANALYZE must not skip the refresh.
-    assert any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
-
-
-def test_refresh_gold_realtime_runs_analyze_when_stats_are_stale() -> None:
-    """Once the realtime stats are older than the throttle interval, ANALYZE runs."""
-    connection = RecordingConnection(
-        dataset_row={"dataset_version_id": 2},
-        analyze_age_seconds=7200.0,  # 2h old, past the 1h throttle window
-    )
-    engine = FakeEngine(connection)
-    settings = Settings(
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=3600,
-    )
-
-    refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    sql_calls = [call[0] for call in connection.calls]
-    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
-
-
-def test_refresh_gold_realtime_always_analyzes_when_throttle_disabled() -> None:
-    """interval <= 0 disables the throttle — ANALYZE runs every cycle (escape hatch)."""
-    connection = RecordingConnection(
-        dataset_row={"dataset_version_id": 2},
-        analyze_age_seconds=1.0,  # just analyzed, but throttle disabled
-    )
-    engine = FakeEngine(connection)
-    settings = Settings(
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=0,
-    )
-
-    refresh_gold_realtime(
-        "stm",
-        settings=settings,
-        registry=FakeRegistry(_build_manifest()),
-        engine=engine,
-    )
-
-    sql_calls = [call[0] for call in connection.calls]
-    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
-    # Throttle disabled — the staleness query is not even issued.
-    assert not any("FROM pg_stat_user_tables" in sql for sql in sql_calls)
+@pytest.mark.parametrize(
+    "age, interval, expected",
+    [
+        (None, 3600, True),
+        (60.0, 3600, False),
+        (3600.0, 3600, True),
+        (7200.0, 3600, True),
+        (1.0, 0, True),
+    ],
+)
+def test_realtime_analyze_throttle(age, interval, expected):
+    connection = RecordingConnection(dataset_row=None, analyze_age_seconds=age)
+    assert _realtime_analyze_is_due(connection, min_interval_seconds=interval) is expected
 
 
 def test_realtime_analyze_age_query_targets_only_realtime_silver_tables() -> None:
@@ -660,9 +530,7 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     assert any("DELETE FROM gold.dim_stop" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_date" in sql for sql in sql_calls)
     # Per-edition scheduled-service summary is captured (migration 0069).
-    assert any(
-        "INSERT INTO gold.schedule_version_service_summary" in sql for sql in sql_calls
-    )
+    assert any("INSERT INTO gold.schedule_version_service_summary" in sql for sql in sql_calls)
     # ACCESS EXCLUSIVE table lock is NOT acquired
     assert not any("LOCK TABLE" in sql for sql in sql_calls)
     # Fact and latest tables are NOT touched

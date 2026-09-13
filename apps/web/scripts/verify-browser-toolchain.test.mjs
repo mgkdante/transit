@@ -77,11 +77,6 @@ async function fixture({ launchedVersion = '151.0.7922.34' } = {}) {
 			chromium_version: '151.0.7922.34',
 		},
 	});
-	await mkdir(join(root, 'apps/web/scripts'), { recursive: true });
-	await writeFile(
-		join(root, 'apps/web/scripts/build-map-posters.ts'),
-		"const PLAYWRIGHT_CORE_VERSION = '1.62.0';\nconst PINNED_CHROMIUM_VERSION = '151.0.7922.34';\n",
-	);
 	let closed = false;
 	let launchedExecutable;
 	return {
@@ -102,7 +97,7 @@ async function fixture({ launchedVersion = '151.0.7922.34' } = {}) {
 	};
 }
 
-test('accepts only a consistent package, installed metadata, poster receipt, constants, and browser', async () => {
+test('accepts only consistent package metadata, receipt, executable, and browser', async () => {
 	const { verifyBrowserToolchain } = await import('./verify-browser-toolchain.mjs');
 	const subject = await fixture();
 	try {

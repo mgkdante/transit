@@ -557,9 +557,10 @@ describe('vehicle state badge baker', () => {
 		expect(VEHICLE_MARKER_GEOMETRY).toEqual({
 			box: 26,
 			bodyIconSize: { z11: 0.78, z15: 1.3 },
-			stateBadge: { offset: [0, 20], scale: 0.6 },
-			silentBadge: { offset: [0, -16], scale: 0.75 },
-			chevronAnnulus: { inner: 4.9, outer: 10.8 },
+			headingOffset: [0, -9],
+			stateBadge: { offset: [0, 30], pairedOffset: [-9, 30], scale: 0.6 },
+			silentBadge: { offset: [0, 30], pairedOffset: [9, 30], scale: 0.75 },
+			chevronAnnulus: { inner: 12.7, outer: 19.8 },
 			plateMargin: 2.4,
 		});
 		expect(Object.isFrozen(VEHICLE_MARKER_GEOMETRY)).toBe(true);

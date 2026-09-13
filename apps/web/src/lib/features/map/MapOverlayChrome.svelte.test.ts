@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
 import type { StopIndexEntry } from '$lib/v1/schemas';
+import { formatRelativeSeconds } from '$lib/utils/time';
 import type { WithDistance } from '$lib/components/map';
 import type { MapHoverPeek } from './mapHoverPeek';
 import { copy as MAP_COPY } from './map.copy';
@@ -70,6 +71,71 @@ afterEach(() => {
 });
 
 describe('MapOverlayChrome', () => {
+	it.each([
+		{ locale: 'en', failure: 'unavailable' },
+		{ locale: 'fr', failure: 'unavailable' },
+		{ locale: 'en', failure: 'retained-family' },
+		{ locale: 'fr', failure: 'retained-family' },
+	] as const)(
+		'keeps report age distinct through $locale $failure and recovery',
+		async ({ locale, failure }) => {
+			const store = createFilterStore(emptyFilterState());
+			const t = MAP_COPY[locale];
+			const generatedUtc = '2026-09-07T12:00:00Z';
+			const props = { store, locale, generatedUtc, ageSeconds: 7, isStale: false };
+			const { container, rerender } = render(MapOverlayChromeHarness, { props });
+			const banner = screen.getByRole('status');
+			const assertReport = (age: number, timestamp: string, degraded: boolean) => {
+				const stamps = container.querySelectorAll('[data-slot="freshness-stamp"]');
+				expect(stamps).toHaveLength(2);
+				for (const stamp of stamps) {
+					expect(stamp.querySelector('.freshness-stamp-label')).toHaveTextContent(t.latestReport);
+					expect(stamp).not.toHaveTextContent(locale === 'en' ? 'LIVE' : 'EN DIRECT');
+					expect(stamp.querySelector('time')).toHaveTextContent(formatRelativeSeconds(age, locale));
+					expect(stamp.querySelector('time')).toHaveAttribute('datetime', timestamp);
+					expect(stamp).toHaveAttribute('data-stale', 'false');
+					expect(stamp).not.toHaveAttribute('aria-live');
+					expect(stamp.querySelector('[data-slot="status-dot"]')).toHaveClass(
+						degraded ? 'bg-[var(--signal-caution)]' : 'bg-dataviz-status-on-time',
+					);
+				}
+			};
+
+			assertReport(7, generatedUtc, false);
+			expect(banner.textContent?.trim()).toBe('');
+
+			const retainedFailure = t.selectedFamilyFailure(t.familyVehicles, true);
+			await rerender({
+				...props,
+				ageSeconds: 8,
+				degraded: true,
+				liveEdgeState: failure === 'unavailable' ? 'unavailable' : null,
+				liveEdgeMessage: failure === 'unavailable' ? t.liveUnavailable : null,
+				selectedFamilyFailureMessage: failure === 'retained-family' ? retainedFailure : null,
+			});
+			assertReport(8, generatedUtc, true);
+			expect(screen.getByRole('status')).toBe(banner);
+			expect(banner).toHaveTextContent(
+				failure === 'unavailable' ? t.liveUnavailable : retainedFailure,
+			);
+			expect(banner).toHaveAttribute('aria-live', 'polite');
+
+			const recoveredUtc = '2026-09-07T12:00:09Z';
+			await rerender({
+				...props,
+				generatedUtc: recoveredUtc,
+				ageSeconds: 1,
+				degraded: false,
+				liveEdgeState: null,
+				liveEdgeMessage: null,
+				selectedFamilyFailureMessage: null,
+			});
+			assertReport(1, recoveredUtc, false);
+			expect(screen.getByRole('status')).toBe(banner);
+			expect(banner.textContent?.trim()).toBe('');
+		},
+	);
+
 	it('composes the title, near-me, the desktop Controls panel, and both freshness chips', () => {
 		const store = createFilterStore(emptyFilterState());
 		const { container } = render(MapOverlayChromeHarness, { props: { store, locale: 'en' } });

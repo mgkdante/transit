@@ -1,18 +1,3 @@
-<!--
-  TrendMark — the LayerChart renderer for a `kind: 'trend'` ChartSpec (A3, S7).
-
-  Two series over a shared x-scale: a primary line (on-time %) on its own pinned absolute
-  domain, and an optional secondary line (avg delay, min) on a SECOND pinned domain.
-  LayerChart marks only read the primary y-scale, so the two domains are kept honest by
-  TWO overlaid `<LcChart>` contexts that share x-scale + padding + width — each owns its
-  `yDomain`, so neither squashes the other.
-
-  CLEAR AXES + MAX DATA: a labelled bottom x-axis (dates / time-of-day), a labelled LEFT
-  y-axis (On-time %) on the primary context, a labelled RIGHT y-axis (Avg delay, min) on
-  the secondary context, a y-grid, a legend, and a hover tooltip that reads the FULL datum
-  (OTP %, avg delay, the Wilson interval, the sample n). `defined` breaks the line/band
-  over null (a gap). Domains from the spec; ChartFrame-gated; sr-table fallback.
--->
 <script lang="ts">
 	import {
 		Chart as LcChart,
@@ -28,7 +13,10 @@
 	} from 'layerchart';
 	import { scaleLinear, scalePoint, scaleTime } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
-	import { cn } from '$lib/utils';
+	import { cn, fmtCount, fmtNumber } from '$lib/utils';
+	import { absenceShort } from '$lib/site/absence';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+	import { trendTimeAxis } from '../trendTimeAxis';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { structuralLabels } from '../structuralLabels';
 	import ChartLegend from '../../ChartLegend.svelte';
@@ -46,24 +34,8 @@
 	const structure = $derived(structuralLabels(spec.locale));
 	const xOf = $derived((d: TrendDatum) => (isTime ? Number(d.x) : String(d.x)));
 
-	const xDomain = $derived.by<number[] | string[]>(() => {
-		if (isTime) {
-			const xs = spec.points.map((p) => Number(p.x)).filter((v) => Number.isFinite(v));
-			if (xs.length === 0) return [0, 1];
-			// The TIME x-axis spans the data's date range — a temporal POSITION axis, not a
-			// magnitude (the y + secondary-y magnitude axes are pinned to spec.domain below,
-			// never auto-scaled). Computed via a reduce, not Math.min/max(...xs), so the
-			// magnitude-only chart-doctrine gate isn't tripped by a legitimate time extent.
-			let lo = xs[0];
-			let hi = xs[0];
-			for (const v of xs) {
-				if (v < lo) lo = v;
-				if (v > hi) hi = v;
-			}
-			return [lo, hi];
-		}
-		return spec.points.map((p) => String(p.x));
-	});
+	const timeAxis = $derived(trendTimeAxis(spec.points, spec.locale));
+	const xDomain = $derived(isTime ? timeAxis.domain : spec.points.map((p) => String(p.x)));
 
 	const yDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const secYDomain = $derived<[number, number] | null>(
@@ -84,7 +56,13 @@
 	const bandDefined = (d: TrendDatum) =>
 		d.bandLo != null && d.bandHi != null && !Number.isNaN(d.bandLo) && !Number.isNaN(d.bandHi);
 
-	const num = (v: number | null | undefined): string => (v == null ? '' : String(v));
+	const noData = $derived(absenceShort('no-observations', spec.locale));
+	const num = (value: number | null | undefined): string | null =>
+		fmtNumber(value, { rounding: 'auto', locale: spec.locale });
+	const valueLabel = (value: number | null | undefined, unit: string): string => {
+		const formatted = num(value);
+		return formatted == null ? noData : `${formatted}${unit}`;
+	};
 	const primaryColor = $derived(spec.colorVar ?? 'var(--dataviz-status-on-time)');
 
 	// Confidence Comet: the OTP dot SIZE encodes the sample size (3 fixed-radius buckets —
@@ -96,13 +74,7 @@
 	const dotsMidN = $derived(otpReals.filter((p) => (p.n ?? 0) >= 30 && (p.n ?? 0) < 100));
 	const dotsHighN = $derived(otpReals.filter((p) => (p.n ?? 0) >= 100));
 
-	// Label a time-x tick (epoch ms) compactly; band-x ticks are the labels themselves.
-	const xTickFormat = $derived(
-		isTime
-			? (v: number) =>
-					new Date(v).toLocaleDateString(spec.locale, { month: 'short', day: 'numeric' })
-			: (v: string) => v,
-	);
+	const xTickFormat = $derived(isTime ? timeAxis.format : (value: string) => value);
 
 	const legendItems = $derived([
 		{ colorVar: primaryColor, label: spec.label, swatch: 'dot' as const },
@@ -144,7 +116,7 @@
 				/>
 				<Axis
 					placement="bottom"
-					ticks={isTime ? 4 : undefined}
+					ticks={isTime ? timeAxis.ticks : undefined}
 					tickSpacing={isTime ? undefined : 96}
 					format={xTickFormat}
 					class="dv-trendmark-axis"
@@ -184,34 +156,40 @@
 				/>
 				<Highlight points lines />
 			</Svg>
-			<Tooltip.Root>
-				{#snippet children({ data: d }: { data: TrendDatum })}
-					<Tooltip.Header>{d.xLabel}</Tooltip.Header>
-					<Tooltip.List>
-						<Tooltip.Item
-							label={spec.label}
-							value={`${num(d.y)}${spec.unit}`}
-							color={primaryColor}
-						/>
-						{#if spec.secondary}
+			{#key $prefersReducedMotion}
+				<Tooltip.Root
+					contained="window"
+					motion={$prefersReducedMotion ? 'none' : 'spring'}
+					fadeDuration={$prefersReducedMotion ? 0 : 100}
+				>
+					{#snippet children({ data: d }: { data: TrendDatum })}
+						<Tooltip.Header>{d.xLabel}</Tooltip.Header>
+						<Tooltip.List>
 							<Tooltip.Item
-								label={spec.secondary.label}
-								value={`${num(d.y2)}${spec.secondary.unit}`}
-								color="var(--dataviz-status-late)"
+								label={spec.label}
+								value={valueLabel(d.y, spec.unit)}
+								color={primaryColor}
 							/>
-						{/if}
-						{#if d.bandLo != null && d.bandHi != null}
-							<Tooltip.Item
-								label={structure.confidenceInterval95}
-								value={`${num(d.bandLo)}-${num(d.bandHi)}${spec.unit}`}
-							/>
-						{/if}
-						{#if d.n != null}
-							<Tooltip.Item label="n" value={num(d.n)} />
-						{/if}
-					</Tooltip.List>
-				{/snippet}
-			</Tooltip.Root>
+							{#if spec.secondary}
+								<Tooltip.Item
+									label={spec.secondary.label}
+									value={valueLabel(d.y2, spec.secondary.unit)}
+									color="var(--dataviz-status-late)"
+								/>
+							{/if}
+							{#if num(d.bandLo) != null && num(d.bandHi) != null}
+								<Tooltip.Item
+									label={structure.confidenceInterval95}
+									value={`${num(d.bandLo)}-${num(d.bandHi)}${spec.unit}`}
+								/>
+							{/if}
+							{#if d.n != null}
+								<Tooltip.Item label="n" value={fmtCount(d.n, { locale: spec.locale, noData })} />
+							{/if}
+						</Tooltip.List>
+					{/snippet}
+				</Tooltip.Root>
+			{/key}
 		</LcChart>
 
 		{#if spec.secondary && hasSecondary && secYDomain}
@@ -256,16 +234,16 @@
 		<thead>
 			<tr>
 				<th scope="col">{structure.x}</th>
-				<th scope="col">{spec.label}{spec.unit}</th>
-				{#if spec.secondary}<th scope="col">{spec.secondary.label}{spec.secondary.unit}</th>{/if}
+				<th scope="col">{spec.label}</th>
+				{#if spec.secondary}<th scope="col">{spec.secondary.label}</th>{/if}
 			</tr>
 		</thead>
 		<tbody>
 			{#each spec.points as p (p.xLabel)}
 				<tr>
 					<th scope="row">{p.xLabel}</th>
-					<td>{num(p.y)}</td>
-					{#if spec.secondary}<td>{num(p.y2)}</td>{/if}
+					<td>{valueLabel(p.y, spec.unit)}</td>
+					{#if spec.secondary}<td>{valueLabel(p.y2, spec.secondary.unit)}</td>{/if}
 				</tr>
 			{/each}
 		</tbody>

@@ -24,12 +24,6 @@ function requireEqual(actual, expected, label) {
 	}
 }
 
-function sourceConstant(source, name) {
-	const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*['"]([^'"]+)['"]`, 'u'));
-	if (!match) throw new Error(`${name} is missing from build-map-posters.ts`);
-	return match[1];
-}
-
 async function launchInstalledBrowser({ executablePath }) {
 	const { chromium } = await import('playwright-core');
 	return chromium.launch({ headless: true, executablePath });
@@ -42,10 +36,7 @@ export async function verifyBrowserToolchain({
 } = {}) {
 	const artifact = await verifyInstalledBrowserArtifact({ repoRoot, browserRoot });
 	const { browser, manifest, paths, webRoot } = artifact;
-	const [receipt, posterSource] = await Promise.all([
-		readJson(resolve(webRoot, 'static/map/basemap-montreal-posters.json')),
-		readFile(resolve(webRoot, 'scripts/build-map-posters.ts'), 'utf8'),
-	]);
+	const receipt = await readJson(resolve(webRoot, 'static/map/basemap-montreal-posters.json'));
 
 	const declaredPlaywright = requireString(
 		manifest.playwrightCoreVersion,
@@ -60,13 +51,8 @@ export async function verifyBrowserToolchain({
 		receipt.reproduced_with?.chromium_version,
 		'poster receipt Chromium version',
 	);
-	const constantPlaywright = sourceConstant(posterSource, 'PLAYWRIGHT_CORE_VERSION');
-	const constantChromium = sourceConstant(posterSource, 'PINNED_CHROMIUM_VERSION');
-
 	requireEqual(receiptPlaywright, declaredPlaywright, 'poster receipt playwright-core version');
-	requireEqual(constantPlaywright, declaredPlaywright, 'poster playwright-core constant');
 	requireEqual(receiptChromium, metadataChromium, 'poster receipt Chromium version');
-	requireEqual(constantChromium, metadataChromium, 'poster Chromium constant');
 
 	const launchedBrowser = await launchBrowser({ executablePath: paths.executablePath });
 	try {

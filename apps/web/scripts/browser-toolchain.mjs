@@ -9,6 +9,23 @@ const RECEIPT_NAME = 'transit-browser-receipt.json';
 const SHA256 = /^[0-9a-f]{64}$/u;
 const SAFE_COMPONENT = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u;
 
+/**
+ * @typedef {{
+ *   name: string,
+ *   version: string,
+ *   revision: string,
+ *   platform: string,
+ *   url: string,
+ *   archiveBytes: number,
+ *   archiveSha256: string,
+ *   archiveRoot: string,
+ *   installDirectory: string,
+ *   executable: string,
+ *   executableSha256: string,
+ * }} BrowserContract
+ */
+
+/** @param {string} path @param {string} label @returns {Promise<any>} */
 async function readJson(path, label) {
 	try {
 		return JSON.parse(await readFile(path, 'utf8'));
@@ -19,12 +36,14 @@ async function readJson(path, label) {
 	}
 }
 
+/** @param {unknown} actual @param {unknown} expected @param {string} label */
 function requireEqual(actual, expected, label) {
 	if (actual !== expected) {
 		throw new Error(`${label} mismatch: expected ${expected}, got ${actual}`);
 	}
 }
 
+/** @param {unknown} value @param {string} label @returns {string} */
 function requireSafeComponent(value, label) {
 	if (typeof value !== 'string' || !SAFE_COMPONENT.test(value) || value === '.' || value === '..') {
 		throw new Error(`${label} must be one safe path component`);
@@ -37,12 +56,14 @@ export function browserPlatform(platform = process.platform, arch = process.arch
 	throw new Error(`unsupported browser artifact platform: ${platform}-${arch}`);
 }
 
+/** @param {string} path */
 export async function sha256File(path) {
 	const hash = createHash('sha256');
 	for await (const chunk of createReadStream(path)) hash.update(chunk);
 	return hash.digest('hex');
 }
 
+/** @param {{ repoRoot?: string }} [options] */
 export async function readBrowserToolchain({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
 	const webRoot = resolve(repoRoot, 'apps/web');
 	const [manifest, webPackage, installedPackage, browsers] = await Promise.all([
@@ -105,7 +126,8 @@ export async function readBrowserToolchain({ repoRoot = DEFAULT_REPO_ROOT } = {}
 		'installed playwright-core version',
 	);
 	const metadata = browsers.browsers?.find(
-		(entry) => entry?.name === browser.name && entry.installByDefault === true,
+		(/** @type {Record<string, unknown>} */ entry) =>
+			entry?.name === browser.name && entry.installByDefault === true,
 	);
 	if (!metadata) throw new Error(`installed Playwright metadata is missing ${browser.name}`);
 	requireEqual(metadata.browserVersion, browser.version, 'installed Chromium metadata version');
@@ -114,6 +136,9 @@ export async function readBrowserToolchain({ repoRoot = DEFAULT_REPO_ROOT } = {}
 	return { browser, manifest, metadata, webRoot };
 }
 
+/**
+ * @param {{ repoRoot?: string, browserRoot?: string, browser?: BrowserContract }} [options]
+ */
 export function resolveBrowserArtifact({
 	repoRoot = DEFAULT_REPO_ROOT,
 	browserRoot,
@@ -138,6 +163,7 @@ export function resolveBrowserArtifact({
 	};
 }
 
+/** @param {{ repoRoot?: string, browserRoot?: string }} [options] */
 export async function verifyInstalledBrowserArtifact({
 	repoRoot = DEFAULT_REPO_ROOT,
 	browserRoot,

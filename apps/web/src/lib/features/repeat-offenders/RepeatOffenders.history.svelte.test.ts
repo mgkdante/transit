@@ -786,12 +786,8 @@ describe('RepeatOffenders retained date history', () => {
 	);
 
 	it('defines complete English and French retained-history copy without changing current copy', () => {
-		expect(repeatCopy.en.cards.worst.subtitle).toBe(
-			'The current worst repeat offender, its severe rate, and its streak',
-		);
-		expect(repeatCopy.fr.cards.worst.subtitle).toBe(
-			'Le pire récidiviste actuel, son taux de retards graves et sa série',
-		);
+		expect(repeatCopy.en.cards.worst.subtitle).toBe('Severe-delay rate and recurrence');
+		expect(repeatCopy.fr.cards.worst.subtitle).toBe('Taux de retards graves et récurrence');
 		expect(repeatCopy.en.history).toMatchObject({
 			retainedWorstSubtitle: expect.not.stringMatching(/current/i),
 			retainedHeroNone: expect.not.stringMatching(/right now/i),

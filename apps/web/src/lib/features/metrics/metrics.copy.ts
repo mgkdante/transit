@@ -28,19 +28,25 @@ export const metricsCopy = defineCopy({
 			pipelineNote: 'Note du pipeline (exécution actuelle)',
 		},
 		provenance: {
-			label: 'Provenance (vaut pour chaque métrique)',
-			body: 'Source = écart à l’horaire PRÉDIT du GTFS-RT + alertes. Chaque chiffre de retard / ponctualité / gravité dérive du delay_seconds prédit du flux temps réel, comment les prédictions ont suivi l’horaire. Il n’y a AUCUNE vérité GPS/AVL et rien n’est une ponctualité certifiée par l’agence. Tout est pondéré par observations (un relevé = une mise à jour de trajet), pas par trajets ni par usagers : les lignes et les heures à haute fréquence pèsent plus de relevés. Bande à l’heure = delay ∈ [-60 s, +300 s); grave = delay > 300 s (avec |delay| ≤ 3600 s, garde anti-fantôme). NULL est honnête : un dénominateur vide s’affiche « aucune donnée », jamais un 0 fabriqué. Les sentinelles internes __unrouted__ / __unknown_stop__ ne sont jamais de vraies lignes/arrêts.',
+			label: 'Sources et populations',
+			body: 'Les mesures dérivent des horaires GTFS, des prédictions GTFS-RT, des positions de véhicules et des avis. Les statistiques historiques de retard comptent des observations, y compris les mises à jour répétées. En direct, la ponctualité et la couverture décrivent les positions admissibles sur la carte; les percentiles donnent le même poids au retard moyen de chaque trajet. Les définitions précisent la population et la fenêtre de chaque indicateur. Ces données ne mesurent pas directement les arrivées aux arrêts ni le nombre de voyageurs. Un dénominateur absent reste inconnu.',
 			unavailable:
 				'Le verdict de conformité du flux n’a pas pu être chargé pour l’instant. La méthodologie ci-dessous reste exacte et complète; seule cette vérification en direct est momentanément indisponible.',
 			howWeMeasure: {
 				label: 'Comment on mesure (vaut pour chaque métrique)',
 				serviceDay: {
 					heading: 'Jour de capture ou jour de service',
-					body: 'Les relevés de retard et de ponctualité sont attribués au JOUR LOCAL DE CAPTURE (la date locale du fournisseur à laquelle le relevé temps réel a été pris). Les spans de service, eux, gardent le JOUR DE SERVICE GTFS du trajet (start_date), donc un trajet de nuit reste sur son propre jour de service au lieu d’un faux premier départ à 00:00, et les heures d’horaire peuvent dépasser 24:00 (elles sont lues comme des décalages écoulés depuis l’ancre midi-moins-12 h du jour de service). Les deux modèles cohabitent : bande à l’heure par jour de capture, span par jour de service.',
+					body: 'Les résumés historiques de retard utilisent le jour local de capture du fournisseur. Les comptes et plages de service gardent le jour de service GTFS. Les heures d’horaire peuvent dépasser 24:00 : ce sont des durées écoulées depuis midi local moins 12 heures. Les mesures en direct décrivent l’instantané courant; chaque famille conserve sa propre fenêtre et ses limites.',
+				},
+				confidenceInterval: {
+					heading: 'Lire un intervalle de confiance',
+					body: 'La méthode de Wilson vise une couverture d’environ 95 % sur des échantillons répétés, avec des observations indépendantes et une probabilité de ponctualité stable. Les mises à jour d’un même trajet peuvent être corrélées. Ces intervalles ne corrigent pas cette dépendance et peuvent sous-estimer l’incertitude.',
+					link: 'Méthode et limites',
+					reference: 'Intervalle de Wilson : référence NIST',
 				},
 				rounding: {
-					heading: 'Arrondi (rebaseline 2026-07-01)',
-					body: 'Depuis le 2026-07-01, tout arrondi publié côté Python casse les égalités DEMI-LOIN-DE-ZÉRO (round_half_away, comme le ROUND de Postgres), remplaçant l’arrondi bancaire (« au pair ») de Python. Les valeurs ne bougent qu’aux frontières exactes en .5 (rebaseline S7-B), donc les chiffres du site et ceux de la base s’accordent au même chiffre arrondi.',
+					heading: 'Arrondi et versions',
+					body: 'À égalité exacte, les valeurs arrondies s’éloignent de zéro : 2,55 devient 2,6 et −2,55 devient −2,6 à une décimale. Les versions de méthodologie live-2, reliability-2 et alerts-2 appliquent cette règle aux métriques publiées. Les anciens fichiers de version 1 conservent leurs valeurs, qui peuvent utiliser un arrondi au pair. Vérifiez la version pour reproduire un résultat. Les classes du réseau en direct portent toujours sur les retards moyens par trajet arrondis à la minute.',
 				},
 				constants: {
 					heading: 'Constantes de la doctrine',
@@ -161,19 +167,25 @@ export const metricsCopy = defineCopy({
 			pipelineNote: 'Pipeline note (current run)',
 		},
 		provenance: {
-			label: 'Provenance (applies to every metric)',
-			body: 'Source = GTFS-RT PREDICTED schedule-deviation + alerts. Every delay / on-time / severe number derives from the realtime feed’s predicted delay_seconds, how predictions tracked the timetable. There is NO GPS/AVL ground truth and none of it is agency-certified OTP. Everything is observation-weighted (one reading = one trip-update), not trip- or rider-weighted: high-frequency routes and hours contribute more readings. On-time band = delay ∈ [-60s, +300s); severe = delay > 300s (with |delay| ≤ 3600s, the ghost guard). NULL is honest: an empty denominator shows “no data”, never a fabricated 0. The internal sentinels __unrouted__ / __unknown_stop__ are never real routes/stops.',
+			label: 'Sources and populations',
+			body: 'The measures derive from GTFS schedules, GTFS-RT predictions, vehicle positions and alerts. Historical delay statistics count observations, including repeated updates. Live punctuality and coverage describe map-eligible vehicle positions; live percentiles give each current trip-average delay equal weight. Each definition states its population and window. These data do not directly measure arrivals at stops or passenger counts. An unavailable denominator remains unknown.',
 			unavailable:
 				'The live feed-conformance verdict could not be loaded right now. The methodology below is still exact and complete; only this live check is momentarily unavailable.',
 			howWeMeasure: {
 				label: 'How we measure (applies to every metric)',
 				serviceDay: {
 					heading: 'Capture day vs service day',
-					body: 'Delay and on-time readings are attributed to the LOCAL CAPTURE DAY (the provider-local date the realtime reading was taken on). Service spans instead keep the trip’s GTFS SERVICE DAY (start_date), so an overnight trip stays on its own service day rather than a fake 00:00 first departure, and schedule times can exceed 24:00 (they are read as elapsed offsets from the service day’s noon-minus-12h anchor). Both models coexist: on-time band by capture day, span by service day.',
+					body: 'Historical delay summaries use the provider-local capture day. Service counts and spans retain the GTFS service day. Schedule times can exceed 24:00: they are elapsed durations from local noon minus 12 hours. Live measures describe the current snapshot; each family retains its own window and coverage limits.',
+				},
+				confidenceInterval: {
+					heading: 'Reading a confidence interval',
+					body: 'The Wilson method aims for about 95% coverage across repeated samples with independent observations and a stable on-time probability. Updates from the same trip can be correlated. These intervals do not adjust for that dependence and can understate uncertainty.',
+					link: 'Method and limits',
+					reference: 'Wilson interval: NIST reference',
 				},
 				rounding: {
-					heading: 'Rounding (2026-07-01 rebaseline)',
-					body: 'As of 2026-07-01, every published Python-side rounding breaks ties HALF-AWAY-FROM-ZERO (round_half_away, matching Postgres ROUND), replacing Python’s banker’s (round-half-to-even) rounding. Values move only at exact-.5 boundaries (the S7-B rebaseline), so the site’s figures and the database agree on the same rounded digit.',
+					heading: 'Rounding and versions',
+					body: 'At an exact tie, rounded values move away from zero: 2.55 becomes 2.6 and −2.55 becomes −2.6 at one decimal place. Methodology versions live-2, reliability-2 and alerts-2 apply this rule to published metrics. Older version-1 files retain their values, which may use ties-to-even rounding. Check the methodology version when reproducing a result. Live network histogram bins still classify trip-average delays rounded to whole minutes.',
 				},
 				constants: {
 					heading: 'Doctrine constants',

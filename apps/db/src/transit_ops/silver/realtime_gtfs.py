@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import hashlib
+from collections.abc import Sequence
+from contextlib import closing
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
@@ -18,7 +21,11 @@ from transit_ops.gtfs.types import (
     validate_wgs84_position,
 )
 from transit_ops.ingestion.common import project_root
-from transit_ops.ingestion.storage import BronzeStorageResolver, get_bronze_storage
+from transit_ops.ingestion.storage import (
+    BronzeStorageResolver,
+    BronzeStorageScope,
+    get_bronze_storage,
+)
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver._batch import execute_batched_insert
@@ -236,6 +243,24 @@ SELECT_REALTIME_SNAPSHOTS_IN_WINDOW = text(
 )
 
 
+SELECT_LATEST_ARCHIVED_REALTIME_IDS = text(
+    """
+    SELECT DISTINCT ON (endpoint.endpoint_key)
+        endpoint.endpoint_key, snapshot.realtime_snapshot_id
+    FROM raw.realtime_snapshot_index AS snapshot
+    JOIN raw.ingestion_runs AS run USING (ingestion_run_id)
+    JOIN raw.ingestion_objects AS archive USING (ingestion_object_id)
+    JOIN core.feed_endpoints AS endpoint
+      ON endpoint.feed_endpoint_id = snapshot.feed_endpoint_id
+    WHERE snapshot.provider_id = :provider_id
+      AND endpoint.endpoint_key IN :endpoint_keys
+      AND run.status = 'succeeded'
+    ORDER BY endpoint.endpoint_key, snapshot.captured_at_utc DESC,
+             snapshot.realtime_snapshot_id DESC
+    """
+).bindparams(bindparam("endpoint_keys", expanding=True))
+
+
 @dataclass(frozen=True)
 class BronzeRealtimeSnapshot:
     provider_id: str
@@ -282,9 +307,11 @@ class RealtimeSilverBatchLoadResult:
     skipped_existing_snapshot_ids: list[int]
     row_counts: dict[str, int]
     results: list[RealtimeSilverLoadResult]
+    verified_row_counts: dict[int, dict[str, int]] = field(default_factory=dict)
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
+        del payload["verified_row_counts"]
         payload["results"] = [result.display_dict() for result in self.results]
         return payload
 
@@ -402,16 +429,21 @@ def _row_to_bronze_realtime_snapshot(
     )
 
 
-def _find_latest_realtime_bronze_snapshot(
+def _find_realtime_bronze_snapshot(
     connection: Connection,
     *,
     provider_id: str,
     endpoint_key: str,
     bronze_storage_resolver: BronzeStorageResolver,
+    snapshot_id: int | None = None,
 ) -> BronzeRealtimeSnapshot:
-    snapshot_row = connection.execute(
-        text(
-            """
+    if snapshot_id is not None and (type(snapshot_id) is not int or snapshot_id <= 0):
+        raise ValueError("Snapshot ID must be a positive integer")
+    snapshot_filter = "AND rsi.realtime_snapshot_id = :snapshot_id" if snapshot_id else ""
+    snapshot_row = (
+        connection.execute(
+            text(
+                f"""
             SELECT
                 rsi.realtime_snapshot_id,
                 rsi.provider_id,
@@ -436,14 +468,29 @@ def _find_latest_realtime_bronze_snapshot(
             WHERE rsi.provider_id = :provider_id
               AND fe.endpoint_key = :endpoint_key
               AND ir.status = 'succeeded'
+              AND ir.provider_id = rsi.provider_id
+              AND ir.feed_endpoint_id = rsi.feed_endpoint_id
+              AND fe.provider_id = rsi.provider_id
+              AND io.provider_id = rsi.provider_id
+              AND io.ingestion_run_id = rsi.ingestion_run_id
+              {snapshot_filter}
             ORDER BY rsi.captured_at_utc DESC, rsi.realtime_snapshot_id DESC
             LIMIT 1
             """
-        ),
-        {"provider_id": provider_id, "endpoint_key": endpoint_key},
-    ).mappings().one_or_none()
+            ),
+            {"provider_id": provider_id, "endpoint_key": endpoint_key}
+            | ({"snapshot_id": snapshot_id} if snapshot_id else {}),
+        )
+        .mappings()
+        .one_or_none()
+    )
 
     if snapshot_row is None:
+        if snapshot_id is not None:
+            raise ValueError(
+                f"No successful Bronze realtime snapshot {snapshot_id} "
+                f"belongs to {provider_id}/{endpoint_key}"
+            )
         raise ValueError(
             "No successful Bronze realtime snapshot was found for this provider and endpoint. "
             "Run capture-realtime before load-realtime-silver."
@@ -452,6 +499,9 @@ def _find_latest_realtime_bronze_snapshot(
         snapshot_row,
         bronze_storage_resolver=bronze_storage_resolver,
     )
+
+
+_find_latest_realtime_bronze_snapshot = _find_realtime_bronze_snapshot
 
 
 def find_latest_realtime_bronze_snapshot(
@@ -481,22 +531,19 @@ def find_realtime_bronze_snapshots(
     end_utc: datetime,
     settings: Settings,
     project_root: Path,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> list[BronzeRealtimeSnapshot]:
     rows = connection.execute(
         SELECT_REALTIME_SNAPSHOTS_IN_WINDOW,
         {"provider_id": provider_id, "start_utc": start_utc, "end_utc": end_utc},
     ).mappings()
-    bronze_storage_resolver = _default_bronze_storage_resolver(
-        settings,
-        project_root=project_root,
-    )
-    return [
-        _row_to_bronze_realtime_snapshot(
-            row,
-            bronze_storage_resolver=bronze_storage_resolver,
-        )
-        for row in rows
-    ]
+    with closing(BronzeStorageScope(settings, project_root=project_root)) as scope:
+        return [
+            _row_to_bronze_realtime_snapshot(
+                row, bronze_storage_resolver=bronze_storage_resolver or scope.resolve
+            )
+            for row in rows
+        ]
 
 
 def _rt_feed_snapshot_id(
@@ -745,15 +792,25 @@ def _read_bronze_realtime_message(
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
 ) -> gtfs_realtime_pb2.FeedMessage:
-    if not bronze_storage.exists(snapshot.storage_path):
+    try:
+        payload = bronze_storage.read_bytes(snapshot.storage_path)
+    except FileNotFoundError as exc:
         raise FileNotFoundError(
             "Bronze realtime archive file not found: "
             f"{bronze_storage.describe_location(snapshot.storage_path)}"
+        ) from exc
+    if snapshot.byte_size is not None and len(payload) != snapshot.byte_size:
+        raise ValueError(
+            f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} byte size mismatch"
+        )
+    if hashlib.sha256(payload).hexdigest() != snapshot.checksum_sha256.lower():
+        raise ValueError(
+            f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} checksum mismatch"
         )
 
     message = gtfs_realtime_pb2.FeedMessage()
     try:
-        message.ParseFromString(bronze_storage.read_bytes(snapshot.storage_path))
+        message.ParseFromString(payload)
     except Exception as exc:
         raise ValueError(f"Failed to parse GTFS-RT Bronze snapshot: {exc}") from exc
     return message
@@ -851,22 +908,54 @@ def _actual_realtime_row_counts(
     raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
 
 
-def _is_complete_existing_load(
+def _lock_realtime_snapshot(connection: Connection, snapshot: BronzeRealtimeSnapshot) -> None:
+    connection.execute(
+        text("""
+        SELECT realtime_snapshot_id FROM raw.realtime_snapshot_index
+        WHERE provider_id=:provider_id AND realtime_snapshot_id=:snapshot_id
+        FOR NO KEY UPDATE
+    """),
+        {"provider_id": snapshot.provider_id, "snapshot_id": snapshot.realtime_snapshot_id},
+    )
+
+
+def _prepare_existing_load(
     connection: Connection,
     *,
     snapshot: BronzeRealtimeSnapshot,
     message: gtfs_realtime_pb2.FeedMessage,
-) -> bool:
-    expected_counts = _expected_realtime_row_counts(message, snapshot=snapshot)
+    repair_incomplete: bool = False,
+) -> dict[str, int] | None:
     actual_counts = _actual_realtime_row_counts(connection, snapshot=snapshot)
+    if not any(actual_counts.values()):
+        return None
+    expected_counts = _expected_realtime_row_counts(message, snapshot=snapshot)
     if actual_counts == expected_counts:
-        return True
-    if any(actual_counts.values()):
+        return expected_counts
+    if not repair_incomplete:
         raise ValueError(
-            f"Incomplete Silver load for Bronze realtime snapshot {snapshot.realtime_snapshot_id}: "
+            f"Incomplete Silver load for Bronze realtime snapshot "
+            f"{snapshot.realtime_snapshot_id}: "
             f"expected {expected_counts}, found {actual_counts}."
         )
-    return False
+    frame_id = _rt_feed_snapshot_id(
+        connection, source_realtime_snapshot_id=snapshot.realtime_snapshot_id
+    )
+    for table in (
+        "rt_trip_update_stop_times",
+        "rt_trip_updates",
+        "rt_vehicle_positions",
+        "rt_entities",
+        "rt_feed_snapshots",
+    ):
+        connection.execute(
+            text(
+                f"DELETE FROM silver.{table} WHERE provider_id=:provider_id "
+                "AND rt_feed_snapshot_id=:frame_id"
+            ),
+            {"provider_id": snapshot.provider_id, "frame_id": frame_id},
+        )
+    return None
 
 
 def _load_realtime_message_to_silver(
@@ -939,6 +1028,12 @@ def _load_realtime_message_to_silver(
             }
         )
 
+    return _realtime_load_result(snapshot, row_counts)
+
+
+def _realtime_load_result(
+    snapshot: BronzeRealtimeSnapshot, row_counts: dict[str, int]
+) -> RealtimeSilverLoadResult:
     return RealtimeSilverLoadResult(
         provider_id=snapshot.provider_id,
         endpoint_key=snapshot.endpoint_key,
@@ -961,16 +1056,12 @@ def load_realtime_snapshot_to_silver(
     bronze_storage,
     provider_bounds: ProviderBounds | None = None,
 ) -> RealtimeSilverLoadResult:
-    if not bronze_storage.exists(snapshot.storage_path):
-        raise FileNotFoundError(
-            "Bronze realtime archive file not found: "
-            f"{bronze_storage.describe_location(snapshot.storage_path)}"
-        )
+    message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
+    _lock_realtime_snapshot(connection, snapshot)
     _ensure_snapshot_not_loaded(
         connection,
         snapshot=snapshot,
     )
-    message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
     return _load_realtime_message_to_silver(
         connection,
         snapshot=snapshot,
@@ -984,26 +1075,35 @@ def load_realtime_snapshots_to_silver(
     *,
     provider_id: str,
     snapshots: list[BronzeRealtimeSnapshot],
-    bronze_storage,
+    bronze_storage_resolver: BronzeStorageResolver,
     skip_existing: bool = False,
     provider_bounds: ProviderBounds | None = None,
+    repair_incomplete: bool = False,
 ) -> RealtimeSilverBatchLoadResult:
     results: list[RealtimeSilverLoadResult] = []
     skipped_existing_snapshot_ids: list[int] = []
     row_counts: dict[str, int] = {}
+    verified_row_counts: dict[int, dict[str, int]] = {}
+    if any(snapshot.provider_id != provider_id for snapshot in snapshots):
+        raise ValueError("Realtime replay snapshots must belong to the requested provider")
 
     for snapshot in snapshots:
+        bronze_storage = bronze_storage_resolver(snapshot.storage_backend)
         message = None
         if skip_existing:
             message = _read_bronze_realtime_message(
                 snapshot=snapshot,
                 bronze_storage=bronze_storage,
             )
-            if _is_complete_existing_load(
+            _lock_realtime_snapshot(connection, snapshot)
+            verified_counts = _prepare_existing_load(
                 connection,
                 snapshot=snapshot,
                 message=message,
-            ):
+                repair_incomplete=repair_incomplete,
+            )
+            if verified_counts is not None:
+                verified_row_counts[snapshot.realtime_snapshot_id] = verified_counts
                 skipped_existing_snapshot_ids.append(snapshot.realtime_snapshot_id)
                 continue
 
@@ -1026,6 +1126,7 @@ def load_realtime_snapshots_to_silver(
                 provider_bounds=provider_bounds,
             )
         results.append(result)
+        verified_row_counts[snapshot.realtime_snapshot_id] = result.row_counts
         for table_name, count in result.row_counts.items():
             row_counts[table_name] = row_counts.get(table_name, 0) + count
 
@@ -1035,18 +1136,22 @@ def load_realtime_snapshots_to_silver(
         skipped_existing_snapshot_ids=skipped_existing_snapshot_ids,
         row_counts=row_counts,
         results=results,
+        verified_row_counts=verified_row_counts,
     )
 
 
-def _load_latest_realtime_to_silver(
+def _load_realtime_to_silver(
     provider_id: str,
     endpoint_key: str,
     *,
+    snapshot_id: int | None = None,
     settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeSilverLoadResult:
+    if snapshot_id is not None and (type(snapshot_id) is not int or snapshot_id <= 0):
+        raise ValueError("Snapshot ID must be a positive integer")
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -1057,43 +1162,99 @@ def _load_latest_realtime_to_silver(
     engine = engine or make_engine(settings)
 
     with engine.connect() as connection:
-        snapshot = _find_latest_realtime_bronze_snapshot(
+        snapshot = _find_realtime_bronze_snapshot(
             connection,
             provider_id=manifest.provider.provider_id,
             endpoint_key=realtime_feed.endpoint_key,
             bronze_storage_resolver=bronze_storage_resolver,
+            snapshot_id=snapshot_id,
         )
-    bronze_storage = bronze_storage_resolver(snapshot.storage_backend)
-
     with engine.begin() as connection:
-        return load_realtime_snapshot_to_silver(
+        batch = load_realtime_snapshots_to_silver(
             connection,
-            snapshot=snapshot,
-            bronze_storage=bronze_storage,
+            provider_id=manifest.provider.provider_id,
+            snapshots=[snapshot],
+            bronze_storage_resolver=bronze_storage_resolver,
+            skip_existing=True,
             provider_bounds=provider_bounds,
         )
+        return _realtime_load_result(
+            snapshot, batch.verified_row_counts[snapshot.realtime_snapshot_id]
+        )
 
 
-def load_latest_realtime_to_silver(
+def load_realtime_to_silver(
     provider_id: str,
     endpoint_key: str,
     *,
+    snapshot_id: int | None = None,
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
 ) -> RealtimeSilverLoadResult:
     settings = settings or get_settings()
-    return _load_latest_realtime_to_silver(
-        provider_id,
-        endpoint_key,
-        settings=settings,
-        registry=registry,
-        engine=engine,
-        bronze_storage_resolver=_default_bronze_storage_resolver(
-            settings,
-            project_root=_project_root(),
-        ),
-    )
+    with closing(BronzeStorageScope(settings, project_root=_project_root())) as storage:
+        return _load_realtime_to_silver(
+            provider_id,
+            endpoint_key,
+            snapshot_id=snapshot_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=storage.resolve,
+        )
+
+
+_load_latest_realtime_to_silver = _load_realtime_to_silver
+load_latest_realtime_to_silver = load_realtime_to_silver
+
+
+def load_latest_realtime_snapshots_to_silver(
+    provider_id: str,
+    endpoint_keys: Sequence[str],
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> list[RealtimeSilverLoadResult]:
+    """Verify a frozen newest-archive selection for the requested realtime lanes."""
+    endpoints = tuple(dict.fromkeys(endpoint_keys))
+    if any(endpoint not in {"trip_updates", "vehicle_positions"} for endpoint in endpoints):
+        raise ValueError("Archived realtime selection supports trip_updates and vehicle_positions")
+    if not endpoints:
+        return []
+    settings = settings or get_settings()
+    registry = registry or ProviderRegistry.from_project_root(settings=settings)
+    owns_engine = engine is None
+    engine = engine or make_engine(settings)
+    try:
+        with engine.connect() as connection:
+            selected = (
+                connection.execute(
+                    SELECT_LATEST_ARCHIVED_REALTIME_IDS,
+                    {"provider_id": provider_id, "endpoint_keys": endpoints},
+                )
+                .mappings()
+                .all()
+            )
+        if not selected:
+            return []
+        with closing(BronzeStorageScope(settings, project_root=_project_root())) as storage:
+            return [
+                _load_realtime_to_silver(
+                    provider_id,
+                    selected_snapshot["endpoint_key"],
+                    snapshot_id=selected_snapshot["realtime_snapshot_id"],
+                    settings=settings,
+                    registry=registry,
+                    engine=engine,
+                    bronze_storage_resolver=storage.resolve,
+                )
+                for selected_snapshot in selected
+            ]
+    finally:
+        if owns_engine:
+            engine.dispose()
 
 
 def replay_realtime_silver_window(
@@ -1105,20 +1266,7 @@ def replay_realtime_silver_window(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
 ) -> RealtimeSilverBatchLoadResult:
-    """Reconstruct realtime Silver from raw Bronze .pb over a captured window.
-
-    This is the rebuild-from-raw replay path that underwrites thin-silver
-    retention and disaster recovery: it reads the archived realtime .pb objects
-    in ``[start_utc, end_utc)`` and re-derives the realtime Silver tables for the
-    provider. Loading is idempotent (``skip_existing=True``) so a replay over a
-    window that overlaps already-loaded snapshots only fills the gaps, never
-    duplicating rows.
-
-    Gold facts are NOT rebuilt here; the caller runs ``build_gold_marts`` (the
-    full-history Gold rebuild) afterwards so Gold re-derives from the
-    reconstructed Silver. Provider-agnostic: the manifest supplies bounds and the
-    snapshot rows supply the storage backend.
-    """
+    """Restore a captured window and retain proof for scoped Gold projection."""
 
     settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
@@ -1129,37 +1277,24 @@ def replay_realtime_silver_window(
     provider_bounds = _manifest_provider_bounds(manifest)
     engine = engine or make_engine(settings)
 
-    with engine.connect() as connection:
-        snapshots = find_realtime_bronze_snapshots(
-            connection,
-            provider_id=manifest.provider.provider_id,
-            start_utc=start_utc,
-            end_utc=end_utc,
-            settings=settings,
-            project_root=_project_root(),
-        )
-
-    if not snapshots:
-        return RealtimeSilverBatchLoadResult(
-            provider_id=manifest.provider.provider_id,
-            loaded_count=0,
-            skipped_existing_snapshot_ids=[],
-            row_counts={},
-            results=[],
-        )
-
-    bronze_storage = get_bronze_storage(
-        settings,
-        project_root=_project_root(),
-        storage_backend=snapshots[0].storage_backend,
-    )
-
-    with engine.begin() as connection:
-        return load_realtime_snapshots_to_silver(
-            connection,
-            provider_id=manifest.provider.provider_id,
-            snapshots=snapshots,
-            bronze_storage=bronze_storage,
-            skip_existing=True,
-            provider_bounds=provider_bounds,
-        )
+    with closing(BronzeStorageScope(settings, project_root=_project_root())) as storage:
+        with engine.connect() as connection:
+            snapshots = find_realtime_bronze_snapshots(
+                connection,
+                provider_id=manifest.provider.provider_id,
+                start_utc=start_utc,
+                end_utc=end_utc,
+                settings=settings,
+                project_root=_project_root(),
+                bronze_storage_resolver=storage.resolve,
+            )
+        with engine.begin() as connection:
+            return load_realtime_snapshots_to_silver(
+                connection,
+                provider_id=manifest.provider.provider_id,
+                snapshots=snapshots,
+                bronze_storage_resolver=storage.resolve,
+                skip_existing=True,
+                repair_incomplete=True,
+                provider_bounds=provider_bounds,
+            )

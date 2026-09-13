@@ -1,30 +1,3 @@
-<!--
-  MapMotionControl — the on-map "how do we draw moving buses?" switch.
-
-  An honest, tasteful control bound to the motionMode store. A real
-  role="switch": OFF = RAW (the default — buses snap to their last reported
-  position on every ~30s feed, NO estimation between reports), ON = SMOOTH
-  ("almost real-time" — between reports each bus glides FORWARD along its route
-  at its last reported speed, a bounded, decaying estimate). The switch reflects
-  the store (raw by default); pressing it flips + persists the choice. A short
-  hint names which truth you are looking at, and a "How this works" link
-  deep-links into the /metrics live-positions explainer.
-
-  Layout: the EXPANDED form is a 4-ROW VERTICAL STACK (label, switch, hint, link),
-  each on its own full-width row — a display:grid single column that can never
-  reflow horizontally. It lives at the TOP of the unified Controls panel (the
-  same panel on desktop and mobile), borrowing that panel's card surface.
-
-  When the desktop Controls panel is COLLAPSED (the narrow icon-only rail), the
-  control shrinks to a SINGLE compact ROUND button carrying the motion (Waves) icon
-  (filled --primary = Smooth/ON, outline = Raw/OFF) sized + centred to match the
-  collapsed filter chips, the round shape pairing with the floating pill. The parent
-  passes `collapsed` down (MapFilters → motionHeader → here); the drawer never
-  collapses, so mobile always shows the 4-row stack. The expanded label row carries
-  the same Waves badge next to its overline, mirroring the filter section badges.
-  a11y: a real <button role="switch"> with aria-checked + a bilingual aria-label in
-  both forms.
--->
 <script lang="ts">
 	import WavesIcon from '@lucide/svelte/icons/waves';
 	import { motionMode } from '$lib/stores';
@@ -34,28 +7,17 @@
 	interface Props {
 		locale: Locale;
 		copy: MapCopy;
-		/**
-		 * When true the control renders its COLLAPSED form: a single compact square
-		 * toggle (filled = Smooth, outline = Raw), sized to the collapsed rail's chips.
-		 * Passed down from MapFilters' `panelOpen === false` rail. Defaults to the full
-		 * 4-row stack (the drawer + the expanded desktop panel never collapse).
-		 */
 		collapsed?: boolean;
 	}
 
 	let { locale, copy: t, collapsed = false }: Props = $props();
 
 	const smooth = $derived(motionMode.isSmooth);
-	// Deep-link straight to the live-positions explainer section on /metrics,
-	// locale-prefixed off the passed-in locale (FR → /fr/metrics#live-positions).
 	const explainHref = $derived(`${localizeHref('/metrics', locale)}#live-positions`);
 </script>
 
 <div class="map-motion" data-testid="map-motion" data-collapsed={collapsed}>
 	{#if collapsed}
-		<!-- Collapsed rail: the motion (Waves) icon as a HEADER badge (matching the filter
-		     section badges below it), with the round toggle button BELOW it. FILLED
-		     (--primary) = Smooth/ON, OUTLINE (hairline) = Raw/OFF. -->
 		<span class="map-motion-badge" aria-hidden="true">
 			<WavesIcon size={13} strokeWidth={2.35} />
 		</span>
@@ -64,61 +26,56 @@
 			class="map-motion-round"
 			role="switch"
 			aria-checked={smooth}
-			aria-label={t.motion.label}
+			aria-label={t.motion.toSmooth}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
 		></button>
 	{:else}
-		<!-- Row 1: the label, prefixed by a small motion (Waves) badge mirroring how the
-		     filter sections badge their overline label. -->
-		<span class="map-motion-label">
-			<span class="map-motion-badge" aria-hidden="true">
-				<WavesIcon size={13} strokeWidth={2.35} />
-			</span>
-			<span class="map-motion-label-text">{t.motion.label}</span>
-		</span>
-		<!-- Row 2: the toggle switch (track/thumb + state name). -->
-		<button
-			type="button"
-			class="map-motion-switch"
-			role="switch"
-			aria-checked={smooth}
-			aria-label={t.motion.label}
-			data-testid="map-motion-switch"
-			onclick={() => motionMode.toggle()}
-		>
-			<span class="map-motion-track" aria-hidden="true">
-				<span class="map-motion-thumb"></span>
-			</span>
-			<span class="map-motion-state">{smooth ? t.motion.smooth : t.motion.raw}</span>
-		</button>
-		<!-- Row 3: the hint. -->
-		<span class="map-motion-hint">{smooth ? t.motion.hintSmooth : t.motion.hintRaw}</span>
-		<!-- Row 4: the "How this works" deep link. -->
-		<a class="map-motion-explain" href={explainHref}>{t.motion.explain}</a>
+		<div class="map-motion-heading">
+			<span class="map-motion-label">{t.motion.label}</span>
+			<button
+				type="button"
+				class="map-motion-switch"
+				role="switch"
+				aria-checked={smooth}
+				aria-label={t.motion.toSmooth}
+				data-testid="map-motion-switch"
+				onclick={() => motionMode.toggle()}
+			>
+				<span class="map-motion-track" aria-hidden="true"
+					><span class="map-motion-thumb"></span></span
+				>
+				<span class="map-motion-state">{smooth ? t.motion.smooth : t.motion.raw}</span>
+			</button>
+		</div>
+		<div class="map-motion-caption">
+			<span class="map-motion-hint">{smooth ? t.motion.hintSmooth : t.motion.hintRaw}</span>
+			<a class="map-motion-explain" href={explainHref}>{t.motion.explain}</a>
+		</div>
 	{/if}
 </div>
 
 <style>
-	/* The 4-row vertical stack: label / switch / hint / link, each on its OWN row at
-	   full container width. A single-column grid — it sits statically in normal flow
-	   inside the unified Controls panel (the same panel on desktop and mobile). No
-	   card chrome, no fixed width: it borrows the surrounding panel's surface, and
-	   the single column means it can never reflow horizontally. */
 	.map-motion {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0.375rem;
-		/* LAW: the motion toggle is sized to its CONTENT, wide enough for the FR
-		   "Presque en temps réel" on one line, NOT 100% of the parent panel. The cap
-		   keeps the longest hint from stretching the control to an awkward width. */
-		width: max-content;
-		max-width: 13.5rem;
+		width: 100%;
+		min-width: 0;
 		max-height: 160px;
 		justify-self: start;
 	}
-	/* Collapsed rail: center the single square in the narrow rail, matching the
-	   collapsed filter chips' centred alignment. */
+	.map-motion-heading,
+	.map-motion-caption {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.map-motion-caption {
+		align-items: center;
+	}
 	.map-motion[data-collapsed='true'] {
 		gap: 0.375rem;
 		justify-items: center;
@@ -133,8 +90,6 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
-	/* Small motion badge next to the overline label — mirrors the filter sections'
-	   badge-icon-by-label treatment so the MOTION row reads as part of the family. */
 	.map-motion-badge {
 		display: inline-grid;
 		place-items: center;
@@ -150,14 +105,6 @@
 		width: 0.82rem;
 		height: 0.82rem;
 	}
-	.map-motion-label-text {
-		min-width: 0;
-	}
-	/* The switch itself — a real role="switch" button: a sliding track/thumb pair
-	   (the on/off affordance) plus the current state name. Calm at rest; lights to
-	   --primary when SMOOTH (estimated) is engaged so the estimate reads as a clear,
-	   opted-in state and RAW reads as the calm default. Justified to the row start so
-	   it owns its own full-width row without stretching the pill. */
 	.map-motion-switch {
 		display: inline-flex;
 		justify-self: start;
@@ -229,6 +176,9 @@
 	}
 	.map-motion-explain {
 		display: inline-flex;
+		min-width: 44px;
+		flex: none;
+		justify-content: center;
 		align-items: center;
 		justify-self: start;
 		min-height: 44px;
@@ -246,11 +196,6 @@
 		border-radius: var(--radius-sm);
 	}
 
-	/* Collapsed rail — a single ~2rem ROUND toggle carrying the motion (Waves) icon,
-	   centred to match the collapsed filter chips and pairing with the floating pill.
-	   OUTLINE (transparent fill, hairline border, muted icon) = Raw/OFF, the calm
-	   default; FILLED with --primary (icon in --primary-foreground) = Smooth/ON, the
-	   opted-in estimate. */
 	.map-motion-round {
 		display: inline-grid;
 		place-items: center;

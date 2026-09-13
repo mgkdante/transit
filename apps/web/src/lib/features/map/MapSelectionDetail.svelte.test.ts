@@ -286,6 +286,35 @@ const index = buildLiveIndex({
 });
 
 describe('MapSelectionDetail', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps available trip stops when the vehicle next stop is unreported (%s)',
+		(locale) => {
+			const changedIndex = {
+				...index,
+				byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], next_stop: null }),
+			};
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{
+					index: changedIndex,
+					stops,
+					alerts,
+					routes,
+				},
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			expect(container).toHaveTextContent(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+			expect(container).not.toHaveTextContent(
+				locale === 'en' ? 'the trip has ended' : 'le trajet est terminé',
+			);
+			expect(container).toHaveTextContent('Mont-Royal / Saint-Laurent');
+			expect(container).toHaveTextContent('Van Horne / Rockland');
+			expect(detail?.kind === 'vehicle' && detail.nextStops[0].etaUtc).toBe('2026-06-15T00:06:00Z');
+		},
+	);
+
 	it('keeps body, identity, and action as mutually exclusive presentations', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
@@ -358,7 +387,7 @@ describe('MapSelectionDetail', () => {
 			routeDirection: null,
 			routeDirectionVariant: null,
 			nextStop: null,
-			nextStopAbsence: 'end-of-route',
+			nextStopAbsence: 'not-reported',
 			pastStops: [],
 			nextStops: [],
 			alerts: [],
@@ -810,7 +839,7 @@ describe('MapSelectionDetail', () => {
 		);
 	});
 
-	it('previews stop and vehicle rows from pointer or keyboard without changing selection', async () => {
+	it('keeps row preview until both pointer and keyboard focus leave without changing selection', async () => {
 		const vehicleDetail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
@@ -821,6 +850,25 @@ describe('MapSelectionDetail', () => {
 		);
 		const onpreview = vi.fn();
 		const selected = vi.fn();
+		async function checkPreview(
+			row: HTMLElement,
+			selection: { kind: 'stop' | 'vehicle'; id: string },
+		) {
+			for (const [event, active] of [
+				['pointerEnter', true],
+				['focus', true],
+				['pointerLeave', true],
+				['blur', false],
+				['focus', true],
+				['pointerEnter', true],
+				['blur', true],
+				['pointerLeave', false],
+			] as const) {
+				await fireEvent[event](row);
+				expect(row).toHaveAttribute('data-previewing', String(active));
+				expect(onpreview).toHaveBeenLastCalledWith(active ? selection : null);
+			}
+		}
 		const vehicleRender = render(MapSelectionDetail, {
 			props: { detail: vehicleDetail, locale: 'en', onselect: selected, onpreview },
 		});
@@ -828,11 +876,7 @@ describe('MapSelectionDetail', () => {
 			name: /Select stop Mont-Royal \/ Saint-Laurent,/,
 		});
 
-		await fireEvent.pointerEnter(stopRow);
-		expect(stopRow).toHaveAttribute('data-previewing', 'true');
-		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
-		await fireEvent.pointerLeave(stopRow);
-		expect(onpreview).toHaveBeenLastCalledWith(null);
+		await checkPreview(stopRow, { kind: 'stop', id: 'stop-2' });
 
 		vehicleRender.unmount();
 		onpreview.mockClear();
@@ -840,11 +884,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail: stopDetail, locale: 'en', onselect: selected, onpreview },
 		});
 		const busRow = stopRender.getByRole('button', { name: /^Select bus veh-1,/ });
-		await fireEvent.focus(busRow);
-		expect(busRow).toHaveAttribute('data-previewing', 'true');
-		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'vehicle', id: 'veh-1' });
-		await fireEvent.blur(busRow);
-		expect(onpreview).toHaveBeenLastCalledWith(null);
+		await checkPreview(busRow, { kind: 'vehicle', id: 'veh-1' });
 		expect(selected).not.toHaveBeenCalled();
 	});
 

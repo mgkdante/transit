@@ -1,14 +1,4 @@
-// receipt.copy.ts: co-located bilingual copy for the Accountability-receipt surface.
-//
-// Co-located with AccountabilityReceipt.svelte so the screen owns no inline strings.
-// The receipt is a daily "service receipt": the day's headline OTP / avg delay /
-// severe share, the counts of affected routes/stops/alerts/vehicles, a rider-impact
-// score and the single worst route + worst stop.
-//
-// Shape: `Record<Locale, ReceiptCopy>` with EN + FR. The FR voice is the canonical
-// product voice (mirrors the raw-FR /v1 headers); EN is the parallel translation.
-// Provider-agnostic: no STM / Montréal references.
-
+import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
@@ -18,7 +8,7 @@ export const copy = defineCopy({
 		kicker: 'ACCOUNTABILITY · DAILY',
 		heading: 'Accountability receipt',
 		subheading: '// RECEIPT',
-		lede: 'One day, one receipt: the headline reliability of the service, the day it covers, and the worst of it, issued daily with nothing hidden.',
+		lede: 'Daily reliability, reported service, and the lines and stops with the largest delays.',
 		article: articleCopy('en', {
 			watermark: 'Receipt',
 			tags: ['receipt', 'reliability', 'service', 'accountability'],
@@ -44,8 +34,8 @@ export const copy = defineCopy({
 				subtitle: 'Severe delays across the day’s service periods',
 			},
 			delivered: {
-				title: 'Service delivered',
-				subtitle: 'Scheduled service split into delivered, cancelled, and silent outcomes',
+				title: serviceComparisonCopy.en.section,
+				subtitle: serviceComparisonCopy.en.split,
 			},
 			silent: {
 				title: 'Scheduled but never appeared',
@@ -79,18 +69,17 @@ export const copy = defineCopy({
 			heading: 'By time of day',
 			severeShare: 'Severe-delay share',
 			caveat:
-				'Severe-delay share by time of day, worst first. A trailing-window punctuality proxy, not certified performance; small samples vary.',
+				'The share of readings more than five minutes late in each service period of the selected day, worst first. Small samples vary.',
 		},
 		stateCuts: {
-			heading: 'Service delivered',
-			completenessLabel: 'Scheduled service delivered',
-			explainer:
-				'Completeness is the share of scheduled trips the network actually ran. A silent trip is scheduled but never appears in the live feed; it is counted as not delivered.',
-			standDown: 'No data yet; this reading accrues once scheduled-service coverage is published.',
-			splitLabel: 'Scheduled trips, by outcome',
-			delivered: 'Delivered',
-			cancelled: 'Cancelled',
-			silent: 'Silent',
+			heading: serviceComparisonCopy.en.section,
+			completenessLabel: serviceComparisonCopy.en.label,
+			explainer: serviceComparisonCopy.en.explanation,
+			standDown: serviceComparisonCopy.en.unavailable,
+			splitLabel: serviceComparisonCopy.en.split,
+			delivered: serviceComparisonCopy.en.observed,
+			cancelled: serviceComparisonCopy.en.cancelled,
+			silent: serviceComparisonCopy.en.shortfall,
 		},
 		notReported: {
 			heading: 'Scheduled but never appeared',
@@ -99,7 +88,7 @@ export const copy = defineCopy({
 			viewDetail: (id) => `View line ${id}`,
 			shownOfTotal: (shown, total) => `Showing ${shown} of ${total}`,
 			caveat:
-				'Lines that were scheduled today yet never appeared in the live feed, silent, not explicitly cancelled. This list is per line, not identifiable buses.',
+				'Lines with scheduled trips that never appeared in the live feed on the selected day and were not explicitly cancelled. This list identifies lines, not individual buses.',
 		},
 		receiptSection: 'The receipt',
 		terminalTitle: 'service-receipt',
@@ -109,24 +98,23 @@ export const copy = defineCopy({
 			onTime: 'On-time',
 			avgDelay: 'Average delay',
 			severe: 'Severe delays',
-			riderImpact: 'Rider impact',
 		},
-		countsSection: 'Affected on the day',
+		countsSection: 'Delay reports and alerts',
 		counts: {
-			routes: 'Lines',
-			stops: 'Stops',
-			alerts: 'Alerts',
+			routes: 'Lines with severe reports',
+			stops: 'Stops with severe reports',
+			alerts: 'Alert message versions',
 			vehicles: 'Vehicles',
 		},
-		worstSection: 'Worst of the day',
+		worstSection: 'Highest mean delays',
 		worst: {
-			routeLabel: 'Worst line',
-			stopLabel: 'Worst stop',
+			routeLabel: 'Line with highest mean delay',
+			stopLabel: 'Stop with highest mean delay',
 			routeDeltaLabel: 'On-time vs network',
 			stopDelayLabel: 'Average delay',
 		},
 		caveat:
-			'A daily summary of observed reliability, not a certified service report. Counts cover entities with a reading on the day; a blank figure means no data, never zero.',
+			'Headline figures use route-attributed delay predictions; repeated predictions remain repeated observations. Line and stop counts cover severe-delay reports, and alert counts cover recorded message versions. A missing figure is unknown; zero remains zero. Publication does not prove full-day feed coverage.',
 		emptyIndex: 'No receipts have been published yet. Check back once the daily build runs.',
 		emptyReceipt: 'No receipt was published for this day.',
 		units: {
@@ -136,11 +124,12 @@ export const copy = defineCopy({
 		},
 		dayVerdict: {
 			label: 'Day verdict',
-			otp: (otpPct) => `The network ran on time ${otpPct} of the time that day`,
-			worst: (name, deltaPts) => `worst line ${name} (${deltaPts} lost)`,
-			affected: (lines) => `${lines} lines affected`,
-			completeness: (pct) => `service delivered at ${pct}`,
-			completenessStandDown: 'service completeness not yet available',
+			otp: (otpPct) => `${otpPct} of known-delay predictions were in the on-time band`,
+			worst: (name, deltaPts) => `highest mean delay: ${name} (on-time ${deltaPts} vs network)`,
+			affected: (lines) =>
+				`${lines.toLocaleString('en-CA')} ${lines === 1 ? 'line' : 'lines'} with severe-delay predictions`,
+			completeness: (pct) => `non-cancelled / scheduled trip-day ratio: ${pct} (capped at 100%)`,
+			completenessStandDown: 'service count comparison not yet available',
 			none: 'No overall reading for this day.',
 		},
 	},
@@ -148,7 +137,7 @@ export const copy = defineCopy({
 		kicker: 'IMPUTABILITÉ · QUOTIDIEN',
 		heading: "Reçu d'imputabilité",
 		subheading: '// REÇU',
-		lede: 'Un jour, un reçu : la fiabilité globale du service, la journée couverte et le pire de la journée, émis chaque jour, rien de caché.',
+		lede: 'Un bilan quotidien de la fiabilité, du service signalé et des lignes et arrêts aux retards les plus importants.',
 		article: articleCopy('fr', {
 			watermark: 'Reçu',
 			tags: ['reçu', 'fiabilité', 'service', 'imputabilité'],
@@ -174,8 +163,8 @@ export const copy = defineCopy({
 				subtitle: 'Les retards graves selon les périodes de service de la journée',
 			},
 			delivered: {
-				title: 'Service livré',
-				subtitle: 'Le service planifié réparti entre livré, annulé et silencieux',
+				title: serviceComparisonCopy.fr.section,
+				subtitle: serviceComparisonCopy.fr.split,
 			},
 			silent: {
 				title: 'Planifiés mais jamais apparus',
@@ -210,19 +199,17 @@ export const copy = defineCopy({
 			heading: 'Par moment de la journée',
 			severeShare: 'Part de retards sévères',
 			caveat:
-				'Part de retards sévères par moment de la journée, du pire au meilleur. Un indicateur de ponctualité sur fenêtre glissante, pas une performance certifiée; les petits échantillons varient.',
+				'La part des relevés à plus de cinq minutes de retard par période de service du jour sélectionné, du pire au meilleur. Les petits échantillons varient.',
 		},
 		stateCuts: {
-			heading: 'Service livré',
-			completenessLabel: 'Service planifié livré',
-			explainer:
-				'La complétude est la part des voyages planifiés que le réseau a réellement effectués. Un voyage silencieux est planifié mais n’apparaît jamais dans le flux en direct : il compte comme non livré.',
-			standDown:
-				'Aucune donnée pour l’instant. Cette mesure s’accumule une fois la couverture du service planifié publiée.',
-			splitLabel: 'Voyages planifiés, par issue',
-			delivered: 'Livrés',
-			cancelled: 'Annulés',
-			silent: 'Silencieux',
+			heading: serviceComparisonCopy.fr.section,
+			completenessLabel: serviceComparisonCopy.fr.label,
+			explainer: serviceComparisonCopy.fr.explanation,
+			standDown: serviceComparisonCopy.fr.unavailable,
+			splitLabel: serviceComparisonCopy.fr.split,
+			delivered: serviceComparisonCopy.fr.observed,
+			cancelled: serviceComparisonCopy.fr.cancelled,
+			silent: serviceComparisonCopy.fr.shortfall,
 		},
 		notReported: {
 			heading: 'Planifiés mais jamais apparus',
@@ -231,7 +218,7 @@ export const copy = defineCopy({
 			viewDetail: (id: string) => `Voir la ligne ${id}`,
 			shownOfTotal: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
 			caveat:
-				'Des lignes planifiées aujourd’hui mais jamais apparues dans le flux en direct, silencieuses, pas explicitement annulées. Cette liste porte sur les lignes, pas des véhicules identifiables.',
+				'Les lignes dont des voyages planifiés ne sont jamais apparus dans le flux en direct le jour sélectionné, sans annulation explicite. Cette liste identifie les lignes, pas les véhicules individuels.',
 		},
 		receiptSection: 'Le reçu',
 		terminalTitle: 'recu-de-service',
@@ -241,24 +228,23 @@ export const copy = defineCopy({
 			onTime: 'À l’heure',
 			avgDelay: 'Retard moyen',
 			severe: 'Retards sévères',
-			riderImpact: 'Impact sur la clientèle',
 		},
-		countsSection: 'Touchés dans la journée',
+		countsSection: 'Retards signalés et avis',
 		counts: {
-			routes: 'Lignes',
-			stops: 'Arrêts',
-			alerts: 'Avis',
+			routes: 'Lignes avec retards graves',
+			stops: 'Arrêts avec retards graves',
+			alerts: 'Versions d’avis',
 			vehicles: 'Véhicules',
 		},
-		worstSection: 'Le pire de la journée',
+		worstSection: 'Retards moyens les plus élevés',
 		worst: {
-			routeLabel: 'Pire ligne',
-			stopLabel: 'Pire arrêt',
+			routeLabel: 'Ligne au retard moyen maximal',
+			stopLabel: 'Arrêt au retard moyen maximal',
 			routeDeltaLabel: 'Ponctualité c. réseau',
 			stopDelayLabel: 'Retard moyen',
 		},
 		caveat:
-			'Un résumé quotidien de la fiabilité observée, et non un rapport de service certifié. Les décomptes portent sur les entités ayant une mesure ce jour-là; une valeur vide signifie aucune donnée, jamais zéro.',
+			'Les indicateurs principaux utilisent les prévisions de retard attribuées aux lignes; les prévisions répétées restent des observations répétées. Les décomptes de lignes et d’arrêts couvrent les retards graves signalés; les avis comptent les versions de contenu enregistrées. Une valeur absente est inconnue; zéro reste zéro. La publication ne prouve pas une collecte continue sur la journée.',
 		emptyIndex:
 			'Aucun reçu n’a encore été publié. Revenez une fois la production quotidienne effectuée.',
 		emptyReceipt: 'Aucun reçu n’a été publié pour cette journée.',
@@ -269,11 +255,15 @@ export const copy = defineCopy({
 		},
 		dayVerdict: {
 			label: 'Verdict du jour',
-			otp: (otpPct: string) => `Le réseau a été à l’heure ${otpPct} ce jour-là`,
-			worst: (name: string, deltaPts: string) => `pire ligne ${name} (${deltaPts} perdus)`,
-			affected: (lines: string) => `${lines} lignes touchées`,
-			completeness: (pct: string) => `service assuré à ${pct}`,
-			completenessStandDown: 'complétude du service pas encore disponible',
+			otp: (otpPct: string) =>
+				`${otpPct} des prévisions avec retard connu étaient dans la plage de ponctualité`,
+			worst: (name: string, deltaPts: string) =>
+				`retard moyen maximal : ${name} (ponctualité ${deltaPts} c. réseau)`,
+			affected: (lines: number) =>
+				`${lines.toLocaleString('fr-CA')} ${lines === 1 ? 'ligne' : 'lignes'} avec des prévisions de retard grave`,
+			completeness: (pct: string) =>
+				`rapport jours-trajets non annulés / prévus : ${pct} (plafond de 100 %)`,
+			completenessStandDown: 'comparaison des décomptes pas encore disponible',
 			none: 'Aucune lecture d’ensemble pour ce jour.',
 		},
 	},

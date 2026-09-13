@@ -16,9 +16,7 @@
     empty-avis    green  , the GOOD empty: zero alerts ⇒ "le réseau roule
                             normalement". Green is a DATA verdict (network
                             healthy), so it rides the dataviz status scale.
-    error-v1      red    , the /v1 contract is unreachable; offers retry and
-                            states the honesty pledge ("on n'invente jamais de
-                            données").
+    error-v1      red    , this data could not load; offers retry when supplied.
 
   DOCTRINE
     Edge-condition glyphs and non-error verdict rules ride the dataviz status
@@ -178,13 +176,13 @@
 		'error-v1': {
 			fr: {
 				glyph: '◆',
-				title: 'Contrat /v1 injoignable',
-				body: 'Impossible de joindre la source de données. On n’invente jamais de données : rien ne s’affiche tant que le contrat /v1 n’est pas rétabli.',
+				title: 'Données indisponibles',
+				body: 'Ces données n’ont pas pu être chargées. Veuillez réessayer.',
 			},
 			en: {
 				glyph: '◆',
-				title: '/v1 contract unreachable',
-				body: 'We can’t reach the data source. We never invent data: nothing is shown until the /v1 contract is restored.',
+				title: 'Data unavailable',
+				body: 'We couldn’t load this data. Please try again.',
 			},
 		},
 	};
@@ -443,6 +441,7 @@
 	/* Retry button, interactive affordance, so --primary is doctrine-clean here.
 	   Solid orange fill, brand pill, visible focus inherited from the base ring. */
 	.edge-retry {
+		min-height: var(--size-tap-min);
 		font-family: var(--font-body);
 		font-size: var(--text-small);
 		font-weight: 600;

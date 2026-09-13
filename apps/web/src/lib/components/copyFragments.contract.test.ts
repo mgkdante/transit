@@ -117,8 +117,8 @@ describe('shared copy fragment characterization', () => {
 			receiptFr: '75cd8552b76c622c5ed1a71577c4ef4f4ea26db021cf297ed21f274de4493458',
 			repeatOffendersEn: '872bc838f04875e327dea624f9215c54d0d79cca4a06ca7c3fc05857673ac775',
 			repeatOffendersFr: 'b3d9bb8383a6b574e41b5e7791bcc23505facd14fd94ad792e69a2088b78e6dc',
-			stopEn: 'caf2c64dbc3f5b24e8af7b8f7a43ddeb4440408519524724337f38e99d5c05e6',
-			stopFr: '5bb69f0a8ce288c2a211591bd5af3271b3cd0134f635099779f047a6241e345a',
+			stopEn: '60c7e8901697ffd45e499e0e06f9b9f42414a010da5084e3a6f1957e8962fe0d',
+			stopFr: 'e83a06e29b69e0c4fbc09ce5cad5acca8bbed364fc94064f8c7600f0bc653170',
 		});
 	});
 

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.error import HTTPError
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects import postgresql
@@ -19,10 +17,10 @@ from transit_ops.ingestion.common import (
     build_bronze_object_storage_path,
     build_request_details,
     download_to_tempfile,
+    finish_failed_capture,
     get_feed_endpoint_id,
     insert_ingestion_object,
     insert_ingestion_run,
-    mark_ingestion_run_failed,
     mark_ingestion_run_succeeded,
     project_root,
     utc_now,
@@ -36,25 +34,9 @@ from transit_ops.ingestion.storage import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
-logger = logging.getLogger(__name__)
-
 I3_ENDPOINT_KEY = "i3_alerts"
 SERVICE_ALERTS_ENDPOINT_KEY = "service_alerts"
 
-
-def _best_effort_delete_orphan(bronze_storage: object, storage_path: str) -> None:
-    """Best-effort delete of an uploaded Bronze object after a downstream failure.
-
-    Swallows and logs any delete error so it never masks the original exception.
-    """
-
-    try:
-        bronze_storage.delete_object(storage_path)
-    except Exception:
-        logger.exception(
-            "Failed to delete orphaned Bronze object after metadata failure: %s",
-            storage_path,
-        )
 
 INSERT_I3_ALERT_SNAPSHOT = text(
     """
@@ -463,36 +445,15 @@ def _run_alert_capture(
             started_at_utc=started_at_utc,
             completed_at_utc=completed_at_utc,
         )
-    except HTTPError as exc:
-        completed_at_utc = utc_now()
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=exc.code,
-                error_message=f"HTTP {exc.code}: {exc.reason}",
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
-        raise
     except Exception as exc:
-        completed_at_utc = utc_now()
-        http_status_code = artifact.http_status_code if artifact else None
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=http_status_code,
-                error_message=str(exc),
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
+        finish_failed_capture(
+            engine=engine,
+            ingestion_run_id=ingestion_run_id,
+            error=exc,
+            artifact=artifact,
+            bronze_storage=bronze_storage,
+            orphan_storage_path=storage_path if persisted else None,
+        )
         raise
 
 

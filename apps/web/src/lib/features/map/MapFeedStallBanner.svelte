@@ -196,6 +196,18 @@
 	   height plus the 10px gap this file already uses. Clear of both peels, it
 	   spans the full row width instead of dodging near-me. */
 	@media (max-width: 1023.98px) {
+		.map-live-edge:is(
+			[data-state='unavailable'],
+			[data-state='selected-family-failure'],
+			[data-state='no-vehicles']
+		) {
+			top: calc(var(--chrome-offset) + 4rem);
+			left: 0.75rem;
+			right: 0.75rem;
+			margin-inline: 0;
+			width: auto;
+			max-width: none;
+		}
 		.map-feed-stall {
 			top: auto;
 			bottom: calc(var(--map-mobile-control-bottom) + 44px + 10px);

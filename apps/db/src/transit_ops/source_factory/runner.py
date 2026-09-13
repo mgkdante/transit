@@ -4,30 +4,28 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+
+from sqlalchemy import Engine
 
 # Re-exported for backwards compatibility; canonical home is core.errors so that
 # ingestion modules can raise it without importing source_factory (import cycle).
 from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.db.connection import make_engine
-from transit_ops.gold.marts import build_gold_marts
-from transit_ops.gold.rollups import build_warm_rollups
-from transit_ops.ingestion.gis import ingest_gis_feed
-from transit_ops.ingestion.i3 import capture_i3_alerts
-from transit_ops.ingestion.realtime_gtfs import capture_realtime_feed
-from transit_ops.ingestion.static_gtfs import ingest_static_feed
+from transit_ops.ingestion.gis import GisIngestionResult
+from transit_ops.ingestion.i3 import I3IngestionResult
+from transit_ops.ingestion.realtime_gtfs import RealtimeIngestionResult
+from transit_ops.ingestion.static_gtfs import StaticIngestionResult
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
-from transit_ops.silver.gis import load_latest_gis_to_silver
-from transit_ops.silver.i3 import load_latest_i3_to_silver
-from transit_ops.silver.realtime_gtfs import load_latest_realtime_to_silver
-from transit_ops.silver.static_gtfs import load_latest_static_to_silver
+from transit_ops.silver.gis import GisSilverLoadResult
+from transit_ops.silver.i3 import I3SilverLoadResult
+from transit_ops.silver.realtime_gtfs import RealtimeSilverLoadResult
+from transit_ops.silver.static_gtfs import StaticSilverLoadResult
 from transit_ops.source_factory.artifacts import write_json_artifact
 from transit_ops.source_factory.catalog import (
     SourceFactorySource,
     build_source_factory_catalog,
-    reset_source_factory_tables,
 )
 from transit_ops.source_factory.guards import (
     assert_oracle_database_target,
@@ -41,23 +39,16 @@ from transit_ops.source_factory.models import (
     PhaseStatus,
     SourceFactoryResult,
 )
-from transit_ops.source_factory.r2 import run_r2_prune_cycle
+from transit_ops.source_factory.operations import (
+    SourceFactoryOperationImpls as SourceFactoryOperationImpls,
+)
+from transit_ops.source_factory.r2 import R2CleanupStorage
 
 
 @dataclass(frozen=True)
-class SourceFactoryOperationImpls:
-    r2_prune_cycle: Callable[..., Any] = run_r2_prune_cycle
-    reset_tables: Callable[..., Any] = reset_source_factory_tables
-    ingest_static_feed: Callable[..., Any] = ingest_static_feed
-    capture_realtime_feed: Callable[..., Any] = capture_realtime_feed
-    ingest_gis_feed: Callable[..., Any] = ingest_gis_feed
-    capture_i3_alerts: Callable[..., Any] = capture_i3_alerts
-    load_latest_static_to_silver: Callable[..., Any] = load_latest_static_to_silver
-    load_latest_realtime_to_silver: Callable[..., Any] = load_latest_realtime_to_silver
-    load_latest_gis_to_silver: Callable[..., Any] = load_latest_gis_to_silver
-    load_latest_i3_to_silver: Callable[..., Any] = load_latest_i3_to_silver
-    build_gold_marts: Callable[..., Any] = build_gold_marts
-    build_warm_rollups: Callable[..., Any] = build_warm_rollups
+class _BackfillResult:
+    steps: list[dict[str, object]]
+    realtime_receipts: tuple[RealtimeSilverLoadResult, ...]
 
 
 def run_source_factory_rebuild(
@@ -74,8 +65,8 @@ def run_source_factory_rebuild(
     confirm_active_prefix_wipe: bool = False,
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
-    engine: Any | None = None,
-    bronze_storage: Any | None = None,
+    engine: Engine | None = None,
+    bronze_storage: R2CleanupStorage | None = None,
     clock: Callable[[], datetime] | None = None,
     operation_impls: SourceFactoryOperationImpls | None = None,
 ) -> SourceFactoryResult:
@@ -109,9 +100,7 @@ def run_source_factory_rebuild(
 
     registry = registry or ProviderRegistry.from_project_root(settings=settings)
     manifest = registry.get_provider(provider_id)
-    catalog = build_source_factory_catalog(
-        provider_id, present_feed_kinds=set(manifest.feeds)
-    )
+    catalog = build_source_factory_catalog(provider_id, present_feed_kinds=set(manifest.feeds))
     bronze_storage = bronze_storage or get_bronze_storage(
         settings,
         project_root=Path(__file__).resolve().parents[3],
@@ -124,9 +113,7 @@ def run_source_factory_rebuild(
     summaries: dict[str, object] = {
         "catalog": catalog.display_dict(),
         "guard_proofs": guard_proofs,
-        "planned_backfill_order": [
-            _planned_source_step(source) for source in catalog.sources
-        ],
+        "planned_backfill_order": [_planned_source_step(source) for source in catalog.sources],
     }
     artifacts["preflight"] = write_json_artifact(
         artifact_dir / "preflight.json",
@@ -152,7 +139,7 @@ def run_source_factory_rebuild(
         confirm_active_prefix_wipe=confirm_active_prefix_wipe,
         clock=now,
     )
-    r2_failed_keys = _failed_r2_cleanup_keys(r2_result)
+    r2_failed_keys = [str(key) for key in r2_result.cleanup_result.failed_keys]
     if r2_failed_keys:
         raise RuntimeError(
             "R2 cleanup failed for "
@@ -167,7 +154,7 @@ def run_source_factory_rebuild(
             FactoryPhase.R2_POST_INVENTORY: PhaseStatus.OK,
         }
     )
-    for artifact_name, artifact in getattr(r2_result, "artifacts", {}).items():
+    for artifact_name, artifact in r2_result.artifacts.items():
         artifacts[f"r2_{artifact_name}"] = _display_value(artifact)
     summaries["r2_prune_cycle"] = _display_value(r2_result)
 
@@ -197,6 +184,16 @@ def run_source_factory_rebuild(
             "result": _display_value(reset_result),
         }
 
+        realtime_endpoints = tuple(
+            source.endpoint_key
+            for source in catalog.sources
+            if source.family in {"trip_updates", "vehicle_positions"}
+            and source.endpoint_key in manifest.feeds
+        )
+        if realtime_endpoints:
+            operation_impls.initialize_realtime_serving(
+                provider_id, realtime_endpoints, settings=settings, engine=engine
+            )
         source_backfill = _execute_source_backfill(
             provider_id,
             catalog.sources,
@@ -205,10 +202,8 @@ def run_source_factory_rebuild(
             engine=engine,
             operation_impls=operation_impls,
         )
-        summaries["source_backfill"] = source_backfill
+        summaries["source_backfill"] = _display_value(source_backfill.steps)
         phase_status[FactoryPhase.SOURCE_BACKFILL] = PhaseStatus.OK
-        # Honesty: the silver layer is now BUILT (backfill complete). No
-        # validation check runs here, so this is *_BUILD, not *_VALIDATION.
         phase_status[FactoryPhase.SILVER_BUILD] = PhaseStatus.OK
 
         gold_marts_result = operation_impls.build_gold_marts(
@@ -216,6 +211,17 @@ def run_source_factory_rebuild(
             settings=settings,
             registry=registry,
             engine=engine,
+        )
+        live_result = (
+            operation_impls.refresh_gold_realtime(
+                provider_id,
+                snapshots=source_backfill.realtime_receipts,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            )
+            if source_backfill.realtime_receipts
+            else None
         )
         warm_rollups_result = operation_impls.build_warm_rollups(
             provider_id,
@@ -225,10 +231,9 @@ def run_source_factory_rebuild(
         summaries["gold"] = {
             "status": PhaseStatus.OK,
             "build_gold_marts": _display_value(gold_marts_result),
+            "refresh_gold_realtime": _display_value(live_result),
             "build_warm_rollups": _display_value(warm_rollups_result),
         }
-        # Honesty: the gold layer is now BUILT (marts + warm rollups). No
-        # validation check runs here, so this is *_BUILD, not *_VALIDATION.
         phase_status[FactoryPhase.GOLD_BUILD] = PhaseStatus.OK
 
     completed_at_utc = now()
@@ -264,12 +269,13 @@ def _execute_source_backfill(
     *,
     settings: Settings,
     registry: ProviderRegistry,
-    engine: Any,
+    engine: Engine,
     operation_impls: SourceFactoryOperationImpls,
-) -> list[dict[str, object]]:
+) -> _BackfillResult:
     results: list[dict[str, object]] = []
+    realtime_receipts: list[RealtimeSilverLoadResult] = []
     for source in sources:
-        result = _execute_source_step(
+        result, receipt = _execute_source_step(
             provider_id,
             source,
             settings=settings,
@@ -278,7 +284,9 @@ def _execute_source_backfill(
             operation_impls=operation_impls,
         )
         results.append(result)
-    return results
+        if receipt is not None:
+            realtime_receipts.append(receipt)
+    return _BackfillResult(results, tuple(realtime_receipts))
 
 
 def _execute_source_step(
@@ -287,9 +295,16 @@ def _execute_source_step(
     *,
     settings: Settings,
     registry: ProviderRegistry,
-    engine: Any,
+    engine: Engine,
     operation_impls: SourceFactoryOperationImpls,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], RealtimeSilverLoadResult | None]:
+    capture_result: (
+        StaticIngestionResult | RealtimeIngestionResult | GisIngestionResult | I3IngestionResult
+    )
+    silver_result: (
+        StaticSilverLoadResult | RealtimeSilverLoadResult | GisSilverLoadResult | I3SilverLoadResult
+    )
+    realtime_receipt: RealtimeSilverLoadResult | None = None
     if source.family == "static_schedule":
         capture_result = operation_impls.ingest_static_feed(
             provider_id,
@@ -302,6 +317,7 @@ def _execute_source_step(
             settings=settings,
             registry=registry,
             engine=engine,
+            expected_checksum_sha256=capture_result.checksum_sha256,
         )
     elif source.family in {"trip_updates", "vehicle_positions"}:
         capture_result = operation_impls.capture_realtime_feed(
@@ -311,13 +327,21 @@ def _execute_source_step(
             engine=engine,
             endpoint_key=source.endpoint_key,
         )
-        silver_result = operation_impls.load_latest_realtime_to_silver(
+        silver_result = operation_impls.load_realtime_to_silver(
             provider_id,
+            snapshot_id=capture_result.realtime_snapshot_id,
             settings=settings,
             registry=registry,
             engine=engine,
             endpoint_key=source.endpoint_key,
         )
+        if not isinstance(silver_result, RealtimeSilverLoadResult) or (
+            silver_result.provider_id,
+            silver_result.endpoint_key,
+            silver_result.realtime_snapshot_id,
+        ) != (provider_id, source.endpoint_key, capture_result.realtime_snapshot_id):
+            raise ValueError("Realtime Silver receipt does not match the requested capture")
+        realtime_receipt = silver_result
     elif source.family == "gis_static":
         try:
             capture_result = operation_impls.ingest_gis_feed(
@@ -329,7 +353,7 @@ def _execute_source_step(
         except Exception as exc:
             if not _is_optional_capture_source_unavailable(source, exc):
                 raise
-            return _optional_source_skip_result(source, exc)
+            return _optional_source_skip_result(source, exc), None
         silver_result = operation_impls.load_latest_gis_to_silver(
             provider_id,
             settings=settings,
@@ -347,27 +371,31 @@ def _execute_source_step(
         except Exception as exc:
             if not _is_optional_capture_source_unavailable(source, exc):
                 raise
-            return _optional_source_skip_result(source, exc)
-        silver_result = operation_impls.load_latest_i3_to_silver(
+            return _optional_source_skip_result(source, exc), None
+        silver_result = operation_impls.load_i3_to_silver(
             provider_id,
+            snapshot_id=capture_result.i3_alert_snapshot_id,
+            endpoint_key=source.endpoint_key,
             settings=settings,
             engine=engine,
         )
+        if not isinstance(silver_result, I3SilverLoadResult) or (
+            silver_result.provider_id,
+            silver_result.i3_alert_snapshot_id,
+        ) != (provider_id, capture_result.i3_alert_snapshot_id):
+            raise ValueError("Alert Silver receipt does not match the requested capture")
     else:
         raise ValueError(f"Unsupported source factory family: {source.family}")
 
-    return {
-        **_planned_source_step(source),
-        "status": PhaseStatus.OK,
-        "capture": _display_value(capture_result),
-        "silver": _display_value(silver_result),
-    }
-
-
-def _failed_r2_cleanup_keys(r2_result: object) -> list[str]:
-    cleanup_result = getattr(r2_result, "cleanup_result", None)
-    failed_keys = getattr(cleanup_result, "failed_keys", [])
-    return [str(key) for key in failed_keys]
+    return (
+        {
+            **_planned_source_step(source),
+            "status": PhaseStatus.OK,
+            "capture": capture_result,
+            "silver": silver_result,
+        },
+        realtime_receipt,
+    )
 
 
 def _optional_source_skip_result(
@@ -424,18 +452,10 @@ def _is_optional_capture_source_unavailable(
     message = str(exc).lower()
     if source.family == "gis_static":
         return (
-            (
-                "gis feed for provider" in message
-                and "does not have a resolved url" in message
-            )
-            or "gis feed endpoint was not found in core.feed_endpoints" in message
-        )
+            "gis feed for provider" in message and "does not have a resolved url" in message
+        ) or "gis feed endpoint was not found in core.feed_endpoints" in message
     if source.family == "i3_alerts":
         return (
-            (
-                "i3 alert feed for provider" in message
-                and "does not have a resolved url" in message
-            )
-            or "i3 alert feed endpoint was not found in core.feed_endpoints" in message
-        )
+            "i3 alert feed for provider" in message and "does not have a resolved url" in message
+        ) or "i3 alert feed endpoint was not found in core.feed_endpoints" in message
     return False

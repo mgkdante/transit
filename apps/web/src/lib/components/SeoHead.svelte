@@ -1,26 +1,3 @@
-<!--
-  SeoHead — per-page document head: title, description, canonical, hreflang
-  alternates, Open Graph + Twitter cards (slice-9.2 P5 SEO glue).
-
-  Self-contained and contract-aligned: locale handling goes through the shared
-  `$lib/i18n` helpers (localizeHref / SUPPORTED_LOCALES / DEFAULT_LOCALE) so EN
-  stays unprefixed and FR gets the `/fr` prefix exactly once, idempotently. The
-  og:image points at the pre-built default card `static/og/{lang}.png` (emitted
-  by `scripts/build-og.ts`); the script ships en + fr, so the image URL always
-  resolves to a committed asset.
-
-  Adapted from yesid.dev apps/web/src/lib/components/seo/SeoHead.svelte — gsap /
-  CMS / JsonLd marketing dependencies stripped, re-themed to transit tokens and
-  the transit i18n contract.
-
-  Usage (per page):
-    <SeoHead
-      title="Network health"
-      description="Live STM on-time performance…"
-      path="/network-health"
-      locale={getLocale()}
-    />
--->
 <script lang="ts">
 	import { dev as runtimeDev } from '$app/environment';
 	import { DEFAULT_LOCALE, SUPPORTED_LOCALES, localizeHref, type Locale } from '$lib/i18n';
@@ -29,7 +6,7 @@
 	interface SeoHeadProps {
 		/** Page title (already localized by the caller). Site name is appended. */
 		title: string;
-		/** Meta description (already localized). Aim for ~150–160 chars. */
+		/** Localized summary of the page's purpose. */
 		description: string;
 		/** Canonical PAGE path, locale-less (e.g. '/lines/165'). Defaults to '/'. */
 		path?: string;
@@ -67,9 +44,6 @@
 		path = '/',
 		locale,
 		siteOrigin = 'https://transit.yesid.dev',
-		// Provider-neutral brand default — callers (the root layout) pass an
-		// identity-derived name ("STM Analytics"); an un-passed caller must never
-		// leak a hardcoded agency, so the fallback stays generic.
 		siteName = 'Transit Analytics',
 		themeColor = '#141414',
 		noIndex = false,
@@ -82,13 +56,8 @@
 		dev = runtimeDev,
 	}: SeoHeadProps = $props();
 
-	// Title: append the site name unless the page already is the site name.
 	const fullTitle = $derived(title === siteName ? title : `${title} · ${siteName}`);
-
-	// Canonical: locale-prefixed page path on the absolute origin.
 	const canonical = $derived(`${siteOrigin}${localizeHref(path, locale)}`);
-
-	// og:image — the pre-built default card for this locale.
 	const ogImage = $derived(`${siteOrigin}/og/${locale}.png`);
 	const ogImageAlt = $derived(`${siteName}: ${title}`);
 
@@ -96,13 +65,9 @@
 	const ogLocale = $derived(`${locale}_CA`);
 	const altLocales = $derived(SUPPORTED_LOCALES.filter((l) => l !== locale).map((l) => `${l}_CA`));
 
-	// JSON-LD: every page carries the WebSite+SearchAction node (built from this
-	// component's own origin/name/locale, so callers need not pass it), plus any
-	// pre-built nodes the caller supplies. Serialized via JSON.stringify only.
 	const ldNodes = $derived([websiteJsonLd({ siteOrigin, siteName, locale }), ...jsonLd]);
 
-	// Dev-only ergonomics: warn (never throw) on lengths that risk SERP/social
-	// truncation. Production renders untouched.
+	// The description length hint encourages concise copy; it is not a search-engine limit.
 	$effect(() => {
 		if (!dev) return;
 		if (fullTitle.length > 60) {
@@ -110,9 +75,11 @@
 				`[SeoHead] title > 60 chars (${fullTitle.length}), may truncate in search. path: ${path}`,
 			);
 		}
-		if (description.length < 120 || description.length > 160) {
+		if (!description.trim()) {
+			console.warn(`[SeoHead] description is blank. path: ${path}`);
+		} else if (description.length > 160) {
 			console.warn(
-				`[SeoHead] description outside 120–160 chars (${description.length}). path: ${path}`,
+				`[SeoHead] description > 160 chars (${description.length}); consider more concise copy. path: ${path}`,
 			);
 		}
 	});
@@ -135,7 +102,6 @@
 		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 
-	<!-- Open Graph -->
 	<meta property="og:title" content={fullTitle} />
 	<meta property="og:description" content={description} />
 	<meta property="og:image" content={ogImage} />
@@ -151,7 +117,6 @@
 		<meta property="og:locale:alternate" content={alt} />
 	{/each}
 
-	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={fullTitle} />
 	<meta name="twitter:description" content={description} />
@@ -164,9 +129,7 @@
 		<meta name="twitter:creator" content={twitterCreator} />
 	{/if}
 
-	<!-- hreflang alternates per supported locale + x-default (EN). Suppressed on
-	     single-locale surfaces and on error renders (the canonical is suppressed,
-	     so alternates would point crawlers at the same broken URL). -->
+	<!-- Suppressing an error page's canonical also suppresses alternates to that broken URL. -->
 	{#if !singleLocale && !suppressCanonical}
 		{#each SUPPORTED_LOCALES as l (l)}
 			<link rel="alternate" hreflang={l} href={`${siteOrigin}${localizeHref(path, l)}`} />
@@ -178,10 +141,7 @@
 		/>
 	{/if}
 
-	<!-- schema.org JSON-LD — always-on WebSite+SearchAction node plus any
-	     caller-supplied nodes. Content is app-built objects, JSON-serialized with
-	     `<` escaped to <, so no markup can break out; the closing tag is split
-	     so the Svelte lexer never sees a literal </script>. -->
+	<!-- Escape `<` so JSON cannot close the script element; split its closing tag for the Svelte lexer. -->
 	{#each ldNodes as node (node)}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- JSON-LD: app-built nodes, < escaped, no user HTML -->
 		{@html '<script type="application/ld+json">' +

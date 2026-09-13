@@ -1,18 +1,4 @@
-<!--
-  ReliabilityPane, shared reliability readout for the route + stop surfaces.
-
-  Route reliability and stop reliability differ in raw shape, so this primitive
-  takes a NORMALIZED view-model (ReliabilityPeriodVM[]) the caller maps into. It
-  renders, per period, a small card with the on-time %, the delay (avg|median),
-  an optional p90, and a severe-share bar, plus a Sparkline of OTP across the
-  periods as an at-a-glance trend.
-
-  DOCTRINE: every data mark rides the dataviz scale (Sparkline / SeverityBar);
-  --primary is never a data colour here. Domain vocabulary (OTP / delay / p90 /
-  severe) is intrinsic, so the FR/EN labels live in a local Record<Locale>.
-  Empty-guard: an empty `periods` renders nothing (the caller wraps the load in
-  ResourceBoundary, which owns the empty/loading/error states).
--->
+<!-- Stop summaries: the source field otpPct carries a non-severe prediction share. -->
 <script lang="ts">
 	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
@@ -22,11 +8,11 @@
 	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
 
-	/** Normalized per-period reliability the caller maps its raw shape into. */
+	/** A stop prediction summary for one period. */
 	export interface ReliabilityPeriodVM {
 		/** Period label / grain (e.g. "7j", "Last 30 days"). */
 		grain: string;
-		/** On-time share as a percent [0,100], or null when unmeasured. */
+		/** Non-severe share of eligible known predictions [0,100], or null when unmeasured. */
 		otpPct: number | null;
 		/** Delay in minutes, a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
@@ -62,7 +48,7 @@
 
 	/* Intrinsic domain vocabulary, FR is the canonical product voice. */
 	type Labels = {
-		readonly otp: string;
+		readonly notSevere: string;
 		readonly delayAvg: string;
 		readonly delayMedian: string;
 		readonly p90: string;
@@ -70,28 +56,28 @@
 		readonly p90Caption: string;
 		readonly severe: string;
 		readonly trend: string;
-		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
+		/** Unit suffix for the prediction-share sparkline tooltip. */
 		readonly unitPct: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
-			otp: 'Ponctualité',
+			notSevere: 'Prévisions sans retard grave',
 			delayAvg: 'Retard moyen',
 			delayMedian: 'Retard médian',
 			p90: 'p90',
-			p90Caption: '10 % les plus lents',
+			p90Caption: '90e percentile des relevés de retard',
 			severe: 'Retards majeurs',
-			trend: 'Tendance ponctualité',
+			trend: 'Part des prévisions sans retard grave',
 			unitPct: '%',
 		},
 		en: {
-			otp: 'On-time %',
+			notSevere: 'Not-severe predictions',
 			delayAvg: 'Avg delay',
 			delayMedian: 'Median delay',
 			p90: 'p90',
-			p90Caption: 'Slowest 10% of trips',
+			p90Caption: '90th percentile of reported delays',
 			severe: 'Major delays',
-			trend: 'On-time trend',
+			trend: 'Share of predictions without severe delay',
 			unitPct: '%',
 		},
 	};
@@ -103,14 +89,11 @@
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// OTP series across periods, drives the trend sparkline (dataviz scale).
-	const otpSeries = $derived(periods.map((p) => p.otpPct));
+	const nonSevereSeries = $derived(periods.map((p) => p.otpPct));
 
-	// P5.2: the OTP mini-trend is a `sparkline` ChartSpec (legacy primitive retired).
-	// The spec carries an EXPLICIT domain via the blessed data-anchored zoom
-	// (chart/sparkDomain.ts owns the adjudication), clamped to the honest [0,100].
+	// The prediction-share sparkline domain stays inside [0,100].
 	const sparkSpec = $derived.by<SparklineSpec | null>(() => {
-		const domain = sparkZoomDomain(otpSeries, { clampHi: 100 });
+		const domain = sparkZoomDomain(nonSevereSeries, { clampHi: 100 });
 		if (domain == null) return null;
 		return {
 			kind: 'sparkline',
@@ -118,8 +101,8 @@
 			locale,
 			domain,
 			unit: t.unitPct,
-			label: t.otp,
-			values: otpSeries,
+			label: t.notSevere,
+			values: nonSevereSeries,
 			xLabels: periods.map((p) => p.grain),
 			showLast: true,
 			width: 160,
@@ -135,10 +118,8 @@
 				<div class="reliability-card">
 					<SectionLabel text={period.grain} variant="metric" />
 					<div class="reliability-metrics">
-						<!-- A null OTP is genuinely unmeasured (e.g. the day grain emits only
-						     p50/p90) — render nothing rather than a bare "·" placeholder. -->
 						{#if period.otpPct != null}
-							<MetricDisplay value={pct(period.otpPct)} label={t.otp} size="sm" />
+							<MetricDisplay value={pct(period.otpPct)} label={t.notSevere} size="sm" />
 						{/if}
 						<MetricDisplay
 							value={min(period.delayMin)}

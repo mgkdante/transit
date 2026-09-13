@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import sharp from 'sharp';
+import browserToolchain from '../browser-toolchain.json';
 import { vectorStyleFromBasemap, type BasemapTheme } from '../src/lib/components/map/basemap';
 import { mapViewportOptions } from '../src/lib/components/map/viewport';
 import {
@@ -13,6 +14,7 @@ import {
 	mapInitialCenter,
 } from '../src/lib/features/map/mapCameraFraming';
 import type { BasemapFile } from '../src/lib/v1/schemas/basemap';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '..');
@@ -26,9 +28,10 @@ const DESCRIPTOR_URL = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 const PMTILES_URL = 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles';
 const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
-const PLAYWRIGHT_CORE_VERSION = '1.62.0';
-const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
+const PLAYWRIGHT_CORE_VERSION = browserToolchain.playwrightCoreVersion;
+const PINNED_CHROMIUM_VERSION = browserToolchain.browser.version;
 const RENDER_INPUT_PATHS = [
+	'browser-toolchain.json',
 	'scripts/build-map-posters.ts',
 	'src/lib/components/map/basemap.ts',
 	'src/lib/components/map/viewport.ts',
@@ -362,10 +365,10 @@ async function buildPosters(seed: PosterReceipt): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
 	const liveBefore = await readLiveSource();
 	const renderInputsBefore = await readRenderInputs();
-	const explicitExecutable = process.env.CHROME_PATH?.trim();
+	const browserArtifact = await verifyInstalledBrowserArtifact();
 	const browser = await chromium.launch({
-		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
 		headless: true,
+		executablePath: browserArtifact.paths.executablePath,
 		args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
 	});
 	const generated: Array<{ spec: PosterSpec; bytes: Buffer }> = [];

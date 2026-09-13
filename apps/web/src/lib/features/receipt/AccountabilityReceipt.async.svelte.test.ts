@@ -352,7 +352,7 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 		receiptGates.get('2026-06-15')!.resolve(receipt('2026-06-15', false));
 		await waitFor(() => {
 			expect(container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-			expect(within(rail).getByRole('button', { name: 'Service delivered' })).toHaveAttribute(
+			expect(within(rail).getByRole('button', { name: 'Service counts' })).toHaveAttribute(
 				'aria-current',
 				'location',
 			);

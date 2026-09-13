@@ -295,17 +295,28 @@ describe('HotspotsBoard article', () => {
 	});
 
 	it.each([
-		['en', 'Worst hotspot: Berri-UQAM, 20 on-time points lost.'],
-		['fr', 'Pire point chaud : Berri-UQAM, 20 pts de ponctualité perdus.'],
+		['en', 'Top-ranked hotspot: Berri-UQAM, 70% severe-delay predictions.'],
+		['fr', 'Point chaud en tête : Berri-UQAM, 70% de prévisions de retard grave.'],
 	] as const)(
-		'renders the %s verdict with the point unit exactly once',
+		'renders the %s verdict from the supplied severe share, not the legacy delta',
 		(locale, expectedVerdict) => {
 			currentLocale.value = locale;
+			payload.current!.by_grain![0].entries![0].otp_delta_pts = 9.7;
 			render(HotspotsBoard);
 
 			expect(screen.getByText(expectedVerdict)).toBeInTheDocument();
 		},
 	);
+
+	it.each([
+		[0, 'Top-ranked hotspot: Berri-UQAM, 0% severe-delay predictions.'],
+		[12.4, 'Top-ranked hotspot: Berri-UQAM, 12.4% severe-delay predictions.'],
+		[null, 'Top-ranked hotspot: Berri-UQAM.'],
+	] as const)('preserves the supplied severe share %s in its headline', (severe, expected) => {
+		payload.current!.by_grain![0].entries![0].severe_pct = severe;
+		render(HotspotsBoard);
+		expect(screen.getByText(expected)).toBeInTheDocument();
+	});
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
 		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);

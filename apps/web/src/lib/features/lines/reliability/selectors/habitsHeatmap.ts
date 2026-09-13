@@ -1,12 +1,5 @@
-// habitsHeatmap.ts — build a classed-tier HeatmapSpec for the §1 "when to ride" hero
-// (B10, S7 P4). The 7×24 (day × hour) `repeat_problem_relative` matrix already lands in
-// [0,1], normalised to THIS route's worst cell (pipeline _build_habits_matrix: v / route_max,
-// 1.0 = the route's worst hour). So the honest read is ABSOLUTE on a fixed [0,1] domain — the
-// mark bins each cell onto the same 4 tiers everywhere, and weekends that genuinely see fewer
-// severe delays render calmer (the legacy per-row re-normalisation HID that, painting Sunday's
-// mild worst-hour as dark as Monday's severe one — a real misleading-viz bug this fixes).
-//
-// Pure (data project): no DOM, no i18n context — the labels arrive resolved via opts.
+// Scores are already normalized to this line’s maximum. The fixed [0,1] domain
+// preserves that supplied scale across weekdays; it does not compare different lines.
 
 import type { Locale } from '$lib/i18n';
 import type { HeatmapSpec, HeatmapCell } from '$lib/components/dataviz/chart/ChartSpec';
@@ -16,7 +9,7 @@ import type { HabitsVM } from '../clusters';
 export interface HabitsHeatmapOpts {
 	/** Accessible name describing the data + takeaway. */
 	readonly title: string;
-	/** What a single cell encodes, for the tooltip + SR table (e.g. "Repeat problems"). */
+	/** What a single cell encodes, for the tooltip + SR table (e.g. "Relative score"). */
 	readonly valueLabel: string;
 	/** Row (day) axis caption. */
 	readonly rowAxisLabel: string;
@@ -26,11 +19,11 @@ export interface HabitsHeatmapOpts {
 	readonly rowLabels: readonly string[];
 	/** Full day names, row order Mon..Sun (length 7) — tooltip heading + SR table. */
 	readonly fullRowLabels: readonly string[];
-	/** Plain-language tier labels, calmest → worst (length 4). */
+	/** Relative-score bands from lowest to highest (length 4). */
 	readonly tierLabels: readonly string[];
 	/** Label for a no-data cell. */
 	readonly noDataLabel: string;
-	/** Glyph stamped on the worst tier (colour is never the sole channel). */
+	/** Glyph stamped on the highest band, including scores below the exact maximum. */
 	readonly worstGlyph?: string;
 	/** Format an hour index (0..23) into a full cell label (e.g. "06:00"). */
 	readonly hourLabel: (hour: number) => string;
@@ -41,7 +34,7 @@ export interface HabitsHeatmapOpts {
 const HOURS = 24;
 
 /**
- * Build the absolute, classed-tier HeatmapSpec from the habits matrix. The caller gates on
+ * Build the fixed-domain, relative-score HeatmapSpec from the habits matrix. The caller gates on
  * `!habits.isEmpty`, so at least one real cell exists here; a `null` cell is the honest
  * no-data swatch (never coerced to a real 0). The domain is the fixed [0,1] the pipeline
  * already normalised to — the renderer bins it, never re-derives a scale.

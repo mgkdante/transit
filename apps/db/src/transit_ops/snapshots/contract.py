@@ -24,14 +24,9 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# GC2 H4 — in-band accountability stamps on every top-level payload root.
-# schema_version = the CONTRACT shape generation (bumped on breaking-ish shape moves;
-# additive-optional field growth does NOT bump it — the growth rule keeps old clients
-# valid). methodology_version is a per-payload-FAMILY string (see PAYLOAD_METHODOLOGY
-# below) so a rebaseline in one family (e.g. the pooled-avg move) is visible in-band
-# without touching unrelated families. publish_generation_id = the deterministic
-# dataset_version+generated_utc composite the publisher stamps once per run (DECISIONS
-# #17), so a citizen can tie any file back to the exact publish that emitted it.
+# Schema and per-family methodology versions describe shape and metric meaning.
+# Publication labels combine provider and tier timestamp. Historic labels share
+# one UTC day; content hashes identify distinct same-day corrections.
 PAYLOAD_SCHEMA_VERSION = 1
 
 # Per-payload-family methodology version map (DECISIONS #14). Families group the
@@ -42,31 +37,31 @@ PAYLOAD_SCHEMA_VERSION = 1
 # unversioned. Values are opaque tokens, compared for equality only.
 PAYLOAD_METHODOLOGY: dict[str, str] = {
     "manifest": "manifest-1",
-    "live_vehicles": "live-1",
-    "live_trips": "live-1",
-    "live_alerts": "alerts-1",
-    "live_network": "live-1",
-    "live_stop_departures": "live-1",
-    "live_data_health": "live-1",
+    "live_vehicles": "live-2",
+    "live_trips": "live-2",
+    "live_alerts": "alerts-2",
+    "live_network": "live-2",
+    "live_stop_departures": "live-2",
+    "live_data_health": "live-2",
     "static_routes_index": "static-1",
     "static_stops_index": "static-1",
     "static_route": "static-1",
     "static_stop": "static-1",
     "static_labels": "static-1",
     "static_basemap": "static-1",
-    "historic_network_trend": "reliability-1",
-    "historic_route_reliability": "reliability-1",
-    "historic_stop_reliability": "reliability-1",
-    "historic_hotspots": "reliability-1",
-    "historic_hotspots_day": "reliability-1",
-    "historic_repeat_offenders": "reliability-1",
-    "historic_repeat_offenders_day": "reliability-1",
+    "historic_network_trend": "reliability-2",
+    "historic_route_reliability": "reliability-2",
+    "historic_stop_reliability": "reliability-2",
+    "historic_hotspots": "reliability-2",
+    "historic_hotspots_day": "reliability-2",
+    "historic_repeat_offenders": "reliability-2",
+    "historic_repeat_offenders_day": "reliability-2",
     "historic_receipt": "receipt-1",
     "historic_receipts_index": "receipt-1",
-    "historic_route_reliability_index": "reliability-1",
-    "historic_alert_history": "alerts-1",
-    "historic_alert_archive_page": "alerts-1",
-    "historic_alert_archive_index": "alerts-1",
+    "historic_route_reliability_index": "reliability-2",
+    "historic_alert_history": "alerts-2",
+    "historic_alert_archive_page": "alerts-2",
+    "historic_alert_archive_index": "alerts-2",
     "historic_collection_index": "history-1",
     "historic_entity_directory_index": "history-1",
     "historic_network_history_partition": "history-1",
@@ -554,12 +549,7 @@ class TrendPoint(BaseModel):
     # source rollups have no data for the bucket.
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
-    # Network service-completeness (GC2 H1, additive-optional; plumbing now, display
-    # is S9's call). service_completeness_rate = 100 * Σdelivered / Σscheduled across
-    # the bucket's routes — the honest "share of scheduled service actually delivered".
-    # cancellation_rate above KEEPS its old RT-reported denominator (NOT redefined);
-    # this is a DIFFERENT, scheduled-aware denominator. None when the scheduled
-    # universe is unknown for every route in the bucket (pre-0073 history).
+    # Count comparison, capped at 100%; no matching of scheduled trip identities.
     service_completeness_rate: float | None = None
     # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
     # is the OTP/avg denominator for THIS bucket ONLY — cancellation_rate and
@@ -652,20 +642,11 @@ class ReliabilityPeriod(BaseModel):
     # public_route_reliability_daily carve-out carries neither).
     on_time: int | None = None
     delay_histogram: list[RouteDelayHistogramBin] | None = None
-    # S7-B windowable (additive-optional): the SAME metric over the immediately PRIOR
-    # comparable window (e.g. the week before this week), so the web can render a
-    # period-over-period delta + gate its significance. prior_observation_count is the
-    # prior window's KNOWN-delay denominator (matching observation_count, NOT total obs)
-    # so a two-proportion z-test (this vs prior) is valid; prior_otp_pct is the prior
-    # window's REAL on_time/known OTP. Both None on the first window (no prior) or when
-    # the period is not windowed (the scalar whole-history periods never carry them).
+    # Prior comparable-window OTP and known-delay denominator. The web shows a
+    # descriptive difference; repeated feed observations do not establish independence.
     prior_observation_count: int | None = None
     prior_otp_pct: int | None = None
-    # prior_on_time is the prior window's EXACT on-time numerator (matching on_time for
-    # the CURRENT window), so the web two-proportion delta pools real counts instead of
-    # reconstructing the prior numerator from the integer-rounded prior_otp_pct (which
-    # leaves a ±0.5pt rounding band the consumer had to suppress conservatively). None
-    # whenever prior_otp_pct is None (no prior window / not a windowed period).
+    # Exact prior on-time count; absent when the prior window is unavailable.
     prior_on_time: int | None = None
 
 
@@ -675,25 +656,12 @@ class CancellationPeriod(BaseModel):
     # trip-day is a distinct (trip_id, start_date) seen in the RT feed; the rate
     # is "canceled among RT-reported trips", NOT schedule-complete. None (not 0)
     # when total_trip_days=0. Counts are carried so weekly/monthly can SUM-derive.
-    # NOTE (GC2 H1): cancellation_rate_pct / total_trip_days / canceled_trip_days
-    # KEEP these exact RT-observed semantics — they are NOT redefined by the
-    # scheduled-universe fields below. total_trip_days remains the RT-observed
-    # denominator; the honest scheduled-complete readout is service_completeness_pct.
     grain: str = "day"
     date: str | None = None
     cancellation_rate_pct: float | None = None
     canceled_trip_days: int | None = None
     total_trip_days: int | None = None
-    # Scheduled-universe split (GC2 H1, additive-optional — None on pre-0073 history
-    # and on editions with no silver schedule; None means UNKNOWN, never 0).
-    # scheduled_trip_days = distinct scheduled trip-days active that date after
-    #   resolving calendar ∩ calendar_dates (exception_type 1/2) against the current
-    #   GTFS edition — the honest denominator RT never saw.
-    # delivered_trip_days = total_trip_days - canceled_trip_days (RT-observed, run).
-    # silent_trip_days    = max(scheduled - total_observed, 0): scheduled trips that
-    #   never appeared in ANY realtime poll (clamped at 0 — over-delivery is hidden).
-    # service_completeness_pct = 100 * delivered / scheduled (read-time; the NEW honest
-    #   completeness metric, None when scheduled unknown). Display is S9/S13's call.
+    # Aggregate observed/scheduled counts; definitions are in apps/db/README.md.
     scheduled_trip_days: int | None = None
     delivered_trip_days: int | None = None
     silent_trip_days: int | None = None
@@ -727,11 +695,8 @@ class HeadwayPeriod(BaseModel):
     # gaps under half the shift median headway (None when no gaps).
     cov: float | None = None
     bunched_pct: float | None = None
-    # S7-B windowable §2 (additive-optional; None on scalar whole-history rows + the first
-    # window with no prior). observation_count = the window's in-clamp gap sample n (the
-    # CoV/median denominator, so a delta is interpretable); prior_observation_count +
-    # prior_observed_min are the SAME shift over the immediately-prior equal-length window,
-    # so the web renders a period-over-period delta on the wait + gates its significance by n.
+    # Gap counts and observed median for this/prior equal-length window.
+    # The busiest direction is selected separately in each window; absent on scalar rows.
     observation_count: int | None = None
     prior_observation_count: int | None = None
     prior_observed_min: float | None = None
@@ -1246,13 +1211,9 @@ class Offender(BaseModel):
     # Offenders are 'trip'/'vehicle' entities with no display name of their
     # own — the route context carries the resolved name instead.
     route_name: str | None = None
-    # recurrence = the legacy pre-formatted "N/14d" string (KEPT byte-identical for
-    # parity). S14 ADDITIVE structured twins so the web stops parsing that string and
-    # stops re-deriving severity client-side: recurrence_days = the N (distinct severe
-    # days), window_days = the mart's fixed 14-day window (the M), severity = the mart's
-    # published severity_label. All optional/None on a legacy payload (additive-optional
-    # growth rule); populated straight from the columns the scalar mart query already
-    # selects, so the scalar list's order + legacy fields stay byte-stable.
+    # recurrence is "N/Md": distinct severe-delay days within the published window.
+    # The mutable mart follows fact retention (14 days by default); immutable
+    # history uses 14 closed local dates. Legacy payloads may omit these fields.
     recurrence: str | None = None
     recurrence_days: int | None = None
     window_days: int | None = None
@@ -1397,18 +1358,7 @@ class ReceiptNotReportedRoute(BaseModel):
 
 
 class ReceiptServiceStates(BaseModel):
-    # S13 the receipt day's scheduled→delivered→cancelled→silent service-state split,
-    # summed network-wide off gold.route_cancellation_daily (GC2 scheduled universe).
-    # scheduled_trip_days = Σ scheduled trip-days (the honest denominator); delivered =
-    # Σ delivered FILTER(scheduled known); cancelled = Σ canceled_trip_days; silent = Σ
-    # silent FILTER(scheduled known). service_completeness_pct = LEAST(100, 100 *
-    # Σdelivered / Σscheduled) — the ONE completeness number for the receipt (DECISIONS
-    # DB1); None (never a fabricated 0/100) when Σscheduled is NULL or 0 (pre-0073
-    # history / no schedule edition). not_reported_route_count is the PRE-cap total count
-    # of not-reported routes that day (the honest shown/total denominator — a mass-outage
-    # day reads count=200, list=top 50); not_reported_routes is that list capped at
-    # NOT_REPORTED_ROUTES_CAP (top by scheduled_trip_days DESC). All counts honest-NULL
-    # (None) when the scheduled universe is unknown, never a fabricated 0.
+    # Per-route count comparisons summed over rows with a known schedule.
     scheduled_trip_days: int | None = None
     delivered_trip_days: int | None = None
     cancelled_trip_days: int | None = None

@@ -1,11 +1,3 @@
-<!--
-  SectionPercentiles — the day-grain typical (p50) vs worst-case (p90) pair.
-
-  Pure presenter of `selectDayPercentiles`. Surfaces the day period's percentiles
-  prominently rather than buried with a placeholder; a null field renders the
-  styled honest-absence chip (MetricDisplay.absentReason), never a fabricated 0.
-  Rendered only when the caller has a non-null percentile pair.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin } from '$lib/utils';
@@ -14,7 +6,7 @@
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionPercentilesProps {
-		/** The typical (p50) / worst-case (p90) pair (null fields → honest absence). */
+		/** Daily predicted-delay percentiles; null fields remain unavailable. */
 		percentiles: { p50: number | null; p90: number | null };
 		locale: Locale;
 		copy: StopReliabilityCopy;
@@ -49,8 +41,8 @@
 			value={min(percentiles.p90)}
 			absentReason="no-observations"
 			{locale}
-			label={copy.percentiles.worstCase}
-			sublabel={copy.percentiles.worstCaseCaption}
+			label={copy.percentiles.p90}
+			sublabel={copy.percentiles.p90Caption}
 			size="md"
 		/>
 	</div>

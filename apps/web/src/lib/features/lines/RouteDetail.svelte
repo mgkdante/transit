@@ -75,7 +75,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { delayColorVar, delaySeverity, delayLabel } from '$lib/site/delayPresentation';
+	import { statusColorVar, statusSeverity, delayLabel } from '$lib/site/delayPresentation';
 	import { DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
 
 	interface RouteDetailProps {
@@ -578,28 +578,31 @@
 												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
 													{#each roster as bus, bi (bus.id)}
 														<li class="route-roster-item">
+															{#snippet rosterRow()}
+																<RankedRow
+																	bare
+																	rank={bi + 1}
+																	title={t.roster.busLabel(bus.id)}
+																	subtitle={bus.next_stop != null
+																		? t.roster.nextStop(bus.next_stop)
+																		: undefined}
+																	severity={statusSeverity(bus.status, bus.delay_min)}
+																	colorVar={statusColorVar(bus.status)}
+																	value={bus.delay_min ?? null}
+																	domain={DELAY_POS_DOMAIN}
+																	unit=" min"
+																	display={rosterDelayLabel(bus.delay_min)}
+																	absentReason="not-reported"
+																	{locale}
+																/>
+															{/snippet}
 															{#if bus.trip}
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
 																	aria-label={t.roster.viewTrip(bus.id)}
 																>
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
+																	{@render rosterRow()}
 																	<ChevronRightIcon
 																		size={14}
 																		strokeWidth={2.4}
@@ -608,22 +611,7 @@
 																</a>
 															{:else}
 																<div class="route-roster-link route-roster-link--static">
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
+																	{@render rosterRow()}
 																</div>
 															{/if}
 															<a

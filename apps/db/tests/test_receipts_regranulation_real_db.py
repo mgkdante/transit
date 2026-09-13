@@ -185,7 +185,8 @@ def _route_candidate(c, d, rid, *, avg_delay, on_time) -> None:  # noqa: ANN001
         text(
             "INSERT INTO gold.route_delay_hourly (provider_id, period_start_utc, route_id,"
             " observation_count, delay_observation_count, on_time_observation_count,"
-            " avg_delay_seconds) VALUES (:p, :ts, :r, 10, 10, :ot, :avg)"
+            " avg_delay_seconds, usable_delay_observation_count, usable_delay_sum_seconds)"
+            " VALUES (:p, :ts, :r, 10, 10, :ot, :avg, 10, :avg * 10)"
         ),
         {
             "p": PROVIDER,

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
 	activeMapFamilies,
 	commitProbeSelection,
@@ -1227,11 +1228,10 @@ const manifestLiveTtlS = preflight.manifest.files?.live?.ttl_s;
 const ttlS = Math.max(1, manifestLiveTtlS ?? DEFAULT_LIVE_TTL_S);
 const ttlMs = ttlS * 1_000;
 const staleThresholdS = ttlS * STALE_TTL_MULTIPLIER;
+const browserArtifact = await verifyInstalledBrowserArtifact();
 const launchOptions = {
 	headless: true,
-	...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
-		? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
-		: {}),
+	executablePath: browserArtifact.paths.executablePath,
 };
 const browser = await chromium.launch(launchOptions);
 try {

@@ -87,6 +87,26 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
+	it('reveals interval assumptions through a saved collapse without live provenance', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		window.location.hash = '#confidence-intervals';
+		const { container } = render(MetricsExplainer);
+		await tick();
+		await tick();
+		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true');
+		const section = container.querySelector('#confidence-intervals') as HTMLElement;
+		expect(
+			within(section).getByRole('heading', { name: 'Reading a confidence interval' }),
+		).toBeVisible();
+		expect(section).toHaveTextContent('independent observations');
+		expect(section).toHaveTextContent('can be correlated');
+		expect(
+			within(section).getByRole('link', { name: 'Wilson interval: NIST reference' }),
+		).toHaveAttribute('href', 'https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm');
+		for (const entry of METRICS)
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	it('stacks the single-rail Metrics freshness date below its label', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),

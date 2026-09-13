@@ -241,6 +241,10 @@ const ALERTS_BY_CODE = [
 ];
 
 const liveStore = {
+	familyStates: {
+		departures: { phase: 'ready', consecutiveFailures: 0 },
+		alerts: { phase: 'ready', consecutiveFailures: 0 },
+	},
 	vehicles: null,
 	trips: null,
 	departures: { generated_utc: '2026-06-15T12:00:00Z' },
@@ -266,6 +270,10 @@ const liveStore = {
 
 const emptyLiveStore = {
 	...liveStore,
+	familyStates: {
+		departures: { phase: 'idle', consecutiveFailures: 0 },
+		alerts: { phase: 'idle', consecutiveFailures: 0 },
+	},
 	departures: null,
 	alerts: null,
 	index: { byStopId: new Map<string, StopDeparture[]>() },
@@ -475,7 +483,7 @@ describe('StopDetail article contract', () => {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
 		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
-			families: ['departures', 'alerts', 'network'],
+			families: ['departures'],
 		});
 
 		expect(
@@ -535,6 +543,7 @@ describe('StopDetail article contract', () => {
 		const summary = container.querySelector('[data-slot="stop-reliability-summary"]');
 		expect(summary).toHaveTextContent('20%');
 		expect(summary).toHaveTextContent('2.7 min');
+		expect(summary).toHaveTextContent('Jun 15, 2026');
 	});
 
 	it('uses historic freshness on the reliability tab', () => {
@@ -570,7 +579,7 @@ describe('StopDetail article contract', () => {
 
 		expect(departuresCard.querySelector('[data-slot="terminal-panel"]')).toBeNull();
 		expect(
-			within(departuresCard).getByRole('table', { name: 'Live next departures' }),
+			within(departuresCard).getByRole('table', { name: 'Reported departures' }),
 		).toBeInTheDocument();
 	});
 
@@ -743,7 +752,9 @@ describe('StopDetail article contract', () => {
 		expect(within(rail).getByRole('button', { name: 'Stop information' })).toBeInTheDocument();
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		expect(within(rail).getByRole('button', { name: 'Scheduled service' })).toBeInTheDocument();
+		expect(
+			within(rail).getByRole('button', { name: 'Sample weekday schedule' }),
+		).toBeInTheDocument();
 	});
 
 	it('preserves a manual facts-card choice across a tab round-trip', async () => {
@@ -868,7 +879,9 @@ describe('StopDetail retained-history singleton boundary', () => {
 		const habits = view.container.querySelector('[data-slot="stop-habits"]');
 		expect(habits).not.toBeNull();
 		expect(
-			within(articleCardFor(habits)).getByRole('button', { name: 'Severe delays by hour' }),
+			within(articleCardFor(habits)).getByRole('button', {
+				name: 'Relative severe-delay score by hour',
+			}),
 		).toBeInTheDocument();
 		expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
 	});
@@ -886,7 +899,9 @@ describe('StopDetail retained-history singleton boundary', () => {
 		const habits = view.container.querySelector('[data-slot="stop-habits"]');
 		expect(habits).not.toBeNull();
 		expect(
-			within(articleCardFor(habits)).getByRole('button', { name: 'Severe delays by hour' }),
+			within(articleCardFor(habits)).getByRole('button', {
+				name: 'Relative severe-delay score by hour',
+			}),
 		).toBeInTheDocument();
 	});
 
@@ -966,7 +981,7 @@ describe('StopDetail retained-history singleton boundary', () => {
 		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
 		await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
 		const error = await screen.findByRole('alert');
-		expect(error).toHaveTextContent('/v1 contract unreachable');
+		expect(error).toHaveTextContent('Data unavailable');
 		expect(view.container.querySelector('.stop-reliability')).toBeNull();
 
 		await fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
@@ -1043,12 +1058,16 @@ describe('StopDetail reliability — habits heatmap', () => {
 		// so scope the heading assertion to the one article card that owns this body.
 		const habitsTile = container.querySelector('[data-slot="stop-habits"]') as HTMLElement;
 		expect(
-			within(articleCardFor(habitsTile)).getByRole('button', { name: 'Severe delays by hour' }),
+			within(articleCardFor(habitsTile)).getByRole('button', {
+				name: 'Relative severe-delay score by hour',
+			}),
 		).toBeInTheDocument();
 		// P5.2: the heatmap is the classed-tier <Chart> mark — a labelled figure (the
 		// sr-only table is the AT mirror; LayerChart paints only in a real layout).
 		expect(
-			within(habitsTile).getByRole('figure', { name: 'Severe-delay heatmap by day and hour' }),
+			within(habitsTile).getByRole('figure', {
+				name: 'Relative score within this stop, by day and hour',
+			}),
 		).toBeInTheDocument();
 	});
 
@@ -1057,7 +1076,7 @@ describe('StopDetail reliability — habits heatmap', () => {
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
-		expect(screen.queryByText('Severe delays by hour')).not.toBeInTheDocument();
+		expect(screen.queryByText('Relative severe-delay score by hour')).not.toBeInTheDocument();
 	});
 });
 
@@ -1429,7 +1448,7 @@ describe('StopDetail live departures — status filter', () => {
 });
 
 describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
-	it('states "scheduled, but no vehicle reporting" when a served route is silent in-window', () => {
+	it('describes only report absence when a served route has a silent trip', () => {
 		// A 24h schedule window (00:00 → 23:59 → always open regardless of the test
 		// clock) on a served route (51) that the live network reports silent.
 		stopFileData = {
@@ -1440,8 +1459,9 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 		render(StopDetail, { props: { id: '57191' } });
 
 		expect(
-			screen.getByText('Scheduled, but no vehicle is reporting live right now.'),
+			screen.getByText('No departures reported for this stop in this report.'),
 		).toBeInTheDocument();
+		expect(screen.queryByText('Scheduled, but no vehicle is reporting live right now.')).toBeNull();
 	});
 
 	it('falls back to the generic honest no-data copy when no reason is derivable', () => {
@@ -1453,7 +1473,9 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 
 		// The board's empty state shows the generic honest no-data copy (the active
 		// "next" tab renders one; getAllByText tolerates other inert panes).
-		expect(screen.getAllByText('Nothing to show').length).toBeGreaterThan(0);
+		expect(
+			screen.getByText('No departures reported for this stop in this report.'),
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText('Scheduled, but no vehicle is reporting live right now.'),
 		).not.toBeInTheDocument();
@@ -1600,7 +1622,7 @@ describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 		} as unknown as StopFile;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		const table = screen.getByRole('table', { name: 'Scheduled service by line' });
+		const table = screen.getByRole('table', { name: 'Sample weekday times by line' });
 		expect(within(table).getByRole('columnheader', { name: 'Line' })).toBeInTheDocument();
 		expect(within(table).getByRole('columnheader', { name: 'Destination' })).toBeInTheDocument();
 		expect(within(table).getByRole('columnheader', { name: 'Departures' })).toBeInTheDocument();
@@ -1616,7 +1638,7 @@ describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 		} as unknown as StopFile;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		const table = screen.getByRole('table', { name: 'Scheduled service by line' });
+		const table = screen.getByRole('table', { name: 'Sample weekday times by line' });
 		expect(container.querySelector('.stop-schedule-times')).toBeNull();
 		const row = table.querySelector('tbody tr') as HTMLElement;
 		expect(row).toHaveTextContent('99');

@@ -66,7 +66,11 @@
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	// The shared occupancy band vocabulary (the SAME labels the lines surface renders).
@@ -252,12 +256,8 @@
 	);
 	const dayPercentiles = $derived(selectDayPercentiles(data.periods, grain));
 
-	// §C5.6 one-line reliability verdict at the TOP of the Reliability pane — the SHARED
-	// VerdictBanner + selectVerdict at stop scope, off the selected-grain period's own
-	// otp_pct + observation_count (the Wilson hedge rides the real n; selectVerdict
-	// derives the numerator from otp×n honestly when no explicit on_time is served). The
-	// pipeline emits one period per grain → read the last matching row; a null otp stands
-	// the band down to "still measuring" (never a fabricated verdict).
+	// Stop otp_pct is the non-severe proxy. Its nominal bounds reconstruct a numerator
+	// from the rounded share; the stop copy identifies the population and dependence limit.
 	const gradedPeriodRaw = $derived.by(() => {
 		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
 		return rows.length > 0 ? rows[rows.length - 1] : null;
@@ -309,9 +309,9 @@
 		explicitHistory && historySelectionText != null ? historySelectionText : copy.crowding.window,
 	);
 
-	// The (i) affordance for the ReliabilityPane heading (its intrinsic OTP/delay/severe).
+	// The stop prediction summary's metric definitions.
 	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
@@ -384,7 +384,7 @@
 	}
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
+{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	{@const i = info(key, name)}
 	<MetricInfo
 		class="stop-metric-info"
@@ -582,7 +582,7 @@
 								bulkCollapsed={quietModeStore.enabled}
 							>
 								{#snippet headerActions()}
-									{@render metricInfo('otp', copy.metrics.otp)}
+									{@render metricInfo('stopNotSevere', copy.metrics.otp)}
 									{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
 									{@render metricInfo('severe', copy.metrics.severe)}
 								{/snippet}

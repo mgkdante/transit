@@ -13,7 +13,7 @@ export interface MapSelectionController {
 	close(): void;
 }
 
-/** Owns selection transitions while MapHero retains picking, resolution, and camera work. */
+/** Owns selection transitions; mapRuntime owns picking, MapHero resolves data and camera intent. */
 export function createMapSelectionController(): MapSelectionController {
 	let selected = $state<MapSelection | null>(null);
 	let hovered = $state<MapSelection | null>(null);

@@ -2,7 +2,7 @@
   §0 Verdict — "Can you count on this line?"
 
   The first rider-question section + the page's at-a-glance answer. Leads with the
-  punctuality KPI tiles (on-time, avg delay, typical/worst-case), then the ONE
+  punctuality KPI tiles (on-time, avg delay, median/p90), then the ONE
   always-visible primary chart — the on-time / avg-delay trend — and tucks the
   analyst detail (the delay distribution + severe-delay share) behind the
   progressive-disclosure `<Detail>` expander.
@@ -17,7 +17,7 @@
 
 -->
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import { localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
@@ -133,12 +133,13 @@
 	const hasTrend = $derived(trendSpec.kind === 'trend');
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
-	// DETAIL — the typical→worst-case delay distribution (signed-delay histogram).
+	// DETAIL — signed-delay histogram with median and 90th-percentile markers.
 	const distSpec = $derived(
 		selectPunctualityDistribution(vm, locale, {
 			title: copy.strip.delayDistHeading,
 			unit: ' s',
 			xLabel: copy.strip.delayDistLabel,
+			yLabel: copy.strip.delayDistCount,
 		}),
 	);
 	const p50 = $derived<number | null>(headline.p50Min);
@@ -258,7 +259,15 @@
 				</div>
 				<Chart spec={trendSpec} />
 				{#if hasWilsonBand}
-					<p class="band-caption" data-slot="wilson-band-caption">{copy.strip.wilsonBandCaption}</p>
+					<p class="band-caption" data-slot="wilson-band-caption">
+						{copy.strip.wilsonBandCaption}
+						<a
+							href={localizeHref('/metrics#confidence-intervals', locale)}
+							data-card-interactive
+							class="underline underline-offset-2"
+							>{explainerCopy.provenance.howWeMeasure.confidenceInterval.link}</a
+						>
+					</p>
 				{/if}
 			</div>
 		{/if}
@@ -287,8 +296,6 @@
 				</div>
 				<Chart spec={distSpec} />
 				{#if isDayGrain && !hasDist}
-					<!-- Day-grain periods carry no percentile distribution (only week/month do) —
-					     nudge to a wider window rather than leaving a bare "no data". -->
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}
 				{#if distSpec.kind === 'histogram'}

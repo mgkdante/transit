@@ -56,7 +56,7 @@ export function selectHeadlineKpis(net: NetworkFile, labels: HeadlineKpisLabels)
 			{
 				value: labels.pctOrNull(net.on_time_pct),
 				label: labels.onTime,
-				key: 'otp',
+				key: 'liveOtp',
 				absentReason: 'not-reported',
 			},
 			{
@@ -68,13 +68,13 @@ export function selectHeadlineKpis(net: NetworkFile, labels: HeadlineKpisLabels)
 			{
 				value: labels.minOrNull(net.delay_p50_min),
 				label: labels.delayP50,
-				key: 'p50p90',
+				key: 'liveDelayPercentiles',
 				absentReason: 'not-reported',
 			},
 			{
 				value: labels.minOrNull(net.delay_p90_min),
 				label: labels.delayP90,
-				key: 'p50p90',
+				key: 'liveDelayPercentiles',
 				absentReason: 'not-reported',
 			},
 		],

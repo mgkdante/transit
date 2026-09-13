@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
 	MOBILE_GEOMETRY_ROUTES,
 	MOBILE_GEOMETRY_VIEWPORT,
@@ -88,7 +89,6 @@ interface ChromeHandle {
 
 interface HarnessOptions {
 	baseUrl?: string;
-	chromePath?: string;
 	log?: (line: string) => void;
 }
 
@@ -670,7 +670,8 @@ export async function runMobileGeometryHarness(
 	options: HarnessOptions = {},
 ): Promise<MobileGeometryRun> {
 	const baseUrl = resolveMobileGeometryBaseUrl(options.baseUrl ?? process.env.BASE_URL);
-	const chromePath = options.chromePath ?? process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
+	const browserArtifact = await verifyInstalledBrowserArtifact();
+	const chromePath = browserArtifact.paths.executablePath;
 	const log = options.log ?? console.log;
 	const preflight = await fetch(`${baseUrl}/`);
 	if (!preflight.ok) throw new Error(`BASE_URL returned HTTP ${preflight.status}: ${baseUrl}`);

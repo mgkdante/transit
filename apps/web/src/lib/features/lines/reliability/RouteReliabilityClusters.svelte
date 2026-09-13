@@ -28,6 +28,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { formatDateKey } from '$lib/utils/time';
+	import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -359,7 +360,7 @@
 		(['day', 'week', 'month', 'range'] as const).map((key) => {
 			const label =
 				key === 'day'
-					? copy.controls.today
+					? copy.controls.latestDay
 					: key === 'week'
 						? copy.controls.thisWeek
 						: key === 'month'
@@ -405,13 +406,8 @@
 		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
-		const latest = datedPeriods.at(-1);
-		if (
-			latest &&
-			data.cancellations?.some((row) => row.date === latest.date && row.scheduled_trip_days === 0)
-		)
-			return aw.singleDay(latest.date);
-		return aw.day;
+		const latest = selectHeadlinePeriod(selectedData.periods ?? [], 'day');
+		return aw.day(latest?.grain === 'day' ? (latest.date ?? null) : null);
 	});
 
 	/* ── mobile floating pills ──────────────────────────────────────────────────
@@ -428,7 +424,7 @@
 				? copy.controls.thisWeek
 				: mode === 'month'
 					? copy.controls.thisMonth
-					: copy.controls.today,
+					: copy.controls.latestDay,
 	);
 
 	// Section TOC (wayfinding): the rider-question sections a reader can jump to. This list

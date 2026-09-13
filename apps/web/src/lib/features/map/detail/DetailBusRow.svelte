@@ -25,7 +25,7 @@
 	function preview(pointer: boolean, focus: boolean): void {
 		pointerPreview = pointer;
 		focusPreview = focus;
-		onpreview?.(previewing ? { kind: 'vehicle', id: vehicle.id } : null);
+		onpreview?.(pointer || focus ? { kind: 'vehicle', id: vehicle.id } : null);
 	}
 	const accessibleName = $derived(
 		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${vehicle.delay_min == null ? absenceShort('not-reported', locale) : delayKnownLabel(vehicle.delay_min, t)}`,
@@ -58,8 +58,8 @@
 <style>
 	.detail-bus-row {
 		display: grid;
-		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
-		gap: 0.5rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.25rem 0.5rem;
 		width: 100%;
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
@@ -84,24 +84,25 @@
 		outline: 2px solid var(--ring);
 		outline-offset: -1px;
 	}
+	.detail-bus-row > strong,
+	.detail-bus-row > span,
+	.detail-bus-row > small {
+		grid-column: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
 	.detail-bus-row strong {
 		font-family: var(--font-mono);
 	}
 	.detail-bus-row small {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
 		color: var(--muted-foreground);
 	}
-	@container right-panel (max-width: 21rem) {
-		.detail-bus-row {
-			grid-template-columns: minmax(0, 1fr) auto;
-		}
-		.detail-bus-row > span,
-		.detail-bus-row > small {
-			grid-column: 1;
-		}
-		.detail-bus-row :global(svg) {
-			grid-column: 2;
-			grid-row: 1 / span 3;
-		}
+	.detail-bus-row :global(svg) {
+		grid-column: 2;
+		grid-row: 1 / span 3;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.detail-bus-row {

@@ -181,8 +181,7 @@ class FakeBronzeStorage:
                 failed_paths.add(storage_path)
         return failed_paths
 
-    def storage_backend(self) -> str:
-        return "local"
+    storage_backend = "s3"
 
 
 @pytest.fixture()

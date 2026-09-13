@@ -162,7 +162,6 @@ export interface AlertRowVM {
 	readonly durationMin: number | null;
 	readonly routes: readonly string[];
 	readonly stops: readonly string[];
-	readonly impactPassages: number | null;
 	/** A safe external URL (http/https only) + its hostname, or null when absent/unsafe. */
 	readonly url: { readonly href: string; readonly host: string } | null;
 }
@@ -211,7 +210,6 @@ export function buildAlertRow(entry: AlertHistoryEntry, r: AlertRowResolvers): A
 		durationMin: entry.duration_min ?? null,
 		routes: entry.routes ?? [],
 		stops: entry.stops ?? [],
-		impactPassages: entry.impact_passages ?? null,
 		url: safeAlertUrl(entry.url),
 	};
 }

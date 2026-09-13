@@ -17,7 +17,7 @@ export {
 } from './time';
 export type { TimeLang } from './time';
 
-export { fmtCount, fmtDelayMin, fmtPct } from './format';
+export { fmtNumber, fmtCount, fmtDelayMin, fmtPct } from './format';
 export type { FormatLang } from './format';
 
 export { roundHalfAwayFromZero } from './rounding';

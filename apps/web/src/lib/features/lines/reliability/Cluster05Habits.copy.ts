@@ -9,8 +9,8 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const habitsBandCopy = defineCopy({
 	fr: {
-		heatmapHeading: 'Problèmes récurrents par heure',
-		heatmapLabel: 'Carte thermique des problèmes par jour et par heure',
+		heatmapHeading: 'Score relatif des problèmes par heure',
+		heatmapLabel: 'Score relatif au sein de cette ligne, par jour et par heure',
 		weekdayHeading: 'Par jour de la semaine',
 		avgDelay: 'Retard moyen',
 		cycle: {
@@ -26,28 +26,23 @@ export const habitsBandCopy = defineCopy({
 		},
 		hourAxisLabel: 'Heure de la journée',
 		dayAxisLabel: 'Jour de la semaine',
-		cellValueLabel: 'Problèmes récurrents',
+		cellValueLabel: 'Score relatif',
 		scaleCaption:
-			'Chaque case indique à quelle fréquence les retards graves reviennent à cette heure-là, sur toute la semaine et sur une seule échelle. Les cases encadrées et marquées d’un ◆ sont les pires heures de cette ligne; les cases pâles voient rarement un retard grave. Les fins de semaine plus calmes paraissent donc plus pâles, ce qui est honnête.',
+			'Un même maximum normalise toutes les heures et journées de cette ligne. Une case pâle indique un score relatif plus faible. ◆ encadre les scores de 0,75 à 1 de ce maximum. Zéro signifie qu’un score nul est fourni; une case vide est indisponible. Ce score n’est ni une fréquence de retard ni un classement entre lignes.',
 		heatmapWindowNote:
-			'Ce portrait utilise tout l’historique de la ligne : il ne change pas selon la fenêtre choisie en haut. « Aujourd’hui », « Cette semaine » et « Ce mois-ci » affichent la même carte. (La fenêtre change plutôt la tendance, les taux et les comparaisons.)',
-		bestTime: {
-			lead: (d: string, h: string) =>
-				`Sur cette ligne, les retards récurrents culminent le ${d} vers ${h}.`,
-			calm: (d: string) => ` Le ${d} est habituellement sa journée la plus calme.`,
-		},
+			'Cette grille utilise tout l’historique conservé disponible dans le portrait actuel de la ligne. Les choix de jour, semaine, mois ou plage de dates modifient d’autres graphiques; cette grille conserve le même historique.',
+		relativePeak: (day: string, hour: string) =>
+			`Un pic observé du score relatif de cette ligne : ${day}, ${hour}.`,
 		scaleLegend: {
-			repeat_problem_relative: 'Problèmes récurrents (par rapport à la pire heure de la ligne)',
-			severe_relative: 'Retards graves (par rapport à la pire heure de la ligne)',
+			repeat_problem_relative: 'Score composite normalisé au sein de cette ligne',
+			severe_relative: 'Score de retards graves normalisé au sein de cette ligne',
 		} as Readonly<Record<string, string>>,
-		// Plain-language reliability tiers, calmest → worst — they say what the colour MEANS
-		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
 		tiers: {
 			labels: [
-				'Rarement en retard',
-				'Parfois en retard',
-				'Souvent en retard',
-				'Très peu fiable',
+				'Score relatif faible',
+				'Score relatif modéré',
+				'Score relatif élevé',
+				'Score relatif très élevé',
 			] as const,
 			worstGlyph: '◆',
 		},
@@ -64,8 +59,8 @@ export const habitsBandCopy = defineCopy({
 		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] as const,
 	},
 	en: {
-		heatmapHeading: 'Repeat problems by hour',
-		heatmapLabel: 'Repeat-problem heatmap by day and hour',
+		heatmapHeading: 'Relative problem score by hour',
+		heatmapLabel: 'Relative score within this line, by day and hour',
 		weekdayHeading: 'By day of week',
 		avgDelay: 'Avg delay',
 		cycle: {
@@ -81,23 +76,23 @@ export const habitsBandCopy = defineCopy({
 		},
 		hourAxisLabel: 'Hour of day',
 		dayAxisLabel: 'Day of week',
-		cellValueLabel: 'Repeat problems',
+		cellValueLabel: 'Relative score',
 		scaleCaption:
-			'Each cell shows how often severe delays come back at that hour, across the whole week on one fixed scale. The outlined cells marked ◆ are this line’s worst hours; pale cells rarely see a severe delay. Calmer weekends therefore read paler, which is honest.',
+			'One maximum normalizes every day and hour on this line. A pale cell has a lower relative score. ◆ outlines scores from 0.75 to 1 of that maximum. Zero means a supplied zero score; blank cells are unavailable. This score is neither a delay frequency nor a ranking across lines.',
 		heatmapWindowNote:
-			'This pattern uses the line’s full history, so it does not change with the time window above. Today, This week and This month all show the same heatmap. (The window changes the trend, the rates and the comparisons instead.)',
-		bestTime: {
-			lead: (d, h) => `On this line, repeat delays peak on ${d} around ${h}.`,
-			calm: (d) => ` ${d} is usually its calmest day.`,
-		},
+			'This grid uses all retained history available in the current snapshot for this line. Day, week, month and date-range controls change other charts; this grid keeps the same history.',
+		relativePeak: (day, hour) => `An observed peak in this line’s relative score: ${day}, ${hour}.`,
 		scaleLegend: {
-			repeat_problem_relative: 'Repeat problems (vs this line’s worst hour)',
-			severe_relative: 'Severe delays (vs this line’s worst hour)',
+			repeat_problem_relative: 'Composite score normalized within this line',
+			severe_relative: 'Severe-delay score normalized within this line',
 		},
-		// Plain-language reliability tiers, calmest → worst — they say what the colour MEANS
-		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
 		tiers: {
-			labels: ['Rarely late', 'Sometimes late', 'Often late', 'Very unreliable'],
+			labels: [
+				'Low relative score',
+				'Moderate relative score',
+				'High relative score',
+				'Very high relative score',
+			],
 			worstGlyph: '◆',
 		},
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],

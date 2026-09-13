@@ -68,8 +68,12 @@ describe('static Montréal basemap posters', () => {
 			},
 			render_inputs: [
 				{
+					path: 'browser-toolchain.json',
+					sha256: 'e20c01b5a24b2f71e495edd72c931a5914ea7ec2c8d449a753744e6c18ea27b7',
+				},
+				{
 					path: 'scripts/build-map-posters.ts',
-					sha256: '23a703f2683d450cec2e3e3d5941b320c5a04d2a49328605b09609632b186b80',
+					sha256: '67e753fe0225a478e30b81f599e2a6c0a155559511274af9dd8f17ee4a308de2',
 				},
 				{
 					path: 'src/lib/components/map/basemap.ts',
@@ -161,7 +165,7 @@ describe('static Montréal basemap posters', () => {
 				['--preload', preload, 'scripts/build-map-posters.ts', '--check'],
 				{
 					cwd: process.cwd(),
-					env: { ...process.env, CHROME_PATH: '/definitely/no/chromium' },
+					env: process.env,
 					stdio: ['ignore', 'pipe', 'pipe'],
 				},
 			);

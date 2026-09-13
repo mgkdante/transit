@@ -27,7 +27,7 @@ const TITLES = {
 	'no-results': { en: 'No results', fr: 'Aucun résultat' },
 	empty: { en: 'Nothing to show', fr: 'Rien à afficher' },
 	'empty-avis': { en: 'No alerts', fr: 'Aucun avis' },
-	'error-v1': { en: '/v1 contract unreachable', fr: 'Contrat /v1 injoignable' },
+	'error-v1': { en: 'Data unavailable', fr: 'Données indisponibles' },
 } satisfies Record<string, Record<Locale, string>>;
 
 const MESSAGE_VARIANTS = Object.keys(TITLES) as Array<keyof typeof TITLES>;
@@ -245,7 +245,7 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 			},
 		});
 		expect(queryByText('Service closed. Opens at 06:00.')).toBeNull();
-		expect(getByText('/v1 contract unreachable')).toBeInTheDocument();
+		expect(getByText('Data unavailable')).toBeInTheDocument();
 	});
 
 	it('the empty variant with NO reason falls back to the generic honest no-data copy', () => {

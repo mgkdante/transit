@@ -3,7 +3,7 @@
 
   The citizen-facing ACCOUNTABILITY log of PAST service alerts: a chronological
   (newest-first) list of resolved/expired alerts with their active window(s),
-  resolved duration, reach (routes/stops), estimated rider-impact and public link —
+  resolved duration, reach (routes/stops), and public link —
   plus the Tier-2 cause/effect/severity distribution when the archive carries one.
 
   S15 THIN ORCHESTRATOR: this file owns the data port + the codec (seed → clamp →

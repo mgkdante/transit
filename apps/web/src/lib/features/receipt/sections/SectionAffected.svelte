@@ -1,8 +1,8 @@
 <!--
   SectionAffected — the receipt's affected-count cells (S13).
 
-  Pure presenter of the affectedCounts VMs: the lines / stops / alerts touched on the
-  day, each a MaybeValue (null → the styled 'no-observations' chip, a real 0 stays 0).
+  Severe-delay line/stop counts and recorded alert-content versions, each a MaybeValue
+  (null → the styled 'no-observations' chip, a real 0 stays 0).
   The always-null `vehicles` cell is dropped upstream by the selector. A receipt
   line-group inside the TerminalPanel (WEB4 metaphor preserved).
 -->

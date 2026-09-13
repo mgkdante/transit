@@ -152,7 +152,7 @@
 
 <!-- MOBILE: ONE pill → ONE sheet merging grain/filters + ToC (<1024; hidden ≥1024). -->
 {#if mobileVisible}
-	<div class="surface-rail-mobile lg:hidden" data-slot="surface-rail-mobile">
+	<div class="surface-rail-mobile" data-slot="surface-rail-mobile" data-open={sheetOpen}>
 		<button
 			bind:this={pillBtn}
 			class="tap-press surface-rail-pill glass-chrome"
@@ -206,6 +206,10 @@
 		flex: none;
 	}
 	@media (min-width: 1024px) {
+		/* Keep an open sheet focusable until its owner completes the desktop handoff. */
+		.surface-rail-mobile[data-open='false'] {
+			display: none;
+		}
 		.surface-rail {
 			display: flex;
 			flex-direction: column;

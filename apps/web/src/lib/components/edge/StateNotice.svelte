@@ -58,25 +58,27 @@
 	{...restProps}
 >
 	<svelte:element this={element} class="state-notice-surface" data-part="surface">
-		{#if presentation !== 'row'}
-			<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">
-				{glyph}
-			</span>
-		{/if}
-
-		<span class="state-notice-copy">
-			<span class="state-notice-title">{title}</span>
-			{#if body}
-				{#if presentation === 'row' || presentation === 'pill'}<span
-						class="state-notice-separator"
-						aria-hidden="true"
-					>
-						·
-					</span>&nbsp;{/if}<span class="state-notice-body" data-slot="state-notice-body"
-					>{body}</span
-				>
+		<svelte:element this={element} class="state-notice-message">
+			{#if presentation !== 'row'}
+				<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">
+					{glyph}
+				</span>
 			{/if}
-		</span>
+
+			<span class="state-notice-copy">
+				<span class="state-notice-title">{title}</span>
+				{#if body}
+					{#if presentation === 'row' || presentation === 'pill'}<span
+							class="state-notice-separator"
+							aria-hidden="true"
+						>
+							·
+						</span>&nbsp;{/if}<span class="state-notice-body" data-slot="state-notice-body"
+						>{body}</span
+					>
+				{/if}
+			</span>
+		</svelte:element>
 
 		{#if meta}
 			<div class="state-notice-meta" data-slot="state-notice-meta">
@@ -121,6 +123,7 @@
 
 	.state-notice-surface {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: flex-start;
 		gap: 0.625rem;
 		min-width: 0;
@@ -141,7 +144,6 @@
 
 	.state-notice--pill .state-notice-surface {
 		align-items: center;
-		flex-wrap: wrap;
 		width: fit-content;
 		padding: 0.25rem 0.625rem;
 		border-radius: var(--radius-md);
@@ -168,6 +170,22 @@
 		border-radius: var(--radius-lg);
 	}
 
+	.state-notice-message {
+		display: flex;
+		flex: 1 1 12rem;
+		gap: inherit;
+		min-width: 0;
+	}
+
+	.state-notice--row .state-notice-message {
+		display: inline;
+	}
+
+	.state-notice--pill .state-notice-message {
+		align-items: center;
+		flex-basis: auto;
+	}
+
 	.state-notice-glyph {
 		flex: 0 0 auto;
 		color: var(--state-notice-ink);
@@ -178,7 +196,7 @@
 
 	.state-notice-copy {
 		display: flex;
-		flex: 1 1 12rem;
+		flex: 1;
 		flex-direction: column;
 		gap: 0.125rem;
 		min-width: 0;

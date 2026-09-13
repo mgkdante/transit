@@ -24,10 +24,12 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+from snapshot_storage_fixtures import MemorySnapshotStore
 
 from transit_ops.snapshots import publish as snapshot_publish
-from transit_ops.snapshots.publish import _parallel_put, _publish_live, publish_snapshot
+from transit_ops.snapshots.publish import _publish_live, publish_snapshot
 from transit_ops.snapshots.storage import HashGatedStorage, SnapshotStorage
+from transit_ops.snapshots.uploads import put_batch as _parallel_put
 from transit_ops.sql_registry import query_name
 
 # ---------------------------------------------------------------------------
@@ -386,12 +388,13 @@ def test_snapshot_storage_shares_client_without_factory() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _OrderTrackingStore:
+class _OrderTrackingStore(MemorySnapshotStore):
     """Records put_json keys in completion order under a lock (hash-gate compat)."""
 
     def __init__(self) -> None:
+        super().__init__()
         self.keys: list[str] = []
-        self.store: dict[str, bytes] = {}
+        self.store = self.objects
         self._lock = threading.Lock()
 
     def full_key(self, rel_key: str) -> str:
@@ -460,6 +463,9 @@ def _historic_dispatch_conn(
             class M:
                 def fetchone(self):
                     return outer._rows[0] if outer._rows else None
+
+                def all(self):
+                    return list(outer._rows)
 
                 def __iter__(self):
                     return iter(outer._rows)
@@ -757,7 +763,7 @@ def _archive_publish_row() -> dict[str, object]:
 
 def test_historic_publish_uploads_index_after_receipts() -> None:
     """receipts/index.json is the LAST historic key, after all receipt files."""
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -822,7 +828,7 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
 
 
 def test_historic_receipt_file_failure_keeps_previous_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -853,7 +859,7 @@ def test_historic_receipt_file_failure_keeps_previous_index() -> None:
 def test_historic_publish_uploads_route_index_after_route_files() -> None:
     """route_reliability/index.json is PUT strictly after every per-route file (staged
     upload: the per-route batch completes before the index stage begins)."""
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -876,7 +882,7 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
 
 
 def test_historic_publish_completes_all_archive_pages_before_stable_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -899,7 +905,7 @@ def test_historic_publish_completes_all_archive_pages_before_stable_index() -> N
 def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
     import datetime
 
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -948,7 +954,7 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
 
 
 def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -1398,6 +1404,9 @@ class _StaticResult:
         class M:
             def fetchone(self):
                 return outer._rows[0] if outer._rows else None
+
+            def all(self):
+                return list(outer._rows)
 
             def __iter__(self):
                 return iter(outer._rows)

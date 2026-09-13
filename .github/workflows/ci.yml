@@ -108,8 +108,8 @@ jobs:
       - name: Ruff
         run: uv run ruff check src tests
 
-      - name: Mypy (snapshot publisher)
-        run: uv run mypy src/transit_ops/snapshots/publish.py
+      - name: Strict Python typing
+        run: uv run mypy
 
   # 2. Single-head guard — `alembic heads` must report exactly one head, or a
   #    branched/forked migration chain will fail the empty-DB replay below and

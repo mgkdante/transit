@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
+from transit_ops.gold.delay_days import invalidate_delay_days
+from transit_ops.gold.delay_periods import invalidate_delay_snapshot, lock_delay_hours
+from transit_ops.gold.transactions import run_gold_transaction
 from transit_ops.ingestion.common import utc_now
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
@@ -16,7 +19,7 @@ DELETE_FACT_TRIP_DELAY_SNAPSHOT = named_query(
     """
     DELETE FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_FACT_VEHICLE_SNAPSHOT = named_query(
@@ -24,7 +27,7 @@ DELETE_FACT_VEHICLE_SNAPSHOT = named_query(
     """
     DELETE FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_LATEST_TRIP_DELAY_SNAPSHOT = named_query(
@@ -32,7 +35,7 @@ DELETE_LATEST_TRIP_DELAY_SNAPSHOT = named_query(
     """
     DELETE FROM gold.latest_trip_delay_snapshot
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_LATEST_VEHICLE_SNAPSHOT = named_query(
@@ -40,7 +43,7 @@ DELETE_LATEST_VEHICLE_SNAPSHOT = named_query(
     """
     DELETE FROM gold.latest_vehicle_snapshot
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 ANALYZE_REALTIME_SILVER_TABLES = named_query(
@@ -51,7 +54,7 @@ ANALYZE_REALTIME_SILVER_TABLES = named_query(
             silver.rt_trip_updates,
             silver.rt_trip_update_stop_times,
             silver.rt_vehicle_positions
-    """
+    """,
 )
 
 # Seconds since the most-recent ANALYZE (manual or autoanalyze) across the five
@@ -77,13 +80,11 @@ SELECT_REALTIME_ANALYZE_AGE_SECONDS = named_query(
           'rt_vehicle_positions'
       )
     HAVING max(greatest(last_analyze, last_autoanalyze)) IS NOT NULL
-    """
+    """,
 )
 
 
-def _realtime_analyze_is_due(
-    connection: Connection, *, min_interval_seconds: int
-) -> bool:
+def _realtime_analyze_is_due(connection: Connection, *, min_interval_seconds: int) -> bool:
     """Return True when the per-cycle realtime-silver ANALYZE should run.
 
     The ANALYZE is throttled to at most once per ``min_interval_seconds`` so the
@@ -104,12 +105,13 @@ def _realtime_analyze_is_due(
         return True
     return float(age_seconds) >= float(min_interval_seconds)
 
+
 DELETE_DIM_DATE = named_query(
     "mart.dim_date.delete",
     """
     DELETE FROM gold.dim_date
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_DIM_STOP = named_query(
@@ -117,7 +119,7 @@ DELETE_DIM_STOP = named_query(
     """
     DELETE FROM gold.dim_stop
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_DIM_ROUTE_PATTERN = named_query(
@@ -125,7 +127,7 @@ DELETE_DIM_ROUTE_PATTERN = named_query(
     """
     DELETE FROM gold.dim_route_pattern
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 DELETE_DIM_ROUTE = named_query(
@@ -133,7 +135,7 @@ DELETE_DIM_ROUTE = named_query(
     """
     DELETE FROM gold.dim_route
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 ACQUIRE_GOLD_BUILD_LOCK = named_query(
@@ -143,7 +145,7 @@ ACQUIRE_GOLD_BUILD_LOCK = named_query(
         hashtext('gold_marts'),
         hashtext(:provider_id)
     )
-    """
+    """,
 )
 
 # Empty-silver guard (slice-9.1.1j): refresh_gold_static DELETEs all dims and
@@ -162,7 +164,7 @@ SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = named_query(
         WHERE provider_id = :provider_id
           AND dataset_version_id = :dataset_version_id
     )
-    """
+    """,
 )
 
 LOCK_GOLD_TABLES = named_query(
@@ -178,7 +180,17 @@ LOCK_GOLD_TABLES = named_query(
         gold.latest_vehicle_snapshot,
         gold.latest_trip_delay_snapshot
     IN ACCESS EXCLUSIVE MODE
+    """,
+)
+
+SELECT_RETAINED_TRIP_CAPTURE_IDS = named_query(
+    "mart.rebuild.retained_trip_capture_ids",
     """
+    SELECT source_realtime_snapshot_id FROM silver.rt_feed_snapshots
+    WHERE provider_id = :provider_id AND endpoint_key = 'trip_updates'
+      AND source_realtime_snapshot_id IS NOT NULL
+    ORDER BY source_realtime_snapshot_id
+    """,
 )
 
 INSERT_DIM_ROUTE = named_query(
@@ -212,7 +224,7 @@ INSERT_DIM_ROUTE = named_query(
     FROM silver.routes
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
-    """
+    """,
 )
 
 INSERT_DIM_ROUTE_PATTERN = named_query(
@@ -236,7 +248,7 @@ INSERT_DIM_ROUTE_PATTERN = named_query(
     FROM silver.route_patterns
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
-    """
+    """,
 )
 
 INSERT_DIM_STOP = named_query(
@@ -272,7 +284,7 @@ INSERT_DIM_STOP = named_query(
     FROM silver.stops
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
-    """
+    """,
 )
 
 INSERT_DIM_DATE = named_query(
@@ -363,7 +375,7 @@ INSERT_DIM_DATE = named_query(
         ON exception_flags.service_date = gs.service_date::date
     WHERE bounds.min_service_date IS NOT NULL
       AND bounds.max_service_date IS NOT NULL
-    """
+    """,
 )
 
 
@@ -392,7 +404,7 @@ CLOSE_DIM_ROUTE_HISTORY = named_query(
             AND r.route_color IS NOT DISTINCT FROM h.route_color
             AND r.route_type IS NOT DISTINCT FROM h.route_type
       )
-    """
+    """,
 )
 
 OPEN_DIM_ROUTE_HISTORY = named_query(
@@ -429,7 +441,7 @@ OPEN_DIM_ROUTE_HISTORY = named_query(
             AND h.route_id = r.route_id
             AND h.valid_to_utc IS NULL
       )
-    """
+    """,
 )
 
 CLOSE_DIM_STOP_HISTORY = named_query(
@@ -449,7 +461,7 @@ CLOSE_DIM_STOP_HISTORY = named_query(
             AND s.stop_lat IS NOT DISTINCT FROM h.stop_lat
             AND s.stop_lon IS NOT DISTINCT FROM h.stop_lon
       )
-    """
+    """,
 )
 
 OPEN_DIM_STOP_HISTORY = named_query(
@@ -484,7 +496,7 @@ OPEN_DIM_STOP_HISTORY = named_query(
             AND h.stop_id = s.stop_id
             AND h.valid_to_utc IS NULL
       )
-    """
+    """,
 )
 
 
@@ -501,7 +513,7 @@ DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
     DELETE FROM gold.schedule_version_service_summary
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
-    """
+    """,
 )
 
 INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
@@ -650,7 +662,7 @@ INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
     LEFT JOIN route_day_exceptions AS rde
         ON rde.route_id = td.route_id AND rde.day_type = sd.day_type
     GROUP BY td.route_id, sd.day_type
-    """
+    """,
 )
 
 
@@ -747,7 +759,7 @@ def _vehicle_snapshot_statement(
           AND rfs.source_realtime_snapshot_id IS NOT NULL
           {latest_snapshot_filter}
         {on_conflict_clause}
-        """
+        """,
     )
 
 
@@ -994,7 +1006,7 @@ def _trip_delay_snapshot_statement(
           AND rfs.source_realtime_snapshot_id IS NOT NULL
           {latest_snapshot_filter}
         {on_conflict_clause}
-        """
+        """,
     )
 
 
@@ -1030,7 +1042,7 @@ INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT = named_query(
     FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
       AND realtime_snapshot_id = :realtime_snapshot_id
-    """
+    """,
 )
 
 INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT = named_query(
@@ -1041,7 +1053,7 @@ INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT = named_query(
     FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
       AND realtime_snapshot_id = :realtime_snapshot_id
-    """
+    """,
 )
 
 
@@ -1074,11 +1086,15 @@ class GoldBuildResult:
 class GoldRealtimeRefreshResult:
     provider_id: str
     provider_timezone: str
-    dataset_version_id: int
+    dataset_version_id: int | None
     latest_trip_updates_snapshot_id: int | None
     latest_vehicle_snapshot_id: int | None
     refreshed_at_utc: datetime
     row_counts: dict[str, int]
+    projected_snapshot_ids: tuple[int, ...] = ()
+    advanced_snapshot_ids: tuple[int, ...] = ()
+    bootstrapped_snapshot_ids: tuple[int, ...] = ()
+    static_context: str = "current_dataset"
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -1124,10 +1140,11 @@ def _resolve_gold_build_context(
     provider_id: str,
     provider_timezone: str,
 ) -> GoldBuildContext:
-    dataset_row = connection.execute(
-        named_query(
-            "mart.dataset.current",
-            """
+    dataset_row = (
+        connection.execute(
+            named_query(
+                "mart.dataset.current",
+                """
             SELECT dataset_version_id
             FROM core.dataset_versions
             WHERE provider_id = :provider_id
@@ -1136,9 +1153,12 @@ def _resolve_gold_build_context(
             ORDER BY loaded_at_utc DESC, dataset_version_id DESC
             LIMIT 1
             """,
-        ),
-        {"provider_id": provider_id},
-    ).mappings().one_or_none()
+            ),
+            {"provider_id": provider_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
 
     if dataset_row is None:
         raise ValueError(
@@ -1146,37 +1166,38 @@ def _resolve_gold_build_context(
             "Run load-static-silver before build-gold-marts."
         )
 
+    return GoldBuildContext(
+        provider_id, provider_timezone, int(dataset_row["dataset_version_id"]), None, None
+    )
+
+
+def _cached_gold_context(connection: Connection, context: GoldBuildContext) -> GoldBuildContext:
+    provider_id = context.provider_id
     latest_trip_updates_snapshot_id = connection.execute(
         named_query(
-            "mart.latest_trip_updates.max_id",
+            "mart.latest_trip_updates.served_id",
             """
-            SELECT max(source_realtime_snapshot_id)
-            FROM silver.rt_feed_snapshots
+            SELECT max(realtime_snapshot_id)
+            FROM gold.latest_trip_delay_snapshot
             WHERE provider_id = :provider_id
-              AND endpoint_key = 'trip_updates'
-              AND source_realtime_snapshot_id IS NOT NULL
             """,
         ),
         {"provider_id": provider_id},
     ).scalar_one()
     latest_vehicle_snapshot_id = connection.execute(
         named_query(
-            "mart.latest_vehicle.max_id",
+            "mart.latest_vehicle.served_id",
             """
-            SELECT max(source_realtime_snapshot_id)
-            FROM silver.rt_feed_snapshots
+            SELECT max(realtime_snapshot_id)
+            FROM gold.latest_vehicle_snapshot
             WHERE provider_id = :provider_id
-              AND endpoint_key = 'vehicle_positions'
-              AND source_realtime_snapshot_id IS NOT NULL
             """,
         ),
         {"provider_id": provider_id},
     ).scalar_one()
 
-    return GoldBuildContext(
-        provider_id=provider_id,
-        provider_timezone=provider_timezone,
-        dataset_version_id=int(dataset_row["dataset_version_id"]),
+    return replace(
+        context,
         latest_trip_updates_snapshot_id=(
             int(latest_trip_updates_snapshot_id)
             if latest_trip_updates_snapshot_id is not None
@@ -1192,8 +1213,6 @@ def _delete_existing_provider_rows(connection: Connection, *, provider_id: str) 
     params = {"provider_id": provider_id}
     connection.execute(DELETE_FACT_TRIP_DELAY_SNAPSHOT, params)
     connection.execute(DELETE_FACT_VEHICLE_SNAPSHOT, params)
-    connection.execute(DELETE_LATEST_TRIP_DELAY_SNAPSHOT, params)
-    connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
     connection.execute(DELETE_DIM_DATE, params)
     connection.execute(DELETE_DIM_STOP, params)
     connection.execute(DELETE_DIM_ROUTE_PATTERN, params)
@@ -1281,12 +1300,17 @@ def _refresh_latest_gold_tables(
     connection: Connection,
     *,
     context: GoldBuildContext,
+    snapshot_ids: frozenset[int] | None = None,
 ) -> dict[str, int]:
     params = {"provider_id": context.provider_id}
-    connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
-    connection.execute(DELETE_LATEST_TRIP_DELAY_SNAPSHOT, params)
+    refresh_vehicle = snapshot_ids is None or context.latest_vehicle_snapshot_id in snapshot_ids
+    refresh_trips = snapshot_ids is None or context.latest_trip_updates_snapshot_id in snapshot_ids
+    if refresh_vehicle:
+        connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
+    if refresh_trips:
+        connection.execute(DELETE_LATEST_TRIP_DELAY_SNAPSHOT, params)
 
-    if context.latest_vehicle_snapshot_id is not None:
+    if refresh_vehicle and context.latest_vehicle_snapshot_id is not None:
         connection.execute(
             INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT,
             {
@@ -1294,7 +1318,7 @@ def _refresh_latest_gold_tables(
                 "realtime_snapshot_id": context.latest_vehicle_snapshot_id,
             },
         )
-    if context.latest_trip_updates_snapshot_id is not None:
+    if refresh_trips and context.latest_trip_updates_snapshot_id is not None:
         connection.execute(
             INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT,
             {
@@ -1327,7 +1351,15 @@ def _refresh_gold_tables(
         "provider_timezone": context.provider_timezone,
         "dataset_version_id": context.dataset_version_id,
     }
-    connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
+    # Retained frames include empty populations. Discarded Gold-only
+    # history is operational source expiry, not a correction to its frozen day.
+    snapshot_ids = connection.execute(SELECT_RETAINED_TRIP_CAPTURE_IDS, params).scalars().all()
+    lock_delay_hours(connection, context.provider_id)
+    for snapshot_id in snapshot_ids:
+        invalidate_delay_snapshot(connection, context.provider_id, snapshot_id)
+    invalidate_delay_days(connection, context.provider_id, snapshot_ids)
+    # Daily workers hold their day lock before reading facts. Acquiring these
+    # exclusive locks earlier would invert that order and deadlock with a build.
     connection.execute(LOCK_GOLD_TABLES)
     _delete_existing_provider_rows(connection, provider_id=context.provider_id)
     connection.execute(INSERT_DIM_ROUTE, params)
@@ -1338,7 +1370,11 @@ def _refresh_gold_tables(
     _record_schedule_version_service_summary(connection, context=context)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
     connection.execute(INSERT_FACT_TRIP_DELAY_SNAPSHOT, params)
-    latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
+    # A full historical rebuild cannot advance or erase the independently served caches.
+    latest_row_counts = {
+        table: _count_gold_rows(connection, provider_id=context.provider_id, table_name=table)
+        for table in ("latest_trip_delay_snapshot", "latest_vehicle_snapshot")
+    }
 
     return {
         "dim_route": _count_gold_rows(
@@ -1397,96 +1433,26 @@ def build_gold_marts(
     provider_timezone = manifest.provider.timezone
     engine = engine or make_engine(settings)
 
-    with engine.begin() as connection:
+    def rebuild(connection: Connection) -> GoldBuildResult:
+        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": provider_id})
         context = _resolve_gold_build_context(
             connection,
             provider_id=manifest.provider.provider_id,
             provider_timezone=provider_timezone,
         )
+        context = _cached_gold_context(connection, context)
         row_counts = _refresh_gold_tables(connection, context=context)
-        built_at_utc = utc_now()
-
-    return GoldBuildResult(
-        provider_id=context.provider_id,
-        provider_timezone=context.provider_timezone,
-        dataset_version_id=context.dataset_version_id,
-        latest_trip_updates_snapshot_id=context.latest_trip_updates_snapshot_id,
-        latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
-        built_at_utc=built_at_utc,
-        row_counts=row_counts,
-    )
-
-
-def refresh_gold_realtime(
-    provider_id: str,
-    *,
-    settings: Settings | None = None,
-    registry: ProviderRegistry | None = None,
-    engine: Engine | None = None,
-) -> GoldRealtimeRefreshResult:
-    settings = settings or get_settings()
-    registry = registry or ProviderRegistry.from_project_root(settings=settings)
-    manifest = registry.get_provider(provider_id)
-    provider_timezone = manifest.provider.timezone
-    engine = engine or make_engine(settings)
-
-    with engine.begin() as connection:
-        context = _resolve_gold_build_context(
-            connection,
-            provider_id=manifest.provider.provider_id,
-            provider_timezone=provider_timezone,
+        return GoldBuildResult(
+            provider_id=context.provider_id,
+            provider_timezone=context.provider_timezone,
+            dataset_version_id=context.dataset_version_id,
+            latest_trip_updates_snapshot_id=context.latest_trip_updates_snapshot_id,
+            latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
+            built_at_utc=utc_now(),
+            row_counts=row_counts,
         )
-        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
 
-        params = {
-            "provider_id": context.provider_id,
-            "provider_timezone": context.provider_timezone,
-            "dataset_version_id": context.dataset_version_id,
-        }
-        fact_row_counts = {
-            "fact_vehicle_snapshot_upserted": 0,
-            "fact_trip_delay_snapshot_upserted": 0,
-        }
-        # Throttled: the heavy realtime-silver ANALYZE no longer runs every
-        # ~57s cycle (the per-cycle 500M-row ANALYZE hot-path), only once its
-        # stats are older than GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS.
-        if _realtime_analyze_is_due(
-            connection,
-            min_interval_seconds=settings.GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS,
-        ):
-            connection.execute(ANALYZE_REALTIME_SILVER_TABLES)
-        if context.latest_vehicle_snapshot_id is not None:
-            fact_row_counts["fact_vehicle_snapshot_upserted"] = _safe_rowcount(
-                connection.execute(
-                    UPSERT_FACT_VEHICLE_SNAPSHOT_LATEST,
-                    {
-                        **params,
-                        "realtime_snapshot_id": context.latest_vehicle_snapshot_id,
-                    },
-                )
-            )
-        if context.latest_trip_updates_snapshot_id is not None:
-            fact_row_counts["fact_trip_delay_snapshot_upserted"] = _safe_rowcount(
-                connection.execute(
-                    UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
-                    {
-                        **params,
-                        "realtime_snapshot_id": context.latest_trip_updates_snapshot_id,
-                    },
-                )
-            )
-        latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
-        refreshed_at_utc = utc_now()
-
-    return GoldRealtimeRefreshResult(
-        provider_id=context.provider_id,
-        provider_timezone=context.provider_timezone,
-        dataset_version_id=context.dataset_version_id,
-        latest_trip_updates_snapshot_id=context.latest_trip_updates_snapshot_id,
-        latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
-        refreshed_at_utc=refreshed_at_utc,
-        row_counts=fact_row_counts | latest_row_counts,
-    )
+    return run_gold_transaction(engine, rebuild)
 
 
 def refresh_gold_static(
@@ -1503,6 +1469,7 @@ def refresh_gold_static(
     engine = engine or make_engine(settings)
 
     with engine.begin() as connection:
+        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": provider_id})
         context = _resolve_gold_build_context(
             connection,
             provider_id=manifest.provider.provider_id,
@@ -1520,7 +1487,6 @@ def refresh_gold_static(
                 f"Current static dataset version {context.dataset_version_id} has no "
                 "Silver rows — run load-static-silver before refresh-gold-static."
             )
-        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
         _refresh_gold_dimensions(connection, context=context)
         row_counts = {
             "dim_route": _count_gold_rows(

@@ -68,6 +68,8 @@
 		variant?: Variant;
 		/** UI language for the intrinsic labels. */
 		locale: Locale;
+		/** Caller-owned label identifying what the timestamp describes. */
+		label?: string;
 		/** Optional extra classes on the stamp. */
 		class?: string;
 	}
@@ -80,6 +82,7 @@
 		degraded = false,
 		variant = 'live',
 		locale,
+		label,
 		class: className,
 	}: FreshnessStampProps = $props();
 
@@ -98,6 +101,7 @@
 		en: { live: 'LIVE', updated: 'Updated', stale: 'stale', unknown: 'unknown' },
 	};
 	const t = $derived(L[locale]);
+	const displayLabel = $derived(label ?? (variant === 'live' ? t.live : t.updated));
 
 	// The effective age: a caller-supplied ticking age wins (live store); otherwise
 	// the centralized server-anchored derivation off the shared clock. Both
@@ -138,8 +142,8 @@
 		data-degraded={degraded ? 'true' : undefined}
 		data-age-seconds={effectiveAge ?? undefined}
 	>
-		<StatusDot color={isStale || degraded ? 'caution' : 'on_time'} label={t.live} />
-		<span class="freshness-stamp-label">{t.live}</span>
+		<StatusDot color={isStale || degraded ? 'caution' : 'on_time'} label={displayLabel} />
+		<span class="freshness-stamp-label">{displayLabel}</span>
 		<!-- Visible relative age (ticks every second) + the machine-readable build
 		     timestamp on the <time> datetime for AT / scrapers. -->
 		<time class="freshness-stamp-age" datetime={generatedUtc ?? undefined}>{relative}</time>
@@ -161,7 +165,7 @@
 		<!-- Decorative neutral dot — the "Updated …" text already carries the meaning,
 		     so the dot adds no sr-only label (no pulse: this is not a live feed). -->
 		<StatusDot color="unknown" aria-hidden="true" />
-		<span class="freshness-stamp-label">{t.updated}</span>
+		<span class="freshness-stamp-label">{displayLabel}</span>
 		<time class="freshness-stamp-age" datetime={generatedUtc ?? undefined}>{relative}</time>
 	</span>
 {/if}

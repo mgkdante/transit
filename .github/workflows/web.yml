@@ -72,6 +72,11 @@ jobs:
             }
 
   ci-work:
+    outputs:
+      artifact_id: ${{ steps.upload_build.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+      producer_attempt: ${{ steps.seal_build.outputs.producer_attempt }}
+      build_target: ${{ steps.build_target.outputs.target }}
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['ci-work'] }}
     runs-on: ubuntu-24.04
@@ -138,11 +143,32 @@ jobs:
       - name: Type-check
         run: bun run check
 
+      - name: Build artifact contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/web-build-artifact.test.mjs
+
+      - name: Select build target
+        id: build_target
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_DEPLOY_TARGET: ${{ inputs.deploy_target }}
+        run: node .github/scripts/web-build-artifact.mjs configure
+
       - name: Build (adapter-cloudflare)
         run: bun run build
 
+      - name: Seal deployment build
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        id: seal_build
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
+        run: node .github/scripts/web-build-artifact.mjs prepare "$RUNNER_TEMP/transit-web-build"
+
       - name: Web Wrangler dry run
-        run: ../../node_modules/.bin/wrangler deploy --dry-run --env=""
+        env:
+          TRANSIT_WRANGLER_ENV: ${{ steps.build_target.outputs.target == 'dev' && 'dev' || '' }}
+        run: ../../node_modules/.bin/wrangler deploy --dry-run --env="$TRANSIT_WRANGLER_ENV"
 
       - name: Browser toolchain contract
         run: node --test scripts/install-browser-toolchain.test.mjs scripts/verify-browser-toolchain.test.mjs
@@ -164,7 +190,26 @@ jobs:
         run: bun run test:b9-display
 
       - name: Unit tests
-        run: bun run test
+        run: env -u PUBLIC_SITE_ORIGIN -u PUBLIC_V1_BASE -u PUBLIC_INDEXING bun run test
+
+      - name: Verify sealed build after checks
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+        run: node .github/scripts/web-build-artifact.mjs verify-source "$RUNNER_TEMP/transit-web-build"
+
+      - name: Upload verified deployment build
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        id: upload_build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/transit-web-build/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   map-poster-check:
     needs: [classify]
@@ -223,11 +268,18 @@ jobs:
     name: deploy dev
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [ci, deploy_scope]
+    needs: [ci, deploy_scope, ci-work]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
+          (needs.ci-work.result == 'success' || needs.ci-work.result == 'skipped') &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')) }}
     environment: development
+    env:
+      TRANSIT_BUILD_TARGET: dev
+      PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -235,19 +287,45 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Require the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        env:
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+        run: |
+          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
+
+      - name: Download the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment build
+        if: ${{ needs.ci-work.result == 'success' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
+      - name: Build when web CI was not required
+        if: ${{ needs.ci-work.result == 'skipped' }}
+        run: bun run build
+
       - name: Apply public snapshot CORS
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Build dev Worker
-        working-directory: apps/web
-        env:
-          PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
-          PUBLIC_V1_BASE: https://data.yesid.dev/v1
-          PUBLIC_INDEXING: "false"
-        run: bun run build
 
       - name: Remove legacy dev DNS route host
         env:
@@ -292,11 +370,18 @@ jobs:
     name: deploy production
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [ci, deploy_scope]
+    needs: [ci, deploy_scope, ci-work]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
+          (needs.ci-work.result == 'success' || needs.ci-work.result == 'skipped') &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')) }}
     environment: production
+    env:
+      TRANSIT_BUILD_TARGET: production
+      PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -304,19 +389,45 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Require the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        env:
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+        run: |
+          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
+
+      - name: Download the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment build
+        if: ${{ needs.ci-work.result == 'success' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
+      - name: Build when web CI was not required
+        if: ${{ needs.ci-work.result == 'skipped' }}
+        run: bun run build
+
       - name: Apply public snapshot CORS
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Build production Worker
-        working-directory: apps/web
-        env:
-          PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
-          PUBLIC_V1_BASE: https://data.yesid.dev/v1
-          PUBLIC_INDEXING: "true"
-        run: bun run build
 
       - name: Deploy production Worker
         working-directory: apps/web

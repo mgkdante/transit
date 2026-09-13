@@ -1,34 +1,3 @@
-<!--
-  NetworkSurface — the /network surface ORCHESTRATOR (S9A re-seat of NetworkHealth.svelte).
-
-  Decomposes the former 1,432-line god-file into a network/reliability tree modelled 1:1 on the
-  stops/reliability re-seat (StopReliabilitySurface). This orchestrator owns EVERYTHING the
-  sections must not: the live store + the trend/provenance resources, the codec-seeded
-  grain/window/retard state + their clamps, the URL mirror, the ONE mapping pass through the
-  pure selectors, and the LIVE/HISTORIC region layout. P5.4: the grain/window/delay view
-  controls + the two-region ToC now ride a map-style GLASS LEFT RAIL (SurfaceRail) — a sticky
-  floating panel beside the regions on desktop, ONE merged pill→sheet on mobile.
-  Each section is a pure presenter fed one VM slice.
-
-  LIVE tier (S9C · DECISIONS C1–C4): the top board is FOUR glance ExplainedMetricCards
-  (on_time_pct · coverage_pct · delay_p50 · delay_p90); vehicles_in_service + non_responding +
-  non_responding_by_route move WHOLLY into the dedicated Reporting row (SectionReporting) with
-  the global-signal caveat. The delay histogram is RE-SEATED off the hand-rolled /max <ul> onto
-  the ChartSpec kernel (SectionDelayHistogram) on an absolute count domain. status/occupancy
-  mixes render as stacked-share specs through the ONE <Chart> renderer (P5.2).
-
-  MIRROR-PATH (DECISIONS A1 — recorded, no churn): grain/window mirror to the URL via
-  mirrorSearchParams (in-place, MERGES, preserves other params); the status/occupancy map
-  cross-filter is a DISTINCT mechanism — it stays map-owned via openSurface→goto (a full
-  navigation to /map), never routed through this surface's search mirror. Two URL seams, kept
-  separate exactly as before the re-seat.
-
-  DOCTRINE: every data mark rides the dataviz scale; --primary stays interactive-only (the
-  grain/window/series pickers are interactive affordances). Honesty — a null headline shows the
-  styled AbsentValue chip, never a fabricated 0; null trend points are gaps; a day with no
-  occupancy telemetry is skipped. Before the first live tick a skeleton EdgeState; a live-store
-  error shows error-v1. All prose comes from ../network-reliability.copy.
--->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -303,7 +272,7 @@
 		const latest = s[s.length - 1]?.otp_pct;
 		const prior = s[s.length - 2]?.otp_pct;
 		if (latest == null || prior == null) return null;
-		return Math.round(latest - prior);
+		return latest - prior;
 	});
 	const verdictDeltaText = $derived(
 		verdictDeltaPts == null

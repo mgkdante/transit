@@ -77,7 +77,7 @@ DELIBERATELY NOT merged:
 
   1. ``repeated_problem`` (gold.repeated_problem_route_stop, ISO-week grain):
      severity off the weekly ``issue_count`` (recurring-severe-week count).
-  2. ``repeat_offender`` (gold.repeat_offender, trailing-14d grain): severity off
+  2. ``repeat_offender`` (gold.repeat_offender, retained fact window, default 14d): severity off
      ``recurrence_days`` (distinct severe days) — critical when recurrence_days
      >= 10 OR avg_delay_seconds > 600; high when recurrence_days >= 5; else watch.
   3. ``by_grain`` repeat-offender entries (trailing week/month windows): the SAME

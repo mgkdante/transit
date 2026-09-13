@@ -1,5 +1,6 @@
 import type { DateWindow } from '$lib/filters';
 import { roundHalfAwayFromZero } from '$lib/utils';
+import { elapsedUtcMinutes } from '$lib/utils/time';
 import { mergeLineHistory, selectLineHistoryPartitionRefs } from '$lib/v1/history/families';
 import { wilsonBounds } from '$lib/v1/stats';
 import type {
@@ -144,22 +145,15 @@ function dailyCancellation(date: string, range: LineHistoryRange): CancellationP
 	};
 }
 
-function spanMinutes(first: string | null | undefined, last: string | null | undefined) {
-	if (first == null || last == null) return null;
-	const firstMs = Date.parse(first);
-	const lastMs = Date.parse(last);
-	if (!Number.isFinite(firstMs) || !Number.isFinite(lastMs)) return null;
-	return roundHalfAwayFromZero((lastMs - firstMs) / 60_000, 0);
-}
-
 function dailyServiceSpan(date: string, range: LineHistoryRange): ServiceSpanPeriod | null {
 	const value = range.serviceSpan.value?.find((entry) => entry.date === date)?.value;
 	if (value == null) return null;
+	const elapsedMin = elapsedUtcMinutes(value.first_trip_utc, value.last_trip_utc);
 	return {
 		date,
 		first_trip_utc: value.first_trip_utc ?? null,
 		last_trip_utc: value.last_trip_utc ?? null,
-		service_span_min: spanMinutes(value.first_trip_utc, value.last_trip_utc),
+		service_span_min: elapsedMin == null ? null : roundHalfAwayFromZero(elapsedMin, 0),
 		first_trip_delay_min:
 			value.first_trip_delay_seconds == null
 				? null

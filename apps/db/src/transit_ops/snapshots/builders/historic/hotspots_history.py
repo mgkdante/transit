@@ -10,7 +10,6 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.gold.reader import shift_case_sql
-from transit_ops.snapshots.builders._helpers import _otp_pct, _otp_pct_severe_proxy
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryNameIndex,
     history_row_int,
@@ -27,6 +26,7 @@ from transit_ops.snapshots.builders.historic.ranking_kernel import (
 )
 from transit_ops.snapshots.contract import (
     HOTSPOTS_BYTE_CEILING,
+    PAYLOAD_METHODOLOGY,
     HistoricHotspotGrain,
     HistoricHotspotsDay,
     Hotspot,
@@ -87,7 +87,9 @@ _HOTSPOTS_HISTORY_ROUTE_DAILY_SQL = named_query(
            SUM(COALESCE((
                SELECT SUM(value)::bigint FROM unnest(sp.delay_histogram) AS value
            ), 0))::bigint AS in_clamp_observation_count,
-           COALESCE(SUM(sp.delay_observation_count) FILTER (
+           COALESCE(SUM((
+               SELECT SUM(value) FROM unnest(sp.delay_histogram) AS value
+           )) FILTER (
                WHERE ({shift_case_sql("sp.hour_of_day_local", indent=14)})
                      IN ({_PEAK_SHIFT_IN_LITERAL})
            ), 0)::bigint AS peak_observation_count,
@@ -356,10 +358,8 @@ def _scalar_hotspots(
     stop_counts = {key: value for key, value in counts.items() if key[0] == "stop"}
     net_route_on_time = sum(value.on_time_count for value in route_counts.values())
     net_route_known = sum(value.known_observation_count for value in route_counts.values())
-    net_route_otp = _otp_pct(net_route_on_time, net_route_known)
     net_stop_obs = sum(value.observation_count for value in stop_counts.values())
     net_stop_severe = sum(value.severe_count for value in stop_counts.values())
-    net_stop_otp = _otp_pct_severe_proxy(net_stop_obs, net_stop_severe)
     stop_totals: dict[str, _Counts] = {}
     for (_kind, stop_id, _route_id), value in stop_counts.items():
         stop_totals[stop_id] = stop_totals.get(stop_id, _Counts()) + value
@@ -381,18 +381,20 @@ def _scalar_hotspots(
             else "high"
         )
         if kind == "route":
-            cell = _otp_pct(
+            delta = otp_delta_points(
                 value.on_time_count if value.on_time_known else None,
                 value.known_observation_count,
+                net_route_on_time,
+                net_route_known,
             )
-            delta = otp_delta_points(cell, net_route_otp)
         else:
             stop_value = stop_totals[entity_id]
-            cell = _otp_pct_severe_proxy(
+            delta = otp_delta_points(
+                stop_value.observation_count - stop_value.severe_count,
                 stop_value.observation_count,
-                stop_value.severe_count,
+                net_stop_obs - net_stop_severe,
+                net_stop_obs,
             )
-            delta = otp_delta_points(cell, net_stop_otp)
         candidates.append((issue_count, kind, entity_id, route_id, severity, delta))
     candidates.sort(key=lambda value: (-value[0], value[1], value[2], value[3]))
     return [
@@ -425,7 +427,7 @@ def _ladder_rows(
     return [
         {
             id_field: entity_id,
-            "obs": value.observation_count,
+            "obs": value.in_clamp_observation_count,
             "severe": value.severe_count,
             "sum_delay_sec": value.sum_delay_seconds,
         }
@@ -510,7 +512,7 @@ def _iter_hotspots_days(
             grains.append(shift)
         payload = HistoricHotspotsDay(
             generated_utc=latest_history_timestamp(timestamps),
-            methodology_version="reliability-1",
+            methodology_version=PAYLOAD_METHODOLOGY["historic_hotspots_day"],
             publish_generation_id=None,
             date=rendered_date,
             hotspots=_scalar_hotspots(

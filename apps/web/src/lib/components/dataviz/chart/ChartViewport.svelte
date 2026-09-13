@@ -132,6 +132,10 @@
 			touch-action: pan-x pan-y;
 		}
 
+		.chart-output[data-chart-layout='dense'] :global(.lc-tooltip-context) {
+			touch-action: pan-x pan-y;
+		}
+
 		.chart-output[data-chart-layout='dense'] .chart-canvas {
 			min-width: var(--chart-mobile-min-width, 48rem);
 			max-width: none;

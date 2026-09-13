@@ -2,7 +2,7 @@
   SectionHeadline — the receipt's headline reliability band (S13).
 
   Pure presenter of the headlineKpis VMs: the day's on-time %, average delay, severe
-  share, rider-impact score, each a MetricDisplay + its (i) metric-explainer. A null
+  share, each a MetricDisplay + its (i) metric-explainer. A null
   value reads the styled honest-absence chip ('no-observations'), never a fabricated 0.
   A receipt line-group inside the TerminalPanel (WEB4 metaphor preserved).
 -->
@@ -91,7 +91,7 @@
 	}
 	@container receipt (min-width: 46rem) {
 		.receipt-metrics {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
+			grid-template-columns: repeat(3, minmax(0, 1fr));
 		}
 	}
 	.receipt-kpi {

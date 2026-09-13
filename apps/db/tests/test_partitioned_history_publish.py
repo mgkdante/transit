@@ -12,9 +12,19 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
+from historic_graph_fixtures import graph_from_bundles
 from test_partitioned_history_builders import _line_history_rows, _network_history_rows
 
-from transit_ops.snapshots import gate, publish
+from transit_ops.snapshots import (
+    builders,
+    envelope,
+    gate,
+    historic_compatibility,
+    historic_receipts,
+    historic_tier,
+    publish,
+    uploads,
+)
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryDigestCollector,
     HistoryNameIndex,
@@ -46,12 +56,10 @@ from transit_ops.snapshots.historic_receipts import (
     HistoricReceiptPreflight,
     build_historic_common_envelope,
 )
-from transit_ops.snapshots.publish import (
-    _publish_historic,
-    _stable_outcome_total,
-)
+from transit_ops.snapshots.historic_tier import publish as _publish_historic
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.snapshots.storage import ImmutableKeyCollisionError, LocalSnapshotStorage
+from transit_ops.snapshots.uploads import stable_outcome_total as _stable_outcome_total
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +79,7 @@ def _empty_point_history_plans(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *args, **kwargs: empty,
     )
     monkeypatch.setattr(
-        publish,
+        historic_tier,
         "_clear_referenced_historic_gc_marks",
         lambda *args, **kwargs: None,
         raising=False,
@@ -196,7 +204,7 @@ def _empty_point_history_indexes(
         for family in ("hotspots", "repeat_offenders")
     )
     for index in indexes:
-        publish._stamp_envelope(  # noqa: SLF001
+        envelope.stamp_envelope(  # noqa: SLF001
             [("unused", index, "historic")],
             provider_id="stm",
             stamp=stamp,
@@ -605,7 +613,7 @@ def _patch_minimal_historic(
                 "historic/receipts/index.json",
                 ReceiptsIndex(
                     generated_utc="2026-07-13T00:00:00Z",
-                    collection_generation_id=publish._receipts_collection_generation_id({}),
+                    collection_generation_id=historic_compatibility._receipts_collection_generation_id({}),
                     dates=[],
                 ),
                 "historic",
@@ -615,8 +623,8 @@ def _patch_minimal_historic(
         compatibility_items.append(("historic/alerts/index.json", archive.index, "historic"))
     stages = [(compatibility_items, "normal")] if compatibility_items else []
     monkeypatch.setattr(
-        publish,
-        "_build_historic_items",
+        historic_compatibility,
+        "_build_items",
         lambda *args, **kwargs: (compatibility_items, [], stages, archive),
     )
     monkeypatch.setattr(
@@ -765,7 +773,7 @@ def test_historic_publish_clears_marks_for_full_graph_before_root_activation(
         observed["call_count"] = len(store.calls)
 
     marker_conn = object()
-    monkeypatch.setattr(publish, "_clear_referenced_historic_gc_marks", record_clear)
+    monkeypatch.setattr(historic_tier, "_clear_referenced_historic_gc_marks", record_clear)
 
     _publish_historic(
         marker_conn,
@@ -803,13 +811,13 @@ def test_history_root_receipt_collection_generation_tracks_only_semantic_payload
         alerts=2,
     )
 
-    baseline = publish._receipts_collection_generation_id(  # noqa: SLF001
+    baseline = historic_compatibility._receipts_collection_generation_id(  # noqa: SLF001
         {"2026-07-01": first, "2026-07-02": second}
     )
-    reversed_mapping = publish._receipts_collection_generation_id(  # noqa: SLF001
+    reversed_mapping = historic_compatibility._receipts_collection_generation_id(  # noqa: SLF001
         {"2026-07-02": second, "2026-07-01": first}
     )
-    stamp_only = publish._receipts_collection_generation_id(  # noqa: SLF001
+    stamp_only = historic_compatibility._receipts_collection_generation_id(  # noqa: SLF001
         {
             "2026-07-01": first.model_copy(
                 update={
@@ -825,7 +833,7 @@ def test_history_root_receipt_collection_generation_tracks_only_semantic_payload
             ),
         }
     )
-    changed = publish._receipts_collection_generation_id(  # noqa: SLF001
+    changed = historic_compatibility._receipts_collection_generation_id(  # noqa: SLF001
         {
             "2026-07-01": first.model_copy(update={"affected_routes": 99}),
             "2026-07-02": second,
@@ -860,18 +868,15 @@ def test_history_root_uses_exact_child_generations_and_metric_coverage():
     )
     hotspots, repeat_offenders = _empty_point_history_indexes()
 
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp="2026-07-13T00:00:00Z",
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    )
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root("2026-07-13T00:00:00Z")
 
     assert [family.family for family in root.families] == [
         "alerts",
@@ -932,9 +937,8 @@ def test_history_root_wholly_empty_uses_run_stamp_fallback():
     lines = _empty_line_history_plan().materialize()
     stops = _empty_stop_history_plan().materialize()
     hotspots, repeat_offenders = _empty_point_history_indexes(stamp)
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp=stamp,
-        alert_index=AlertArchiveIndex(
+    root = graph_from_bundles(
+        alerts=AlertArchiveIndex(
             generated_utc=stamp,
             collection_generation_id="empty-alerts",
             first_available_date=None,
@@ -942,19 +946,17 @@ def test_history_root_wholly_empty_uses_run_stamp_fallback():
             total_alerts=0,
             months=[],
         ),
-        receipts_index=ReceiptsIndex(
+        receipts=ReceiptsIndex(
             generated_utc=stamp,
             collection_generation_id="empty-receipts",
             dates=[],
         ),
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    )
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root(stamp)
 
     assert root.generated_utc == stamp
     assert [family.family for family in root.families] == [
@@ -998,18 +1000,15 @@ def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # n
         dates=["2026-06-01", "2026-07-02"],
     )
     hotspots, repeat_offenders = _empty_point_history_indexes()
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp="2026-07-13T00:00:00Z",
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    )
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root("2026-07-13T00:00:00Z")
     mutation(root)
 
     findings = gate.check_history_availability_graph(
@@ -1261,7 +1260,7 @@ def test_historic_validate_records_the_same_versioned_pointer_graph_as_publish(m
         stop_plan=_stop_history_plan(),
     )
     stamp = "2026-07-13T00:00:00Z"
-    monkeypatch.setattr(publish, "_historic_stamp", lambda: stamp)
+    monkeypatch.setattr(historic_tier, "publication_stamp", lambda: stamp)
     monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
 
     class Engine:
@@ -1416,7 +1415,7 @@ def test_line_history_publish_rejects_self_consistent_entity_index_omission(
     line_bundle = line_plan.materialize()
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
     monkeypatch.setattr(
-        publish.builders,
+        builders,
         "LineHistoryStreamSummary",
         summary_factory,
         raising=False,
@@ -1452,7 +1451,7 @@ def test_line_history_publish_keeps_directory_truth_when_builder_clears_inputs(
     line_plan = _line_history_plan()
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
     monkeypatch.setattr(
-        publish.builders,
+        builders,
         "LineHistoryStreamSummary",
         summary_factory,
         raising=False,
@@ -1488,7 +1487,7 @@ def test_line_history_validate_rejects_self_consistent_stream_omission(
     line_plan = _line_history_plan()
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
     monkeypatch.setattr(
-        publish.builders,
+        builders,
         "LineHistoryStreamSummary",
         summary_factory,
         raising=False,
@@ -1524,7 +1523,7 @@ def test_line_history_validate_preserves_detached_directory_truth(
     line_plan = _line_history_plan()
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
     monkeypatch.setattr(
-        publish.builders,
+        builders,
         "LineHistoryStreamSummary",
         summary_factory,
         raising=False,
@@ -1958,7 +1957,7 @@ def test_retained_partition_families_upload_through_the_bounded_parallel_seam(
         line_plan=_line_history_plan(),
         stop_plan=_stop_history_plan(),
     )
-    real_parallel_put = publish._parallel_put
+    real_parallel_put = uploads.put_batch
     partition_types: list[str] = []
 
     def record_partition_batches(storage, items, **kwargs):  # noqa: ANN001, ANN202
@@ -1970,7 +1969,7 @@ def test_retained_partition_families_upload_through_the_bounded_parallel_seam(
         partition_types.extend(sorted(names))
         return real_parallel_put(storage, items, **kwargs)
 
-    monkeypatch.setattr(publish, "_parallel_put", record_partition_batches)
+    monkeypatch.setattr(uploads, "put_batch", record_partition_batches)
 
     _publish_historic(
         object(),
@@ -2083,7 +2082,7 @@ def test_provider_publish_reuses_one_executor_across_1000_partition_flushes(
                 with self.lock:
                     self.in_flight -= 1
 
-    monkeypatch.setattr(publish, "ThreadPoolExecutor", ExecutorProbe)
+    monkeypatch.setattr(uploads, "ThreadPoolExecutor", ExecutorProbe)
     store = LifecycleStore()
 
     keys = _publish_historic(
@@ -2274,7 +2273,9 @@ def test_network_history_publish_rejects_self_consistent_index_that_omits_stream
     plan = _network_history_plan()
     bundle = plan.materialize()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2308,7 +2309,9 @@ def test_network_history_validate_rejects_self_consistent_index_that_omits_strea
 ):
     plan = _network_history_plan()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2349,7 +2352,9 @@ def test_network_history_publish_keeps_stream_truth_when_plan_clears_index_ref_i
     plan = _network_history_plan()
     bundle = plan.materialize()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2377,7 +2382,9 @@ def test_network_history_validate_keeps_stream_truth_when_plan_clears_index_ref_
 ):
     plan = _network_history_plan()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2412,7 +2419,9 @@ def test_network_history_publish_keeps_stream_truth_when_plan_mutates_index_ref_
     plan = _network_history_plan()
     bundle = plan.materialize()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2570,7 +2579,9 @@ def test_network_history_no_gate_rejects_invalid_bundle_before_any_put(monkeypat
     bundle = _network_history_bundle()
     bundle.partitions[0].days[0].delay.on_time_count = 999
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -2596,7 +2607,9 @@ def test_network_history_validate_records_bundle_sha_and_preserves_alert_slot(mo
     plan = _network_history_plan()
     bundle = plan.materialize()
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(publish.builders, "build_network_history_plan", lambda *a, **k: plan)
     monkeypatch.setattr(publish, "_prior_files_total", lambda *a, **k: None)
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
@@ -2617,7 +2630,7 @@ def test_network_history_validate_records_bundle_sha_and_preserves_alert_slot(mo
         include_archive_bundle=True,
         include_network_bundle=True,
     )
-    assert isinstance(collected, publish.HistoricValidationInputs)
+    assert isinstance(collected, historic_tier.HistoricValidationInputs)
     assert collected.alert_archive is archive
     assert collected.network_history is plan
 
@@ -2888,7 +2901,9 @@ def test_network_history_no_gate_corrupt_date_returns_gate_error_not_checker_cra
     bundle = _network_history_bundle()
     bundle.partitions[0].days[0].date = "not-a-date"
     archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    monkeypatch.setattr(
+        historic_compatibility, "_build_items", lambda *a, **k: ([], [], [], archive),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history_plan",
@@ -3006,8 +3021,8 @@ def test_historic_validate_consumes_lazy_history_plans_before_connection_closes(
 
 def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
     _patch_minimal_historic(monkeypatch, stop_plan=_many_stop_history_plan())
-    monkeypatch.setattr(publish, "STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE", 2, raising=False)
-    real_parallel_put = publish._parallel_put
+    monkeypatch.setattr(historic_tier, "STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE", 2, raising=False)
+    real_parallel_put = uploads.put_batch
     batch_sizes: list[int] = []
 
     def record_batches(storage, items, **kwargs):  # noqa: ANN001, ANN202
@@ -3023,7 +3038,7 @@ def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
             batch_sizes.append(len(items))
         return real_parallel_put(storage, items, **kwargs)
 
-    monkeypatch.setattr(publish, "_parallel_put", record_batches)
+    monkeypatch.setattr(uploads, "put_batch", record_batches)
 
     _publish_historic(
         object(),
@@ -3185,22 +3200,19 @@ def test_history_root_malformed_family_returns_findings_not_exceptions(family: o
     )
     receipts = ReceiptsIndex(
         generated_utc="2026-07-13T00:00:00Z",
-        collection_generation_id=publish._receipts_collection_generation_id({}),
+        collection_generation_id=historic_compatibility._receipts_collection_generation_id({}),
         dates=[],
     )
     hotspots, repeat_offenders = _empty_point_history_indexes()
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp="2026-07-13T00:00:00Z",
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    ).model_dump(mode="json")
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root("2026-07-13T00:00:00Z").model_dump(mode="json")
     root["families"][0]["family"] = family
 
     findings = gate.check_history_availability_index(
@@ -3321,22 +3333,19 @@ def test_history_root_gate_handles_malformed_stop_dates_gaps_and_metrics():
     )
     receipts = ReceiptsIndex(
         generated_utc="2026-07-13T00:00:00Z",
-        collection_generation_id=publish._receipts_collection_generation_id({}),
+        collection_generation_id=historic_compatibility._receipts_collection_generation_id({}),
         dates=[],
     )
     hotspots, repeat_offenders = _empty_point_history_indexes()
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp="2026-07-13T00:00:00Z",
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    )
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root("2026-07-13T00:00:00Z")
     malformed = stops.indexes[0].model_dump(mode="json")
     malformed["available_dates"].append(None)
     malformed["metrics"][0]["gaps"] = [{"start_date": None, "end_date": "2026-07-01"}]
@@ -3363,7 +3372,7 @@ def test_stop_history_validate_reports_malformed_index_without_root_reconstructi
 ):
     _patch_minimal_historic(monkeypatch, stop_plan=_stop_history_plan())
     monkeypatch.setattr(
-        publish.builders,
+        builders,
         "StopHistoryStreamSummary",
         _MalformedStopIndexSummary,
     )
@@ -3403,7 +3412,7 @@ def test_receipts_collection_gate_reconciles_exact_stamped_payload_semantics():
     index = ReceiptsIndex(
         generated_utc="2026-07-13T00:00:00Z",
         dates=["2026-07-01"],
-        collection_generation_id=publish._receipts_collection_generation_id(
+        collection_generation_id=historic_compatibility._receipts_collection_generation_id(
             {receipt.date: receipt}
         ),
     )
@@ -3450,7 +3459,9 @@ def test_historic_publish_gates_receipt_collection_before_retained_pointers(
             ("historic/receipts/index.json", index, "historic"),
         ],
     )
-    monkeypatch.setattr(publish, "_finalize_receipts_collection_generation", lambda items: None)
+    monkeypatch.setattr(
+        historic_compatibility, "_finalize_receipts_collection_generation", lambda items: None,
+    )
     store = _RecordingStore()
 
     with pytest.raises(gate.GateError) as exc_info:
@@ -3487,7 +3498,9 @@ def test_historic_validate_gates_receipt_collection_semantics(monkeypatch):
             ("historic/receipts/index.json", index, "historic"),
         ],
     )
-    monkeypatch.setattr(publish, "_finalize_receipts_collection_generation", lambda items: None)
+    monkeypatch.setattr(
+        historic_compatibility, "_finalize_receipts_collection_generation", lambda items: None,
+    )
     monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
 
     class Engine:
@@ -3528,18 +3541,15 @@ def _root_gate_fixture():
         dates=["2026-07-01"],
     )
     hotspots, repeat_offenders = _empty_point_history_indexes()
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp="2026-07-13T00:00:00Z",
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat_offenders,
-    )
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
+    ).build_root("2026-07-13T00:00:00Z")
     return SimpleNamespace(
         root=root,
         alerts=alerts,
@@ -3908,7 +3918,7 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
         persisted_receipts = []
         state_rows = []
         _patch_minimal_historic(monkeypatch)
-        build_compatibility = publish._build_historic_items
+        build_compatibility = historic_compatibility._build_items
 
         def counted_compatibility(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
             calls["query.compatibility"] += 1
@@ -3957,6 +3967,18 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             state_rows.append(kwargs)
 
         class Connection:
+            def execute(self, statement, params=None):
+                return self
+
+            def scalar_one(self):
+                return False
+
+            def mappings(self):
+                return self
+
+            def all(self):
+                return []
+
             @contextmanager
             def begin_nested(self):
                 calls["transaction.receipt_savepoint"] += 1
@@ -3970,8 +3992,8 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
                 calls["transaction.publish"] += 1
                 yield connection
 
-        monkeypatch.setattr(publish, "_historic_stamp", lambda: "2026-07-13T00:00:00Z")
-        monkeypatch.setattr(publish, "_build_historic_items", counted_compatibility)
+        monkeypatch.setattr(historic_tier, "publication_stamp", lambda: "2026-07-13T00:00:00Z")
+        monkeypatch.setattr(historic_compatibility, "_build_items", counted_compatibility)
         monkeypatch.setattr(
             publish.builders,
             "build_network_history_plan",
@@ -3989,7 +4011,7 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
         )
         monkeypatch.setattr(
             publish,
-            "_acquire_publish_lock",
+            "acquire_publication_lane",
             lambda *args, **kwargs: calls.update(["query.publish_lock"]),
         )
         monkeypatch.setattr(
@@ -3998,11 +4020,11 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             lambda *args, **kwargs: calls.update(["query.prior_files_total"]),
         )
         monkeypatch.setattr(
-            publish,
+            historic_tier,
             "prepare_historic_receipt_preflight",
             prepare_preflight,
         )
-        monkeypatch.setattr(publish, "persist_historic_receipts", persist_receipts)
+        monkeypatch.setattr(historic_receipts, "persist_historic_receipts", persist_receipts)
         monkeypatch.setattr(publish, "_record_publish_state", record_state)
 
         root = tmp_path / label
@@ -4196,6 +4218,7 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
         key = (payload.family, payload.entity_id or "")
         consumers.setdefault(key, []).append((label, id(payload), snapshot_json_bytes(payload)))
 
+
     class TrackingLineSummary(BuilderLineHistoryStreamSummary):
         def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
             indexes = super().build_indexes(fallback_generated_utc=fallback_generated_utc)
@@ -4221,17 +4244,17 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
                 observe("materialize", index)
                 yield index
 
-    monkeypatch.setattr(publish.builders, "LineHistoryStreamSummary", TrackingLineSummary)
-    monkeypatch.setattr(publish.builders, "StopHistoryStreamSummary", TrackingStopSummary)
+    monkeypatch.setattr(builders, "LineHistoryStreamSummary", TrackingLineSummary)
+    monkeypatch.setattr(builders, "StopHistoryStreamSummary", TrackingStopSummary)
 
-    real_stamp = publish._stamp_envelope
+    real_stamp = envelope.stamp_envelope
 
     def record_stamp(items, *, provider_id, stamp):  # noqa: ANN001, ANN202
         real_stamp(items, provider_id=provider_id, stamp=stamp)
         for _path, payload, _tier in items:
             observe("stamp", payload)
 
-    monkeypatch.setattr(publish, "_stamp_envelope", record_stamp)
+    monkeypatch.setattr(envelope, "stamp_envelope", record_stamp)
 
     real_line_gate = gate.check_line_history_stream_indexes
 
@@ -4257,6 +4280,26 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
         "from_indexes",
         record_line_directory_summary,
     )
+    real_stop_gate = gate.check_stop_history_stream_index
+
+    def record_stop_gate(payload, summary, *, fallback_generated_utc):
+        observe("stream_gate", payload)
+        return real_stop_gate(payload, summary, fallback_generated_utc=fallback_generated_utc)
+
+    monkeypatch.setattr(gate, "check_stop_history_stream_index", record_stop_gate)
+    for owner, label, original in (
+        (builders.StopHistoryPointerSummary, "directory",
+         builders.StopHistoryPointerSummary.observe),
+        (gate.StopHistoryDirectorySummary, "directory_gate",
+         gate.StopHistoryDirectorySummary.observe),
+    ):
+        def record_stop_summary(self, payload, *, index_path, _original=original, _label=label):
+            if payload.family == "stops":
+                observe(_label, payload)
+            return _original(self, payload, index_path=index_path)
+
+        monkeypatch.setattr(owner, "observe", record_stop_summary)
+
     real_root_gate = gate.check_history_availability_graph
 
     def record_root_gate(payload, **kwargs):  # noqa: ANN001, ANN202
@@ -4288,7 +4331,7 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
     lines_sha = "f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767"
     stop_412f_sha = "565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477"
     stops_sha = "c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb"
-    history_sha = "229f5749ced1e7867518adac7d4588a120354c74b90e1dd592bd0d37f4a72783"
+    history_sha = "44e5cb0439669984ea89079b37f6a470d6f6b0c2947a91b68acfa8774124b511"
     expected_parent_sha256 = {
         f"historic/history/lines/31/generations/{line_31_sha}/index.json": line_31_sha,
         f"historic/history/lines/3130/generations/{line_3130_sha}/index.json": line_3130_sha,
@@ -4311,11 +4354,14 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
     assert keys[-1] == "historic/history/index.json"
     assert store.calls[-1] == ("normal", "historic/history/index.json")
     assert materialized == Counter({key: 1 for key in consumers})
-    for observations in consumers.values():
+    for key, observations in consumers.items():
         labels = [label for label, _identity, _body in observations]
         assert labels.count("materialize") == 1
         assert labels.count("stamp") == 1
         assert labels.count("upload") == 1
+        assert labels.count("stream_gate") == 1
+        assert labels.count("directory") == 1, key
+        assert labels.count("directory_gate") == 1
         assert len({identity for _label, identity, _body in observations}) == 1
         assert len(
             {
@@ -4324,3 +4370,67 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
                 if label != "materialize"
             }
         ) == 1
+
+
+@pytest.mark.parametrize("publishing", [False, True])
+def test_stop_parent_retention_matches_validation_and_publication_lifetimes(
+    monkeypatch, publishing,
+):
+    import weakref
+
+    from transit_ops.snapshots.contract import HistoricCollectionIndex
+
+    _patch_minimal_historic(monkeypatch, stop_plan=_many_stop_history_plan(128))
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+    references = []
+    live_counts = []
+    checked = []
+    built_all = False
+    original = BuilderStopHistoryStreamSummary.iter_indexes
+
+    def tracked(self, *, fallback_generated_utc):
+        nonlocal built_all
+        for index in original(self, fallback_generated_utc=fallback_generated_utc):
+            references.append(weakref.ref(index))
+            live_counts.append(sum(ref() is not None for ref in references))
+            yield index
+        built_all = True
+
+    monkeypatch.setattr(BuilderStopHistoryStreamSummary, "iter_indexes", tracked)
+    original_check = gate.check_stop_history_stream_index
+
+    def check_index(index, summary, *, fallback_generated_utc):
+        assert built_all is publishing
+        checked.append(weakref.ref(index))
+        return original_check(index, summary, fallback_generated_utc=fallback_generated_utc)
+
+    monkeypatch.setattr(gate, "check_stop_history_stream_index", check_index)
+
+    class Engine:
+        @contextmanager
+        def connect(self):
+            yield object()
+
+    if publishing:
+        class Store(_RecordingStore):
+            def put_immutable_json(self, rel_key, payload):
+                if isinstance(payload, HistoricCollectionIndex) and payload.family == "stops":
+                    assert built_all
+                    assert all(ref() is not None for ref in references)
+                    assert any(ref() is payload for ref in checked)
+                return super().put_immutable_json(rel_key, payload)
+
+        _publish_historic(
+            object(), Store(), provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z", gate_report=_gate_report(True),
+        )
+    else:
+        report = publish.validate_snapshots(
+            "stm", tier="historic", settings=SimpleNamespace(), engine=Engine(),
+        )
+        assert report.passed
+    assert len(references) == len(checked) == 128
+    assert all(built is gated for built, gated in zip(references, checked, strict=True))
+    assert max(live_counts) == (128 if publishing else 2)
+    assert all(ref() is None for ref in references)

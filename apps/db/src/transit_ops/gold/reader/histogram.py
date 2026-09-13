@@ -15,12 +15,20 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping, Sequence
 
 
-def round_half_away(x: float, ndigits: int) -> Decimal:
-    """Half-away-from-zero round (Python's builtin round() is banker's).
+type SqlNumber = int | float | Decimal
 
-    decimal ROUND_HALF_UP resolves ties away from zero for BOTH signs, matching
-    Postgres ROUND(::numeric, n) — the single published-rounding convention
-    (2026-07-01 rebaseline; see the provenance methodology `rounding` note).
+
+def _sql_number(value: object) -> SqlNumber:
+    if isinstance(value, int | float | Decimal):
+        return value
+    raise TypeError("Expected a SQL numeric value")
+
+
+def round_half_away(x: SqlNumber, ndigits: int) -> Decimal:
+    """Round the decimal spelling of x, with halfway values moving away from zero.
+
+    Matches PostgreSQL ROUND(numeric, scale) for the supplied decimal value;
+    prior floating-point arithmetic is not made exact by this conversion.
     """
     return Decimal(str(x)).quantize(Decimal(10) ** -ndigits, rounding=ROUND_HALF_UP)
 
@@ -32,9 +40,9 @@ def hist_and_avg(r: Mapping[str, object]) -> tuple[list[int], float | None]:
     sum of the histogram bins (Finding C: ghost-excluded numerator AND denominator).
     None when there are no in-clamp delays -> avg_delay_min -> honest None.
     """
-    hist = [int(r[f"h{k}"] or 0) for k in range(1, 22)]  # type: ignore[arg-type]
+    hist = [int(_sql_number(r[f"h{k}"] or 0)) for k in range(1, 22)]
     in_clamp = sum(hist)
-    avg_sec = (float(r["sum_delay_sec"]) / in_clamp) if in_clamp else None  # type: ignore[arg-type]
+    avg_sec = (float(_sql_number(r["sum_delay_sec"])) / in_clamp) if in_clamp else None
     return hist, avg_sec
 
 

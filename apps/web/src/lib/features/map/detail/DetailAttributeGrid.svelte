@@ -15,12 +15,20 @@
 		display: grid;
 		margin: 0;
 	}
-	.detail-attribute-grid :global(div) {
+	.detail-attribute-grid > :global(div) {
 		display: grid;
 		grid-template-columns: 5.75rem minmax(0, 1fr);
-		gap: 0.5rem;
-		padding-block: 0.5rem;
+		gap: 0.75rem;
+		align-items: center;
+		padding-block: 0.75rem;
 		border-bottom: 1px solid var(--border-subtle);
+	}
+	.detail-attribute-grid > :global(div:has(> .detail-fact-action)) {
+		grid-template-columns: 5.75rem minmax(0, 1fr) auto;
+	}
+	.detail-attribute-grid > :global(div > .detail-fact-action) {
+		min-block-size: 44px;
+		justify-content: center;
 	}
 	.detail-attribute-grid :global(dt) {
 		font-family: var(--font-mono);
@@ -31,11 +39,13 @@
 	}
 	.detail-attribute-grid :global(dd) {
 		min-width: 0;
+		overflow-wrap: anywhere;
 		margin: 0;
 		font-size: var(--text-small);
 	}
 	@container right-panel (max-width: 21rem) {
-		.detail-attribute-grid :global(div) {
+		.detail-attribute-grid > :global(div),
+		.detail-attribute-grid > :global(div:has(> .detail-fact-action)) {
 			grid-template-columns: minmax(0, 1fr);
 		}
 	}

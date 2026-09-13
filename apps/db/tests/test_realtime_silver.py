@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -192,8 +194,10 @@ class FakeBronzeStorage:
         self.payload = payload
         self.prefix = prefix.rstrip("/")
         self.read_calls: list[str] = []
+        self.exists_calls: list[str] = []
 
     def exists(self, storage_path: str) -> bool:
+        self.exists_calls.append(storage_path)
         return True
 
     def read_bytes(self, storage_path: str) -> bytes:
@@ -304,11 +308,32 @@ def _build_snapshot(path: Path, endpoint_key: str) -> BronzeRealtimeSnapshot:
         storage_path=f"stm/{endpoint_key}/sample.pb",
         archive_full_path=str(path),
         source_url=f"https://example.com/{endpoint_key}.pb",
-        checksum_sha256="c" * 64,
+        checksum_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         byte_size=path.stat().st_size,
         feed_timestamp_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         captured_at_utc=datetime(2026, 3, 25, 0, 0, 5, tzinfo=UTC),
     )
+
+
+@pytest.mark.parametrize("fault", ["checksum", "byte size"])
+def test_archive_must_match_recorded_capture_before_silver_writes(tmp_path, fault):
+    path = tmp_path / "capture.pb"
+    payload = _build_trip_updates_bytes()
+    path.write_bytes(payload)
+    snapshot = _build_snapshot(path, "trip_updates")
+    if fault == "checksum":
+        message = gtfs_realtime_pb2.FeedMessage()
+        message.ParseFromString(payload)
+        message.header.timestamp += 1
+        payload = message.SerializeToString()
+    else:
+        snapshot = replace(snapshot, byte_size=len(payload) - 1)
+    connection = RecordingConnection()
+    with pytest.raises(ValueError, match=fault):
+        load_realtime_snapshot_to_silver(
+            connection, snapshot=snapshot, bronze_storage=FakeBronzeStorage(payload)
+        )
+    assert _insert_call_sql(connection) == []
 
 
 def _build_snapshot_row(
@@ -329,7 +354,7 @@ def _build_snapshot_row(
         "ingestion_object_id": 200 + realtime_snapshot_id,
         "storage_path": f"stm/{endpoint_key}/{realtime_snapshot_id}.pb",
         "source_url": f"https://example.com/{endpoint_key}.pb",
-        "checksum_sha256": "a" * 64,
+        "checksum_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "byte_size": path.stat().st_size,
         "feed_timestamp_utc": datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         "captured_at_utc": captured_at_utc,
@@ -552,8 +577,7 @@ def test_find_realtime_bronze_snapshots_returns_window_in_capture_order(
 
     assert [snapshot.realtime_snapshot_id for snapshot in snapshots] == [1, 2, 3]
     assert (
-        "ORDER BY rsi.captured_at_utc ASC, fe.endpoint_key ASC, "
-        "rsi.realtime_snapshot_id ASC"
+        "ORDER BY rsi.captured_at_utc ASC, fe.endpoint_key ASC, rsi.realtime_snapshot_id ASC"
     ) in connection.calls[0][0]
 
 
@@ -626,6 +650,8 @@ def test_load_realtime_snapshot_to_silver_trip_updates_inserts_parent_and_child_
     )
 
     assert result.realtime_snapshot_id == 301
+    assert bronze_storage.read_calls == [snapshot.storage_path]
+    assert bronze_storage.exists_calls == []
     assert result.row_counts == {
         "rt_feed_snapshots": 1,
         "rt_entities": 1,
@@ -670,7 +696,7 @@ def test_load_realtime_snapshot_to_silver_trip_updates_inserts_audited_source_ro
     assert feed_snapshot["source_url"] == "https://example.com/trip_updates.pb"
     assert feed_snapshot["storage_backend"] == "local"
     assert feed_snapshot["storage_path"] == "stm/trip_updates/sample.pb"
-    assert feed_snapshot["checksum_sha256"] == "c" * 64
+    assert feed_snapshot["checksum_sha256"] == hashlib.sha256(archive_path.read_bytes()).hexdigest()
     assert feed_snapshot["byte_size"] == archive_path.stat().st_size
     assert feed_snapshot["parser_version"]
     assert feed_snapshot["manifest_json"] == {
@@ -890,7 +916,7 @@ def test_load_realtime_snapshots_to_silver_aggregates_row_counts(
         connection,
         provider_id="stm",
         snapshots=[trip_snapshot, vehicle_snapshot],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=False,
     )
 
@@ -906,6 +932,33 @@ def test_load_realtime_snapshots_to_silver_aggregates_row_counts(
     }
     assert not (LEGACY_REALTIME_TABLES & set(result.row_counts))
     assert [item.realtime_snapshot_id for item in result.results] == [301, 302]
+    assert result.verified_row_counts[301]["rt_feed_snapshots"] == 1
+    assert result.verified_row_counts[301]["rt_trip_update_stop_times"] == 1
+    assert result.verified_row_counts[302]["rt_feed_snapshots"] == 1
+    assert result.verified_row_counts[302]["rt_vehicle_positions"] == 1
+
+
+def test_replay_resolves_each_captures_storage_backend(tmp_path):
+    trip_path = tmp_path / "trip.pb"
+    vehicle_path = tmp_path / "vehicle.pb"
+    trip_path.write_bytes(_build_trip_updates_bytes())
+    vehicle_path.write_bytes(_build_vehicle_positions_bytes())
+    trip = _build_snapshot(trip_path, "trip_updates")
+    vehicle = replace(_build_snapshot(vehicle_path, "vehicle_positions"), storage_backend="s3")
+    storage = {
+        "local": FakeBronzeStorage(trip_path.read_bytes()),
+        "s3": FakeBronzeStorage(vehicle_path.read_bytes()),
+    }
+    result = realtime_silver_module.load_realtime_snapshots_to_silver(
+        ExistingAwareConnection(),
+        provider_id="stm",
+        snapshots=[trip, vehicle],
+        bronze_storage_resolver=storage.__getitem__,
+    )
+    assert result.verified_row_counts[301]["rt_trip_updates"] == 1
+    assert result.verified_row_counts[302]["rt_vehicle_positions"] == 1
+    assert storage["local"].read_calls == [trip.storage_path]
+    assert storage["s3"].read_calls == [vehicle.storage_path]
 
 
 def test_load_realtime_snapshots_to_silver_skips_existing_when_requested(
@@ -928,12 +981,18 @@ def test_load_realtime_snapshots_to_silver_skips_existing_when_requested(
         connection,
         provider_id="stm",
         snapshots=[already_loaded],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=True,
     )
 
     assert result.loaded_count == 0
     assert result.skipped_existing_snapshot_ids == [already_loaded.realtime_snapshot_id]
+    assert result.verified_row_counts[already_loaded.realtime_snapshot_id] == {
+        "rt_feed_snapshots": 1,
+        "rt_entities": 1,
+        "rt_trip_updates": 1,
+        "rt_trip_update_stop_times": 1,
+    }
     assert result.row_counts == {}
     assert result.results == []
     assert bronze_storage.read_calls == [already_loaded.storage_path]
@@ -959,7 +1018,7 @@ def test_load_realtime_snapshots_to_silver_skips_complete_trip_updates_snapshot(
         connection,
         provider_id="stm",
         snapshots=[already_loaded],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=True,
     )
 
@@ -989,7 +1048,7 @@ def test_load_realtime_snapshots_to_silver_loads_legacy_only_snapshot_again(
         connection,
         provider_id="stm",
         snapshots=[legacy_only],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=True,
     )
 
@@ -1025,7 +1084,7 @@ def test_load_realtime_snapshots_to_silver_rejects_partial_trip_updates_skip(
             connection,
             provider_id="stm",
             snapshots=[partially_loaded],
-            bronze_storage=bronze_storage,
+            bronze_storage_resolver=lambda _backend: bronze_storage,
             skip_existing=True,
         )
 
@@ -1049,7 +1108,7 @@ def test_load_realtime_snapshots_to_silver_skips_complete_vehicle_positions_snap
         connection,
         provider_id="stm",
         snapshots=[already_loaded],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=True,
     )
 
@@ -1079,7 +1138,7 @@ def test_load_realtime_snapshots_to_silver_skips_complete_zero_row_source_snapsh
         connection,
         provider_id="stm",
         snapshots=[snapshot],
-        bronze_storage=bronze_storage,
+        bronze_storage_resolver=lambda _backend: bronze_storage,
         skip_existing=True,
     )
 
@@ -1110,7 +1169,7 @@ def test_load_realtime_snapshots_to_silver_fails_existing_without_skip(
             connection,
             provider_id="stm",
             snapshots=[already_loaded],
-            bronze_storage=bronze_storage,
+            bronze_storage_resolver=lambda _backend: bronze_storage,
             skip_existing=False,
         )
 
@@ -1144,7 +1203,7 @@ def test_load_realtime_snapshots_to_silver_preserves_provider_for_empty_batch() 
         ExistingAwareConnection(),
         provider_id="stm",
         snapshots=[],
-        bronze_storage=FakeBronzeStorage(b""),
+        bronze_storage_resolver=lambda _backend: FakeBronzeStorage(b""),
         skip_existing=True,
     )
 
@@ -1207,7 +1266,7 @@ def test_load_latest_realtime_to_silver_uses_bronze_snapshot_without_api_key(
         "ingestion_object_id": 22,
         "storage_path": "stm/trip_updates/captured_at_utc=2026-03-25/sample.pb",
         "source_url": "https://example.com/trip-updates.pb",
-        "checksum_sha256": "e" * 64,
+        "checksum_sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
         "byte_size": archive_path.stat().st_size,
         "feed_timestamp_utc": datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         "captured_at_utc": datetime(2026, 3, 25, 0, 0, 5, tzinfo=UTC),
@@ -1252,7 +1311,7 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot() -> None:
         "ingestion_object_id": 23,
         "storage_path": "stm/vehicle_positions/captured_at_utc=2026-03-25/sample.pb",
         "source_url": "https://example.com/vehicle-positions.pb",
-        "checksum_sha256": "f" * 64,
+        "checksum_sha256": hashlib.sha256(payload).hexdigest(),
         "byte_size": len(payload),
         "feed_timestamp_utc": datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         "captured_at_utc": datetime(2026, 3, 25, 0, 0, 5, tzinfo=UTC),
@@ -1298,7 +1357,7 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot() -> None:
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
 
 
-def test_realtime_silver_public_signatures_are_unchanged() -> None:
+def test_realtime_silver_public_signatures_allow_explicit_capture_identity() -> None:
     latest_signature = inspect.signature(find_latest_realtime_bronze_snapshot)
     assert list(latest_signature.parameters) == [
         "connection",
@@ -1311,6 +1370,7 @@ def test_realtime_silver_public_signatures_are_unchanged() -> None:
     assert list(load_signature.parameters) == [
         "provider_id",
         "endpoint_key",
+        "snapshot_id",
         "settings",
         "registry",
         "engine",

@@ -120,6 +120,8 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect(layout['icon-image']).toBe(HEADING_ICON);
 		expect(JSON.stringify(layout['icon-rotate'])).toContain('bearing');
 		expect(layout['icon-rotation-alignment']).toBe('map');
+		expect(layout['icon-pitch-alignment']).toBe('viewport');
+		expect(layout['icon-offset']).toEqual([0, -9]);
 		// Shows only matched buses that actually report a heading (no fake arrows).
 		expect(JSON.stringify(rendered.filter)).toContain('matched');
 		expect(JSON.stringify(rendered.filter)).toContain('hasHeading');
@@ -282,7 +284,12 @@ describe('toVehicleFeatures entity filtering', () => {
 		);
 		expect(layout).toMatchObject({
 			'icon-image': ['get', 'mark'],
-			'icon-offset': rawStateOffset,
+			'icon-offset': [
+				'case',
+				['==', ['get', 'stale'], 1],
+				['literal', [-15, 30 / 0.6]],
+				['literal', rawStateOffset],
+			],
 			'icon-allow-overlap': true,
 			'icon-ignore-placement': true,
 		});
@@ -299,32 +306,25 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect((body?.layout as Record<string, unknown>)['icon-image']).toEqual(['get', 'body']);
 	});
 
-	it('normalizes the semantic state offset for MapLibre and clears the heading annulus', () => {
-		expect(VEHICLE_MARKER_GEOMETRY.stateBadge).toEqual({ offset: [0, 20], scale: 0.6 });
-		const rawOffset = mapLibreRawIconOffset(
-			VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
-			VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-		);
-		expect(rawOffset).toEqual([0, 20 / 0.6]);
+	it('keeps every bearing outside the upright bus silhouette', () => {
+		// Rounded body: 13x19, radius 4, plus its one-pixel halo.
+		const bodyRadius = Math.hypot(6.5 - 4, 9.5 - 4) + 4 + 1;
+		expect(VEHICLE_MARKER_GEOMETRY.chevronAnnulus.inner).toBeGreaterThan(bodyRadius);
+	});
 
-		for (const [zoom, bodyScale, expectedTop, expectedAnnulus] of [
-			[11, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11, 9.516, 8.424],
-			[15, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15, 15.86, 14.04],
-		] as const) {
-			const effectiveDisplacement = rawOffset[1] * bodyScale * 0.6;
-			expect(effectiveDisplacement, `z${zoom} effective displacement`).toBeCloseTo(
-				20 * bodyScale,
-				12,
-			);
-
-			const spriteTop =
-				(20 - (VEHICLE_MARKER_GEOMETRY.box / 2) * VEHICLE_MARKER_GEOMETRY.stateBadge.scale) *
-				bodyScale;
-			const annulusOuter = VEHICLE_MARKER_GEOMETRY.chevronAnnulus.outer * bodyScale;
-			expect(spriteTop, `z${zoom} sprite top`).toBeCloseTo(expectedTop, 12);
-			expect(annulusOuter, `z${zoom} annulus outer`).toBeCloseTo(expectedAnnulus, 12);
-			expect(spriteTop, `z${zoom} clearance`).toBeGreaterThan(annulusOuter);
+	it('keeps single and paired badges below every heading without covering each other', () => {
+		const { stateBadge, silentBadge, box, plateMargin, chevronAnnulus } = VEHICLE_MARKER_GEOMETRY;
+		const halfPlate = box / 2 - plateMargin + 1; // Include the one-pixel stroke.
+		for (const badge of [stateBadge, silentBadge]) {
+			const raw = mapLibreRawIconOffset(badge.offset, badge.scale);
+			expect(raw[0] * badge.scale).toBe(0);
+			expect(raw[1] * badge.scale).toBeCloseTo(30);
+			for (const offset of [badge.offset, badge.pairedOffset]) {
+				expect(offset[1] - halfPlate * badge.scale).toBeGreaterThan(chevronAnnulus.outer);
+			}
 		}
+		const gap = silentBadge.pairedOffset[0] - stateBadge.pairedOffset[0];
+		expect(gap).toBeGreaterThan(halfPlate * (stateBadge.scale + silentBadge.scale));
 	});
 
 	it('does not restore the retired per-vehicle silence opacity expression', () => {
@@ -592,6 +592,12 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		};
 		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
 		expect(layout['icon-image']).toBe(SILENT_ICON);
+		expect(layout['icon-offset']).toEqual([
+			'case',
+			['!=', ['coalesce', ['get', 'mark'], ''], ''],
+			['literal', [12, 30 / 0.75]],
+			['literal', [0, 30 / 0.75]],
+		]);
 		// Shows only matched buses that are per-bus stale.
 		expect(JSON.stringify(rendered.filter)).toContain('matched');
 		expect(JSON.stringify(rendered.filter)).toContain('stale');
