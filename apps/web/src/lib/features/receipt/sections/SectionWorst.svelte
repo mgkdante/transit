@@ -1,11 +1,3 @@
-<!--
-  SectionWorst — the receipt's worst-of-day callouts (S13).
-
-  Pure presenter of the worstOfDay VM: the single worst line (→ /lines/[id]) + worst
-  stop (→ /stop/[id]) as linked EntityRows. The whole panel is mounted by the
-  orchestrator ONLY when hasWorst — so it stands down (the grid reflows past it) rather
-  than a fabricated empty card. A receipt line-group inside the TerminalPanel (WEB4).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
@@ -78,5 +70,19 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+
+	.receipt-worst :global(.entity-row) {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.375rem;
+	}
+	.receipt-worst :global(.entity-row-title-text),
+	.receipt-worst :global(.entity-row-subtitle) {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+	.receipt-worst :global(.entity-row-meta) {
+		overflow-wrap: anywhere;
 	}
 </style>

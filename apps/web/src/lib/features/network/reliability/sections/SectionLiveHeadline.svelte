@@ -49,8 +49,7 @@
 	let { cards, info, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
 </script>
 
-<!-- Glance board — the four scalars on an auto-fit grid so they fill the desktop width and
-     reflow to one column on a phone. No `label`: the enclosing LIVE region already names it. -->
+<!-- Four scalars form two balanced rows, or one column when two cards cannot fit. -->
 <NetworkTile title={copy.liveSection} sectionKey="network-live-headline">
 	<p class="network-live-lede" data-slot="network-lede">{copy.lede}</p>
 	<TerminalPanel
@@ -60,7 +59,7 @@
 		footerItems={terminal.footerItems}
 		class="network-live-terminal"
 	>
-		<DashboardGrid minTile="220px" gutter={false}>
+		<DashboardGrid minTile="max(220px, calc((100% - var(--space-card-gap)) / 2))" gutter={false}>
 			{#each cards as card (card.label)}
 				{@const i = info(card.key, card.label)}
 				<ExplainedMetricCard

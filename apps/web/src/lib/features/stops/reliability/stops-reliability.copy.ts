@@ -70,6 +70,7 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
 			currentOnly:
 				'L’identité, les périodes, les habitudes, les jours, les heures et le détail par ligne restent basés sur le portrait actuel.',
+			predictionScope: 'Résumé du portrait actuel; indépendant des dates choisies.',
 			loading: 'Chargement de la plage conservée…',
 			ready: 'Plage conservée chargée.',
 			error: 'Impossible de charger cette plage conservée.',
@@ -221,6 +222,7 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'This range has only partial retained metric coverage.',
 			currentOnly:
 				'Identity, periods, habits, weekday, time-of-day, and by-line detail still use the current snapshot.',
+			predictionScope: 'Current snapshot summary; unaffected by the selected dates.',
 			loading: 'Loading retained range…',
 			ready: 'Retained range loaded.',
 			error: 'This retained range could not be loaded.',

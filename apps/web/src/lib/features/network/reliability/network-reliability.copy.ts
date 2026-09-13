@@ -162,8 +162,9 @@ export const networkReliabilityCopy = defineCopy({
 		} satisfies VerdictCopy,
 		verdictDelta: {
 			label: 'Network verdict',
-			chip: (signedPts) => `${signedPts} vs prior day`,
-			a11y: 'Change versus the prior day:',
+			chip: (signedPts: string, singular: boolean) =>
+				`Daily on-time change: ${signedPts} percentage ${singular ? 'point' : 'points'}`,
+			versus: 'vs',
 		},
 	},
 	fr: {
@@ -324,8 +325,9 @@ export const networkReliabilityCopy = defineCopy({
 		} satisfies VerdictCopy,
 		verdictDelta: {
 			label: 'Verdict du réseau',
-			chip: (signedPts: string) => `${signedPts} vs la veille`,
-			a11y: 'Variation par rapport à la veille :',
+			chip: (signedPts: string, singular: boolean) =>
+				`Variation quotidienne de la ponctualité : ${signedPts} ${singular ? 'point' : 'points'} de pourcentage`,
+			versus: 'contre',
 		},
 	},
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy & { readonly verdict: VerdictCopy }>>;

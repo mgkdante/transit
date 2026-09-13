@@ -194,7 +194,7 @@ export const detailCopy = defineCopy({
 			heading: 'Exemple d’horaire en semaine',
 			none: 'Aucun exemple d’horaire publié pour cet arrêt.',
 			scope:
-				'Heures sélectionnées dans un horaire représentatif de semaine. Ce n’est pas l’horaire complet ni nécessairement celui d’aujourd’hui.',
+				'Heures sélectionnées dans un horaire représentatif de semaine. Ce n’est pas l’horaire complet ni nécessairement celui d’aujourd’hui. Les heures suivent la journée de service : 25:30 signifie 01:30 le lendemain.',
 			table: {
 				caption: 'Exemples d’heures en semaine par ligne',
 				route: 'Ligne',
@@ -295,7 +295,7 @@ export const detailCopy = defineCopy({
 			heading: 'Sample weekday schedule',
 			none: 'No sample schedule published for this stop.',
 			scope:
-				'Selected times from a representative weekday schedule. This is not the complete timetable or necessarily today’s service.',
+				'Selected times from a representative weekday schedule. This is not the complete timetable or necessarily today’s service. Times follow the service day: 25:30 means 01:30 the next day.',
 			table: {
 				caption: 'Sample weekday times by line',
 				route: 'Line',

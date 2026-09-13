@@ -408,7 +408,15 @@ describe('NetworkSurface retained-history integration', () => {
 		const view = render(NetworkSurface);
 
 		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%', '90%']));
-		expect(view.container.querySelector('[data-slot="verdict-delta"]')).toHaveTextContent('+70');
+		const change = view.container.querySelector('[data-slot="verdict-delta"]')!;
+		expect(view.container.querySelector('[data-toc="net-historic"]')).toContainElement(
+			change as HTMLElement,
+		);
+		expect(change).toHaveTextContent('+70 percentage points');
+		expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+			'2026-02-01',
+			'2026-01-31',
+		]);
 		expect(view.queryByRole('radiogroup', { name: 'Trend window' })).toBeNull();
 
 		await fireEvent.click(view.getByRole('radio', { name: 'Week' }));
@@ -422,6 +430,7 @@ describe('NetworkSurface retained-history integration', () => {
 		const view = render(NetworkSurface);
 
 		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
+		expect(view.container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
 	});
 
 	it('preserves the default singleton absence treatment for one coarse point', async () => {

@@ -482,12 +482,13 @@ describe('NetworkSurface article shell', () => {
 		);
 	});
 
-	it('uses deterministic full-width history rows followed by one responsive companion row', () => {
+	it('places the dated comparison before the history rows and responsive companions', () => {
 		const { container } = render(NetworkSurface);
 		const board = container.querySelector('[data-slot="network-history-board"]') as HTMLElement;
 
 		expect(board).not.toBeNull();
 		expect(Array.from(board.children).map((child) => child.getAttribute('data-slot'))).toEqual([
+			'verdict-delta',
 			'network-history-trend-row',
 			'network-history-cancellations-row',
 			'network-history-crowding-row',
@@ -567,18 +568,26 @@ describe('NetworkSurface drilldown', () => {
 });
 
 describe('NetworkSurface live cards (S9C)', () => {
-	it('renders the four headline scalars as ExplainedMetricCards with the (i) affordance', () => {
-		render(NetworkSurface);
-		// The four glance cards each render an ExplainedMetricCard wrapper + the (i) info affordance.
-		const cards = document.querySelectorAll('[data-slot="explained-metric-card"]');
-		// four headline + two reporting + one cancellation latest = at least the four headline.
-		expect(cards.length).toBeGreaterThanOrEqual(4);
-		expect(
-			document.querySelectorAll('[data-slot="explained-metric-info"]').length,
-		).toBeGreaterThanOrEqual(4);
-		// The on-time headline reads its real value inside a card's inner MetricDisplay.
-		const otpTile = screen.getByText('Median delay').closest('[data-slot="explained-metric-card"]');
-		expect(otpTile).not.toBeNull();
+	it('renders exactly four live headline cards in their metric order with explainers', () => {
+		const { container } = render(NetworkSurface);
+		const headline = container.querySelector('[data-network-section="network-live-headline"]')!;
+		const cards = [...headline.querySelectorAll('[data-slot="explained-metric-card"]')];
+		expect(cards).toHaveLength(4);
+		for (const [index, label] of [
+			copy.metrics.onTime,
+			copy.metrics.coverage,
+			copy.metrics.delayP50,
+			copy.metrics.delayP90,
+		].entries()) {
+			expect(within(cards[index] as HTMLElement).getByText(label)).toBeInTheDocument();
+			expect(cards[index].querySelector('[data-slot="explained-metric-info"]')).not.toBeNull();
+		}
+		expect(cards.map((card) => card.querySelector('.metric-value')?.textContent?.trim())).toEqual([
+			'80%',
+			'95%',
+			'1 min',
+			'6 min',
+		]);
 	});
 
 	it('renders the styled honest-absence chip (not a plain "no data") for a null live tile', () => {
@@ -1173,4 +1182,68 @@ describe('NetworkSurface current-position verdict', () => {
 			expect.soft(sentence).not.toMatch(/trips|trajets|ran late|95% sure|sûr à 95/);
 		},
 	);
+});
+
+describe('NetworkSurface daily comparison scope', () => {
+	it.each(['en', 'fr'] as const)(
+		'separates historical percentage points and dates from live positions in %s',
+		(locale) => {
+			network.on_time_pct = 50;
+			network.status_dist = { early: 0, on_time: 5, late: 5, severe: 0, unknown: 0 };
+			trendSeries.splice(
+				0,
+				trendSeries.length,
+				{ ...trendSeries[0], date: '2026-08-28', otp_pct: 20 },
+				{ ...trendSeries[1], date: '2026-08-29', otp_pct: 90 },
+			);
+			const { container } = render(NetworkSurface, {
+				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			});
+			const change = container.querySelector('[data-slot="verdict-delta"]')!;
+			expect(container.querySelector('[data-toc="net-historic"]')).toContainElement(
+				change as HTMLElement,
+			);
+			expect(container.querySelector('.network-verdict [data-slot="verdict-delta"]')).toBeNull();
+			expect(container.querySelector('.network-verdict')).toHaveTextContent(/50\s*%/);
+			expect(change).toHaveTextContent(
+				locale === 'en'
+					? 'Daily on-time change: +70 percentage points'
+					: 'Variation quotidienne de la ponctualité : +70 points de pourcentage',
+			);
+			expect(change.textContent).not.toMatch(/70\s*%|prior day|la veille/);
+			expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+				'2026-08-29',
+				'2026-08-28',
+			]);
+			expect(change.textContent).toContain('2026');
+		},
+	);
+
+	it.each([
+		{ prior: 20, latest: 20, text: '0 percentage points' },
+		{ prior: 21, latest: 20, text: '-1 percentage point' },
+		{ prior: 20.1, latest: 20.2, text: '+0.1 percentage points' },
+	])('keeps the signed difference and actual gapped dates for $text', ({ prior, latest, text }) => {
+		trendSeries.splice(
+			0,
+			trendSeries.length,
+			{ ...trendSeries[0], date: '2026-08-27', otp_pct: prior },
+			{ ...trendSeries[1], date: '2026-08-29', otp_pct: latest },
+		);
+		const { container } = render(NetworkSurface);
+		const change = container.querySelector('[data-slot="verdict-delta"]')!;
+		expect(change).toHaveTextContent(text);
+		expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+			'2026-08-29',
+			'2026-08-27',
+		]);
+		expect(change.textContent).not.toContain('prior day');
+	});
+
+	it('does not fabricate a historical change when an endpoint is missing', () => {
+		trendSeries[1].otp_pct = null;
+		const { container } = render(NetworkSurface);
+		expect(container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
+		expect(container.querySelector('.network-verdict')).toHaveTextContent(/80\s*%/);
+	});
 });

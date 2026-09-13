@@ -560,7 +560,7 @@ ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET ...`,
 		},
 		caveats: {
 			fr: [
-				serviceComparisonCopy.fr.explanation,
+				`${serviceComparisonCopy.fr.label} : ${serviceComparisonCopy.fr.explanation}`,
 				"PROXY, pas certifié : c'est la part des trajets RAPPORTÉS par le flux GTFS-RT marqués ANNULÉS (schedule_relationship = 3). Pas une statistique certifiée par l'agence. Aucun AVL, aucune réconciliation programmé-vs-opéré.",
 				"DÉNOMINATEUR = TRAJETS RAPPORTÉS, PAS L'HORAIRE : total_trip_days ne compte que les jours-trajets que le flux a mentionnés. Un trajet discrètement abandonné n'est PAS compté comme annulé. Le taux de l'horaire publié pourrait être plus élevé.",
 				'NULL-comme-non-annulé : le GTFS-RT omet schedule_relationship pour les trajets ordinaires; le silver stocke NULL; le SQL le COALESCE à 0 pour les garder au dénominateur comme non-annulés.',
@@ -571,7 +571,7 @@ ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET ...`,
 				'TAUX RÉSEAU PONDÉRÉ PAR COMPTE, pas une moyenne des taux par ligne : network_trend re-dérive 100 × SUM(canceled)/SUM(total).',
 			],
 			en: [
-				serviceComparisonCopy.en.explanation,
+				`${serviceComparisonCopy.en.label}: ${serviceComparisonCopy.en.explanation}`,
 				'PROXY, NOT certified: this is the share of trips the GTFS-RT feed REPORTED that were flagged CANCELED (schedule_relationship=3). It is not an agency-certified statistic. There is no AVL and no scheduled-vs-operated reconciliation.',
 				'DENOMINATOR IS REPORTED TRIPS, NOT THE TIMETABLE: total_trip_days counts only trip-days the feed actually mentioned. A trip silently dropped from the feed is NOT counted as canceled. The published-schedule cancellation rate could be higher.',
 				'NULL-as-not-canceled: GTFS-RT omits schedule_relationship for ordinary trips; silver stores NULL; the SQL COALESCEs NULL to 0 so those trips stay in the denominator as non-canceled.',
@@ -748,8 +748,8 @@ GROUP BY provider_id, route_id`,
 			en: 'How full the buses are, expressed as the share of vehicle reports that fell into each of five crowding levels: empty, many seats free, few seats free, standing room only, and full. It is built only from the crowding “level” that vehicles broadcast over the live feed (a category like “standing-room-only”), not from any head-count or percentage-full number. So a value like “standing = 0.32” means “32% of the vehicle pings that reported a crowding level said standing-room-only”, it is NOT “32% full” and NOT “32% of riders were standing.” Levels are reported per vehicle ping, so busy routes contribute more pings.',
 		},
 		math: {
-			fr: "Pour chaque palier b : share_b = count(relevés en palier b) / observation_count, où observation_count = count(relevés avec occupancy_status ∈ {0,1,2,3,4,5}). Appartenance : empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; les statuts {6,7,8} et NULL sont écartés. Les cinq parts somment à ~1,0. Règle honnête-None : si observation_count = 0, le mélange entier est null (pas un objet tout-à-zéro), car un mélange tout-à-zéro est indiscernable d'une vraie flotte toute vide.",
-			en: 'For each band b: share_b = count(pings in band b) / observation_count, where observation_count = count(pings with occupancy_status ∈ {0,1,2,3,4,5}). Membership: empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; statuses {6,7,8} and NULL are dropped. The five shares sum to ~1.0. Honest-None rule: if observation_count = 0 the entire mix is null (not an all-zero object), because an all-zero mix is indistinguishable from a genuine all-empty fleet.',
+			fr: 'Pour chaque palier b : share_b = count(relevés en palier b) / observation_count, où observation_count = count(relevés avec occupancy_status ∈ {0,1,2,3,4,5}). Appartenance : empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; les statuts {6,7,8} et NULL sont écartés. Les cinq parts somment à ~1,0. Règle honnête-None : si observation_count = 0, le mélange entier est null (pas un objet tout-à-zéro).',
+			en: 'For each band b: share_b = count(pings in band b) / observation_count, where observation_count = count(pings with occupancy_status ∈ {0,1,2,3,4,5}). Membership: empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; statuses {6,7,8} and NULL are dropped. The five shares sum to ~1.0. Honest-None rule: if observation_count = 0 the entire mix is null (not an all-zero object).',
 		},
 		sql: `-- gold/rollups.py UPSERT_ROUTE_OCCUPANCY_BAND_DAILY (the defining daily reduction)
 INSERT INTO gold.route_occupancy_band_daily (
@@ -891,7 +891,7 @@ GROUP BY 1, 2
 			en: 'Groups readings by weekday (Mon–Sun, local time) and shows, per weekday, the average lateness and severe-delay share over the route’s WHOLE accrued spine history (730-day retention), so a long-run pattern, not just the last few days.',
 		},
 		definition: {
-			fr: "Pour une ligne, ceci regroupe chaque relevé d'écart à l'horaire par le jour de la semaine où il s'est produit (lundi à dimanche, heure locale) et montre, pour chaque jour : la lateur moyenne en minutes, et la part des relevés « gravement en retard » (plus de 5 minutes derrière). Ça répond à « cette ligne est-elle fiablement pire le vendredi que le mardi ? » C'est calculé à la lecture depuis gold.route_delay_spine, sur TOUT l'historique accumulé du spine (rétention 730 jours, réconcilié S14 2026-07-02), donc un vrai motif hebdomadaire de long terme, pas un instantané des derniers jours.",
+			fr: "Pour une ligne, ceci regroupe chaque relevé d'écart à l'horaire par le jour de la semaine où il s'est produit (lundi à dimanche, heure locale) et montre, pour chaque jour : le retard moyen en minutes, et la part des relevés « gravement en retard » (plus de 5 minutes derrière). Ça répond à « cette ligne est-elle fiablement pire le vendredi que le mardi ? » C'est calculé à la lecture depuis gold.route_delay_spine, sur TOUT l'historique accumulé du spine (rétention 730 jours, réconcilié S14 2026-07-02), donc un vrai motif hebdomadaire de long terme, pas un instantané des derniers jours.",
 			en: 'For one route, this groups every schedule-deviation reading the feed gave us by which day of the week it happened on (Monday through Sunday, in local time) and shows, for each weekday: the average lateness in minutes, and the share of readings that were “severely late” (more than 5 minutes behind). It answers “is this route reliably worse on, say, Fridays than on Tuesdays?” It is computed at read time from gold.route_delay_spine over the route’s WHOLE accrued spine history (730-day retention, reconciled S14 2026-07-02), so it is a genuine long-run weekday pattern, not a snapshot of the last few days.',
 		},
 		math: {
@@ -919,14 +919,14 @@ WHERE provider_id = :provider_id AND route_id = :route_id
 GROUP BY 1
 ORDER BY 1;`,
 		notReally: {
-			fr: "Pas une affirmation que « cette ligne est toujours pire le vendredi » ni une note de ponctualité certifiée par jour. C'est une lateur moyenne POOLÉE et une PART de retards graves par jour de semaine local, sur tout l'historique du spine, à partir des déviations prédites, avec des échantillons inégaux d'un jour à l'autre. Un severe_pct élevé un jour peut reposer sur peu de relevés en-clamp; à lire avec observation_count, sans traiter avg_delay_min comme une médiane.",
+			fr: "Pas une affirmation que « cette ligne est toujours pire le vendredi » ni une note de ponctualité certifiée par jour. C'est un retard moyen pondéré et une PART de retards graves par jour de semaine local, sur tout l'historique du spine, à partir des déviations prédites, avec des échantillons inégaux d'un jour à l'autre. Un severe_pct élevé un jour peut reposer sur peu de relevés en-clamp; à lire avec observation_count, sans traiter avg_delay_min comme une médiane.",
 			en: 'Not a statement that “this route is always worse on Fridays” or a certified day-of-week on-time score. It is a POOLED weighted-average lateness and severe-late SHARE per local weekday over the whole spine history, from predicted feed deviations, with uneven per-weekday samples. A high severe_pct on one weekday can rest on few in-clamp readings; read it together with observation_count, and do not treat avg_delay_min as a median.',
 		},
 		caveats: {
 			fr: [
 				"PROXY, pas une ponctualité certifiée : bâti sur l'écart à l'horaire prédit du GTFS-RT, pas l'AVL ni une métrique certifiée par l'agence.",
 				"DÉNOMINATEUR de severe_pct (correction d'honnêteté 3/3, migration 0051) : delay_observation_count = SUM(COUNT(delay_seconds)), rangées à retard CONNU, PAS observation_count. severe_pct retourne None (pas 0) quand known_obs ≤ 0.",
-				"avg_delay_min est une MOYENNE POOLÉE en-clamp = SUM(sum_delay_seconds) / SUM(seaux d'histogramme) (jadis mal étiquetée « médiane »), signée (négatif = en avance). AUCUN p50/p90 à ce grain, les percentiles n'existent qu'au grain JOUR de l'arrêt.",
+				"avg_delay_min est une MOYENNE POOLÉE en-clamp = SUM(sum_delay_seconds) / SUM(seaux d'histogramme) (jadis mal étiquetée « médiane »), signée (négatif = en avance). AUCUN p50/p90 à ce grain.",
 				'SEUIL grave = delay_seconds > 300 (5 min); les relevés |delay| > 3600 (1 h) sont fantômes et exclus du numérateur ET du dénominateur en-clamp.',
 				"FENÊTRE TOUT-HISTORIQUE (réconcilié S14, 2026-07-02) : le jour-de-semaine est lu à la construction depuis gold.route_delay_spine SANS clause de fenêtre, donc sur tout l'accumulé (rétention 730 jours), un vrai motif de long terme. L'ancien fold gold.route_delay_day_of_week fenêtré ~10 jours sur gold.route_delay_hourly a été SUPPRIMÉ (migration 0064).",
 				'DST / attribution du jour : day_of_week_iso = EXTRACT(ISODOW FROM provider_local_date), et provider_local_date est déjà en heure locale du fournisseur dans le spine (aucun timezone() ré-appliqué), donc les relevés post-minuit et de transition DST tombent sur le bon jour calendaire local.',
@@ -936,7 +936,7 @@ ORDER BY 1;`,
 			en: [
 				'PROXY, not certified OTP: built from GTFS-RT predicted schedule-deviation, not AVL and not an agency-certified on-time metric.',
 				'severe_pct DENOMINATOR (honesty-fix 3/3, migration 0051): delay_observation_count = SUM(COUNT(delay_seconds)), rows with a KNOWN delay, NOT observation_count. severe_pct returns None (not 0) when known_obs ≤ 0.',
-				'avg_delay_min is a POOLED in-clamp MEAN = SUM(sum_delay_seconds) / SUM(histogram bins) (was previously mislabeled “median”), signed (negative = running early). There is NO p50/p90 at this weekday grain, percentiles exist only at the stop DAY grain.',
+				'avg_delay_min is a POOLED in-clamp MEAN = SUM(sum_delay_seconds) / SUM(histogram bins) (was previously mislabeled “median”), signed (negative = running early). There is NO p50/p90 at this weekday grain.',
 				'SEVERE threshold = delay_seconds > 300 (5 min); readings with |delay| > 3600 (1 h) are ghost/outlier and excluded from BOTH the numerator AND the in-clamp denominator.',
 				'ALL-HISTORY window (reconciled S14, 2026-07-02): day-of-week is read at build time from gold.route_delay_spine with NO window clause, so over the whole accrual (730-day retention), a genuine long-run pattern. The old ~10-day-windowed gold.route_delay_day_of_week fold over gold.route_delay_hourly was DROPPED (migration 0064).',
 				'DST / weekday attribution: day_of_week_iso = EXTRACT(ISODOW FROM provider_local_date), and provider_local_date is already provider-local in the spine (no timezone() re-applied), so cross-midnight and DST-shift readings land on the correct local calendar weekday.',

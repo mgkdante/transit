@@ -123,7 +123,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
 		scheduleIntro:
-			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
+			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ». Les heures suivent la journée de service : 25:30 signifie 01:30 le lendemain.',
 		scheduleTable: {
 			caption: 'Périodes de service planifiées',
 			period: 'Période',
@@ -221,7 +221,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
 		scheduleIntro:
-			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab.',
+			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab. Times follow the service day: 25:30 means 01:30 the next day.',
 		scheduleTable: {
 			caption: 'Planned service periods',
 			period: 'Period',

@@ -371,6 +371,7 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			'99.0%',
 		);
 		expect(view.container.querySelector('[data-slot="stop-crowding"]')).toHaveTextContent('100%');
+		expect(view.container.querySelector('[data-slot="prediction-scope"]')).toBeNull();
 	});
 
 	it('uses one controlled navigator in the existing rail, keeps three grains, and removes the local picker', async () => {
@@ -444,7 +445,7 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		['en', /current snapshot/i],
 		['fr', /portrait actuel/i],
 	] as const)(
-		'keeps current-only period, habits, weekday, time, and route sections with one %s scope label',
+		'keeps current-only period, habits, weekday, time, and route sections with %s scope labels',
 		async (locale, localizedScope) => {
 			harness.page.url = explicitUrl();
 			const history = createHistory();
@@ -460,8 +461,10 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			]) {
 				expect.soft(view.container.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
 			}
-			expect(view.container.querySelector('[data-slot="stop-reliability-pane"]')).toHaveTextContent(
-				'22%',
+			const predictionPane = view.container.querySelector('[data-slot="stop-reliability-pane"]');
+			expect(predictionPane).toHaveTextContent('22%');
+			expect(predictionPane?.querySelector('[data-slot="prediction-scope"]')).toHaveTextContent(
+				localizedScope,
 			);
 			expect(view.container.querySelector('[data-slot="stop-by-route"]')).toHaveTextContent('51');
 			const scope = view.container.querySelectorAll('[data-slot="history-current-only"]');

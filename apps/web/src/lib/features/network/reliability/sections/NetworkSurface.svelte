@@ -15,6 +15,7 @@
 	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
+		fmtNumber as sharedFmtNumber,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
@@ -265,24 +266,26 @@
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
-	// The comparison reads the same selected daily series the historic board plots.
-	const verdictDeltaPts = $derived.by<number | null>(() => {
-		const s = selectedTrend?.series ?? [];
-		if (s.length < 2) return null;
-		const latest = s[s.length - 1]?.otp_pct;
-		const prior = s[s.length - 2]?.otp_pct;
-		if (latest == null || prior == null) return null;
-		return latest - prior;
+	// Compare the last two published daily points, which need not be consecutive dates.
+	const dailyChange = $derived.by(() => {
+		const series = selectedTrend?.series ?? [];
+		const latest = series.at(-1);
+		const prior = series.at(-2);
+		if (latest?.otp_pct == null || prior?.otp_pct == null) return null;
+		return { points: latest.otp_pct - prior.otp_pct, latest, prior };
 	});
-	const verdictDeltaText = $derived(
-		verdictDeltaPts == null
+	const dailyChangeText = $derived(
+		dailyChange == null
 			? null
-			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
+			: t.verdictDelta.chip(
+					`${dailyChange.points > 0 ? '+' : ''}${sharedFmtNumber(dailyChange.points, { rounding: 'auto', locale })}`,
+					Math.abs(dailyChange.points) === 1,
+				),
 	);
-	const verdictDeltaColor = $derived(
-		verdictDeltaPts == null || verdictDeltaPts === 0
+	const dailyChangeColor = $derived(
+		dailyChange == null || dailyChange.points === 0
 			? 'var(--muted-foreground)'
-			: verdictDeltaPts > 0
+			: dailyChange.points > 0
 				? 'var(--dataviz-status-on-time)'
 				: 'var(--dataviz-status-late)',
 	);
@@ -625,6 +628,27 @@
 {#snippet historicBoard()}
 	<!-- The readouts share the one selected range and one mapping pass. -->
 	<ArticleSectionStack class="network-history-board" data-slot="network-history-board">
+		{#if dailyChange && dailyChangeText}
+			<p
+				class="network-daily-change"
+				data-slot="verdict-delta"
+				style={`--delta-tone: ${dailyChangeColor}`}
+			>
+				<span class="network-daily-change__mark" aria-hidden="true"
+					>{dailyChange.points > 0 ? '▲' : dailyChange.points < 0 ? '▼' : '■'}</span
+				>
+				<span>
+					{dailyChangeText} ·
+					<time datetime={dailyChange.latest.date}
+						>{formatDateKey(dailyChange.latest.date, locale, true)}</time
+					>
+					{t.verdictDelta.versus}
+					<time datetime={dailyChange.prior.date}
+						>{formatDateKey(dailyChange.prior.date, locale, true)}</time
+					>
+				</span>
+			</p>
+		{/if}
 		<div class="network-history-row" data-slot="network-history-trend-row">
 			<SectionTrend
 				{trendSpec}
@@ -863,29 +887,9 @@
 				{/if}
 			</section>
 
-			<!-- §0 NETWORK VERDICT BAND (§C5.7): the one-line at-a-glance answer between the LIVE
-	     and HISTORIC regions — the SHARED VerdictBanner off the live on_time_pct, plus the
-	     Δ-vs-prior chip (§C6 #3) the network previously lacked. Stands down honestly
-	     ("still measuring") before the first live tick / on an absent live tier. -->
+			<!-- The verdict uses current known-status vehicle positions. -->
 			<section class="network-verdict" aria-label={t.verdictDelta.label}>
 				<VerdictBanner result={networkVerdict} />
-				{#if verdictDeltaText}
-					<span
-						class="network-verdict-delta"
-						data-slot="verdict-delta"
-						style={`--delta-tone: ${verdictDeltaColor}`}
-						aria-label={`${t.verdictDelta.a11y} ${verdictDeltaText}`}
-					>
-						<span class="network-verdict-delta__mark" aria-hidden="true"
-							>{verdictDeltaPts != null && verdictDeltaPts > 0
-								? '▲'
-								: verdictDeltaPts != null && verdictDeltaPts < 0
-									? '▼'
-									: '■'}</span
-						>
-						<span>{verdictDeltaText}</span>
-					</span>
-				{/if}
 			</section>
 
 			<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
@@ -1022,8 +1026,7 @@
 		width: 100%;
 		min-width: 0;
 	}
-	/* §0 verdict band between LIVE and HISTORIC — the VerdictBanner beside the Δ-vs-prior
-	   chip; wraps on a narrow phone so the chip drops beneath the sentence. */
+	/* Current-position verdict stays separate from the dated historical comparison. */
 	.network-verdict {
 		display: flex;
 		flex-wrap: wrap;
@@ -1032,7 +1035,7 @@
 	}
 	/* Δ-vs-prior chip: a quiet mono pill whose glyph + colour + sign read the direction
 	   (colour is never the sole channel — the ▲/▼ + the +/− sign carry it too). */
-	.network-verdict-delta {
+	.network-daily-change {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
@@ -1041,7 +1044,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--delta-tone, var(--muted-foreground));
 	}
-	.network-verdict-delta__mark {
+	.network-daily-change__mark {
 		line-height: 1;
 	}
 	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */

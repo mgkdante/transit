@@ -97,7 +97,7 @@ export const metricsCopy = defineCopy({
 				},
 				{
 					heading: 'Pourquoi les deux modes',
-					body: 'Le mode fluide est plus agréable à regarder, mais c’est une estimation; le mode brut est la vérité brute, à vous de choisir. C’est honnête par conception : on ne vous cache pas l’approximation, on vous laisse la voir ou l’éteindre. Le mouvement reste un peu en retard pour l’instant; un véritable moteur de prédiction est prévu pour la suite.',
+					body: 'Le mode fluide estime le déplacement entre les mises à jour du flux. Le mode brut affiche les positions rapportées. Vous pouvez changer de mode à tout moment.',
 				},
 			],
 		},
@@ -236,7 +236,7 @@ export const metricsCopy = defineCopy({
 				},
 				{
 					heading: 'Why both modes',
-					body: 'Smooth is easier to watch but is an estimate; raw is the unembellished truth, you choose. This is honest by design: we do not hide the approximation from you, we let you see it or switch it off. The motion is still a touch laggy for now; a proper prediction engine is planned next.',
+					body: 'Smooth mode estimates motion between feed updates. Raw mode shows the reported positions. You can switch between them at any time.',
 				},
 			],
 		},

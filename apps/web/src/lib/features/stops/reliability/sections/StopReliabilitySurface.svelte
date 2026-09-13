@@ -596,7 +596,11 @@
 									{@render metricInfo('severe', copy.metrics.severe)}
 								{/snippet}
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
-									<!-- §C5.6: the one-line reliability verdict at the top of the pane. -->
+									{#if explicitHistory}
+										<p class="stop-prediction-scope" data-slot="prediction-scope">
+											{copy.history.predictionScope}
+										</p>
+									{/if}
 									<VerdictBanner result={stopVerdict} />
 									<ReliabilityPane periods={gradedPeriods} {locale} />
 								</div>
@@ -787,8 +791,8 @@
 		margin: 0;
 	}
 
-	/* Resolved-window caption — quiet mono, on its own row beneath the grain chips. */
-	.stop-reliability-window {
+	.stop-reliability-window,
+	.stop-prediction-scope {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
