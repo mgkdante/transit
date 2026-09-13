@@ -179,25 +179,6 @@ export function tokenizeSql(source: string): CodeToken[] {
 	return mergeAdjacentPlain(tokens);
 }
 
-const HTML_TEXT: Readonly<Record<string, string>> = {
-	'&': '&amp;',
-	'<': '&lt;',
-	'>': '&gt;',
-	'"': '&quot;',
-	"'": '&#39;',
-	'\r': '&#13;',
-};
-
-/** Token classes are fixed; escape source text, including CR to preserve line endings. */
-export function highlightSqlHtml(source: string): string {
-	return tokenizeSql(source)
-		.map(({ type, value }) => {
-			const text = value.replace(/[&<>"'\r]/g, (character) => HTML_TEXT[character] ?? character);
-			return `<span class="tok tok--${type}">${text}</span>`;
-		})
-		.join('');
-}
-
 // Collapse runs of same-typed plain/punctuation neighbors to keep the DOM lean
 // (whitespace + adjacent plain identifiers do not need separate spans). Keyword,
 // string, number, function, and comment tokens are always preserved as-is.

@@ -1,6 +1,6 @@
 <!-- Verbatim, keyboard-scrollable code with local light/dark syntax colors. -->
 <script lang="ts">
-	import { highlightSqlHtml } from './sql-highlight';
+	import { tokenizeSql, type CodeToken } from './sql-highlight';
 
 	export interface CodeBlockProps {
 		/** The verbatim source to render. Language-neutral; highlighting is SQL-aware. */
@@ -23,7 +23,7 @@
 		class: className,
 	}: CodeBlockProps = $props();
 
-	const highlighted = $derived(highlightSqlHtml(code));
+	const tokens: CodeToken[] = $derived(tokenizeSql(code));
 </script>
 
 <figure class={`codeblock ${className ?? ''}`} class:codeblock--embedded={embedded}>
@@ -35,15 +35,14 @@
 	<!-- Scrollable code region: keyboard-focusable so the overflow is reachable
 	     without a pointer (mirrors the dataviz scrollable-region pattern). -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<!-- eslint-disable svelte/no-at-html-tags -- highlightSqlHtml escapes source text and emits only fixed token tags/classes. -->
 	<pre
 		class="codeblock__pre"
 		tabindex="0"
 		role="region"
 		aria-label={ariaLabel ?? `${lang} source`}><code class="codeblock__code"
-			>{@html highlighted}</code
+			>{#each tokens as token, i (i)}<span class={`tok tok--${token.type}`}>{token.value}</span
+				>{/each}</code
 		></pre>
-	<!-- eslint-enable svelte/no-at-html-tags -->
 </figure>
 
 <style>
@@ -116,27 +115,27 @@
 		font-family: inherit;
 	}
 
-	.codeblock__code :global(.tok--keyword) {
+	.tok--keyword {
 		color: var(--code-keyword);
 		font-weight: 600;
 	}
-	.codeblock__code :global(.tok--string) {
+	.tok--string {
 		color: var(--code-string);
 	}
-	.codeblock__code :global(.tok--number) {
+	.tok--number {
 		color: var(--code-number);
 	}
-	.codeblock__code :global(.tok--function) {
+	.tok--function {
 		color: var(--code-function);
 	}
-	.codeblock__code :global(.tok--comment) {
+	.tok--comment {
 		color: var(--code-comment);
 		font-style: italic;
 	}
-	.codeblock__code :global(.tok--punctuation) {
+	.tok--punctuation {
 		color: var(--code-punctuation);
 	}
-	.codeblock__code :global(.tok--plain) {
+	.tok--plain {
 		color: var(--code-plain);
 	}
 </style>
