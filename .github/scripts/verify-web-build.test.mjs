@@ -29,10 +29,15 @@ async function server(t, production, mutate = () => {}) {
       body = production
         ? `<urlset><url><loc>${env.PUBLIC_SITE_ORIGIN}/privacy</loc></url><url><loc>${env.PUBLIC_SITE_ORIGIN}/fr/privacy</loc></url></urlset>`
         : "<urlset/>";
-    else {
+    else if (path === "/privacy" || path === "/fr/privacy") {
+      const french = path === "/fr/privacy";
       headers["content-type"] = "text/html";
       if (!production) headers["x-robots-tag"] = "noindex, nofollow";
-      body = `<html lang="${path.startsWith("/fr/") ? "fr" : "en"}"><head><link href="${env.PUBLIC_SITE_ORIGIN}${path}" rel="canonical">${production ? "" : '<meta content="noindex,nofollow" name="robots">'}</head></html>`;
+      body = `<html lang="${french ? "fr" : "en"}"><head><link href="${env.PUBLIC_SITE_ORIGIN}${french ? "/fr/privacy" : "/privacy"}" rel="canonical">${production ? "" : '<meta content="noindex,nofollow" name="robots">'}</head></html>`;
+    } else {
+      response.writeHead(404);
+      response.end();
+      return;
     }
     const result = { status: 200, body, headers };
     mutate(path, result);

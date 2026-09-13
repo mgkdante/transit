@@ -5,6 +5,7 @@ import posixpath
 import re
 import shlex
 import subprocess
+import sys
 import tomllib
 from functools import cache
 from pathlib import Path
@@ -55,6 +56,7 @@ VERSION_OWNERS = {
     ".github/scripts/install-gitleaks.sh",
 }
 COMPATIBILITY_PROOFS = {
+    ".github/scripts/web-build-artifact.test.mjs",
     "apps/db/tests/test_toolchain_contract.py",
     "apps/db/tests/test_deploy_artifacts.py",
     "apps/db/tests/test_setup_py_action.py",
@@ -190,7 +192,7 @@ def _inventory_violations(sources: dict[str, str]) -> list[str]:
         document = documents.get(path)
         if re.search(r"\bwrangler@(?:[^\s\"'`]+)", source, re.IGNORECASE) or re.search(
             r"\b(?:npx|bunx|(?:npm|pnpm|yarn|bun)\s+(?:exec|dlx|add|install))"
-            r"[\s\"'`,\[\]]+(?:--?\S+[\s\"'`,\[\]]+)*wrangler\b",
+            r"[\s\"'`,\[\]]+(?:-[^\s\"'`,\[\]]*[\s\"'`,\[\]]+)*wrangler\b",
             source,
         ):
             violations.append(f"{path}: ad-hoc Wrangler executable")
@@ -251,8 +253,14 @@ def test_tracked_toolchain_inventory_has_only_reviewed_owners_and_images() -> No
             "external image",
         ),
         ("new/deploy.sh", "npx wrangler deploy", "ad-hoc Wrangler"),
+        ("new/deploy.sh", "npx -y --no-install wrangler deploy", "ad-hoc Wrangler"),
         ("new/deploy.mjs", 'spawn("bunx", ["wrangler@latest", "deploy"]);', "ad-hoc Wrangler"),
         ("new/deploy.js", 'spawn("npx", ["wrangler", "deploy"]);', "ad-hoc Wrangler"),
+        (
+            "new/deploy.js",
+            'spawn("npx", ["--yes", "--no-install", "wrangler", "deploy"]);',
+            "ad-hoc Wrangler",
+        ),
         ("new/package.json", '{"devDependencies":{"wrangler":"4.999.0"}}', "root package"),
         ("new/tool.mjs", "const NODE_VERSION = '20.18.0';", "tool version outside"),
         ("new/setup.yml", "with:\n  python-version: '3.13'\n", "tool version outside"),
@@ -267,6 +275,22 @@ def test_inventory_rejects_new_unowned_executable_surfaces(
     path: str, source: str, failure: str
 ) -> None:
     assert any(failure in issue for issue in _inventory_violations({path: source}))
+
+
+def test_inventory_finishes_on_repeated_quoted_option_fragments() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import runpy, sys\n"
+            "scan = runpy.run_path(sys.argv[1])['_inventory_violations']\n"
+            "assert scan({'new/tool.mjs': 'npx -' + '!\"-' * 4096 + 'other'}) == []\n",
+            str(Path(__file__).resolve()),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
 
 
 def test_inventory_accepts_local_stages_and_compose_builds() -> None:
