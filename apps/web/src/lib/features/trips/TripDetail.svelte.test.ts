@@ -126,8 +126,30 @@ describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
 		const { container } = render(TripDetail, { props: { id: 'probe' }, context });
 		const verdict = container.querySelector('.trip-verdict') as HTMLElement;
 		const badge = verdict.querySelector('[data-slot="status-badge"]')!;
+		if (status === 'unknown' && delay == null) {
+			expect(
+				verdict.textContent?.match(new RegExp(tripCopy[locale].status.unknown, 'g')),
+			).toHaveLength(1);
+			const probe = document.createElement('button');
+			probe.innerHTML = verdict.innerHTML;
+			document.body.append(probe);
+			try {
+				expect(probe).toHaveAccessibleName(
+					locale === 'en'
+						? 'Unknown, not reported in the live feed'
+						: 'Inconnu, non signalé dans le flux en direct',
+				);
+			} finally {
+				probe.remove();
+			}
+		}
+
 		expect(badge).toHaveAttribute('data-status', status);
-		expect(badge).toHaveTextContent(tripCopy[locale].status[status]);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(tripCopy[locale].status[status]);
 		expect(badge.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
 		const reading = verdict.querySelector('.trip-verdict-delay')!;
 		expect(reading).not.toHaveAttribute('data-tone');

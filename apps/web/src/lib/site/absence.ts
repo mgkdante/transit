@@ -1,47 +1,13 @@
-// absence.ts — the ONE shared unknown-data layer (LOGIC).
-//
-// PURE, provider-agnostic business layer for HONEST ABSENCE across the whole app.
-// Zero Svelte, zero markup, zero styling, zero clock, zero fetch, zero DOM. It is
-// the single brain S6..S15 surfaces reuse so the same missing-data logic applies
-// everywhere cleanly, with the VISUAL layer (AbsentValue.svelte) strictly separate.
-//
-// It EXTENDS serviceWindow.ts (the block-level absence inference) instead of
-// forking it:
-//   - the service-window reason keys (metro-no-realtime, closed-opens-at,
-//     overnight-opens-at, before-open, scheduled-silent, last-seen) are RE-EXPORTED,
-//     never re-declared;
-//   - NEW per-FIELD value-absence keys (not-reported, not-reporting, not-in-schedule,
-//     no-prediction, end-of-route, inferred) cover a single missing value in a row
-//     rather than a whole block standing down.
-//
-// Three pieces:
-//   AbsenceReasonKey   — the unified key union (window keys + value-absence keys).
-//   Maybe<T>           — a value-or-absence discriminated type + known()/absent().
-//   describeAbsence()  — a pure resolver: key + locale + params -> { label, why, tone }.
-//
-// HONESTY: copy is provider-agnostic DATA (no STM/STO/OC/STS literal), bilingual
-// EN+FR, and never uses an em dash (a middle dot or comma instead).
+// Provider-independent absence vocabulary; service-window reasons retain their original owner.
 
 import type { Locale } from '$lib/i18n';
 import type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
 
-// Re-export the serviceWindow keys + the structured reason so consumers have ONE
-// import home for the absence vocabulary (do NOT fork the union).
 export type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
 export type { AbsenceReason, AbsenceSignals } from './serviceWindow';
 export { inferAbsenceReason } from './serviceWindow';
 
-/**
- * NEW per-FIELD value-absence keys (one missing value in a row, not a whole block):
- *   not-reported    — the live feed omitted this field for an otherwise-present row.
- *   not-reporting   — the entity itself is stale (e.g. a GPS-stale vehicle).
- *   not-in-schedule — absent from the static index (e.g. an unresolved stop/route name).
- *   no-prediction   — no ETA/delay was predicted for this item.
- *   end-of-route    — no next item because the trip ended.
- *   inferred        — value synthesized (computed/estimated), not published as-is.
- *   no-observations — a historic/aggregate metric had too few readings to report.
- *   retained-history keys — typed explanations for omitted history-index facts.
- */
+/** Field absence is distinct from the service-window reason for a whole block. */
 export type ValueAbsenceKey =
 	| 'not-reported'
 	| 'not-reporting'
@@ -58,17 +24,10 @@ export type ValueAbsenceKey =
 	| 'no-metric-inventory'
 	| 'no-retained-data';
 
-/**
- * The canonical, unified absence vocabulary: every service-window reason key plus
- * every per-field value-absence key. One union the whole app branches on.
- */
+/** Service-window and field-level reasons share one presentation vocabulary. */
 export type AbsenceReasonKey = ServiceWindowReasonKey | ValueAbsenceKey;
 
-/**
- * A value that is either KNOWN (carry the value) or ABSENT (carry the typed reason
- * + optional copy params). The discriminant is `known`, so consumers narrow with
- * `if (m.known)` and never null-check or invent a placeholder.
- */
+/** Narrow on `known`; a measured zero remains a present value. */
 export type Maybe<T> =
 	| { readonly known: true; readonly value: T }
 	| {
@@ -90,16 +49,7 @@ export function absent<T>(
 	return params ? { known: false, reason, params } : { known: false, reason };
 }
 
-/**
- * Bilingual, PROVIDER-AGNOSTIC reason copy as DATA. Two strings per key:
- *   short — a terse in-row label (e.g. "Unknown").
- *   why   — the honest one-clause reason (e.g. "not reported in the live feed").
- * No em dash anywhere (middle dot / comma). No provider literal. EN is the source
- * voice; FR mirrors it one-for-one.
- *
- * The opens-at / last-seen variants leave a `{first}` / `{age}` placeholder for
- * describeAbsence to interpolate from params, so the copy never fabricates a value.
- */
+/** Localized copy uses {first}/{age} parameters supplied by the caller, never invented values. */
 type ReasonCopy = { readonly short: string; readonly why: string };
 
 export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> = {
@@ -223,12 +173,7 @@ function interpolate(template: string, params?: Readonly<Record<string, string |
 	);
 }
 
-/**
- * PURE resolver: map a reason key (+ locale + optional copy params) to the
- * render-ready { label, why, tone }. The single place copy is selected — the
- * visual layer never branches on a key. Unknown keys fall back to the generic
- * "not reported" copy so a caller can never render a raw key.
- */
+/** Unknown keys fall back to not-reported copy rather than exposing an internal key. */
 export function describeAbsence(
 	reason: AbsenceReasonKey,
 	locale: Locale,
@@ -258,28 +203,12 @@ export function absenceSentence(
 	return `${description.label} · ${description.why}`;
 }
 
-/**
- * Thin per-field inferrer: pick the right value-absence key from a stale flag.
- * A stale entity is "not-reporting" (it exists but has gone quiet); a present
- * entity with a missing field is "not-reported" (the feed simply omitted it).
- * Pure + tiny by design; richer field rules belong in the calling surface.
- */
+/** A stale entity is not-reporting; a missing field on a present entity is not-reported. */
 export function fieldAbsenceReason(signals: { stale?: boolean }): ValueAbsenceKey {
 	return signals.stale ? 'not-reporting' : 'not-reported';
 }
 
-/**
- * Bilingual, PROVIDER-AGNOSTIC labelled fallback for a NAME we could not resolve
- * from the static index. We keep the stable identifier (so the row is still
- * actionable) and SAY the name is unavailable, instead of leaking a bare id that
- * reads as a name. Two patterns:
- *   stop  → "Stop {id} (name unavailable)" / "Arrêt {id} (nom indisponible)"
- *   route → "Route {id}" / "Ligne {id}" (the id IS the rider-facing route number,
- *           so no "unavailable" qualifier is needed, just an explicit kind prefix).
- *
- * This lives in the absence LOGIC layer (not a surface copy file) so every surface
- * shares the same honest wording. No em dash (a parenthetical, never a dash).
- */
+/** Preserve actionable IDs: unknown stops disclose their missing name; routes use their public number. */
 const NAME_FALLBACK_COPY: Record<Locale, { stop: string; route: string }> = {
 	en: { stop: 'Stop {id} (name unavailable)', route: 'Route {id}' },
 	fr: { stop: 'Arrêt {id} (nom indisponible)', route: 'Ligne {id}' },

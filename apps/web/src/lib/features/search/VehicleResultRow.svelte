@@ -4,7 +4,7 @@
 	import type { Vehicle } from '$lib/v1/schemas';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
 	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { absenceShort } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { MaybeValue } from '$lib/components/edge';
 	import type { VehicleResultCopy } from './search.copy';
 
@@ -25,6 +25,7 @@
 
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
+	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
 	// Live-tier absence reason for every omitted bus field on this row: the feed
@@ -51,7 +52,7 @@
 	data-sveltekit-preload-data="hover"
 	class="vehicle-row"
 	data-slot="vehicle-result"
-	aria-label={`${copy.busAria(vehicle.id)}, ${statusLabel}, ${copy.delay}: ${delayText ?? absenceShort(NOT_REPORTED, locale)}`}
+	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(NOT_REPORTED, locale)}`}
 >
 	<span class="vehicle-row-lead">
 		{#if hasBearing}
@@ -81,7 +82,13 @@
 			</MaybeValue>
 		</span>
 		<span class="vehicle-row-marks">
-			<StatusBadge status={vehicle.status} mode="pill" size="sm" label={statusLabel} />
+			<StatusBadge
+				status={vehicle.status}
+				mode={unknownStatusAndDelay ? 'dot' : 'pill'}
+				aria-hidden={unknownStatusAndDelay || undefined}
+				size="sm"
+				label={statusLabel}
+			/>
 			<MaybeValue present={occupancyLabel != null} reason={NOT_REPORTED} {locale}>
 				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
 					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
@@ -92,7 +99,12 @@
 	</span>
 
 	<span class="vehicle-row-meta">
-		<MaybeValue value={delayText} reason={NOT_REPORTED} {locale} />
+		<MaybeValue
+			value={delayText}
+			reason={NOT_REPORTED}
+			variant={unknownStatusAndDelay ? 'row' : 'inline'}
+			{locale}
+		/>
 	</span>
 </a>
 

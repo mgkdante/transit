@@ -75,7 +75,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { absenceShort } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import { dayTypeLabel, shiftLabel } from '$lib/features/reliability/shiftGrains';
@@ -563,6 +563,8 @@
 												</div>
 												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
 													{#each roster as bus (bus.id)}
+														{@const unknownStatusAndDelay =
+															bus.status === 'unknown' && bus.delay_min == null}
 														<li class="route-roster-item">
 															{#snippet rosterRow()}
 																<div class="route-roster-reading">
@@ -570,7 +572,8 @@
 																	<StatusBadge
 																		status={bus.status}
 																		label={STATUS_LABELS[locale][bus.status]}
-																		mode="legend"
+																		mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+																		aria-hidden={unknownStatusAndDelay || undefined}
 																		size="sm"
 																	/>
 																	<span class="route-roster-delay"
@@ -590,7 +593,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${STATUS_LABELS[locale][bus.status]}, ${locale === 'fr' ? 'Retard' : 'Delay'}: ${delayMeasurement(bus.delay_min) ?? absenceShort('not-reported', locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${locale === 'fr' ? 'Retard' : 'Delay'}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

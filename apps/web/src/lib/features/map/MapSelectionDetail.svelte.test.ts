@@ -1796,6 +1796,20 @@ describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (loc
 		const badge = container.querySelector('[data-slot="status-badge"]');
 		expect(badge).toHaveAttribute('data-status', status);
 		const button = getByRole('button');
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+			expect(
+				button.textContent?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(
+				button.getAttribute('aria-label')?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(button.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
 		expect(button.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
 		if (measurement) {
 			expect(button.getAttribute('aria-label')).toContain(`${t.delay}: ${measurement}`);

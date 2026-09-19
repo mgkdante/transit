@@ -2,7 +2,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Vehicle } from '$lib/v1/schemas';
-	import { absenceShort } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { timeLabel } from '../mapSelectionDetail.logic';
@@ -29,8 +29,9 @@
 		focusPreview = focus;
 		onpreview?.(pointer || focus ? { kind: 'vehicle', id: vehicle.id } : null);
 	}
+	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceShort('not-reported', locale)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
 	);
 </script>
 
@@ -51,10 +52,16 @@
 		<StatusBadge
 			status={vehicle.status}
 			label={STATUS_LABELS[locale][vehicle.status]}
-			mode="legend"
+			mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+			aria-hidden={unknownStatusAndDelay || undefined}
 			size="sm"
 		/>
-		<MaybeValue value={delayMeasurement(vehicle.delay_min)} reason="not-reported" {locale} />
+		<MaybeValue
+			value={delayMeasurement(vehicle.delay_min)}
+			reason="not-reported"
+			variant={unknownStatusAndDelay ? 'row' : 'inline'}
+			{locale}
+		/>
 	</small>
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 </button>

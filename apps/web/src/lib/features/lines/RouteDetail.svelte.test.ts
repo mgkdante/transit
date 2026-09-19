@@ -1102,12 +1102,28 @@ describe.each(['en', 'fr'] as const)('RouteDetail roster published status in %s'
 		const roster = screen.getByTestId('route-roster');
 		const badge = roster.querySelector('[data-slot="status-badge"]');
 		expect(badge).toHaveAttribute('data-status', status);
-		expect(badge).toHaveTextContent(STATUS_LABELS[locale][status]);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(STATUS_LABELS[locale][status]);
 		const reading = roster.querySelector('.route-roster-delay')!;
 		if (measurement) expect(reading).toHaveTextContent(measurement);
 		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
 		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
 		const link = roster.querySelector('.route-roster-link')!;
+		if (status === 'unknown' && delay == null) {
+			expect(link.textContent?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g'))).toHaveLength(
+				1,
+			);
+			expect(
+				link.getAttribute('aria-label')?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(link.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
+
 		expect(link.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
 		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});

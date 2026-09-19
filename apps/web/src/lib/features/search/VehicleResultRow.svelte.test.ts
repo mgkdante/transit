@@ -147,12 +147,24 @@ describe.each(['en', 'fr'] as const)('VehicleResultRow published status in %s', 
 		});
 		const badge = container.querySelector('[data-slot="status-badge"]');
 		expect(badge).toHaveAttribute('data-status', status);
-		expect(badge).toHaveTextContent(statusLabel);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(statusLabel);
 		const reading = container.querySelector('.vehicle-row-meta')!;
 		if (measurement) expect(reading).toHaveTextContent(measurement);
 		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
 		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
 		const link = container.querySelector('a')!;
+		if (status === 'unknown' && delay == null) {
+			expect(link.textContent?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
+			expect(link.getAttribute('aria-label')?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
+			expect(link.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
+
 		expect(link).toHaveAccessibleName(new RegExp(statusLabel));
 		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});

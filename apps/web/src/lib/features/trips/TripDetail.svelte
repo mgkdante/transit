@@ -56,6 +56,7 @@
 	const reportFailed = $derived(reportState.consecutiveFailures > 0);
 
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
+	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
 	// A failed optional stop-name lookup preserves the raw stop IDs.
 	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
 	const stopNameById = $derived.by<Record<string, string>>(() => {
@@ -176,10 +177,16 @@
 							</span>
 
 							<span class="trip-verdict">
-								<StatusBadge status={trip.status} label={t.status[trip.status]} mode="legend" />
+								<StatusBadge
+									status={trip.status}
+									label={t.status[trip.status]}
+									mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+									aria-hidden={unknownStatusAndDelay || undefined}
+								/>
 								<span class="trip-verdict-delay">
 									<MaybeValue
 										value={delayMeasurement(trip.delay_min)}
+										variant={unknownStatusAndDelay ? 'row' : 'inline'}
 										reason="not-reported"
 										{locale}
 									/>
