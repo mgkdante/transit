@@ -223,11 +223,11 @@
 			{:else if detail.kind === 'stop'}
 				<DetailAttributeGrid>
 					<div>
-						<dt>{t.departures(3)}</dt>
+						<dt>{t.departuresLabel}</dt>
 						<dd>
 							{detail.departures == null
 								? t.departuresUnavailable
-								: t.departures(Math.min(3, detail.departures.length))}
+								: t.departures(detail.departures.length)}
 						</dd>
 					</div>
 				</DetailAttributeGrid>

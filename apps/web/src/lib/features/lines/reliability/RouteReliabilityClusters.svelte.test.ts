@@ -145,6 +145,54 @@ const activeWindowText = (container: HTMLElement): string =>
 	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
 
 describe('RouteReliabilityClusters', () => {
+	it.each(['en', 'fr'] as const)('names the severe reading population in %s', async (locale) => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale },
+		});
+		const verdict = container.querySelector('[data-band="verdict"]') as HTMLElement;
+		await fireEvent.click(
+			within(verdict).getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+		);
+		expect(verdict.querySelector('[data-slot="severe-caption"]')).toHaveTextContent(
+			locale === 'en'
+				? 'Share of known-delay readings classified as severe'
+				: 'Part des relevés à retard connu classés en retard grave',
+		);
+	});
+
+	it.each(['en', 'fr'] as const)(
+		'distinguishes daily percentiles from window estimates in %s',
+		async (locale) => {
+			const view = render(RouteReliabilityClusters, { props: { data: populated, locale } });
+			const t = reliabilityCopy[locale];
+			const captions = () =>
+				[
+					...view.container.querySelectorAll('[data-slot="verdict-kpis"] .metric-bullet__caption'),
+				].map((node) => node.textContent);
+			const exact =
+				locale === 'en'
+					? ['Median of reported predicted delays', '90th percentile of reported predicted delays']
+					: ['Médiane des relevés de retard prédit', '90e percentile des relevés de retard prédit'];
+			const estimated =
+				locale === 'en'
+					? [
+							'Estimated median of reported predicted delays',
+							'Estimated 90th percentile of reported predicted delays',
+						]
+					: [
+							'Médiane estimée des relevés de retard prédit',
+							'90e percentile estimé des relevés de retard prédit',
+						];
+			expect.soft(captions()).toEqual(exact);
+			for (const name of [t.controls.thisWeek, t.controls.thisMonth]) {
+				await fireEvent.click(view.getByRole('radio', { name }));
+				expect.soft(captions()).toEqual(estimated);
+			}
+			await fireEvent.click(view.getByRole('radio', { name: t.controls.latestDay }));
+			expect(captions()).toEqual(exact);
+		},
+	);
+
 	it('places an optional article verdict in the shared summary lane before reliability cards', () => {
 		const articleSummary = createRawSnippet(() => ({
 			render: () => '<p data-testid="line-article-summary">Line verdict</p>',

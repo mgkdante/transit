@@ -1439,6 +1439,49 @@ describe('MapSelectionDetail', () => {
 		expect(queryByRole('status')).not.toBeInTheDocument();
 	});
 
+	it.each(['en', 'fr'] as const)('reports actual departure counts in %s', async (locale) => {
+		const detail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-1' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+		const view = render(MapSelectionDetail, { props: { detail, locale } });
+		for (const [count, en, fr] of [
+			[null, 'Live departures unavailable', 'Départs en direct indisponibles'],
+			[0, '0 departures', '0 départs'],
+			[1, '1 departure', '1 départ'],
+			[2, '2 departures', '2 départs'],
+			[5, '5 departures', '5 départs'],
+		] as const) {
+			const departures =
+				count == null
+					? null
+					: Array.from({ length: count }, (_, i) => ({
+							route: '24',
+							trip: `trip-${i}`,
+							eta_utc: utc('2026-06-15T16:40:00Z'),
+							delay_min: 0,
+						}));
+			await view.rerender({ detail: { ...detail, departures }, locale });
+			const grid = view.container.querySelector('.detail-attribute-grid');
+			expect
+				.soft(grid?.querySelector('dt'))
+				.toHaveTextContent(locale === 'en' ? 'Departures' : 'Départs');
+			expect.soft(grid?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
+			if (count === 5) {
+				expect(view.container.querySelectorAll('[data-slot="detail-departures"] li')).toHaveLength(
+					3,
+				);
+				expect(
+					view.container.querySelectorAll('[data-slot="detail-more-departures"] li'),
+				).toHaveLength(2);
+				expect(
+					view.container.querySelector('[data-slot="detail-more-departures-action"]'),
+				).toHaveTextContent(locale === 'en' ? '+2 more' : '+2 de plus');
+			}
+		}
+	});
+
 	it('renders a stop detail with code, departures, inbound vehicles, and alerts', async () => {
 		const detail = resolveMapSelection(
 			{ kind: 'stop', id: 'stop-1' },

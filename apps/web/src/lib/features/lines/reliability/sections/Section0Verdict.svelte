@@ -62,6 +62,7 @@
 	// A date range uses the retained dated series. Only the literal day mode uses
 	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
+	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
@@ -235,7 +236,7 @@
 					spec={p50Bullet}
 					{locale}
 					info={p50Info}
-					caption={copy.strip.p50Caption}
+					caption={estimatedPercentiles ? copy.strip.p50EstimatedCaption : copy.strip.p50Caption}
 				/>
 				<MetricBullet
 					label={copy.strip.p90Min}
@@ -243,7 +244,7 @@
 					spec={p90Bullet}
 					{locale}
 					info={p90Info}
-					caption={copy.strip.p90Caption}
+					caption={estimatedPercentiles ? copy.strip.p90EstimatedCaption : copy.strip.p90Caption}
 				/>
 			</div>
 		{/if}

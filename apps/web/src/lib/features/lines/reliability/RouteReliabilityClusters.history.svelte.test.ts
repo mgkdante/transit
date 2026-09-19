@@ -284,6 +284,53 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('RouteReliabilityClusters retained Line history', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps retained one-day percentiles exact and multi-day percentiles absent in %s',
+		async (locale) => {
+			harness.page.url = new URL(
+				'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+			);
+			harness.loadLineHistoryRange.mockResolvedValueOnce([retainedPartitions[0]]);
+			const history = createHistory();
+			const view = render(RouteReliabilityClusters, { props: { data: current, locale, history } });
+			try {
+				await waitFor(() => expect(history.state).toBe('ready'));
+				const tiles = () =>
+					[
+						...view.container.querySelectorAll(
+							'[data-slot="verdict-kpis"] [data-slot="metric-bullet"]',
+						),
+					].slice(2);
+				const exact =
+					locale === 'en'
+						? [
+								'Median of reported predicted delays',
+								'90th percentile of reported predicted delays',
+							]
+						: [
+								'Médiane des relevés de retard prédit',
+								'90e percentile des relevés de retard prédit',
+							];
+				expect
+					.soft(tiles().map((tile) => tile.querySelector('.metric-bullet__caption')?.textContent))
+					.toEqual(exact);
+				expect(
+					tiles().map((tile) => tile.querySelector('.metric-bullet__value')?.textContent?.trim()),
+				).toEqual(['1.0 min', '3.0 min']);
+				expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1);
+				history.setRequest(
+					historyRangeRequestFromSearchParams(new URLSearchParams('from=2026-01-31&to=2026-02-01')),
+				);
+				await waitFor(() => expect(history.value?.aggregate.window.to).toBe('2026-02-01'));
+				for (const tile of tiles())
+					expect(tile.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+				expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(2);
+			} finally {
+				history.destroy();
+			}
+		},
+	);
+
 	it('adds a same-day percentile spread without loading another partition', async () => {
 		harness.page.url = new URL(
 			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
