@@ -10,6 +10,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import type { Snippet } from 'svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
@@ -31,6 +32,8 @@
 		absentParams?: Readonly<Record<string, string | number>>;
 		/** Primary label. */
 		label: string;
+		/** Optional explanation beside the label. */
+		info?: Snippet;
 		/** Optional secondary description. */
 		sublabel?: string;
 		/** Display size. */
@@ -46,6 +49,7 @@
 		locale,
 		absentParams,
 		label,
+		info,
 		sublabel,
 		size = 'md',
 		labelBelow = false,
@@ -66,7 +70,10 @@
 
 <div class={cn('flex flex-col', className)} data-slot="metric-display" {...restProps}>
 	{#if !labelBelow}
-		<span class="label-metric">{label}</span>
+		<div class="flex items-center gap-1">
+			<span class="label-metric">{label}</span>
+			{@render info?.()}
+		</div>
 	{/if}
 	{#if isEmpty}
 		{#if absentReason && locale}
@@ -81,7 +88,10 @@
 		>
 	{/if}
 	{#if labelBelow}
-		<span class="mt-2 label-metric">{label}</span>
+		<div class="mt-2 flex items-center gap-1">
+			<span class="label-metric">{label}</span>
+			{@render info?.()}
+		</div>
 	{/if}
 	{#if sublabel}
 		<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{sublabel}</span>

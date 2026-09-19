@@ -53,7 +53,12 @@ describe('selectPunctualityDistribution — the A1 signed-delay histogram', () =
 		const spec = selectPunctualityDistribution(vmWithHistogram(null), 'en', labels);
 		expect(spec.kind).toBe('absence');
 		if (spec.kind !== 'absence') return;
-		expect(spec.reason).toBe('no-observations');
+		expect(spec.reason).toBe('histogram-not-published');
+	});
+
+	it('explicitly empty bins retain the no-observations reason', () => {
+		const spec = selectPunctualityDistribution(vmWithHistogram([]), 'fr', labels);
+		expect(spec).toMatchObject({ kind: 'absence', reason: 'no-observations', locale: 'fr' });
 	});
 
 	it('an all-zero histogram is absence, not a flat row of zero bars', () => {
@@ -63,5 +68,7 @@ describe('selectPunctualityDistribution — the A1 signed-delay histogram', () =
 		];
 		const spec = selectPunctualityDistribution(vmWithHistogram(zero), 'en', labels);
 		expect(spec.kind).toBe('absence');
+		if (spec.kind !== 'absence') return;
+		expect(spec.reason).toBe('no-observations');
 	});
 });

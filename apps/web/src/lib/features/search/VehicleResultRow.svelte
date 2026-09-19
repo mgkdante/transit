@@ -1,29 +1,10 @@
-<!--
-  VehicleResultRow — a live bus result row for the /search surface.
-
-  A matched vehicle (exact unit-id) is no longer a bare link: this row renders the
-  same live vocabulary the map already speaks —
-    · a STATUS chip (on-time / late / severe) — StatusBadge (dataviz scale + glyph)
-    · a CROWDING indicator (occupancy band) — OCCUPANCY glyph + label, honest
-      no-telemetry mark when absent
-    · the signed DELAY (+4 min / −2 min / on time) in the meta cell
-    · a 'next: <stop name>' subtitle (resolved against the in-memory stops index;
-      an unresolved id falls to the honest "no next stop" — never the raw id)
-    · a directional ARROW rotated by bearing (the map's heading channel)
-
-  The row links to the live map filtered to this bus (routeFor {kind:'vehicle'}),
-  matching every other "open on map" affordance.
-
-  DOCTRINE: status + crowding marks ride the dataviz scale (never --primary).
-  HONESTY: a null occupancy → the no-telemetry mark, never a fabricated band; a
-  null delay → "no delay" text, never a fabricated 0; a missing bearing → no
-  arrow. Bilingual labels are passed in (co-located search copy), provider-agnostic.
--->
 <script lang="ts">
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import type { Vehicle } from '$lib/v1/schemas';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
+	import { absenceShort } from '$lib/site/absence';
 	import { MaybeValue } from '$lib/components/edge';
 	import type { VehicleResultCopy } from './search.copy';
 
@@ -44,17 +25,7 @@
 
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
-	// Signed delay reading, reusing the map's early / on-time / late vocabulary.
-	// A null delay is HONEST ABSENCE (the live feed omitted it), not a fabricated
-	// "no delay" — the template renders the styled chip on the absent branch.
-	const delayKnown = $derived(vehicle.delay_min != null);
-	const delayText = $derived.by(() => {
-		const d = vehicle.delay_min;
-		if (d == null) return '';
-		if (d < 0) return copy.early(d);
-		if (d > 0) return copy.late(d);
-		return copy.onTime;
-	});
+	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
 	// Live-tier absence reason for every omitted bus field on this row: the feed
 	// carried the vehicle but left this value out → "Unknown · not reported".
@@ -80,7 +51,7 @@
 	data-sveltekit-preload-data="hover"
 	class="vehicle-row"
 	data-slot="vehicle-result"
-	aria-label={copy.busAria(vehicle.id)}
+	aria-label={`${copy.busAria(vehicle.id)}, ${statusLabel}, ${copy.delay}: ${delayText ?? absenceShort(NOT_REPORTED, locale)}`}
 >
 	<span class="vehicle-row-lead">
 		{#if hasBearing}
@@ -121,7 +92,7 @@
 	</span>
 
 	<span class="vehicle-row-meta">
-		<MaybeValue present={delayKnown} value={delayText} reason={NOT_REPORTED} {locale} />
+		<MaybeValue value={delayText} reason={NOT_REPORTED} {locale} />
 	</span>
 </a>
 

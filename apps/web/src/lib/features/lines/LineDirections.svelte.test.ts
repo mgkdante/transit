@@ -3,13 +3,13 @@
 //   1. The clickable stops + live readout (the behaviour that lived in RouteDetail
 //      before the extraction): each stop links to its detail page; a predicted
 //      stop shows the approaching bus's reading; an unpredicted stop shows an
-//      honest "no live bus", never a fabricated time.
+//      honest "no prediction", never a fabricated time.
 //   2. The self-contained @container contract (the contract that moved here from
 //      RouteDetail): container-type rides the PARENT .line-directions-pane and the
 //      side-by-side grid targets the DESCENDANT .line-directions (never the same
 //      element — the self-target trap).
 
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +28,7 @@ const DIRECTIONS: RouteFile['directions'] = [
 	},
 ];
 
-// sA has an approaching bus (2 min late); sB has NONE → honest "no live bus".
+// sA has an approaching bus (2 min late); sB has NONE → honest "no prediction".
 const PREDICTIONS = new Map<string, StopPrediction>([
 	['sA', { etaUtc: '2026-06-15T12:05:00Z', delayMin: 2 }],
 ]);
@@ -54,21 +54,35 @@ describe('LineDirections', () => {
 		);
 	});
 
-	it('shows the approaching bus reading for a predicted stop and an honest no-live-bus otherwise', () => {
-		render(LineDirections, {
-			props: {
-				directions: DIRECTIONS,
-				predictions: PREDICTIONS,
-				locale: 'en',
-				copy: detailCopy.en,
-			},
-		});
+	it.each(['en', 'fr'] as const)(
+		'preserves prediction delay and explains an absent prediction in %s',
+		(locale) => {
+			render(LineDirections, {
+				props: {
+					directions: DIRECTIONS,
+					predictions: PREDICTIONS,
+					locale,
+					copy: detailCopy[locale],
+				},
+			});
 
-		// sA has a bus 2 min late; sB has none → the honest placeholder, never a time.
-		expect(screen.getByText('2 min late')).toBeInTheDocument();
-		const empty = screen.getByText('No live bus').closest('[data-component="state-notice"]');
-		expect(empty).toHaveAttribute('data-presentation', 'pill');
-	});
+			// A missing prediction says nothing about whether a vehicle is present.
+			expect(
+				screen.getByText(locale === 'en' ? '2 min late' : '2 min en retard'),
+			).toBeInTheDocument();
+			const stop = screen.getByRole('link', { name: detailCopy[locale].viewStop('Second stop') });
+			const empty = stop.querySelector('[data-slot="absent-value"]');
+			expect(empty).toHaveAttribute('data-presentation', 'row');
+			expect(empty).toHaveAttribute(
+				'aria-label',
+				locale === 'en'
+					? 'No estimate, no prediction available'
+					: 'Aucune estimation, aucune prévision disponible',
+			);
+			expect(within(stop).queryByText(/No live bus|Aucun bus en direct/)).toBeNull();
+			expect(stop.querySelector('time')).toBeNull();
+		},
+	);
 
 	it('renders nothing when the route carries no directions', () => {
 		const { container } = render(LineDirections, {

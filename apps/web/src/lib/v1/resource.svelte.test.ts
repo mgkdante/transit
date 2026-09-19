@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 
-// Capture the default newest-data writer so freshness-bearing tests can assert
-// exactly what createResource feeds through its runtime port.
 const mocks = vi.hoisted(() => ({
-	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
 	bumpRefreshEpoch: () => {},
 	resetRefreshEpoch: () => {},
 }));
@@ -27,7 +24,6 @@ vi.mock('$lib/stores/refresh.svelte', async () => {
 				subscribe();
 				return refreshEpoch;
 			},
-			noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
 		},
 	};
 });
@@ -161,24 +157,6 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 		}
 	});
 
-	it('feeds noteDataGeneratedUtc when the payload has generated_utc AND the freshness flag', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z', x: 1 }), {
-				freshness: true,
-			});
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-20T00:00:00Z');
-			});
-		} finally {
-			cleanup();
-		}
-	});
-
 	it('refetches when the installed refresh epoch changes', async () => {
 		mocks.resetRefreshEpoch();
 		const fetcher = vi.fn(async () => 'value');
@@ -191,42 +169,6 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 			mocks.bumpRefreshEpoch();
 			flushSync();
 			await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
-		} finally {
-			cleanup();
-		}
-	});
-
-	it('does NOT feed the shared timestamp without the freshness flag', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z' }));
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(true).toBe(true);
-			});
-			// One microtask settle, then assert it was never called.
-			await Promise.resolve();
-			flushSync();
-			expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
-		} finally {
-			cleanup();
-		}
-	});
-
-	it('feeds nothing (no crash) when a freshness-bearing payload is null', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => null, { freshness: true });
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith(undefined);
-			});
 		} finally {
 			cleanup();
 		}
@@ -330,16 +272,15 @@ describe('createResource — cancellation ownership', () => {
 		}
 	});
 
-	it('publishes freshness from an accepted seed without a duplicate fetch', () => {
-		mocks.noteDataGeneratedUtc.mockClear();
+	it('retains the timestamp on an accepted seed without a duplicate fetch', () => {
 		const seeded = {
 			generated_utc: '2026-07-14T12:00:00Z',
 		};
 		const fetcher = vi.fn(async () => seeded);
 
+		let resource!: ReturnType<typeof createResource<typeof seeded>>;
 		const cleanup = $effect.root(() => {
-			createResource(fetcher, {
-				freshness: true,
+			resource = createResource(fetcher, {
 				key: () => 'provenance',
 				seed: () => ({ key: 'provenance', data: seeded }),
 			});
@@ -347,8 +288,7 @@ describe('createResource — cancellation ownership', () => {
 		});
 
 		try {
-			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledOnce();
-			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-07-14T12:00:00Z');
+			expect(resource.data?.generated_utc).toBe(seeded.generated_utc);
 			expect(fetcher).not.toHaveBeenCalled();
 		} finally {
 			cleanup();

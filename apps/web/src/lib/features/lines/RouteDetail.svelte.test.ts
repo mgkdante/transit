@@ -10,10 +10,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
+import { detailCopy } from './lines.copy';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
@@ -46,8 +48,9 @@ const ROUTE_FILE = {
 	first_departure: '05:30',
 	last_departure: '01:10',
 	service_periods: [
-		{ shift: 'AM peak', window: '06:00–09:00', headway_min: 6 },
-		{ shift: 'Midday', window: '09:00–15:00', headway_min: 10 },
+		{ shift: 'am_peak', window: '06:00–09:00', headway_min: 6 },
+		{ shift: 'midday', window: '09:00–15:00', headway_min: 10 },
+		{ shift: 'weekend', window: null, headway_min: 12 },
 	],
 	directions: [
 		{
@@ -391,8 +394,9 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 beforeEach(() => routeSurface.reset());
 
+// 37 existing mounts (including both schedule locales) plus seven status cases per locale.
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(39);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(51);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -871,19 +875,35 @@ describe('RouteDetail article schedule structure', () => {
 		expect(source).toMatch(/class="route-schedule-periods"/);
 	});
 
-	it('renders service periods as the shared semantic schedule table', async () => {
-		renderRoute();
-		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		const table = screen.getByRole('table', { name: 'Planned service periods' });
-
-		expect(within(table).getByRole('columnheader', { name: 'Period' })).toBeInTheDocument();
-		expect(within(table).getByRole('columnheader', { name: 'Window' })).toBeInTheDocument();
-		expect(
-			within(table).getByRole('columnheader', { name: 'Planned headway' }),
-		).toBeInTheDocument();
-		expect(within(table).getByText('AM peak')).toBeInTheDocument();
-		expect(within(table).getByText('6.0 min')).toBeInTheDocument();
-	});
+	it.each(['en', 'fr'] as const)(
+		'renders publisher service-period labels in %s',
+		async (locale) => {
+			const t = detailCopy[locale];
+			routeSurface.mount(RouteDetail, {
+				props: { id: '161', seed: routeSeed() },
+				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			});
+			await fireEvent.click(
+				screen.getByRole('tab', { name: locale === 'en' ? 'Schedule' : 'Horaire' }),
+			);
+			const table = screen.getByRole('table', { name: t.scheduleTable.caption });
+			for (const name of [
+				t.scheduleTable.period,
+				t.scheduleTable.window,
+				t.scheduleTable.headway,
+			]) {
+				expect(within(table).getByRole('columnheader', { name })).toBeInTheDocument();
+			}
+			const periodLabels =
+				locale === 'en'
+					? ['AM peak', 'Midday', 'Weekend']
+					: ['Pointe AM', 'Journée', 'Fin de semaine'];
+			for (const label of periodLabels)
+				expect(within(table).getByText(label, { exact: true })).toBeInTheDocument();
+			expect(within(table).queryByText(/^(am_peak|midday|weekend)$/)).toBeNull();
+			expect(within(table).getByText('6.0 min')).toBeInTheDocument();
+		},
+	);
 });
 
 describe('RouteDetail map drilldown', () => {
@@ -925,11 +945,15 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 		expect(stop).not.toHaveTextContent('No delay');
 	});
 
-	it('shows an honest "no live bus" for a stop with no live prediction', () => {
+	it('states no prediction without inferring whether a live bus exists', () => {
 		renderRoute();
 
-		// sC has no approaching bus → the placeholder, never a fabricated time.
-		expect(screen.getByText('No live bus')).toBeInTheDocument();
+		const stop = screen.getByRole('link', { name: 'View stop Third stop' });
+		const absence = stop.querySelector('[data-slot="absent-value"]');
+		expect(absence).toHaveAttribute('data-density', 'row');
+		expect(absence).toHaveTextContent('No estimate · no prediction available');
+		expect(stop).not.toHaveTextContent('No live bus');
+		expect(stop.querySelector('time')).toBeNull();
 	});
 
 	it('renders the live freshness chip when a live build is present', () => {
@@ -966,19 +990,6 @@ describe('RouteDetail Detail tab: service alerts affecting this route', () => {
 });
 
 describe('RouteDetail Detail tab: current-buses roster', () => {
-	it.each([
-		{ status: 'on_time', delay_min: 1, tone: 'on-time', trip: 'tRounded' },
-		{ status: 'late', delay_min: 5, tone: 'late', trip: undefined },
-		{ status: 'unknown', delay_min: 5, tone: 'unknown', trip: 'tUnknown' },
-	] as const)('uses published $status status when delay rounds to $delay_min minutes', (bus) => {
-		liveIndex = buildIndex([{ ...VEHICLES[0], ...bus }]);
-		renderRoute();
-		const bar = document.querySelector('[data-testid="route-roster"] [data-slot="severity-bar"]');
-		const fill = bar?.querySelector('.dv-severity-fill') as HTMLElement;
-		expect(fill.style.background).toContain(`--dataviz-status-${bus.tone}`);
-		expect(bar).toHaveAttribute('data-severity', 'watch');
-	});
-
 	it('renders one row per live vehicle on this route, each linking to its trip', () => {
 		renderRoute();
 
@@ -993,7 +1004,9 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 
 		// Each bus row links to its trip detail page.
 		expect(
-			within(roster).getByRole('link', { name: 'View the trip for bus busLate' }),
+			within(roster).getByRole('link', {
+				name: 'View the trip for bus busLate, Severe, Delay: +8 min',
+			}),
 		).toHaveAttribute('href', '/trip/tLate');
 	});
 
@@ -1002,8 +1015,8 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
 		// Known delays read honestly; the null-delay bus uses the full shared row absence, never "0".
-		expect(within(roster).getByText('8 min late')).toBeInTheDocument();
-		expect(within(roster).getByText('3 min early')).toBeInTheDocument();
+		expect(within(roster).getByText('+8 min')).toBeInTheDocument();
+		expect(within(roster).getByText('−3 min')).toBeInTheDocument();
 		const absence = within(roster)
 			.getByText('not reported in the live feed')
 			.closest('[data-slot="absent-value"]');
@@ -1022,38 +1035,21 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		);
 	});
 
-	it('colours an early / on-time bus CALM (status scale), never a problem tone', () => {
-		// Honesty lock (calm-by-default): the roster bar's COLOUR is the status band
-		// (early = blue), not the problem-severity scale, and the bar LENGTH encodes
-		// LATENESS only — an early bus reads near-zero length, never a long red/amber
-		// bar. Rows are sorted most-late first → busLate, busEarly, busNoDelay.
+	it('retains lateness ordering with the published glyph and no second severity verdict', () => {
 		renderRoute();
-
-		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
-		const bars = roster.querySelectorAll('[data-slot="severity-bar"]');
-		expect(bars.length).toBe(3);
-
-		// busLate (8 min late → severe band ≥5): severe status colour (the PROBLEM
-		// tone), escalated a11y band, non-zero bar. The colour stays on the status
-		// scale, never the problem-severity scale.
-		const lateFill = bars[0].querySelector('.dv-severity-fill') as HTMLElement;
-		expect(lateFill).not.toBeNull();
-		expect(lateFill.style.background).toContain('--dataviz-status-severe');
-		expect(lateFill.style.background).not.toContain('severity');
-		expect(bars[0].getAttribute('data-severity')).toBe('high');
-		expect(Number.parseFloat(lateFill.style.width)).toBeGreaterThan(0);
-
-		// busEarly (3 min early): CALM blue status colour, calm 'watch' a11y band,
-		// zero-length bar (early is not a problem — never red/amber, never long).
-		const earlyFill = bars[1].querySelector('.dv-severity-fill') as HTMLElement;
-		expect(earlyFill).not.toBeNull();
-		expect(earlyFill.style.background).toContain('--dataviz-status-early');
-		expect(earlyFill.style.background).not.toContain('severity');
-		expect(bars[1].getAttribute('data-severity')).toBe('watch');
-		expect(Number.parseFloat(earlyFill.style.width)).toBe(0);
-
-		// busNoDelay (null): no-data track — no fill at all, never a fabricated 0 bar.
-		expect(bars[2].querySelector('.dv-severity-fill')).toBeNull();
+		const roster = screen.getByTestId('route-roster');
+		expect([...roster.querySelectorAll('strong')].map((el) => el.textContent)).toEqual([
+			'Bus busLate',
+			'Bus busEarly',
+			'Bus busNoDelay',
+		]);
+		expect(
+			[...roster.querySelectorAll('[data-slot="status-badge"]')].map((el) =>
+				el.getAttribute('data-status'),
+			),
+		).toEqual(['severe', 'early', 'unknown']);
+		expect(within(roster).queryByRole('progressbar')).toBeNull();
+		expect(roster).not.toHaveTextContent(/Watch|High|no change data/);
 	});
 
 	it('stands the roster down entirely when no live bus is on this route', () => {
@@ -1073,7 +1069,7 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 		liveIndex = buildIndex([]);
 		renderRoute('1');
 
-		expect(screen.getByText('Live positions are not published for the metro.')).toBeInTheDocument();
+		expect(screen.getByText('live positions are not published here')).toBeInTheDocument();
 	});
 
 	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
@@ -1084,8 +1080,35 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 		renderRoute();
 
 		expect(screen.getAllByText('Nothing to show').length).toBeGreaterThan(0);
-		expect(
-			screen.queryByText('Live positions are not published for the metro.'),
-		).not.toBeInTheDocument();
+		expect(screen.queryByText('live positions are not published here')).not.toBeInTheDocument();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('RouteDetail roster published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		liveIndex = buildIndex([{ ...VEHICLES[0], status, delay_min: delay }]);
+		routeSurface.mount(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+		});
+		const roster = screen.getByTestId('route-roster');
+		const badge = roster.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		expect(badge).toHaveTextContent(STATUS_LABELS[locale][status]);
+		const reading = roster.querySelector('.route-roster-delay')!;
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+		const link = roster.querySelector('.route-roster-link')!;
+		expect(link.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
+		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});
 });

@@ -22,7 +22,7 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { MaybeValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
@@ -296,7 +296,13 @@
 						{/if}
 					</span>
 				</div>
-				<Chart spec={distSpec} />
+				{#if distSpec.kind === 'histogram'}
+					<Chart spec={distSpec} />
+				{:else}
+					<p class="caption">
+						<AbsentValue reason={distSpec.reason} variant="row" {locale} />
+					</p>
+				{/if}
 				{#if dailyPercentiles != null}
 					<p class="caption" data-slot="daily-percentile-spread">
 						{dailyPercentileCaption(dailyPercentiles, locale)}

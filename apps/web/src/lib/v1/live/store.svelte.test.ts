@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => {
 		network: vi.fn(),
 		clockDispose,
 		clockSubscribe: vi.fn(() => clockDispose),
-		noteDataGeneratedUtc: vi.fn(),
 		bumpRefreshEpoch: () => {},
 		resetRefreshEpoch: () => {},
 	};
@@ -64,7 +63,6 @@ vi.mock('$lib/stores', async () => {
 				subscribe();
 				return refreshEpoch;
 			},
-			noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
 		},
 	};
 });
@@ -107,7 +105,6 @@ function resetLiveFetches(): void {
 	mocks.network.mockReset().mockImplementation(async () => ({ generated_utc: mocks.generatedUtc }));
 	mocks.clockDispose.mockReset();
 	mocks.clockSubscribe.mockClear();
-	mocks.noteDataGeneratedUtc.mockReset();
 }
 
 async function settleLivePoll(): Promise<void> {
@@ -384,7 +381,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.network).toBeNull();
 	});
 
-	it('derives freshness and the shared data timestamp from a departures-only store', async () => {
+	it('derives source freshness from a departures-only store', async () => {
 		const generated = Date.parse('2026-06-21T12:00:00Z');
 		mocks.nowMs = generated + 30_000;
 		mocks.offsetMs = 0;
@@ -395,7 +392,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
 		expect(store.ageSeconds).toBe(30);
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-21T12:00:00Z');
 	});
 
 	it('deduplicates repeated family names within one poll', async () => {
@@ -408,6 +404,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 	});
 
 	it('commits successful families and keeps the oldest retained active generation', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:02:00Z');
+		mocks.offsetMs = 0;
 		mocks.vehicles
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z', vehicles: [] })
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z', vehicles: [] });
@@ -430,6 +428,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect(store.network?.on_time_pct).toBe(91);
 		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(store.ageSeconds).toBe(120);
+		expect(store.isStale).toBe(true);
 	});
 
 	it.each([
@@ -557,7 +557,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			successRevision: 1,
 		});
 		expect(store.error).toBeNull();
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(2);
 	});
 
 	it('times out only pending families, preserves prior commits, and rejects late settlement', async () => {
@@ -597,7 +596,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.network).toBeNull();
 		expect(store.familyStates.network.phase).toBe('failed');
 		expect(store.familyStates.network.error?.name).toBe('TimeoutError');
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 	});
 
 	it('ref-counts deduplicated leases and makes disposal idempotent', async () => {
@@ -728,7 +726,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.trips).toBeNull();
 		expect(store.familyStates.trips.active).toBe(false);
 		expect(store.familyStates.trips.successRevision).toBe(0);
-		expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
 	});
 
 	it('derives vehicle motion freshness independently from an old retained alerts family', async () => {
@@ -927,7 +924,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.generatedUtc).toBeNull();
 		expect(store.error).toBeNull();
 		expect(store.loading).toBe(false);
-		expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
 	});
 
 	it('times out a hung family batch and releases single-flight for recovery', async () => {
@@ -981,13 +977,11 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect.soft(retrySettled).toBe(true);
 		expect.soft(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect.soft(store.error).toBeNull();
-		expect.soft(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 
 		releaseLate();
 		await settleLivePoll();
 
 		expect.soft(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
-		expect.soft(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 	});
 
 	it('keeps timeout silent after stop when a transport ignores abort', async () => {

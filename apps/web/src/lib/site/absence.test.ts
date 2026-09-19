@@ -37,6 +37,7 @@ const ALL_KEYS: AbsenceReasonKey[] = [
 	'end-of-route',
 	'inferred',
 	'no-observations',
+	'histogram-not-published',
 	'not-published',
 	'no-retained-dates',
 	'no-gap-inventory',

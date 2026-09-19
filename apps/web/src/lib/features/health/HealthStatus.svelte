@@ -19,7 +19,7 @@
   the ToC + stat rail derive from the SAME presence flags so a stood-down section
   is simply absent from the nav.
 
-  Three resources, ALL freshness:true — so the shared dataPulse epoch re-runs them
+  Three resources — the shared dataPulse epoch re-runs them
   on a new publish (auto-refresh, no polling). HONESTY: a null/absent slice stands
   its section DOWN or shows the styled absence, never a fabricated value. DOCTRINE:
   status marks ride the dataviz status scale (StatusDot), never --primary.
@@ -106,18 +106,14 @@
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
 
-	// The three honesty documents. `freshness: true` on each wires the shared
-	// newest-data contribution AND the dataPulse-epoch auto-refresh: a new publish
-	// bumps the epoch and all resources re-run, so /status advances with no polling.
+	// The shared publish epoch refreshes all three honesty documents.
 	const provenance = createResource(() => getProvenance(), {
-		freshness: true,
 		key: () => 'provenance',
 		seed: () => provenanceSeed,
 	});
 	// data_health.json lives on the LIVE lane; null when not published yet (legacy
 	// manifest / 404) → the lanes section stands down honestly.
 	const dataHealth = createResource(() => getDataHealth(), {
-		freshness: true,
 		key: () => 'data-health',
 		seed: () => dataHealthSeed,
 	});
@@ -125,7 +121,6 @@
 	// legacy root with no families stands down; a partial real root stays visible
 	// and the selector names every omitted public family honestly.
 	const historicAvailability = createResource(() => getHistoricAvailability(), {
-		freshness: true,
 		key: () => 'historic-availability',
 		seed: () => historicAvailabilitySeed,
 	});

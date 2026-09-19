@@ -144,7 +144,7 @@
 					yScale={scaleBand().padding(0.06)}
 					yDomain={rowIdx}
 					padding={cellPadding}
-					tooltipContext={{ mode: 'bounds' }}
+					tooltipContext={{ mode: 'bounds', touchEvents: 'auto' }}
 				>
 					<Svg>
 						<!-- Hour (col) axis — a sparse clock-tick subset so 24 columns stay legible. -->

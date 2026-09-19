@@ -18,7 +18,6 @@ const fixture = vi.hoisted(() => ({
 	network: vi.fn(),
 	stopNames: vi.fn(),
 	clockDispose: vi.fn(),
-	noteDataGeneratedUtc: vi.fn(),
 }));
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$lib/v1/boot', () => ({
@@ -103,7 +102,6 @@ beforeEach(() => {
 		fixture.network,
 		fixture.stopNames,
 		fixture.clockDispose,
-		fixture.noteDataGeneratedUtc,
 	])
 		method.mockReset();
 	fixture.trips.mockResolvedValue(report());
@@ -122,7 +120,6 @@ beforeEach(() => {
 				subscribeRefresh();
 				return fixture.epoch;
 			},
-			noteDataGeneratedUtc: fixture.noteDataGeneratedUtc,
 		},
 	});
 });
@@ -170,7 +167,9 @@ describe('TripDetail with the shared live store', () => {
 		expect(stamp()).toHaveAttribute('data-degraded', 'true');
 		expect(stamp()).toHaveAttribute('data-stale', 'false');
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Refresh unavailable');
-		expect(document.querySelector('.trip-status-label')).toHaveTextContent('On time');
+		expect(document.querySelector('.trip-verdict [data-slot="status-badge"]')).toHaveTextContent(
+			'On time',
+		);
 		await advance(60);
 		expect(stamp()).toHaveAttribute('data-stale', 'true');
 		fixture.trips.mockResolvedValue(report());

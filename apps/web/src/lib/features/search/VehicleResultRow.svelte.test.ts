@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import type { Vehicle } from '$lib/v1/schemas';
 import { copy } from './search.copy';
@@ -47,10 +48,9 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: 'Few seats',
 			},
 		});
-		expect(screen.getByRole('link', { name: 'Live bus 40061' })).toHaveAttribute(
-			'href',
-			'/map?vehicle=40061',
-		);
+		expect(
+			screen.getByRole('link', { name: 'Live bus 40061, Late, Delay: +4 min' }),
+		).toHaveAttribute('href', '/map?vehicle=40061');
 		expect(screen.getByText('Late')).toBeInTheDocument();
 		expect(screen.getByText('+4 min')).toBeInTheDocument();
 		expect(screen.getByText('Route 161')).toBeInTheDocument();
@@ -121,5 +121,39 @@ describe('VehicleResultRow', () => {
 		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
 		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(screen.queryByText('No next stop')).toBeNull();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('VehicleResultRow published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const statusLabel = STATUS_LABELS[locale][status];
+		const { container } = render(VehicleResultRow, {
+			props: {
+				vehicle: vehicle({ status, delay_min: delay }),
+				locale,
+				nextStopName: 'Stop',
+				copy: copy[locale].vehicle,
+				statusLabel,
+				occupancyLabel: 'Full',
+			},
+		});
+		const badge = container.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		expect(badge).toHaveTextContent(statusLabel);
+		const reading = container.querySelector('.vehicle-row-meta')!;
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+		const link = container.querySelector('a')!;
+		expect(link).toHaveAccessibleName(new RegExp(statusLabel));
+		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});
 });

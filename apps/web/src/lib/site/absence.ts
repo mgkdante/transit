@@ -50,6 +50,7 @@ export type ValueAbsenceKey =
 	| 'end-of-route'
 	| 'inferred'
 	| 'no-observations'
+	| 'histogram-not-published'
 	| 'not-published'
 	| 'no-retained-dates'
 	| 'no-gap-inventory'
@@ -118,6 +119,10 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'end-of-route': { short: 'End of line', why: 'no next stop, the trip has ended' },
 		inferred: { short: 'Estimated', why: 'estimated, not published directly' },
 		'no-observations': { short: 'No data', why: 'not enough readings yet' },
+		'histogram-not-published': {
+			short: 'No histogram',
+			why: 'the selected view does not publish a delay histogram',
+		},
 		'not-published': {
 			short: 'Not published',
 			why: 'this family is not listed in the retained history index',
@@ -168,6 +173,10 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'end-of-route': { short: 'Terminus', why: 'aucun arrêt suivant, le trajet est terminé' },
 		inferred: { short: 'Estimé', why: 'estimé, non publié directement' },
 		'no-observations': { short: 'Aucune donnée', why: 'pas assez de mesures' },
+		'histogram-not-published': {
+			short: 'Aucun histogramme',
+			why: 'la vue sélectionnée ne publie pas d’histogramme des retards',
+		},
 		'not-published': {
 			short: 'Non publiée',
 			why: 'cette famille n’apparaît pas dans l’index de l’historique conservé',

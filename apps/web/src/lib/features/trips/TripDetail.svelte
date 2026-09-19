@@ -16,7 +16,7 @@
 	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusBadge } from '$lib/components/dataviz';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue, StateNotice } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -24,7 +24,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
-	import { statusTone, delayTone, delayLabel } from '$lib/site/delayPresentation';
+	import { delayMeasurement, delayTone, delayLabel } from '$lib/site/delayPresentation';
 	import { tripCopy } from './trips.copy';
 
 	interface TripDetailProps {
@@ -176,16 +176,14 @@
 							</span>
 
 							<span class="trip-verdict">
-								<StatusDot color={trip.status} />
-								<span class="trip-status-label">{t.status[trip.status] ?? t.status.unknown}</span>
-								<!-- Only a known on-time band with exact zero delay is redundant. -->
-								{#if trip.status !== 'on_time' || trip.delay_min !== 0}
-									<MaybeValue present={trip.delay_min != null} reason="not-reported" {locale}>
-										<span class="trip-verdict-delay" data-tone={statusTone(trip.status)}>
-											{delayLabel(trip.delay_min, t)}
-										</span>
-									</MaybeValue>
-								{/if}
+								<StatusBadge status={trip.status} label={t.status[trip.status]} mode="legend" />
+								<span class="trip-verdict-delay">
+									<MaybeValue
+										value={delayMeasurement(trip.delay_min)}
+										reason="not-reported"
+										{locale}
+									/>
+								</span>
 							</span>
 						</div>
 
@@ -352,10 +350,6 @@
 		gap: 0.5rem;
 		flex-wrap: wrap;
 	}
-	.trip-status-label {
-		font-size: var(--text-body);
-		color: var(--foreground);
-	}
 	.trip-verdict-delay {
 		display: inline-flex;
 		align-items: center;
@@ -364,21 +358,6 @@
 		font-weight: 600;
 		font-size: var(--text-body);
 		color: var(--muted-foreground);
-	}
-	.trip-verdict-delay[data-tone='none'] {
-		color: var(--muted-foreground);
-	}
-	.trip-verdict-delay[data-tone='early'] {
-		color: var(--dataviz-status-early);
-	}
-	.trip-verdict-delay[data-tone='on-time'] {
-		color: var(--dataviz-status-on-time);
-	}
-	.trip-verdict-delay[data-tone='late'] {
-		color: var(--dataviz-status-late);
-	}
-	.trip-verdict-delay[data-tone='severe'] {
-		color: var(--dataviz-status-severe);
 	}
 
 	.trip-last-stop {

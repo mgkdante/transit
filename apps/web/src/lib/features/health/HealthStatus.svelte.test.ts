@@ -566,7 +566,7 @@ describe('HealthStatus — full manifest render', () => {
 		expect(within(header).queryByText('LIVE')).toBeNull();
 	});
 
-	it('wires each request-scoped seed to its freshness-bearing auto-refresh resource', () => {
+	it('wires each request-scoped seed to its auto-refresh resource', () => {
 		const seeds = {
 			provenanceSeed: { key: 'provenance', data: richProvenance },
 			dataHealthSeed: { key: 'data-health', data: richDataHealth },
@@ -582,7 +582,6 @@ describe('HealthStatus — full manifest render', () => {
 			'historic-availability': seeds.historicAvailabilitySeed,
 		})) {
 			const call = resourceOptions.find((candidate) => candidate.kind === kind);
-			expect(call?.options.freshness).toBe(true);
 			expect((call?.options.key as (() => unknown) | undefined)?.()).toBe(kind);
 			expect((call?.options.seed as (() => unknown) | undefined)?.()).toBe(seed);
 		}

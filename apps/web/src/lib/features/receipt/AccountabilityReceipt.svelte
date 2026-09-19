@@ -173,17 +173,13 @@
 
 	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked, so
 	// changing the day re-runs the fetch (the spine drops out-of-order responses). Hold
-	// off until the index advertises a selected date. `freshness: true`
-	// feeds the chosen receipt's generated_utc into the shared newest-data timestamp.
-	const receipt = createResource<Receipt | null>(
-		(signal) => {
-			const indexData = index.data;
-			const date = selectedDate;
-			if (!indexData || !date || !availableDates.includes(date)) return Promise.resolve(null);
-			return getAdvertisedReceipt(indexData, date, { signal });
-		},
-		{ freshness: true },
-	);
+	// off until the index advertises a selected date.
+	const receipt = createResource<Receipt | null>((signal) => {
+		const indexData = index.data;
+		const date = selectedDate;
+		if (!indexData || !date || !availableDates.includes(date)) return Promise.resolve(null);
+		return getAdvertisedReceipt(indexData, date, { signal });
+	});
 	const receiptReady = $derived(
 		selectedDate !== '' &&
 			receipt.settled &&

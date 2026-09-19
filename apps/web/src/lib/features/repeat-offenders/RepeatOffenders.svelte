@@ -144,7 +144,6 @@
 		},
 		{
 			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
-			freshness: true,
 		},
 	);
 	onDestroy(() => offenders.destroy());

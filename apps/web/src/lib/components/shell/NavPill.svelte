@@ -868,14 +868,6 @@
 		min-height: 44px;
 	}
 
-	/* The refresh control stays a compact icon in the pill: its "updated <relative>"
-	   readout is a floating-chrome affordance, not pill content — suppress it so the
-	   pill keeps its tight capsule width (the readout still rides the button title +
-	   aria-label, so freshness stays reachable to AT). */
-	.nav-controls :global(.nav-control .refresh-readout) {
-		display: none;
-	}
-
 	.nav-compact-search {
 		display: inline-flex;
 		align-items: center;

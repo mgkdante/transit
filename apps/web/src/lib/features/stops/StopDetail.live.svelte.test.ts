@@ -161,7 +161,6 @@ beforeEach(() => {
 				subscribeRefresh();
 				return fixture.epoch;
 			},
-			noteDataGeneratedUtc: () => {},
 		},
 	});
 });

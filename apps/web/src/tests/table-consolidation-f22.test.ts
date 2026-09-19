@@ -379,9 +379,9 @@ const RENDER_SITES: readonly RenderSite[] = [
 				note: 'zeroes the stacked row padding the primitive sets.',
 			},
 			{
-				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody th ), :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody td ) { grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr); gap: 0.75rem; padding: 0.875rem; border-bottom: 1px solid var(--border); }",
+				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody th ), :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody td ) { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.875rem; border-bottom: 1px solid var(--border); }",
 				verdict: 'drift:responsive-collapse',
-				note: "re-authors the primitive's stacked label/value track (7rem/0.45fr -> 6.5rem/0.35fr), its gap, its padding and its separator. Responsive collapse is named in the primitive's contract; this is the heaviest drift in the tree.",
+				note: "replaces the primitive's stacked label/value grid with a vertical flex layout, and overrides its gap, padding and separator. Responsive collapse remains primitive-owned; this is still drift.",
 			},
 			{
 				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody tr > :last-child ) { border-bottom: 0; }",

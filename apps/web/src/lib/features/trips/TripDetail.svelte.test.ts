@@ -106,52 +106,35 @@ describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
 		const { container } = render(TripDetail, { props: { id: 'tEmpty' }, context });
 		const verdict = container.querySelector('.trip-verdict')!;
 		expect(within(verdict as HTMLElement).getAllByText(tripCopy[locale].onTime)).toHaveLength(1);
-		expect(verdict.querySelector('.trip-verdict-delay')).toBeNull();
+		expect(verdict.querySelector('.trip-verdict-delay')).toHaveTextContent('0 min');
 		expect(container.textContent).not.toMatch(/\/v1|never invented|jamais inventé/);
 	});
 
 	it.each([
-		['on_time', 1, '1 min late', '1 min en retard', 'on-time'],
-		['early', -2, '2 min early', '2 min en avance', 'early'],
-		['severe', 4, '4 min late', '4 min en retard', 'severe'],
-		['unknown', 4, '4 min late', '4 min en retard', 'none'],
-		['unknown', 0, 'On time', "À l'heure", 'none'],
-		['late', 0, 'On time', "À l'heure", 'late'],
-	] as const)(
-		'preserves status %s and independently reported delay %s',
-		(status, delay, en, fr, tone) => {
-			tripsData = {
-				...TRIPS_FILE,
-				trips: { probe: { status, delay_min: delay, route: '24', stops: [] } },
-			} as TripsFile;
-			const { container } = render(TripDetail, { props: { id: 'probe' }, context });
-			const verdict = container.querySelector('.trip-verdict')!;
-			expect(verdict.querySelector('.trip-status-label')).toHaveTextContent(
-				tripCopy[locale].status[status],
-			);
-			expect(verdict.querySelector('.trip-verdict-delay')).toHaveTextContent(
-				locale === 'fr' ? fr : en,
-			);
-			expect(verdict.querySelector('.trip-verdict-delay')).toHaveAttribute('data-tone', tone);
-		},
-	);
-
-	it.each([null, undefined])(
-		'retains missing-delay absence beside known on-time status: %s',
-		(delay) => {
-			tripsData = {
-				...TRIPS_FILE,
-				trips: { probe: { status: 'on_time', delay_min: delay, route: '24', stops: [] } },
-			} as TripsFile;
-			const { container } = render(TripDetail, { props: { id: 'probe' }, context });
-			const verdict = container.querySelector('.trip-verdict')!;
-			expect(verdict.querySelector('.trip-status-label')).toHaveTextContent(
-				tripCopy[locale].status.on_time,
-			);
-			expect(verdict.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
-			expect(verdict.querySelector('.trip-verdict-delay')).toBeNull();
-		},
-	);
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('uses published %s with neutral measurement %s', (status, delay, measurement) => {
+		tripsData = {
+			...TRIPS_FILE,
+			trips: { probe: { status, delay_min: delay, route: '24', stops: [] } },
+		} as TripsFile;
+		const { container } = render(TripDetail, { props: { id: 'probe' }, context });
+		const verdict = container.querySelector('.trip-verdict') as HTMLElement;
+		const badge = verdict.querySelector('[data-slot="status-badge"]')!;
+		expect(badge).toHaveAttribute('data-status', status);
+		expect(badge).toHaveTextContent(tripCopy[locale].status[status]);
+		expect(badge.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+		const reading = verdict.querySelector('.trip-verdict-delay')!;
+		expect(reading).not.toHaveAttribute('data-tone');
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+	});
 });
 
 describe('TripDetail: a broadcasting trip', () => {

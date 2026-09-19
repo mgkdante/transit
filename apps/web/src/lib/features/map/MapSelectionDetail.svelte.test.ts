@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
@@ -424,7 +425,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Status',
 			crowdingLabel: 'Crowding',
 			status: '▲ Late',
-			statusName: 'Late 4 min late',
+			statusName: 'Late +4 min',
 			occupancyName: 'Standing',
 		},
 		{
@@ -432,7 +433,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Statut',
 			crowdingLabel: 'Achalandage',
 			status: '▲ En retard',
-			statusName: 'En retard 4 min en retard',
+			statusName: 'En retard +4 min',
 			occupancyName: 'Debout',
 		},
 	] as const)(
@@ -476,7 +477,7 @@ describe('MapSelectionDetail', () => {
 
 	it.each([
 		{ delayMin: 0, status: 'on_time', want: '● On-time', absence: false },
-		{ delayMin: 4, status: 'late', want: '▲ Late · 4 min late', absence: false },
+		{ delayMin: 4, status: 'late', want: '▲ Late · +4 min', absence: false },
 		{
 			delayMin: null,
 			status: 'unknown',
@@ -599,7 +600,7 @@ describe('MapSelectionDetail', () => {
 			expect(occupancyValue).not.toHaveTextContent(empty);
 			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
 			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', noDataGlyph);
-			expectAccessibleContentName(statusValue, unknown);
+			expectAccessibleContentName(statusValue, `${unknown} 0 min`);
 			expectAccessibleContentName(occupancyValue, occupancyName);
 		},
 	);
@@ -835,7 +836,7 @@ describe('MapSelectionDetail', () => {
 			},
 		});
 		expect(getByRole('button')).toHaveAccessibleName(
-			'Select bus veh-1, Route 24, 20:06, Late, Delay: 4 min late',
+			'Select bus veh-1, Route 24, 20:06, Late, Delay: +4 min',
 		);
 	});
 
@@ -1735,5 +1736,73 @@ describe('MapSelectionDetail', () => {
 
 		// The honest labelled fallback shows; the bare id alone is never rendered.
 		expect(getByText('Stop stop-2 (name unavailable)')).toBeInTheDocument();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('MapSelectionDetail published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'vehicle') throw new Error('missing vehicle fixture');
+		const { container } = render(MapSelectionDetail, {
+			props: {
+				detail: { ...detail, vehicle: { ...detail.vehicle, status, delay_min: delay } },
+				locale,
+			},
+		});
+		const fact = detailValue(container, locale === 'fr' ? 'Statut' : 'Status');
+		expect(fact).toHaveTextContent(STATUS_LABELS[locale][status]);
+		const glyph = fact.querySelector('[data-m6d-glyph-kind="status"]');
+		expect(glyph).toHaveAttribute('data-m6d-glyph-code', status);
+		expect(glyph).toHaveAttribute('aria-hidden', 'true');
+		const reading = fact.querySelector('.detail-delay-measurement')!;
+		if (measurement) {
+			expect(reading).toHaveTextContent(measurement);
+			expectAccessibleContentName(fact, `${STATUS_LABELS[locale][status]} ${measurement}`);
+		} else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+	});
+});
+
+describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const t = MAP_SELECTION_DETAIL_COPY[locale];
+		const { container, getByRole } = render(DetailBusRow, {
+			props: {
+				vehicle: { ...vehicles[0], status, delay_min: delay },
+				locale,
+				t,
+				onselect: vi.fn(),
+			},
+		});
+		const badge = container.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		const button = getByRole('button');
+		expect(button.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
+		if (measurement) {
+			expect(button.getAttribute('aria-label')).toContain(`${t.delay}: ${measurement}`);
+			expect(button).toHaveTextContent(measurement);
+		} else expect(button.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(button.getAttribute('aria-label')).not.toMatch(
+			/min late|min early|min en retard|min en avance/,
+		);
 	});
 });

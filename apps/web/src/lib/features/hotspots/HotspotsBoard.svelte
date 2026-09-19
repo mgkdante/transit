@@ -107,7 +107,6 @@
 		},
 		{
 			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
-			freshness: true,
 		},
 	);
 	onDestroy(() => hotspots.destroy());

@@ -1461,7 +1461,7 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 		expect(
 			screen.getByText('No departures reported for this stop in this report.'),
 		).toBeInTheDocument();
-		expect(screen.queryByText('Scheduled, but no vehicle is reporting live right now.')).toBeNull();
+		expect(screen.queryByText('scheduled, but nothing is reporting live')).toBeNull();
 	});
 
 	it('falls back to the generic honest no-data copy when no reason is derivable', () => {
@@ -1476,9 +1476,7 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 		expect(
 			screen.getByText('No departures reported for this stop in this report.'),
 		).toBeInTheDocument();
-		expect(
-			screen.queryByText('Scheduled, but no vehicle is reporting live right now.'),
-		).not.toBeInTheDocument();
+		expect(screen.queryByText('scheduled, but nothing is reporting live')).not.toBeInTheDocument();
 	});
 });
 

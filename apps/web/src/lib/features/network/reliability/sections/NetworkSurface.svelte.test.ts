@@ -44,7 +44,12 @@ const createResourceSpy = vi.hoisted(() => vi.fn());
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
-		live: { ageSeconds: 20 as number | null, hasNetwork: true },
+		live: {
+			ageSeconds: 20 as number | null,
+			hasNetwork: true,
+			isStale: false,
+			error: null as Error | null,
+		},
 		network: {
 			generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
 			vehicles_in_service: 10,
@@ -132,6 +137,8 @@ function resetNetworkSurfaceState(): void {
 	motion.reduced = false;
 	live.ageSeconds = 20;
 	live.hasNetwork = true;
+	live.isStale = false;
+	live.error = null;
 	Object.assign(network, structuredClone(networkDefaults));
 	restoreArray(trendSeries, trendDefaults);
 	restoreArray(weeklySeries, weeklyDefaults);
@@ -201,9 +208,13 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return live.ageSeconds;
 			},
-			isStale: false,
+			get isStale() {
+				return live.isStale;
+			},
 			loading: false,
-			error: null,
+			get error() {
+				return live.error;
+			},
 			start: vi.fn(),
 			stop: vi.fn(),
 			refresh: vi.fn(),
@@ -321,7 +332,7 @@ describe('NetworkSurface article shell', () => {
 			screen.getByText(copy.lede),
 		);
 		expect(container.querySelector('.header__meta')).toHaveTextContent(copy.article.sections(2));
-		expect(container.querySelector('.header__meta time')).toHaveAttribute(
+		expect(container.querySelector('[data-slot="freshness-stamp"] time')).toHaveAttribute(
 			'datetime',
 			network.generated_utc,
 		);
@@ -613,6 +624,31 @@ describe('NetworkSurface live cards (S9C)', () => {
 			.closest('[data-slot="metric-display"]') as HTMLElement;
 		expect(within(tile).getByText('0%')).toBeInTheDocument();
 		expect(tile.querySelector('[data-slot="absent-value"]')).toBeNull();
+	});
+
+	it('gives the header sole ownership of snapshot freshness and keeps worker age distinct', () => {
+		network.feed_freshness_s = 80;
+		const { container } = render(NetworkSurface);
+		const stamps = container.querySelectorAll('[data-slot="freshness-stamp"]');
+		expect(stamps).toHaveLength(1);
+		expect(stamps[0].closest('[data-slot="article-header"]')).not.toBeNull();
+		expect(stamps[0]).toHaveAttribute('data-age-seconds', '20');
+		expect(container.querySelectorAll(`time[datetime="${network.generated_utc}"]`)).toHaveLength(1);
+		expect(container.querySelector('[data-slot="feed-age"]')).toHaveTextContent('2 minutes ago');
+	});
+
+	it('keeps a stale retained snapshot visible with a named refresh failure', () => {
+		live.ageSeconds = 120;
+		live.isStale = true;
+		live.error = new Error('network unavailable');
+		const { container } = render(NetworkSurface);
+		const stamp = container.querySelector('[data-slot="freshness-stamp"]');
+		expect(stamp).toHaveAttribute('data-stale', 'true');
+		expect(stamp).toHaveAttribute('data-degraded', 'true');
+		expect(stamp).toHaveTextContent(copy.snapshotRefreshFailed);
+		expect(stamp).toHaveTextContent('stale');
+		expect(stamp?.querySelector('time')).toHaveAttribute('datetime', network.generated_utc);
+		expect(container.querySelector('[data-slot="terminal-panel"]')).not.toBeNull();
 	});
 
 	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {

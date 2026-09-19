@@ -11,7 +11,6 @@
   Pure presenter of `selectHeadlineKpis(...).headline`; the orchestrator does the mapping pass.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -43,7 +42,6 @@
 			title: string;
 			tag: string;
 			footerItems: TerminalFooterItem[];
-			meta: Snippet;
 		};
 	}
 	let { cards, info, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
@@ -55,7 +53,6 @@
 	<TerminalPanel
 		title={terminal.title}
 		tag={terminal.tag}
-		meta={terminal.meta}
 		footerItems={terminal.footerItems}
 		class="network-live-terminal"
 	>

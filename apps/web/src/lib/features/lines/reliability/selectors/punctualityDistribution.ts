@@ -46,7 +46,7 @@ export function selectPunctualityDistribution(
 			kind: 'absence',
 			title: labels.title,
 			locale,
-			reason: 'no-observations',
+			reason: vm.headline.delayHistogram == null ? 'histogram-not-published' : 'no-observations',
 			variant: 'block',
 		};
 	}

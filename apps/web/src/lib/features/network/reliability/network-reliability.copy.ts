@@ -20,7 +20,6 @@ export const networkReliabilityCopy = defineCopy({
 		article: articleCopy('en', {
 			watermark: 'Network',
 			tags: ['network', 'live service', 'reliability', 'crowding', 'open data'],
-			generated: 'Generated',
 			sections: (count: number) => `${count} sections`,
 		}),
 		liveTerminal: {
@@ -61,6 +60,7 @@ export const networkReliabilityCopy = defineCopy({
 			delayP50: 'Median delay',
 			delayP90: '90th-percentile delay',
 		},
+		snapshotRefreshFailed: 'Snapshot refresh failed',
 		feedAge: { label: 'FEED', a11yPrefix: 'Worker feed updated' },
 		reporting: {
 			heading: 'Reporting & coverage',
@@ -174,7 +174,6 @@ export const networkReliabilityCopy = defineCopy({
 		article: articleCopy('fr', {
 			watermark: 'Réseau',
 			tags: ['réseau', 'service en direct', 'fiabilité', 'achalandage', 'données ouvertes'],
-			generated: 'Généré',
 			sections: (count: number) => `${count} sections`,
 		}),
 		liveTerminal: {
@@ -215,6 +214,7 @@ export const networkReliabilityCopy = defineCopy({
 			delayP50: 'Retard médian',
 			delayP90: 'Retard au 90e percentile',
 		},
+		snapshotRefreshFailed: 'Actualisation de l’instantané échouée',
 		feedAge: { label: 'FLUX', a11yPrefix: 'Flux du travailleur mis à jour' },
 		reporting: {
 			heading: 'Signalement et couverture',

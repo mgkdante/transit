@@ -285,14 +285,22 @@ describe('RouteReliabilityClusters', () => {
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day('2026-06-19'));
 	});
 
-	it('does not borrow a capture date from a service-day measure', () => {
+	it('does not borrow a capture date from a service-day measure', async () => {
 		const data = {
 			...populated,
 			periods: populated.periods?.map((period) => ({ ...period, date: null })),
 		};
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day(null));
-		expect(container.textContent).toContain('2026-06-19');
+		const waitSection = container.querySelector('[data-section="the-wait"]') as HTMLElement;
+		expect(waitSection.querySelector('[data-slot="service-span-window"]')).toBeNull();
+		await fireEvent.click(
+			within(waitSection).getByRole('button', { name: copy.sections.detailShow }),
+		);
+		expect(waitSection.querySelector('[data-slot="service-span-window"]')).toHaveTextContent(
+			copy.windows.serviceSpan('2026-06-19'),
+		);
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day(null));
 	});
 
 	it('honours the FR canonical voice for the section overlines', () => {

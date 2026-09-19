@@ -5,8 +5,10 @@
 	import { absenceShort } from '$lib/site/absence';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
-	import { delayKnownLabel, timeLabel } from '../mapSelectionDetail.logic';
-	import MapDelayTag from '../MapDelayTag.svelte';
+	import { timeLabel } from '../mapSelectionDetail.logic';
+	import { MaybeValue } from '$lib/components/edge';
+	import { StatusBadge } from '$lib/components/dataviz';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
 
 	interface Props {
 		vehicle: Vehicle;
@@ -28,7 +30,7 @@
 		onpreview?.(pointer || focus ? { kind: 'vehicle', id: vehicle.id } : null);
 	}
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${vehicle.delay_min == null ? absenceShort('not-reported', locale) : delayKnownLabel(vehicle.delay_min, t)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceShort('not-reported', locale)}`,
 	);
 </script>
 
@@ -45,13 +47,15 @@
 >
 	<strong>{vehicle.id}</strong>
 	<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-	<small
-		><span>{STATUS_LABELS[locale][vehicle.status]}</span><MapDelayTag
-			delay={vehicle.delay_min}
-			{locale}
-			{t}
-		/></small
-	>
+	<small>
+		<StatusBadge
+			status={vehicle.status}
+			label={STATUS_LABELS[locale][vehicle.status]}
+			mode="legend"
+			size="sm"
+		/>
+		<MaybeValue value={delayMeasurement(vehicle.delay_min)} reason="not-reported" {locale} />
+	</small>
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 </button>
 

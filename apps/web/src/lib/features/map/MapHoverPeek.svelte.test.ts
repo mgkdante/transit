@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import type { Alert } from '$lib/v1/schemas';
 import MapHoverPeek from './MapHoverPeek.svelte';
 import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
@@ -116,7 +117,7 @@ describe('MapHoverPeek', () => {
 		expect(container).toHaveTextContent('Bus');
 		expect(container).toHaveTextContent('Late');
 		expect(container).toHaveTextContent('Standing');
-		expect(container).toHaveTextContent('4 min late');
+		expect(container).toHaveTextContent('+4 min');
 		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
 		expect(container).toHaveTextContent('No recent position');
 		expect(container).toHaveTextContent('3 min');
@@ -128,7 +129,7 @@ describe('MapHoverPeek', () => {
 
 	it.each([
 		{ delayMin: 0, status: 'on_time', want: 'On-time', absence: false },
-		{ delayMin: 4, status: 'late', want: 'Late · 4 min late', absence: false },
+		{ delayMin: 4, status: 'late', want: '▲ Late · +4 min', absence: false },
 		{
 			delayMin: null,
 			status: 'unknown',
@@ -280,6 +281,31 @@ describe('MapHoverPeek', () => {
 
 		expect(container).toHaveTextContent('Live departures unavailable');
 		expect(container).not.toHaveTextContent('0 departures');
+		expectInert(container);
+	});
+});
+
+describe.each(['en', 'fr'] as const)('MapHoverPeek published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delayMin, measurement) => {
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...vehicleFresh, status, delayMin }, locale },
+		});
+		const fact = definitionValue(container, locale === 'fr' ? 'Statut' : 'Status');
+		expect(fact).toHaveTextContent(STATUS_LABELS[locale][status]);
+		const badge = fact.querySelector('[data-slot="status-badge"]');
+		if (measurement || status !== 'unknown') expect(badge).toHaveAttribute('data-status', status);
+		const reading = fact.querySelector('.map-peek-delay')!;
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
 		expectInert(container);
 	});
 });

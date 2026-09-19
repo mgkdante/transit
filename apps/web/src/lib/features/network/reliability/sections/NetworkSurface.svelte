@@ -12,7 +12,7 @@
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
+	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtNumber as sharedFmtNumber,
@@ -48,12 +48,7 @@
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import {
-		ArticleHeader,
-		ArticleSectionStack,
-		DetailShell,
-		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
@@ -577,18 +572,7 @@
 	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
-	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
-		const entries: ArticleMetaEntry[] = [];
-		if (live.generatedUtc != null) {
-			entries.push({
-				label: t.article.generated,
-				text: formatUtc(live.generatedUtc, locale),
-				datetime: live.generatedUtc,
-			});
-		}
-		entries.push(t.article.sections(tocEntries.length));
-		return entries;
-	});
+	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
 </script>
 
 <p
@@ -738,6 +722,8 @@
 						generatedUtc={live.generatedUtc}
 						ageSeconds={live.ageSeconds}
 						isStale={live.isStale}
+						degraded={live.error != null}
+						label={live.error ? t.snapshotRefreshFailed : undefined}
 						{locale}
 					/>
 					<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
@@ -826,15 +812,6 @@
 	{/snippet}
 
 	{#snippet center()}
-		{#snippet liveTerminalMeta()}
-			<FreshnessStamp
-				variant="live"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-		{/snippet}
 		<div class="network-content">
 			<!-- ── LIVE region ──────────────────────────────────────────────────────────────
 			     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
@@ -862,7 +839,6 @@
 										value: t.liveTerminal.footerValue,
 									},
 								],
-								meta: liveTerminalMeta,
 							}}
 						/>
 						<SectionReporting cards={kpis.reporting} {silentRows} {info} copy={t} {locale} />

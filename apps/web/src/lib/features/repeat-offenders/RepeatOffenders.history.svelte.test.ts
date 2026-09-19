@@ -523,13 +523,14 @@ describe('RepeatOffenders retained date history', () => {
 		expect(container.querySelectorAll('[data-toc^="repeat-"]')).toHaveLength(0);
 	});
 
-	it('refreshes the current lane without fetching a date and reports only current payload freshness', async () => {
-		const noteFreshness = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
+	it('refreshes the current lane without fetching a date and shows the current payload timestamp', async () => {
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Current trip');
 
-		expect(noteFreshness).toHaveBeenCalledWith('2026-06-25T12:00:00Z');
-		expect(noteFreshness).not.toHaveBeenCalledWith(historyIndex.generated_utc);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			'2026-06-25T12:00:00Z',
+		);
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffenders).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffendersHistoryIndex).toHaveBeenCalledTimes(2);
@@ -537,14 +538,15 @@ describe('RepeatOffenders retained date history', () => {
 		expect(harness.state.url.searchParams.get('date')).toBeNull();
 	});
 
-	it('refreshes only the selected retained lane and reports freshness from its accepted payload', async () => {
+	it('refreshes only the selected retained lane and shows its accepted timestamp', async () => {
 		reset('http://localhost/repeat-offenders?date=2026-06-22');
-		const noteFreshness = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Retained 22 trip');
 
-		expect(noteFreshness).toHaveBeenCalledWith('2026-06-22T23:59:59Z');
-		expect(noteFreshness).not.toHaveBeenCalledWith(historyIndex.generated_utc);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			'2026-06-22T23:59:59Z',
+		);
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffendersHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffenders).not.toHaveBeenCalled();

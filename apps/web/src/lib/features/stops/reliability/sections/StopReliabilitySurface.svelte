@@ -590,11 +590,6 @@
 								openSignal={cardOpenSignal('stop-rel-pane')}
 								bulkCollapsed={quietModeStore.enabled}
 							>
-								{#snippet headerActions()}
-									{@render metricInfo('stopNotSevere', copy.metrics.otp)}
-									{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
-									{@render metricInfo('severe', copy.metrics.severe)}
-								{/snippet}
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
 									{#if explicitHistory}
 										<p class="stop-prediction-scope" data-slot="prediction-scope">
@@ -602,7 +597,7 @@
 										</p>
 									{/if}
 									<VerdictBanner result={stopVerdict} />
-									<ReliabilityPane periods={gradedPeriods} {locale} />
+									<ReliabilityPane periods={gradedPeriods} {locale} {metricInfo} />
 								</div>
 							</CollapsibleSection>
 						</div>

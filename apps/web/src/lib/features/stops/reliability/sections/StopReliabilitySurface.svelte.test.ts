@@ -590,3 +590,69 @@ describe('StopReliabilitySurface prediction-share verdict', () => {
 		},
 	);
 });
+
+describe('StopReliabilitySurface metric help ownership', () => {
+	it.each(['en', 'fr'] as const)(
+		'associates median, p90 and mean help with their displayed metric in %s',
+		async (locale) => {
+			mockUrl = new URL('http://localhost/stop/57191');
+			const { container } = render(StopReliabilitySurface, { props: { data, locale } });
+			const section = disclosure(container, 'stop-rel-pane');
+			const pane = section.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
+			const header = section.querySelector('.section-heading-row');
+			expect(header).not.toBeNull();
+			expect(header?.querySelector('.metric-info')).toBeNull();
+
+			for (const label of [locale === 'en' ? 'Median delay' : 'Retard médian', 'p90']) {
+				const metric = within(pane)
+					.getByText(label, { exact: true })
+					.closest('[data-slot="metric-display"]') as HTMLElement;
+				const help = within(metric).getByRole('button', { name: new RegExp(label, 'i') });
+				expect(help.parentElement?.parentElement).toContainElement(
+					within(metric).getByText(label, { exact: true }),
+				);
+				await fireEvent.click(help);
+				const dialog = within(metric).getByRole('dialog', { name: new RegExp(label, 'i') });
+				expect(help).toHaveAttribute('aria-controls', dialog.id);
+				expect(dialog).toHaveTextContent(
+					locale === 'en'
+						? 'The median describes the centre of reported predicted delays'
+						: 'La médiane situe le centre des retards prédits rapportés',
+				);
+				expect(within(dialog).getByRole('link')).toHaveAttribute(
+					'href',
+					locale === 'en' ? '/metrics#p50-p90' : '/fr/metrics#p50-p90',
+				);
+				await fireEvent.keyDown(help, { key: 'Escape' });
+				expect(help).toHaveAttribute('aria-expanded', 'false');
+			}
+			expect(
+				within(pane).queryByRole('button', { name: /major delays|retards majeurs/i }),
+			).toBeNull();
+
+			await fireEvent.click(
+				within(desktopGroup(container)).getByRole('radio', {
+					name: locale === 'en' ? 'Week' : 'Semaine',
+				}),
+			);
+			const averageLabel = locale === 'en' ? 'Avg delay' : 'Retard moyen';
+			const average = within(pane)
+				.getByText(averageLabel, { exact: true })
+				.closest('[data-slot="metric-display"]') as HTMLElement;
+			await fireEvent.click(
+				within(average).getByRole('button', { name: new RegExp(averageLabel, 'i') }),
+			);
+			const dialog = within(average).getByRole('dialog');
+			expect(dialog).toHaveTextContent(
+				locale === 'en'
+					? 'Average predicted deviation from the timetable'
+					: 'L’écart moyen prédit par rapport à l’horaire',
+			);
+			expect(within(dialog).getByRole('link')).toHaveAttribute(
+				'href',
+				locale === 'en' ? '/metrics#avg-delay' : '/fr/metrics#avg-delay',
+			);
+			expect(within(pane).queryByText('p90', { exact: true })).toBeNull();
+		},
+	);
+});

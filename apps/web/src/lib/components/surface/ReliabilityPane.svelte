@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
+	import type { Snippet } from 'svelte';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { SeverityBar } from '$lib/components/dataviz';
@@ -35,6 +36,8 @@
 		locale: Locale;
 		/** Whether `delayMin` is an average or a median, drives the delay caption. */
 		delayLabelKind?: 'avg' | 'median';
+		/** Explanation for each rendered metric, supplied by the owning surface. */
+		metricInfo?: Snippet<[key: 'stopNotSevere' | 'avgDelay' | 'p50p90' | 'severe', label: string]>;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
@@ -43,6 +46,7 @@
 		periods,
 		locale,
 		delayLabelKind = 'avg',
+		metricInfo,
 		class: className,
 	}: ReliabilityPaneProps = $props();
 
@@ -83,8 +87,6 @@
 	};
 	const t = $derived(L[locale]);
 
-	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
-
 	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'round' });
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
@@ -115,35 +117,45 @@
 	<div class={cn('reliability-pane', className)} data-slot="reliability-pane">
 		<div class="reliability-cards">
 			{#each periods as period (period.grain)}
+				{@const median = (period.delayKind ?? delayLabelKind) === 'median'}
+				{@const delayLabel = median ? t.delayMedian : t.delayAvg}
 				<div class="reliability-card">
 					<SectionLabel text={period.grain} variant="metric" />
 					<div class="reliability-metrics">
 						{#if period.otpPct != null}
-							<MetricDisplay value={pct(period.otpPct)} label={t.notSevere} size="sm" />
+							<MetricDisplay value={pct(period.otpPct)} label={t.notSevere} size="sm">
+								{#snippet info()}{@render metricInfo?.('stopNotSevere', t.notSevere)}{/snippet}
+							</MetricDisplay>
 						{/if}
 						<MetricDisplay
 							value={min(period.delayMin)}
 							absentReason="no-observations"
 							{locale}
-							label={period.delayKind === 'median'
-								? t.delayMedian
-								: period.delayKind === 'avg'
-									? t.delayAvg
-									: delayLabel}
+							label={delayLabel}
 							size="sm"
-						/>
+						>
+							{#snippet info()}{@render metricInfo?.(
+									median ? 'p50p90' : 'avgDelay',
+									delayLabel,
+								)}{/snippet}
+						</MetricDisplay>
 						{#if period.p90Min != null}
 							<MetricDisplay
 								value={min(period.p90Min)}
 								label={t.p90}
 								sublabel={t.p90Caption}
 								size="sm"
-							/>
+							>
+								{#snippet info()}{@render metricInfo?.('p50p90', t.p90)}{/snippet}
+							</MetricDisplay>
 						{/if}
 					</div>
 					{#if period.severePct != null}
 						<div class="reliability-severe">
-							<SectionLabel text={t.severe} variant="metric" />
+							<div class="flex items-center gap-1">
+								<SectionLabel text={t.severe} variant="metric" />
+								{@render metricInfo?.('severe', t.severe)}
+							</div>
 							<SeverityBar
 								severity="watch"
 								value={period.severePct / 100}

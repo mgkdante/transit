@@ -5,6 +5,7 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
@@ -136,20 +137,16 @@
 							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
 								{STATUS_LABELS[locale][detail.vehicle.status]}
 							{/if}
-							{#if detail.vehicle.delay_min !== 0}
-								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-									<span aria-hidden="true">·</span>
-								{/if}
-								<MapDelayTag
-									delay={detail.vehicle.delay_min}
-									{locale}
-									{t}
-									ctx={{
-										stale: notReporting != null,
-										metro: detail.routeType === ROUTE_TYPE_METRO,
-									}}
-								/>
+							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+								<span aria-hidden="true">·</span>
 							{/if}
+							<span class="detail-delay-measurement">
+								<MaybeValue
+									value={delayMeasurement(detail.vehicle.delay_min)}
+									reason={absence}
+									{locale}
+								/>
+							</span>
 						</dd>
 						<button
 							type="button"
@@ -446,6 +443,10 @@
 		font-family: var(--font-mono);
 		font-weight: 800;
 		color: var(--glyph);
+	}
+	.detail-delay-measurement {
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
 	}
 	.detail-status-band {
 		display: grid;

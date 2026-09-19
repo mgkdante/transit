@@ -1,4 +1,4 @@
-import type { SeverityCode, StatusCode } from '$lib/v1';
+import type { SeverityCode } from '$lib/v1';
 
 export type DelayTone = 'none' | 'early' | 'on-time' | 'late' | 'severe';
 
@@ -10,25 +10,10 @@ export function delayTone(delay: number | null | undefined): DelayTone {
 	return 'on-time';
 }
 
-const STATUS_TONE: Record<StatusCode, DelayTone> = {
-	early: 'early',
-	on_time: 'on-time',
-	late: 'late',
-	severe: 'severe',
-	unknown: 'none',
-};
-
-export function statusTone(status: StatusCode): DelayTone {
-	return STATUS_TONE[status] ?? 'none';
-}
-
-export function statusColorVar(status: StatusCode): string | undefined {
-	return TONE_VAR[statusTone(status)] ?? 'var(--dataviz-status-unknown)';
-}
-
-export function statusSeverity(status: StatusCode, delay: number | null | undefined): SeverityCode {
-	if (status !== 'severe') return 'watch';
-	return delay != null && delay >= 10 ? 'critical' : 'high';
+/** A rounded measurement never reclassifies the publisher's raw-second status. */
+export function delayMeasurement(delay: number | null | undefined): string | null {
+	if (delay == null) return null;
+	return `${delay < 0 ? '−' : delay > 0 ? '+' : ''}${Math.abs(delay)} min`;
 }
 
 const TONE_VAR: Record<DelayTone, string | undefined> = {

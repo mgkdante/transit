@@ -40,47 +40,18 @@ describe('dataRefresh', () => {
 
 		expect(settled).toBe(true);
 		expect(dataRefresh.refreshing).toBe(false);
-		expect(dataRefresh.lastRefreshedMs).not.toBeNull();
+		expect(dataRefresh.epoch).toBe(1);
+		mocks.invalidateAll.mockResolvedValueOnce();
+		await dataRefresh.run();
+		expect(mocks.invalidateAll).toHaveBeenCalledTimes(2);
+		expect(dataRefresh.refreshing).toBe(false);
+		expect(dataRefresh.epoch).toBe(2);
 	});
-
-	it('records the live snapshot data timestamp for shared freshness readouts', async () => {
+	it('advances the publish epoch without invalidating routes', async () => {
 		const { dataRefresh } = await loadRefreshStore();
-		const generatedUtc = '2026-06-15T23:09:05Z';
-
-		dataRefresh.noteDataGeneratedUtc(generatedUtc);
-
-		expect(dataRefresh.dataGeneratedUtc).toBe(generatedUtc);
-	});
-
-	it('is monotonic: a NEWER timestamp advances the shared value', async () => {
-		const { dataRefresh } = await loadRefreshStore();
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:00:00Z');
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:05:00Z');
-		expect(dataRefresh.dataGeneratedUtc).toBe('2026-06-15T23:05:00Z');
-	});
-
-	it('is monotonic: an OLDER timestamp never clobbers a fresher one', async () => {
-		const { dataRefresh } = await loadRefreshStore();
-		// e.g. the live store posted a fresh stamp, then a static surface re-fetched
-		// its much-older daily build — the older value must NOT win.
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:05:00Z');
-		dataRefresh.noteDataGeneratedUtc('2026-06-14T00:00:00Z');
-		expect(dataRefresh.dataGeneratedUtc).toBe('2026-06-15T23:05:00Z');
-	});
-
-	it('ignores an equal timestamp (no thrash on a re-fetch of the same build)', async () => {
-		const { dataRefresh } = await loadRefreshStore();
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:05:00Z');
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:05:00Z');
-		expect(dataRefresh.dataGeneratedUtc).toBe('2026-06-15T23:05:00Z');
-	});
-
-	it('ignores falsy and unparseable timestamps', async () => {
-		const { dataRefresh } = await loadRefreshStore();
-		dataRefresh.noteDataGeneratedUtc('2026-06-15T23:05:00Z');
-		dataRefresh.noteDataGeneratedUtc(null);
-		dataRefresh.noteDataGeneratedUtc(undefined);
-		dataRefresh.noteDataGeneratedUtc('not-a-date');
-		expect(dataRefresh.dataGeneratedUtc).toBe('2026-06-15T23:05:00Z');
+		dataRefresh.bumpEpoch();
+		expect(dataRefresh.epoch).toBe(1);
+		expect(dataRefresh.refreshing).toBe(false);
+		expect(mocks.invalidateAll).not.toHaveBeenCalled();
 	});
 });

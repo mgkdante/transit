@@ -302,6 +302,15 @@ describe('RouteReliabilityClusters retained Line history', () => {
 			expect(verdict.querySelector('[data-slot="daily-percentile-spread"]')).toHaveTextContent(
 				'p90 − median spread: 2.0 min. 2026-01-31 · 10 eligible delay predictions.',
 			);
+			const distribution = verdict.querySelector('[data-slot="delay-distribution"]') as HTMLElement;
+			expect(distribution.querySelector('[data-slot="delay-dist-readout"]')).toHaveTextContent(
+				'Median delay 1.0 min · 90th-percentile delay 3.0 min',
+			);
+			expect(distribution.querySelector('[data-slot="absent-value"]')).toHaveTextContent(
+				'the selected view does not publish a delay histogram',
+			);
+			expect(distribution).not.toHaveTextContent('not enough readings yet');
+			expect(distribution.querySelector('[data-slot="delay-dist-caption"]')).toBeNull();
 			expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1);
 		} finally {
 			history.destroy();
