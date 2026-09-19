@@ -162,10 +162,10 @@
 						     outline + the centred ◆ glyph. -->
 						<HeatmapCells cells={data} worstTier={HEATMAP_WORST_TIER} {worstGlyph} />
 					</Svg>
-					<Tooltip.Root>
+					<Tooltip.Root contained="window" anchor="top">
 						{#snippet children({ data: d }: { data: FlatCell })}
 							<Tooltip.Header>{d.fullRowLabel} · {d.colLabel}</Tooltip.Header>
-							<Tooltip.List>
+							<Tooltip.List class="grid-cols-1">
 								<Tooltip.Item
 									label={spec.valueLabel ?? spec.title}
 									value={`${d.worst && worstGlyph ? worstGlyph + ' ' : ''}${d.tierLabel}`}
