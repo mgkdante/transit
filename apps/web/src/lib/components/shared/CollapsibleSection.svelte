@@ -1,21 +1,8 @@
-<!--
-  Reusable collapsible section card. Used by detail pages (e.g. /metrics) and the
-  shared TOC (TocNav wraps one). Card surface + numbered/icon badge + a bits-ui
-  Collapsible for a11y (aria-controls, aria-expanded, focus management).
-
-  Ported from yesid.dev shared/CollapsibleSection. Deviations from the source:
-    - Transit keeps the page-scoped signal wiring explicit: this card accepts
-      OPTIONAL `closeSignal` / `openSignal` monotonic counters as props. Article
-      pages forward the shared store counters behind the exact `Collapse all` /
-      `Expand all` actions. When a caller bumps `closeSignal`, the card collapses;
-      when it bumps `openSignal`, the card opens. Absent (the default, `null`) →
-      the card is signal-inert, exactly as before.
-    - `persisted` is transit's sessionStorage-backed rune ($lib/stores), not
-      yesid's locale-handoff one. Same `.value` surface.
--->
+<!-- Persistent disclosure state, article signals and whole-card pointer behavior.
+     The native button supplies keyboard activation; the body stays mounted so
+     charts and reader state survive closing. CSS owns height transitions. -->
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
-	import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@yesid/ui/collapsible';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { Badge } from '@yesid/ui/badge';
 	import { Card } from '@yesid/ui/card';
@@ -41,48 +28,23 @@
 		children,
 	}: {
 		title: string;
-		/**
-		 * Optional one-line subtitle shown UNDER the title in the header — visible
-		 * whether the card is open or closed. On /metrics this carries the metric's
-		 * `oneLiner`, so the story is legible pre-expand (§C5.8). Muted caption voice.
-		 */
+		/** Visible with the card open or closed. */
 		subtitle?: string;
 		headerVariant?: CollapsibleSectionHeaderVariant;
 		open?: boolean;
-		/**
-		 * Opt this section's open/closed state into surviving a locale navigation.
-		 * When set, a sessionStorage value keyed by `sectionKey` (a stable,
-		 * locale-free string, NOT the translated title) drives `open`, seeded with
-		 * the `open` prop as the per-slot default. When absent, the plain
-		 * `$bindable` `open` is the source of truth.
-		 */
+		/** Stable, locale-free sessionStorage key; when set, persisted state owns open. */
 		sectionKey?: string;
 		index?: number | null;
 		accentColor?: string;
 		collapsible?: boolean;
-		/** When set, renders `data-toc={anchor}` on the card root so the shared TOC
-		 *  (TocNav / TocPill via toc.ts) can scroll to + active-track this section. */
+		/** Shared ToC target emitted as data-toc on the card root. */
 		anchor?: string;
-		/**
-		 * Monotonic "collapse this card" signal. Each time the page-scoped
-		 * `Collapse all` action bumps it to a new number, the card collapses. `null`
-		 * (default) keeps the card signal-inert.
-		 */
+		/** A changed counter closes the card; null is inert. */
 		closeSignal?: number | null;
-		/**
-		 * Monotonic "open this card" signal. Each time the page-scoped `Expand all`
-		 * action bumps it, the card opens. `null` (default) keeps it signal-inert.
-		 */
+		/** A changed counter opens the card; null is inert. */
 		openSignal?: number | null;
-		/**
-		 * The page's CURRENT bulk mode (quietModeStore.enabled) for cards that mount
-		 * AFTER the article's mount-time signal fired (data-gated cards appear once
-		 * their fetch resolves; the edge-detectors can't see a bump that predates
-		 * init). Applied once at init, authoritative over the `open` default and any
-		 * restored session choice — the same contract the mount-time signal enforces
-		 * for cards that were present when it fired. `null` (default) keeps the
-		 * mount state seed-driven, exactly as before.
-		 */
+		/** Current bulk mode for late-mounted cards. Applied once, overriding the
+		 *  initial/session value; null leaves that value intact. */
 		bulkCollapsed?: boolean | null;
 		icon?: Snippet;
 		/** Interactive actions rendered beside an article-summary disclosure button.
@@ -93,32 +55,33 @@
 
 	const headerUid = $props.id();
 	const subtitleId = `${headerUid}-summary`;
+	const contentId = `${headerUid}-content`;
 	const usesArticleSummary = $derived(collapsible && headerVariant === 'article-summary');
 	const hasHeaderMark = $derived(index !== null || icon !== undefined);
 
-	// When a sectionKey is supplied, the open state is session-scoped: persisted()
-	// seeds from the `open` prop default. The key + seed are captured ONCE at init
-	// (untrack makes that explicit - like every persisted() call site, the key
-	// must be a stable string), so a later prop change never re-creates the store.
-	// When no key is supplied, `persistedOpen` is null and the bindable `open` is
-	// the source of truth (the existing behaviour).
+	// Capture the key and seed once; later prop updates must not recreate storage.
 	const persistedOpen = untrack(() => (sectionKey ? persisted(sectionKey, open) : null));
 
-	// Single source of truth the template binds to: the persisted value when
-	// keyed, otherwise the local bindable. Writes route back to whichever owns it.
 	let isOpen = $derived(persistedOpen ? persistedOpen.value : open);
 	function setOpen(next: boolean): void {
 		if (persistedOpen) persistedOpen.value = next;
 		else open = next;
 	}
 
-	// Article-control parity — edge-triggered collapse/open signals (yesid
-	// closeSignal/openSignal idiom). Each effect fires only when its counter CHANGES from the
-	// value captured at init, so the initial render never force-toggles (SSR-safe,
-	// respects a restored persisted state). A `null` signal is inert: the last-seen
-	// value stays null and the guard never advances. Only collapsible cards react.
-	// The init reads are `untrack`ed on purpose: they seed the edge-detector once
-	// (capturing the initial prop), and it is the $effect that reactively tracks it.
+	const triggerProps = $derived({
+		type: 'button' as const,
+		'data-section-trigger': '',
+		'data-slot': 'collapsible-trigger',
+		'data-state': isOpen ? 'open' : 'closed',
+		'aria-controls': contentId,
+		'aria-expanded': isOpen,
+		onclick: (event: MouseEvent) => {
+			if (event.button !== 0) event.preventDefault();
+			else setOpen(!isOpen);
+		},
+	});
+
+	// Initial counters must not override restored state. Only later changes signal.
 	let lastCloseSignal = untrack(() => closeSignal);
 	$effect(() => {
 		const signal = closeSignal;
@@ -135,21 +98,12 @@
 		if (collapsible && signal !== null) setOpen(true);
 	});
 
-	// Mount-time bulk adoption: a card mounting after the article's mount-time
-	// signal fired would otherwise keep its seed (stale session choice or the
-	// `open` default) and desync from the page's bulk mode. Cards mounted BEFORE
-	// the signal are unaffected: init() re-emits on every article mount and the
-	// edge effects above settle them to the same state.
+	// A late-mounted card cannot observe earlier signal changes; adopt bulk mode once.
 	untrack(() => {
 		if (collapsible && bulkCollapsed !== null) setOpen(!bulkCollapsed);
 	});
 
-	// The WHOLE card is the toggle surface. Interactive children take priority: a
-	// click that originates inside a link/button/input never toggles. The header
-	// button matches 'button' here too, which is exactly right: its own bits-ui
-	// trigger already toggles, so skipping it prevents a double-toggle. The header
-	// stays the semantic button (aria-expanded, keyboard); this handler is a
-	// pointer convenience on top.
+	// The header already toggles itself; interactive descendants retain their own action.
 	const INTERACTIVE_CHILD =
 		'a,button,input,select,textarea,[role="button"],[data-card-interactive]';
 	function onCardClick(event: MouseEvent) {
@@ -184,16 +138,11 @@
 			{title}
 		</h2>
 		{#if subtitle}
-			<!-- One-line story, visible whether the card is open or closed (§C5.8). -->
 			<span class="section-subtitle">{subtitle}</span>
 		{/if}
 	</span>
 {/snippet}
 
-<!--
-  --accent CSS custom property propagates accentColor into the style block.
-  Collapsible.Root renders the div we use as the card wrapper.
--->
 <Card
 	class="section-card {collapsible ? 'section-card--toggleable' : ''} {usesArticleSummary
 		? 'section-card--article-summary'
@@ -203,7 +152,7 @@
 	data-header-variant={usesArticleSummary ? 'article-summary' : undefined}
 	onclick={collapsible ? onCardClick : undefined}
 >
-	<Collapsible bind:open={() => isOpen, setOpen}>
+	<div data-slot="collapsible" data-state={isOpen ? 'open' : 'closed'}>
 		{#if collapsible}
 			{#if usesArticleSummary}
 				<div
@@ -211,30 +160,24 @@
 					class:section-heading-row--actions={headerActions !== undefined}
 				>
 					<h2 class="section-heading">
-						<CollapsibleTrigger>
-							{#snippet child({ props })}
-								<button
-									{...props}
-									type="button"
-									data-section-trigger
-									aria-describedby={subtitle ? subtitleId : undefined}
-									class="section-header section-header--article-summary {hasHeaderMark
-										? 'section-header--with-mark'
-										: ''} {subtitle ? '' : 'section-header--title-only'}"
-								>
-									{#if hasHeaderMark}
-										<span class="section-header__mark" aria-hidden="true">
-											{@render headerMark()}
-										</span>
-									{/if}
-									<span
-										class="section-title section-title--article-summary font-heading text-lg font-bold text-[var(--foreground)]"
-									>
-										{title}
-									</span>
-								</button>
-							{/snippet}
-						</CollapsibleTrigger>
+						<button
+							{...triggerProps}
+							aria-describedby={subtitle ? subtitleId : undefined}
+							class="section-header section-header--article-summary {hasHeaderMark
+								? 'section-header--with-mark'
+								: ''} {subtitle ? '' : 'section-header--title-only'}"
+						>
+							{#if hasHeaderMark}
+								<span class="section-header__mark" aria-hidden="true">
+									{@render headerMark()}
+								</span>
+							{/if}
+							<span
+								class="section-title section-title--article-summary font-heading text-lg font-bold text-[var(--foreground)]"
+							>
+								{title}
+							</span>
+						</button>
 					</h2>
 					{#if headerActions}
 						<div class="section-header-actions" data-card-interactive>
@@ -257,19 +200,13 @@
 					</p>
 				{/if}
 			{:else}
-				<CollapsibleTrigger>
-					{#snippet child({ props })}
-						<button
-							{...props}
-							type="button"
-							data-section-trigger
-							class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
-						>
-							{@render legacyHeaderContent()}
-							<ChevronToggle open={isOpen} direction="right" />
-						</button>
-					{/snippet}
-				</CollapsibleTrigger>
+				<button
+					{...triggerProps}
+					class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
+				>
+					{@render legacyHeaderContent()}
+					<ChevronToggle open={isOpen} direction="right" />
+				</button>
 			{/if}
 		{:else}
 			<div class="flex items-center gap-2.5 px-6 py-4">
@@ -277,19 +214,25 @@
 			</div>
 		{/if}
 
-		<CollapsibleContent class="section-body">
-			<div class="px-6 pb-6 pt-3">
-				{#if children}
-					{@render children()}
-				{/if}
+		<div
+			id={contentId}
+			class="collapsible-content section-body"
+			data-slot="collapsible-content"
+			data-state={isOpen ? 'open' : 'closed'}
+			inert={!isOpen}
+			aria-hidden={isOpen ? undefined : 'true'}
+		>
+			<div class="collapsible-content__inner">
+				<div class="px-6 pb-6 pt-3">
+					{@render children?.()}
+				</div>
 			</div>
-		</CollapsibleContent>
-	</Collapsible>
+		</div>
+	</div>
 </Card>
 
 <style>
-	/* The section-card frame steps up to a 3px rule so content blocks read as
-	   discrete panels (matches the detail-page card progression). */
+	/* Keep the stronger article-card rule above the shared Card defaults. */
 	:global([data-slot='card'].section-card) {
 		border-width: 3px;
 	}
@@ -302,11 +245,7 @@
 		border-color: var(--accent);
 	}
 
-	/* The whole card is the toggle surface: pointer affordance + a tap-press tier
-	   (scale .97 / opacity .92) on the NON-INTERACTIVE surface only. Presses that
-	   start on interactive children (links/buttons/inputs, incl. the header
-	   button) keep their own feedback and don't press the shell. The extra
-	   .section-card qualifier outranks card.svelte's scoped transition. */
+	/* Interactive descendants keep their own feedback; only the card surface scales. */
 	.section-header {
 		cursor: pointer;
 	}
@@ -401,8 +340,7 @@
 		scale: 0.97;
 		opacity: 0.92;
 	}
-	/* tap-press contract: reduced motion drops the timing, keeps the :active
-	   state change (colour transitions stay, SAFE-ALWAYS). */
+	/* Reduced motion retains color feedback without the card scale transition. */
 	@media (prefers-reduced-motion: reduce) {
 		.section-header {
 			cursor: pointer;
@@ -423,8 +361,7 @@
 		transition: color var(--duration-normal) var(--ease-default);
 	}
 
-	/* One-line story subtitle — a muted caption under the title, visible whether the
-	   card is open or closed (§C5.8 /metrics oneLiner). Not a data mark, not --primary. */
+	/* The summary remains visible while the body is closed. */
 	.section-subtitle {
 		font-size: var(--text-caption);
 		line-height: 1.5;
@@ -466,8 +403,28 @@
 		line-clamp: 2;
 	}
 
-	/* The open/close animation (grid-template-rows 0fr -> 1fr + opacity, reduced-
-	   motion-guarded) lives in transit's CollapsibleContent wrapper. We only need
-	   the `.section-body` hook here for the TOC/test contract; no grid rules so
-	   the two never fight over the same element. */
+	.collapsible-content {
+		display: grid;
+		grid-template-rows: 0fr;
+		opacity: 0;
+		transition:
+			grid-template-rows var(--duration-slow) var(--ease-default),
+			opacity var(--duration-slow) var(--ease-default);
+	}
+
+	.collapsible-content[data-state='open'] {
+		grid-template-rows: 1fr;
+		opacity: 1;
+	}
+
+	.collapsible-content__inner {
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.collapsible-content {
+			transition: none;
+		}
+	}
 </style>
