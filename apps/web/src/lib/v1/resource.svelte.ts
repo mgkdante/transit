@@ -85,7 +85,8 @@ export function createResource<T>(
 		candidateSeed !== undefined && (!keyed || Object.is(candidateSeed.key, initialKey))
 			? candidateSeed
 			: undefined;
-	let data = $state<T | null>(initialSeed?.data ?? null);
+	const initialData = initialSeed?.data ?? null;
+	let data = $state<T | null>(initialData);
 	let error = $state<Error | null>(null);
 	let loading = $state(false);
 	let settled = $state(initialSeed !== undefined);
@@ -124,7 +125,8 @@ export function createResource<T>(
 			seq += 1;
 			stateKey = activeKey;
 			dataKey = activeKey;
-			data = seed.data;
+			// Hydration already exposes this seed; replacing its proxy invalidates every reader.
+			if (sawSeed || !Object.is(seed.data, initialData)) data = seed.data;
 			error = null;
 			loading = false;
 			settled = true;

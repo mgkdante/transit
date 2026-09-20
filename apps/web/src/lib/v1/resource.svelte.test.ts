@@ -272,6 +272,42 @@ describe('createResource — cancellation ownership', () => {
 		}
 	});
 
+	it('preserves the initial object identity when hydration consumes its server seed', () => {
+		const seed = { key: 'A', data: { rows: [{ value: 42 }] } };
+		const fetcher = vi.fn(async () => seed.data);
+		let resource!: ReturnType<typeof createResource<typeof seed.data>>;
+		let initial!: typeof resource.data;
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { key: () => 'A', seed: () => seed });
+			initial = resource.data;
+		});
+		try {
+			flushSync();
+			expect(resource.data).toBe(initial);
+			expect(resource.data?.rows).toBe(initial?.rows);
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('accepts a server seed replaced before the first hydration effect', () => {
+		const seed = $state({ key: 'A', data: { value: 42 } });
+		const fetcher = vi.fn(async () => seed.data);
+		let resource!: ReturnType<typeof createResource<typeof seed.data>>;
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { key: () => 'A', seed: () => seed });
+		});
+		try {
+			seed.data = { value: 99 };
+			flushSync();
+			expect(resource.data?.value).toBe(99);
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
 	it('retains the timestamp on an accepted seed without a duplicate fetch', () => {
 		const seeded = {
 			generated_utc: '2026-07-14T12:00:00Z',
