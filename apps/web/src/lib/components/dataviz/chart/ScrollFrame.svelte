@@ -44,16 +44,20 @@
 		const el = scrollEl;
 		if (!el) return;
 		const max = el.scrollWidth - el.clientWidth;
-		scrollable = max > 1;
-		moreStart = scrollable && el.scrollLeft > 1;
-		moreEnd = scrollable && el.scrollLeft < max - 1;
+		const canScroll = max > 1;
+		scrollable = canScroll;
+		moreStart = canScroll && el.scrollLeft > 1;
+		moreEnd = canScroll && el.scrollLeft < max - 1;
 	}
 
 	$effect(() => {
 		const el = scrollEl;
 		if (!el) return;
-		measure();
-		if (typeof ResizeObserver === 'undefined') return;
+		if (typeof ResizeObserver === 'undefined') {
+			measure();
+			return;
+		}
+		// The first delivery supplies layout without a duplicate synchronous measurement.
 		const ro = new ResizeObserver(measure);
 		ro.observe(el);
 		if (el.firstElementChild) ro.observe(el.firstElementChild);

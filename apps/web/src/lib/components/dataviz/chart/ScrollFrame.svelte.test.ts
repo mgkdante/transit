@@ -33,6 +33,32 @@ describe('ScrollFrame', () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it('measures on resize delivery without resubscribing when overflow changes', async () => {
+		let width = 600;
+		const reads = vi
+			.spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+			.mockImplementation(() => width);
+		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+		const { container } = render(ScrollFrame, {
+			props: { scrollLabel: 'Hours', gutter: snip('<i>g</i>'), scroller: snip('<i>s</i>') },
+		});
+		const scroller = container.querySelector('[data-slot="scroll-frame-scroller"]')!;
+		expect(reads).not.toHaveBeenCalled();
+		const observer = observerFor(scroller)!;
+		observer.trigger();
+		await tick();
+		expect(scroller).toHaveAttribute('tabindex', '0');
+		expect(reads).toHaveBeenCalledOnce();
+		width = 300;
+		observer.trigger();
+		await tick();
+		expect(scroller).not.toHaveAttribute('tabindex');
+		expect(reads).toHaveBeenCalledTimes(2);
+		expect(resizeObservers).toHaveLength(1);
+		expect(observer.disconnect).not.toHaveBeenCalled();
 	});
 
 	it('renders the frozen gutter without a fake keyboard affordance when it does not overflow', () => {
