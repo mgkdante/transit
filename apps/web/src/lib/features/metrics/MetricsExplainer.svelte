@@ -64,6 +64,7 @@
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { persisted } from '$lib/stores';
+	import { layout } from '$lib/nav/layout.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import {
 		CollapsibleSection,
@@ -106,6 +107,13 @@
 	// (the badge renders nothing when conformance is null / the fetch fails), so it
 	// never blocks the static methodology article.
 	const provenance = createResource(() => getProvenance());
+
+	// These duplicate live cards have no SSR seed. Keep them after their first
+	// desktop visit so later viewport changes preserve the reader's state.
+	let desktopRailVisited = $state(false);
+	$effect(() => {
+		if (layout.isDesktop) desktopRailVisited = true;
+	});
 
 	// Article-cover data (P5-R R3a.2) — REAL data only; a missing datum drops its
 	// meta entry, never fabricated. The generated stamp comes from the
@@ -386,7 +394,7 @@
 		<!-- Provenance: the live feed-conformance verdict (the same honesty signal
 		     the preamble carries), or an honest stand-down when it can't load. An
 		     unresolved resource renders no empty disclosure shell. -->
-		{#if provenance.data?.conformance || provenanceUnavailable}
+		{#if desktopRailVisited && (provenance.data?.conformance || provenanceUnavailable)}
 			<CollapsibleSection
 				title={t.statRail.provenance.title}
 				headerVariant="article-summary"
@@ -445,7 +453,7 @@
 
 		<!-- Freshness: when this methodology build's provenance document was generated
 		     (the calm "Updated N ago" stamp — never a live-tier LIVE chip). -->
-		{#if provenance.data?.generated_utc}
+		{#if desktopRailVisited && provenance.data?.generated_utc}
 			<CollapsibleSection
 				title={t.statRail.freshness.title}
 				headerVariant="article-summary"

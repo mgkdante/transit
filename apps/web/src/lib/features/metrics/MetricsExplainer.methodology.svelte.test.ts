@@ -10,8 +10,10 @@
 // The data ports are stubbed (the real repository chain reads $env/dynamic/public)
 // with a mutable `provState` the createResource mock reads by reference.
 
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricsExplainer from './MetricsExplainer.svelte';
@@ -53,7 +55,19 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	}),
 }));
 
+const viewport = window as typeof window & { happyDOM: { setInnerWidth(width: number): void } };
+
+beforeEach(() => {
+	viewport.happyDOM.setInnerWidth(1280);
+	quietModeStore.resetForTest();
+});
+
 afterEach(() => {
+	viewport.happyDOM.setInnerWidth(1280);
+	quietModeStore.resetForTest();
+	for (const key of ['provenance', 'coverage', 'freshness']) {
+		sessionStorage.removeItem(`transit.persisted:metrics-rail-${key}`);
+	}
 	provState.data = null;
 	provState.error = null;
 	provState.settled = true;
@@ -113,6 +127,82 @@ describe('MetricsExplainer — live pipeline note', () => {
 });
 
 describe('MetricsExplainer — responsive stat rail icons', () => {
+	it('keeps mobile provenance facts visible without mounting the duplicate live rail cards', () => {
+		viewport.happyDOM.setInnerWidth(390);
+		provState.data = richProvenance;
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.metrics-stat-rail') as HTMLElement;
+		expect(rail.querySelector('[data-slot="stat-provenance"]')).toBeNull();
+		expect(rail.querySelector('[data-slot="stat-freshness"]')).toBeNull();
+		expect(rail.querySelector('[data-slot="stat-coverage"]')).toHaveTextContent('14');
+		expect(container.querySelector('.toc-nav')).toBeInTheDocument();
+		expect(
+			container.querySelector('.metrics-conformance [data-slot="conformance-badge"]'),
+		).toHaveAttribute('data-verdict', 'conformant');
+		expect(container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
+			'datetime',
+			richProvenance.generated_utc,
+		);
+		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
+	});
+
+	it('adopts current FOCUS on first desktop visit and keeps independent card state across later resizes', async () => {
+		viewport.happyDOM.setInnerWidth(390);
+		provState.data = richProvenance;
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.metrics-stat-rail') as HTMLElement;
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+		viewport.happyDOM.setInnerWidth(1280);
+		await waitFor(() =>
+			expect(rail.querySelector('[data-slot="stat-provenance"]')).toBeInTheDocument(),
+		);
+		const provenance = within(rail).getByRole('button', { name: 'Provenance' });
+		const freshness = within(rail).getByRole('button', { name: 'Freshness' });
+		expect(provenance).toHaveAttribute('aria-expanded', 'false');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(provenance);
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		const originalBody = rail.querySelector('[data-slot="stat-provenance"]');
+
+		viewport.happyDOM.setInnerWidth(390);
+		await tick();
+		expect(rail.querySelector('[data-slot="stat-provenance"]')).toBe(originalBody);
+		viewport.happyDOM.setInnerWidth(1280);
+		await tick();
+		expect(within(rail).getByRole('button', { name: 'Provenance' })).toBe(provenance);
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('retains the ToC, Coverage and complete definitions in actual unseeded SSR', async () => {
+		const { createServer } = await import('vite');
+		const server = await createServer({
+			configFile: 'vite.config.ts',
+			appType: 'custom',
+			logLevel: 'silent',
+			optimizeDeps: { noDiscovery: true },
+			server: { middlewareMode: true },
+		});
+		try {
+			const { render: renderSsr } = await server.ssrLoadModule('svelte/server');
+			const { default: ServerExplainer } = await server.ssrLoadModule(
+				'/src/lib/features/metrics/MetricsExplainer.svelte',
+			);
+			const html = renderSsr(ServerExplainer).body;
+			const document = window.document.createElement('div');
+			document.innerHTML = html;
+			expect(document.querySelector('.toc-nav')).not.toBeNull();
+			expect(document.querySelector('[data-slot="stat-coverage"]')?.textContent).toContain('14');
+			expect(document.querySelector('[data-slot="stat-provenance"]')).toBeNull();
+			expect(document.querySelector('[data-slot="stat-freshness"]')).toBeNull();
+			expect(document.querySelectorAll('[data-kind="definition"]')).toHaveLength(14);
+			expect(document.querySelector('#structural-gaps')).not.toBeNull();
+		} finally {
+			await server.close();
+		}
+	}, 20_000);
+
 	it('renders the Provenance, Coverage, and Freshness SectionIcons in the shared rail', () => {
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);

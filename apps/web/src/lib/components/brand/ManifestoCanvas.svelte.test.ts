@@ -13,6 +13,7 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 }));
 vi.mock('@yesid/motion/utils/ticker', () => ticker);
 
+const visibilityObservers: IntersectionObserverStub[] = [];
 class IntersectionObserverStub {
 	observe = vi.fn();
 	disconnect = vi.fn();
@@ -21,7 +22,18 @@ class IntersectionObserverStub {
 	root = null;
 	rootMargin = '0px';
 	thresholds = [0];
-	constructor(_callback: IntersectionObserverCallback, _options?: IntersectionObserverInit) {}
+	constructor(
+		private readonly callback: IntersectionObserverCallback,
+		_options?: IntersectionObserverInit,
+	) {
+		visibilityObservers.push(this);
+	}
+	trigger(visible: boolean): void {
+		this.callback(
+			[{ isIntersecting: visible } as IntersectionObserverEntry],
+			this as unknown as IntersectionObserver,
+		);
+	}
 }
 
 const resizeObservers: ResizeObserverStub[] = [];
@@ -68,18 +80,24 @@ function host(): HTMLDivElement {
 	return node;
 }
 
-describe('ManifestoCanvas — overlapping route instances', () => {
+describe('ManifestoCanvas — geometry and lifecycle', () => {
+	let initialPrimary = '';
 	beforeEach(() => {
+		vi.clearAllMocks();
+		initialPrimary = document.documentElement.style.getPropertyValue('--primary-rgb');
 		motion.reduced = false;
 		ticker.subscribe.mockReset();
 		ticker.unsubscribe.mockReset();
 		resizeObservers.length = 0;
+		visibilityObservers.length = 0;
 		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
 		vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
 	});
 
 	afterEach(() => {
+		if (initialPrimary) document.documentElement.style.setProperty('--primary-rgb', initialPrimary);
+		else document.documentElement.style.removeProperty('--primary-rgb');
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 		document.body.replaceChildren();
@@ -106,6 +124,7 @@ describe('ManifestoCanvas — overlapping route instances', () => {
 		const containerEl = host();
 		const view = render(ManifestoCanvas, { props: { containerEl } });
 		const canvas = view.container.querySelector('canvas') as HTMLCanvasElement;
+		resizeObservers[0].trigger();
 		expect(canvas.width).toBe(320);
 		expect(canvas.height).toBe(240);
 		expect(resizeObservers).toHaveLength(1);
@@ -136,5 +155,54 @@ describe('ManifestoCanvas — overlapping route instances', () => {
 
 		await view.unmount();
 		expect(resizeObservers[0].disconnect).toHaveBeenCalledTimes(1);
+	});
+	it('uses the current host size and theme on the first observer delivery and preserves visibility gating', async () => {
+		document.documentElement.style.setProperty('--primary-rgb', '1 2 3');
+		const containerEl = host();
+		const view = render(ManifestoCanvas, { props: { containerEl } });
+		const canvas = view.container.querySelector('canvas') as HTMLCanvasElement;
+		// The host can change before the browser delivers its initial observation.
+		containerEl.getBoundingClientRect = () =>
+			({ width: 480, height: 360, left: 0, top: 0 }) as DOMRect;
+		document.documentElement.style.setProperty('--primary-rgb', '4 5 6');
+		resizeObservers[0].trigger();
+		expect(canvas.width).toBe(480);
+		expect(canvas.height).toBe(360);
+		visibilityObservers[0].trigger(true);
+		const animate = ticker.subscribe.mock.calls[0][1] as () => void;
+		animate();
+		expect(context.fillStyle).toMatch(/^rgba\(4,5,6,/);
+
+		document.documentElement.style.setProperty('--primary-rgb', '7 8 9');
+		document.dispatchEvent(new Event('themechange'));
+		animate();
+		expect(context.fillStyle).toMatch(/^rgba\(7,8,9,/);
+		const paints = vi.mocked(context.clearRect).mock.calls.length;
+		visibilityObservers[0].trigger(false);
+		animate();
+		expect(context.clearRect).toHaveBeenCalledTimes(paints);
+
+		await view.unmount();
+		expect(visibilityObservers[0].disconnect).toHaveBeenCalledOnce();
+		expect(resizeObservers[0].disconnect).toHaveBeenCalledOnce();
+	});
+
+	it('paints reduced motion on initial delivery and theme changes, then releases the theme listener', async () => {
+		motion.reduced = true;
+		document.documentElement.style.setProperty('--primary-rgb', '10 20 30');
+		const view = render(ManifestoCanvas, { props: { containerEl: host() } });
+		resizeObservers[0].trigger();
+		expect(context.clearRect).toHaveBeenLastCalledWith(0, 0, 320, 240);
+		expect(context.fillStyle).toMatch(/^rgba\(10,20,30,/);
+		expect(ticker.subscribe).not.toHaveBeenCalled();
+
+		document.documentElement.style.setProperty('--primary-rgb', '40 50 60');
+		document.dispatchEvent(new Event('themechange'));
+		expect(context.fillStyle).toMatch(/^rgba\(40,50,60,/);
+		await view.unmount();
+		const paints = vi.mocked(context.clearRect).mock.calls.length;
+		document.dispatchEvent(new Event('themechange'));
+		expect(context.clearRect).toHaveBeenCalledTimes(paints);
+		expect(resizeObservers[0].disconnect).toHaveBeenCalledOnce();
 	});
 });
