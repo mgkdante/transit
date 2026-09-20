@@ -830,13 +830,17 @@ async function collectNetwork(page, locale) {
 function verifyLedger(cell, fixture, ledger) {
 	const labelPath = `labels/${cell.locale}.json`;
 	const historyStatus = fixture.not_found.includes('historic/history/index.json') ? 404 : 200;
+	const range = new URL(cell.path, 'http://b9.local');
+	const selectedLine =
+		cell.surface === 'line' && range.searchParams.has('from') && range.searchParams.has('to');
+	const lineHistoryLane = selectedLine && historyStatus === 200 ? 'ssr' : 'browser';
 	const expected = {
 		line: [
 			['ssr', 'manifest.json', 200, 2],
 			['ssr', 'static/routes/24.json', 200, 1],
 			['ssr', 'historic/route_reliability/24.json', 200, 1],
 			['ssr', labelPath, 200, 1],
-			['browser', 'historic/history/index.json', historyStatus, 1],
+			[lineHistoryLane, 'historic/history/index.json', historyStatus, 1],
 			['browser', 'provenance.json', 200, 1],
 			['browser', 'live/vehicles.json', 200, 1],
 			['browser', 'live/trips.json', 200, 1],
@@ -862,7 +866,8 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/network.json', 200, 1],
 		],
 	}[cell.surface];
-	const range = new URL(cell.path, 'http://b9.local');
+	if (selectedLine && historyStatus === 404)
+		expected.push(['ssr', 'historic/history/index.json', 404, 1]);
 	const selectedRefs = (index) => {
 		const from = range.searchParams.get('from');
 		const to = range.searchParams.get('to');
@@ -884,25 +889,27 @@ function verifyLedger(cell, fixture, ledger) {
 		const family = cell.surface === 'line' ? 'lines' : 'stops';
 		const directoryPath = root.families?.find((entry) => entry.family === family)?.index_path;
 		if (directoryPath) {
-			expected.push(['browser', directoryPath, 200, 1]);
+			const lane = cell.surface === 'line' ? lineHistoryLane : 'browser';
+			expected.push([lane, directoryPath, 200, 1]);
 			const entityId = cell.surface === 'line' ? '24' : '52095';
 			const entityPath = fixture.files[directoryPath]?.entities?.find(
 				(entry) => entry.entity_id === entityId,
 			)?.index_path;
 			if (entityPath) {
-				expected.push(['browser', entityPath, 200, 1]);
+				expected.push([lane, entityPath, 200, 1]);
 				const refs = selectedRefs(fixture.files[entityPath]);
 				if (cell.surface === 'line' && cell.fixture === 'rich' && refs.length === 0)
 					refs.push(...(fixture.files[entityPath]?.partitions ?? []).slice(-1));
-				for (const ref of refs)
-					expected.push([
-						'browser',
-						ref.path,
-						200,
-						cell.surface === 'line' && cell.fixture !== 'live' && range.searchParams.has('from')
-							? 2
-							: 1,
-					]);
+				for (const ref of refs) {
+					if (lane === 'ssr') {
+						// The initial selected partition is read by SSR. Synthetic controls later
+						// make the first browser read; the server seed does not populate its cache.
+						expected.push(['ssr', ref.path, 200, 1]);
+						if (cell.fixture !== 'live') expected.push(['browser', ref.path, 200, 1]);
+					} else {
+						expected.push(['browser', ref.path, 200, 1]);
+					}
+				}
 			}
 		}
 	}
@@ -922,17 +929,119 @@ function verifyLedger(cell, fixture, ledger) {
 	);
 }
 
-function verifySsr(cell, fixture, html) {
+async function verifySsr(page, cell, fixture, html) {
 	const mainHtml = html.match(/<main\b[^>]*>[\s\S]*?<\/main>/iu)?.[0] ?? '';
 	invariant(mainHtml !== '', `${cell.path} SSR omitted main`);
 	const normalized = ssrText(mainHtml);
 	if (cell.surface === 'line') {
 		const route = fixture.files['static/routes/24.json'];
 		invariant(normalized.includes(route.long), `${cell.path} SSR omitted line identity`);
+		const selected = new URL(cell.path, 'http://b9.local').searchParams.has('from');
+		if (selected && fixture.not_found.includes('historic/history/index.json')) {
+			invariant(
+				!mainHtml.includes('data-section="verdict"'),
+				`${cell.path} SSR rendered an unresolved retained range`,
+			);
+			return;
+		}
+		// An unattached template parses only the captured response. It executes no
+		// scripts or resource loads and cannot borrow values from the hydrated page.
+		const ssr = await page.evaluate((source) => {
+			const template = document.createElement('template');
+			template.innerHTML = source;
+			const main = template.content.querySelector('main');
+			const values = [
+				...main.querySelectorAll(
+					'[data-section="verdict"] [data-slot="verdict-kpis"] > [data-slot="metric-bullet"]',
+				),
+			].map((tile) =>
+				tile.querySelector('[data-slot="absent-value"]')
+					? null
+					: (tile.querySelector('.metric-bullet__value')?.textContent?.trim() ?? null),
+			);
+			return {
+				values,
+				bands: [...main.querySelectorAll('.reliability-band[data-band]')].map((band) =>
+					band.getAttribute('data-band'),
+				),
+				window: main.querySelector('[data-slot="active-window"]')?.textContent ?? '',
+				freshness:
+					main
+						.querySelector('[data-slot="article-header"] .header__meta time')
+						?.getAttribute('datetime') ?? null,
+				headerBan:
+					main.querySelector('.route-verdict-banner .verdict__ban')?.textContent?.trim() ?? null,
+				currentOnly:
+					main.querySelector('[data-slot="header-verdict-current-only"]')?.textContent?.trim() ??
+					null,
+				importError: main.querySelector('[data-slot="reliability-import-error"]') != null,
+			};
+		}, html);
 		invariant(
-			!mainHtml.includes('data-slot="verdict"') && !mainHtml.includes('data-section="verdict"'),
-			`${cell.path} SSR eagerly rendered lazy reliability content`,
+			JSON.stringify(ssr.bands) ===
+				JSON.stringify(['verdict', 'when-to-ride', 'the-wait', 'run-and-fit', 'worst-stops']),
+			`${cell.path} SSR omitted or reordered reliability bands`,
 		);
+		invariant(!ssr.importError, `${cell.path} SSR contains a reliability import failure`);
+		const ids = [
+			'line.day.otp_pct',
+			'line.day.avg_delay_min',
+			'line.day.p50_min',
+			'line.day.p90_min',
+		];
+		const expected = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale, cell.path);
+		const expectedHeadline = expected.filter((row) => ids.includes(row.id));
+		invariant(
+			ssr.values.length === 4 ||
+				(ssr.values.length === 0 && expectedHeadline.every((row) => row.value == null)),
+			`${cell.path} SSR KPI shape changed`,
+		);
+		const actual = ids.map((id, index) => observation(id, parseNumber(ssr.values[index])));
+		actual.push(observation('line.pane.freshness_iso', ssr.freshness));
+		compareObservations(
+			expected.filter((row) => ids.includes(row.id) || row.id === 'line.pane.freshness_iso'),
+			actual,
+			`${cell.fixture}/${cell.locale}/line SSR`,
+		);
+		for (const [index, value] of ssr.values.entries()) {
+			if (value != null)
+				invariant(
+					index === 0 ? value.includes('%') : value.includes('min'),
+					`${cell.path} SSR KPI ${index} omitted its unit`,
+				);
+		}
+		const params = new URL(cell.path, 'http://b9.local').searchParams;
+		const dates = selected
+			? [params.get('from'), params.get('to')]
+			: [expectedScheduleTruth(fixture).date];
+		for (const date of dates)
+			invariant(
+				date && ssr.window.includes(date),
+				`${cell.path} SSR omitted selected/current date ${date}`,
+			);
+		if (cell.fixture !== 'live')
+			invariant(
+				ssr.headerBan != null,
+				`${cell.path} SSR omitted its independent current header verdict`,
+			);
+		if (ssr.headerBan != null) {
+			const current = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale).find(
+				(row) => row.id === 'line.day.otp_pct',
+			);
+			invariant(
+				parseNumber(ssr.headerBan) === current.value,
+				`${cell.path} SSR header borrowed the selected historical percentage`,
+			);
+			invariant(
+				selected
+					? ssr.currentOnly ===
+							(cell.locale === 'fr'
+								? 'Verdict d’en-tête : portrait actuel'
+								: 'Header verdict: current snapshot')
+					: ssr.currentOnly == null,
+				`${cell.path} SSR current-header scope changed`,
+			);
+		}
 	} else if (cell.surface === 'stop') {
 		const stop = fixture.files['static/stops/52095.json'];
 		invariant(normalized.includes(stop.name), `${cell.path} SSR omitted stop identity`);
@@ -1777,7 +1886,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
 				await settleSurface(page, cell, fixture);
-				verifySsr(cell, fixture, ssrHtml);
+				await verifySsr(page, cell, fixture, ssrHtml);
 				// Open analyst content through its real control before reading its values.
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
