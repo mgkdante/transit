@@ -20,7 +20,7 @@ import {
 	OCCUPANCY_CODES,
 	type StatusCode,
 	type OccupancyCode,
-} from '$lib/v1/schemas';
+} from '$lib/v1/schemas/types';
 import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
 
 /** Frozen marker geometry: the map layer and non-Chromium receipt runner share this table. */
