@@ -74,8 +74,8 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		height: 2.25rem;
-		width: 2.25rem;
+		height: 2.75rem;
+		width: 2.75rem;
 		padding: 0;
 		background: none;
 		border: none;
