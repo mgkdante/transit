@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handle } from '../hooks.server';
+
+const appPaths = vi.hoisted(() => ({ assets: '' }));
+vi.mock('$app/paths', () => appPaths);
+afterEach(() => {
+	appPaths.assets = '';
+});
 
 interface CacheHarness {
 	readonly defaultMatch: ReturnType<typeof vi.fn>;
@@ -201,4 +207,75 @@ describe('server HTML edge cache', () => {
 		expect(await response.text()).toBe('fresh');
 		expect(resolve).toHaveBeenCalledTimes(1);
 	});
+});
+
+describe('critical font response preloads', () => {
+	const kitLinks =
+		'</_app/app.css>; rel="preload"; as="style", </_app/start.js>; rel="modulepreload"';
+
+	it.each(['', '/transit', 'https://assets.example.test/transit'])(
+		'preloads the existing fonts before Kit links with assets prefix %s',
+		async (prefix) => {
+			appPaths.assets = prefix;
+			const response = await handle({
+				event: event(),
+				resolve: vi.fn(async () => html('article', { headers: { link: kitLinks } })),
+			});
+			const expected = ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2']
+				.map(
+					(file) =>
+						`<${prefix}/fonts/${file}>; rel="preload"; as="font"; type="font/woff2"; crossorigin`,
+				)
+				.join(', ');
+			expect(response.headers.get('link')).toBe(`${expected}, ${kitLinks}`);
+			expect(await response.text()).toBe('article');
+		},
+	);
+
+	it.each(['GET', 'HEAD'])('keeps cached %s preloads idempotent', async (method) => {
+		const cache = cacheHarness();
+		const resolve = vi.fn(async () => html('article', { headers: { link: kitLinks } }));
+		const miss = await handle({ event: event(undefined, { cache }), resolve });
+		await Promise.all(cache.writes);
+		const [, stored] = cache.put.mock.calls[0] as [Request, Response];
+		cache.match.mockResolvedValue(stored);
+		const hit = await handle({ event: event(undefined, { cache, method }), resolve });
+		expect(hit.headers.get('link')).toBe(miss.headers.get('link'));
+		expect(hit.headers.get('link')?.match(/as="font"/g)).toHaveLength(2);
+		expect(hit.headers.get('x-transit-edge-cache')).toBe('HIT');
+		expect(resolve).toHaveBeenCalledOnce();
+		expect(await hit.text()).toBe(method === 'HEAD' ? '' : 'article');
+	});
+
+	it('keeps an already supplied font preload without duplicating its URL', async () => {
+		const existing =
+			'</fonts/inter-latin-wght-normal.woff2>; rel="preload"; as="font"; type="font/woff2"; crossorigin';
+		const response = await handle({
+			event: event(),
+			resolve: vi.fn(async () =>
+				html('article', { headers: { link: `${existing}, ${kitLinks}` } }),
+			),
+		});
+		expect(
+			response.headers.get('link')?.match(/<\/fonts\/inter-latin-wght-normal\.woff2>/g),
+		).toHaveLength(1);
+		expect(response.headers.get('link')).toContain(`${existing}, ${kitLinks}`);
+		expect(response.headers.get('link')).toMatch(
+			/^<\/fonts\/jetbrains-mono-latin-wght-normal\.woff2>/,
+		);
+	});
+
+	it.each(['application/json', 'text/plain'])(
+		'preserves non-HTML %s response links',
+		async (type) => {
+			const response = await handle({
+				event: event(),
+				resolve: vi.fn(
+					async () => new Response('value', { headers: { 'content-type': type, link: kitLinks } }),
+				),
+			});
+			expect(response.headers.get('link')).toBe(kitLinks);
+			expect(await response.text()).toBe('value');
+		},
+	);
 });

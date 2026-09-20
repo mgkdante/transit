@@ -1,5 +1,6 @@
 import type { Handle, ServerInit } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { assets } from '$app/paths';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { securityHeaders } from '$lib/site/securityHeaders';
@@ -66,6 +67,16 @@ function mutableResponse(response: Response, head = false): Response {
 function applyDocumentHeaders(response: Response): void {
 	for (const [name, value] of Object.entries(securityHeaders({ dev }))) {
 		response.headers.set(name, value);
+	}
+
+	if (isHtml(response)) {
+		// Kit's HTTP module preloads are discovered before the font links in app.html.
+		const existing = response.headers.get('link') ?? '';
+		const fonts = ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2']
+			.map((file) => encodeURI(`${assets}/fonts/${file}`))
+			.filter((url) => !existing.includes(`<${url}>`))
+			.map((url) => `<${url}>; rel="preload"; as="font"; type="font/woff2"; crossorigin`);
+		if (fonts.length) response.headers.set('link', [...fonts, existing].filter(Boolean).join(', '));
 	}
 
 	if (!readPublicSiteConfig().indexing) {
