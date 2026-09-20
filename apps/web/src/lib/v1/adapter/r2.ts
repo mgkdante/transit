@@ -67,6 +67,10 @@ export const r2Adapter = {
 		stopReliability: true,
 	}),
 	basemap: deferredPort(loadStatic, (module) => module.basemapPort, { get: true }),
-	provenance: deferredPort(loadHistoric, (module) => module.provenancePort, { get: true }),
+	provenance: deferredPort(
+		() => import('./r2.provenance'),
+		(module) => module.provenancePort,
+		{ get: true },
+	),
 	dataHealth: deferredPort(loadLive, (module) => module.dataHealthPort, { get: true }),
 };

@@ -2,7 +2,6 @@
      Keep observing hidden tabs so their charts recover when shown. -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
-	import { findScrollParent } from '$lib/components/shared/viewportPresence';
 	import { cn } from '$lib/utils';
 
 	export interface ChartFrameProps {
@@ -39,7 +38,8 @@
 					io = null;
 				},
 				{
-					root: findScrollParent(node),
+					// An inner scrolling panel can itself be outside the reader's viewport.
+					root: node.closest('#main'),
 					rootMargin: '200px 0px',
 					threshold: 0,
 				},

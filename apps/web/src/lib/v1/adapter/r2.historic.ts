@@ -12,7 +12,6 @@ import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_i
 import { ReceiptSchema } from '$lib/v1/schemas/receipts';
 import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
 import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
-import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
 import { NetworkTrendSchema } from '$lib/v1/schemas/network_trend';
 import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
 import {
@@ -361,19 +360,6 @@ export const historicPort = {
 			stopId,
 			StopReliabilitySchema,
 			'historic.stopReliability',
-			MUTABLE_CACHE,
-			ctx,
-		);
-	},
-};
-
-export const provenancePort = {
-	async get(ctx?: AdapterCtx) {
-		const manifest = await loadManifest(ctx);
-		return readWhole(
-			manifest.files.historic?.provenance ?? DEFAULTS.provenance,
-			ProvenanceSchema,
-			'provenance',
 			MUTABLE_CACHE,
 			ctx,
 		);

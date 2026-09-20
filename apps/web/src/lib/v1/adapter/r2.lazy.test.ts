@@ -8,6 +8,7 @@ const evaluated = vi.hoisted(() => ({
 	live: 0,
 	static: 0,
 	historic: 0,
+	provenance: 0,
 }));
 
 vi.mock('$lib/v1/schemas/data_health', async (importOriginal) => {
@@ -20,8 +21,13 @@ vi.mock('$lib/v1/schemas/routes_index', async (importOriginal) => {
 	return importOriginal<typeof import('$lib/v1/schemas/routes_index')>();
 });
 
-vi.mock('$lib/v1/schemas/provenance', async (importOriginal) => {
+vi.mock('$lib/v1/schemas/history', async (importOriginal) => {
 	evaluated.historic += 1;
+	return importOriginal<typeof import('$lib/v1/schemas/history')>();
+});
+
+vi.mock('$lib/v1/schemas/provenance', async (importOriginal) => {
+	evaluated.provenance += 1;
 	return importOriginal<typeof import('$lib/v1/schemas/provenance')>();
 });
 
@@ -112,6 +118,7 @@ describe('r2 lazy adapter boundaries', () => {
 			live: 0,
 			static: 0,
 			historic: 0,
+			provenance: 0,
 		});
 		expect(r2Adapter).toBeDefined();
 	});
@@ -169,10 +176,31 @@ describe('r2 lazy adapter boundaries', () => {
 			live: 1,
 			static: 0,
 			historic: 0,
+			provenance: 0,
 		});
 		expectUnchanged(r2Adapter, facadeSnapshot);
 		for (const [portName, snapshot] of portSnapshots) {
 			expectUnchanged(facade[portName], snapshot);
 		}
+	});
+
+	it('loads provenance without constructing the unrelated historic schemas', async () => {
+		const { r2Adapter } = await import('./r2');
+		const before = { ...evaluated };
+		const port = snapshotObject(r2Adapter.provenance);
+		const provenance = {
+			generated_utc: '2026-07-15T12:00:00Z',
+			freshness: [{ feed: 'vehicles', age_s: 95 }],
+		};
+		const request = vi.fn(async () => json(provenance));
+		await expect(
+			r2Adapter.provenance.get({
+				fetch: request,
+				manifest: { files: { historic: { provenance: 'historic/provenance.json' } } } as Manifest,
+			}),
+		).resolves.toEqual(provenance);
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(evaluated).toEqual({ ...before, provenance: before.provenance + 1 });
+		expectUnchanged(r2Adapter.provenance, port);
 	});
 });

@@ -204,6 +204,44 @@ describe('Chart shared viewport', () => {
 		expect(frame?.querySelector('.lc-tooltip-context')).toBe(mountedMark);
 	});
 
+	it.each([true, false])(
+		'ignores an inner terminal scroll box with page viewport present: %s',
+		async (insideMain) => {
+			vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+			const main = document.createElement('main');
+			main.id = 'main';
+			main.style.overflowY = 'auto';
+			const terminal = document.createElement('div');
+			terminal.style.overflowY = 'auto';
+			document.body.append(main);
+			(insideMain ? main : document.body).append(terminal);
+			const view = render(Chart, { target: terminal, props: { spec: fluidSpec } });
+			try {
+				await tick();
+				const frame = terminal.querySelector<HTMLElement>('[data-slot="chart-frame"]')!;
+				expect(frame).not.toBeNull();
+				const intersection = intersectionObserverFor(frame)!;
+				expect(intersection.root).toBe(insideMain ? main : null);
+				expect(intersection.rootMargin).toBe('200px 0px');
+				observerFor(frame)?.trigger(210, 44);
+				intersection.trigger(frame, false);
+				await tick();
+				expect(terminal.querySelector('table.sr-only')).not.toBeNull();
+				expect(frame.querySelector('.lc-tooltip-context')).toBeNull();
+				intersection.trigger(frame, true);
+				await vi.waitFor(() => expect(frame.querySelector('.lc-tooltip-context')).not.toBeNull());
+				const mounted = frame.querySelector('.lc-tooltip-context');
+				intersection.trigger(frame, false);
+				await tick();
+				expect(frame.querySelector('.lc-tooltip-context')).toBe(mounted);
+			} finally {
+				view.unmount();
+				terminal.remove();
+				main.remove();
+			}
+		},
+	);
+
 	it('waits for a hidden zero-size frame to recover after entering the viewport', async () => {
 		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
 		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
