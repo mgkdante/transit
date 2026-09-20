@@ -3,6 +3,7 @@ import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Chart from './Chart.svelte';
 import ChartFrame from './ChartFrame.svelte';
+import ChartViewport from './ChartViewport.svelte';
 import type { ChartSpec, HeatmapSpec, MagnitudeBarsSpec, StackedShareSpec } from './ChartSpec';
 
 const fluidSpec: StackedShareSpec = {
@@ -136,6 +137,44 @@ describe('Chart shared viewport', () => {
 			const canvas = container.querySelector<HTMLElement>('[data-slot="chart-canvas"]');
 			expect(canvas?.style.getPropertyValue('--chart-mobile-min-width')).toBe('48rem');
 		}
+	});
+
+	it.each(['fluid', 'self-managed'] as const)(
+		'does not measure or observe the non-scrolling %s viewport',
+		(layout) => {
+			const style = vi.spyOn(globalThis, 'getComputedStyle');
+			const { container } = render(ChartViewport, { props: { layout, label: 'Chart' } });
+			const viewport = container.querySelector('[data-slot="chart-viewport"]')!;
+			expect(style.mock.calls.filter(([element]) => element === viewport)).toHaveLength(0);
+			expect(observerFor(viewport)).toBeUndefined();
+			expect(viewport).not.toHaveAttribute('tabindex');
+		},
+	);
+
+	it('uses the initial resize delivery and clears scroll affordances when changing to fluid layout', async () => {
+		const style = vi.spyOn(globalThis, 'getComputedStyle');
+		const view = render(ChartViewport, { props: { layout: 'dense', label: 'Chart' } });
+		const viewport = view.container.querySelector<HTMLElement>('[data-slot="chart-viewport"]')!;
+		viewport.style.overflowX = 'auto';
+		Object.defineProperties(viewport, {
+			clientWidth: { configurable: true, get: () => 320 },
+			scrollWidth: { configurable: true, get: () => 768 },
+		});
+		expect(style.mock.calls.filter(([element]) => element === viewport)).toHaveLength(0);
+		const observer = observerFor(viewport)!;
+		observer.trigger();
+		await tick();
+		expect(viewport).toHaveAttribute('role', 'region');
+		expect(viewport).toHaveAttribute('tabindex', '0');
+		await view.rerender({ layout: 'fluid', label: 'Chart' });
+		expect(viewport).not.toHaveAttribute('role');
+		expect(viewport).not.toHaveAttribute('tabindex');
+		expect(view.container.querySelector('[data-slot="chart-output"]')).toHaveAttribute(
+			'data-more-end',
+			'false',
+		);
+		expect(observer.disconnect).toHaveBeenCalledOnce();
+		expect(style.mock.calls.filter(([element]) => element === viewport)).toHaveLength(1);
 	});
 
 	it('adds focus, a label, and an edge cue only while a dense viewport really overflows', async () => {
