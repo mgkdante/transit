@@ -193,7 +193,7 @@
 	}
 
 	.toc-pill-counter {
-		color: color-mix(in srgb, var(--primary) 85%, transparent);
+		color: var(--primary);
 		flex-shrink: 0;
 	}
 
