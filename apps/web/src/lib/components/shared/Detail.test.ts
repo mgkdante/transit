@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, hydrate, tick, unmount } from 'svelte';
 import Detail from './Detail.svelte';
 
 const body = createRawSnippet(() => ({
@@ -73,7 +73,16 @@ describe('Detail', () => {
 		},
 	);
 
-	it('includes initially open content during SSR without waiting for an effect', async () => {
+	it('ignores secondary clicks and unrelated keys', async () => {
+		const view = render(Detail, { props: { label: 'More', children: body } });
+		const toggle = view.getByRole('button', { name: 'More' });
+		await fireEvent.click(toggle, { button: 2 });
+		await fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+		expect(toggle.getAttribute('aria-expanded')).toBe('false');
+		expect(view.queryByTestId('detail-content')).toBeNull();
+	});
+
+	it('keeps the SSR trigger disabled until the same control hydrates, preserving initial content', async () => {
 		const { createServer } = await import('vite');
 		const server = await createServer({
 			configFile: 'vite.config.ts',
@@ -100,6 +109,39 @@ describe('Detail', () => {
 				expect(html.includes('Server analyst detail')).toBe(open);
 				expect(html).toContain(`aria-expanded="${open}"`);
 				expect(html).toContain('data-slot="collapsible-content"');
+				const target = document.createElement('div');
+				target.innerHTML = html;
+				const trigger = target.querySelector<HTMLButtonElement>('[data-slot="detail-toggle"]')!;
+				expect(trigger.disabled).toBe(true);
+				const activation = vi.fn();
+				trigger.addEventListener('click', activation);
+				trigger.click();
+				expect(activation).not.toHaveBeenCalled();
+				document.body.append(target);
+				const hydrated = hydrate(Detail, {
+					target,
+					props: {
+						label: 'More',
+						open,
+						children: createRawSnippet(() => ({
+							render: () => '<p>Server analyst detail</p>',
+						})),
+					},
+				});
+				try {
+					await tick();
+					expect(target.querySelector('[data-slot="detail-toggle"]')).toBe(trigger);
+					expect(trigger.disabled).toBe(false);
+					expect(trigger.getAttribute('aria-expanded')).toBe(String(open));
+					trigger.click();
+					await tick();
+					expect(activation).toHaveBeenCalledOnce();
+					expect(trigger.getAttribute('aria-expanded')).toBe(String(!open));
+					expect(target.textContent).toContain('Server analyst detail');
+				} finally {
+					await unmount(hydrated);
+					target.remove();
+				}
 			}
 		} finally {
 			await server.close();

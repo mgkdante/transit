@@ -339,11 +339,12 @@ async function collectLine(page, cell) {
 		'[data-slot="delay-by-crowding"]',
 		cell.locale,
 	);
-	for (let depth = 0; depth < 2; depth += 1) {
-		if ((await page.locator('[data-slot="severe-share"]').count()) > 0) break;
-		const closed = page.locator('[data-section="verdict"] button[aria-expanded="false"]').first();
-		if ((await closed.count()) > 0) await closed.click();
-	}
+	const verdictDetail = page.locator('[data-section="verdict"] [data-slot="detail-toggle"]');
+	invariant(
+		(await verdictDetail.count()) === 1 &&
+			(await verdictDetail.getAttribute('aria-expanded')) === 'true',
+		'verdict detail lost its opened state before collection',
+	);
 	invariant(
 		(await page.locator('[data-slot="severe-share"]').count()) > 0,
 		`severe-share control missing: ${(await page.locator('main').innerText()).slice(0, 1500)}`,
@@ -1889,7 +1890,21 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				await verifySsr(page, cell, fixture, ssrHtml);
 				// Open analyst content through its real control before reading its values.
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
-					if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+					const control = await toggle.elementHandle();
+					invariant(control != null, `${cell.path} detail control disappeared`);
+					try {
+						if ((await control.getAttribute('aria-expanded')) === 'false') await control.click();
+						await page.waitForFunction(
+							(button) =>
+								button.isConnected &&
+								!button.disabled &&
+								button.getAttribute('aria-expanded') === 'true',
+							control,
+							{ timeout: 5_000 },
+						);
+					} finally {
+						await control.dispose();
+					}
 				}
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
