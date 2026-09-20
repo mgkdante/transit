@@ -132,6 +132,7 @@
 	let activeTocId = $state('');
 	let tabViewport = $state<HTMLElement>();
 	let tabsMoreEnd = $state(false);
+	let observedTabViewport: HTMLElement | undefined;
 	let previousTocIds: string[] = [];
 	$effect.pre(() => {
 		const pathname = page.url.pathname;
@@ -163,9 +164,26 @@
 		});
 	}
 
-	function measureTabOverflow(): void {
-		if (!tabViewport) return;
-		tabsMoreEnd = tabViewport.scrollLeft + tabViewport.clientWidth < tabViewport.scrollWidth - 1;
+	function measureTabOverflow(viewport = tabViewport): void {
+		if (!viewport) return;
+		tabsMoreEnd = viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1;
+	}
+
+	function centerActiveTab(viewport: HTMLElement): void {
+		const activeTab = viewport.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+		const reduced =
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (activeTab) {
+			const desiredLeft = activeTab.offsetLeft - (viewport.clientWidth - activeTab.offsetWidth) / 2;
+			const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+			const left = Math.min(Math.max(0, desiredLeft), maxLeft);
+			if (typeof viewport.scrollTo === 'function') {
+				viewport.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left });
+			} else {
+				viewport.scrollLeft = left;
+			}
+		}
+		measureTabOverflow(viewport);
 	}
 
 	function guardScrolledTouchActivation(node: HTMLElement) {
@@ -219,14 +237,30 @@
 	$effect(() => {
 		const viewport = tabViewport;
 		if (!viewport) return;
-		measureTabOverflow();
-		if (typeof ResizeObserver !== 'function') return;
+		observedTabViewport = undefined;
+		if (typeof ResizeObserver !== 'function') {
+			observedTabViewport = viewport;
+			measureTabOverflow(viewport);
+			return;
+		}
 
-		const observer = new ResizeObserver(measureTabOverflow);
+		let disposed = false;
+		const observer = new ResizeObserver(() => {
+			if (disposed) return;
+			if (observedTabViewport !== viewport) {
+				observedTabViewport = viewport;
+				centerActiveTab(viewport);
+			} else {
+				measureTabOverflow(viewport);
+			}
+		});
 		observer.observe(viewport);
 		const tabList = viewport.querySelector('[role="tablist"]');
 		if (tabList) observer.observe(tabList);
-		return () => observer.disconnect();
+		return () => {
+			disposed = true;
+			observer.disconnect();
+		};
 	});
 
 	$effect(() => {
@@ -234,22 +268,9 @@
 		const viewport = tabViewport;
 		let cancelled = false;
 		void tick().then(() => {
-			if (cancelled || !viewport || selected !== active) return;
-			const activeTab = viewport.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-			const reduced =
-				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-			if (activeTab) {
-				const desiredLeft =
-					activeTab.offsetLeft - (viewport.clientWidth - activeTab.offsetWidth) / 2;
-				const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-				const left = Math.min(Math.max(0, desiredLeft), maxLeft);
-				if (typeof viewport.scrollTo === 'function') {
-					viewport.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left });
-				} else {
-					viewport.scrollLeft = left;
-				}
-			}
-			measureTabOverflow();
+			// Native initial resize owns first centering; later tab changes keep their tick.
+			if (cancelled || !viewport || selected !== active || observedTabViewport !== viewport) return;
+			centerActiveTab(viewport);
 		});
 
 		return () => {
