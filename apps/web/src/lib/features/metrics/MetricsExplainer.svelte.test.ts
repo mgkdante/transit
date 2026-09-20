@@ -139,10 +139,9 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('keeps every information kind in one foreground stack at every width', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
+		const source = ['MetricsExplainer.svelte', 'MetricBody.svelte']
+			.map((file) => readFileSync(resolve(process.cwd(), 'src/lib/features/metrics', file), 'utf8'))
+			.join('\n');
 		expect(source).toMatch(
 			/\.metric__paired-information\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/,
 		);

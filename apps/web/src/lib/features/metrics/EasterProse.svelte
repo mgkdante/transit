@@ -38,6 +38,7 @@
 <p class={className} data-slot="easter-prose">
 	{#each segments as seg, i (i)}{#if seg.match}<span
 				class="easter-word"
+				data-easter-effect={i}
 				use:easterWordHover={{ startEffect: i }}>{seg.text}</span
 			>{:else}{seg.text}{/if}{/each}
 </p>
