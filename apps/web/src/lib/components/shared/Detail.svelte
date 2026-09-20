@@ -106,6 +106,10 @@
 		cursor: pointer;
 		transition: color var(--duration-fast) var(--ease-default);
 	}
+	.detail__toggle:disabled {
+		cursor: default;
+		opacity: 0.5;
+	}
 	.detail__toggle:hover {
 		color: var(--primary-hover);
 		text-decoration: underline;
