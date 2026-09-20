@@ -74,13 +74,13 @@ describe('server request locale', () => {
 		expect(request.locals.v1Cache).toBeInstanceOf(Map);
 	});
 
-	it('preloads render assets but not JavaScript while preserving the locale transform', async () => {
+	it('preloads JavaScript and render assets while preserving the locale transform', async () => {
 		const request = event('https://transit.yesid.dev/fr/status');
 		const resolve = vi.fn(async (_event, options) => {
 			expect(options?.preload?.({ type: 'css', path: '/_app/app.css' })).toBe(true);
 			expect(options?.preload?.({ type: 'font', path: '/fonts/inter.woff2' })).toBe(true);
 			expect(options?.preload?.({ type: 'asset', path: '/brand.svg' })).toBe(true);
-			expect(options?.preload?.({ type: 'js', path: '/_app/start.js' })).toBe(false);
+			expect(options?.preload?.({ type: 'js', path: '/_app/start.js' })).toBe(true);
 			const transformed = options?.transformPageChunk?.({
 				html: '<html lang="%lang%">status</html>',
 				done: true,
