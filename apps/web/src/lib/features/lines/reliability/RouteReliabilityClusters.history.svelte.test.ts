@@ -11,6 +11,7 @@ import {
 import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 import {
 	createLineHistoryResource,
+	loadLineHistorySeed,
 	type LineHistoryResource,
 } from './data/lineHistoryResource.svelte';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
@@ -284,6 +285,49 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('RouteReliabilityClusters retained Line history', () => {
+	it('renders accepted server counts and source date immediately without reloading the selected partition', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+		);
+		harness.loadLineHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+		const request = historyRangeRequestFromSearchParams(harness.page.url.searchParams);
+		const seed = await loadLineHistorySeed(entityId, request, {
+			signal: new AbortController().signal,
+		});
+		expect(seed.index?.generated_utc).toBe(generatedUtc);
+		expect(seed.result?.value?.aggregate.delay.value).toMatchObject({
+			observationCount: 10,
+			onTimeCount: 2,
+			severeCount: 1,
+			averageDelaySeconds: 120,
+			otpPct: 20,
+			severePct: 10,
+		});
+		harness.getLineHistoryIndex.mockClear();
+		harness.loadLineHistoryRange.mockClear();
+		const history = createLineHistoryResource(entityId, request, () => seed);
+		try {
+			expect(history.state).toBe('ready');
+			const view = render(RouteReliabilityClusters, {
+				props: { data: current, locale: 'en', history },
+			});
+			const verdict = view.container.querySelector('[data-band="verdict"]') as HTMLElement;
+			expect(verdict).toHaveTextContent('20%');
+			expect(verdict).not.toHaveTextContent('12%');
+			expect(activeWindowText(view.container)).toContain('2026-01-31');
+			await fireEvent.click(
+				within(verdict).getByRole('button', { name: reliabilityCopy.en.sections.detailShow }),
+			);
+			expect(verdict.querySelector('[data-slot="daily-percentile-spread"]')).toHaveTextContent(
+				'p90 − median spread: 2.0 min. 2026-01-31 · 10 eligible delay predictions.',
+			);
+			expect(harness.getLineHistoryIndex).not.toHaveBeenCalled();
+			expect(harness.loadLineHistoryRange).not.toHaveBeenCalled();
+		} finally {
+			history.destroy();
+		}
+	});
+
 	it.each(['en', 'fr'] as const)(
 		'keeps retained one-day percentiles exact and multi-day percentiles absent in %s',
 		async (locale) => {

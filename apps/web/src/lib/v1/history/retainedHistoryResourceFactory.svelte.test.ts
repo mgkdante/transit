@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { LineHistoryResource } from '$lib/features/lines/reliability/data/lineHistoryResource.svelte';
+import type {
+	LineHistoryResource,
+	LineHistorySeed,
+} from '$lib/features/lines/reliability/data/lineHistoryResource.svelte';
 import type { NetworkHistoryResource } from '$lib/features/network/reliability/data/networkHistoryResource.svelte';
 import type { StopHistoryResource } from '$lib/features/stops/reliability/data/stopHistoryResource.svelte';
 import type { RawHistoryRangeRequest } from './rangeResource.svelte';
@@ -12,7 +15,11 @@ type Expect<T extends true> = T;
 type _LineSignature = Expect<
 	Equal<
 		typeof import('$lib/features/lines/reliability/data/lineHistoryResource.svelte').createLineHistoryResource,
-		(entityId: string, request: RawHistoryRangeRequest) => LineHistoryResource
+		(
+			entityId: string,
+			request: RawHistoryRangeRequest,
+			seed?: () => LineHistorySeed | undefined,
+		) => LineHistoryResource
 	>
 >;
 type _NetworkSignature = Expect<

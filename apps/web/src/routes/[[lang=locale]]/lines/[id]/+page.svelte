@@ -19,4 +19,7 @@
 	seed={data.seed}
 	routeSeed={data.routeSeed ?? undefined}
 	reliabilitySeed={data.reliabilitySeed ?? undefined}
+	lineHistorySeed={data.lineHistorySeed ?? undefined}
+	initialClusters={data.initialClusters}
+	initialImportFailed={data.initialImportFailed}
 />

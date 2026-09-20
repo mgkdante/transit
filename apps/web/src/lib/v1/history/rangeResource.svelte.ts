@@ -51,8 +51,18 @@ export interface HistoryRangeResource<TIndex, TValue> {
 	destroy(): void;
 }
 
-export interface HistoryRangeResourceOptions {
+/** An accepted server read, with its original request and resolved index kept together. */
+export interface HistoryRangeSeed<TIndex, TValue> {
+	readonly request: RawHistoryRangeRequest;
+	readonly index: TIndex | null;
+	readonly resolved: ResolvedHistoryRange | null;
+	readonly result: HistoryRangeLoadResult<TValue> | null;
+}
+
+export interface HistoryRangeResourceOptions<TIndex = unknown, TValue = unknown> {
 	readonly initialRequest: RawHistoryRangeRequest;
+	/** Read once at construction; subsequent requests and retries exclusively own this resource. */
+	readonly seed?: () => HistoryRangeSeed<TIndex, TValue> | undefined;
 }
 
 type FailureStage = 'index' | 'range' | null;
@@ -93,6 +103,45 @@ function rangeState(status: HistoryRangeLoadResult<unknown>['status']): HistoryR
 	return 'no-data';
 }
 
+function resolveAgainst<TIndex, TValue>(
+	loader: HistoryRangeLoader<TIndex, TValue>,
+	index: TIndex,
+	request: RawHistoryRangeRequest,
+): ResolvedHistoryRange {
+	const availability = loader.availability(index);
+	if (availability.kind === 'empty') {
+		return { selection: null, canonicalWindow: null, intersectingGaps: [], correction: null };
+	}
+	return resolveHistoryRange(
+		request.hasFrom ? request.rawFrom : undefined,
+		request.hasTo ? request.rawTo : undefined,
+		availability,
+		loader.defaultWindow(index),
+	);
+}
+
+/** Load through the same repository, selection and builder contract used after hydration. */
+export async function loadHistoryRangeSeed<TIndex, TValue>(
+	loader: HistoryRangeLoader<TIndex, TValue>,
+	initialRequest: RawHistoryRangeRequest,
+	signal: AbortSignal,
+): Promise<HistoryRangeSeed<TIndex, TValue>> {
+	const request = snapshotRequest(initialRequest);
+	signal.throwIfAborted();
+	const index = await loader.loadIndex(signal);
+	signal.throwIfAborted();
+	const resolved = index === null ? null : resolveAgainst(loader, index, request);
+	const result =
+		index !== null &&
+		isExplicit(request) &&
+		resolved?.canonicalWindow != null &&
+		resolved.selection != null
+			? await loader.load(resolved, index, signal)
+			: null;
+	signal.throwIfAborted();
+	return { request, index, resolved, result };
+}
+
 export function historyRangeRequestFromSearchParams(
 	params: URLSearchParams,
 ): RawHistoryRangeRequest {
@@ -106,25 +155,36 @@ export function historyRangeRequestFromSearchParams(
 
 export function createHistoryRangeResource<TIndex, TValue>(
 	loader: HistoryRangeLoader<TIndex, TValue>,
-	options: HistoryRangeResourceOptions,
+	options: HistoryRangeResourceOptions<TIndex, TValue>,
 ): HistoryRangeResource<TIndex, TValue> {
 	const initialRequest = snapshotRequest(options.initialRequest);
+	const candidate = options.seed?.();
+	const seed =
+		candidate !== undefined && sameRequest(initialRequest, candidate.request)
+			? candidate
+			: undefined;
 	let request = $state.raw<RawHistoryRangeRequest>(initialRequest);
-	let index = $state.raw<TIndex | null>(null);
-	let resolved = $state.raw<ResolvedHistoryRange | null>(null);
-	let value = $state.raw<TValue | null>(null);
-	let state = $state<HistoryRangeResourceState>('idle');
+	let index = $state.raw<TIndex | null>(seed?.index ?? null);
+	let resolved = $state.raw<ResolvedHistoryRange | null>(seed?.resolved ?? null);
+	let value = $state.raw<TValue | null>(seed?.result?.value ?? null);
+	let state = $state<HistoryRangeResourceState>(
+		seed === undefined ? 'idle' : seed.result === null ? 'current' : rangeState(seed.result.status),
+	);
 	let error = $state.raw<Error | null>(null);
 
 	let destroyed = false;
 	let failureStage: FailureStage = null;
-	let indexStatus: IndexStatus = 'idle';
+	let indexStatus: IndexStatus =
+		seed === undefined ? 'idle' : seed.index === null ? 'missing' : 'available';
 	let indexSequence = 0;
 	let rangeSequence = 0;
-	let indexIdentity = 0;
+	let indexIdentity = seed?.index == null ? 0 : 1;
 	let indexController: AbortController | null = null;
 	let rangeController: AbortController | null = null;
-	let rangeKey: string | null = null;
+	let rangeKey: string | null =
+		seed?.result != null && seed.resolved?.canonicalWindow != null
+			? `${indexIdentity}:${seed.resolved.canonicalWindow.from}:${seed.resolved.canonicalWindow.to}`
+			: null;
 
 	const abortRange = () => {
 		rangeSequence += 1;
@@ -150,21 +210,7 @@ export function createHistoryRangeResource<TIndex, TValue>(
 
 	const resolveAgainstIndex = (accepted: TIndex): ResolvedHistoryRange | null => {
 		try {
-			const availability = loader.availability(accepted);
-			if (availability.kind === 'empty') {
-				return {
-					selection: null,
-					canonicalWindow: null,
-					intersectingGaps: [],
-					correction: null,
-				};
-			}
-			return resolveHistoryRange(
-				request.hasFrom ? request.rawFrom : undefined,
-				request.hasTo ? request.rawTo : undefined,
-				availability,
-				loader.defaultWindow(accepted),
-			);
+			return resolveAgainst(loader, accepted, request);
 		} catch (cause) {
 			failIndex(cause);
 			return null;
@@ -336,7 +382,9 @@ export function createHistoryRangeResource<TIndex, TValue>(
 
 	const disposeEffects = $effect.root(() => {
 		$effect(() => {
-			untrack(startIndex);
+			untrack(() => {
+				if (indexStatus === 'idle') startIndex();
+			});
 		});
 	});
 

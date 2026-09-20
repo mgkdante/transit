@@ -64,10 +64,13 @@
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
-	import LazyRouteReliabilityPane from './LazyRouteReliabilityPane.svelte';
+	import LazyRouteReliabilityPane, {
+		type RouteReliabilityClustersModule,
+	} from './LazyRouteReliabilityPane.svelte';
 	import {
 		createLineHistoryResource,
 		type LineHistoryResource,
+		type LineHistorySeed,
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -89,9 +92,20 @@
 		routeSeed?: ResourceSeed<RouteFile | null>;
 		/** Server-loaded reliability archive; absent only when that independent read failed. */
 		reliabilitySeed?: ResourceSeed<RouteReliability | null>;
+		lineHistorySeed?: LineHistorySeed;
+		initialClusters?: RouteReliabilityClustersModule['default'];
+		initialImportFailed?: boolean;
 	}
 
-	let { id, seed, routeSeed, reliabilitySeed }: RouteDetailProps = $props();
+	let {
+		id,
+		seed,
+		routeSeed,
+		reliabilitySeed,
+		lineHistorySeed,
+		initialClusters,
+		initialImportFailed,
+	}: RouteDetailProps = $props();
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
@@ -151,6 +165,7 @@
 		return createLineHistoryResource(
 			routeId,
 			historyRangeRequestFromSearchParams(page.url.searchParams),
+			() => lineHistorySeed,
 		);
 	}
 	const initialHistoryEntityId = untrack(() => id);
@@ -711,6 +726,8 @@
 			<LazyRouteReliabilityPane
 				entityId={id}
 				resource={reliability}
+				{initialClusters}
+				{initialImportFailed}
 				{locale}
 				directionHeadsigns={dirHeadsigns}
 				history={lineHistory}

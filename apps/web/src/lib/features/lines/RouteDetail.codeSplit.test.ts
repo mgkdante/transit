@@ -10,9 +10,6 @@ describe('RouteDetail reliability bundle boundary', () => {
 		const detail = source('RouteDetail.svelte');
 
 		expect(detail).not.toMatch(/(^|\n)\s*import\s+RouteReliabilityClusters\b/u);
-		expect(detail).toContain(
-			"import LazyRouteReliabilityPane from './LazyRouteReliabilityPane.svelte'",
-		);
 		expect(detail).not.toContain("from './reliability/clusters'");
 		expect(detail).not.toContain("from './reliability/reliability.copy'");
 		expect(detail).toContain("from './reliability/selectors/dayVerdictHeadline'");

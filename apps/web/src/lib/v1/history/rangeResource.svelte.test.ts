@@ -3,6 +3,7 @@ import { flushSync } from 'svelte';
 import type { DateWindow } from '$lib/v1/history';
 import {
 	createHistoryRangeResource,
+	loadHistoryRangeSeed,
 	historyRangeRequestFromSearchParams,
 	type HistoryRangeLoader,
 	type HistoryRangeResource,
@@ -79,6 +80,119 @@ function create(
 
 afterEach(() => {
 	for (const resource of resources.splice(0)) resource.destroy();
+});
+
+describe('server-seeded history ranges', () => {
+	it.each(['complete', 'partial', 'no_data'] as const)(
+		'hydrates %s without repeating accepted repository work',
+		async (status) => {
+			const loader = makeLoader({
+				load: vi.fn(async () => ({
+					status,
+					value: status === 'no_data' ? null : { label: 'accepted January' },
+				})),
+			});
+			const captured = request('2026-01-10', '2026-01-20');
+			const seed = await loadHistoryRangeSeed(loader, captured, new AbortController().signal);
+			vi.mocked(loader.loadIndex).mockClear();
+			vi.mocked(loader.load).mockClear();
+			const resource = createHistoryRangeResource(loader, {
+				initialRequest: captured,
+				seed: () => seed,
+			});
+			resources.push(resource);
+			expect(resource.state).toBe(
+				status === 'complete' ? 'ready' : status === 'partial' ? 'partial' : 'no-data',
+			);
+			expect(resource.value?.label ?? null).toBe(status === 'no_data' ? null : 'accepted January');
+			expect(resource.index).toBe(index);
+			flushSync();
+			resource.setRequest({ ...captured });
+			flushSync();
+			expect(loader.loadIndex).not.toHaveBeenCalled();
+			expect(loader.load).not.toHaveBeenCalled();
+		},
+	);
+
+	it('keeps missing history and corrected bounds on their truthful current lanes', async () => {
+		for (const loader of [makeLoader({ loadIndex: vi.fn(async () => null) }), makeLoader()]) {
+			const captured = request('not-a-date', '2026-01-20');
+			const seed = await loadHistoryRangeSeed(loader, captured, new AbortController().signal);
+			const resource = createHistoryRangeResource(loader, {
+				initialRequest: captured,
+				seed: () => seed,
+			});
+			resources.push(resource);
+			expect(resource.state).toBe('current');
+			expect(resource.value).toBeNull();
+			expect(resource.resolved?.correction?.reason ?? null).toBe(
+				seed.index === null ? null : 'malformed',
+			);
+			flushSync();
+			expect(loader.loadIndex).toHaveBeenCalledTimes(1);
+			expect(loader.load).not.toHaveBeenCalled();
+		}
+	});
+
+	it('never rolls back client A→B→A or retry results when later server seeds arrive', async () => {
+		const loader = makeLoader();
+		const a = request('2026-01-01', '2026-01-10'),
+			b = request('2026-01-20', '2026-01-31');
+		const initial = await loadHistoryRangeSeed(loader, a, new AbortController().signal);
+		let incoming = $state.raw(initial);
+		const readSeed = vi.fn(() => incoming);
+		const resource = createHistoryRangeResource(loader, { initialRequest: a, seed: readSeed });
+		resources.push(resource);
+		flushSync();
+		const pending = deferred<{ value: TestValue; status: 'complete' }>();
+		vi.mocked(loader.load)
+			.mockImplementationOnce(() => pending.promise)
+			.mockResolvedValueOnce({ value: { label: 'new local A' }, status: 'complete' });
+		resource.setRequest(b);
+		const signal = vi.mocked(loader.load).mock.calls.at(-1)![2];
+		resource.setRequest(a);
+		await settle(resource);
+		expect(signal.aborted).toBe(true);
+		incoming = { ...initial, result: { value: { label: 'late server A' }, status: 'complete' } };
+		flushSync();
+		pending.resolve({ value: { label: 'late browser B' }, status: 'complete' });
+		await Promise.resolve();
+		flushSync();
+		expect(resource.value).toEqual({ label: 'new local A' });
+		vi.mocked(loader.load)
+			.mockRejectedValueOnce(new Error('offline'))
+			.mockResolvedValueOnce({ value: { label: 'retried B' }, status: 'complete' });
+		resource.setRequest(b);
+		await settle(resource);
+		expect(resource.state).toBe('error');
+		resource.retry();
+		await settle(resource);
+		expect(resource.value).toEqual({ label: 'retried B' });
+		incoming = { ...initial, request: b };
+		flushSync();
+		expect(resource.value).toEqual({ label: 'retried B' });
+		expect(readSeed).toHaveBeenCalledTimes(1);
+		resource.destroy();
+		incoming = initial;
+		flushSync();
+		expect(resource.state).toBe('idle');
+		expect(resource.index).toBeNull();
+	});
+
+	it('does not load a partition after an aborted server index read, even if the loader ignores cancellation', async () => {
+		const pending = deferred<TestIndex | null>(),
+			controller = new AbortController();
+		const loader = makeLoader({ loadIndex: vi.fn(() => pending.promise) });
+		const read = loadHistoryRangeSeed(
+			loader,
+			request('2026-01-01', '2026-01-10'),
+			controller.signal,
+		);
+		controller.abort();
+		pending.resolve(index);
+		await expect(read).rejects.toMatchObject({ name: 'AbortError' });
+		expect(loader.load).not.toHaveBeenCalled();
+	});
 });
 
 describe('historyRangeRequestFromSearchParams', () => {
