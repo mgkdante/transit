@@ -1895,6 +1895,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
 		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(2);
 
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Late' }));
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);

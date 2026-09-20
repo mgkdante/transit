@@ -71,6 +71,47 @@ afterEach(() => {
 });
 
 describe('MapOverlayChrome', () => {
+	it('does not mount hidden desktop controls on an initial mobile visit', () => {
+		installViewportMatchMedia(390);
+		const store = createFilterStore(emptyFilterState());
+		const { container } = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'fr', isDesktop: false },
+		});
+		expect(container.querySelector('.map-filter-panel')).toBeNull();
+		expect(container.querySelector('.map-filters')).toBeNull();
+		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
+	});
+
+	it('mounts desktop controls on first entry and retains their DOM and local groups across resizing', async () => {
+		installViewportMatchMedia(390);
+		const store = createFilterStore(emptyFilterState());
+		const view = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: false },
+		});
+		expect(view.container.querySelector('.map-filter-panel')).toBeNull();
+		installViewportMatchMedia(1280);
+		await view.rerender({ isDesktop: true });
+		const panel = view.container.querySelector('.map-filter-panel')!;
+		const controls = panel.querySelector('.map-filters')!;
+		const status = panel.querySelector('[data-filter-group="status"] .mf-group-trigger')!;
+		await fireEvent.click(status);
+		expect(status).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(panel.querySelector('.mf-toggle')!);
+		expect(controls).toHaveAttribute('data-open', 'false');
+
+		installViewportMatchMedia(390);
+		await view.rerender({ isDesktop: false });
+		expect(view.container.querySelector('.map-filter-panel')).toBe(panel);
+		installViewportMatchMedia(1280);
+		await view.rerender({ isDesktop: true });
+		expect(panel.querySelector('.map-filters')).toBe(controls);
+		expect(controls).toHaveAttribute('data-open', 'false');
+		await fireEvent.click(panel.querySelector('.mf-rail-expand')!);
+		expect(controls).toHaveAttribute('data-open', 'true');
+		expect(panel.querySelector('[data-filter-group="status"] .mf-group-trigger')).toBe(status);
+		expect(status).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	it.each([
 		{ locale: 'en', failure: 'unavailable' },
 		{ locale: 'fr', failure: 'unavailable' },
@@ -615,15 +656,14 @@ describe('MapOverlayChrome', () => {
 		const view = render(MapOverlayChromeHarness, {
 			props: { store, locale: 'en', isDesktop: false },
 		});
-		await waitFor(() =>
-			expect(document.querySelector('.map-filter-panel .map-filters')).toHaveAttribute(
-				'data-open',
-				'false',
-			),
-		);
+		expect(document.querySelector('.map-filter-panel')).toBeNull();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		await view.rerender({ store, locale: 'en', isDesktop: true });
+		expect(document.querySelector('.map-filter-panel .map-filters')).toHaveAttribute(
+			'data-open',
+			'false',
+		);
 		desktopListener?.({ matches: true, media: '(min-width: 1024px)' } as MediaQueryListEvent);
 
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

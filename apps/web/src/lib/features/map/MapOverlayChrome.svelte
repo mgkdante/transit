@@ -4,7 +4,7 @@
   SINGLE RESPONSIBILITY: compose every floating overlay that rides over the canvas —
   the title (MapHeadTitle), the near-me control, the desktop Controls panel (the
   shared `controls` snippet), the floating freshness chip, the feed-stall banner,
-  the live-edge notice, and the desktop hover peek. ZERO state mutation: every
+  the live-edge notice, and the desktop hover peek. No filter or motion mutation: every
   handler + snippet is passed in by the orchestrator (MapHero), which owns all the
   state. The right-edge chrome reads --map-detail-offset so it clears the open
   detail overlay. Owns the scoped CSS for the overlays it places (filter panel,
@@ -91,6 +91,13 @@
 		controls,
 	}: Props = $props();
 
+	// Avoid building CSS-hidden desktop controls on mobile. Once mounted, keep
+	// their local group/collapse state and DOM through later viewport changes.
+	let desktopControlsMounted = $state(false);
+	$effect(() => {
+		if (isDesktop) desktopControlsMounted = true;
+	});
+
 	const feedBannerState = $derived(
 		deriveMapFeedBannerState({
 			selectedFamilyFailureMessage,
@@ -155,9 +162,11 @@
      mobile renders the SAME snippet inside MapFilterPill's drawer (one source
      of truth, no divergent call sites). There is no separate floating chip,
      so nothing reflows when the toggle swaps raw⇄smooth. -->
-<div class="map-overlay map-filter-panel">
-	{@render controls(undefined)}
-</div>
+{#if isDesktop || desktopControlsMounted}
+	<div class="map-overlay map-filter-panel">
+		{@render controls(undefined)}
+	</div>
+{/if}
 
 <!-- M6f-2 F14: no `stalled` gate. People must still be able to SEE what the
      controls are when the data is not responding, so the peel stays present,
