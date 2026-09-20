@@ -110,7 +110,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
 	const cache = await edgeCache(event.platform);
-	const cacheBypassed = cache == null || requestBypassesHtmlCache(event.request);
+	const cacheBypassed =
+		event.isDataRequest || cache == null || requestBypassesHtmlCache(event.request);
 	const key = cacheBypassed ? null : cacheKey(event.url);
 
 	if (cache != null && key != null) {

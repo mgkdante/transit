@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
-import { STATUS_LABELS } from '$lib/v1/enumLabels';
+import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
@@ -1862,4 +1862,77 @@ describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (loc
 			/min late|min early|min en retard|min en avance/,
 		);
 	});
+});
+
+describe('vehicle attribute definition groups', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps every %s fact action inside its description group',
+		async (locale) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			if (detail?.kind !== 'vehicle' || !detail.nextStop)
+				throw new Error('expected vehicle next stop');
+			const onselect = vi.fn();
+			const onfilter = vi.fn();
+			const view = render(MapSelectionDetail, { props: { detail, locale, onselect, onfilter } });
+			const grid = view.container.querySelector('dl.detail-attribute-grid')!;
+			for (const group of grid.children) {
+				expect(group.tagName).toBe('DIV');
+				const tags = [...group.children].map((element) => element.tagName);
+				expect(tags[0]).toBe('DT');
+				expect(tags.slice(1).every((tag) => tag === 'DD')).toBe(true);
+			}
+			const actions = [
+				...grid.querySelectorAll<HTMLButtonElement>('.detail-attribute-action > button'),
+			];
+			const t = MAP_SELECTION_DETAIL_COPY[locale];
+			expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+				t.filterStatus(STATUS_LABELS[locale].late),
+				t.selectStop(detail.nextStop.name),
+				t.filterCrowding(OCCUPANCY_LABELS[locale].standing),
+			]);
+			await fireEvent.click(actions[0]);
+			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'status', value: 'late' });
+			await fireEvent.click(actions[1]);
+			expect(onselect).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
+			await fireEvent.click(actions[2]);
+			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'occupancy', value: 'standing' });
+		},
+	);
+
+	it.each([320, 540])(
+		'retains action-cell layout and 44px targets at %ipx panel width',
+		(width) => {
+			const style = installLeafContainerSizeSeam(
+				'src/lib/features/map/detail/DetailAttributeGrid.svelte',
+				width,
+			);
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const view = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+			try {
+				const cells = [
+					...view.container.querySelectorAll<HTMLElement>('dd.detail-attribute-action'),
+				];
+				expect(cells).toHaveLength(3);
+				for (const cell of cells) {
+					// Native geometry remains required; this checks the grid stretch contract.
+					expect(getComputedStyle(cell).display).toBe('grid');
+					expectHard44(cell.querySelector('button')!);
+					const columns = getComputedStyle(cell.parentElement!).gridTemplateColumns.replace(
+						/\s/g,
+						'',
+					);
+					expect(columns).toBe(width === 320 ? 'minmax(0,1fr)' : '5.75remminmax(0,1fr)auto');
+				}
+			} finally {
+				style.remove();
+				view.unmount();
+			}
+		},
+	);
 });

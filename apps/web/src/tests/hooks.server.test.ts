@@ -123,6 +123,30 @@ describe('server HTML edge cache', () => {
 		expect(cache.put).not.toHaveBeenCalled();
 	});
 
+	it('bypasses cached HTML for a server-data request with the same normalized URL', async () => {
+		const cache = cacheHarness(html('<h1>cached document</h1>'));
+		const request = event('https://transit.yesid.dev/fr/metrics/__data.json', { cache });
+		request.url = new URL('https://transit.yesid.dev/fr/metrics');
+		request.isDataRequest = true;
+		const payload = { type: 'data', nodes: [] };
+		const resolve = vi.fn(
+			async () =>
+				new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } }),
+		);
+
+		const response = await handle({ event: request, resolve });
+
+		expect(resolve).toHaveBeenCalledOnce();
+		expect(cache.match).not.toHaveBeenCalled();
+		expect(cache.put).not.toHaveBeenCalled();
+		expect(request.locals.locale).toBe('fr');
+		expect(response.headers.get('x-transit-edge-cache')).toBe('BYPASS');
+		expect(response.headers.get('content-type')).toBe('application/json');
+		expect(response.headers.get('content-security-policy')).toBeTruthy();
+		expect(response.headers.get('link')).toBeNull();
+		expect(await response.json()).toEqual(payload);
+	});
+
 	it('stores a safe anonymous HTML miss for 30 seconds without exposing that TTL publicly', async () => {
 		const cache = cacheHarness();
 		const request = event('https://transit.yesid.dev/lines/24?tab=detail', { cache });

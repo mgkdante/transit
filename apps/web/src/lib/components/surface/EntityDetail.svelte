@@ -186,7 +186,7 @@
 		measureTabOverflow(viewport);
 	}
 
-	function guardScrolledTouchActivation(node: HTMLElement) {
+	function tabInteractions(node: HTMLElement) {
 		let touchStart: { x: number; y: number; scrollLeft: number } | null = null;
 		let suppressActivation = false;
 
@@ -219,10 +219,27 @@
 			touchStart = null;
 		};
 
+		const onFocusIn = (event: FocusEvent) => {
+			const tab = event.target;
+			if (
+				!(tab instanceof HTMLElement) ||
+				tab.getAttribute('role') !== 'tab' ||
+				!tab.matches(':focus-visible')
+			)
+				return;
+			touchStart = null;
+			suppressActivation = false;
+			if (typeof tab.scrollIntoView !== 'function') return;
+			// Keyboard focus must clear both the scroll strip and floating page controls.
+			tab.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+			measureTabOverflow();
+		};
+
 		node.addEventListener('pointerdown', onPointerDown, { passive: true });
 		node.addEventListener('pointermove', onPointerMove, { passive: true });
 		node.addEventListener('scroll', onScroll, { passive: true });
 		node.addEventListener('click', onClick, true);
+		node.addEventListener('focusin', onFocusIn);
 
 		return {
 			destroy() {
@@ -230,6 +247,7 @@
 				node.removeEventListener('pointermove', onPointerMove);
 				node.removeEventListener('scroll', onScroll);
 				node.removeEventListener('click', onClick, true);
+				node.removeEventListener('focusin', onFocusIn);
 			},
 		};
 	}
@@ -283,7 +301,7 @@
 	<div class="entity-tabs" class:entity-tabs--article={article} data-slot="entity-detail-tabs">
 		<div
 			bind:this={tabViewport}
-			use:guardScrolledTouchActivation
+			use:tabInteractions
 			class="entity-tabs__scroll"
 			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"

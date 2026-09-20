@@ -229,6 +229,84 @@ describe('EntityDetail — signage-active tab pattern', () => {
 		},
 	);
 
+	it('reveals a selected keyboard tab and clears older touch scroll before keyboard activation', async () => {
+		vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+		const { container } = render(EntityDetailHarness, {
+			props: { mode: 'article', initialActive: 'reliability' },
+		});
+		const viewport = container.querySelector<HTMLElement>(
+			'[data-slot="entity-detail-tabs-scroll"]',
+		)!;
+		const selected = screen.getByRole('tab', { name: 'Reliability' });
+		const pane = screen.getByText('Reliability pane');
+		Object.defineProperties(viewport, {
+			clientWidth: { configurable: true, value: 320 },
+			scrollWidth: { configurable: true, value: 377 },
+		});
+		// The test DOM has no native input-modality state; supply the browser's focus-visible result.
+		const matches = selected.matches.bind(selected);
+		vi.spyOn(selected, 'matches').mockImplementation(
+			(selector) => selector === ':focus-visible' || matches(selector),
+		);
+		const reveal = vi.fn(() => {
+			viewport.scrollLeft = 33;
+		});
+		Object.defineProperty(selected, 'scrollIntoView', { configurable: true, value: reveal });
+		selected.focus();
+		await tick();
+		expect(selected).toHaveFocus();
+		expect(viewport.scrollLeft).toBe(33);
+		expect(reveal).toHaveBeenCalledExactlyOnceWith({
+			behavior: 'auto',
+			block: 'center',
+			inline: 'nearest',
+		});
+		expect(screen.getByRole('tab', { name: 'Reliability' })).toBe(selected);
+		expect(selected).toHaveAttribute('aria-selected', 'true');
+		expect(screen.getByText('Reliability pane')).toBe(pane);
+		expect(screen.queryByText('Detail pane')).not.toBeInTheDocument();
+
+		selected.blur();
+		await fireEvent.pointerDown(viewport, { pointerType: 'touch', clientX: 250, clientY: 220 });
+		viewport.scrollLeft = 57;
+		await fireEvent.scroll(viewport);
+		selected.focus();
+		await fireEvent.scroll(viewport);
+		const activation = vi.fn();
+		selected.addEventListener('click', activation);
+		expect(await fireEvent.click(selected, { detail: 0 })).toBe(true);
+		expect(activation).toHaveBeenCalledOnce();
+		expect(selected).toHaveAttribute('aria-selected', 'true');
+	});
+
+	it.each(['mouse', 'touch'])(
+		'preserves manual strip scroll when %s input focuses a tab',
+		async (pointerType) => {
+			vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+			const { container } = render(EntityDetailHarness, {
+				props: { mode: 'article', initialActive: 'reliability' },
+			});
+			const viewport = container.querySelector<HTMLElement>(
+				'[data-slot="entity-detail-tabs-scroll"]',
+			)!;
+			const selected = screen.getByRole('tab', { name: 'Reliability' }),
+				reveal = vi.fn();
+			const matches = selected.matches.bind(selected);
+			vi.spyOn(selected, 'matches').mockImplementation(
+				(selector) => selector !== ':focus-visible' && matches(selector),
+			);
+			Object.defineProperty(selected, 'scrollIntoView', { configurable: true, value: reveal });
+			viewport.scrollLeft = 57;
+			await fireEvent.pointerDown(selected, { pointerType, clientX: 250, clientY: 220 });
+			selected.focus();
+			await tick();
+			expect(selected).toHaveFocus();
+			expect(reveal).not.toHaveBeenCalled();
+			expect(viewport.scrollLeft).toBe(57);
+			expect(selected).toHaveAttribute('aria-selected', 'true');
+		},
+	);
+
 	it('does not activate a tab when a touch gesture horizontally scrolled the strip', async () => {
 		const { container } = render(EntityDetailHarness, { props: { mode: 'article' } });
 		const scrollport = container.querySelector<HTMLElement>(
