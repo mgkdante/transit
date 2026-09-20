@@ -383,7 +383,7 @@ describe('vehicle sprite glyph vocabulary boundary', () => {
 			'utf8',
 		);
 		const datavizImport = source.match(
-			/import\s*\{([^}]+)\}\s*from ['"]\$lib\/components\/dataviz['"];/u,
+			/import\s*\{([^}]+)\}\s*from ['"]\$lib\/components\/dataviz\/tokens['"];/u,
 		);
 		expect(datavizImport?.[1]).toMatch(/\bSTATUS_GLYPH\b/u);
 		expect(datavizImport?.[1]).toMatch(/\boccupancyGlyph\b/u);

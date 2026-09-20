@@ -11,7 +11,12 @@
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas/types';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+	import {
+		STATUS_GLYPH,
+		occupancyGlyph,
+		occupancyVar,
+		statusVar,
+	} from '$lib/components/dataviz/tokens';
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';

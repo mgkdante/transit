@@ -6,7 +6,7 @@
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapHoverPeek } from './mapHoverPeek';
-	import { StatusBadge } from '$lib/components/dataviz';
+	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';

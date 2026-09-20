@@ -76,7 +76,7 @@
 	import { runViewTransition } from '$lib/motion/view-transition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { AppShell } from '$lib/components/shell';
-	import { Footer } from '$lib/components/layout';
+	import Footer from '$lib/components/layout/Footer.svelte';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import { mainLandmarkLabel } from '$lib/content/nav';

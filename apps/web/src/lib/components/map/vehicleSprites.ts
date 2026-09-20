@@ -21,7 +21,12 @@ import {
 	type StatusCode,
 	type OccupancyCode,
 } from '$lib/v1/schemas/types';
-import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+import {
+	STATUS_GLYPH,
+	occupancyGlyph,
+	occupancyVar,
+	statusVar,
+} from '$lib/components/dataviz/tokens';
 
 /** Frozen marker geometry: the map layer and non-Chromium receipt runner share this table. */
 export const VEHICLE_MARKER_GEOMETRY = Object.freeze({

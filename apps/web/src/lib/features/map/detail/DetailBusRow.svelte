@@ -7,7 +7,7 @@
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { timeLabel } from '../mapSelectionDetail.logic';
 	import { MaybeValue } from '$lib/components/edge';
-	import { StatusBadge } from '$lib/components/dataviz';
+	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 
 	interface Props {

@@ -4,7 +4,12 @@
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+	import {
+		STATUS_GLYPH,
+		occupancyGlyph,
+		occupancyVar,
+		statusVar,
+	} from '$lib/components/dataviz/tokens';
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
