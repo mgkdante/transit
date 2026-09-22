@@ -1,0 +1,128 @@
+diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d38841256c52b 100644
+--- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
++++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+@@ -24,6 +24,7 @@ export class DismissibleLayerState {
+     #documentObj = undefined;
+     #onFocusOutside;
+     #unsubClickListener = noop;
++    #pendingTouch = null;
+     constructor(opts) {
+         this.opts = opts;
+         this.#behaviorType = opts.interactOutsideBehavior;
+@@ -37,6 +38,7 @@ export class DismissibleLayerState {
+             this.#resetState();
+             globalThis.bitsDismissableLayers.delete(this);
+             this.#handleInteractOutside.destroy();
++            this.#clearTouch();
+             unsubEvents();
+         };
+         watch([() => this.opts.enabled.current, () => this.opts.ref.current], () => {
+@@ -55,7 +57,7 @@ export class DismissibleLayerState {
+             this.#resetState.destroy();
+             globalThis.bitsDismissableLayers.delete(this);
+             this.#handleInteractOutside.destroy();
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             unsubEvents();
+         });
+     }
+@@ -87,12 +89,50 @@ export class DismissibleLayerState {
+          * Mark interaction-start event as non-intercepted. Debounce `onInteractOutsideStart`
+          * to avoid prematurely checking if other events were intercepted.
+          */
+-        on(this.#documentObj, "pointerdown", executeCallbacks(this.#markNonInterceptedEvent, this.#handleInteractOutside)), 
++        on(this.#documentObj, "pointerdown", executeCallbacks(this.#markNonInterceptedEvent, this.#startInteractOutside)),
++        on(this.#documentObj, "pointercancel", this.#clearTouch, { capture: true }), 
+         /**
+          * HANDLE FOCUS OUTSIDE
+          */
+         on(this.#documentObj, "focusin", this.#handleFocus));
+     }
++    #clearTouch = () => {
++        this.#pendingTouch = null;
++        this.#unsubClickListener();
++        this.#unsubClickListener = noop;
++    };
++    #finishTouch = () => {
++        const pending = this.#pendingTouch;
++        if (!pending?.validated || !pending.click)
++            return;
++        if (!this.opts.enabled.current || this.opts.ref.current !== pending.node) {
++            this.#clearTouch();
++            return;
++        }
++        this.#clearTouch();
++        this.#handleDismiss(pending.click);
++    };
++    #startInteractOutside = (event) => {
++        if (event.pointerType === "touch" && this.opts.ref.current) {
++            const pending = { event, node: this.opts.ref.current, path: event.composedPath(), click: null, validated: false };
++            this.#pendingTouch = pending;
++            // Keep this gesture's click even when it precedes the deferred validation.
++            this.#unsubClickListener = on(this.#documentObj, "click", (click) => {
++                this.#unsubClickListener();
++                this.#unsubClickListener = noop;
++                const path = click.composedPath();
++                const sameGesture = path.includes(event.target) || pending.path.includes(click.target);
++                if (this.#pendingTouch !== pending || click.detail === 0 || !sameGesture ||
++                    (path.includes(pending.node) && !pending.path.includes(pending.node))) {
++                    this.#clearTouch();
++                    return;
++                }
++                pending.click = click;
++                this.#finishTouch();
++            }, { once: true });
++        }
++        this.#handleInteractOutside(event);
++    };
+     #handleDismiss = (e) => {
+         let event = e;
+         if (event.defaultPrevented) {
+@@ -102,13 +142,13 @@ export class DismissibleLayerState {
+     };
+     #handleInteractOutside = debounce((e) => {
+         if (!this.opts.ref.current) {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         const isEventValid = this.opts.isValidEvent.current(e, this.opts.ref.current) ||
+             isValidEvent(e, this.opts.ref.current);
+         if (!this.#isResponsibleLayer || this.#isAnyEventIntercepted() || !isEventValid) {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         let event = e;
+@@ -117,20 +157,25 @@ export class DismissibleLayerState {
+         }
+         if (this.#behaviorType.current !== "close" &&
+             this.#behaviorType.current !== "defer-otherwise-close") {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         if (e.pointerType === "touch") {
+-            this.#unsubClickListener();
+-            this.#unsubClickListener = on(this.#documentObj, "click", this.#handleDismiss, {
+-                once: true,
+-            });
++            const pending = this.#pendingTouch;
++            if (!pending || pending.event !== e || pending.node !== this.opts.ref.current)
++                return;
++            pending.validated = true;
++            this.#finishTouch();
+         }
+         else {
+             this.#interactOutsideProp.current(event);
+         }
+     }, 10);
+     #markInterceptedEvent = (e) => {
++        if (this.#pendingTouch) {
++            this.#handleInteractOutside.destroy();
++            this.#clearTouch();
++        }
+         this.#interceptedEvents[e.type] = true;
+     };
+     #markNonInterceptedEvent = (e) => {

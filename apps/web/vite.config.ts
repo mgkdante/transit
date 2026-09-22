@@ -136,7 +136,6 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
 	build: {
-		modulePreload: false,
 		chunkSizeWarningLimit: 1100,
 		rollupOptions: isSsrBuild
 			? undefined

@@ -35,5 +35,9 @@
     "undici": "7.29.0",
     "cookie": "0.7.2",
     "vite": "7.3.6"
+  },
+  "patchedDependencies": {
+    "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
+    "vite@7.3.6": "patches/vite@7.3.6.patch"
   }
 }
