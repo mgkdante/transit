@@ -394,9 +394,9 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 beforeEach(() => routeSurface.reset());
 
-// 37 existing mounts (including both schedule locales) plus seven status cases per locale.
+// Existing mounts plus the prepared-time key/fallback case and seven status cases per locale.
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(51);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(52);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -448,6 +448,45 @@ describe('RouteDetail article cover and focus scope', () => {
 			'datetime',
 			CURRENT_RELIABILITY.generated_utc,
 		);
+	});
+
+	it('uses a prepared article time only for the same route, ISO, and locale', async () => {
+		routeDetailNav.page.url = new URL('http://localhost/lines/161?tab=reliability');
+		reliabilityResourceState = {
+			data: CURRENT_RELIABILITY,
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const prepared = {
+			routeId: '161',
+			iso: CURRENT_RELIABILITY.generated_utc,
+			locale: 'en' as const,
+			text: 'Prepared current timestamp',
+		};
+		const props = { id: '161', seed: routeSeed(), preparedArticleTime: prepared };
+		const view = routeSurface.mount(RouteDetail, { props });
+		const articleTime = () =>
+			view.container.querySelector<HTMLElement>('[data-slot="article-header"] time[datetime]');
+		expect(articleTime()).toHaveTextContent(prepared.text);
+		expect(articleTime()).toHaveAttribute('datetime', prepared.iso);
+		expect(view.container.querySelector('.header__edge-right')).toHaveTextContent(prepared.text);
+
+		for (const mismatch of [
+			{ routeId: 'other' },
+			{ iso: ROUTE_FILE.generated_utc },
+			{ locale: 'fr' as const },
+		]) {
+			await view.rerender({ ...props, preparedArticleTime: { ...prepared, ...mismatch } });
+			expect(articleTime()).not.toHaveTextContent(prepared.text);
+		}
+
+		await view.rerender(props);
+		expect(articleTime()).toHaveTextContent(prepared.text);
+		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await tick();
+		expect(articleTime()).toHaveAttribute('datetime', ROUTE_FILE.generated_utc);
+		expect(articleTime()).not.toHaveTextContent(prepared.text);
 	});
 
 	it('keeps tab URLs shareable while preserving unrelated search parameters', async () => {

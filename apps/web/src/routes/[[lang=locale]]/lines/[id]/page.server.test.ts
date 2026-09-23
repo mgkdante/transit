@@ -71,6 +71,7 @@ describe('/lines/[id] server identity seed', () => {
 			const request = {
 				data,
 				url: new URL(`https://transit.yesid.dev/lines/24?tab=reliability&grain=${grain}`),
+				parent: async () => ({ lang: 'en' }),
 			} as Parameters<typeof loadUniversal>[0];
 			expect((await loadUniversal(request))?.initialClusters).toBeUndefined();
 			data.reliabilitySeed.data.periods.push({ grain, date: '2026-01-20', otp_pct: 60 });

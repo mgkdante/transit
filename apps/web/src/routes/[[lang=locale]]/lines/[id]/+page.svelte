@@ -22,4 +22,5 @@
 	lineHistorySeed={data.lineHistorySeed ?? undefined}
 	initialClusters={data.initialClusters}
 	initialImportFailed={data.initialImportFailed}
+	preparedArticleTime={data.preparedArticleTime}
 />

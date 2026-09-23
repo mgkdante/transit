@@ -20,7 +20,7 @@
 	import { page } from '$app/state';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getLocale, localizeHref } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
@@ -95,6 +95,7 @@
 		lineHistorySeed?: LineHistorySeed;
 		initialClusters?: RouteReliabilityClustersModule['default'];
 		initialImportFailed?: boolean;
+		preparedArticleTime?: { routeId: string; iso: string; locale: Locale; text: string };
 	}
 
 	let {
@@ -105,6 +106,7 @@
 		lineHistorySeed,
 		initialClusters,
 		initialImportFailed,
+		preparedArticleTime,
 	}: RouteDetailProps = $props();
 
 	const locale = getLocale();
@@ -229,17 +231,24 @@
 			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
-	const articleEdgeRight = $derived(
-		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
+	const articleTimeText = $derived(
+		articleGeneratedUtc
+			? preparedArticleTime?.routeId === id &&
+				preparedArticleTime.iso === articleGeneratedUtc &&
+				preparedArticleTime.locale === locale
+				? preparedArticleTime.text
+				: formatUtc(articleGeneratedUtc, locale)
+			: null,
 	);
+	const articleEdgeRight = $derived(articleTimeText ?? shortName);
 	const articleTags = $derived<readonly string[]>(shortName ? [id, shortName] : [id]);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (shortName) entries.push({ label: t.article.provider, text: shortName });
-		if (articleGeneratedUtc) {
+		if (articleGeneratedUtc && articleTimeText !== null) {
 			entries.push({
 				label: t.article.generated,
-				text: formatUtc(articleGeneratedUtc, locale),
+				text: articleTimeText,
 				datetime: articleGeneratedUtc,
 			});
 		}
