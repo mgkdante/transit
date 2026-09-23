@@ -10,6 +10,11 @@ export const DEV_MANIFEST_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/manife
 export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
+const ssrContractTests = [
+	'src/routes/**/page.svelte.test.ts',
+	'src/lib/features/metrics/MetricBody.svelte.test.ts',
+	'src/lib/features/metrics/MetricsExplainer.methodology.svelte.test.ts',
+];
 
 function canonicalDataUrl(value: unknown): URL | null {
 	if (typeof value !== 'string') return null;
@@ -228,7 +233,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 						'src/lib/**/*.svelte.test.ts',
 						'src/routes/**/*.test.ts',
 					],
-					exclude: ['src/routes/**/page.svelte.test.ts'],
+					exclude: ssrContractTests,
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
@@ -240,7 +245,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 				extends: true,
 				test: {
 					name: 'ssr-contract',
-					include: ['src/routes/**/page.svelte.test.ts'],
+					include: ssrContractTests,
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
