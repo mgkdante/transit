@@ -67,7 +67,7 @@
 				ruleX1: right ? 31 : 8,
 				ruleX2: right ? 47.5 : 25,
 				tx: right ? 39 : 16,
-				ty: mid + 3.8,
+				ty: mid + 4.8,
 				active: loc === locale,
 				delay: k * 60,
 			};
@@ -97,7 +97,7 @@
 						<g
 							class="board"
 							class:active={b.active}
-							style="--d:{b.delay}ms; transform-origin:28px {b.ty - 3.8}px;"
+							style="--d:{b.delay}ms; transform-origin:28px {b.ty - 4.8}px;"
 						>
 							<!-- fingerboard: flat outline (current locale fills solid --primary) -->
 							<path class="plate" d={b.path} />

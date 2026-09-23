@@ -183,7 +183,7 @@
 	.freshness-stamp--live .freshness-stamp-label {
 		letter-spacing: 1px;
 		text-transform: uppercase;
-		color: var(--accent-text);
+		color: color-mix(in srgb, var(--accent-text) 70%, var(--foreground));
 	}
 	/* Updated variant: a calm muted overline — never the hot accent. */
 	.freshness-stamp--updated .freshness-stamp-label {
