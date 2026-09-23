@@ -42,8 +42,6 @@ export function createMapRuntime(options: {
 	let reportSetupFailure: (() => void) | null = null;
 	const emphasis = createMapEmphasisController(options.selection);
 	const layers = createMapLayerFeedController();
-	const stops = $derived(options.readFeed().stops.items);
-
 	function release(m: MapLibreMap): void {
 		if (map !== m) return;
 		const released = ownerCleanup.releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
@@ -232,10 +230,9 @@ export function createMapRuntime(options: {
 
 	$effect(() => {
 		const m = map;
-		const entries = stops;
 		void options.selection.selected;
 		void options.selection.hovered;
-		if (m) untrack(() => emphasis.apply(m, entries));
+		if (m) untrack(() => emphasis.apply(m));
 	});
 
 	let replayMap: MapLibreMap | null = null;

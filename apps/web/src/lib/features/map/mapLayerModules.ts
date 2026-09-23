@@ -2,8 +2,6 @@ import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import {
 	addRouteLineLayers,
 	addRouteLineSource,
-	addStopExceptionLayer,
-	addStopExceptionSource,
 	addStopsLayer,
 	addStopsSource,
 	bakeLocationPinImage,
@@ -83,16 +81,14 @@ const stopsModule: LayerModule = {
 	id: 'stops',
 	install(map) {
 		addStopsSource(map);
-		addStopExceptionSource(map);
 		addStopsLayer(map);
-		addStopExceptionLayer(map);
 	},
 	invalidationKey(ctx) {
 		const { alertIds, filter, items, selectedId } = ctx.stops;
 		const alertFilterActive = (filter?.alerts?.length ?? 0) > 0;
 		return [
 			items,
-			selectedId,
+			filter?.stops.size ? null : selectedId,
 			[...(filter?.stops ?? [])].sort().join('\u0000'),
 			!filter?.entities?.length || filter.entities.includes('stop'),
 			alertFilterActive,

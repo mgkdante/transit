@@ -1,6 +1,5 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import type { SlimStopEntry } from '$lib/v1';
-import { setStopException, STOPS_SOURCE } from '$lib/components/map';
+import { STOPS_SOURCE } from '$lib/components/map';
 import type { MapSelection } from './mapSelection';
 import type { MapSelectionController } from './mapSelectionController.svelte';
 
@@ -13,7 +12,7 @@ type ReadonlySelectionController = Pick<MapSelectionController, 'hovered' | 'sel
 export interface MapEmphasisController {
 	get hoveredTarget(): MapEmphasisTarget | null;
 	get selectedTargets(): readonly MapEmphasisTarget[];
-	apply(map: MapLibreMap, stops: readonly SlimStopEntry[]): void;
+	apply(map: MapLibreMap): void;
 	clear(map?: MapLibreMap): void;
 	replay(map: MapLibreMap): void;
 }
@@ -54,36 +53,6 @@ export function createMapEmphasisController(
 	let hoveredTarget = $state<MapEmphasisTarget | null>(null);
 	let selectedTargets = $state<MapEmphasisTarget[]>([]);
 	let activeMap: MapLibreMap | null = null;
-	let stopEntries: readonly SlimStopEntry[] = [];
-	let stopsById: Readonly<Record<string, SlimStopEntry>> = {};
-	let exceptionMap: MapLibreMap | null = null;
-	let exceptionSelectedStopId: string | null = null;
-	let exceptionHoveredStopId: string | null = null;
-
-	function updateStopIndex(stops: readonly SlimStopEntry[]): boolean {
-		if (stops === stopEntries) return false;
-		stopEntries = stops;
-		stopsById = Object.fromEntries(stops.map((stop) => [stop.id, stop]));
-		return true;
-	}
-
-	function syncStopException(map: MapLibreMap, force = false): void {
-		const selectedStopId = selectedTargets.find((target) => target.kind === 'stop')?.id ?? null;
-		const hoveredStopId = hoveredTarget?.kind === 'stop' ? hoveredTarget.id : null;
-		if (
-			!force &&
-			exceptionMap === map &&
-			exceptionSelectedStopId === selectedStopId &&
-			exceptionHoveredStopId === hoveredStopId
-		) {
-			return;
-		}
-		setStopException(map, stopsById, selectedStopId, hoveredStopId);
-		exceptionMap = map;
-		exceptionSelectedStopId = selectedStopId;
-		exceptionHoveredStopId = hoveredStopId;
-	}
-
 	function clearMap(map: MapLibreMap): void {
 		const errors: unknown[] = [];
 		if (hoveredTarget) {
@@ -104,29 +73,15 @@ export function createMapEmphasisController(
 			}
 		}
 		selectedTargets = retainedSelected;
-		if (
-			exceptionMap === map &&
-			(exceptionSelectedStopId != null || exceptionHoveredStopId != null)
-		) {
-			try {
-				setStopException(map, stopsById, null, null);
-				exceptionSelectedStopId = null;
-				exceptionHoveredStopId = null;
-			} catch (error) {
-				errors.push(error);
-			}
-		}
 		if (errors.length === 1) throw errors[0];
 		if (errors.length > 1) throw new AggregateError(errors, 'Map emphasis cleanup failed');
 	}
 
-	function apply(map: MapLibreMap, stops: readonly SlimStopEntry[]): void {
+	function apply(map: MapLibreMap): void {
 		const nextHovered = emphasisTarget(selection.hovered);
 		const selected = emphasisTarget(selection.selected);
 		const nextSelected = selected ? [selected] : [];
 		const mapChanged = activeMap != null && activeMap !== map;
-		const stopsChanged = updateStopIndex(stops);
-
 		if (mapChanged && activeMap) clearMap(activeMap);
 
 		if (!mapChanged && activeMap === map) {
@@ -154,22 +109,13 @@ export function createMapEmphasisController(
 			for (const target of selectedTargets) setState(map, target, 'selected');
 		}
 		if (hoverChanged && hoveredTarget) setState(map, hoveredTarget, 'hovered');
-
-		syncStopException(map, mapChanged || stopsChanged);
 	}
 
 	function clear(map: MapLibreMap | null = activeMap): void {
 		if (!map) return;
 		clearMap(map);
-		if (
-			map === activeMap &&
-			hoveredTarget == null &&
-			selectedTargets.length === 0 &&
-			exceptionSelectedStopId == null &&
-			exceptionHoveredStopId == null
-		) {
+		if (map === activeMap && hoveredTarget == null && selectedTargets.length === 0) {
 			activeMap = null;
-			exceptionMap = null;
 		}
 	}
 
@@ -178,7 +124,6 @@ export function createMapEmphasisController(
 		activeMap = map;
 		for (const target of selectedTargets) setState(map, target, 'selected');
 		if (hoveredTarget) setState(map, hoveredTarget, 'hovered');
-		syncStopException(map, true);
 	}
 
 	return {

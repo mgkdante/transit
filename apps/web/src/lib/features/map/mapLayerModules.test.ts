@@ -2,7 +2,12 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { minimalDarkStyle } from '$lib/components/map/basemap';
-import { STOP_EXCEPTION_LAYER } from '$lib/components/map/stopsLayer';
+import {
+	STOP_EXCEPTION_LAYER,
+	STOP_HIGHLIGHT_LAYER,
+	STOPS_LAYER,
+	STOPS_SOURCE,
+} from '$lib/components/map/stopsLayer';
 import {
 	createMapLayerFeedController,
 	firstSymbolLayerId,
@@ -299,22 +304,64 @@ describe('map layer feed invariants', () => {
 		expect(feeds.stops).toHaveBeenCalledTimes(2);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(3);
 
-		controller.feed(map, filtered, 2);
+		// A nonempty stop filter already marks each retained stop selected in GeoJSON.
+		const selectedPinned = {
+			...filtered,
+			stops: { ...filtered.stops, selectedId: 'stop-1' },
+		} as MapLayerFeedContext;
+		controller.feed(map, selectedPinned, 1);
+		const selectedOutsidePinnedSet = {
+			...selectedPinned,
+			stops: { ...selectedPinned.stops, selectedId: 'stop-2' },
+		} as MapLayerFeedContext;
+		controller.feed(map, selectedOutsidePinnedSet, 1);
+		expect(feeds.stops).toHaveBeenCalledTimes(2);
+
+		const unfiltered = {
+			...selectedOutsidePinnedSet,
+			vehicles: { ...selectedOutsidePinnedSet.vehicles, filter },
+			stops: { ...selectedOutsidePinnedSet.stops, filter, selectedId: 'stop-1' },
+		} as MapLayerFeedContext;
+		controller.feed(map, unfiltered, 1);
+		const unfilteredOtherSelected = {
+			...unfiltered,
+			stops: { ...unfiltered.stops, selectedId: 'stop-2' },
+		} as MapLayerFeedContext;
+		controller.feed(map, unfilteredOtherSelected, 1);
+		expect(feeds.stops).toHaveBeenCalledTimes(4);
+		const catalogChanged = {
+			...unfilteredOtherSelected,
+			stops: { ...unfilteredOtherSelected.stops, items: [{ id: 'stop-1' }] },
+		} as unknown as MapLayerFeedContext;
+		controller.feed(map, catalogChanged, 1);
+		expect(feeds.stops).toHaveBeenCalledTimes(5);
+
+		controller.feed(map, catalogChanged, 2);
 
 		expect(feeds.routes).toHaveBeenCalledTimes(2);
-		expect(feeds.stops).toHaveBeenCalledTimes(3);
-		expect(feeds.vehicles).toHaveBeenCalledTimes(4);
+		expect(feeds.stops).toHaveBeenCalledTimes(6);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(5);
 
-		controller.feed({} as MapLibreMap, filtered, 2);
+		controller.feed({} as MapLibreMap, catalogChanged, 2);
 
 		expect(feeds.routes).toHaveBeenCalledTimes(3);
-		expect(feeds.stops).toHaveBeenCalledTimes(4);
-		expect(feeds.vehicles).toHaveBeenCalledTimes(5);
+		expect(feeds.stops).toHaveBeenCalledTimes(7);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(6);
 	});
 
-	it('registers the shipped stop layer and low-zoom exception at stop priority', () => {
-		expect(PICKABLE_MAP_LAYERS).toContain('stops');
-		expect(PICKABLE_MAP_LAYERS).toContain(STOP_EXCEPTION_LAYER);
+	it('installs only reachable app stop layers while keeping generic low-zoom pick priority', () => {
+		const sources = new Set<string>();
+		const layers = new Set<string>();
+		const map = {
+			getSource: (id: string) => (sources.has(id) ? {} : undefined),
+			addSource: (id: string) => sources.add(id),
+			getLayer: (id: string) => (layers.has(id) ? {} : undefined),
+			addLayer: (layer: { id: string }) => layers.add(layer.id),
+		} as unknown as MapLibreMap;
+		MAP_LAYER_MODULES.find((module) => module.id === 'stops')?.install?.(map);
+		expect([...sources]).toEqual([STOPS_SOURCE]);
+		expect([...layers]).toEqual([STOP_HIGHLIGHT_LAYER, STOPS_LAYER]);
+		expect(PICKABLE_MAP_LAYERS).toEqual([STOPS_LAYER, STOP_EXCEPTION_LAYER, 'route-lines-hit']);
 		expect(PICKABLE_MAP_LAYERS).not.toContain('stops-overview');
 	});
 });

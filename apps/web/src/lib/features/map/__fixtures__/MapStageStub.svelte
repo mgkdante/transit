@@ -14,7 +14,7 @@
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
-	import { STOP_EXCEPTION_LAYER, STOPS_LAYER } from '$lib/components/map/stopsLayer';
+	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
 	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
 	interface Props {
@@ -117,8 +117,7 @@
 		},
 		getCanvas: () => fakeCanvas,
 		overlayPick: () => (pickLayer === VEHICLE_BODY_LAYER ? 'bus-1' : null),
-		getLayer: (id: string) =>
-			id === STOPS_LAYER || id === STOP_EXCEPTION_LAYER ? { id } : undefined,
+		getLayer: (id: string) => (id === STOPS_LAYER ? { id } : undefined),
 		queryRenderedFeatures: (_point: unknown, options: { layers: string[] }) =>
 			options.layers.includes(pickLayer)
 				? [{ layer: { id: pickLayer }, properties: { id: 'stop-1' } }]

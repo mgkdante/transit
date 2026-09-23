@@ -1,10 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { settled, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	setStopException as setRealStopException,
-	toStopFeatures,
-} from '$lib/components/map/stopsLayer';
+import { toStopFeatures } from '$lib/components/map/stopsLayer';
 import MapHero from './MapHero.svelte';
 import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
@@ -60,32 +57,12 @@ const harness = vi.hoisted(() => {
 	const addVehicleLayers = vi.fn();
 	const addStopsSource = sourceInstaller('stops');
 	const addStopsLayer = vi.fn();
-	const addStopExceptionSource = sourceInstaller('stop-exception');
-	const addStopExceptionLayer = vi.fn();
 	const addRouteLineSource = sourceInstaller('route-lines');
 	const addRouteLineLayers = vi.fn();
 	const addNearTargetSource = sourceInstaller('near-target');
 	const addNearTargetLayer = vi.fn();
 	const setRouteLines = vi.fn();
 	const setStops = vi.fn();
-	const stopExceptionSourceSetData = vi.fn();
-	const setStopException = vi.fn(
-		(
-			_map: unknown,
-			stopsById: Readonly<Record<string, { id: string }>>,
-			selectedStopId: string | null,
-			hoveredStopId: string | null,
-		) => {
-			const ids = [selectedStopId, hoveredStopId].filter(
-				(id, index, all): id is string =>
-					id != null && all.indexOf(id) === index && Object.hasOwn(stopsById, id),
-			);
-			stopExceptionSourceSetData({
-				type: 'FeatureCollection',
-				features: ids.map((id) => ({ properties: { id } })),
-			});
-		},
-	);
 	const setNearTarget = vi.fn();
 	const setStale = vi.fn();
 	const overlayPaint = vi.fn();
@@ -438,16 +415,12 @@ const harness = vi.hoisted(() => {
 		addVehicleLayers,
 		addStopsSource,
 		addStopsLayer,
-		addStopExceptionSource,
-		addStopExceptionLayer,
 		addRouteLineSource,
 		addRouteLineLayers,
 		addNearTargetSource,
 		addNearTargetLayer,
 		setRouteLines,
 		setStops,
-		setStopException,
-		stopExceptionSourceSetData,
 		setNearTarget,
 		setStale,
 		prefersReducedMotion,
@@ -666,7 +639,6 @@ vi.mock('$lib/components/map', async () => {
 		STOPS_LAYER: 'stops',
 		STOPS_SOURCE: 'stops',
 		STOP_EXCEPTION_LAYER: 'stop-exception',
-		STOP_EXCEPTION_SOURCE: 'stop-exception',
 		VEHICLE_BODY_LAYER: 'vehicle-body',
 		VEHICLE_SOURCE: 'vehicles',
 		ROUTE_LINE_HIT_LAYER: 'route-lines-hit',
@@ -681,10 +653,7 @@ vi.mock('$lib/components/map', async () => {
 		createVehicleMotionController: harness.createVehicleMotionController,
 		addStopsSource: harness.addStopsSource,
 		addStopsLayer: harness.addStopsLayer,
-		addStopExceptionSource: harness.addStopExceptionSource,
-		addStopExceptionLayer: harness.addStopExceptionLayer,
 		setStops: harness.setStops,
-		setStopException: harness.setStopException,
 		addRouteLineSource: harness.addRouteLineSource,
 		addRouteLineLayers: harness.addRouteLineLayers,
 		setRouteLines: harness.setRouteLines,
@@ -850,9 +819,7 @@ describe('MapHero stage lifecycle', () => {
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
 			harness.addStopsSource,
-			harness.addStopExceptionSource,
 			harness.addStopsLayer,
-			harness.addStopExceptionLayer,
 		];
 		render(MapHero);
 		await tick();
@@ -1166,7 +1133,6 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 	);
 	const activeSources = {
 		stops: 1,
-		'stop-exception': 1,
 		'route-lines': 1,
 	};
 
@@ -1624,11 +1590,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		async (_, desktop, operation) => {
 			const pageErrors = capturePageErrors();
 			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-			const defaultSetStopException = harness.setStopException.getMockImplementation();
 			try {
-				harness.setStopException.mockImplementation(
-					setRealStopException as unknown as NonNullable<typeof defaultSetStopException>,
-				);
 				if (!operation) mapHeroReceiptSignals.setMotionMode('smooth');
 				const before = await openDetail(desktop);
 				await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
@@ -1666,9 +1628,6 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(consoleError).toHaveBeenCalledWith('MapStage cleanup failed', error);
 				if (!desktop) expect(document.body.style.overflow).not.toBe('hidden');
 			} finally {
-				if (defaultSetStopException) {
-					harness.setStopException.mockImplementation(defaultSetStopException);
-				}
 				pageErrors.dispose();
 			}
 		},
@@ -1896,9 +1855,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
 			harness.addStopsSource,
-			harness.addStopExceptionSource,
 			harness.addStopsLayer,
-			harness.addStopExceptionLayer,
 		];
 		const installSpies = [
 			harness.bakeVehicleSprites,
@@ -1964,7 +1921,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 			getStop: harness.getStop.mock.calls.length,
 			leases: harness.liveStore.subscribeFamilies.mock.calls.length,
 		};
-		const exceptionBefore = harness.stopExceptionSourceSetData.mock.calls.length;
 
 		for (let i = 0; i < 4; i += 1) {
 			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
@@ -1982,11 +1938,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 			leases: harness.liveStore.subscribeFamilies.mock.calls.length,
 		}).toEqual(before);
 		expect(stormUploadDelta).toBe(controlUploadDelta);
-		const exceptionCalls = harness.stopExceptionSourceSetData.mock.calls.slice(exceptionBefore);
-		expect(exceptionCalls.length).toBeGreaterThan(0);
-		for (const [collection] of exceptionCalls) {
-			expect((collection as { features: unknown[] }).features.length).toBeLessThanOrEqual(2);
-		}
 	});
 
 	it('commits and closes a selection-owned vehicle through affected layers only', async () => {
@@ -2092,6 +2043,24 @@ describe('MapHero map-layer feed lifecycle', () => {
 			toStopFeatures(stopFeed?.[1] ?? [], stopFeed?.[2], stopFeed?.[3], stopFeed?.[4]).features[0]
 				?.properties.selected,
 		).toBe(0);
+	});
+
+	it('keeps pinned stop data stable while detail selection updates feature state', async () => {
+		harness.setPageUrl('http://localhost/map?stop=stop-1');
+		render(MapHero);
+		await tick();
+		const feedsBeforePick = harness.setStops.mock.calls.length;
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'set',
+				target: { source: 'stops', id: 'stop-1' },
+				state: { selected: true },
+			}),
+		);
+		expect(harness.setStops).toHaveBeenCalledTimes(feedsBeforePick);
 	});
 
 	it('keeps a pre-existing URL route while an echoed picked vehicle retires on close', async () => {
@@ -2351,7 +2320,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 		harness.setRouteLines.mockImplementation(() => order.push('routes'));
 		harness.setStops.mockImplementation(() => order.push('stops'));
 		harness.motionSet.mockImplementation(() => order.push('motion'));
-		harness.setStopException.mockImplementation(() => order.push('exception'));
 		mapHeroReceiptSignals.observeFeatureState((event) => {
 			if (event.operation === 'set') order.push('feature-state');
 		});
@@ -2371,7 +2339,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 
 		expect(Number(stage.getAttribute('data-feature-state-set-count'))).toBe(beforeStyle + 1);
 		expect(order.filter((event) => event === 'feature-state')).toHaveLength(1);
-		expect(order.filter((event) => event === 'exception')).toHaveLength(1);
 		const stateOrder = order.indexOf('feature-state');
 		for (const feed of ['routes', 'stops', 'motion']) {
 			expect(order.indexOf(feed), `${feed} must precede replay`).toBeLessThan(stateOrder);
