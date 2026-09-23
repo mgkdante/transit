@@ -296,6 +296,12 @@ export type StateBadgeReceipt = Readonly<{
 	stateGlyphMaskImages: Readonly<Record<string, ImageData>>;
 }>;
 
+export type VehicleSpriteReceipt = StateBadgeReceipt &
+	Readonly<{
+		sprites: Readonly<Record<string, ImageData>>;
+		pixelRatio: number;
+	}>;
+
 /**
  * Count alpha-painted canvas pixels from an actual baked image (registered badge
  * or glyph-only mask), normalize its DPR, then apply the frozen MapLibre
@@ -449,7 +455,10 @@ function stateGlyphMaskCanvas(glyph: string, fill: string): HTMLCanvasElement {
  * and glyph-mask receipts; threshold runners derive provenance from the exact
  * `stateGlyphMaskImages` whose counts are recorded in `stateGlyphMasks`.
  */
-export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
+export function bakeVehicleSprites(
+	map: MapLibreMap,
+	registerVehicleImages = true,
+): VehicleSpriteReceipt {
 	const background = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
 	const foreground = resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK);
 	const canvases: HTMLCanvasElement[] = [];
@@ -502,6 +511,7 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 	const stateBadgeImages: Record<string, ImageData> = {};
 	const stateGlyphMasks: Record<string, number> = {};
 	const stateGlyphMaskImages: Record<string, ImageData> = {};
+	const spriteImages: Record<string, ImageData> = {};
 	for (const { id, image, mask } of badges) {
 		stateBadgeImages[id] = images[image];
 		stateGlyphMaskImages[id] = images[mask];
@@ -509,6 +519,8 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 		stateGlyphMasks[id] = countStateBadgePaintedPixels(images[mask]);
 	}
 	for (const { id, index } of sprites) {
+		spriteImages[id] = images[index];
+		if (id !== STOP_ICON && !registerVehicleImages) continue;
 		if (map.hasImage(id)) map.removeImage(id);
 		map.addImage(id, images[index], { pixelRatio: RATIO });
 	}
@@ -517,6 +529,8 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 		stateBadgeImages: Object.freeze(stateBadgeImages),
 		stateGlyphMasks: Object.freeze(stateGlyphMasks),
 		stateGlyphMaskImages: Object.freeze(stateGlyphMaskImages),
+		sprites: Object.freeze(spriteImages),
+		pixelRatio: RATIO,
 	});
 }
 

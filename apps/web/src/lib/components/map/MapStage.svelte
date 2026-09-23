@@ -162,10 +162,11 @@
 		label?: string;
 		/**
 		 * Fired ONCE with the Map after its style `load` event — the safe point to
-		 * `addImage`/`addSource`/`addLayer` (e.g. the live vehicle layer). Browser-
-		 * only; never invoked under SSR.
+		 * install consumer layers/foreground. The second callback reports a later
+		 * consumer setup failure against this exact boot attempt for guarded retry.
+		 * Browser-only; never invoked under SSR.
 		 */
-		onready?: (map: MapLibreMap) => void;
+		onready?: (map: MapLibreMap, reportSetupFailure: () => void) => void;
 		/** Fired ONCE when MapLibre first becomes idle for the current boot attempt. */
 		onidle?: (map: MapLibreMap) => void;
 		/**
@@ -581,8 +582,15 @@
 			// buffer + first frame to match the laid-out container.
 			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
-				instance.resize();
-				onready?.(instance);
+				const reportSetupFailure = () => {
+					if (isCurrentAttempt(attempt)) failAttempt(attempt, 'setup');
+				};
+				try {
+					instance.resize();
+					onready?.(instance, reportSetupFailure);
+				} catch {
+					reportSetupFailure();
+				}
 			};
 			ownMapListener(attempt, instance, 'load', handleLoad);
 			let releaseIdle = () => {};
@@ -730,7 +738,11 @@
 		const handleStyleLoad = () => {
 			releaseWithoutEscape(releaseStyleLoad);
 			if (!isCurrentAttempt(attempt)) return;
-			onstyleload?.(m);
+			try {
+				onstyleload?.(m);
+			} catch {
+				failAttempt(attempt, 'setup');
+			}
 		};
 		releaseStyleLoad = ownMapListener(attempt, m, 'style.load', handleStyleLoad);
 		try {

@@ -673,9 +673,9 @@
 		return false;
 	}
 
-	function onMapReady(m: MapLibreMap): void {
+	function onMapReady(m: MapLibreMap, reportSetupFailure?: () => void): void {
 		hasFirstIdle = false;
-		runtime.ready(m);
+		runtime.ready(m, reportSetupFailure);
 		nearMeController.refocus();
 		onready?.();
 	}

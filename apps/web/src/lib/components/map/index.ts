@@ -11,6 +11,9 @@ export { centerFromProviderBbox } from './viewport';
 export type { MapFitPadding } from './viewport';
 
 export { bakeVehicleSprites } from './vehicleSprites';
+export type { VehicleSpriteReceipt } from './vehicleSprites';
+export { createVehicleOverlay, VEHICLE_OVERLAY_RECEIPT } from './vehicleOverlay';
+export type { VehicleOverlay, VehicleOverlayReceipt } from './vehicleOverlay';
 
 export {
 	addVehicleSource,
@@ -47,10 +50,12 @@ export {
 } from './routeLines';
 export {
 	bakeLocationPinSprite,
+	bakeLocationPinImage,
 	addNearTargetSource,
 	addNearTargetLayer,
 	setNearTarget,
 } from './nearTargetLayer';
+export type { NearTarget } from './nearTargetLayer';
 
 export { nearestStops } from './nearbyStops';
 export type { LatLon, WithDistance } from './nearbyStops';

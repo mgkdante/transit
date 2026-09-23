@@ -23,6 +23,10 @@ const layerModulesSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
 	'utf-8',
 );
+const runtimeSource = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/map/mapRuntime.svelte.ts'),
+	'utf-8',
+);
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
 const mapStage = source.match(/<MapStage\s[\s\S]*?\/>/u)?.[0];
@@ -188,7 +192,8 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
 		expect(layerModulesSource).toContain('tickKey: vehicles.tickKey');
 		expect(layerModulesSource).toContain('stale: vehicles.stale');
-		expect(layerModulesSource).toContain('setStale(map, vehicles.stale)');
+		expect(runtimeSource).toContain('feed.vehicles.stale');
+		expect(runtimeSource).toContain('overlay?.setScene(');
 		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
 		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
 		expect(source).toContain("family.phase === 'failed' || family.consecutiveFailures > 0");

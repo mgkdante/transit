@@ -12,8 +12,45 @@ import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svel
 const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
 	const reportNavigationFailure = vi.fn();
-	const bakeVehicleSprites = vi.fn();
+	const bakeVehicleSprites = vi.fn(() => ({ sprites: {}, pixelRatio: 2 }));
 	const bakeLocationPinSprite = vi.fn();
+	const bakeLocationPinImage = vi.fn(() => ({ width: 88, height: 120 }));
+	const overlayScene = vi.fn(
+		(_stale: boolean, _target: unknown, _hovered: string | null, _selected: string | null) => true,
+	);
+	const createVehicleOverlay = vi.fn(
+		(
+			map: { overlayPick?: () => string | null },
+			_sprites: unknown,
+			_pin: unknown,
+			onPaint: (receipt: {
+				drawSequence: number;
+				drawable: boolean;
+				projectedCount: number;
+			}) => void,
+		) => {
+			const receipt = { drawSequence: 0, drawable: false, projectedCount: 0 };
+			return {
+				receipt,
+				draw: (features: { features: unknown[] }) => {
+					receipt.drawSequence += 1;
+					receipt.drawable = true;
+					receipt.projectedCount = features.features.length;
+					overlayPaint(features);
+					onPaint(receipt);
+				},
+				redraw: vi.fn(() => {
+					receipt.drawSequence += 1;
+				}),
+				setScene: overlayScene,
+				setSprites: vi.fn(),
+				pick: () => map.overlayPick?.() ?? null,
+				hold: vi.fn(),
+				resume: vi.fn(),
+				destroy: vi.fn(),
+			};
+		},
+	);
 	const sourceInstaller = (id: string) =>
 		vi.fn(
 			(map: { addSource: (sourceId: string, source: { setData(data: unknown): void }) => void }) =>
@@ -51,7 +88,7 @@ const harness = vi.hoisted(() => {
 	);
 	const setNearTarget = vi.fn();
 	const setStale = vi.fn();
-	const vehicleSourceSetData = vi.fn();
+	const overlayPaint = vi.fn();
 	let reducedMotion = false;
 	const reducedMotionSubscribers = new Set<(value: boolean) => void>();
 	const prefersReducedMotion = {
@@ -67,6 +104,7 @@ const harness = vi.hoisted(() => {
 	};
 	let vehicleMotionFrame: number | null = null;
 	let vehicleMotionFeatures: unknown = null;
+	let publishMotionFrame: (features: unknown) => void = () => {};
 	const stopVehicleUploads = () => {
 		if (vehicleMotionFrame == null || typeof cancelAnimationFrame !== 'function') return;
 		cancelAnimationFrame(vehicleMotionFrame);
@@ -74,7 +112,7 @@ const harness = vi.hoisted(() => {
 	};
 	const uploadVehicleFrame = () => {
 		if (vehicleMotionFrame == null) return;
-		vehicleSourceSetData(vehicleMotionFeatures);
+		publishMotionFrame(vehicleMotionFeatures);
 		vehicleMotionFrame = requestAnimationFrame(uploadVehicleFrame);
 	};
 	const runMotionSet = (
@@ -83,13 +121,13 @@ const harness = vi.hoisted(() => {
 	) => {
 		options?.serverNowFn?.();
 		vehicleMotionFeatures = features;
+		publishMotionFrame(features);
 		if (options?.animate && typeof requestAnimationFrame === 'function') {
 			if (vehicleMotionFrame == null) {
 				vehicleMotionFrame = requestAnimationFrame(uploadVehicleFrame);
 			}
 		} else {
 			stopVehicleUploads();
-			vehicleSourceSetData(features);
 		}
 	};
 	const motionSet = vi.fn(runMotionSet);
@@ -137,28 +175,33 @@ const harness = vi.hoisted(() => {
 	const fitRouteBounds = vi.fn(() => true);
 	const toVehicleFeatures = vi.fn(
 		(
-			_items: unknown,
+			items: unknown,
 			filter: { routes: ReadonlySet<string>; vehicles: ReadonlySet<string> },
 			_alertIds: unknown,
 			selectedId: string | null,
 		) => ({
 			type: 'FeatureCollection',
-			features: [
-				{
-					type: 'Feature',
-					geometry: { type: 'Point', coordinates: [-73.57, 45.51] },
-					properties: {
-						id: 'bus-1',
-						selected: selectedId === 'bus-1' || filter.vehicles.has('bus-1') ? 1 : 0,
-					},
-				},
-			],
+			features:
+				Array.isArray(items) && items.length > 0
+					? [
+							{
+								type: 'Feature',
+								geometry: { type: 'Point', coordinates: [-73.57, 45.51] },
+								properties: {
+									id: 'bus-1',
+									selected: selectedId === 'bus-1' || filter.vehicles.has('bus-1') ? 1 : 0,
+								},
+							},
+						]
+					: [],
 		}),
 	);
-	const createVehicleMotionController = vi.fn(() => ({
-		set: motionSet,
-		destroy: motionDestroy,
-	}));
+	const createVehicleMotionController = vi.fn(
+		(_map: unknown, _runtime: unknown, publish: (features: unknown) => void) => {
+			publishMotionFrame = publish;
+			return { set: motionSet, destroy: motionDestroy };
+		},
+	);
 	const alertSource = {
 		id: 'mobile-orchestrator-alert',
 		severity: 'high',
@@ -388,6 +431,9 @@ const harness = vi.hoisted(() => {
 		},
 		bakeVehicleSprites,
 		bakeLocationPinSprite,
+		bakeLocationPinImage,
+		createVehicleOverlay,
+		overlayScene,
 		addVehicleSource,
 		addVehicleLayers,
 		addStopsSource,
@@ -413,7 +459,7 @@ const harness = vi.hoisted(() => {
 		getStopsIndexSlim,
 		deferStopsIndex,
 		resetStopsIndex,
-		vehicleSourceSetData,
+		overlayPaint,
 		motionDestroy,
 		stopVehicleUploads,
 		hasPendingVehicleMotionFrame: () => vehicleMotionFrame != null,
@@ -626,6 +672,8 @@ vi.mock('$lib/components/map', async () => {
 		ROUTE_LINE_HIT_LAYER: 'route-lines-hit',
 		bakeVehicleSprites: harness.bakeVehicleSprites,
 		bakeLocationPinSprite: harness.bakeLocationPinSprite,
+		bakeLocationPinImage: harness.bakeLocationPinImage,
+		createVehicleOverlay: harness.createVehicleOverlay,
 		addVehicleSource: harness.addVehicleSource,
 		addVehicleLayers: harness.addVehicleLayers,
 		setStale: harness.setStale,
@@ -704,7 +752,7 @@ afterEach(async () => {
 	}
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
-	harness.vehicleSourceSetData.mockReset();
+	harness.overlayPaint.mockReset();
 	harness.resetMotionSetImplementation();
 	harness.resetGetRouteImplementation();
 	harness.resetStopsIndex();
@@ -737,7 +785,6 @@ function bulkCounts() {
 		routes: harness.setRouteLines.mock.calls.length,
 		motion: harness.motionSet.mock.calls.length,
 		stops: harness.setStops.mock.calls.length,
-		nearTarget: harness.setNearTarget.mock.calls.length,
 	};
 }
 
@@ -799,28 +846,26 @@ describe('MapHero stage lifecycle', () => {
 	it('retints every token surface on theme repaint without feed, motion, or emphasis replay', async () => {
 		const installSpies = [
 			harness.bakeVehicleSprites,
-			harness.bakeLocationPinSprite,
+			harness.bakeLocationPinImage,
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
 			harness.addStopsSource,
 			harness.addStopExceptionSource,
 			harness.addStopsLayer,
 			harness.addStopExceptionLayer,
-			harness.addVehicleSource,
-			harness.addVehicleLayers,
-			harness.addNearTargetSource,
-			harness.addNearTargetLayer,
 		];
 		render(MapHero);
 		await tick();
 		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
 		await tick();
 		const stage = screen.getByTestId('map-stage-stub');
+		const foreground = harness.createVehicleOverlay.mock.results[0].value;
+		const retints = foreground.setSprites.mock.calls.length;
+		const draws = foreground.receipt.drawSequence;
 		const before = {
 			installs: installSpies.map((spy) => spy.mock.calls.length),
 			feeds: bulkCounts(),
-			stale: harness.setStale.mock.calls.length,
-			setData: harness.vehicleSourceSetData.mock.calls.length,
+			paint: harness.overlayPaint.mock.calls.length,
 			featureState: Number(stage.getAttribute('data-feature-state-set-count')),
 		};
 
@@ -830,9 +875,10 @@ describe('MapHero stage lifecycle', () => {
 		expect(installSpies.map((spy) => spy.mock.calls.length)).toEqual(
 			before.installs.map((count) => count + 1),
 		);
+		expect(foreground.setSprites).toHaveBeenCalledTimes(retints + 1);
+		expect(foreground.receipt.drawSequence).toBeGreaterThan(draws);
 		expect(bulkCounts()).toEqual(before.feeds);
-		expect(harness.setStale).toHaveBeenCalledTimes(before.stale);
-		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(before.setData);
+		expect(harness.overlayPaint).toHaveBeenCalledTimes(before.paint);
 		expect(Number(stage.getAttribute('data-feature-state-set-count'))).toBe(before.featureState);
 	});
 
@@ -938,7 +984,7 @@ describe('MapHero near-me device location', () => {
 			expect(search.has('nearPrecision')).toBe(false);
 		}
 		await waitFor(() =>
-			expect(harness.setNearTarget).toHaveBeenLastCalledWith(expect.anything(), {
+			expect(harness.overlayScene.mock.lastCall?.[1]).toEqual({
 				lat: 45.525686,
 				lon: -73.594764,
 				label: 'Use my location',
@@ -1111,17 +1157,17 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		boxzoomend: 0,
 		click: 0,
 		mousemove: 0,
+		webglcontextrestored: 0,
+		'style.load': 0,
 		'canvas:mouseleave': 0,
 	};
 	const activeListeners = Object.fromEntries(
 		Object.keys(releasedListeners).map((type) => [type, 1]),
 	);
 	const activeSources = {
-		vehicles: 1,
 		stops: 1,
 		'stop-exception': 1,
 		'route-lines': 1,
-		'near-target': 1,
 	};
 
 	function capturePageErrors() {
@@ -1593,7 +1639,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
 				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(
-					operation === 'emphasis:removeFeatureState' ? 2 : 1,
+					operation === 'emphasis:removeFeatureState' ? 1 : 0,
 				);
 				expect(harness.activeLeaseCount()).toBe(1);
 				if (!operation) expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
@@ -1609,6 +1655,9 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(
+					harness.createVehicleOverlay.mock.results.at(-1)?.value.destroy,
+				).toHaveBeenCalledOnce();
 				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 				expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
 				expect(harness.releaseLease).toHaveBeenCalledTimes(1);
@@ -1643,7 +1692,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			await tick();
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
-			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(1);
 			expect(harness.activeLeaseCount()).toBe(1);
 			expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
 			harness.motionDestroy.mockImplementationOnce(() => {
@@ -1707,7 +1756,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				await screen.findByRole('button', { name: 'Close panel' });
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
-				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(1);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 				expect(harness.activeLeaseCount()).toBe(1);
 				const selectionUrl = harness.activeNavigation?.to?.url;
 				if (!selectionUrl) throw new Error('expected a selection navigation');
@@ -1745,7 +1794,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
 				await tick();
 				expect(harness.activeLeaseCount()).toBe(1);
-				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(1);
 				const selectionUrl = harness.activeNavigation?.to?.url;
 				if (!selectionUrl) throw new Error('expected a selection navigation');
 				await harness.commitNavigation(selectionUrl.href);
@@ -1842,7 +1891,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 	});
 
 	it('reinstalls and re-feeds after style load, then re-feeds after a filter mutation', async () => {
-		const prepareSpies = [harness.bakeVehicleSprites, harness.bakeLocationPinSprite];
+		const prepareSpies = [harness.bakeVehicleSprites, harness.bakeLocationPinImage];
 		const layerInstallSpies = [
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
@@ -1850,28 +1899,19 @@ describe('MapHero map-layer feed lifecycle', () => {
 			harness.addStopExceptionSource,
 			harness.addStopsLayer,
 			harness.addStopExceptionLayer,
-			harness.addVehicleSource,
-			harness.addVehicleLayers,
-			harness.addNearTargetSource,
-			harness.addNearTargetLayer,
 		];
 		const installSpies = [
 			harness.bakeVehicleSprites,
-			harness.bakeLocationPinSprite,
+			harness.bakeLocationPinImage,
 			...layerInstallSpies,
 		];
-		const feedSpies = [
-			harness.setRouteLines,
-			harness.motionSet,
-			harness.setStops,
-			harness.setNearTarget,
-			harness.setStale,
-		];
+		const feedSpies = [harness.setRouteLines, harness.motionSet, harness.setStops];
 
 		render(MapHero);
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(1);
-		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(1);
+		const initialFeeds = feedSpies.map((feed) => feed.mock.calls.length);
+		for (const count of initialFeeds) expect(count).toBeGreaterThanOrEqual(1);
 		const lastPrepare = Math.max(
 			...prepareSpies.map((spy) => spy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY),
 		);
@@ -1893,17 +1933,17 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await fireEvent.click(screen.getByTestId('map-stage-stub-style-load'));
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
-		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(2);
+		for (const [index, feed] of feedSpies.entries())
+			expect(feed).toHaveBeenCalledTimes(initialFeeds[index] + 1);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Late' }));
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
-		expect(harness.setRouteLines).toHaveBeenCalledTimes(2);
-		expect(harness.motionSet).toHaveBeenCalledTimes(3);
-		expect(harness.setStops).toHaveBeenCalledTimes(2);
-		expect(harness.setNearTarget).toHaveBeenCalledTimes(2);
-		expect(harness.setStale).toHaveBeenCalledTimes(3);
+		expect(harness.setRouteLines).toHaveBeenCalledTimes(initialFeeds[0] + 1);
+		expect(harness.motionSet).toHaveBeenCalledTimes(initialFeeds[1] + 2);
+		expect(harness.setStops).toHaveBeenCalledTimes(initialFeeds[2] + 1);
+		expect(harness.overlayScene.mock.lastCall?.[0]).toBe(false);
 		expect(harness.toVehicleFeatures.mock.lastCall?.[1]).toMatchObject({ status: ['late'] });
 	});
 
@@ -1913,9 +1953,9 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
 		await tick();
 		await settleAnimationFrames();
-		const controlUploadStart = harness.vehicleSourceSetData.mock.calls.length;
+		const controlUploadStart = harness.overlayPaint.mock.calls.length;
 		await settleAnimationFrames(4);
-		const controlUploadDelta = harness.vehicleSourceSetData.mock.calls.length - controlUploadStart;
+		const controlUploadDelta = harness.overlayPaint.mock.calls.length - controlUploadStart;
 		harness.getRoute.mockClear();
 		harness.getStop.mockClear();
 		const before = {
@@ -1931,9 +1971,9 @@ describe('MapHero map-layer feed lifecycle', () => {
 			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
 		}
 		await fireEvent.click(screen.getByTestId('map-stage-stub-mouseleave'));
-		const stormUploadStart = harness.vehicleSourceSetData.mock.calls.length;
+		const stormUploadStart = harness.overlayPaint.mock.calls.length;
 		await settleAnimationFrames(4);
-		const stormUploadDelta = harness.vehicleSourceSetData.mock.calls.length - stormUploadStart;
+		const stormUploadDelta = harness.overlayPaint.mock.calls.length - stormUploadStart;
 
 		expect({
 			...bulkCounts(),
@@ -1963,7 +2003,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 				routes: beforeCommit.routes + 1,
 				motion: beforeCommit.motion + 1,
 				stops: beforeCommit.stops,
-				nearTarget: beforeCommit.nearTarget,
 			}),
 		);
 		expect(
@@ -1981,7 +2020,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 				routes: beforeClose.routes + 1,
 				motion: beforeClose.motion + 1,
 				stops: beforeClose.stops,
-				nearTarget: beforeClose.nearTarget,
 			}),
 		);
 
@@ -2034,7 +2072,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 				routes: beforeCommit.routes,
 				motion: beforeCommit.motion + 1,
 				stops: beforeCommit.stops + 1,
-				nearTarget: beforeCommit.nearTarget,
 			}),
 		);
 
@@ -2045,7 +2082,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 				routes: beforeClose.routes,
 				motion: beforeClose.motion + 1,
 				stops: beforeClose.stops + 1,
-				nearTarget: beforeClose.nearTarget,
 			}),
 		);
 
@@ -2123,29 +2159,19 @@ describe('MapHero map-layer feed lifecycle', () => {
 		expect(closed.searchParams.has('vehicle')).toBe(false);
 	});
 
-	it('drives hover, mouseleave, detail swap, Back, and close through rendered feature state', async () => {
+	it('drives vehicle hover through the foreground and stop detail changes through GL state', async () => {
 		render(MapHero);
 		await tick();
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 
 		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
-		await waitFor(() =>
-			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
-				operation: 'set',
-				target: { source: 'vehicles', id: 'bus-1' },
-				state: { hovered: true },
-			}),
-		);
+		await waitFor(() => expect(harness.overlayScene.mock.lastCall?.[2]).toBe('bus-1'));
+		expect(mapHeroReceiptSignals.featureStateEvents).toEqual([]);
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.click(screen.getByTestId('map-stage-stub-mouseleave'));
-		await waitFor(() =>
-			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
-				operation: 'remove',
-				target: { source: 'vehicles', id: 'bus-1' },
-				property: 'hovered',
-			}),
-		);
+		await waitFor(() => expect(harness.overlayScene.mock.lastCall?.[2]).toBeNull());
+		expect(mapHeroReceiptSignals.featureStateEvents).toEqual([]);
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
@@ -2219,33 +2245,18 @@ describe('MapHero map-layer feed lifecycle', () => {
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.pointerEnter(busRow);
-		await waitFor(() =>
-			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
-				operation: 'set',
-				target: { source: 'vehicles', id: 'bus-1' },
-				state: { hovered: true },
-			}),
-		);
+		await waitFor(() => expect(harness.overlayScene.mock.lastCall?.[2]).toBe('bus-1'));
+		expect(mapHeroReceiptSignals.featureStateEvents).toEqual([]);
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.pointerLeave(busRow);
-		await waitFor(() =>
-			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
-				operation: 'remove',
-				target: { source: 'vehicles', id: 'bus-1' },
-				property: 'hovered',
-			}),
-		);
+		await waitFor(() => expect(harness.overlayScene.mock.lastCall?.[2]).toBeNull());
+		expect(mapHeroReceiptSignals.featureStateEvents).toEqual([]);
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.focus(busRow);
-		await waitFor(() =>
-			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
-				operation: 'set',
-				target: { source: 'vehicles', id: 'bus-1' },
-				state: { hovered: true },
-			}),
-		);
+		await waitFor(() => expect(harness.overlayScene.mock.lastCall?.[2]).toBe('bus-1'));
+		expect(mapHeroReceiptSignals.featureStateEvents).toEqual([]);
 	});
 
 	it('keeps vehicle leases and route reads unchanged during hover without fetching a stop', async () => {
@@ -2340,7 +2351,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 		harness.setRouteLines.mockImplementation(() => order.push('routes'));
 		harness.setStops.mockImplementation(() => order.push('stops'));
 		harness.motionSet.mockImplementation(() => order.push('motion'));
-		harness.setNearTarget.mockImplementation(() => order.push('near-target'));
 		harness.setStopException.mockImplementation(() => order.push('exception'));
 		mapHeroReceiptSignals.observeFeatureState((event) => {
 			if (event.operation === 'set') order.push('feature-state');
@@ -2350,7 +2360,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await tick();
 		const stage = screen.getByTestId('map-stage-stub');
 
-		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
 		await tick();
 		const beforeStyle = Number(stage.getAttribute('data-feature-state-set-count'));
 		expect(beforeStyle).toBeGreaterThan(0);
@@ -2363,7 +2373,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		expect(order.filter((event) => event === 'feature-state')).toHaveLength(1);
 		expect(order.filter((event) => event === 'exception')).toHaveLength(1);
 		const stateOrder = order.indexOf('feature-state');
-		for (const feed of ['routes', 'stops', 'motion', 'near-target']) {
+		for (const feed of ['routes', 'stops', 'motion']) {
 			expect(order.indexOf(feed), `${feed} must precede replay`).toBeLessThan(stateOrder);
 		}
 	});
@@ -2387,30 +2397,29 @@ describe('MapHero map-layer feed lifecycle', () => {
 			routes: beforeClock.routes,
 			motion: beforeClock.motion + 1,
 			stops: beforeClock.stops,
-			nearTarget: beforeClock.nearTarget,
 		});
 	});
 
-	it('publishes a processed tick only after the raw vehicle source upload completes', async () => {
+	it('publishes a processed tick only after the synchronous foreground paint completes', async () => {
 		render(MapHero);
 		await tick();
 		const hero = document.querySelector('.map-hero');
 		expect(hero).not.toBeNull();
 		const nextTickKey = '2026-06-20T12:00:30Z';
-		const uploadsBefore = harness.vehicleSourceSetData.mock.calls.length;
-		harness.vehicleSourceSetData.mockImplementation(() => {
+		const uploadsBefore = harness.overlayPaint.mock.calls.length;
+		harness.overlayPaint.mockImplementation(() => {
 			expect(hero).not.toHaveAttribute('data-motion-tick-key', nextTickKey);
 		});
 
 		mapHeroReceiptSignals.setVehiclesGeneration(nextTickKey);
 		await waitFor(() => expect(hero).toHaveAttribute('data-motion-tick-key', nextTickKey));
 		expect(hero).toHaveAttribute('data-motion-vehicle-count', '1');
-		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploadsBefore + 1);
+		expect(harness.overlayPaint).toHaveBeenCalledTimes(uploadsBefore + 1);
 
-		const uploads = harness.vehicleSourceSetData.mock.calls.length;
+		const uploads = harness.overlayPaint.mock.calls.length;
 		mapHeroReceiptSignals.setVehiclesGeneration(nextTickKey);
 		await tick();
-		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploads);
+		expect(harness.overlayPaint).toHaveBeenCalledTimes(uploads);
 	});
 
 	it('reacts to reduced motion by snapping and cancelling the pending animated upload', async () => {
@@ -2444,10 +2453,10 @@ describe('MapHero map-layer feed lifecycle', () => {
 		harness.setReducedMotion(true);
 		await tick();
 		expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: false });
-		const uploadsAfterSnap = harness.vehicleSourceSetData.mock.calls.length;
+		const uploadsAfterSnap = harness.overlayPaint.mock.calls.length;
 		pending?.(0);
 
-		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploadsAfterSnap);
+		expect(harness.overlayPaint).toHaveBeenCalledTimes(uploadsAfterSnap);
 	});
 });
 

@@ -116,16 +116,13 @@
 			receipt.recordSourceCount(id, 0);
 		},
 		getCanvas: () => fakeCanvas,
+		overlayPick: () => (pickLayer === VEHICLE_BODY_LAYER ? 'bus-1' : null),
 		getLayer: (id: string) =>
-			id === STOPS_LAYER || id === STOP_EXCEPTION_LAYER || id === VEHICLE_BODY_LAYER
-				? { id }
-				: undefined,
-		queryRenderedFeatures: () => [
-			{
-				layer: { id: pickLayer },
-				properties: { id: pickLayer === STOPS_LAYER ? 'stop-1' : 'bus-1' },
-			},
-		],
+			id === STOPS_LAYER || id === STOP_EXCEPTION_LAYER ? { id } : undefined,
+		queryRenderedFeatures: (_point: unknown, options: { layers: string[] }) =>
+			options.layers.includes(pickLayer)
+				? [{ layer: { id: pickLayer }, properties: { id: 'stop-1' } }]
+				: [],
 		setFeatureState: (
 			target: { source: string; id: string | number },
 			state: Record<string, boolean>,

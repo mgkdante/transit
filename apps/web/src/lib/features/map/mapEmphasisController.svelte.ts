@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { SlimStopEntry } from '$lib/v1';
-import { setStopException, STOPS_SOURCE, VEHICLE_SOURCE } from '$lib/components/map';
+import { setStopException, STOPS_SOURCE } from '$lib/components/map';
 import type { MapSelection } from './mapSelection';
 import type { MapSelectionController } from './mapSelectionController.svelte';
 
@@ -28,16 +28,15 @@ function sameTarget(a: MapEmphasisTarget | null, b: MapEmphasisTarget | null): b
 	return a?.kind === b?.kind && a?.id === b?.id;
 }
 
-function sourceFor(target: MapEmphasisTarget): string {
-	return target.kind === 'vehicle' ? VEHICLE_SOURCE : STOPS_SOURCE;
-}
-
 function setState(
 	map: MapLibreMap,
 	target: MapEmphasisTarget,
 	property: 'hovered' | 'selected',
 ): void {
-	map.setFeatureState({ source: sourceFor(target), id: target.id }, { [property]: true });
+	// Vehicle emphasis is painted by the moving foreground, without a GL source.
+	if (target.kind === 'stop') {
+		map.setFeatureState({ source: STOPS_SOURCE, id: target.id }, { [property]: true });
+	}
 }
 
 function removeState(
@@ -45,7 +44,8 @@ function removeState(
 	target: MapEmphasisTarget,
 	property: 'hovered' | 'selected',
 ): void {
-	map.removeFeatureState({ source: sourceFor(target), id: target.id }, property);
+	if (target.kind === 'stop')
+		map.removeFeatureState({ source: STOPS_SOURCE, id: target.id }, property);
 }
 
 export function createMapEmphasisController(

@@ -443,7 +443,10 @@ describe('vehicle state badge baker', () => {
 			'stateBadgeImages',
 			'stateGlyphMasks',
 			'stateGlyphMaskImages',
+			'sprites',
+			'pixelRatio',
 		]);
+		expect(receipt.sprites[BUS_ICON]).toBe(images.get(BUS_ICON));
 		expect(Object.keys(receipt.stateBadges)).toEqual(ids);
 		expect(Object.keys(receipt.stateBadgeImages)).toEqual(ids);
 		expect(Object.keys(receipt.stateGlyphMasks)).toEqual(ids);

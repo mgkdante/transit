@@ -383,6 +383,55 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.successfulRegistrations).toBe(1);
 	});
 
+	it('routes a synchronous consumer-ready failure through setup cleanup and guarded retry', async () => {
+		const failures: Failure[] = [];
+		const onerror = vi.fn((failure: Failure | null) => {
+			if (failure) failures.push(failure);
+		});
+		const onbeforeremove = vi.fn();
+		let failReady = true;
+		const onready = vi.fn(() => {
+			if (failReady) throw new Error('foreground unavailable');
+		});
+		const { map } = await bootStage({ onready, onbeforeremove, onerror });
+		map.emit('load');
+		await waitFor(() => expect(failures).toHaveLength(1));
+		expect(failures[0]?.kind).toBe('setup');
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.remove).toHaveBeenCalledOnce();
+		failReady = false;
+		await failures[0]!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		harness.state.maps[1]!.emit('load');
+		expect(onready).toHaveBeenCalledTimes(2);
+		expect(onerror).toHaveBeenLastCalledWith(null);
+	});
+
+	it('gives the consumer a generation-bound later setup failure reporter', async () => {
+		const failures: Failure[] = [];
+		let reportSetupFailure: (() => void) | null = null;
+		const { map } = await bootStage({
+			onready: (_map: unknown, report: () => void) => {
+				reportSetupFailure = report;
+			},
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		map.emit('load');
+		const staleReporter = reportSetupFailure!;
+		staleReporter();
+		expect(failures[0]?.kind).toBe('setup');
+		expect(map.remove).toHaveBeenCalledOnce();
+		await failures[0]!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		harness.state.maps[1]!.emit('load');
+		staleReporter();
+		expect(failures).toHaveLength(1);
+		reportSetupFailure!();
+		expect(failures).toHaveLength(2);
+	});
+
 	it('reports the first idle event once and releases its listener immediately', async () => {
 		const onidle = vi.fn();
 		const { map } = await bootStage({ onidle });
@@ -1138,6 +1187,34 @@ describe('MapStage boot lifecycle', () => {
 		expect(map.handlers.get('style.load')).toHaveLength(1);
 		map.emit('style.load');
 		expect(map.handlers.get('style.load')).toHaveLength(0);
+	});
+
+	it('routes a failed consumer style reinstall through setup teardown', async () => {
+		const failures: Failure[] = [];
+		const onbeforeremove = vi.fn();
+		const { view, props, map } = await bootStage({
+			onstyleload: () => {
+				throw new Error('foreground retint failed');
+			},
+			onbeforeremove,
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		await view.rerender({
+			...props,
+			basemap: {
+				url: 'https://example.com/montreal.pmtiles',
+				sha256: 'a'.repeat(64),
+				generated_utc: '2026-07-31T00:00:00Z',
+			},
+		});
+		await settle();
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		expect(() => map.emit('style.load')).not.toThrow();
+		expect(failures[0]?.kind).toBe('setup');
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.remove).toHaveBeenCalledOnce();
 	});
 
 	it('makes a copied ResizeObserver callback inert after teardown', async () => {

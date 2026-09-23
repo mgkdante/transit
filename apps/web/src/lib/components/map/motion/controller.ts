@@ -62,6 +62,7 @@ interface VehicleWrite {
 export function createVehicleMotionController(
 	map: MapLibreMap,
 	runtime: MotionRuntime = {},
+	publishFrame?: (features: VehicleFC) => void,
 ): VehicleMotionController {
 	const { requestFrame, cancelFrame, now } = resolveMotionRuntime(runtime);
 
@@ -173,6 +174,10 @@ export function createVehicleMotionController(
 	}
 
 	function publish(features: VehicleFC, full: boolean): void {
+		if (publishFrame) {
+			publishFrame(features);
+			return;
+		}
 		const source = map.getSource(VEHICLE_SOURCE) as GeoJSONSource | undefined;
 		if (!source) {
 			clearSourceWrite();

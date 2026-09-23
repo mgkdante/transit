@@ -174,31 +174,10 @@ describe('installMapInteractions', () => {
 });
 
 describe('map layer feed invariants', () => {
-	it('retints through every prepare before install without feeding any module', async () => {
-		const api = (await import('./mapLayerModules')) as typeof import('./mapLayerModules') & {
-			retintMapLayers?: (map: MapLibreMap) => void;
-		};
-		const trace: string[] = [];
-		const feedSpies = [];
-		for (const module of MAP_LAYER_MODULES) {
-			if (module.prepare) {
-				vi.spyOn(module, 'prepare').mockImplementation(() => trace.push(`prepare:${module.id}`));
-			}
-			vi.spyOn(module, 'install').mockImplementation(() => trace.push(`install:${module.id}`));
-			feedSpies.push(vi.spyOn(module, 'feed'));
-		}
-
-		(api.retintMapLayers ?? (() => {}))({} as MapLibreMap);
-
-		expect(trace).toEqual([
-			'prepare:vehicles',
-			'prepare:near-target',
-			'install:routes',
-			'install:stops',
-			'install:vehicles',
-			'install:near-target',
-		]);
-		for (const feed of feedSpies) expect(feed).not.toHaveBeenCalled();
+	it('keeps geography and stops in MapLibre while vehicle painting has no GL pick layer', () => {
+		expect(MAP_LAYER_MODULES.map((module) => module.id)).toEqual(['routes', 'stops', 'vehicles']);
+		expect(PICKABLE_MAP_LAYERS).toEqual(['stops', STOP_EXCEPTION_LAYER, 'route-lines-hit']);
+		expect(MAP_LAYER_MODULES.find((module) => module.id === 'vehicles')?.pick).toBeUndefined();
 	});
 
 	afterEach(() => {
@@ -307,7 +286,6 @@ describe('map layer feed invariants', () => {
 		expect(feeds.routes).toHaveBeenCalledTimes(1);
 		expect(feeds.stops).toHaveBeenCalledTimes(1);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(2);
-		expect(feeds['near-target']).toHaveBeenCalledTimes(1);
 
 		const nextFilter: FilterState = { ...filter, stops: new Set(['stop-1']) };
 		const filtered = {
@@ -320,21 +298,18 @@ describe('map layer feed invariants', () => {
 		expect(feeds.routes).toHaveBeenCalledTimes(1);
 		expect(feeds.stops).toHaveBeenCalledTimes(2);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(3);
-		expect(feeds['near-target']).toHaveBeenCalledTimes(1);
 
 		controller.feed(map, filtered, 2);
 
 		expect(feeds.routes).toHaveBeenCalledTimes(2);
 		expect(feeds.stops).toHaveBeenCalledTimes(3);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(4);
-		expect(feeds['near-target']).toHaveBeenCalledTimes(2);
 
 		controller.feed({} as MapLibreMap, filtered, 2);
 
 		expect(feeds.routes).toHaveBeenCalledTimes(3);
 		expect(feeds.stops).toHaveBeenCalledTimes(4);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(5);
-		expect(feeds['near-target']).toHaveBeenCalledTimes(3);
 	});
 
 	it('registers the shipped stop layer and low-zoom exception at stop priority', () => {
