@@ -67,6 +67,16 @@ class RetentionProofReport:
     dry_runs: dict[str, ProofDryRunSection]
     static_feed_validation: dict[str, object]
 
+    @property
+    def is_complete(self) -> bool:
+        active_static = self.static_feed_validation.get("active_static")
+        return (
+            bool(self.dry_runs)
+            and all(section.status == "ok" for section in self.dry_runs.values())
+            and isinstance(active_static, dict)
+            and active_static.get("status") == "ok"
+        )
+
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,

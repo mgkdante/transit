@@ -11,6 +11,7 @@ from transit_ops.backups import BackupError
 from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
 from transit_ops.validation.historic_publish import HistoricPublishProofReport
+from transit_ops.validation.proof import ProofDryRunSection, RetentionProofReport
 
 runner = CliRunner()
 LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
@@ -236,31 +237,46 @@ def test_retention_proof_report_help() -> None:
     assert "--report-path" in result.stdout
 
 
-def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
-    from dataclasses import dataclass
-
+@pytest.mark.parametrize(
+    ("prune_status", "static_validation", "expected_exit"),
+    [
+        ("ok", {"active_static": {"status": "ok"}}, 0),
+        ("unavailable", {"active_static": {"status": "ok"}}, 1),
+        ("ok", {"active_static": {"status": "unavailable"}}, 1),
+        ("ok", {"active_static": {"status": "invalid"}}, 1),
+        ("ok", {"status": "unavailable", "error_type": "OSError"}, 1),
+    ],
+    ids=[
+        "complete", "prune-unavailable", "download-unavailable", "invalid-feed", "validator-error"
+    ],
+)
+def test_retention_proof_report_writes_complete_report_before_exit(
+    monkeypatch, tmp_path, prune_status, static_validation, expected_exit
+) -> None:
     recorded: dict[str, object] = {}
     report_path = tmp_path / "retention-proof.json"
-
-    @dataclass(frozen=True)
-    class FakeRetentionProofResult:
-        provider_id: str
-
-        def display_dict(self) -> dict[str, object]:
-            return {
-                "provider_id": self.provider_id,
-                "generated_at_utc": "2026-05-24T12:00:00+00:00",
-                "retention_contract": {},
-                "storage": {},
-                "dry_runs": {},
-                "static_feed_validation": {"status": "ok"},
-            }
 
     def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["settings_type"] = type(settings).__name__
         recorded["registry_type"] = type(registry).__name__
-        return FakeRetentionProofResult(provider_id=provider_id)
+        return RetentionProofReport(
+            provider_id=provider_id,
+            generated_at_utc=datetime(2026, 5, 24, 12, tzinfo=UTC),
+            retention_contract={},
+            storage={},
+            dry_runs={
+                name: ProofDryRunSection(
+                    status=prune_status if name == "bronze" else "ok",
+                    dry_run=True,
+                    result={},
+                    message="",
+                    error_type=None,
+                )
+                for name in ("silver", "gold", "bronze", "warm_rollup", "i3")
+            },
+            static_feed_validation=static_validation,
+        )
 
     monkeypatch.setattr(
         cli_module,
@@ -274,12 +290,14 @@ def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, t
         ["retention-proof-report", "stm", "--report-path", str(report_path)],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == expected_exit
     assert recorded["provider_id"] == "stm"
     stdout_payload = json.loads(result.stdout)
     report_payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert stdout_payload == report_payload
     assert report_payload["provider_id"] == "stm"
+    assert report_payload["dry_runs"]["bronze"]["status"] == prune_status
+    assert report_payload["static_feed_validation"] == static_validation
 
 
 def test_retention_proof_report_bad_report_path_exits_before_build(monkeypatch, tmp_path) -> None:

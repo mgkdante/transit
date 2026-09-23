@@ -561,6 +561,8 @@ def retention_proof_report_command(
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
     typer.echo(report)
+    if not result.is_complete:
+        raise typer.Exit(code=1)
 
 
 @app.command("gc-historic-snapshots")

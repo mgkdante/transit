@@ -447,6 +447,11 @@ are separate contracts; changing fact retention does not redefine historical win
 configuration contract. A retention change must update both, Compose defaults,
 tests, and this table together.
 
+`uv run transit-ops retention-proof-report stm --report-path retention-proof.json`
+writes the non-destructive proof to the file and stdout before exiting. Exit 1
+means a dry-run section or static-feed validation is unavailable or invalid;
+inspect the report before retrying. An unseeded provider remains an explicit skip.
+
 ## Existing Postgres volumes
 
 `POSTGRES_PASSWORD` initializes an empty Postgres data directory. Changing the
