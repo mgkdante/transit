@@ -52,7 +52,8 @@
 		availableLocales.map((loc, k) => {
 			const n = availableLocales.length;
 			const span = 36 / n;
-			const h = Math.min(12, span - 2);
+			// Keep labels clear of the outline at the mobile SVG scale.
+			const h = Math.min(14, span - 2);
 			const yTop = 4 + k * span + (span - h) / 2;
 			const mid = yTop + h / 2;
 			const right = k % 2 === 1;
