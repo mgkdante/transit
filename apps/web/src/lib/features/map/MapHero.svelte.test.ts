@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { settled, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toStopFeatures } from '$lib/components/map/stopsLayer';
+import { RouteFileSchema, type RouteFile } from '$lib/v1/schemas/route';
 import MapHero from './MapHero.svelte';
 import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
@@ -146,7 +147,9 @@ const harness = vi.hoisted(() => {
 	const resetStopsIndex = () => {
 		stopsIndexResult = defaultStopsIndex();
 	};
-	const getRoute = vi.fn(async (_id?: string, _options?: unknown) => null);
+	const getRoute = vi.fn(
+		async (_id?: string, _options?: unknown): Promise<RouteFile | null> => null,
+	);
 	const getStop = vi.fn(() => null);
 	const focusCoordinate = vi.fn(() => true);
 	const fitRouteBounds = vi.fn(() => true);
@@ -1807,6 +1810,40 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await tick();
 
 		expect(harness.getRoute).toHaveBeenCalledExactlyOnceWith('24');
+	});
+
+	it('reuses a selected route after closing its panel and enabling smooth motion', async () => {
+		harness.isDesktop = true;
+		harness.getRoute.mockResolvedValue(
+			RouteFileSchema.parse({
+				id: '24',
+				generated_utc: '2026-06-20T12:00:00Z',
+				directions: [
+					{
+						dir: 0,
+						shape: {
+							type: 'LineString',
+							coordinates: [
+								[-73.6, 45.5],
+								[-73.58, 45.5],
+							],
+						},
+					},
+				],
+			}),
+		);
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() => expect(harness.getRoute).toHaveBeenCalled());
+		await settled();
+		await fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
+		await settled();
+		const selectionRequests = harness.getRoute.mock.calls.length;
+
+		mapHeroReceiptSignals.setMotionMode('smooth');
+		await tick();
+
+		expect(harness.getRoute).toHaveBeenCalledTimes(selectionRequests);
 	});
 
 	it('prefetches a newly polled route while smooth mode is active', async () => {

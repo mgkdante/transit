@@ -322,6 +322,12 @@
 			enabled: () => focusedStopId != null,
 		},
 	);
+	$effect(() => {
+		const routes = [...(selectedRoutes.data ?? []), focusedRoute.data];
+		untrack(() => {
+			for (const route of routes) if (route) shapeCache.remember(route);
+		});
+	});
 	const routeList = $derived(
 		selectedRouteIds.length === 0
 			? []
