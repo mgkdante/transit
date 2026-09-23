@@ -150,7 +150,7 @@
 	   the map. Sits just below the floating freshness/edge row. */
 	.map-live-edge {
 		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
-		top: var(--chrome-offset);
+		top: calc(var(--chrome-offset) + 2.5rem);
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;
@@ -185,10 +185,6 @@
 	.map-live-edge[data-state='global-stall'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
-	.map-feed-stall {
-		top: calc(var(--chrome-offset) + 2.5rem);
-	}
-
 	/* M6f-2 F14: the banner used to sit ON the control row's own anchor
 	   (--map-mobile-control-bottom, left 0.75rem) — the controls peel's exact
 	   origin — which only worked because the peel was being hidden. The peel now
