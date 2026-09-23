@@ -142,21 +142,20 @@
 		position: absolute;
 		z-index: var(--z-map-overlay);
 	}
-	/* Shared top-centre announcement. Centred between the left rail and the right
-	   detail offset
-	   (the same offset the rest of the floating chrome tracks) so it never hides
-	   behind a pane. Token-driven (card surface + hairline + blur, like the rest of
-	   the floating chrome); non-interactive — it states a fact, it does not block
-	   the map. Sits just below the floating freshness/edge row. */
+	/* Reserve the 16rem controls and 1rem gutters, and stay clear of the published
+	   detail edge. Announcements sit below freshness and never intercept map input. */
 	.map-live-edge {
 		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
 		top: calc(var(--chrome-offset) + 2.5rem);
-		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
-		right: 0;
+		left: calc(var(--app-left-rail-offset, 0rem) + 18rem);
+		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		margin-inline: auto;
 		z-index: var(--z-map-banner-content);
 		width: max-content;
-		max-width: min(26rem, calc(100% - 2rem));
+		max-width: min(
+			26rem,
+			calc(100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 19rem)
+		);
 		padding: 0.375rem 0.875rem;
 		text-align: center;
 		font-size: var(--text-caption);

@@ -456,7 +456,6 @@ describe('MapOverlayChrome', () => {
 		expect(banner).toHaveClass('map-feed-stall');
 		expect(getComputedStyle(banner).top).not.toBe('auto');
 		expect(getComputedStyle(banner).bottom).not.toBe('84px');
-		expect(getComputedStyle(banner).right).toBe('0px');
 	});
 
 	it.each([
@@ -565,7 +564,6 @@ describe('MapOverlayChrome', () => {
 			} else {
 				expect(getComputedStyle(banner).top).not.toBe('auto');
 				expect(getComputedStyle(banner).bottom).not.toBe('84px');
-				expect(getComputedStyle(banner).right).toBe('0px');
 			}
 		},
 	);
