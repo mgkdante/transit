@@ -131,6 +131,10 @@
 	.lang-post:hover {
 		color: var(--foreground);
 	}
+	.lang-post:active {
+		/* Keep language text contrast while the shared press effect scales the sign. */
+		opacity: 1;
+	}
 	.lang-post:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
