@@ -190,7 +190,7 @@
 		font-weight: 600;
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
-		color: var(--accent);
+		color: color-mix(in srgb, var(--accent-text) 80%, var(--foreground));
 		line-height: 1.2;
 	}
 

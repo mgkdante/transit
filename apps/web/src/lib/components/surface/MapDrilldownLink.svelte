@@ -39,7 +39,7 @@
 		padding: 0.25rem 0.65rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		color: var(--primary);
+		color: color-mix(in srgb, var(--primary) 60%, var(--foreground));
 		text-decoration: none;
 		background: color-mix(in srgb, var(--primary) 8%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);

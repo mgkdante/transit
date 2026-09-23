@@ -1,33 +1,5 @@
-<!--
-  AppShell — the application chrome, ONE STABLE DOM correct on the first (SSR)
-  paint. The persistent chrome (the floating NavPill) is rendered UNCONDITIONALLY,
-  so it is in the very first server-rendered frame and never flashes in or re-mounts
-  on navigation.
-
-    ┌ NavPill (floats, publishes --pill-h; carries ALL nav — Map/Lines/Stops/    ┐
-    │ Network + Audit via the hamburger) ──────────────────────────────────────  │
-    │  <main> map stage (full bleed under the floating chrome)                    │
-    │ the detail surface overlays right.                                          │
-    └─────────────────────────────────────────────────────────────────────────── ┘
-
-  The site nav lives ENTIRELY in the NavPill now — the old left-nav rail is gone.
-  DESKTOP vs MOBILE for the detail surface is a JS open/close decision (`detailOpen`),
-  never a breakpoint re-branch of the chrome. The detail surface floats over the
-  map's right slice on desktop and rides the BottomSheet on mobile.
-
-  `layout.isDesktop` survives only for the genuine route-vs-panel JS decision in
-  `$lib/nav` (openSurface) — the detail surface's desktop-overlay vs mobile-sheet
-  presentation. The map is truly full-bleed: nothing offsets it from the left.
-
-  Named snippet props: `main` (map stage), `detail` (RightPanel / BottomSheet body),
-  plus optional `detailFooter`. The zones render whatever the page passes, with
-  quiet empty states from the child components.
-
-  Adapted from the yesid.dev +layout.svelte chrome composition — re-themed to
-  the transit board, gsap/lenis/seo/marketing stripped. Tokens only; surfaces
-  SOLID. The shell fills the viewport (h-dvh) and never scrolls as a whole —
-  each zone scrolls internally.
--->
+<!-- Persistent navigation and the caller-owned main surface.
+     Feature owners compose RightPanel or BottomSheet when a selection opens. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
@@ -36,14 +8,7 @@
 	import type { TransitModeKey } from '$lib/search/stopMode';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import type { BilingualLabel } from '$lib/content/nav';
-	// `layout.isDesktop` is consulted ONLY for the detail surface's desktop-overlay
-	// vs mobile-sheet presentation — the genuine route-vs-panel intent decision. The
-	// PERSISTENT chrome (the floating NavPill) never reads it, so the first paint is
-	// correct without JS. See the detail block + `$lib/nav`.
-	import { layout } from '$lib/nav';
 	import NavPill from './NavPill.svelte';
-	import RightPanel from './RightPanel.svelte';
-	import BottomSheet from './BottomSheet.svelte';
 
 	interface AppShellProps {
 		/** Active locale, threaded to every chrome zone (prop wins over context). */
@@ -65,15 +30,6 @@
 		/** Transit modes picked in the NavPill dropdown; the layout owns the set. */
 		searchModes?: SvelteSet<TransitModeKey>;
 
-		/** Whether the detail surface (RightPanel / BottomSheet) is shown (bindable). */
-		detailOpen?: boolean;
-		/** Title for the detail surface header. */
-		detailTitle?: string;
-		/** Stable key for the active surface — re-keys the detail body on swap. */
-		surfaceKey?: string;
-		/** Fired when the detail surface is dismissed. */
-		ondetailclose?: () => void;
-
 		/**
 		 * Bilingual accessible name for the `<main>` landmark, surface-appropriate
 		 * (e.g. Lines / Daily receipt). The shell renders ONE persistent `<main>`
@@ -84,10 +40,6 @@
 
 		/** The MapStage content — the map fills this zone. */
 		main?: Snippet;
-		/** RightPanel / BottomSheet body — the swapped surface detail. */
-		detail?: Snippet;
-		/** Sticky footer for the detail surface. */
-		detailFooter?: Snippet;
 
 		class?: string;
 	}
@@ -103,14 +55,8 @@
 		onresultselect,
 		searchScope = 'all',
 		searchModes,
-		detailOpen = $bindable(false),
-		detailTitle,
-		surfaceKey = 'empty',
-		ondetailclose,
 		mainLabel,
 		main,
-		detail,
-		detailFooter,
 		class: className,
 	}: AppShellProps = $props();
 
@@ -125,11 +71,6 @@
 				? 'Carte du réseau'
 				: 'Network map',
 	);
-
-	function closeDetail() {
-		detailOpen = false;
-		ondetailclose?.();
-	}
 </script>
 
 <div
@@ -160,9 +101,7 @@
 		/>
 	</div>
 
-	<!-- ONE stable row, server-rendered, correct on first paint. The map stage +
-	     the detail surface are ALWAYS in the DOM; the map is full-bleed with nothing
-	     offsetting it from the left (the site nav lives entirely in the NavPill). -->
+	<!-- The main row stays mounted across viewport changes. -->
 	<div class="app-shell-row min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
 		<!-- Transparent base: the blueprint grid painted on .app-shell-root (circuit-
 		     grid) shows through the document surfaces (solid cards occlude it — the
@@ -175,39 +114,6 @@
 		>
 			{#if main}{@render main()}{/if}
 		</main>
-
-		<!-- Detail surface — selected-entity content, never first-paint chrome. It is
-		     absent until a selection opens it (`detailOpen`), so branching its
-		     PRESENTATION (desktop floating overlay vs mobile bottom sheet) on
-		     `layout.isDesktop` causes no load-time flash: nothing is selected at first
-		     paint. This is the genuine route-vs-panel intent decision the layout store
-		     is reserved for — distinct from the persistent rail/header/footer chrome,
-		     which is CSS-responsive above. -->
-		{#if layout.isDesktop}
-			{#if detailOpen}
-				<div class="app-shell-detail-overlay" data-slot="app-shell-detail-overlay">
-					<RightPanel
-						{locale}
-						title={detailTitle}
-						{surfaceKey}
-						onclose={closeDetail}
-						footer={detailFooter}
-					>
-						{#if detail}{@render detail()}{/if}
-					</RightPanel>
-				</div>
-			{/if}
-		{:else}
-			<BottomSheet
-				bind:open={detailOpen}
-				{locale}
-				title={detailTitle}
-				{surfaceKey}
-				footer={detailFooter}
-			>
-				{#if detail}{@render detail()}{/if}
-			</BottomSheet>
-		{/if}
 	</div>
 </div>
 
@@ -256,16 +162,5 @@
 	.app-shell-main {
 		position: absolute;
 		inset: 0;
-	}
-
-	/* The desktop detail dock is the sheet's desktop form (the mobile BottomSheet
-	   uses --z-sheet); it rides the same elevation band, below the floating pill
-	   (--z-nav). */
-	.app-shell-detail-overlay {
-		position: absolute;
-		inset-block: 0;
-		right: 0;
-		z-index: var(--z-sheet);
-		pointer-events: auto;
 	}
 </style>

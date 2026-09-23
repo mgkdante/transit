@@ -328,13 +328,12 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-back-link, var(--text-small));
 		letter-spacing: 0;
-		color: var(--article-accent);
+		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
 		text-decoration: none;
-		opacity: 0.7;
-		transition: opacity var(--duration-normal) ease;
+		transition: color var(--duration-normal) ease;
 	}
 	.header__back:hover {
-		opacity: 1;
+		color: var(--foreground);
 	}
 	@media (min-width: 1024px) {
 		.header__back {
@@ -367,7 +366,7 @@
 		font-size: 11px;
 		letter-spacing: 3px;
 		text-transform: uppercase;
-		color: var(--article-accent);
+		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
 		max-width: calc(100% - 2rem);
 	}
 	.header__cat-line::before,
@@ -429,7 +428,7 @@
 		font-family: var(--font-mono);
 		font-size: 10px;
 		letter-spacing: 0.04em;
-		color: color-mix(in srgb, var(--article-accent) 85%, transparent);
+		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
 		border: 1px solid color-mix(in srgb, var(--article-accent) 12%, transparent);
 		border-radius: var(--radius-pill);
 		padding: 4px 12px;
@@ -438,7 +437,6 @@
 	@media (min-width: 1024px) {
 		.header__pill {
 			font-size: var(--text-caption);
-			color: color-mix(in srgb, var(--article-accent) 90%, transparent);
 			border-color: color-mix(in srgb, var(--article-accent) 15%, transparent);
 			padding: 7px 18px;
 			background: color-mix(in srgb, var(--article-accent) 4%, transparent);
@@ -455,7 +453,7 @@
 		min-height: 1rem;
 		font-family: var(--font-mono);
 		font-size: clamp(9px, 2.8vw, 11px);
-		color: color-mix(in srgb, var(--article-accent) 85%, transparent);
+		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
 	}
 	.header__meta-item {
 		display: inline-flex;
