@@ -1,3 +1,4 @@
+import type { Locale } from '$lib/i18n';
 import type { LiveIndex } from '$lib/v1/live';
 import { routeDirectionVariants, type RouteDirectionVariant } from '$lib/components/map';
 import type {
@@ -56,6 +57,7 @@ export function sameNullableSelection(a: MapSelection | null, b: MapSelection | 
 }
 
 export interface ResolveContext {
+	readonly locale?: Locale;
 	readonly index: LiveIndex;
 	readonly stops: readonly StopIndexEntry[];
 	readonly routes?: readonly RouteFile[] | null;
@@ -119,12 +121,6 @@ export interface VehicleMapDetail {
 	readonly routeDirection: RouteDirection | null;
 	readonly routeDirectionVariant: RouteDirectionVariant | null;
 	readonly nextStop: StopIndexEntry | null;
-	/**
-	 * The honest reason there is no RESOLVED next stop (only meaningful when
-	 * `nextStop` is null). `not-in-schedule` when the feed named a next stop we
-	 * could not resolve to a real stop (render "Next stop unknown", never the raw
-	 * id); `end-of-route` when the feed named no next stop at all (the trip ended).
-	 */
 	readonly nextStopAbsence: AbsenceReasonKey;
 	readonly pastStops: readonly MapStopRef[];
 	readonly nextStops: readonly MapStopRef[];
@@ -276,8 +272,9 @@ function resolveVehicleDirectionVariant(
 	route: RouteFile | null,
 	vehicle: Vehicle,
 	trip: Trip | null,
+	locale: Locale = 'en',
 ): RouteDirectionVariant | null {
-	const variants = route ? routeDirectionVariants(route) : [];
+	const variants = route ? routeDirectionVariants(route, locale) : [];
 	if (variants.length === 0) return null;
 	const anchors = (trip?.stops ?? []).map((stop) => stop.stop);
 	const fallbackAnchors = vehicle.next_stop ? [vehicle.next_stop] : [];
@@ -407,8 +404,9 @@ function buildStopRouteTimes(
 function routeDirectionStops(
 	route: RouteFile,
 	selectedVariant: RouteDirectionVariant | null,
+	locale: Locale = 'en',
 ): RouteDirectionStops[] {
-	const variants = selectedVariant ? [selectedVariant] : routeDirectionVariants(route);
+	const variants = selectedVariant ? [selectedVariant] : routeDirectionVariants(route, locale);
 	return variants.map((variant) => ({
 		variantKey: variant.key,
 		dir: variant.dir,
@@ -438,7 +436,12 @@ export function resolveMapSelection(
 		if (!vehicle) return null;
 		const trip = vehicle.trip ? (context.index.byTripId.get(vehicle.trip) ?? null) : null;
 		const route = findRoute(context.routes, vehicle.route ?? trip?.route);
-		const routeDirectionVariant = resolveVehicleDirectionVariant(route, vehicle, trip);
+		const routeDirectionVariant = resolveVehicleDirectionVariant(
+			route,
+			vehicle,
+			trip,
+			context.locale,
+		);
 		const routeDirection = routeDirectionVariant?.direction ?? null;
 		const { pastStops, nextStops } = buildVehicleStopProgress(
 			vehicle,
@@ -448,11 +451,8 @@ export function resolveMapSelection(
 		);
 
 		const nextStop = findStop(context.stops, vehicle.next_stop);
-		// When there is no RESOLVED next stop, say WHY honestly: the feed named one we
-		// could not resolve (not-in-schedule → "Next stop unknown") vs the feed named
-		// none at all (end-of-route → the trip has ended). Never leak the raw id.
 		const hasNamedNextStop = vehicle.next_stop != null && vehicle.next_stop !== '';
-		const nextStopAbsence: AbsenceReasonKey = hasNamedNextStop ? 'not-in-schedule' : 'end-of-route';
+		const nextStopAbsence: AbsenceReasonKey = hasNamedNextStop ? 'not-in-schedule' : 'not-reported';
 
 		return {
 			kind: 'vehicle',
@@ -478,7 +478,7 @@ export function resolveMapSelection(
 	if (selection.kind === 'route') {
 		const route = (context.routes ?? []).find((candidate) => candidate.id === selection.id);
 		if (!route) return null;
-		const variants = routeDirectionVariants(route);
+		const variants = routeDirectionVariants(route, context.locale);
 		const selectedVariant =
 			selection.variantKey == null
 				? selection.direction == null
@@ -492,7 +492,7 @@ export function resolveMapSelection(
 			title: `Route ${route.id}`,
 			route,
 			direction,
-			directions: routeDirectionStops(route, selectedVariant),
+			directions: routeDirectionStops(route, selectedVariant, context.locale),
 			vehicles: vehiclesOnRoute(context.index, route.id),
 			alerts:
 				context.alerts == null

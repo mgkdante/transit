@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from _sqlfakes import NamedQueryConn
+from historic_graph_fixtures import graph_from_bundles
 from test_partitioned_history_publish import (
     _line_history_plan,
     _network_history_plan,
@@ -16,7 +17,15 @@ from test_partitioned_history_publish import (
     _stop_history_plan,
 )
 
-from transit_ops.snapshots import gate, publish
+from transit_ops.snapshots import (
+    envelope,
+    gate,
+    historic_compatibility,
+    historic_streams,
+    historic_tier,
+    publish,
+    uploads,
+)
 from transit_ops.snapshots.builders.historic import history_common
 from transit_ops.snapshots.contract import (
     HistoricAvailabilityIndex,
@@ -29,6 +38,7 @@ from transit_ops.snapshots.contract import (
     HotspotGrain,
     Offender,
 )
+from transit_ops.snapshots.historic_graph import HistoricGraph
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.sql_registry import query_name
 
@@ -40,7 +50,7 @@ def _ignore_historic_gc_mark_clearing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep ranking/pointer tests focused on their in-memory publish seam."""
 
     monkeypatch.setattr(
-        publish,
+        historic_tier,
         "_clear_referenced_historic_gc_marks",
         lambda *args, **kwargs: None,
     )
@@ -113,7 +123,7 @@ def test_point_bundle_reuses_provider_names_and_executes_five_queries() -> None:
         strict=True,
     )
 
-    bundle = publish._build_historic_point_plans(connection, provider_id="stm")  # noqa: SLF001
+    bundle = historic_tier._build_historic_point_plans(connection, provider_id="stm")  # noqa: SLF001
 
     assert bundle.hotspots.names is bundle.repeat_offenders.names
     assert [query_name(statement) for statement in connection.executed] == [
@@ -161,9 +171,10 @@ def test_point_summary_keeps_published_empty_day_and_rejects_duplicate_or_wrong_
         history_common.PointHistorySummary("network")
 
 
-def test_point_ref_rejects_wrong_methodology_before_addressing() -> None:
+@pytest.mark.parametrize("methodology", [None, "history-1", "reliability-3"])
+def test_point_ref_rejects_wrong_methodology_before_addressing(methodology) -> None:
     payload = _hotspots_day()
-    payload.methodology_version = "history-1"
+    payload.methodology_version = methodology
 
     with pytest.raises(ValueError, match="methodology"):
         history_common.history_point_ref("hotspots", payload)
@@ -240,7 +251,7 @@ def test_point_family_index_gate_rejects_wrong_identity_dates_refs_and_generatio
     mutation,  # noqa: ANN001
 ) -> None:
     summary, index = _point_index("repeat_offenders", _repeat_day())
-    publish._stamp_envelope(  # noqa: SLF001
+    envelope.stamp_envelope(  # noqa: SLF001
         [("unused", index, "historic")],
         provider_id="stm",
         stamp=STAMP,
@@ -276,7 +287,7 @@ def test_point_family_index_gate_requires_canonical_published_envelope(
     expected_check: str,
 ) -> None:
     _summary, index = _point_index("hotspots", _hotspots_day())
-    publish._stamp_envelope(  # noqa: SLF001
+    envelope.stamp_envelope(  # noqa: SLF001
         [("unused", index, "historic")],
         provider_id="stm",
         stamp=STAMP,
@@ -310,7 +321,7 @@ def test_publish_streams_all_point_days_before_exact_indexes_and_root(
     _patch_points(monkeypatch, hotspots=hotspots, repeat=repeat)
     store = _RecordingStore()
 
-    keys = publish._publish_historic(  # noqa: SLF001
+    keys = historic_tier.publish(  # noqa: SLF001
         object(),
         store,
         provider_id="stm",
@@ -377,7 +388,7 @@ def test_point_days_upload_in_bounded_immutable_batches_after_gating(
     store = _RecordingStore()
     report = gate.new_report("stm", "historic", STAMP)
     batches: list[tuple[int, int, str]] = []
-    original_parallel_put = publish._parallel_put  # noqa: SLF001
+    original_parallel_put = uploads.put_batch  # noqa: SLF001
 
     def record_batch(storage, items, *, concurrency, write_mode="normal"):  # noqa: ANN001, ANN202
         batches.append((len(items), concurrency, write_mode))
@@ -388,14 +399,14 @@ def test_point_days_upload_in_bounded_immutable_batches_after_gating(
             write_mode=write_mode,
         )
 
-    monkeypatch.setattr(publish, "_parallel_put", record_batch)
+    monkeypatch.setattr(uploads, "put_batch", record_batch)
 
-    summary, keys = publish._publish_point_history_days(  # noqa: SLF001
+    summary, keys = historic_streams.consume_point_days(  # noqa: SLF001
         _PointPlan(*days),
         family="hotspots",
         storage=store,
         report=report,
-        analytics_report=None,
+        record_payloads=False,
         force=False,
         concurrency=2,
     )
@@ -422,14 +433,14 @@ def test_point_day_batch_memory_cap_is_fixed_even_with_extreme_executor_concurre
         batches.append((len(items), concurrency, write_mode))
         return [item[0] for item in items]
 
-    monkeypatch.setattr(publish, "_parallel_put", record_batch)
+    monkeypatch.setattr(uploads, "put_batch", record_batch)
 
-    _summary, keys = publish._publish_point_history_days(  # noqa: SLF001
+    _summary, keys = historic_streams.consume_point_days(  # noqa: SLF001
         _PointPlan(*days),
         family="hotspots",
         storage=_RecordingStore(),
         report=gate.new_report("stm", "historic", STAMP),
-        analytics_report=None,
+        record_payloads=False,
         force=False,
         concurrency=10_000,
     )
@@ -462,7 +473,7 @@ def test_point_child_or_index_failure_leaves_old_root_active(
     store.objects["historic/history/index.json"] = old_root
 
     with pytest.raises(RuntimeError, match="point index failed"):
-        publish._publish_historic(  # noqa: SLF001
+        historic_tier.publish(  # noqa: SLF001
             object(),
             store,
             provider_id="stm",
@@ -485,7 +496,7 @@ def test_point_indexes_extend_root_timestamp_and_exact_child_graph() -> None:
     )
     repeat_summary, repeat = _point_index("repeat_offenders", _repeat_day())
     for index in (hotspots, repeat):
-        publish._stamp_envelope(  # noqa: SLF001
+        envelope.stamp_envelope(  # noqa: SLF001
             [("unused", index, "historic")],
             provider_id="stm",
             stamp=STAMP,
@@ -502,23 +513,18 @@ def test_point_indexes_extend_root_timestamp_and_exact_child_graph() -> None:
     )
     receipts = ReceiptsIndex(
         generated_utc=STAMP,
-        collection_generation_id=publish._receipts_collection_generation_id({}),  # noqa: SLF001
+        collection_generation_id=historic_compatibility._receipts_collection_generation_id({}),  # noqa: SLF001
         dates=[],
     )
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp=STAMP,
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat,
-        hotspots_index_path=hotspot_path,
-        repeat_offenders_index_path=repeat_path,
-    )
+    root = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat,
+    ).build_root(STAMP)
 
     assert root.generated_utc == "2026-07-14T01:00:00Z"
     assert not gate.check_history_availability_graph(
@@ -569,7 +575,7 @@ def test_collect_names_historic_bundles_and_consumes_point_plans_in_connection(
         hotspots=(_hotspots_day(),),
         repeat=(_repeat_day(),),
     )
-    monkeypatch.setattr(publish, "_historic_stamp", lambda: STAMP)
+    monkeypatch.setattr(historic_tier, "publication_stamp", lambda: STAMP)
     monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
     connection = SimpleNamespace(closed=False)
 
@@ -581,7 +587,7 @@ def test_collect_names_historic_bundles_and_consumes_point_plans_in_connection(
             finally:
                 connection.closed = True
 
-    def consume(collected: publish.HistoricValidationInputs):  # noqa: ANN202
+    def consume(collected: historic_tier.HistoricValidationInputs):  # noqa: ANN202
         assert not connection.closed
         assert collected.alert_archive is not None
         assert collected.alert_archive.provider_timezone == "UTC"
@@ -613,11 +619,11 @@ def test_collect_names_historic_bundles_and_consumes_point_plans_in_connection(
 
 
 def test_validation_named_inputs_support_a_point_only_non_prefix_bundle() -> None:
-    point_plans = publish.HistoricPointPlanBundle(
+    point_plans = historic_tier.HistoricPointPlanBundle(
         hotspots=_PointPlan(),
         repeat_offenders=_PointPlan(),
     )
-    collected = publish.HistoricValidationInputs(
+    collected = historic_tier.HistoricValidationInputs(
         all_items=[],
         route_items=[],
         stamp=STAMP,
@@ -643,7 +649,7 @@ def test_validation_named_inputs_support_range_archive_without_point_bundle(
         line_plan=_line_history_plan(),
         stop_plan=_stop_history_plan(),
     )
-    monkeypatch.setattr(publish, "_historic_stamp", lambda: STAMP)
+    monkeypatch.setattr(historic_tier, "publication_stamp", lambda: STAMP)
     monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
 
     class Engine:
@@ -662,7 +668,7 @@ def test_validation_named_inputs_support_range_archive_without_point_bundle(
         include_stop_bundle=True,
     )
 
-    assert isinstance(collected, publish.HistoricValidationInputs)
+    assert isinstance(collected, historic_tier.HistoricValidationInputs)
     assert collected.point_plans is None
     report = publish.validate_snapshots(
         "stm",
@@ -691,7 +697,7 @@ def test_validation_records_the_exact_point_graph_published_from_fresh_plans(
         ),
         repeat=(_repeat_day("2026-07-02"),),
     )
-    monkeypatch.setattr(publish, "_historic_stamp", lambda: STAMP)
+    monkeypatch.setattr(historic_tier, "publication_stamp", lambda: STAMP)
     monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
 
     class Engine:
@@ -706,7 +712,7 @@ def test_validation_records_the_exact_point_graph_published_from_fresh_plans(
         engine=Engine(),
     )
     store = _RecordingStore()
-    publish._publish_historic(  # noqa: SLF001
+    historic_tier.publish(  # noqa: SLF001
         object(),
         store,
         provider_id="stm",
@@ -750,7 +756,7 @@ def test_each_point_family_write_failure_preserves_old_root(
     store.objects["historic/history/index.json"] = old_root
 
     with pytest.raises(RuntimeError, match=f"{family} {stage} failed"):
-        publish._publish_historic(  # noqa: SLF001
+        historic_tier.publish(  # noqa: SLF001
             object(),
             store,
             provider_id="stm",
@@ -779,7 +785,7 @@ def test_point_family_gate_failure_blocks_root_unless_force_is_explicit(
     blocked.objects["historic/history/index.json"] = old_root
 
     with pytest.raises(gate.GateError) as exc_info:
-        publish._publish_historic(  # noqa: SLF001
+        historic_tier.publish(  # noqa: SLF001
             object(),
             blocked,
             provider_id="stm",
@@ -792,7 +798,7 @@ def test_point_family_gate_failure_blocks_root_unless_force_is_explicit(
 
     forced = _RecordingStore()
     forced.objects["historic/history/index.json"] = old_root
-    publish._publish_historic(  # noqa: SLF001
+    historic_tier.publish(  # noqa: SLF001
         object(),
         forced,
         provider_id="stm",
@@ -827,9 +833,8 @@ def test_root_contract_rejects_missing_duplicate_wrong_mode_and_mutable_point_pa
     stops = _stop_history_plan().materialize()
     _hot_summary, hotspots = _point_index("hotspots", _hotspots_day())
     _repeat_summary, repeat = _point_index("repeat_offenders", _repeat_day())
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp=STAMP,
-        alert_index=AlertArchiveIndex(
+    root = graph_from_bundles(
+        alerts=AlertArchiveIndex(
             generated_utc=STAMP,
             collection_generation_id="alerts",
             first_available_date=None,
@@ -837,19 +842,17 @@ def test_root_contract_rejects_missing_duplicate_wrong_mode_and_mutable_point_pa
             total_alerts=0,
             months=[],
         ),
-        receipts_index=ReceiptsIndex(
+        receipts=ReceiptsIndex(
             generated_utc=STAMP,
             collection_generation_id="receipts",
             dates=[],
         ),
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat,
-    )
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat,
+    ).build_root(STAMP)
     mutation(root)
 
     findings = gate.check_history_availability_index(
@@ -882,37 +885,32 @@ def test_root_build_and_graph_require_both_exact_point_children() -> None:
     _hot_summary, hotspots = _point_index("hotspots")
     _repeat_summary, repeat = _point_index("repeat_offenders")
     for index in (hotspots, repeat):
-        publish._stamp_envelope(  # noqa: SLF001
+        envelope.stamp_envelope(  # noqa: SLF001
             [("unused", index, "historic")],
             provider_id="stm",
             stamp=STAMP,
         )
 
-    with pytest.raises(RuntimeError, match="point history children"):
-        publish._build_history_availability_index(  # noqa: SLF001
-            stamp=STAMP,
-            alert_index=alerts,
-            receipts_index=receipts,
-            network_index=network,
-            line_directory=lines.directory,
-            line_indexes=lines.indexes,
-            stop_directory=stops.directory,
-            stop_indexes=stops.indexes,
-            hotspots_index=hotspots,
+    graph = graph_from_bundles(
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat,
+    )
+    with pytest.raises(TypeError, match="repeat_offenders"):
+        HistoricGraph(
+            alerts=graph.alerts,
+            receipts=graph.receipts,
+            network=graph.network,
+            lines=graph.lines,
+            stops=graph.stops,
+            hotspots=graph.hotspots,
         )
 
-    root = publish._build_history_availability_index(  # noqa: SLF001
-        stamp=STAMP,
-        alert_index=alerts,
-        receipts_index=receipts,
-        network_index=network,
-        line_directory=lines.directory,
-        line_indexes=lines.indexes,
-        stop_directory=stops.directory,
-        stop_indexes=stops.indexes,
-        hotspots_index=hotspots,
-        repeat_offenders_index=repeat,
-    )
+    root = graph.build_root(STAMP)
     findings = gate.check_history_availability_graph(
         root,
         alert_index=alerts,
@@ -927,3 +925,19 @@ def test_root_build_and_graph_require_both_exact_point_children() -> None:
     )
 
     assert "missing_point_child" in {finding.check for finding in findings}
+
+
+@pytest.mark.parametrize("family", ["hotspots", "repeat_offenders"])
+def test_point_refs_preserve_exact_bytes_for_both_methodology_versions(family: str) -> None:
+    previous = _hotspots_day() if family == "hotspots" else _repeat_day()
+    corrected = previous.model_copy(update={"methodology_version": "reliability-2"})
+    old_bytes = snapshot_json_bytes(previous)
+    refs = [history_common.history_point_ref(family, payload)
+            for payload in (previous, corrected)]
+    assert snapshot_json_bytes(previous) == old_bytes
+    assert refs[0].path != refs[1].path
+    for payload, ref in zip((previous, corrected), refs, strict=True):
+        assert ref.sha256 == hashlib.sha256(snapshot_json_bytes(payload)).hexdigest()
+        assert gate.check_point_history_day_ref(
+            family=family, payload=payload, ref=ref,
+        ) == []

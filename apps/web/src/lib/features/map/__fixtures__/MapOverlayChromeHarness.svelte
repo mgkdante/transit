@@ -29,6 +29,7 @@
 		generatedUtc?: string | null;
 		ageSeconds?: number | null;
 		isStale?: boolean;
+		degraded?: boolean;
 		selectedFamilyFailureMessage?: string | null;
 		// Near-me.
 		nearMeOrigin?: NearMeOrigin | null;
@@ -53,6 +54,7 @@
 		generatedUtc = '2026-06-15T00:00:00Z',
 		ageSeconds = 12,
 		isStale = false,
+		degraded = false,
 		selectedFamilyFailureMessage = null,
 		nearMeOrigin = null,
 		nearbyStops = [],
@@ -91,6 +93,7 @@
 	{generatedUtc}
 	{ageSeconds}
 	{isStale}
+	{degraded}
 	{selectedFamilyFailureMessage}
 	bind:nearMeOpen
 	bind:nearMeQuery

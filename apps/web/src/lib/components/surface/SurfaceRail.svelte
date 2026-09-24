@@ -152,7 +152,7 @@
 
 <!-- MOBILE: ONE pill → ONE sheet merging grain/filters + ToC (<1024; hidden ≥1024). -->
 {#if mobileVisible}
-	<div class="surface-rail-mobile lg:hidden" data-slot="surface-rail-mobile">
+	<div class="surface-rail-mobile" data-slot="surface-rail-mobile" data-open={sheetOpen}>
 		<button
 			bind:this={pillBtn}
 			class="tap-press surface-rail-pill glass-chrome"
@@ -206,6 +206,10 @@
 		flex: none;
 	}
 	@media (min-width: 1024px) {
+		/* Keep an open sheet focusable until its owner completes the desktop handoff. */
+		.surface-rail-mobile[data-open='false'] {
+			display: none;
+		}
 		.surface-rail {
 			display: flex;
 			flex-direction: column;
@@ -225,8 +229,10 @@
 
 	/* ── Mobile pill + sheet (<1024) ────────────────────────────────────────────── */
 	.surface-rail-mobile {
+		--surface-rail-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+		--surface-rail-sheet-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 		position: fixed;
-		bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+		bottom: var(--surface-rail-bottom);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-sheet);
@@ -267,9 +273,17 @@
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
-		bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+		bottom: var(--surface-rail-sheet-bottom);
 		width: min(28rem, calc(100vw - 1.5rem));
-		max-height: min(70dvh, 32rem);
+		/* The transformed mobile rail contains this fixed sheet, so both insets apply. */
+		max-height: min(
+			70dvh,
+			32rem,
+			calc(
+				100dvh - var(--chrome-offset) - var(--surface-rail-bottom) -
+					var(--surface-rail-sheet-bottom)
+			)
+		);
 		overflow-y: auto;
 		overscroll-behavior: contain;
 		display: flex;

@@ -2,7 +2,7 @@
   §0 Verdict — "Can you count on this line?"
 
   The first rider-question section + the page's at-a-glance answer. Leads with the
-  punctuality KPI tiles (on-time, avg delay, typical/worst-case), then the ONE
+  punctuality KPI tiles (on-time, avg delay, median/p90), then the ONE
   always-visible primary chart — the on-time / avg-delay trend — and tucks the
   analyst detail (the delay distribution + severe-delay share) behind the
   progressive-disclosure `<Detail>` expander.
@@ -17,12 +17,12 @@
 
 -->
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import { localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { MaybeValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
@@ -42,6 +42,7 @@
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectBullet, otpTone } from '../selectors/bullet';
+	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
@@ -54,12 +55,14 @@
 		copy: ReliabilityCopy;
 		/** Active window (day|week|month|range) — names the verdict window + drives the trend. */
 		mode?: 'day' | 'week' | 'month' | 'range';
+		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 	}
-	let { vm, locale, copy, mode = 'day' }: Section0VerdictProps = $props();
+	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
 	// A date range uses the retained dated series. Only the literal day mode uses
 	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
+	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
@@ -133,12 +136,13 @@
 	const hasTrend = $derived(trendSpec.kind === 'trend');
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
-	// DETAIL — the typical→worst-case delay distribution (signed-delay histogram).
+	// DETAIL — signed-delay histogram with median and 90th-percentile markers.
 	const distSpec = $derived(
 		selectPunctualityDistribution(vm, locale, {
 			title: copy.strip.delayDistHeading,
 			unit: ' s',
 			xLabel: copy.strip.delayDistLabel,
+			yLabel: copy.strip.delayDistCount,
 		}),
 	);
 	const p50 = $derived<number | null>(headline.p50Min);
@@ -232,7 +236,7 @@
 					spec={p50Bullet}
 					{locale}
 					info={p50Info}
-					caption={copy.strip.p50Caption}
+					caption={estimatedPercentiles ? copy.strip.p50EstimatedCaption : copy.strip.p50Caption}
 				/>
 				<MetricBullet
 					label={copy.strip.p90Min}
@@ -240,7 +244,7 @@
 					spec={p90Bullet}
 					{locale}
 					info={p90Info}
-					caption={copy.strip.p90Caption}
+					caption={estimatedPercentiles ? copy.strip.p90EstimatedCaption : copy.strip.p90Caption}
 				/>
 			</div>
 		{/if}
@@ -258,7 +262,15 @@
 				</div>
 				<Chart spec={trendSpec} />
 				{#if hasWilsonBand}
-					<p class="band-caption" data-slot="wilson-band-caption">{copy.strip.wilsonBandCaption}</p>
+					<p class="band-caption" data-slot="wilson-band-caption">
+						{copy.strip.wilsonBandCaption}
+						<a
+							href={localizeHref('/metrics#confidence-intervals', locale)}
+							data-card-interactive
+							class="underline underline-offset-2"
+							>{explainerCopy.provenance.howWeMeasure.confidenceInterval.link}</a
+						>
+					</p>
 				{/if}
 			</div>
 		{/if}
@@ -285,10 +297,19 @@
 						{/if}
 					</span>
 				</div>
-				<Chart spec={distSpec} />
+				{#if distSpec.kind === 'histogram'}
+					<Chart spec={distSpec} />
+				{:else}
+					<p class="caption">
+						<AbsentValue reason={distSpec.reason} variant="row" {locale} />
+					</p>
+				{/if}
+				{#if dailyPercentiles != null}
+					<p class="caption" data-slot="daily-percentile-spread">
+						{dailyPercentileCaption(dailyPercentiles, locale)}
+					</p>
+				{/if}
 				{#if isDayGrain && !hasDist}
-					<!-- Day-grain periods carry no percentile distribution (only week/month do) —
-					     nudge to a wider window rather than leaving a bare "no data". -->
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}
 				{#if distSpec.kind === 'histogram'}

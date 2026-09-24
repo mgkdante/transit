@@ -145,6 +145,54 @@ const activeWindowText = (container: HTMLElement): string =>
 	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
 
 describe('RouteReliabilityClusters', () => {
+	it.each(['en', 'fr'] as const)('names the severe reading population in %s', async (locale) => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale },
+		});
+		const verdict = container.querySelector('[data-band="verdict"]') as HTMLElement;
+		await fireEvent.click(
+			within(verdict).getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+		);
+		expect(verdict.querySelector('[data-slot="severe-caption"]')).toHaveTextContent(
+			locale === 'en'
+				? 'Share of known-delay readings classified as severe'
+				: 'Part des relevés à retard connu classés en retard grave',
+		);
+	});
+
+	it.each(['en', 'fr'] as const)(
+		'distinguishes daily percentiles from window estimates in %s',
+		async (locale) => {
+			const view = render(RouteReliabilityClusters, { props: { data: populated, locale } });
+			const t = reliabilityCopy[locale];
+			const captions = () =>
+				[
+					...view.container.querySelectorAll('[data-slot="verdict-kpis"] .metric-bullet__caption'),
+				].map((node) => node.textContent);
+			const exact =
+				locale === 'en'
+					? ['Median of reported predicted delays', '90th percentile of reported predicted delays']
+					: ['Médiane des relevés de retard prédit', '90e percentile des relevés de retard prédit'];
+			const estimated =
+				locale === 'en'
+					? [
+							'Estimated median of reported predicted delays',
+							'Estimated 90th percentile of reported predicted delays',
+						]
+					: [
+							'Médiane estimée des relevés de retard prédit',
+							'90e percentile estimé des relevés de retard prédit',
+						];
+			expect.soft(captions()).toEqual(exact);
+			for (const name of [t.controls.thisWeek, t.controls.thisMonth]) {
+				await fireEvent.click(view.getByRole('radio', { name }));
+				expect.soft(captions()).toEqual(estimated);
+			}
+			await fireEvent.click(view.getByRole('radio', { name: t.controls.latestDay }));
+			expect(captions()).toEqual(exact);
+		},
+	);
+
 	it('places an optional article verdict in the shared summary lane before reliability cards', () => {
 		const articleSummary = createRawSnippet(() => ({
 			render: () => '<p data-testid="line-article-summary">Line verdict</p>',
@@ -222,7 +270,7 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
 		// The control spine offers the three discrete grains.
-		expect(screen.getAllByText(copy.controls.today).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(copy.controls.latestDay).length).toBeGreaterThan(0);
 		expect(screen.getByText(copy.controls.thisWeek)).toBeInTheDocument();
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
 	});
@@ -265,8 +313,8 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: populated, locale: 'en' },
 		});
 
-		// Default grain ('day') → the active-window caption names today.
-		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day);
+		// The date comes from the selected delay period.
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day('2026-06-19'));
 
 		// Switch to "This week" → the caption re-answers for the week window.
 		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.thisWeek }));
@@ -282,7 +330,25 @@ describe('RouteReliabilityClusters', () => {
 			),
 		};
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
-		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.singleDay('2026-06-19'));
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day('2026-06-19'));
+	});
+
+	it('does not borrow a capture date from a service-day measure', async () => {
+		const data = {
+			...populated,
+			periods: populated.periods?.map((period) => ({ ...period, date: null })),
+		};
+		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day(null));
+		const waitSection = container.querySelector('[data-section="the-wait"]') as HTMLElement;
+		expect(waitSection.querySelector('[data-slot="service-span-window"]')).toBeNull();
+		await fireEvent.click(
+			within(waitSection).getByRole('button', { name: copy.sections.detailShow }),
+		);
+		expect(waitSection.querySelector('[data-slot="service-span-window"]')).toHaveTextContent(
+			copy.windows.serviceSpan('2026-06-19'),
+		);
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day(null));
 	});
 
 	it('honours the FR canonical voice for the section overlines', () => {
@@ -295,8 +361,8 @@ describe('RouteReliabilityClusters', () => {
 		expect(
 			screen.getAllByText(reliabilityCopy.fr.sections.worstStops.label)[0],
 		).toBeInTheDocument();
-		// "Aujourd'hui" appears in both the grain picker and the active-window caption.
-		expect(screen.getAllByText(reliabilityCopy.fr.controls.today).length).toBeGreaterThan(0);
+
+		expect(screen.getAllByText(reliabilityCopy.fr.controls.latestDay).length).toBeGreaterThan(0);
 	});
 
 	it('offers a Date range segment when the contract carries dated day-periods', () => {
@@ -470,7 +536,7 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		expect(pillBtn).not.toBeNull();
 		// Labelled with the View heading + the active window (default 'day' → Today).
 		expect(pillBtn.textContent).toContain(copy.controls.viewLabel);
-		expect(pillBtn.textContent).toContain(copy.controls.today);
+		expect(pillBtn.textContent).toContain(copy.controls.latestDay);
 		// The sheet is closed by default (no dialog rendered yet).
 		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
 		// The old collapse toggle + the separate toc/filter pills are gone.

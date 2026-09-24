@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fmtCount, fmtDelayMin, fmtPct } from './format';
 
-/**
- * The honesty doctrine is the point of this module: a null / undefined / NaN
- * value is an ABSENCE. It MUST funnel through the single `noData` branch and
- * render EITHER `null` (caller's own empty state) OR the localized no-data
- * string — NEVER a fabricated 0, never a bare "·". These tests pin that branch
- * plus every rounding / suffix / locale variant the call sites rely on so the
- * shared util reproduces each site's prior output byte-for-byte.
- */
-
 const ABSENT = [null, undefined, NaN, Infinity, -Infinity] as const;
 
 describe('fmtPct — honesty branch', () => {
@@ -36,12 +27,12 @@ describe('fmtPct — rounding + suffix variants', () => {
 		expect(fmtPct(82)).toBe('82%');
 	});
 
-	it('Math.round + % (Cluster02, ReliabilityPane)', () => {
+	it('rounds whole percentages', () => {
 		expect(fmtPct(81.6, { rounding: 'round' })).toBe('82%');
 		expect(fmtPct(82.4, { rounding: 'round' })).toBe('82%');
 	});
 
-	it('toFixed(1) + % (Cluster03, fmtSeverePct, fmtCancel)', () => {
+	it('formats one-decimal percentages', () => {
 		expect(fmtPct(4.2, { rounding: 'fixed1' })).toBe('4.2%');
 		expect(fmtPct(2.56, { rounding: 'fixed1' })).toBe('2.6%');
 		expect(fmtPct(3, { rounding: 'fixed1' })).toBe('3.0%');
@@ -86,7 +77,7 @@ describe('fmtCount — rounding + locale variants', () => {
 		expect(fmtCount(1234, { locale: 'fr' })).toMatch(/^1\s?234$/u);
 	});
 
-	it('toFixed(1) score, no suffix (receipt fmtScore)', () => {
+	it('formats a one-decimal number without units', () => {
 		expect(fmtCount(3.25, { rounding: 'fixed1' })).toBe('3.3');
 		expect(fmtCount(4, { rounding: 'fixed1' })).toBe('4.0');
 	});
@@ -119,7 +110,7 @@ describe('fmtDelayMin — rounding + suffix variants', () => {
 		expect(fmtDelayMin(3)).toBe('3 min');
 	});
 
-	it('toFixed(1) + " min" (reliability clusters, repeat-offenders)', () => {
+	it('formats one-decimal minute values', () => {
 		expect(fmtDelayMin(3.2, { rounding: 'fixed1' })).toBe('3.2 min');
 		expect(fmtDelayMin(12.4, { rounding: 'fixed1' })).toBe('12.4 min');
 	});
@@ -142,4 +133,34 @@ describe('fmtDelayMin — rounding + suffix variants', () => {
 	it('a real 0 renders "0 min" (a present value is NOT no-data)', () => {
 		expect(fmtDelayMin(0)).toBe('0 min');
 	});
+});
+
+describe('unitless numeric formatting', () => {
+	it('shares the count implementation while allowing bounded localized precision', async () => {
+		const { fmtNumber } = await import('./format');
+		expect(fmtNumber).toBe(fmtCount);
+		expect(fmtNumber(200 / 3, { rounding: 'auto', locale: 'en' })).toBe('66.7');
+		expect(fmtNumber(200 / 3, { rounding: 'auto', locale: 'fr' })).toBe('66,7');
+		expect(fmtNumber(0, { rounding: 'auto', locale: 'fr' })).toBe('0');
+		for (const value of [null, undefined, NaN, Infinity])
+			expect(fmtNumber(value, { rounding: 'auto', locale: 'en' })).toBeNull();
+	});
+});
+
+describe('metric display rounding', () => {
+	it.each([
+		['round', 2.5, '3', '-3'],
+		['fixed1', 2.55, '2.6', '-2.6'],
+		['auto', 2.55, '2.6', '-2.6'],
+	] as const)(
+		'%s uses decimal half-away ties with or without a locale',
+		(rounding, value, positive, negative) => {
+			for (const locale of [undefined, 'en', 'fr'] as const) {
+				const local = (text: string) => (locale === 'fr' ? text.replace('.', ',') : text);
+				expect(fmtDelayMin(value, { rounding, locale })).toBe(local(positive) + ' min');
+				expect(fmtDelayMin(-value, { rounding, locale })).toBe(local(negative) + ' min');
+				expect(fmtPct(-value, { rounding, locale })).toBe(local(negative) + '%');
+			}
+		},
+	);
 });

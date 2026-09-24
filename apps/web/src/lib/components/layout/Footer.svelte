@@ -1,26 +1,5 @@
-<!--
-  Footer, the site footer strip.
-
-  Ported from yesid.dev's layout/Footer.svelte; same two-row structure, re-themed
-  to transit tokens and re-contented for the citizen dashboard:
-    Row 1 (above the hazard rule):
-      LEFT   : the yesid. parent-brand wordmark (-> yesid.dev) + the "transit"
-               product mark + a bilingual tagline. transit.yesid.dev is a
-               yesid.dev product, so the chrome carries the house mark, mirrors
-               the TopBar brand cluster.
-      RIGHT  : localized Explore, Audit and Legal link groups from the canonical nav.
-    Row 2 (below the hazard rule, departure-board rule):
-      caller-supplied attribution (the active manifest's verbatim licence on data
-      routes, static rights copy on legal documents) + the unofficial-site
-      disclaimer (Honesty Gate #6) on the left; the live system-date readout on
-      the right (the orange route-set lamp is the lone --primary touch).
-
-  DOCTRINE: orange --primary is INTERACTIVE-only. The footer-link underline draw
-  and the status lamp are the only --primary marks; no data is painted here.
-  Bilingual via getLocale() context (no prop drilling) + the co-located,
-  FR-canonical footer.copy.ts pattern. Reduced-motion-safe (link transitions guarded).
--->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { FooterGroup, FooterLink } from '@yesid/ui/footer';
 	import { SURFACE_NAV, AUDIT_NAV, LEGAL_NAV } from '$lib/content/nav';
@@ -29,108 +8,67 @@
 	import { footerCopy } from './footer.copy';
 
 	interface FooterProps {
-		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
-		/**
-		 * Caller-owned attribution rendered verbatim. Data routes supply the active
-		 * manifest licence; legal documents supply static rights copy.
-		 * Omitted ⇒ the line is hidden (never fabricate a licence we do not hold).
-		 */
+		/** Render the caller's licence verbatim; omission must not invent an attribution. */
 		attribution?: string;
-		/** Provider display name (manifest.display_name); drives the tagline + disclaimer. */
 		providerName?: string;
 	}
 
 	let { locale: localeProp, attribution: attributionProp, providerName }: FooterProps = $props();
 
-	// Prop wins (the layout threads the reactive request locale so the footer copy
-	// + localized hrefs stay current across EN⇄FR without a remount); fall back to
-	// the context reader for isolated renders (e.g. the _kit harness / tests).
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
-	// System date, the departure-board readout (YYYY.MM.DD), matches yesid's footer.
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
 	const t = $derived(footerCopy[locale]);
 
-	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
-	// manifest (display_name), with a neutral, provider-agnostic fallback for the
-	// brief window before the v1 context boots — NEVER a hardcoded 'STM'.
 	const agencyName = $derived(providerName ?? t.providerFallback);
 	const tagline = $derived(t.tagline(agencyName));
 	const disclaimer = $derived(t.disclaimer(agencyName));
 
-	// The three footer groups consume the canonical manifests directly, preserving
-	// their distinct wayfinding/accountability/legal roles and manifest order.
-	const exploreLinks = $derived(
-		SURFACE_NAV.map((item) => ({
-			label: item.label[locale],
-			href: localizeHref(item.href, locale),
-		})),
-	);
-	const auditLinks = $derived(
-		AUDIT_NAV.map((item) => ({
-			label: item.label[locale],
-			href: localizeHref(item.href, locale),
-		})),
-	);
-	const legalLinks = $derived(
-		LEGAL_NAV.map((item) => ({
-			label: item.label[locale],
-			href: localizeHref(item.href, locale),
-		})),
-	);
+	const groups = $derived([
+		{ label: t.exploreLabel, links: SURFACE_NAV },
+		{ label: t.auditLabel, links: AUDIT_NAV },
+		{ label: t.legalLabel, links: LEGAL_NAV, testId: 'footer-legal' },
+	]);
+
+	let footer: HTMLElement;
+	let inView = $state(false);
+	onMount(() => {
+		if (typeof IntersectionObserver === 'undefined') return;
+		const observer = new IntersectionObserver(([entry]) => (inView = entry.isIntersecting));
+		observer.observe(footer);
+		return () => observer.disconnect();
+	});
 </script>
 
-<footer data-testid="footer" data-slot="footer" class="relative z-50 bg-[var(--muted)]">
-	<!-- Platform edge: the footer's top line is real hazard tape. -->
+<footer
+	bind:this={footer}
+	data-in-view={inView}
+	data-testid="footer"
+	data-slot="footer"
+	class="relative z-[var(--z-content)] bg-[var(--muted)]"
+>
 	<div class="footer-gradient-sep" aria-hidden="true"></div>
-
-	<!-- Row 1: full-bleed grouped columns — the Transit brand block plus the
-	     EXPLORE / AUDIT / LEGAL groups, edge to edge with page padding. -->
 	<div
 		class="grid w-full grid-cols-1 gap-10 px-6 pb-8 pt-10 sm:grid-cols-2 sm:px-10 sm:pt-12 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-8 lg:px-16 lg:pt-14"
 	>
-		<!-- Brand block: shared parent wordmark + Transit product mark + tagline. -->
 		<div class="flex flex-col items-start">
 			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
 			<span class="mt-2 font-mono text-xs text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
-
-		<!-- EXPLORE: citizen-facing surfaces. -->
-		<nav aria-label={t.exploreLabel} class="flex flex-col gap-2">
-			<!-- Parity hold: the shared leaf ships a 44px tap floor; adopting it changes footer geometry (recorded owner follow-up, not a silent change). Applies to all three groups below. -->
-			<FooterGroup label={t.exploreLabel} style="--size-tap-min: 0px;">
-				{#each exploreLinks as link (link.href)}
-					<FooterLink href={link.href}>{link.label}</FooterLink>
-				{/each}
-			</FooterGroup>
-		</nav>
-
-		<!-- AUDIT: accountability surfaces. -->
-		<nav aria-label={t.auditLabel} class="flex flex-col gap-2">
-			<FooterGroup label={t.auditLabel} style="--size-tap-min: 0px;">
-				{#each auditLinks as link (link.href)}
-					<FooterLink href={link.href}>{link.label}</FooterLink>
-				{/each}
-			</FooterGroup>
-		</nav>
-
-		<!-- LEGAL: the policy pages. -->
-		<nav aria-label={t.legalLabel} data-testid="footer-legal" class="flex flex-col gap-2">
-			<FooterGroup label={t.legalLabel} style="--size-tap-min: 0px;">
-				{#each legalLinks as link (link.href)}
-					<FooterLink href={link.href}>{link.label}</FooterLink>
-				{/each}
-			</FooterGroup>
-		</nav>
+		{#each groups as group (group.label)}
+			<nav aria-label={group.label} data-testid={group.testId} class="flex flex-col gap-2">
+				<FooterGroup label={group.label}>
+					{#each group.links as link (link.href)}
+						<FooterLink href={localizeHref(link.href, locale)}>{link.label[locale]}</FooterLink>
+					{/each}
+				</FooterGroup>
+			</nav>
+		{/each}
 	</div>
-
-	<!-- Row 2: Status bar, below the hazard rule. Caller-supplied attribution + the
-	     unofficial-site disclaimer (Honesty Gate #6) sit on the left; the live system
-	     readout sits on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
 		class="footer-status-border flex w-full flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10 lg:px-16"
 	>
@@ -147,8 +85,6 @@
 </footer>
 
 <style>
-	/* Platform-edge hazard strip (theme-invariant yellow + warm black, matches
-	   the Separator hazard recipe). */
 	.footer-gradient-sep {
 		height: 3px;
 		background: repeating-linear-gradient(
@@ -159,8 +95,6 @@
 			var(--hazard-b) 12px
 		);
 	}
-
-	/* Owner directive: match yesid.dev's bold amber departure-board divider. */
 	.footer-status-border {
 		border-top: 2px solid var(--border-rule-accent);
 	}
@@ -168,11 +102,6 @@
 	footer {
 		padding-bottom: env(safe-area-inset-bottom, 0px);
 	}
-
-	/* The brand cluster (yesid. mark · divider · transit product mark) now lives in
-	   BrandCluster.svelte, the shared brand primitive, also used by the TopBar. */
-
-	/* Honesty line, attribution + the unofficial-site disclaimer stack tight. */
 	.footer-honesty {
 		display: flex;
 		flex-direction: column;
@@ -181,9 +110,6 @@
 	.footer-disclaimer {
 		color: var(--secondary-foreground);
 	}
-
-	/* FooterLink owns the underline and tap floor. Keep the footer-specific
-	   reduced-motion guarantee even though the leaf is shared. */
 	@media (prefers-reduced-motion: reduce) {
 		:global([data-slot='footer-link']) {
 			transition: none;

@@ -1,43 +1,3 @@
-<!--
-  §3 Run & Fit — "Will the bus run, and will you fit?"
-
-  Merges the old Cluster03 (service delivered: cancellations + skipped stops) and
-  Cluster04 (crowding: occupancy mix + delay-by-crowding) into ONE rider-question
-  section. Two labelled sub-blocks live under the section overline:
-
-    - "run" sub-block (copy.clusters.serviceDelivered): the two RAMP-IN reliability
-      rates the route accrues forward — cancellation_rate_pct + skipped_stop_rate_pct
-      (MetricDisplay) each over a STABLE absolute completeness bar + the honest
-      "X of Y" raw counts, plus the prominent ramp-in caveat.
-    - "fit" sub-block (copy.clusters.crowding): the trailing-window occupancy mix as
-      a 100%-stacked proportion bar (StackedBar, scale='occupancy') + the dominant
-      band lifted to a MetricDisplay headline.
-
-  PRIMARY (always visible): both rate tiles + their completeness bars + fractions,
-  the ramp-in note, the occupancy-mix bar + dominant tile.
-
-  DETAIL (one progressive-disclosure expander): the delay-by-crowding magnitude
-  bars, the weekday-vs-weekend occupancy 2-col, and the per-ISO-weekday occupancy
-  small multiple.
-
-  HONESTY DOCTRINE upheld verbatim from both sources:
-    - S7: a flat ~0% rate sparkline conveyed nothing → completeness bars ride a FIXED
-      absolute % domain (the same share renders the same length every visit), never
-      a per-chart zoom; every data mark rides the dataviz scale (amber "late" voice
-      for problem-rates, the occupancy scale for the mix), NEVER --primary.
-    - RAMP-IN shown PROMINENTLY (copy.strip.rampInNote): history accrues forward, no
-      backfill — an early low number is not "good".
-    - occupancy_mix is null when there is no telemetry; the VM resolves that (and an
-      all-zero mix) to a null dominant — we render the explicit AbsentValue chip,
-      never a fabricated bar or an even split.
-    - number | null guarded everywhere; null means "no data", never 0. Each half /
-      chart / cell self-handles its own absence.
-    - Whole-section honest empty: BOTH service.isEmpty AND crowding dominant == null
-      → one AbsentValue block.
-
-  Band labels reuse the canonical `lines` detail copy (detailCopy[locale].occupancyBands)
-  so the vocabulary stays DRY across surfaces.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { absenceShort } from '$lib/site/absence';
@@ -49,7 +9,11 @@
 	import { occupancyVar } from '$lib/components/dataviz/tokens';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		CANCEL_RATE_DOMAIN,
@@ -100,7 +64,7 @@
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
 	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
@@ -361,7 +325,7 @@
 	const sectionEmpty = $derived(service.isEmpty && dominant == null);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
+{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	{@const i = info(key, name)}
 	<MetricInfo
 		class="cluster-info"
@@ -374,6 +338,10 @@
 {/snippet}
 
 <!-- Per-KPI explainer snippets — the (i) trigger MetricBullet renders beside each tile label. -->
+{#snippet serviceComparisonInfo()}{@render metricInfo(
+		'serviceComparison',
+		t.serviceCompletenessPct,
+	)}{/snippet}
 {#snippet cancellationInfo()}{@render metricInfo('cancellation', t.cancellationRatePct)}{/snippet}
 {#snippet skippedInfo()}{@render metricInfo('skippedStop', t.skippedStopRatePct)}{/snippet}
 {#snippet dominantBandInfo()}
@@ -420,6 +388,7 @@
 							label={t.serviceCompletenessPct}
 							valueText={pct(serviceCompletenessPct)}
 							spec={serviceCompletenessBullet}
+							info={serviceComparisonInfo}
 							{locale}
 							caption={service.scheduledService
 								? t.serviceCompletenessFraction(

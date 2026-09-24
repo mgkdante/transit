@@ -1,9 +1,11 @@
-FROM postgres:16
+FROM postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825
 
 # postgresql-16-repack: enables online table-rewrite via the pg_repack extension.
 # Used by scripts/run-pg-repack.sh and after large DELETE migrations
 # (e.g. 0017 wiped 3.2M silver.i3_alerts snapshot rows; pg_repack reclaims
-# the resulting disk slack that regular VACUUM doesn't return to the OS).
+# the resulting disk slack that regular VACUUM doesn't return to the OS). These
+# apt patch packages intentionally float for security servicing; protected CI
+# prints the versions resolved into each built runtime image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         postgresql-16-postgis-3 \

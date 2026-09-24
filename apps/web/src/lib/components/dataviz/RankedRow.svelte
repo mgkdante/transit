@@ -236,8 +236,8 @@
 	{/if}
 
 	<div class="min-w-0">
-		<div class="flex items-baseline justify-between gap-2">
-			<span class="truncate font-medium text-foreground">{title}</span>
+		<div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+			<span class="min-w-0 break-words font-medium text-foreground">{title}</span>
 			{#if showAbsent}
 				<span class="min-w-0 text-right">
 					<AbsentValue
@@ -248,11 +248,14 @@
 					/>
 				</span>
 			{:else if display}
-				<span class="shrink-0 font-mono text-small tabular-nums text-foreground">{display}</span>
+				<span
+					class="ml-auto min-w-0 break-words text-right font-mono text-small tabular-nums text-foreground"
+					>{display}</span
+				>
 			{/if}
 		</div>
 		{#if subtitle}
-			<span class="block truncate text-caption text-muted-foreground">{subtitle}</span>
+			<span class="block break-words text-caption text-muted-foreground">{subtitle}</span>
 		{/if}
 		<div class="mt-1.5">
 			<SeverityBar
@@ -287,7 +290,7 @@
 	<div
 		bind:this={ref}
 		class={cn(
-			'dv-ranked-row grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2',
+			'dv-ranked-row grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2',
 			interactive &&
 				'cursor-pointer transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
 			!interactive &&

@@ -149,8 +149,16 @@ export class KitNavigationSimulator {
 		if (!this.reachLoadCheckpoint(navigation)) throw new Error('navigation superseded');
 		await Promise.all([...this.onNavigateCallbacks].map((callback) => callback(navigation)));
 
-		this.setPageUrl(committedHref);
 		const activeElement = this.adapter.activeElement();
+		if (
+			!navigation.keepFocus &&
+			typeof HTMLElement !== 'undefined' &&
+			activeElement instanceof HTMLElement &&
+			activeElement !== this.adapter.bodyElement()
+		) {
+			activeElement.blur();
+		}
+		this.setPageUrl(committedHref);
 		await this.adapter.settled();
 		await this.adapter.tick();
 		await this.adapter.tick();

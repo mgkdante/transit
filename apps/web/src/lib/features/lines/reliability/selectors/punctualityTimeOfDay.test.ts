@@ -31,7 +31,7 @@ function vmWith(
 }
 
 describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => {
-	it('orders shifts am→night, bands severity, the fixed SEVERE_DOMAIN + the all-day mean', () => {
+	it('orders and bands the dots without inventing a reference when counts are absent', () => {
 		const spec = selectPunctualityTimeOfDay(
 			vmWith([
 				{ grain: 'pm_peak', severePct: 12 },
@@ -47,13 +47,10 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		expect(spec.points.map((p) => p.key)).toEqual(['am_peak', 'midday', 'pm_peak']);
 		// severeShareToSeverity: >=10 critical, >=5 high, else watch.
 		expect(spec.points.map((p) => p.severity)).toEqual(['watch', 'high', 'critical']);
-		// No observation counts on these rows → the reference falls back to the plain mean.
-		expect(spec.medianRef).toBeCloseTo((4 + 8 + 12) / 3, 5);
+		expect(spec.medianRef).toBeNull();
 	});
 
-	it('weights the all-day reference by each shift observation count (H6)', () => {
-		// A tiny-n night shift with a high 30% severe rate must NOT drag the reference up the way a
-		// plain mean-of-rates would: the line is the true all-day severe-share (Σ severe×obs / Σ obs).
+	it('weights the rounded shift rates by their known-delay observation counts', () => {
 		const spec = selectPunctualityTimeOfDay(
 			vmWith([
 				{ grain: 'am_peak', severePct: 4, observationCount: 1000 },
@@ -64,6 +61,7 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 			'en',
 			labels,
 		);
+		expect(spec.kind).toBe('dot-strip');
 		if (spec.kind !== 'dot-strip') return;
 		// Weighted: (4·1000 + 8·200 + 12·1000 + 30·50) / 2250 = 19100/2250 ≈ 8.49.
 		expect(spec.medianRef).toBeCloseTo(19100 / 2250, 5);
@@ -71,11 +69,44 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		expect(spec.medianRef as number).toBeLessThan(13.5);
 	});
 
+	it.each([undefined, null, 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+		'keeps every dot but suppresses the reference when one count is %s',
+		(observationCount) => {
+			const spec = selectPunctualityTimeOfDay(
+				vmWith([
+					{ grain: 'am_peak', severePct: 4, observationCount: 1000 },
+					{ grain: 'night', severePct: 30, observationCount },
+				]),
+				'en',
+				labels,
+			);
+			expect(spec.kind).toBe('dot-strip');
+			if (spec.kind !== 'dot-strip') return;
+			expect(spec.points.map((p) => p.value)).toEqual([4, 30]);
+			expect(spec.medianRef).toBeNull();
+		},
+	);
+
+	it('retains a measured zero rate in the weighted reference', () => {
+		const spec = selectPunctualityTimeOfDay(
+			vmWith([
+				{ grain: 'am_peak', severePct: 0, observationCount: 900 },
+				{ grain: 'night', severePct: 10, observationCount: 100 },
+			]),
+			'en',
+			labels,
+		);
+		expect(spec.kind).toBe('dot-strip');
+		if (spec.kind !== 'dot-strip') return;
+		expect(spec.points.map((p) => p.value)).toEqual([0, 10]);
+		expect(spec.medianRef).toBe(1);
+	});
+
 	it('keeps null-severe shifts as honest gaps but stays a dot-strip while one is real', () => {
 		const spec = selectPunctualityTimeOfDay(
 			vmWith([
-				{ grain: 'am_peak', severePct: 6 },
-				{ grain: 'night', severePct: null },
+				{ grain: 'am_peak', severePct: 6, observationCount: 100 },
+				{ grain: 'night', severePct: null, observationCount: 300 },
 			]),
 			'en',
 			labels,
@@ -84,11 +115,12 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		if (spec.kind !== 'dot-strip') return;
 		expect(spec.points.length).toBe(2);
 		expect(spec.points.find((p) => p.key === 'night')?.value).toBeNull();
+		expect(spec.medianRef).toBe(6);
 	});
 
 	it('no shift carries a real severe share → honest absence', () => {
 		const spec = selectPunctualityTimeOfDay(
-			vmWith([{ grain: 'am_peak', severePct: null }]),
+			vmWith([{ grain: 'am_peak', severePct: null, observationCount: 0 }]),
 			'en',
 			labels,
 		);

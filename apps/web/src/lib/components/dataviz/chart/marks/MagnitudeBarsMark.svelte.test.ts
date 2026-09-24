@@ -1,3 +1,4 @@
+import { observeChartFrames } from '../__fixtures__/observeChartFrames';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { ChartDatumPopoverModel } from '../useChartDatumPopover.svelte';
@@ -57,6 +58,7 @@ const cell = (c: HTMLElement): string =>
 
 function renderReadyMark(spec: MagnitudeBarsSpec) {
 	vi.stubGlobal('IntersectionObserver', undefined);
+	observeChartFrames(768, 400);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 	Object.defineProperty(Element.prototype, 'animate', {

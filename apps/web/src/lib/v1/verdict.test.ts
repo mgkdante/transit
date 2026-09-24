@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { selectVerdict, wilsonInterval } from './verdict';
 import { routeVerdictCopy } from '$lib/features/lines/reliability/routeVerdict.copy';
 
-// The lightweight line verdict copy exercises the hoisted engine against the canonical
-// line-detail voice; the sentence assertions stay byte-identical to the pre-split behaviour.
 const en = routeVerdictCopy.en.verdict;
 const fr = routeVerdictCopy.fr.verdict;
 
@@ -17,9 +15,6 @@ const h = (
 	onTime,
 });
 
-// wilsonInterval now delegates to the shared $lib/v1/stats kernel at z=WILSON_Z=1.96 (was a local
-// 1.959963984540054). The ~2e-5 z drift is sub-integer on the CI and never flips a threshold below,
-// so these property tests hold unchanged; nothing published changes (the verdict is client display).
 describe('wilsonInterval', () => {
 	it('is wider at small n and narrows as n grows', () => {
 		const small = wilsonInterval(8, 10);
@@ -42,7 +37,7 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 		expect(v.status).toBe('reliable');
 		expect(v.ban).toBe('85%');
 		expect(v.sentence).toContain('Ran reliably this week');
-		expect(v.sentence).toContain('95% sure between');
+		expect(v.sentence).toContain('95% CI:');
 	});
 	it('60–80% reads patchy', () => {
 		expect(selectVerdict(h(72, N, 2880), 'week', 'en', en).status).toBe('patchy');
@@ -58,13 +53,10 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 		expect(v.sentence).toContain('8 in 10');
 		expect(v.sentence).toContain('2 in 10');
 	});
-	it('a high-OTP window NEVER narrates "0 in 10 late" when trips were actually late (L1)', () => {
-		// 96% on-time over n=10000 → 400 real late trips. Rounding 96/10 = 10 used to fabricate
-		// "10 in 10 on time, 0 in 10 late". Each side now floors at 1 when its count is > 0.
+	it('does not round a nonzero minority up to one in ten', () => {
 		const v = selectVerdict(h(96, 10000, 9600), 'week', 'en', en);
-		expect(v.sentence).toContain('9 in 10');
-		expect(v.sentence).toContain('1 in 10');
-		expect(v.sentence).not.toContain('0 in 10');
+		expect(v.sentence).toContain('>9 in 10');
+		expect(v.sentence).toContain('<1 in 10');
 	});
 	it('a genuinely perfect window still reads "0 in 10 late" (a TRUE zero stays honest)', () => {
 		const v = selectVerdict(h(100, 5000, 5000), 'week', 'en', en);
@@ -74,18 +66,18 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 });
 
 describe('selectVerdict — n-aware confidence pipeline', () => {
-	it('n<30 suppresses the verdict (NCHS small-sample) → absent, no BAN', () => {
+	it('n<30 suppresses the verdict → absent, no BAN', () => {
 		const v = selectVerdict(h(90, 12, 11), 'day', 'en', en);
 		expect(v.status).toBe('absent');
 		expect(v.ban).toBeNull();
-		expect(v.sentence).toContain('Still measuring');
+		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).toContain('12');
 	});
 	it('a wide Wilson interval (n≥30 but imprecise) → tentative', () => {
 		// n=30 at p≈0.5 → width well over 0.30.
 		const v = selectVerdict(h(50, 30, 15), 'week', 'en', en);
 		expect(v.status).toBe('tentative');
-		expect(v.sentence).toContain('Too few trips');
+		expect(v.sentence).toContain('Limited data');
 	});
 	it('no percentage at all → absent', () => {
 		const v = selectVerdict(h(null), 'day', 'en', en);
@@ -107,7 +99,7 @@ describe('selectVerdict — graceful pre-republish degradation (no denominator)'
 		// numerator + the Wilson hedge, not the band edge.
 		const v = selectVerdict(h(85, 1000, null), 'week', 'en', en);
 		expect(v.status).toBe('reliable');
-		expect(v.sentence).toContain('95% sure between');
+		expect(v.sentence).toContain('95% CI:');
 	});
 	it('reads tentative when the Wilson CI straddles a band boundary (80% at n=1000)', () => {
 		// 80% with n=1000 → Wilson CI ≈ [77, 82], crossing the 80 reliable/patchy line: the verdict
@@ -122,9 +114,58 @@ describe('selectVerdict — FR canonical voice', () => {
 		const v = selectVerdict(h(85, 4000, 3400), 'week', 'fr', fr);
 		expect(v.status).toBe('reliable');
 		expect(v.sentence).toContain('Service fiable cette semaine');
-		expect(v.sentence).toContain('sûr à 95 %');
+		expect(v.sentence).toContain('IC 95 % :');
 	});
 	it('FR absent voice', () => {
-		expect(selectVerdict(h(null), 'day', 'fr', fr).sentence).toContain('Mesure en cours');
+		expect(selectVerdict(h(null), 'day', 'fr', fr).sentence).toContain('Aucun relevé de retard');
+	});
+});
+
+describe('selectVerdict — natural-frequency boundaries', () => {
+	it.each([
+		[0, 0, 0, 10],
+		[1, 0.02, '<1', '>9'],
+		[499, 9.98, '<1', '>9'],
+		[500, 10, 1, 9],
+		[2500, 50, 5, 5],
+		[4500, 90, 9, 1],
+		[4501, 90.02, '>9', '<1'],
+		[4999, 99.98, '>9', '<1'],
+		[5000, 100, 10, 0],
+	] as const)('preserves both sides for %s of 5000 observations', (on, otp, onTen, lateTen) => {
+		const english = selectVerdict(h(otp, 5000, on), 'week', 'en', en);
+		const french = selectVerdict(h(otp, 5000, on), 'week', 'fr', fr);
+		expect(english.sentence).toContain(`${onTen} in 10 delay observations in the on-time band`);
+		expect(english.sentence).toContain(`${lateTen} in 10 outside that band`);
+		expect(french.sentence).toContain(
+			`${onTen} relevés de retard sur 10 dans la plage de ponctualité`,
+		);
+		expect(french.sentence).toContain(`${lateTen} sur 10 hors de cette plage`);
+	});
+
+	it.each([
+		[0, '<1', '>9'],
+		[4, '<1', '>9'],
+		[10, 1, 9],
+		[85, 9, 1],
+		[90, 9, 1],
+		[96, '>9', '<1'],
+		[100, '>9', '<1'],
+	] as const)('uses reported OTP %s without inventing a zero count', (otp, onTen, lateTen) => {
+		const english = selectVerdict(h(otp), 'month', 'en', en);
+		const french = selectVerdict(h(otp), 'month', 'fr', fr);
+		expect(english.sentence).toContain(`${onTen} in 10 delay observations in the on-time band`);
+		expect(english.sentence).toContain(`${lateTen} in 10 outside that band`);
+		expect(french.sentence).toContain(
+			`${onTen} relevés de retard sur 10 dans la plage de ponctualité`,
+		);
+		expect(french.sentence).toContain(`${lateTen} sur 10 hors de cette plage`);
+		expect(english.sentence).not.toContain('95% CI:');
+		expect(french.sentence).not.toContain('IC 95 % :');
+	});
+
+	it('uses real counts when the published percentage rounds to an endpoint', () => {
+		expect(selectVerdict(h(100, 5000, 4999), 'week', 'en', en).sentence).toContain('<1 in 10');
+		expect(selectVerdict(h(0, 5000, 1), 'week', 'en', en).sentence).toContain('<1 in 10');
 	});
 });

@@ -11,7 +11,12 @@
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas/types';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+	import {
+		STATUS_GLYPH,
+		occupancyGlyph,
+		occupancyVar,
+		statusVar,
+	} from '$lib/components/dataviz/tokens';
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';
@@ -281,7 +286,7 @@
 				{presentation}
 				ontoggle={() => toggleGroup('markers')}
 			>
-				<div class="mf-chips">
+				<div class="mf-chips mf-entity-chips">
 					{#each entityOptions as item (item.kind)}
 						<button
 							type="button"
@@ -486,17 +491,15 @@
 	</div>
 
 	{#if collapsible && !panelOpen}
-		<div class="mf-rail-layer">
-			<MapFilterRail
-				copy={t}
-				activeCount={selectedCount}
-				hasFilters={!store.isEmpty}
-				{controlsId}
-				onexpand={() => void togglePanel(true)}
-				onactivate={(target) => void activateRail(target)}
-				onclear={() => void clearFilters()}
-			/>
-		</div>
+		<MapFilterRail
+			copy={t}
+			activeCount={selectedCount}
+			hasFilters={!store.isEmpty}
+			{controlsId}
+			onexpand={() => void togglePanel(true)}
+			onactivate={(target) => void activateRail(target)}
+			onclear={() => void clearFilters()}
+		/>
 	{/if}
 </div>
 
@@ -545,14 +548,17 @@
 	}
 
 	.map-filters[data-open='false'] .mf-expanded {
+		position: absolute;
 		pointer-events: none;
 		opacity: 0;
 		transition: none;
 	}
 
-	.mf-rail-layer {
-		position: absolute;
-		inset: 0;
+	.mf-chips.mf-entity-chips {
+		padding-inline: 0;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.375rem;
 	}
 
 	.mf-controls {
@@ -578,7 +584,7 @@
 		min-width: 0;
 		min-height: 44px;
 		gap: 0.5rem;
-		padding: 0.375rem 0.5rem;
+		padding: 0.375rem 0;
 		color: var(--foreground);
 		background: transparent;
 		border: 0;
@@ -620,6 +626,8 @@
 
 	.mf-clear {
 		display: inline-flex;
+		flex-shrink: 0;
+		white-space: nowrap;
 		align-items: center;
 		justify-content: center;
 		min-height: 44px;

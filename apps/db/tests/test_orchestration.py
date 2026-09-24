@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -23,6 +24,30 @@ from transit_ops.orchestration import (
 from transit_ops.settings import Settings
 from transit_ops.silver import I3SilverLoadResult, RealtimeSilverLoadResult, StaticSilverLoadResult
 from transit_ops.silver.gis import GisSilverLoadResult
+from transit_ops.silver.static_gtfs import StaticApplicationState
+
+
+@pytest.fixture(autouse=True)
+def _unapplied_static_dataset(monkeypatch):
+    monkeypatch.setattr(
+        orchestration,
+        "prepare_static_application",
+        lambda provider_id, *, engine: StaticApplicationState(None, False),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_realtime_services(monkeypatch):
+    monkeypatch.setattr(orchestration, "initialize_realtime_serving", lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestration, "_best_effort_publish_live", lambda *args, **kwargs: 0)
+
+
+def _static_already_applied(monkeypatch):
+    monkeypatch.setattr(
+        orchestration,
+        "prepare_static_application",
+        lambda provider_id, *, engine: StaticApplicationState("a" * 64, True),
+    )
 
 
 class _FakeEngine:
@@ -222,9 +247,11 @@ def _gold_refresh_result() -> GoldRealtimeRefreshResult:
     )
 
 
-def _realtime_ingestion_result(endpoint_key: str, snapshot_id: int) -> RealtimeIngestionResult:
+def _realtime_ingestion_result(
+    endpoint_key: str, snapshot_id: int, provider_id: str = "stm"
+) -> RealtimeIngestionResult:
     return RealtimeIngestionResult(
-        provider_id="stm",
+        provider_id=provider_id,
         endpoint_key=endpoint_key,
         feed_kind=endpoint_key,
         source_url=f"https://example.com/{endpoint_key}.pb",
@@ -245,23 +272,23 @@ def _realtime_ingestion_result(endpoint_key: str, snapshot_id: int) -> RealtimeI
     )
 
 
-def _realtime_silver_result(endpoint_key: str, snapshot_id: int) -> RealtimeSilverLoadResult:
+def _realtime_silver_result(
+    endpoint_key: str, snapshot_id: int, provider_id: str = "stm"
+) -> RealtimeSilverLoadResult:
     row_counts = (
-        {"trip_updates": 10}
-        if endpoint_key == "trip_updates"
-        else {"vehicle_positions": 5}
+        {"trip_updates": 10} if endpoint_key == "trip_updates" else {"vehicle_positions": 5}
     )
     return RealtimeSilverLoadResult(
-        provider_id="stm",
+        provider_id=provider_id,
         endpoint_key=endpoint_key,
         realtime_snapshot_id=snapshot_id,
         source_ingestion_run_id=snapshot_id,
         source_ingestion_object_id=snapshot_id + 100,
         storage_path=f"stm/{endpoint_key}/sample.pb",
         archive_full_path=f"s3://transit-raw/stm/{endpoint_key}/sample.pb",
-        content_hash="d" * 64,
+        content_hash="c" * 64,
         feed_timestamp_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
-        captured_at_utc=datetime(2026, 3, 25, 0, 0, 2, tzinfo=UTC),
+        captured_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
         row_counts=row_counts,
     )
 
@@ -313,7 +340,7 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
             call_order.append("load-static-silver"),
             _static_silver_result(),
         )[1],
@@ -330,7 +357,9 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -360,14 +389,16 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         call_order.append(f"capture:{endpoint_key}")
         if endpoint_key == "vehicle_positions":
             raise RuntimeError("vehicle endpoint down")
-        return _realtime_ingestion_result(endpoint_key, 20)
+        return _realtime_ingestion_result(
+            endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
+        )
 
-    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+    def fake_load(provider_id, endpoint_key, settings, registry, engine, snapshot_id):  # noqa: ANN001
         call_order.append(f"load:{endpoint_key}")
-        return _realtime_silver_result(endpoint_key, 20)
+        return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
     monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
-    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
     monkeypatch.setattr(
         orchestration,
         "capture_i3_alerts",
@@ -379,8 +410,8 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     )
     monkeypatch.setattr(
         orchestration,
-        "load_latest_i3_to_silver",
-        lambda provider_id, settings, engine: (
+        "load_i3_to_silver",
+        lambda provider_id, settings, engine, snapshot_id, endpoint_key: (
             call_order.append("load:i3_alerts"),
             _i3_silver_result(),
         )[1],
@@ -389,7 +420,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     monkeypatch.setattr(
         orchestration,
         "refresh_gold_realtime",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, snapshots: (
             call_order.append("refresh-gold-realtime"),
             _gold_refresh_result(),
         )[1],
@@ -409,7 +440,9 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
     )
@@ -448,8 +481,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     assert result.endpoint_results[1].silver_load_duration_seconds is None
     assert result.endpoint_results[1].total_endpoint_duration_seconds >= 0
     assert (
-        result.endpoint_results[1].error_message
-        == "capture-realtime failed: vehicle endpoint down"
+        result.endpoint_results[1].error_message == "capture-realtime failed: vehicle endpoint down"
     )
     assert result.endpoint_results[2].endpoint_key == "i3_alerts"
     assert result.endpoint_results[2].status == "succeeded"
@@ -601,6 +633,7 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
             )
         ),
     )
+
     def _fake_overrun_cycle(  # noqa: ANN001
         provider_id,
         settings,
@@ -854,12 +887,15 @@ def _install_worker_storage_cycle_stubs(
     ):
         call_order.append(f"capture:{endpoint_key}")
         record_storage(bronze_storage_resolver)
-        return _realtime_ingestion_result(endpoint_key, 20)
+        return _realtime_ingestion_result(
+            endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
+        )
 
     def load_gtfs(  # noqa: ANN001
         provider_id,
         endpoint_key,
         *,
+        snapshot_id,
         settings,
         registry,
         engine,
@@ -868,7 +904,7 @@ def _install_worker_storage_cycle_stubs(
         call_order.append(f"load:{endpoint_key}")
         record_storage(bronze_storage_resolver)
         record_storage(bronze_storage_resolver)
-        return _realtime_silver_result(endpoint_key, 20)
+        return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
     def capture_i3(  # noqa: ANN001
         provider_id,
@@ -885,15 +921,15 @@ def _install_worker_storage_cycle_stubs(
     monkeypatch.setattr(orchestration, "_capture_realtime_feed", capture_gtfs, raising=False)
     monkeypatch.setattr(
         orchestration,
-        "_load_latest_realtime_to_silver",
+        "_load_realtime_to_silver",
         load_gtfs,
         raising=False,
     )
     monkeypatch.setattr(orchestration, "_capture_i3_alerts", capture_i3, raising=False)
     monkeypatch.setattr(
         orchestration,
-        "load_latest_i3_to_silver",
-        lambda provider_id, settings, engine: (
+        "load_i3_to_silver",
+        lambda provider_id, settings, engine, snapshot_id, endpoint_key: (
             call_order.append("load:i3_alerts"),
             _i3_silver_result(),
         )[1],
@@ -901,7 +937,7 @@ def _install_worker_storage_cycle_stubs(
     monkeypatch.setattr(
         orchestration,
         "refresh_gold_realtime",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, snapshots: (
             call_order.append("refresh-gold-realtime"),
             _gold_refresh_result(),
         )[1],
@@ -1337,10 +1373,10 @@ def test_run_pruner_loop_rejects_non_positive_sleep() -> None:
         )
 
 
-def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchanged(
+def test_run_static_pipeline_skips_silver_and_gold_when_content_already_applied(
     monkeypatch,
 ) -> None:
-    """Unchanged static ingestion: Silver load and Gold refresh are skipped entirely."""
+    _static_already_applied(monkeypatch)
     silver_called = False
     gold_called = False
 
@@ -1373,7 +1409,9 @@ def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchange
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1391,7 +1429,7 @@ def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchange
     assert result.static_ingestion_duration_seconds >= 0
 
 
-def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
+def test_run_static_pipeline_retries_unapplied_content_after_unchanged_capture(
     monkeypatch,
 ) -> None:
     silver_called = False
@@ -1415,32 +1453,34 @@ def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
         lambda provider_id, settings, registry, engine: skipped_ingestion,
     )
 
-    def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
+    def _load_silver(*args, **kwargs):  # noqa: ANN002, ANN003
         nonlocal silver_called
         silver_called = True
         return _static_silver_result()
 
-    def _should_not_be_called_gold(*args, **kwargs):  # noqa: ANN002, ANN003
+    def _refresh_gold(*args, **kwargs):  # noqa: ANN002, ANN003
         nonlocal gold_called
         gold_called = True
         return _gold_static_refresh_result()
 
-    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_be_called_silver)
-    monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_be_called_gold)
+    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _load_silver)
+    monkeypatch.setattr(orchestration, "refresh_gold_static", _refresh_gold)
     _patch_gis_steps(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
 
     assert result.status == "succeeded"
-    assert result.static_changed is False
-    assert result.skipped_reason == "static_content_unchanged"
-    assert not silver_called
-    assert not gold_called
+    assert result.static_changed is True
+    assert result.skipped_reason is None
+    assert silver_called
+    assert gold_called
 
 
 def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(monkeypatch) -> None:
@@ -1458,7 +1498,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(monkeyp
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
             call_order.append("silver"),
             _static_silver_result(),
         )[1],
@@ -1475,7 +1515,9 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(monkeyp
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1506,7 +1548,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
             call_order.append("silver"),
             _static_silver_result(),
         )[1],
@@ -1523,7 +1565,9 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1555,7 +1599,7 @@ def test_run_static_pipeline_runs_gis_after_static_chain(monkeypatch) -> None:
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
             call_order.append("load-static-silver"),
             _static_silver_result(),
         )[1],
@@ -1572,7 +1616,9 @@ def test_run_static_pipeline_runs_gis_after_static_chain(monkeypatch) -> None:
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1594,7 +1640,7 @@ def test_run_static_pipeline_runs_gis_after_static_chain(monkeypatch) -> None:
 
 
 def test_run_static_pipeline_runs_gis_when_static_unchanged(monkeypatch) -> None:
-    """GIS silver load runs even when static content is unchanged (unconditional reload)."""
+    _static_already_applied(monkeypatch)
     call_order: list[str] = []
 
     monkeypatch.setattr(
@@ -1622,7 +1668,9 @@ def test_run_static_pipeline_runs_gis_when_static_unchanged(monkeypatch) -> None
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1636,6 +1684,7 @@ def test_run_static_pipeline_runs_gis_when_static_unchanged(monkeypatch) -> None
 
 
 def test_run_static_pipeline_reports_gis_pair_skip_as_success(monkeypatch) -> None:
+    _static_already_applied(monkeypatch)
     monkeypatch.setattr(
         orchestration,
         "ingest_static_feed",
@@ -1671,7 +1720,9 @@ def test_run_static_pipeline_reports_gis_pair_skip_as_success(monkeypatch) -> No
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1695,7 +1746,9 @@ def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(monkeypat
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: _static_silver_result(),
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
+            _static_silver_result()
+        ),
     )
     monkeypatch.setattr(
         orchestration,
@@ -1716,7 +1769,9 @@ def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(monkeypat
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1739,7 +1794,9 @@ def test_run_static_pipeline_gis_silver_failure_recorded_not_raised(monkeypatch)
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: _static_silver_result(),
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
+            _static_silver_result()
+        ),
     )
     monkeypatch.setattr(
         orchestration,
@@ -1762,7 +1819,9 @@ def test_run_static_pipeline_gis_silver_failure_recorded_not_raised(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1785,7 +1844,9 @@ def test_run_static_pipeline_display_dict_carries_gis_fields(monkeypatch) -> Non
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
-        lambda provider_id, settings, registry, engine: _static_silver_result(),
+        lambda provider_id, settings, registry, engine, expected_checksum_sha256: (
+            _static_silver_result()
+        ),
     )
     monkeypatch.setattr(
         orchestration,
@@ -1796,7 +1857,9 @@ def test_run_static_pipeline_display_dict_carries_gis_fields(monkeypatch) -> Non
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -1848,14 +1911,16 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
 
     def fake_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
         call_order.append(f"capture:{endpoint_key}")
-        return _realtime_ingestion_result(endpoint_key, 20)
+        return _realtime_ingestion_result(
+            endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
+        )
 
-    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+    def fake_load(provider_id, endpoint_key, settings, registry, engine, snapshot_id):  # noqa: ANN001
         call_order.append(f"load:{endpoint_key}")
-        return _realtime_silver_result(endpoint_key, 20)
+        return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
     monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
-    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
     monkeypatch.setattr(
         orchestration,
         "capture_i3_alerts",
@@ -1867,8 +1932,8 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
     )
     monkeypatch.setattr(
         orchestration,
-        "load_latest_i3_to_silver",
-        lambda provider_id, settings, engine: (
+        "load_i3_to_silver",
+        lambda provider_id, settings, engine, snapshot_id, endpoint_key: (
             call_order.append("load:i3_alerts"),
             _i3_silver_result(),
         )[1],
@@ -1877,7 +1942,7 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
     monkeypatch.setattr(
         orchestration,
         "refresh_gold_realtime",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, snapshots: (
             call_order.append("refresh-gold-realtime"),
             _gold_refresh_result(),
         )[1],
@@ -1912,7 +1977,9 @@ def test_run_realtime_cycle_skips_i3_when_interval_not_elapsed(monkeypatch) -> N
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
         last_captures=last_captures,
@@ -1924,9 +1991,7 @@ def test_run_realtime_cycle_skips_i3_when_interval_not_elapsed(monkeypatch) -> N
     assert "capture:trip_updates" in call_order
     assert "capture:vehicle_positions" in call_order
 
-    i3_result = next(
-        r for r in result.endpoint_results if r.endpoint_key == "i3_alerts"
-    )
+    i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
     assert i3_result.status == "skipped"
     assert i3_result.capture_result["reason"] == "interval_not_elapsed"
     assert i3_result.capture_result["refresh_interval_seconds"] == 300
@@ -1948,7 +2013,9 @@ def test_run_realtime_cycle_runs_i3_when_interval_elapsed(monkeypatch) -> None:
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
         last_captures=last_captures,
@@ -1957,9 +2024,7 @@ def test_run_realtime_cycle_runs_i3_when_interval_elapsed(monkeypatch) -> None:
     assert "capture:i3_alerts" in call_order
     assert "load:i3_alerts" in call_order
 
-    i3_result = next(
-        r for r in result.endpoint_results if r.endpoint_key == "i3_alerts"
-    )
+    i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
     assert i3_result.status == "succeeded"
     # last_captures was mutated to record this cycle's start
     assert last_captures["i3_alerts"] == frozen_now
@@ -1973,7 +2038,9 @@ def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(monkeypatc
     # Bare registry — never accessed when last_captures is None
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
     )
@@ -2023,7 +2090,9 @@ def test_single_shot_cycle_is_manifest_driven_captures_service_alerts(monkeypatc
 
     result = run_realtime_cycle(
         "sto",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_service_alerts(),
         engine=object(),
     )
@@ -2051,7 +2120,9 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch)
 
     run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
         last_captures=last_captures,
@@ -2076,7 +2147,7 @@ def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(monkeypa
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    def failing_gold_refresh(provider_id, settings, registry, engine):  # noqa: ANN001
+    def failing_gold_refresh(provider_id, settings, registry, engine, snapshots):  # noqa: ANN001
         call_order.append("refresh-gold-realtime")
         raise RuntimeError("gold build stalled on 0034 backfill")
 
@@ -2084,7 +2155,9 @@ def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(monkeypa
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
     )
@@ -2120,7 +2193,9 @@ def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(monkeypatch) 
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=object(),
     )
@@ -2187,6 +2262,14 @@ def test_shared_capture_load_executor_preserves_order_payload_and_rounding(
     call_order: list[str] = []
     capture_payload = {"kind": "capture", "rows": 5}
     silver_payload = {"kind": "silver", "rows": 4}
+    captured = SimpleNamespace(display_dict=lambda: capture_payload)
+    silver = SimpleNamespace(display_dict=lambda: silver_payload)
+
+    def load_exact(received):
+        assert received is captured
+        call_order.append("load")
+        return silver
+
     durations = {
         "capture-realtime[trip_updates]": 1.235,
         "load-realtime-silver[trip_updates]": 2.346,
@@ -2210,17 +2293,15 @@ def test_shared_capture_load_executor_preserves_order_payload_and_rounding(
         "trip_updates",
         capture_step=lambda: (
             call_order.append("capture"),
-            SimpleNamespace(display_dict=lambda: capture_payload),
+            captured,
         )[1],
-        silver_load_step=lambda: (
-            call_order.append("load"),
-            SimpleNamespace(display_dict=lambda: silver_payload),
-        )[1],
+        silver_load_step=load_exact,
         capture_label_prefix="capture-realtime",
         silver_label_prefix="load-realtime-silver",
         engine=object(),
     )
 
+    assert result.silver_load_result is silver
     assert call_order == [
         "capture-realtime[trip_updates]",
         "capture",
@@ -2264,7 +2345,7 @@ def test_shared_capture_load_executor_capture_failure_skips_load_and_receipt(
         "sto",
         "service_alerts",
         capture_step=fail_capture,
-        silver_load_step=lambda: load_calls.append("load"),
+        silver_load_step=lambda captured: load_calls.append("load"),
         capture_label_prefix="capture-service-alerts",
         silver_label_prefix="load-service-alerts-silver",
         engine=object(),
@@ -2297,7 +2378,7 @@ def test_shared_capture_load_executor_load_failure_persists_exact_receipt(
             return step(), 0.111
         return step(), 0.222
 
-    def fail_load():
+    def fail_load(captured):
         raise RuntimeError("silver down")
 
     perf_values = iter([30.0, 30.1, 31.0, 31.5678, 32.3456])
@@ -2307,9 +2388,7 @@ def test_shared_capture_load_executor_load_failure_persists_exact_receipt(
     monkeypatch.setattr(
         orchestration,
         "_persist_silver_load_failure",
-        lambda receipt_engine, **kwargs: receipt_calls.append(
-            (receipt_engine, kwargs)
-        ),
+        lambda receipt_engine, **kwargs: receipt_calls.append((receipt_engine, kwargs)),
     )
 
     result = orchestration._run_capture_load_steps(
@@ -2355,7 +2434,7 @@ def test_shared_capture_load_executor_swallows_receipt_persistence_failure(
             return step(), 0.111
         return step(), 0.222
 
-    def fail_load():
+    def fail_load(captured):
         raise RuntimeError("silver down")
 
     perf_values = iter([40.0, 40.1, 41.0, 41.25, 42.0])
@@ -2442,10 +2521,10 @@ def test_capture_load_adapters_delegate_exact_labels(
         raising=False,
     )
     monkeypatch.setattr(orchestration, "capture_realtime_feed", fail_eager_call)
-    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fail_eager_call)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fail_eager_call)
     monkeypatch.setattr(orchestration, "capture_i3_alerts", fail_eager_call)
     monkeypatch.setattr(orchestration, "capture_service_alerts", fail_eager_call)
-    monkeypatch.setattr(orchestration, "load_latest_i3_to_silver", fail_eager_call)
+    monkeypatch.setattr(orchestration, "load_i3_to_silver", fail_eager_call)
 
     adapter = getattr(orchestration, adapter_name)
     kwargs = {
@@ -2478,20 +2557,22 @@ def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(monkeypatch) -
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+    def fake_load(provider_id, endpoint_key, settings, registry, engine, snapshot_id):  # noqa: ANN001
         call_order.append(f"load:{endpoint_key}")
         if endpoint_key == "trip_updates":
             raise RuntimeError("silver loader exploded")
-        return _realtime_silver_result(endpoint_key, 20)
+        return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
-    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
 
     engine = _RecordingFailureEngine()
     _install_failure_persistence_spies(monkeypatch, engine)
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=engine,
     )
@@ -2516,18 +2597,20 @@ def test_run_realtime_cycle_persists_i3_silver_load_failure_row(monkeypatch) -> 
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    def fake_i3_load(provider_id, settings, engine):  # noqa: ANN001
+    def fake_i3_load(provider_id, settings, engine, snapshot_id, endpoint_key):  # noqa: ANN001
         call_order.append("load:i3_alerts")
         raise RuntimeError("i3 silver loader exploded")
 
-    monkeypatch.setattr(orchestration, "load_latest_i3_to_silver", fake_i3_load, raising=False)
+    monkeypatch.setattr(orchestration, "load_i3_to_silver", fake_i3_load, raising=False)
 
     engine = _RecordingFailureEngine()
     _install_failure_persistence_spies(monkeypatch, engine)
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=engine,
     )
@@ -2547,13 +2630,13 @@ def test_silver_load_failure_persistence_is_best_effort(monkeypatch) -> None:
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+    def fake_load(provider_id, endpoint_key, settings, registry, engine, snapshot_id):  # noqa: ANN001
         call_order.append(f"load:{endpoint_key}")
         if endpoint_key == "trip_updates":
             raise RuntimeError("silver loader exploded")
-        return _realtime_silver_result(endpoint_key, 20)
+        return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
-    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
 
     # engine.begin() explodes -> persistence is impossible, but must not propagate.
     engine = _RecordingFailureEngine(explode=True)
@@ -2561,7 +2644,9 @@ def test_silver_load_failure_persistence_is_best_effort(monkeypatch) -> None:
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=engine,
     )
@@ -2584,7 +2669,9 @@ def test_capture_failures_do_not_write_silver_load_rows(monkeypatch) -> None:
         call_order.append(f"capture:{endpoint_key}")
         if endpoint_key == "vehicle_positions":
             raise RuntimeError("capture down")
-        return _realtime_ingestion_result(endpoint_key, 20)
+        return _realtime_ingestion_result(
+            endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
+        )
 
     monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
 
@@ -2593,7 +2680,9 @@ def test_capture_failures_do_not_write_silver_load_rows(monkeypatch) -> None:
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
         registry=_fake_registry_with_intervals(),
         engine=engine,
     )
@@ -2684,3 +2773,286 @@ def test_run_realtime_cycle_does_not_poll_an_absent_i3_feed(monkeypatch) -> None
         "trip_updates",
         "vehicle_positions",
     }
+
+
+@pytest.mark.parametrize("private", [False, True])
+@pytest.mark.parametrize("endpoint_key", ["trip_updates", "vehicle_positions"])
+def test_rt_controller_keeps_capture_a_after_capture_b_becomes_latest(
+    monkeypatch, private, endpoint_key
+):
+    captured = _realtime_ingestion_result(endpoint_key, 20)
+    receipts = {identity: _realtime_silver_result(endpoint_key, identity) for identity in (20, 21)}
+    latest = {"id": 20}
+    selected = []
+
+    def resolver(backend):
+        pytest.fail("controller must delegate storage resolution")
+
+    def capture(*args, **kwargs):
+        latest["id"] = 21
+        if private:
+            assert kwargs["bronze_storage_resolver"] is resolver
+        return captured
+
+    def load(*args, snapshot_id=None, **kwargs):
+        if private:
+            assert kwargs["bronze_storage_resolver"] is resolver
+        selected.append(snapshot_id)
+        return receipts[latest["id"] if snapshot_id is None else snapshot_id]
+
+    monkeypatch.setattr(
+        orchestration, "_capture_realtime_feed" if private else "capture_realtime_feed", capture
+    )
+    monkeypatch.setattr(
+        orchestration, "_load_realtime_to_silver" if private else "load_realtime_to_silver", load
+    )
+    result = orchestration._capture_and_load_endpoint(
+        "stm",
+        endpoint_key,
+        settings=Settings(_env_file=None),
+        registry=object(),
+        engine=object(),
+        bronze_storage_resolver=resolver if private else None,
+    )
+    assert result.status == "succeeded"
+    assert latest["id"] == 21
+    assert selected == [20]
+    assert result.silver_load_result is receipts[20]
+    assert result.capture_result["realtime_snapshot_id"] == 20
+    assert result.display_dict()["silver_load_result"]["realtime_snapshot_id"] == 20
+
+
+@pytest.mark.parametrize("endpoint_key", ["i3_alerts", "service_alerts"])
+def test_alert_controller_passes_its_actual_capture_id_and_endpoint(monkeypatch, endpoint_key):
+    captured = replace(_i3_ingestion_result(45), endpoint_key=endpoint_key, feed_kind=endpoint_key)
+    receipt = _i3_silver_result(captured.i3_alert_snapshot_id)
+    selected = []
+    monkeypatch.setattr(
+        orchestration,
+        "capture_i3_alerts" if endpoint_key == "i3_alerts" else "capture_service_alerts",
+        lambda *args, **kwargs: captured,
+    )
+
+    def load(provider_id, *, snapshot_id, endpoint_key, **kwargs):
+        selected.append((provider_id, snapshot_id, endpoint_key))
+        return receipt
+
+    monkeypatch.setattr(orchestration, "load_i3_to_silver", load)
+    controller = (
+        orchestration._capture_and_load_i3_alerts
+        if endpoint_key == "i3_alerts"
+        else orchestration._capture_and_load_service_alerts
+    )
+    result = controller(
+        "stm", settings=Settings(_env_file=None), registry=object(), engine=object()
+    )
+    assert result.status == "succeeded"
+    assert selected == [("stm", 245, endpoint_key)]
+    assert result.silver_load_result is receipt
+
+
+def test_cycle_initializes_before_capture_and_passes_original_rt_receipts_to_gold(monkeypatch):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+    receipts = {
+        endpoint: _realtime_silver_result(endpoint, snapshot_id)
+        for endpoint, snapshot_id in (("trip_updates", 20), ("vehicle_positions", 21))
+    }
+    selected = []
+    initialized = []
+
+    def initialize(provider_id, endpoint_keys, **kwargs):
+        assert calls == []
+        initialized.append((provider_id, endpoint_keys))
+        calls.append("initialize")
+
+    def load(provider_id, endpoint_key, *, snapshot_id, **kwargs):
+        assert snapshot_id == receipts[endpoint_key].realtime_snapshot_id
+        calls.append(f"load:{endpoint_key}")
+        return receipts[endpoint_key]
+
+    def refresh(provider_id, *, snapshots, **kwargs):
+        assert calls[-1] == "load:i3_alerts"
+        assert isinstance(snapshots, list)
+        assert all(snapshot is receipts[snapshot.endpoint_key] for snapshot in snapshots)
+        selected.extend(snapshots)
+        return _gold_refresh_result()
+
+    monkeypatch.setattr(orchestration, "initialize_realtime_serving", initialize)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", load)
+    monkeypatch.setattr(orchestration, "refresh_gold_realtime", refresh)
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+    )
+    assert result.status == "succeeded"
+    assert initialized == [("stm", ["trip_updates", "vehicle_positions"])]
+    assert selected == list(receipts.values())
+    assert all(isinstance(snapshot, RealtimeSilverLoadResult) for snapshot in selected)
+    assert result.endpoint_results[0].silver_load_result is receipts["trip_updates"]
+    assert (
+        result.display_dict()["endpoint_results"][0]["silver_load_result"]
+        == receipts["trip_updates"].display_dict()
+    )
+
+
+def test_cycle_serving_initialization_failure_prevents_capture(monkeypatch):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+
+    def fail_initialize(*args, **kwargs):
+        raise RuntimeError("cannot establish serving cutoff")
+
+    monkeypatch.setattr(orchestration, "initialize_realtime_serving", fail_initialize)
+    with pytest.raises(RuntimeError, match="cannot establish serving cutoff"):
+        run_realtime_cycle(
+            "stm",
+            settings=Settings(_env_file=None),
+            registry=_fake_registry_with_intervals(),
+            engine=object(),
+        )
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("provider_id", "other"),
+        ("endpoint_key", "vehicle_positions"),
+        ("realtime_snapshot_id", 21),
+    ],
+)
+def test_rt_controller_refuses_a_mismatched_silver_receipt(monkeypatch, field, value):
+    failed = []
+    monkeypatch.setattr(
+        orchestration,
+        "capture_realtime_feed",
+        lambda *args, **kwargs: _realtime_ingestion_result("trip_updates", 20),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_realtime_to_silver",
+        lambda *args, **kwargs: replace(
+            _realtime_silver_result("trip_updates", 20), **{field: value}
+        ),
+    )
+    monkeypatch.setattr(
+        orchestration, "_persist_silver_load_failure", lambda *args, **kwargs: failed.append(kwargs)
+    )
+    result = orchestration._capture_and_load_endpoint(
+        "stm",
+        "trip_updates",
+        settings=Settings(_env_file=None),
+        registry=object(),
+        engine=object(),
+    )
+    assert result.status == "failed"
+    assert result.silver_load_result is None
+    assert result.capture_result["realtime_snapshot_id"] == 20
+    assert len(failed) == 1
+    assert "capture" in result.error_message.lower()
+
+
+@pytest.mark.parametrize("field,value", [("provider_id", "other"), ("i3_alert_snapshot_id", 999)])
+def test_alert_controller_refuses_a_mismatched_silver_receipt(monkeypatch, field, value):
+    failed = []
+    monkeypatch.setattr(
+        orchestration, "capture_i3_alerts", lambda *args, **kwargs: _i3_ingestion_result()
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_i3_to_silver",
+        lambda *args, **kwargs: replace(_i3_silver_result(), **{field: value}),
+    )
+    monkeypatch.setattr(
+        orchestration, "_persist_silver_load_failure", lambda *args, **kwargs: failed.append(kwargs)
+    )
+    result = orchestration._capture_and_load_i3_alerts(
+        "stm",
+        settings=Settings(_env_file=None),
+        registry=object(),
+        engine=object(),
+    )
+    assert result.status == "failed"
+    assert result.silver_load_result is None
+    assert result.capture_result["i3_alert_snapshot_id"] == 230
+    assert len(failed) == 1
+    assert "capture" in result.error_message.lower()
+
+
+@pytest.mark.parametrize("vehicle_state", ["failed", "skipped"])
+def test_cycle_projects_only_successful_rt_receipts(monkeypatch, vehicle_state):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+    receipt = _realtime_silver_result("trip_updates", 20)
+    selected = []
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now)
+
+    def capture(provider_id, endpoint_key, **kwargs):
+        if endpoint_key == "vehicle_positions":
+            assert vehicle_state == "failed"
+            raise RuntimeError("vehicle capture unavailable")
+        return _realtime_ingestion_result(endpoint_key, 20)
+
+    def load(provider_id, endpoint_key, *, snapshot_id, **kwargs):
+        assert (endpoint_key, snapshot_id) == ("trip_updates", 20)
+        return receipt
+
+    def refresh(provider_id, *, snapshots, **kwargs):
+        selected.extend(snapshots)
+        return _gold_refresh_result()
+
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", capture)
+    monkeypatch.setattr(orchestration, "load_realtime_to_silver", load)
+    monkeypatch.setattr(orchestration, "refresh_gold_realtime", refresh)
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+        last_captures={"vehicle_positions": now} if vehicle_state == "skipped" else {},
+    )
+    assert selected == [receipt]
+    assert selected[0] is receipt
+    assert result.endpoint_results[1].status == vehicle_state
+    assert result.endpoint_results[2].status == "succeeded"
+    assert result.status == ("partial_failure" if vehicle_state == "failed" else "succeeded")
+
+
+@pytest.mark.parametrize("alerts", [False, True])
+@pytest.mark.parametrize("field,value", [("provider_id", "other"), ("endpoint_key", "other")])
+def test_controller_refuses_capture_receipts_for_a_different_source(
+    monkeypatch, alerts, field, value
+):
+    endpoint = "i3_alerts" if alerts else "trip_updates"
+    captured = _i3_ingestion_result() if alerts else _realtime_ingestion_result(endpoint, 20)
+    captured = replace(captured, **{field: value})
+    failed = []
+    monkeypatch.setattr(
+        orchestration,
+        "capture_i3_alerts" if alerts else "capture_realtime_feed",
+        lambda *args, **kwargs: captured,
+    )
+
+    def reject_load(*args, **kwargs):
+        pytest.fail("a different source capture must fail before Silver application")
+
+    monkeypatch.setattr(
+        orchestration, "load_i3_to_silver" if alerts else "load_realtime_to_silver", reject_load
+    )
+    monkeypatch.setattr(
+        orchestration, "_persist_silver_load_failure", lambda *args, **kwargs: failed.append(kwargs)
+    )
+    common = dict(settings=Settings(_env_file=None), registry=object(), engine=object())
+    result = (
+        orchestration._capture_and_load_i3_alerts("stm", **common)
+        if alerts
+        else orchestration._capture_and_load_endpoint("stm", endpoint, **common)
+    )
+    assert result.status == "failed"
+    assert result.silver_load_result is None
+    assert len(failed) == 1
+    assert "capture" in result.error_message.lower()

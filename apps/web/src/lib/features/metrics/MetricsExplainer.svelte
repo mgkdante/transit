@@ -64,6 +64,7 @@
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { persisted } from '$lib/stores';
+	import { layout } from '$lib/nav/layout.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import {
 		CollapsibleSection,
@@ -82,7 +83,9 @@
 		type MetricEntry,
 	} from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
-	import EasterProse from './EasterProse.svelte';
+	import MetricBody, { type MetricBodies } from './MetricBody.svelte';
+
+	let { metricBodies }: { metricBodies?: MetricBodies } = $props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
@@ -104,6 +107,13 @@
 	// (the badge renders nothing when conformance is null / the fetch fails), so it
 	// never blocks the static methodology article.
 	const provenance = createResource(() => getProvenance());
+
+	// These duplicate live cards have no SSR seed. Keep them after their first
+	// desktop visit so later viewport changes preserve the reader's state.
+	let desktopRailVisited = $state(false);
+	$effect(() => {
+		if (layout.isDesktop) desktopRailVisited = true;
+	});
 
 	// Article-cover data (P5-R R3a.2) — REAL data only; a missing datum drops its
 	// meta entry, never fabricated. The generated stamp comes from the
@@ -194,6 +204,7 @@
 	// is a non-metric section, so it leads the ToC with an icon badge (not the
 	// metric number run); the same anchor is its data-toc hook + ToC entry id.
 	const PROVENANCE_ANCHOR = 'metrics-provenance';
+	const CONFIDENCE_INTERVALS_ANCHOR = 'confidence-intervals';
 
 	const tocEntries = $derived.by((): TocEntry[] => [
 		// The provenance preamble opens the page — a non-metric section, so it
@@ -322,7 +333,8 @@
 		if (anchor === requestedHash) return;
 		requestedHash = anchor;
 		const generation = ++navigationGeneration;
-		if (anchor && openableAnchors.has(anchor)) void navigate(anchor, generation);
+		if (anchor && (openableAnchors.has(anchor) || anchor === CONFIDENCE_INTERVALS_ANCHOR))
+			void navigate(anchor, generation);
 	}
 
 	onMount(() => {
@@ -362,7 +374,8 @@
 	// scroll clamping uses call-time geometry. Reduced-motion drops the smooth
 	// scroll and its transitions, so the settle is two frames there.
 	async function navigate(id: string, generation = ++navigationGeneration): Promise<void> {
-		if (openableAnchors.has(id)) openCard(id);
+		const card = id === CONFIDENCE_INTERVALS_ANCHOR ? PROVENANCE_ANCHOR : id;
+		if (openableAnchors.has(card)) openCard(card);
 		await tick();
 		const target = tocElement(id);
 		await settleLayout(target);
@@ -381,7 +394,7 @@
 		<!-- Provenance: the live feed-conformance verdict (the same honesty signal
 		     the preamble carries), or an honest stand-down when it can't load. An
 		     unresolved resource renders no empty disclosure shell. -->
-		{#if provenance.data?.conformance || provenanceUnavailable}
+		{#if desktopRailVisited && (provenance.data?.conformance || provenanceUnavailable)}
 			<CollapsibleSection
 				title={t.statRail.provenance.title}
 				headerVariant="article-summary"
@@ -440,7 +453,7 @@
 
 		<!-- Freshness: when this methodology build's provenance document was generated
 		     (the calm "Updated N ago" stamp — never a live-tier LIVE chip). -->
-		{#if provenance.data?.generated_utc}
+		{#if desktopRailVisited && provenance.data?.generated_utc}
 			<CollapsibleSection
 				title={t.statRail.freshness.title}
 				headerVariant="article-summary"
@@ -572,6 +585,17 @@
 								</h3>
 								<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
 							</div>
+							<div class="metrics-measure__item" id={CONFIDENCE_INTERVALS_ANCHOR}>
+								<h3 class="metrics-measure__heading">
+									{t.provenance.howWeMeasure.confidenceInterval.heading}
+								</h3>
+								<p class="metric__prose">{t.provenance.howWeMeasure.confidenceInterval.body}</p>
+								<a
+									class="metric__top"
+									href="https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm"
+									>{t.provenance.howWeMeasure.confidenceInterval.reference}</a
+								>
+							</div>
 							<div class="metrics-measure__item">
 								<h3 class="metrics-measure__heading">
 									{t.provenance.howWeMeasure.rounding.heading}
@@ -649,37 +673,7 @@
 										</p>
 
 										<div class="metric__information-stack">
-											<TypedInformationCard kind="definition" label={t.sections.definition}>
-												<EasterProse text={entry.definition[locale]} class="metric__prose" />
-											</TypedInformationCard>
-
-											<TypedInformationCard kind="math" label={t.sections.math}>
-												<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
-											</TypedInformationCard>
-
-											<TypedInformationCard
-												kind="sql"
-												label={t.sections.sql}
-												code={entry.sql}
-												codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
-											/>
-
-											<div class="metric__paired-information">
-												<TypedInformationCard kind="not-really" label={t.sections.notReally}>
-													<EasterProse
-														text={entry.notReally[locale]}
-														class="metric__prose metric__not"
-													/>
-												</TypedInformationCard>
-
-												<TypedInformationCard kind="caveat" label={t.sections.caveats}>
-													<ul class="metric__caveats">
-														{#each entry.caveats[locale] as caveat, i (i)}
-															<li>{caveat}</li>
-														{/each}
-													</ul>
-												</TypedInformationCard>
-											</div>
+											<MetricBody {entry} {locale} serverHtml={metricBodies?.[entry.key]} />
 
 											{#if note}
 												<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
@@ -975,28 +969,14 @@
 		gap: 1rem;
 		min-width: 0;
 	}
-	.metric__paired-information {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		min-width: 0;
-	}
 	.metric__prose {
 		margin: 0;
 		color: var(--foreground);
 	}
 	.metric__prose,
-	.metric__caveats,
 	.metric__pipeline-note {
 		font-size: inherit;
 		line-height: inherit;
-	}
-	.metric__caveats {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin: 0;
-		padding-inline-start: 1.1rem;
 	}
 	/* ── Structural-gaps card ─────────────────────────────────────────────────
 	   Same card spine as a metric section; the gap list reads as discrete named

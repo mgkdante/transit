@@ -1,12 +1,8 @@
-import { render } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Section1WhenToRide from './Section1WhenToRide.svelte';
 import { reliabilityCopy } from '../reliability.copy';
 import type { PunctualityVM, PeriodComparisonRow, HabitsVM } from '../clusters';
-
-// PR-WEB-3 §1 on-time-by-time-of-day · vs-prior comparison. The pure two-proportion math
-// is unit-tested in selectors/priorDelta.test.ts; THIS pins the section WIRING: the windowed
-// gate, the change / noise / honest-absence states, and the four-colour Δ badge text.
 
 const row = (
 	grain: string,
@@ -24,7 +20,7 @@ const row = (
 	onTime,
 	priorOtpPct,
 	priorObservationCount,
-	priorOnTime: null, // section-wiring tests use the band-hack fallback; exact-count path lives in priorDelta.test.ts
+	priorOnTime: null,
 });
 
 const vm = (
@@ -59,94 +55,164 @@ const rowsByState = (container: HTMLElement, prior: string): HTMLElement[] =>
 		(el) => el.getAttribute('data-prior') === prior,
 	) as HTMLElement[];
 
-const mount = (punctuality: PunctualityVM, mode: 'day' | 'week' | 'month' = 'week') =>
-	render(Section1WhenToRide, {
+const mount = async (
+	punctuality: PunctualityVM,
+	mode: 'day' | 'week' | 'month' = 'week',
+	locale: 'en' | 'fr' = 'en',
+) => {
+	const view = render(Section1WhenToRide, {
 		props: {
 			punctuality,
 			habits: emptyHabits,
-			locale: 'en' as const,
-			copy: reliabilityCopy.en,
+			locale,
+			copy: reliabilityCopy[locale],
 			mode,
 		},
 	});
+	await fireEvent.click(
+		view.getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+	);
+	return view;
+};
 
-describe('Section1WhenToRide — on-time vs prior (PR-WEB-3)', () => {
+describe('Section1WhenToRide observed prior-window differences', () => {
 	const byShift: PeriodComparisonRow[] = [
-		row('am_peak', 89, 2137, 1902, 84, 2183), // +5, large n → SIGNIFICANT improvement
-		row('midday', 90, 40, 36, 85, 40), // +5 but n=40 → within noise (not significant)
-		row('pm_peak', 81, 4529, 3669, 90, 4400), // −9, large n → SIGNIFICANT regression
-		row('night', 90, 50, 45, null, null), // no prior → honest absence
+		row('am_peak', 90, 40000, 36000, 85, 40000),
+		row('midday', 90, 40, 36, 85, 40),
+		row('pm_peak', 81, 40, 32, 90, 40),
+		row('night', 90, 50, 45, null, null),
 	];
 
-	it('renders a significant improvement as "+5 pts vs prior week" with the change state', () => {
-		const { container } = mount(vm(byShift, [], true));
+	it('shows the same +5-point observation at large and small sample sizes', async () => {
+		const { container } = await mount(vm(byShift.slice(0, 2), [], true));
 		const changed = rowsByState(container, 'change');
-		const improve = changed.find((el) => el.textContent?.includes('+5'));
-		expect(improve).toBeTruthy();
-		expect(improve?.textContent).toContain('+5 pts');
-		expect(improve?.textContent).toContain('vs prior week');
-		expect(improve?.textContent).toContain('▲');
+		expect(changed).toHaveLength(2);
+		for (const element of changed) {
+			expect(element.textContent).toContain('+5 pts');
+			expect(element.textContent).toContain('vs prior week');
+			expect(element.textContent).toContain('▲');
+		}
+		const caption = container.querySelector('[data-slot="on-time-vs-prior-caption"]')?.textContent;
+		expect(caption).toContain('Feed coverage');
+		expect(container.textContent).not.toMatch(/95%|significan|within noise/i);
 	});
 
-	it('renders a significant regression as a negative "-9 pts" change', () => {
-		const { container } = mount(vm(byShift, [], true));
-		const regress = rowsByState(container, 'change').find((el) => el.textContent?.includes('-9'));
-		expect(regress?.textContent).toContain('-9 pts');
-		expect(regress?.textContent).toContain('▼');
-	});
-
-	it('renders a real-but-insignificant swing as neutral "within noise" (no number)', () => {
-		const { container } = mount(vm(byShift, [], true));
-		const noise = rowsByState(container, 'noise');
-		expect(noise.length).toBe(1);
-		expect(noise[0].textContent).toContain('within noise');
-		expect(noise[0].textContent).not.toContain('+5');
-		expect(noise[0].textContent).toContain('·');
-	});
-
-	it('renders an honest absence ("no prior week") when there is no prior window', () => {
-		const { container } = mount(vm(byShift, [], true));
-		const absent = rowsByState(container, 'absent');
-		expect(absent.length).toBe(1);
-		expect(absent[0].textContent).toContain('no prior week');
-		expect(absent[0].textContent).not.toContain('pts');
-	});
-
-	it('names the window per grain ("vs prior month" on the month grain)', () => {
-		const { container } = mount(vm([row('am_peak', 89, 2137, 1902, 84, 2183)], [], true), 'month');
-		expect(container.querySelector('[data-slot="on-time-vs-prior"]')?.textContent).toContain(
-			'vs prior month',
-		);
-	});
-
-	it('gives within-noise and no-prior rows distinct, localized, self-identifying aria', () => {
-		const { container } = mount(vm(byShift, [], true));
-		const ariaOf = (prior: string): string =>
-			rowsByState(container, prior)[0]
-				?.querySelector('[data-slot="delta-stat"]')
-				?.getAttribute('aria-label') ?? '';
-		const noise = ariaOf('noise'); // Midday
-		const absent = ariaOf('absent'); // Night
-		expect(noise).not.toBe(absent);
-		expect(noise).toContain('within noise');
-		expect(absent).toContain('no prior week');
-		// never the misleading "no change data" for a measured-but-insignificant change
-		expect(noise).not.toContain('no change data');
-		expect(absent).not.toContain('no change data');
-		// self-identifying: the chip's accessible name carries its shift label
-		expect(noise.toLowerCase()).toContain('midday');
-	});
-
-	it('uses the singular unit on a ±1-point move ("+1 pt", never "+1 pts")', () => {
-		// +1 pt at n≈80k is a real (significant) difference — the unit must read singular.
-		const { container } = mount(vm([row('am_peak', 86, 79256, 68160, 85, 80832)], [], true));
+	it('shows a decrease without requiring a significance verdict', async () => {
+		const { container } = await mount(vm([byShift[2]], [], true));
 		const change = rowsByState(container, 'change')[0];
-		expect(change?.textContent).toContain('+1 pt');
-		expect(change?.textContent).not.toContain('+1 pts');
+		expect(change?.textContent).toContain('-9 pts');
+		expect(change?.textContent).toContain('▼');
 	});
 
-	it('HIDES the comparison entirely when the breakdowns are not windowed (no prior to compare)', () => {
-		const { container } = mount(vm(byShift, [], false));
+	it('keeps measured zero distinct from an absent prior window, including accessible text', async () => {
+		const { container } = await mount(
+			vm([row('midday', 90, 40, 36, 90, 40), byShift[3]], [], true),
+		);
+		const flat = rowsByState(container, 'flat')[0];
+		const absent = rowsByState(container, 'absent')[0];
+		expect(flat?.textContent).toContain('0 pts');
+		expect(flat?.textContent).toContain('vs prior week');
+		expect(flat?.textContent).not.toMatch(/[▲▼]/);
+		expect(absent?.textContent).toContain('no prior week');
+		expect(absent?.textContent).not.toContain('pts');
+		const aria = (element: Element) =>
+			element.querySelector('[data-slot="delta-stat"]')?.getAttribute('aria-label');
+		expect(aria(flat)).toMatch(/0 pts.*midday.*vs prior week/i);
+		expect(aria(absent)).toMatch(/night.*no prior week/i);
+	});
+
+	it.each(['day', 'week', 'month'] as const)(
+		'identifies the %s comparison window',
+		async (mode) => {
+			const { container } = await mount(vm([byShift[0]], [], true), mode);
+			expect(rowsByState(container, 'change')[0]?.textContent).toContain(`vs prior ${mode}`);
+		},
+	);
+
+	it('uses singular percentage points on a one-point change', async () => {
+		const { container } = await mount(vm([row('am_peak', 86, 40, 34, 85, 40)], [], true));
+		const text = rowsByState(container, 'change')[0]?.textContent;
+		expect(text).toContain('+1 pt');
+		expect(text).not.toContain('+1 pts');
+	});
+
+	it('omits comparisons when the source breakdown is not windowed', async () => {
+		const { container } = await mount(vm(byShift, [], false));
 		expect(container.querySelector('[data-slot="on-time-vs-prior"]')).toBeNull();
 	});
+
+	it('explains descriptive changes and absent prior windows in French', async () => {
+		const { container } = await mount(vm([byShift[1], byShift[3]], [], true), 'week', 'fr');
+		expect(rowsByState(container, 'change')[0]?.textContent).toContain('+5 pts');
+		expect(rowsByState(container, 'absent')[0]?.textContent).toContain('pas de semaine précédente');
+		expect(
+			container.querySelector('[data-slot="on-time-vs-prior-caption"]')?.textContent,
+		).toContain('couverture');
+		expect(container.textContent).not.toMatch(/95\s*%|significati|bruit/i);
+	});
+});
+
+describe('Section1WhenToRide relative heatmap meaning', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps relative bands and missing values aligned in %s',
+		async (locale) => {
+			const matrix: (number | null)[][] = Array.from({ length: 7 }, () => Array(24).fill(null));
+			matrix[0].splice(0, 8, 0, 0.2499, 0.25, 0.5, 0.7499, 0.75, 1, null);
+			const { container } = render(Section1WhenToRide, {
+				props: {
+					punctuality: vm([], [], false),
+					habits: { scale: 'repeat_problem_relative', matrix, isEmpty: false },
+					locale,
+					copy: reliabilityCopy[locale],
+					mode: 'day',
+				},
+			});
+			const block = container.querySelector('[data-slot="habits-heatmap"]') as HTMLElement;
+			const labels =
+				locale === 'en'
+					? [
+							'Low relative score',
+							'Moderate relative score',
+							'High relative score',
+							'Very high relative score',
+						]
+					: [
+							'Score relatif faible',
+							'Score relatif modéré',
+							'Score relatif élevé',
+							'Score relatif très élevé',
+						];
+			const cells = [...block.querySelectorAll('table tbody tr:first-child td')]
+				.slice(0, 8)
+				.map((cell) => cell.textContent?.trim());
+			expect
+				.soft(cells)
+				.toEqual([
+					labels[0],
+					labels[0],
+					labels[1],
+					labels[2],
+					labels[2],
+					`◆ ${labels[3]}`,
+					`◆ ${labels[3]}`,
+					locale === 'en' ? 'No data' : 'Aucune donnée',
+				]);
+			const caption = block.querySelector('[data-slot="habits-scale-caption"]')?.textContent ?? '';
+			expect.soft(caption).toMatch(locale === 'en' ? /0.75.*maximum/ : /0,75.*maximum/);
+			expect.soft(caption).not.toMatch(/how often|rarely see|fréquence.*reviennent/);
+			const legendLabels = [...block.querySelectorAll('[data-slot="chart-legend"] li')].map(
+				(item) => item.textContent?.trim(),
+			);
+			expect
+				.soft(legendLabels)
+				.toEqual([
+					...labels.slice(0, 3),
+					`${labels[3]} ◆`,
+					locale === 'en' ? 'No data' : 'Aucune donnée',
+				]);
+			await fireEvent.click(within(block).getByRole('button', { name: /about|propos/i }));
+			const help = block.querySelector('.metric-info__tip')?.textContent ?? '';
+			expect.soft(help).toMatch(locale === 'en' ? /relative score/i : /score relatif/i);
+		},
+	);
 });

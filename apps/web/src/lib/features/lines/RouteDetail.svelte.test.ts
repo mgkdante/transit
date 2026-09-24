@@ -10,10 +10,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
+import { detailCopy } from './lines.copy';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
@@ -46,8 +48,9 @@ const ROUTE_FILE = {
 	first_departure: '05:30',
 	last_departure: '01:10',
 	service_periods: [
-		{ shift: 'AM peak', window: '06:00–09:00', headway_min: 6 },
-		{ shift: 'Midday', window: '09:00–15:00', headway_min: 10 },
+		{ shift: 'am_peak', window: '06:00–09:00', headway_min: 6 },
+		{ shift: 'midday', window: '09:00–15:00', headway_min: 10 },
+		{ shift: 'weekend', window: null, headway_min: 12 },
 	],
 	directions: [
 		{
@@ -139,7 +142,7 @@ const VEHICLES: Vehicle[] = [
 		id: 'busLate',
 		lat: 45.5,
 		lon: -73.6,
-		status: 'late',
+		status: 'severe',
 		updated_utc: '2026-06-15T12:00:00Z',
 		route: '161',
 		trip: 'tLate',
@@ -391,8 +394,9 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 beforeEach(() => routeSurface.reset());
 
+// Existing mounts plus the prepared-time key/fallback case and seven status cases per locale.
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(36);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(52);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -444,6 +448,45 @@ describe('RouteDetail article cover and focus scope', () => {
 			'datetime',
 			CURRENT_RELIABILITY.generated_utc,
 		);
+	});
+
+	it('uses a prepared article time only for the same route, ISO, and locale', async () => {
+		routeDetailNav.page.url = new URL('http://localhost/lines/161?tab=reliability');
+		reliabilityResourceState = {
+			data: CURRENT_RELIABILITY,
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const prepared = {
+			routeId: '161',
+			iso: CURRENT_RELIABILITY.generated_utc,
+			locale: 'en' as const,
+			text: 'Prepared current timestamp',
+		};
+		const props = { id: '161', seed: routeSeed(), preparedArticleTime: prepared };
+		const view = routeSurface.mount(RouteDetail, { props });
+		const articleTime = () =>
+			view.container.querySelector<HTMLElement>('[data-slot="article-header"] time[datetime]');
+		expect(articleTime()).toHaveTextContent(prepared.text);
+		expect(articleTime()).toHaveAttribute('datetime', prepared.iso);
+		expect(view.container.querySelector('.header__edge-right')).toHaveTextContent(prepared.text);
+
+		for (const mismatch of [
+			{ routeId: 'other' },
+			{ iso: ROUTE_FILE.generated_utc },
+			{ locale: 'fr' as const },
+		]) {
+			await view.rerender({ ...props, preparedArticleTime: { ...prepared, ...mismatch } });
+			expect(articleTime()).not.toHaveTextContent(prepared.text);
+		}
+
+		await view.rerender(props);
+		expect(articleTime()).toHaveTextContent(prepared.text);
+		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await tick();
+		expect(articleTime()).toHaveAttribute('datetime', ROUTE_FILE.generated_utc);
+		expect(articleTime()).not.toHaveTextContent(prepared.text);
 	});
 
 	it('keeps tab URLs shareable while preserving unrelated search parameters', async () => {
@@ -703,7 +746,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
 		const error = await screen.findByRole('alert');
-		expect(error).toHaveTextContent('/v1 contract unreachable');
+		expect(error).toHaveTextContent('Data unavailable');
 		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
 
 		await fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
@@ -871,19 +914,35 @@ describe('RouteDetail article schedule structure', () => {
 		expect(source).toMatch(/class="route-schedule-periods"/);
 	});
 
-	it('renders service periods as the shared semantic schedule table', async () => {
-		renderRoute();
-		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		const table = screen.getByRole('table', { name: 'Planned service periods' });
-
-		expect(within(table).getByRole('columnheader', { name: 'Period' })).toBeInTheDocument();
-		expect(within(table).getByRole('columnheader', { name: 'Window' })).toBeInTheDocument();
-		expect(
-			within(table).getByRole('columnheader', { name: 'Planned headway' }),
-		).toBeInTheDocument();
-		expect(within(table).getByText('AM peak')).toBeInTheDocument();
-		expect(within(table).getByText('6.0 min')).toBeInTheDocument();
-	});
+	it.each(['en', 'fr'] as const)(
+		'renders publisher service-period labels in %s',
+		async (locale) => {
+			const t = detailCopy[locale];
+			routeSurface.mount(RouteDetail, {
+				props: { id: '161', seed: routeSeed() },
+				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			});
+			await fireEvent.click(
+				screen.getByRole('tab', { name: locale === 'en' ? 'Schedule' : 'Horaire' }),
+			);
+			const table = screen.getByRole('table', { name: t.scheduleTable.caption });
+			for (const name of [
+				t.scheduleTable.period,
+				t.scheduleTable.window,
+				t.scheduleTable.headway,
+			]) {
+				expect(within(table).getByRole('columnheader', { name })).toBeInTheDocument();
+			}
+			const periodLabels =
+				locale === 'en'
+					? ['AM peak', 'Midday', 'Weekend']
+					: ['Pointe AM', 'Journée', 'Fin de semaine'];
+			for (const label of periodLabels)
+				expect(within(table).getByText(label, { exact: true })).toBeInTheDocument();
+			expect(within(table).queryByText(/^(am_peak|midday|weekend)$/)).toBeNull();
+			expect(within(table).getByText('6.0 min')).toBeInTheDocument();
+		},
+	);
 });
 
 describe('RouteDetail map drilldown', () => {
@@ -925,11 +984,15 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 		expect(stop).not.toHaveTextContent('No delay');
 	});
 
-	it('shows an honest "no live bus" for a stop with no live prediction', () => {
+	it('states no prediction without inferring whether a live bus exists', () => {
 		renderRoute();
 
-		// sC has no approaching bus → the placeholder, never a fabricated time.
-		expect(screen.getByText('No live bus')).toBeInTheDocument();
+		const stop = screen.getByRole('link', { name: 'View stop Third stop' });
+		const absence = stop.querySelector('[data-slot="absent-value"]');
+		expect(absence).toHaveAttribute('data-density', 'row');
+		expect(absence).toHaveTextContent('No estimate · no prediction available');
+		expect(stop).not.toHaveTextContent('No live bus');
+		expect(stop.querySelector('time')).toBeNull();
 	});
 
 	it('renders the live freshness chip when a live build is present', () => {
@@ -980,7 +1043,9 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 
 		// Each bus row links to its trip detail page.
 		expect(
-			within(roster).getByRole('link', { name: 'View the trip for bus busLate' }),
+			within(roster).getByRole('link', {
+				name: 'View the trip for bus busLate, Severe, Delay: +8 min',
+			}),
 		).toHaveAttribute('href', '/trip/tLate');
 	});
 
@@ -989,8 +1054,8 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
 		// Known delays read honestly; the null-delay bus uses the full shared row absence, never "0".
-		expect(within(roster).getByText('8 min late')).toBeInTheDocument();
-		expect(within(roster).getByText('3 min early')).toBeInTheDocument();
+		expect(within(roster).getByText('+8 min')).toBeInTheDocument();
+		expect(within(roster).getByText('−3 min')).toBeInTheDocument();
 		const absence = within(roster)
 			.getByText('not reported in the live feed')
 			.closest('[data-slot="absent-value"]');
@@ -1009,38 +1074,21 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		);
 	});
 
-	it('colours an early / on-time bus CALM (status scale), never a problem tone', () => {
-		// Honesty lock (calm-by-default): the roster bar's COLOUR is the status band
-		// (early = blue), not the problem-severity scale, and the bar LENGTH encodes
-		// LATENESS only — an early bus reads near-zero length, never a long red/amber
-		// bar. Rows are sorted most-late first → busLate, busEarly, busNoDelay.
+	it('retains lateness ordering with the published glyph and no second severity verdict', () => {
 		renderRoute();
-
-		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
-		const bars = roster.querySelectorAll('[data-slot="severity-bar"]');
-		expect(bars.length).toBe(3);
-
-		// busLate (8 min late → severe band ≥5): severe status colour (the PROBLEM
-		// tone), escalated a11y band, non-zero bar. The colour stays on the status
-		// scale, never the problem-severity scale.
-		const lateFill = bars[0].querySelector('.dv-severity-fill') as HTMLElement;
-		expect(lateFill).not.toBeNull();
-		expect(lateFill.style.background).toContain('--dataviz-status-severe');
-		expect(lateFill.style.background).not.toContain('severity');
-		expect(bars[0].getAttribute('data-severity')).toBe('high');
-		expect(Number.parseFloat(lateFill.style.width)).toBeGreaterThan(0);
-
-		// busEarly (3 min early): CALM blue status colour, calm 'watch' a11y band,
-		// zero-length bar (early is not a problem — never red/amber, never long).
-		const earlyFill = bars[1].querySelector('.dv-severity-fill') as HTMLElement;
-		expect(earlyFill).not.toBeNull();
-		expect(earlyFill.style.background).toContain('--dataviz-status-early');
-		expect(earlyFill.style.background).not.toContain('severity');
-		expect(bars[1].getAttribute('data-severity')).toBe('watch');
-		expect(Number.parseFloat(earlyFill.style.width)).toBe(0);
-
-		// busNoDelay (null): no-data track — no fill at all, never a fabricated 0 bar.
-		expect(bars[2].querySelector('.dv-severity-fill')).toBeNull();
+		const roster = screen.getByTestId('route-roster');
+		expect([...roster.querySelectorAll('strong')].map((el) => el.textContent)).toEqual([
+			'Bus busLate',
+			'Bus busEarly',
+			'Bus busNoDelay',
+		]);
+		expect(
+			[...roster.querySelectorAll('[data-slot="status-badge"]')].map((el) =>
+				el.getAttribute('data-status'),
+			),
+		).toEqual(['severe', 'early', 'unknown']);
+		expect(within(roster).queryByRole('progressbar')).toBeNull();
+		expect(roster).not.toHaveTextContent(/Watch|High|no change data/);
 	});
 
 	it('stands the roster down entirely when no live bus is on this route', () => {
@@ -1060,7 +1108,7 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 		liveIndex = buildIndex([]);
 		renderRoute('1');
 
-		expect(screen.getByText('Live positions are not published for the metro.')).toBeInTheDocument();
+		expect(screen.getByText('live positions are not published here')).toBeInTheDocument();
 	});
 
 	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
@@ -1071,8 +1119,51 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 		renderRoute();
 
 		expect(screen.getAllByText('Nothing to show').length).toBeGreaterThan(0);
-		expect(
-			screen.queryByText('Live positions are not published for the metro.'),
-		).not.toBeInTheDocument();
+		expect(screen.queryByText('live positions are not published here')).not.toBeInTheDocument();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('RouteDetail roster published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		liveIndex = buildIndex([{ ...VEHICLES[0], status, delay_min: delay }]);
+		routeSurface.mount(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+		});
+		const roster = screen.getByTestId('route-roster');
+		const badge = roster.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(STATUS_LABELS[locale][status]);
+		const reading = roster.querySelector('.route-roster-delay')!;
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+		const link = roster.querySelector('.route-roster-link')!;
+		if (status === 'unknown' && delay == null) {
+			expect(link.textContent?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g'))).toHaveLength(
+				1,
+			);
+			expect(
+				link.getAttribute('aria-label')?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(link.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
+
+		expect(link.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
+		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});
 });

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tick } from 'svelte';
@@ -33,7 +33,33 @@ vi.mock('$app/state', async () => {
 	};
 });
 
-beforeEach(() => navigation.setPath('/lines/24'));
+const resizeObservers: ResizeObserverProbe[] = [];
+class ResizeObserverProbe {
+	readonly targets = new Set<Element>();
+	readonly observe = vi.fn((target: Element) => this.targets.add(target));
+	readonly unobserve = vi.fn((target: Element) => this.targets.delete(target));
+	readonly disconnect = vi.fn();
+	constructor(private readonly callback: ResizeObserverCallback) {
+		resizeObservers.push(this);
+	}
+	deliver(): void {
+		this.callback([], this as unknown as ResizeObserver);
+	}
+}
+function tabObserver(viewport: HTMLElement): ResizeObserverProbe {
+	const matches = resizeObservers.filter((observer) => observer.targets.has(viewport));
+	expect(matches).toHaveLength(1);
+	return matches[0];
+}
+
+beforeEach(() => {
+	navigation.setPath('/lines/24');
+	resizeObservers.length = 0;
+});
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
+});
 
 // Regression guard for the signage-active tab look (yesid StationTabs parity).
 // EntityDetail's tab strip renders each bits-ui TabsTrigger through a `child`
@@ -149,6 +175,7 @@ describe('EntityDetail — signage-active tab pattern', () => {
 	] as const)(
 		'centers the active tab inside only the strip with $behavior movement when reduced motion is $reduced',
 		async ({ reduced, behavior }) => {
+			vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
 			const originalMatchMedia = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
 			const scrollIntoView = vi.fn();
 			Object.defineProperty(globalThis, 'matchMedia', {
@@ -180,6 +207,8 @@ describe('EntityDetail — signage-active tab pattern', () => {
 					scrollIntoView: { configurable: true, value: scrollIntoView },
 				});
 				await tick();
+				tabObserver(scrollport).deliver();
+				await tick();
 				scrollTo.mockClear();
 
 				await fireEvent.click(schedule);
@@ -197,6 +226,84 @@ describe('EntityDetail — signage-active tab pattern', () => {
 				if (originalMatchMedia) Object.defineProperty(globalThis, 'matchMedia', originalMatchMedia);
 				else Reflect.deleteProperty(globalThis, 'matchMedia');
 			}
+		},
+	);
+
+	it('reveals a selected keyboard tab and clears older touch scroll before keyboard activation', async () => {
+		vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+		const { container } = render(EntityDetailHarness, {
+			props: { mode: 'article', initialActive: 'reliability' },
+		});
+		const viewport = container.querySelector<HTMLElement>(
+			'[data-slot="entity-detail-tabs-scroll"]',
+		)!;
+		const selected = screen.getByRole('tab', { name: 'Reliability' });
+		const pane = screen.getByText('Reliability pane');
+		Object.defineProperties(viewport, {
+			clientWidth: { configurable: true, value: 320 },
+			scrollWidth: { configurable: true, value: 377 },
+		});
+		// The test DOM has no native input-modality state; supply the browser's focus-visible result.
+		const matches = selected.matches.bind(selected);
+		vi.spyOn(selected, 'matches').mockImplementation(
+			(selector) => selector === ':focus-visible' || matches(selector),
+		);
+		const reveal = vi.fn(() => {
+			viewport.scrollLeft = 33;
+		});
+		Object.defineProperty(selected, 'scrollIntoView', { configurable: true, value: reveal });
+		selected.focus();
+		await tick();
+		expect(selected).toHaveFocus();
+		expect(viewport.scrollLeft).toBe(33);
+		expect(reveal).toHaveBeenCalledExactlyOnceWith({
+			behavior: 'auto',
+			block: 'center',
+			inline: 'nearest',
+		});
+		expect(screen.getByRole('tab', { name: 'Reliability' })).toBe(selected);
+		expect(selected).toHaveAttribute('aria-selected', 'true');
+		expect(screen.getByText('Reliability pane')).toBe(pane);
+		expect(screen.queryByText('Detail pane')).not.toBeInTheDocument();
+
+		selected.blur();
+		await fireEvent.pointerDown(viewport, { pointerType: 'touch', clientX: 250, clientY: 220 });
+		viewport.scrollLeft = 57;
+		await fireEvent.scroll(viewport);
+		selected.focus();
+		await fireEvent.scroll(viewport);
+		const activation = vi.fn();
+		selected.addEventListener('click', activation);
+		expect(await fireEvent.click(selected, { detail: 0 })).toBe(true);
+		expect(activation).toHaveBeenCalledOnce();
+		expect(selected).toHaveAttribute('aria-selected', 'true');
+	});
+
+	it.each(['mouse', 'touch'])(
+		'preserves manual strip scroll when %s input focuses a tab',
+		async (pointerType) => {
+			vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+			const { container } = render(EntityDetailHarness, {
+				props: { mode: 'article', initialActive: 'reliability' },
+			});
+			const viewport = container.querySelector<HTMLElement>(
+				'[data-slot="entity-detail-tabs-scroll"]',
+			)!;
+			const selected = screen.getByRole('tab', { name: 'Reliability' }),
+				reveal = vi.fn();
+			const matches = selected.matches.bind(selected);
+			vi.spyOn(selected, 'matches').mockImplementation(
+				(selector) => selector !== ':focus-visible' && matches(selector),
+			);
+			Object.defineProperty(selected, 'scrollIntoView', { configurable: true, value: reveal });
+			viewport.scrollLeft = 57;
+			await fireEvent.pointerDown(selected, { pointerType, clientX: 250, clientY: 220 });
+			selected.focus();
+			await tick();
+			expect(selected).toHaveFocus();
+			expect(reveal).not.toHaveBeenCalled();
+			expect(viewport.scrollLeft).toBe(57);
+			expect(selected).toHaveAttribute('aria-selected', 'true');
 		},
 	);
 
@@ -394,5 +501,107 @@ describe('EntityDetail — optional article cover', () => {
 
 		sessionStorage.removeItem(`transit.persisted:${firstKey}`);
 		sessionStorage.removeItem(`transit.persisted:${secondKey}`);
+	});
+});
+
+describe('EntityDetail native initial tab geometry', () => {
+	function geometry(container: HTMLElement, selected: HTMLElement) {
+		const viewport = container.querySelector<HTMLElement>(
+			'[data-slot="entity-detail-tabs-scroll"]',
+		)!;
+		let width = 200;
+		const readWidth = vi.fn(() => width);
+		const scrollTo = vi.fn(({ left }: ScrollToOptions) => {
+			viewport.scrollLeft = left ?? 0;
+		});
+		Object.defineProperties(viewport, {
+			clientWidth: { configurable: true, get: readWidth },
+			scrollWidth: { configurable: true, value: 600 },
+			scrollTo: { configurable: true, value: scrollTo },
+		});
+		Object.defineProperties(selected, {
+			offsetLeft: { configurable: true, value: 250 },
+			offsetWidth: { configurable: true, value: 100 },
+		});
+		return {
+			viewport,
+			readWidth,
+			scrollTo,
+			setWidth: (next: number) => {
+				width = next;
+			},
+		};
+	}
+
+	it('uses one initial delivery, retains user scroll on resize, and ignores a queued delivery after teardown', async () => {
+		vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+		const view = render(EntityDetailHarness, {
+			props: { mode: 'article', initialActive: 'schedule' },
+		});
+		const selected = screen.getByRole('tab', { name: 'Schedule' });
+		const { viewport, readWidth, scrollTo, setWidth } = geometry(view.container, selected);
+		const observer = tabObserver(viewport);
+		expect(observer.targets.has(screen.getByRole('tablist'))).toBe(true);
+		await tick();
+		expect(readWidth).not.toHaveBeenCalled();
+		expect(scrollTo).not.toHaveBeenCalled();
+		selected.focus();
+		observer.deliver();
+		await tick();
+		expect(scrollTo).toHaveBeenCalledTimes(1);
+		expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 200 }));
+		expect(selected).toHaveFocus();
+		expect(view.container.querySelector('[data-slot="entity-detail-tabs-fade"]')).toHaveClass(
+			'entity-tabs__fade--visible',
+		);
+
+		viewport.scrollLeft = 400;
+		await fireEvent.scroll(viewport);
+		expect(view.container.querySelector('[data-slot="entity-detail-tabs-fade"]')).not.toHaveClass(
+			'entity-tabs__fade--visible',
+		);
+		scrollTo.mockClear();
+		setWidth(150);
+		observer.deliver();
+		await tick();
+		expect(scrollTo).not.toHaveBeenCalled();
+		expect(viewport.scrollLeft).toBe(400);
+		expect(view.container.querySelector('[data-slot="entity-detail-tabs-fade"]')).toHaveClass(
+			'entity-tabs__fade--visible',
+		);
+		await view.unmount();
+		expect(observer.disconnect).toHaveBeenCalledOnce();
+		readWidth.mockClear();
+		observer.deliver();
+		expect(readWidth).not.toHaveBeenCalled();
+	});
+
+	it('centers the latest selected tab when selection changes before the first delivery', async () => {
+		vi.stubGlobal('ResizeObserver', ResizeObserverProbe);
+		const view = render(EntityDetailHarness, { props: { mode: 'article' } });
+		const selected = screen.getByRole('tab', { name: 'Schedule' });
+		const { viewport, scrollTo } = geometry(view.container, selected);
+		const tablist = screen.getByRole('tablist');
+		await fireEvent.click(selected);
+		await tick();
+		expect(scrollTo).not.toHaveBeenCalled();
+		tabObserver(viewport).deliver();
+		await tick();
+		expect(scrollTo).toHaveBeenCalledTimes(1);
+		expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 200 }));
+		expect(screen.getByRole('tablist')).toBe(tablist);
+		expect(selected).toHaveAttribute('aria-selected', 'true');
+	});
+
+	it('keeps initial centering when ResizeObserver is unavailable', async () => {
+		vi.stubGlobal('ResizeObserver', undefined);
+		const view = render(EntityDetailHarness, {
+			props: { mode: 'article', initialActive: 'schedule' },
+		});
+		const { scrollTo } = geometry(view.container, screen.getByRole('tab', { name: 'Schedule' }));
+		await tick();
+		await waitFor(() =>
+			expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 200 })),
+		);
 	});
 });

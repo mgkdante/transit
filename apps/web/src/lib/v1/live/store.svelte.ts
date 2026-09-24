@@ -17,13 +17,7 @@
 // ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so they track the
 // publisher's cadence.
 //
-// The age advances off the app-supplied shared clock port, not a
-// private interval, so the freshness here ticks in lockstep with every other
-// relative-time label in the chrome (the TopBar refresh chip, etc.). This store
-// is also the SINGLE authoritative writer of the chrome's `dataGeneratedUtc`:
-// each successful poll pushes the snapshot's own DATA timestamp through the
-// refresh port, so the freshness readout never drifts from the
-// data it describes.
+// Freshness uses the app-supplied shared clock for consistent, server-anchored ages.
 //
 // Lifecycle: createLiveStore(manifest) builds an instance; call .start() from
 // onMount and .stop() from onDestroy (or use the $effect convenience in a
@@ -408,9 +402,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 				error: null,
 				successRevision: changed ? state.successRevision + 1 : state.successRevision,
 			};
-			if (payloadGeneration != null) {
-				runtime.refresh.noteDataGeneratedUtc(payloadGeneration);
-			}
 		} catch (value) {
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 			if (isAbortError(value)) {

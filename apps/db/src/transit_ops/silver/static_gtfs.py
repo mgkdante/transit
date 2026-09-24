@@ -6,9 +6,10 @@ import logging
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from io import BytesIO, TextIOWrapper
+from functools import partial
+from io import BufferedIOBase, BytesIO, TextIOWrapper
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipExtFile, ZipFile
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects import postgresql
@@ -689,6 +690,38 @@ def validate_required_static_members(
             )
 
 
+@dataclass(frozen=True)
+class _MemberMetadata:
+    columns: list[str]
+    row_count: int
+    checksum_sha256: str
+
+
+class _HashingReader(BufferedIOBase):
+    """Hash the unchanged member bytes delivered to the text decoder."""
+
+    def __init__(self, source: ZipExtFile, update: Callable[[bytes], None]) -> None:
+        self.source = source
+        self.update = update
+
+    @property
+    def name(self) -> str:
+        return self.source.name
+
+    def readable(self) -> bool:
+        return True
+
+    def read1(self, size: int = -1) -> bytes:
+        data = self.source.read1(size)
+        self.update(data)
+        return data
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.source.read(size)
+        self.update(data)
+        return data
+
+
 def _read_member_header(zip_file: ZipFile, member_name: str) -> set[str]:
     with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
         raw_handle,
@@ -784,14 +817,22 @@ def _iter_gtfs_rows(
     *,
     member_name: str,
     required_columns: set[str],
+    member_metadata: dict[str, _MemberMetadata] | None = None,
 ) -> Iterator[dict[str, str]]:
-    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
-        raw_handle,
-        encoding="utf-8-sig",
-        newline="",
-    ) as text_handle:
+    digest = hashlib.sha256()
+    with (
+        zip_file.open(member_name, "r") as raw_handle,
+        TextIOWrapper(
+            _HashingReader(raw_handle, digest.update)
+            if member_metadata is not None
+            else raw_handle,
+            encoding="utf-8-sig",
+            newline="",
+        ) as text_handle,
+    ):
         reader = csv.DictReader(text_handle)
-        fieldnames = set(reader.fieldnames or [])
+        columns = list(reader.fieldnames or [])
+        fieldnames = set(columns)
         if not fieldnames:
             raise ValueError(f"{member_name} is missing a header row.")
 
@@ -800,8 +841,13 @@ def _iter_gtfs_rows(
             missing_display = ", ".join(missing_columns)
             raise ValueError(f"{member_name} is missing required columns: {missing_display}")
 
+        row_count = 0
         for row in reader:
+            row_count += 1
             yield _normalize_row(row)
+        # Publish facts only after EOF; a failed or abandoned load has no complete receipt.
+        if member_metadata is not None:
+            member_metadata[member_name] = _MemberMetadata(columns, row_count, digest.hexdigest())
 
 
 def _build_route_record(
@@ -1061,6 +1107,7 @@ def _load_member_rows(
     copy_target: CopyTarget | None = None,
     strict_gtfs: bool = True,
     conformance: list[dict[str, str]] | None = None,
+    member_metadata: dict[str, _MemberMetadata] | None = None,
 ) -> int:
     if member_key not in member_map:
         return 0
@@ -1084,15 +1131,14 @@ def _load_member_rows(
             zip_file,
             member_name=member_name,
             required_columns=required_columns,
+            member_metadata=member_metadata,
         )
     )
     if copy_target is not None:
         return execute_copy_insert(connection, target=copy_target, rows=rows)
     if statement is None:
         raise ValueError("A SQL statement or COPY target is required.")
-    return execute_batched_insert(
-        connection, statement=statement, rows=rows, chunk_size=CHUNK_SIZE
-    )
+    return execute_batched_insert(connection, statement=statement, rows=rows, chunk_size=CHUNK_SIZE)
 
 
 def _load_translation_rows(
@@ -1104,6 +1150,7 @@ def _load_translation_rows(
     dataset_version_id: int,
     strict_gtfs: bool = True,
     conformance: list[dict[str, str]] | None = None,
+    member_metadata: dict[str, _MemberMetadata] | None = None,
 ) -> int:
     member_key = "translations.txt"
     if member_key not in member_map:
@@ -1130,6 +1177,7 @@ def _load_translation_rows(
                 zip_file,
                 member_name=member_name,
                 required_columns=required_columns,
+                member_metadata=member_metadata,
             ),
             start=1,
         )
@@ -1156,24 +1204,28 @@ def _record_gtfs_source_members(
     provider_id: str,
     dataset_version_id: int,
     loaded_at_utc: datetime,
+    member_metadata: dict[str, _MemberMetadata] | None = None,
 ) -> int:
     rows: list[dict[str, object]] = []
     for source_file_name, member_path in _txt_member_items(member_map):
-        columns, row_count = _read_member_columns_and_row_count(zip_file, member_path)
+        metadata = member_metadata.get(member_path) if member_metadata is not None else None
+        if metadata is None:
+            columns, row_count = _read_member_columns_and_row_count(zip_file, member_path)
+            metadata = _MemberMetadata(columns, row_count, _hash_zip_member(zip_file, member_path))
         rows.append(
             {
                 "dataset_version_id": dataset_version_id,
                 "provider_id": provider_id,
                 "source_file_name": source_file_name,
                 "member_path": member_path,
-                "row_count": row_count,
-                "checksum_sha256": _hash_zip_member(zip_file, member_path),
+                "row_count": metadata.row_count,
+                "checksum_sha256": metadata.checksum_sha256,
                 "byte_size": zip_file.getinfo(member_path).file_size,
                 "first_seen_at_utc": loaded_at_utc,
                 "last_seen_at_utc": loaded_at_utc,
                 "manifest_json": {
-                    "columns": columns,
-                    "column_count": len(columns),
+                    "columns": metadata.columns,
+                    "column_count": len(metadata.columns),
                 },
             }
         )
@@ -1393,6 +1445,84 @@ def register_dataset_version(
     return dataset_version_id, version_loaded_at_utc
 
 
+@dataclass(frozen=True)
+class StaticApplicationState:
+    content_hash: str | None
+    gold_applied: bool
+
+
+def prepare_static_application(provider_id: str, *, engine: Engine) -> StaticApplicationState:
+    with engine.begin() as connection:
+        applied = connection.execute(
+            text(
+                """
+                SELECT dv.dataset_version_id, dv.content_hash, dv.is_current,
+                    EXISTS (
+                        SELECT 1 FROM gold.dim_route AS r
+                        WHERE r.provider_id = dv.provider_id
+                          AND r.dataset_version_id = dv.dataset_version_id
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM gold.dim_route AS r
+                        WHERE r.provider_id = dv.provider_id
+                          AND r.dataset_version_id <> dv.dataset_version_id
+                    ) AS gold_applied
+                FROM core.dataset_versions AS dv
+                WHERE dv.provider_id = :provider_id
+                  AND dv.dataset_kind = 'static_schedule'
+                  AND EXISTS (
+                      SELECT 1 FROM silver.routes AS r
+                      WHERE r.dataset_version_id = dv.dataset_version_id
+                  )
+                ORDER BY dv.is_current DESC, dv.loaded_at_utc DESC,
+                         dv.dataset_version_id DESC
+                LIMIT 1
+                """
+            ),
+            {"provider_id": provider_id},
+        ).mappings().one_or_none()
+        if applied is not None and not applied["is_current"]:
+            connection.execute(
+                text(
+                    """
+                    UPDATE core.dataset_versions
+                    SET is_current = (dataset_version_id = :dataset_version_id)
+                    WHERE provider_id = :provider_id
+                      AND dataset_kind = 'static_schedule'
+                      AND (is_current OR dataset_version_id = :dataset_version_id)
+                    """
+                ),
+                {"provider_id": provider_id, "dataset_version_id": applied["dataset_version_id"]},
+            )
+    return StaticApplicationState(
+        content_hash=str(applied["content_hash"]) if applied is not None else None,
+        gold_applied=bool(applied["gold_applied"]) if applied is not None else False,
+    )
+
+
+def _pin_static_archive_source(connection: Connection, archive: BronzeStaticArchive) -> None:
+    if not connection.in_transaction() or getattr(
+        connection.connection.dbapi_connection, "autocommit", True
+    ):
+        raise ValueError("Static loading requires a non-autocommit transaction")
+    source_id = connection.execute(
+        text("""
+            SELECT io.ingestion_object_id
+            FROM raw.ingestion_objects io
+            WHERE io.ingestion_object_id = :object_id
+              AND io.ingestion_run_id = :run_id
+              AND io.provider_id = :provider_id
+            FOR KEY SHARE OF io
+        """),
+        {
+            "object_id": archive.source_ingestion_object_id,
+            "run_id": archive.source_ingestion_run_id,
+            "provider_id": archive.provider_id,
+        },
+    ).scalar_one_or_none()
+    if source_id is None:
+        raise ValueError("Static archive source is no longer available for loading")
+
+
 def load_static_zip_to_silver(
     connection: Connection,
     *,
@@ -1401,13 +1531,12 @@ def load_static_zip_to_silver(
     require_beta_static_contract: bool = False,
     strict_gtfs: bool = True,
 ) -> StaticSilverLoadResult:
-    if not bronze_storage.exists(archive.storage_path):
-        archive_location = bronze_storage.describe_location(archive.storage_path)
-        raise FileNotFoundError(
-            f"Bronze archive file not found: {archive_location}"
-        )
-
+    _pin_static_archive_source(connection, archive)
     archive_bytes = bronze_storage.read_bytes(archive.storage_path)
+    if archive.byte_size is not None and len(archive_bytes) != archive.byte_size:
+        raise ValueError("Bronze static archive size does not match the captured metadata.")
+    if hashlib.sha256(archive_bytes).hexdigest() != archive.checksum_sha256:
+        raise ValueError("Bronze static archive checksum does not match the captured metadata.")
 
     dataset_version_id, loaded_at_utc = register_dataset_version(
         connection,
@@ -1427,124 +1556,79 @@ def load_static_zip_to_silver(
         )
         if require_beta_static_contract:
             validate_beta_static_contract(member_map, zip_file)
+        member_metadata: dict[str, _MemberMetadata] = {}
+        load_member = partial(
+            _load_member_rows,
+            connection,
+            member_metadata=member_metadata,
+            zip_file=zip_file,
+            member_map=member_map,
+            provider_id=archive.provider_id,
+            dataset_version_id=dataset_version_id,
+        )
         row_counts = {
-            "routes": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "routes": load_member(
                 member_key="routes.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_route_record,
                 statement=ROUTES_INSERT,
             ),
-            "stops": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "stops": load_member(
                 member_key="stops.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_stop_record,
                 copy_target=STOPS_COPY,
             ),
-            "trips": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "trips": load_member(
                 member_key="trips.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_trip_record,
                 copy_target=TRIPS_COPY,
             ),
-            "stop_times": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "stop_times": load_member(
                 member_key="stop_times.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_stop_time_record,
                 copy_target=STOP_TIMES_COPY,
             ),
-            "calendar": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "calendar": load_member(
                 member_key="calendar.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_calendar_record,
                 statement=CALENDAR_INSERT,
             ),
-            "calendar_dates": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "calendar_dates": load_member(
                 member_key="calendar_dates.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_calendar_date_record,
                 statement=CALENDAR_DATES_INSERT,
             ),
         }
         optional_row_counts = {
-            "agency": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "agency": load_member(
                 member_key="agency.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_agency_record,
                 statement=AGENCY_INSERT,
                 strict_gtfs=strict_gtfs,
                 conformance=conformance,
             ),
-            "feed_info": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "feed_info": load_member(
                 member_key="feed_info.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_feed_info_record,
                 statement=FEED_INFO_INSERT,
                 strict_gtfs=strict_gtfs,
                 conformance=conformance,
             ),
-            "directions": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "directions": load_member(
                 member_key="directions.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_direction_record,
                 statement=DIRECTIONS_INSERT,
                 strict_gtfs=strict_gtfs,
                 conformance=conformance,
             ),
-            "route_patterns": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "route_patterns": load_member(
                 member_key="route_patterns.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_route_pattern_record,
                 statement=ROUTE_PATTERNS_INSERT,
                 strict_gtfs=strict_gtfs,
                 conformance=conformance,
             ),
-            "shapes": _load_member_rows(
-                connection,
-                zip_file=zip_file,
-                member_map=member_map,
+            "shapes": load_member(
                 member_key="shapes.txt",
-                provider_id=archive.provider_id,
-                dataset_version_id=dataset_version_id,
                 builder=_build_shape_record,
                 copy_target=SHAPES_COPY,
                 strict_gtfs=strict_gtfs,
@@ -1552,6 +1636,7 @@ def load_static_zip_to_silver(
             ),
             "translations": _load_translation_rows(
                 connection,
+                member_metadata=member_metadata,
                 zip_file=zip_file,
                 member_map=member_map,
                 provider_id=archive.provider_id,
@@ -1560,6 +1645,8 @@ def load_static_zip_to_silver(
                 conformance=conformance,
             ),
         }
+        if row_counts["routes"] == 0:
+            raise ValueError("Static GTFS routes.txt must contain at least one route.")
         row_counts.update(
             {
                 member_name: row_count
@@ -1569,6 +1656,7 @@ def load_static_zip_to_silver(
         )
         member_count = _record_gtfs_source_members(
             connection,
+            member_metadata=member_metadata,
             zip_file=zip_file,
             member_map=member_map,
             provider_id=archive.provider_id,
@@ -1617,8 +1705,6 @@ def _archive_requires_beta_static_contract(archive: BronzeStaticArchive) -> bool
     return any("beta" in token.lower() for token in source_tokens)
 
 
-# Every table the static load bulk-seeds; each gets a post-commit ANALYZE so the
-# first post-flip reader plans against real row counts, not pre-seed statistics.
 _POST_LOAD_ANALYZE_TABLES = (
     "silver.agency",
     "silver.feed_info",
@@ -1641,6 +1727,7 @@ def load_latest_static_to_silver(
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    expected_checksum_sha256: str | None = None,
 ) -> StaticSilverLoadResult:
     settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
@@ -1659,6 +1746,11 @@ def load_latest_static_to_silver(
             settings=settings,
             project_root=_project_root(),
         )
+    if expected_checksum_sha256 is not None and archive.checksum_sha256 != expected_checksum_sha256:
+        raise ValueError(
+            "Latest Bronze static archive does not match the captured checksum. "
+            "Retry run-static-pipeline to capture the current source again."
+        )
     bronze_storage = get_bronze_storage(
         settings,
         project_root=_project_root(),
@@ -1676,20 +1768,13 @@ def load_latest_static_to_silver(
             require_beta_static_contract=_archive_requires_beta_static_contract(archive),
             strict_gtfs=effective_strict,
         )
+        for table in _POST_LOAD_ANALYZE_TABLES:
+            connection.execute(text(f"ANALYZE {table}"))
         # NOTE: static dataset pruning is intentionally NOT done here. Running it
         # inside the load transaction (before refresh_gold_static re-points the
         # gold dims) FK-violates with STATIC_DATASET_RETENTION_COUNT=1 and rolls
         # back the entire silver load on every content change. Worker-cycle
         # prune_silver_storage owns all static cleanup now (slice-9.1.1j).
 
-    # A bulk-seeded dataset version leaves the planner with stale per-column
-    # stats until autovacuum catches up; the first post-flip publish query then
-    # mis-plans (rows≈1 estimate vs ~650k actual → join-filter nested loops, the
-    # 0166-class planner disease — STO 2026-07-01: an 89-minute static-publish
-    # hang killed two daily runs). ANALYZE costs seconds relative to a seed and
-    # must run after the load transaction commits so it sees the new rows.
-    with engine.begin() as analyze_connection:
-        for table in _POST_LOAD_ANALYZE_TABLES:
-            analyze_connection.execute(text(f"ANALYZE {table}"))
 
     return result

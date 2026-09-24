@@ -64,7 +64,7 @@ from transit_ops.snapshots.gate import (
     check_stop_history_partition_ref,
 )
 from transit_ops.snapshots.paths import safe_public_path
-from transit_ops.snapshots.publish import _acquire_publish_lock
+from transit_ops.snapshots.publication_lane import acquire_publication_lane
 from transit_ops.snapshots.storage import (
     StoredObjectVersion,
     StoredObjectVersionMismatchError,
@@ -1122,7 +1122,7 @@ def run_historic_snapshot_gc(
     resolved_storage = storage or build_snapshot_storage(settings, provider_id=provider_id)
     scanned_at = now or datetime.now(UTC)
     with resolved_engine.begin() as conn:
-        _acquire_publish_lock(conn, provider_id=provider_id, tier="historic")
+        acquire_publication_lane(conn, provider_id=provider_id, tier="historic")
         existing = _load_marks(conn, provider_id)
         report = plan_historic_generation_gc(
             resolved_storage,

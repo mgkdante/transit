@@ -5,6 +5,11 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/receipt'), state: {} },
+}));
+
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
 
 class ReconciliationIntersectionObserver {
@@ -102,6 +107,12 @@ const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
 	getAdvertisedReceipt: vi.fn(),
+}));
+
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
+	}),
 }));
 
 vi.mock('$lib/v1/repositories/historic', () => ({
@@ -210,7 +221,7 @@ describe('AccountabilityReceipt article shell', () => {
 		for (const name of [
 			'The receipt',
 			'By time of day',
-			'Service delivered',
+			'Service counts',
 			'Scheduled but never appeared',
 		]) {
 			expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
@@ -243,7 +254,7 @@ describe('AccountabilityReceipt article shell', () => {
 		).toHaveTextContent('04');
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(within(rail).queryByRole('button', { name: 'By time of day' })).toBeNull();
-		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Service counts' })).toBeInTheDocument();
 		expect(
 			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
 		).toBeInTheDocument();
@@ -270,7 +281,7 @@ describe('AccountabilityReceipt article shell', () => {
 		let rail = deliveredOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(card(deliveredOnly.container, 'receipt-delivered')).not.toBeNull();
 		expect(deliveredOnly.container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Service counts' })).toBeInTheDocument();
 		expect(within(rail).queryByRole('button', { name: 'Scheduled but never appeared' })).toBeNull();
 		deliveredOnly.unmount();
 		resetReceiptState();
@@ -293,7 +304,7 @@ describe('AccountabilityReceipt article shell', () => {
 		rail = silentOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(silentOnly.container.querySelector('[data-toc="receipt-delivered"]')).toBeNull();
 		expect(card(silentOnly.container, 'receipt-silent')).not.toBeNull();
-		expect(within(rail).queryByRole('button', { name: 'Service delivered' })).toBeNull();
+		expect(within(rail).queryByRole('button', { name: 'Service counts' })).toBeNull();
 		expect(
 			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
 		).toBeInTheDocument();
@@ -467,7 +478,7 @@ describe('AccountabilityReceipt article shell', () => {
 			});
 			await waitFor(() => {
 				expect(container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-				expect(within(rail).getByRole('button', { name: 'Service delivered' })).toHaveAttribute(
+				expect(within(rail).getByRole('button', { name: 'Service counts' })).toHaveAttribute(
 					'aria-current',
 					'location',
 				);
@@ -498,14 +509,36 @@ describe('AccountabilityReceipt headline + counts', () => {
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 		expect(screen.getByText('3.4 min')).toBeInTheDocument();
-		expect(screen.getByText('7.2')).toBeInTheDocument();
+		expect(screen.queryByText('7.2')).not.toBeInTheDocument();
+		expect(screen.queryByText('Rider impact')).not.toBeInTheDocument();
+		expect(screen.getByLabelText('Day verdict')).toHaveTextContent(
+			'82% of known-delay predictions were in the on-time band',
+		);
 	});
+
+	it.each([-8.4, 0, 8.4])(
+		'preserves a %s-point route comparison with the same-day network',
+		async (delta) => {
+			receiptData = {
+				...(receiptData as Receipt),
+				worst_route: { id: '161', name: 'Van Horne', otp_delta_pts: delta },
+			};
+			render(AccountabilityReceipt);
+			await screen.findByText('82%');
+			const verdict = screen.getByLabelText('Day verdict');
+			expect(verdict).toHaveTextContent(
+				`highest mean delay: Van Horne (on-time ${delta > 0 ? '+' : ''}${delta} pts vs network)`,
+			);
+			expect(verdict).not.toHaveTextContent('lost');
+		},
+	);
 
 	it('renders the affected counts on the day', async () => {
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('340')).toBeInTheDocument();
 		expect(screen.getByText('12')).toBeInTheDocument();
 		expect(screen.getByText('5')).toBeInTheDocument();
+		expect(screen.getByText('Alert message versions')).toBeInTheDocument();
 	});
 
 	it('links the worst route to its detail page and the worst stop to its detail page', async () => {

@@ -11,7 +11,6 @@
   Pure presenter of `selectHeadlineKpis(...).headline`; the orchestrator does the mapping pass.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -43,24 +42,21 @@
 			title: string;
 			tag: string;
 			footerItems: TerminalFooterItem[];
-			meta: Snippet;
 		};
 	}
 	let { cards, info, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
 </script>
 
-<!-- Glance board — the four scalars on an auto-fit grid so they fill the desktop width and
-     reflow to one column on a phone. No `label`: the enclosing LIVE region already names it. -->
+<!-- Four scalars form two balanced rows, or one column when two cards cannot fit. -->
 <NetworkTile title={copy.liveSection} sectionKey="network-live-headline">
 	<p class="network-live-lede" data-slot="network-lede">{copy.lede}</p>
 	<TerminalPanel
 		title={terminal.title}
 		tag={terminal.tag}
-		meta={terminal.meta}
 		footerItems={terminal.footerItems}
 		class="network-live-terminal"
 	>
-		<DashboardGrid minTile="220px" gutter={false}>
+		<DashboardGrid minTile="max(220px, calc((100% - var(--space-card-gap)) / 2))" gutter={false}>
 			{#each cards as card (card.label)}
 				{@const i = info(card.key, card.label)}
 				<ExplainedMetricCard

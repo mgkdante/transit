@@ -1,30 +1,3 @@
-<!--
-  §2 The wait — "How long until the next bus, and is it steady?"
-
-  The wait-and-regularity rider-question section. Leads with the ONE always-visible
-  PRIMARY chart — the scheduled-vs-observed headway DUMBBELL, all shifts in one
-  comparable chart on the fixed HEADWAY_DOMAIN, the connector span = the excess wait
-  — then tucks the analyst detail behind the progressive-disclosure `<Detail>`:
-  the whole-day excess-wait headline, the per-shift breakdown (excess-wait RankedRow
-  + CoV/bunched SeverityBars), the observed-gap-by-direction table, and the
-  service-span timeline + its four numeric tiles.
-
-  Reads two contract slices, both guarded by the foundation VM mapper:
-    · headway[]       (WaitRegularityVM), scheduled-vs-observed headway +
-      excess wait per shift, plus the regularity readings (CoV, bunched %).
-    · service_spans[] (ServiceSpanPeriod[]), the most-recent service-span day:
-      first/last trip span (min) + first/last-trip punctuality.
-
-  DOCTRINE upheld here:
-    · every data mark rides the dataviz scale (SeverityBar owns that); --primary
-      stays interactive-only.
-    · honest empties, when headway is empty we render the section's no-data note,
-      not a zeroed bar; same for the service-span sub-block. A null metric shows
-      "—", never a fabricated 0.
-  Bilingual: FR is canonical; band-local labels are co-located below (BAND_COPY) and
-  the shared honest-state notes + section overline/question come from the passed copy.
-  Reduced-motion is honoured by the primitives (SeverityBar guards its own transition).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { absenceShort } from '$lib/site/absence';
@@ -33,7 +6,7 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { DeltaStat } from '$lib/components/dataviz';
 	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
-	import { meanPriorDelta, type PriorDelta } from '../selectors/priorDelta';
+	import { priorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import { selectDirectionAsymmetry } from '../selectors/directionAsymmetry';
@@ -118,8 +91,6 @@
 		readonly firstTripDelay: string;
 		readonly lastTripDelay: string;
 		readonly tripCount: string;
-		/** a11y prefix for the per-shift excess-wait magnitude bar. */
-		readonly excessWaitMagnitude: (shift: string) => string;
 		/** "more detail" reveal label for the per-direction / weekend shift rows. */
 		readonly moreDetail: string;
 		/** Heading for the per-direction observed-gap comparison inside the reveal. */
@@ -130,21 +101,14 @@
 		readonly directionCol: (n: number) => string;
 		/** Direction-table row-label suffix for the weekend variant. */
 		readonly weekendSuffix: string;
-		/** Suffix for the whole-day excess-wait headline (mean across the shifts). */
-		readonly allDay: string;
-		/** Excess-wait explainer for the WINDOWED grains (true passenger-weighted EWT). */
+		/** The headline gives each reporting shift equal weight. */
+		readonly shiftMean: string;
+		readonly priorDirectionNote: string;
+		/** Excess-wait model and reporting-shift aggregation limits. */
 		readonly excessWaitExplain: string;
 		/** Excess-wait explainer for the SCALAR whole-history rows (the typical-gap proxy, which
 		 *  carries no variance term — those rows read off route_headway_by_shift, no moment sums). */
 		readonly excessWaitProxyExplain: string;
-		/** Whole-dumbbell accessible summary, given the scheduled + observed readings. */
-		readonly dumbbellAria: (scheduled: string, observed: string) => string;
-		/** Excess-wait annotation prefix beside the dumbbell, given the formatted value. */
-		readonly dumbbellExcess: (value: string) => string;
-		/** a11y prefix for the per-shift CoV (regularity) magnitude bar. */
-		readonly covMagnitude: (shift: string) => string;
-		/** a11y prefix for the per-shift bunched-share magnitude bar. */
-		readonly bunchedMagnitude: (shift: string) => string;
 		/** Value-axis title for the scheduled-vs-observed headway dumbbell. */
 		readonly headwayAxis: string;
 		/** Overline for the always-visible direction-asymmetry callout. */
@@ -162,27 +126,22 @@
 	const BAND_COPY: Record<Locale, BandCopy> = {
 		fr: {
 			headwaySection: 'Attente par période',
-			spanSection: 'Plage de service',
-			serviceSpan: 'Durée de service',
-			firstTripDelay: 'Retard 1er départ',
-			lastTripDelay: 'Retard dernier départ',
-			tripCount: 'Voyages',
-			excessWaitMagnitude: (shift) => `Attente excédentaire, ${shift}`,
+			spanSection: 'Premières apparitions de trajets',
+			serviceSpan: 'Écart entre premières captures',
+			firstTripDelay: 'Premier trajet : retard du premier relevé',
+			lastTripDelay: 'Dernier trajet : retard du dernier relevé',
+			tripCount: 'Identifiants de trajet observés',
 			moreDetail: 'Plus de détail · intervalle observé par direction',
 			directionGap: 'Intervalle observé par direction',
 			directionShiftCol: 'Période',
 			directionCol: (n) => `Direction ${n}`,
 			weekendSuffix: 'fin de sem.',
-			allDay: 'sur la journée',
+			shiftMean: 'moyenne des périodes rapportées',
+			priorDirectionNote: 'La direction la plus achalandée peut changer entre les fenêtres.',
 			excessWaitExplain:
-				"Le temps d'attente supplémentaire réel des usagers, au-delà d'un bus parfaitement régulier. C'est pondéré par les passagers : quand les bus se collent, les longs intervalles touchent plus de monde et font monter ce chiffre. 0 signifie que le service vaut (ou dépasse) ce que l'horaire promet.",
+				"Chaque période rapportée a le même poids. Le modèle suppose des arrivées uniformes et estime le surplus au-delà de la moitié de l'intervalle prévu. Les apparitions dans le flux ne mesurent pas l'attente aux arrêts.",
 			excessWaitProxyExplain:
-				"De combien l'intervalle TYPIQUE entre les bus dépasse l'intervalle prévu. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue. C'est l'excédent d'intervalle typique, pas une attente pondérée par la variance; quand les bus se collent, certains usagers attendent plus longtemps.",
-			dumbbellAria: (scheduled, observed) =>
-				`Intervalle prévu ${scheduled} min, intervalle observé ${observed} min`,
-			dumbbellExcess: (value) => `Attente excédentaire ${value} min`,
-			covMagnitude: (shift) => `Régularité (CV), ${shift}`,
-			bunchedMagnitude: (shift) => `Part de bus collés, ${shift}`,
+				"Moyenne non pondérée des écarts médians excédentaires des périodes rapportées, ramenés à zéro au minimum. Ce proxy compare l'intervalle observé à l'intervalle prévu; il n'estime pas l'attente des usagers.",
 			headwayAxis: 'Intervalle (min)',
 			directionAsymmetryLabel: 'La direction compte',
 			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
@@ -190,27 +149,22 @@
 		},
 		en: {
 			headwaySection: 'Wait by shift',
-			spanSection: 'Service span',
-			serviceSpan: 'Span',
-			firstTripDelay: 'First-trip delay',
-			lastTripDelay: 'Last-trip delay',
-			tripCount: 'Trips',
-			excessWaitMagnitude: (shift) => `Excess wait, ${shift}`,
+			spanSection: 'Trip first appearances',
+			serviceSpan: 'First-report span',
+			firstTripDelay: 'First trip: delay in earliest report',
+			lastTripDelay: 'Last trip: delay in latest report',
+			tripCount: 'Trip IDs observed',
 			moreDetail: 'More detail · observed gap by direction',
 			directionGap: 'Observed gap by direction',
 			directionShiftCol: 'Shift',
 			directionCol: (n) => `Direction ${n}`,
 			weekendSuffix: 'weekend',
-			allDay: 'across the day',
+			shiftMean: 'mean across reported shifts',
+			priorDirectionNote: 'The busiest direction can change between windows.',
 			excessWaitExplain:
-				'The extra time riders actually wait, beyond an evenly-scheduled bus. It is passenger-weighted, so bunching counts: when buses clump, the long gaps catch more riders and push this up. 0 means service is as good as (or better than) the schedule promises.',
+				'Each reported shift has equal weight. The estimates assume uniform rider arrivals and model extra wait above half the scheduled gap. Feed appearances do not measure waits at stops.',
 			excessWaitProxyExplain:
-				'How much longer the TYPICAL gap between buses runs than scheduled. 0 means the line met (or beat) its planned frequency. This is the typical-gap excess, not a variance-aware wait. When buses bunch, some riders wait longer than this.',
-			dumbbellAria: (scheduled, observed) =>
-				`Scheduled gap ${scheduled} min, observed gap ${observed} min`,
-			dumbbellExcess: (value) => `Excess wait ${value} min`,
-			covMagnitude: (shift) => `Regularity (CoV), ${shift}`,
-			bunchedMagnitude: (shift) => `Bunched share, ${shift}`,
+				"Unweighted mean of the reported shifts' median-gap excesses, each clamped to zero. This proxy compares observed and scheduled gaps; it does not estimate passenger wait.",
 			headwayAxis: 'Headway (min)',
 			directionAsymmetryLabel: 'Direction matters',
 			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
@@ -247,10 +201,7 @@
 	/** Short value-level no-data label for chart and inline string consumers. */
 	const valueNoData = $derived(absenceShort('no-observations', locale));
 
-	/* ── service-span timeline copy + formatters ──────────────────────────────
-	   The first/last-trip clock times resolve inside the service-span mark (it owns the
-	   UTC→wall-clock + the fixed 24h axis); here we only shape the two TEXT annotations
-	   it renders (span length + trip count), both honest-null when absent. */
+	// Preserve the selected row's published whole-minute span and trip-count annotations.
 	const spanCopy = $derived(copy.serviceSpanTimeline);
 	/** A whole-minute span → a compact "{H}h {MM}m" / "{M}m" duration. null when absent. */
 	const spanDuration = (v: number | null | undefined): string | null => {
@@ -286,9 +237,7 @@
 		readonly covSeverity: SeverityCode;
 		/** PR-WEB-3 comparison-vs-prior: this window's gap-sample n + the prior window's observed
 		 *  median + n (only on the windowed headway_by_grain rows; null on the scalar history). */
-		readonly observationCount: number | null;
 		readonly priorObserved: number | null;
-		readonly priorObservationCount: number | null;
 	}
 
 	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
@@ -327,9 +276,7 @@
 			magnitude: h.excess_wait_min ?? null,
 			severity: bunchingToSeverity(h.bunched_pct),
 			covSeverity: covToSeverity(h.cov),
-			observationCount: h.observation_count ?? null,
 			priorObserved: h.prior_observed_min ?? null,
-			priorObservationCount: h.prior_observation_count ?? null,
 		})),
 	);
 
@@ -358,18 +305,12 @@
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
 
-	/* ── DETAIL — wait by shift · vs prior {window} (PR-WEB-3) ───────────────────
-	   The busiest-direction observed wait per shift, each with a Δ-vs-prior badge gated by a
-	   shared-CoV two-sample z-test (meanPriorDelta — observed headway is a MEAN, not a rate, so
-	   a proportion test would be invalid). Shown ONLY when the headway breakdown is windowed
-	   (headway_by_grain present) — the scalar whole-history rows carry no prior. Honest absence:
-	   no prior window → the neutral "no prior {window}" marker (never a fake 0); an insignificant
-	   jitter → "within noise" (neutral), never a coloured arrow (a RISING wait is the bad way). */
+	// Compare reported medians for adjacent windows; this is descriptive, not inference.
 	interface WaitCompareRow {
 		readonly key: string;
 		readonly label: string;
 		readonly observed: number | null;
-		readonly delta: PriorDelta;
+		readonly delta: number | null;
 	}
 	const waitCompareRows = $derived<WaitCompareRow[]>(
 		mainRows
@@ -381,13 +322,7 @@
 				key: `${r.shift}-${i}`,
 				label: shiftLabel(r),
 				observed: r.observed,
-				delta: meanPriorDelta(
-					r.observed,
-					r.observationCount,
-					r.priorObserved,
-					r.priorObservationCount,
-					{ cov: r.cov },
-				),
+				delta: priorDelta(r.observed, r.priorObserved, 1),
 			})),
 	);
 	const hasWaitCompare = $derived(wait.windowed && waitCompareRows.length > 0);
@@ -491,28 +426,19 @@
 		selectDirectionAsymmetry(directionRows, { dir0Label, dir1Label }),
 	);
 
-	// The headline excess-wait read, lifted to a prominent ExplainedMetricCard so the
-	// "extra wait over WHAT" baseline is ALWAYS visible beside the number (the operator's
-	// "1.8 min over what" fix). It represents the WHOLE DAY — the mean excess wait across the
-	// shifts that carry a value — NOT a cherry-picked shift (a single time-of-day in the
-	// headline reads as arbitrary "why morning?"). The per-shift breakdown below shows the
-	// variation, so the bad shifts stay visible; the headline is just the at-a-glance typical.
+	// Per-shift values lack additive gap moments: this is an unweighted shift mean.
 	const excessWaitValues = $derived(
-		mainRows.map((r) => r.excessWait).filter((v): v is number => v != null),
+		mainRows.map((r) => r.excessWait).filter((v): v is number => v != null && Number.isFinite(v)),
 	);
-	const allDayExcessWait = $derived<number | null>(
+	const meanShiftExcessWait = $derived<number | null>(
 		excessWaitValues.length > 0
 			? excessWaitValues.reduce((sum, v) => sum + v, 0) / excessWaitValues.length
 			: null,
 	);
-	const hasExcessHeadline = $derived(allDayExcessWait != null);
+	const hasExcessHeadline = $derived(meanShiftExcessWait != null);
 
-	// S7 P5: the all-day excess-wait headline as a LayerChart bullet on the headway scale
-	// (the SAME fixed HEADWAY_DOMAIN the dumbbell uses, so the excess reads the same length).
-	// The always-visible "over the scheduled gap" baseline rides the caption (the "1.8 min
-	// over WHAT" fix); the amber tone is the extra-wait voice.
 	const excessBullet = $derived(
-		selectBullet(allDayExcessWait, locale, {
+		selectBullet(meanShiftExcessWait, locale, {
 			title: terms.excessWait,
 			xLabel: terms.excessWait,
 			unit: ' min',
@@ -600,10 +526,7 @@
 	);
 	const hasSpan = $derived(latestSpan != null);
 
-	// S7 P5: the first→last service-span TIMELINE as a LayerChart mark (24h axis + a floating
-	// bar) — the same face as every other chart. The selector resolves the ISO endpoints to
-	// wall-clock minutes + builds the signed-delay readings; honest absence (an unresolvable
-	// endpoint) returns an absence spec the <Chart> renders as the no-data chip.
+	// Geometry uses elapsed instants; endpoint labels retain provider-local dates and offsets.
 	const serviceSpanSpec = $derived(
 		latestSpan
 			? selectServiceSpan(
@@ -627,7 +550,7 @@
 							count(latestSpan.trip_count) != null
 								? spanCopy.trips(count(latestSpan.trip_count)!)
 								: null,
-						hourLabel: (h) => `${String(h).padStart(2, '0')}h`,
+						hourLabel: (h) => `+${h}h`,
 						ariaLabel: spanCopy.ariaLabel,
 						absentTitle: t.spanSection,
 						noDataLabel: valueNoData,
@@ -656,21 +579,15 @@
 	<li
 		class="compare-row"
 		data-slot="wait-compare-row"
-		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+		data-prior={row.delta == null ? 'absent' : row.delta === 0 ? 'flat' : 'change'}
 	>
 		<span class="compare-label">{row.label}</span>
 		<span class="compare-value">{min(row.observed) ?? valueNoData}</span>
 		<DeltaStat
 			class="compare-delta"
-			delta={row.delta.significant ? row.delta.delta : null}
-			display={row.delta.significant && row.delta.delta != null
-				? fmtMinDelta(row.delta.delta)
-				: undefined}
-			context={row.delta.significant
-				? copy.priorDelta.vsPrior[win]
-				: row.delta.hasPrior
-					? copy.priorDelta.withinNoise
-					: copy.priorDelta.noPrior[win]}
+			delta={row.delta}
+			display={row.delta != null ? fmtMinDelta(row.delta) : undefined}
+			context={row.delta != null ? copy.priorDelta.vsPrior[win] : copy.priorDelta.noPrior[win]}
 			ariaNoun={`${row.label} ${copy.priorDelta.waitNoun}`}
 		/>
 	</li>
@@ -745,16 +662,10 @@
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
 			<!-- Headway-by-shift sub-block. -->
 			<div class="cluster-sub" data-sub="headway">
-				<!-- S7: the headline excess-wait read, lifted to a prominent 2-col card whose
-				     always-visible explanation states the baseline ("over the scheduled gap")
-				     beside the number — the operator's "1.8 min over what" fix. -->
 				{#if hasExcessHeadline}
-					<!-- S7 P5: the all-day excess-wait headline as a MetricBullet — the number is the
-					     value voice, the bullet its scale context on the headway domain; the always-
-					     visible "over the scheduled gap" baseline rides the caption (the "over what" fix). -->
 					<MetricBullet
-						label={`${terms.excessWait} · ${t.allDay}`}
-						valueText={min(allDayExcessWait)}
+						label={`${terms.excessWait} · ${t.shiftMean}`}
+						valueText={min(meanShiftExcessWait)}
 						spec={excessBullet}
 						{locale}
 						size="lg"
@@ -765,9 +676,6 @@
 					/>
 				{/if}
 
-				<!-- Wait by shift · vs the prior window (PR-WEB-3): the busiest-direction observed
-				     wait per shift with a significance-gated Δ-vs-prior badge. Windowed-only (the
-				     scalar whole-history headway carries no prior to compare). -->
 				{#if hasWaitCompare}
 					<div class="block" data-slot="wait-vs-prior" data-card>
 						<span class="label-with-info">
@@ -779,6 +687,7 @@
 						</ul>
 						<p class="compare-caption" data-slot="wait-vs-prior-caption">
 							{copy.priorDelta.caption}
+							{t.priorDirectionNote}
 						</p>
 					</div>
 				{/if}
@@ -874,10 +783,7 @@
 						</span>
 					</div>
 
-					<!-- P3: the first→last service-span TIMELINE as a LayerChart mark (24h axis + a
-					     floating bar), with signed first/last-trip punctuality readings beside it. The
-					     numeric tiles below remain the exact reading; this is the at-a-glance shape.
-					     Honest absence (no resolvable first/last departure) lives in the selector. -->
+					<!-- The timeline uses instants; the tiles retain the selected row's published metrics. -->
 					{#if serviceSpanSpec}
 						<Chart spec={serviceSpanSpec} />
 					{/if}

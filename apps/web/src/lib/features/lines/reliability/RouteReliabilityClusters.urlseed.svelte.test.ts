@@ -89,7 +89,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		// would leave the radiogroup with ZERO checked chips.
 		const checked = container.querySelectorAll('[role="radio"][aria-checked="true"]');
 		expect(checked.length).toBe(1);
-		expect(checked[0].textContent?.toLowerCase()).toContain('today');
+		expect(checked[0].textContent?.toLowerCase()).toContain('latest day');
 	});
 
 	it('mirrors a grain change to ?grain AND OMITS the day default (clean canonical URL)', async () => {
@@ -180,7 +180,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(caption(container)).toBe(caption(dflt));
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('today');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest day');
 	});
 
 	// HIGH-2 companion: a bare ?from/?to with a PARTIALLY out-of-window bound (one real, one
@@ -192,7 +192,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 			props: { data: rangeData, locale: 'en' },
 		});
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('today');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest day');
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 	});
 

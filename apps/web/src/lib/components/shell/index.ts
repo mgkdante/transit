@@ -1,10 +1,7 @@
 // $lib/components/shell — the responsive app-shell chrome.
 //
-// The shell is the persistent application frame: a floating NavPill (which carries
-// ALL site nav — Map/Lines/Stops/Network + Audit via the hamburger) over a
-// full-bleed MapStage + a RightPanel (desktop) / BottomSheet (mobile) detail
-// surface. Pages compose it via named snippet props (main / detail / detailFooter)
-// and drive it with bindable `search` + `detailOpen`.
+// AppShell owns the persistent NavPill and caller-provided main surface.
+// Feature owners compose the exported detail surfaces when a selection opens.
 //
 // Import the composed shell from here:
 //   import { AppShell } from '$lib/components/shell';

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from './__fixtures__/KitNavigationSimulator';
 
 const kitPackage = JSON.parse(
@@ -22,9 +22,51 @@ function ordered(...needles: string[]): number[] {
 	return positions;
 }
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe('Kit navigation simulator source contract', () => {
+	it('blurs before committing page data and restores snapshots after afterNavigate', () => {
+		ordered(
+			'document.activeElement.blur();',
+			'root.$set(navigation_result.props);',
+			'update(navigation_result.props.page);',
+			'after_navigate_callbacks.forEach',
+			'restore_snapshot(current_navigation_index);',
+			'stores.navigating.set((navigating.current = null));',
+		);
+	});
+
+	it.each([false, true])('models pre-commit blur with keepFocus=%s', async (keepFocus) => {
+		const events: string[] = [];
+		class HtmlElement {
+			blur() {
+				events.push(`blur:${simulator.currentPageHref}`);
+				focused = body;
+			}
+		}
+		vi.stubGlobal('HTMLElement', HtmlElement);
+		const body = new HtmlElement();
+		let focused = new HtmlElement();
+		const simulator = new KitNavigationSimulator({
+			publishPage: (href) => events.push(`page:${href}`),
+			publishNavigating: () => {},
+			settled: async () => {},
+			tick: async () => {},
+			activeElement: () => focused,
+			bodyElement: () => body,
+			resetFocus: () => events.push('reset'),
+		});
+		simulator.startNavigation('http://localhost/lines', undefined, { keepFocus });
+		await simulator.commitNavigation('http://localhost/lines');
+		expect(events).toEqual(
+			keepFocus
+				? ['page:http://localhost/lines']
+				: ['blur:http://localhost/map', 'page:http://localhost/lines', 'reset'],
+		);
+	});
+
 	it('pins the harness to the installed Kit release', () => {
-		expect(kitPackage.version).toBe('2.65.1');
+		expect(kitPackage.version).toBe('2.70.3');
 	});
 
 	it('suppresses beforeNavigate during an active navigation but publishes every accepted target', () => {

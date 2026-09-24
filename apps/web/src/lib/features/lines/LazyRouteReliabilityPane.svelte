@@ -26,6 +26,8 @@
 		historyOnlyReliability?: RouteReliability | null;
 		articleSummary?: Snippet;
 		importClusters?: () => Promise<RouteReliabilityClustersModule>;
+		initialClusters?: RouteReliabilityClustersModule['default'];
+		initialImportFailed?: boolean;
 	};
 
 	const IMPORT_FAILURE_COPY: Record<Locale, { title: string; body: string; retry: string }> = {
@@ -43,7 +45,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import { layout } from '$lib/nav';
@@ -58,16 +60,22 @@
 		historyOnlyReliability = null,
 		articleSummary,
 		importClusters,
+		initialClusters,
+		initialImportFailed = false,
 	}: Props = $props();
 
-	let Clusters = $state.raw<RouteReliabilityClustersModule['default'] | null>(null);
-	let importError = $state<Error | null>(null);
+	let Clusters = $state.raw<RouteReliabilityClustersModule['default'] | null>(
+		untrack(() => initialClusters ?? null),
+	);
+	let importError = $state<Error | null>(
+		untrack(() => (initialImportFailed ? new Error('Reliability module import failed') : null)),
+	);
 	let importPending: Promise<void> | null = null;
 	let alive = false;
 
 	onMount(() => {
 		alive = true;
-		startImport();
+		if (!importError) startImport();
 		return () => {
 			alive = false;
 		};
@@ -132,12 +140,21 @@
 	{/if}
 {/snippet}
 
-{#if resource.settled && resource.error == null && resource.data == null && historyOnlyReliability != null && history.state !== 'current'}
-	{@render loaded(historyOnlyReliability)}
-{:else}
-	<ResourceBoundary {resource} lang={locale}>
-		{#snippet children(reliability)}
-			{@render loaded(reliability)}
-		{/snippet}
-	</ResourceBoundary>
-{/if}
+<div class="reliability-pane">
+	{#if resource.settled && resource.error == null && resource.data == null && historyOnlyReliability != null && history.state !== 'current'}
+		{@render loaded(historyOnlyReliability)}
+	{:else}
+		<ResourceBoundary {resource} lang={locale}>
+			{#snippet children(reliability)}
+				{@render loaded(reliability)}
+			{/snippet}
+		</ResourceBoundary>
+	{/if}
+</div>
+
+<style>
+	.reliability-pane {
+		/* Keep the footer below the viewport while the article loads. */
+		min-block-size: 100svh;
+	}
+</style>

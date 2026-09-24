@@ -7,10 +7,10 @@ import { StopDeparturesFileSchema } from '$lib/v1/schemas/stop_departures';
 import { TripsFileSchema } from '$lib/v1/schemas/trips';
 import { VehiclesFileSchema } from '$lib/v1/schemas/vehicles';
 import { fetchOf, loadManifest, MUTABLE_CACHE, R2_DEFAULTS, readWhole } from './r2.core';
-import type { DataHealthPort, LivePort } from './types';
+import type { AdapterCtx } from './types';
 
-export const livePort: LivePort = {
-	async vehicles(ctx) {
+export const livePort = {
+	async vehicles(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.live.vehicles ?? R2_DEFAULTS.live.vehicles,
@@ -20,7 +20,7 @@ export const livePort: LivePort = {
 			ctx,
 		);
 	},
-	async trips(ctx) {
+	async trips(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.live.trips ?? R2_DEFAULTS.live.trips,
@@ -30,7 +30,7 @@ export const livePort: LivePort = {
 			ctx,
 		);
 	},
-	async stopDepartures(ctx) {
+	async stopDepartures(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.live.stop_departures ?? R2_DEFAULTS.live.stop_departures,
@@ -40,7 +40,7 @@ export const livePort: LivePort = {
 			ctx,
 		);
 	},
-	async alerts(ctx) {
+	async alerts(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.live.alerts ?? R2_DEFAULTS.live.alerts,
@@ -50,7 +50,7 @@ export const livePort: LivePort = {
 			ctx,
 		);
 	},
-	async network(ctx) {
+	async network(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.live.network ?? R2_DEFAULTS.live.network,
@@ -62,8 +62,8 @@ export const livePort: LivePort = {
 	},
 };
 
-export const dataHealthPort: DataHealthPort = {
-	async get(ctx) {
+export const dataHealthPort = {
+	async get(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.files.live.data_health ?? R2_DEFAULTS.live.data_health;
 		const value = await getEntityJson(

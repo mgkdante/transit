@@ -1,12 +1,11 @@
 """Static contract test for migration 0021: silver.i3_alerts SCD2 dedup."""
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-MIGRATION = Path(
-    "src/transit_ops/db/migrations/versions/0021_i3_alerts_scd2_dedup.py"
-)
+MIGRATION = Path("src/transit_ops/db/migrations/versions/0021_i3_alerts_scd2_dedup.py")
 INGESTION = Path("src/transit_ops/silver/i3.py")
 
 
@@ -140,7 +139,7 @@ def test_downgrade_restores_legacy_view_and_drops_columns() -> None:
     assert "valid_to" not in legacy_view
     assert "CREATE OR REPLACE VIEW gold.current_i3_alerts" in legacy_view
 
-    downgrade_body = text[text.index("def downgrade"):]
+    downgrade_body = text[text.index("def downgrade") :]
     assert "_LEGACY_GOLD_VIEW_FROM_0017" in downgrade_body
     assert "DROP COLUMN IF EXISTS content_hash" in downgrade_body
     assert "DROP INDEX IF EXISTS" in downgrade_body
@@ -156,13 +155,10 @@ def test_redundancy_pct_guards_against_empty_table() -> None:
 
     # The naked unguarded division must not appear.
     assert "(1 - n_unique/n_total)*100:.1f" not in text, (
-        "unguarded n_unique/n_total division still present — "
-        "ZeroDivisionError on empty DB"
+        "unguarded n_unique/n_total division still present — ZeroDivisionError on empty DB"
     )
     # A zero-guard must be present so empty tables report 0.0% redundancy.
-    assert "if n_total else 0.0" in text, (
-        "redundancy pct must guard against n_total == 0"
-    )
+    assert "if n_total else 0.0" in text, "redundancy pct must guard against n_total == 0"
 
 
 def test_ingestion_code_computes_content_hash_and_uses_on_conflict() -> None:
@@ -184,8 +180,9 @@ def test_ingestion_code_computes_content_hash_and_uses_on_conflict() -> None:
     ):
         assert kw in text, f"compute_alert_content_hash signature missing {kw}"
 
-    # Same Unit Separator as the SQL backfill (\x1F)
-    assert '_HASH_FIELD_SEP = "\\x1F"' in text
+    from transit_ops.silver.i3 import _HASH_FIELD_SEP
+
+    assert _HASH_FIELD_SEP == chr(31)
     # md5 of UTF-8 bytes
     assert 'hashlib.md5(canonical.encode("utf-8")).hexdigest()' in text
 

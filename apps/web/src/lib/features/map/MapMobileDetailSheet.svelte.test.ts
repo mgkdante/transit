@@ -78,7 +78,7 @@ const noTargetVehicle: VehicleMapDetail = {
 	routeDirection: null,
 	routeDirectionVariant: null,
 	nextStop: null,
-	nextStopAbsence: 'end-of-route',
+	nextStopAbsence: 'not-reported',
 	pastStops: [],
 	nextStops: [],
 	alerts: [],
@@ -230,7 +230,7 @@ describe('MapMobileDetailSheet', () => {
 		expect(document.querySelector('[data-slot="sheet-title"]')).toHaveTextContent(stop.name);
 	});
 
-	it('gives only the mobile sheet definition rows aligned scan columns and strong wrapping', async () => {
+	it('reserves action space only for definition rows with an action and keeps values wrapping', async () => {
 		const style = document.createElement('style');
 		let unmount: (() => void) | undefined;
 		style.textContent = [
@@ -271,10 +271,12 @@ describe('MapMobileDetailSheet', () => {
 			const value = row.querySelector<HTMLElement>('dd')!;
 			const action = row.querySelector<HTMLElement>('button')!;
 
-			expect(getComputedStyle(row).gridTemplateColumns).toBe(
-				'5.75rem minmax(0, 1fr) minmax(5.5rem, auto)',
-			);
-			expect(getComputedStyle(row).borderBottomWidth).toBe('1px');
+			expect(getComputedStyle(row).gridTemplateColumns).toBe('5.75rem minmax(0, 1fr) auto');
+			const etaRow = [
+				...document.querySelectorAll<HTMLElement>('.detail-attribute-grid > div'),
+			].find((candidate) => candidate.querySelector('dt')?.textContent === 'ETA')!;
+			expect(etaRow.querySelector('button')).toBeNull();
+			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe('5.75rem minmax(0, 1fr)');
 			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');
 			expect(
 				Math.max(

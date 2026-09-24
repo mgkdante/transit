@@ -1,347 +1,197 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { parse, type AST } from 'svelte/compiler';
 import { createServer } from 'vite';
 import Page from './+page.svelte';
 
 const { state, createLiveStoreSpy } = vi.hoisted(() => ({
-	state: { locale: 'en' as 'en' | 'fr' },
+	state: { locale: 'en' as 'en' | 'fr', desktop: true },
 	createLiveStoreSpy: vi.fn(),
 }));
-
-let homeIntersectionCallback: IntersectionObserverCallback | undefined;
-
-class HomeIntersectionObserverStub {
-	readonly root = null;
-	readonly rootMargin = '0px';
-	readonly thresholds = [0];
-	constructor(next: IntersectionObserverCallback) {
-		homeIntersectionCallback = next;
-	}
-	observe() {}
-	unobserve() {}
-	disconnect() {}
-	takeRecords() {
-		return [];
-	}
-}
-
-vi.mock('$lib/i18n', async () => ({
+vi.mock('$lib/i18n', () => ({
 	getLocale: () => state.locale,
 	localizeHref: (path: string, locale: 'en' | 'fr') =>
 		locale === 'fr' ? `/fr${path === '/' ? '' : path}` : path,
 }));
-
 vi.mock('$lib/nav', async () => {
 	const { routeFor } =
 		await vi.importActual<typeof import('$lib/nav/intent.svelte')>('$lib/nav/intent.svelte');
 	return { routeFor };
 });
-
+vi.mock('$lib/nav/layout.svelte', () => ({
+	layout: {
+		get isDesktop() {
+			return state.desktop;
+		},
+	},
+}));
 vi.mock('$lib/v1/live/store.svelte', () => ({ createLiveStore: createLiveStoreSpy }));
 
-const routePath = resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte');
-const explorePath = resolve(process.cwd(), 'src/lib/features/home/HomeExplore.svelte');
-
-const destinationPreviews = [
-	{
-		href: '/map',
-		en: 'Vehicle positions · status · crowding · alerts',
-		fr: 'Positions des véhicules · état · achalandage · avis',
-	},
-	{
-		href: '/stops',
-		en: 'Next departures · on-time rate · delay · crowding',
-		fr: 'Prochains passages · ponctualité · retard · achalandage',
-	},
-	{
-		href: '/search',
-		en: 'Lines · stops · live vehicles',
-		fr: 'Lignes · arrêts · véhicules en direct',
-	},
-	{
-		href: '/lines',
-		en: 'On-time rate · delay percentiles · cancellations · headways',
-		fr: 'Ponctualité · percentiles de retard · annulations · intervalles',
-	},
-	{
-		href: '/network',
-		en: 'On-time rate · median delay · crowding · feed freshness',
-		fr: 'Ponctualité · retard médian · achalandage · fraîcheur du flux',
-	},
-	{
-		href: '/hotspots',
-		en: 'Severe-delay rate · observations · affected lines and stops',
-		fr: 'Taux de retard grave · observations · lignes et arrêts touchés',
-	},
-	{
-		href: '/receipt',
-		en: 'On-time rate · average delay · severe delays · service delivered',
-		fr: 'Ponctualité · retard moyen · retards graves · service livré',
-	},
-	{
-		href: '/repeat-offenders',
-		en: 'Severe-delay rate · repeat days · readings · 95% confidence interval',
-		fr: 'Taux de retard grave · jours répétés · mesures · intervalle de confiance à 95 %',
-	},
-	{
-		href: '/alerts',
-		en: 'Active alerts · duration · cause · effect · severity',
-		fr: 'Avis actifs · durée · cause · effet · gravité',
-	},
-	{
-		href: '/metrics',
-		en: 'Definitions · formulas · SQL · limitations',
-		fr: 'Définitions · formules · SQL · limites',
-	},
-	{
-		href: '/status',
-		en: 'Freshness · source lineage · gaps · retention · conformance',
-		fr: 'Fraîcheur · traçabilité · lacunes · rétention · conformité',
-	},
+const destinations = [
+	['/network', 'Network health', 'Santé du réseau'],
+	['/map', 'Network map', 'Carte du réseau'],
+	['/stops', 'Stops', 'Arrêts'],
+	['/search', 'Search', 'Rechercher'],
+	['/lines', 'Lines', 'Lignes'],
+	['/hotspots', 'Hotspots', 'Points chauds'],
+	['/receipt', 'Daily receipt', 'Reçu quotidien'],
+	['/repeat-offenders', 'Repeat offenders', 'Récidivistes'],
+	['/alerts', 'Alerts', 'Avis'],
+	['/metrics', 'How we measure', 'Comment on mesure'],
+	['/status', 'Data health', 'Santé des données'],
 ] as const;
-
-function declarationsFor(source: string, wantedSelector: string): ReadonlyMap<string, string> {
-	const css = parse(source, { modern: true }).css;
-	if (css == null) return new Map();
-	let match = new Map<string, string>();
-
-	function visit(nodes: readonly (AST.CSS.Atrule | AST.CSS.Rule | AST.CSS.Declaration)[]): void {
-		for (const node of nodes) {
-			if (node.type === 'Atrule') {
-				visit(node.block?.children ?? []);
-				continue;
-			}
-			if (node.type !== 'Rule') continue;
-			const selectors = node.prelude.children.map((selector) =>
-				source.slice(selector.start, selector.end).replace(/\s+/g, ' ').trim(),
-			);
-			if (!selectors.includes(wantedSelector)) continue;
-			match = new Map(
-				node.block.children
-					.filter((child): child is AST.CSS.Declaration => child.type === 'Declaration')
-					.map((child) => [child.property, child.value]),
-			);
-		}
-	}
-
-	visit(css.children);
-	return match;
-}
+const nav = () =>
+	screen.getByRole('navigation', {
+		name: state.locale === 'fr' ? 'Tout explorer' : 'Explore everything',
+	});
 
 afterEach(() => {
 	state.locale = 'en';
+	state.desktop = true;
 	createLiveStoreSpy.mockClear();
-	homeIntersectionCallback = undefined;
-	vi.unstubAllGlobals();
 });
 
-describe('Home hub — explore-first contract', () => {
-	it('opens on the filterable destination board without a hero or live-store side effect', () => {
-		const { container } = render(Page);
-		const surface = container.querySelector('[data-slot="surface"]');
-		const filters = screen.getByRole('group', { name: 'Filters' });
-		const auditBrief = container.querySelector('[data-slot="home-audit-brief"]');
-		const destinationNav = screen.getByRole('navigation', { name: 'Explore everything' });
+describe('Home civic overview and directory', () => {
+	it.each(['en', 'fr'] as const)(
+		'preserves every destination once as a native localized link in %s',
+		(locale) => {
+			state.locale = locale;
+			render(Page);
+			const links = within(nav()).getAllByRole('link');
+			expect(links).toHaveLength(11);
+			for (const [path, en, fr] of destinations) {
+				const href = locale === 'fr' ? `/fr${path}` : path;
+				const link = links.find((candidate) => candidate.getAttribute('href') === href);
+				expect(link, href).toHaveTextContent(locale === 'fr' ? fr : en);
+				expect(link).not.toHaveAttribute('tabindex', '-1');
+			}
+			expect(new Set(links.map((link) => link.getAttribute('href'))).size).toBe(11);
+		},
+	);
 
-		expect(surface).toHaveClass('surface-shell--surface');
-		expect(surface?.firstElementChild).toHaveAttribute('data-slot', 'home-explore');
+	it('introduces the civic purpose, then the network overview and map, without fetching live data', () => {
+		const { container } = render(Page);
 		expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Explore everything');
-		expect(container.querySelector('[data-slot="home-hero-intro"]')).toBeNull();
-		expect(container.querySelector('[data-slot="home-control-room"]')).toBeNull();
-		expect(screen.queryByRole('region', { name: /what this is/i })).toBeNull();
-		expect(auditBrief).toHaveTextContent(
-			'This is a concerned citizen’s civic audit of day-to-day transit operations',
+		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+			'How Montréal’s transit holds up.',
 		);
-		expect(auditBrief).toHaveTextContent(
-			'It is not a usual travel app, a point-A-to-B tool, or a trip planner.',
+		expect(container.querySelector('[data-slot="home-audit-brief"]')).toHaveTextContent(
+			'the limits of public data',
 		);
-		expect(destinationNav.firstElementChild).toBe(auditBrief);
+		const primary = container.querySelector('[data-slot="home-primary"]') as HTMLElement;
 		expect(
-			filters.compareDocumentPosition(auditBrief as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
-		).toBeTruthy();
+			within(primary)
+				.getAllByRole('link')
+				.map((link) => link.getAttribute('href')),
+		).toEqual(['/network', '/map']);
+		expect(nav().firstElementChild).toBe(primary);
 		expect(createLiveStoreSpy).not.toHaveBeenCalled();
 	});
 
-	it('keeps the Explore start in normal flow under the shell-owned mobile clearance', () => {
-		const routeSource = readFileSync(routePath, 'utf8');
-		const rootDeclarations = declarationsFor(readFileSync(explorePath, 'utf8'), '.home-explore');
-		const rootValues = [...rootDeclarations.values()].join(' ');
-
-		expect(routeSource).toMatch(/<Surface>\s*<HomeExplore/);
-		expect(routeSource).not.toMatch(/surface-bleed|chrome-offset|margin-top/);
-		expect(rootDeclarations.get('display')).toBe('flex');
-		expect(rootDeclarations.has('position')).toBe(false);
-		expect(rootDeclarations.has('top')).toBe(false);
-		expect(rootDeclarations.has('margin-top')).toBe(false);
-		expect(rootValues).not.toContain('--chrome-offset');
-	});
-});
-
-describe('Home hub — destination board', () => {
-	it('renders every rider-question group and all eleven destinations as native links', () => {
+	it('retains all four question groups while making the remaining directory compact', () => {
 		render(Page);
-		const nav = screen.getByRole('navigation', { name: 'Explore everything' });
-
-		for (const heading of [
-			'Where’s my bus?',
+		for (const name of [
+			'How is the network running?',
 			'Which line can I trust?',
 			'Did they keep their promise?',
 			'Behind the numbers',
 		]) {
-			expect(within(nav).getByRole('heading', { name: heading })).toBeInTheDocument();
+			expect(within(nav()).getByRole('heading', { name })).toBeInTheDocument();
 		}
-		const links = within(nav)
-			.getAllByRole('link')
-			.filter((link) => link.classList.contains('hub-tile'));
-		expect(links).toHaveLength(11);
+	});
+
+	it('filters all destinations by question, including the featured network overview', async () => {
+		const { container } = render(Page);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
 		expect(
-			within(nav)
-				.queryAllByRole('button')
-				.filter((button) => button.classList.contains('hub-tile')),
-		).toHaveLength(0);
-		for (const { href, en } of destinationPreviews) {
-			const link = links.find((candidate) => candidate.getAttribute('href') === href);
-			expect(link, href).toBeDefined();
-			expect(link?.tagName).toBe('A');
-			expect(link).not.toHaveAttribute('tabindex', '-1');
-			expect(link?.querySelector('[data-slot="home-destination-preview"]')).toHaveTextContent(en);
-		}
-	});
-
-	it('keeps the destination links localized and usable without hydration', () => {
-		render(Page);
-		const nav = screen.getByRole('navigation', { name: 'Explore everything' });
-		const linksByHref = new Map(
-			within(nav)
+			within(nav())
 				.getAllByRole('link')
-				.map((link) => [link.getAttribute('href'), link]),
-		);
-		const expectedLinks = [
-			['Live map', '/map'],
-			['Lines', '/lines'],
-			['Stops', '/stops'],
-			['Network health', '/network'],
-			['Search', '/search'],
-			['Hotspots', '/hotspots'],
-			['Daily receipt', '/receipt'],
-			['Repeat offenders', '/repeat-offenders'],
-			['Alerts', '/alerts'],
-			['How we measure', '/metrics'],
-			['Data health', '/status'],
-		] as const;
-
-		for (const [name, href] of expectedLinks) {
-			const link = linksByHref.get(href);
-			expect(link, href).toBeDefined();
-			expect(link).toHaveTextContent(name);
-		}
+				.map((link) => link.getAttribute('href')),
+		).toEqual(['/lines', '/network', '/hotspots']);
+		expect(container.querySelector('[data-slot="home-primary"]')).toBeNull();
+		expect(screen.getAllByText('3 destinations').length).toBeGreaterThan(0);
 	});
 
-	it('filters by rider question', async () => {
+	it('keeps answer-kind filtering and restores the full composition on clear', async () => {
+		render(Page);
+		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
+		expect(
+			within(nav())
+				.getAllByRole('link')
+				.map((link) => link.getAttribute('href')),
+		).toEqual(['/lines', '/hotspots', '/receipt', '/repeat-offenders']);
+		await fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+		expect(within(nav()).getAllByRole('link')).toHaveLength(11);
+	});
+
+	it('keeps the exact question and kind intersection for a single result', async () => {
 		render(Page);
 		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
-		const nav = screen.getByRole('navigation', { name: 'Explore everything' });
-
-		expect(within(nav).getAllByRole('link')).toHaveLength(3);
-		expect(
-			within(nav).getByRole('heading', { name: 'Which line can I trust?' }),
-		).toBeInTheDocument();
-		expect(within(nav).queryByRole('heading', { name: 'Where’s my bus?' })).toBeNull();
-		expect(screen.getAllByText('3 destinations').length).toBeGreaterThanOrEqual(1);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Live now' }));
+		expect(within(nav()).getAllByRole('link')).toHaveLength(1);
+		expect(within(nav()).getByRole('link')).toHaveAttribute('href', '/network');
 	});
 
-	it('filters by answer kind and clears back to the complete board', async () => {
-		render(Page);
-		const nav = screen.getByRole('navigation', { name: 'Explore everything' });
+	it.each(['en', 'fr'] as const)(
+		'announces an empty intersection with direct recovery in %s',
+		async (locale) => {
+			state.locale = locale;
+			render(Page);
+			await fireEvent.click(
+				screen.getByRole('radio', {
+					name: locale === 'fr' ? 'Comment va le réseau ?' : 'How is the network running?',
+				}),
+			);
+			await fireEvent.click(
+				screen.getByRole('radio', { name: locale === 'fr' ? 'Le bilan' : 'The record' }),
+			);
+			const status = screen.getByRole('status');
+			expect(status).toHaveAttribute('aria-live', 'polite');
+			expect(within(nav()).queryAllByRole('link')).toHaveLength(0);
+			await fireEvent.click(
+				within(status).getByRole('button', {
+					name: locale === 'fr' ? 'Effacer les filtres' : 'Clear filters',
+				}),
+			);
+			expect(within(nav()).getAllByRole('link')).toHaveLength(11);
+		},
+	);
 
-		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
-		expect(within(nav).queryByRole('link', { name: /Live map/i })).toBeNull();
-		expect(within(nav).getByRole('link', { name: /Repeat offenders/i })).toBeInTheDocument();
-		expect(within(nav).queryByRole('heading', { name: 'Behind the numbers' })).toBeNull();
-
-		await fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
-		expect(within(nav).getAllByRole('link')).toHaveLength(11);
-		expect(within(nav).getByRole('heading', { name: 'Behind the numbers' })).toBeInTheDocument();
-	});
-
-	it('announces an honest empty intersection', async () => {
-		render(Page);
-		await fireEvent.click(screen.getByRole('radio', { name: 'Where’s my bus?' }));
-		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
-
-		const status = screen.getByRole('status');
-		expect(status).toHaveTextContent('Nothing matches these filters');
-		expect(status).toHaveAttribute('aria-live', 'polite');
-	});
-
-	it('supports keyboard filtering and labels every card with its answer kind', async () => {
-		render(Page);
-		expect(screen.getByRole('group', { name: 'Filters' })).toBeInTheDocument();
-		const questionGroup = screen.getByRole('group', { name: 'By question' });
-		expect(screen.getByRole('group', { name: 'By kind' })).toBeInTheDocument();
-		const mapTile = screen.getByRole('link', { name: /Live map/i });
-		expect(within(mapTile).getByText('Live now')).toBeInTheDocument();
-		const receiptTile = screen.getByRole('link', { name: /Daily receipt/i });
-		expect(within(receiptTile).getByText('The record')).toBeInTheDocument();
-		const allQuestions = within(questionGroup).getByRole('radio', { name: 'All' });
-		await fireEvent.keyDown(allQuestions, { key: 'ArrowDown' });
-		expect(screen.getByRole('radio', { name: 'Where’s my bus?' })).toHaveFocus();
-		expect(screen.getByRole('navigation', { name: 'Explore everything' })).toHaveTextContent(
-			'Where’s my bus?',
-		);
-	});
-
-	it('shows the mobile filter control only while Explore is visible', async () => {
-		vi.stubGlobal('IntersectionObserver', HomeIntersectionObserverStub);
+	it('keeps the same native disclosure available on desktop', async () => {
 		const { container } = render(Page);
-		const explore = container.querySelector('[data-slot="home-explore"]') as HTMLElement;
+		const details = container.querySelector('details') as HTMLDetailsElement;
+		await vi.waitFor(() => expect(details.open).toBe(true));
+		details.open = false;
+		await fireEvent(details, new Event('toggle'));
+		expect(details.open).toBe(false);
+		expect(details.querySelector('summary')).toHaveTextContent('Filters');
+	});
 
+	it('preserves arrow-key movement in the question filter', async () => {
+		render(Page);
+		const all = within(screen.getByRole('group', { name: 'By question' })).getByRole('radio', {
+			name: 'All',
+		});
+		await fireEvent.keyDown(all, { key: 'ArrowDown' });
+		expect(screen.getByRole('radio', { name: 'How is the network running?' })).toHaveFocus();
+	});
+
+	it('keeps one inline mobile filter tree and restores its disclosure focus on Escape', async () => {
+		state.desktop = false;
+		const { container } = render(Page);
+		const details = container.querySelector('details') as HTMLDetailsElement;
+		const summary = details.querySelector('summary') as HTMLElement;
+		expect(details.open).toBe(false);
+		details.open = true;
+		await fireEvent(details, new Event('toggle'));
+		screen.getByRole('radio', { name: 'The record' }).focus();
+		await fireEvent.keyDown(window, { key: 'Escape' });
+		expect(details.open).toBe(false);
+		expect(summary).toHaveFocus();
+		expect(container.querySelectorAll('.explore-filters')).toHaveLength(1);
 		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
-		homeIntersectionCallback?.(
-			[{ target: explore, isIntersecting: true } as unknown as IntersectionObserverEntry],
-			{} as IntersectionObserver,
-		);
-		await vi.waitFor(() =>
-			expect(container.querySelector('[data-slot="surface-rail-mobile"]')).not.toBeNull(),
-		);
-		expect(screen.getByRole('button', { name: /filters 11 destinations/i })).toBeInTheDocument();
-
-		homeIntersectionCallback?.(
-			[{ target: explore, isIntersecting: false } as unknown as IntersectionObserverEntry],
-			{} as IntersectionObserver,
-		);
-		await vi.waitFor(() =>
-			expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull(),
-		);
-	});
-});
-
-describe('Home hub — French and SSR', () => {
-	it('renders the French heading, filters, groups, and localized links', () => {
-		state.locale = 'fr';
-		const { container } = render(Page);
-
-		expect(screen.getByRole('heading', { level: 1, name: 'Tout explorer' })).toBeInTheDocument();
-		expect(screen.getByRole('group', { name: 'Par question' })).toBeInTheDocument();
-		expect(screen.getByRole('radio', { name: 'Le bilan' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'Où est mon bus ?' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'Ont-ils tenu parole ?' })).toBeInTheDocument();
-		expect(container.querySelector('[data-slot="home-audit-brief"]')).toHaveTextContent(
-			'C’est l’audit civique d’un citoyen préoccupé par le fonctionnement quotidien du transport collectif',
-		);
-		for (const { href, fr } of destinationPreviews) {
-			const localizedHref = `/fr${href}`;
-			const link = container.querySelector(`a.hub-tile[href="${localizedHref}"]`);
-			expect(link, localizedHref).not.toBeNull();
-			expect(link?.querySelector('[data-slot="home-destination-preview"]')).toHaveTextContent(fr);
-		}
 	});
 
-	it('renders the Explore board through the server compiler without hero data work', async () => {
+	it('server-renders every navigation href and the civic heading without hydration', async () => {
 		const server = await createServer({
 			configFile: 'vite.config.ts',
 			appType: 'custom',
@@ -350,22 +200,17 @@ describe('Home hub — French and SSR', () => {
 			server: { middlewareMode: true },
 		});
 		try {
-			const pageModule = (await server.ssrLoadModule(
-				'/src/routes/[[lang=locale]]/+page.svelte',
-			)) as { default: typeof Page };
+			const module = await server.ssrLoadModule('/src/routes/[[lang=locale]]/+page.svelte');
 			const { render: renderSsr } = (await server.ssrLoadModule(
 				'svelte/server',
 			)) as typeof import('svelte/server');
-			const context = new Map<unknown, unknown>();
-			context.set(Symbol.for('transit.i18n.locale'), () => 'en' as const);
-			const { body } = renderSsr(pageModule.default, { context });
-
-			expect(body).toContain('Explore everything');
-			expect(body).toContain('Where’s my bus?');
-			expect(body).toContain('concerned citizen’s civic audit');
-			expect(body).toContain('Vehicle positions · status · crowding · alerts');
-			expect(body).not.toContain('home-hero-intro');
-			expect(body).not.toContain('home-control-room');
+			const context = new Map<unknown, unknown>([
+				[Symbol.for('transit.i18n.locale'), () => 'en' as const],
+			]);
+			const { body } = renderSsr(module.default, { context });
+			expect(body).toContain('How Montréal’s');
+			expect(body).toContain('the limits of public data');
+			for (const [href] of destinations) expect(body).toContain(`href="${href}"`);
 		} finally {
 			await server.close();
 		}

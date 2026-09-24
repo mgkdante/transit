@@ -15,7 +15,8 @@ from datetime import date, timedelta
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders._helpers import _wilson_lo
-from transit_ops.snapshots.builders.historic import _weak_stops_by_grain, build_route_reliability
+from transit_ops.snapshots.builders.historic import build_route_reliability
+from transit_ops.snapshots.builders.historic._spine import _weak_stops_by_grain
 
 _PROVIDER = "stm_dense_ws"
 _ROUTE = "WS1"

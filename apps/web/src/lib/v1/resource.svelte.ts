@@ -16,21 +16,9 @@
 // It also honors the app-supplied refresh epoch: a chrome "refresh data" press
 // bumps it, which re-runs the fetch here (createResource surfaces don't use load
 // functions, so invalidateAll alone would never reach them).
-//
-// FRESHNESS-BEARING (slice-9.8 A): a resource whose payload carries a server
-// `generated_utc` can OPT IN (`{ freshness: true }`) to feed that timestamp into
-// the app-supplied newest-data authority. This is how the
-// static/historic surfaces (/status, /alerts, /hotspots, /receipt,
-// /repeat-offenders, /trip) contribute the ONE site-wide newest-data timestamp
-// with ZERO per-page age math — the live store remains the live-tier writer, and
-// `noteDataGeneratedUtc` is latest-wins/monotonic so whichever tier published most
-// recently owns the readout.
 
 import { untrack } from 'svelte';
 import { getV1Runtime } from '$lib/v1/runtime';
-
-/** A payload that may carry the server's build timestamp (latest-data anchor). */
-type MaybeFreshPayload = { readonly generated_utc?: string | null } | null | undefined;
 
 /** Options for {@link createResource}. */
 export interface ResourceSeed<T> {
@@ -59,13 +47,6 @@ export interface ResourceOptions<T> {
 	 * fetch because the same seed is applied only once.
 	 */
 	readonly seed?: () => ResourceSeed<T> | undefined;
-	/**
-	 * Opt in to contributing the payload's `generated_utc` to the shared
-	 * newest-data timestamp (`dataRefresh.noteDataGeneratedUtc`). Only set this for
-	 * surfaces whose fetched file carries a server build stamp; the write is
-	 * latest-wins/monotonic, so it is safe alongside the live-tier writer.
-	 */
-	readonly freshness?: boolean;
 }
 
 /** The reactive surface a resource exposes. `data` is null until the first success. */
@@ -95,10 +76,7 @@ export function createResource<T>(
 	fetcher: (signal: AbortSignal) => Promise<T>,
 	options: ResourceOptions<T> = {},
 ): Resource<T> {
-	const wantsFreshness = options.freshness === true;
 	const epoch = () => getV1Runtime().refresh.epoch;
-	const onGenerated = (generatedUtc: string | null | undefined) =>
-		getV1Runtime().refresh.noteDataGeneratedUtc(generatedUtc);
 	const keyed = options.key !== undefined;
 	const unresolvedKey = Symbol('unresolved-resource-key');
 	const initialKey = options.key?.() ?? unresolvedKey;
@@ -107,7 +85,8 @@ export function createResource<T>(
 		candidateSeed !== undefined && (!keyed || Object.is(candidateSeed.key, initialKey))
 			? candidateSeed
 			: undefined;
-	let data = $state<T | null>(initialSeed?.data ?? null);
+	const initialData = initialSeed?.data ?? null;
+	let data = $state<T | null>(initialData);
 	let error = $state<Error | null>(null);
 	let loading = $state(false);
 	let settled = $state(initialSeed !== undefined);
@@ -146,16 +125,14 @@ export function createResource<T>(
 			seq += 1;
 			stateKey = activeKey;
 			dataKey = activeKey;
-			data = seed.data;
+			// Hydration already exposes this seed; replacing its proxy invalidates every reader.
+			if (sawSeed || !Object.is(seed.data, initialData)) data = seed.data;
 			error = null;
 			loading = false;
 			settled = true;
 			sawSeed = true;
 			lastSeedKey = seed.key;
 			lastSeedData = seed.data;
-			if (wantsFreshness) {
-				onGenerated((seed.data as MaybeFreshPayload)?.generated_utc);
-			}
 			return;
 		}
 
@@ -205,12 +182,6 @@ export function createResource<T>(
 				if (token !== seq) return;
 				data = value;
 				dataKey = activeKey;
-				// Freshness-bearing surfaces feed the shared newest-data timestamp from
-				// the payload's own server stamp (latest-wins/monotonic). One line, no
-				// per-page age math — the spine derives the relative age centrally.
-				if (wantsFreshness) {
-					onGenerated((value as MaybeFreshPayload)?.generated_utc);
-				}
 			})
 			.catch((e) => {
 				if (token !== seq) return;

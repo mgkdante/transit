@@ -16,7 +16,7 @@ function sha256(value: string | Uint8Array): string {
 	return createHash('sha256').update(value).digest('hex');
 }
 
-describe('Phase 2 SEO extraction byte parity', () => {
+describe('SEO serialization and reviewed social cards', () => {
 	it('freezes the enabled and disabled robots.txt bytes', () => {
 		expect(sha256(buildRobotsTxt({ siteOrigin: ORIGIN, indexing: true }))).toBe(
 			'ef76f0ad68803b445fc74612c2357457fc170d9a6e1be9b200e50d9d271225d2',
@@ -37,10 +37,10 @@ describe('Phase 2 SEO extraction byte parity', () => {
 
 	it('freezes both generated Open Graph card bytes', () => {
 		expect(sha256(readFileSync(resolve(process.cwd(), 'static/og/en.png')))).toBe(
-			'391d29013b7b04b8c12c65d1f23482e5299f401475da8c95c47979d1fe8e8f9a',
+			'793daaf48c11bd7348039b3ab79ef731d4d60c665424686c78b8fa21b74ca4e2',
 		);
 		expect(sha256(readFileSync(resolve(process.cwd(), 'static/og/fr.png')))).toBe(
-			'471fd2afa64f8060438a2d6759988f52cfe821d4b2f3e08d5089bc55fad3093b',
+			'8b52b9ad268068a195ecfc0d0f767d8664e9da2c63a0ff29dde052bd60d5f40a',
 		);
 	});
 });

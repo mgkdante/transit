@@ -1,4 +1,6 @@
-import json, pathlib
+import json
+import pathlib
+
 from transit_ops.snapshots.contract import export_schemas
 
 OUT = pathlib.Path(__file__).resolve().parents[1] / "src/transit_ops/snapshots/schemas"

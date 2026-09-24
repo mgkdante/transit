@@ -1,34 +1,3 @@
-<!--
-  NetworkSurface — the /network surface ORCHESTRATOR (S9A re-seat of NetworkHealth.svelte).
-
-  Decomposes the former 1,432-line god-file into a network/reliability tree modelled 1:1 on the
-  stops/reliability re-seat (StopReliabilitySurface). This orchestrator owns EVERYTHING the
-  sections must not: the live store + the trend/provenance resources, the codec-seeded
-  grain/window/retard state + their clamps, the URL mirror, the ONE mapping pass through the
-  pure selectors, and the LIVE/HISTORIC region layout. P5.4: the grain/window/delay view
-  controls + the two-region ToC now ride a map-style GLASS LEFT RAIL (SurfaceRail) — a sticky
-  floating panel beside the regions on desktop, ONE merged pill→sheet on mobile.
-  Each section is a pure presenter fed one VM slice.
-
-  LIVE tier (S9C · DECISIONS C1–C4): the top board is FOUR glance ExplainedMetricCards
-  (on_time_pct · coverage_pct · delay_p50 · delay_p90); vehicles_in_service + non_responding +
-  non_responding_by_route move WHOLLY into the dedicated Reporting row (SectionReporting) with
-  the global-signal caveat. The delay histogram is RE-SEATED off the hand-rolled /max <ul> onto
-  the ChartSpec kernel (SectionDelayHistogram) on an absolute count domain. status/occupancy
-  mixes render as stacked-share specs through the ONE <Chart> renderer (P5.2).
-
-  MIRROR-PATH (DECISIONS A1 — recorded, no churn): grain/window mirror to the URL via
-  mirrorSearchParams (in-place, MERGES, preserves other params); the status/occupancy map
-  cross-filter is a DISTINCT mechanism — it stays map-owned via openSurface→goto (a full
-  navigation to /map), never routed through this surface's search mirror. Two URL seams, kept
-  separate exactly as before the re-seat.
-
-  DOCTRINE: every data mark rides the dataviz scale; --primary stays interactive-only (the
-  grain/window/series pickers are interactive affordances). Honesty — a null headline shows the
-  styled AbsentValue chip, never a fabricated 0; null trend points are gaps; a day with no
-  occupancy telemetry is skipped. Before the first live tick a skeleton EdgeState; a live-store
-  error shows error-v1. All prose comes from ../network-reliability.copy.
--->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -43,9 +12,10 @@
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
+	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
+		fmtNumber as sharedFmtNumber,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
@@ -78,12 +48,7 @@
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import {
-		ArticleHeader,
-		ArticleSectionStack,
-		DetailShell,
-		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
@@ -296,24 +261,26 @@
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
-	// The comparison reads the same selected daily series the historic board plots.
-	const verdictDeltaPts = $derived.by<number | null>(() => {
-		const s = selectedTrend?.series ?? [];
-		if (s.length < 2) return null;
-		const latest = s[s.length - 1]?.otp_pct;
-		const prior = s[s.length - 2]?.otp_pct;
-		if (latest == null || prior == null) return null;
-		return Math.round(latest - prior);
+	// Compare the last two published daily points, which need not be consecutive dates.
+	const dailyChange = $derived.by(() => {
+		const series = selectedTrend?.series ?? [];
+		const latest = series.at(-1);
+		const prior = series.at(-2);
+		if (latest?.otp_pct == null || prior?.otp_pct == null) return null;
+		return { points: latest.otp_pct - prior.otp_pct, latest, prior };
 	});
-	const verdictDeltaText = $derived(
-		verdictDeltaPts == null
+	const dailyChangeText = $derived(
+		dailyChange == null
 			? null
-			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
+			: t.verdictDelta.chip(
+					`${dailyChange.points > 0 ? '+' : ''}${sharedFmtNumber(dailyChange.points, { rounding: 'auto', locale })}`,
+					Math.abs(dailyChange.points) === 1,
+				),
 	);
-	const verdictDeltaColor = $derived(
-		verdictDeltaPts == null || verdictDeltaPts === 0
+	const dailyChangeColor = $derived(
+		dailyChange == null || dailyChange.points === 0
 			? 'var(--muted-foreground)'
-			: verdictDeltaPts > 0
+			: dailyChange.points > 0
 				? 'var(--dataviz-status-on-time)'
 				: 'var(--dataviz-status-late)',
 	);
@@ -605,18 +572,7 @@
 	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
-	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
-		const entries: ArticleMetaEntry[] = [];
-		if (live.generatedUtc != null) {
-			entries.push({
-				label: t.article.generated,
-				text: formatUtc(live.generatedUtc, locale),
-				datetime: live.generatedUtc,
-			});
-		}
-		entries.push(t.article.sections(tocEntries.length));
-		return entries;
-	});
+	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
 </script>
 
 <p
@@ -656,6 +612,27 @@
 {#snippet historicBoard()}
 	<!-- The readouts share the one selected range and one mapping pass. -->
 	<ArticleSectionStack class="network-history-board" data-slot="network-history-board">
+		{#if dailyChange && dailyChangeText}
+			<p
+				class="network-daily-change"
+				data-slot="verdict-delta"
+				style={`--delta-tone: ${dailyChangeColor}`}
+			>
+				<span class="network-daily-change__mark" aria-hidden="true"
+					>{dailyChange.points > 0 ? '▲' : dailyChange.points < 0 ? '▼' : '■'}</span
+				>
+				<span>
+					{dailyChangeText} ·
+					<time datetime={dailyChange.latest.date}
+						>{formatDateKey(dailyChange.latest.date, locale, true)}</time
+					>
+					{t.verdictDelta.versus}
+					<time datetime={dailyChange.prior.date}
+						>{formatDateKey(dailyChange.prior.date, locale, true)}</time
+					>
+				</span>
+			</p>
+		{/if}
 		<div class="network-history-row" data-slot="network-history-trend-row">
 			<SectionTrend
 				{trendSpec}
@@ -745,6 +722,8 @@
 						generatedUtc={live.generatedUtc}
 						ageSeconds={live.ageSeconds}
 						isStale={live.isStale}
+						degraded={live.error != null}
+						label={live.error ? t.snapshotRefreshFailed : undefined}
 						{locale}
 					/>
 					<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
@@ -833,15 +812,6 @@
 	{/snippet}
 
 	{#snippet center()}
-		{#snippet liveTerminalMeta()}
-			<FreshnessStamp
-				variant="live"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-		{/snippet}
 		<div class="network-content">
 			<!-- ── LIVE region ──────────────────────────────────────────────────────────────
 			     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
@@ -869,7 +839,6 @@
 										value: t.liveTerminal.footerValue,
 									},
 								],
-								meta: liveTerminalMeta,
 							}}
 						/>
 						<SectionReporting cards={kpis.reporting} {silentRows} {info} copy={t} {locale} />
@@ -894,29 +863,9 @@
 				{/if}
 			</section>
 
-			<!-- §0 NETWORK VERDICT BAND (§C5.7): the one-line at-a-glance answer between the LIVE
-	     and HISTORIC regions — the SHARED VerdictBanner off the live on_time_pct, plus the
-	     Δ-vs-prior chip (§C6 #3) the network previously lacked. Stands down honestly
-	     ("still measuring") before the first live tick / on an absent live tier. -->
+			<!-- The verdict uses current known-status vehicle positions. -->
 			<section class="network-verdict" aria-label={t.verdictDelta.label}>
 				<VerdictBanner result={networkVerdict} />
-				{#if verdictDeltaText}
-					<span
-						class="network-verdict-delta"
-						data-slot="verdict-delta"
-						style={`--delta-tone: ${verdictDeltaColor}`}
-						aria-label={`${t.verdictDelta.a11y} ${verdictDeltaText}`}
-					>
-						<span class="network-verdict-delta__mark" aria-hidden="true"
-							>{verdictDeltaPts != null && verdictDeltaPts > 0
-								? '▲'
-								: verdictDeltaPts != null && verdictDeltaPts < 0
-									? '▼'
-									: '■'}</span
-						>
-						<span>{verdictDeltaText}</span>
-					</span>
-				{/if}
 			</section>
 
 			<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
@@ -1053,8 +1002,7 @@
 		width: 100%;
 		min-width: 0;
 	}
-	/* §0 verdict band between LIVE and HISTORIC — the VerdictBanner beside the Δ-vs-prior
-	   chip; wraps on a narrow phone so the chip drops beneath the sentence. */
+	/* Current-position verdict stays separate from the dated historical comparison. */
 	.network-verdict {
 		display: flex;
 		flex-wrap: wrap;
@@ -1063,7 +1011,7 @@
 	}
 	/* Δ-vs-prior chip: a quiet mono pill whose glyph + colour + sign read the direction
 	   (colour is never the sole channel — the ▲/▼ + the +/− sign carry it too). */
-	.network-verdict-delta {
+	.network-daily-change {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
@@ -1072,7 +1020,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--delta-tone, var(--muted-foreground));
 	}
-	.network-verdict-delta__mark {
+	.network-daily-change__mark {
 		line-height: 1;
 	}
 	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */

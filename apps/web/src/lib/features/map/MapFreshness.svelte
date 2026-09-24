@@ -1,18 +1,11 @@
 <!--
-  MapFreshness — the map's positioning shell around the shared FreshnessStamp.
-
-  The map is a full-bleed live surface, so its freshness readout floats over the
-  canvas (desktop) or tucks into the kicker row (mobile) — positioning the chip
-  can't do itself. This wrapper owns ONLY that placement chrome (the floating pill
-  background, the right-offset that tracks the detail panel, the responsive
-  head/floating swap); the readout itself is the site-wide FreshnessStamp
-  (variant="live"), so the map shares the exact same chip as every other surface.
-
-  Replaces the former MapLiveFreshness (which wrapped the now-removed LiveFreshness).
+  MapFreshness positions the shared timestamp readout and identifies report age.
+  Current feed availability is announced separately by MapFeedStallBanner.
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { FreshnessStamp } from '$lib/components/surface';
+	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
+	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {
 		generatedUtc: string | null;
@@ -48,6 +41,7 @@
 	>
 		<FreshnessStamp
 			variant="live"
+			label={ageLabel ? undefined : MAP_COPY[locale].latestReport}
 			{generatedUtc}
 			{ageSeconds}
 			{ageLabel}

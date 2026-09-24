@@ -9,7 +9,12 @@ const OPTS: HabitsHeatmapOpts = {
 	colAxisLabel: 'Hour of day',
 	rowLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 	fullRowLabels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-	tierLabels: ['Rarely late', 'Sometimes late', 'Often late', 'Very unreliable'],
+	tierLabels: [
+		'Low relative score',
+		'Moderate relative score',
+		'High relative score',
+		'Very high relative score',
+	],
 	noDataLabel: 'No data',
 	worstGlyph: '◆',
 	hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
@@ -48,18 +53,6 @@ describe('selectHabitsHeatmap', () => {
 		expect(s.cells[0][3].absentReason).toBe('no-observations');
 		expect(s.cells[0][8].value).toBe(1);
 		expect(s.cells[0][8].absentReason).toBeUndefined();
-	});
-
-	it('carries the classed-tier legend + the worst glyph', () => {
-		const s = selectHabitsHeatmap(vm(makeMatrix()), 'en', OPTS);
-		expect(s.tiers?.tierLabels).toEqual([
-			'Rarely late',
-			'Sometimes late',
-			'Often late',
-			'Very unreliable',
-		]);
-		expect(s.tiers?.noDataLabel).toBe('No data');
-		expect(s.tiers?.worstGlyph).toBe('◆');
 	});
 
 	it('formats hour labels + a sparse clock-tick subset for the column axis', () => {

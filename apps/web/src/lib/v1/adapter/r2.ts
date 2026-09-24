@@ -1,5 +1,4 @@
 import { labelsPort, manifestPort } from './r2.core';
-import type { ContentAdapter } from './types';
 
 function deferredPort<Module, Port extends object>(
 	load: () => Promise<Module>,
@@ -25,7 +24,7 @@ const loadHistoric = () => import('./r2.historic');
  * Stable R2 adapter facade. Manifest and labels stay in the boot closure; each
  * data tier crosses one literal dynamic-import boundary on first use.
  */
-export const r2Adapter: ContentAdapter = {
+export const r2Adapter = {
 	manifest: manifestPort,
 	labels: labelsPort,
 	live: deferredPort(loadLive, (module) => module.livePort, {
@@ -68,6 +67,10 @@ export const r2Adapter: ContentAdapter = {
 		stopReliability: true,
 	}),
 	basemap: deferredPort(loadStatic, (module) => module.basemapPort, { get: true }),
-	provenance: deferredPort(loadHistoric, (module) => module.provenancePort, { get: true }),
+	provenance: deferredPort(
+		() => import('./r2.provenance'),
+		(module) => module.provenancePort,
+		{ get: true },
+	),
 	dataHealth: deferredPort(loadLive, (module) => module.dataHealthPort, { get: true }),
 };

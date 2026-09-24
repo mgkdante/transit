@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   run-static-pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Three 30-minute provider budgets plus bounded setup and publish headroom.
     timeout-minutes: 110
     defaults:
@@ -92,6 +92,7 @@ jobs:
           exit "$aggregate_status"
 
       - name: Publish static /v1 snapshot to R2 (all active providers)
+        if: steps.run-static-providers.outcome == 'success'
         run: uv run python -m transit_ops.cli publish-all --tier static
 
       - name: Re-fail after provider pipeline failures
@@ -101,7 +102,7 @@ jobs:
   notify:
     needs: [run-static-pipeline]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository

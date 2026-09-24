@@ -14,14 +14,21 @@ describe('footer parity probe script contract', () => {
 				'https://preview.example/transit/',
 				'--out',
 				'/tmp/transit-footer-probe',
-				'--executable-path',
-				'/opt/chromium',
 			]),
 		).toEqual({
 			baseUrl: 'https://preview.example/transit/',
 			outDir: '/tmp/transit-footer-probe',
-			executablePath: '/opt/chromium',
 		});
+		expect(() =>
+			parseCliArgs([
+				'--base-url',
+				'https://preview.example/',
+				'--out',
+				'/tmp/transit-footer-probe',
+				'--executable-path',
+				'/opt/chromium',
+			]),
+		).toThrow(/unknown argument/u);
 	});
 
 	it('rejects incomplete or unsafe base URLs and output paths', () => {

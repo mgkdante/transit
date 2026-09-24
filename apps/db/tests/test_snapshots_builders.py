@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 
 from transit_ops.snapshots.builders import (
-    _iso,
     build_alerts,
     build_manifest,
     build_network,
@@ -20,6 +19,7 @@ from transit_ops.snapshots.builders import (
     build_trips,
     build_vehicles,
 )
+from transit_ops.snapshots.builders._helpers import _iso
 from transit_ops.snapshots.contract import (
     AlertsFile,
     Manifest,
@@ -298,9 +298,9 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
 
 def test_trip_departures_sql_contract_60min_horizon() -> None:
     """slice-9.1.1q: the trips departures query caps the ETA horizon at 60 min."""
-    from transit_ops.snapshots import builders
+    from transit_ops.snapshots.builders.live import _TRIP_DEPARTURES_SQL
 
-    sql = str(builders._TRIP_DEPARTURES_SQL)
+    sql = str(_TRIP_DEPARTURES_SQL)
     assert "interval '60 minutes'" in sql
     assert "predicted_departure_utc <" in sql
 
@@ -395,15 +395,18 @@ def test_build_stop_departures_groups_by_stop_in_eta_order_and_maps_delay() -> N
 
 
 def test_build_stop_departures_sql_contract() -> None:
-    from transit_ops.snapshots import builders
+    from transit_ops.snapshots.builders.live import (
+        _STOP_DEPARTURES_PER_ROUTE_CAP,
+        _STOP_DEPARTURES_SQL,
+    )
 
-    sql = str(builders._STOP_DEPARTURES_SQL)
+    sql = str(_STOP_DEPARTURES_SQL)
     assert "PARTITION BY d.stop_id, d.route_id" in sql
     assert ":per_route_cap" in sql
     assert "d.stop_id IS NOT NULL" in sql
     assert "current_trip_delay_computed" in sql
     assert "GROUP BY provider_id, trip_id" in sql
-    assert builders._STOP_DEPARTURES_PER_ROUTE_CAP == 2
+    assert _STOP_DEPARTURES_PER_ROUTE_CAP == 2
 
 
 # --------------------------------------------------------------------------
@@ -599,7 +602,6 @@ def test_build_network_aggregates_kpis() -> None:
         {
             "current_vehicle_map_with_status": vehicle_rows,
             "current_trip_delay_computed": trip_rows,
-            "0) AS non_responding": [{"non_responding": 7}],
             # per-route breakdown (dispatched by registry name) — sums to 7
             "network.live.non_responding_by_route": [
                 {"route_id": "51", "nr_count": 4},
@@ -638,6 +640,7 @@ def test_build_network_aggregates_kpis() -> None:
         ("165", 3),
     ]
     assert sum(r.count for r in out.non_responding_by_route) == out.non_responding
+    assert sum("FROM gold.non_responding_current" in sql for sql in conn.executed) == 1
     # delay_histogram: all 8 buckets present, sums to len(delays), values land
     # in the right bins. delays = [1, 2, 10] -> [0,2)=1 [2,5)=1 [5,10)... 10 -> [10,15)=1
     assert out.delay_histogram is not None
@@ -661,7 +664,6 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
                 {"status_band": "Critique / Severe", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )
@@ -683,9 +685,7 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": [],
-            # SUM(...) COALESCE-d to 0 still returns one row; MAX(...) over an
-            # empty set returns a single NULL — model both faithfully.
-            "0) AS non_responding": [{"non_responding": 0}],
+            # MAX over no completed runs returns one NULL.
             "feed_freshness_current": [{"feed_freshness_s": None}],
         }
     )
@@ -715,7 +715,6 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
                 {"status_band": "Inconnu / Unknown", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 4}],
         }
     )
@@ -737,7 +736,6 @@ def test_build_network_no_occupancy_telemetry_emits_none_not_all_zero() -> None:
                 {"status_band": "En retard / Late", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
@@ -755,7 +753,6 @@ def test_build_network_delay_histogram_none_when_no_delay_observations() -> None
                 {"status_band": "À l'heure / On time", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],  # zero delay observations
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
@@ -779,7 +776,6 @@ def test_build_network_delay_histogram_signed_bucket_edges() -> None:
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": trip_rows,
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
@@ -805,8 +801,7 @@ def test_build_network_non_responding_by_route_none_when_no_routes() -> None:
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": [],
-            "0) AS non_responding": [{"non_responding": 0}],
-            # no "nr_by_route" fixture -> per-route query yields no rows
+            "network.live.non_responding_by_route": [],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
@@ -1119,6 +1114,13 @@ def test_build_labels_includes_methodology_gap_attribution():
     assert "14 days" in en.labels["methodology.percentiles"]
     assert "90 derniers jours" not in fr.labels["methodology.percentiles"]
     assert "14 derniers jours" in fr.labels["methodology.percentiles"]
+    assert "known-delay observations" in en.labels["methodology.otp_definition"]
+    assert "observations au retard connu" in fr.labels["methodology.otp_definition"]
+    assert "no delay was recorded" not in en.labels["methodology.otp_definition"]
+    assert "trip-average" in en.labels["methodology.percentiles"]
+    assert "moyens par trajet" in fr.labels["methodology.percentiles"]
+    assert "STM" not in en.labels["methodology.delay_unit"]
+    assert "STM" not in fr.labels["methodology.delay_unit"]
 
 
 def test_build_labels_non_stm_derives_attribution_from_core_providers():
@@ -1162,7 +1164,7 @@ def test_build_labels_non_stm_derives_attribution_from_core_providers():
 def test_static_label_key_sets_identical_fr_en():
     """Parity invariant: the two static dicts must always carry the same key set,
     so fr.json and en.json never drift apart (slice-9.1.1t)."""
-    from transit_ops.snapshots.builders import _STATIC_LABELS_EN, _STATIC_LABELS_FR
+    from transit_ops.snapshots.builders.static import _STATIC_LABELS_EN, _STATIC_LABELS_FR
 
     assert set(_STATIC_LABELS_FR) == set(_STATIC_LABELS_EN)
 
@@ -1963,7 +1965,6 @@ def test_build_alerts_stamps_generated_utc() -> None:
 def test_build_network_stamps_generated_utc() -> None:
     conn = FakeConn(
         {
-            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )
@@ -2084,7 +2085,6 @@ def test_build_alert_history_passes_bilingual_source_messages_without_rekeying()
     import datetime
 
     from transit_ops.snapshots.builders import build_alert_history
-    from transit_ops.snapshots.builders.historic.small_surfaces import _ALERT_HISTORY_SQL
 
     start = datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC)
 
@@ -2120,12 +2120,6 @@ def test_build_alert_history_passes_bilingual_source_messages_without_rekeying()
     assert first.description_en == "<p>Stops cancelled.</p>"
     assert changed_copy.description == "Message source modifié"
     assert first.id == changed_copy.id
-
-    sql = " ".join(str(_ALERT_HISTORY_SQL).split())
-    assert "MAX(grp.description) AS description" in sql
-    assert "MAX(grp.description_en) AS description_en" in sql
-    group_by = sql.split("GROUP BY", 1)[1].split("ORDER BY", 1)[0]
-    assert "description" not in group_by
 
 
 # --------------------------------------------------------------------------

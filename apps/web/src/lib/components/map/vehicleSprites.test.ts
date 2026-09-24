@@ -35,11 +35,18 @@ type Point = readonly [number, number];
 
 const FIXED_TEST_ALPHA_PIXELS = 40;
 const renderedImages: LoggedImageData[] = [];
+const pixelReads: { width: number; height: number }[] = [];
 let fixedAlphaSchedule: number[] = [];
+const canvasRecords = new Map<
+	HTMLCanvasElement,
+	{ commands: DrawCommand[]; alphaPixels: number; index: number }
+>();
 
-function canvasContext(): CanvasRenderingContext2D {
+function canvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 	const commands: DrawCommand[] = [];
 	const alphaPixels = fixedAlphaSchedule.shift() ?? FIXED_TEST_ALPHA_PIXELS;
+	canvasRecords.set(canvas, { commands, alphaPixels, index: canvasRecords.size });
+	const copies: { canvas: HTMLCanvasElement; x: number; y: number }[] = [];
 	let fillStyle = '';
 	let strokeStyle = '';
 	let font = '';
@@ -47,6 +54,7 @@ function canvasContext(): CanvasRenderingContext2D {
 	const record = (method: string, ...args: unknown[]) =>
 		commands.push({ method, args, fillStyle, strokeStyle });
 	const context = {
+		canvas,
 		commands,
 		set fillStyle(value: string) {
 			fillStyle = value;
@@ -92,11 +100,23 @@ function canvasContext(): CanvasRenderingContext2D {
 		stroke: () => record('stroke'),
 		save: () => record('save'),
 		restore: () => record('restore'),
+		drawImage: (source: HTMLCanvasElement, x: number, y: number) => {
+			copies.push({ canvas: source, x, y });
+		},
 		getImageData: (sx: number, sy: number, sw: number, sh: number) => {
+			pixelReads.push({ width: sw, height: sh });
 			record('getImageData', sx, sy, sw, sh);
 			const data = new Uint8ClampedArray(sw * sh * 4);
-			for (let pixel = 0; pixel < alphaPixels; pixel += 1) {
-				data[pixel * 4 + 3] = 255;
+			for (const copy of copies.length ? copies : [{ canvas, x: 0, y: 0 }]) {
+				const source = canvasRecords.get(copy.canvas)!;
+				// A source identifier in RGB lets the ImageData stub recover the drawing
+				// commands after real production atlas slicing. Alpha keeps its own oracle.
+				data[(copy.y * sw + copy.x) * 4] = source.index + 1;
+				for (let pixel = 0; pixel < source.alphaPixels; pixel += 1) {
+					const x = copy.x + (pixel % copy.canvas.width);
+					const y = copy.y + Math.floor(pixel / copy.canvas.width);
+					data[(y * sw + x) * 4 + 3] = 255;
+				}
 			}
 			const image = {
 				width: sw,
@@ -104,7 +124,7 @@ function canvasContext(): CanvasRenderingContext2D {
 				data,
 				commands,
 			} as LoggedImageData;
-			renderedImages.push(image);
+			if (!copies.length) renderedImages.push(image);
 			return image;
 		},
 	};
@@ -296,8 +316,29 @@ for (const [index, code] of OCCUPANCY_CODES.entries()) {
 
 beforeEach(() => {
 	renderedImages.length = 0;
+	pixelReads.length = 0;
 	fixedAlphaSchedule = [];
-	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => canvasContext());
+	canvasRecords.clear();
+	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
+		this: HTMLCanvasElement,
+	) {
+		return canvasContext(this);
+	});
+	vi.stubGlobal(
+		'ImageData',
+		class {
+			readonly commands: DrawCommand[];
+			readonly colorSpace = 'srgb';
+			constructor(
+				readonly data: Uint8ClampedArray,
+				readonly width: number,
+				readonly height: number,
+			) {
+				this.commands = [...canvasRecords.values()][data[0] - 1]!.commands;
+				renderedImages.push(this as LoggedImageData);
+			}
+		},
+	);
 	vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((node) => {
 		const color = resolvedColors.get((node as HTMLElement).style.color);
 		return { color: color ?? 'rgb(0, 0, 0)' } as CSSStyleDeclaration;
@@ -306,6 +347,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe('vehicle sprite palette contract', () => {
@@ -341,7 +383,7 @@ describe('vehicle sprite glyph vocabulary boundary', () => {
 			'utf8',
 		);
 		const datavizImport = source.match(
-			/import\s*\{([^}]+)\}\s*from ['"]\$lib\/components\/dataviz['"];/u,
+			/import\s*\{([^}]+)\}\s*from ['"]\$lib\/components\/dataviz\/tokens['"];/u,
 		);
 		expect(datavizImport?.[1]).toMatch(/\bSTATUS_GLYPH\b/u);
 		expect(datavizImport?.[1]).toMatch(/\boccupancyGlyph\b/u);
@@ -363,6 +405,19 @@ describe('vehicle sprite glyph vocabulary boundary', () => {
 });
 
 describe('vehicle state badge baker', () => {
+	it('reads the complete sprite batch once before uploading real image data', () => {
+		const images: ImageData[] = [];
+		bakeVehicleSprites({
+			hasImage: () => false,
+			addImage: (_id: string, image: ImageData) => {
+				expect(image.data.some((value, index) => index % 4 === 3 && value !== 0)).toBe(true);
+				images.push(image);
+			},
+		} as never);
+		expect(images).toHaveLength(24);
+		expect(pixelReads).toHaveLength(1);
+	});
+
 	it('registers exactly one reachable vector badge for every schema state and never a no-data badge', () => {
 		const { images, receipt } = bakeReceipt();
 		const ids = [
@@ -388,7 +443,10 @@ describe('vehicle state badge baker', () => {
 			'stateBadgeImages',
 			'stateGlyphMasks',
 			'stateGlyphMaskImages',
+			'sprites',
+			'pixelRatio',
 		]);
+		expect(receipt.sprites[BUS_ICON]).toBe(images.get(BUS_ICON));
 		expect(Object.keys(receipt.stateBadges)).toEqual(ids);
 		expect(Object.keys(receipt.stateBadgeImages)).toEqual(ids);
 		expect(Object.keys(receipt.stateGlyphMasks)).toEqual(ids);
@@ -557,9 +615,10 @@ describe('vehicle state badge baker', () => {
 		expect(VEHICLE_MARKER_GEOMETRY).toEqual({
 			box: 26,
 			bodyIconSize: { z11: 0.78, z15: 1.3 },
-			stateBadge: { offset: [0, 20], scale: 0.6 },
-			silentBadge: { offset: [0, -16], scale: 0.75 },
-			chevronAnnulus: { inner: 4.9, outer: 10.8 },
+			headingOffset: [0, -9],
+			stateBadge: { offset: [0, 30], pairedOffset: [-9, 30], scale: 0.6 },
+			silentBadge: { offset: [0, 30], pairedOffset: [9, 30], scale: 0.75 },
+			chevronAnnulus: { inner: 12.7, outer: 19.8 },
 			plateMargin: 2.4,
 		});
 		expect(Object.isFrozen(VEHICLE_MARKER_GEOMETRY)).toBe(true);

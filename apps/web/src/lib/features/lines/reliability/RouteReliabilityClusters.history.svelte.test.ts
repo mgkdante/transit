@@ -11,6 +11,7 @@ import {
 import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 import {
 	createLineHistoryResource,
+	loadLineHistorySeed,
 	type LineHistoryResource,
 } from './data/lineHistoryResource.svelte';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
@@ -284,6 +285,129 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('RouteReliabilityClusters retained Line history', () => {
+	it('renders accepted server counts and source date immediately without reloading the selected partition', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+		);
+		harness.loadLineHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+		const request = historyRangeRequestFromSearchParams(harness.page.url.searchParams);
+		const seed = await loadLineHistorySeed(entityId, request, {
+			signal: new AbortController().signal,
+		});
+		expect(seed.index?.generated_utc).toBe(generatedUtc);
+		expect(seed.result?.value?.aggregate.delay.value).toMatchObject({
+			observationCount: 10,
+			onTimeCount: 2,
+			severeCount: 1,
+			averageDelaySeconds: 120,
+			otpPct: 20,
+			severePct: 10,
+		});
+		harness.getLineHistoryIndex.mockClear();
+		harness.loadLineHistoryRange.mockClear();
+		const history = createLineHistoryResource(entityId, request, () => seed);
+		try {
+			expect(history.state).toBe('ready');
+			const view = render(RouteReliabilityClusters, {
+				props: { data: current, locale: 'en', history },
+			});
+			const verdict = view.container.querySelector('[data-band="verdict"]') as HTMLElement;
+			expect(verdict).toHaveTextContent('20%');
+			expect(verdict).not.toHaveTextContent('12%');
+			expect(activeWindowText(view.container)).toContain('2026-01-31');
+			await fireEvent.click(
+				within(verdict).getByRole('button', { name: reliabilityCopy.en.sections.detailShow }),
+			);
+			expect(verdict.querySelector('[data-slot="daily-percentile-spread"]')).toHaveTextContent(
+				'p90 − median spread: 2.0 min. 2026-01-31 · 10 eligible delay predictions.',
+			);
+			expect(harness.getLineHistoryIndex).not.toHaveBeenCalled();
+			expect(harness.loadLineHistoryRange).not.toHaveBeenCalled();
+		} finally {
+			history.destroy();
+		}
+	});
+
+	it.each(['en', 'fr'] as const)(
+		'keeps retained one-day percentiles exact and multi-day percentiles absent in %s',
+		async (locale) => {
+			harness.page.url = new URL(
+				'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+			);
+			harness.loadLineHistoryRange.mockResolvedValueOnce([retainedPartitions[0]]);
+			const history = createHistory();
+			const view = render(RouteReliabilityClusters, { props: { data: current, locale, history } });
+			try {
+				await waitFor(() => expect(history.state).toBe('ready'));
+				const tiles = () =>
+					[
+						...view.container.querySelectorAll(
+							'[data-slot="verdict-kpis"] [data-slot="metric-bullet"]',
+						),
+					].slice(2);
+				const exact =
+					locale === 'en'
+						? [
+								'Median of reported predicted delays',
+								'90th percentile of reported predicted delays',
+							]
+						: [
+								'Médiane des relevés de retard prédit',
+								'90e percentile des relevés de retard prédit',
+							];
+				expect
+					.soft(tiles().map((tile) => tile.querySelector('.metric-bullet__caption')?.textContent))
+					.toEqual(exact);
+				expect(
+					tiles().map((tile) => tile.querySelector('.metric-bullet__value')?.textContent?.trim()),
+				).toEqual(['1.0 min', '3.0 min']);
+				expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1);
+				history.setRequest(
+					historyRangeRequestFromSearchParams(new URLSearchParams('from=2026-01-31&to=2026-02-01')),
+				);
+				await waitFor(() => expect(history.value?.aggregate.window.to).toBe('2026-02-01'));
+				for (const tile of tiles())
+					expect(tile.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+				expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(2);
+			} finally {
+				history.destroy();
+			}
+		},
+	);
+
+	it('adds a same-day percentile spread without loading another partition', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-01-31',
+		);
+		harness.loadLineHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+		const history = createHistory();
+		const view = render(RouteReliabilityClusters, {
+			props: { data: current, locale: 'en', history },
+		});
+		try {
+			await waitFor(() => expect(history.state).toBe('ready'));
+			const verdict = view.container.querySelector('[data-band="verdict"]') as HTMLElement;
+			await fireEvent.click(
+				within(verdict).getByRole('button', { name: reliabilityCopy.en.sections.detailShow }),
+			);
+			expect(verdict.querySelector('[data-slot="daily-percentile-spread"]')).toHaveTextContent(
+				'p90 − median spread: 2.0 min. 2026-01-31 · 10 eligible delay predictions.',
+			);
+			const distribution = verdict.querySelector('[data-slot="delay-distribution"]') as HTMLElement;
+			expect(distribution.querySelector('[data-slot="delay-dist-readout"]')).toHaveTextContent(
+				'Median delay 1.0 min · 90th-percentile delay 3.0 min',
+			);
+			expect(distribution.querySelector('[data-slot="absent-value"]')).toHaveTextContent(
+				'the selected view does not publish a delay histogram',
+			);
+			expect(distribution).not.toHaveTextContent('not enough readings yet');
+			expect(distribution.querySelector('[data-slot="delay-dist-caption"]')).toBeNull();
+			expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1);
+		} finally {
+			history.destroy();
+		}
+	});
+
 	it('keeps the current default untouched, discovers only this entity, and loads no partition', async () => {
 		const history = createHistory();
 		const view = render(RouteReliabilityClusters, {
@@ -322,7 +446,7 @@ describe('RouteReliabilityClusters retained Line history', () => {
 
 		expect(view.container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
 		expect(
-			view.getAllByRole('radio', { name: /Today|This week|This month|Date range/ }),
+			view.getAllByRole('radio', { name: /Latest day|This week|This month|Date range/ }),
 		).toHaveLength(4);
 		await fireEvent.click(view.getByRole('radio', { name: reliabilityCopy.en.controls.dateRange }));
 		const rail = view.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;

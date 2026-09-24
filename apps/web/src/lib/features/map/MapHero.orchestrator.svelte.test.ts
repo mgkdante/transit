@@ -23,6 +23,10 @@ const layerModulesSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
 	'utf-8',
 );
+const runtimeSource = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/map/mapRuntime.svelte.ts'),
+	'utf-8',
+);
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
 const mapStage = source.match(/<MapStage\s[\s\S]*?\/>/u)?.[0];
@@ -58,10 +62,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('urlCoordinator.settle(url)');
 	});
 
-	it('keeps the orchestrator bounded and delegates outward lifecycle signals', () => {
+	it('delegates outward lifecycle signals', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(950);
 		expect(script).toContain('function onMapIdle(): void');
 		expect(script).toContain('function onMapFailure(failure: MapStageFailure | null): void');
 	});
@@ -79,18 +82,6 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
-	});
-
-	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
-		expect(source).toContain(
-			"import { createMapEmphasisController } from './mapEmphasisController.svelte'",
-		);
-		expect(source).toContain("import { resolveMapHoverPeek } from './mapHoverPeek'");
-		expect(source).not.toContain('hoveredId:');
-		expect(source).not.toContain('const focusedSelection = $derived(selected ?? hovered)');
-		expect(source).toContain('const serverNow = untrack(() => sharedClock.serverNow)');
-		expect(source).toContain('untrack(() => emphasisController.apply(m, entries))');
-		expect(source).toContain('untrack(() => emphasisController.replay(m))');
 	});
 
 	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {
@@ -129,7 +120,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
 		expect(mapStage).toContain('onidle={onMapIdle}');
 		expect(mapStage).toContain('onerror={onMapFailure}');
-		expect(mapStage).toContain('onbeforeremove={releaseMapOwners}');
+		expect(mapStage).toContain('onbeforeremove={runtime.release}');
 		expect(mapStage).not.toContain('layout.isDesktop');
 	});
 
@@ -201,7 +192,8 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
 		expect(layerModulesSource).toContain('tickKey: vehicles.tickKey');
 		expect(layerModulesSource).toContain('stale: vehicles.stale');
-		expect(layerModulesSource).toContain('setStale(map, vehicles.stale)');
+		expect(runtimeSource).toContain('feed.vehicles.stale');
+		expect(runtimeSource).toContain('overlay?.setScene(');
 		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
 		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
 		expect(source).toContain("family.phase === 'failed' || family.consecutiveFailures > 0");

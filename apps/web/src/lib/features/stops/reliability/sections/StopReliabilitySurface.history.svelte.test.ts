@@ -340,6 +340,26 @@ afterEach(() => {
 });
 
 describe('StopReliabilitySurface retained Stop history', () => {
+	it.each(['en', 'fr'] as const)(
+		'shows the selected raw daily percentiles and their own sample in %s',
+		async (locale) => {
+			harness.page.url = explicitUrl();
+			harness.page.url.searchParams.set('to', WINDOW.from);
+			harness.loadStopHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+			const history = createHistory();
+			const view = renderSurface(history, locale);
+			await waitFor(() => expect(history.state).toBe('ready'));
+			const detail = view.container.querySelector('[data-slot="stop-percentiles"]');
+			expect(detail).toHaveTextContent('0.5 min');
+			expect(detail).toHaveTextContent('3.0 min');
+			expect(detail).toHaveTextContent(
+				locale === 'fr' ? 'Écart p90 − médiane : 2,5 min.' : 'p90 − median spread: 2.5 min.',
+			);
+			expect(detail).toHaveTextContent('2026-01-31 · 40');
+			expect(harness.loadStopHistoryRange).toHaveBeenCalledTimes(1);
+		},
+	);
+
 	it('keeps the current default untouched, discovers only the raw stop, and loads no partition', async () => {
 		const history = createHistory();
 		const view = renderSurface(history);
@@ -351,6 +371,7 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			'99.0%',
 		);
 		expect(view.container.querySelector('[data-slot="stop-crowding"]')).toHaveTextContent('100%');
+		expect(view.container.querySelector('[data-slot="prediction-scope"]')).toBeNull();
 	});
 
 	it('uses one controlled navigator in the existing rail, keeps three grains, and removes the local picker', async () => {
@@ -424,7 +445,7 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		['en', /current snapshot/i],
 		['fr', /portrait actuel/i],
 	] as const)(
-		'keeps current-only period, habits, weekday, time, and route sections with one %s scope label',
+		'keeps current-only period, habits, weekday, time, and route sections with %s scope labels',
 		async (locale, localizedScope) => {
 			harness.page.url = explicitUrl();
 			const history = createHistory();
@@ -440,8 +461,10 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			]) {
 				expect.soft(view.container.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
 			}
-			expect(view.container.querySelector('[data-slot="stop-reliability-pane"]')).toHaveTextContent(
-				'22%',
+			const predictionPane = view.container.querySelector('[data-slot="stop-reliability-pane"]');
+			expect(predictionPane).toHaveTextContent('22%');
+			expect(predictionPane?.querySelector('[data-slot="prediction-scope"]')).toHaveTextContent(
+				localizedScope,
 			);
 			expect(view.container.querySelector('[data-slot="stop-by-route"]')).toHaveTextContent('51');
 			const scope = view.container.querySelectorAll('[data-slot="history-current-only"]');

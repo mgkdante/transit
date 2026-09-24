@@ -25,6 +25,7 @@ from transit_ops.snapshots.contract import (
     LineHistoryDay,
     LineHistoryPartition,
     NetworkHistoryDay,
+    NetworkHistoryPartition,
     StopHistoryDay,
     StopHistoryPartition,
 )
@@ -1735,6 +1736,70 @@ def test_history_common_entity_plan_and_month_partition_helpers():
     assert ref.path.endswith(f"/{snapshot_sha256(partition)}/2026-07.json")
     assert ref.sha256 == snapshot_sha256(partition)
     assert partition.generated_utc == "2026-07-02T08:00:00Z"
+
+
+@pytest.mark.parametrize(
+    ("partition_type", "day_type"),
+    [
+        (NetworkHistoryPartition, NetworkHistoryDay),
+        (LineHistoryPartition, LineHistoryDay),
+        (StopHistoryPartition, StopHistoryDay),
+    ],
+)
+@pytest.mark.parametrize("dates", [("2024-02-29",), ("2024-02-01", "2024-02-29")])
+def test_month_partition_identity_encodes_once(monkeypatch, partition_type, day_type, dates):
+    common = import_module("transit_ops.snapshots.builders.historic.history_common")
+    original = partition_type.model_dump_json
+    encoded = []
+
+    def encode(self, *args, **kwargs):
+        body = original(self, *args, **kwargs)
+        encoded.append(body)
+        return body
+
+    monkeypatch.setattr(partition_type, "model_dump_json", encode)
+    identity = {} if partition_type is NetworkHistoryPartition else {"entity_id": "Édouard/µ"}
+    ref, partition = common.history_month_partition_ref(
+        lambda local_date: day_type(
+            date=local_date,
+            delay={
+                "observation_count": 1,
+                "in_clamp_observation_count": 1,
+                "sum_delay_seconds": -1,
+            },
+        ),
+        lambda stamp, month, days: partition_type(
+            generated_utc=stamp,
+            month=month,
+            days=days,
+            **identity,
+        ),
+        lambda digest, month: f"history/generations/{digest}/{month}.json",
+        month="2024-02",
+        dates=dates,
+        source_timestamps=({dates[-1]: ["2024-03-01T08:00:00Z"]},),
+    )
+    body = original(partition).encode("utf-8")
+    digest = hashlib.sha256(body).hexdigest()
+    assert len(encoded) == 1
+    assert ref.model_dump() == {
+        "path": f"history/generations/{digest}/2024-02.json",
+        "coverage_start": dates[0],
+        "coverage_end": dates[-1],
+        "count": len(dates),
+        "sha256": digest,
+        "byte_size": len(body),
+    }
+    assert common.history_partition_ref(ref.path, partition) == ref
+    assert partition.generated_utc == "2024-03-01T08:00:00Z"
+
+
+@pytest.mark.parametrize("days", [None, (), []])
+def test_partition_reference_rejects_missing_or_empty_days(days):
+    common = import_module("transit_ops.snapshots.builders.historic.history_common")
+    partition = NetworkHistoryPartition.model_construct(days=days)
+    with pytest.raises(ValueError, match="nonempty days list"):
+        common.history_partition_ref("fixed/path.json", partition)
 
 
 def test_history_common_batch_loader_helpers_and_family_adoption():

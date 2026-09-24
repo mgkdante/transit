@@ -283,7 +283,8 @@ def test_spine_plan_reads_the_closed_day_fact_slice_once(conn) -> None:  # noqa:
         str(fact_nodes[0].get(key, "")) for key in ("Index Cond", "Recheck Cond", "Filter")
     )
     assert "provider_id" in conditions
-    assert "snapshot_date_key" in conditions
+    assert "captured_at_utc >=" in conditions
+    assert "captured_at_utc <" in conditions
 
 
 def test_spine_watermark_idempotent(conn) -> None:  # noqa: ANN001

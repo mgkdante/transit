@@ -2,10 +2,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TripsFile } from '$lib/v1';
 import TripDetail from './TripDetail.svelte';
-
-// A live trips map (trip-keyed). t161 is broadcasting on route 161 with two
-// remaining stops: sA carries a 4 min late prediction, sB carries a NULL delay
-// (honest "no data", never 0). The absent-trip test looks up an id NOT here.
+import { tripCopy } from './trips.copy';
 const TRIPS_FILE = {
 	generated_utc: '2026-06-15T12:00:00Z',
 	trips: {
@@ -18,15 +15,12 @@ const TRIPS_FILE = {
 				{ stop: 'sB', eta_utc: '2026-06-15T12:12:00Z', delay_min: null },
 			],
 		},
-		// A broadcasting trip with NO remaining stops → the honest "no stops" note.
 		tEmpty: {
 			status: 'on_time',
 			route: '24',
 			delay_min: 0,
 			stops: [],
 		},
-		// A broadcasting trip whose live row OMITS route + delay_min → the styled
-		// honest-absence chip at both the route cell and the trip-level delay cell.
 		tBlank: {
 			status: 'unknown',
 			route: null,
@@ -35,24 +29,39 @@ const TRIPS_FILE = {
 		},
 	},
 } as unknown as TripsFile;
-
-// Mutable so individual tests can drive an absent / empty broadcast without
-// re-mocking the module.
 let tripsData: TripsFile | null = TRIPS_FILE;
-
-// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
-// module graph incl. $app/environment, which the jsdom env can't boot).
-// getV1Context feeds the A4 CornerMeta corners (provider short_name); a minimal
-// manifest stub is enough for the head to render.
 vi.mock('$lib/v1/repositories/live', () => ({ getTrips: vi.fn() }));
+let reportStale = false;
+let reportFailures = 0;
+vi.mock('$lib/v1/live/store.svelte', () => ({
+	createLiveStore: () => ({
+		get trips() {
+			return tripsData;
+		},
+		get generatedUtc() {
+			return tripsData?.generated_utc ?? null;
+		},
+		ageSeconds: 300,
+		get isStale() {
+			return reportStale;
+		},
+		get familyStates() {
+			return { trips: { phase: 'ready', consecutiveFailures: reportFailures } };
+		},
+		error: null,
+		loading: false,
+		start: vi.fn(),
+		stop: vi.fn(),
+		refresh: vi.fn(),
+	}),
+}));
 vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: vi.fn() }));
 vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),
 }));
-
-// createResource returns the trips file (or null) for the one trips read.
+// The optional stop-name lookup deliberately falls back to raw IDs in this fixture.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		get data() {
@@ -64,16 +73,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		reload: vi.fn(),
 	}),
 }));
-
-// Mock the shared clock with a FIXED, skewed `serverNow` so the freshness age the
-// FreshnessStamp renders is anchored to the SERVER clock (PR-6), not the raw
-// client `Date.now()`. serverNow = the file's generated_utc + exactly 5 minutes →
-// the chip must read "5 minutes ago" regardless of the machine's real clock. A
-// drift-bugged readout (off Date.now()) would NOT land on that controlled value.
-// serverNow = generated_utc (12:00:00Z) + 5 min → the stamp must read "5 minutes ago".
-// Hoisted so the mock factories (also hoisted) can reference it. FreshnessStamp
-// derives the age via $lib/v1/freshness → $lib/stores/clock.svelte, so mock the
-// clock module too (not just the barrel) to pin the readout deterministically.
+// Pin server time five minutes after generation, independent of client wall time.
 const clockStub = vi.hoisted(() => ({
 	get now() {
 		return Date.parse('2026-06-15T12:05:00Z');
@@ -88,6 +88,75 @@ vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
 
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
+	reportStale = false;
+	reportFailures = 0;
+});
+
+describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
+	const context = new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	it('keeps a prediction caveat without inventing its source', () => {
+		const { container } = render(TripDetail, { props: { id: 't161' }, context });
+		expect(container.querySelector('.trip-prediction-caveat')).toHaveTextContent(
+			locale === 'fr'
+				? 'Les prédictions couvrent jusqu’à une heure au moment de la préparation du rapport. Elles peuvent changer.'
+				: 'Predictions cover up to one hour when the report is prepared. They may change.',
+		);
+	});
+	it('states on time once when the reported delay is exactly zero', () => {
+		const { container } = render(TripDetail, { props: { id: 'tEmpty' }, context });
+		const verdict = container.querySelector('.trip-verdict')!;
+		expect(within(verdict as HTMLElement).getAllByText(tripCopy[locale].onTime)).toHaveLength(1);
+		expect(verdict.querySelector('.trip-verdict-delay')).toHaveTextContent('0 min');
+		expect(container.textContent).not.toMatch(/\/v1|never invented|jamais inventé/);
+	});
+
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('uses published %s with neutral measurement %s', (status, delay, measurement) => {
+		tripsData = {
+			...TRIPS_FILE,
+			trips: { probe: { status, delay_min: delay, route: '24', stops: [] } },
+		} as TripsFile;
+		const { container } = render(TripDetail, { props: { id: 'probe' }, context });
+		const verdict = container.querySelector('.trip-verdict') as HTMLElement;
+		const badge = verdict.querySelector('[data-slot="status-badge"]')!;
+		if (status === 'unknown' && delay == null) {
+			expect(
+				verdict.textContent?.match(new RegExp(tripCopy[locale].status.unknown, 'g')),
+			).toHaveLength(1);
+			const probe = document.createElement('button');
+			probe.innerHTML = verdict.innerHTML;
+			document.body.append(probe);
+			try {
+				expect(probe).toHaveAccessibleName(
+					locale === 'en'
+						? 'Unknown, not reported in the live feed'
+						: 'Inconnu, non signalé dans le flux en direct',
+				);
+			} finally {
+				probe.remove();
+			}
+		}
+
+		expect(badge).toHaveAttribute('data-status', status);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(tripCopy[locale].status[status]);
+		expect(badge.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+		const reading = verdict.querySelector('.trip-verdict-delay')!;
+		expect(reading).not.toHaveAttribute('data-tone');
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+	});
 });
 
 describe('TripDetail: a broadcasting trip', () => {
@@ -95,14 +164,11 @@ describe('TripDetail: a broadcasting trip', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
 		expect(screen.getByRole('heading', { name: 'Trip t161' })).toBeInTheDocument();
-		// Route links to the line detail page.
 		expect(screen.getByRole('link', { name: 'View line 161' })).toHaveAttribute(
 			'href',
 			'/lines/161',
 		);
-		// Trip-level status reads honestly (the visible text channel, not colour-only).
 		expect(screen.getByText('Late')).toBeInTheDocument();
-		// "4 min late" appears at trip level AND on the matching stop; both are honest.
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
 	});
 
@@ -111,7 +177,6 @@ describe('TripDetail: a broadcasting trip', () => {
 
 		const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
 		expect(nav).toBeInTheDocument();
-		// Home links to the localized root; the trip leaf is the current page (not a link).
 		expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
 		const leaf = within(nav).getByText('Trip t161');
 		expect(leaf).toHaveAttribute('aria-current', 'page');
@@ -120,37 +185,27 @@ describe('TripDetail: a broadcasting trip', () => {
 
 	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {
 		render(TripDetail, { props: { id: 't161' } });
-
-		// The chip's age derives from generated_utc (12:00:00Z) vs the mocked
-		// sharedClock.serverNow (12:05:00Z) → exactly "5 minutes ago". This only
-		// holds if the surface reads serverNow; an age off the raw client clock
-		// would render whatever the wall clock minus 12:00Z happens to be.
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
 		expect(chip).not.toBeNull();
 		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
-		// The machine-readable build stamp rides the <time datetime>, unchanged.
 		expect(chip.querySelector('time')).toHaveAttribute('datetime', '2026-06-15T12:00:00Z');
 	});
 
-	it('frames each remaining-stop ETA as a live prediction with an honest delay basis', () => {
+	it('frames each reported ETA as a prediction with an honest delay basis', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
-		const stops = screen.getByRole('list', { name: 'Remaining stops on this trip' });
-		// Each remaining stop links to its detail page.
+		const stops = screen.getByRole('list', { name: 'Reported predictions for this trip' });
 		expect(within(stops).getByRole('link', { name: 'View stop sA' })).toHaveAttribute(
 			'href',
 			'/stop/sA',
 		);
-		// The ETA is labelled a live PREDICTION, not a guarantee (every remaining stop).
-		expect(within(stops).getAllByText('Live prediction').length).toBe(2);
+		expect(within(stops).getAllByText('Prediction').length).toBe(2);
 	});
 
 	it('shows the delay basis when present and the styled honest-absence chip when null, never 0', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
-		const stops = screen.getByRole('list', { name: 'Remaining stops on this trip' });
-		// sA has a 4 min late delay basis; sB has a null delay → the styled
-		// honest-absence chip ("Unknown · not reported in the live feed"), never "0".
+		const stops = screen.getByRole('list', { name: 'Reported predictions for this trip' });
 		expect(within(stops).getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
 		const absent = within(stops).getByText('not reported in the live feed');
 		expect(absent.closest('[data-slot="absent-value"]')).not.toBeNull();
@@ -159,54 +214,75 @@ describe('TripDetail: a broadcasting trip', () => {
 
 	it('renders the styled honest-absence chip when a broadcasting trip omits route + delay', () => {
 		render(TripDetail, { props: { id: 'tBlank' } });
-
-		// The surface still renders (trip is broadcasting), with the route cell and the
-		// trip-level delay cell both showing the styled honest-absence chip instead of
-		// a plain easy-to-miss note. Both read 'not reported in the live feed'.
 		expect(screen.getByRole('heading', { name: 'Trip tBlank' })).toBeInTheDocument();
 		const chips = screen.getAllByText('not reported in the live feed');
-		// Route cell + delay cell.
 		expect(chips.length).toBe(2);
 		for (const chip of chips) {
 			expect(chip.closest('[data-slot="absent-value"]')).not.toBeNull();
 		}
-		// The old plain notes are gone (no bare grey text where the chip now lives).
 		expect(screen.queryByText('No line reported')).not.toBeInTheDocument();
 	});
 
-	it('renders an honest note when a broadcasting trip reports no remaining stops', () => {
+	it('renders an honest note when a broadcasting trip reports no predictions', () => {
 		render(TripDetail, { props: { id: 'tEmpty' } });
 
 		const empty = screen.getByTestId('trip-no-stops');
 		expect(empty).toBeInTheDocument();
 		expect(empty).toHaveAttribute('data-component', 'state-notice');
 		expect(empty).toHaveAttribute('data-presentation', 'silo');
-		// No fabricated stop list.
 		expect(
-			screen.queryByRole('list', { name: 'Remaining stops on this trip' }),
+			screen.queryByRole('list', { name: 'Reported predictions for this trip' }),
 		).not.toBeInTheDocument();
 	});
 });
 
 describe('TripDetail: stand-down honesty', () => {
-	it('stands down when the trip id is absent from the broadcast (ids rotate)', () => {
+	it('stands down when the trip id is absent from the retained report', () => {
 		render(TripDetail, { props: { id: 'tGhost' } });
 
 		expect(screen.getByTestId('trip-standdown')).toBeInTheDocument();
-		// Role+name query: SectionHeading glues [last word + dot] in a tail span
-		// (DOT LAW), so the heading text spans multiple nodes; the accessible name
-		// still reads whole (the aria-hidden dot is excluded).
-		expect(screen.getByRole('heading', { name: 'Trip not broadcasting' })).toBeInTheDocument();
-		// Never a fabricated trip heading / stop list.
+		expect(screen.getByRole('heading', { name: 'Trip not in this report' })).toBeInTheDocument();
 		expect(screen.queryByRole('heading', { name: 'Trip tGhost' })).not.toBeInTheDocument();
 	});
 
-	it('stands down when getTrips yields no broadcast at all', () => {
+	it('stands down when no report has loaded', () => {
 		tripsData = null;
 		render(TripDetail, { props: { id: 't161' } });
-
-		// ResourceBoundary renders its empty edge state; no trip surface, no crash.
 		expect(screen.queryByRole('heading', { name: 'Trip t161' })).not.toBeInTheDocument();
 		expect(screen.queryByTestId('trip-standdown')).not.toBeInTheDocument();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) => {
+	const context = new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	it('counts prediction rows and names the last reported stop without inferring a terminal', () => {
+		const { container } = render(TripDetail, { props: { id: 't161' }, context });
+		expect(container.querySelector('.trip-last-stop-name')).toHaveTextContent('sB');
+		expect(container.querySelector('.trip-prediction-count')).toHaveTextContent(
+			locale === 'fr' ? '2 prédictions communiquées' : '2 predictions reported',
+		);
+		expect(container.textContent).toContain(
+			locale === 'fr' ? 'Dernier arrêt communiqué' : 'Last reported stop',
+		);
+		expect(container.textContent).not.toMatch(/Destination|stops remaining|arrêts restants/);
+	});
+	it.each([false, true])('retains report-specific absence and timestamp when stale=%s', (stale) => {
+		reportStale = stale;
+		render(TripDetail, { props: { id: 'tGhost' }, context });
+		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
+		expect(stamp).toHaveAttribute('data-stale', String(stale));
+		expect(stamp.querySelector('time')).toHaveAttribute('datetime', TRIPS_FILE.generated_utc);
+		expect(screen.queryByTestId('trip-report-notice') !== null).toBe(stale);
+	});
+	it('warns on failed refresh without classifying a recent retained report as stale', () => {
+		reportFailures = 1;
+		render(TripDetail, { props: { id: 't161' }, context });
+		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
+		expect(stamp).toHaveAttribute('data-degraded', 'true');
+		expect(stamp).toHaveAttribute('data-stale', 'false');
+		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent(
+			locale === 'fr' ? 'Actualisation indisponible' : 'Refresh unavailable',
+		);
+		expect(document.querySelectorAll('.trip-stop-link')).toHaveLength(2);
 	});
 });

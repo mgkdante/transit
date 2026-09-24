@@ -42,17 +42,10 @@ export const ReliabilityPeriodSchema = z.object({
 	// in-window observations, else all 21 bins incl. zeros). Both null on daily grain.
 	on_time: z.number().int().nullable().optional(),
 	delay_histogram: z.array(RouteDelayHistogramBinSchema).nullable().optional(),
-	// S7-B windowable (additive-optional): the SAME metric over the prior comparable
-	// window, for a period-over-period delta. prior_observation_count is the prior
-	// window's KNOWN-delay denominator (matches observation_count, so a two-proportion
-	// significance test is valid); prior_otp_pct is the prior window's real OTP. Both
-	// null on the first window or on the scalar whole-history periods.
+	// Prior comparable-window OTP and known-delay denominator for descriptive comparison.
 	prior_observation_count: z.number().int().nullable().optional(),
 	prior_otp_pct: z.number().int().nullable().optional(),
-	// FIX-4 (additive-optional): the prior window's EXACT on-time numerator, so the
-	// two-proportion delta pools real counts instead of reconstructing the prior
-	// numerator from the integer-rounded prior_otp_pct (a ±0.5pt band). Null on
-	// pre-republish snapshots; the consumer keeps the band hack as a fallback.
+	// Exact prior on-time count; absent when the prior window is unavailable.
 	prior_on_time: z.number().int().nullable().optional(),
 });
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
@@ -144,10 +137,7 @@ export const CancellationPeriodSchema = z.object({
 	cancellation_rate_pct: z.number().nullable().optional(),
 	canceled_trip_days: z.number().int().nullable().optional(),
 	total_trip_days: z.number().int().nullable().optional(),
-	// Scheduled-universe split (GC2 H1, additive-optional; null = unknown, never 0).
-	// scheduled = calendar ∩ calendar_dates active trips; delivered = total − canceled;
-	// silent = scheduled trips never seen in any RT poll; service_completeness_pct =
-	// 100 × delivered / scheduled (the honest scheduled-complete readout).
+	// Count comparison, not a match of scheduled trip identities.
 	scheduled_trip_days: z.number().int().nullable().optional(),
 	delivered_trip_days: z.number().int().nullable().optional(),
 	silent_trip_days: z.number().int().nullable().optional(),

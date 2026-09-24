@@ -3,7 +3,7 @@
 
   The citizen-facing ACCOUNTABILITY log of PAST service alerts: a chronological
   (newest-first) list of resolved/expired alerts with their active window(s),
-  resolved duration, reach (routes/stops), estimated rider-impact and public link —
+  resolved duration, reach (routes/stops), and public link —
   plus the Tier-2 cause/effect/severity distribution when the archive carries one.
 
   S15 THIN ORCHESTRATOR: this file owns the data port + the codec (seed → clamp →
@@ -127,10 +127,8 @@
 	// The current compatibility payload stays the fast default and supplies the honest
 	// current span. The optional retained index decides whether range reads come from
 	// partitioned archive pages or keep the legacy newest-window behavior.
-	const history = createResource((signal) => getAlertHistory({ signal }), { freshness: true });
-	const alertArchiveIndex = createResource((signal) => getAlertArchiveIndex({ signal }), {
-		freshness: true,
-	});
+	const history = createResource((signal) => getAlertHistory({ signal }));
+	const alertArchiveIndex = createResource((signal) => getAlertArchiveIndex({ signal }));
 
 	/** Max rows rendered before the "+N more" disclosure. */
 	const VISIBLE_CAP = 25;
@@ -227,26 +225,23 @@
 		readonly generated_utc?: AlertHistory['generated_utc'] | null;
 	}
 	let rangeAttemptKey: string | null = null;
-	const archiveRange = createResource<SelectedAlertRange | null>(
-		async (signal) => {
-			const index = alertArchiveIndex.data;
-			const selection = archiveLoadWindow;
-			if (!windowSettled || index == null || selection == null) {
-				rangeAttemptKey = null;
-				return null;
-			}
+	const archiveRange = createResource<SelectedAlertRange | null>(async (signal) => {
+		const index = alertArchiveIndex.data;
+		const selection = archiveLoadWindow;
+		if (!windowSettled || index == null || selection == null) {
+			rangeAttemptKey = null;
+			return null;
+		}
 
-			const requestedWindow = { from: selection.from, to: selection.to };
-			rangeAttemptKey = windowKey(requestedWindow);
-			const rangeEntries = await getAlertArchiveRange(index, requestedWindow, { signal });
-			return {
-				window: requestedWindow,
-				entries: rangeEntries,
-				generated_utc: history.data?.generated_utc ?? null,
-			};
-		},
-		{ freshness: true },
-	);
+		const requestedWindow = { from: selection.from, to: selection.to };
+		rangeAttemptKey = windowKey(requestedWindow);
+		const rangeEntries = await getAlertArchiveRange(index, requestedWindow, { signal });
+		return {
+			window: requestedWindow,
+			entries: rangeEntries,
+			generated_utc: history.data?.generated_utc ?? null,
+		};
+	});
 
 	const selectedRangeData = $derived.by<SelectedAlertRange | null>(() => {
 		if (alertArchiveIndex.data == null || pickedWindow == null) return null;

@@ -22,7 +22,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
+	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
@@ -46,11 +46,9 @@
 	import { RightPanel } from '$lib/components/shell';
 	import {
 		MapStage,
-		createVehicleMotionController,
 		nearestStops,
 		liveTtlS,
 		type WithDistance,
-		type VehicleMotionController,
 		type FixResolver,
 	} from '$lib/components/map';
 	import { createShapeCacheManager } from './mapShapeCache';
@@ -78,7 +76,6 @@
 	import { isMapFocusReady } from './mapFocusReadiness';
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
-	import { createMapEmphasisController } from './mapEmphasisController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
 	import {
 		deriveMapFitPadding,
@@ -89,14 +86,7 @@
 	import { copy as MAP_COPY } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
-	import {
-		createMapLayerFeedController,
-		installMapInteractions,
-		PICKABLE_MAP_LAYERS,
-		retintMapLayers,
-		type MapLayerFeedContext,
-	} from './mapLayerModules';
-	import { pickMapSelection } from './mapPicking';
+	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
 	import {
 		resolveMapSelection,
 		type MapSelection,
@@ -267,50 +257,20 @@
 
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
-	// Track map identity so teardown releases only the matching logical map owner.
-	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<MapStageFailure | null>(null);
-	let vehicleMotion = $state<VehicleMotionController | null>(null);
-	let processedMotion = $state<{ tickKey: string; vehicleCount: number } | null>(null);
-	let vehicleMotionMap: MapLibreMap | null = null;
-
+	let hasFirstIdle = $state(false);
 	const shapeCache = createShapeCacheManager(getRoute);
-
-	let layerRevision = $state(0);
-	let interactionsMap: MapLibreMap | null = null;
-	let interactionDisposers: readonly (() => void)[] = [];
 	const selectionController = createMapSelectionController();
-	const emphasisController = createMapEmphasisController(selectionController);
-	const layerFeedController = createMapLayerFeedController();
+	const runtime = createMapRuntime({
+		selection: selectionController,
+		readFeed: readMapFeed,
+		onpick: selectPickedFeature,
+	});
+	const map = $derived(runtime.map);
 	const selected = $derived(selectionController.selected);
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
 	const detailOpen = $derived(selectionController.detailOpen);
-
-	function releaseMapOwners(m: MapLibreMap): void {
-		if (map !== m) return;
-		const released = ownerCleanup.releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
-			emphasisController.clear(m),
-		);
-		vehicleMotion = released.motion;
-		vehicleMotionMap = released.motion ? m : null;
-		interactionDisposers = released.disposers;
-		interactionsMap = released.disposers.length > 0 ? m : null;
-		map = released.motion || released.disposers.length > 0 || released.emphasisPending ? m : null;
-		ownerCleanup.throwCleanupErrors(released.errors, 'MapHero owner cleanup failed');
-	}
-
-	$effect(() => () => {
-		const ownedMap = untrack(() => map);
-		if (!ownedMap) return;
-		try {
-			releaseMapOwners(ownedMap);
-		} catch (error) {
-			// This fallback covers parent-first destruction. The normal child-first path
-			// reports through MapStage's exception-isolated disposal boundary.
-			reportMapCleanupFailure(error);
-		}
-	});
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
@@ -362,6 +322,12 @@
 			enabled: () => focusedStopId != null,
 		},
 	);
+	$effect(() => {
+		const routes = [...(selectedRoutes.data ?? []), focusedRoute.data];
+		untrack(() => {
+			for (const route of routes) if (route) shapeCache.remember(route);
+		});
+	});
 	const routeList = $derived(
 		selectedRouteIds.length === 0
 			? []
@@ -474,6 +440,7 @@
 	const departuresAvailable = $derived(live.familyStates.departures.retainedGeneration != null);
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
+			locale,
 			index: live.index,
 			stops: stopList,
 			routes: contextRoutes,
@@ -484,6 +451,7 @@
 	);
 	const hoverPeek = $derived(
 		resolveMapHoverPeek(hovered, {
+			locale,
 			index: live.index,
 			stops: stopList,
 			routesIndex: routesIndex.data?.routes ?? [],
@@ -558,17 +526,6 @@
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
-	function clearHover(m: MapLibreMap): void {
-		selectionController.setHovered(null);
-		m.getCanvas().style.cursor = '';
-	}
-
-	function pickSelectionAt(m: MapLibreMap, e: MapMouseEvent): MapSelection | null {
-		const layers = PICKABLE_MAP_LAYERS.filter((layer) => m.getLayer(layer));
-		if (layers.length === 0) return null;
-		return pickMapSelection(m.queryRenderedFeatures(e.point, { layers }));
-	}
-
 	const SELECTION_WRITE = { authority: 'selection', ownership: 'claim-new' } as const;
 	function addSelectionFilter(selection: MapSelection): void {
 		const chips: Chip[] = [{ kind: selection.kind, value: selection.id }];
@@ -584,18 +541,10 @@
 		selectionController.selectPicked(next);
 	}
 
-	function selectPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
-		const next = pickSelectionAt(m, e);
-		if (!next) return;
+	function selectPickedFeature(next: MapSelection): void {
 		commitPickedSelection(next);
 		detailCollapsed = false;
 		focusSelection(next);
-	}
-
-	function hoverPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
-		const next = pickSelectionAt(m, e);
-		if (!selectionController.setHovered(next)) return;
-		m.getCanvas().style.cursor = next ? 'pointer' : '';
 	}
 
 	function closeDetail(): void {
@@ -730,76 +679,21 @@
 		return false;
 	}
 
-	function ensureMapInteractions(m: MapLibreMap): void {
-		if (interactionsMap === m) return;
-		const previousMap = interactionsMap;
-		const released = ownerCleanup.releaseCleanupReceipts(interactionDisposers);
-		interactionDisposers = released.pending;
-		interactionsMap = released.pending.length > 0 ? previousMap : null;
-		ownerCleanup.throwCleanupErrors(released.errors, 'Map interaction replacement cleanup failed');
-		const nextDisposers = ownerCleanup.installCleanupReceipts(
-			() =>
-				installMapInteractions(m, {
-					click: (event) => selectPickedFeature(m, event),
-					mousemove: (event) => hoverPickedFeature(m, event),
-					mouseleave: () => clearHover(m),
-				}),
-			(partial) => {
-				interactionDisposers = partial;
-				interactionsMap = null;
-			},
-		);
-		interactionDisposers = nextDisposers;
-		interactionsMap = m;
-	}
-	function ensureVehicleMotion(m: MapLibreMap): void {
-		if (vehicleMotionMap !== m) {
-			vehicleMotion?.destroy();
-			vehicleMotion = createVehicleMotionController(m);
-			vehicleMotionMap = m;
-		}
-	}
-
-	function installMapLayers(m: MapLibreMap): void {
-		// Prepare every module before installing any layer. bakeVehicleSprites owns
-		// STOP_ICON even though the stops module consumes it, so a per-module
-		// prepare/install loop would install stops before that shared asset exists.
-
-		// SF deliberately preserves append order. firstSymbolLayerId() is available
-		// for the owner-parked visual flip, but this slice passes no anchor.
-		const beforeId: string | undefined = undefined;
-		retintMapLayers(m, beforeId);
-
-		// Controller identity belongs to this MapHero instance, not the static
-		// registry. Reuse it across style loads of the same map.
-		ensureVehicleMotion(m);
-		ensureMapInteractions(m);
-		// Bump so the feed effect re-runs and re-pushes the vehicle/stop/route data
-		// MapLibre cleared from its custom sources on the style swap.
-		layerRevision += 1;
-	}
-
-	function onMapReady(m: MapLibreMap): void {
-		map = m;
-		installMapLayers(m);
+	function onMapReady(m: MapLibreMap, reportSetupFailure?: () => void): void {
+		hasFirstIdle = false;
+		runtime.ready(m, reportSetupFailure);
 		nearMeController.refocus();
 		onready?.();
 	}
 
 	function onMapIdle(): void {
+		hasFirstIdle = true;
 		onidle?.();
 	}
 
 	function onMapFailure(failure: MapStageFailure | null): void {
 		mapFailure = failure;
 		onfailure?.(failure);
-	}
-
-	function onMapStyleLoad(m: MapLibreMap): void {
-		installMapLayers(m);
-	}
-	function onMapThemeRepaint(m: MapLibreMap): void {
-		retintMapLayers(m);
 	}
 
 	// Lazily fetch route shapes for the routes that currently have live buses
@@ -835,27 +729,16 @@
 		};
 	};
 
-	// Feed every registered module from one synchronous, non-retained context.
-	// Forward projection is CLOCK-DRIVEN inside the controller's rAF loop, so this
-	// effect re-feeds files/filter/selection changes but not the per-second clock.
-	$effect(() => {
-		const m = map;
-		// Reading the revision registers the post-style-swap layer install as an
-		// effect dependency, so data is re-fed after MapLibre clears custom sources.
-		// (A resolved route shape needs NO re-feed: the controller's per-frame
-		// shapeFor reads routeShapeCache directly and upgrades buses on the next frame.)
-		const revision = layerRevision;
-		if (!m) {
-			processedMotion = null;
-			return;
-		}
+	// Clock reads stay untracked: the motion controller advances between polls.
+	function readMapFeed(): MapRuntimeFeed {
 		const reduceMotion = $prefersReducedMotion;
 		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
 		// every feed, no estimation), the honest default. Reading motionMode.current
 		// here registers it as an effect dependency so flipping the toggle re-feeds
 		// and the controller switches between project and snap without a poll.
 		const smoothMotion = motionMode.current === 'smooth';
-		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
+		// Continuous source updates can prevent the first idle that reveals the map.
+		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
 		// re-run by the per-second clock tick (the controller's rAF loop advances
 		// projection between polls). Used only for feed-time stale classification.
@@ -864,13 +747,12 @@
 		const stale = live.vehiclesIsStale;
 		const vehicleItems = live.vehicles?.vehicles ?? [];
 		const vehicleTickKey = live.vehiclesGeneratedUtc;
-		const ctx: MapLayerFeedContext = {
+		return {
 			routes: {
 				items: routeLineRoutes,
 				selected: selectedRouteLine,
 			},
 			vehicles: {
-				motion: vehicleMotion,
 				items: vehicleItems,
 				filter,
 				alertIds: alertVehicleIds,
@@ -888,7 +770,7 @@
 				animate,
 			},
 			stops: {
-				items: stops.data?.stops ?? [],
+				items: stopList,
 				filter,
 				alertIds: alertEntitySets.stops,
 				selectedId: selectedStopId,
@@ -897,33 +779,7 @@
 				target: nearMeController.origin,
 			},
 		};
-
-		layerFeedController.feed(m, ctx, revision);
-		processedMotion = vehicleTickKey
-			? { tickKey: vehicleTickKey, vehicleCount: vehicleItems.length }
-			: null;
-	});
-
-	$effect(() => {
-		const m = map;
-		const entries = stopList;
-		void selected;
-		void hovered;
-		if (!m) return;
-		untrack(() => emphasisController.apply(m, entries));
-	});
-
-	let replayMap: MapLibreMap | null = null;
-	let replayRevision = -1;
-	$effect(() => {
-		const m = map;
-		const revision = layerRevision;
-		if (!m) return;
-		const shouldReplay = replayMap === m && replayRevision !== revision;
-		replayMap = m;
-		replayRevision = revision;
-		if (shouldReplay) untrack(() => emphasisController.replay(m));
-	});
+	}
 
 	$effect(() => {
 		if (!detailOpen) return;
@@ -987,10 +843,10 @@
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onidle={onMapIdle}
-		onstyleload={onMapStyleLoad}
-		onthemerepaint={onMapThemeRepaint}
+		onstyleload={runtime.styleLoad}
+		onthemerepaint={runtime.repaint}
 		onerror={onMapFailure}
-		onbeforeremove={releaseMapOwners}
+		onbeforeremove={runtime.release}
 		customAttribution={manifest.attribution}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
@@ -1118,8 +974,8 @@
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
 	data-motion-stale={live.vehiclesIsStale}
-	data-motion-tick-key={processedMotion?.tickKey}
-	data-motion-vehicle-count={processedMotion?.vehicleCount}
+	data-motion-tick-key={runtime.processedMotion?.tickKey}
+	data-motion-vehicle-count={runtime.processedMotion?.vehicleCount}
 	bind:this={heroEl}
 	bind:clientWidth={mapWidthPx}
 >

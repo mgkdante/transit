@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import sharp from 'sharp';
+import browserToolchain from '../browser-toolchain.json';
 import { vectorStyleFromBasemap, type BasemapTheme } from '../src/lib/components/map/basemap';
 import { mapViewportOptions } from '../src/lib/components/map/viewport';
 import {
@@ -13,22 +16,24 @@ import {
 	mapInitialCenter,
 } from '../src/lib/features/map/mapCameraFraming';
 import type { BasemapFile } from '../src/lib/v1/schemas/basemap';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '..');
 const outputDir = resolve(webRoot, 'static/map');
 const receiptPath = resolve(outputDir, 'basemap-montreal-posters.json');
-const maplibreScript = resolve(webRoot, 'node_modules/maplibre-gl/dist/maplibre-gl.js');
-const maplibreCss = resolve(webRoot, 'node_modules/maplibre-gl/dist/maplibre-gl.css');
+const maplibreDist = resolve(webRoot, 'node_modules/maplibre-gl/dist');
+const maplibreCss = resolve(maplibreDist, 'maplibre-gl.css');
 const pmtilesScript = resolve(webRoot, 'node_modules/pmtiles/dist/pmtiles.js');
 
 const DESCRIPTOR_URL = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 const PMTILES_URL = 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles';
 const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
-const PLAYWRIGHT_CORE_VERSION = '1.62.0';
-const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
+const PLAYWRIGHT_CORE_VERSION = browserToolchain.playwrightCoreVersion;
+const PINNED_CHROMIUM_VERSION = browserToolchain.browser.version;
 const RENDER_INPUT_PATHS = [
+	'browser-toolchain.json',
 	'scripts/build-map-posters.ts',
 	'src/lib/components/map/basemap.ts',
 	'src/lib/components/map/viewport.ts',
@@ -274,30 +279,64 @@ async function readLiveSource(): Promise<{
 	};
 }
 
-async function preparePage(browser: Browser, spec: PosterSpec): Promise<Page> {
+async function serveMaplibre() {
+	const modules = new Map(
+		await Promise.all(
+			['maplibre-gl.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs'].map(
+				async (filename) =>
+					[`/${filename}`, await readFile(resolve(maplibreDist, filename))] as const,
+			),
+		),
+	);
+	const server = createServer((request, response) => {
+		if (request.url === '/') {
+			response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+			response.end('<main id="map" aria-label="Static Montréal basemap"></main>');
+			return;
+		}
+		const module = modules.get(request.url ?? '');
+		response.writeHead(module ? 200 : 404, { 'Content-Type': 'text/javascript' });
+		response.end(module);
+	});
+	await new Promise<void>((resolveListen, rejectListen) => {
+		server.once('error', rejectListen);
+		server.listen(0, '127.0.0.1', () => {
+			server.off('error', rejectListen);
+			resolveListen();
+		});
+	});
+	return {
+		origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+		close: () =>
+			new Promise<void>((resolveClose, rejectClose) => {
+				server.close((error) => (error ? rejectClose(error) : resolveClose()));
+				server.closeAllConnections();
+			}),
+	};
+}
+
+async function preparePage(browser: Browser, origin: string, spec: PosterSpec): Promise<Page> {
 	const page = await browser.newPage({
 		viewport: { width: spec.width, height: spec.height },
 		deviceScaleFactor: 1,
 	});
-	await page.setContent('<main id="map" aria-label="Static Montréal basemap"></main>', {
-		waitUntil: 'domcontentloaded',
-	});
+	await page.goto(origin, { waitUntil: 'domcontentloaded' });
 	await page.addStyleTag({ path: maplibreCss });
 	await page.addStyleTag({
 		content:
 			'html,body,#map{width:100%;height:100%;margin:0;overflow:hidden}body{position:fixed;inset:0}',
 	});
-	await page.addScriptTag({ path: maplibreScript });
 	await page.addScriptTag({ path: pmtilesScript });
 	return page;
 }
 
 async function capturePoster(
 	browser: Browser,
+	origin: string,
 	descriptor: PinnedDescriptor,
 	spec: PosterSpec,
 ): Promise<Buffer> {
-	const page = await preparePage(browser, spec);
+	const page = await preparePage(browser, origin, spec);
 	try {
 		const style = vectorStyleFromBasemap(descriptor, spec.theme);
 		const viewport = mapViewportOptions(
@@ -306,14 +345,14 @@ async function capturePoster(
 			MAP_MAX_BOUNDS,
 		);
 		const renderResult = await page.evaluate(
-			async ({ style, viewport, center }) => {
+			async ({ style, viewport, center, maplibreUrl }) => {
+				const maplibregl: typeof import('maplibre-gl') = await import(maplibreUrl);
 				const globals = window as typeof window & {
-					maplibregl: typeof import('maplibre-gl');
 					pmtiles: typeof import('pmtiles');
 				};
 				const protocol = new globals.pmtiles.Protocol();
-				globals.maplibregl.addProtocol('pmtiles', protocol.tile);
-				const map = new globals.maplibregl.Map({
+				maplibregl.addProtocol('pmtiles', protocol.tile);
+				const map = new maplibregl.Map({
 					container: 'map',
 					style,
 					center,
@@ -336,7 +375,12 @@ async function capturePoster(
 				});
 				return { errors, center: map.getCenter().toArray(), zoom: map.getZoom() };
 			},
-			{ style, viewport, center: mapInitialCenter },
+			{
+				style,
+				viewport,
+				center: mapInitialCenter,
+				maplibreUrl: `${origin}/maplibre-gl.mjs`,
+			},
 		);
 		if (renderResult.errors.length > 0) {
 			throw new Error(`MapLibre emitted errors: ${renderResult.errors.join(' | ')}`);
@@ -362,15 +406,17 @@ async function buildPosters(seed: PosterReceipt): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
 	const liveBefore = await readLiveSource();
 	const renderInputsBefore = await readRenderInputs();
-	const explicitExecutable = process.env.CHROME_PATH?.trim();
-	const browser = await chromium.launch({
-		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
-		headless: true,
-		args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
-	});
+	const browserArtifact = await verifyInstalledBrowserArtifact();
+	const moduleServer = await serveMaplibre();
+	let browser: Browser | undefined;
 	const generated: Array<{ spec: PosterSpec; bytes: Buffer }> = [];
 	let browserVersion: string;
 	try {
+		browser = await chromium.launch({
+			headless: true,
+			executablePath: browserArtifact.paths.executablePath,
+			args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
+		});
 		browserVersion = browser.version();
 		assertEqual(browserVersion, PINNED_CHROMIUM_VERSION, 'poster Chromium version');
 		console.log(
@@ -383,10 +429,17 @@ async function buildPosters(seed: PosterReceipt): Promise<void> {
 				width: poster.width,
 				height: poster.height,
 			};
-			generated.push({ spec, bytes: await capturePoster(browser, liveBefore.descriptor, spec) });
+			generated.push({
+				spec,
+				bytes: await capturePoster(browser, moduleServer.origin, liveBefore.descriptor, spec),
+			});
 		}
 	} finally {
-		await browser.close();
+		try {
+			await browser?.close();
+		} finally {
+			await moduleServer.close();
+		}
 	}
 
 	const liveAfter = await readLiveSource();

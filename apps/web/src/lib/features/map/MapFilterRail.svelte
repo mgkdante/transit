@@ -106,8 +106,7 @@
 
 <style>
 	.mf-rail-layer {
-		position: absolute;
-		inset: 0;
+		position: relative;
 		display: grid;
 		align-content: start;
 		gap: 0.375rem;

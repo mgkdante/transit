@@ -3,6 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { copy } from './receipt.copy';
 
 describe('Daily Receipt article copy', () => {
+	it.each([
+		[0, '0 lines with severe-delay predictions', '0 lignes avec des prévisions de retard grave'],
+		[1, '1 line with severe-delay predictions', '1 ligne avec des prévisions de retard grave'],
+		[2, '2 lines with severe-delay predictions', '2 lignes avec des prévisions de retard grave'],
+		[
+			1000,
+			'1,000 lines with severe-delay predictions',
+			'1\u00a0000 lignes avec des prévisions de retard grave',
+		],
+	])('formats %i affected lines in each locale', (count, en, fr) => {
+		expect(copy.en.dayVerdict.affected(count)).toBe(en);
+		expect(copy.fr.dayVerdict.affected(count)).toBe(fr);
+	});
+
 	it('matches the approved English article, rail, card, and caveat contract', () => {
 		expect(copy.en.article).toEqual({
 			watermark: 'Receipt',
@@ -35,8 +49,8 @@ describe('Daily Receipt article copy', () => {
 				subtitle: 'Severe delays across the day’s service periods',
 			},
 			delivered: {
-				title: 'Service delivered',
-				subtitle: 'Scheduled service split into delivered, cancelled, and silent outcomes',
+				title: 'Service counts',
+				subtitle: 'Counts relative to the schedule',
 			},
 			silent: {
 				title: 'Scheduled but never appeared',
@@ -78,8 +92,8 @@ describe('Daily Receipt article copy', () => {
 				subtitle: 'Les retards graves selon les périodes de service de la journée',
 			},
 			delivered: {
-				title: 'Service livré',
-				subtitle: 'Le service planifié réparti entre livré, annulé et silencieux',
+				title: 'Décomptes de service',
+				subtitle: 'Décomptes rapportés à l’horaire',
 			},
 			silent: {
 				title: 'Planifiés mais jamais apparus',
@@ -88,6 +102,8 @@ describe('Daily Receipt article copy', () => {
 			},
 		});
 		expect(copy.fr.caveatLabel).toBe('Mise en garde');
-		expect(copy.fr.dayVerdict.worst('Bridge', '40 pts')).toBe('pire ligne Bridge (40 pts perdus)');
+		expect(copy.fr.dayVerdict.worst('Bridge', '+4,2 pts')).toBe(
+			'retard moyen maximal : Bridge (ponctualité +4,2 pts c. réseau)',
+		);
 	});
 });

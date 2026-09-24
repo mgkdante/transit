@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
+from transit_ops.snapshots.builders.historic.small_surfaces import build_repeat_offenders
 
 PROVIDER = "stm_rollup_ghost_test"
 ENDPOINT_ID = 991001
@@ -38,7 +39,7 @@ class _NoCommitEngine:
 
 
 @pytest.fixture()
-def conn(real_db_engine, seed_provider):
+def conn(real_db_engine, seed_provider, monkeypatch):
     with real_db_engine.connect() as connection:
         transaction = connection.begin()
         # Anchor in the provider timezone (America/Toronto) — the same calendar
@@ -54,6 +55,7 @@ def conn(real_db_engine, seed_provider):
             .astimezone(UTC)
         )
         seed = _SeedData(base_utc)
+        monkeypatch.setattr(rollups, "utc_now", lambda: base_utc + timedelta(hours=1))
         _seed(connection, seed, seed_provider)
         _build_rollups(connection)
         try:
@@ -179,7 +181,7 @@ def _insert_trip_delay_rows(
     connection,  # noqa: ANN001
     snapshot_id: int,
     captured_at: datetime,
-    rows: list[tuple[str, str, int, object, str]],
+    rows: list[tuple[str, str, int | None, object, str]],
 ) -> None:
     snapshot_local_date = captured_at.astimezone(TORONTO).date()
     snapshot_date_key = int(snapshot_local_date.strftime("%Y%m%d"))
@@ -396,6 +398,77 @@ def test_ghost_trip_excluded_from_repeat_offender(conn) -> None:  # noqa: ANN001
     assert _decimal(late["avg_delay_seconds"]) == Decimal("400.0")
 
 
+@pytest.mark.parametrize("retention_days", [11, 14, 21])
+def test_repeat_offender_window_matches_retained_facts_and_public_snapshot(
+    conn, retention_days: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connection, seed = conn
+    now = connection.execute(text("SELECT now()")).scalar_one()
+    monkeypatch.setattr(rollups, "utc_now", lambda: now)
+    retained_local_days = set()
+    for day_offset in range(23):
+        captured_at = now - timedelta(days=day_offset, minutes=1)
+        local_date = captured_at.astimezone(TORONTO).date()
+        if day_offset < retention_days:
+            retained_local_days.add(local_date)
+        _insert_snapshot(connection, seed, captured_at, entity_count=1)
+        _insert_trip_delay_rows(
+            connection,
+            seed.snapshot_id,
+            captured_at,
+            [("WINDOW", "51T", 400, local_date, "S_A")],
+        )
+    connection.execute(
+        text(
+            "UPDATE gold.fact_trip_delay_snapshot SET vehicle_id = 'WINDOW_VEHICLE' "
+            "WHERE provider_id = :provider_id AND trip_id = 'WINDOW'"
+        ),
+        {"provider_id": PROVIDER},
+    )
+    rollups.build_warm_rollups(
+        PROVIDER,
+        settings=Settings(
+            _env_file=None,
+            DATABASE_URL=None,
+            GOLD_FACT_RETENTION_DAYS=retention_days,
+            GOLD_REPORTING_OPEN_WINDOW_DAYS=10,
+        ),
+        engine=_NoCommitEngine(connection),
+    )
+    rows = (
+        connection.execute(
+            text(
+                "SELECT recurrence_days, window_days, avg_delay_seconds, severity_label "
+                "FROM gold.repeat_offender WHERE provider_id = :provider_id "
+                "AND entity_id IN ('WINDOW', 'WINDOW_VEHICLE') ORDER BY entity_kind"
+            ),
+            {"provider_id": PROVIDER},
+        )
+        .mappings()
+        .all()
+    )
+    assert len(rows) == 2
+    for row in rows:
+        assert row["recurrence_days"] == len(retained_local_days)
+        assert row["avg_delay_seconds"] == Decimal("400.0")
+        assert row["severity_label"] == "critical"
+        assert row["window_days"] == retention_days
+
+    snapshot = build_repeat_offenders(connection, PROVIDER, generated_utc=now.isoformat())
+    offenders = [o for o in snapshot.offenders if o.id in {"WINDOW", "WINDOW_VEHICLE"}]
+    assert {o.type for o in offenders} == {"trip", "vehicle"}
+    for offender in offenders:
+        assert offender.recurrence_days == len(retained_local_days)
+        assert offender.window_days == retention_days
+        assert offender.recurrence == f"{len(retained_local_days)}/{retention_days}d"
+        assert offender.avg_delay_min == 6.7
+        assert offender.severity == "critical"
+    assert [(grain.grain, grain.window_days) for grain in snapshot.by_grain] == [
+        ("week", 7),
+        ("month", 30),
+    ]
+
+
 def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  # noqa: ANN001
     connection, seed = conn
     today = seed.base_local_date
@@ -466,3 +539,53 @@ def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN0
     )
     after = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
     assert after == before
+
+
+def test_percentile_rollups_interpolate_signed_cohort_and_exclude_unusable_delays(conn) -> None:
+    connection, seed = conn
+    captured_at = seed.base_utc - timedelta(days=1)
+    local_date = captured_at.astimezone(TORONTO).date()
+    # Eligible sorted delays [-60, 0, 120, 300]: continuous ranks 1.5 and 2.7
+    # give p50=60 and p90=246. Ghost and unknown values must not increase n.
+    delays = [-60, 0, 120, 300, 3601, None]
+    _insert_snapshot(connection, seed, captured_at, entity_count=len(delays))
+    _insert_trip_delay_rows(
+        connection,
+        seed.snapshot_id,
+        captured_at,
+        [
+            (f"PCT-{index}", "PCT_ROUTE", delay, local_date, "PCT_STOP")
+            for index, delay in enumerate(delays)
+        ],
+    )
+    params = {
+        "provider_id": PROVIDER,
+        "local_date": local_date,
+        "built_at_utc": seed.base_utc,
+    }
+    for statement, table, identity_column, identity in (
+        (
+            rollups.UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
+            "route_delay_percentile_daily",
+            "route_id",
+            "PCT_ROUTE",
+        ),
+        (
+            rollups.UPSERT_STOP_DELAY_PERCENTILE_DAILY,
+            "stop_delay_percentile_daily",
+            "stop_id",
+            "PCT_STOP",
+        ),
+    ):
+        # Exercise the production upsert directly: this fixture has already built
+        # its closed-day markers, so an ordinary warm run may correctly skip it.
+        connection.execute(statement, params)
+        observed = connection.execute(
+            text(
+                "SELECT delay_observation_count, p50_delay_seconds, p90_delay_seconds "
+                f"FROM gold.{table} WHERE provider_id=:provider_id "
+                f"AND provider_local_date=:local_date AND {identity_column}=:identity"
+            ),
+            {**params, "identity": identity},
+        ).one()
+        assert tuple(observed) == (4, Decimal("60.00"), Decimal("246.00"))

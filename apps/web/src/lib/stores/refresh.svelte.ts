@@ -17,39 +17,11 @@
 // knowledge of what is currently mounted.
 
 import { browser } from '$app/environment';
-import { ageSeconds as ageSecondsOf } from '$lib/utils/time';
-import { sharedClock } from './clock.svelte';
 
 export const REFRESH_INVALIDATE_TIMEOUT_MS = 8_000;
 
 let epoch = $state(0);
 let refreshing = $state(false);
-let lastRefreshedMs = $state<number | null>(null);
-let dataGeneratedUtc = $state<string | null>(null);
-
-// The freshness age (seconds), DERIVED — not a private interval. It reads the
-// SHARED clock so it ticks in lockstep with every other relative-time label,
-// and the single `dataGeneratedUtc` so the chrome readout never drifts from the
-// data it describes. Falls back to `lastRefreshedMs` (manual press / page-load
-// anchor) when no snapshot timestamp is known yet. `null` when nothing anchors
-// it. Readers must consult `now` inside a reactive context for it to tick; a
-// reader that wants the timer ALIVE subscribes via `sharedClock.subscribe()`.
-const ageSecondsValue = $derived.by<number | null>(() => {
-	if (dataGeneratedUtc) {
-		// SERVER-anchored now: `dataGeneratedUtc` is server time, so subtracting a
-		// skewed CLIENT clock would mis-report the age. `serverNow` ticks every
-		// shared interval AND corrects for clock skew (see sharedClock).
-		const age = ageSecondsOf(dataGeneratedUtc, sharedClock.serverNow);
-		return Number.isNaN(age) ? null : Math.max(0, age);
-	}
-	// `lastRefreshedMs` is a CLIENT `Date.now()` anchor (manual press / page load),
-	// so it must subtract the raw client `now` — mixing in the server offset would
-	// re-introduce skew into a purely client-clock delta.
-	return lastRefreshedMs != null
-		? Math.max(0, Math.round((sharedClock.now - lastRefreshedMs) / 1000))
-		: null;
-});
-
 async function invalidateAllBounded(): Promise<void> {
 	let done = false;
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -79,78 +51,17 @@ export const dataRefresh = {
 	get refreshing(): boolean {
 		return refreshing;
 	},
-	/** Epoch ms of the last completed refresh / load anchor, or null before any. */
-	get lastRefreshedMs(): number | null {
-		return lastRefreshedMs;
-	},
-	/** UTC data-build timestamp currently loaded in the app chrome, if known. */
-	get dataGeneratedUtc(): string | null {
-		return dataGeneratedUtc;
-	},
-	/**
-	 * Freshness age in seconds, DERIVED off the shared clock + the single
-	 * `dataGeneratedUtc` (falling back to `lastRefreshedMs`). `null` when nothing
-	 * anchors it. Read inside a reactive context to tick; pair with
-	 * `sharedClock.subscribe()` to keep the underlying interval alive while a
-	 * freshness readout is on screen.
-	 */
-	get ageSeconds(): number | null {
-		return ageSecondsValue;
-	},
-	/**
-	 * AUTHORITATIVE write of the snapshot's own DATA timestamp — the single
-	 * site-wide "newest data" value every freshness readout shares. Multiple
-	 * writers now contribute: the live store on every poll, AND every
-	 * freshness-bearing createResource surface (static/historic) on every fetch.
-	 *
-	 * LATEST-WINS / MONOTONIC: the value only advances. A write is accepted iff the
-	 * incoming timestamp is strictly NEWER than the one held, so an older static
-	 * build can never clobber a fresher live build regardless of write order (and a
-	 * re-fetch of the same build never thrashes the readout). The first valid value
-	 * always lands. No-op on the server / for falsy / unparseable input.
-	 */
-	noteDataGeneratedUtc(generatedUtc: string | null | undefined): void {
-		if (!browser || !generatedUtc) return;
-		const incoming = Date.parse(generatedUtc);
-		if (Number.isNaN(incoming)) return;
-		if (dataGeneratedUtc != null) {
-			const current = Date.parse(dataGeneratedUtc);
-			// Keep the newer of the two; ignore equal/older (no thrash, monotonic).
-			if (!Number.isNaN(current) && incoming <= current) return;
-		}
-		dataGeneratedUtc = generatedUtc;
-	},
-	/**
-	 * Seed the snapshot timestamp from the booted manifest as an INITIAL fallback,
-	 * only when no authoritative value has landed yet (seed-if-unset). Lets the
-	 * freshness readout show the page-load data's age on pages WITHOUT a live
-	 * store; the live store's `noteDataGeneratedUtc` supersedes it once polling
-	 * starts. No-op on the server / for falsy input / once a value exists.
-	 */
-	seedDataGeneratedUtc(generatedUtc: string | null | undefined): void {
-		if (!browser || !generatedUtc || dataGeneratedUtc != null) return;
-		dataGeneratedUtc = generatedUtc;
-	},
-	/**
-	 * Anchor the "as of" timestamp to now IF still unset — call once when the
-	 * chrome mounts so the freshness readout reflects the initial page-load data
-	 * (SSR-booted /v1 + first resource fetches), not just manual presses. No-op on
-	 * the server and after the first refresh. */
-	seedNow(): void {
-		if (browser && lastRefreshedMs == null) lastRefreshedMs = Date.now();
-	},
 	/**
 	 * Bump `epoch` WITHOUT running load functions — the lightweight auto-refresh
 	 * path used by dataPulse when it detects a new publish. A bump alone re-runs
 	 * every createResource surface AND re-polls the live store (both watch `epoch`),
 	 * which is exactly what a new snapshot needs; it deliberately skips the heavier
 	 * `invalidateAll` (full /v1 re-boot) that the manual `run()` press performs.
-	 * Browser-only. Updates the load anchor so a freshness fallback stays current.
+	 * Browser-only.
 	 */
 	bumpEpoch(): void {
 		if (!browser) return;
 		epoch += 1;
-		lastRefreshedMs = Date.now();
 	},
 	/**
 	 * Refresh ALL data on the current page: bump `epoch` (createResource + live
@@ -164,7 +75,6 @@ export const dataRefresh = {
 			epoch += 1;
 			await invalidateAllBounded();
 		} finally {
-			lastRefreshedMs = Date.now();
 			refreshing = false;
 		}
 	},

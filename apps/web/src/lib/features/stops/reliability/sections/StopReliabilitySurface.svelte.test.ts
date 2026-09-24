@@ -99,7 +99,7 @@ const desktopGroup = (c: HTMLElement): HTMLElement => {
 const PRESENT_SECTIONS = [
 	['stop-rel-trend', 'Daily trend'],
 	['stop-rel-percentiles', 'Daily delay'],
-	['stop-rel-pane', 'On-time and delay'],
+	['stop-rel-pane', 'Predicted delays'],
 	['stop-rel-crowding', 'Crowding on buses seen here'],
 	['stop-rel-by-route', 'Avg delay by route'],
 ] as const;
@@ -157,13 +157,15 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 	});
 
 	it('day percentiles surface only on the day grain (drop on week, no fabricated 0)', async () => {
-		const { container, queryByText } = render(StopReliabilitySurface, {
+		const { container } = render(StopReliabilitySurface, {
 			props: { data, locale: 'en' },
 		});
-		expect(queryByText('Typical delay')).not.toBeNull();
+		expect(container.querySelector('[data-slot="stop-percentiles"]')?.textContent).toContain(
+			'Median delay',
+		);
 		const week = within(desktopGroup(container)).getByRole('radio', { name: 'Week' });
 		await fireEvent.click(week);
-		expect(queryByText('Typical delay')).toBeNull();
+		expect(container.querySelector('[data-slot="stop-percentiles"]')).toBeNull();
 	});
 
 	it('mirrors a grain change to ?grain and OMITS the day default (clean URL)', async () => {
@@ -296,11 +298,11 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 		// Present: trend + percentiles (day grain) + pane + crowding + by-route.
 		expect(labels).toContain('Daily trend');
 		expect(labels).toContain('Daily delay'); // day percentiles
-		expect(labels).toContain('On-time and delay'); // pane
+		expect(labels).toContain('Predicted delays'); // pane
 		expect(labels).toContain('Crowding on buses seen here');
 		expect(labels).toContain('Avg delay by route');
 		// Absent from the fixture (no habits / day_of_week / shift periods) → not listed.
-		expect(labels).not.toContain('Severe delays by hour'); // habits
+		expect(labels).not.toContain('Relative severe-delay score by hour'); // habits
 		expect(labels).not.toContain('By day of week');
 		expect(labels).not.toContain('By time of day');
 		// The old ↻/∞ per-row scope glyph is gone.
@@ -538,4 +540,119 @@ describe('StopReliabilitySurface canonical article-control stack', () => {
 		expect(component).not.toMatch(/class=["']stop-reliability-control-body/);
 		expect(component).not.toMatch(/\.stop-reliability-control-body\s*\{/);
 	});
+});
+
+describe('StopReliabilitySurface prediction-share verdict', () => {
+	it.each(['en', 'fr'] as const)(
+		'describes the stop proxy and nominal bounds in %s',
+		async (locale) => {
+			const { container } = render(StopReliabilitySurface, {
+				props: {
+					locale,
+					data: { ...data, periods: [{ grain: 'day', otp_pct: 87, observation_count: 120 }] },
+				},
+			});
+			const banner = container.querySelector(
+				'[data-slot="stop-reliability-pane"] [data-slot="verdict"]',
+			);
+			expect(banner).toHaveAttribute('data-status', 'tentative');
+			const sentence = banner?.querySelector('p')?.textContent ?? '';
+			expect(sentence).toContain('87');
+			expect(sentence).toContain('120');
+			expect(sentence).toContain('79');
+			expect(sentence).toContain('92');
+			expect
+				.soft(sentence)
+				.toMatch(
+					locale === 'en'
+						? /known predictions.*not severely late/
+						: /prévisions connues.*sans retard grave/,
+				);
+			expect.soft(sentence).toMatch(/Wilson/);
+			expect.soft(sentence).toMatch(locale === 'en' ? /dependent/ : /dépendan/);
+			expect.soft(sentence).not.toMatch(/arrivals|à l’heure|95% sure|sûr à 95|today|aujourd’hui/);
+			const pane = container.querySelector('[data-slot="reliability-pane"]');
+			expect(pane?.textContent).toContain(
+				locale === 'en' ? 'Not-severe predictions' : 'Prévisions sans retard grave',
+			);
+			expect(pane?.textContent).not.toMatch(/On-time %|Tendance ponctualité|Slowest 10%/);
+			const section = container.querySelector('[data-toc="stop-rel-pane"]') as HTMLElement;
+			const help = within(section).getByRole('button', {
+				name: /not-severe predictions|prévisions sans retard grave/i,
+			});
+			await fireEvent.click(help);
+			const explanation = help.closest('.metric-info');
+			expect(explanation?.textContent).toMatch(locale === 'en' ? /300 seconds/ : /300 secondes/);
+			expect(explanation?.querySelector('a')).toHaveAttribute(
+				'href',
+				locale === 'en' ? '/metrics#severe' : '/fr/metrics#severe',
+			);
+		},
+	);
+});
+
+describe('StopReliabilitySurface metric help ownership', () => {
+	it.each(['en', 'fr'] as const)(
+		'associates median, p90 and mean help with their displayed metric in %s',
+		async (locale) => {
+			mockUrl = new URL('http://localhost/stop/57191');
+			const { container } = render(StopReliabilitySurface, { props: { data, locale } });
+			const section = disclosure(container, 'stop-rel-pane');
+			const pane = section.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
+			const header = section.querySelector('.section-heading-row');
+			expect(header).not.toBeNull();
+			expect(header?.querySelector('.metric-info')).toBeNull();
+
+			for (const label of [locale === 'en' ? 'Median delay' : 'Retard médian', 'p90']) {
+				const metric = within(pane)
+					.getByText(label, { exact: true })
+					.closest('[data-slot="metric-display"]') as HTMLElement;
+				const help = within(metric).getByRole('button', { name: new RegExp(label, 'i') });
+				expect(help.parentElement?.parentElement).toContainElement(
+					within(metric).getByText(label, { exact: true }),
+				);
+				await fireEvent.click(help);
+				const dialog = within(metric).getByRole('dialog', { name: new RegExp(label, 'i') });
+				expect(help).toHaveAttribute('aria-controls', dialog.id);
+				expect(dialog).toHaveTextContent(
+					locale === 'en'
+						? 'The median describes the centre of reported predicted delays'
+						: 'La médiane situe le centre des retards prédits rapportés',
+				);
+				expect(within(dialog).getByRole('link')).toHaveAttribute(
+					'href',
+					locale === 'en' ? '/metrics#p50-p90' : '/fr/metrics#p50-p90',
+				);
+				await fireEvent.keyDown(help, { key: 'Escape' });
+				expect(help).toHaveAttribute('aria-expanded', 'false');
+			}
+			expect(
+				within(pane).queryByRole('button', { name: /major delays|retards majeurs/i }),
+			).toBeNull();
+
+			await fireEvent.click(
+				within(desktopGroup(container)).getByRole('radio', {
+					name: locale === 'en' ? 'Week' : 'Semaine',
+				}),
+			);
+			const averageLabel = locale === 'en' ? 'Avg delay' : 'Retard moyen';
+			const average = within(pane)
+				.getByText(averageLabel, { exact: true })
+				.closest('[data-slot="metric-display"]') as HTMLElement;
+			await fireEvent.click(
+				within(average).getByRole('button', { name: new RegExp(averageLabel, 'i') }),
+			);
+			const dialog = within(average).getByRole('dialog');
+			expect(dialog).toHaveTextContent(
+				locale === 'en'
+					? 'Average predicted deviation from the timetable'
+					: 'L’écart moyen prédit par rapport à l’horaire',
+			);
+			expect(within(dialog).getByRole('link')).toHaveAttribute(
+				'href',
+				locale === 'en' ? '/metrics#avg-delay' : '/fr/metrics#avg-delay',
+			);
+			expect(within(pane).queryByText('p90', { exact: true })).toBeNull();
+		},
+	);
 });

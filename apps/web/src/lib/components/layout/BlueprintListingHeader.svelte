@@ -115,7 +115,7 @@
 		max-width: var(--measure-body);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		color: var(--accent-text);
+		color: color-mix(in srgb, var(--accent-text) 80%, var(--foreground));
 		letter-spacing: 0;
 		line-height: 1.35;
 		text-transform: uppercase;
@@ -125,7 +125,7 @@
 		margin: 0.375rem 0 0;
 		max-width: var(--measure-body);
 		font-size: var(--text-small);
-		color: var(--muted-foreground);
+		color: color-mix(in srgb, var(--muted-foreground) 50%, var(--foreground));
 		line-height: 1.4;
 	}
 

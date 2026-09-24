@@ -23,7 +23,7 @@
 	function preview(pointer: boolean, focus: boolean): void {
 		pointerPreview = pointer;
 		focusPreview = focus;
-		onpreview?.(previewing ? { kind: 'stop', id: stop.id } : null);
+		onpreview?.(pointer || focus ? { kind: 'stop', id: stop.id } : null);
 	}
 	const accessibleName = $derived(
 		`${t.selectStop(stopDisplayName(stop, locale))}${stop.seq == null ? `, ${seqUnknownAria}` : `, ${stop.seq}`}${stop.etaUtc ? `, ${timeLabel(stop.etaUtc, locale)}` : ''}`,

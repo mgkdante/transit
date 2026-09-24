@@ -5,10 +5,6 @@ import { reliabilityCopy } from '../reliability.copy';
 import type { WaitRegularityVM } from '../clusters';
 import type { HeadwayPeriod } from '$lib/v1';
 
-// PR-WEB-3 §2 wait-by-shift · vs-prior comparison. The shared-CoV two-sample math is unit-
-// tested in selectors/priorDelta.test.ts; THIS pins the section WIRING: the windowed gate,
-// the change / noise / honest-absence states, and the Δ-vs-prior wait badge (minutes).
-
 const hw = (
 	shift: string,
 	observed: number | null,
@@ -52,20 +48,23 @@ const rowsByState = (container: HTMLElement, prior: string): HTMLElement[] =>
 		(el) => el.getAttribute('data-prior') === prior,
 	) as HTMLElement[];
 
-const mount = (wait: WaitRegularityVM, mode: 'day' | 'week' | 'month' = 'week') =>
-	render(Section2TheWait, {
+const mount = async (wait: WaitRegularityVM, mode: 'day' | 'week' | 'month' = 'week') => {
+	const view = render(Section2TheWait, {
 		props: { wait, locale: 'en' as const, copy: reliabilityCopy.en, mode },
 	});
+	await fireEvent.click(view.getByRole('button', { name: reliabilityCopy.en.sections.detailShow }));
+	return view;
+};
 
-describe('Section2TheWait — wait vs prior (PR-WEB-3)', () => {
+describe('Section2TheWait — reported gap comparisons', () => {
 	const headway: HeadwayPeriod[] = [
-		hw('am_peak', 18, 60, 0.2, 9, 60), // +9 min, healthy n → SIGNIFICANT (a rising wait is bad)
-		hw('midday', 29.4, 20, 0.39, 29.2, 24), // +0.2 min, sparse + jittery → within noise
+		hw('am_peak', 18, 60, 0.2, 9, 60), // +9 min
+		hw('midday', 29.4, 20, 0.39, 29.2, 24), // +0.2 min with fewer reports
 		hw('night', 21, 30, 0.3, null, null), // no prior → honest absence
 	];
 
-	it('renders a significant wait increase as "+9.0 min vs prior week", flagged regression', () => {
-		const { container } = mount(waitVm(headway, true));
+	it('renders a reported gap increase as "+9.0 min vs prior week", flagged regression', async () => {
+		const { container } = await mount(waitVm(headway, true));
 		const changed = rowsByState(container, 'change');
 		const worse = changed.find((el) => el.textContent?.includes('+9.0'));
 		expect(worse?.textContent).toContain('+9.0 min');
@@ -74,23 +73,23 @@ describe('Section2TheWait — wait vs prior (PR-WEB-3)', () => {
 		expect(worse?.textContent).toContain('▲');
 	});
 
-	it('renders a sub-minute jitter as neutral "within noise"', () => {
-		const { container } = mount(waitVm(headway, true));
-		const noise = rowsByState(container, 'noise');
-		expect(noise.length).toBe(1);
-		expect(noise[0].textContent).toContain('within noise');
-		expect(noise[0].textContent).not.toContain('+0.2');
+	it('keeps a small measured difference without an unsupported noise verdict', async () => {
+		const { container } = await mount(waitVm(headway, true));
+		const row = rowsByState(container, 'change').find((el) => el.textContent?.includes('+0.2'));
+		expect(row?.textContent).toContain('+0.2 min');
+		expect(row?.textContent).toContain('vs prior week');
+		expect(container.textContent).not.toMatch(/within noise|significance|95%/);
 	});
 
-	it('renders an honest absence ("no prior week") when there is no prior window', () => {
-		const { container } = mount(waitVm(headway, true));
+	it('renders an honest absence ("no prior week") when there is no prior window', async () => {
+		const { container } = await mount(waitVm(headway, true));
 		const absent = rowsByState(container, 'absent');
 		expect(absent.length).toBe(1);
 		expect(absent[0].textContent).toContain('no prior week');
 	});
 
-	it('HIDES the comparison when the headway breakdown is not windowed', () => {
-		const { container } = mount(waitVm(headway, false));
+	it('HIDES the comparison when the headway breakdown is not windowed', async () => {
+		const { container } = await mount(waitVm(headway, false));
 		expect(container.querySelector('[data-slot="wait-vs-prior"]')).toBeNull();
 	});
 });
@@ -158,4 +157,55 @@ describe('Section2TheWait — direction DataTable contract', () => {
 			).toEqual(['Période', 'Direction 1', 'Direction 2']);
 		}
 	});
+});
+
+// Two equally sampled shifts can still have different exposure: gaps [10,10] and
+// [10,30] give modeled EWT 0 and 7.5. Their mean is 3.75; pooled moments give 5.0.
+describe('Section2TheWait — reporting-shift summary', () => {
+	it.each(['en', 'fr'] as const)(
+		'labels the unweighted shift mean and model limits in %s',
+		async (locale) => {
+			const headway = [
+				{ ...hw('am_peak', 10, 2, 0, null, null), excess_wait_min: 0 },
+				{ ...hw('midday', 20, 2, 0.71, null, null), excess_wait_min: 7.5 },
+				{ ...hw('night', null, null, null, null, null), excess_wait_min: null },
+			];
+			const view = render(Section2TheWait, {
+				props: { wait: waitVm(headway, true), locale, copy: reliabilityCopy[locale] },
+			});
+			await fireEvent.click(
+				view.getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+			);
+			const headline = view.container.querySelector('[data-slot="excess-wait-headline"]');
+			expect(headline?.textContent).toContain(
+				locale === 'en' ? 'mean across reported shifts' : 'moyenne des périodes rapportées',
+			);
+			expect(headline?.textContent).toContain('3.8');
+			expect(headline?.textContent).toContain(
+				locale === 'en' ? 'uniform rider arrivals' : 'arrivées uniformes',
+			);
+			expect(headline?.textContent).not.toMatch(
+				/actually wait|supplémentaire réel|across the day|sur la journée/,
+			);
+		},
+	);
+
+	it.each(['en', 'fr'] as const)(
+		'compares the published medians, not means, in %s',
+		async (locale) => {
+			// [2,2,26] has median2 and mean10; [6,6,6] has median6 and mean6.
+			const wait = waitVm([hw('am_peak', 2, 3, 1.39, 6, 3)], true);
+			const view = render(Section2TheWait, {
+				props: { wait, locale, copy: reliabilityCopy[locale], mode: 'week' },
+			});
+			await fireEvent.click(
+				view.getByRole('button', { name: reliabilityCopy[locale].sections.detailShow }),
+			);
+			const { container } = view;
+			const row = rowsByState(container, 'change')[0];
+			expect(row?.textContent).toContain('-4.0 min');
+			expect(row?.textContent).toContain(reliabilityCopy[locale].priorDelta.vsPrior.week);
+			expect(container.textContent).not.toMatch(/95%|significan|within noise|dans le bruit/);
+		},
+	);
 });

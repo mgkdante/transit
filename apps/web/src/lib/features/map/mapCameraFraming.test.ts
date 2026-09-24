@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { mapViewportOptions, type MapFitPadding } from '$lib/components/map/viewport';
@@ -8,16 +10,19 @@ import {
 	mapInitialCenter,
 } from './mapCameraFraming';
 
-// The camera maths this receipt settles against is MapLibre's own, but the
-// transform and the fit helper are not on its public export surface — they live in
-// the TypeScript sources it ships beside the bundle. Load them through NON-LITERAL
-// specifiers: the runtime resolves them identically, while `svelte-check` stays out
-// of maplibre's sources, which do not compile under this project's tsconfig. The
-// shapes below describe the API surface only; every number stays MapLibre's.
-const MERCATOR_TRANSFORM_MODULE = 'maplibre-gl/src/geo/projection/mercator_transform';
-const CAMERA_HELPER_MODULE = 'maplibre-gl/src/geo/projection/camera_helper';
-const LNG_LAT_MODULE = 'maplibre-gl/src/geo/lng_lat';
-const LNG_LAT_BOUNDS_MODULE = 'maplibre-gl/src/geo/lng_lat_bounds';
+// Import the real shipped TS sources through their package directory: v6 exports
+// its package.json but not src subpaths. Non-literal URLs keep vendor sources out
+// of svelte-check while Vitest still transforms them for the numerical oracle.
+const maplibrePackage = pathToFileURL(
+	createRequire(import.meta.url).resolve('maplibre-gl/package.json'),
+);
+const MERCATOR_TRANSFORM_MODULE = new URL(
+	'src/geo/projection/mercator_transform.ts',
+	maplibrePackage,
+).href;
+const CAMERA_HELPER_MODULE = new URL('src/geo/projection/camera_helper.ts', maplibrePackage).href;
+const LNG_LAT_MODULE = new URL('src/geo/lng_lat.ts', maplibrePackage).href;
+const LNG_LAT_BOUNDS_MODULE = new URL('src/geo/lng_lat_bounds.ts', maplibrePackage).href;
 
 type PaddingBox = { top: number; bottom: number; left: number; right: number };
 
@@ -114,7 +119,7 @@ function paddingObject(padding: MapFitPadding): PaddingBox {
 
 /**
  * Settle the REAL MapLibre camera exactly the way `Map`'s constructor does
- * (maplibre-gl 5.24.0, `ui/map.ts:713-819`): build the transform from
+ * (maplibre-gl 6.4.1): build the transform from
  * `mapViewportOptions`, apply maxBounds, jumpTo(center/zoom), resize, fitBounds at
  * duration 0, then the final constraining resize. Every number this returns is
  * COMPUTED from that transform — nothing is sampled from rendered pixels, which is

@@ -20,7 +20,7 @@
 	import { page } from '$app/state';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getLocale, localizeHref } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
@@ -38,7 +38,7 @@
 	import { sharedClock } from '$lib/stores';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { inferAbsenceReason } from '$lib/site/serviceWindow';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState, MaybeValue } from '$lib/components/edge';
 	import {
 		EntityDetail,
 		ResourceBoundary,
@@ -46,7 +46,7 @@
 		FreshnessStamp,
 		AffectedAlerts,
 	} from '$lib/components/surface';
-	import { RankedRow } from '$lib/components/dataviz';
+	import { StatusBadge } from '$lib/components/dataviz';
 	import {
 		ArticleHeader,
 		ArticleSectionStack,
@@ -64,10 +64,13 @@
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
-	import LazyRouteReliabilityPane from './LazyRouteReliabilityPane.svelte';
+	import LazyRouteReliabilityPane, {
+		type RouteReliabilityClustersModule,
+	} from './LazyRouteReliabilityPane.svelte';
 	import {
 		createLineHistoryResource,
 		type LineHistoryResource,
+		type LineHistorySeed,
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -75,8 +78,10 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { delayColorVar, delaySeverity, delayLabel } from '$lib/site/delayPresentation';
-	import { DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
+	import { absenceSentence } from '$lib/site/absence';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
+	import { STATUS_LABELS } from '$lib/v1/enumLabels';
+	import { dayTypeLabel, shiftLabel } from '$lib/features/reliability/shiftGrains';
 
 	interface RouteDetailProps {
 		/** The route id this surface details. */
@@ -87,9 +92,22 @@
 		routeSeed?: ResourceSeed<RouteFile | null>;
 		/** Server-loaded reliability archive; absent only when that independent read failed. */
 		reliabilitySeed?: ResourceSeed<RouteReliability | null>;
+		lineHistorySeed?: LineHistorySeed;
+		initialClusters?: RouteReliabilityClustersModule['default'];
+		initialImportFailed?: boolean;
+		preparedArticleTime?: { routeId: string; iso: string; locale: Locale; text: string };
 	}
 
-	let { id, seed, routeSeed, reliabilitySeed }: RouteDetailProps = $props();
+	let {
+		id,
+		seed,
+		routeSeed,
+		reliabilitySeed,
+		lineHistorySeed,
+		initialClusters,
+		initialImportFailed,
+		preparedArticleTime,
+	}: RouteDetailProps = $props();
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
@@ -149,6 +167,7 @@
 		return createLineHistoryResource(
 			routeId,
 			historyRangeRequestFromSearchParams(page.url.searchParams),
+			() => lineHistorySeed,
 		);
 	}
 	const initialHistoryEntityId = untrack(() => id);
@@ -212,17 +231,24 @@
 			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
-	const articleEdgeRight = $derived(
-		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
+	const articleTimeText = $derived(
+		articleGeneratedUtc
+			? preparedArticleTime?.routeId === id &&
+				preparedArticleTime.iso === articleGeneratedUtc &&
+				preparedArticleTime.locale === locale
+				? preparedArticleTime.text
+				: formatUtc(articleGeneratedUtc, locale)
+			: null,
 	);
+	const articleEdgeRight = $derived(articleTimeText ?? shortName);
 	const articleTags = $derived<readonly string[]>(shortName ? [id, shortName] : [id]);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (shortName) entries.push({ label: t.article.provider, text: shortName });
-		if (articleGeneratedUtc) {
+		if (articleGeneratedUtc && articleTimeText !== null) {
 			entries.push({
 				label: t.article.generated,
-				text: formatUtc(articleGeneratedUtc, locale),
+				text: articleTimeText,
 				datetime: articleGeneratedUtc,
 			});
 		}
@@ -278,12 +304,7 @@
 		}),
 	);
 
-	// CURRENT-BUSES ROSTER: the live vehicles running THIS route right now, read
-	// from the SAME live index (vehiclesByRoute → byVehicleId) the predictions use
-	// — NO second poll. Sorted MOST-LATE first (the honest "worst"); an early or
-	// on-time bus reads calm, and a vehicle with no delay value sorts last (never a
-	// fabricated 0). The whole section stands down when no live vehicle is on this
-	// route (metro, or a feed gap) — never an empty roster.
+	// Reuse the live index; numeric lateness sorts independently of the published status.
 	const roster = $derived.by<Vehicle[]>(() => {
 		const ids = live.index.vehiclesByRoute.get(id);
 		if (!ids) return [];
@@ -296,10 +317,7 @@
 		return out.sort((a, b) => delaySortKey(b.delay_min) - delaySortKey(a.delay_min));
 	});
 
-	// Sort key: a known delay sorts by SIGNED lateness (most late = worst, first;
-	// early buses trail on-time ones); an absent delay sorts last (no fabricated 0
-	// jumping it ahead of a real reading). Agrees with the colour channel on
-	// "worst = most late".
+	// Missing measurements follow every known value, including early buses.
 	function delaySortKey(delay: number | null | undefined): number {
 		return delay == null ? Number.NEGATIVE_INFINITY : delay;
 	}
@@ -373,14 +391,6 @@
 	// claim). `absenceReason` may still be null (no derivable signal) → we render a
 	// plain honest no-data note instead of inventing a reason.
 	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
-
-	// The roster's delay reading: a known delay reads early / on time / N min late;
-	// a NULL delay reads an honest "no data" (not "no delay", which would imply
-	// on-time), and is NEVER rendered as a fabricated 0.
-	function rosterDelayLabel(delay: number | null | undefined): string | null {
-		if (delay == null) return null;
-		return delayLabel(delay, t);
-	}
 
 	const tripHref = (tripId: string): string =>
 		localizeHref(routeFor({ kind: 'trip', id: tripId }), locale);
@@ -576,30 +586,40 @@
 													<span class="route-roster-count">{t.roster.count(roster.length)}</span>
 												</div>
 												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
-													{#each roster as bus, bi (bus.id)}
+													{#each roster as bus (bus.id)}
+														{@const unknownStatusAndDelay =
+															bus.status === 'unknown' && bus.delay_min == null}
 														<li class="route-roster-item">
+															{#snippet rosterRow()}
+																<div class="route-roster-reading">
+																	<strong>{t.roster.busLabel(bus.id)}</strong>
+																	<StatusBadge
+																		status={bus.status}
+																		label={STATUS_LABELS[locale][bus.status]}
+																		mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+																		aria-hidden={unknownStatusAndDelay || undefined}
+																		size="sm"
+																	/>
+																	<span class="route-roster-delay"
+																		><MaybeValue
+																			value={delayMeasurement(bus.delay_min)}
+																			reason="not-reported"
+																			variant="row"
+																			{locale}
+																		/></span
+																	>
+																	{#if bus.next_stop != null}<span class="route-roster-next"
+																			>{t.roster.nextStop(bus.next_stop)}</span
+																		>{/if}
+																</div>
+															{/snippet}
 															{#if bus.trip}
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={t.roster.viewTrip(bus.id)}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${locale === 'fr' ? 'Retard' : 'Delay'}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
 																>
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
+																	{@render rosterRow()}
 																	<ChevronRightIcon
 																		size={14}
 																		strokeWidth={2.4}
@@ -608,22 +628,7 @@
 																</a>
 															{:else}
 																<div class="route-roster-link route-roster-link--static">
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
+																	{@render rosterRow()}
 																</div>
 															{/if}
 															<a
@@ -709,7 +714,7 @@
 											rows={(file.service_periods ?? []).map(
 												(period): ScheduleRow => ({
 													kind: 'service',
-													period: period.shift,
+													period: dayTypeLabel(shiftLabel(period.shift, locale), locale),
 													window: period.window,
 													headway: fmtMin(period.headway_min),
 												}),
@@ -730,6 +735,8 @@
 			<LazyRouteReliabilityPane
 				entityId={id}
 				resource={reliability}
+				{initialClusters}
+				{initialImportFailed}
 				{locale}
 				directionHeadsigns={dirHeadsigns}
 				history={lineHistory}
@@ -805,7 +812,23 @@
 		align-items: center;
 		gap: 0.5rem;
 	}
-	/* The bus row links to its trip; the RankedRow renders bare inside this <a>. */
+	.route-roster-reading {
+		display: flex;
+		flex: 1;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.route-roster-delay,
+	.route-roster-next {
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+	}
+	.route-roster-next {
+		flex-basis: 100%;
+	}
 	.route-roster-link {
 		flex: 1 1 auto;
 		min-width: 0;

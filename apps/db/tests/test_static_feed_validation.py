@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import hashlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from zipfile import ZipFile
 
 import pytest
@@ -251,6 +253,51 @@ def test_validate_static_feeds_reports_download_failure_as_unavailable() -> None
     assert display["active_static"]["status"] == "unavailable"
     assert display["active_static"]["error_type"] == "download_error"
     assert "network unavailable" in display["active_static"]["message"]
+
+
+@pytest.mark.parametrize("truncated", [False, True], ids=["complete", "truncated"])
+def test_static_validation_reports_chunked_download_and_cleans_temporary_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truncated: bool
+) -> None:
+    archive = tmp_path / "static.zip"
+    _write_gtfs_zip(archive)
+    body = archive.read_bytes()
+    monkeypatch.setattr(static_feed_validation.tempfile, "tempdir", str(tmp_path))
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(f"{len(body):x}\r\n".encode())
+            self.wfile.write(body[: len(body) // 2] if truncated else body + b"\r\n0\r\n\r\n")
+            self.close_connection = True
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/static.zip"
+            registry = FakeRegistry(FakeProvider({"static_schedule": FakeFeed(url)}))
+            result = validate_static_feeds("stm", registry=registry)
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert not list(tmp_path.glob("static_feed_validation_*"))
+    assert result.active_static.status == ("unavailable" if truncated else "ok")
+    if truncated:
+        assert result.active_static.error_type == "download_error"
+        assert "IncompleteRead" in result.active_static.message
+        assert result.active_static.byte_size is None
+        assert result.active_static.checksum_sha256 is None
+        assert result.active_static.row_counts == {}
+    else:
+        assert result.active_static.checksum_sha256 == hashlib.sha256(body).hexdigest()
 
 
 def test_validate_static_feeds_preserves_injected_artifact_paths_outside_temp_dir(

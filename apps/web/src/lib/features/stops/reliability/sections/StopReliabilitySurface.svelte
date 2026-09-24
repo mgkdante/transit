@@ -66,7 +66,11 @@
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	// The shared occupancy band vocabulary (the SAME labels the lines surface renders).
@@ -79,6 +83,7 @@
 		STOP_GRAINS,
 		type StopGrain,
 	} from '../data/presentGrains';
+	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';
@@ -250,14 +255,17 @@
 	const gradedPeriods = $derived(
 		selectGradedPeriods(data.periods, grain, (g) => copy.grain[g as StopGrain] ?? g),
 	);
-	const dayPercentiles = $derived(selectDayPercentiles(data.periods, grain));
+	const retainedPercentiles = $derived(
+		explicitHistory && retainedReady
+			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			: null,
+	);
+	const dayPercentiles = $derived(
+		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
+	);
 
-	// §C5.6 one-line reliability verdict at the TOP of the Reliability pane — the SHARED
-	// VerdictBanner + selectVerdict at stop scope, off the selected-grain period's own
-	// otp_pct + observation_count (the Wilson hedge rides the real n; selectVerdict
-	// derives the numerator from otp×n honestly when no explicit on_time is served). The
-	// pipeline emits one period per grain → read the last matching row; a null otp stands
-	// the band down to "still measuring" (never a fabricated verdict).
+	// Stop otp_pct is the non-severe proxy. Its nominal bounds reconstruct a numerator
+	// from the rounded share; the stop copy identifies the population and dependence limit.
 	const gradedPeriodRaw = $derived.by(() => {
 		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
 		return rows.length > 0 ? rows[rows.length - 1] : null;
@@ -309,9 +317,9 @@
 		explicitHistory && historySelectionText != null ? historySelectionText : copy.crowding.window,
 	);
 
-	// The (i) affordance for the ReliabilityPane heading (its intrinsic OTP/delay/severe).
+	// The stop prediction summary's metric definitions.
 	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
@@ -319,7 +327,7 @@
 	/* ── section ToC (P5.4 responsive left-rail wayfinding) ─────────────────────
 	   A vertical jump list of the PRESENT sections (built off the SAME conditions
 	   that mount each tile below, so the ToC never lists a stood-down section).
-	   Retained selection applies only to the trend and crowding sections; all other
+	   Retained selection applies to the trend, daily percentiles and crowding sections; all other
 	   sections keep their explicit current-only scope. The observer keys on each
 	   tile's [data-toc] anchor (minted below, locale-free). */
 	const sectionNav = $derived(
@@ -384,7 +392,7 @@
 	}
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
+{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	{@const i = info(key, name)}
 	<MetricInfo
 		class="stop-metric-info"
@@ -560,6 +568,7 @@
 								{/snippet}
 								<SectionPercentiles
 									percentiles={dayPercentiles}
+									dailyPercentiles={retainedPercentiles}
 									{locale}
 									{copy}
 									presentation="article-body"
@@ -581,15 +590,14 @@
 								openSignal={cardOpenSignal('stop-rel-pane')}
 								bulkCollapsed={quietModeStore.enabled}
 							>
-								{#snippet headerActions()}
-									{@render metricInfo('otp', copy.metrics.otp)}
-									{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
-									{@render metricInfo('severe', copy.metrics.severe)}
-								{/snippet}
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
-									<!-- §C5.6: the one-line reliability verdict at the top of the pane. -->
+									{#if explicitHistory}
+										<p class="stop-prediction-scope" data-slot="prediction-scope">
+											{copy.history.predictionScope}
+										</p>
+									{/if}
 									<VerdictBanner result={stopVerdict} />
-									<ReliabilityPane periods={gradedPeriods} {locale} />
+									<ReliabilityPane periods={gradedPeriods} {locale} {metricInfo} />
 								</div>
 							</CollapsibleSection>
 						</div>
@@ -778,8 +786,8 @@
 		margin: 0;
 	}
 
-	/* Resolved-window caption — quiet mono, on its own row beneath the grain chips. */
-	.stop-reliability-window {
+	.stop-reliability-window,
+	.stop-prediction-scope {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);

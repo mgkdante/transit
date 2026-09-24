@@ -23,6 +23,21 @@ vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
 
 const GEN = '2026-06-20T12:00:00Z';
 
+it.each(['live', 'updated'] as const)(
+	'uses the caller timestamp label in the %s variant without changing age or announcements',
+	(variant) => {
+		const { container } = render(FreshnessStamp, {
+			props: { variant, generatedUtc: GEN, locale: 'en', label: 'Latest report' },
+		});
+		const chip = container.querySelector('[data-slot="freshness-stamp"]')!;
+		expect(chip.querySelector('.freshness-stamp-label')).toHaveTextContent('Latest report');
+		expect(chip.querySelector('time')).toHaveTextContent('5 minutes ago');
+		expect(chip.querySelector('time')).toHaveAttribute('datetime', GEN);
+		expect(chip).not.toHaveTextContent('LIVE');
+		expect(chip.getAttribute('aria-live')).toBe(variant === 'live' ? null : 'polite');
+	},
+);
+
 describe('FreshnessStamp — live variant', () => {
 	it('renders the pulsing LIVE chip with a server-anchored relative age', () => {
 		render(FreshnessStamp, { props: { variant: 'live', generatedUtc: GEN, locale: 'en' } });

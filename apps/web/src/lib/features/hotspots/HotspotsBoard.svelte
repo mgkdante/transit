@@ -107,7 +107,6 @@
 		},
 		{
 			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
-			freshness: true,
 		},
 	);
 	onDestroy(() => hotspots.destroy());
@@ -291,9 +290,10 @@
 		if (!topHotspot || topHotspotName == null) {
 			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
 		}
-		if (topHotspot.otp_delta_pts == null) return t.verdict.topNoDelta(topHotspotName);
-		const points = String(Math.abs(Math.round(topHotspot.otp_delta_pts)));
-		return t.verdict.topWithDelta(topHotspotName, points);
+		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
+		return severe == null
+			? t.verdict.topNoRate(topHotspotName)
+			: t.verdict.topWithRate(topHotspotName, severe);
 	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 

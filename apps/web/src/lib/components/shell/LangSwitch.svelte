@@ -52,7 +52,8 @@
 		availableLocales.map((loc, k) => {
 			const n = availableLocales.length;
 			const span = 36 / n;
-			const h = Math.min(12, span - 2);
+			// Keep labels clear of the outline at the mobile SVG scale.
+			const h = Math.min(14, span - 2);
 			const yTop = 4 + k * span + (span - h) / 2;
 			const mid = yTop + h / 2;
 			const right = k % 2 === 1;
@@ -67,7 +68,7 @@
 				ruleX1: right ? 31 : 8,
 				ruleX2: right ? 47.5 : 25,
 				tx: right ? 39 : 16,
-				ty: mid + 3.8,
+				ty: mid + 4.8,
 				active: loc === locale,
 				delay: k * 60,
 			};
@@ -97,7 +98,7 @@
 						<g
 							class="board"
 							class:active={b.active}
-							style="--d:{b.delay}ms; transform-origin:28px {b.ty - 3.8}px;"
+							style="--d:{b.delay}ms; transform-origin:28px {b.ty - 4.8}px;"
 						>
 							<!-- fingerboard: flat outline (current locale fills solid --primary) -->
 							<path class="plate" d={b.path} />
@@ -129,6 +130,10 @@
 	}
 	.lang-post:hover {
 		color: var(--foreground);
+	}
+	.lang-post:active {
+		/* Keep language text contrast while the shared press effect scales the sign. */
+		opacity: 1;
 	}
 	.lang-post:focus-visible {
 		outline: 2px solid var(--ring);

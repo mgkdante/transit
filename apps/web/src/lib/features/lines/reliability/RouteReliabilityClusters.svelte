@@ -27,7 +27,9 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { formatDateKey } from '$lib/utils/time';
+	import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -332,6 +334,11 @@
 
 	// One mapping pass — every band reads its slice of this.
 	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
+	const dailyPercentiles = $derived(
+		explicitHistory && retainedReady && mode === 'range'
+			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			: null,
+	);
 
 	// Instance-unique id prefix so the mobile drawer's disabled-reason description ids never
 	// collide with another surface's controls on the same page.
@@ -359,7 +366,7 @@
 		(['day', 'week', 'month', 'range'] as const).map((key) => {
 			const label =
 				key === 'day'
-					? copy.controls.today
+					? copy.controls.latestDay
 					: key === 'week'
 						? copy.controls.thisWeek
 						: key === 'month'
@@ -405,13 +412,8 @@
 		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
-		const latest = datedPeriods.at(-1);
-		if (
-			latest &&
-			data.cancellations?.some((row) => row.date === latest.date && row.scheduled_trip_days === 0)
-		)
-			return aw.singleDay(latest.date);
-		return aw.day;
+		const latest = selectHeadlinePeriod(selectedData.periods ?? [], 'day');
+		return aw.day(latest?.grain === 'day' ? (latest.date ?? null) : null);
 	});
 
 	/* ── mobile floating pills ──────────────────────────────────────────────────
@@ -428,7 +430,7 @@
 				? copy.controls.thisWeek
 				: mode === 'month'
 					? copy.controls.thisMonth
-					: copy.controls.today,
+					: copy.controls.latestDay,
 	);
 
 	// Section TOC (wayfinding): the rider-question sections a reader can jump to. This list
@@ -588,16 +590,18 @@
 						/>
 					{:else}
 						<div class="reliability-history-state" data-slot="history-state">
-							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
-								<p data-slot="history-loading">{copy.history.loading}</p>
-							{:else if history?.state === 'partial'}
-								<p data-slot="history-partial">{copy.history.partial}</p>
-							{:else if history?.state === 'error'}
-								<p data-slot="history-error">{copy.history.error}</p>
-								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
-									{copy.history.retry}
-								</Button>
-							{/if}
+							<div class="reliability-history-status">
+								{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+									<p data-slot="history-loading">{copy.history.loading}</p>
+								{:else if history?.state === 'partial'}
+									<p data-slot="history-partial">{copy.history.partial}</p>
+								{:else if history?.state === 'error'}
+									<p data-slot="history-error">{copy.history.error}</p>
+									<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+										{copy.history.retry}
+									</Button>
+								{/if}
+							</div>
 							<p data-slot="history-current-only">{copy.history.currentOnly}</p>
 						</div>
 					{/if}
@@ -605,7 +609,7 @@
 				<ArticleSectionStack>
 					<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
 					<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
-						<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
+						<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} {dailyPercentiles} />
 					</div>
 
 					<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
@@ -760,6 +764,9 @@
 	}
 	.reliability-history-state p {
 		margin: 0;
+	}
+	.reliability-history-status {
+		min-block-size: 1lh;
 	}
 	.reliability-history-correction {
 		margin: 0;

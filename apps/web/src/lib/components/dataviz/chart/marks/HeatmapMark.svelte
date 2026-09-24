@@ -144,7 +144,7 @@
 					yScale={scaleBand().padding(0.06)}
 					yDomain={rowIdx}
 					padding={cellPadding}
-					tooltipContext={{ mode: 'bounds' }}
+					tooltipContext={{ mode: 'bounds', touchEvents: 'auto' }}
 				>
 					<Svg>
 						<!-- Hour (col) axis — a sparse clock-tick subset so 24 columns stay legible. -->
@@ -162,10 +162,10 @@
 						     outline + the centred ◆ glyph. -->
 						<HeatmapCells cells={data} worstTier={HEATMAP_WORST_TIER} {worstGlyph} />
 					</Svg>
-					<Tooltip.Root>
+					<Tooltip.Root contained="window" anchor="top">
 						{#snippet children({ data: d }: { data: FlatCell })}
 							<Tooltip.Header>{d.fullRowLabel} · {d.colLabel}</Tooltip.Header>
-							<Tooltip.List>
+							<Tooltip.List class="grid-cols-1">
 								<Tooltip.Item
 									label={spec.valueLabel ?? spec.title}
 									value={`${d.worst && worstGlyph ? worstGlyph + ' ' : ''}${d.tierLabel}`}

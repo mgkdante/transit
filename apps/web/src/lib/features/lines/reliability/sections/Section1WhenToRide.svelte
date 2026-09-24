@@ -44,11 +44,11 @@
 		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTimeOfDay } from '../selectors/punctualityTimeOfDay';
-	import { proportionPriorDelta, type PriorDelta } from '../selectors/priorDelta';
+	import { priorDelta } from '../selectors/priorDelta';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
-	import { selectBestTimeInsight } from '../selectors/bestTimeInsight';
+	import { selectRelativeScorePeak } from '../selectors/relativeScorePeak';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -95,32 +95,21 @@
 		return g;
 	};
 
-	/* ── PRIMARY — the 7×24 repeat-problems heatmap (grain-invariant) ─────────
-	   habits.matrix (7 days × 24 hours, cells number|null in [0,1], normalised to
-	   THIS route's worst hour). Now a CLASSED-tier LayerChart mark (S7 P4): a fixed
-	   [0,1] domain binned onto 4 plain-language tiers on a CVD-safe ramp, so the same
-	   value reads the same tier on every route — and weekends that genuinely see fewer
-	   severe delays read calmer (the legacy per-row re-normalisation hid that). A null
-	   cell is the honest no-data swatch; the worst tier carries an outline + the ◆ glyph. */
+	// The supplied matrix is normalized across this line. Keep one [0,1] domain
+	// for all weekdays; the outline marks the highest band, not only exact maxima.
 	const hasHeatmap = $derived(!habits.isEmpty);
 
 	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading + table.
 	const fullDayLabels = $derived(band.weekdays.slice(1));
 
-	// §1 takeaway SENTENCE (the verdict the section earmarks): the line's worst repeat-problem
-	// window + its calmest weekday, read straight off the matrix so a rider gets "when to avoid /
-	// when it's fine" without decoding the grid. Worded RELATIVE to the line (its own peak hour).
-	const bestTime = $derived(
-		selectBestTimeInsight(habits, {
+	const relativePeak = $derived(
+		selectRelativeScorePeak(habits, {
 			fullRowLabels: fullDayLabels,
 			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
 		}),
 	);
-	const bestTimeText = $derived(
-		bestTime
-			? band.bestTime.lead(bestTime.worstDayLabel, bestTime.worstHourLabel) +
-					(bestTime.calmDayIdx >= 0 ? band.bestTime.calm(bestTime.calmDayLabel) : '')
-			: null,
+	const relativePeakText = $derived(
+		relativePeak ? band.relativePeak(relativePeak.dayLabel, relativePeak.hourLabel) : null,
 	);
 
 	const heatmapSpec = $derived(
@@ -181,7 +170,7 @@
 	/* ── DETAIL — by time of day (A1/A2) ─────────────────────────────────────
 	   The granular shift + day-type buckets the contract already carries. The
 	   per-shift severe share is a Cleveland DOT-STRIP — one dot per shift on the
-	   fixed SEVERE_DOMAIN, dots NOT connected, the all-day mean a reference rule.
+	   fixed SEVERE_DOMAIN, dots NOT connected, their approximate weighted mean a reference rule.
 	   selectPunctualityTimeOfDay owns the shift order + severity banding + the
 	   mean; honest absence when no shift carries a real severe share. */
 	const timeOfDaySpec = $derived(
@@ -264,30 +253,18 @@
 		!punctuality.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
 
-	/* ── DETAIL — on-time by time of day · vs prior {window} (PR-WEB-3) ──────────
-	   The per-shift + weekday/weekend ON-TIME rate the windowed breakdowns carry, each with
-	   a Δ-vs-prior badge gated on a two-proportion z-test (proportionPriorDelta). Shown ONLY
-	   when the §1 breakdowns are windowed (periods_by_grain present) — the scalar whole-history
-	   rows carry no prior, so there is nothing to compare. Honest absence: a row with no prior
-	   window shows the neutral "no prior {window}" marker (never a fake 0); a real-but-
-	   insignificant swing reads "within noise" (neutral), never a coloured arrow. */
+	// Windowed rates compare the same time period with its previous window.
 	interface OnTimeRow {
 		readonly key: string;
 		readonly label: string;
 		readonly otpPct: number | null;
-		readonly delta: PriorDelta;
+		readonly delta: number | null;
 	}
 	const toOnTimeRow = (r: PeriodComparisonRow, label: (g: string) => string): OnTimeRow => ({
 		key: r.grain,
 		label: label(r.grain),
 		otpPct: r.otpPct,
-		delta: proportionPriorDelta(
-			r.otpPct,
-			r.observationCount,
-			r.priorOtpPct,
-			r.priorObservationCount,
-			{ onTime: r.onTime, priorOnTime: r.priorOnTime },
-		),
+		delta: priorDelta(r.otpPct, r.priorOtpPct),
 	});
 	const onTimeShiftRows = $derived(
 		orderByGrain(
@@ -364,22 +341,16 @@
 	<li
 		class="compare-row"
 		data-slot="on-time-compare-row"
-		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+		data-prior={row.delta == null ? 'absent' : row.delta === 0 ? 'flat' : 'change'}
 	>
 		<span class="compare-label">{row.label}</span>
 		<span class="compare-value">{pct(row.otpPct) ?? noDataLabel}</span>
 		<DeltaStat
 			class="compare-delta"
-			delta={row.delta.significant ? row.delta.delta : null}
-			display={row.delta.significant && row.delta.delta != null
-				? fmtPts(row.delta.delta)
-				: undefined}
+			delta={row.delta}
+			display={row.delta == null ? undefined : fmtPts(row.delta)}
 			higherIsBetter
-			context={row.delta.significant
-				? copy.priorDelta.vsPrior[win]
-				: row.delta.hasPrior
-					? copy.priorDelta.withinNoise
-					: copy.priorDelta.noPrior[win]}
+			context={row.delta == null ? copy.priorDelta.noPrior[win] : copy.priorDelta.vsPrior[win]}
 			ariaNoun={`${row.label} ${copy.priorDelta.onTimeNoun}`}
 		/>
 	</li>
@@ -403,11 +374,8 @@
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
 				</span>
-				<!-- Tier-1 takeaway (the verdict SENTENCE the section earmarks): names the line's worst
-				     repeat-problem window + calmest weekday, so the rider gets the answer before reading
-				     the grid. Worded relative to the line itself. -->
-				{#if bestTimeText}
-					<p class="heatmap-insight" data-slot="best-time-insight">{bestTimeText}</p>
+				{#if relativePeakText}
+					<p class="heatmap-insight" data-slot="best-time-insight">{relativePeakText}</p>
 				{/if}
 				<!-- Operator: "today and this week look the same — explain why." The heatmap reads the
 					     FULL history (grain-invariant), so it is identical whichever window the rail is on.
@@ -453,7 +421,7 @@
 					{#if hasShiftStrip}
 						<!-- P10: a Cleveland DOT/STRIP plot — one dot per shift on ONE shared
 						     severe-share axis (fixed SEVERE_DOMAIN), am→night order, dots NOT
-						     connected. The all-day mean is a reference rule; dots ride the
+						     connected. Their approximate weighted mean is a reference rule; dots ride the
 						     dataviz severity scale + a glyph; a null-severe shift is an honest
 						     gap (no fake 0). -->
 						<div class="strip" data-slot="shift-severe-strip">

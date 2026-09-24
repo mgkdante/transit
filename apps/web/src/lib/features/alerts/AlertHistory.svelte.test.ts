@@ -341,6 +341,11 @@ describe('AlertHistory article shell', () => {
 		});
 		expect(copyEn.article.matches(1)).toBe('1 match');
 		expect(copyEn.article.matches(2)).toBe('2 matches');
+		for (const count of [0, 1, 2, 1000]) {
+			const label = `${count.toLocaleString('en-CA')} ${count === 1 ? 'alert' : 'alerts'}`;
+			expect(copyEn.filters.pillSummary(count)).toBe(label);
+			expect(copyEn.breakdown.buckets(count)).toBe(label);
+		}
 		expect(copyEn.rail).toEqual({
 			label: 'Filters & contents',
 			open: 'Open filters and contents',
@@ -515,14 +520,12 @@ describe('AlertHistory log', () => {
 		expect(container.querySelector('[data-slot="alert-log"] strong')).toBeNull();
 	});
 
-	it('omits absent fields and never fabricates a 0 (no impact line when impact_passages is null)', () => {
+	it('omits unsupported impact estimates while preserving duration and route reports', () => {
 		render(AlertHistoryScreen);
-		const list = screen.getByRole('list', { name: /past service alerts, newest first/i });
-		const rows = within(list).getAllByRole('listitem');
-		const withImpact = rows.find((r) => within(r).queryByText(/passages affected/i));
-		expect(withImpact).toBeDefined();
-		expect(within(withImpact as HTMLElement).getByText('1,234 passages')).toBeInTheDocument();
-		expect(within(list).queryByText('0 passages')).toBeNull();
+		const list = screen.getByRole('list', { name: copyEn.logListLabel });
+		expect(within(list).queryAllByText(/passages/i)).toHaveLength(0);
+		expect(within(list).getByText('2040 min')).toBeInTheDocument();
+		expect(within(list).getByText('24')).toBeInTheDocument();
 	});
 
 	it('renders the resolved duration in minutes', () => {

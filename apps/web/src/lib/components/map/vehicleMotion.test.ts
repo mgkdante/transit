@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setImmediate } from 'node:timers/promises';
 
-import type { Map as MapLibreMap } from 'maplibre-gl';
+import { GeoJSONSource, type GeoJSONSourceDiff, type Map as MapLibreMap } from 'maplibre-gl';
 import {
 	createVehicleMotionController,
 	power1Out,
@@ -9,6 +10,7 @@ import {
 	type MotionRuntime,
 	type ShapeResolver,
 	type VehicleFix,
+	type VehicleMotionController,
 } from './vehicleMotion';
 import { VEHICLE_SOURCE, type VehicleFC, type VehicleFeature } from './vehicleLayer';
 import { STALE_CUTOFF_S } from './vehicleProjection';
@@ -1100,5 +1102,288 @@ describe('createVehicleMotionController — forward projection', () => {
 		expect(back.s).toBeGreaterThan(0);
 		expect(back.distance).toBeLessThan(1); // sits ON the shape
 		c.destroy();
+	});
+});
+
+describe('vehicle source delivery', () => {
+	const controllers: VehicleMotionController[] = [];
+	afterEach(() => {
+		for (const controller of controllers) controller.destroy();
+		controllers.length = 0;
+	});
+
+	function actualSource() {
+		type Message = { data: { data?: VehicleFC; dataDiff?: GeoJSONSourceDiff } };
+		const pending: { message: Message; resolve: () => void; reject: (error: Error) => void }[] = [];
+		const messages: Message[] = [];
+		const errors: string[] = [];
+		const actor = {
+			sendAsync(message: Message) {
+				messages.push(structuredClone(message));
+				return new Promise<object>((resolve, reject) => {
+					pending.push({ message, resolve: () => resolve({}), reject });
+				});
+			},
+		};
+		// Use the installed source's real coalescing, mirror and error behavior;
+		// only the actor settlement is controlled. No worker or WebGL is started.
+		const source = new GeoJSONSource(
+			VEHICLE_SOURCE,
+			{ type: 'geojson', data: { type: 'FeatureCollection', features: [] }, promoteId: 'id' },
+			{ getActor: () => Promise.resolve(actor) } as unknown as ConstructorParameters<
+				typeof GeoJSONSource
+			>[2],
+			undefined as unknown as ConstructorParameters<typeof GeoJSONSource>[3],
+		);
+		source.on('error', (event) => errors.push(event.error.message));
+		const setData = vi.spyOn(source, 'setData');
+		const updateData = vi.spyOn(source, 'updateData');
+		const on = vi.spyOn(source, 'on');
+		const off = vi.spyOn(source, 'off');
+		async function settle(error?: Error) {
+			await setImmediate();
+			const call = pending.shift();
+			if (!call) throw new Error('expected a pending source write');
+			if (error) call.reject(error);
+			else call.resolve();
+			// Settle the real source/controller promise chains without advancing
+			// either projection clock or inventing a browser animation frame.
+			await setImmediate();
+		}
+		return { source, setData, updateData, on, off, messages, errors, settle };
+	}
+
+	function connect(initial: GeoJSONSource) {
+		let source: GeoJSONSource | undefined = initial;
+		const clock = controlledRuntime();
+		const mapErrors = vi.fn();
+		const map = { getSource: () => source, fire: mapErrors } as unknown as MapLibreMap;
+		const controller = createVehicleMotionController(map, clock.runtime);
+		controllers.push(controller);
+		const options = {
+			tickKey: 'a',
+			animate: true,
+			shapeFor: straightShape,
+			fixFor: fixFor(5, 10),
+			serverNowFn: clock.serverNowFn,
+		};
+		return {
+			...clock,
+			controller,
+			options,
+			mapErrors,
+			replace: (next?: GeoJSONSource) => {
+				source = next;
+			},
+		};
+	}
+
+	it('retains a full authoritative replacement after an older animation diff settles', async () => {
+		const h = actualSource(),
+			run = connect(h.source);
+		run.controller.set(fcAt(W[0], W[1], 17), run.options);
+		await h.settle();
+		run.frame(34);
+		expect(h.updateData).toHaveBeenCalledOnce();
+		const next = fcAt(-73.6, 45.55, 270);
+		next.features[0].properties.stale = 1;
+		next.features[0].properties.selected = 1;
+		run.controller.set(next, { animate: false, tickKey: 'b' });
+		expect(h.setData).toHaveBeenCalledTimes(1);
+		await h.settle();
+		expect(h.setData).toHaveBeenLastCalledWith(next);
+		await h.settle();
+		expect(await h.source.getData()).toEqual(next);
+		expect(h.errors).toEqual([]);
+		expect(run.hasPending()).toBe(false);
+	});
+
+	it('coalesces pending frames while retaining the latest full membership and filter state', async () => {
+		const h = actualSource(),
+			run = connect(h.source);
+		const legacy = stubMap(),
+			clock = controlledRuntime();
+		const baseline = createVehicleMotionController(legacy.map, clock.runtime);
+		controllers.push(baseline);
+		const initial: VehicleFC = {
+			type: 'FeatureCollection',
+			features: [...fcAt(W[0], W[1]).features, ...fcAt(-73.65, W[1], 0, 'removed').features],
+		};
+		const feed = (data: VehicleFC, tickKey: string) => {
+			run.controller.set(data, { ...run.options, tickKey });
+			baseline.set(data, { ...run.options, tickKey, serverNowFn: clock.serverNowFn });
+		};
+		const frame = () => {
+			run.frame(34);
+			clock.frame(34);
+		};
+		feed(initial, 'a');
+		await h.settle();
+		frame();
+		expect(h.updateData).toHaveBeenCalledOnce();
+		const next: VehicleFC = {
+			type: 'FeatureCollection',
+			features: [...fcAt(-73.6, W[1]).features, ...fcAt(-73.62, W[1], 0, 'added').features],
+		};
+		next.features[0].properties.selected = 1;
+		next.features[0].properties.body = 'filtered-body';
+		feed(next, 'b');
+		frame();
+		frame();
+		expect(h.setData).toHaveBeenCalledTimes(1);
+		expect(h.updateData).toHaveBeenCalledOnce();
+		const expected = structuredClone(legacy.setData.mock.calls.at(-1)![0]);
+		await h.settle();
+		expect(h.setData).toHaveBeenLastCalledWith(expected);
+		await h.settle();
+		expect(await h.source.getData()).toEqual(expected);
+		frame();
+		await h.settle();
+		expect(await h.source.getData()).toEqual(legacy.setData.mock.calls.at(-1)![0]);
+		expect(h.errors).toEqual([]);
+	});
+
+	it('recovers a bearing change from an emitted source error even when its promise fulfills', async () => {
+		const h = actualSource(),
+			run = connect(h.source);
+		let shape: readonly Coord[] | null = null;
+		run.controller.set(fcAt(W[0], W[1], 17), { ...run.options, shapeFor: () => shape });
+		await h.settle();
+		shape = STRAIGHT;
+		run.frame(34);
+		expect(h.updateData.mock.calls[0][0].update?.[0].addOrUpdateProperties).toEqual([
+			{ key: 'bearing', value: 90 },
+		]);
+		const write = h.updateData.mock.results[0].value as Promise<void>;
+		run.frame(34);
+		await h.settle(new Error('worker data failed'));
+		await expect(write).resolves.toBeUndefined();
+		expect(h.errors).toEqual(['worker data failed']);
+		expect(run.mapErrors).not.toHaveBeenCalled();
+		expect(h.setData).toHaveBeenCalledTimes(2);
+		expect(h.updateData).toHaveBeenCalledOnce();
+		await h.settle();
+		const restored = (await h.source.getData()) as unknown as VehicleFC;
+		expect(restored.features[0].properties.bearing).toBe(90);
+		expect(restored.features[0].geometry.coordinates[0]).toBeGreaterThan(W[0]);
+	});
+
+	it.each(['throw', 'reject'] as const)(
+		'invalidates the baseline after a source API %s without retrying the same frame',
+		async (failure) => {
+			const h = actualSource(),
+				run = connect(h.source);
+			run.controller.set(fcAt(W[0], W[1]), run.options);
+			await h.settle();
+			const error = new Error('source API failed');
+			if (failure === 'throw')
+				h.updateData.mockImplementationOnce(() => {
+					throw error;
+				});
+			else h.updateData.mockRejectedValueOnce(error);
+			run.frame(34);
+			await setImmediate();
+			expect(run.mapErrors).toHaveBeenCalledExactlyOnceWith('error', { error });
+			expect(h.errors).toEqual([]);
+			expect(h.setData).toHaveBeenCalledOnce();
+			expect(h.updateData).toHaveBeenCalledOnce();
+			run.frame(34);
+			await h.settle();
+			expect(h.setData).toHaveBeenCalledTimes(2);
+			expect(h.updateData).toHaveBeenCalledOnce();
+			expect(
+				((await h.source.getData()) as unknown as VehicleFC).features[0].geometry.coordinates[0],
+			).toBeGreaterThan(W[0]);
+		},
+	);
+
+	it('retains duplicate IDs through full writes, including a duplicate snapshot queued behind a diff', async () => {
+		const h = actualSource(),
+			run = connect(h.source);
+		run.controller.set(fcAt(W[0], W[1]), run.options);
+		await h.settle();
+		run.frame(34);
+		const duplicate: VehicleFC = {
+			type: 'FeatureCollection',
+			features: [...fcAt(-73.65, W[1]).features, ...fcAt(-73.6, W[1]).features],
+		};
+		run.controller.set(duplicate, { ...run.options, tickKey: 'duplicates' });
+		await h.settle();
+		await h.settle();
+		expect(((await h.source.getData()) as unknown as VehicleFC).features).toHaveLength(2);
+		run.frame(34);
+		await h.settle();
+		expect(h.updateData).toHaveBeenCalledOnce();
+		expect(h.setData).toHaveBeenCalledTimes(3);
+		expect(h.errors).toEqual([]);
+	});
+
+	it.each(['replace', 'remove', 'destroy'] as const)(
+		'detaches pending source writes and listeners on %s',
+		async (operation) => {
+			const h = actualSource(),
+				run = connect(h.source);
+			run.controller.set(fcAt(W[0], W[1]), run.options);
+			await h.settle();
+			run.frame(34);
+			run.frame(34);
+			const listener = h.on.mock.calls.at(-1)![1];
+			const next = operation === 'replace' ? actualSource() : null;
+			if (operation === 'destroy') run.controller.destroy();
+			else {
+				run.replace(next?.source);
+				run.controller.set(fcAt(-73.6, W[1], 270), { animate: false, tickKey: 'b' });
+			}
+			expect(h.off).toHaveBeenCalledWith('error', listener);
+			await h.settle();
+			expect(h.setData).toHaveBeenCalledOnce();
+			expect(h.updateData).toHaveBeenCalledOnce();
+			if (next) {
+				await next.settle();
+				expect(await next.source.getData()).toEqual(fcAt(-73.6, W[1], 270));
+				expect(next.updateData).not.toHaveBeenCalled();
+			}
+			expect(run.hasPending()).toBe(false);
+		},
+	);
+
+	it('keeps exact projection, stale transitions and the existing 30 Hz cadence through differential writes', async () => {
+		const h = actualSource(),
+			run = connect(h.source);
+		const legacy = stubMap(),
+			clock = controlledRuntime();
+		const baseline = createVehicleMotionController(legacy.map, clock.runtime);
+		controllers.push(baseline);
+		const data: VehicleFC = {
+			type: 'FeatureCollection',
+			features: [
+				...fcAt(W[0], W[1]).features,
+				...fcAt(-73.65, W[1], 17, 'stationary').features,
+				...fcAt(-73.6, W[1], 17, 'aging').features,
+			],
+		};
+		const moving = fixFor(5, 10),
+			stationary = fixFor(5, 0),
+			aging = fixFor(STALE_CUTOFF_S - 0.05, 0);
+		const fixes: FixResolver = (id) =>
+			id === 'stationary' ? stationary(id) : id === 'aging' ? aging(id) : moving(id);
+		run.controller.set(data, { ...run.options, fixFor: fixes });
+		baseline.set(data, { ...run.options, fixFor: fixes, serverNowFn: clock.serverNowFn });
+		await h.settle();
+		for (let i = 0; i < 120; i++) {
+			run.frame(1000 / 60 + 1e-9);
+			clock.frame(1000 / 60 + 1e-9);
+			if (!h.source.loaded()) await h.settle();
+			expect(await h.source.getData()).toEqual(legacy.setData.mock.calls.at(-1)![0]);
+		}
+		expect(h.setData).toHaveBeenCalledOnce();
+		expect(h.updateData).toHaveBeenCalledTimes(60);
+		expect(legacy.setData).toHaveBeenCalledTimes(61);
+		const sentIds = h.updateData.mock.calls.flatMap(
+			([diff]) => diff.update?.map((item) => item.id) ?? [],
+		);
+		expect(sentIds).not.toContain('stationary');
+		expect(sentIds.filter((id) => id === 'aging')).toHaveLength(1);
+		expect(h.errors).toEqual([]);
 	});
 });

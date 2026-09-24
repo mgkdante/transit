@@ -8,7 +8,7 @@
 
   Each stop is a link into its detail page carrying the live readout: the soonest
   predicted arrival on this route (from the live trips) + the approaching bus's
-  on-time status, or an honest "no live bus" when nothing is currently predicting
+  on-time status, or an honest "no prediction" when nothing is currently predicting
   it — never a fabricated time. The delay reading + tone come from the shared
   delayPresentation helpers (identical to the current-buses roster).
 
@@ -39,7 +39,7 @@
 	import { stopNameFallback } from '$lib/site/absence';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
-	import { AbsentValue, StateNotice } from '$lib/components/edge';
+	import { AbsentValue } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();
@@ -99,7 +99,7 @@
 													<AbsentValue reason="not-reported" variant="row" {locale} />
 												{/if}
 											{:else}
-												<StateNotice title={copy.noLiveBus} presentation="pill" />
+												<AbsentValue reason="no-prediction" variant="row" {locale} />
 											{/if}
 										</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />

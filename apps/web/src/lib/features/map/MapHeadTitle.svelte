@@ -1,11 +1,3 @@
-<!--
-  MapHeadTitle — the top-left title block.
-
-  SINGLE RESPONSIBILITY (pure presentation): a mono kicker overline + the
-  head-placement freshness chip riding above a confident heading with the brand
-  dot, anchored to the canvas edge by a hairline accent rule. Owns no map state;
-  every value (locale, copy, freshness) is passed in. Rendered by MapOverlayChrome.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import MapFreshness from './MapFreshness.svelte';
@@ -34,8 +26,6 @@
 	}: Props = $props();
 </script>
 
-<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
-     confident heading; a hairline accent rule anchors the block to the edge. -->
 <div class="map-overlay map-head">
 	<div class="map-kicker-row">
 		<p class="map-kicker">{kicker}</p>
@@ -88,9 +78,13 @@
 	}
 	.map-title-row {
 		display: flex;
+		align-self: flex-start;
 		align-items: center;
 		gap: 0.5rem;
 		min-width: 0;
+		padding: 0.25rem 0.5rem;
+		background: var(--card);
+		border-radius: var(--radius-sm);
 	}
 	.map-heading {
 		margin: 0;
@@ -100,9 +94,6 @@
 		letter-spacing: var(--tracking-tight);
 		line-height: 0.95;
 		color: var(--foreground);
-		/* Faint legibility lift so the heading survives over busy basemap tiles;
-		   the colour-mix keeps it theme-correct (dark halo on dark, light on light). */
-		text-shadow: 0 1px 16px color-mix(in srgb, var(--background) 70%, transparent);
 	}
 	.map-dot {
 		color: var(--primary);
@@ -118,6 +109,14 @@
 		}
 		.map-heading {
 			font-size: var(--text-subheading);
+		}
+	}
+	@media (max-width: 1023.98px) {
+		.map-title-row {
+			order: -1;
+		}
+		.map-kicker {
+			display: none;
 		}
 	}
 </style>

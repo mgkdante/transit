@@ -2,6 +2,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -19,7 +20,7 @@ def _step(job: dict, name: str) -> dict:
     return next(step for step in job["steps"] if step.get("name") == name)
 
 
-def test_static_provider_failures_publish_before_refailing_the_bounded_job() -> None:
+def test_static_publication_requires_successful_providers_before_the_refail_step() -> None:
     job = _load_workflow()["jobs"]["run-static-pipeline"]
     steps = job["steps"]
     provider_step = _step(job, PROVIDER_STEP_NAME)
@@ -32,7 +33,7 @@ def test_static_provider_failures_publish_before_refailing_the_bounded_job() -> 
     publish = _step(job, "Publish static /v1 snapshot to R2 (all active providers)")
     publish_index = steps.index(publish)
     assert publish_index == provider_index + 1
-    assert "if" not in publish
+    assert publish["if"] == "steps.run-static-providers.outcome == 'success'"
 
     refail = steps[publish_index + 1]
     assert refail["if"] == (
@@ -44,8 +45,12 @@ def test_static_provider_failures_publish_before_refailing_the_bounded_job() -> 
         assert "continue-on-error" not in _step(job, name)
 
 
-def test_static_provider_loop_attempts_every_provider_and_returns_first_failure(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "octranspo_status,stm_status,publish_status",
+    [(42, 0, 0), (0, 43, 0), (42, 43, 0), (124, 0, 0), (0, 0, 0), (0, 0, 31)],
+)
+def test_static_workflow_attempts_every_provider_and_publishes_only_after_success(
+    tmp_path: Path, octranspo_status: int, stm_status: int, publish_status: int,
 ) -> None:
     job = _load_workflow()["jobs"]["run-static-pipeline"]
     provider_step = _step(job, PROVIDER_STEP_NAME)
@@ -69,13 +74,13 @@ if [[ "$*" == *"run-static-pipeline"* ]]; then
   provider="${!#}"
   printf '%s\\n' "$provider" >> "$ATTEMPTS"
   if [[ "$provider" == "octranspo" ]]; then
-    exit 42
+    exit "$OCTRANSPO_STATUS"
   fi
-  exit 0
+  exit "$STM_STATUS"
 fi
 if [[ "$*" == *"publish-all --tier static"* ]]; then
   printf '%s\\n' "$*" >> "$PUBLISH_CALLS"
-  exit 0
+  exit "$PUBLISH_STATUS"
 fi
 exit 99
 """,
@@ -108,6 +113,9 @@ exec "$@"
     environment["ATTEMPTS"] = str(attempts)
     environment["PUBLISH_CALLS"] = str(publish_calls)
     environment["TIMEOUT_CALLS"] = str(timeout_calls)
+    environment["OCTRANSPO_STATUS"] = str(octranspo_status)
+    environment["STM_STATUS"] = str(stm_status)
+    environment["PUBLISH_STATUS"] = str(publish_status)
 
     result = subprocess.run(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
@@ -118,7 +126,7 @@ exec "$@"
         check=False,
     )
 
-    assert result.returncode == 42
+    assert result.returncode == (octranspo_status or stm_status)
     assert attempts.read_text(encoding="utf-8").splitlines() == [
         "octranspo",
         "stm",
@@ -134,35 +142,47 @@ exec "$@"
         ),
     ]
     assert result.stdout.count("::endgroup::") == 2
-    assert "provider=octranspo outcome=failure exit_code=42" in result.stdout
-    assert "provider=stm outcome=success exit_code=0" in result.stdout
+    for provider, status in (("octranspo", octranspo_status), ("stm", stm_status)):
+        outcome = "success" if status == 0 else "failure"
+        assert f"provider={provider} outcome={outcome} exit_code={status}" in result.stdout
 
-    publish_script = tmp_path / "publish-step.sh"
-    publish_script.write_text(publish_step["run"], encoding="utf-8")
-    publish_result = subprocess.run(
-        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(publish_script)],
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    provider_outcome = "success" if result.returncode == 0 else "failure"
+    publish_result = None
+    if publish_step.get("if") in (
+        None, f"steps.run-static-providers.outcome == '{provider_outcome}'",
+    ):
+        publish_result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", publish_step["run"]],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-    assert publish_result.returncode == 0
-    assert publish_calls.read_text(encoding="utf-8").splitlines() == [
-        "run python -m transit_ops.cli publish-all --tier static"
-    ]
+    if result.returncode != 0:
+        assert publish_result is None
+        assert not publish_calls.exists()
+    else:
+        assert publish_result is not None
+        assert publish_result.returncode == publish_status
+        assert publish_calls.read_text(encoding="utf-8").splitlines() == [
+            "run python -m transit_ops.cli publish-all --tier static"
+        ]
 
     refail_step = job["steps"][job["steps"].index(publish_step) + 1]
-    refail_script = tmp_path / "refail-step.sh"
-    refail_script.write_text(refail_step["run"], encoding="utf-8")
-    refail_result = subprocess.run(
-        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(refail_script)],
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert refail_result.returncode == 1
+    if refail_step["if"] == (
+        f"always() && steps.run-static-providers.outcome == '{provider_outcome}'"
+    ):
+        refail_result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", refail_step["run"]],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert refail_result.returncode == 1
+        assert result.returncode != 0
+    else:
+        assert result.returncode == 0

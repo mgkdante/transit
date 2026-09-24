@@ -128,12 +128,11 @@ export const copy = defineCopy({
 			avg: 'moy',
 			samples: 'n',
 		},
-		deltaLost: (pts: string) => `${pts} pts de ponctualité perdus`,
 		verdict: {
 			label: 'Point chaud n°1',
-			topWithDelta: (name: string, deltaPts: string) =>
-				`Pire point chaud : ${name}, ${deltaPts} pts de ponctualité perdus.`,
-			topNoDelta: (name: string) => `Pire point chaud : ${name}.`,
+			topWithRate: (name: string, severePct: string) =>
+				`Point chaud en tête : ${name}, ${severePct} de prévisions de retard grave.`,
+			topNoRate: (name: string) => `Point chaud en tête : ${name}.`,
 			none: 'Aucun point chaud pour l’instant.',
 		},
 		type: {
@@ -254,11 +253,11 @@ export const copy = defineCopy({
 			avg: 'avg',
 			samples: 'n',
 		},
-		deltaLost: (pts) => `${pts} on-time points lost`,
 		verdict: {
 			label: '#1 hotspot',
-			topWithDelta: (name, deltaPts) => `Worst hotspot: ${name}, ${deltaPts} on-time points lost.`,
-			topNoDelta: (name) => `Worst hotspot: ${name}.`,
+			topWithRate: (name, severePct) =>
+				`Top-ranked hotspot: ${name}, ${severePct} severe-delay predictions.`,
+			topNoRate: (name) => `Top-ranked hotspot: ${name}.`,
 			none: 'Nothing is a hotspot right now.',
 		},
 		type: {

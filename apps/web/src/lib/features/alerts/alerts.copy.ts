@@ -1,20 +1,11 @@
-// alerts.copy.ts: co-located bilingual copy for the Alert History surface
-// (slice-9.6 Family D, "Avis"; re-seated in S15).
-//
-// All user-facing strings the AlertHistory screen renders live here, keyed by
-// Locale, so the .svelte file carries zero inline literals. Provider-agnostic:
-// no STM / Montréal names. The cross-surface alert presentation (headline,
-// cause/effect, severity word) is inherited from the shared $lib/v1 kernel
-// (alertDisplay/gtfsAlertLabels/enumLabels SEVERITY_LABELS), so this file only
-// carries the history-specific captions (window, duration, impact, pickers,
-// breakdown, headline). S15: SEVERITY_WORDS was hoisted into $lib/v1/enumLabels
-// (SEVERITY_LABELS) — the copy reads THAT one vocabulary, never a local copy.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
+
+const alertCount = (count: number) =>
+	`${count.toLocaleString('en-CA')} ${count === 1 ? 'alert' : 'alerts'}`;
 
 export const alertHistoryCopy = defineCopy({
 	fr: {
@@ -54,7 +45,8 @@ export const alertHistoryCopy = defineCopy({
 		},
 		logSection: 'Avis passés',
 		logListLabel: 'Avis de service passés, du plus récent au plus ancien',
-		count: (shown: number, total: number) => `${shown} sur ${total} avis affichés`,
+		count: (shown: number, total: number) =>
+			`${shown} sur ${total} avis ${shown === 1 ? 'affiché' : 'affichés'}`,
 		more: (n: number) => `+${n} de plus`,
 		showLess: 'Réduire',
 		foreignLanguage: '(en anglais seulement)',
@@ -70,10 +62,8 @@ export const alertHistoryCopy = defineCopy({
 			durationValue: (min: number) => `${min} min`,
 			routes: 'Lignes touchées',
 			stops: 'Arrêts touchés',
-			impact: 'Passages touchés (est.)',
-			impactValue: (passages: number) => `${passages.toLocaleString('fr-CA')} passages`,
 			windows: 'Fenêtres de service',
-			windowsCount: (n: number) => `${n} fenêtres de service`,
+			windowsCount: (n: number) => `${n} ${n === 1 ? 'fenêtre' : 'fenêtres'} de service`,
 			link: 'Détails',
 			linkAria: (host: string) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
 		},
@@ -193,7 +183,7 @@ export const alertHistoryCopy = defineCopy({
 		},
 		logSection: 'Past alerts',
 		logListLabel: 'Past service alerts, newest first',
-		count: (shown, total) => `Showing ${shown} of ${total} alerts`,
+		count: (shown, total) => `Showing ${shown} of ${alertCount(total)}`,
 		more: (n) => `+${n} more`,
 		showLess: 'Show less',
 		foreignLanguage: '(French only)',
@@ -209,10 +199,8 @@ export const alertHistoryCopy = defineCopy({
 			durationValue: (min) => `${min} min`,
 			routes: 'Lines affected',
 			stops: 'Stops affected',
-			impact: 'Passages affected (est.)',
-			impactValue: (passages) => `${passages.toLocaleString('en-CA')} passages`,
 			windows: 'Service windows',
-			windowsCount: (n) => `${n} service windows`,
+			windowsCount: (n) => `${n} service ${n === 1 ? 'window' : 'windows'}`,
 			link: 'Details',
 			linkAria: (host) => `Open the alert details on ${host} (new tab)`,
 		},
@@ -221,7 +209,7 @@ export const alertHistoryCopy = defineCopy({
 			railLabel: 'Filters',
 			pillOpen: 'Open filters',
 			pillClose: 'Close filters',
-			pillSummary: (matchCount) => `${matchCount.toLocaleString('en-CA')} alerts`,
+			pillSummary: alertCount,
 			entity: {
 				label: 'Affects',
 				all: 'All',
@@ -287,7 +275,7 @@ export const alertHistoryCopy = defineCopy({
 			byCauseLabel: 'Alert distribution by cause',
 			byEffectLabel: 'Alert distribution by effect',
 			bySeverityLabel: 'Alert distribution by severity',
-			buckets: (count) => `${count.toLocaleString('en-CA')} alerts`,
+			buckets: alertCount,
 			median: (min) => `median duration ${min} min`,
 			unspecified: 'Unspecified',
 		},

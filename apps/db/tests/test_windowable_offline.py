@@ -14,8 +14,8 @@ from __future__ import annotations
 from datetime import date
 
 from transit_ops.snapshots import builders
-from transit_ops.snapshots.builders import historic as H
-from transit_ops.snapshots.builders.historic import _grain_windows
+from transit_ops.snapshots.builders.historic import _spine as spine
+from transit_ops.snapshots.builders.historic._spine import _grain_windows
 from transit_ops.snapshots.contract import (
     HOTSPOTS_BYTE_CEILING,
     ROUTE_RELIABILITY_BYTE_CEILING,
@@ -250,7 +250,7 @@ def test_attach_prior_emits_exact_prior_on_time() -> None:
     # prior_otp_pct), so the web two-proportion z-test pools real counts. The rounded pct
     # is lossy here on purpose — 7953/8837 = 89.997% rounds to 90, but prior_on_time stays 7953.
     periods = [ReliabilityPeriod(grain="am_peak"), ReliabilityPeriod(grain="midday")]
-    H._attach_prior(periods, {"am_peak": (7953, 8837)})  # midday has no prior
+    spine._attach_prior(periods, {"am_peak": (7953, 8837)})  # midday has no prior
     am, midday = periods
     assert am.prior_on_time == 7953  # exact numerator preserved
     assert am.prior_observation_count == 8837
@@ -280,7 +280,7 @@ def _hw_summed_row(
         "sum_gap_sq_min": float(sum(g * g for g in gaps)),
         "cov": None,
     }
-    for k in range(1, H._GAP_NBINS + 1):
+    for k in range(1, spine._GAP_NBINS + 1):
         row[f"g{k}"] = 0
     return row
 
@@ -296,7 +296,7 @@ def test_headway_excess_wait_is_passenger_weighted_ewt() -> None:
         _hw_summed_row("am_peak", [5, 5, 5, 5, 5], trips=20),
         _hw_summed_row("pm_peak", [1, 1, 5, 9, 9], trips=20),
     ]
-    out = H._headway_period_from_summed(rows, {"am_peak": 5.0, "pm_peak": 5.0})
+    out = spine._headway_period_from_summed(rows, {"am_peak": 5.0, "pm_peak": 5.0})
     assert out["am_peak"].excess_wait_min == 0.0  # perfectly regular at scheduled
     assert out["pm_peak"].excess_wait_min == 1.3  # the bunching penalty surfaces
     assert out["pm_peak"].excess_wait_min > out["am_peak"].excess_wait_min
@@ -306,10 +306,10 @@ def test_headway_excess_wait_clamped_and_honest_none() -> None:
     # Actual far more frequent than scheduled makes AWT < scheduled/2.
     # EWT therefore floors at 0 and never goes negative.
     rows = [_hw_summed_row("am_peak", [3, 3, 3, 3, 3])]  # AWT = 45/(2·15) = 1.5
-    clamped = H._headway_period_from_summed(rows, {"am_peak": 12.0})  # 1.5 − 6.0 < 0
+    clamped = spine._headway_period_from_summed(rows, {"am_peak": 12.0})  # 1.5 − 6.0 < 0
     assert clamped["am_peak"].excess_wait_min == 0.0
     # Honest absence: no scheduled headway for the shift → excess None (never a fabricated 0).
-    none_sched = H._headway_period_from_summed(rows, {})
+    none_sched = spine._headway_period_from_summed(rows, {})
     assert none_sched["am_peak"].excess_wait_min is None
 
 
@@ -344,21 +344,27 @@ def test_grain_windows_are_trailing_and_priors_dont_overlap() -> None:
 def test_whole_history_projectors_byte_identical_windowed_twins_bound() -> None:
     # The default window_clause="" path must be byte-identical to before this change.
     for sql in (
-        H._ROUTE_SPINE_BY_SHIFT_SQL,
-        H._ROUTE_SPINE_BY_DAYTYPE_SQL,
-        H._ROUTE_SPINE_WEEKLY_SQL,
-        H._ROUTE_SPINE_MONTHLY_SQL,
-        H._ROUTE_SPINE_DOW_SQL,
-        H._ROUTE_SPINE_CROSSTAB_SQL,
-        H._NETWORK_SPINE_BY_SHIFT_SQL,
-        H._NETWORK_SPINE_BY_DAYTYPE_SQL,
+        spine._ROUTE_SPINE_BY_SHIFT_SQL,
+        spine._ROUTE_SPINE_BY_DAYTYPE_SQL,
+        spine._ROUTE_SPINE_WEEKLY_SQL,
+        spine._ROUTE_SPINE_MONTHLY_SQL,
+        spine._ROUTE_SPINE_DOW_SQL,
+        spine._ROUTE_SPINE_CROSSTAB_SQL,
+        spine._NETWORK_SPINE_BY_SHIFT_SQL,
+        spine._NETWORK_SPINE_BY_DAYTYPE_SQL,
     ):
         assert ":win_start" not in str(sql), "whole-history projector must NOT carry a window bound"
     # The windowed twins + the habits recomposition carry the bound.
-    for sql in (H._W_BY_SHIFT, H._W_BY_DAYTYPE, H._W_DOW, H._W_CROSSTAB, H._ROUTE_HABIT_SPINE_SQL):
+    for sql in (
+        spine._W_BY_SHIFT,
+        spine._W_BY_DAYTYPE,
+        spine._W_DOW,
+        spine._W_CROSSTAB,
+        spine._ROUTE_HABIT_SPINE_SQL,
+    ):
         assert ":win_start" in str(sql) and ":win_end" in str(sql)
     # No accidental double-space where {entity_clause}{window_clause} concatenate.
-    assert "  AND provider_local_date" not in str(H._W_BY_SHIFT)
+    assert "  AND provider_local_date" not in str(spine._W_BY_SHIFT)
 
 
 def test_builders_reexport_is_importable() -> None:
@@ -371,33 +377,33 @@ def test_builders_reexport_is_importable() -> None:
 
 def test_round_half_away_matches_sql_round_semantics() -> None:
     # Postgres ROUND(::numeric, n) is half-away-from-zero; Python's builtin round() is banker's.
-    assert float(H._round_half_away(2.5, 0)) == 3.0  # banker's would give 2.0
-    assert float(H._round_half_away(0.625, 2)) == 0.63
-    assert float(H._round_half_away(7.45, 1)) == 7.5
+    assert float(spine._round_half_away(2.5, 0)) == 3.0  # banker's would give 2.0
+    assert float(spine._round_half_away(0.625, 2)) == 0.63
+    assert float(spine._round_half_away(7.45, 1)) == 7.5
 
 
 def test_headway_median_cdf_interp_and_honest_absence() -> None:
-    nbins = len(H._GAP_EDGES) - 1
+    nbins = len(spine._GAP_EDGES) - 1
     hist = [0] * nbins
     hist[7] = 4  # all gaps in [6,8) -> CDF-interp median = 7.0
-    assert H._headway_pctile_from_hist(hist, 0.5, H._GAP_EDGES) == 7.0
-    assert H._headway_pctile_from_hist([], 0.5, H._GAP_EDGES) is None
-    assert H._headway_pctile_from_hist([0] * nbins, 0.5, H._GAP_EDGES) is None
+    assert spine._headway_pctile_from_hist(hist, 0.5, spine._GAP_EDGES) == 7.0
+    assert spine._headway_pctile_from_hist([], 0.5, spine._GAP_EDGES) is None
+    assert spine._headway_pctile_from_hist([0] * nbins, 0.5, spine._GAP_EDGES) is None
 
 
 def test_bunched_pct_from_pooled_hist() -> None:
-    nbins = len(H._GAP_EDGES) - 1
+    nbins = len(spine._GAP_EDGES) - 1
     hist = [0] * nbins
     hist[0] = 2  # [0,0.5) — well below 0.5*median
     hist[7] = 2  # [6,8) — above
-    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, 7.0) == 50.0  # 2 of 4 below 3.5
-    assert H._bunched_pct_from_hist([0] * nbins, H._GAP_EDGES, 7.0) is None
-    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, None) is None  # no median -> None
+    assert spine._bunched_pct_from_hist(hist, spine._GAP_EDGES, 7.0) == 50.0  # 2 of 4 below 3.5
+    assert spine._bunched_pct_from_hist([0] * nbins, spine._GAP_EDGES, 7.0) is None
+    assert spine._bunched_pct_from_hist(hist, spine._GAP_EDGES, None) is None  # no median -> None
     # straddling bin: median 7.0 -> thresh 3.5 falls INSIDE bin [3,4); linear-interp half of it.
     straddle = [0] * nbins
     straddle[4] = 2  # [3,4) straddles 3.5
     straddle[7] = 2  # [6,8) above
-    assert H._bunched_pct_from_hist(straddle, H._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4
+    assert spine._bunched_pct_from_hist(straddle, spine._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4
 
 
 # --------------------------------------------------------------------------

@@ -224,20 +224,17 @@
 		ctx = canvas.getContext('2d');
 		if (!ctx) return;
 
-		readPrimaryRgb();
 		const reducedMotion = isPrefersReducedMotion();
-		// The resource-backed meta row can change the cover height after mount.
-		// Observe the actual host box so the bitmap and pointer coordinates stay in
-		// lock-step with both async content growth and viewport/orientation changes.
+		// The first native delivery supplies settled geometry and color; later
+		// deliveries follow async header growth and viewport changes.
 		const resizeObserver = new ResizeObserver(() => {
+			readPrimaryRgb();
 			resize();
 			if (reducedMotion) paintStatic();
 		});
 		resizeObserver.observe(containerEl);
-		resize();
 
 		if (reducedMotion) {
-			paintStatic();
 			const onThemeChange = () => {
 				readPrimaryRgb();
 				paintStatic();

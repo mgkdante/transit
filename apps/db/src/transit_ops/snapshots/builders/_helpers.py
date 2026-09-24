@@ -7,7 +7,7 @@ from the gold.reader kernel), and the deterministic *representative service
 date* resolution shared by the static route/stop builders and the historic
 ``_scheduled_headway_by_shift`` headway computation.
 
-Status-band thresholds mirror migration 0020; see the package ``__init__``
+Status-band thresholds mirror migration 0020; see the ``live`` module
 docstring and the per-tier modules for the publishing rationale.
 """
 

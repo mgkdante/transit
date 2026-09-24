@@ -4,7 +4,13 @@
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+	import {
+		STATUS_GLYPH,
+		occupancyGlyph,
+		occupancyVar,
+		statusVar,
+	} from '$lib/components/dataviz/tokens';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
@@ -136,28 +142,26 @@
 							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
 								{STATUS_LABELS[locale][detail.vehicle.status]}
 							{/if}
-							{#if detail.vehicle.delay_min !== 0}
-								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-									<span aria-hidden="true">·</span>
-								{/if}
-								<MapDelayTag
-									delay={detail.vehicle.delay_min}
-									{locale}
-									{t}
-									ctx={{
-										stale: notReporting != null,
-										metro: detail.routeType === ROUTE_TYPE_METRO,
-									}}
-								/>
+							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+								<span aria-hidden="true">·</span>
 							{/if}
+							<span class="detail-delay-measurement">
+								<MaybeValue
+									value={delayMeasurement(detail.vehicle.delay_min)}
+									reason={absence}
+									{locale}
+								/>
+							</span>
 						</dd>
-						<button
-							type="button"
-							class="detail-fact-action"
-							aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
-							onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
-							>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
-						>
+						<dd class="detail-attribute-action">
+							<button
+								type="button"
+								class="detail-fact-action"
+								aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
+								onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
+								>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+							>
+						</dd>
 					</div>
 					<div>
 						<dt>{t.nextStop}</dt>
@@ -166,12 +170,14 @@
 								>{detail.nextStop!.name}</MaybeValue
 							>
 						</dd>
-						{#if detail.nextStop}<button
-								type="button"
-								class="detail-fact-action"
-								aria-label={t.selectStop(detail.nextStop.name)}
-								onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</button
-							>{/if}
+						{#if detail.nextStop}<dd class="detail-attribute-action">
+								<button
+									type="button"
+									class="detail-fact-action"
+									aria-label={t.selectStop(detail.nextStop.name)}
+									onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</button
+								>
+							</dd>{/if}
 					</div>
 					<div>
 						<dt>ETA</dt>
@@ -211,26 +217,28 @@
 								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
 						</dd>
-						{#if detail.vehicle.occupancy != null}<button
-								type="button"
-								class="detail-fact-action"
-								aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][detail.vehicle.occupancy])}
-								onclick={() =>
-									detail.kind === 'vehicle' &&
-									detail.vehicle.occupancy != null &&
-									onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
-								>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
-							>{/if}
+						{#if detail.vehicle.occupancy != null}<dd class="detail-attribute-action">
+								<button
+									type="button"
+									class="detail-fact-action"
+									aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][detail.vehicle.occupancy])}
+									onclick={() =>
+										detail.kind === 'vehicle' &&
+										detail.vehicle.occupancy != null &&
+										onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
+									>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+								>
+							</dd>{/if}
 					</div>
 				</DetailAttributeGrid>
 			{:else if detail.kind === 'stop'}
 				<DetailAttributeGrid>
 					<div>
-						<dt>{t.departures(3)}</dt>
+						<dt>{t.departuresLabel}</dt>
 						<dd>
 							{detail.departures == null
 								? t.departuresUnavailable
-								: t.departures(Math.min(3, detail.departures.length))}
+								: t.departures(detail.departures.length)}
 						</dd>
 					</div>
 				</DetailAttributeGrid>
@@ -446,6 +454,10 @@
 		font-family: var(--font-mono);
 		font-weight: 800;
 		color: var(--glyph);
+	}
+	.detail-delay-measurement {
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
 	}
 	.detail-status-band {
 		display: grid;

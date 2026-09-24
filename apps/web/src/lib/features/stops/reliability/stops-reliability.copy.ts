@@ -12,14 +12,21 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
 
+const predictionShare = {
+	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
+		`Dans ce résumé ${window}, environ ${onTen} prévisions connues sur 10 sont sans retard grave${hedge}; environ ${lateTen} sur 10 dépassent cinq minutes de retard.`,
+	en: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
+		`In this ${window}, about ${onTen} in 10 known predictions are not severely late${hedge}; about ${lateTen} in 10 exceed five minutes late.`,
+};
+
 export const stopReliabilityCopy = defineCopy({
 	fr: {
 		byRoute: 'Retard moyen par ligne',
 		noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
 		viewLine: (routeId: string) => `Voir la ligne ${routeId}`,
-		paneHeading: 'Ponctualité et retard',
+		paneHeading: 'Prévisions de retard',
 		metrics: {
-			otp: 'Ponctualité',
+			otp: 'Prévisions sans retard grave',
 			avgDelay: 'Retard moyen',
 			severe: 'Part des retards graves',
 		},
@@ -63,6 +70,7 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
 			currentOnly:
 				'L’identité, les périodes, les habitudes, les jours, les heures et le détail par ligne restent basés sur le portrait actuel.',
+			predictionScope: 'Résumé du portrait actuel; indépendant des dates choisies.',
 			loading: 'Chargement de la plage conservée…',
 			ready: 'Plage conservée chargée.',
 			error: 'Impossible de charger cette plage conservée.',
@@ -70,46 +78,45 @@ export const stopReliabilityCopy = defineCopy({
 		},
 		verdict: {
 			windowPhrase: {
-				day: 'aujourd’hui',
-				week: 'cette semaine',
-				month: 'ce mois-ci',
-				range: 'sur la période',
+				day: 'quotidien',
+				week: 'hebdomadaire',
+				month: 'mensuel',
+				range: 'de la plage choisie',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Arrêt fiable ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			patchy: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Arrêt inégal ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Arrêt peu fiable ${window}, seulement ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			reliable: predictionShare.fr,
+			patchy: predictionShare.fr,
+			unreliable: predictionShare.fr,
 			tentative: ({ window, otp, n, lo, hi }) =>
-				`Environ ${otp} % des passages à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
+				`Dans ce résumé ${window}, ${otp} % de ${n} prévisions connues sont sans retard grave. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les relevés peuvent être dépendants.`,
 			tooFew: (window: string, n: number) =>
-				`Mesure en cours ${window}, seulement ${n} passages suivis.`,
-			absent: 'Mesure de l’arrêt en cours. Pas encore de lecture de ponctualité.',
+				`Ce résumé ${window} contient seulement ${n} prévisions connues admissibles.`,
+			absent: 'Aucune prévision de retard admissible dans ce résumé.',
 			hedgeSimple: (otp: number) => ` (${otp} %)`,
 			hedgeCI: (otp: number, lo: number, hi: number) =>
-				` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+				` (${otp} %; Wilson nominal à 95 % : ${lo}–${hi} %, relevés potentiellement dépendants)`,
 		} satisfies VerdictCopy,
 		percentiles: {
 			heading: 'Retard journalier',
-			typical: 'Retard typique',
-			typicalCaption: 'La moitié des passages (médiane)',
-			worstCase: 'Pire des cas',
-			worstCaseCaption: '10 % les plus lents (p90)',
+			typical: 'Retard médian',
+			typicalCaption: 'Médiane des relevés de retard prédit',
+			p90: 'Retard au 90e percentile',
+			p90Caption: '90e percentile des relevés de retard prédit',
 		},
 		habits: {
-			heading: 'Retards graves par heure',
-			label: 'Carte thermique des retards graves par jour et par heure',
-			cellValueLabel: 'Intensité',
+			heading: 'Score relatif des retards graves par heure',
+			label: 'Score relatif au sein de cet arrêt, par jour et par heure',
+			cellValueLabel: 'Score relatif',
 			hourAxisLabel: 'Heure de la journée',
 			dayAxisLabel: 'Jour de la semaine',
 			caption:
-				'La couleur indique la fréquence des retards graves, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
+				'Les comptes de relevés de retard grave sont divisés par le plus grand compte de cet arrêt, toutes journées et heures confondues. ◆ encadre les scores de 0,75 à 1 de ce maximum. Zéro signifie qu’un score nul est fourni; une case vide est indisponible. Cette échelle compare les heures au sein de cet arrêt, sans mesurer la probabilité de retard d’un trajet.',
 			legend: {
-				low: 'Faible',
-				medium: 'Moyen',
-				high: 'Élevé',
-				tiers: ['Rarement grave', 'Parfois grave', 'Souvent grave', 'Très peu fiable'] as const,
+				tiers: [
+					'Score relatif faible',
+					'Score relatif modéré',
+					'Score relatif élevé',
+					'Score relatif très élevé',
+				] as const,
 			},
 			weekdays: [
 				'',
@@ -169,9 +176,9 @@ export const stopReliabilityCopy = defineCopy({
 		byRoute: 'Avg delay by route',
 		noRouteBreakdown: 'No per-route breakdown for this stop.',
 		viewLine: (routeId) => `View line ${routeId}`,
-		paneHeading: 'On-time and delay',
+		paneHeading: 'Predicted delays',
 		metrics: {
-			otp: 'On-time %',
+			otp: 'Not-severe predictions',
 			avgDelay: 'Average delay',
 			severe: 'Severe-delay share',
 		},
@@ -215,6 +222,7 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'This range has only partial retained metric coverage.',
 			currentOnly:
 				'Identity, periods, habits, weekday, time-of-day, and by-line detail still use the current snapshot.',
+			predictionScope: 'Current snapshot summary; unaffected by the selected dates.',
 			loading: 'Loading retained range…',
 			ready: 'Retained range loaded.',
 			error: 'This retained range could not be loaded.',
@@ -222,44 +230,44 @@ export const stopReliabilityCopy = defineCopy({
 		},
 		verdict: {
 			windowPhrase: {
-				day: 'today',
-				week: 'this week',
-				month: 'this month',
-				range: 'over the range',
+				day: 'daily summary',
+				week: 'weekly summary',
+				month: 'monthly summary',
+				range: 'selected-range summary',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }) =>
-				`This stop ran reliably ${window}, about ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
-			patchy: ({ window, onTen, lateTen, hedge }) =>
-				`This stop ran unevenly ${window}, about ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
-			unreliable: ({ window, onTen, lateTen, hedge }) =>
-				`This stop ran poorly ${window}, only ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
+			reliable: predictionShare.en,
+			patchy: predictionShare.en,
+			unreliable: predictionShare.en,
 			tentative: ({ window, otp, n, lo, hi }) =>
-				`About ${otp}% of arrivals on time ${window} (95% sure between ${lo} and ${hi}%, n=${n}).`,
-			tooFew: (window, n) => `Still measuring ${window}, only ${n} arrivals tracked.`,
-			absent: 'Still measuring this stop. No on-time reading yet.',
+				`In this ${window}, ${otp}% of ${n} known predictions are not severely late. Nominal 95% Wilson bounds: ${lo}–${hi}%; readings may be dependent.`,
+			tooFew: (window, n) => `This ${window} contains only ${n} eligible known predictions.`,
+			absent: 'No eligible predicted-delay readings in this summary.',
 			hedgeSimple: (otp) => ` (${otp}%)`,
-			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
+			hedgeCI: (otp, lo, hi) =>
+				` (${otp}%; nominal 95% Wilson: ${lo}–${hi}%, potentially dependent readings)`,
 		} satisfies VerdictCopy,
 		percentiles: {
 			heading: 'Daily delay',
-			typical: 'Typical delay',
-			typicalCaption: 'Half of departures (median)',
-			worstCase: 'Worst case',
-			worstCaseCaption: 'Slowest 10% (p90)',
+			typical: 'Median delay',
+			typicalCaption: 'Median of reported predicted delays',
+			p90: '90th-percentile delay',
+			p90Caption: '90th percentile of reported predicted delays',
 		},
 		habits: {
-			heading: 'Severe delays by hour',
-			label: 'Severe-delay heatmap by day and hour',
-			cellValueLabel: 'Intensity',
+			heading: 'Relative severe-delay score by hour',
+			label: 'Relative score within this stop, by day and hour',
+			cellValueLabel: 'Relative score',
 			hourAxisLabel: 'Hour of day',
 			dayAxisLabel: 'Day of week',
 			caption:
-				'Colour shows how often severe delays repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
+				'Severe-delay reading counts are divided by this stop’s highest count across all days and hours. ◆ outlines scores from 0.75 to 1 of that maximum. Zero means a supplied zero score; blank cells are unavailable. This scale compares hours within this stop, without measuring a trip’s chance of delay.',
 			legend: {
-				low: 'Low',
-				medium: 'Medium',
-				high: 'High',
-				tiers: ['Rarely severe', 'Sometimes severe', 'Often severe', 'Very unreliable'],
+				tiers: [
+					'Low relative score',
+					'Moderate relative score',
+					'High relative score',
+					'Very high relative score',
+				],
 			},
 			weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 			weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],

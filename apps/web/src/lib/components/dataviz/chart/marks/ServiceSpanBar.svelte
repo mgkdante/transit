@@ -1,53 +1,34 @@
-<!--
-  ServiceSpanBar — the timeline layer for ServiceSpanMark, rendered INSIDE the LayerChart
-  <Svg> so it can scale the first/last departure minutes through the chart context's linear
-  24h x-scale. Draws the full-day baseline track, the structural 06/12/18 grid ticks, the
-  first→last span bar (on the dataviz on-time scale), and an endpoint cap at each end so a
-  zero-length span (first==last) still reads. The hour axis + readouts live in the parent.
--->
 <script lang="ts">
 	import { getChartContext } from 'layerchart';
 
 	let {
-		firstMin,
-		lastMin,
+		elapsedMin,
+		domainEnd,
 		gridMins,
 		title,
 	}: {
-		firstMin: number | null;
-		lastMin: number | null;
+		elapsedMin: number;
+		domainEnd: number;
 		gridMins: readonly number[];
 		title: string;
 	} = $props();
 
 	const ctx = getChartContext();
 	const h = $derived((ctx.height as number) ?? 0);
-	const x = (m: number): number => (ctx.xScale(m) as number) ?? 0;
+	const x = (min: number): number => (ctx.xScale(min) as number) ?? 0;
 	const trackY = $derived(h * 0.5);
-	const barX = $derived(
-		firstMin != null && lastMin != null ? Math.min(x(firstMin), x(lastMin)) : null,
-	);
-	const barW = $derived(
-		firstMin != null && lastMin != null ? Math.abs(x(lastMin) - x(firstMin)) : 0,
-	);
+	const barW = $derived(x(elapsedMin) - x(0));
 </script>
 
-<!-- Structural 24h grid ticks (06/12/18) — orientation rules, not data. -->
-{#each gridMins as g (g)}
-	<line class="dv-span-grid" x1={x(g)} y1={trackY - 6} x2={x(g)} y2={trackY + 6} />
+{#each gridMins as min (min)}
+	<line class="dv-span-grid" x1={x(min)} y1={trackY - 6} x2={x(min)} y2={trackY + 6} />
 {/each}
-<!-- The full-day baseline track (the empty hours read as absent). -->
-<line class="dv-span-track" x1={x(0)} y1={trackY} x2={x(1440)} y2={trackY} />
-<!-- The service-span bar (first→last) on the dataviz on-time scale. -->
-{#if barX != null}
-	<rect class="dv-span-bar" x={barX} y={trackY - 4} width={Math.max(barW, 2)} height={8} rx="2">
+<line class="dv-span-track" x1={x(0)} y1={trackY} x2={x(domainEnd)} y2={trackY} />
+{#if elapsedMin > 0}
+	<rect class="dv-span-bar" x={x(0)} y={trackY - 4} width={barW} height={8} rx="2">
 		<title>{title}</title>
 	</rect>
+	<circle class="dv-span-dot" cx={x(elapsedMin)} cy={trackY} r="3.5" />
 {/if}
-<!-- Endpoint caps so a zero-length span is still visible. -->
-{#if firstMin != null}
-	<circle class="dv-span-dot" cx={x(firstMin)} cy={trackY} r="3.5" />
-{/if}
-{#if lastMin != null}
-	<circle class="dv-span-dot" cx={x(lastMin)} cy={trackY} r="3.5" />
-{/if}
+<!-- A zero-length interval is a point, not a minimum-width duration bar. -->
+<circle class="dv-span-dot" cx={x(0)} cy={trackY} r="3.5" />

@@ -28,6 +28,8 @@ import {
 export const MAX_CACHED_ROUTE_SHAPES = 200;
 
 export interface ShapeCacheManager {
+	/** Retain an already loaded route without fetching it again for motion. */
+	remember(route: RouteFile): void;
 	/**
 	 * Lazily fetch route shapes for the routes that currently have live buses
 	 * (deduped). Each route is requested at most once while ledgered/resident;
@@ -52,7 +54,7 @@ export interface ShapeCacheManager {
 
 /**
  * Create a route-shape cache manager backed by `getRoute` (the same on-demand
- * loader MapHero uses for the selected-route linework). The two caches are plain
+ * loader MapHero uses for the selected-route linework). The caches are plain
  * (non-reactive) collections: a route is requested once while ledgered/resident,
  * and a resolved shape reaches the next frame's `shapeFor` lookup with no re-feed.
  */
@@ -63,39 +65,51 @@ export function createShapeCacheManager(
 	// buses. A PLAIN (non-reactive) Map: a SvelteMap would make every .set() reactive
 	// and thrash the feed effect; the controller's per-frame shapeFor reads it
 	// directly, so a newly-cached shape is picked up on the very next rAF frame.
-	const routeShapeCache = new Map<string, RouteShapes>();
-	// Routes already fetched (or null/empty result cached) while ledgered/resident.
-	// Plain Set for the same reason — a non-reactive dedupe ledger.
-	const routeShapeRequested = new Set<string>();
+	const routeShapeCache = new Map<string, { generatedUtc: string; shapes: RouteShapes }>();
+	// Tokens deduplicate requests and reject completions after replacement or eviction.
+	const routeShapeRequested = new Map<string, symbol>();
+	// Do not retain complete route responses after their resources release them.
+	const rememberedRoutes = new WeakSet<RouteFile>();
 	let revision = 0;
+
+	function cacheRoute(id: string, route: RouteFile): void {
+		const cached = routeShapeCache.get(id);
+		if (
+			cached &&
+			((cached.generatedUtc === route.generated_utc && rememberedRoutes.has(route)) ||
+				Date.parse(route.generated_utc) < Date.parse(cached.generatedUtc))
+		)
+			return;
+		const shapes = routeShapes(route);
+		rememberedRoutes.add(route);
+		// Accepted resource data retires any older request still in flight.
+		routeShapeRequested.set(id, Symbol());
+		if (!cached && routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
+			const oldest = routeShapeCache.keys().next().value;
+			if (oldest != null) {
+				routeShapeCache.delete(oldest);
+				routeShapeRequested.delete(oldest);
+				revision += 1;
+			}
+		}
+		routeShapeCache.set(id, { generatedUtc: route.generated_utc, shapes });
+		if (shapes.length > 0 || (cached?.shapes.length ?? 0) > 0) revision += 1;
+	}
 
 	function prefetch(vehicles: readonly Vehicle[]): void {
 		for (const v of vehicles) {
 			const id = v.route;
 			if (id == null || id === '') continue;
 			if (routeShapeRequested.has(id)) continue;
-			routeShapeRequested.add(id);
+			const request = Symbol();
+			routeShapeRequested.set(id, request);
 			void getRoute(id)
 				.then((route) => {
-					if (!route) return;
-					const shapes = routeShapes(route);
-					if (shapes.length === 0) return;
-					// Bound the cache (drop oldest) so a long session can't grow it
-					// unbounded; the visible route set is small so this rarely fires.
-					if (routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
-						const oldest = routeShapeCache.keys().next().value;
-						if (oldest != null) {
-							routeShapeCache.delete(oldest);
-							routeShapeRequested.delete(oldest);
-							revision += 1;
-						}
-					}
-					routeShapeCache.set(id, shapes);
-					revision += 1;
+					if (routeShapeRequested.get(id) !== request) return;
+					if (route) cacheRoute(id, route);
 				})
 				.catch(() => {
-					// Fail-soft: leave the route un-cached → chord fallback. Allow a
-					// later retry by clearing the requested flag.
+					if (routeShapeRequested.get(id) !== request) return;
 					routeShapeRequested.delete(id);
 					revision += 1;
 				});
@@ -105,11 +119,11 @@ export function createShapeCacheManager(
 	const shapeFor: ShapeCacheManager['shapeFor'] = (feature) => {
 		const routeId = feature.properties.route;
 		if (!routeId) return null;
-		const shapes = routeShapeCache.get(routeId);
+		const shapes = routeShapeCache.get(routeId)?.shapes;
 		if (!shapes || shapes.length === 0) return null;
 		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
 	};
 	shapeFor.revision = () => revision;
 
-	return { prefetch, shapeFor };
+	return { prefetch, remember: (route) => cacheRoute(route.id, route), shapeFor };
 }

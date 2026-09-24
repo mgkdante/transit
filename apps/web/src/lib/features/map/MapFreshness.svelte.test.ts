@@ -11,7 +11,9 @@ describe('MapFreshness', () => {
 
 		// The map shares the ONE site-wide FreshnessStamp (variant="live"), never a
 		// bespoke chip — it only owns the placement chrome around it.
-		expect(s).toContain("import { FreshnessStamp } from '$lib/components/surface'");
+		expect(s).toContain(
+			"import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte'",
+		);
 		expect(s).toContain('variant="live"');
 		expect(s).toContain("placement: 'head' | 'floating'");
 		expect(s).toContain('data-placement={placement}');

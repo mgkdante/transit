@@ -4,8 +4,8 @@
   A daily accountability article whose primary card preserves the brand TerminalPanel
   receipt metaphor. A SMART availability-aware single-date calendar in the combined
   rail picks the day, driving a per-date fetch composed as fixed, conditional cards —
-    · headline figures  — on-time %, average delay, severe share, rider impact;
-    · affected counts   — lines / stops / alerts touched on the day;
+    · headline figures  — on-time prediction share, average delay, severe share;
+    · affected counts   — lines / stops with severe reports, alert message versions;
     · worst of the day   — worst line (→ /lines/[id]) + worst stop (→ /stop/[id]);
   and the S13 re-granulated cuts in their own article cards:
     · by time of day    — severe-delay share ranked by shift (absolute SEVERE_DOMAIN);
@@ -37,6 +37,9 @@
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getAdvertisedReceipt, getReceiptsIndex } from '$lib/v1/repositories/historic';
 	import type { Receipt } from '$lib/v1';
+	import { getV1Context } from '$lib/v1/boot';
+	import { receiptObservation } from './selectors/observation';
+	import ObservationCopy from './ObservationCopy.svelte';
 	import {
 		availabilityFromReceiptsIndex,
 		datesForAvailability,
@@ -95,6 +98,7 @@
 	import SectionNotReported from './sections/SectionNotReported.svelte';
 
 	const locale: Locale = getLocale();
+	const manifest = getV1Context().manifest;
 	const t = $derived(COPY[locale]);
 	const railDisclosures = createRailDisclosureController({
 		controls: 'receipt-controls',
@@ -169,17 +173,13 @@
 
 	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked, so
 	// changing the day re-runs the fetch (the spine drops out-of-order responses). Hold
-	// off until the index advertises a selected date. `freshness: true`
-	// feeds the chosen receipt's generated_utc into the shared newest-data timestamp.
-	const receipt = createResource<Receipt | null>(
-		(signal) => {
-			const indexData = index.data;
-			const date = selectedDate;
-			if (!indexData || !date || !availableDates.includes(date)) return Promise.resolve(null);
-			return getAdvertisedReceipt(indexData, date, { signal });
-		},
-		{ freshness: true },
-	);
+	// off until the index advertises a selected date.
+	const receipt = createResource<Receipt | null>((signal) => {
+		const indexData = index.data;
+		const date = selectedDate;
+		if (!indexData || !date || !availableDates.includes(date)) return Promise.resolve(null);
+		return getAdvertisedReceipt(indexData, date, { signal });
+	});
 	const receiptReady = $derived(
 		selectedDate !== '' &&
 			receipt.settled &&
@@ -190,6 +190,11 @@
 	);
 	const currentReceipt = $derived(receiptReady ? receipt.data : null);
 	const generatedUtc = $derived(currentReceipt?.generated_utc ?? null);
+	const observationText = $derived(
+		currentReceipt && index.data
+			? receiptObservation(currentReceipt, index.data, manifest, locale, page.url.origin)
+			: null,
+	);
 
 	// ── Formatters (null on no-data → the styled honest-absence chip; a real 0 stays 0) ──
 	const fmtPct = (v: number | null | undefined) => sharedFmtPct(v, { suffix: t.units.pct });
@@ -197,7 +202,6 @@
 		sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min });
 	const fmtSeverePct = (v: number | null | undefined) =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
-	const fmtScore = (v: number | null | undefined) => sharedFmtCount(v, { rounding: 'fixed1' });
 	const fmtCount = (v: number | null | undefined) => sharedFmtCount(v, { locale });
 	const fmtSharePct = (v: number | null) =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
@@ -220,11 +224,9 @@
 					onTime: t.metrics.onTime,
 					avgDelay: t.metrics.avgDelay,
 					severe: t.metrics.severe,
-					riderImpact: t.metrics.riderImpact,
 					fmtPct,
 					fmtMin: fmtMinTile,
 					fmtSeverePct,
-					fmtScore,
 				})
 			: [],
 	);
@@ -262,11 +264,7 @@
 			fmtSharePct,
 		}),
 	);
-	// §C5.11 DAY-VERDICT SENTENCE — templated ONLY from numbers already on the receipt
-	// (on-time % · worst line + its on-time loss · affected lines · completeness), NEVER a
-	// fabricated baseline: a null on-time → the whole-verdict stand-down; a null worst
-	// line drops that clause; and when the S13 completeness cut stands down (ramp-in) the
-	// sentence SAYS so ("service completeness not yet available") instead of inventing one.
+	// The highest-mean-delay route's OTP difference uses the same day's network baseline.
 	const dayVerdict = $derived.by<string | null>(() => {
 		const r = currentReceipt;
 		if (r == null) return null;
@@ -274,11 +272,9 @@
 		const clauses: string[] = [t.dayVerdict.otp(`${r.otp_pct}${t.units.pct}`)];
 		const wr = r.worst_route;
 		if (wr?.name != null && wr.otp_delta_pts != null) {
-			const pts = `${Math.abs(Math.round(wr.otp_delta_pts))}${t.units.pts}`;
-			clauses.push(t.dayVerdict.worst(wr.name, pts));
+			clauses.push(t.dayVerdict.worst(wr.name, fmtDelta(wr.otp_delta_pts)));
 		}
-		if (r.affected_routes != null)
-			clauses.push(t.dayVerdict.affected(fmtCount(r.affected_routes) ?? `${r.affected_routes}`));
+		if (r.affected_routes != null) clauses.push(t.dayVerdict.affected(r.affected_routes));
 		// Completeness: the ONE service_completeness_pct if the S13 cut is live, else the
 		// honest stand-down (never a fabricated baseline during the GC2 ramp).
 		const comp = r.service_states?.service_completeness_pct ?? null;
@@ -597,6 +593,11 @@
 												</div>
 											</div>
 										</TerminalPanel>
+										{#if observationText != null}
+											{#key observationText}
+												<ObservationCopy text={observationText} {locale} />
+											{/key}
+										{/if}
 										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
 											<p>{t.caveat}</p>
 										</TypedInformationCard>

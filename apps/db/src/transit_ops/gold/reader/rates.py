@@ -9,7 +9,7 @@ numerator or empty denominator returns None, never a fabricated rate.
 
 from __future__ import annotations
 
-from transit_ops.gold.reader.histogram import round_half_away
+from transit_ops.gold.reader.histogram import SqlNumber, round_half_away
 
 # --- Chart Doctrine honesty spine (slice-S3) ---------------------------------
 # The single server-authoritative definitions of "reliable enough" and the
@@ -24,28 +24,30 @@ MIN_N_RATE = 30  # proportion reliability floor (OTP / cancellation / silent / o
 WILSON_Z = 1.96  # 95% two-sided Wilson score interval
 
 
-def otp_pct(on_time: object, known: object) -> int | None:
+def otp_pct(on_time: SqlNumber | None, known: SqlNumber | None) -> int | None:
     """round(100 * on_time / known) as int; None when numerator or denominator is unknown."""
     if on_time is None or not known:
         return None
-    known_obs = float(known)  # type: ignore[arg-type]
+    known_obs = float(known)
     if known_obs <= 0:
         return None
     return int(round_half_away(100.0 * float(on_time) / known_obs, 0))
 
 
-def otp_pct_severe_proxy(observation_count: object, severe: object) -> int | None:
+def otp_pct_severe_proxy(
+    observation_count: SqlNumber | None, severe: SqlNumber | None
+) -> int | None:
     """Stop OTP proxy: per-stop delay observations not severe over observations."""
     if not observation_count:
         return None
-    obs = float(observation_count)  # type: ignore[arg-type]
+    obs = float(observation_count)
     if obs <= 0:
         return None
     return int(round_half_away(100.0 * (obs - float(severe or 0)) / obs, 0))
 
 
 def wilson_bounds(
-    successes: object, n: object, *, z: float = WILSON_Z
+    successes: SqlNumber | None, n: SqlNumber | None, *, z: float = WILSON_Z
 ) -> tuple[float, float] | None:
     """95% Wilson score interval (lo, hi) in PERCENT (0..100) for successes/n.
 
@@ -57,10 +59,10 @@ def wilson_bounds(
     """
     if successes is None or not n:
         return None
-    total = float(n)  # type: ignore[arg-type]
+    total = float(n)
     if total <= 0:
         return None
-    k = min(max(float(successes), 0.0), total)  # type: ignore[arg-type]
+    k = min(max(float(successes), 0.0), total)
     p = k / total
     z2 = z * z
     denom = 1.0 + z2 / total
@@ -71,26 +73,30 @@ def wilson_bounds(
     return (float(round_half_away(lo, 1)), float(round_half_away(hi, 1)))
 
 
-def wilson_lo(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
+def wilson_lo(
+    successes: SqlNumber | None, n: SqlNumber | None, *, z: float = WILSON_Z
+) -> float | None:
     b = wilson_bounds(successes, n, z=z)
     return None if b is None else b[0]
 
 
-def wilson_hi(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
+def wilson_hi(
+    successes: SqlNumber | None, n: SqlNumber | None, *, z: float = WILSON_Z
+) -> float | None:
     b = wilson_bounds(successes, n, z=z)
     return None if b is None else b[1]
 
 
-def avg_delay_min(avg_delay_seconds: object) -> float | None:
+def avg_delay_min(avg_delay_seconds: SqlNumber | None) -> float | None:
     if avg_delay_seconds is None:
         return None
-    return float(round_half_away(float(avg_delay_seconds) / 60.0, 1))  # type: ignore[arg-type]
+    return float(round_half_away(float(avg_delay_seconds) / 60.0, 1))
 
 
-def severe_pct(observation_count: object, severe: object) -> float | None:
+def severe_pct(observation_count: SqlNumber | None, severe: SqlNumber | None) -> float | None:
     if not observation_count:
         return None
-    obs = float(observation_count)  # type: ignore[arg-type]
+    obs = float(observation_count)
     if obs <= 0:
         return None
     return float(round_half_away(100.0 * float(severe or 0) / obs, 1))

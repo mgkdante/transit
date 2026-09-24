@@ -387,7 +387,7 @@ def test_ingest_static_feed_skips_unchanged_zip_without_bronze_or_raw_object(
     assert not temp_path.exists()
 
 
-def test_ingest_static_feed_persists_changed_zip_and_registers_dataset_version(
+def test_ingest_static_feed_persists_changed_zip_without_promoting_dataset(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -440,23 +440,14 @@ def test_ingest_static_feed_persists_changed_zip_and_registers_dataset_version(
 
     assert result.status == "succeeded"
     assert result.content_changed is True
-    assert result.dataset_version_id == 88
+    assert result.dataset_version_id is None
     assert result.ingestion_object_id == 202
     assert result.storage_path is not None
     assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"
     assert fake_storage.persisted[0][1] == result.storage_path
     assert any("INSERT INTO raw.ingestion_objects" in sql for sql, _ in connection.calls)
-    insert_params = next(
-        params for sql, params in connection.calls
-        if "INSERT INTO core.dataset_versions" in sql
-    )
-    assert insert_params["source_ingestion_run_id"] == 101
-    assert insert_params["source_ingestion_object_id"] is None
-    assert insert_params["storage_path"] == result.storage_path
-    assert insert_params["parser_version"] == "slice-8.4"
-    assert any(
-        "UPDATE core.dataset_versions" in sql
-        and "source_ingestion_object_id" in sql
+    assert not any(
+        "INSERT INTO core.dataset_versions" in sql or "UPDATE core.dataset_versions" in sql
         for sql, _ in connection.calls
     )
 

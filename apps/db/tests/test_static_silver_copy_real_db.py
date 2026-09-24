@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -94,7 +95,7 @@ def _edge_members() -> dict[str, str]:
     }
 
 
-def _archive(*, provider_id: str, base: int, checksum: str) -> BronzeStaticArchive:
+def _archive(*, provider_id: str, base: int, payload: bytes) -> BronzeStaticArchive:
     return BronzeStaticArchive(
         provider_id=provider_id,
         storage_backend="local",
@@ -104,7 +105,7 @@ def _archive(*, provider_id: str, base: int, checksum: str) -> BronzeStaticArchi
         storage_path=f"{provider_id}/static_schedule/test.zip",
         archive_full_path=f"{provider_id}/static_schedule/test.zip",
         source_url="https://example.test/static.zip",
-        checksum_sha256=checksum,
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
         byte_size=None,
         source_completed_at_utc=datetime(2026, 7, 21, tzinfo=UTC),
     )
@@ -237,7 +238,7 @@ def test_static_copy_round_trips_typed_rows_on_real_postgres(real_db_engine, see
                 archive=_archive(
                     provider_id=PARITY_PROVIDER,
                     base=PARITY_BASE,
-                    checksum="b" * 64,
+                    payload=payload,
                 ),
                 bronze_storage=MemoryBronzeStorage(payload),
             )
@@ -334,6 +335,7 @@ def test_static_copy_constraint_failure_rolls_back_the_entire_load(
             "duplicate,45.5,-73.5,1\n"
             "duplicate,45.6,-73.6,1\n"
         )
+        payload = _zip_bytes(members)
         with pytest.raises(UniqueViolation) as exc_info:
             with engine.begin() as connection:
                 load_static_zip_to_silver(
@@ -341,9 +343,9 @@ def test_static_copy_constraint_failure_rolls_back_the_entire_load(
                     archive=_archive(
                         provider_id=ROLLBACK_PROVIDER,
                         base=ROLLBACK_BASE,
-                        checksum="d" * 64,
+                        payload=payload,
                     ),
-                    bronze_storage=MemoryBronzeStorage(_zip_bytes(members)),
+                    bronze_storage=MemoryBronzeStorage(payload),
                 )
         assert exc_info.value.sqlstate == "23505"
 
@@ -420,6 +422,7 @@ def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
             "stops,stop_name,en,S1,Metro Central\n"
             "stops,stop_name,fr,S1,\n"
         )
+        payload = _zip_bytes(members)
         with pytest.raises(ValueError) as exc_info:
             with engine.begin() as connection:
                 load_static_zip_to_silver(
@@ -427,9 +430,9 @@ def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
                     archive=_archive(
                         provider_id=BUILDER_FAILURE_PROVIDER,
                         base=BUILDER_FAILURE_BASE,
-                        checksum="f" * 64,
+                        payload=payload,
                     ),
-                    bronze_storage=MemoryBronzeStorage(_zip_bytes(members)),
+                    bronze_storage=MemoryBronzeStorage(payload),
                 )
         assert type(exc_info.value) is ValueError
         assert str(exc_info.value) == ("translations.txt requires non-empty column 'translation'.")

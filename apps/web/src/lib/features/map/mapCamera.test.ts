@@ -251,11 +251,11 @@ describe('fitRouteBounds', () => {
 });
 
 describe('MapLibre camera vendor fact pin', () => {
-	it('pins 5.24.0: duration-0 sync, eventData threading, fit padding deletion, and PRM offset omission', () => {
+	it('pins 6.4.1: duration-0 sync, eventData threading, fit padding deletion, and PRM offset omission', () => {
 		const packageJson = JSON.parse(
 			readFileSync(resolve(process.cwd(), 'node_modules/maplibre-gl/package.json'), 'utf8'),
 		) as { version: string };
 
-		expect(packageJson.version).toBe('5.24.0');
+		expect(packageJson.version).toBe('6.4.1');
 	});
 });

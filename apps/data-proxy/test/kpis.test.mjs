@@ -36,9 +36,21 @@ function iso(msAgo) {
 function liveDocs({ snapshotMsAgo = 5_000 } = {}) {
   const stamp = iso(snapshotMsAgo);
   const vehicles = [
-    ...Array.from({ length: 3 }, (_, i) => ({ id: `a${i}`, route: "10", delay_min: 2 })),
-    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i}`, route: "20", delay_min: 0 })),
-    ...Array.from({ length: 2 }, (_, i) => ({ id: `c${i}`, route: "30", delay_min: -1 })),
+    ...Array.from({ length: 3 }, (_, i) => ({
+      id: `a${i}`,
+      route: "10",
+      delay_min: 2,
+    })),
+    ...Array.from({ length: 2 }, (_, i) => ({
+      id: `b${i}`,
+      route: "20",
+      delay_min: 0,
+    })),
+    ...Array.from({ length: 2 }, (_, i) => ({
+      id: `c${i}`,
+      route: "30",
+      delay_min: -1,
+    })),
     { id: "d0", route: "40", delay_min: 5 },
     { id: "e0", route: "50", delay_min: null },
     { id: "f0", route: null, delay_min: 1 },
@@ -55,9 +67,15 @@ function liveDocs({ snapshotMsAgo = 5_000 } = {}) {
     t7: { route: null, delay_min: 2 },
   };
   return {
-    "v1/stm/live/vehicles.json": JSON.stringify({ generated_utc: stamp, vehicles }),
+    "v1/stm/live/vehicles.json": JSON.stringify({
+      generated_utc: stamp,
+      vehicles,
+    }),
     "v1/stm/live/trips.json": JSON.stringify({ generated_utc: stamp, trips }),
-    "v1/stm/live/network.json": JSON.stringify({ generated_utc: stamp, coverage_pct: 97 }),
+    "v1/stm/live/network.json": JSON.stringify({
+      generated_utc: stamp,
+      coverage_pct: 97,
+    }),
     "v1/stm/static/routes_index.json": JSON.stringify({
       routes: [
         { id: "M1", type: 1 },
@@ -90,11 +108,42 @@ beforeEach(() => {
   __resetKpisCachesForTests();
 });
 
+for (const [minutes, expectedSeconds] of [
+  [-61, -31],
+  [61, 31],
+  [-1, -1],
+  [1, 1],
+]) {
+  test(`network and route half-second means round away from zero (${minutes}/120 min)`, async () => {
+    const docs = liveDocs();
+    docs["v1/stm/live/trips.json"] = JSON.stringify({
+      generated_utc: iso(5_000),
+      trips: Object.fromEntries(
+        Array.from({ length: 120 }, (_, index) => [
+          `trip-${index}`,
+          {
+            route: "10",
+            delay_min: index < Math.abs(minutes) ? Math.sign(minutes) : 0,
+          },
+        ]),
+      ),
+    });
+    const body = await (
+      await fetchKpis({ SNAPSHOTS: new FakeKpisBucket(docs) })
+    ).json();
+    assert.equal(body.avgDelayS, expectedSeconds);
+    assert.equal(body.topRoutes[0].avgDelayS, expectedSeconds);
+  });
+}
+
 test("GET /api/v1/kpis returns the frozen v1 contract with correct aggregation", async () => {
   const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs()) };
   const response = await fetchKpis(env);
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal(
+    response.headers.get("content-type"),
+    "application/json; charset=utf-8",
+  );
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("x-kpis-cache"), "miss");
@@ -111,7 +160,10 @@ test("GET /api/v1/kpis returns the frozen v1 contract with correct aggregation",
     "topRoutes",
   ]);
   assert.match(body.snapshotAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-  assert.ok(body.freshnessS >= 4 && body.freshnessS <= 8, `freshnessS=${body.freshnessS}`);
+  assert.ok(
+    body.freshnessS >= 4 && body.freshnessS <= 8,
+    `freshnessS=${body.freshnessS}`,
+  );
   assert.equal(body.vehicles, 10);
   // Trip delays with data: 2,4,0,-1,5,2 min -> mean = 2 min = 120 s.
   assert.equal(body.avgDelayS, 120);
@@ -157,9 +209,14 @@ test("second request within the cadence serves the memo — no extra R2 reads", 
 });
 
 test("freshnessS is recomputed at serve time on cache hits", async () => {
-  const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 40_000 })) };
+  const env = {
+    SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 40_000 })),
+  };
   const first = await (await fetchKpis(env)).json();
-  assert.ok(first.freshnessS >= 39 && first.freshnessS <= 43, `freshnessS=${first.freshnessS}`);
+  assert.ok(
+    first.freshnessS >= 39 && first.freshnessS <= 43,
+    `freshnessS=${first.freshnessS}`,
+  );
 
   const realNow = Date.now;
   Date.now = () => realNow() + 20_000; // 20 s later, still within the 30 s cache window
@@ -167,11 +224,72 @@ test("freshnessS is recomputed at serve time on cache hits", async () => {
     const response = await fetchKpis(env);
     assert.equal(response.headers.get("x-kpis-cache"), "hit");
     const body = await response.json();
-    assert.ok(body.freshnessS >= 59 && body.freshnessS <= 63, `freshnessS=${body.freshnessS}`);
+    assert.ok(
+      body.freshnessS >= 59 && body.freshnessS <= 63,
+      `freshnessS=${body.freshnessS}`,
+    );
   } finally {
     Date.now = realNow;
   }
 });
+
+for (const cacheLayer of ["memo", "edge", "revalidating"]) {
+  for (const expiredSource of ["trips", "network"]) {
+    test(`${cacheLayer} cache expires ${expiredSource} fields independently`, async (t) => {
+      let now = Date.parse("2026-09-04T12:00:00Z");
+      t.mock.method(Date, "now", () => now);
+      const cache = new Map();
+      const previousCaches = globalThis.caches;
+      globalThis.caches = {
+        default: {
+          match: async (key) => cache.get(key)?.clone(),
+          put: async (key, response) => cache.set(key, response),
+        },
+      };
+      t.after(() => {
+        if (previousCaches === undefined) delete globalThis.caches;
+        else globalThis.caches = previousCaches;
+      });
+
+      const docs = liveDocs({ snapshotMsAgo: 0 });
+      const key = `v1/stm/live/${expiredSource}.json`;
+      const source = JSON.parse(docs[key]);
+      const elapsedMs = cacheLayer === "revalidating" ? 31_000 : 2_000;
+      source.generated_utc = iso(90_000 - elapsedMs);
+      docs[key] = JSON.stringify(source);
+      const bucket = new FakeKpisBucket(docs);
+      const env = { SNAPSHOTS: bucket };
+      const first = await (await fetchKpis(env)).json();
+      assert.equal(first.avgDelayS, 120);
+      assert.equal(first.coverage, 0.97);
+
+      if (cacheLayer === "edge") __resetKpisCachesForTests();
+      now += elapsedMs;
+      const ctx = makeCtx();
+      const response = await worker.fetch(
+        new Request(`${BASE}${KPIS}`),
+        env,
+        ctx,
+      );
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(
+        response.headers.get("x-kpis-cache"),
+        cacheLayer === "revalidating" ? "stale" : "hit",
+      );
+      assert.equal(body.freshnessS, elapsedMs / 1_000);
+      assert.equal(body.vehicles, 10);
+      assert.equal(body.avgDelayS, expiredSource === "trips" ? null : 120);
+      assert.equal(body.coverage, expiredSource === "network" ? null : 0.97);
+      assert.equal(
+        body.topRoutes[0].avgDelayS,
+        expiredSource === "trips" ? null : 180,
+      );
+      if (cacheLayer !== "revalidating") assert.equal(bucket.reads.length, 4);
+      await ctx.settle();
+    });
+  }
+}
 
 test("expired cache serves stale and revalidates in the background (SWR)", async () => {
   const bucket = new FakeKpisBucket(liveDocs({ snapshotMsAgo: 2_000 }));
@@ -191,7 +309,11 @@ test("expired cache serves stale and revalidates in the background (SWR)", async
     bucket.objects = new Map(Object.entries(fresher));
 
     const ctx = makeCtx();
-    const staleResponse = await worker.fetch(new Request(`${BASE}${KPIS}`), env, ctx);
+    const staleResponse = await worker.fetch(
+      new Request(`${BASE}${KPIS}`),
+      env,
+      ctx,
+    );
     assert.equal(staleResponse.headers.get("x-kpis-cache"), "stale");
     assert.equal((await staleResponse.json()).coverage, 0.97); // still the cached numbers
     await ctx.settle(); // background rebuild completes
@@ -217,13 +339,21 @@ test("failed SWR rebuilds are throttled while the stale core remains usable", as
     bucket.objects = new Map(Object.entries(broken));
 
     const firstCtx = makeCtx();
-    const firstStale = await worker.fetch(new Request(`${BASE}${KPIS}`), env, firstCtx);
+    const firstStale = await worker.fetch(
+      new Request(`${BASE}${KPIS}`),
+      env,
+      firstCtx,
+    );
     assert.equal(firstStale.headers.get("x-kpis-cache"), "stale");
     await firstCtx.settle(); // background rebuild fails and starts the failure window
     const readsAfterFailure = bucket.reads.length;
 
     const secondCtx = makeCtx();
-    const secondStale = await worker.fetch(new Request(`${BASE}${KPIS}`), env, secondCtx);
+    const secondStale = await worker.fetch(
+      new Request(`${BASE}${KPIS}`),
+      env,
+      secondCtx,
+    );
     assert.equal(secondStale.headers.get("x-kpis-cache"), "stale");
     await secondCtx.settle();
     assert.equal(bucket.reads.length, readsAfterFailure);
@@ -233,7 +363,9 @@ test("failed SWR rebuilds are throttled while the stale core remains usable", as
 });
 
 test("snapshot older than 90 s returns 503 with Retry-After, even from cache", async () => {
-  const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 3_000 })) };
+  const env = {
+    SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 3_000 })),
+  };
   await fetchKpis(env); // prime with a healthy snapshot
 
   const realNow = Date.now;
@@ -280,7 +412,10 @@ test("HEAD /api/v1/kpis returns headers with an empty body", async () => {
   const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs()) };
   const response = await fetchKpis(env, { method: "HEAD" });
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+  assert.equal(
+    response.headers.get("content-type"),
+    "application/json; charset=utf-8",
+  );
   assert.equal(await response.text(), "");
 });
 
@@ -289,12 +424,20 @@ test("OPTIONS /api/v1/kpis returns the 204 preflight", async () => {
   const response = await fetchKpis(env, { method: "OPTIONS" });
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
-  assert.equal(response.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
+  assert.equal(
+    response.headers.get("access-control-allow-methods"),
+    "GET, HEAD, OPTIONS",
+  );
 });
 
 test("unknown /api/v1/* paths return an uncacheable 404", async () => {
   const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs()) };
-  for (const path of ["/api/v1/", "/api/v1/kpis/", "/api/v1/other", "/api/v1/kpis.json"]) {
+  for (const path of [
+    "/api/v1/",
+    "/api/v1/kpis/",
+    "/api/v1/other",
+    "/api/v1/kpis.json",
+  ]) {
     const response = await fetchKpis(env, { path });
     assert.equal(response.status, 404, `expected 404 for ${path}`);
     assert.equal(response.headers.get("cache-control"), "no-store");
@@ -334,7 +477,9 @@ test("a stalled vehicles anchor is cold (503) even when trips are fresh", async 
 });
 
 test("a vehicles stamp far in the future is unusable — clock-skew guard", async () => {
-  const env = { SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: -300_000 })) };
+  const env = {
+    SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: -300_000 })),
+  };
   const response = await fetchKpis(env);
   assert.equal(response.status, 503);
 });
@@ -360,7 +505,9 @@ test("pipeline recovery is picked up on the next rebuild window after a cold spe
   const realNow = Date.now;
   Date.now = () => realNow() + 11_000; // past the 10 s failure memo
   try {
-    bucket.objects = new Map(Object.entries(liveDocs({ snapshotMsAgo: 2_000 }))); // fresh publish
+    bucket.objects = new Map(
+      Object.entries(liveDocs({ snapshotMsAgo: 2_000 })),
+    ); // fresh publish
     const response = await fetchKpis(env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-kpis-cache"), "miss");

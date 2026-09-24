@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from transit_ops.gold import rollups
+from transit_ops.gold import delay_hours, delay_periods, rollups
 from transit_ops.settings import Settings
 
 PROVIDER = "stm_immutable_history_test"
@@ -174,7 +174,8 @@ def test_daily_watermark_calendar_is_independent_of_session_timezone(conn) -> No
 
 
 def test_daily_failure_commits_prior_days_and_atomically_resumes(
-    real_db_engine, seed_provider  # noqa: ANN001
+    real_db_engine,
+    seed_provider,  # noqa: ANN001
 ) -> None:
     trigger_name = "dwr_daily_resume_failure"
     function_name = "public.dwr_daily_resume_failure"
@@ -254,9 +255,7 @@ def test_daily_failure_commits_prior_days_and_atomically_resumes(
             assert _resume_daily_state(check) == (set(days[:2]), set(days[:2]))
 
         with real_db_engine.begin() as release:
-            release.execute(
-                text(f"DROP TRIGGER {trigger_name} ON gold.warm_rollup_periods")
-            )
+            release.execute(text(f"DROP TRIGGER {trigger_name} ON gold.warm_rollup_periods"))
             release.execute(text(f"DROP FUNCTION {function_name}()"))
 
         resumed = rollups.build_warm_rollups(
@@ -439,10 +438,29 @@ def _insert_5m(
             "built_at": built_at,
         },
     )
+    connection.execute(
+        rollups.UPSERT_WARM_ROLLUP_PERIOD,
+        {
+            "provider_id": PROVIDER,
+            "rollup_kind": "trip_delay_summary_5m",
+            "period_start_utc": period,
+            "built_at_utc": built_at,
+        },
+    )
 
 
-def _run_build(connection, monkeypatch: pytest.MonkeyPatch, built_at: datetime) -> None:  # noqa: ANN001
+def _run_build(
+    connection,
+    monkeypatch: pytest.MonkeyPatch,
+    built_at: datetime,  # noqa: ANN001
+    materialized_at: datetime | None = None,
+) -> None:
     monkeypatch.setattr(rollups, "utc_now", lambda: built_at)
+    monkeypatch.setattr(delay_periods, "utc_now", lambda: built_at)
+    for owner in (rollups, delay_periods, delay_hours):
+        monkeypatch.setattr(
+            owner, "materialization_time", lambda connection: materialized_at or built_at
+        )
     rollups.build_warm_rollups(
         PROVIDER,
         settings=_settings(),
@@ -627,7 +645,12 @@ def test_0033_backfill_matches_fact_counts(conn) -> None:  # noqa: ANN001
     assert severe == 1
 
 
-def test_boundary_hour_not_partially_rebuilt(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+@pytest.mark.parametrize("materialized_after_minutes", [0, 67])
+def test_boundary_hour_not_partially_rebuilt(
+    conn,
+    monkeypatch: pytest.MonkeyPatch,
+    materialized_after_minutes: int,  # noqa: ANN001
+) -> None:
     cutoff = BUILT_T.replace(minute=0, second=0, microsecond=0) - timedelta(days=10)
     sentinel_hour = cutoff - timedelta(hours=1)
     _insert_5m(conn, period=cutoff, severe=1)
@@ -645,7 +668,8 @@ def test_boundary_hour_not_partially_rebuilt(conn, monkeypatch: pytest.MonkeyPat
         {"p": PROVIDER, "hour": sentinel_hour, "route_id": ROUTE, "built_at": BUILT_OLD},
     )
 
-    _run_build(conn, monkeypatch, BUILT_T)
+    materialized_at = BUILT_T + timedelta(minutes=materialized_after_minutes)
+    _run_build(conn, monkeypatch, BUILT_T, materialized_at)
 
     frozen = _row(
         conn,
@@ -669,6 +693,16 @@ def test_boundary_hour_not_partially_rebuilt(conn, monkeypatch: pytest.MonkeyPat
     assert frozen["severe_delay_count"] == 99
     assert frozen["built_at_utc"] == BUILT_OLD
     assert rebuilt == 3
+    assert (
+        conn.execute(
+            text(
+                "SELECT min(built_at_utc) FROM gold.route_delay_hourly "
+                "WHERE provider_id=:p AND period_start_utc=:hour"
+            ),
+            {"p": PROVIDER, "hour": cutoff},
+        ).scalar_one()
+        == materialized_at
+    )
 
 
 def test_rebuild_idempotent_under_pinned_clock(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001

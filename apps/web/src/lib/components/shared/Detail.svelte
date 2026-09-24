@@ -1,26 +1,7 @@
-<!--
-  Detail — the lightweight "Show the detail" progressive-disclosure expander.
-
-  The reliability surface leads each rider-question section with a verdict line +
-  ONE always-visible primary chart; the dense analyst charts (distribution,
-  crosstab, per-shift breakdowns, confidence bands) live one opt-in level deeper,
-  behind this control. Closed by DEFAULT — that is the whole point of progressive
-  disclosure: a calm default view, the full data one tap away. Keep to ONE
-  disclosure level (research: designs past 2 levels lose users — NN/g 2006).
-
-  Built on the bits-ui Collapsible (CollapsibleTrigger/Content) so it inherits
-  aria-expanded + aria-controls wiring, Enter/Space keyboard, and the grid-rows
-  0fr→1fr open/close animation (reduced-motion-guarded). Styled as a CONTROL
-  (chevron + "Show/Hide" text), never a link — the WCAG disclosure pattern + the
-  a11y research (Label-in-Name: the visible label IS the accessible name).
-
-  Locale-agnostic: the labels are passed in (FR-canonical copy lives with the
-  consumer), so this primitive performs no i18n.
--->
+<!-- Analyst disclosure: native controls, retained content and token-based grid transitions. -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@yesid/ui/collapsible';
 	import { ChevronToggle } from '@yesid/ui/brand';
 
 	let {
@@ -39,26 +20,65 @@
 		class?: string;
 		children?: Snippet;
 	} = $props();
+	const contentId = $props.id();
+	// SSR controls must not accept an activation before their handlers are attached.
+	let ready = $state(false);
+	onMount(() => {
+		ready = true;
+	});
+
+	function toggle(event: MouseEvent | KeyboardEvent): void {
+		if (!ready) return;
+		if ('key' in event) {
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			event.preventDefault();
+		} else if (event.button !== 0) {
+			event.preventDefault();
+			return;
+		}
+		open = !open;
+	}
+
+	// Closed analyst content mounts once; retain it for state and closing transitions.
+	let hasOpened = $state(false);
+	$effect(() => {
+		if (open) hasOpened = true;
+	});
 
 	const currentLabel = $derived(open ? (labelOpen ?? label) : label);
 </script>
 
 <div class={cn('detail', className)} data-slot="detail">
-	<Collapsible bind:open>
-		<CollapsibleTrigger>
-			{#snippet child({ props })}
-				<button {...props} type="button" class="detail__toggle" data-slot="detail-toggle">
-					<ChevronToggle {open} direction="down" size="sm" />
-					<span>{currentLabel}</span>
-				</button>
-			{/snippet}
-		</CollapsibleTrigger>
-		<CollapsibleContent>
-			<div class="detail__body" data-slot="detail-body">
-				{@render children?.()}
+	<div data-slot="collapsible" data-state={open ? 'open' : 'closed'}>
+		<button
+			type="button"
+			class="detail__toggle"
+			data-slot="detail-toggle"
+			data-state={open ? 'open' : 'closed'}
+			aria-expanded={open}
+			aria-controls={contentId}
+			disabled={!ready}
+			onclick={toggle}
+			onkeydown={toggle}
+		>
+			<ChevronToggle {open} direction="down" size="sm" />
+			<span>{currentLabel}</span>
+		</button>
+		<div
+			id={contentId}
+			class="collapsible-content"
+			data-slot="collapsible-content"
+			data-state={open ? 'open' : 'closed'}
+			inert={!open}
+			aria-hidden={open ? undefined : 'true'}
+		>
+			<div class="collapsible-content__inner">
+				<div class="detail__body" data-slot="detail-body">
+					{#if open || hasOpened}{@render children?.()}{/if}
+				</div>
 			</div>
-		</CollapsibleContent>
-	</Collapsible>
+		</div>
+	</div>
 </div>
 
 <style>
@@ -86,6 +106,10 @@
 		cursor: pointer;
 		transition: color var(--duration-fast) var(--ease-default);
 	}
+	.detail__toggle:disabled {
+		cursor: default;
+		opacity: 0.5;
+	}
 	.detail__toggle:hover {
 		color: var(--primary-hover);
 		text-decoration: underline;
@@ -100,8 +124,25 @@
 		text-decoration: underline;
 		text-underline-offset: 3px;
 	}
+	.collapsible-content {
+		display: grid;
+		grid-template-rows: 0fr;
+		opacity: 0;
+		transition:
+			grid-template-rows var(--duration-slow) var(--ease-default),
+			opacity var(--duration-slow) var(--ease-default);
+	}
+	.collapsible-content[data-state='open'] {
+		grid-template-rows: 1fr;
+		opacity: 1;
+	}
+	.collapsible-content__inner {
+		min-height: 0;
+		overflow: hidden;
+	}
 	@media (prefers-reduced-motion: reduce) {
-		.detail__toggle {
+		.detail__toggle,
+		.collapsible-content {
 			transition: none;
 		}
 	}

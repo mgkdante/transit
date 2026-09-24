@@ -69,14 +69,14 @@
 	import { getVehicles } from '$lib/v1/repositories/live';
 	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { dataRefresh, dataPulse, themeStore } from '$lib/stores';
+	import { dataPulse, themeStore } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion/view-transition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { AppShell } from '$lib/components/shell';
-	import { Footer } from '$lib/components/layout';
+	import Footer from '$lib/components/layout/Footer.svelte';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import { mainLandmarkLabel } from '$lib/content/nav';
@@ -205,16 +205,6 @@
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
 	});
-	// Seed the chrome freshness timestamp from the booted manifest as an INITIAL
-	// fallback (seed-if-unset) so pages WITHOUT a live store still show the
-	// page-load data's age. The live store is the single AUTHORITATIVE writer —
-	// once it polls, its per-poll timestamp supersedes this seed.
-	$effect(() => {
-		dataRefresh.seedDataGeneratedUtc(
-			v1?.manifest.files.live.generated_utc ?? v1?.manifest.files.static?.generated_utc,
-		);
-	});
-
 	// AUTO-REFRESH-ON-NEW-PUBLISH (slice-9.8 A): subscribe the dataPulse engine ONCE
 	// here at the app root. It re-reads the manifest on the min-tier-ttl cadence and
 	// bumps dataRefresh.epoch on a strictly-newer publish, which re-runs every

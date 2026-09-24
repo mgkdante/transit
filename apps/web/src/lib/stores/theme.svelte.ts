@@ -26,6 +26,19 @@ function resolvedSurface(): string {
 	return getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
 }
 
+let surfaceFrame: number | null = null;
+const surfaceMetaSelector = 'meta[name="theme-color"]:not([media])';
+
+function updateSurfaceMeta(): void {
+	if (surfaceFrame !== null || !document.querySelector(surfaceMetaSelector)) return;
+	// Let hydration and theme bindings finish before resolving CSS. Rapid changes
+	// share one read of the latest theme and current SvelteKit head element.
+	surfaceFrame = requestAnimationFrame(() => {
+		surfaceFrame = null;
+		document.querySelector(surfaceMetaSelector)?.setAttribute('content', resolvedSurface());
+	});
+}
+
 /** Read the theme the pre-paint script applied to <html data-theme>. */
 function readDocumentTheme(): Theme {
 	if (!browser) return 'dark';
@@ -44,14 +57,14 @@ let theme = $state<Theme>('dark');
 function apply(next: Theme, persist: boolean): void {
 	theme = next;
 	if (!browser) return;
-	document.documentElement.dataset.theme = next;
+	if (document.documentElement.dataset.theme !== next) {
+		document.documentElement.dataset.theme = next;
+	}
 	// Target the NON-media theme-color meta (SeoHead's, in %sveltekit.head%). The
 	// two media-scoped metas in app.html own the no-JS first paint; once the user
 	// makes an explicit choice we drive the unscoped tag, which wins regardless of
 	// the OS prefers-color-scheme.
-	document
-		.querySelector('meta[name="theme-color"]:not([media])')
-		?.setAttribute('content', resolvedSurface());
+	updateSurfaceMeta();
 	if (persist) {
 		try {
 			localStorage.setItem('theme', next);

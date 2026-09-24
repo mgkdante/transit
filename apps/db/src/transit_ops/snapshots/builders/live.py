@@ -12,7 +12,7 @@ LIVE sources:
       (<=2 per route).
     * ``gold.current_i3_alerts`` (0024) — alerts; STM leaves ``alert_id`` and
       ``severity`` NULL, so the id is content-hashed and severity maps to 'watch'.
-    * ``gold.non_responding_current`` (0027), ``gold.feed_freshness_current`` (0013),
+    * ``gold.non_responding_current`` (0091), ``gold.feed_freshness_current`` (0013),
       ``gold.dim_provider`` (0013), ``core.dataset_versions`` (0001).
 
 Status-band thresholds mirror migration 0020; network OTP counts on_time+late
@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from transit_ops.gold.reader import round_half_away
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
@@ -34,6 +35,7 @@ from transit_ops.snapshots.builders._helpers import (
     _kmh,
     _opt_int,
     _opt_iso,
+    _otp_pct,
     _percentile,
     _round5,
     _sane_en,
@@ -395,17 +397,7 @@ _NETWORK_DELAYS_SQL = named_query(
     """
 )
 
-_NETWORK_NON_RESPONDING_SQL = named_query(
-    "network.live.non_responding",
-    """
-    SELECT COALESCE(SUM(non_responding_count), 0) AS non_responding
-    FROM gold.non_responding_current
-    WHERE provider_id = :provider_id
-    """
-)
-
-# Per-route breakdown of the scalar non_responding total. SUM(nr_count) over these
-# rows equals the scalar non_responding.
+# Uncapped route counts supply both the total and breakdown from one view read.
 _NETWORK_NON_RESPONDING_BY_ROUTE_SQL = named_query(
     "network.live.non_responding_by_route",
     """
@@ -435,7 +427,7 @@ _DELAY_HISTOGRAM_EDGES: tuple[tuple[int | None, int | None], ...] = (
 def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
     """Distribution of the (signed) network delay minutes into 8 fixed buckets.
 
-    Each value is rounded to whole minutes (the same rounding p50/p90 emit) and
+    Each value is rounded half away from zero to whole minutes and
     classified into the single bucket where (lo is None or lo <= d) and (hi is
     None or d < hi). All 8 buckets are always returned (count may be 0) so the
     UI can draw the full shape; honest-None only when there are zero delay
@@ -445,7 +437,7 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
         return None
     counts = [0] * len(_DELAY_HISTOGRAM_EDGES)
     for value in delays_min:
-        d = round(value)
+        d = int(round_half_away(value, 0))
         for i, (lo, hi) in enumerate(_DELAY_HISTOGRAM_EDGES):
             if (lo is None or lo <= d) and (hi is None or d < hi):
                 counts[i] += 1
@@ -500,7 +492,7 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     on_time_band = dist.on_time + dist.late
     # Honesty: with no known-status vehicles the punctuality rate is unknown,
     # not 0%. Emit None so the UI shows "no data" instead of a fabricated 0.
-    on_time_pct = round(100 * on_time_band / known) if known else None
+    on_time_pct = _otp_pct(on_time_band, known)
 
     occ_total = sum(occ_counts.values())
     # Honesty: with no occupancy telemetry the distribution is unknown — None,
@@ -514,9 +506,7 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 
     # coverage_pct: share of the live fleet with a KNOWN punctuality status.
     # Honesty: with no live fleet there is nothing to cover — None, not 0.
-    coverage_pct = (
-        round(100 * known / vehicles_in_service) if vehicles_in_service else None
-    )
+    coverage_pct = _otp_pct(known, vehicles_in_service)
 
     delays_min = sorted(
         float(r["avg_delay_seconds"]) / 60.0
@@ -524,20 +514,17 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     )
     # Honesty: with no delay observations the percentiles are undefined — None,
     # not a fabricated 0-minute delay.
-    delay_p50_min = round(_percentile(delays_min, 0.50)) if delays_min else None
-    delay_p90_min = round(_percentile(delays_min, 0.90)) if delays_min else None
+    delay_p50_min = int(round_half_away(_percentile(delays_min, 0.50), 0)) if delays_min else None
+    delay_p90_min = int(round_half_away(_percentile(delays_min, 0.90), 0)) if delays_min else None
     # Distribution of the SAME delays_min list (None iff no observations, same
     # guard as the percentiles above; all 8 buckets emitted otherwise).
     delay_histogram = _delay_histogram(delays_min)
 
-    non_responding = int(conn.execute(_NETWORK_NON_RESPONDING_SQL, params).scalar_one() or 0)
-    # Per-route breakdown of non_responding (already grouped in gold). Honesty:
-    # empty -> None so the UI stands down; never an empty-but-present list.
+    # No route rows produce a zero total and an absent breakdown.
     by_route = [
         NonRespondingRoute(route_id=str(r["route_id"]), count=int(r["nr_count"]))
         for r in conn.execute(_NETWORK_NON_RESPONDING_BY_ROUTE_SQL, params).mappings()
     ]
-    non_responding_by_route = by_route or None
     # Honesty: MAX over no completed runs is NULL — freshness is genuinely
     # unknown. Emit None rather than COALESCE-ing NULL into a false "0s = fresh".
     freshness_raw = conn.execute(_NETWORK_FRESHNESS_SQL, params).scalar_one()
@@ -551,11 +538,11 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
         delay_p50_min=delay_p50_min,
         delay_p90_min=delay_p90_min,
         occupancy_mix=occupancy_mix,
-        non_responding=non_responding,
+        non_responding=sum(route.count for route in by_route),
         feed_freshness_s=feed_freshness_s,
         coverage_pct=coverage_pct,
         delay_histogram=delay_histogram,
-        non_responding_by_route=non_responding_by_route,
+        non_responding_by_route=by_route or None,
     )
 
 

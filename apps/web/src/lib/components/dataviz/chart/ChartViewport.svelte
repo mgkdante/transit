@@ -17,20 +17,27 @@
 
 	function measure(): void {
 		const element = viewport;
-		if (!element) return;
+		if (!element || layout !== 'dense') return;
 		const overflowX = getComputedStyle(element).overflowX;
 		const scrollRange = element.scrollWidth - element.clientWidth;
-		scrollable =
-			layout === 'dense' && (overflowX === 'auto' || overflowX === 'scroll') && scrollRange > 1;
-		moreStart = scrollable && element.scrollLeft > 1;
-		moreEnd = scrollable && element.scrollLeft < scrollRange - 1;
+		const canScroll = (overflowX === 'auto' || overflowX === 'scroll') && scrollRange > 1;
+		scrollable = canScroll;
+		moreStart = canScroll && element.scrollLeft > 1;
+		moreEnd = canScroll && element.scrollLeft < scrollRange - 1;
 	}
 
 	$effect(() => {
+		if (layout !== 'dense') {
+			scrollable = moreStart = moreEnd = false;
+			return;
+		}
 		const element = viewport;
 		if (!element) return;
-		measure();
-		if (typeof ResizeObserver === 'undefined') return;
+		if (typeof ResizeObserver === 'undefined') {
+			measure();
+			return;
+		}
+		// Its initial delivery measures the settled layout without an extra synchronous flush.
 		const observer = new ResizeObserver(measure);
 		observer.observe(element);
 		if (element.firstElementChild) observer.observe(element.firstElementChild);
@@ -129,6 +136,10 @@
 			overflow-y: hidden;
 			scrollbar-width: thin;
 			overscroll-behavior-inline: contain;
+			touch-action: pan-x pan-y;
+		}
+
+		.chart-output[data-chart-layout='dense'] :global(.lc-tooltip-context) {
 			touch-action: pan-x pan-y;
 		}
 

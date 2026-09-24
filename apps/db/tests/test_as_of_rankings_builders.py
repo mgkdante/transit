@@ -391,7 +391,7 @@ def test_hotspots_as_of_scalar_cross_kind_and_source_route_ties_are_stable() -> 
     assert snapshot_json_bytes(forward) == snapshot_json_bytes(reverse)
 
 
-def test_hotspots_as_of_route_scalar_and_ladder_keep_distinct_denominators() -> None:
+def test_hotspots_as_of_route_scalar_and_ladder_use_usable_delay_counts() -> None:
     payload = _days(
         routes=[
             _route_row(
@@ -409,11 +409,10 @@ def test_hotspots_as_of_route_scalar_and_ladder_keep_distinct_denominators() -> 
     # Scalar pooled avg is 601/2 = 300.5s and therefore clears the >300
     # mart doctrine even with zero severe issues.
     assert [(item.id, item.severity) for item in payload.hotspots] == [("GHOSTS", "high")]
-    # The executable ladder deliberately keeps the ghost-inclusive n=100, so
-    # its displayed pooled mean is 601/100/60 -> 0.1 min.
     entry = _entry(payload, "day", "route", "GHOSTS")
-    assert entry.observation_count == 100
-    assert entry.avg_delay_min == 0.1
+    assert entry.observation_count == 2
+    assert entry.avg_delay_min == 5.0
+    assert entry.rank is None
 
 
 def test_hotspots_as_of_stop_scalar_identity_keeps_route_but_ladder_pools_stop() -> None:
@@ -621,7 +620,7 @@ def test_hotspots_as_of_stop_name_and_envelope_are_historical_and_stable() -> No
     )[0]
 
     assert payload.hotspots[0].name == "Closing stop"
-    assert payload.methodology_version == "reliability-1"
+    assert payload.methodology_version == "reliability-2"
     assert payload.publish_generation_id is None
 
 
@@ -1330,7 +1329,7 @@ def test_repeat_offenders_as_of_fall_dst_close_and_envelope_are_stable() -> None
     )[0]
 
     assert _repeat_grain(payload, "week").entries[0].route_name == "Fall DST day"
-    assert payload.methodology_version == "reliability-1"
+    assert payload.methodology_version == "reliability-2"
     assert payload.publish_generation_id is None
 
 
@@ -1469,3 +1468,20 @@ def test_repeat_offenders_as_of_closed_scalar_matches_equivalent_closed_spine_wi
         "avg_delay_min": 6.7,
         "severity": "watch",
     }
+
+
+def test_scalar_offender_midpoint_matches_retained_history() -> None:
+    # Each day can contain delays 301 and -31 seconds: mean 135, severe count 1.
+    rows = [_offender_row(f"2026-09-{day:02d}", "T1", obs=2, severe=1,
+                          sum_delay_sec=270) for day in range(8, 11)]
+    retained = _offender_days(rows=rows)[-1].offenders[0]
+    current = build_repeat_offenders(NamedQueryConn({
+        "repeat.offenders": [{
+            "entity_kind": "trip", "entity_id": "T1", "route_id": "R1",
+            "recurrence_days": 3, "window_days": 14, "avg_delay_seconds": 135,
+            "severity_label": "watch",
+        }],
+    }), generated_utc="t").offenders[0]
+    assert current == retained
+    assert current.avg_delay_min == 2.3
+    assert current.severity == "watch"

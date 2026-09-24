@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from transit_ops.gold.reader import round_half_away
 from transit_ops.snapshots.builders._helpers import (
     _alert_active_periods,
     _iso,
@@ -18,6 +19,7 @@ from transit_ops.snapshots.builders._helpers import (
 from transit_ops.snapshots.contract import (
     ALERT_ARCHIVE_PAGE_BYTE_CEILING,
     ALERT_ARCHIVE_PAGE_ENTRY_CAP,
+    PAYLOAD_METHODOLOGY,
     AlertArchiveEntry,
     AlertArchiveIndex,
     AlertArchiveMonth,
@@ -93,7 +95,7 @@ def _duration_minutes(start: object, end: object) -> float | None:
     except (TypeError, ValueError):
         return None
     seconds = (end_dt - start_dt).total_seconds()
-    return round(seconds / 60.0) if seconds >= 0 else None
+    return float(round_half_away(seconds / 60.0, 0)) if seconds >= 0 else None
 
 
 def _canonical_utc(value: object) -> str:
@@ -186,7 +188,7 @@ def _finalize_page(
 ) -> tuple[str, AlertArchivePage, AlertArchivePageRef]:  # type: ignore[type-arg]
     page = AlertArchivePage(
         generated_utc=_page_stamp(rows),
-        methodology_version="alerts-1",
+        methodology_version=PAYLOAD_METHODOLOGY["historic_alert_archive_page"],
         month=month,
         page=page_number,
         alerts=entries,
@@ -261,13 +263,15 @@ def build_alert_archive(
         refs: list[AlertArchivePageRef] = []
         current_rows: list[dict] = []
         current_entries: list[AlertArchiveEntry] = []
+        current_entry_bytes = 0
+        current_stamp = ""
         page_number = 1
 
         def finalize(
             current_month: str = month,
             month_refs: list[AlertArchivePageRef] = refs,
         ) -> None:
-            nonlocal current_rows, current_entries, page_number
+            nonlocal current_rows, current_entries, current_entry_bytes, current_stamp, page_number
             path, page, ref = _finalize_page(
                 month=current_month,
                 page_number=page_number,
@@ -279,29 +283,37 @@ def build_alert_archive(
             month_refs.append(ref)
             current_rows = []
             current_entries = []
+            current_entry_bytes = 0
+            current_stamp = ""
             page_number += 1
 
         for row, entry in items:
-            candidate_rows = [*current_rows, row]
-            candidate_entries = [*current_entries, entry]
-            too_many = len(candidate_entries) > ALERT_ARCHIVE_PAGE_ENTRY_CAP
+            entry_bytes = len(snapshot_json_bytes(entry))
+            entry_stamp = _canonical_utc(row["updated_at_utc"])
+            too_many = len(current_entries) == ALERT_ARCHIVE_PAGE_ENTRY_CAP
             too_large = False
             if not too_many:
                 candidate = AlertArchivePage(
-                    generated_utc=_page_stamp(candidate_rows),
-                    methodology_version="alerts-1",
+                    generated_utc=max(current_stamp, entry_stamp),
+                    methodology_version=PAYLOAD_METHODOLOGY["historic_alert_archive_page"],
                     month=month,
                     page=page_number,
-                    alerts=candidate_entries,
+                    alerts=[entry],
                 )
-                too_large = len(snapshot_json_bytes(candidate)) > ALERT_ARCHIVE_PAGE_BYTE_CEILING
+                # Compact JSON adds one comma per preceding entry. Measure the
+                # envelope separately so page sizing never re-encodes prior alerts.
+                envelope_bytes = len(candidate.model_dump_json(exclude={"alerts"}).encode("utf-8"))
+                candidate_bytes = (
+                    envelope_bytes + len(b',"alerts":[]')
+                    + current_entry_bytes + entry_bytes + len(current_entries)
+                )
+                too_large = candidate_bytes > ALERT_ARCHIVE_PAGE_BYTE_CEILING
             if current_entries and (too_many or too_large):
                 finalize()
-                current_rows = [row]
-                current_entries = [entry]
-            else:
-                current_rows = candidate_rows
-                current_entries = candidate_entries
+            current_rows.append(row)
+            current_entries.append(entry)
+            current_entry_bytes += entry_bytes
+            current_stamp = max(current_stamp, entry_stamp)
         if current_entries:
             finalize()
         month_models.append(AlertArchiveMonth(month=month, total_alerts=len(items), pages=refs))

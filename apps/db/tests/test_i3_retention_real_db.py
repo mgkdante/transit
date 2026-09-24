@@ -90,11 +90,18 @@ def _hash(content: dict) -> str:
 
 
 class FakeBronze:
+    storage_backend = "s3"
+
     def __init__(self) -> None:
         self.deleted: list[str] = []
 
     def delete_object(self, storage_path: str) -> None:
         self.deleted.append(storage_path)
+
+    def delete_objects(self, paths):
+        for path in paths:
+            self.delete_object(path)
+        return set()
 
 
 class _ExistingTransactionEngine:
@@ -324,8 +331,7 @@ def test_0038_constants_collapse_and_close_legacy_rows(conn) -> None:
     # Zero NULL-hash rows remain.
     remaining_null = conn.execute(
         text(
-            "SELECT count(*) FROM silver.i3_alerts "
-            "WHERE provider_id = :p AND content_hash IS NULL"
+            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
         ),
         {"p": PROVIDER},
     ).scalar()
@@ -346,16 +352,20 @@ def test_0038_constants_collapse_and_close_legacy_rows(conn) -> None:
     # Hash equals the python/SQL twin.
     assert a["content_hash"] == _hash(GROUP_A)
     # Survivor carries the EXTENDED entity set (the snap-2 capture's two stops).
-    a_entities = conn.execute(
-        text(
-            """
+    a_entities = (
+        conn.execute(
+            text(
+                """
             SELECT stop_id FROM silver.i3_alert_informed_entities
             WHERE provider_id = :p AND i3_alert_snapshot_id = :s AND alert_index = 0
             ORDER BY stop_id
             """
-        ),
-        {"p": PROVIDER, "s": SNAP_IDS[1]},
-    ).scalars().all()
+            ),
+            {"p": PROVIDER, "s": SNAP_IDS[1]},
+        )
+        .scalars()
+        .all()
+    )
     assert a_entities == ["S100", "S101"]
 
     b = by_alert["ALERT-B"]
@@ -400,15 +410,19 @@ def test_0038_promote_does_not_violate_active_partial_unique_index(conn) -> None
     _run_collapse(conn)
 
     # The pre-existing ACTIVE hashed row is untouched and still active.
-    active = conn.execute(
-        text(
-            """
+    active = (
+        conn.execute(
+            text(
+                """
             SELECT i3_alert_snapshot_id, valid_to FROM silver.i3_alerts
             WHERE provider_id = :p AND content_hash = :hash AND valid_to IS NULL
             """
-        ),
-        {"p": PROVIDER, "hash": _hash(GROUP_A)},
-    ).mappings().all()
+            ),
+            {"p": PROVIDER, "hash": _hash(GROUP_A)},
+        )
+        .mappings()
+        .all()
+    )
     assert len(active) == 1
     assert active[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
 
@@ -445,16 +459,20 @@ def test_0038_resume_after_partial_delete_keeps_one_survivor_with_full_span(conn
 
     # Exactly one closed survivor so far (the latest-captured T3 dup), carrying
     # the FULL span T1..T3 even though T1/T2 are still present.
-    survivor = conn.execute(
-        text(
-            """
+    survivor = (
+        conn.execute(
+            text(
+                """
             SELECT i3_alert_snapshot_id, first_seen_at, last_seen_at, valid_to
             FROM silver.i3_alerts
             WHERE provider_id = :p AND content_hash = :h AND valid_to IS NOT NULL
             """
-        ),
-        {"p": PROVIDER, "h": legacy_hash},
-    ).mappings().all()
+            ),
+            {"p": PROVIDER, "h": legacy_hash},
+        )
+        .mappings()
+        .all()
+    )
     assert len(survivor) == 1
     assert survivor[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
     assert survivor[0]["first_seen_at"] == T1
@@ -477,8 +495,7 @@ def test_0038_resume_after_partial_delete_keeps_one_survivor_with_full_span(conn
     # One NULL dup (the T2 capture) survives into the resumed run.
     null_left = conn.execute(
         text(
-            "SELECT count(*) FROM silver.i3_alerts "
-            "WHERE provider_id = :p AND content_hash IS NULL"
+            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
         ),
         {"p": PROVIDER},
     ).scalar()
@@ -490,8 +507,7 @@ def test_0038_resume_after_partial_delete_keeps_one_survivor_with_full_span(conn
     # Zero NULL-hash rows remain.
     remaining_null = conn.execute(
         text(
-            "SELECT count(*) FROM silver.i3_alerts "
-            "WHERE provider_id = :p AND content_hash IS NULL"
+            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
         ),
         {"p": PROVIDER},
     ).scalar()
@@ -529,10 +545,7 @@ def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None
 
     surviving = set(
         conn.execute(
-            text(
-                "SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots "
-                "WHERE provider_id = :p"
-            ),
+            text("SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots WHERE provider_id = :p"),
             {"p": PROVIDER},
         ).scalars()
     )
@@ -543,6 +556,35 @@ def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None
     assert SNAP_IDS[1] not in surviving
     assert any(str(SNAP_IDS[1]) in p for p in storage.deleted)
     assert meta_counts["raw.i3_alert_snapshots"] == 1
+
+
+@pytest.mark.parametrize("equal_time", [False, True])
+def test_i3_raw_retention_keeps_capture_time_winner(conn, equal_time):
+    conn.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET captured_at_utc=:captured "
+            "WHERE i3_alert_snapshot_id=:snapshot"
+        ),
+        [
+            {"snapshot": SNAP_IDS[0], "captured": T3},
+            {"snapshot": SNAP_IDS[1], "captured": T3 if equal_time else T2},
+            {"snapshot": SNAP_IDS[2], "captured": T1},
+        ],
+    )
+    storage = FakeBronze()
+    kwargs = dict(
+        provider_id=PROVIDER,
+        retention_days=1,
+        bronze_storage=storage,
+        now_utc=T3 + timedelta(days=40),
+    )
+    _, expected, _, _ = prune_i3_raw_snapshots(conn, dry_run=True, **kwargs)
+    _, deleted, _, _ = prune_i3_raw_snapshots(conn, **kwargs)
+    assert deleted == expected == {"i3_raw": 2}
+    assert conn.execute(
+        text("SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars().all() == [SNAP_IDS[1 if equal_time else 0]]
 
 
 def test_prune_i3_silver_closed_rows_respects_30d_floor_and_cascade(conn) -> None:
@@ -682,9 +724,8 @@ def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, mo
         raising=False,
     )
     monkeypatch.setattr(
-        i3_maintenance_module._maintenance_pkg,
-        "get_bronze_storage",
-        lambda settings, project_root=None: FakeBronze(),
+        "transit_ops.maintenance.bronze.BronzeStorageScope.resolve",
+        lambda self, backend: FakeBronze(),
     )
 
     result = i3_maintenance_module.prune_i3_storage(
@@ -727,3 +768,69 @@ def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, mo
     assert archived["url"].startswith("https://")
     assert archived["stop_ids"] == ["S900"]
     assert len(archived["active_periods"]) == 1
+
+
+def test_i3_raw_retention_keeps_each_alert_endpoints_latest_capture(conn):
+    endpoint = conn.execute(
+        text(
+            "INSERT INTO core.feed_endpoints "
+            "(provider_id,endpoint_key,feed_kind,source_format) "
+            "VALUES (:p,'service_alerts','service_alerts','gtfs_rt_service_alerts') "
+            "RETURNING feed_endpoint_id"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    conn.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET feed_endpoint_id=:endpoint "
+            "WHERE i3_alert_snapshot_id=:snapshot"
+        ),
+        {"endpoint": endpoint, "snapshot": SNAP_IDS[1]},
+    )
+    conn.execute(
+        text(
+            "UPDATE raw.ingestion_runs SET feed_endpoint_id=:endpoint,run_kind='service_alerts' "
+            "WHERE ingestion_run_id=:run"
+        ),
+        {"endpoint": endpoint, "run": RUN_IDS[1]},
+    )
+    storage = FakeBronze()
+    _, deleted, _, _ = prune_i3_raw_snapshots(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=1,
+        bronze_storage=storage,
+        now_utc=T3 + timedelta(days=40),
+    )
+    assert deleted == {"i3_raw": 1}
+    assert set(
+        conn.execute(
+            text("SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots WHERE provider_id=:p"),
+            {"p": PROVIDER},
+        ).scalars()
+    ) == set(SNAP_IDS[1:])
+
+
+def test_i3_pruner_defers_while_silver_loader_owns_the_provider(conn, real_db_engine):
+    from transit_ops.silver.i3 import RawI3AlertSnapshot, load_i3_snapshot_to_silver
+
+    storage = FakeBronze()
+    kwargs = dict(
+        provider_id=PROVIDER,
+        retention_days=1,
+        bronze_storage=storage,
+        now_utc=T3 + timedelta(days=40),
+    )
+    with conn.begin_nested() as loading:
+        load_i3_snapshot_to_silver(
+            conn,
+            snapshot=RawI3AlertSnapshot(SNAP_IDS[2], PROVIDER, "America/Toronto", T3, []),
+        )
+        with real_db_engine.begin() as contender:
+            contender.execute(text("SET LOCAL statement_timeout='1s'"))
+            _, deferred, _, _ = prune_i3_raw_snapshots(contender, **kwargs)
+        assert deferred == {"i3_raw": 0}
+        assert storage.deleted == []
+        loading.rollback()
+    _, retried, _, _ = prune_i3_raw_snapshots(conn, **kwargs)
+    assert retried == {"i3_raw": 2}

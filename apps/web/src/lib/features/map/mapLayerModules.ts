@@ -1,26 +1,19 @@
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import {
-	addNearTargetLayer,
-	addNearTargetSource,
 	addRouteLineLayers,
 	addRouteLineSource,
-	addStopExceptionLayer,
-	addStopExceptionSource,
 	addStopsLayer,
 	addStopsSource,
-	addVehicleLayers,
-	addVehicleSource,
-	bakeLocationPinSprite,
+	bakeLocationPinImage,
 	bakeVehicleSprites,
 	ROUTE_LINE_HIT_LAYER,
-	setNearTarget,
 	setRouteLines,
-	setStale,
 	setStops,
 	STOP_EXCEPTION_LAYER,
 	STOPS_LAYER,
 	toVehicleFeatures,
-	VEHICLE_BODY_LAYER,
+	type VehicleSpriteReceipt,
+	type NearTarget,
 	type FixResolver,
 	type ShapeResolver,
 	type VehicleMotionController,
@@ -53,15 +46,13 @@ export type MapLayerFeedContext = Readonly<{
 		selectedId: Parameters<typeof setStops>[4];
 	}>;
 	nearTarget: Readonly<{
-		target: Parameters<typeof setNearTarget>[1];
+		target: NearTarget | null;
 	}>;
 }>;
 
 export interface LayerModule {
 	readonly id: string;
-	/** Must complete synchronously so installs and the first feed cannot race assets. */
-	prepare?(map: MapLibreMap): void;
-	install(map: MapLibreMap, beforeId?: string): void;
+	install?(map: MapLibreMap, beforeId?: string): void;
 	invalidationKey(ctx: MapLayerFeedContext): readonly unknown[];
 	feed(map: MapLibreMap, ctx: MapLayerFeedContext): void;
 	readonly pick?: {
@@ -90,16 +81,14 @@ const stopsModule: LayerModule = {
 	id: 'stops',
 	install(map) {
 		addStopsSource(map);
-		addStopExceptionSource(map);
 		addStopsLayer(map);
-		addStopExceptionLayer(map);
 	},
 	invalidationKey(ctx) {
 		const { alertIds, filter, items, selectedId } = ctx.stops;
 		const alertFilterActive = (filter?.alerts?.length ?? 0) > 0;
 		return [
 			items,
-			selectedId,
+			filter?.stops.size ? null : selectedId,
 			[...(filter?.stops ?? [])].sort().join('\u0000'),
 			!filter?.entities?.length || filter.entities.includes('stop'),
 			alertFilterActive,
@@ -115,15 +104,6 @@ const stopsModule: LayerModule = {
 
 const vehiclesModule: LayerModule = {
 	id: 'vehicles',
-	prepare(map) {
-		// bakeVehicleSprites also installs STOP_ICON, which the stops module consumes.
-		// All prepares run before any installs so that cross-module asset is ready.
-		bakeVehicleSprites(map);
-	},
-	install(map) {
-		addVehicleSource(map);
-		addVehicleLayers(map);
-	},
 	invalidationKey(ctx) {
 		const vehicles = ctx.vehicles;
 		const filter = vehicles.filter;
@@ -164,26 +144,6 @@ const vehiclesModule: LayerModule = {
 				animate: vehicles.animate,
 			},
 		);
-		setStale(map, vehicles.stale);
-	},
-	pick: { layerIds: [VEHICLE_BODY_LAYER], priority: 30 },
-};
-
-const nearTargetModule: LayerModule = {
-	id: 'near-target',
-	prepare(map) {
-		bakeLocationPinSprite(map);
-	},
-	install(map) {
-		addNearTargetSource(map);
-		addNearTargetLayer(map);
-	},
-	invalidationKey(ctx) {
-		const target = ctx.nearTarget.target;
-		return [target?.lat, target?.lon, target?.label, target?.precision];
-	},
-	feed(map, ctx) {
-		setNearTarget(map, ctx.nearTarget.target);
 	},
 };
 
@@ -192,7 +152,6 @@ export const MAP_LAYER_MODULES: readonly LayerModule[] = Object.freeze([
 	routesModule,
 	stopsModule,
 	vehiclesModule,
-	nearTargetModule,
 ]);
 
 function sameInvalidationKey(previous: readonly unknown[], next: readonly unknown[]): boolean {
@@ -228,14 +187,17 @@ export function createMapLayerFeedController(): MapLayerFeedController {
 	};
 }
 
-// Prepare EVERY module before installing any layer (bakeVehicleSprites owns
-// STOP_ICON even though the stops module consumes it — a per-module loop would
-// install stops before that shared asset exists). Installs are idempotent
-// retints on re-entry, so this is BOTH the full first-install path and the
-// theme-only repaint path (no feed, no revision — the caller owns those).
-export function retintMapLayers(map: MapLibreMap, beforeId?: string): void {
-	for (const module of MAP_LAYER_MODULES) module.prepare?.(map);
-	for (const module of MAP_LAYER_MODULES) module.install(map, beforeId);
+// Bake once before installing stops, which consume STOP_ICON. Vehicle and pin
+// sprite bytes remain in the CPU foreground; only the stop image reaches GL.
+export function retintMapLayers(
+	map: MapLibreMap,
+	beforeId?: string,
+): { sprites: VehicleSpriteReceipt; pin: ImageData } {
+	// The stop icon remains MapLibre-owned; moving images stay in one CPU atlas.
+	const sprites = bakeVehicleSprites(map, false);
+	const pin = bakeLocationPinImage();
+	for (const module of MAP_LAYER_MODULES) module.install?.(map, beforeId);
+	return { sprites, pin };
 }
 
 export const PICKABLE_MAP_LAYERS: readonly string[] = Object.freeze(
@@ -261,6 +223,8 @@ export function installMapInteractions(
 		click: (event: MapMouseEvent) => void;
 		mousemove: (event: MapMouseEvent) => void;
 		mouseleave: () => void;
+		webglcontextrestored?: () => void;
+		styleload?: () => void;
 	}>,
 ): readonly (() => void)[] {
 	const canvas = map.getCanvas();
@@ -292,6 +256,18 @@ export function installMapInteractions(
 			() => canvas.addEventListener('mouseleave', handlers.mouseleave),
 			() => canvas.removeEventListener('mouseleave', handlers.mouseleave),
 		);
+		if (handlers.webglcontextrestored) {
+			register(
+				() => map.on('webglcontextrestored', handlers.webglcontextrestored!),
+				() => map.off('webglcontextrestored', handlers.webglcontextrestored!),
+			);
+		}
+		if (handlers.styleload) {
+			register(
+				() => map.on('style.load', handlers.styleload!),
+				() => map.off('style.load', handlers.styleload!),
+			);
+		}
 	} catch (registrationError) {
 		const rollbackErrors: unknown[] = [];
 		for (const rollback of [...rollbacks].reverse()) {

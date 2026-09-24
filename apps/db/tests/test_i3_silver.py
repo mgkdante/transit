@@ -149,20 +149,19 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert result.i3_alert_snapshot_id == 505
     assert result.alert_rows_inserted == 1
     assert result.informed_entity_rows_inserted == 2
-    # D2: feed + per-alert language observations are written from the raw
-    # payload before any Silver DELETE/INSERT can reach the monotonic SCD merge.
-    assert "INSERT INTO raw.alert_feed_observations" in connection.calls[0][0]
-    assert "INSERT INTO raw.alert_language_observations" in connection.calls[1][0]
-    # S15: the active-periods child DELETE stays first inside the Silver portion
-    # (FK order), and its INSERT runs after the entity insert.
-    assert "DELETE FROM silver.i3_alert_active_periods" in connection.calls[2][0]
-    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[3][0]
-    assert "DELETE FROM silver.i3_alerts" in connection.calls[4][0]
-    assert "INSERT INTO silver.i3_alerts" in connection.calls[5][0]
-    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[6][0]
-    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[7][0]
-    assert "INSERT INTO silver.i3_alert_active_periods" in connection.calls[8][0]
-    assert "SET valid_to" in connection.calls[9][0]
+    data_calls = [
+        sql for sql, _ in connection.calls if "silver.i3_" in sql or "INSERT INTO raw.alert_" in sql
+    ]
+    assert "INSERT INTO raw.alert_feed_observations" in data_calls[0]
+    assert "INSERT INTO raw.alert_language_observations" in data_calls[1]
+    assert "DELETE FROM silver.i3_alert_active_periods" in data_calls[2]
+    assert "DELETE FROM silver.i3_alert_informed_entities" in data_calls[3]
+    assert "DELETE FROM silver.i3_alerts" in data_calls[4]
+    assert "INSERT INTO silver.i3_alerts" in data_calls[5]
+    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in data_calls[6]
+    assert "INSERT INTO silver.i3_alert_informed_entities" in data_calls[7]
+    assert "INSERT INTO silver.i3_alert_active_periods" in data_calls[8]
+    assert "SET valid_to" in data_calls[9]
     assert result.alerts_redirected_to_existing == 0
     assert result.entities_dropped_missing_parent == 0
 
@@ -343,18 +342,31 @@ def test_single_period_hash_is_byte_identical_to_pre_s15_formula() -> None:
     # Frozen: md5 over "a1\x1fH\x1fD\x1fWARN\x1fC\x1fEFF\x1f<start>\x1f<end>\x1f\x1f".
     frozen = "fe7cfb8f8f2e46274639499aded61a7e"
     new_single = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
     )
     assert new_single == frozen
     # Passing an EMPTY extra-periods list is also byte-identical (single-period).
     with_empty = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None, extra_active_periods=[],
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
+        extra_active_periods=[],
     )
     assert with_empty == frozen
 
@@ -365,18 +377,31 @@ def test_multi_period_alert_hashes_differently_from_single_period() -> None:
     s = datetime(2026, 5, 1, 8, tzinfo=UTC)
     e = datetime(2026, 5, 1, 10, tzinfo=UTC)
     single = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
     )
     multi = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
-        extra_active_periods=[(datetime(2026, 5, 8, 8, tzinfo=UTC),
-                               datetime(2026, 5, 8, 10, tzinfo=UTC))],
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
+        extra_active_periods=[
+            (datetime(2026, 5, 8, 8, tzinfo=UTC), datetime(2026, 5, 8, 10, tzinfo=UTC))
+        ],
     )
     assert single != multi
 

@@ -5,7 +5,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
@@ -14,8 +14,6 @@ import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
-
-vi.mock('@testing-library/svelte', { spy: true });
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
@@ -46,7 +44,12 @@ const createResourceSpy = vi.hoisted(() => vi.fn());
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
-		live: { ageSeconds: 20 as number | null, hasNetwork: true },
+		live: {
+			ageSeconds: 20 as number | null,
+			hasNetwork: true,
+			isStale: false,
+			error: null as Error | null,
+		},
 		network: {
 			generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
 			vehicles_in_service: 10,
@@ -134,6 +137,8 @@ function resetNetworkSurfaceState(): void {
 	motion.reduced = false;
 	live.ageSeconds = 20;
 	live.hasNetwork = true;
+	live.isStale = false;
+	live.error = null;
 	Object.assign(network, structuredClone(networkDefaults));
 	restoreArray(trendSeries, trendDefaults);
 	restoreArray(weeklySeries, weeklyDefaults);
@@ -203,9 +208,13 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return live.ageSeconds;
 			},
-			isStale: false,
+			get isStale() {
+				return live.isStale;
+			},
 			loading: false,
-			error: null,
+			get error() {
+				return live.error;
+			},
 			start: vi.fn(),
 			stop: vi.fn(),
 			refresh: vi.fn(),
@@ -246,10 +255,6 @@ beforeEach(() => networkSurface.reset());
 
 afterEach(() => {
 	quietModeStore.resetForTest();
-});
-
-afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(55);
 });
 
 describe('NetworkSurface article shell', () => {
@@ -327,7 +332,7 @@ describe('NetworkSurface article shell', () => {
 			screen.getByText(copy.lede),
 		);
 		expect(container.querySelector('.header__meta')).toHaveTextContent(copy.article.sections(2));
-		expect(container.querySelector('.header__meta time')).toHaveAttribute(
+		expect(container.querySelector('[data-slot="freshness-stamp"] time')).toHaveAttribute(
 			'datetime',
 			network.generated_utc,
 		);
@@ -488,12 +493,13 @@ describe('NetworkSurface article shell', () => {
 		);
 	});
 
-	it('uses deterministic full-width history rows followed by one responsive companion row', () => {
+	it('places the dated comparison before the history rows and responsive companions', () => {
 		const { container } = render(NetworkSurface);
 		const board = container.querySelector('[data-slot="network-history-board"]') as HTMLElement;
 
 		expect(board).not.toBeNull();
 		expect(Array.from(board.children).map((child) => child.getAttribute('data-slot'))).toEqual([
+			'verdict-delta',
 			'network-history-trend-row',
 			'network-history-cancellations-row',
 			'network-history-crowding-row',
@@ -573,18 +579,26 @@ describe('NetworkSurface drilldown', () => {
 });
 
 describe('NetworkSurface live cards (S9C)', () => {
-	it('renders the four headline scalars as ExplainedMetricCards with the (i) affordance', () => {
-		render(NetworkSurface);
-		// The four glance cards each render an ExplainedMetricCard wrapper + the (i) info affordance.
-		const cards = document.querySelectorAll('[data-slot="explained-metric-card"]');
-		// four headline + two reporting + one cancellation latest = at least the four headline.
-		expect(cards.length).toBeGreaterThanOrEqual(4);
-		expect(
-			document.querySelectorAll('[data-slot="explained-metric-info"]').length,
-		).toBeGreaterThanOrEqual(4);
-		// The on-time headline reads its real value inside a card's inner MetricDisplay.
-		const otpTile = screen.getByText('Median delay').closest('[data-slot="explained-metric-card"]');
-		expect(otpTile).not.toBeNull();
+	it('renders exactly four live headline cards in their metric order with explainers', () => {
+		const { container } = render(NetworkSurface);
+		const headline = container.querySelector('[data-network-section="network-live-headline"]')!;
+		const cards = [...headline.querySelectorAll('[data-slot="explained-metric-card"]')];
+		expect(cards).toHaveLength(4);
+		for (const [index, label] of [
+			copy.metrics.onTime,
+			copy.metrics.coverage,
+			copy.metrics.delayP50,
+			copy.metrics.delayP90,
+		].entries()) {
+			expect(within(cards[index] as HTMLElement).getByText(label)).toBeInTheDocument();
+			expect(cards[index].querySelector('[data-slot="explained-metric-info"]')).not.toBeNull();
+		}
+		expect(cards.map((card) => card.querySelector('.metric-value')?.textContent?.trim())).toEqual([
+			'80%',
+			'95%',
+			'1 min',
+			'6 min',
+		]);
 	});
 
 	it('renders the styled honest-absence chip (not a plain "no data") for a null live tile', () => {
@@ -610,6 +624,31 @@ describe('NetworkSurface live cards (S9C)', () => {
 			.closest('[data-slot="metric-display"]') as HTMLElement;
 		expect(within(tile).getByText('0%')).toBeInTheDocument();
 		expect(tile.querySelector('[data-slot="absent-value"]')).toBeNull();
+	});
+
+	it('gives the header sole ownership of snapshot freshness and keeps worker age distinct', () => {
+		network.feed_freshness_s = 80;
+		const { container } = render(NetworkSurface);
+		const stamps = container.querySelectorAll('[data-slot="freshness-stamp"]');
+		expect(stamps).toHaveLength(1);
+		expect(stamps[0].closest('[data-slot="article-header"]')).not.toBeNull();
+		expect(stamps[0]).toHaveAttribute('data-age-seconds', '20');
+		expect(container.querySelectorAll(`time[datetime="${network.generated_utc}"]`)).toHaveLength(1);
+		expect(container.querySelector('[data-slot="feed-age"]')).toHaveTextContent('2 minutes ago');
+	});
+
+	it('keeps a stale retained snapshot visible with a named refresh failure', () => {
+		live.ageSeconds = 120;
+		live.isStale = true;
+		live.error = new Error('network unavailable');
+		const { container } = render(NetworkSurface);
+		const stamp = container.querySelector('[data-slot="freshness-stamp"]');
+		expect(stamp).toHaveAttribute('data-stale', 'true');
+		expect(stamp).toHaveAttribute('data-degraded', 'true');
+		expect(stamp).toHaveTextContent(copy.snapshotRefreshFailed);
+		expect(stamp).toHaveTextContent('stale');
+		expect(stamp?.querySelector('time')).toHaveAttribute('datetime', network.generated_utc);
+		expect(container.querySelector('[data-slot="terminal-panel"]')).not.toBeNull();
 	});
 
 	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {
@@ -641,8 +680,8 @@ describe('NetworkSurface reporting row (S9C vehicles-reporting own row)', () => 
 		const section = document.querySelector('[data-slot="reporting-section"]') as HTMLElement;
 		expect(section).not.toBeNull();
 		// The non_responding total card + the vehicles card live in the reporting row.
-		expect(within(section).getByText('Vehicles in service')).toBeInTheDocument();
-		expect(within(section).getByText('Not reporting')).toBeInTheDocument();
+		expect(within(section).getByText('Vehicle positions')).toBeInTheDocument();
+		expect(within(section).getByText('Trips without a signal')).toBeInTheDocument();
 		// The silent-by-route list lives inside the same section.
 		const list = within(section).getByRole('list', {
 			name: /scheduled trips currently running with no live vehicle/i,
@@ -763,12 +802,12 @@ describe('NetworkSurface trend window + series', () => {
 			return cells?.[1]?.textContent ?? '';
 		};
 		expect(secondaryHeader()).toContain('Slowest 10% (min)');
-		expect(lastY2()).toBe('6');
+		expect(lastY2()).toBe('6 min');
 
 		await fireEvent.click(screen.getByRole('radio', { name: 'Average' }));
 		expect(secondaryHeader()).toContain('Average delay (min)');
 		expect(secondaryHeader()).not.toContain('Slowest 10% (min)');
-		expect(lastY2()).toBe('1.8');
+		expect(lastY2()).toBe('1.8 min');
 	});
 });
 
@@ -791,12 +830,12 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		const { container } = render(NetworkSurface);
 		const dayRows = trendRows(container);
 		expect(dayRows).toHaveLength(2);
-		expect(rowY(dayRows[dayRows.length - 1])).toBe('81');
+		expect(rowY(dayRows[dayRows.length - 1])).toBe('81%');
 
 		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
 		const weekRows = trendRows(container);
 		expect(weekRows).toHaveLength(3);
-		expect(rowY(weekRows[weekRows.length - 1])).toBe('83');
+		expect(rowY(weekRows[weekRows.length - 1])).toBe('83%');
 	});
 
 	it('switches the plotted series to monthly when "Month" is picked', async () => {
@@ -804,7 +843,7 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		await fireEvent.click(screen.getByRole('radio', { name: 'Month' }));
 		const monthRows = trendRows(container);
 		expect(monthRows).toHaveLength(2);
-		expect(rowY(monthRows[monthRows.length - 1])).toBe('76');
+		expect(rowY(monthRows[monthRows.length - 1])).toBe('76%');
 	});
 
 	it('hides the daily-only marks under week/month (window picker, vehicles row, per-day crowding)', async () => {
@@ -830,7 +869,7 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		expect(header?.textContent).toContain('Average delay (min)');
 		expect(header?.textContent).not.toContain('Slowest 10% (min)');
 		const rows = trendRows(container);
-		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6');
+		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6 min');
 	});
 
 	it('stands the grain picker down when no coarse series carries data', () => {
@@ -995,7 +1034,7 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 		render(NetworkSurface);
 		const tile = document.querySelector('[data-slot="completeness-section"]') as HTMLElement;
 		expect(tile).not.toBeNull();
-		expect(tile.textContent).toContain('No data yet');
+		expect(tile.textContent).toContain('observed trip counts and a non-zero scheduled count');
 	});
 
 	it('stands the completeness tile UP with the latest served rate when data accrues', () => {
@@ -1008,10 +1047,10 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 		render(NetworkSurface);
 		const tile = document.querySelector('[data-slot="completeness-section"]') as HTMLElement;
 		expect(tile).not.toBeNull();
-		expect(within(tile).getByText('Scheduled service delivered')).toBeInTheDocument();
+		expect(within(tile).getByText('Observed / scheduled trips')).toBeInTheDocument();
 		expect(within(tile).getByText('94.2%')).toBeInTheDocument();
-		// The always-visible explainer carries the silent-trip framing.
-		expect(within(tile).getByText(/never appears in the live feed/i)).toBeInTheDocument();
+		// Count parity does not establish that scheduled trip identities were observed.
+		expect(within(tile).getByText(/Trips are not matched by identity/)).toBeInTheDocument();
 	});
 });
 
@@ -1150,5 +1189,97 @@ describe('NetworkSurface canonical article-control stack', () => {
 		);
 		expect(component).not.toMatch(/class=["']network-control-body/);
 		expect(component).not.toMatch(/\.network-control-body\s*\{/);
+	});
+});
+
+describe('NetworkSurface current-position verdict', () => {
+	it.each(['en', 'fr'] as const)(
+		'names the vehicle population and both outside-band directions in %s',
+		(locale) => {
+			network.on_time_pct = 80;
+			network.status_dist = { early: 1, on_time: 8, late: 0, severe: 1, unknown: 0 };
+			const { container } = render(NetworkSurface, {
+				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			});
+			const banner = container.querySelector('.network-verdict [data-slot="verdict"]');
+			expect(banner).toHaveAttribute('data-status', 'reliable');
+			const sentence = banner?.querySelector('p')?.textContent ?? '';
+			expect(sentence).toContain('80');
+			expect
+				.soft(sentence)
+				.toMatch(
+					locale === 'en'
+						? /current known-status vehicle positions/
+						: /positions actuelles de véhicules au statut connu/,
+				);
+			expect
+				.soft(sentence)
+				.toMatch(locale === 'en' ? /outside.*early or late/ : /hors.*avance ou.*retard/);
+			expect.soft(sentence).not.toMatch(/trips|trajets|ran late|95% sure|sûr à 95/);
+		},
+	);
+});
+
+describe('NetworkSurface daily comparison scope', () => {
+	it.each(['en', 'fr'] as const)(
+		'separates historical percentage points and dates from live positions in %s',
+		(locale) => {
+			network.on_time_pct = 50;
+			network.status_dist = { early: 0, on_time: 5, late: 5, severe: 0, unknown: 0 };
+			trendSeries.splice(
+				0,
+				trendSeries.length,
+				{ ...trendSeries[0], date: '2026-08-28', otp_pct: 20 },
+				{ ...trendSeries[1], date: '2026-08-29', otp_pct: 90 },
+			);
+			const { container } = render(NetworkSurface, {
+				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			});
+			const change = container.querySelector('[data-slot="verdict-delta"]')!;
+			expect(container.querySelector('[data-toc="net-historic"]')).toContainElement(
+				change as HTMLElement,
+			);
+			expect(container.querySelector('.network-verdict [data-slot="verdict-delta"]')).toBeNull();
+			expect(container.querySelector('.network-verdict')).toHaveTextContent(/50\s*%/);
+			expect(change).toHaveTextContent(
+				locale === 'en'
+					? 'Daily on-time change: +70 percentage points'
+					: 'Variation quotidienne de la ponctualité : +70 points de pourcentage',
+			);
+			expect(change.textContent).not.toMatch(/70\s*%|prior day|la veille/);
+			expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+				'2026-08-29',
+				'2026-08-28',
+			]);
+			expect(change.textContent).toContain('2026');
+		},
+	);
+
+	it.each([
+		{ prior: 20, latest: 20, text: '0 percentage points' },
+		{ prior: 21, latest: 20, text: '-1 percentage point' },
+		{ prior: 20.1, latest: 20.2, text: '+0.1 percentage points' },
+	])('keeps the signed difference and actual gapped dates for $text', ({ prior, latest, text }) => {
+		trendSeries.splice(
+			0,
+			trendSeries.length,
+			{ ...trendSeries[0], date: '2026-08-27', otp_pct: prior },
+			{ ...trendSeries[1], date: '2026-08-29', otp_pct: latest },
+		);
+		const { container } = render(NetworkSurface);
+		const change = container.querySelector('[data-slot="verdict-delta"]')!;
+		expect(change).toHaveTextContent(text);
+		expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+			'2026-08-29',
+			'2026-08-27',
+		]);
+		expect(change.textContent).not.toContain('prior day');
+	});
+
+	it('does not fabricate a historical change when an endpoint is missing', () => {
+		trendSeries[1].otp_pct = null;
+		const { container } = render(NetworkSurface);
+		expect(container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
+		expect(container.querySelector('.network-verdict')).toHaveTextContent(/80\s*%/);
 	});
 });

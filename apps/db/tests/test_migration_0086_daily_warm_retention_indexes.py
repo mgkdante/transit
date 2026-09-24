@@ -56,7 +56,6 @@ PERF_OBJECT_COUNT = 30_000
 PERF_SILVER_COUNT = 2_000
 PERF_GOLD_COUNT = 300_000
 PERF_CUTOFF = datetime(2027, 1, 1, tzinfo=UTC)
-PERF_ELIGIBLE_COUNT = 27_999
 
 OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
     """
@@ -341,7 +340,10 @@ def _seed_perf_rows(engine) -> None:
 
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         for relation in (
+            "core.feed_endpoints",
+            "raw.ingestion_objects",
             "raw.realtime_snapshot_index",
+            "silver.rt_feed_snapshots",
             "gold.fact_trip_delay_snapshot",
             "gold.fact_vehicle_snapshot",
         ):
@@ -480,34 +482,6 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
 
         with real_db_engine.connect() as connection:
             transaction = connection.begin()
-            connection.execute(text("SET LOCAL statement_timeout = '2s'"))
-            started = time.perf_counter()
-            selected_object_ids = list(
-                connection.execute(
-                    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-                    selector_params,
-                ).scalars()
-            )
-            selector_elapsed_seconds = time.perf_counter() - started
-            started = time.perf_counter()
-            eligible_count = int(
-                connection.execute(
-                    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-                    {
-                        "provider_id": PERF_PROVIDER,
-                        "cutoff_utc": PERF_CUTOFF,
-                    },
-                ).scalar_one()
-            )
-            count_elapsed_seconds = time.perf_counter() - started
-            assert selected_object_ids == expected_selector_ids
-            assert eligible_count == PERF_ELIGIBLE_COUNT
-            assert selector_elapsed_seconds < 2
-            assert count_elapsed_seconds < 2
-            transaction.rollback()
-
-        with real_db_engine.connect() as connection:
-            transaction = connection.begin()
             connection.execute(text("SET LOCAL statement_timeout = '250ms'"))
             with pytest.raises(DBAPIError) as timeout_error:
                 connection.execute(
@@ -549,6 +523,34 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
             assert "ix_gold_ftds_realtime_snapshot_id" in trip_plan
             assert "ix_gold_fvs_realtime_snapshot_id" in vehicle_plan
             assert "ix_raw_rsi_ingestion_object_id" in rsi_plan
+
+        with real_db_engine.connect() as connection:
+            transaction = connection.begin()
+            connection.execute(text("SET LOCAL statement_timeout = '2s'"))
+            started = time.perf_counter()
+            selected_object_ids = list(
+                connection.execute(
+                    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                    selector_params,
+                ).scalars()
+            )
+            selector_elapsed_seconds = time.perf_counter() - started
+            started = time.perf_counter()
+            eligible_count = int(
+                connection.execute(
+                    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                    {
+                        "provider_id": PERF_PROVIDER,
+                        "cutoff_utc": PERF_CUTOFF,
+                    },
+                ).scalar_one()
+            )
+            count_elapsed_seconds = time.perf_counter() - started
+            assert selected_object_ids == expected_selector_ids
+            assert eligible_count == 5_000
+            assert selector_elapsed_seconds < 2
+            assert count_elapsed_seconds < 2
+            transaction.rollback()
 
         with real_db_engine.connect() as connection:
             transaction = connection.begin()

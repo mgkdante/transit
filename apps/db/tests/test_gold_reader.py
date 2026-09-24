@@ -1,17 +1,4 @@
-"""gold.reader kernel gates (S7-close C2).
-
-Byte-identity locks for the extracted spine-reader kernel:
-  * the shift / day_type CASE emitters reproduce every historical literal
-    shape exactly (frozen strings, indentation-sensitive),
-  * the ONE CDF interpolator reproduces both pre-refactor walkers (goldens
-    computed from the old functions before the move),
-  * every SQL statement C2 touched hashes byte-identical to its pre-refactor
-    body (the emitted-SQL lock: published bytes cannot move),
-  * gold.reader imports neither transit_ops.snapshots nor gold.rollups
-    (the no-cycle law that lets both sides import it),
-  * the 2026-07-01 half-away rounding rebaseline semantics (ties away from
-    zero, matching Postgres ROUND) on the moved rate/percentile kernels.
-"""
+"""Gold reader arithmetic, query baselines, and dependency boundaries."""
 
 from __future__ import annotations
 
@@ -19,8 +6,11 @@ import hashlib
 import subprocess
 import sys
 from datetime import date, timedelta
+from decimal import Decimal
 
-import transit_ops.snapshots.builders.historic  # noqa: F401 - registers the C2-touched reads
+import pytest
+
+import transit_ops.snapshots.builders.historic  # noqa: F401 - registers the reviewed queries
 from transit_ops.gold.reader import (
     SPINE_WINDOW_CLAUSE,
     GrainWindows,
@@ -325,23 +315,9 @@ def test_current_date_trailing_clause_bytes() -> None:
 
 
 # --------------------------------------------------------------------------
-# emitted-SQL byte-identity lock (every statement C2 touched)
-# --------------------------------------------------------------------------
-
-# sha256 of each registered SQL body, captured from the PRE-C2 code. The kernel
-# extraction is a pure refactor: if any of these move, published bytes moved.
-# Three entries (route.occupancy.by_dow, route.occupancy.by_grain,
-# route.delay.by_crowding) were captured AFTER stripping the retired
-# substring-dispatch comment tags — re-deriving them from pre-C1 main will
-# differ by exactly those inert comment lines, not by SQL.
-#
-# 14 entries re-frozen 2026-07 for the GC1 / Step G5 spine column rename
-# service_local_date → provider_local_date (migration 0072) — PURE identifier
-# renames: each re-captured body's ONLY delta from its prior hash is the column
-# name (verified by reverse-substitution — reverting the identifier
-# reproduces the pre-rename hash exactly), so no SQL value/shape moved. The
-# rename aligns the four S7-era spine tables with every other daily gold table.
-_C2_TOUCHED_SQL_SHA256 = {
+# Reviewed registry bodies exclude the query-name marker. D7's retained-witness
+# change is covered by test_headway_carry_in_real_db; other fingerprints remain.
+_REVIEWED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
         "624b551f37e63268c7a443c4da56081de3d144a0655d2a8146d982e56dfefd5c"
     ),
@@ -349,12 +325,8 @@ _C2_TOUCHED_SQL_SHA256 = {
         "6b0047ab0486b0a477e81f9524f16c8dfe119da06c5c22927bc5012f9df9550a"
     ),
     "rollup.route_headway_shift.upsert": (
-        "f78800c5faff45368ed01e827ab80dd12fa150ed17c93319bfe52fa3eaf8d5a3"
+        "68ae0f5b0e149eabe88eff831b0b20545784f2ece19320853812309ba021adcd"
     ),
-    # RE-FROZEN (GC1 / Step G4, migration 0071): stop.reliability.by_grain was re-pointed off
-    # gold.stop_delay_hourly (timezone()-re-bucketed) onto the pre-localized
-    # gold.stop_delay_shift_daily, aligning /stop shift+day_type attribution with /lines. The SQL
-    # body changed by design (documented day-attribution rebaseline), so this lock is re-captured.
     "stop.reliability.by_grain": "e5fcdf48ac5795e3b1ab83cbfcb4bed52e0dc2e5d01026b2fb043b0f3e75741f",
     "route.habit.spine": "ed5437bc9b3d4fc1cb0fb7f48e5ae5eae28333c27b8ef990d7c7d290081a0c60",
     "route.headway.window": "35e5bb26c2a6887c1bce33f4a8889e2c434423ece484a89af716408548a852c8",
@@ -385,34 +357,21 @@ _C2_TOUCHED_SQL_SHA256 = {
     "stop.occupancy.band_window": (
         "d833895c42e44543e95389d8c9c015f0299286b8d0d34becac220f05ecdb0fed"
     ),
-    # RE-FROZEN (Task 3, 2026-07-13): receipt discovery now follows every retained
-    # accountability date. The driver lost its trailing wall-clock cap; worst-route
-    # and worst-stop enrichment use the driver's actual inclusive min/max bounds.
     "receipts.accountability": "b9580ef70c44a3a84f74f1d696495602f0d15c55aa82100dcc0bf4745525e5d7",
-    # RE-FROZEN (Task 3 review): DISTINCT ON now enforces the existing top-one-per-date
-    # ranking in PostgreSQL instead of streaming every retained route/stop row to Python.
-    "receipts.worst_route": "801185a271e42fd0e8e70c8525a486c3f969bab9161ea650e475e94a533808aa",
+    "receipts.worst_route": "8c50bf3663aaf38364209de7ab67f35d76981f91aae2ea336ed5e6bc9d65530a",
     "receipts.worst_stop": "38bd3eeaab7d373296085f49ceba254d0095339e76a328dd8c0a6bf7774324f5",
-    # RE-FROZEN (S15, 2026-07-02): alerts.history was windowed — the now()-anchored
-    # trailing-30 clause became explicit :win_start/:win_end binds serving the full
-    # retention span, LIMIT 200 -> 500, + correlated url / active_periods subqueries
-    # off the 0077 child table. Re-frozen AGAIN in the S15 review fix wave (F3):
-    # the periods subquery became DISTINCT ON (period_index) newest-version-wins so
-    # re-rowed multi-period alerts cannot emit duplicate period_index bounds.
-    # Re-frozen for 0079: two source-description columns are deterministic MAX()
-    # passthroughs; the grouping, ordering, cap, and alert identity are unchanged.
-    "alerts.history": "4ff90b3e64c76a2020094843a11e88b060a07604f9209554d486172dbfd9d5a4",
+    "alerts.history": "87d3a1916d07413a3a59e17b1df6f41d04353cf7bb4c3850d2a612ff4a50b7ac",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 
 
-def test_c2_touched_statements_byte_identical() -> None:
+def test_reviewed_statements_match_sql_baseline() -> None:
     drifted = {
         name
-        for name, expected in _C2_TOUCHED_SQL_SHA256.items()
+        for name, expected in _REVIEWED_SQL_SHA256.items()
         if hashlib.sha256(_REGISTRY[name].encode()).hexdigest() != expected
     }
-    assert not drifted, f"emitted SQL drifted from the pre-C2 bytes: {sorted(drifted)}"
+    assert not drifted, f"emitted SQL changed from its reviewed baseline: {sorted(drifted)}"
 
 
 # --------------------------------------------------------------------------
@@ -448,3 +407,26 @@ def test_gold_reader_sources_never_import_rollups() -> None:
         if "transit_ops.gold.rollups" in p.read_text() or "transit_ops.gold.marts" in p.read_text()
     ]
     assert not offenders, f"gold.reader modules import gold.rollups/marts: {offenders}"
+
+
+@pytest.mark.parametrize("numeric_type", [int, float, Decimal])
+def test_metric_readers_accept_database_numeric_values(numeric_type) -> None:
+    assert otp_pct(numeric_type(5), numeric_type(8)) == 63
+    assert otp_pct_severe_proxy(numeric_type(8), numeric_type(3)) == 63
+    assert severe_pct(numeric_type(8), numeric_type(3)) == 37.5
+    assert avg_delay_min(numeric_type(-15)) == -0.3
+    assert wilson_bounds(numeric_type(50), numeric_type(100)) == (40.4, 59.6)
+    row = {f"h{k}": None for k in range(1, 22)}
+    row.update({"h8": numeric_type(4), "sum_delay_sec": numeric_type(120)})
+    histogram, average = hist_and_avg(row)
+    assert sum(histogram) == 4
+    assert average == 30.0
+
+
+def test_histogram_count_preserves_large_integer_precision() -> None:
+    count = 2**53 + 1
+    row = {f"h{k}": None for k in range(1, 22)}
+    row.update({"h8": Decimal(count), "sum_delay_sec": Decimal(count)})
+    histogram, average = hist_and_avg(row)
+    assert sum(histogram) == count
+    assert average == 1.0

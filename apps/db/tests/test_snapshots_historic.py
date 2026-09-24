@@ -17,16 +17,6 @@ import pytest
 from _sqlfakes import NamedQueryConn
 
 from transit_ops.snapshots.builders import (
-    _RECEIPTS_NETWORK_DAILY_SQL,
-    _RECEIPTS_WORST_ROUTE_SQL,
-    _RECEIPTS_WORST_STOP_SQL,
-    _ROUTE_NAMES_SQL,
-    _ROUTE_REL_DAILY_SQL,
-    _STOP_NAMES_SQL,
-    _TREND_DAILY_SQL,
-    _TREND_FACT_SQL,
-    _otp_pct,
-    _otp_pct_severe_proxy,
     build_alert_history,
     build_hotspots,
     build_network_trend,
@@ -37,29 +27,36 @@ from transit_ops.snapshots.builders import (
     build_stop_reliability,
 )
 from transit_ops.snapshots.builders._helpers import (
+    _ROUTE_NAMES_SQL,
+    _STOP_NAMES_SQL,
     MIN_N_RATE,
     WILSON_Z,
+    _otp_pct,
+    _otp_pct_severe_proxy,
     _wilson_bounds,
     _wilson_hi,
     _wilson_lo,
 )
-from transit_ops.snapshots.builders.historic import (
-    _HOTSPOTS_SQL,
-    _RECEIPTS_ACCOUNTABILITY_SQL,
-    _RECEIPTS_NOT_REPORTED_ROUTES_SQL,
-    _RECEIPTS_SERVICE_STATES_SQL,
-    _RECEIPTS_SHIFT_DAILY_SQL,
-    _STOP_REL_BY_ROUTE_SQL,
-    _hotspots_by_grain,
-)
+from transit_ops.snapshots.builders.historic.network_trend import _TREND_DAILY_SQL, _TREND_FACT_SQL
 from transit_ops.snapshots.builders.historic.ranking_kernel import (
     MIN_N_OFFENDER,
     build_offender_kind_ladder,
     offender_severity,
 )
+from transit_ops.snapshots.builders.historic.route_reliability import _ROUTE_REL_DAILY_SQL
 from transit_ops.snapshots.builders.historic.small_surfaces import (
+    _HOTSPOTS_SQL,
+    _RECEIPTS_ACCOUNTABILITY_SQL,
+    _RECEIPTS_NETWORK_DAILY_SQL,
+    _RECEIPTS_NOT_REPORTED_ROUTES_SQL,
+    _RECEIPTS_SERVICE_STATES_SQL,
+    _RECEIPTS_SHIFT_DAILY_SQL,
+    _RECEIPTS_WORST_ROUTE_SQL,
+    _RECEIPTS_WORST_STOP_SQL,
+    _hotspots_by_grain,
     _repeat_offenders_by_grain,
 )
+from transit_ops.snapshots.builders.historic.stop_reliability import _STOP_REL_BY_ROUTE_SQL
 from transit_ops.snapshots.contract import (
     AlertHistory,
     Hotspots,
@@ -192,14 +189,14 @@ def test_wilson_lo_hi_extract_bounds_and_guard_none() -> None:
 
 
 def test_pctile_from_hist_empty_is_none() -> None:
-    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+    from transit_ops.snapshots.builders.historic._spine import _pctile_from_hist
 
     assert _pctile_from_hist([], 0.5) is None
     assert _pctile_from_hist([0] * 21, 0.5) is None  # all-zero == no observations
 
 
 def test_pctile_from_hist_interpolates_within_bin() -> None:
-    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+    from transit_ops.snapshots.builders.historic._spine import _pctile_from_hist
 
     # All mass in bin 15 = [300, 420) sec. p50 -> 300 + 120*0.5 = 360s = 6.0 min;
     # p90 -> 300 + 120*0.9 = 408s = 6.8 min.
@@ -209,7 +206,7 @@ def test_pctile_from_hist_interpolates_within_bin() -> None:
 
 
 def test_pctile_from_hist_terminal_bin_floor() -> None:
-    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+    from transit_ops.snapshots.builders.historic._spine import _pctile_from_hist
 
     # Mass only in the overflow bin 20 ([3600, +inf)); no edges[21] to index.
     # Finding B: pin at the last edge 3600s = 60.0 min (documented tail floor).
@@ -219,7 +216,7 @@ def test_pctile_from_hist_terminal_bin_floor() -> None:
 
 
 def test_pctile_from_hist_bin_zero_safe_and_negative() -> None:
-    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+    from transit_ops.snapshots.builders.historic._spine import _pctile_from_hist
 
     # Mass in bin 0 = [-3600, -300) sec (very early). p90 -> -3600 + 3300*0.9 =
     # -630s = -10.5 min. Lower edge exists; never indexes out of range.
@@ -241,7 +238,7 @@ def _spine_row(*, known_obs, on_time, severe, sum_delay_sec, hist):  # noqa: ANN
 
 
 def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
-    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+    from transit_ops.snapshots.builders.historic._spine import _spine_reliability_period
 
     # 6 in-clamp delays summing to 1100s; otp 4/8=50, severe 2/8=25.0,
     # avg 1100/6/60 = 3.06 -> rounds to 3.1.
@@ -269,7 +266,7 @@ def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
 
 
 def test_spine_reliability_period_honest_null_when_no_delays() -> None:
-    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+    from transit_ops.snapshots.builders.historic._spine import _spine_reliability_period
 
     # No usable delays: on_time NULL, known_obs 0, empty histogram -> every derived
     # metric is honest-None (never a fabricated 0.0).
@@ -358,7 +355,7 @@ def test_build_network_trend_merges_and_orders() -> None:
     # d2: present in BOTH series
     assert p2.otp_pct == 90
     assert p2.avg_delay_min == 1.5
-    assert p2.p90_min == 7.2  # rounded to 1dp
+    assert p2.p90_min == 7.3  # decimal midpoint rounds away from zero
     assert p2.vehicles == 310
     # d3: on_time NULL in rollup (None OTP) but fact covers it (p90/vehicles present)
     assert p3.otp_pct is None
@@ -960,7 +957,7 @@ def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
     # but the cell is still emitted (it keeps its shift/day_type identity + obs count).
     # Post-cutover by_shift_daytype derives from _spine_route_crosstab, so feed a
     # SPINE-shaped zero row (dispatched on the whole-history crosstab projector name).
-    from transit_ops.snapshots.builders.historic import _spine_route_crosstab
+    from transit_ops.snapshots.builders.historic._spine import _spine_route_crosstab
 
     row = {
         "shift": "night",
@@ -1554,16 +1551,13 @@ def test_build_hotspots_otp_delta_route_real_otp_signed_1dp() -> None:
             # stop columns are NULL for a route cell (per-kind JOIN)
             "stop_obs": None,
             "stop_severe": None,
-            # network baseline: 825 / 1000 -> 82.5 -> 83 (half-away tie; the
-            # 2026-07-01 S7-B rounding rebaseline — banker's round() gave 82)
             "net_on_time": 825,
             "net_known": 1000,
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
-    # _otp_pct(825,1000)=half_away(82.5)=83 ; 75 - 83 = -8.0 pts (worse than network)
-    assert out.hotspots[0].otp_delta_pts == -8.0
+    assert out.hotspots[0].otp_delta_pts == -7.5
 
 
 def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:
@@ -3181,7 +3175,7 @@ def test_build_alert_history_aggregation() -> None:
     import datetime as _dt
     import hashlib
 
-    from transit_ops.snapshots.builders import _severity_code
+    from transit_ops.snapshots.builders._helpers import _severity_code
 
     start = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.UTC)
     end = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.UTC)  # 150 min
@@ -3230,7 +3224,7 @@ def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> Non
     duration; NULL cause/effect fold into 'unknown' (the high-NULL STM reality)."""
     import datetime as _dt
 
-    from transit_ops.snapshots.builders import _severity_code
+    from transit_ops.snapshots.builders._helpers import _severity_code
 
     def _row(header, sev, cause, effect, start, end):  # noqa: ANN001, ANN202
         return {
@@ -3792,7 +3786,7 @@ def test_provenance_methodology_keys_have_localized_labels() -> None:
     surface, locked by the band/service-time/alert-en tests above); the FR/EN
     labels carry the parallel citizen wording under methodology.<dimension>.
     """
-    from transit_ops.snapshots.builders import _STATIC_LABELS_EN, _STATIC_LABELS_FR
+    from transit_ops.snapshots.builders.static import _STATIC_LABELS_EN, _STATIC_LABELS_FR
 
     conn = FakeConn(
         [
@@ -4066,7 +4060,7 @@ def test_build_all_route_reliability_two_route_bytes_hashes_and_row_order() -> N
         assert built["R2"].weak_stops[0].id == "S2"
         assert all(route_id != "FOREIGN" for route_id in built)
         outputs.append({key: snapshot_json_bytes(value) for key, value in built.items()})
-        from transit_ops.snapshots.publish import _stamp_envelope
+        from transit_ops.snapshots.envelope import stamp_envelope as _stamp_envelope
 
         stamped_items = [
             (
@@ -4085,8 +4079,8 @@ def test_build_all_route_reliability_two_route_bytes_hashes_and_row_order() -> N
             for _key, payload, _tier in stamped_items
         }
         assert stamped == {
-            "R1": (2336, "6d8142c7ae7d68416d1b3ae40e6952c3bd26f6a454c828abe285fb26b8425c7f"),
-            "R2": (2334, "af757368d526b63c7caae34c77160e021e099974ac5a1f1a7a64eaf89829f585"),
+            "R1": (2336, "a0e9e0e154546fd9db65b1aee3caa66bb576ec6ea4a2d461cd0c3fdc932e46c2"),
+            "R2": (2334, "35ba07471339c9dfa1d32b4dd0044836b46a8aeb859d19267f2b910f22c9576b"),
         }
     assert outputs[0] == outputs[1]
 
@@ -4234,3 +4228,34 @@ def test_route_batch_sql_is_set_based_partitioned_and_has_no_lateral_subplans() 
         assert "PARTITION BY ROUTE_ID" in sql
         assert "ROUTE_RANK <= 30" in sql
     assert "ROUTE_ID = :ROUTE_ID" not in composite
+
+
+@pytest.mark.parametrize("numerator, expected", [(49, 6.13), (0, 0.0), (None, None)])
+def test_network_trend_rate_midpoints_and_missing_counts(numerator, expected) -> None:
+    conn = FakeConn({
+        "network.trend.daily_cancel": [{
+            "local_date": "2026-09-11", "canceled": numerator, "total": 800,
+            "delivered": numerator, "scheduled": 800,
+        }],
+    })
+    point = build_network_trend(conn, generated_utc="t").series[0]
+    assert point.cancellation_rate == expected
+    assert point.service_completeness_rate == expected
+
+
+def test_headway_bunching_midpoint_and_excess_subtraction_precision() -> None:
+    conn = FakeConn(_route_reliability_dispatch(
+        schedule=[
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:01:00"},
+        ],
+        headway=[{
+            "shift": "am_peak", "observed_headway_min": 2.3,
+            "sample_count": 400, "bunched_count": 9,
+        }],
+    ))
+    period = build_route_reliability(conn, route_id="51", generated_utc="t").headway[0]
+    assert period.bunched_pct == 2.3
+    assert period.scheduled_min == 1.0
+    assert period.observed_min == 2.3
+    assert period.excess_wait_min == 1.3  # collapse 2.3 - 1.0 floating-point residue

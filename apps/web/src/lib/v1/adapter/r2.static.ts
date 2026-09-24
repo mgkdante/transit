@@ -13,10 +13,10 @@ import {
 	readEntity,
 	readWhole,
 } from './r2.core';
-import type { BasemapPort, StaticPort } from './types';
+import type { AdapterCtx } from './types';
 
-export const staticPort: StaticPort = {
-	async routesIndex(ctx) {
+export const staticPort = {
+	async routesIndex(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.static?.routes_index ?? R2_DEFAULTS.static.routes_index,
@@ -26,7 +26,7 @@ export const staticPort: StaticPort = {
 			ctx,
 		);
 	},
-	async route(routeId, ctx) {
+	async route(routeId: string, ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readEntity(
 			'static',
@@ -38,7 +38,7 @@ export const staticPort: StaticPort = {
 			ctx,
 		);
 	},
-	async stopsIndex(ctx) {
+	async stopsIndex(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.static?.stops_index ?? R2_DEFAULTS.static.stops_index,
@@ -48,7 +48,7 @@ export const staticPort: StaticPort = {
 			ctx,
 		);
 	},
-	async stop(stopId, ctx) {
+	async stop(stopId: string, ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		return readEntity(
 			'static',
@@ -62,8 +62,8 @@ export const staticPort: StaticPort = {
 	},
 };
 
-export const basemapPort: BasemapPort = {
-	async get(ctx) {
+export const basemapPort = {
+	async get(ctx?: AdapterCtx) {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.basemap ?? R2_DEFAULTS.basemap;
 		const value = await getEntityJson(

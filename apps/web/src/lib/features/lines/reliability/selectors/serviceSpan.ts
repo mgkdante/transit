@@ -1,16 +1,19 @@
-// selectServiceSpan — build a ServiceSpanSpec for the §2 first→last departure timeline
-// (P3, S7 P5). Resolves the ISO-UTC endpoints to America/Toronto wall-clock minutes on a
-// FIXED 24h domain [0,1440] (deterministic: new Date(iso) is pure). Honest absence: unless
-// BOTH endpoints resolve to a real clock time, the whole mark is absent (says WHY), never a
-// fabricated 0/"·". The signed first/last-trip delays + the span-length / trip-count
-// annotations ride the spec; the mark renders them beside the timeline. Pure (data project).
-
 import type { Locale } from '$lib/i18n';
 import type { AbsenceSpec, ServiceSpanSpec, ServiceSpanTick } from '$lib/components/dataviz/chart';
-import { formatClock, minutesSinceMidnight } from '$lib/utils/time';
+import { elapsedUtcMinutes, formatUtc } from '$lib/utils/time';
 
 const DAY_MIN = 1440;
-const TICK_MINS = [0, 360, 720, 1080, 1440] as const;
+const SIX_HOURS_MIN = 360;
+const ENDPOINT_FORMAT = {
+	year: 'numeric',
+	month: 'short',
+	day: 'numeric',
+	hour: '2-digit',
+	minute: '2-digit',
+	second: '2-digit',
+	hourCycle: 'h23',
+	timeZoneName: 'shortOffset',
+} as const;
 
 export interface ServiceSpanInput {
 	readonly firstTripUtc: string | null;
@@ -28,9 +31,9 @@ export interface ServiceSpanOpts {
 	readonly spanLabel: string | null;
 	/** Pre-formatted trip-count annotation (e.g. "142 trips"); null ⇒ omitted. */
 	readonly tripsLabel: string | null;
-	/** Format an axis hour (0/6/12/18/24) into its tick label (e.g. "00h"). */
+	/** Format elapsed axis hours into an offset label (e.g. "+6h"). */
 	readonly hourLabel: (hour: number) => string;
-	/** Whole-figure accessible summary given the two clock times. */
+	/** Whole-figure accessible summary given the two local timestamp labels. */
 	readonly ariaLabel: (first: string, last: string) => string;
 	/** Fallback accessible name for the absent state. */
 	readonly absentTitle: string;
@@ -38,25 +41,13 @@ export interface ServiceSpanOpts {
 	readonly noDataLabel: string;
 }
 
-function clockMinutes(iso: string | null): number | null {
-	if (!iso) return null;
-	const m = minutesSinceMidnight(new Date(iso));
-	return Number.isNaN(m) ? null : m;
-}
-function clockText(iso: string | null, locale: Locale): string {
-	return iso ? formatClock(new Date(iso), locale) : '·';
-}
-
 export function selectServiceSpan(
 	input: ServiceSpanInput,
 	locale: Locale,
 	opts: ServiceSpanOpts,
 ): ServiceSpanSpec | AbsenceSpec {
-	const firstMin = clockMinutes(input.firstTripUtc);
-	const lastMin = clockMinutes(input.lastTripUtc);
-
-	// The span is honest only when BOTH endpoints resolve to a real clock time.
-	if (firstMin == null || lastMin == null) {
+	const elapsedMin = elapsedUtcMinutes(input.firstTripUtc, input.lastTripUtc);
+	if (elapsedMin == null) {
 		return {
 			kind: 'absence',
 			title: opts.absentTitle,
@@ -66,21 +57,13 @@ export function selectServiceSpan(
 		};
 	}
 
-	const firstClock = clockText(input.firstTripUtc, locale);
-	const lastClock = clockText(input.lastTripUtc, locale);
-
-	// FIX-2: a GTFS service day can run past local midnight (e.g. first 05:00 → last 01:30),
-	// so the last trip's clock minute can fall BELOW the first's. Render it on a transit
-	// SERVICE-DAY CLOCK (24h, 25h, …, 30h) by unwrapping the wrapped last endpoint forward one
-	// day, instead of letting the bar invert on a fixed [0,1440] axis. The wall-clock TEXT
-	// (firstClock/lastClock) still shows the real "05:00"/"01:30".
-	const crossesMidnight = lastMin < firstMin;
-	const lastMinResolved = crossesMidnight ? lastMin + DAY_MIN : lastMin;
-	const domainEnd = crossesMidnight ? Math.ceil(lastMinResolved / 360) * 360 : DAY_MIN;
-	const tickMins =
-		domainEnd === DAY_MIN
-			? TICK_MINS
-			: Array.from({ length: domainEnd / 360 + 1 }, (_, i) => i * 360);
+	const firstClock = formatUtc(input.firstTripUtc!, locale, ENDPOINT_FORMAT);
+	const lastClock = formatUtc(input.lastTripUtc!, locale, ENDPOINT_FORMAT);
+	const domainEnd = Math.max(DAY_MIN, Math.ceil(elapsedMin / SIX_HOURS_MIN) * SIX_HOURS_MIN);
+	// Keep at most five ticks, even when the observed interval spans many days.
+	const tickStep = Math.ceil(domainEnd / (4 * SIX_HOURS_MIN)) * SIX_HOURS_MIN;
+	const tickMins = Array.from({ length: Math.ceil(domainEnd / tickStep) }, (_, i) => i * tickStep);
+	tickMins.push(domainEnd);
 	const hourTicks: ServiceSpanTick[] = tickMins.map((min) => ({
 		min,
 		label: opts.hourLabel(min / 60),
@@ -91,8 +74,7 @@ export function selectServiceSpan(
 		title: opts.ariaLabel(firstClock, lastClock),
 		locale,
 		domain: [0, domainEnd],
-		firstMin,
-		lastMin: lastMinResolved,
+		elapsedMin,
 		firstClock,
 		lastClock,
 		firstDelayMin: input.firstDelayMin,

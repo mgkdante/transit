@@ -13,7 +13,7 @@
 //     DISAPPEAR (a real layer filter, not a dim).
 // Status × crowding × routes combine (AND). No clustering — ~600 GPU symbols.
 
-import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
+import type { Map as MapLibreMap, ExpressionSpecification, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
 import {
@@ -263,17 +263,28 @@ export function mapLibreRawIconOffset(
 	return [semanticOffset[0] / overlayScale, semanticOffset[1] / overlayScale];
 }
 
+function badgeOffset(
+	badge: typeof VEHICLE_MARKER_GEOMETRY.stateBadge | typeof VEHICLE_MARKER_GEOMETRY.silentBadge,
+	pairedWhen: unknown,
+): unknown {
+	const offset = (value: readonly [number, number]) => [
+		'literal',
+		mapLibreRawIconOffset(value, badge.scale),
+	];
+	return ['case', pairedWhen, offset(badge.pairedOffset), offset(badge.offset)];
+}
+
 /** Global stale-dim multiplier: 45% when the WHOLE live tier is behind, else 1. */
 const GLOBAL_STALE_OPACITY = 0.45;
 
-const FEATURE_HOVERED = ['boolean', ['feature-state', 'hovered'], false];
-const FEATURE_SELECTED = ['boolean', ['feature-state', 'selected'], false];
+const FEATURE_HOVERED: ExpressionSpecification = ['boolean', ['feature-state', 'hovered'], false];
+const FEATURE_SELECTED: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false];
 
 /**
  * Hover and committed selection ride feature-state; the serialized `selected`
  * branch remains for URL/filter-only emphasis with no open detail.
  */
-function iconOpacityExpr(globalStale: boolean): unknown {
+function iconOpacityExpr(globalStale: boolean): ExpressionSpecification {
 	return [
 		'case',
 		FEATURE_HOVERED,
@@ -397,8 +408,12 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'hasHeading'], 1]],
 			layout: {
 				'icon-image': HEADING_ICON,
+				// Keep the rotating halo outside the upright bus at every bearing.
+				'icon-offset': VEHICLE_MARKER_GEOMETRY.headingOffset,
 				'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
 				'icon-rotation-alignment': 'map',
+				// Share the bus plane so camera pitch cannot compress the gap.
+				'icon-pitch-alignment': 'viewport',
 				'icon-allow-overlap': true,
 				'icon-ignore-placement': true,
 				'icon-size': ICON_SIZE,
@@ -419,10 +434,11 @@ export function addVehicleLayers(map: MapLibreMap): void {
 				filter: ['all', ['==', ['get', 'matched'], 1], ['!=', ['get', 'mark'], '']],
 				layout: {
 					'icon-image': ['get', 'mark'],
-					'icon-offset': mapLibreRawIconOffset(
-						VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
-						VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-					),
+					'icon-offset': badgeOffset(VEHICLE_MARKER_GEOMETRY.stateBadge, [
+						'==',
+						['get', 'stale'],
+						1,
+					]),
 					'icon-size': STATE_BADGE_ICON_SIZE,
 					'icon-allow-overlap': true,
 					'icon-ignore-placement': true,
@@ -445,9 +461,12 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'stale'], 1]],
 			layout: {
 				'icon-image': SILENT_ICON,
-				// Float the big "!" just above the bus glyph (icon-offset is in icon px,
-				// applied before icon-size, so it tracks the glyph as it scales).
-				'icon-offset': VEHICLE_MARKER_GEOMETRY.silentBadge.offset,
+				// Badges share one row below the direction ring; a lone badge is centered.
+				'icon-offset': badgeOffset(VEHICLE_MARKER_GEOMETRY.silentBadge, [
+					'!=',
+					['coalesce', ['get', 'mark'], ''],
+					'',
+				]),
 				// ~75% of the bus icon — a prominent alert flag, scaling with zoom.
 				'icon-size': SILENT_ICON_SIZE,
 				'icon-allow-overlap': true,
@@ -465,7 +484,7 @@ export function addVehicleLayers(map: MapLibreMap): void {
  * opacity 1 through a global stale so the per-bus not-reporting "!" flags remain
  * legible on top of the dimmed fleet. This is deliberate, NOT a missed layer. */
 export function setStale(map: MapLibreMap, stale: boolean): void {
-	const opacity = iconOpacityExpr(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
+	const opacity = iconOpacityExpr(stale);
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {
 		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', opacity);
 	}

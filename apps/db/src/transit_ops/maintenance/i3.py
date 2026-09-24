@@ -9,7 +9,6 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-import transit_ops.maintenance as _maintenance_pkg
 from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.gold.alert_archive import (
     AlertArchiveSyncResult,
@@ -17,12 +16,16 @@ from transit_ops.gold.alert_archive import (
     sync_alert_archive_on_connection,
 )
 from transit_ops.ingestion.common import utc_now
-from transit_ops.ingestion.storage import BronzeStorage
+from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
-from ._helpers import _safe_rowcount, _safe_scalar_count, logger
-from .bronze import DELETE_INGESTION_OBJECTS_BY_IDS
+from ._helpers import _safe_rowcount, _safe_scalar_count, require_prune_transaction
+from .bronze import (
+    DELETE_INGESTION_OBJECTS_BY_IDS,
+    _delete_archives_by_backend,
+    _prune_archive_stores,
+)
 
 I3_RETENTION_TABLES = (
     "raw.i3_alert_snapshots",
@@ -35,51 +38,68 @@ I3_RETENTION_TABLES = (
 # Raw i3 snapshots are deletable only when no surviving silver.i3_alerts row
 # still references them — the fk_silver_i3_alerts_snapshot_id FK is ON DELETE
 # CASCADE (0013:200-205), so an unguarded raw delete would silently destroy
-# live SCD-2 history. We also keep the per-provider latest snapshot so
+# live SCD-2 history. We also keep the newest capture per provider/endpoint so
 # find_latest_i3_raw_snapshot (silver/i3.py) keeps resolving.
 MIN_SILVER_I3_CLOSED_RETENTION_DAYS = 30
 
-SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
-    """
-    SELECT
-        s.i3_alert_snapshot_id,
-        s.ingestion_run_id,
-        s.ingestion_object_id,
-        s.storage_path
+_I3_LATEST_CAPTURES = """
+WITH latest_by_endpoint AS MATERIALIZED (
+    SELECT DISTINCT ON (s.feed_endpoint_id) s.i3_alert_snapshot_id
     FROM raw.i3_alert_snapshots s
-    WHERE s.provider_id = :provider_id
+    JOIN core.feed_endpoints e ON e.feed_endpoint_id = s.feed_endpoint_id
+    WHERE s.provider_id = :provider_id AND e.provider_id = s.provider_id
+    ORDER BY s.feed_endpoint_id, s.captured_at_utc DESC, s.i3_alert_snapshot_id DESC
+)
+"""
+
+_I3_RAW_ELIGIBILITY = """
+    FROM raw.i3_alert_snapshots s
+    JOIN core.feed_endpoints e ON e.feed_endpoint_id = s.feed_endpoint_id
+    WHERE s.provider_id = :provider_id AND e.provider_id = s.provider_id
       AND s.captured_at_utc < :cutoff_utc
       AND NOT EXISTS (
           SELECT 1 FROM silver.i3_alerts a
           WHERE a.i3_alert_snapshot_id = s.i3_alert_snapshot_id
       )
-      AND s.i3_alert_snapshot_id <> COALESCE((
-          SELECT max(s2.i3_alert_snapshot_id)
-          FROM raw.i3_alert_snapshots s2
-          WHERE s2.provider_id = :provider_id
-      ), -1)
+      AND s.i3_alert_snapshot_id NOT IN (
+          SELECT i3_alert_snapshot_id FROM latest_by_endpoint
+      )
+"""
+
+SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
+    f"""
+    {_I3_LATEST_CAPTURES}
+    SELECT s.i3_alert_snapshot_id, s.ingestion_run_id, s.ingestion_object_id, s.storage_path,
+        COALESCE(s.storage_backend, (
+            SELECT io.storage_backend FROM raw.ingestion_objects io
+            WHERE io.ingestion_object_id = s.ingestion_object_id
+              AND io.provider_id = s.provider_id AND io.ingestion_run_id = s.ingestion_run_id
+              AND io.storage_path = s.storage_path
+        )) AS storage_backend
+    {_I3_RAW_ELIGIBILITY}
     ORDER BY s.captured_at_utc ASC, s.i3_alert_snapshot_id ASC
     LIMIT :max_objects
+    FOR UPDATE OF s SKIP LOCKED
     """
 )
 
 COUNT_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
-    """
-    SELECT COUNT(*)
-    FROM raw.i3_alert_snapshots s
-    WHERE s.provider_id = :provider_id
-      AND s.captured_at_utc < :cutoff_utc
-      AND NOT EXISTS (
-          SELECT 1 FROM silver.i3_alerts a
-          WHERE a.i3_alert_snapshot_id = s.i3_alert_snapshot_id
-      )
-      AND s.i3_alert_snapshot_id <> COALESCE((
-          SELECT max(s2.i3_alert_snapshot_id)
-          FROM raw.i3_alert_snapshots s2
-          WHERE s2.provider_id = :provider_id
-      ), -1)
+    f"{_I3_LATEST_CAPTURES} SELECT COUNT(*) {_I3_RAW_ELIGIBILITY}"
+)
+
+RECHECK_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
+    f"""
+    {_I3_LATEST_CAPTURES}
+    SELECT s.i3_alert_snapshot_id
+    {_I3_RAW_ELIGIBILITY}
+      AND s.i3_alert_snapshot_id = ANY(CAST(:locked_snapshot_ids AS bigint[]))
     """
 )
+
+_TRY_I3_LOAD_LOCK = text(
+    "SELECT pg_try_advisory_xact_lock(hashtext('transit.silver.i3'), hashtext(:provider_id))"
+)
+
 
 DELETE_I3_RAW_SNAPSHOTS_BY_IDS = text(
     """
@@ -248,7 +268,8 @@ def prune_i3_raw_snapshots(
     *,
     provider_id: str,
     retention_days: int,
-    bronze_storage: BronzeStorage,
+    bronze_storage: BronzeStorage | None = None,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
     dry_run: bool = False,
     now_utc: datetime | None = None,
     max_objects: int = 5000,
@@ -258,7 +279,7 @@ def prune_i3_raw_snapshots(
     Returns (raw_cutoff_utc, deleted_object_counts, deleted_metadata_counts,
     failed_snapshot_ids). Eligible rows are older than the cutoff, no longer
     referenced by any silver.i3_alerts row (the ON DELETE CASCADE trap), and not
-    the per-provider latest snapshot (find_latest_i3_raw_snapshot must keep
+    the latest capture per provider/endpoint (find_latest_i3_raw_snapshot must keep
     working). R2 objects are deleted first with per-object failure-skip (a failed
     delete leaves the DB row for the next run), then metadata deletes run in FK
     order: snapshots -> ingestion_objects -> orphaned i3 ingestion runs.
@@ -293,6 +314,9 @@ def prune_i3_raw_snapshots(
             set(),
         )
 
+    require_prune_transaction(connection)
+    if not connection.execute(_TRY_I3_LOAD_LOCK, {"provider_id": provider_id}).scalar_one():
+        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
     rows = list(
         connection.execute(
             SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS,
@@ -303,28 +327,28 @@ def prune_i3_raw_snapshots(
             },
         )
     )
+    if rows:
+        eligible_snapshot_ids = set(
+            connection.execute(
+                RECHECK_ELIGIBLE_I3_RAW_SNAPSHOTS,
+                {
+                    "provider_id": provider_id,
+                    "cutoff_utc": cutoff_utc,
+                    "locked_snapshot_ids": [int(row[0]) for row in rows],
+                },
+            ).scalars()
+        )
+        rows = [row for row in rows if int(row[0]) in eligible_snapshot_ids]
     if not rows:
         return cutoff_utc, zero_object_counts, zero_meta_counts, set()
 
-    deleted_object_count = 0
-    failed_snapshot_ids: set[int] = set()
-    for row in rows:
-        snapshot_id = int(row[0])
-        storage_path = row[3]
-        if storage_path is None:
-            # No R2 object to remove (older capture before storage_path was set).
-            continue
-        try:
-            bronze_storage.delete_object(str(storage_path))
-            deleted_object_count += 1
-        except Exception as exc:
-            logger.error(
-                "Failed to delete i3 raw object '%s' (i3_alert_snapshot_id=%s): %s",
-                storage_path,
-                snapshot_id,
-                exc,
-            )
-            failed_snapshot_ids.add(snapshot_id)
+    archived_rows = [(int(row[0]), str(row[3]), str(row[4])) for row in rows if row[3] is not None]
+    failed_snapshot_ids = _delete_archives_by_backend(
+        archived_rows,
+        storage=bronze_storage,
+        resolver=bronze_storage_resolver,
+    )
+    deleted_object_count = len(archived_rows) - len(failed_snapshot_ids)
 
     successful_snapshot_ids = [
         int(row[0]) for row in rows if int(row[0]) not in failed_snapshot_ids
@@ -386,43 +410,36 @@ def prune_i3_storage(
 
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
-    # Resolve get_bronze_storage through the package (not a direct import) so a
-    # monkeypatch of transit_ops.maintenance.get_bronze_storage reaches this call,
-    # matching the pre-split module-global behavior and bronze.prune_bronze_storage.
-    # parents[3]: this module sits one directory deeper than the old maintenance.py.
-    bronze_storage = _maintenance_pkg.get_bronze_storage(
-        settings, project_root=Path(__file__).resolve().parents[3]
-    )
-
     silver_retention = settings.SILVER_I3_CLOSED_RETENTION_DAYS
     raw_retention = settings.BRONZE_I3_RETENTION_DAYS
     archive_from, archive_to = _provider_alert_archive_bounds(provider_id, settings)
 
-    with engine.begin() as connection:
-        set_daily_warm_transaction_timeouts(connection)
-        archive_sync = sync_alert_archive_on_connection(
-            connection,
-            provider_id=provider_id,
-            from_date=archive_from,
-            to_date=archive_to,
-            dry_run=dry_run,
-        )
-        silver_cutoff_utc, silver_row_counts = prune_i3_silver_closed_rows(
-            connection,
-            provider_id=provider_id,
-            retention_days=silver_retention,
-            dry_run=dry_run,
-        )
-        raw_cutoff_utc, raw_object_counts, raw_meta_counts, failed_snapshot_ids = (
-            prune_i3_raw_snapshots(
+    with _prune_archive_stores(settings, Path(__file__).resolve().parents[3]) as resolve_storage:
+        with engine.begin() as connection:
+            set_daily_warm_transaction_timeouts(connection)
+            archive_sync = sync_alert_archive_on_connection(
                 connection,
                 provider_id=provider_id,
-                retention_days=raw_retention,
-                bronze_storage=bronze_storage,
+                from_date=archive_from,
+                to_date=archive_to,
                 dry_run=dry_run,
             )
-        )
-        completed_at_utc = utc_now()
+            silver_cutoff_utc, silver_row_counts = prune_i3_silver_closed_rows(
+                connection,
+                provider_id=provider_id,
+                retention_days=silver_retention,
+                dry_run=dry_run,
+            )
+            raw_cutoff_utc, raw_object_counts, raw_meta_counts, failed_snapshot_ids = (
+                prune_i3_raw_snapshots(
+                    connection,
+                    provider_id=provider_id,
+                    retention_days=raw_retention,
+                    bronze_storage_resolver=resolve_storage,
+                    dry_run=dry_run,
+                )
+            )
+            completed_at_utc = utc_now()
 
     deleted_row_counts = {**silver_row_counts, **raw_meta_counts}
 

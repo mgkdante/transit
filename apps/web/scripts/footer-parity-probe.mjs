@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'nod
 import { join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 
 export const WIDTHS = Object.freeze([639, 640, 767, 768, 1023, 1024, 1280]);
 export const THEMES = Object.freeze(['dark', 'light']);
@@ -33,12 +34,11 @@ function usage() {
 	return [
 		'Usage:',
 		'  node scripts/footer-parity-probe.mjs --base-url <url> --out <empty-directory>',
-		'    [--executable-path <chromium-binary>]',
 	].join('\n');
 }
 
 function parseFlagValues(args) {
-	const allowed = new Set(['--base-url', '--out', '--executable-path']);
+	const allowed = new Set(['--base-url', '--out']);
 	const values = new Map();
 
 	for (let index = 0; index < args.length; index++) {
@@ -84,11 +84,9 @@ export function parseCliArgs(argv) {
 	if (!baseUrl) throw new Error(`missing --base-url\n${usage()}`);
 	if (!out) throw new Error(`missing --out\n${usage()}`);
 
-	const executablePath = values.get('--executable-path');
 	return {
 		baseUrl: normalizeBaseUrl(baseUrl),
 		outDir: safeDirectory(out, '--out'),
-		...(executablePath ? { executablePath: resolve(executablePath) } : {}),
 	};
 }
 
@@ -379,13 +377,10 @@ function prepareOutputDirectory(outDir) {
 
 async function runProbe(args) {
 	prepareOutputDirectory(args.outDir);
-	const executablePath =
-		args.executablePath ??
-		process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ??
-		process.env.CHROMIUM_EXECUTABLE_PATH;
+	const browserArtifact = await verifyInstalledBrowserArtifact();
 	const browser = await chromium.launch({
 		headless: true,
-		...(executablePath ? { executablePath } : {}),
+		executablePath: browserArtifact.paths.executablePath,
 	});
 
 	try {

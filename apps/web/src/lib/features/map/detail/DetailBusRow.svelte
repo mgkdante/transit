@@ -2,11 +2,13 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Vehicle } from '$lib/v1/schemas';
-	import { absenceShort } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
-	import { delayKnownLabel, timeLabel } from '../mapSelectionDetail.logic';
-	import MapDelayTag from '../MapDelayTag.svelte';
+	import { timeLabel } from '../mapSelectionDetail.logic';
+	import { MaybeValue } from '$lib/components/edge';
+	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
 
 	interface Props {
 		vehicle: Vehicle;
@@ -25,10 +27,11 @@
 	function preview(pointer: boolean, focus: boolean): void {
 		pointerPreview = pointer;
 		focusPreview = focus;
-		onpreview?.(previewing ? { kind: 'vehicle', id: vehicle.id } : null);
+		onpreview?.(pointer || focus ? { kind: 'vehicle', id: vehicle.id } : null);
 	}
+	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${vehicle.delay_min == null ? absenceShort('not-reported', locale) : delayKnownLabel(vehicle.delay_min, t)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
 	);
 </script>
 
@@ -45,21 +48,29 @@
 >
 	<strong>{vehicle.id}</strong>
 	<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-	<small
-		><span>{STATUS_LABELS[locale][vehicle.status]}</span><MapDelayTag
-			delay={vehicle.delay_min}
+	<small>
+		<StatusBadge
+			status={vehicle.status}
+			label={STATUS_LABELS[locale][vehicle.status]}
+			mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+			aria-hidden={unknownStatusAndDelay || undefined}
+			size="sm"
+		/>
+		<MaybeValue
+			value={delayMeasurement(vehicle.delay_min)}
+			reason="not-reported"
+			variant={unknownStatusAndDelay ? 'row' : 'inline'}
 			{locale}
-			{t}
-		/></small
-	>
+		/>
+	</small>
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 </button>
 
 <style>
 	.detail-bus-row {
 		display: grid;
-		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
-		gap: 0.5rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.25rem 0.5rem;
 		width: 100%;
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
@@ -84,24 +95,25 @@
 		outline: 2px solid var(--ring);
 		outline-offset: -1px;
 	}
+	.detail-bus-row > strong,
+	.detail-bus-row > span,
+	.detail-bus-row > small {
+		grid-column: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
 	.detail-bus-row strong {
 		font-family: var(--font-mono);
 	}
 	.detail-bus-row small {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
 		color: var(--muted-foreground);
 	}
-	@container right-panel (max-width: 21rem) {
-		.detail-bus-row {
-			grid-template-columns: minmax(0, 1fr) auto;
-		}
-		.detail-bus-row > span,
-		.detail-bus-row > small {
-			grid-column: 1;
-		}
-		.detail-bus-row :global(svg) {
-			grid-column: 2;
-			grid-row: 1 / span 3;
-		}
+	.detail-bus-row :global(svg) {
+		grid-column: 2;
+		grid-row: 1 / span 3;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.detail-bus-row {

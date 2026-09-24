@@ -233,19 +233,19 @@ describe('Daily Receipt presenter refinements', () => {
 			'utf8',
 		);
 		const twoColumnStart = source.indexOf('@container receipt (min-width: 24rem)');
-		const fourColumnStart = source.indexOf('@container receipt (min-width: 46rem)');
+		const threeColumnStart = source.indexOf('@container receipt (min-width: 46rem)');
 		expect(twoColumnStart).toBeGreaterThan(-1);
-		expect(fourColumnStart).toBeGreaterThan(twoColumnStart);
+		expect(threeColumnStart).toBeGreaterThan(twoColumnStart);
 		const base = source.slice(0, twoColumnStart);
-		const wider = source.slice(twoColumnStart, fourColumnStart);
-		const widest = source.slice(fourColumnStart);
+		const wider = source.slice(twoColumnStart, threeColumnStart);
+		const widest = source.slice(threeColumnStart);
 		expect(base).toMatch(/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/);
 		expect(base).not.toMatch(/repeat\(2/);
 		expect(wider).toMatch(
 			/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
 		);
 		expect(widest).toMatch(
-			/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+			/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
 		);
 	});
 });

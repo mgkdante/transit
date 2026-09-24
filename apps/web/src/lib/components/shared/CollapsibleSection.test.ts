@@ -1,15 +1,7 @@
-// CollapsibleSection.test.ts - the reusable collapsible section card.
-//
-// Ported from yesid.dev's gate (quiet-mode cases dropped: transit has no
-// quiet-mode store). Covers: title + children, numbered badge, toggle, the
-// non-collapsible (static) variant, accent CSS var, the data-toc anchor the
-// shared TOC scrolls to, and the whole-card toggle contract (interactive
-// children never toggle; the header stays the semantic aria-expanded button).
-
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, it, expect } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import CollapsibleSection from './CollapsibleSection.svelte';
 
@@ -36,6 +28,133 @@ function cssRule(source: string, selector: RegExp): string {
 }
 
 describe('CollapsibleSection', () => {
+	it('retains the body, its state and stable control target through closing and reopening', async () => {
+		const dispose = vi.fn();
+		const setup = vi.fn(() => dispose);
+		const children = createRawSnippet(() => ({
+			render: () => '<input aria-label="Reader note" value="initial">',
+			setup,
+		}));
+		const view = render(CollapsibleSection, {
+			props: { title: 'Reader section', open: true, children },
+		});
+		const trigger = view.getByRole('button', { name: 'Reader section' });
+		const body = view.container.querySelector('.section-body') as HTMLElement;
+		const input = view.getByLabelText('Reader note') as HTMLInputElement;
+		const controlledId = trigger.getAttribute('aria-controls');
+		expect(controlledId).toBe(body.id);
+		expect(body.id).not.toBe('');
+		await fireEvent.input(input, { target: { value: 'keep my note' } });
+
+		await fireEvent.click(trigger);
+		expect(body).toHaveAttribute('inert');
+		expect(body).toHaveAttribute('aria-hidden', 'true');
+		expect(view.container.contains(input)).toBe(true);
+		await fireEvent.click(trigger);
+		expect(view.getByLabelText('Reader note')).toBe(input);
+		expect(input.value).toBe('keep my note');
+		expect(trigger).toHaveAttribute('aria-controls', controlledId);
+		expect(body).not.toHaveAttribute('inert');
+		expect(body).not.toHaveAttribute('aria-hidden');
+		expect(setup).toHaveBeenCalledOnce();
+		expect(dispose).not.toHaveBeenCalled();
+		await view.unmount();
+		expect(dispose).toHaveBeenCalledOnce();
+	});
+
+	it('keeps distinct control targets for simultaneous header variants', () => {
+		const views = (['default', 'article-summary'] as const).map((headerVariant) =>
+			render(CollapsibleSection, { props: { title: headerVariant, headerVariant } }),
+		);
+		const targets = views.map((view) => {
+			const trigger = within(view.container).getByRole('button');
+			const body = view.container.querySelector('.section-body') as HTMLElement;
+			expect(trigger).toHaveAttribute('type', 'button');
+			expect(trigger).toHaveAttribute('aria-controls', body.id);
+			return body.id;
+		});
+		expect(new Set(targets).size).toBe(2);
+	});
+
+	it('keeps content identity when parent state and bulk signals update the disclosure', async () => {
+		const view = render(CollapsibleSection, {
+			props: {
+				title: 'Controlled',
+				open: false,
+				closeSignal: 0,
+				openSignal: 0,
+				children: bodyContent,
+			},
+		});
+		const trigger = view.getByRole('button', { name: 'Controlled' });
+		const body = view.getByTestId('body-text');
+		await view.rerender({ open: true });
+		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		await view.rerender({ closeSignal: 1 });
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		await view.rerender({ openSignal: 1 });
+		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		expect(view.getByTestId('body-text')).toBe(body);
+	});
+
+	it('preserves a reader choice when a keyed section remounts', async () => {
+		const key = 'reader-disclosure-remount';
+		try {
+			const first = render(CollapsibleSection, {
+				props: { title: 'First visit', sectionKey: key, open: true },
+			});
+			await fireEvent.click(first.getByRole('button', { name: 'First visit' }));
+			await first.unmount();
+			const second = render(CollapsibleSection, {
+				props: { title: 'Second visit', sectionKey: key, open: true },
+			});
+			expect(second.getByRole('button', { name: 'Second visit' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+		} finally {
+			sessionStorage.removeItem(`transit.persisted:${key}`);
+		}
+	});
+
+	it('includes complete default-open and closed bodies in server-rendered markup', async () => {
+		const { createServer } = await import('vite');
+		const server = await createServer({
+			configFile: 'vite.config.ts',
+			appType: 'custom',
+			logLevel: 'silent',
+			optimizeDeps: { noDiscovery: true },
+			server: { middlewareMode: true },
+		});
+		try {
+			const { default: ServerSection } = await server.ssrLoadModule(
+				'/src/lib/components/shared/CollapsibleSection.svelte',
+			);
+			const { render: renderSsr } = (await server.ssrLoadModule(
+				'svelte/server',
+			)) as typeof import('svelte/server');
+			const { createRawSnippet: serverSnippet } = (await server.ssrLoadModule(
+				'svelte',
+			)) as typeof import('svelte');
+			for (const open of [undefined, false]) {
+				const children = serverSnippet(() => ({
+					render: () => '<p>Complete methodology source</p>',
+				}));
+				const html = renderSsr(ServerSection, {
+					props: { title: 'Server section', open, children },
+				}).body;
+				expect(html).toContain('Complete methodology source');
+				expect(html).toContain(`aria-expanded="${open ?? true}"`);
+				const markup = document.createElement('div');
+				markup.innerHTML = html;
+				const body = markup.querySelector('.section-body');
+				expect(body?.getAttribute('aria-hidden')).toBe(open === false ? 'true' : null);
+			}
+		} finally {
+			await server.close();
+		}
+	}, 20_000);
+
 	it('renders title and children when open', () => {
 		const { getByText } = render(CollapsibleSection, {
 			props: { title: 'Overview', open: true },
@@ -389,13 +508,7 @@ describe('CollapsibleSection - article summary header', () => {
 	});
 
 	it('characterizes the unchanged content and chevron motion contracts', () => {
-		const contentSource = readFileSync(
-			resolve(
-				process.cwd(),
-				'vendor/design/ui/src/primitives/collapsible/collapsible-content.svelte',
-			),
-			'utf-8',
-		);
+		const contentSource = componentSource();
 		const chevronSource = readFileSync(
 			resolve(process.cwd(), 'vendor/design/ui/src/brand/ChevronToggle.svelte'),
 			'utf-8',
@@ -426,6 +539,35 @@ describe('CollapsibleSection - article summary header', () => {
 });
 
 describe('CollapsibleSection - whole-card toggling', () => {
+	it('leaves an ancestor open when a nested card owns the click', async () => {
+		const nested = createRawSnippet(() => ({
+			render: () => '<div data-slot="card"><p data-testid="nested-card-body">Nested card</p></div>',
+		}));
+		const view = render(CollapsibleSection, { props: { title: 'Outer', children: nested } });
+		await fireEvent.click(view.getByTestId('nested-card-body'));
+		expect(view.getByRole('button', { name: 'Outer' })).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('does not collapse prose when a click finishes selecting text', async () => {
+		const view = render(CollapsibleSection, {
+			props: { title: 'Selectable', children: bodyContent },
+		});
+		const text = view.getByTestId('body-text');
+		const selection = window.getSelection()!;
+		const range = document.createRange();
+		range.selectNodeContents(text);
+		selection.addRange(range);
+		try {
+			await fireEvent.click(text);
+			expect(view.getByRole('button', { name: 'Selectable' })).toHaveAttribute(
+				'aria-expanded',
+				'true',
+			);
+		} finally {
+			selection.removeAllRanges();
+		}
+	});
+
 	it('toggles from a click on the non-interactive card body', async () => {
 		const { container, getByTestId } = render(CollapsibleSection, {
 			props: { title: 'Card', open: true, children: bodyContent },

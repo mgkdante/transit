@@ -14,6 +14,7 @@ from transit_ops.gold.reader import (
     SHIFT_BOUNDS,
     SHIFT_DEFAULT,
     GrainWindows,
+    round_half_away,
     shift_case_sql,
 )
 from transit_ops.snapshots.builders._helpers import (
@@ -27,7 +28,6 @@ from transit_ops.snapshots.builders._helpers import (
     _opt_int,
     _opt_iso,
     _otp_pct,
-    _otp_pct_severe_proxy,
     _public_impact_score,
     _route_sort_key,
     _sane_en,
@@ -97,10 +97,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #                     every row.
 # The per-kind JOIN keys (route_id vs stop_id) keep route and stop OTP from ever
 # cross-contaminating, and each kind subtracts its OWN-metric network baseline.
-# The OTP math + honest-None live in Python (_otp_pct / _otp_pct_severe_proxy /
-# otp_delta_points) so the convention matches the rest of the historic surface
-# byte-for-byte. Network baselines are week-grain only; on a non-week fallback
-# target the route/stop weekly joins miss and the delta is None.
 _HOTSPOTS_SQL = named_query(
     "hotspots.list",
     """
@@ -248,11 +244,20 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
         # The SQL only populates the matching kind's columns, so cross-kind
         # contamination is impossible, but key the Python branch on kind too.
         if kind == "route":
-            cell_otp = _otp_pct(r.get("route_on_time"), r.get("route_known"))
-            network_otp = _otp_pct(r.get("net_on_time"), r.get("net_known"))
+            delta = otp_delta_points(
+                r.get("route_on_time"),
+                r.get("route_known"),
+                r.get("net_on_time"),
+                r.get("net_known"),
+            )
         else:
-            cell_otp = _otp_pct_severe_proxy(r.get("stop_obs"), r.get("stop_severe"))
-            network_otp = _otp_pct_severe_proxy(r.get("net_stop_obs"), r.get("net_stop_severe"))
+            stop_obs, network_obs = r.get("stop_obs"), r.get("net_stop_obs")
+            delta = otp_delta_points(
+                None if stop_obs is None else stop_obs - (r.get("stop_severe") or 0),
+                stop_obs,
+                None if network_obs is None else network_obs - (r.get("net_stop_severe") or 0),
+                network_obs,
+            )
         hotspots.append(
             Hotspot(
                 rank=i + 1,
@@ -265,11 +270,9 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
                     else stop_names.get(str(r["entity_id"]))
                 ),
                 severity=r["severity_label"],
-                otp_delta_pts=otp_delta_points(cell_otp, network_otp),
+                otp_delta_pts=delta,
             )
         )
-    # S12 additive: the evidence-rich by_grain ladders. The scalar hotspots[] above is
-    # UNTOUCHED (byte-identical); by_grain is appended off the same spines at read time.
     by_grain = _hotspots_by_grain(conn, provider_id, route_names, stop_names)
     return Hotspots(generated_utc=generated_utc, hotspots=hotspots, by_grain=by_grain)
 
@@ -317,7 +320,7 @@ _HOTSPOTS_ROUTE_WINDOW_SQL = named_query(
     """
     SELECT
         route_id,
-        SUM(delay_observation_count)::bigint  AS obs,
+        SUM((SELECT SUM(value) FROM unnest(delay_histogram) AS value))::bigint AS obs,
         SUM(severe_delay_count)::bigint       AS severe,
         SUM(sum_delay_seconds)::bigint        AS sum_delay_sec
     FROM gold.route_delay_spine
@@ -357,7 +360,7 @@ _HOTSPOTS_ROUTE_SHIFT_SQL = named_query(
     f"""
     SELECT
         route_id,
-        SUM(delay_observation_count)::bigint  AS obs,
+        SUM((SELECT SUM(value) FROM unnest(delay_histogram) AS value))::bigint AS obs,
         SUM(severe_delay_count)::bigint       AS severe,
         SUM(sum_delay_seconds)::bigint        AS sum_delay_sec
     FROM gold.route_delay_spine
@@ -505,10 +508,10 @@ def build_repeat_offenders(
             route_name=(route_names.get(str(r["route_id"])) if r["route_id"] is not None else None),
             recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
             # S14 additive structured twins (columns the query already selects): the web
-            # reads these instead of parsing "N/14d" + re-deriving severity client-side.
+            # reads these instead of parsing "N/Md" + re-deriving severity client-side.
             recurrence_days=_opt_int(r["recurrence_days"]),
             window_days=_opt_int(r["window_days"]),
-            avg_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
+            avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             severity=r["severity_label"],
         )
         for r in rows
@@ -523,7 +526,7 @@ def build_repeat_offenders(
 # --------------------------------------------------------------------------
 # S14 — re-granulated repeat-offender ladders (week/month) off the 0075 spine
 # --------------------------------------------------------------------------
-# The scalar mart gold.repeat_offender is a single 14d-recurrence snapshot, so
+# The scalar mart follows the fact-retention window (14 days by default), so
 # week/month recurrence CANNOT come from it. The honest path (matching the S12
 # _hotspots_by_grain house pattern) recomposes the ladders at READ TIME off the
 # 0075 daily offender spine gold.repeat_offender_daily_spine — NO new mart read.
@@ -687,19 +690,44 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
 _RECEIPTS_WORST_ROUTE_SQL = named_query(
     "receipts.worst_route",
     """
+    WITH candidates AS (
+        SELECT * FROM gold.public_route_reliability_daily
+        WHERE provider_id = :provider_id
+          AND provider_local_date >= :receipt_start
+          AND provider_local_date <= :receipt_end
+          AND route_id <> '__unrouted__'
+    ), incomplete_dates AS (
+        SELECT DISTINCT c.provider_local_date
+        FROM candidates AS c
+        JOIN gold.dim_provider AS dp ON dp.provider_id = c.provider_id
+        WHERE c.avg_delay_seconds IS NULL
+          AND EXISTS (
+              SELECT 1 FROM gold.route_delay_hourly AS h
+              WHERE h.provider_id = c.provider_id AND h.route_id = c.route_id
+                AND h.period_start_utc >= c.provider_local_date::timestamp AT TIME ZONE dp.timezone
+                AND h.period_start_utc <
+                    (c.provider_local_date + 1)::timestamp AT TIME ZONE dp.timezone
+                AND (
+                    h.usable_delay_observation_count > 0
+                    OR (h.usable_delay_observation_count IS NULL AND (
+                        h.observation_count > 0 OR h.delay_observation_count > 0
+                        OR h.trip_count > 0 OR h.delayed_trip_count > 0 OR h.severe_delay_count > 0
+                        OR h.avg_delay_seconds IS NOT NULL OR h.max_delay_seconds IS NOT NULL
+                    ))
+                )
+          )
+    )
     SELECT DISTINCT ON (prr.provider_local_date)
            prr.provider_local_date AS d,
            prr.route_id,
            prr.avg_delay_seconds,
            prr.on_time_observation_count AS on_time,
            prr.delay_observation_count   AS known_obs
-    FROM gold.public_route_reliability_daily AS prr
-    JOIN gold.dim_provider AS dp ON dp.provider_id = prr.provider_id
-    WHERE prr.provider_id = :provider_id
-      AND prr.provider_local_date >= :receipt_start
-      AND prr.provider_local_date <= :receipt_end
-      AND prr.avg_delay_seconds IS NOT NULL
-      AND prr.route_id <> '__unrouted__'
+    FROM candidates AS prr
+    WHERE prr.avg_delay_seconds IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM incomplete_dates AS i WHERE i.provider_local_date = prr.provider_local_date
+      )
     ORDER BY prr.provider_local_date, prr.avg_delay_seconds DESC, prr.route_id
     """,
 )
@@ -873,6 +901,8 @@ def build_receipts(
         pooled, inclamp = r["pooled_delay_sec"], r["inclamp_obs"]
         avg_sec = (float(pooled) / float(inclamp)) if inclamp and pooled is not None else None
         net[ds] = {
+            "on_time": r["on_time"],
+            "known_obs": known_obs,
             "otp_pct": _otp_pct(r["on_time"], known_obs),
             "avg_delay_min": _avg_delay_min(avg_sec),
             "severe_pct": _severe_pct(known_obs, r["severe"]),
@@ -888,12 +918,16 @@ def build_receipts(
             # On-time-vs-network gap: the worst route's own daily OTP minus the
             # day's network baseline OTP (already computed in net[ds]). Honest-None
             # when either side is unknown (otp_delta_points) — never a fabricated 0.
-            route_otp = _otp_pct(r.get("on_time"), r.get("known_obs"))
-            network_otp = net.get(ds, {}).get("otp_pct")
+            network = net.get(ds, {})
             worst_route[ds] = ReceiptWorstRoute(
                 id=str(r["route_id"]),
                 name=route_names.get(str(r["route_id"])),
-                otp_delta_pts=otp_delta_points(route_otp, network_otp),
+                otp_delta_pts=otp_delta_points(
+                    r.get("on_time"),
+                    r.get("known_obs"),
+                    network.get("on_time"),
+                    network.get("known_obs"),
+                ),
             )
 
     # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
@@ -1003,20 +1037,39 @@ def build_receipts(
 # build_alert_history
 # --------------------------------------------------------------------------
 
-# 8M-row table — always filter by date BEFORE aggregating.
-# S15 bounds: the served window is the full honest retention span
-# (SILVER_I3_CLOSED_RETENTION_DAYS, bound as :win_start/:win_end — the
-# hotspots/offenders precedent), newest-first, LIMIT 500. impact_passages is None
-# (not in source). array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
-#
-# active_periods: aggregated from silver.i3_alert_active_periods (0077 child
-# table) via a correlated LATERAL matched on the SAME group identity (provider +
-# header + the scalar period[0] pair, IS NOT DISTINCT FROM for the nullable
-# bounds). Rows predating 0077 have no child periods → the LATERAL returns empty
-# and the builder falls back to the scalar pair as a 1-element list.
+# Group the provider-local window before enrichment; keep its independent 500 cap.
+# URL and periods include all retained versions with the same nullable identity.
+# Each period index uses the greatest (snapshot ID, alert index), even when its
+# capture falls outside the display window. Missing children use scalar fallback.
 _ALERT_HISTORY_SQL = named_query(
     "alerts.history",
     """
+    WITH metadata AS MATERIALIZED (
+        SELECT alert_header_text, start_utc, end_utc,
+               MAX(url) AS url,
+               json_agg(json_build_object('start_utc', period_start,
+                                          'end_utc', period_end)
+                        ORDER BY period_index)
+                   FILTER (WHERE period_index IS NOT NULL AND newest = 1) AS active_periods
+        FROM (
+            SELECT a.alert_header_text,
+                   a.active_period_start_utc AS start_utc,
+                   a.active_period_end_utc AS end_utc,
+                   a.url, p.period_index,
+                   p.start_utc AS period_start, p.end_utc AS period_end,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY a.alert_header_text, a.active_period_start_utc,
+                                    a.active_period_end_utc, p.period_index
+                       ORDER BY a.i3_alert_snapshot_id DESC, a.alert_index DESC
+                   ) AS newest
+            FROM silver.i3_alerts a
+            LEFT JOIN silver.i3_alert_active_periods p
+              ON p.i3_alert_snapshot_id = a.i3_alert_snapshot_id
+             AND p.alert_index = a.alert_index
+            WHERE a.provider_id = :provider_id
+        ) AS versions
+        GROUP BY alert_header_text, start_utc, end_utc
+    ), grouped AS (
     SELECT grp.alert_header_text,
            MAX(grp.header_text_en)                                  AS header_text_en,
            MAX(grp.description)                                     AS description,
@@ -1029,45 +1082,7 @@ _ALERT_HISTORY_SQL = named_query(
            ARRAY_AGG(DISTINCT grp.stop_id)
                FILTER (WHERE grp.stop_id IS NOT NULL)               AS stops,
            grp.start_utc,
-           grp.end_utc,
-           -- url + active_periods are correlated subqueries keyed on the SAME
-           -- group identity (provider + header + scalar period[0]), so they never
-           -- fan out the 8M-row aggregation. url = one non-NULL display link if
-           -- any matching silver row carries one (honest-NULL otherwise).
-           (
-               SELECT MAX(a2.url)
-               FROM silver.i3_alerts a2
-               WHERE a2.provider_id = :provider_id
-                 AND a2.alert_header_text IS NOT DISTINCT FROM grp.alert_header_text
-                 AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
-                 AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
-           )                                                        AS url,
-           -- One window per period_index, ordered. Re-rowed multi-period alerts
-           -- (the S15 hash cutover mints a new SCD-2 row when periods beyond [0]
-           -- change) can share header+period[0] across versions with DIFFERENT
-           -- later bounds — DISTINCT ON keeps the NEWEST version's bound per
-           -- period_index. NULL when no child rows exist (pre-0077 history).
-           (
-               SELECT json_agg(
-                          json_build_object('start_utc', ap.start_utc,
-                                            'end_utc', ap.end_utc)
-                          ORDER BY ap.period_index
-                      )
-               FROM (
-                   SELECT DISTINCT ON (p.period_index)
-                          p.period_index, p.start_utc, p.end_utc
-                   FROM silver.i3_alerts a2
-                   JOIN silver.i3_alert_active_periods p
-                     ON p.i3_alert_snapshot_id = a2.i3_alert_snapshot_id
-                    AND p.alert_index = a2.alert_index
-                   WHERE a2.provider_id = :provider_id
-                     AND a2.alert_header_text IS NOT DISTINCT FROM grp.alert_header_text
-                     AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
-                     AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
-                   ORDER BY p.period_index,
-                            a2.i3_alert_snapshot_id DESC, a2.alert_index DESC
-               ) AS ap
-           )                                                        AS active_periods
+           grp.end_utc
     FROM (
         SELECT iah.alert_header_text,
                iah.alert_header_text_en                             AS header_text_en,
@@ -1089,6 +1104,14 @@ _ALERT_HISTORY_SQL = named_query(
     GROUP BY grp.alert_header_text, grp.start_utc, grp.end_utc
     ORDER BY grp.start_utc DESC NULLS LAST
     LIMIT 500
+    )
+    SELECT grouped.*, metadata.url, metadata.active_periods
+    FROM grouped
+    LEFT JOIN metadata
+      ON metadata.alert_header_text IS NOT DISTINCT FROM grouped.alert_header_text
+     AND metadata.start_utc IS NOT DISTINCT FROM grouped.start_utc
+     AND metadata.end_utc IS NOT DISTINCT FROM grouped.end_utc
+    ORDER BY grouped.start_utc DESC NULLS LAST
     """,
 )
 
@@ -1155,7 +1178,7 @@ def _alert_breakdown(
                 key=key,
                 count=counts[key],
                 median_duration_min=(
-                    round(statistics.median(grouped[key]), 1) if grouped.get(key) else None
+                    statistics.median(grouped[key]) if grouped.get(key) else None
                 ),
             )
             for key in counts
@@ -1234,7 +1257,7 @@ def build_alert_history(
                 # A malformed window (end < start) yields a meaningless negative
                 # duration — publish null (untrustworthy), never a negative bar
                 # (slice-9.1.1y).
-                duration_min = round(diff_s / 60.0) if diff_s >= 0 else None
+                duration_min = float(round_half_away(diff_s / 60.0, 0)) if diff_s >= 0 else None
             except (ValueError, TypeError):
                 duration_min = None
 

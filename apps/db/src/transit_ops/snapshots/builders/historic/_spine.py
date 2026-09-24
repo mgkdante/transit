@@ -393,7 +393,7 @@ def _windowed_otp_index(conn, sql, params):  # noqa: ANN001, ANN202
 
 def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
     """Set prior_observation_count (= prior KNOWN_obs, matching observation_count) + the prior
-    real OTP on each current period, so a two-proportion delta is valid. No prior -> left None."""
+    OTP on each current period for descriptive comparison. No prior -> left None."""
     for p in periods:
         pri = prior_index.get(p.grain)
         if pri is None:

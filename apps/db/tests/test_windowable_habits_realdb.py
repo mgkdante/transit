@@ -28,7 +28,7 @@ from test_spine_cutover_gate import (  # noqa: E402
     _seed,
 )
 
-from transit_ops.snapshots.builders.historic import (
+from transit_ops.snapshots.builders.historic._spine import (
     _ROUTE_HABIT_SPINE_SQL,
     _grain_windows,
     _spine_habits_by_grain,

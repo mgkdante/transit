@@ -1,15 +1,3 @@
-<!--
-  SectionStateCuts — the receipt's scheduled→delivered→cancelled→silent split (S13, NEW).
-
-  Pure presenter of selectStateCuts. The ONE completeness number (heroed from
-  service_states.service_completeness_pct — DB1) rides an ExplainedMetricCard with the
-  S9 "silent = scheduled but never appears in the live feed" explainer; the delivered /
-  cancelled / silent shares are RankedRow SeverityBars on the FIXED absolute
-  CANCEL_RATE_DOMAIN [0,100] (doctrine-coded — never the in-view max). Mounted by the
-  orchestrator only when hasData (RAMP-IN: service_states is additive-optional, null
-  across the retained window until GC2 accrues). A receipt line-group below the frame —
-  a documented hoist because a share-bar ladder breaks the compact tile metaphor (WEB4).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
@@ -45,7 +33,7 @@
 		headingLevel = 2,
 	}: SectionStateCutsProps = $props();
 
-	const i = $derived(info('cancellation', completenessLabel));
+	const i = $derived(info('serviceComparison', completenessLabel));
 </script>
 
 <section class="receipt-states" data-slot="receipt-state-cuts" aria-label={heading}>

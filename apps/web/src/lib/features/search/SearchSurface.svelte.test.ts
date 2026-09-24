@@ -238,7 +238,7 @@ describe('SearchSurface vehicle results', () => {
 		setUrlQuery('q=40061');
 		render(SearchSurface);
 
-		const busRow = screen.getByRole('link', { name: 'Live bus 40061' });
+		const busRow = screen.getByRole('link', { name: 'Live bus 40061, Late, Delay: +4 min' });
 		expect(busRow).toBeInTheDocument();
 		// Links to the live map filtered to this bus.
 		expect(busRow).toHaveAttribute('href', '/map?vehicle=40061');

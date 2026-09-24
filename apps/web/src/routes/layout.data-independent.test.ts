@@ -106,9 +106,6 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 vi.mock('$lib/stores', () => ({
 	dataRefresh: {
 		epoch: 0,
-		seedDataGeneratedUtc: vi.fn(),
-		seedNow: vi.fn(),
-		noteDataGeneratedUtc: vi.fn(),
 		run: vi.fn(),
 		refreshing: false,
 		ageSeconds: null,

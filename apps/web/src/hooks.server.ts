@@ -1,5 +1,6 @@
 import type { Handle, ServerInit } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { assets } from '$app/paths';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { securityHeaders } from '$lib/site/securityHeaders';
@@ -68,6 +69,16 @@ function applyDocumentHeaders(response: Response): void {
 		response.headers.set(name, value);
 	}
 
+	if (isHtml(response)) {
+		// Kit's HTTP module preloads are discovered before the font links in app.html.
+		const existing = response.headers.get('link') ?? '';
+		const fonts = ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2']
+			.map((file) => encodeURI(`${assets}/fonts/${file}`))
+			.filter((url) => !existing.includes(`<${url}>`))
+			.map((url) => `<${url}>; rel="preload"; as="font"; type="font/woff2"; crossorigin`);
+		if (fonts.length) response.headers.set('link', [...fonts, existing].filter(Boolean).join(', '));
+	}
+
 	if (!readPublicSiteConfig().indexing) {
 		response.headers.set('x-robots-tag', 'noindex, nofollow');
 	}
@@ -99,7 +110,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
 	const cache = await edgeCache(event.platform);
-	const cacheBypassed = cache == null || requestBypassesHtmlCache(event.request);
+	const cacheBypassed =
+		event.isDataRequest || cache == null || requestBypassesHtmlCache(event.request);
 	const key = cacheBypassed ? null : cacheKey(event.url);
 
 	if (cache != null && key != null) {
@@ -120,7 +132,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const resolved = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
-		preload: ({ type }) => type !== 'js',
+		preload: () => true,
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 

@@ -20,16 +20,30 @@ import {
 	OCCUPANCY_CODES,
 	type StatusCode,
 	type OccupancyCode,
-} from '$lib/v1/schemas';
-import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+} from '$lib/v1/schemas/types';
+import {
+	STATUS_GLYPH,
+	occupancyGlyph,
+	occupancyVar,
+	statusVar,
+} from '$lib/components/dataviz/tokens';
 
 /** Frozen marker geometry: the map layer and non-Chromium receipt runner share this table. */
 export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
 	box: 26,
 	bodyIconSize: Object.freeze({ z11: 0.78, z15: 1.3 }),
-	stateBadge: Object.freeze({ offset: Object.freeze([0, 20] as const), scale: 0.6 }),
-	silentBadge: Object.freeze({ offset: Object.freeze([0, -16] as const), scale: 0.75 }),
-	chevronAnnulus: Object.freeze({ inner: 4.9, outer: 10.8 }),
+	headingOffset: Object.freeze([0, -9] as const),
+	stateBadge: Object.freeze({
+		offset: Object.freeze([0, 30] as const),
+		pairedOffset: Object.freeze([-9, 30] as const),
+		scale: 0.6,
+	}),
+	silentBadge: Object.freeze({
+		offset: Object.freeze([0, 30] as const),
+		pairedOffset: Object.freeze([9, 30] as const),
+		scale: 0.75,
+	}),
+	chevronAnnulus: Object.freeze({ inner: 12.7, outer: 19.8 }),
 	plateMargin: 2.4,
 });
 
@@ -80,7 +94,7 @@ export function resolveColor(varExpr: string, fallback: string): string {
 	return c || fallback;
 }
 
-function newCtx(): { ctx: CanvasRenderingContext2D; px: number } {
+function spriteContext(): CanvasRenderingContext2D {
 	const px = SIZE * RATIO;
 	const cv = document.createElement('canvas');
 	cv.width = px;
@@ -88,7 +102,7 @@ function newCtx(): { ctx: CanvasRenderingContext2D; px: number } {
 	const ctx = cv.getContext('2d');
 	if (!ctx) throw new Error('[vehicleSprites] 2D canvas context unavailable');
 	ctx.scale(RATIO, RATIO);
-	return { ctx, px };
+	return ctx;
 }
 
 /** Trace a rounded rectangle path (no stroke/fill — caller decides). */
@@ -116,8 +130,8 @@ function roundedRect(
  * every bearing: a rounded body, a windshield band, and two headlights cut from
  * the halo colour so the silhouette stays a bus, not a blob, even at small zoom.
  */
-function busImage(fill: string, halo: string): ImageData {
-	const { ctx, px } = newCtx();
+function busCanvas(fill: string, halo: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 
 	// Body — a tall rounded rect (bus front), centred with a small margin.
@@ -149,15 +163,15 @@ function busImage(fill: string, halo: string): ImageData {
 		ctx.fill();
 	}
 
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /**
  * Bake the STOP map-pin pictogram, PAINTED with `fill` and ringed by `halo`,
  * with a halo-cut hole so the pin reads as a stop marker, not a solid teardrop.
  */
-function stopPinImage(fill: string, halo: string): ImageData {
-	const { ctx, px } = newCtx();
+function stopPinCanvas(fill: string, halo: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 	const c = SIZE / 2;
@@ -191,7 +205,7 @@ function stopPinImage(fill: string, halo: string): ImageData {
 	ctx.fillStyle = halo;
 	ctx.fill();
 
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /**
@@ -199,8 +213,8 @@ function stopPinImage(fill: string, halo: string): ImageData {
  * with `fill` and ringed by `halo`. ONE sprite; the layer rotates it by bearing
  * and floats it just ahead of the bus, so the bus glyph itself stays upright.
  */
-function chevronImage(fill: string, halo: string): ImageData {
-	const { ctx, px } = newCtx();
+function chevronCanvas(fill: string, halo: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	const c = SIZE / 2;
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
@@ -217,7 +231,7 @@ function chevronImage(fill: string, halo: string): ImageData {
 	ctx.lineWidth = 1.6;
 	ctx.strokeStyle = halo;
 	ctx.stroke();
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /**
@@ -229,8 +243,8 @@ function chevronImage(fill: string, halo: string): ImageData {
  * so a no-longer-reporting vehicle is FLAGGED, not hidden. The flag is per-bus
  * (each bus's own reported_utc age), not the old global silence.
  */
-function silentBadgeImage(fill: string, halo: string): ImageData {
-	const { ctx, px } = newCtx();
+function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 
@@ -264,7 +278,7 @@ function silentBadgeImage(fill: string, halo: string): ImageData {
 	ctx.fillStyle = halo;
 	ctx.fill();
 
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
@@ -281,6 +295,12 @@ export type StateBadgeReceipt = Readonly<{
 	stateGlyphMasks: Readonly<Record<string, number>>;
 	stateGlyphMaskImages: Readonly<Record<string, ImageData>>;
 }>;
+
+export type VehicleSpriteReceipt = StateBadgeReceipt &
+	Readonly<{
+		sprites: Readonly<Record<string, ImageData>>;
+		pixelRatio: number;
+	}>;
 
 /**
  * Count alpha-painted canvas pixels from an actual baked image (registered badge
@@ -399,8 +419,8 @@ function drawStateGlyph(
 }
 
 /** Bake a compact halo-cut state mark using only vector paths, never font glyphs. */
-function stateBadgeImage(glyph: string, fill: string, halo: string): ImageData {
-	const { ctx, px } = newCtx();
+function stateBadgeCanvas(glyph: string, fill: string, halo: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 
@@ -414,16 +434,16 @@ function stateBadgeImage(glyph: string, fill: string, halo: string): ImageData {
 	ctx.stroke();
 	drawStateGlyph(ctx, glyph, halo, fill);
 
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /** Bake only the shared vector glyph path on transparency for pixel-threshold receipts. */
-function stateGlyphMaskImage(glyph: string, fill: string): ImageData {
-	const { ctx, px } = newCtx();
+function stateGlyphMaskCanvas(glyph: string, fill: string): HTMLCanvasElement {
+	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 	drawStateGlyph(ctx, glyph, fill, null);
-	return ctx.getImageData(0, 0, px, px);
+	return ctx.canvas;
 }
 
 /**
@@ -435,85 +455,99 @@ function stateGlyphMaskImage(glyph: string, fill: string): ImageData {
  * and glyph-mask receipts; threshold runners derive provenance from the exact
  * `stateGlyphMaskImages` whose counts are recorded in `stateGlyphMasks`.
  */
-export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
-	const busHalo = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
-	const stateBadgeFill = resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK);
-	const stateBadgeHalo = resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK);
+export function bakeVehicleSprites(
+	map: MapLibreMap,
+	registerVehicleImages = true,
+): VehicleSpriteReceipt {
+	const background = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
+	const foreground = resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK);
+	const canvases: HTMLCanvasElement[] = [];
+	const sprites: { id: string; index: number }[] = [];
+	const badges: { id: string; image: number; mask: number }[] = [];
+	const queue = (canvas: HTMLCanvasElement): number => canvases.push(canvas) - 1;
+	const add = (id: string, canvas: HTMLCanvasElement): number => {
+		const index = queue(canvas);
+		sprites.push({ id, index });
+		return index;
+	};
+
+	for (const code of STATUS_CODES as readonly StatusCode[]) {
+		add(
+			bodyIconId('status', code),
+			busCanvas(resolveColor(statusVar(code), '#8a8a8a'), background),
+		);
+	}
+	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
+		add(
+			bodyIconId('occupancy', code),
+			busCanvas(resolveColor(occupancyVar(code), '#7a5fb0'), background),
+		);
+	}
+	for (const code of STATUS_CODES as readonly StatusCode[]) {
+		const id = stateBadgeIconId('status', code);
+		const glyph = STATUS_GLYPH[code];
+		badges.push({
+			id,
+			image: add(id, stateBadgeCanvas(glyph, foreground, background)),
+			mask: queue(stateGlyphMaskCanvas(glyph, background)),
+		});
+	}
+	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
+		const id = stateBadgeIconId('occupancy', code);
+		const glyph = occupancyGlyph(code);
+		badges.push({
+			id,
+			image: add(id, stateBadgeCanvas(glyph, foreground, background)),
+			mask: queue(stateGlyphMaskCanvas(glyph, background)),
+		});
+	}
+	add(BUS_ICON, busCanvas(resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK), background));
+	add(HEADING_ICON, chevronCanvas(foreground, background));
+	add(SILENT_ICON, silentBadgeCanvas(foreground, background));
+	add(STOP_ICON, stopPinCanvas(resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK), background));
+
+	const images = readSpriteCanvases(canvases);
 	const stateBadges: Record<string, number> = {};
 	const stateBadgeImages: Record<string, ImageData> = {};
 	const stateGlyphMasks: Record<string, number> = {};
 	const stateGlyphMaskImages: Record<string, ImageData> = {};
-	const add = (id: string, img: ImageData) => {
+	const spriteImages: Record<string, ImageData> = {};
+	for (const { id, image, mask } of badges) {
+		stateBadgeImages[id] = images[image];
+		stateGlyphMaskImages[id] = images[mask];
+		stateBadges[id] = countStateBadgePaintedPixels(images[image]);
+		stateGlyphMasks[id] = countStateBadgePaintedPixels(images[mask]);
+	}
+	for (const { id, index } of sprites) {
+		spriteImages[id] = images[index];
+		if (id !== STOP_ICON && !registerVehicleImages) continue;
 		if (map.hasImage(id)) map.removeImage(id);
-		map.addImage(id, img, { pixelRatio: RATIO });
-	};
-	// One bus glyph per colour; the heading chevron is a SEPARATE rotated layer.
-	const addBus = (id: string, fill: string) => add(id, busImage(fill, busHalo));
-
-	for (const code of STATUS_CODES as readonly StatusCode[]) {
-		addBus(bodyIconId('status', code), resolveColor(statusVar(code), '#8a8a8a'));
+		map.addImage(id, images[index], { pixelRatio: RATIO });
 	}
-
-	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
-		addBus(bodyIconId('occupancy', code), resolveColor(occupancyVar(code), '#7a5fb0'));
-	}
-
-	for (const code of STATUS_CODES as readonly StatusCode[]) {
-		const id = stateBadgeIconId('status', code);
-		const glyph = STATUS_GLYPH[code];
-		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
-		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
-		stateBadges[id] = countStateBadgePaintedPixels(image);
-		stateBadgeImages[id] = image;
-		stateGlyphMaskImages[id] = mask;
-		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
-		add(id, image);
-	}
-
-	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
-		const id = stateBadgeIconId('occupancy', code);
-		const glyph = occupancyGlyph(code);
-		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
-		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
-		stateBadges[id] = countStateBadgePaintedPixels(image);
-		stateBadgeImages[id] = image;
-		stateGlyphMaskImages[id] = mask;
-		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
-		add(id, image);
-	}
-
-	// Default (no filter) — yesid brand orange (--primary).
-	addBus(BUS_ICON, resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK));
-
-	// The directional chevron — ONE neutral sprite, rotated per-feature by the layer.
-	add(
-		HEADING_ICON,
-		chevronImage(
-			resolveColor(HEADING_FILL_TOKEN, HEADING_FILL_FALLBACK),
-			resolveColor(HEADING_HALO_TOKEN, HEADING_HALO_FALLBACK),
-		),
-	);
-
-	// The silent "!" badge — a neutral high-contrast disc with a cut "!", drawn
-	// ABOVE a frozen/stale bus by VEHICLE_SILENT_LAYER (per-bus reported_utc age).
-	add(
-		SILENT_ICON,
-		silentBadgeImage(
-			resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK),
-			resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK),
-		),
-	);
-
-	// Stops are map-pins (reddish-orange on light, amber on dark), with the same
-	// theme surface outline as buses.
-	const stopFill = resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK);
-	const stopHalo = resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK);
-	add(STOP_ICON, stopPinImage(stopFill, stopHalo));
-
 	return Object.freeze({
 		stateBadges: Object.freeze(stateBadges),
 		stateBadgeImages: Object.freeze(stateBadgeImages),
 		stateGlyphMasks: Object.freeze(stateGlyphMasks),
 		stateGlyphMaskImages: Object.freeze(stateGlyphMaskImages),
+		sprites: Object.freeze(spriteImages),
+		pixelRatio: RATIO,
 	});
+}
+
+/** Keep the original per-sprite rasterization, then read one vertical atlas.
+ *  Equal-width sprites occupy contiguous RGBA blocks; every image is complete
+ *  before MapLibre installation and the alpha-derived receipts are computed. */
+function readSpriteCanvases(canvases: readonly HTMLCanvasElement[]): ImageData[] {
+	const px = SIZE * RATIO;
+	const atlas = document.createElement('canvas');
+	atlas.width = px;
+	atlas.height = px * canvases.length;
+	const ctx = atlas.getContext('2d');
+	if (!ctx) throw new Error('[vehicleSprites] 2D canvas context unavailable');
+	canvases.forEach((canvas, index) => ctx.drawImage(canvas, 0, index * px));
+	const { data } = ctx.getImageData(0, 0, px, atlas.height);
+	const bytes = px * px * 4;
+	return canvases.map(
+		(_, index) => new ImageData(data.slice(index * bytes, (index + 1) * bytes), px, px),
+	);
 }

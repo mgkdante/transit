@@ -1,18 +1,4 @@
-<!--
-  CodeBlock — yesid.dev code-snippet treatment for a verbatim SQL/code block.
-
-  Gives the explainer's Defining SQL the brand code chrome: a language tag, a
-  surface/border register, and dependency-free syntax highlighting (keywords /
-  strings / numbers / functions / comments). No highlighter dep is in the tree,
-  so the tokenizer is hand-rolled here (a keyword set + a single ordered regex).
-
-  DOCTRINE: the syntax palette is a set of theme-aware CSS custom properties
-  LOCAL to this component (a light + dark pair keyed off [data-theme]), NOT
-  global tokens — so the highlight reads correctly in both themes without
-  touching tokens.json/tokens.css. The chrome (border, --card surface, the mono
-  language tag) reuses existing global tokens. No data marks, no --primary on the
-  code itself; the block is keyboard-scrollable so overflow is pointer-free.
--->
+<!-- Verbatim, keyboard-scrollable code with local light/dark syntax colors. -->
 <script lang="ts">
 	import { tokenizeSql, type CodeToken } from './sql-highlight';
 

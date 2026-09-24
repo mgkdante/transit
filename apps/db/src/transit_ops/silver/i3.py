@@ -16,7 +16,7 @@ from transit_ops.settings import Settings, get_settings
 
 # ASCII Unit Separator — non-printable so it won't collide with real text in
 # alert headers/descriptions. MUST match the SQL backfill in migration 0021.
-_HASH_FIELD_SEP = "\x1F"
+_HASH_FIELD_SEP = "\x1f"
 
 
 def compute_alert_content_hash(
@@ -81,11 +81,10 @@ def compute_alert_content_hash(
     # and md5 — is byte-identical to the pre-S15 10-field form (no re-row churn
     # on deploy). Multi-period alerts append one trailing separated field.
     if extra_active_periods:
-        parts.append(
-            ",".join(f"{_ts(start)}:{_ts(end)}" for start, end in extra_active_periods)
-        )
+        parts.append(",".join(f"{_ts(start)}:{_ts(end)}" for start, end in extra_active_periods))
     canonical = _HASH_FIELD_SEP.join(parts)
     return hashlib.md5(canonical.encode("utf-8")).hexdigest()
+
 
 DELETE_I3_ENTITIES = text(
     """
@@ -303,6 +302,19 @@ UPSERT_ALERT_FEED_OBSERVATION = text(
     """
 )
 
+ACQUIRE_I3_LOAD_LOCK = text(
+    "SELECT pg_advisory_xact_lock(hashtext('transit.silver.i3'), hashtext(:provider_id))"
+)
+
+SELECT_NEWER_FEED_OBSERVATION = text(
+    """
+    SELECT observed_at_utc
+    FROM raw.alert_feed_observations
+    WHERE provider_id = :provider_id AND observed_at_utc > :captured_at_utc
+    LIMIT 1
+    """
+)
+
 
 @dataclass(frozen=True)
 class RawI3AlertSnapshot:
@@ -334,6 +346,7 @@ class I3SilverLoadResult:
     alerts_redirected_to_existing: int = 0
     alerts_superseded: int = 0
     entities_dropped_missing_parent: int = 0
+    skipped_older_capture: bool = False
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -382,8 +395,7 @@ def _text(payload: object) -> str | None:
         preferred = [
             item
             for item in payload
-            if isinstance(item, dict)
-            and _primary_language(item.get("language")) in {"fr", "fra"}
+            if isinstance(item, dict) and _primary_language(item.get("language")) in {"fr", "fra"}
         ]
         for item in [*preferred, *payload]:
             value = _text(item)
@@ -416,10 +428,7 @@ def _text_en(payload: object) -> str | None:
     """
     if isinstance(payload, list):
         for item in payload:
-            if (
-                isinstance(item, dict)
-                and _primary_language(item.get("language")) in {"en", "eng"}
-            ):
+            if isinstance(item, dict) and _primary_language(item.get("language")) in {"en", "eng"}:
                 value = _text(item.get("text") or item.get("value"))
                 if value:
                     return value
@@ -479,8 +488,7 @@ def _without_explicit_english(payload: object) -> object:
             _without_explicit_english(item)
             for item in payload
             if not (
-                isinstance(item, dict)
-                and _primary_language(item.get("language")) in {"en", "eng"}
+                isinstance(item, dict) and _primary_language(item.get("language")) in {"en", "eng"}
             )
         ]
     if isinstance(payload, dict):
@@ -492,10 +500,7 @@ def _without_explicit_english(payload: object) -> object:
         return {
             key: _without_explicit_english(value)
             for key, value in payload.items()
-            if not (
-                isinstance(key, str)
-                and _primary_language(key) in {"en", "eng"}
-            )
+            if not (isinstance(key, str) and _primary_language(key) in {"en", "eng"})
         }
     return payload
 
@@ -538,9 +543,7 @@ def _fallback_alert_logical_id(raw_alert: dict[str, Any]) -> str:
 def _provider_local_observation_date(snapshot: RawI3AlertSnapshot) -> date:
     if snapshot.captured_at_utc.utcoffset() is None:
         raise ValueError("captured_at_utc must be timezone-aware")
-    return snapshot.captured_at_utc.astimezone(
-        ZoneInfo(snapshot.provider_timezone)
-    ).date()
+    return snapshot.captured_at_utc.astimezone(ZoneInfo(snapshot.provider_timezone)).date()
 
 
 def build_alert_language_observations(
@@ -561,17 +564,15 @@ def build_alert_language_observations(
         if not isinstance(raw_alert, dict):
             continue
         alert_id = _text(_value(raw_alert, "id", "alertId", "messageId"))
-        logical_id = (
-            f"id:{alert_id}" if alert_id else _fallback_alert_logical_id(raw_alert)
-        )
+        logical_id = f"id:{alert_id}" if alert_id else _fallback_alert_logical_id(raw_alert)
         header = _value(raw_alert, *_ALERT_HEADER_KEYS)
         description = _value(raw_alert, *_ALERT_DESCRIPTION_KEYS)
-        has_explicit_fr = _has_explicit_language(
-            header, {"fr", "fra"}
-        ) or _has_explicit_language(description, {"fr", "fra"})
-        has_explicit_en = _has_explicit_language(
-            header, {"en", "eng"}
-        ) or _has_explicit_language(description, {"en", "eng"})
+        has_explicit_fr = _has_explicit_language(header, {"fr", "fra"}) or _has_explicit_language(
+            description, {"fr", "fra"}
+        )
+        has_explicit_en = _has_explicit_language(header, {"en", "eng"}) or _has_explicit_language(
+            description, {"en", "eng"}
+        )
         latest_by_logical_id[logical_id] = AlertLanguageObservation(
             provider_id=snapshot.provider_id,
             alert_logical_id=logical_id,
@@ -597,8 +598,7 @@ def record_alert_language_observations(
     observations = build_alert_language_observations(snapshot)
     observation_date = _provider_local_observation_date(snapshot)
     source_alert_count = sum(
-        isinstance(item, dict)
-        for item in _payload_alerts(snapshot.raw_payload_json)
+        isinstance(item, dict) for item in _payload_alerts(snapshot.raw_payload_json)
     )
     connection.execute(
         UPSERT_ALERT_FEED_OBSERVATION,
@@ -702,9 +702,7 @@ def normalize_i3_alert_payload(
         periods = _active_periods(raw_alert)
         active_start, active_end = periods[0] if periods else (None, None)
         alert_id = _text(_value(raw_alert, "id", "alertId", "messageId"))
-        alert_header_text = _text(
-            _value(raw_alert, "header", "title", "summary", "header_texts")
-        )
+        alert_header_text = _text(_value(raw_alert, "header", "title", "summary", "header_texts"))
         description_text = _text(
             _value(raw_alert, "description", "body", "message", "description_texts")
         )
@@ -838,11 +836,21 @@ def load_i3_snapshot_to_silver(
     snapshot: RawI3AlertSnapshot,
     loaded_at_utc: datetime | None = None,
 ) -> I3SilverLoadResult:
-    # D2 observation seam: this reads the raw payload and writes the daily
-    # language evidence BEFORE normalize/INSERT can hit the monotonic SCD
-    # COALESCE. Both proprietary i3 JSON and converted GTFS-RT alerts arrive
-    # here through raw.i3_alert_snapshots.
+    connection.execute(ACQUIRE_I3_LOAD_LOCK, {"provider_id": snapshot.provider_id})
     record_alert_language_observations(connection, snapshot=snapshot)
+    newer_observations = connection.execute(
+        SELECT_NEWER_FEED_OBSERVATION,
+        {"provider_id": snapshot.provider_id, "captured_at_utc": snapshot.captured_at_utc},
+    ).mappings()
+    if any(newer_observations):
+        return I3SilverLoadResult(
+            provider_id=snapshot.provider_id,
+            i3_alert_snapshot_id=snapshot.i3_alert_snapshot_id,
+            alert_rows_inserted=0,
+            informed_entity_rows_inserted=0,
+            loaded_at_utc=loaded_at_utc or datetime.now(UTC),
+            skipped_older_capture=True,
+        )
     alert_rows, entity_rows, period_rows = normalize_i3_alert_payload(snapshot)
     connection.execute(
         DELETE_I3_ACTIVE_PERIODS,
@@ -940,14 +948,23 @@ def load_i3_snapshot_to_silver(
     )
 
 
-def find_latest_i3_raw_snapshot(
+def find_i3_raw_snapshot(
     connection: Connection,
     *,
     provider_id: str,
+    snapshot_id: int | None = None,
+    endpoint_key: str | None = None,
 ) -> RawI3AlertSnapshot:
-    row = connection.execute(
-        text(
-            """
+    if snapshot_id is not None and (type(snapshot_id) is not int or snapshot_id <= 0):
+        raise ValueError("Snapshot ID must be a positive integer")
+    if endpoint_key is not None and endpoint_key not in {"i3_alerts", "service_alerts"}:
+        raise ValueError(f"Unsupported alert endpoint {endpoint_key!r}")
+    snapshot_filter = "AND i3.i3_alert_snapshot_id = :snapshot_id" if snapshot_id else ""
+    endpoint_filter = "AND fe.endpoint_key = :endpoint_key" if endpoint_key else ""
+    row = (
+        connection.execute(
+            text(
+                f"""
             SELECT
                 i3.i3_alert_snapshot_id,
                 i3.provider_id,
@@ -959,15 +976,32 @@ def find_latest_i3_raw_snapshot(
                 ON p.provider_id = i3.provider_id
             INNER JOIN raw.ingestion_runs AS ir
                 ON ir.ingestion_run_id = i3.ingestion_run_id
+            INNER JOIN core.feed_endpoints AS fe
+                ON fe.feed_endpoint_id = i3.feed_endpoint_id
             WHERE i3.provider_id = :provider_id
               AND ir.status = 'succeeded'
+              AND ir.provider_id = i3.provider_id
+              AND ir.feed_endpoint_id = i3.feed_endpoint_id
+              AND fe.provider_id = i3.provider_id
+              {snapshot_filter}
+              {endpoint_filter}
             ORDER BY i3.captured_at_utc DESC, i3.i3_alert_snapshot_id DESC
             LIMIT 1
             """
-        ),
-        {"provider_id": provider_id},
-    ).mappings().one_or_none()
+            ),
+            {"provider_id": provider_id}
+            | ({"snapshot_id": snapshot_id} if snapshot_id else {})
+            | ({"endpoint_key": endpoint_key} if endpoint_key else {}),
+        )
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
+        if snapshot_id is not None:
+            raise ValueError(
+                f"No successful raw alert snapshot {snapshot_id} "
+                f"belongs to {provider_id}/{endpoint_key or 'alerts'}"
+            )
         raise ValueError(
             "No successful raw i3 alert snapshot was found for this provider. "
             "Run capture-i3 before load-i3-silver."
@@ -981,14 +1015,24 @@ def find_latest_i3_raw_snapshot(
     )
 
 
-def load_latest_i3_to_silver(
+find_latest_i3_raw_snapshot = find_i3_raw_snapshot
+
+
+def load_i3_to_silver(
     provider_id: str,
     *,
+    snapshot_id: int | None = None,
+    endpoint_key: str | None = None,
     settings: Settings | None = None,
     engine: Engine | None = None,
 ) -> I3SilverLoadResult:
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
     with engine.begin() as connection:
-        snapshot = find_latest_i3_raw_snapshot(connection, provider_id=provider_id)
+        snapshot = find_i3_raw_snapshot(
+            connection, provider_id=provider_id, snapshot_id=snapshot_id, endpoint_key=endpoint_key
+        )
         return load_i3_snapshot_to_silver(connection, snapshot=snapshot)
+
+
+load_latest_i3_to_silver = load_i3_to_silver

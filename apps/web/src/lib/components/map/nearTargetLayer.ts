@@ -6,7 +6,7 @@ export const NEAR_TARGET_SOURCE = 'near-target';
 export const NEAR_TARGET_LAYER = 'near-target-pin';
 export const LOCATION_PIN_ICON = 'near-target-pin';
 
-interface NearTarget {
+export interface NearTarget {
 	readonly lat: number;
 	readonly lon: number;
 	readonly label: string;
@@ -49,11 +49,17 @@ export function toNearTargetFeatures(target: NearTarget | null): NearTargetFC {
 
 export function bakeLocationPinSprite(map: MapLibreMap): void {
 	if (typeof document === 'undefined') return;
+	const image = bakeLocationPinImage();
+	if (map.hasImage(LOCATION_PIN_ICON)) map.removeImage(LOCATION_PIN_ICON);
+	map.addImage(LOCATION_PIN_ICON, image, { pixelRatio: PIN_RATIO });
+}
+
+export function bakeLocationPinImage(): ImageData {
+	if (typeof document === 'undefined') throw new Error('Location pin requires a browser canvas');
 	const fill = resolveColor('var(--accent-text)', 'rgb(255, 182, 39)');
 	const halo = resolveColor('var(--background)', 'rgb(20, 20, 20)');
 	const inner = resolveColor('var(--card)', 'rgb(255, 255, 255)');
-	if (map.hasImage(LOCATION_PIN_ICON)) map.removeImage(LOCATION_PIN_ICON);
-	map.addImage(LOCATION_PIN_ICON, pinImage(fill, halo, inner), { pixelRatio: PIN_RATIO });
+	return pinImage(fill, halo, inner);
 }
 
 export function addNearTargetSource(map: MapLibreMap): void {

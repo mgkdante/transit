@@ -52,7 +52,9 @@ function selectionFromFeature(feature: PickableMapFeature): MapSelection | null 
 }
 
 export function pickMapSelection(features: readonly PickableMapFeature[]): MapSelection | null {
-	for (const layer of PICKABLE_MAP_LAYERS) {
+	// Keep the old GL-body priority for source-compatible callers; the live runtime
+	// now supplies overlay body hits before querying the remaining GL layers.
+	for (const layer of [VEHICLE_BODY_LAYER, ...PICKABLE_MAP_LAYERS]) {
 		for (const feature of features) {
 			if (feature.layer?.id !== layer) continue;
 			const selection = selectionFromFeature(feature);

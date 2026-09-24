@@ -9,6 +9,7 @@ describe('selectHabitsHeatmap', () => {
 		]);
 		expect(vm.hasHabits).toBe(true);
 		expect(vm.matrix).toHaveLength(2);
+		expect(selectHabitsHeatmap([[0]]).hasHabits).toBe(true);
 	});
 
 	it('stands the section down (hasHabits=false) when every cell is null', () => {
@@ -29,7 +30,12 @@ describe('selectHabitsHeatmapSpec (P5.2)', () => {
 		colAxisLabel: 'Hour',
 		rowLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 		fullRowLabels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-		tierLabels: ['Low', 'Low', 'Medium', 'High'],
+		tierLabels: [
+			'Low relative score',
+			'Moderate relative score',
+			'High relative score',
+			'Very high relative score',
+		],
 		noDataLabel: 'No data',
 		worstGlyph: '◆',
 		hourLabel: (h: number) => `${String(h).padStart(2, '0')}:00`,

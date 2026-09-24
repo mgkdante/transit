@@ -115,12 +115,6 @@
 						<dd>{row.stops.length}</dd>
 					</div>
 				{/if}
-				{#if row.impactPassages != null}
-					<div>
-						<dt>{copy.meta.impact}</dt>
-						<dd>{copy.meta.impactValue(row.impactPassages)}</dd>
-					</div>
-				{/if}
 			</dl>
 			{#if row.url}
 				<!-- A present url as a SAFE external link (http/https only, hostname shown). -->

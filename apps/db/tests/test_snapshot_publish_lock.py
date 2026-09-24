@@ -1,12 +1,13 @@
-"""Static/historic publish-lane advisory-lock orchestration."""
+"""Provider/tier publication lane orchestration."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 
 import pytest
+from snapshot_storage_fixtures import MemorySnapshotStore
 
-from transit_ops.snapshots import publish
+from transit_ops.snapshots import historic_tier, publication_lane, publish
 from transit_ops.snapshots.storage import (
     StableActivationConflictError,
     StableActivationOutcome,
@@ -24,6 +25,9 @@ class _Result:
 
     def mappings(self) -> _Result:
         return self
+
+    def all(self):
+        return []
 
     def fetchone(self):  # noqa: ANN201
         return None
@@ -66,10 +70,10 @@ class _Engine:
         return _transaction()
 
 
-class _Store:
+class _Store(MemorySnapshotStore):
     def __init__(self, events: list[str]) -> None:
+        super().__init__()
         self.events = events
-        self.objects: dict[str, bytes] = {}
 
     def full_key(self, rel_key: str) -> str:
         return rel_key
@@ -105,7 +109,7 @@ def test_historic_lock_precedes_hash_load_public_write_flush_and_db_state(
         events.append("publisher")
         storage.put_json("historic/compat.json", {"generation": 1}, tier="historic")
 
-    monkeypatch.setattr(publish, "_publish_historic", _publish_one)
+    monkeypatch.setattr(historic_tier, "publish", _publish_one)
 
     publish.publish_snapshot(
         "stm",
@@ -117,7 +121,10 @@ def test_historic_lock_precedes_hash_load_public_write_flush_and_db_state(
     )
 
     assert events == [
+        "sql:publish.snapshot.repeatable_read",
         "sql:publish.lock.try_acquire",
+        "sql:rollup.delay_day.status",
+        "sql:rollup.route_delay_hourly.historic_dependencies_pending",
         "get:_meta/publish_state_historic.json",
         "publisher",
         "put:historic/compat.json",
@@ -136,7 +143,7 @@ def test_denied_historic_lock_has_zero_storage_or_publish_state_side_effects(
     def _must_not_publish(*_args, **_kwargs) -> None:  # noqa: ANN002, ANN003
         raise AssertionError("publisher ran without the lane lock")
 
-    monkeypatch.setattr(publish, "_publish_historic", _must_not_publish)
+    monkeypatch.setattr(historic_tier, "publish", _must_not_publish)
 
     with pytest.raises(
         publish.PublishLockUnavailableError,
@@ -151,7 +158,7 @@ def test_denied_historic_lock_has_zero_storage_or_publish_state_side_effects(
             gate_enabled=False,
         )
 
-    assert events == ["sql:publish.lock.try_acquire"]
+    assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
     assert store.objects == {}
     assert conn.state_writes == []
 
@@ -177,7 +184,7 @@ def test_denied_static_lock_stops_before_dataset_stamp_lookup(
             gate_enabled=False,
         )
 
-    assert events == ["sql:publish.lock.try_acquire"]
+    assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
 
 
 @pytest.mark.parametrize("tier", ["static", "historic"])
@@ -192,7 +199,10 @@ def test_static_and_historic_publish_acquire_the_exact_lane_lock(
     def _publish_nothing(*_args, **_kwargs) -> None:  # noqa: ANN002, ANN003
         return None
 
-    monkeypatch.setattr(publish, f"_publish_{tier}", _publish_nothing)
+    if tier == "historic":
+        monkeypatch.setattr(historic_tier, "publish", _publish_nothing)
+    else:
+        monkeypatch.setattr(publish, f"_publish_{tier}", _publish_nothing)
     if tier == "static":
         monkeypatch.setattr(publish, "_static_stamp", lambda *_args: "2026-07-14T00:00:00Z")
 
@@ -205,11 +215,12 @@ def test_static_and_historic_publish_acquire_the_exact_lane_lock(
         gate_enabled=False,
     )
 
-    assert conn.params[0] == (
+    assert conn.params[0] == ("publish.snapshot.repeatable_read", {})
+    assert conn.params[1] == (
         "publish.lock.try_acquire",
         {"provider_id": "stm", "tier": tier},
     )
-    assert events[0] == "sql:publish.lock.try_acquire"
+    assert events[:2] == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
 
 
 def test_publish_lock_key_is_provider_and_tier_scoped() -> None:
@@ -217,37 +228,34 @@ def test_publish_lock_key_is_provider_and_tier_scoped() -> None:
     conn = _Conn(events)
 
     for provider_id, tier in (("stm", "static"), ("stm", "historic"), ("exo", "static")):
-        publish._acquire_publish_lock(conn, provider_id=provider_id, tier=tier)
+        publication_lane.acquire_publication_lane(conn, provider_id=provider_id, tier=tier)
 
     assert [params for name, params in conn.params if name == "publish.lock.try_acquire"] == [
         {"provider_id": "stm", "tier": "static"},
         {"provider_id": "stm", "tier": "historic"},
         {"provider_id": "exo", "tier": "static"},
     ]
-    sql = str(publish._PUBLISH_LOCK_SQL)
+    sql = str(publication_lane._PUBLISH_LOCK_SQL)
     assert "pg_try_advisory_xact_lock" in sql
     assert "transit.snapshot_publish:" in sql
     assert ":provider_id" in sql
     assert ":tier" in sql
 
 
-def test_live_publish_does_not_take_static_historic_lane_lock() -> None:
+def test_denied_live_lane_stops_before_storage_or_state() -> None:
     events: list[str] = []
     conn = _Conn(events, lock_acquired=False)
     store = _Store(events)
 
-    result = publish.publish_snapshot(
-        "stm",
-        tier="live",
-        settings=_Settings(),
-        engine=_Engine(conn),
-        storage=store,
-        gate_enabled=False,
-    )
+    with pytest.raises(publish.PublishLockUnavailableError):
+        publish.publish_snapshot(
+            "stm", tier="live", settings=_Settings(), engine=_Engine(conn),
+            storage=store, gate_enabled=False,
+        )
 
-    assert result.tier == "live"
-    assert "sql:publish.lock.try_acquire" not in events
-    assert len(result.keys_written) == 7
+    assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
+    assert store.objects == {}
+    assert conn.state_writes == []
 
 
 def test_root_activation_conflict_does_not_flush_hash_or_db_state(
@@ -281,7 +289,7 @@ def test_root_activation_conflict_does_not_flush_hash_or_db_state(
             tier="historic",
         )
 
-    monkeypatch.setattr(publish, "_publish_historic", _conflicting_publish)
+    monkeypatch.setattr(historic_tier, "publish", _conflicting_publish)
 
     with pytest.raises(StableActivationConflictError):
         publish.publish_snapshot(
@@ -332,7 +340,7 @@ def test_same_root_activation_is_counted_as_an_idempotent_skip(
             tier="historic",
         )
 
-    monkeypatch.setattr(publish, "_publish_historic", _same_root_publish)
+    monkeypatch.setattr(historic_tier, "publish", _same_root_publish)
 
     result = publish.publish_snapshot(
         "stm",

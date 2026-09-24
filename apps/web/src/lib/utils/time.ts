@@ -78,6 +78,17 @@ function parseIso(iso: string): Date | null {
 	return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Unrounded elapsed minutes between explicit-offset instants; invalid/reversed pairs are absent. */
+export function elapsedUtcMinutes(
+	first: string | null | undefined,
+	last: string | null | undefined,
+): number | null {
+	const offset = /(?:z|[+-]\d{2}:\d{2})$/i;
+	if (first == null || last == null || !offset.test(first) || !offset.test(last)) return null;
+	const minutes = (Date.parse(last) - Date.parse(first)) / 60_000;
+	return Number.isFinite(minutes) && minutes >= 0 ? minutes : null;
+}
+
 /**
  * Resolve an ISO instant to the provider's calendar-day key.
  *
@@ -138,12 +149,13 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
  * America/Toronto would roll it back to the previous evening and render the
  * wrong day. Returns '·' for empty/invalid input.
  */
-export function formatDateKey(key: string, lang: TimeLang): string {
+export function formatDateKey(key: string, lang: TimeLang, includeYear = false): string {
 	const date = parseIso(key);
 	if (!date) return '·';
 	return dateTimeFormat(localeTag(lang), {
 		month: 'short',
 		day: 'numeric',
+		...(includeYear ? { year: 'numeric' as const } : {}),
 		timeZone: 'UTC',
 	}).format(date);
 }

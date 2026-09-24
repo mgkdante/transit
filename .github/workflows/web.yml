@@ -8,13 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       deploy_target:
-        description: "Manual deploy/smoke target"
+        description: "Deploy a target or verify its restored build without deploying"
         required: true
         default: "dev"
         type: choice
         options:
           - dev
           - production
+          - verify-dev
+          - verify-production
 
 permissions:
   contents: read
@@ -30,7 +32,7 @@ defaults:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       classification: ${{ steps.classify.outputs.classification }}
@@ -46,7 +48,7 @@ jobs:
             {
               "schema": 1,
               "always": {
-                "paths": [".bun-version", ".github/scripts/materialize-shared-config.mjs", ".github/shared-tooling.json", ".github/workflows/web.yml", ".npmrc", "bun.lock", "package.json", "turbo.json"],
+                "paths": [".bun-version", ".nvmrc", ".github/scripts/materialize-shared-config.mjs", ".github/shared-tooling.json", ".github/workflows/web.yml", ".npmrc", "bun.lock", "package.json", "turbo.json"],
                 "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
               },
               "jobs": {
@@ -55,7 +57,7 @@ jobs:
                   "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
                 "map-poster-check": {
-                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
+                  "paths": ["apps/web/browser-toolchain.json", "apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
                   "prefixes": ["apps/web/static/map/"]
                 }
               },
@@ -72,9 +74,14 @@ jobs:
             }
 
   ci-work:
+    outputs:
+      artifact_id: ${{ steps.upload_build.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+      producer_attempt: ${{ steps.seal_build.outputs.producer_attempt }}
+      build_target: ${{ steps.build_target.outputs.target }}
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['ci-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -100,6 +107,10 @@ jobs:
       - name: Data proxy unit tests
         working-directory: ${{ github.workspace }}
         run: bun run --cwd apps/data-proxy test
+
+      - name: Data proxy Wrangler dry run
+        working-directory: apps/data-proxy
+        run: ../../node_modules/.bin/wrangler deploy --dry-run
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -134,23 +145,78 @@ jobs:
       - name: Type-check
         run: bun run check
 
+      - name: Build artifact contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/web-build-artifact.test.mjs .github/scripts/verify-web-build.test.mjs
+
+      - name: Select build target
+        id: build_target
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_DEPLOY_TARGET: ${{ inputs.deploy_target }}
+        run: node .github/scripts/web-build-artifact.mjs configure
+
       - name: Build (adapter-cloudflare)
         run: bun run build
+
+      - name: Seal deployment build
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        id: seal_build
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
+        run: node .github/scripts/web-build-artifact.mjs prepare "$RUNNER_TEMP/transit-web-build"
+
+      - name: Web Wrangler dry run
+        env:
+          TRANSIT_WRANGLER_ENV: ${{ steps.build_target.outputs.target == 'dev' && 'dev' || '' }}
+        run: ../../node_modules/.bin/wrangler deploy --dry-run --env="$TRANSIT_WRANGLER_ENV"
+
+      - name: Browser toolchain contract
+        run: node --test scripts/install-browser-toolchain.test.mjs scripts/verify-browser-toolchain.test.mjs
+
+      - name: Install authenticated Chromium
+        env:
+          TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
+          node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
+
+      - name: Verify browser toolchain
+        run: node scripts/verify-browser-toolchain.mjs
 
       - name: B9 displayed-value correctness
         env:
           B9_REUSE_BUILD: "1"
-        run: |
-          ./node_modules/.bin/playwright-core install chromium-headless-shell
-          bun run test:b9-display
+        run: bun run test:b9-display
 
       - name: Unit tests
-        run: bun run test
+        run: env -u PUBLIC_SITE_ORIGIN -u PUBLIC_V1_BASE -u PUBLIC_INDEXING bun run test
+
+      - name: Verify sealed build after checks
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+        run: node .github/scripts/web-build-artifact.mjs verify-source "$RUNNER_TEMP/transit-web-build"
+
+      - name: Upload verified deployment build
+        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        id: upload_build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/transit-web-build/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   map-poster-check:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['map-poster-check'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -166,16 +232,52 @@ jobs:
     name: ci
     needs: [classify, ci-work, map-poster-check]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
         with:
           needs-json: ${{ toJSON(needs) }}
 
+  verify-build:
+    name: verify restored build
+    needs: [ci, ci-work]
+    if: >-
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.ci-work.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.deploy_target == 'verify-dev' || inputs.deploy_target == 'verify-production') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TRANSIT_BUILD_TARGET: ${{ needs.ci-work.outputs.build_target }}
+      TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+      TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+      PUBLIC_SITE_ORIGIN: ${{ needs.ci-work.outputs.build_target == 'production' && 'https://transit.yesid.dev' || 'https://dev.transit.yesid.dev' }}
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: ${{ needs.ci-work.outputs.build_target == 'production' && 'true' || 'false' }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Download the producer artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore and verify target HTTP behavior
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/verify-web-build.mjs "$RUNNER_TEMP/transit-web-build"
+
   deploy_scope:
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       deploy_web: ${{ steps.scope.outputs.deploy_web }}
@@ -184,6 +286,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
 
       - name: Resolve deployable event diff
         id: scope
@@ -196,13 +304,20 @@ jobs:
 
   deploy-dev:
     name: deploy dev
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [ci, deploy_scope]
+    needs: [ci, deploy_scope, ci-work]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
+          (needs.ci-work.result == 'success' || needs.ci-work.result == 'skipped') &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')) }}
     environment: development
+    env:
+      TRANSIT_BUILD_TARGET: dev
+      PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -210,19 +325,45 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Require the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        env:
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+        run: |
+          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
+
+      - name: Download the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment build
+        if: ${{ needs.ci-work.result == 'success' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
+      - name: Build when web CI was not required
+        if: ${{ needs.ci-work.result == 'skipped' }}
+        run: bun run build
+
       - name: Apply public snapshot CORS
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Build dev Worker
-        working-directory: apps/web
-        env:
-          PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
-          PUBLIC_V1_BASE: https://data.yesid.dev/v1
-          PUBLIC_INDEXING: "false"
-        run: bun run build
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
 
       - name: Remove legacy dev DNS route host
         env:
@@ -261,17 +402,24 @@ jobs:
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 deploy --env dev
+        run: ../../node_modules/.bin/wrangler deploy --env dev
 
   deploy-production:
     name: deploy production
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [ci, deploy_scope]
+    needs: [ci, deploy_scope, ci-work]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
+          (needs.ci-work.result == 'success' || needs.ci-work.result == 'skipped') &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')) }}
     environment: production
+    env:
+      TRANSIT_BUILD_TARGET: production
+      PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -279,25 +427,51 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Require the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        env:
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+        run: |
+          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
+
+      - name: Download the producer artifact
+        if: ${{ needs.ci-work.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment build
+        if: ${{ needs.ci-work.result == 'success' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
+      - name: Build when web CI was not required
+        if: ${{ needs.ci-work.result == 'skipped' }}
+        run: bun run build
+
       - name: Apply public snapshot CORS
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Build production Worker
-        working-directory: apps/web
-        env:
-          PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
-          PUBLIC_V1_BASE: https://data.yesid.dev/v1
-          PUBLIC_INDEXING: "true"
-        run: bun run build
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
 
       - name: Deploy production Worker
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler@4.100.0 deploy --env=""
+        run: ../../node_modules/.bin/wrangler deploy --env=""
 
       - name: Verify shared production routes
         working-directory: apps/data-proxy

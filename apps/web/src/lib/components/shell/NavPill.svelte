@@ -44,7 +44,9 @@
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import type { TransitModeKey } from '$lib/search/stopMode';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { SearchControls, type SearchScopeKey } from '$lib/components/surface';
+	import SearchControls, {
+		type SearchScopeKey,
+	} from '$lib/components/surface/SearchControls.svelte';
 	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
 	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { navPillCopy } from './navPill.copy';
@@ -866,14 +868,6 @@
 	.nav-controls :global(.nav-control) {
 		min-width: 44px;
 		min-height: 44px;
-	}
-
-	/* The refresh control stays a compact icon in the pill: its "updated <relative>"
-	   readout is a floating-chrome affordance, not pill content — suppress it so the
-	   pill keeps its tight capsule width (the readout still rides the button title +
-	   aria-label, so freshness stays reachable to AT). */
-	.nav-controls :global(.nav-control .refresh-readout) {
-		display: none;
 	}
 
 	.nav-compact-search {

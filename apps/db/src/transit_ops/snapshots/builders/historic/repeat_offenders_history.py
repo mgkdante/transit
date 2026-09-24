@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any
 
+from transit_ops.gold.reader import avg_delay_min
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryNameIndex,
     history_row_int,
@@ -24,6 +25,7 @@ from transit_ops.snapshots.builders.historic.ranking_kernel import (
     build_offender_kind_ladder,
 )
 from transit_ops.snapshots.contract import (
+    PAYLOAD_METHODOLOGY,
     REPEAT_OFFENDERS_BYTE_CEILING,
     HistoricRepeatOffenderGrain,
     HistoricRepeatOffendersDay,
@@ -202,10 +204,10 @@ def _scalar_offenders(
 ) -> list[Offender]:
     """Recompose the fixed scalar doctrine over 14 closed provider-local dates.
 
-    The fixed mutable mart uses an instant ``now()-14d`` fact window, which can
+    The mutable mart follows configured fact retention (14 days by default) and can
     include an open local day and a partial oldest day. Exact newest scalar
-    parity therefore applies only when that mutable source window is aligned to
-    these same closed dates; immutable history never relaxes its closed-day rule.
+    parity requires 14-day retention aligned to these same closed dates;
+    immutable history always keeps its fixed closed-day window.
     """
 
     ranked: list[tuple[int, Decimal, str, str, str, Offender]] = []
@@ -234,9 +236,7 @@ def _scalar_offenders(
                     recurrence=f"{recurrence_days}/{_SCALAR_WINDOW_DAYS}d",
                     recurrence_days=recurrence_days,
                     window_days=_SCALAR_WINDOW_DAYS,
-                    # Keep the fixed compatibility builder's Python-round display
-                    # behavior after applying the mart's numeric seconds rounding.
-                    avg_delay_min=round(float(average_seconds) / 60.0, 1),
+                    avg_delay_min=avg_delay_min(average_seconds),
                     severity=severity,
                 ),
             )
@@ -332,7 +332,7 @@ def _iter_repeat_offender_days(
         ]
         payload = HistoricRepeatOffendersDay(
             generated_utc=latest_history_timestamp(timestamps),
-            methodology_version="reliability-1",
+            methodology_version=PAYLOAD_METHODOLOGY["historic_repeat_offenders_day"],
             publish_generation_id=None,
             date=rendered_date,
             offenders=_scalar_offenders(

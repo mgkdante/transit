@@ -13,10 +13,13 @@
 //     and clicking it fires the handler.
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import EdgeState from './EdgeState.svelte';
 import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 import type { Locale } from '$lib/i18n';
+import { sharedClock } from '$lib/stores/clock.svelte';
+
+vi.mock('$app/environment', () => ({ browser: true }));
 
 const LOCALES: Locale[] = ['en', 'fr'];
 
@@ -27,7 +30,7 @@ const TITLES = {
 	'no-results': { en: 'No results', fr: 'Aucun résultat' },
 	empty: { en: 'Nothing to show', fr: 'Rien à afficher' },
 	'empty-avis': { en: 'No alerts', fr: 'Aucun avis' },
-	'error-v1': { en: '/v1 contract unreachable', fr: 'Contrat /v1 injoignable' },
+	'error-v1': { en: 'Data unavailable', fr: 'Données indisponibles' },
 } satisfies Record<string, Record<Locale, string>>;
 
 const MESSAGE_VARIANTS = Object.keys(TITLES) as Array<keyof typeof TITLES>;
@@ -105,7 +108,10 @@ describe('EdgeState — a11y verdict surface', () => {
 		// The glyph span is aria-hidden; the title text is what AT announces.
 		const glyph = container.querySelector('[data-slot="state-notice-glyph"]');
 		expect(glyph).not.toBeNull();
-		expect(glyph!.textContent).toBe('●'); // empty-avis = the GOOD green dot
+		expect(glyph).toHaveAttribute('aria-hidden', 'true');
+		expect(glyph!.textContent).toBe('○');
+		expect(container).toHaveTextContent('Aucun avis n’est signalé dans cette fenêtre.');
+		expect(container).not.toHaveTextContent('Le réseau roule normalement');
 	});
 });
 
@@ -123,7 +129,7 @@ describe('EdgeState — card border treatment', () => {
 		['stale-offline', 'warning'],
 		['no-results', 'neutral'],
 		['empty', 'neutral'],
-		['empty-avis', 'positive'],
+		['empty-avis', 'neutral'],
 		['error-v1', 'error'],
 	] as const)('%s keeps semantic colour in content, never in a top frame rule', (variant, tone) => {
 		const { container } = render(EdgeState, { props: { variant, lang: 'en' } });
@@ -186,16 +192,14 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 		const en = render(EdgeState, {
 			props: { variant: 'empty', lang: 'en', emptyReason: { key: 'metro-no-realtime' } },
 		});
-		expect(en.getByText('Live positions are not published for the metro.')).toBeInTheDocument();
+		expect(en.getByText('live positions are not published here')).toBeInTheDocument();
 		// The generic empty body must NOT also render.
 		expect(en.queryByText('No data has been published for this view yet.')).toBeNull();
 
 		const fr = render(EdgeState, {
 			props: { variant: 'empty', lang: 'fr', emptyReason: { key: 'metro-no-realtime' } },
 		});
-		expect(
-			fr.getByText('Les positions en temps réel ne sont pas publiées pour le métro.'),
-		).toBeInTheDocument();
+		expect(fr.getByText('les positions en direct ne sont pas publiées ici')).toBeInTheDocument();
 	});
 
 	it('closed-opens-at names the FIRST departure (EN + FR)', () => {
@@ -206,7 +210,7 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
 			},
 		});
-		expect(en.getByText('Service closed. Opens at 06:00.')).toBeInTheDocument();
+		expect(en.getByText('service is closed, opens at 06:00')).toBeInTheDocument();
 
 		const fr = render(EdgeState, {
 			props: {
@@ -215,7 +219,7 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
 			},
 		});
-		expect(fr.getByText('Service terminé. Reprise à 06:00.')).toBeInTheDocument();
+		expect(fr.getByText('service terminé, reprise à 06:00')).toBeInTheDocument();
 	});
 
 	it('overnight-opens-at reads "no service at this hour" with FIRST', () => {
@@ -226,27 +230,77 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 				emptyReason: { key: 'overnight-opens-at', firstDeparture: '05:11' },
 			},
 		});
-		expect(getByText('No service at this hour. Opens at 05:11.')).toBeInTheDocument();
+		expect(getByText('no service at this hour, opens at 05:11')).toBeInTheDocument();
 	});
 
 	it('scheduled-silent reads the honest "no vehicle reporting" message', () => {
 		const { getByText } = render(EdgeState, {
 			props: { variant: 'empty', lang: 'en', emptyReason: { key: 'scheduled-silent' } },
 		});
-		expect(getByText('Scheduled, but no vehicle is reporting live right now.')).toBeInTheDocument();
+		expect(getByText('scheduled, but nothing is reporting live')).toBeInTheDocument();
 	});
 
-	it('a reason is IGNORED on the error variant (an error is never mislabeled)', () => {
-		const { queryByText, getByText } = render(EdgeState, {
+	it.each(['error-v1', 'stale-offline', 'skeleton'] as const)(
+		'%s takes precedence over a service-window reason',
+		(variant) => {
+			const { queryByText, getByText } = render(EdgeState, {
+				props: {
+					variant,
+					lang: 'en',
+					skeletonDelayMs: 0,
+					emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
+				},
+			});
+			expect(queryByText('service is closed, opens at 06:00')).toBeNull();
+			expect(
+				getByText(variant === 'skeleton' ? 'Loading…' : TITLES[variant].en),
+			).toBeInTheDocument();
+		},
+	);
+
+	it.each([
+		['en', 'service has not started yet, opens at 06:37'],
+		['fr', 'service pas encore commencé, début à 06:37'],
+	] as const)('before-open preserves the first departure in %s', (lang, body) => {
+		const { getByText } = render(EdgeState, {
 			props: {
-				variant: 'error-v1',
-				lang: 'en',
-				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
+				variant: 'empty',
+				lang,
+				emptyReason: { key: 'before-open', firstDeparture: '06:37' },
 			},
 		});
-		expect(queryByText('Service closed. Opens at 06:00.')).toBeNull();
-		expect(getByText('/v1 contract unreachable')).toBeInTheDocument();
+		expect(getByText(body)).toBeInTheDocument();
 	});
+
+	it.each(['en', 'fr'] as const)(
+		'last-seen ages against the shared server clock in %s',
+		async (lang) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date('2026-06-15T12:09:00Z'));
+			sharedClock.noteServerEpochMs(Date.parse('2026-06-15T12:00:00Z'));
+			try {
+				const { container } = render(EdgeState, {
+					props: {
+						variant: 'empty',
+						lang,
+						emptyReason: { key: 'last-seen', lastSeenIso: '2026-06-15T11:57:00Z' },
+					},
+				});
+				const body = container.querySelector('[data-slot="state-notice-body"]');
+				expect(body).toHaveTextContent(
+					lang === 'en' ? 'last seen 3 minutes ago' : 'dernière position il y a 3 min',
+				);
+				await vi.advanceTimersByTimeAsync(60_000);
+				expect(body).toHaveTextContent(
+					lang === 'en' ? 'last seen 4 minutes ago' : 'dernière position il y a 4 min',
+				);
+			} finally {
+				cleanup();
+				sharedClock.noteServerEpochMs(Date.now());
+				vi.useRealTimers();
+			}
+		},
+	);
 
 	it('the empty variant with NO reason falls back to the generic honest no-data copy', () => {
 		const { getByText } = render(EdgeState, { props: { variant: 'empty', lang: 'en' } });

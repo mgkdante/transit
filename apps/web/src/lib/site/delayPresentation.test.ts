@@ -1,6 +1,12 @@
 // delayPresentation.test.ts — the shared delay-reading helpers (slice-S6).
 import { describe, expect, it } from 'vitest';
-import { delayTone, delayColorVar, delaySeverity, delayLabel } from './delayPresentation';
+import {
+	delayTone,
+	delayColorVar,
+	delaySeverity,
+	delayLabel,
+	delayMeasurement,
+} from './delayPresentation';
 
 describe('delayTone', () => {
 	it('bands a delay to a calm-by-default status tone', () => {
@@ -56,5 +62,19 @@ describe('delayLabel', () => {
 		expect(delayLabel(null, noNoDelay)).toBe('On time');
 		expect(delayLabel(undefined, noNoDelay)).toBe('On time');
 		expect(delayLabel(0, noNoDelay)).toBe('On time');
+	});
+});
+
+describe('delayMeasurement', () => {
+	it.each([
+		[1, '+1 min'],
+		[0, '0 min'],
+		[-2, '−2 min'],
+		[4, '+4 min'],
+		[-0, '0 min'],
+		[null, null],
+		[undefined, null],
+	] as const)('formats %s without a categorical verdict', (delay, expected) => {
+		expect(delayMeasurement(delay)).toBe(expected);
 	});
 });

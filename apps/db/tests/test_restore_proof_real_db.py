@@ -1,26 +1,9 @@
-"""Real-database restore-proof contract for slice-9.1.1n off-VM backups.
-
-These tests assert the cluster restored by scripts/restore-backup-proof.sh is
-faithful: repo alembic head applied, core/gold/silver data present, the
-excluded silver.rt_trip_update_stop_times restored present-but-EMPTY (the
---exclude-table-data effectiveness proof), and postgis installed.
-
-They run ONLY when TRANSIT_RESTORE_PROOF_DATABASE_URL points at the throwaway
-cluster left running by the restore drill:
-
-    KEEP_RESTORE_WORKDIR=1 bash scripts/restore-backup-proof.sh
-    export TRANSIT_RESTORE_PROOF_DATABASE_URL=\
-"postgresql+psycopg://postgres@:55434/transit_restore?host=/tmp/transit-restore-proof/sock"
-    uv run pytest tests/test_restore_proof_real_db.py -v
-
-Never point this at production. This is deliberately a different env var from
-TRANSIT_TEST_DATABASE_URL: that one points at a schema-only regression cluster
-where these data assertions would false-fail.
-"""
+"""Data and durability checks for a retained local restore drill."""
 
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -39,30 +22,34 @@ pytestmark = pytest.mark.skipif(
 
 def repo_alembic_head() -> str:
     config = Config(str(DB_ROOT / "alembic.ini"))
-    # alembic.ini stores script_location relative to the invocation cwd; pin
-    # it to the absolute migrations dir so pytest can run from anywhere.
-    config.set_main_option(
-        "script_location", str(DB_ROOT / "src/transit_ops/db/migrations")
-    )
+    config.set_main_option("script_location", str(DB_ROOT / "src/transit_ops/db/migrations"))
     head = ScriptDirectory.from_config(config).get_current_head()
     assert head is not None, "repo migrations directory has no head revision"
     return head
 
 
+def expected_restore_revision() -> str:
+    revision = os.environ.get("RESTORE_EXPECTED_REVISION") or repo_alembic_head()
+    if not re.fullmatch(r"[A-Za-z0-9_]+", revision):
+        raise ValueError("expected restore revision must be one safe revision ID")
+    return revision
+
+
 @pytest.fixture()
 def conn():
+    expected_restore_revision()
     engine = create_engine(DB_URL)
-    with engine.connect() as connection:
-        yield connection
-    engine.dispose()
+    try:
+        with engine.connect() as connection:
+            yield connection
+    finally:
+        engine.dispose()
 
 
-def test_restored_alembic_head_matches_repo_head(conn) -> None:
-    restored = conn.execute(
-        text("SELECT version_num FROM alembic_version")
-    ).scalar_one()
+def test_restored_alembic_head_matches_expected_source(conn) -> None:
+    restored = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert restored == repo_alembic_head()
+    assert restored == expected_restore_revision()
 
 
 def test_restored_core_schema_has_providers(conn) -> None:
@@ -72,9 +59,7 @@ def test_restored_core_schema_has_providers(conn) -> None:
 
 
 def test_restored_long_horizon_marts_nonempty(conn) -> None:
-    rollups = conn.execute(
-        text("SELECT count(*) FROM gold.trip_delay_summary_5m")
-    ).scalar_one()
+    rollups = conn.execute(text("SELECT count(*) FROM gold.trip_delay_summary_5m")).scalar_one()
     alerts = conn.execute(text("SELECT count(*) FROM silver.i3_alerts")).scalar_one()
 
     assert rollups > 0, "warm rollups must survive the restore"
@@ -87,9 +72,7 @@ def test_excluded_rt_stop_times_restored_present_but_empty(conn) -> None:
     ).scalar_one()
     assert regclass is not None, "excluded table must still be restored (schema, no data)"
 
-    rows = conn.execute(
-        text("SELECT count(*) FROM silver.rt_trip_update_stop_times")
-    ).scalar_one()
+    rows = conn.execute(text("SELECT count(*) FROM silver.rt_trip_update_stop_times")).scalar_one()
     assert rows == 0, "exclusion regressed: excluded table restored WITH data"
 
 
@@ -99,3 +82,13 @@ def test_postgis_extension_restored(conn) -> None:
     ).scalar_one()
 
     assert postgis == 1
+
+
+def test_restore_preserves_utf8_and_durability(conn) -> None:
+    settings = conn.execute(
+        text(
+            "SELECT current_setting('fsync'), current_setting('full_page_writes'), "
+            "current_setting('server_encoding')"
+        )
+    ).one()
+    assert settings == ("on", "on", "UTF8")

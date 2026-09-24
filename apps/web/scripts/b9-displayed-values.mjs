@@ -1,9 +1,18 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
 	FIXTURES,
 	MARK_KINDS,
@@ -19,7 +28,9 @@ const args = new Set(process.argv.slice(2));
 const WEB_ROOT = new URL('..', import.meta.url).pathname;
 const OUTPUT = new URL('../.svelte-kit/output/server/index.js', import.meta.url).pathname;
 const BUILD_ROOT = join(WEB_ROOT, '.svelte-kit/cloudflare');
-const WRANGLER = join(WEB_ROOT, '../data-proxy/node_modules/.bin/wrangler');
+const WRANGLER = join(WEB_ROOT, '../../node_modules/.bin/wrangler');
+const EXPECTED_WRANGLER = JSON.parse(readFileSync(join(WEB_ROOT, '../../package.json'), 'utf8'))
+	.devDependencies?.wrangler;
 const REPLAY_PREFIX = '/v1/stm/';
 const CELLS = Object.freeze([
 	{
@@ -113,32 +124,20 @@ const SEMANTIC_LABELS = Object.freeze({
 const tierMap = (labels) =>
 	Object.fromEntries(labels.map((label, index) => [label, index === 0 ? null : index - 1]));
 const HEATMAP_TIERS = Object.freeze({
-	line: {
-		en: tierMap(['No data', 'Rarely late', 'Sometimes late', 'Often late', '◆ Very unreliable']),
-		fr: tierMap([
-			'Aucune donnée',
-			'Rarement en retard',
-			'Parfois en retard',
-			'Souvent en retard',
-			'◆ Très peu fiable',
-		]),
-	},
-	stop: {
-		en: tierMap([
-			'No data',
-			'Rarely severe',
-			'Sometimes severe',
-			'Often severe',
-			'◆ Very unreliable',
-		]),
-		fr: tierMap([
-			'Aucune donnée',
-			'Rarement grave',
-			'Parfois grave',
-			'Souvent grave',
-			'◆ Très peu fiable',
-		]),
-	},
+	en: tierMap([
+		'No data',
+		'Low relative score',
+		'Moderate relative score',
+		'High relative score',
+		'◆ Very high relative score',
+	]),
+	fr: tierMap([
+		'Aucune donnée',
+		'Score relatif faible',
+		'Score relatif modéré',
+		'Score relatif élevé',
+		'◆ Score relatif très élevé',
+	]),
 });
 
 async function readTable(page, root) {
@@ -171,7 +170,7 @@ async function readSemanticTable(page, root, locale) {
 }
 
 async function readHeatmapTiers(page, root, surface, locale) {
-	const tiers = HEATMAP_TIERS[surface][locale];
+	const tiers = HEATMAP_TIERS[locale];
 	const rows = await readTable(page, root);
 	return {
 		headers: await readHeaders(page, root),
@@ -281,7 +280,9 @@ async function collectLine(page, cell) {
 		.first()
 		.innerText();
 	const observedN =
-		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:tracked trips|trajets suivis)/iu)?.[1] ?? null;
+		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		verdictText.match(/\((\d+)\)/u)?.[1] ??
+		null;
 	const runBulletText = async (slot) =>
 		(await readValues(page, `[data-slot="${slot}"]`, '.metric-bullet__value'))[0] ?? null;
 	const completenessValue = await runBulletText('service-completeness');
@@ -338,11 +339,12 @@ async function collectLine(page, cell) {
 		'[data-slot="delay-by-crowding"]',
 		cell.locale,
 	);
-	for (let depth = 0; depth < 2; depth += 1) {
-		if ((await page.locator('[data-slot="severe-share"]').count()) > 0) break;
-		const closed = page.locator('[data-section="verdict"] button[aria-expanded="false"]').first();
-		if ((await closed.count()) > 0) await closed.click();
-	}
+	const verdictDetail = page.locator('[data-section="verdict"] [data-slot="detail-toggle"]');
+	invariant(
+		(await verdictDetail.count()) === 1 &&
+			(await verdictDetail.getAttribute('aria-expanded')) === 'true',
+		'verdict detail lost its opened state before collection',
+	);
 	invariant(
 		(await page.locator('[data-slot="severe-share"]').count()) > 0,
 		`severe-share control missing: ${(await page.locator('main').innerText()).slice(0, 1500)}`,
@@ -364,8 +366,8 @@ async function collectLine(page, cell) {
 						? 'Plage de dates'
 						: 'Date range'
 					: cell.locale === 'fr'
-						? "Aujourd'hui"
-						: 'Today',
+						? 'Dernier jour'
+						: 'Latest day',
 			})
 			.click();
 	}
@@ -531,14 +533,16 @@ async function collectStop(page) {
 					: (element.querySelector('.metric-value')?.textContent?.trim() ?? null),
 			})),
 		);
-	const otpMetric = periodMetrics.find((metric) => /on-time|ponctualité/iu.test(metric.label));
+	const notSevereMetric = periodMetrics.find((metric) =>
+		/not-severe predictions|prévisions sans retard grave/iu.test(metric.label),
+	);
 	const verdictText = await page
 		.locator('[data-slot="stop-reliability-sections"] [data-slot="verdict"]')
 		.first()
 		.innerText();
 	const observedN =
 		verdictText.match(/\bn=(\d+)/u)?.[1] ??
-		verdictText.match(/(\d+)\s+(?:arrivals|passages)/iu)?.[1];
+		verdictText.match(/(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1];
 	const summaryText = await readValues(
 		page,
 		'[data-slot="stop-reliability-summary"] [data-slot="metric-display"]',
@@ -562,12 +566,8 @@ async function collectStop(page) {
 		links.map((link) => ({
 			id: new URL(link.href).pathname.split('/').at(-1),
 			display:
-				[...link.querySelectorAll('span')]
-					.find(
-						(span) =>
-							span.classList.contains('shrink-0') && span.classList.contains('tabular-nums'),
-					)
-					?.textContent?.trim() ?? null,
+				link.querySelector('.dv-ranked-row .tabular-nums.text-foreground')?.textContent?.trim() ??
+				null,
 		})),
 	);
 	const rankedRoutes = routeRows.map((row) => [row.id, parseNumber(row.display)]);
@@ -595,8 +595,8 @@ async function collectStop(page) {
 	};
 	const stopScalars = {
 		otp: {
-			value: parseNumber(otpMetric?.value),
-			text: normalizeObservation(otpMetric?.value ?? ''),
+			value: parseNumber(notSevereMetric?.value),
+			text: normalizeObservation(notSevereMetric?.value ?? ''),
 		},
 		summary: summary.map((value, index) => ({
 			value,
@@ -612,7 +612,7 @@ async function collectStop(page) {
 		})),
 	};
 	return [
-		observation('stop.day.otp_pct', parseNumber(otpMetric?.value)),
+		observation('stop.day.otp_pct', parseNumber(notSevereMetric?.value)),
 		observation('stop.day.avg_delay_min', summary[1] ?? null),
 		observation('stop.day.p50_min', percentiles[0] ?? null),
 		observation('stop.day.p90_min', percentiles[1] ?? null),
@@ -831,13 +831,17 @@ async function collectNetwork(page, locale) {
 function verifyLedger(cell, fixture, ledger) {
 	const labelPath = `labels/${cell.locale}.json`;
 	const historyStatus = fixture.not_found.includes('historic/history/index.json') ? 404 : 200;
+	const range = new URL(cell.path, 'http://b9.local');
+	const selectedLine =
+		cell.surface === 'line' && range.searchParams.has('from') && range.searchParams.has('to');
+	const lineHistoryLane = selectedLine && historyStatus === 200 ? 'ssr' : 'browser';
 	const expected = {
 		line: [
 			['ssr', 'manifest.json', 200, 2],
 			['ssr', 'static/routes/24.json', 200, 1],
 			['ssr', 'historic/route_reliability/24.json', 200, 1],
 			['ssr', labelPath, 200, 1],
-			['browser', 'historic/history/index.json', historyStatus, 1],
+			[lineHistoryLane, 'historic/history/index.json', historyStatus, 1],
 			['browser', 'provenance.json', 200, 1],
 			['browser', 'live/vehicles.json', 200, 1],
 			['browser', 'live/trips.json', 200, 1],
@@ -852,7 +856,6 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'historic/stop_reliability/52095.json', 200, 1],
 			['browser', 'live/stop_departures.json', 200, 1],
 			['browser', 'live/alerts.json', 200, 1],
-			['browser', 'live/network.json', 200, 1],
 		],
 		network: [
 			['ssr', 'manifest.json', 200, 2],
@@ -864,7 +867,8 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/network.json', 200, 1],
 		],
 	}[cell.surface];
-	const range = new URL(cell.path, 'http://b9.local');
+	if (selectedLine && historyStatus === 404)
+		expected.push(['ssr', 'historic/history/index.json', 404, 1]);
 	const selectedRefs = (index) => {
 		const from = range.searchParams.get('from');
 		const to = range.searchParams.get('to');
@@ -886,25 +890,27 @@ function verifyLedger(cell, fixture, ledger) {
 		const family = cell.surface === 'line' ? 'lines' : 'stops';
 		const directoryPath = root.families?.find((entry) => entry.family === family)?.index_path;
 		if (directoryPath) {
-			expected.push(['browser', directoryPath, 200, 1]);
+			const lane = cell.surface === 'line' ? lineHistoryLane : 'browser';
+			expected.push([lane, directoryPath, 200, 1]);
 			const entityId = cell.surface === 'line' ? '24' : '52095';
 			const entityPath = fixture.files[directoryPath]?.entities?.find(
 				(entry) => entry.entity_id === entityId,
 			)?.index_path;
 			if (entityPath) {
-				expected.push(['browser', entityPath, 200, 1]);
+				expected.push([lane, entityPath, 200, 1]);
 				const refs = selectedRefs(fixture.files[entityPath]);
 				if (cell.surface === 'line' && cell.fixture === 'rich' && refs.length === 0)
 					refs.push(...(fixture.files[entityPath]?.partitions ?? []).slice(-1));
-				for (const ref of refs)
-					expected.push([
-						'browser',
-						ref.path,
-						200,
-						cell.surface === 'line' && cell.fixture !== 'live' && range.searchParams.has('from')
-							? 2
-							: 1,
-					]);
+				for (const ref of refs) {
+					if (lane === 'ssr') {
+						// The initial selected partition is read by SSR. Synthetic controls later
+						// make the first browser read; the server seed does not populate its cache.
+						expected.push(['ssr', ref.path, 200, 1]);
+						if (cell.fixture !== 'live') expected.push(['browser', ref.path, 200, 1]);
+					} else {
+						expected.push(['browser', ref.path, 200, 1]);
+					}
+				}
 			}
 		}
 	}
@@ -924,17 +930,119 @@ function verifyLedger(cell, fixture, ledger) {
 	);
 }
 
-function verifySsr(cell, fixture, html) {
+async function verifySsr(page, cell, fixture, html) {
 	const mainHtml = html.match(/<main\b[^>]*>[\s\S]*?<\/main>/iu)?.[0] ?? '';
 	invariant(mainHtml !== '', `${cell.path} SSR omitted main`);
 	const normalized = ssrText(mainHtml);
 	if (cell.surface === 'line') {
 		const route = fixture.files['static/routes/24.json'];
 		invariant(normalized.includes(route.long), `${cell.path} SSR omitted line identity`);
+		const selected = new URL(cell.path, 'http://b9.local').searchParams.has('from');
+		if (selected && fixture.not_found.includes('historic/history/index.json')) {
+			invariant(
+				!mainHtml.includes('data-section="verdict"'),
+				`${cell.path} SSR rendered an unresolved retained range`,
+			);
+			return;
+		}
+		// An unattached template parses only the captured response. It executes no
+		// scripts or resource loads and cannot borrow values from the hydrated page.
+		const ssr = await page.evaluate((source) => {
+			const template = document.createElement('template');
+			template.innerHTML = source;
+			const main = template.content.querySelector('main');
+			const values = [
+				...main.querySelectorAll(
+					'[data-section="verdict"] [data-slot="verdict-kpis"] > [data-slot="metric-bullet"]',
+				),
+			].map((tile) =>
+				tile.querySelector('[data-slot="absent-value"]')
+					? null
+					: (tile.querySelector('.metric-bullet__value')?.textContent?.trim() ?? null),
+			);
+			return {
+				values,
+				bands: [...main.querySelectorAll('.reliability-band[data-band]')].map((band) =>
+					band.getAttribute('data-band'),
+				),
+				window: main.querySelector('[data-slot="active-window"]')?.textContent ?? '',
+				freshness:
+					main
+						.querySelector('[data-slot="article-header"] .header__meta time')
+						?.getAttribute('datetime') ?? null,
+				headerBan:
+					main.querySelector('.route-verdict-banner .verdict__ban')?.textContent?.trim() ?? null,
+				currentOnly:
+					main.querySelector('[data-slot="header-verdict-current-only"]')?.textContent?.trim() ??
+					null,
+				importError: main.querySelector('[data-slot="reliability-import-error"]') != null,
+			};
+		}, html);
 		invariant(
-			!mainHtml.includes('data-slot="verdict"') && !mainHtml.includes('data-section="verdict"'),
-			`${cell.path} SSR eagerly rendered lazy reliability content`,
+			JSON.stringify(ssr.bands) ===
+				JSON.stringify(['verdict', 'when-to-ride', 'the-wait', 'run-and-fit', 'worst-stops']),
+			`${cell.path} SSR omitted or reordered reliability bands`,
 		);
+		invariant(!ssr.importError, `${cell.path} SSR contains a reliability import failure`);
+		const ids = [
+			'line.day.otp_pct',
+			'line.day.avg_delay_min',
+			'line.day.p50_min',
+			'line.day.p90_min',
+		];
+		const expected = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale, cell.path);
+		const expectedHeadline = expected.filter((row) => ids.includes(row.id));
+		invariant(
+			ssr.values.length === 4 ||
+				(ssr.values.length === 0 && expectedHeadline.every((row) => row.value == null)),
+			`${cell.path} SSR KPI shape changed`,
+		);
+		const actual = ids.map((id, index) => observation(id, parseNumber(ssr.values[index])));
+		actual.push(observation('line.pane.freshness_iso', ssr.freshness));
+		compareObservations(
+			expected.filter((row) => ids.includes(row.id) || row.id === 'line.pane.freshness_iso'),
+			actual,
+			`${cell.fixture}/${cell.locale}/line SSR`,
+		);
+		for (const [index, value] of ssr.values.entries()) {
+			if (value != null)
+				invariant(
+					index === 0 ? value.includes('%') : value.includes('min'),
+					`${cell.path} SSR KPI ${index} omitted its unit`,
+				);
+		}
+		const params = new URL(cell.path, 'http://b9.local').searchParams;
+		const dates = selected
+			? [params.get('from'), params.get('to')]
+			: [expectedScheduleTruth(fixture).date];
+		for (const date of dates)
+			invariant(
+				date && ssr.window.includes(date),
+				`${cell.path} SSR omitted selected/current date ${date}`,
+			);
+		if (cell.fixture !== 'live')
+			invariant(
+				ssr.headerBan != null,
+				`${cell.path} SSR omitted its independent current header verdict`,
+			);
+		if (ssr.headerBan != null) {
+			const current = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale).find(
+				(row) => row.id === 'line.day.otp_pct',
+			);
+			invariant(
+				parseNumber(ssr.headerBan) === current.value,
+				`${cell.path} SSR header borrowed the selected historical percentage`,
+			);
+			invariant(
+				selected
+					? ssr.currentOnly ===
+							(cell.locale === 'fr'
+								? 'Verdict d’en-tête : portrait actuel'
+								: 'Header verdict: current snapshot')
+					: ssr.currentOnly == null,
+				`${cell.path} SSR current-header scope changed`,
+			);
+		}
 	} else if (cell.surface === 'stop') {
 		const stop = fixture.files['static/stops/52095.json'];
 		invariant(normalized.includes(stop.name), `${cell.path} SSR omitted stop identity`);
@@ -1059,7 +1167,9 @@ async function verifyTextSemantics(page, cell, fixture) {
 		if (!cell.path.includes('from=')) {
 			invariant(/[−-]1[.,]5 min/u.test(text), `${cell.path} lost the signed minute value`);
 			invariant(
-				text.includes(cell.locale === 'fr' ? '77 voyages' : '77 trips'),
+				text.includes(
+					cell.locale === 'fr' ? '77 identifiants de trajet observés' : '77 trip IDs observed',
+				),
 				`${cell.path} lost the localized plural`,
 			);
 		}
@@ -1108,7 +1218,7 @@ async function verifyControls(page, cell) {
 			`${cell.path} multi-day percentiles did not stand down`,
 		);
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? "Aujourd'hui" : 'Today' })
+			.getByRole('radio', { name: cell.locale === 'fr' ? 'Dernier jour' : 'Latest day' })
 			.click();
 	} else if (cell.surface === 'stop') {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
@@ -1119,6 +1229,29 @@ async function verifyControls(page, cell) {
 		);
 		await grain.getByRole('radio', { name: cell.locale === 'fr' ? 'Jour' : 'Day' }).click();
 		await page.locator('[data-slot="stop-percentiles"]').waitFor({ state: 'attached' });
+	}
+}
+
+async function verifyResponsiveRailFocus(page, cell) {
+	const desktopViewport = page.viewportSize();
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		await page.setViewportSize({ width: 390, height: 844 });
+		const pill = page.locator('[data-slot="surface-rail-mobile"] > button[aria-expanded]');
+		await pill.focus();
+		await page.keyboard.press('Enter');
+		const sheet = page
+			.getByRole('dialog')
+			.filter({ has: page.locator('[data-slot="surface-rail"]') });
+		await sheet.waitFor();
+		await sheet.locator('button:visible:not([disabled])').first().focus();
+		await page.setViewportSize(desktopViewport);
+		await sheet.waitFor({ state: 'detached' });
+		invariant(
+			await page
+				.locator('[data-slot="surface-rail"]')
+				.evaluate((rail) => rail.contains(document.activeElement)),
+			`${cell.path} lost keyboard focus when the mobile controls moved to desktop`,
+		);
 	}
 }
 
@@ -1236,9 +1369,9 @@ const MARK_SIGNATURES = Object.freeze({
 	},
 	'stacked-share': { domain: [0, 100], unit: '%', axis: [] },
 	'service-span': {
-		domain: [0, 1800],
+		domain: [0, 1440],
 		unit: 'min',
-		axis: ['00h', '06h', '12h', '18h', '24h', '30h'],
+		axis: ['+0h', '+6h', '+12h', '+18h', '+24h'],
 	},
 });
 
@@ -1323,8 +1456,19 @@ async function verifyGeometry(page, seen) {
 			.locator('[data-slot="service-span-timeline"] .dv-span-end-clock')
 			.allTextContents();
 		invariant(
-			clocks[0] === '05:00' && clocks[1] === '01:30',
+			clocks[0] === 'Aug 29, 2026, 05:00:00 GMT-4' && clocks[1] === 'Aug 30, 2026, 01:30:00 GMT-4',
 			'service-span representative does not cross midnight',
+		);
+		const timeline = page.locator('[data-slot="service-span-timeline"]');
+		const barWidth = await timeline
+			.locator('rect.dv-span-bar')
+			.evaluate((element) => element.getBoundingClientRect().width);
+		const trackWidth = await timeline
+			.locator('line.dv-span-track')
+			.evaluate((element) => element.getBoundingClientRect().width);
+		invariant(
+			trackWidth > 0 && Math.abs(barWidth / trackWidth - 1230 / 1440) < 0.001,
+			`service-span must show 20.5 elapsed hours on its 24-hour axis: ${barWidth}/${trackWidth}`,
 		);
 	}
 	if ((await page.locator('[data-slot="weak-stops"] [data-slot="ci-whisker"]').count()) > 0) {
@@ -1332,6 +1476,23 @@ async function verifyGeometry(page, seen) {
 		invariant(
 			(await whisker.locator('line').count()) === 3,
 			'magnitude CI whisker is not a line plus two caps',
+		);
+	}
+}
+
+async function settleVisibleChartText(page) {
+	for (const frame of await page.locator('[data-slot="chart-frame"]').all()) {
+		await frame.scrollIntoViewIfNeeded();
+		await page.waitForFunction(
+			(element) => {
+				const box = element.querySelector('svg')?.getBoundingClientRect();
+				return box && box.width > 0 && box.height > 0;
+			},
+			await frame.elementHandle(),
+			{ timeout: 5000 },
+		);
+		await page.evaluate(
+			() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
 		);
 	}
 }
@@ -1442,7 +1603,10 @@ async function startPreview(replayBase) {
 		cwd: WEB_ROOT,
 		label: 'wrangler version',
 	});
-	invariant(/4\.115\.0/u.test(version), `unexpected wrangler version ${version.trim()}`);
+	invariant(
+		typeof EXPECTED_WRANGLER === 'string' && version.trim() === EXPECTED_WRANGLER,
+		`unexpected wrangler version ${version.trim()}`,
+	);
 	const child = spawn(
 		WRANGLER,
 		[
@@ -1687,13 +1851,11 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 	let preview;
 	let browser;
 	try {
-		const bundled = chromium.executablePath();
-		const executablePath = existsSync(bundled)
-			? bundled
-			: ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(
-					existsSync,
-				);
-		browser = await chromium.launch({ headless: true, executablePath });
+		const browserArtifact = await verifyInstalledBrowserArtifact();
+		browser = await chromium.launch({
+			headless: true,
+			executablePath: browserArtifact.paths.executablePath,
+		});
 		for (let run = 0; run < runs; run += 1) {
 			preview = await startPreview(replay.base);
 			const transcript = [];
@@ -1725,7 +1887,25 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
 				await settleSurface(page, cell, fixture);
-				verifySsr(cell, fixture, ssrHtml);
+				await verifySsr(page, cell, fixture, ssrHtml);
+				// Open analyst content through its real control before reading its values.
+				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
+					const control = await toggle.elementHandle();
+					invariant(control != null, `${cell.path} detail control disappeared`);
+					try {
+						if ((await control.getAttribute('aria-expanded')) === 'false') await control.click();
+						await page.waitForFunction(
+							(button) =>
+								button.isConnected &&
+								!button.disabled &&
+								button.getAttribute('aria-expanded') === 'true',
+							control,
+							{ timeout: 5_000 },
+						);
+					} finally {
+						await control.dispose();
+					}
+				}
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;
@@ -1742,6 +1922,8 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						{ cause: error },
 					);
 				}
+				// Both transcripts include the same opened, viewport-mounted chart text.
+				await settleVisibleChartText(page);
 				const initialHydrated = normalizeObservation(await page.locator('main').innerText());
 				await verifyAccessibleMirrors(page, cell);
 				observationCount += actual.length;
@@ -1774,6 +1956,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					await verifyGeometry(page, geometrySeen);
 				}
 				await verifyControls(page, cell);
+				await verifyResponsiveRailFocus(page, cell);
 				const expected404 = replay.state.ledger.some((entry) => entry.status === 404);
 				const svgViolations = await page.evaluate(() => window.__b9SvgViolations ?? []);
 				const geometryErrors = errors.filter((error) =>

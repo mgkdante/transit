@@ -1,29 +1,7 @@
-// verdict.ts — the plain-language reliability verdict (a surface's at-a-glance answer).
-//
-// The §0 line-detail verdict selector, hoisted to $lib so every surface that owns an
-// OTP headline (lines index network-band, line detail, stop detail, /network §0) can
-// reuse the ONE verdict engine + the ONE VerdictBanner presenter without a
-// cross-feature import (the crossFeatureImports gate keeps features/ leaf-isolated —
-// shared kernels live here). The lines reliability copy still satisfies VerdictCopy
-// structurally, so nothing about the line-detail voice changes.
-//
-// Research-driven (S7 pass-2): the verdict is TEXT-LED (the Deterministic Construal
-// Error — text reads 94% correct vs ~36% for any probability graphic) and is the
-// honesty failure point (84% of misleading dashboards mislead via the reasoning, not
-// the marks). So this selector is deliberately conservative + n-aware:
-//
-//   • two-sided natural frequency  ("about 8 in 10 trips on time … 2 in 10 late")
-//   • a numeric (not verbal) hedge ("78%, 95% sure between 71 and 84%")
-//   • NCHS small-sample suppression (n<30 → "still measuring", never a confident verdict)
-//   • a Wilson-width "tentative" tier when the interval is too wide to call
-//
-// Value bands (OTP% vs the operator-locked 80% SLA target): Reliable ≥80 / Patchy 60–80 /
-// Unreliable <60. (Distinct from the coarse 90/75 list-row colour badge in
-// v1/reliabilityVerdict.ts — that's a glyph swatch; this is the nuanced sentence.)
-//
-// Degrades honestly pre-republish: observation_count / on_time are nullable+optional on the
-// contract, so when the denominator is absent the band sentence still shows WITHOUT the
-// Wilson hedge or n (never fabricated). Pure (no runes/DOM) → lives in the fast data project.
+// Shared reliability verdict for route, stop and network headlines.
+// Product thresholds choose the value band, require n >= 30 for a sample-based
+// verdict, and use Wilson bounds to flag wide intervals or uncertain band membership.
+// Copy belongs to each surface so its observation population stays explicit.
 
 import type { Locale } from '$lib/i18n';
 import { wilsonBoundsProportion } from '$lib/v1/stats';
@@ -45,22 +23,16 @@ export interface VerdictHeadline {
 	readonly onTime: number | null;
 }
 
-/** The computed numbers a verdict band sentence interpolates (two-sided natural frequency). */
+/** The window, frequencies and uncertainty clause interpolated by a verdict sentence. */
 export interface VerdictSentenceArgs {
 	readonly window: string;
-	readonly onTen: number;
-	readonly lateTen: number;
-	/** The numeric hedge clause, e.g. " (78%, 95% sure between 71 and 84%)" or " (78%)". */
+	readonly onTen: number | '<1' | '>9';
+	readonly lateTen: number | '<1' | '>9';
+	/** The numeric clause, e.g. " (78%, 95% CI: 71–84%)" or " (78%)". */
 	readonly hedge: string;
 }
 
-/**
- * The bilingual copy a verdict band interpolates — the ONE shape `selectVerdict`
- * reads. The lines `ReliabilityCopy['verdict']` bundle satisfies this structurally
- * (so the line-detail voice is byte-identical); network + stop supply their own
- * scope-specific bundle of the SAME shape. This is the kernel decoupling that lets the
- * selector live in $lib without importing any feature's copy.
- */
+/** Surface-specific copy for the shared verdict calculation. */
 export interface VerdictCopy {
 	readonly windowPhrase: {
 		readonly day: string;
@@ -84,22 +56,16 @@ export interface VerdictCopy {
 	readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
 }
 
-/** NCHS small-sample suppression floor: below this many tracked arrivals, suppress. */
+/** Minimum observation count for a sample-based verdict. */
 export const VERDICT_MIN_N = 30;
-/** OTP% at/above which the line reads "reliable" — the operator-locked 80% SLA target. */
+/** Product threshold for the "reliable" band. */
 export const VERDICT_RELIABLE_FLOOR = 80;
 /** OTP% at/above which the line reads "patchy" (below → "unreliable"). */
 export const VERDICT_PATCHY_FLOOR = 60;
 /** Wilson interval width (proportion) at/above which a verdict degrades to "tentative". */
 const VERDICT_WIDE_CI = 0.3;
 
-/**
- * 95% Wilson score interval for a proportion onTime/n — valid near 0/1 and at small n
- * where the Wald interval collapses to false certainty (Brown, Cai & DasGupta 2001).
- * Returns [0,1] bounds. Thin wrapper over the shared {@link wilsonBoundsProportion}
- * kernel ($lib/v1/stats, z=WILSON_Z=1.96) so the verdict and the rest of the site
- * agree on one Wilson implementation; a degenerate n≤0 falls back to the widest [0,1].
- */
+/** Shared Wilson bounds; a nonpositive denominator yields the full [0,1] interval. */
 export function wilsonInterval(onTime: number, n: number): { lo: number; hi: number } {
 	const b = wilsonBoundsProportion(onTime, n);
 	return { lo: b?.[0] ?? 0, hi: b?.[1] ?? 1 };
@@ -134,29 +100,27 @@ export function selectVerdict(
 
 	const otpInt = Math.round(otp);
 	const n = headline.observationCount;
-	// Two-sided natural frequency. Derived from the REAL counts when available, and NEVER letting a
-	// side read 0-in-10 unless its true count is genuinely 0 — rounding 96% to "10 in 10 on time, 0
-	// in 10 late" fabricated a zero for ~1000 actually-late trips. When the counts are absent
-	// (pre-republish), fall back to the rounded otp (the old behaviour, only ever hit with no n).
-	let onTen: number;
-	let lateTen: number;
-	if (n != null && n > 0 && headline.onTime != null) {
-		const on = headline.onTime;
-		const late = Math.max(0, n - on);
-		if (on === 0) {
-			onTen = 0;
-			lateTen = 10;
-		} else if (late === 0) {
-			onTen = 10;
-			lateTen = 0;
-		} else {
-			// Both sides have real trips → each floors at 1 (so neither narrates a fabricated 0).
-			lateTen = Math.min(9, Math.max(1, Math.round((late / n) * 10)));
-			onTen = 10 - lateTen;
-		}
+	// Only real counts can establish an exact zero. A small nonzero share stays
+	// below one in ten rather than being inflated to one or rounded to zero.
+	const hasCounts = n != null && n > 0 && headline.onTime != null;
+	const onShare = hasCounts ? headline.onTime / n : otp / 100;
+	let onTen: VerdictSentenceArgs['onTen'];
+	let lateTen: VerdictSentenceArgs['lateTen'];
+	if (hasCounts && headline.onTime === 0) {
+		onTen = 0;
+		lateTen = 10;
+	} else if (hasCounts && headline.onTime >= n) {
+		onTen = 10;
+		lateTen = 0;
+	} else if (onShare < 0.1) {
+		onTen = '<1';
+		lateTen = '>9';
+	} else if (onShare > 0.9) {
+		onTen = '>9';
+		lateTen = '<1';
 	} else {
-		onTen = Math.round(otp / 10);
-		lateTen = Math.max(0, 10 - onTen);
+		onTen = hasCounts ? 10 - Math.round(((n - headline.onTime) / n) * 10) : Math.round(otp / 10);
+		lateTen = 10 - onTen;
 	}
 	const band = bandOf(otp);
 
@@ -168,7 +132,7 @@ export function selectVerdict(
 			sentence: v[band]({ window, onTen, lateTen, hedge: v.hedgeSimple(otpInt) }),
 		};
 	}
-	// Too few tracked trips to call it (NCHS n<30 suppression).
+	// Too few observations for the product's sample-based verdict.
 	if (n < VERDICT_MIN_N) {
 		return { status: 'absent', ban: null, sentence: v.tooFew(window, n) };
 	}

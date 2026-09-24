@@ -1,38 +1,4 @@
-// metrics.content.ts, the in-app metric explainer's data module (slice-9.6).
-//
-// One entry per citizen-facing reliability metric, ported VERBATIM from the
-// Notion "🔬 Metric Science Reference" (post-#59 honesty fixes, 2026-06-19). FR
-// is the canonical product voice; EN mirrors it. The verbatim Defining SQL is
-// language-neutral. The same fenced block serves both locales.
-//
-// DRIFT NOTE (S10, 2026-07-02): two families were reconciled on disk AHEAD of the
-// Notion cards (the Notion "🔬 Metric Science Reference" cards for these two are
-// updated at slice close, per the drift law):
-//   · `seasonality` — re-pointed to the current route.spine.dow projector over
-//     gold.route_delay_spine (WHOLE-history, 730d retention); the old ~10-day
-//     gold.route_delay_day_of_week / gold.route_delay_hourly fold was dropped
-//     (migration 0064). oneLiner / definition / math / SQL / notReally / caveats
-//     rewritten. `sciName` kept ('day_of_week.severe_pct') as the stable label.
-//   · `p50p90` — the percentile-rollup retention caveat corrected 365 -> 730 days
-//     to cite provenance.methodology.percentiles ("retained 730 days").
-//
-// This module is the SINGLE source of truth for:
-//   · the /metrics explainer page sections (definition / math / SQL / "not" /
-//     caveats), grouped by the five reliability clusters, and
-//   · the (i) hover tip + deep-link anchor each metric label on the reliability
-//     surface points at (see metricInfoFor()).
-//
-// DOCTRINE that MUST survive any edit (this honesty is the whole point):
-//   · PROXY, not certified OTP, GTFS-RT predicted schedule-deviation, no AVL.
-//   · avg_delay_min is an observation-weighted MEAN, never a "median".
-//   · p50/p90 percentiles only at the DAY grain.
-//   · everything observation-weighted, not trip/rider-weighted.
-//   · cancellation + skipped-stop are RAMP-IN, no backfill.
-//   · occupancy is a band-share of pings, NOT % full / not per-rider.
-//   · the habits matrix is per-route self-normalized [0,1], not cross-route.
-//   · NULL = "no data", never a fabricated 0.
-//   · __unrouted__ / __unknown_stop__ are internal sentinels, never real.
-
+import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import type { Locale } from '$lib/i18n';
 import { localizeHref } from '$lib/i18n';
 
@@ -94,7 +60,7 @@ export interface MetricEntry {
 	readonly definition: BilingualText;
 	/** The math, plain + formula (ported from the Notion "Formula:" line). */
 	readonly math: BilingualText;
-	/** Verbatim Defining SQL (language-neutral; reused for both locales). */
+	/** Representative SQL and publication arithmetic, shared by both locales. */
 	readonly sql: string;
 	/** "A citizen reads X, but it's actually Y" (ported from the Notion "Not:"). */
 	readonly notReally: BilingualText;
@@ -123,70 +89,53 @@ export const METRICS: readonly MetricEntry[] = [
 		name: { fr: 'Ponctualité', en: 'On-time %' },
 		sciName: 'otp_pct',
 		oneLiner: {
-			fr: "La part des relevés de position de la ligne qui tombaient à l'heure (de 1 min en avance à moins de 5 min en retard), pas un taux de trajets ni une ponctualité certifiée.",
-			en: 'The share of the line’s position readings that landed on time (1 min early to under 5 min late), not a trip count and not a certified punctuality rating.',
+			fr: 'La part des prédictions à retard connu entre une minute d’avance et moins de cinq minutes de retard.',
+			en: 'The share of known-delay predictions between one minute early and less than five minutes late.',
 		},
 		definition: {
-			fr: "Pour une ligne, c'est la part de ses relevés de position GPS qui sont tombés à peu près à l'heure, de 1 minute en avance jusqu'à un peu moins de 5 minutes en retard. On suit le flux de position en direct toute la journée; chaque fois qu'on peut mesurer l'écart à l'horaire, ça compte comme une observation. La ponctualité, c'est simplement : de toutes ces observations où le retard était connu, combien étaient « à l'heure ». 90 % signifie 9 relevés sur 10 dans la fenêtre à l'heure. Ce n'est PAS un décompte de trajets et PAS une note de ponctualité officielle. C'est un instantané relevé par relevé, bâti sur le flux d'arrivées prédites, sans aucun journal d'arrivées certifié.",
-			en: 'For one bus/tram route, this is the share of its GPS check-ins that landed roughly on schedule, from 1 minute early up to just under 5 minutes late. We watch each route’s live position feed all day, and every time we can tell how far ahead or behind schedule it is, that counts as one observation. On-time % is simply: of all those observations where we knew the delay, how many were “on time.” 90% means 9 out of 10 readings were within the on-time window. It is NOT a count of trips and NOT an official punctuality rating. It is a reading-by-reading snapshot built from the predicted-arrival feed, with no certified arrival/departure logs behind it.',
+			fr: 'Pour la sélection et la période affichées, ce pourcentage compte les relevés de retard prédit dans la bande à l’heure, de −60 secondes inclusivement à 300 secondes exclusivement. Chaque relevé à retard connu compte comme une observation; plusieurs relevés peuvent concerner le même voyage. Une valeur de 90 % signifie neuf observations sur dix dans cette bande. Les retards inconnus sont exclus du dénominateur. Cette mesure décrit les prédictions GTFS-RT, sans certifier les arrivées réelles ni compter les voyages ponctuels.',
+			en: 'For the displayed selection and period, this percentage counts predicted-delay readings in the on-time band, from −60 seconds inclusive to 300 seconds exclusive. Each known-delay reading is one observation; multiple readings can describe the same trip. A value of 90% means nine observations in ten fall within that band. Unknown delays are excluded from the denominator. This measures GTFS-RT predictions, without certifying actual arrivals or counting punctual trips.',
 		},
 		math: {
-			fr: "otp_pct = round(100 × on_time_observation_count / delay_observation_count), en pourcentage entier. NULL (pas 0) quand on_time_observation_count est inconnu OU que delay_observation_count = 0. La bande à l'heure = delay_seconds dans [-60, +300) (≥ -60 s et < 300 s). Le numérateur remonte la chaîne de rollup avec une garde tout-ou-rien : à chaque niveau, SUM(on_time) UNIQUEMENT si COUNT(*) = COUNT(on_time). Si un seul seau enfant a un on_time NULL, l'agrégat entier devient NULL et s'affiche « aucune donnée » plutôt qu'un pourcentage sous-estimé. Pondéré par observations, pas par trajets.",
-			en: 'otp_pct = round(100 × on_time_observation_count / delay_observation_count), as an integer percent. NULL (not 0) when on_time_observation_count is unknown OR delay_observation_count = 0. The on-time band = delay_seconds in [-60, +300) (≥ -60s and < 300s). The numerator propagates up the rollup chain with an all-or-nothing guard: at every level it is SUM(on_time) ONLY WHEN COUNT(*) = COUNT(on_time). If ANY child bucket has a NULL on_time, the whole aggregate becomes NULL and renders “no data” rather than an understated percentage. Observation-weighted, not trip-weighted.',
+			fr: 'Ponctualité = 100 × nombre de relevés dans [−60, 300) / nombre de relevés à retard connu. Les comptes des groupes sont additionnés avant la division. Le pourcentage entier est arrondi avec les demis s’éloignant de zéro : 1 relevé sur 40 donne 3 %. Un numérateur inconnu ou un dénominateur nul donne une valeur indisponible.',
+			en: 'On-time percentage = 100 × readings in [−60, 300) / readings with a known delay. Counts are pooled before division. The whole percentage rounds ties away from zero: 1 reading in 40 gives 3%. An unknown numerator or empty denominator gives an unavailable value.',
 		},
-		sql: `-- on-time band at the 5m feeder (gold.trip_delay_summary_5m_live, mig 0030):
-COUNT(*) FILTER (WHERE delay_seconds >= -60 AND delay_seconds < 300)::integer
-    AS on_time_observation_count
-
--- WEEKLY rollup (UPSERT_ROUTE_RELIABILITY_WEEKLY; MONTHLY is identical with date_trunc('month',...)):
-INSERT INTO gold.route_reliability_weekly (... on_time_observation_count ...)
+		sql: `-- Route population; omit the route filter for a network receipt.
 SELECT
-    rd.provider_id,
-    date_trunc('week', timezone(dp.timezone, rd.period_start_utc))::date,
-    rd.route_id,
-    SUM(rd.observation_count)::integer,
-    SUM(rd.delay_observation_count)::integer,
-    -- A NULL in any contributing hour means pre-fix history is unknowable.
-    CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-        THEN SUM(rd.on_time_observation_count)::integer
-    END,
-    ...
-FROM gold.route_delay_hourly AS rd
-INNER JOIN gold.dim_provider AS dp ON dp.provider_id = rd.provider_id
-WHERE rd.provider_id = :provider_id
-GROUP BY 1, 2, 3
-ON CONFLICT (provider_id, week_start_local, route_id) DO UPDATE SET ...
+    SUM(on_time_observation_count) AS on_time,
+    SUM(delay_observation_count) AS known
+FROM gold.route_delay_spine
+WHERE provider_id = :provider_id AND route_id = :route_id
+  AND provider_local_date BETWEEN :win_start AND :win_end;
 
--- publisher reduction (snapshots/builders/_helpers.py _otp_pct):
-def _otp_pct(on_time, known):
-    if on_time is None or not known: return None
-    known_obs = float(known)
-    if known_obs <= 0: return None
-    return round(100.0 * float(on_time) / known_obs)`,
+# Equivalent publication rounding (gold.reader.rates.otp_pct):
+from decimal import Decimal, ROUND_HALF_UP
+
+def otp_pct(on_time, known):
+    if on_time is None or not known or known <= 0:
+        return None
+    pct = 100.0 * float(on_time) / float(known)
+    return int(Decimal(str(pct)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))`,
 		notReally: {
-			fr: "Un usager lira « Ligne 80 : 88 % à l'heure » comme « 88 % des trajets de la 80 sont arrivés à l'horaire (ponctualité officielle) ». Ce n'est pas ça : c'est la part des RELEVÉS d'écart à l'horaire tombés dans une fenêtre -1 min/+5 min prédite, pondérée par observations, de qualité proxy, sans donnée d'arrivée certifiée et sans dénominateur de trajets effectués. Une ligne peut afficher une ponctualité élevée tout en sautant des arrêts ou en effectuant peu de trajets.",
-			en: 'A citizen will read “Route 80: 88% on-time” as “88% of route 80’s trips arrived on schedule (official punctuality).” It is NOT that: it is the share of live schedule-deviation READINGS that fell in a -1min/+5min predicted window, observation-weighted, proxy-grade, with no certified arrival data and no trip-completion denominator. A route could show high OTP while skipping stops or running few trips, because OTP says nothing about trips run or cancelled.',
+			fr: 'Ce pourcentage décrit des prédictions observées. Il ne compte ni les voyages arrivés à l’heure ni les voyageurs concernés. Une ligne peu desservie ou qui saute des arrêts peut tout de même afficher une forte ponctualité.',
+			en: 'This percentage describes observed predictions. It counts neither trips that arrived on time nor affected passengers. A route with infrequent service or skipped stops can still have a high on-time percentage.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, pas une ponctualité certifiée : bâti sur l'écart à l'horaire prédit du GTFS-RT (delay_seconds), pas sur des journaux d'arrivée certifiés ni sur de l'AVL. C'est « la déviation prédite dans la fenêtre à l'heure », pas « les portes ont ouvert à l'heure ».",
-				"BANDE À L'HEURE ASYMÉTRIQUE : à l'heure = delay dans [-60 s, +300 s), de 1 min en avance à moins de 5 min en retard. ≥ 300 s (5 min de retard) est « grave » et exclu du numérateur; ≤ -60 s aussi.",
-				'DÉNOMINATEUR = OBSERVATIONS À RETARD CONNU, PAS DES TRAJETS : delay_observation_count compte des relevés de mise à jour, donc la ponctualité est pondérée par observations. Une ligne sondée plus souvent domine son propre chiffre.',
-				"NULL EST HONNÊTE, PAS ZÉRO : otp_pct est null (l'UI montre « aucune donnée ») quand delay_observation_count = 0, OU quand un seau a un on_time inconnu. L'historique pré-correctif à on_time NULL propage NULL plutôt qu'un pourcentage faussement bas.",
-				'PERCENTILES SEULEMENT AU GRAIN JOUR : les rangées semaine/mois portent otp_pct + avg_delay_min + severe_pct mais p50/p90 = None. avg_delay_min ici est la MOYENNE pondérée par observations (jadis mal étiquetée « médiane »), pas un percentile.',
-				"FUITE DE SENTINELLE : __unrouted__ peut être publié comme fichier de ligne (l'index n'exclut pas la sentinelle de l'émission par ligne), les clients ne doivent jamais l'afficher comme une vraie ligne.",
-				"CALENDRIER LOCAL / HEURE AVANCÉE : les seaux jour/semaine/mois utilisent l'heure locale du fournisseur; les jours de transition ont 23 h/25 h, mais comme la ponctualité est un ratio, cela ne décale que le mélange d'observations.",
-				"SIGNAUX MORTS DU FLUX NON UTILISÉS : occupancy_percentage, congestion_level, le champ delay natif GTFS et les trajets ADDED ne sont jamais lus. Les lignes sans temps réel dans le flux n'ont pas de ponctualité.",
+				'−60 secondes est inclus; 300 secondes est exclu. Exactement cinq minutes de retard est aussi exclu du numérateur des retards graves, qui exige plus de 300 secondes. Ces deux parts ne se complètent donc pas à 100 %.',
+				'Pour les lignes et les bilans quotidiens, le dénominateur conserve tous les retards connus, même au-delà de ±3 600 secondes. Le retard moyen et les statistiques par arrêt utilisent une plage admissible différente.',
+				'Les mises à jour répétées d’un voyage comptent séparément. Cette pondération par observations ne représente pas le nombre de voyageurs.',
+				'Une cellule sans retard connu n’ajoute aucune observation au total. Un dénominateur entièrement vide donne une valeur indisponible, jamais une ponctualité de zéro.',
+				'Les périodes utilisent les dates locales du fournisseur. Les journées de 23 ou 25 heures peuvent changer le mélange d’observations; les seuils restent les mêmes.',
+				'La couleur d’un véhicule sur la carte suit des bandes de retard distinctes. Elle ne remplace pas ce pourcentage calculé sur plusieurs observations.',
 			],
 			en: [
-				'PROXY, NOT CERTIFIED OTP: built from GTFS-RT predicted schedule-deviation (delay_seconds), not certified arrival/departure logs and no AVL. It is “predicted-deviation in the on-time window”, not “doors opened on time”.',
-				'ON-TIME BAND IS ASYMMETRIC: on-time = delay in [-60s, +300s), up to 1 min early through under 5 min late. ≥ 300s (5 min late) is “severe” and excluded from the numerator; ≤ -60s (more than 1 min early) is also outside the band.',
-				'DENOMINATOR IS KNOWN-DELAY OBSERVATIONS, NOT TRIPS: delay_observation_count counts trip-update readings, so OTP is observation-weighted, not trip-weighted. A route polled more often dominates its own number.',
-				'NULL IS HONEST, NOT ZERO: otp_pct is null (UI shows “no data”) when delay_observation_count = 0, OR when any contributing bucket has an unknown on_time count. Pre-fix history with NULL on_time propagates to NULL OTP rather than a falsely-low percentage.',
-				'PERCENTILES ONLY AT DAY GRAIN: week/month rows carry otp_pct + avg_delay_min + severe_pct but p50_min/p90_min = None. avg_delay_min here is the observation-weighted MEAN (formerly mislabeled “median”), not a percentile.',
-				'SENTINEL LEAKS INTO PER-ROUTE FILES: __unrouted__ can be published as a route file (the index does not exclude the sentinel from per-route emission), clients must not render it as a real route.',
-				'LOCAL-CALENDAR / DST: week/month/day buckets use the provider’s local time. DST days have 23h/25h, but since OTP is a ratio this only shifts the observation mix, not the band math.',
-				'DEAD FEED SIGNALS NOT INVOLVED: occupancy_percentage, congestion_level, GTFS native delay, and ADDED trips are never read. Routes with no realtime in the feed have no OTP.',
+				'−60 seconds is included; 300 seconds is excluded. Exactly five minutes late is also excluded from the severe-delay numerator, which requires more than 300 seconds. These two shares therefore do not add up to 100%.',
+				'For routes and daily receipts, the denominator retains all known delays, including those beyond ±3,600 seconds. Average delay and stop statistics use a different accepted range.',
+				'Repeated updates for one trip count separately. This observation weighting does not represent passenger numbers.',
+				'A cell without known delays contributes no observations to the total. An entirely empty denominator gives an unavailable value, never an on-time percentage of zero.',
+				'Periods use the provider’s local dates. Days of 23 or 25 hours can change the observation mix; the thresholds stay the same.',
+				'A vehicle’s map color follows separate delay bands. It does not replace this percentage across multiple observations.',
 			],
 		},
 	},
@@ -199,47 +148,51 @@ def _otp_pct(on_time, known):
 		name: { fr: 'Retard moyen', en: 'Average delay' },
 		sciName: 'avg_delay_min',
 		oneLiner: {
-			fr: "La lateur MOYENNE sur tous les relevés d'écart à l'horaire, une moyenne (tirée vers le haut par quelques très gros retards), pas une médiane, et un proxy du flux sans vérité GPS.",
-			en: 'The MEAN lateness across every schedule-deviation reading, an average (pulled up by a few very-late readings), not a median, and a feed proxy with no GPS truth.',
+			fr: 'L’écart moyen prédit par rapport à l’horaire, en minutes : positif pour un retard, négatif pour une avance.',
+			en: 'Average predicted deviation from the timetable, in minutes: positive for late, negative for early.',
 		},
 		definition: {
-			fr: "Pour une ligne, à quel point elle a roulé hors horaire. Le chiffre vedette (avg_delay_min) est la lateur MOYENNE sur chaque relevé d'écart à l'horaire collecté pour la période, on les additionne, on divise par leur nombre. Un nombre positif = en retard, négatif = en avance. Ces chiffres viennent directement de l'écart prédit du flux temps réel, ils décrivent comment les prédictions ont suivi l'horaire, pas un dossier de ponctualité certifié, et il n'y a aucune vérité GPS/AVL derrière.",
-			en: 'For one bus/tram route, how far off schedule it ran. The headline number (avg_delay_min) is the AVERAGE lateness across every schedule-deviation reading we collected for that route in the period, add them all up, divide by how many there were. A positive number means late, negative means early. These come straight from the realtime feed’s predicted schedule deviation, they describe how predictions tracked vs the timetable, not a certified on-time record, and there is no GPS/AVL truth behind them.',
+			fr: 'La somme des écarts prévus utilisables divisée par le nombre d’observations. Les valeurs manquantes et celles qui dépassent une heure en avance ou en retard sont exclues. Chaque observation compte, y compris les mises à jour répétées d’un même trajet.',
+			en: 'The sum of usable predicted deviations divided by their observation count. Missing values and deviations more than one hour early or late are excluded. Each observation counts, including repeated updates for the same trip.',
 		},
 		math: {
-			fr: 'avg_delay_min (tous grains) : moyenne pondérée par observations du retard plafonné, puis secondes→minutes. Par heure, le feeder 5m donne avg_delay_seconds_capped = AVG(delay_seconds) FILTER(|delay|≤3600); le rollup re-pondère par (delay_observation_count − outlier_count) : avg_delay_seconds = ROUND( SUM(avg_capped × (obs−outlier)) / SUM(obs−outlier), 2 ); valeur publiée = round(avg_delay_seconds / 60, 1). |delay_seconds| ≤ 3600 imposé partout (garde anti-fantôme). None (jamais 0) quand le dénominateur est vide.',
-			en: 'avg_delay_min (all grains): observation-weighted mean of capped delay, then seconds→minutes. Per hour the 5m feeder gives avg_delay_seconds_capped = AVG(delay_seconds) FILTER(|delay|≤3600); rollup re-weights by (delay_observation_count − outlier_count): avg_delay_seconds = ROUND( SUM(avg_capped × (obs−outlier)) / SUM(obs−outlier), 2 ); published value = round(avg_delay_seconds / 60, 1). |delay_seconds| ≤ 3600 enforced in every path (ghost guard). None (never 0) when the denominator is empty.',
+			fr: 'Moyenne = somme des delay_seconds connus dans [−3600, 3600] / nombre de ces observations. Les sommes et les comptes se cumulent sans arrondir les moyennes intermédiaires. Le résultat est converti en minutes, puis arrondi à une décimale, les demis s’éloignant de zéro. Aucun dénominateur utilisable, ou une heure contributrice inconnue dans le résumé quotidien, donne une valeur indisponible.',
+			en: 'Mean = sum of known delay_seconds within [−3600, 3600] / count of those observations. Sums and counts are pooled without rounding intermediate means. The result is converted to minutes, then rounded to one decimal place with ties away from zero. An empty usable denominator, or an unknown contributing hour in the daily summary, gives an unavailable value.',
 		},
-		sql: `-- avg_delay_min (all grains), observation-weighted MEAN; gold.public_route_reliability_daily view:
-ROUND( SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-       / NULLIF(SUM(rd.delay_observation_count), 0), 2 ) AS avg_delay_seconds
-FROM gold.route_delay_hourly AS rd ... GROUP BY provider_id, route_id, provider_local_date;
--- builder: avg_delay_min = round(avg_delay_seconds/60, 1); week/month carry the mean alone.
--- per-hour 5m feeder cap: AVG(delay_seconds) FILTER (WHERE ABS(delay_seconds) <= 3600)`,
+		sql: `SELECT
+    rd.provider_id,
+    rd.route_id,
+    (rd.period_start_utc AT TIME ZONE dp.timezone)::date AS local_date,
+    CASE WHEN BOOL_AND(
+        rd.usable_delay_observation_count IS NOT NULL
+        AND (rd.usable_delay_observation_count = 0
+             OR rd.usable_delay_sum_seconds IS NOT NULL)
+    ) THEN SUM(rd.usable_delay_sum_seconds)::numeric
+           / NULLIF(SUM(rd.usable_delay_observation_count), 0)
+    END AS avg_delay_seconds
+FROM gold.route_delay_hourly AS rd
+JOIN gold.dim_provider AS dp ON dp.provider_id = rd.provider_id
+GROUP BY rd.provider_id, rd.route_id, local_date;`,
 		notReally: {
-			fr: "Un usager lira avg_delay_min comme « le trajet typique a roulé X minutes en retard » ou comme une note officielle. C'est ni l'un ni l'autre : c'est la MOYENNE (gonflée par quelques relevés très en retard, donc elle surestime le trajet typique), un proxy de prédiction du flux sans vérité GPS ni certification, et une moyenne sur des observations (mises à jour), pas des trajets. Le vrai « trajet typique » est p50_min (grain jour seulement); le « pire des cas » est p90_min.",
-			en: 'A citizen is most likely to read avg_delay_min as “the typical trip ran X minutes late” or as an official on-time score. It is neither: it is the MEAN (skewed upward by a few very-late readings, so it overstates the typical trip), it is a feed-prediction proxy with no GPS truth and no certification, and it is averaged over observations (stop-time updates) not trips. The honest “typical trip” number is p50_min (day grain only); the “how bad it gets” number is p90_min.',
+			fr: 'Cette moyenne décrit les prédictions observées. Elle ne mesure pas les arrivées réelles ni la durée d’un trajet. La médiane p50 décrit le milieu de la distribution des observations; un trajet signalé plus souvent pèse davantage dans les deux mesures.',
+			en: 'This mean describes observed predictions. It does not measure actual arrivals or journey duration. The p50 median describes the middle of the observation distribution; a trip reported more often carries more weight in both measures.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, pas une ponctualité certifiée : chaque valeur dérive de l'écart à l'horaire prédit du GTFS-RT (delay_seconds). Aucune vérité AVL/GPS derrière.",
-				'avg_delay_min est une MOYENNE pondérée par observations, PAS une médiane. Elle fut jadis (à tort) étiquetée « médiane »; ce cadrage est corrigé et ne doit jamais revenir. La vraie médiane est p50_min, au grain jour seulement.',
-				"DÉNOMINATEUR de la moyenne = delay_observation_count (relevés à retard connu), re-pondéré heure→jour→semaine→mois, moins les outliers. Un compte d'observations, pas de trajets distincts.",
-				'GARDE ANTI-FANTÔME : les observations |delay_seconds| > 3600 s (1 h) sont exclues de la moyenne ET des percentiles. Les prédictions périmées/erronées ne font pas exploser la queue.',
-				"NULL HONNÊTE, jamais un 0 fabriqué : avg est null quand son dénominateur est vide, l'UI doit afficher « aucune donnée », pas un 0 min trompeur.",
-				'HEURE AVANCÉE / jour local : chaque grain replie les horodatages UTC vers la date locale du fournisseur.',
-				"SENTINELLES : route_id est COALESCé en __unrouted__ dans le spine horaire; un fichier de fiabilité par ligne est clé par route_id, donc __unrouted__ n'est jamais lié depuis un index public, interne, pas une ligne citoyenne.",
-				'SIGNAUX MORTS DU FLUX : occupancy_percentage, congestion_level, le champ delay natif GTFS-RT et les trajets ADDED sont ignorés.',
+				'La moyenne est sensible aux valeurs extrêmes qui restent dans la plage admissible.',
+				'Les résumés quotidiens suivent la date locale de capture et peuvent inclure une journée en cours. Les fenêtres plus longues utilisent les dates de leurs résumés conservés; leurs horloges diffèrent encore près de minuit.',
+				'Une ancienne moyenne arrondie ne suffit pas à retrouver une somme exacte. Si une heure contributrice ne peut pas être reconstituée, la moyenne du jour reste indisponible.',
+				'Le classement de la pire ligne est indisponible si la comparaison quotidienne contient une ligne admissible dont la moyenne est inconnue.',
+				'Une valeur indisponible est distincte de zéro. L’absence de prédiction ne prouve pas le respect de l’horaire.',
+				'La ponctualité utilise son propre dénominateur de retards connus, y compris ceux exclus de cette moyenne.',
 			],
 			en: [
-				'PROXY, not certified OTP: every value derives from GTFS-RT predicted schedule deviation (delay_seconds). There is NO AVL/GPS ground truth behind it.',
-				'avg_delay_min is an observation-weighted MEAN, NOT a median. It was historically (wrongly) labelled “median”; that framing is corrected and must never be reintroduced. The true median is p50_min, available on the DAY grain only.',
-				'DENOMINATOR for the mean is delay_observation_count (readings with a known delay), re-weighted hour→day→week→month, minus per-bucket outlier_count. It is an observation (not distinct-trip) count.',
-				'GHOST-TRIP GUARD: observations with |delay_seconds| > 3600s (1h) are excluded from BOTH the mean and the percentiles. Stale/garbage predictions don’t blow up the tail.',
-				'HONEST-NULL, never fabricated 0: avg/p50/p90 are null when their denominator is empty, the UI must render “no data”, not a misleading 0 min.',
-				'DST / local-day bucketing: every grain folds UTC capture timestamps to the provider’s local date.',
-				'SENTINELS: route_id is COALESCE’d to __unrouted__ in the hourly spine; a per-route reliability file is keyed by route_id, so __unrouted__ is never linked from a public index, internal, not a citizen route.',
-				'DEAD FEED signals never feed this family: occupancy_percentage, congestion_level, the native GTFS-RT delay field, and ADDED trips are ignored.',
+				'The mean is sensitive to extreme values that remain within the accepted range.',
+				'Daily summaries use the local capture date and can include the current partial day. Longer windows use retained summary dates; their reporting clocks still differ near midnight.',
+				'An old rounded mean cannot recover an exact sum. If a contributing hour cannot be reconstructed, the daily mean remains unavailable.',
+				'The worst-route ranking is unavailable when the daily comparison includes an eligible route with an unknown mean.',
+				'Unavailable differs from zero. A missing prediction does not prove on-time service.',
+				'On-time percentage uses its own known-delay denominator, including delays excluded from this mean.',
 			],
 		},
 	},
@@ -249,19 +202,19 @@ FROM gold.route_delay_hourly AS rd ... GROUP BY provider_id, route_id, provider_
 		cluster: 'punctuality',
 		family: 2,
 		confidence: 'proxy',
-		name: { fr: 'Retard typique et pire des cas', en: 'Typical and worst-case delay' },
+		name: { fr: 'Retard médian et 90e percentile', en: 'Median and 90th-percentile delay' },
 		sciName: 'p50_min · p90_min',
 		oneLiner: {
-			fr: "Sur la vue JOUR : p50 = le relevé du milieu (la moitié pire, la moitié mieux); p90 = le relevé d'un mauvais jour (1 relevé sur 10 est pire). p90 capte la queue douloureuse que la moyenne cache.",
-			en: 'On the DAY view: p50 = the middle reading (half later, half earlier); p90 = the bad-day reading (only 1 in 10 readings is worse). p90 catches the painful tail the average hides.',
+			fr: 'La médiane situe le centre des retards prédits rapportés; le 90e percentile décrit leur partie haute. Il ne représente pas le retard maximal.',
+			en: 'The median describes the centre of reported predicted delays; the 90th percentile describes their upper range. It is not the maximum delay.',
 		},
 		definition: {
-			fr: "Sur la vue JOUR seulement, on montre deux chiffres « ce qu'un trajet typique a ressenti » : p50_min, le relevé du milieu (la moitié des relevés étaient plus tardifs, la moitié plus tôt), et p90_min, le relevé d'un mauvais jour (seul 1 relevé sur 10 était pire). p90 est ce qui capte la queue douloureuse que la moyenne cache. Ce sont de vrais percentiles continus (percentile_cont 0,5 / 0,9) sur les delay_seconds bruts par observation de la journée. Ils viennent de l'écart prédit du flux, pas de vérité GPS/AVL, et n'existent QU'au grain jour : semaine/mois ne portent que la moyenne, car les percentiles ne se composent pas additivement.",
-			en: 'On the DAY view only, we show two “what a typical trip felt like” numbers: p50_min, the middle reading (half of all readings were later, half earlier), and p90_min, the bad-day reading (only 1 in 10 readings was worse than this). p90 is what catches the painful tail the average hides. These are true continuous percentiles (percentile_cont 0.5 / 0.9) over that day’s raw per-observation delay_seconds. They come from the feed’s predicted deviation, no GPS/AVL truth, and exist ONLY on the day grain: week/month carry the mean alone because percentiles are not additively composable.',
+			fr: 'Les valeurs quotidiennes sont des percentiles continus des prédictions au retard connu et compris entre −3 600 et +3 600 secondes, pour une même date locale de capture. Chaque observation compte; un même trajet peut contribuer plusieurs fois. Le calcul interpole entre les valeurs triées. Avec des égalités ou de petits échantillons, exactement 10 % des observations ne sont pas forcément supérieures au p90. Les estimations sur des fenêtres plus longues utilisent les histogrammes regroupés lorsqu’ils sont disponibles; une moyenne de percentiles quotidiens ne reconstitue pas le percentile de la fenêtre.',
+			en: 'Daily values are continuous percentiles of known predicted delays between −3,600 and +3,600 seconds on one provider-local capture date. Each observation counts; one trip can contribute repeatedly. The calculation interpolates between sorted values. With ties or small samples, exactly 10% of observations need not exceed p90. Longer-window estimates use pooled histograms where available; averaging daily percentiles cannot reconstruct a window percentile.',
 		},
 		math: {
-			fr: 'p50_min = round( percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_seconds) / 60, 1 ); p90_min = idem avec 0,9, calculés une fois par journée locale close, directement sur les rangées de faits brutes (route_delay_percentile_daily), JAMAIS re-dérivés pour semaine/mois (→ None). |delay_seconds| ≤ 3600 imposé. None (jamais 0) quand le dénominateur est vide.',
-			en: 'p50_min = round( percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_seconds) / 60, 1 ); p90_min = same with 0.9, both computed once per closed local day directly over raw fact rows (route_delay_percentile_daily), NOT re-derived for week/month (→ None). |delay_seconds| ≤ 3600 enforced. None (never 0) when the denominator is empty.',
+			fr: 'Pour n observations triées d[0]…d[n−1] et p = 0,5 ou 0,9 : h=(n−1)p, i=floor(h), f=h−i; Qp=d[i]+f·(d[min(i+1,n−1)]−d[i]). Le résumé quotidien stocke Qp à 0,01 seconde; l’affichage convertit en minutes. Les percentiles d’histogramme interpolent dans des classes et restent des estimations. Aucun échantillon admissible signifie une valeur absente.',
+			en: 'For n sorted observations d[0]…d[n−1] and p = 0.5 or 0.9: h=(n−1)p, i=floor(h), f=h−i; Qp=d[i]+f·(d[min(i+1,n−1)]−d[i]). The daily summary stores Qp to 0.01 seconds; display converts to minutes. Histogram percentiles interpolate within bins and remain estimates. No eligible sample means an unavailable value.',
 		},
 		sql: `-- p50/p90 (DAY grain only), gold.route_delay_percentile_daily, computed per closed local day over raw facts:
 INSERT INTO gold.route_delay_percentile_daily (...)
@@ -279,23 +232,21 @@ WHERE f.provider_id = :provider_id
   AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
 GROUP BY f.provider_id, f.route_id;`,
 		notReally: {
-			fr: "Un usager pourrait croire que p90 prédit son trajet de demain. Non : c'est une statistique rétrospective sur les relevés d'écart PRÉDIT d'une journée close, « 1 relevé sur 10 fut pire que ça », pas une garantie pour un trajet précis ni une arrivée mesurée. p50 est le vrai « trajet typique » (la médiane), pas la moyenne (avg_delay_min).",
-			en: 'A citizen might read p90 as a prediction of tomorrow’s trip. It is not: it is a retrospective statistic over a closed day’s PREDICTED-deviation readings, “1 in 10 readings was worse than this”, not a guarantee for any single trip and not a measured arrival. p50 is the honest “typical trip” (the median), not the mean (avg_delay_min).',
+			fr: 'Ces quantiles décrivent les prédictions collectées. Ils ne mesurent pas ce qu’un trajet ou un voyageur a vécu, ne prédisent pas un trajet particulier et ne constituent pas une garantie de retard maximal. Le p90 et la médiane doivent appartenir à la même population et à la même fenêtre pour être comparés.',
+			en: 'These quantiles describe collected predictions. They do not measure an individual trip or passenger experience, predict a particular journey, or guarantee a maximum delay. A p90 and median must belong to the same population and window to be compared.',
 		},
 		caveats: {
 			fr: [
-				'p50_min / p90_min existent UNIQUEMENT au grain jour. Semaine et mois émettent avg_delay_min avec p50=p90=null, car les percentiles ne se composent pas additivement à partir des feeders horaires/5m, ils doivent être calculés une fois par journée locale close sur les faits bruts.',
-				"PROXY, pas une ponctualité certifiée : tirés de l'écart à l'horaire prédit du GTFS-RT, sans vérité GPS/AVL.",
-				'GARDE ANTI-FANTÔME : les percentiles excluent |delay_seconds| > 3600 s (ABS ≤ 3600), donc les prédictions périmées ne gonflent pas la queue.',
-				"NULL HONNÊTE : p50/p90 sont null quand il n'y a aucun fait pour cette journée close, « aucune donnée », jamais 0.",
-				"HEURE AVANCÉE / jour local : le rollup de percentiles ne bâtit que les journées locales CLOSES (≥ aujourd'hui_local − lookback). Faits retenus ~14 j, rollup de percentiles 730 j (source : provenance.methodology.percentiles, « retained 730 days »).",
+				'Distinguer les percentiles quotidiens sur les observations, les estimations d’histogramme sur une fenêtre et les percentiles en direct des retards moyens par trajet.',
+				'Les observations répétées ne sont pas des trajets ni des voyageurs indépendants. La fréquence des rapports influence leur poids.',
+				'Le filtre |retard| ≤ 3 600 s définit la population; il ne certifie pas la justesse des prédictions restantes.',
+				'Une valeur absente n’est pas zéro. La date, la couverture et la provenance indiquent le contexte; la politique de conservation est configurable.',
 			],
 			en: [
-				'p50_min / p90_min exist ONLY on the day grain. Week and month emit avg_delay_min with p50=p90=null because percentiles are not additively composable from the hourly/5m feeders, they must be computed once per closed local day over raw facts.',
-				'PROXY, not certified OTP: derived from GTFS-RT predicted schedule deviation, no GPS/AVL ground truth.',
-				'GHOST-TRIP GUARD: the percentiles exclude |delay_seconds| > 3600s (ABS ≤ 3600), so stale predictions don’t blow up the tail.',
-				'HONEST-NULL: p50/p90 are null when there are no facts for that closed day, “no data”, never 0.',
-				'DST / local-day bucketing: the percentile rollup only builds CLOSED local days (≥ today_local − lookback). Facts retained ~14d, the percentile rollup 730d (source: provenance.methodology.percentiles, “retained 730 days”).',
+				'Distinguish daily observation percentiles, windowed histogram estimates, and live percentiles of current trip-average delays.',
+				'Repeated reports are not independent trips or passengers. Reporting frequency affects their weight.',
+				'The |delay| ≤ 3,600 s filter defines the population; it does not certify the accuracy of the remaining predictions.',
+				'Unavailable is not zero. Date, coverage and provenance supply context; retention policy is configurable.',
 			],
 		},
 	},
@@ -308,58 +259,52 @@ GROUP BY f.provider_id, f.route_id;`,
 		name: { fr: 'Part des retards graves', en: 'Severe-delay share' },
 		sciName: 'severe_pct',
 		oneLiner: {
-			fr: "La part des relevés d'écart à l'horaire qui dépassaient +5 min de retard, la part de NOS relevés, pas la part des bus, trajets ou usagers en retard.",
-			en: 'The share of schedule-deviation readings that ran more than 5 min late, the share of OUR readings, not the share of buses, trips, or riders that were late.',
+			fr: 'La part des prédictions à plus de cinq minutes et au plus une heure de retard, parmi les observations de la vue affichée.',
+			en: 'The share of predictions more than five minutes and at most one hour late, among the displayed view’s observations.',
 		},
 		definition: {
-			fr: "De toutes les fois où l'on a pu mesurer l'écart à l'horaire d'une ligne, c'est le pourcentage qui roulait gravement en retard, plus de 5 minutes derrière. Donc 8 % signifie qu'environ 8 relevés sur 100 collectés pour cette ligne étaient à plus de 5 minutes de retard. Ce n'est PAS la part des bus, trajets ou usagers en retard, et ce n'est pas mesuré contre un horaire complet. C'est la part de nos relevés réels (chaque relevé = une arrivée/un départ prédit du flux GTFS-RT) ayant franchi la ligne du retard grave. Les relevés à plus d'une heure d'écart sont d'abord jetés comme fantômes, et « grave » plafonne à +60 minutes.",
-			en: 'Out of all the times we could measure how far behind (or ahead of) schedule a route’s trips were, this is the percentage that were running severely late, more than 5 minutes behind schedule. So if a route shows 8%, it means about 8 out of every 100 schedule-deviation readings we collected for that route were more than 5 minutes late. It is NOT the share of buses, trips, or riders that were late, and it is not measured against a complete timetable. It is the share of our actual readings (each reading is one predicted arrival/departure from the live GTFS-RT feed) that crossed the severe-late line. Readings off by more than an hour are thrown out first as feed ghosts, and “severe” caps at +60 minutes.',
+			fr: 'Un retard grave dépasse 300 secondes sans dépasser 3 600 secondes. Pour une ligne ou un bilan quotidien, le dénominateur comprend tous les relevés à retard connu, même ceux hors de la plage ±3 600 secondes. Pour les statistiques par arrêt, seuls les relevés dans cette plage comptent. Les classements des points chauds et des récidivistes utilisent aussi cette plage. Ces pourcentages décrivent des prédictions, pas des arrivées mesurées ni une part des voyageurs.',
+			en: 'A severe delay exceeds 300 seconds and is no more than 3,600 seconds. For a route or daily receipt, the denominator includes every known-delay reading, including those outside ±3,600 seconds. Stop statistics count only readings within that range. Hotspot and repeat-offender rankings also use that range. These percentages describe predictions, not measured arrivals or a share of passengers.',
 		},
 		math: {
-			fr: 'severe_pct = round( 100 × severe / delay_observation_count , 1 ), et None (pas 0) quand delay_observation_count est 0 ou NULL. severe = COUNT(observations WHERE delay_seconds > 300 AND ABS(delay_seconds) ≤ 3600). Les grains supérieurs composent additivement en sommant le compte severe ET le compte à retard connu, puis divisent une seule fois au moment de la publication, jamais en moyennant les pourcentages quotidiens.',
-			en: 'severe_pct = round( 100 × severe / delay_observation_count , 1 ), and None (not 0) when delay_observation_count is 0 or NULL. severe = COUNT(observations WHERE delay_seconds > 300 AND ABS(delay_seconds) ≤ 3600). Higher grains compose additively by summing both the severe count and the known-delay count, then dividing once at publish time, never by averaging the per-day percentages.',
+			fr: 'Part des retards graves = 100 × nombre de relevés dans (300, 3600] / nombre de relevés admissibles pour la vue. Les comptes sont additionnés avant la division; le résultat est arrondi à une décimale avec les demis s’éloignant de zéro. Exemple : avec des retards de 600 et 7 200 secondes, la part d’une ligne est 50 %, mais celle d’un arrêt est 100 %, car son dénominateur exclut le second relevé. Un dénominateur vide donne une valeur indisponible.',
+			en: 'Severe-delay share = 100 × readings in (300, 3600] / readings eligible for the view. Counts are pooled before division; the result rounds to one decimal place with ties away from zero. For example, delays of 600 and 7,200 seconds give a route share of 50%, but a stop share of 100%, because its denominator excludes the second reading. An empty denominator gives an unavailable value.',
 		},
-		sql: `-- 5m base (gold/rollups.py UPSERT_TRIP_DELAY_SUMMARY_5M):
-COUNT(delay_seconds)::integer                              AS delay_observation_count,
+		sql: `-- Route population: outliers remain in the denominator.
+COUNT(delay_seconds) AS known,
 COUNT(*) FILTER (
-    WHERE delay_seconds > 300            -- SEVERE_DELAY_SECONDS
-      AND ABS(delay_seconds) <= 3600     -- GHOST_DELAY_ABS_SECONDS
-)::integer                                                 AS severe_delay_observation_count,
+    WHERE delay_seconds > 300 AND delay_seconds <= 3600
+) AS severe
 
--- daily public view (migration 0030 public_route_reliability_daily):
-SUM(rd.severe_delay_count)::integer    AS severe_delay_observation_count,
-SUM(rd.delay_observation_count)::integer AS delay_observation_count
+-- Stop population: apply this filter before counting or summing.
+WHERE delay_seconds IS NOT NULL AND ABS(delay_seconds) <= 3600
 
--- publish step (snapshots/builders/_helpers.py _severe_pct):
-def _severe_pct(observation_count, severe):
-    if not observation_count: return None
-    obs = float(observation_count)
-    if obs <= 0: return None
-    return round(100.0 * float(severe or 0) / obs, 1)`,
+# Equivalent publication rounding (gold.reader.rates.severe_pct):
+from decimal import Decimal, ROUND_HALF_UP
+
+def severe_pct(observations, severe):
+    if not observations or observations <= 0:
+        return None
+    pct = 100.0 * float(severe or 0) / float(observations)
+    return float(Decimal(str(pct)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))`,
 		notReally: {
-			fr: "Un usager lira 8 % comme « 8 % des bus (ou trajets) de cette ligne ont roulé gravement en retard ». Ce n'est pas ça. C'est 8 % des RELEVÉS de prédiction collectés, pondérés par observations; un seul trajet chroniquement en retard, prédit des dizaines de fois, gonfle la part, et cela ne dit rien du nombre de véhicules, trajets ou usagers distincts touchés.",
-			en: 'A citizen reads 8% as “8% of this route’s buses (or trips) ran severely late”. It is not. It is 8% of the prediction READINGS we collected, observation-weighted; a single chronically-late trip predicted dozens of times inflates the share, and it says nothing about how many distinct vehicles, trips, or riders were affected.',
+			fr: 'Un taux de 8 % ne signifie pas que 8 % des voyages ou des autobus étaient gravement en retard. Un même voyage peut produire plusieurs relevés. Cette mesure ne compte pas les voyageurs touchés et ne vérifie pas les arrivées physiques.',
+			en: 'An 8% share does not mean 8% of trips or buses were severely late. One trip can produce many readings. This measure does not count affected passengers or verify physical arrivals.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, pas une ponctualité certifiée : chaque observation est un écart à l'horaire prédit du GTFS-RT, pas une arrivée AVL. « Grave » = le flux a prédit > 5 min de retard, pas une arrivée tardive vérifiée.",
-				"DÉNOMINATEUR = delay_observation_count (observations à retard connu), PAS le compte de trajets, de véhicules ni observation_count total. Utiliser observation_count sous-estimerait la part (c'était la correction d'honnêteté 3/3 du grain jour-de-semaine).",
-				'GARDE FANTÔME : les relevés ABS(delay_seconds) > 3600 s (1 h) sont entièrement exclus du numérateur et du dénominateur. severe est borné à > 300 s ET ≤ 3600 s.',
-				'severe est strictement EN RETARD (delay_seconds > 300). Le « grave en avance » est impossible par construction.',
-				"NULL, pas 0, quand delay_observation_count est 0, « aucune donnée mesurable » n'est jamais rendu comme « zéro retard grave ».",
-				'severe_pct EST additif : semaine/mois/quart/type-de-jour somment les comptes bruts puis divisent une seule fois. Les pourcentages par période ne sont jamais moyennés.',
-				"SENTINELLES : __unrouted__ (route_id NULL) n'apparaît jamais sur un artefact public par ligne.",
-				'SIGNAUX MORTS DU FLUX non impliqués : severe dérive uniquement de delay_seconds.',
+				'300 secondes est exclu du numérateur; 3 600 secondes est inclus. Au-delà d’une heure, un relevé reste dans le dénominateur d’une ligne mais ne compte jamais comme retard grave.',
+				'Les retards inconnus sont exclus. Pour les arrêts et les classements, les relevés hors de ±3 600 secondes sont aussi exclus du dénominateur; comparer ces populations demande donc de la prudence.',
+				'Les comptes bruts se composent entre périodes; les pourcentages quotidiens ne sont pas moyennés.',
+				'Zéro signifie aucun retard grave parmi les observations admissibles. Une valeur indisponible signifie que leur dénominateur est vide.',
+				'La fréquence de signalement influence le résultat : plusieurs prédictions d’un même voyage comptent séparément.',
 			],
 			en: [
-				'PROXY, not certified OTP: every observation is a GTFS-RT predicted schedule deviation, not an AVL/door-sensor arrival. “Severe” = the feed predicted >5 min late, not a verified late arrival.',
-				'DENOMINATOR is delay_observation_count (observations with a known delay), NOT the trip count, vehicle count, or total observation_count. Using observation_count would understate the share (this was honesty-fix 3/3 for the day-of-week grain).',
-				'GHOST guard: readings with ABS(delay_seconds) > 3600s (1 hour) are excluded entirely from both numerator and denominator. severe is bounded to >300s AND ≤3600s.',
-				'severe is strictly LATE (delay_seconds > 300). Severe-early is impossible by construction; early/on-time never enter the numerator.',
-				'NULL, not 0, when delay_observation_count is 0, “no measurable data” is never rendered as “zero severe delays”.',
-				'severe_pct IS additively composable: week/month/shift/day-type sum the raw counts then divide once. Per-period percentages are never averaged.',
-				'SENTINELS: __unrouted__ (route_id IS NULL) never appears on a public per-route artifact.',
-				'DEAD FEED signals are NOT involved: severe is derived only from delay_seconds.',
+				'300 seconds is excluded from the numerator; 3,600 seconds is included. Beyond one hour, a reading remains in a route’s denominator but never counts as severe.',
+				'Unknown delays are excluded. Stops and rankings also exclude readings outside ±3,600 seconds from their denominator, so comparisons across these populations require care.',
+				'Raw counts combine across periods; daily percentages are not averaged.',
+				'Zero means no severe delays among the eligible observations. An unavailable value means their denominator is empty.',
+				'Reporting frequency influences the result: multiple predictions for one trip count separately.',
 			],
 		},
 	},
@@ -372,55 +317,57 @@ def _severe_pct(observation_count, severe):
 		name: { fr: 'Arrêts les plus en retard', en: 'Weak stops' },
 		sciName: 'weak_stops',
 		oneLiner: {
-			fr: "Les 5 arrêts d'une ligne où les véhicules tendent à être le plus en retard en moyenne, une moyenne sur tout l'historique des prédictions, pas un décompte d'arrivées réelles.",
-			en: 'The 5 stops on a line where vehicles tend to run latest on average, a mean over all recorded predictions, not a count of actual arrivals.',
+			fr: 'Les arrêts d’une ligne où les prédictions de retard sont les moins favorables, selon la période affichée.',
+			en: 'Stops on a line with less favorable delay predictions, for the displayed period.',
 		},
 		definition: {
-			fr: "Pour une seule ligne, c'est la liste des 5 arrêts où les véhicules tendent à rouler le plus en retard, en moyenne, contre leur horaire. Chaque arrêt montre un chiffre : la lateur moyenne en minutes vue à cet arrêt sur cette ligne, en comptant chaque prédiction jamais enregistrée. Un chiffre plus grand = les bus de cette ligne arrivent habituellement plus tard là qu'ailleurs. C'est une figure « en moyenne » bâtie sur les prédictions d'arrivée/départ en direct, pas un journal compté d'arrivées réelles, et c'est classé par plus forte moyenne d'abord.",
-			en: 'For a single bus or train line, this is the list of the 5 stops where vehicles tend to run the latest, on average, against their scheduled time. Each stop shows one number: the average lateness in minutes seen at that stop on that line, counting every prediction the transit feed has ever recorded for it. A bigger number means buses on that line usually show up later there than at other stops. It is an “on average” figure built from the live arrival/departure predictions the agency broadcasts, not a hand-counted log of actual arrivals, and it is ranked highest-average-delay first.',
+			fr: 'Dans la vue par période, le classement utilise la borne inférieure de Wilson de la part sans retard grave : une borne plus basse place l’arrêt plus haut. Les barres montrent la part des retards graves, pas le score de classement. Seuls les arrêts ayant au moins 30 observations admissibles sont retenus, avec au plus 15 arrêts par période. Si cette vue est indisponible, le résumé classe les arrêts par retard moyen sur les 30 dates locales se terminant au dernier jour clos disponible. Les deux calculs excluent les retards inconnus ou hors de [−3 600, 3 600] secondes.',
+			en: 'In the period view, ranking uses the lower Wilson bound of the non-severe share: a lower bound places the stop higher. Bars show severe-delay share, not the ranking score. Only stops with at least 30 eligible observations qualify, with at most 15 stops per period. If this view is unavailable, the summary ranks stops by mean delay over the 30 local dates ending on the latest available closed day. Both calculations exclude unknown delays and values outside [−3,600, 3,600] seconds.',
 		},
 		math: {
-			fr: 'avg_delay_min = round( [ SUM(stop_delay_weekly.avg_delay_seconds × observation_count) / SUM(observation_count) ] / 60 , 1 ), calculé par arrêt dans la ligne sur toutes les rangées hebdomadaires, puis classé DESC et tronqué à 5; les rangées à zéro observation ou somme pondérée NULL sont écartées.',
-			en: 'avg_delay_min = round( [ SUM(stop_delay_weekly.avg_delay_seconds × observation_count) / SUM(observation_count) ] / 60 , 1 ), computed per stop within the route over all weekly rows, then ranked DESC and truncated to 5; rows with zero observations or a NULL weighted sum are dropped.',
+			fr: 'Par période, n est le nombre de relevés admissibles et k = n − nombre de retards graves. La borne inférieure de Wilson pour k/n, avec z = 1,96, est classée en ordre croissant; les égalités sont départagées par retard moyen décroissant, puis identifiant d’arrêt. Le résumé utilise plutôt la moyenne non arrondie, somme des retards / n, puis l’identifiant. Les minutes publiées sont arrondies à une décimale avec les demis s’éloignant de zéro. Les comptes sont regroupés avant tout ratio.',
+			en: 'For each period, n is the eligible reading count and k = n − severe-delay count. The lower Wilson bound for k/n, with z = 1.96, sorts ascending; ties break by mean delay descending, then stop ID. The summary instead uses the unrounded mean, sum of delays / n, then stop ID. Published minutes round to one decimal place with ties away from zero. Counts are pooled before any ratio.',
 		},
-		sql: `-- Aggregation feeding weak_stops (historic.py _ROUTE_WEAK_STOPS_SQL):
+		sql: `-- Summary window: latest closed stop-delay date minus 29 days through that date.
 SELECT stop_id,
-       SUM(observation_count)                     AS obs,
-       SUM(avg_delay_seconds * observation_count) AS weighted_delay_sec,
-       SUM(severe_delay_count)                    AS severe
-FROM gold.stop_delay_weekly
+       SUM(observation_count) AS observations,
+       SUM(sum_delay_seconds) AS total_delay_seconds,
+       SUM(severe_delay_count) AS severe
+FROM gold.stop_delay_spine
 WHERE provider_id = :provider_id AND route_id = :route_id
-GROUP BY stop_id
--- Python: avg_sec = weighted_delay_sec / obs  (None when obs falsy / weighted None)
---         sort desc by avg_sec; top 5; avg_delay_min = round(avg_sec/60.0, 1)`,
+  AND provider_local_date BETWEEN :win_start AND :win_end
+GROUP BY stop_id;
+
+# Period view: require observations >= 30.
+# Sort by (wilson_lo(observations - severe, observations), -avg_delay_min, stop_id).
+# Retain at most 15; bars show 100 * severe / observations.
+# Wilson bounds use gold.reader.rates.wilson_lo/hi with z=1.96.
+
+# Summary fallback: ignore empty groups.
+mean_seconds = total_delay_seconds / observations
+# Sort by (-mean_seconds, stop_id); the default publication cap is 100.
+# Published minutes use gold.reader.rates.avg_delay_min (ties away from zero).`,
 		notReally: {
-			fr: "Un usager pourrait lire avg_delay_min comme « combien de minutes mon bus sera en retard à cet arrêt » ou comme un pourcentage de trajets en retard. Ni l'un ni l'autre : c'est la MOYENNE de lateur prédite à long terme à cet arrêt sur cette ligne sur toutes les prédictions (une moyenne, facilement biaisée par une minorité de prédictions très tardives), pas une garantie pour un trajet, pas un pourcentage à l'heure, pas une arrivée mesurée.",
-			en: 'A citizen may read avg_delay_min as “how many minutes my bus will be late at this stop” or as a percentage of trips that are late. It is neither: it is the long-run AVERAGE predicted lateness at that stop on that line across all recorded predictions (a mean, easily skewed by a minority of very-late predictions), not a guarantee for any single trip, not an on-time percentage, and not a measured arrival.',
+			fr: 'Ce classement ne prédit pas votre prochain voyage et ne mesure pas les arrivées réelles. Une borne de Wilson basse peut aussi traduire un petit échantillon; elle ne prouve pas qu’un arrêt est systématiquement le pire.',
+			en: 'This ranking does not predict your next trip or measure actual arrivals. A low Wilson bound can also reflect a small sample; it does not prove a stop is consistently the worst.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, pas une ponctualité certifiée : avg_delay_min dérive de l'écart à l'horaire PRÉDIT des mises à jour GTFS-RT. Aucun AVL / aucune arrivée physique mesurée.",
-				"C'est une MOYENNE, pas une médiane : moyenne arithmétique pondérée par observations. weak_stops ne porte AUCUN p50/p90. Quelques prédictions extrêmes peuvent tirer la moyenne vers le haut.",
-				"Dénominateur pondéré par observations : chaque moyenne d'arrêt pondère chaque heure/semaine par son observation_count. observation_count n'est PAS des trajets distincts.",
-				'Filtre fantôme : toute prédiction |delay_seconds| > 3600 s (1 h) est écartée à la source horaire, donc les vrais retards > 1 h sont aussi exclus.',
-				"Severe (> 300 s) remonte dans le feeder mais n'est PAS exposé dans WeakStop. C'est un classement de retard moyen seulement.",
-				"Sentinelles : __unrouted__ ne peut jamais correspondre à une vraie ligne; stop_id vient du delay_stop_id non-null, donc __unknown_stop__ n'apparaît jamais. Propre par construction.",
-				'Accumulation : agrège TOUTES les rangées hebdomadaires retenues (pas de fenêtre glissante sur la lecture), donc la moyenne mêle anciennes et récentes semaines.',
-				'SIGNAUX MORTS DU FLUX non utilisés : seul delay_seconds (déviation prédite) alimente ce métrique.',
+				'La moyenne est pondérée par observations, pas par voyages ou voyageurs. Un voyage signalé plus souvent pèse davantage.',
+				'La fenêtre de 30 dates peut contenir des jours sans données. Elle se termine au dernier jour disponible, qui peut être ancien si le flux est interrompu.',
+				'Les retards hors de ±3 600 secondes sont exclus, même lorsqu’ils correspondent à un incident réel.',
+				'Un arrêt sans observation admissible est absent du classement. Une liste courte n’est pas complétée artificiellement.',
+				'Les prédictions répétées ne sont pas des essais indépendants. Les bornes de Wilson décrivent le calcul utilisé; leur couverture réelle de 95 % n’a pas été validée.',
 			],
 			en: [
-				'PROXY, not certified OTP: avg_delay_min derives from GTFS-RT trip-update PREDICTED schedule deviation. There is NO AVL / no measured physical arrival.',
-				'It is a MEAN, not a median: observation-weighted arithmetic mean. weak_stops carries NO p50/p90. A few extreme predictions can pull the mean up.',
-				'Observation-weighted denominator: each stop’s mean weights every hour/week by its observation_count. observation_count is NOT distinct trips.',
-				'Ghost filter: any prediction with |delay_seconds| > 3600s (1h) is dropped at the hourly source, so genuine >1h delays are also excluded.',
-				'Severe (>300s) flows up the feeder but is NOT surfaced in WeakStop, weak_stops is a mean-delay ranking only.',
-				'Sentinel handling: __unrouted__ can never match a real route_id; stop_id comes from non-null delay_stop_id so __unknown_stop__ never appears. Sentinel-clean by construction.',
-				'Accrual: aggregates ALL retained weekly rows (no trailing-window cap on the read), so a route’s mean blends old and recent weeks.',
-				'DEAD FEED signals are not used: only delay_seconds (predicted deviation) feeds this metric.',
+				'The mean is weighted by observations, not trips or passengers. A trip reported more often carries more weight.',
+				'The 30-date window can contain days without data. It ends on the latest available day, which may be old if reporting has stopped.',
+				'Delays outside ±3,600 seconds are excluded, even when they reflect a real incident.',
+				'A stop without eligible observations is absent from the ranking. Short lists are not padded.',
+				'Repeated predictions are not independent trials. Wilson bounds describe the calculation used; their real-world 95% coverage has not been validated.',
 			],
 		},
 	},
-	// ── 02 Wait regularity ──────────────────────────────────────────────────
 	{
 		key: 'regularityCov',
 		anchor: 'regularity',
@@ -430,65 +377,43 @@ GROUP BY stop_id
 		name: { fr: 'Régularité des intervalles (CV)', en: 'Headway regularity (CoV)' },
 		sciName: 'headway_cov · bunched_pct',
 		oneLiner: {
-			fr: "Si les véhicules sont régulièrement espacés ou en accordéon. Le CV est un score d'irrégularité (plus haut = plus erratique); « collés » est la part d'intervalles si courts qu'ils signalent deux véhicules quasi ensemble.",
-			en: 'Whether vehicles are evenly spaced or bunched. CoV is an irregularity score (higher = more erratic); “bunched” is the share of gaps so short they signal two vehicles arriving nearly together.',
+			fr: 'La variabilité des intervalles entre apparitions de trajets dans le flux. Le CV augmente avec l’irrégularité; la part d’apparitions rapprochées estime les écarts inférieurs à la moitié de la médiane.',
+			en: 'Variation in the gaps between trips appearing in the feed. CoV rises with irregularity; the closely spaced share estimates gaps below half the median.',
 		},
 		definition: {
-			fr: "À quel point les bus/trains d'une ligne sont réellement espacés. On observe quand chaque trajet apparaît « en direct » pour la première fois dans le flux, puis on mesure l'écart entre un trajet et le suivant sur la même ligne, fenêtre horaire et journée de service. De ces écarts on tire la régularité : « CV » est un score d'uniformité de 0 et plus (plus haut = plus erratique) et « collés » est la part d'écarts si courts qu'ils signalent deux véhicules arrivant presque ensemble (bus en accordéon). C'est une image de constance, pas une garantie qu'un trajet précis a roulé à l'heure.",
-			en: 'How evenly the buses/trains on a route are actually spaced. We watch when each trip first shows up “live” in the feed, then measure the gap between one trip and the next on the same route, time-of-day window, and service day. From those gaps we report regularity, whether gaps are even or erratic: “CoV” is a 0-and-up evenness score (higher = more erratic) and “bunched” is the share of gaps so short they signal two vehicles arriving nearly together (bus-bunching). It is a picture of consistency, not a guarantee that any single trip ran on time.',
+			fr: 'Ces mesures décrivent les premières captures admissibles de trajets, pas des arrivées mesurées à un arrêt. Le CV divise l’écart-type des intervalles par leur moyenne. La part d’apparitions rapprochées mesure les écarts inférieurs à la moitié de la médiane. Les vues par jour, semaine et mois regroupent les statistiques quotidiennes conservées; elles couvrent la direction comptant le plus de trajets de semaine dans chaque fenêtre.',
+			en: 'These measures describe the first eligible feed captures of trips, not measured stop arrivals. CoV divides the sample standard deviation of gaps by their mean. The closely spaced share measures gaps below half the median. Day, week and month views pool retained daily statistics; they cover the direction with the most observed weekday trips in each window.',
 		},
 		math: {
-			fr: "Par (route, quart) sur 14 JOURS GLISSANTS : trip_start = MIN(captured_at_utc) par trajet (delay_seconds non-null, |delay| ≤ 3600); gap_min = écart entre trips successifs; filtre de bon sens partagé : gap > 0 ET < 240 min. headway_cov = ROUND(stddev_samp(gap)/avg(gap), 4), seulement si n ≥ 2 ET moyenne > 0 (sinon NULL). bunched_count = COUNT FILTER (gap < 0,5 × médiane du quart); bunched_pct = round(100 × bunched/sample, 1) (None si pas d'échantillon).",
-			en: 'Per (route, shift) over a TRAILING 14 DAYS: trip_start = MIN(captured_at_utc) per trip (delay_seconds non-null, |delay| ≤ 3600); gap_min = gap between successive trip-starts; shared sanity filter: gap > 0 AND < 240 min. headway_cov = ROUND(stddev_samp(gap)/avg(gap), 4), only when n ≥ 2 AND mean > 0 (else NULL). bunched_count = COUNT FILTER (gap < 0.5 × shift median gap); bunched_pct = round(100 × bunched/sample, 1) (None when no sample).',
+			fr: 'Pour les fenêtres de 1, 7 et 30 jours : n = nombre d’écarts, S = somme des écarts en minutes, Q = somme de leurs carrés. CV = sqrt(max((Q − S²/n)/(n−1), 0)) / (S/n), arrondi à 4 décimales; valeur indisponible si n < 2 ou S ≤ 0. Cette formule utilise les moments conservés, pas l’histogramme. La part rapprochée est estimée dans l’histogramme regroupé sous T = 0,5 × médiane publiée, avec répartition uniforme dans le seau coupé par T, puis arrondie à une décimale.',
+			en: 'For the 1-, 7- and 30-day windows: n is the gap count, S the sum of gap minutes, and Q the sum of squared gap minutes. CoV = sqrt(max((Q − S²/n)/(n−1), 0)) / (S/n), rounded to 4 decimals; unavailable if n < 2 or S ≤ 0. This uses the retained moments, not the histogram. The closely spaced share estimates pooled histogram mass below T = 0.5 × published median, assuming uniform values inside the bin crossed by T, then rounds to one decimal place.',
 		},
-		sql: `-- gold.route_headway_daily build (UPSERT_ROUTE_HEADWAY_DAILY), essential aggregation:
-gaps AS (
-  SELECT provider_id, route_id, direction_id, service_date, shift,
-    EXTRACT(EPOCH FROM (
-      trip_start_utc - LAG(trip_start_utc) OVER (
-        PARTITION BY provider_id, route_id, direction_id, service_date, shift
-        ORDER BY trip_start_utc))) / 60.0 AS gap_min
-  FROM shifted),
-filtered AS (                       -- single shared sample for median/CoV/bunching
-  SELECT provider_id, route_id, shift, gap_min FROM gaps
-  WHERE gap_min IS NOT NULL AND gap_min > 0 AND gap_min < 240),
-agg AS (
-  SELECT provider_id, route_id, shift,
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min) AS med_gap,
-    avg(gap_min) AS mean_gap, stddev_samp(gap_min) AS sd_gap, COUNT(*) AS n
-  FROM filtered GROUP BY provider_id, route_id, shift)
-INSERT INTO gold.route_headway_daily (...)
-SELECT a.provider_id, a.route_id, a.shift,
-  ROUND(a.med_gap::numeric, 1),            -- observed_headway_min
-  a.n::integer,                            -- sample_count
-  CASE WHEN a.n >= 2 AND a.mean_gap > 0    -- headway_cov (NULL for <2 gaps)
-       THEN ROUND((a.sd_gap / a.mean_gap)::numeric, 4) END,
-  COALESCE(b.bunched_count, 0)::integer    -- bunched_count
-FROM agg a LEFT JOIN bunch b USING (provider_id, route_id, shift) ...;`,
+		sql: `# Pool daily count and moments over the selected direction, shift and window.
+mean = sum_gap / n if n else None
+variance = max((sum_gap_sq - sum_gap**2 / n) / (n - 1), 0) if n >= 2 else None
+cov = round_half_away(math.sqrt(variance) / mean, 4) if variance is not None and mean > 0 else None
+
+# Bunching is re-estimated from pooled bins, never summed from daily bunched counts.
+bunched = bunched_pct(pooled_gap_histogram, gap_edges, published_median)
+bunched_pct_value = round_half_away(bunched, 1) if bunched is not None else None`,
 		notReally: {
-			fr: "Un usager lira « collés 18 % » comme une note de ponctualité certifiée pour son arrêt. Ce n'en est pas une : c'est la part d'intervalles erratiquement courts, sur la direction la plus achalandée en semaine des 14 derniers jours, tirée de l'apparition des trajets dans le flux en direct, pas une heure d'arrivée à l'arrêt, pas un décompte de trajets à l'heure, et cela ne dit rien des trajets annulés ou jamais apparus.",
-			en: 'A citizen will read “bunched 18%” as a certified, schedule-complete punctuality score for their stop. It is not: it is the share of erratically-short gaps, over the busiest weekday direction in the last 14 days, derived from when trips first appear in the live feed, not an at-stop arrival time, not a per-trip on-time count, and it says nothing about trips that were cancelled or never appeared.',
+			fr: 'Une part rapprochée de 18 % ne signifie pas que 18 % des bus arrivent collés à votre arrêt. Les captures manquantes et les interruptions du flux peuvent modifier les écarts. Ni le CV ni cette part ne mesure la ponctualité, les passagers touchés ou les trajets annulés.',
+			en: 'A closely spaced share of 18% does not mean 18% of buses arrive together at your stop. Missed captures and feed interruptions can change the gaps. Neither CoV nor this share measures on-time performance, affected passengers or cancelled trips.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, PAS une ponctualité : c'est l'espacement des apparitions de trajets GTFS-RT, jamais une ponctualité certifiée ni basée sur l'AVL/odomètre.",
-				"FENÊTRE GLISSANTE de 14 j, pas un historique par période close : les tables gold sont reconstruites à chaque exécution depuis captured_at_utc ≥ now() − 14 jours. AUCUN historique d'intervalles par jour; une ligne calme sur 14 j disparaît.",
-				"DÉNOMINATEUR du CV et du collement = le MÊME jeu d'écarts filtré (gap > 0 et < 240 min), un échantillon partagé délibéré.",
-				'CV honnête-NULL quand moins de 2 écarts valides (garde n ≥ 2) ou moyenne = 0; bunched_pct est None sans échantillon. Jamais fabriqué à 0.',
-				"COLLAPSE direction/type-de-jour : route_headway_daily ne garde QUE la direction la plus achalandée et le service SEMAINE (ISODOW 1-5), donc le CV/collement vedette ne décrit qu'une direction en semaine.",
-				'GARDE FANTÔME : seules les rangées delay_seconds non-null et |delay| ≤ 3600 amorcent un trip-start; les écarts sont bornés à > 0 et < 240 min.',
-				"MÉDIANE, pas moyenne : observed_headway_min est une médiane. La moyenne n'apparaît que dans le dénominateur du CV.",
-				'SIGNAUX MORTS DU FLUX non utilisés : occupancy_percentage, congestion_level, delay natif, trajets ADDED.',
+				'Les écarts proviennent de trajets avec retard prédit connu dans [−3 600, 3 600] secondes; seuls les écarts strictement dans (0, 240) minutes sont admissibles, dans une même direction, journée de service et période horaire.',
+				'Les fenêtres se terminent au dernier jour clos disponible de la série et regroupent les données admissibles de semaine. La direction la plus représentée peut changer entre fenêtres.',
+				'Le CV est recomposé à partir des moments; la médiane et la part rapprochée sont des estimations issues des histogrammes. Le même nombre d’écarts sert de dénominateur.',
+				'Le résumé sans fenêtre reste une série distincte sur la fenêtre de conservation configurée des faits bruts, de 14 jours par défaut : médiane continue, écart-type d’échantillon et décompte direct des écarts inférieurs à la demi-médiane.',
+				'CV = 0 décrit des écarts constants. CV indisponible signifie moins de deux écarts ou une moyenne non positive; la part rapprochée est indisponible sans écarts.',
 			],
 			en: [
-				'PROXY, NOT OTP: this is GTFS-RT trip-appearance spacing, never certified on-time performance and never AVL/odometer-based.',
-				'TRAILING-14d WINDOW, NOT closed-period history: both gold tables are full rebuilds each run from captured_at_utc ≥ now() − 14 days. There is NO per-day headway history; a route quiet in the last 14d simply disappears.',
-				'DENOMINATOR for CoV and bunching is the SAME filtered gap set (gap > 0 and gap < 240 min), a deliberate shared sample so numerator/denominator never drift.',
-				'CoV is honest-NULL when fewer than 2 valid gaps (n ≥ 2 guard) or mean = 0; bunched_pct is None when there is no gap sample. Neither is ever fabricated to 0.',
-				'DIRECTION/DAY-TYPE COLLAPSE: route_headway_daily keeps only the BUSIEST direction and WEEKDAY service (ISODOW 1–5), so the headline CoV/bunching describe one direction on weekdays only.',
-				'GHOST-TRIP GUARD: only fact rows with delay_seconds NOT NULL and |delay_seconds| ≤ 3600 seed a trip-start; gaps are clamped to > 0 and < 240 min.',
-				'MEDIAN, NOT MEAN: observed_headway_min is a median. The mean only appears inside CoV’s denominator.',
-				'DEAD FEED SIGNALS not used: occupancy_percentage, congestion_level, native delay, ADDED trips.',
+				'Gaps come from trips with known predicted delays within [−3,600, 3,600] seconds; only gaps strictly within (0,240) minutes qualify, within one direction, service day and shift.',
+				'Windows end on the series’ newest available closed day and pool eligible weekday data. The busiest observed direction can change between windows.',
+				'CoV is reconstructed from moments; the median and closely spaced share are histogram estimates. The same gap count supplies their denominator.',
+				'The non-windowed summary uses the configured raw-fact retention window, 14 days by default, with a continuous median, sample standard deviation and direct count of gaps below half the median.',
+				'CoV = 0 describes constant gaps. Unavailable CoV means fewer than two gaps or a nonpositive mean; the closely spaced share is unavailable without gaps.',
 			],
 		},
 	},
@@ -498,52 +423,45 @@ FROM agg a LEFT JOIN bunch b USING (provider_id, route_id, shift) ...;`,
 		cluster: 'waitRegularity',
 		family: 4,
 		confidence: 'proxy',
-		name: { fr: 'Intervalle observé et programmé', en: 'Observed and scheduled headway' },
+		name: { fr: 'Intervalle dans le flux et prévu', en: 'Feed-appearance and scheduled headway' },
 		sciName: 'observed_min · scheduled_min',
 		oneLiner: {
-			fr: "L'écart typique (médian) que vous attendriez entre deux véhicules (observé) vs l'écart que l'horaire promet (programmé), mesuré à partir de l'apparition des trajets dans le flux, pas d'une arrivée à l'arrêt.",
-			en: 'The typical (median) gap you’d wait between vehicles (observed) vs the gap the timetable promises (scheduled), measured from trips appearing in the feed, not an at-stop arrival.',
+			fr: 'L’intervalle médian entre les premières apparitions de trajets dans le flux, comparé aux départs prévus au premier arrêt. Il ne mesure pas votre attente à un arrêt.',
+			en: 'The median gap between trips first appearing in the feed, compared with scheduled first-stop departures. It does not measure your wait at a stop.',
 		},
 		definition: {
-			fr: "Par quart, on rapporte deux des quatre mesures d'intervalle : (1) intervalle observé = l'écart typique (médian) que vous attendriez entre véhicules; (2) intervalle programmé = l'écart typique que l'horaire promet. « Début de trajet » est le premier moment où l'on a vu un trajet rapporter dans le flux en direct avec une déviation calculable, pas un événement de départ à l'arrêt. L'intervalle observé est donc un proxy d'écart entre apparitions de trajets, pas une mesure d'inter-arrivée au niveau de l'arrêt.",
-			en: 'Per shift, we report two of the four headway measures: (1) observed headway = the typical (median) gap you’d wait between vehicles; (2) scheduled headway = the typical gap the timetable promises. A “trip start” = the FIRST realtime observation that carried a computable schedule deviation, not an at-stop departure event. Observed headway is therefore an inter-trip-appearance gap proxy, not a stop-level inter-arrival measurement.',
+			fr: 'On retient la première capture admissible de chaque trajet et journée de service : retard prédit connu et compris entre −3 600 et 3 600 secondes. Les écarts entre apparitions successives restent dans la même ligne, direction, journée de service et période horaire; seuls les écarts strictement positifs et inférieurs à 240 minutes sont retenus. Les vues par jour, semaine et mois estiment une médiane à partir des histogrammes quotidiens regroupés. Le repère prévu vient du GTFS actuel, sur une journée de semaine représentative.',
+			en: 'Each trip and service day contributes its first eligible capture: a known predicted delay within −3,600 to 3,600 seconds. Gaps between successive appearances stay within the same route, direction, service day and shift; only gaps strictly above zero and below 240 minutes remain. The day, week and month views estimate a median from pooled daily histograms. The scheduled reference comes from the current GTFS timetable on a representative weekday.',
 		},
 		math: {
-			fr: "observed_headway_min = ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min), 1) sur le jeu d'écarts filtré (gap > 0 et < 240 min). scheduled_min n'est PAS stocké en gold : calculé au moment de la publication = médiane des écarts entre minutes de départ programmées distinctes au premier arrêt (direction la plus achalandée en semaine), regroupées dans le même quart.",
-			en: 'observed_headway_min = ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min), 1) over the filtered gap set (gap > 0 and < 240 min). scheduled_min is NOT stored in gold: computed at PUBLISH time = median gap between distinct timetabled first-stop departure minutes (busiest weekday direction), bucketed into the same shift.',
+			fr: 'Vue par fenêtre : observed_min = médiane estimée par interpolation du cumul des histogrammes d’écarts, arrondie à une décimale. Les fenêtres de 1, 7 et 30 jours se terminent au dernier jour clos de cette série et ne contiennent que les écarts admissibles de semaine. La direction retenue maximise le nombre de trajets observés dans chaque fenêtre. Le résumé sans fenêtre utilise la médiane continue sur la fenêtre de conservation configurée des faits bruts, de 14 jours par défaut. scheduled_min = médiane des écarts entre minutes de départ distinctes au premier arrêt, par période, dans la direction avec le plus de départs du GTFS actuel.',
+			en: 'Windowed view: observed_min is estimated by interpolating the pooled gap-histogram CDF and rounding to one decimal place. The 1-, 7- and 30-day windows end on this series’ newest closed day and include only eligible weekday gaps. The selected direction has the most observed trips in each window. The non-windowed summary uses a continuous median over the configured raw-fact retention window, 14 days by default. scheduled_min is the median gap between distinct first-stop departure minutes, per shift, in the direction with the most departures in the current timetable.',
 		},
-		sql: `-- observed_headway_min (gold.route_headway_daily; see headway-regularity above for the gaps CTE):
-ROUND(a.med_gap::numeric, 1) AS observed_headway_min   -- percentile_cont(0.5) over the shared filtered gaps
+		sql: `# Windowed observations: pool histogram counts, then estimate one median.
+observed_min = round_half_away(cdf_percentile(pooled_gap_histogram, 0.5, gap_edges), 1)
 
--- scheduled_min + excess_wait are PUBLISH-TIME, NOT stored in gold (migration 0035 dropped them):
---   scheduled = median gap of distinct first-stop departure minutes (busiest weekday direction), per shift
---   excess_wait (windowed) = round(max(0.0, sum_gap_sq_min/(2*sum_gap_min) - scheduled/2.0), 1)  -- passenger-weighted EWT
---   excess_wait (scalar whole-history) = round(max(0.0, observed - scheduled), 1)  -- typical-gap proxy (no moments)
--- the direction/day-type sibling rows (route_headway_direction_daily) carry observed_min only.`,
+# Current scheduled reference: distinct first-stop departure minutes within one shift.
+minutes = sorted(set(departure_minutes))
+gaps = [right - left for left, right in zip(minutes, minutes[1:])]
+scheduled_min = round_half_away(statistics.median(gaps), 1) if gaps else None`,
 		notReally: {
-			fr: "« Intervalle observé 12 min » n'est pas « mon bus passe aux 12 minutes à mon arrêt ». C'est l'écart médian entre les moments où les trajets successifs apparaissent d'abord dans le flux, sur la direction la plus achalandée en semaine des 14 derniers jours, pas une inter-arrivée mesurée à l'arrêt, et les trajets annulés ou jamais apparus rétrécissent simplement l'échantillon, ils ne comptent pas comme de longues attentes.",
-			en: '“Observed headway 12 min” is not “my bus comes every 12 minutes at my stop.” It is the median gap between when consecutive trips first appear in the feed, over the busiest weekday direction in the last 14 days, not a measured at-stop inter-arrival, and cancelled or never-appeared trips just shrink the sample, they are not counted as long waits.',
+			fr: 'Un intervalle de 12 minutes ne promet pas un bus toutes les 12 minutes à votre arrêt. Les apparitions dans le flux ne sont pas des départs ou arrivées mesurés. Des trajets absents, des captures manquantes ou une interruption du flux peuvent changer ces écarts. La différence entre les repères ne mesure pas l’attente excédentaire des usagers.',
+			en: 'A 12-minute gap does not promise a bus every 12 minutes at your stop. Feed appearances are not measured departures or arrivals. Missing trips, missed captures or an interrupted feed can change these gaps. The difference between the two markers does not measure passengers’ excess wait.',
 		},
 		caveats: {
 			fr: [
-				"PROXY d'apparition dans le flux, pas une inter-arrivée à l'arrêt ni de l'AVL : « intervalle observé » est l'écart médian entre apparitions successives de trajets avec une déviation calculable.",
-				"FENÊTRE GLISSANTE de 14 j : reconstruite à chaque exécution; aucun historique d'intervalles par jour.",
-				"PROGRAMMÉ & EXCÈS sont AU MOMENT DE LA PUBLICATION, NON STOCKÉS : la migration 0035 a retiré scheduled/excess de gold car l'upsert ne les écrivait jamais. Recalculés depuis l'horaire GTFS.",
-				'COLLAPSE direction/jour-type : observed_min vedette ne couvre que la direction la plus achalandée en semaine; week-end et autres directions vivent dans la table sœur (observed_min seulement).',
-				'MÉDIANE, pas moyenne, pour observed_min et scheduled_min (percentile_cont 0.5; statistics.median sur les minutes de départ distinctes).',
-				'QUARTS en heure LOCALE; le seau « nuit » {23, 0-5} replie les heures post-minuit. Aucun traitement DST explicite au-delà du seau en heure locale.',
-				'GARDE FANTÔME : seules les rangées à delay calculable et |delay| ≤ 3600 amorcent un trip-start; écarts bornés > 0 et < 240 min.',
-				'SIGNAUX MORTS DU FLUX jamais rapportés ici : occupancy_percentage, congestion_level, delay natif, trajets ADDED.',
+				'Les histogrammes quotidiens sont conservés et regroupés; les médianes de fenêtres sont des estimations, pas des moyennes de médianes quotidiennes.',
+				'Les fenêtres principale et précédente peuvent retenir des directions différentes. Les écarts affichés décrivent les échantillons et ne prouvent pas une évolution pour les mêmes trajets.',
+				'Le repère prévu utilise l’horaire actuel et sa propre direction la plus fournie; il ne reconstitue pas l’horaire de chaque journée historique.',
+				'Les fenêtres regroupent les jours de capture admissibles de semaine et excluent le service de fin de semaine. Les résumés par direction et fin de semaine, quand présents, sont des séries distinctes.',
+				'Sans écarts admissibles, la médiane est indisponible. L’absence de données reste distincte d’un intervalle observé de zéro.',
 			],
 			en: [
-				'FEED-APPEARANCE PROXY, not an at-stop inter-arrival and not AVL: “observed headway” is the median gap between successive trip appearances carrying a computable deviation.',
-				'TRAILING-14d WINDOW: rebuilt every run; there is no per-day headway history.',
-				'SCHEDULED & EXCESS ARE PUBLISH-TIME, NOT STORED: migration 0035 dropped scheduled/excess from gold because the upsert never wrote them. Recomputed from the GTFS timetable.',
-				'DIRECTION/DAY-TYPE COLLAPSE: the headline observed_min covers only the busiest weekday direction; weekend and other directions live in the sibling table (observed_min only).',
-				'MEDIAN, NOT MEAN, for observed_min and scheduled_min (percentile_cont 0.5; statistics.median over distinct departure minutes).',
-				'SHIFT BUCKETS use LOCAL time; the “night” bucket {23, 0–5} folds post-midnight times. No explicit DST handling beyond local-time bucketing.',
-				'GHOST-TRIP GUARD: only rows with a computable delay and |delay| ≤ 3600 seed a trip-start; gaps clamped > 0 and < 240 min.',
-				'DEAD FEED SIGNALS never reported here: occupancy_percentage, congestion_level, native delay, ADDED trips.',
+				'Daily histograms are retained and pooled; window medians are estimates, not averages of daily medians.',
+				'Current and previous windows can select different directions. Displayed changes describe the samples and do not establish a change for the same trips.',
+				'The scheduled reference uses the current timetable and its own busiest direction; it does not reconstruct the timetable for each historical day.',
+				'Windowed data pool eligible weekday capture dates and exclude weekend service. Direction and weekend summaries, when present, are separate series.',
+				'Without eligible gaps, the median is unavailable. Missing data remains distinct from an observed zero-minute gap.',
 			],
 		},
 	},
@@ -556,44 +474,38 @@ ROUND(a.med_gap::numeric, 1) AS observed_headway_min   -- percentile_cont(0.5) o
 		name: { fr: 'Attente excédentaire', en: 'Excess wait' },
 		sciName: 'excess_wait_min',
 		oneLiner: {
-			fr: "Le temps d'attente supplémentaire que subissent les usagers, au-delà d'un bus parfaitement régulier, jamais montré négatif (le service en avance/supplémentaire est ramené à 0).",
-			en: 'The extra wait riders take on, beyond a perfectly even bus, never shown negative (early/extra service is clamped to 0).',
+			fr: "Estimation d'attente excédentaire fondée sur les apparitions de trajets et des arrivées uniformes des usagers, ramenée à zéro au minimum.",
+			en: 'Modeled extra wait from trip appearances, assuming uniform rider arrivals and clamped to zero.',
 		},
 		definition: {
-			fr: "L'attente excédentaire est le temps d'attente supplémentaire d'un usager typique au-delà d'un bus parfaitement régulier. Sur les grains fenêtrés (aujourd'hui / cette semaine / ce mois) c'est l'Attente Excédentaire pondérée par les passagers : AWT − programmé/2, où AWT = somme(écart²) / (2·somme(écart)) est l'attente qu'un usager au hasard subit selon les écarts observés (le talonnage compte : les longs écarts touchent plus de monde), et programmé/2 est l'attente sur un service parfaitement régulier. Ramenée à 0 (un service aussi fréquent que prévu est un 0 honnête, jamais une attente négative). La ligne scalaire toute-histoire garde l'ancien proxy d'écart typique, max(0, observé − programmé), car sa table source ne porte pas les moments de variance.",
-			en: 'Excess wait is the extra time a typical rider waits beyond a perfectly even bus. On the windowed grains (today / this week / this month) it is the passenger-weighted Excess Wait Time: AWT − scheduled/2, where AWT = sum(gap²) / (2·sum(gap)) is the wait a random rider expects from the observed gaps (bunching counts: long gaps catch more riders) and scheduled/2 is the wait on perfectly even service. It is clamped to 0 (service as frequent as scheduled is an honest 0, never a negative wait). The scalar whole-history row keeps an older typical-gap proxy, max(0, observed − scheduled), because its source table carries no gap-variance moments.',
+			fr: "Pour une période de la fenêtre choisie, le modèle calcule AWT = somme(écart²) / (2·somme(écart)), puis retranche la moitié de l'intervalle prévu. Il suppose des arrivées uniformes pendant les écarts observés; aucune fréquentation réelle n'est utilisée. La carte résumée donne le même poids à chaque période rapportée. Cette moyenne de périodes n'est pas une attente calculée sur tous les écarts de la journée. Les anciennes lignes sans moments conservent le proxy max(0, médiane observée − médiane prévue).",
+			en: 'For each shift in the selected window, the model calculates AWT = sum(gap²) / (2·sum(gap)), then subtracts half the scheduled gap. It assumes uniform rider arrivals over the observed gaps; actual passenger counts are not used. The summary card gives each reporting shift equal weight. That shift mean is not a wait pooled from all gaps across the day. Older rows without gap moments retain the proxy max(0, observed median − scheduled median).',
 		},
 		math: {
-			fr: "Grains fenêtrés : excess_wait_min = round( max(0, AWT − programmé/2), 1 ), AWT = somme(écart²) / (2·somme(écart)) sur les écarts d'apparition de trajets de la direction la plus achalandée dans la fenêtre. Pondéré par les passagers, le talonnage le fait monter ; ramené à 0 ; None sauf si des écarts ET un intervalle programmé existent. Scalaire toute-histoire : excess_wait_min = round( max(0, observed − scheduled), 1 ), l'ancien proxy d'écart typique (sans terme de variance).",
-			en: 'Windowed grains: excess_wait_min = round( max(0, AWT − scheduled/2), 1 ), AWT = sum(gap²) / (2·sum(gap)) over the busiest-direction trip-appearance gaps in the window. Passenger-weighted, so bunching raises it; clamped to 0; None unless gaps and a scheduled headway both exist. Scalar whole-history: excess_wait_min = round( max(0, observed − scheduled), 1 ), the older typical-gap proxy (no variance term).',
+			fr: "Par période : excess_wait_min = round(max(0, somme(écart²)/(2·somme(écart)) − prévu/2), 1). Résumé : somme des valeurs publiées non nulles / nombre de périodes qui en portent. Deux périodes d'excès 0 et 7,5 min donnent 3,75 min, affiché 3,8 min, quels que soient leurs nombres d'observations. L'absence de valeur reste inconnue.",
+			en: 'Per shift: excess_wait_min = round(max(0, sum(gap²)/(2·sum(gap)) − scheduled/2), 1). Summary: sum of non-null published values / number of reporting shifts. Shift values of 0 and 7.5 min average to 3.75 min, displayed as 3.8 min, regardless of observation counts. Missing values remain unknown.',
 		},
-		sql: `-- excess_wait is PUBLISH-TIME, NOT stored in gold (migration 0035 dropped the column):
--- WINDOWED grains (FIX-1) from gold.route_headway_shift_daily moment sums:
---   awt = sum_gap_sq_min / (2 * sum_gap_min)              -- passenger-weighted actual wait
---   excess = round(max(0.0, awt - scheduled / 2.0), 1)    -- vs the even-scheduled baseline, clamped
--- SCALAR whole-history (no moments → typical-gap proxy):
---   excess = round(max(0.0, observed - scheduled), 1) if both else None
--- scheduled = median gap of distinct first-stop departure minutes (busiest weekday direction), per shift`,
+		sql: `-- Windowed per-shift model, calculated during publication:
+-- awt = sum_gap_sq_min / (2 * sum_gap_min)
+-- excess = round(max(0.0, awt - scheduled / 2.0), 1)
+-- Older scalar rows without moments: max(0.0, observed - scheduled)
+-- scheduled = median gap of distinct first-stop departure minutes per shift`,
 		notReally: {
-			fr: "« Attente excédentaire 4 min » n'est pas « mon bus a 4 minutes de retard » ni « j'attends 4 minutes de plus à mon arrêt ». C'est un MODÈLE d'attente pondéré par les passagers (il suppose des arrivées au hasard et utilise les écarts observés), tiré des apparitions de trajets sur la direction la plus achalandée, pas une attente mesurée à l'arrêt.",
-			en: 'A citizen will read “excess wait 4 min” as “my bus is 4 minutes late” or “I wait 4 extra minutes at my stop.” It is a passenger-weighted MODEL of the extra wait (it assumes riders arrive at random and uses the observed gaps), derived from trip appearances in the feed over the busiest direction, not a measured at-stop wait.',
+			fr: "Ce modèle utilise les premières apparitions de trajets dans le flux. Il ne mesure ni les arrivées aux arrêts ni l'attente réelle des usagers. Un zéro signifie seulement que l'estimation ne dépasse pas la référence choisie; il ne prouve pas que le service a été assuré.",
+			en: 'This model uses first trip appearances in the feed. It does not measure stop arrivals or actual passenger waits. Zero only means the estimate did not exceed the selected reference; it does not prove that scheduled service ran.',
 		},
 		caveats: {
 			fr: [
-				"AU MOMENT DE LA PUBLICATION, NON STOCKÉ : recalculé au build. Les grains fenêtrés utilisent les moments de variance d'écart sur gold.route_headway_shift_daily ; la ligne scalaire toute-histoire n'a pas de moments, elle garde le proxy d'écart typique.",
-				"PONDÉRÉ PAR LES PASSAGERS (fenêtré) : AWT = somme(écart²)/(2·somme(écart)) intègre le talonnage, donc une ligne irrégulière monte même si son écart moyen respecte l'horaire. C'est une quantité de demi-intervalle, donc plus petite que (et non comparable à) l'ancien proxy d'écart.",
-				'RAMENÉ À 0 : le service en avance/supplémentaire est plafonné à 0, jamais une attente négative.',
-				'None à moins que des écarts ET un intervalle programmé existent pour ce quart, jamais fabriqué.',
-				"MODÈLE D'APPARITION DANS LE FLUX, pas une attente mesurée ni une inter-arrivée à l'arrêt ; il suppose des arrivées uniformes des passagers.",
-				'COLLAPSE direction/fenêtre : décrit la direction la plus achalandée seulement, sur la fenêtre choisie.',
+				'Chaque fenêtre utilise la direction qui compte le plus de trajets observés. Cette direction et les trajets représentés peuvent changer entre les fenêtres.',
+				"Les trajets jamais apparus n'ajoutent pas de longue attente au modèle. Le choix des premiers témoins, la fréquence des rapports et les bornes d'écart influencent l'échantillon.",
+				"La moyenne résumée donne le même poids à chaque période disponible. Ni cette moyenne ni une pondération par le seul nombre d'écarts ne reconstituent une attente journalière groupée : il faudrait les sommes d'écarts et de leurs carrés.",
+				"Les lignes sans moments utilisent un excès d'intervalle médian, distinct du modèle d'attente. Valeur absente si l'intervalle prévu ou les données nécessaires manquent.",
 			],
 			en: [
-				'PUBLISH-TIME, NOT STORED: recomputed at snapshot build. Windowed grains use the gap-variance moments on gold.route_headway_shift_daily; the scalar whole-history row has no moments, so it keeps the typical-gap proxy.',
-				'PASSENGER-WEIGHTED (windowed): AWT = sum(gap²)/(2·sum(gap)) folds in bunching, so a clumpy line reads higher even when its average gap matches the schedule. It is a HALF-headway quantity, so it is smaller than (and not comparable to) the old gap proxy.',
-				'CLAMPED TO 0: early/extra service is clamped to 0, never a negative wait.',
-				'None unless gaps and a scheduled headway both exist for that shift, never fabricated.',
-				'FEED-APPEARANCE MODEL, not a measured passenger wait and not an at-stop inter-arrival; it assumes uniform passenger arrivals.',
-				'DIRECTION/WINDOW COLLAPSE: describes the busiest direction only, over the selected window.',
+				'Each window uses the direction with the most observed trips. That direction and the represented trips can change between windows.',
+				'Trips that never appear do not add a long wait to the model. First-witness selection, reporting frequency and gap bounds affect the sample.',
+				'The summary gives every available shift equal weight. Neither that average nor weighting by gap counts alone reconstructs a pooled daily wait: that requires gap sums and squared-gap sums.',
+				'Rows without gap moments use median-gap excess, a different quantity from modeled wait. Missing schedule or required observations leave the value unknown.',
 			],
 		},
 	},
@@ -611,8 +523,8 @@ ROUND(a.med_gap::numeric, 1) AS observed_headway_min   -- percentile_cont(0.5) o
 			en: 'Of the trips the realtime feed actually REPORTED for a route that day, the share it flagged canceled, not the share of the full timetable (trips the feed never mentions are not counted).',
 		},
 		definition: {
-			fr: "Des trajets que le flux temps réel a réellement rapportés pour une ligne un jour donné, la part que le flux a marqués annulés. Un « jour-trajet » est une exécution programmée d'une ligne un jour calendaire; si le flux l'a marquée ANNULÉE à un moment de la journée, elle compte comme annulée. Donc « 3,2 % » signifie : sur 100 trajets dont le flux nous a parlé ce jour-là, environ 3 ont été annulés. C'est la part des trajets RAPPORTÉS annulés, pas la part de l'horaire publié complet, car les trajets jamais mentionnés ne sont pas dans le compte.",
-			en: 'Of the trips the realtime feed actually reported for a route on a given day, the share that the feed flagged as canceled. A “trip-day” is one scheduled run of a route on one calendar day; if the feed ever marked that run CANCELED at any point that day, it counts as canceled. So “3.2%” means: out of every 100 trips the feed told us about that day, about 3 were called off. It is the share of REPORTED trips that were canceled, not the share of the full published timetable, because trips the feed never mentions are not in the count at all.',
+			fr: "Des trajets que le flux temps réel a réellement rapportés pour une ligne un jour donné, la part que le flux a marqués annulés. Un « jour-trajet » regroupe les observations ayant le même identifiant de trajet et la même date de service; s’il est signalé annulé au moins une fois, il compte comme annulé. Donc « 3,2 % » signifie : sur 100 trajets dont le flux nous a parlé ce jour-là, environ 3 ont été annulés. C'est la part des trajets RAPPORTÉS annulés, pas la part de l'horaire publié complet, car les trajets jamais mentionnés ne sont pas dans le compte.",
+			en: 'Of the trips the realtime feed actually reported for a route on a given day, the share that the feed flagged as canceled. A “trip-day” groups observations with the same trip ID and service date; if the feed ever marked that run CANCELED at any point that day, it counts as canceled. So “3.2%” means: out of every 100 trips the feed told us about that day, about 3 were called off. It is the share of REPORTED trips that were canceled, not the share of the full published timetable, because trips the feed never mentions are not in the count at all.',
 		},
 		math: {
 			fr: 'Par ligne, par jour local clos : cancellation_rate_pct = ROUND(100,0 × canceled_trip_days / NULLIF(total_trip_days, 0), 2), où total_trip_days = COUNT(distinct (trip_id, start_date)) observés, et canceled_trip_days = COUNT de ceux dont MAX((schedule_relationship == 3)) = 1. NULL (pas 0) quand total_trip_days = 0. Le rollup réseau re-dérive depuis les comptes sommés, PAS une moyenne des taux par ligne.',
@@ -648,6 +560,7 @@ ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET ...`,
 		},
 		caveats: {
 			fr: [
+				`${serviceComparisonCopy.fr.label} : ${serviceComparisonCopy.fr.explanation}`,
 				"PROXY, pas certifié : c'est la part des trajets RAPPORTÉS par le flux GTFS-RT marqués ANNULÉS (schedule_relationship = 3). Pas une statistique certifiée par l'agence. Aucun AVL, aucune réconciliation programmé-vs-opéré.",
 				"DÉNOMINATEUR = TRAJETS RAPPORTÉS, PAS L'HORAIRE : total_trip_days ne compte que les jours-trajets que le flux a mentionnés. Un trajet discrètement abandonné n'est PAS compté comme annulé. Le taux de l'horaire publié pourrait être plus élevé.",
 				'NULL-comme-non-annulé : le GTFS-RT omet schedule_relationship pour les trajets ordinaires; le silver stocke NULL; le SQL le COALESCE à 0 pour les garder au dénominateur comme non-annulés.',
@@ -658,6 +571,7 @@ ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET ...`,
 				'TAUX RÉSEAU PONDÉRÉ PAR COMPTE, pas une moyenne des taux par ligne : network_trend re-dérive 100 × SUM(canceled)/SUM(total).',
 			],
 			en: [
+				`${serviceComparisonCopy.en.label}: ${serviceComparisonCopy.en.explanation}`,
 				'PROXY, NOT certified: this is the share of trips the GTFS-RT feed REPORTED that were flagged CANCELED (schedule_relationship=3). It is not an agency-certified statistic. There is no AVL and no scheduled-vs-operated reconciliation.',
 				'DENOMINATOR IS REPORTED TRIPS, NOT THE TIMETABLE: total_trip_days counts only trip-days the feed actually mentioned. A trip silently dropped from the feed is NOT counted as canceled. The published-schedule cancellation rate could be higher.',
 				'NULL-as-not-canceled: GTFS-RT omits schedule_relationship for ordinary trips; silver stores NULL; the SQL COALESCEs NULL to 0 so those trips stay in the denominator as non-canceled.',
@@ -748,24 +662,24 @@ count(*) FILTER (WHERE stc.schedule_relationship = 1)::integer
 		family: 7,
 		confidence: 'proxy',
 		name: {
-			fr: 'Amplitude de service et ponctualité du premier/dernier',
-			en: 'Service span and first/last-trip punctuality',
+			fr: 'Écart entre premières apparitions de trajets',
+			en: 'Span of trip first appearances',
 		},
 		sciName: 'service_span_min · first/last_trip_delay_min',
 		oneLiner: {
-			fr: "Quand le premier et le dernier trajet OBSERVÉS d'une ligne ont démarré ce jour-là, et l'écart entre eux, basé sur l'apparition dans le flux, pas l'horaire imprimé; c'est un plancher des heures réelles d'opération.",
-			en: 'When the route’s first and last OBSERVED trips started that day, and the gap between them, based on feed appearance, not the printed timetable; it is a floor on real operating hours.',
+			fr: 'L’écart entre la plus précoce et la plus tardive des premières captures de trajets d’une ligne pour un jour de service GTFS. Il ne prouve ni des départs réels ni une période de fonctionnement continu.',
+			en: 'The gap between the earliest and latest first captured reports of a route’s trips for one GTFS service day. It establishes neither real departures nor continuous operation.',
 		},
 		definition: {
-			fr: "Pour chaque ligne chaque jour fini, on montre quand son premier trajet observé a démarré, quand le dernier a démarré, et combien de minutes les séparent (l'« amplitude de service », environ combien de temps la ligne roule ce jour-là). On montre aussi le retard/l'avance du tout premier et du tout dernier trajet, en minutes, contre leur horaire. « Début de trajet » est le premier moment où l'on a réellement vu un trajet rapporter dans le flux en direct ce jour-là, pas son départ imprimé à l'horaire. Un retard positif = en retard, négatif = en avance. Chaque jour se tient seul; aucune moyenne entre jours.",
-			en: 'For each route on each finished day, this shows when the route’s first observed trip started, when its last one started, and how many minutes apart those two are (the “service span”, roughly how long the route runs that day). It also shows how late or early the very first and very last trips of the day were, in minutes, versus their schedule. “Trip start” is the first moment we actually saw a trip reporting in the live feed that day, not its printed timetable departure. A positive delay means late; a negative one means early. Each day stands on its own; there is no average across days.',
+			fr: 'Pour chaque identifiant de trajet du jour de service D, on conserve sa première capture trouvée dans les jours de capture D et D+1. Les extrémités sont la plus précoce et la plus tardive de ces premières captures. Le compte indique les identifiants de trajet distincts présents dans cette fenêtre. Le retard du premier trajet vient de son premier relevé; celui du dernier trajet vient de son dernier relevé dans la fenêtre. Ce dernier relevé peut être postérieur à l’extrémité droite et n’est pas nécessairement une arrivée au terminus.',
+			en: 'For each trip ID with GTFS service date D, we retain its earliest capture found on capture dates D and D+1. The endpoints are the earliest and latest of those first captures. The count is the number of distinct trip IDs present in that window. The first trip’s delay comes from its earliest report; the last trip’s delay comes from its latest report in the window. That latest report can be later than the right endpoint and need not be a terminal arrival.',
 		},
 		math: {
-			fr: 'Par (provider_id, route_id, JOUR DE SERVICE GTFS = start_date) : trip_start(trip) = MIN(captured_at_utc) sur les observations du trajet. first = trip au trip_start le plus tôt; last = au plus tard. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60,0 ) en minutes entières (peut dépasser 1440 sur du service de nuit). first_trip_delay_min = l’écart à la PREMIÈRE observation du premier trajet; last_trip_delay_min = l’écart à la DERNIÈRE observation (terminale) du dernier trajet, en round(sec/60, 1). Chaque jour de service est lu sur une fenêtre de capture de 2 jours pour inclure la queue d’après-minuit. Aucun dénominateur/ratio, des horodatages extrémaux et des comptes.',
-			en: 'Per (provider_id, route_id, GTFS SERVICE DAY = start_date): trip_start(trip) = MIN(captured_at_utc) over that trip’s observations. first = trip with earliest trip_start; last = latest. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60.0 ) as integer minutes (may exceed 1440 on overnight service). first_trip_delay_min = the FIRST trip’s first-observation delay; last_trip_delay_min = the LAST trip’s LATEST (terminal) observation delay, as round(sec/60, 1). Each service day is read from a 2-day capture window so the post-midnight tail is included. No denominator/ratio, extremal timestamps and counts.',
+			fr: 'Regroupement : fournisseur, ligne et start_date GTFS. Pour chaque trip_id, t = min(captured_at_utc) dans D/D+1. Extrémités : min(t) et max(t). service_span_min = round((max(t) − min(t)) / 60 secondes) en minutes entières. Le graphique utilise l’écart exact des instants UTC, y compris les secondes; ses graduations +h indiquent le temps écoulé. Les dates, heures et décalages UTC affichés sont locaux au fournisseur. Les retards signés se convertissent de secondes en minutes, arrondies à une décimale.',
+			en: 'Group by provider, route and GTFS start_date. For each trip_id, t = min(captured_at_utc) inside D/D+1. Endpoints are min(t) and max(t). service_span_min = round((max(t) − min(t)) / 60 seconds) in whole minutes. The chart uses the exact UTC elapsed interval, including seconds; its +hour ticks show elapsed time. Displayed dates, clocks and UTC offsets use the provider timezone. Signed delays convert seconds to minutes rounded to one decimal place.',
 		},
 		sql: `-- service_date = the just-completed GTFS service day = :local_date - 1; read a 2-day
--- INDEXED window {date_key(service_date), date_key(:local_date)} so the overnight tail is in.
+-- INDEXED window {date_key(service_date), date_key(:local_date)} capture dates only; later reports are outside this window.
 WITH trip_starts AS (
     SELECT f.provider_id, f.route_id, f.trip_id,
            MIN(f.captured_at_utc) AS trip_start_utc,
@@ -788,37 +702,34 @@ SELECT provider_id, (CAST(:local_date AS date) - 1), route_id,
        MIN(trip_start_utc), MAX(trip_start_utc),
        ROUND(EXTRACT(EPOCH FROM (MAX(trip_start_utc) - MIN(trip_start_utc))) / 60.0)::integer,
        MAX(first_obs_delay) FILTER (WHERE rn_first = 1),   -- first trip: its first-obs delay
-       MAX(last_obs_delay)  FILTER (WHERE rn_last  = 1),   -- last trip: its LATEST (terminal) delay
+       MAX(last_obs_delay)  FILTER (WHERE rn_last  = 1),   -- last trip: its latest captured-report delay
        COUNT(*)::integer, :built_at_utc
 FROM ranked
 GROUP BY provider_id, route_id`,
 		notReally: {
-			fr: "Ce n'est PAS le premier et le dernier départ programmés/à l'horaire de la ligne (par ex. « la 165 roule de 05 h 00 à 01 h 30 selon l'horaire »). C'est quand le flux en direct a montré pour la première et la dernière fois un trajet, donc une capture manquée tôt le matin ou tard le soir fait paraître la ligne démarrer plus tard ou finir plus tôt qu'en réalité, l'amplitude est un plancher des heures d'opération réelles, pas la fenêtre de service officielle.",
-			en: 'It is NOT the route’s scheduled/timetabled first and last departure (e.g., it does not tell you “the 165 runs 05:00–01:30 per the timetable”). It is when the live feed first and last showed a trip, so a missed early-morning or late-night capture makes the route look like it started later or ended earlier than it really does, the span is a floor on real operating hours, not the official service window.',
+			fr: 'Ce n’est ni une plage horaire officielle, ni une mesure du temps passé en circulation, ni un plancher garanti des heures d’exploitation. Une absence de captures n’établit pas une absence de service; des rapports tardifs peuvent décaler les extrémités. Les retards décrivent des prévisions reçues, pas des départs ou arrivées mesurés.',
+			en: 'This is neither an official timetable, a measure of time spent operating, nor a guaranteed lower bound on operating hours. Missing captures do not establish missing service; delayed reports can shift the endpoints. Delay readings describe received predictions, not measured departures or arrivals.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, PAS L'HORAIRE : « premier/dernier trajet » = premier/dernier trajet OBSERVÉ dans le flux GTFS-RT ce jour-là (MIN(captured_at_utc) par trajet), pas le départ programmé du GTFS statique. Une capture tardive ou une panne aux bords du jour tronque l'amplitude.",
-				"LE RETARD EST L'ÉCART PRÉDIT, pas une ponctualité certifiée, sans AVL : first_trip_delay_min = l'écart à la première observation du premier trajet; last_trip_delay_min = l'écart à la DERNIÈRE observation (terminale) du dernier trajet, en minutes.",
-				"AUCUN DÉNOMINATEUR / AUCUN TAUX : des horodatages extrémaux, une différence de deux horodatages et un compte. Avec un seul trajet observé, l'amplitude est 0; NULL uniquement quand aucun trajet n'est observé.",
-				'GRAIN JOUR DE SERVICE GTFS : les rangées sont regroupées par start_date (le jour de service GTFS), PAS le jour calendaire de capture, donc un trajet de nuit reste sur son propre jour de service au lieu de feindre un premier départ à 00 h 00. Chaque jour de service est lu sur une fenêtre de capture de 2 jours; la différence EPOCH est calculée sur des instants UTC, donc sûre en DST et peut dépasser 24 h.',
-				"APPEND-ONLY, RAMP-IN, AUCUN RÉTROACTIF : une rangée par jour de SERVICE clos, bâtie après la clôture du jour suivant (la queue d'après-minuit doit être complète). L'historique s'accumule en avant seulement depuis le lancement (2026-06-18); élagué à ~730 jours (provenance.methodology.service_span : « retained 730 days »).",
-				"HYGIÈNE SENTINELLE : les rangées exigent route_id IS NOT NULL et trip_id IS NOT NULL, donc __unrouted__ / __unknown_stop__ n'entrent jamais.",
-				"DÉTERMINISME DE BRIS D'ÉGALITÉ : à trip_start égal, le trajet au plus petit retard premier-observé est choisi.",
-				"SIGNAUX MORTS DU FLUX INTOUCHÉS : cette famille n'utilise que captured_at_utc, start_date et delay_seconds.",
+				'La fenêtre est limitée aux dates de capture D et D+1 pour start_date = D. Des rapports plus tardifs ou sans start_date ne sont pas inclus; la couverture d’un trajet de nuit prolongé n’est pas garantie.',
+				'Les deux extrémités sont des premières captures de trajets différents ou du même trajet. L’extrémité droite n’est pas le dernier rapport reçu de la journée.',
+				'Le dernier retard affiché vient du dernier relevé du dernier trajet identifié, à un instant potentiellement différent de l’extrémité droite; il ne certifie pas le retard à l’arrivée.',
+				'Le compte porte sur des identifiants de trajet groupés, pas sur des trajets achevés ni des voyageurs. Un seul identifiant, ou plusieurs premières captures simultanées, donne un écart nul.',
+				'Une durée nulle est un point sur le graphique. Une durée positive conserve sa largeur proportionnelle, même si l’annotation arrondie vaut zéro minute. Des retards peuvent être indisponibles alors que les extrémités et le compte sont connus.',
+				'Le calcul UTC préserve la durée lors des changements d’heure; les dates et décalages locaux distinguent les jours et les heures répétées. L’axe part de zéro et s’étend au-delà de 24 heures si nécessaire.',
 			],
 			en: [
-				'PROXY, NOT TIMETABLE: “first/last trip” = first/last trip we OBSERVED in the GTFS-RT feed that day (MIN(captured_at_utc) per trip), not the scheduled departure from GTFS static. A late-starting capture or an outage at the edges silently truncates the span.',
-				'DELAY IS PREDICTED SCHEDULE DEVIATION, NOT CERTIFIED OTP and has NO AVL: first_trip_delay_min is the first trip’s first-observation deviation; last_trip_delay_min is the last trip’s LATEST (terminal) observation deviation, in minutes.',
-				'NO DENOMINATOR / NO RATE: extremal timestamps, a difference of two timestamps, and a count. With a single observed trip the span is 0; it is NULL only when no trips were observed.',
-				'GTFS SERVICE-DAY GRAIN: rows are bucketed by start_date (the GTFS service day), NOT the calendar capture day, so an overnight trip stays on its own service day instead of faking a 00:00 first departure. Each service day is read from a 2-day capture window (daytime + post-midnight tail); the EPOCH span is on UTC instants so it is DST-safe and can exceed 24h.',
-				'APPEND-ONLY, RAMP-IN, NO BACKFILL: one row per closed SERVICE day, built after the NEXT day closes (so the post-midnight tail is complete). History accrues forward only from launch (2026-06-18); pruned to ~730 days (provenance.methodology.service_span: “retained 730 days”).',
-				'SENTINEL HYGIENE: rows require route_id IS NOT NULL and trip_id IS NOT NULL, so the __unrouted__ / __unknown_stop__ sentinels never enter.',
-				'TIE-BREAK DETERMINISM: when two trips share the same start instant, the one with the smaller first-observed delay is chosen.',
-				'DEAD FEED SIGNALS UNTOUCHED: this family uses only captured_at_utc, start_date, and delay_seconds.',
+				'The window is limited to capture dates D and D+1 with start_date = D. Later reports and reports without start_date are excluded; complete coverage of extended overnight trips is not guaranteed.',
+				'Both endpoints are first captures of different trips or the same trip. The right endpoint is not the day’s latest received report.',
+				'The final delay reading is the latest report of the last appearing trip, potentially after the right endpoint; it does not establish arrival delay.',
+				'The count covers grouped trip IDs, not completed journeys or passengers. One ID, or several simultaneous first captures, gives a zero span.',
+				'Zero duration draws a point. Positive durations retain proportional width even if the rounded annotation says zero minutes. Delays can be unavailable while endpoints and counts remain known.',
+				'UTC arithmetic preserves elapsed time through clock changes; local dates and offsets distinguish days and repeated hours. The axis starts at zero and extends beyond 24 hours when needed.',
 			],
 		},
 	},
+
 	// ── 04 Crowding ────────────────────────────────────────────────────────────
 	{
 		key: 'occupancy',
@@ -837,8 +748,8 @@ GROUP BY provider_id, route_id`,
 			en: 'How full the buses are, expressed as the share of vehicle reports that fell into each of five crowding levels: empty, many seats free, few seats free, standing room only, and full. It is built only from the crowding “level” that vehicles broadcast over the live feed (a category like “standing-room-only”), not from any head-count or percentage-full number. So a value like “standing = 0.32” means “32% of the vehicle pings that reported a crowding level said standing-room-only”, it is NOT “32% full” and NOT “32% of riders were standing.” Levels are reported per vehicle ping, so busy routes contribute more pings.',
 		},
 		math: {
-			fr: "Pour chaque palier b : share_b = count(relevés en palier b) / observation_count, où observation_count = count(relevés avec occupancy_status ∈ {0,1,2,3,4,5}). Appartenance : empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; les statuts {6,7,8} et NULL sont écartés. Les cinq parts somment à ~1,0. Règle honnête-None : si observation_count = 0, le mélange entier est null (pas un objet tout-à-zéro), car un mélange tout-à-zéro est indiscernable d'une vraie flotte toute vide.",
-			en: 'For each band b: share_b = count(pings in band b) / observation_count, where observation_count = count(pings with occupancy_status ∈ {0,1,2,3,4,5}). Membership: empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; statuses {6,7,8} and NULL are dropped. The five shares sum to ~1.0. Honest-None rule: if observation_count = 0 the entire mix is null (not an all-zero object), because an all-zero mix is indistinguishable from a genuine all-empty fleet.',
+			fr: 'Pour chaque palier b : share_b = count(relevés en palier b) / observation_count, où observation_count = count(relevés avec occupancy_status ∈ {0,1,2,3,4,5}). Appartenance : empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; les statuts {6,7,8} et NULL sont écartés. Les cinq parts somment à ~1,0. Règle honnête-None : si observation_count = 0, le mélange entier est null (pas un objet tout-à-zéro).',
+			en: 'For each band b: share_b = count(pings in band b) / observation_count, where observation_count = count(pings with occupancy_status ∈ {0,1,2,3,4,5}). Membership: empty={0}, many_seats={1}, few_seats={2}, standing={3,4}, full={5}; statuses {6,7,8} and NULL are dropped. The five shares sum to ~1.0. Honest-None rule: if observation_count = 0 the entire mix is null (not an all-zero object).',
 		},
 		sql: `-- gold/rollups.py UPSERT_ROUTE_OCCUPANCY_BAND_DAILY (the defining daily reduction)
 INSERT INTO gold.route_occupancy_band_daily (
@@ -902,19 +813,19 @@ if not total: return None        # honest-None, never an all-zero mix`,
 		cluster: 'habits',
 		family: 12,
 		confidence: 'proxy',
-		name: { fr: 'Carte des problèmes récurrents (7×24)', en: 'Repeat-problem heatmap (7×24)' },
-		sciName: 'habits.matrix · repeat_problem_relative',
+		name: { fr: 'Scores horaires relatifs (7×24)', en: 'Relative hourly scores (7×24)' },
+		sciName: 'habits.matrix · repeat_problem_relative · severe_relative',
 		oneLiner: {
-			fr: 'Une grille 7 jours × 24 heures : chaque cellule indique à quel point la ligne tend à être problématique dans ce créneau, RELATIVEMENT à son propre pire créneau (1,0 = pire); null = jamais observée. Pas comparable entre lignes.',
-			en: 'A 7-day × 24-hour grid: each cell shades how problematic the route tends to be in that slot, RELATIVE to its own worst slot (1.0 = worst); null = never observed. Not comparable between routes.',
+			fr: 'Un score relatif par jour et heure au sein d’une ligne ou d’un arrêt. 1 désigne son plus grand score fourni, 0 un score fourni nul; une case vide est indisponible. Ce score ne mesure pas une probabilité de retard et ne compare pas les entités.',
+			en: 'A relative score for each weekday and hour within one line or stop. 1 is its highest supplied score, 0 a supplied zero score; a blank cell is unavailable. The score measures neither delay probability nor differences between entities.',
 		},
 		definition: {
-			fr: "Une grille de 7 rangées (jour de semaine, lundi=1 … dimanche=7, heure locale) par 24 colonnes (heure 0-23, locale) pour une ligne : chaque cellule teinte à quel point cette ligne tend à être fiablement mauvaise dans ce créneau jour-et-heure, comparé à son PROPRE pire créneau. 1,0 = « le créneau le plus chroniquement problématique de cette ligne »; 0,0 = « observé mais constamment calme »; une cellule vide/null = jamais observée (pas de service ou pas de donnée). C'est RELATIF à chaque ligne, un 1,0 sur une bonne ligne n'est PAS aussi grave qu'un 1,0 sur une ligne chroniquement en retard.",
-			en: 'A 7-rows-by-24-columns grid for one route: each row is a day of the week (Monday=1 … Sunday=7, local time), each column is an hour (0–23, local time). Every cell shades how reliably bad that route tends to be in that day-and-hour slot, compared to that same route’s own worst slot. A value of 1.0 means “this is this route’s most chronically problematic hour”; 0.0 means “observed but consistently calm”; an empty/null cell means the route was never observed running in that slot. It is RELATIVE to each route, a 1.0 on a generally good route is NOT as bad as a 1.0 on a chronically late route.',
+			fr: 'Chaque grille utilise un seul maximum pour ses 7 jours et 24 heures. Les scores de ligne combinent un compte de relevés de retard grave et un retard moyen positif. Les scores d’arrêt utilisent seulement le compte de relevés de retard grave. Les quatre couleurs divisent l’échelle relative en [0; 0,25[, [0,25; 0,5[, [0,5; 0,75[ et [0,75; 1]. Le contour et le symbole ◆ marquent toute la dernière bande, y compris les valeurs inférieures au maximum. Une couleur pâle exprime un score relatif faible, sans prouver une faible fréquence de retard.',
+			en: 'Each grid uses one maximum across its 7 days and 24 hours. Line scores combine a severe-delay reading count and a positive mean delay. Stop scores use only the severe-delay reading count. The four colors divide the relative scale into [0,0.25), [0.25,0.5), [0.5,0.75) and [0.75,1]. The outline and ◆ mark the entire highest band, including values below the maximum. A pale color expresses a low relative score without establishing a low delay frequency.',
 		},
 		math: {
-			fr: 'Par cellule : raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, arrondi à 4 décimales et PLAFONNÉ à 9999.9999 (garde de débordement de stockage, pas une vraie magnitude). avg_delay_seconds est la MOYENNE POOLÉE en-clamp : Σ sum_delay_seconds / Σ observations des histogrammes de retard (fantômes hors ±3600 s exclus), arrondie à 2 décimales. Cellules regroupées par jour-de-semaine et heure LOCAUX. Cellule publiée = raw_score / route_max, où route_max = max raw_score sur les cellules observées de la ligne. Si route_max = 0 → 0,0; sinon le pire → 1,0. Cellules non observées → null; cellule observée à score NULL → null (jamais 0,0).',
-			en: 'Per cell: raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, rounded to 4 decimals and CAPPED at 9999.9999 (a storage-overflow guard, not a real magnitude). avg_delay_seconds is the POOLED in-clamp mean: Σ sum_delay_seconds / Σ delay-histogram observations (ghosts beyond ±3600s excluded), rounded to 2 decimals. Cells bucketed by LOCAL day-of-week and hour. Published cell = raw_score / route_max, where route_max = max raw_score over the route’s observed cells. If route_max = 0 → 0.0; else the worst → 1.0. Unobserved cells → null; an observed cell with a NULL raw score → null (never 0.0).',
+			fr: 'Ligne : raw_score = min(round(severe_count × 10 + max(mean_delay_seconds, 0) / 60, 4), 9999.9999). La moyenne regroupe les sommes de retard et les comptes des histogrammes admissibles, en excluant les relevés hors de ±3 600 secondes, puis s’arrondit à 2 décimales. Arrêt : raw_score = somme des relevés de retard grave, sans terme de moyenne ni facteur ×10. Pour chaque entité, score publié = round(raw_score / maximum, 4), où le maximum porte sur toutes ses cellules fournies; si le maximum vaut zéro, les scores fournis restent zéro. Les valeurs indisponibles restent null. Les arrondis déplacent les demis à l’écart de zéro.',
+			en: 'Line: raw_score = min(round(severe_count × 10 + max(mean_delay_seconds, 0) / 60, 4), 9999.9999). The mean pools delay sums and eligible histogram counts, excluding readings outside ±3,600 seconds, then rounds to 2 decimals. Stop: raw_score is the summed severe-delay reading count, with no mean term or ×10 factor. For each entity, published score = round(raw_score / maximum, 4), where the maximum spans all supplied cells; if it is zero, supplied scores remain zero. Unavailable values stay null. Rounding moves exact ties away from zero.',
 		},
 		sql: `-- ROUTE_HABIT_SPINE_SQL (gold/reader/projector.py), reconciled S14 2026-07-02: ONE reader-owned
 -- formula (gold/reader/score.py REPEAT_PROBLEM_SCORE_EXPR) over gold.route_delay_spine. The old
@@ -941,31 +852,29 @@ GROUP BY 1, 2
 
 -- Per-route [0,1] normalization at publish time (_helpers.py _build_habits_matrix):
 -- observed = [v for v in cells if v is not None]; route_max = max(observed) or 0.0
--- cell = None if v is None else (round(v / route_max, 4) if route_max > 0 else 0.0)`,
+-- cell = None if v is None else (round_half_away(v / route_max, 4) if route_max > 0 else 0.0)`,
 		notReally: {
-			fr: "Un usager confond un 1,0 (ou une cellule foncée) avec « cette ligne sera ~X minutes en retard à cette heure » ou « c'est la pire ligne du réseau à cette heure ». NI L'UN NI L'AUTRE. Cela dit seulement « par rapport à l'historique de cette seule ligne, ce jour-et-heure est où elle est la plus chroniquement problématique ». La cellule ne porte aucune minute, aucune probabilité pour un trajet précis, aucun classement entre lignes; un 1,0 sur une ligne fiable peut être plus doux en absolu qu'un 0,3 sur une ligne chroniquement en retard.",
-			en: 'A citizen is most likely to misread a 1.0 (or a dark cell) as “this route will be ~X minutes late at this hour” or “this is the worst route in the network at this hour.” It is NEITHER. It only says “relative to this one route’s own history, this day-and-hour is where it is most chronically problematic.” The cell carries no minutes, no probability for a specific trip, and no cross-route ranking; a 1.0 on a reliable route can be milder in absolute terms than a 0.3 on a chronically late route.',
+			fr: 'Un score de 1 ne prédit pas le retard d’un futur trajet et ne désigne pas le pire arrêt ou la pire ligne du réseau. Un score de 0 ne prouve pas que ce créneau est toujours calme; il indique seulement que le score fourni est nul. Une case indisponible ne prouve pas l’absence de service.',
+			en: 'A score of 1 does not predict a future trip’s delay or identify the network’s worst stop or line. A score of 0 does not establish that a slot is consistently calm; it only means the supplied score is zero. An unavailable cell does not establish that no service ran.',
 		},
 		caveats: {
 			fr: [
-				"PROXY, pas une ponctualité certifiée : bâti entièrement sur l'écart à l'horaire prédit du GTFS-RT, pas l'AVL/les arrivées réelles. « Grave » = retard prédit > 300 s.",
-				"NORMALISATION RELATIVE par ligne : chaque cellule est divisée par le PIRE créneau de CETTE ligne, donc un 1,0 ici n'est PAS comparable à un 1,0 d'une autre ligne. La magnitude absolue (minutes) est délibérément écartée.",
-				"Composition du score brute opaque : repeat_problem_score = severe_count×10 + mean_delay_min. La pondération ×10 fait dominer les événements graves récurrents; le terme de retard moyen est la MOYENNE POOLÉE en-clamp des histogrammes du spine (fantômes exclus; corrigée de l'ancien mauvais étiquetage « médiane »).",
-				'La valeur 9999.9999 est une GARDE de débordement Numeric(8,4), pas une vraie magnitude. Une cellule au plafond est simplement le max de la ligne et se normalise à exactement 1,0.',
-				'Discipline du null : un créneau non observé est null = « pas de service / pas de donnée »; un créneau observé à score NULL est AUSSI gardé null, JAMAIS forcé à un faux 0,0 calme. Un vrai créneau calme observé est un vrai 0,0.',
-				"DST / heure locale : dow et heure viennent de l'heure locale du fournisseur. L'heure de saut printanier accumule zéro observation; l'heure répétée d'automne double-compte. Artefacts attendus deux fois l'an.",
-				"Fenêtre TOUT-HISTORIQUE (réconcilié S14, 2026-07-02) : la matrice scalaire est calculée sur TOUT l'historique accumulé du spine de retards (rétention 730 jours), donc elle reflète les habitudes de long terme; les variantes fenêtrées par grain (jour/semaine/mois) du MÊME score montrent les habitudes récentes. Les cellules clairsemées peuvent virer vers 1,0 sur un seul mauvais événement.",
-				"La surface d'arrêt réutilise la MÊME forme mais avec un libellé d'échelle DISTINCT 'severe_relative'. Ne pas confondre : la famille de ligne est scale='repeat_problem_relative'. Une légende partagée doit clé sur le champ scale.",
+				'Les relevés sont des prédictions GTFS-RT, pas des arrivées mesurées ni des passagers comptés. Les relevés répétés d’un même trajet comptent séparément.',
+				'Le volume de service et la fréquence des signalements peuvent augmenter les comptes et les scores. Sans dénominateur d’exposition, ce score n’est pas une fréquence ni une probabilité de retard.',
+				'La normalisation est propre à chaque entité et au jeu de cellules fourni. Les mêmes couleurs de deux lignes ou arrêts ne donnent pas un classement de fiabilité.',
+				'Le plafond de ligne à 9999.9999 protège le stockage et peut égaliser des scores élevés. La bande ◆ commence à 0,75; elle ne désigne pas seulement les cellules exactement maximales.',
+				'Zéro reste distinct de null : zéro est un score fourni nul; null signifie qu’aucun score utilisable n’est fourni, quelle qu’en soit la raison.',
+				'Les changements d’heure peuvent modifier la durée couverte par une case locale. L’heure répétée d’automne regroupe les deux occurrences; une heure sautée n’existe pas le jour de la transition.',
+				'La carte de ligne affichée utilise son historique disponible conservé; les variantes par fenêtre publiées utilisent la même formule. La carte d’arrêt utilise ses agrégats horaires disponibles, dont la couverture peut différer.',
 			],
 			en: [
-				'PROXY, not certified OTP: built entirely on GTFS-RT predicted schedule-deviation, not AVL/actual arrivals. “Severe” = predicted delay > 300s.',
-				'RELATIVE per-route normalization: every cell is divided by THAT route’s own worst cell, so a 1.0 here is NOT comparable to a 1.0 on another route. Absolute magnitude (minutes) is deliberately discarded.',
-				'Raw score composition is opaque: repeat_problem_score = severe_count×10 + mean_delay_min. The ×10 weighting means recurring severe events dominate; the mean-delay term is the POOLED in-clamp mean over the spine’s delay histograms (ghosts excluded; corrected from the old mislabel “median”).',
-				'The 9999.9999 value is a Numeric(8,4) overflow GUARD, not a real magnitude. An at-cap cell is simply the route’s max and normalizes to exactly 1.0.',
-				'Null discipline: an unobserved slot is null = “no service / no data”; an observed slot with a NULL raw score is ALSO kept null, NEVER coerced to a false observed-calm 0.0. A genuinely calm observed slot is a real 0.0.',
-				'DST / local-time bucketing: dow and hour come from the provider’s local time. The spring-forward gap hour accrues zero observations; the fall-back repeated hour double-counts. Expected artifacts twice a year.',
-				'ALL-HISTORY window (reconciled S14, 2026-07-02): the scalar matrix is computed over the route’s full accrued delay-spine history (730-day retention), so it reflects long-run habits; the per-grain windowed variants (day/week/month) of the SAME score show recent habits. Sparse cells can swing toward 1.0 on a single bad event.',
-				'The stop surface reuses the SAME shape but with a DISTINCT scale label “severe_relative”. Do not conflate: the route family is scale=“repeat_problem_relative”. A shared legend must key off the scale field.',
+				'Readings are GTFS-RT predictions, not measured arrivals or passenger counts. Repeated readings of one trip count separately.',
+				'Service volume and reporting frequency can increase counts and scores. Without an exposure denominator, this score is neither a delay frequency nor a delay probability.',
+				'Normalization belongs to each entity and its supplied cells. Identical colors on different lines or stops do not rank their reliability.',
+				'The line-score cap of 9999.9999 protects storage and can make high scores equal. The ◆ band starts at 0.75; it does not identify only exact maximum cells.',
+				'Zero stays distinct from null: zero is a supplied zero score; null means no usable score was supplied, whatever the reason.',
+				'Clock changes can alter a local cell’s elapsed coverage. The repeated autumn hour combines both occurrences; a skipped hour does not occur on its transition day.',
+				'The displayed line grid uses its available retained history; published window variants use the same formula. The stop grid uses its available hourly aggregates, whose coverage can differ.',
 			],
 		},
 	},
@@ -982,7 +891,7 @@ GROUP BY 1, 2
 			en: 'Groups readings by weekday (Mon–Sun, local time) and shows, per weekday, the average lateness and severe-delay share over the route’s WHOLE accrued spine history (730-day retention), so a long-run pattern, not just the last few days.',
 		},
 		definition: {
-			fr: "Pour une ligne, ceci regroupe chaque relevé d'écart à l'horaire par le jour de la semaine où il s'est produit (lundi à dimanche, heure locale) et montre, pour chaque jour : la lateur moyenne en minutes, et la part des relevés « gravement en retard » (plus de 5 minutes derrière). Ça répond à « cette ligne est-elle fiablement pire le vendredi que le mardi ? » C'est calculé à la lecture depuis gold.route_delay_spine, sur TOUT l'historique accumulé du spine (rétention 730 jours, réconcilié S14 2026-07-02), donc un vrai motif hebdomadaire de long terme, pas un instantané des derniers jours.",
+			fr: "Pour une ligne, ceci regroupe chaque relevé d'écart à l'horaire par le jour de la semaine où il s'est produit (lundi à dimanche, heure locale) et montre, pour chaque jour : le retard moyen en minutes, et la part des relevés « gravement en retard » (plus de 5 minutes derrière). Ça répond à « cette ligne est-elle fiablement pire le vendredi que le mardi ? » C'est calculé à la lecture depuis gold.route_delay_spine, sur TOUT l'historique accumulé du spine (rétention 730 jours, réconcilié S14 2026-07-02), donc un vrai motif hebdomadaire de long terme, pas un instantané des derniers jours.",
 			en: 'For one route, this groups every schedule-deviation reading the feed gave us by which day of the week it happened on (Monday through Sunday, in local time) and shows, for each weekday: the average lateness in minutes, and the share of readings that were “severely late” (more than 5 minutes behind). It answers “is this route reliably worse on, say, Fridays than on Tuesdays?” It is computed at read time from gold.route_delay_spine over the route’s WHOLE accrued spine history (730-day retention, reconciled S14 2026-07-02), so it is a genuine long-run weekday pattern, not a snapshot of the last few days.',
 		},
 		math: {
@@ -1010,14 +919,14 @@ WHERE provider_id = :provider_id AND route_id = :route_id
 GROUP BY 1
 ORDER BY 1;`,
 		notReally: {
-			fr: "Pas une affirmation que « cette ligne est toujours pire le vendredi » ni une note de ponctualité certifiée par jour. C'est une lateur moyenne POOLÉE et une PART de retards graves par jour de semaine local, sur tout l'historique du spine, à partir des déviations prédites, avec des échantillons inégaux d'un jour à l'autre. Un severe_pct élevé un jour peut reposer sur peu de relevés en-clamp; à lire avec observation_count, sans traiter avg_delay_min comme une médiane.",
+			fr: "Pas une affirmation que « cette ligne est toujours pire le vendredi » ni une note de ponctualité certifiée par jour. C'est un retard moyen pondéré et une PART de retards graves par jour de semaine local, sur tout l'historique du spine, à partir des déviations prédites, avec des échantillons inégaux d'un jour à l'autre. Un severe_pct élevé un jour peut reposer sur peu de relevés en-clamp; à lire avec observation_count, sans traiter avg_delay_min comme une médiane.",
 			en: 'Not a statement that “this route is always worse on Fridays” or a certified day-of-week on-time score. It is a POOLED weighted-average lateness and severe-late SHARE per local weekday over the whole spine history, from predicted feed deviations, with uneven per-weekday samples. A high severe_pct on one weekday can rest on few in-clamp readings; read it together with observation_count, and do not treat avg_delay_min as a median.',
 		},
 		caveats: {
 			fr: [
 				"PROXY, pas une ponctualité certifiée : bâti sur l'écart à l'horaire prédit du GTFS-RT, pas l'AVL ni une métrique certifiée par l'agence.",
 				"DÉNOMINATEUR de severe_pct (correction d'honnêteté 3/3, migration 0051) : delay_observation_count = SUM(COUNT(delay_seconds)), rangées à retard CONNU, PAS observation_count. severe_pct retourne None (pas 0) quand known_obs ≤ 0.",
-				"avg_delay_min est une MOYENNE POOLÉE en-clamp = SUM(sum_delay_seconds) / SUM(seaux d'histogramme) (jadis mal étiquetée « médiane »), signée (négatif = en avance). AUCUN p50/p90 à ce grain, les percentiles n'existent qu'au grain JOUR de l'arrêt.",
+				"avg_delay_min est une MOYENNE POOLÉE en-clamp = SUM(sum_delay_seconds) / SUM(seaux d'histogramme) (jadis mal étiquetée « médiane »), signée (négatif = en avance). AUCUN p50/p90 à ce grain.",
 				'SEUIL grave = delay_seconds > 300 (5 min); les relevés |delay| > 3600 (1 h) sont fantômes et exclus du numérateur ET du dénominateur en-clamp.',
 				"FENÊTRE TOUT-HISTORIQUE (réconcilié S14, 2026-07-02) : le jour-de-semaine est lu à la construction depuis gold.route_delay_spine SANS clause de fenêtre, donc sur tout l'accumulé (rétention 730 jours), un vrai motif de long terme. L'ancien fold gold.route_delay_day_of_week fenêtré ~10 jours sur gold.route_delay_hourly a été SUPPRIMÉ (migration 0064).",
 				'DST / attribution du jour : day_of_week_iso = EXTRACT(ISODOW FROM provider_local_date), et provider_local_date est déjà en heure locale du fournisseur dans le spine (aucun timezone() ré-appliqué), donc les relevés post-minuit et de transition DST tombent sur le bon jour calendaire local.',
@@ -1027,7 +936,7 @@ ORDER BY 1;`,
 			en: [
 				'PROXY, not certified OTP: built from GTFS-RT predicted schedule-deviation, not AVL and not an agency-certified on-time metric.',
 				'severe_pct DENOMINATOR (honesty-fix 3/3, migration 0051): delay_observation_count = SUM(COUNT(delay_seconds)), rows with a KNOWN delay, NOT observation_count. severe_pct returns None (not 0) when known_obs ≤ 0.',
-				'avg_delay_min is a POOLED in-clamp MEAN = SUM(sum_delay_seconds) / SUM(histogram bins) (was previously mislabeled “median”), signed (negative = running early). There is NO p50/p90 at this weekday grain, percentiles exist only at the stop DAY grain.',
+				'avg_delay_min is a POOLED in-clamp MEAN = SUM(sum_delay_seconds) / SUM(histogram bins) (was previously mislabeled “median”), signed (negative = running early). There is NO p50/p90 at this weekday grain.',
 				'SEVERE threshold = delay_seconds > 300 (5 min); readings with |delay| > 3600 (1 h) are ghost/outlier and excluded from BOTH the numerator AND the in-clamp denominator.',
 				'ALL-HISTORY window (reconciled S14, 2026-07-02): day-of-week is read at build time from gold.route_delay_spine with NO window clause, so over the whole accrual (730-day retention), a genuine long-run pattern. The old ~10-day-windowed gold.route_delay_day_of_week fold over gold.route_delay_hourly was DROPPED (migration 0064).',
 				'DST / weekday attribution: day_of_week_iso = EXTRACT(ISODOW FROM provider_local_date), and provider_local_date is already provider-local in the spine (no timezone() re-applied), so cross-midnight and DST-shift readings land on the correct local calendar weekday.',
@@ -1108,19 +1017,20 @@ export function metricName(key: MetricKey, locale: Locale): string {
 // ── Supplemental (i) tips ──────────────────────────────────────────────────────
 //
 // Some surfaces label numbers that are NOT one of the 14 reliability families that
-// drive the /metrics explainer page (rider-impact weighting, schedule coverage,
+// drive the /metrics explainer page (live feed coverage,
 // observation counts, and the /alerts GTFS-RT dimensions). They still deserve an
 // honest one-line (i) tip with a deep link into /metrics, but they do NOT get their
 // own explainer section, so they live here rather than in the METRICS array (which
 // the explainer page renders 1:1 and the coverage test pins exactly).
 //
-// Each entry carries the SAME honesty doctrine: feed-derived proxy, observation-
-// weighted, NULL = no data, never a fabricated count. The deep-link `anchor` points
-// at the closest existing /metrics section so the tip's "how this is measured" link
-// always lands on real, related copy.
+// Each entry identifies its own population and missing-data rules. Its `anchor`
+// links to the existing /metrics section that explains that source or methodology.
 export type SupplementalMetricKey =
-	| 'riderImpact'
+	| 'liveOtp'
+	| 'liveDelayPercentiles'
+	| 'stopNotSevere'
 	| 'coverage'
+	| 'serviceComparison'
 	| 'vehicleCount'
 	| 'affectedCounts'
 	| 'silentTrip'
@@ -1140,39 +1050,57 @@ interface SupplementalMetricEntry {
 export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
 	Record<SupplementalMetricKey, SupplementalMetricEntry>
 > = {
-	riderImpact: {
+	serviceComparison: {
 		anchor: 'cancellation',
+		oneLiner: { en: serviceComparisonCopy.en.tip, fr: serviceComparisonCopy.fr.tip },
+	},
+	liveOtp: {
+		anchor: 'metrics-provenance',
 		oneLiner: {
-			fr: "Un score relatif qui pondère la perte de service d'une ligne par son ampleur, pas un décompte d'usagers réels ni une mesure certifiée; plus haut = plus de service manqué.",
-			en: 'A relative score that weights a route’s lost service by its size, not a count of real riders and not a certified figure; higher means more missed service.',
+			fr: 'Parmi les véhicules actuels admissibles sur la carte et au statut connu, la part dont le retard prédit moyen du trajet est compris entre −60 s inclus et 300 s exclus. Les statuts inconnus sont exclus du dénominateur.',
+			en: 'Among current vehicle rows eligible for the map and with a known status, the share whose trip-average predicted delay is at least −60 s and below 300 s. Unknown statuses are excluded from the denominator.',
+		},
+	},
+	stopNotSevere: {
+		anchor: 'severe',
+		oneLiner: {
+			fr: 'La part des prévisions connues admissibles à cet arrêt dont le retard ne dépasse pas 300 secondes, y compris les avances. Les retards hors de [−3 600, 3 600] secondes sont exclus. Cette part est le complément des retards graves, pas une ponctualité mesurée.',
+			en: 'The share of eligible known predictions at this stop no more than 300 seconds late, including early predictions. Delays outside [−3,600, 3,600] seconds are excluded. This is the complement of severe-delay share, not measured on-time performance.',
+		},
+	},
+	liveDelayPercentiles: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: 'Médiane et 90e percentile des retards prédits moyens par trajet actuels, chaque agrégat de trajet ayant le même poids, arrondis à la minute. Valeur indisponible sans trajet mesuré; aucune pondération par les usagers.',
+			en: 'Median and 90th percentile of current trip-average predicted delays, with equal weight per trip aggregate, rounded to whole minutes. Unavailable without measured trips; no passenger weighting.',
 		},
 	},
 	coverage: {
-		anchor: 'regularity',
+		anchor: 'metrics-provenance',
 		oneLiner: {
-			fr: "La part du service prévu qu'on a réellement vue passer dans le flux en direct, un proxy de couverture, pas une garantie que chaque trajet a roulé.",
-			en: 'The share of scheduled service we actually saw in the live feed, a coverage proxy, not a guarantee that every trip ran.',
+			fr: 'La part des véhicules actuels admissibles sur la carte dont le statut de retard est connu. Sans position admissible, la valeur est indisponible. Les véhicules absents du flux ne sont pas au dénominateur.',
+			en: 'The share of current vehicle-position rows eligible for the map with a known delay status. Unavailable without eligible positions. Vehicles absent from the feed are outside the denominator.',
 		},
 	},
 	vehicleCount: {
-		anchor: 'headway',
+		anchor: 'metrics-provenance',
 		oneLiner: {
-			fr: 'Le nombre de véhicules distincts vus rapporter dans le flux sur la période, un décompte d’observations, pas une flotte officielle ni une capacité.',
-			en: 'The count of distinct vehicles seen reporting in the feed over the period, an observation count, not an official fleet size or capacity.',
+			fr: 'Le nombre de positions de véhicules actuelles aux coordonnées valides dans la zone configurée, sans dédoublonnage supplémentaire par identifiant de véhicule. Ce décompte ne mesure ni la flotte officielle ni les véhicules distincts sur une journée.',
+			en: 'The count of current vehicle-position rows with valid coordinates within configured map bounds, without additional deduplication by vehicle ID. This is neither the official fleet size nor a count of distinct vehicles over a day.',
 		},
 	},
 	affectedCounts: {
 		anchor: 'metrics-provenance',
 		oneLiner: {
-			fr: 'Le nombre de lignes, arrêts, alertes et véhicules distincts touchés par les observations de la journée, des décomptes d’entités tirés du flux, pas une estimation d’usagers ni un total certifié.',
-			en: 'How many distinct routes, stops, alerts, and vehicles the day’s observations touched, entity counts derived from the feed, not a rider estimate and not a certified total.',
+			fr: "Lignes et arrêts distincts ayant au moins une prévision attribuée de retard supérieur à 5 minutes et d'au plus 60 minutes ce jour-là. Les versions d'avis comptent les contenus distincts enregistrés, pas les incidents ni les usagers. Une source absente laisse le décompte de lignes ou d'arrêts inconnu.",
+			en: 'Distinct lines and stops with at least one attributed delay prediction greater than 5 and at most 60 minutes that day. Alert versions count distinct recorded message content, not incidents or riders. Missing route or stop data leaves that count unknown.',
 		},
 	},
 	silentTrip: {
-		anchor: 'skipped-stop',
+		anchor: 'metrics-provenance',
 		oneLiner: {
-			fr: "Les trajets prévus qui ne sont jamais apparus en direct dans le flux, un signal de service silencieux, pas une annulation confirmée par l'agence.",
-			en: 'Scheduled trips that never showed up live in the feed, a silent-service signal, not an agency-confirmed cancellation.',
+			fr: 'Les trajets prévus en circulation maintenant, hors métro, sans véhicule correspondant dans l’instantané actuel. Un trajet peut avoir émis plus tôt; son absence actuelle ne confirme pas une annulation.',
+			en: 'Scheduled non-metro trips running now with no matching vehicle in the current snapshot. A trip may have reported earlier; its current absence does not confirm a cancellation.',
 		},
 	},
 	alertCause: {
@@ -1217,7 +1145,7 @@ export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
  * tip + a localized deep link to the explainer at that metric's anchor.
  *
  * Resolves BOTH the 14 reliability families (MetricKey, full explainer entry) and
- * the supplemental metrics (SupplementalMetricKey: rider-impact, coverage,
+ * the supplemental metrics (SupplementalMetricKey: coverage,
  * vehicle/silent-trip counts, the /alerts dimensions) that carry only a tip +
  * anchor. `localizeHref` strips/re-adds the locale prefix; the `#anchor` is
  * appended by us (localizeHref treats the hash as caller-owned), so EN →

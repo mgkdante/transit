@@ -1,19 +1,3 @@
-<!--
-  HistogramMark — the LayerChart renderer for a `kind: 'histogram'` ChartSpec (A1, S7).
-
-  The signed-delay distribution on a TRUE LINEAR delay axis (seconds, clipped to the decision
-  window supplied by the chart spec). Each contract bin is unequal width (30 s near 0 → minutes in
-  the tail), so a bar spans its real [lo,hi] and its HEIGHT is the density (count ÷ bin-width):
-  the bar AREA is proportional to the trip count — the honest unequal-bin histogram. (Rendering
-  one equal-pixel bar per bin would over-weight the wide tail bins and bend the time axis.)
-
-  Diverging colour anchored at 0 — early bins (≤ -60 s) ride the early hue, the on-time band
-  (-60 s…+300 s, the OTP definition) a light neutral, late bins (≥ +300 s) the late hue. The
-  median + p90 are vertical reference rules (NO mean — skew makes a mean lie). A hover tooltip
-  surfaces each bin's exact range, count, and share; an sr-only table is the AT fallback (it
-  carries EVERY bin, including the rare extreme-early / -late ones the clipped view omits). The
-  y-axis is the distribution's own shape (density), so it carries no cross-view magnitude scale.
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Rule, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleLinear } from 'd3-scale';
@@ -56,7 +40,7 @@
 	};
 	// Only bins that fall WHOLLY inside the clipped delay window render — the rare extreme-early /
 	// extreme-late tail bins are omitted from the plot (the p90 rule + the sr-table carry them) so
-	// no bar is partially clipped and every bar's area stays an exact trip count.
+	// no bar is partially clipped and area remains proportional to its count.
 	const bars = $derived<Bar[]>(
 		spec.bins
 			.map((b, i) => ({ b, i }))
@@ -141,7 +125,7 @@
 				{#snippet children({ data: d }: { data: Bar })}
 					<Tooltip.Header>{fmtRange(d)}</Tooltip.Header>
 					<Tooltip.List>
-						<Tooltip.Item label={structure.tripsTitle} value={`${d.count}`} />
+						<Tooltip.Item label={spec.yLabel ?? structure.tripsTitle} value={`${d.count}`} />
 						<Tooltip.Item label={structure.share} value={sharePct(d.count)} />
 					</Tooltip.List>
 				{/snippet}
@@ -153,7 +137,10 @@
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
-			<tr><th scope="col">{structure.binMinutes}</th><th scope="col">{structure.tripsLower}</th></tr
+			<tr
+				><th scope="col">{structure.binMinutes}</th><th scope="col"
+					>{spec.yLabel?.toLocaleLowerCase(spec.locale) ?? structure.tripsLower}</th
+				></tr
 			>
 		</thead>
 		<tbody>

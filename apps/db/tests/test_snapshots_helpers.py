@@ -1,4 +1,4 @@
-"""Regression tests for the pure-helper functions in builders.py.
+"""Numeric and string contracts for snapshot builder helpers.
 
 These tests lock the exact numeric and string contracts of every small helper
 so a future refactor cannot silently break conversion logic without a test
@@ -7,7 +7,7 @@ failure.  No database connection is required.
 
 from __future__ import annotations
 
-from transit_ops.snapshots.builders import (
+from transit_ops.snapshots.builders._helpers import (
     _gtfs_min,
     _infer_shift,
     _kmh,

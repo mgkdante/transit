@@ -42,7 +42,14 @@
 	}
 
 	const DEFAULT_IMPORTERS: MapStageImporters = {
-		maplibre: () => import('maplibre-gl'),
+		maplibre: async () => {
+			const [maplibre, { default: workerUrl }] = await Promise.all([
+				import('maplibre-gl'),
+				import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'),
+			]);
+			maplibre.setWorkerUrl(workerUrl);
+			return maplibre;
+		},
 		css: () => import('maplibre-gl/dist/maplibre-gl.css'),
 		pmtiles: () => import('pmtiles'),
 	};
@@ -106,7 +113,7 @@
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
-	import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
+	import type { Map as MapLibreMap, MapEventType, StyleSpecification } from 'maplibre-gl';
 
 	interface MapStageProps {
 		/** Initial map centre as [lng, lat] (GeoJSON/MapLibre order). */
@@ -155,10 +162,11 @@
 		label?: string;
 		/**
 		 * Fired ONCE with the Map after its style `load` event — the safe point to
-		 * `addImage`/`addSource`/`addLayer` (e.g. the live vehicle layer). Browser-
-		 * only; never invoked under SSR.
+		 * install consumer layers/foreground. The second callback reports a later
+		 * consumer setup failure against this exact boot attempt for guarded retry.
+		 * Browser-only; never invoked under SSR.
 		 */
-		onready?: (map: MapLibreMap) => void;
+		onready?: (map: MapLibreMap, reportSetupFailure: () => void) => void;
 		/** Fired ONCE when MapLibre first becomes idle for the current boot attempt. */
 		onidle?: (map: MapLibreMap) => void;
 		/**
@@ -377,7 +385,7 @@
 	function ownMapListener(
 		attempt: BootAttempt,
 		instance: MapLibreMap,
-		type: string,
+		type: keyof MapEventType,
 		listener: (event: unknown) => void,
 	): () => void {
 		let active = true;
@@ -428,14 +436,14 @@
 
 	function preflightWebgl(): void {
 		const canvas = document.createElement('canvas');
-		const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
-		if (!context) throw new Error('WebGL is unavailable');
+		const context = canvas.getContext('webgl2');
+		if (!context) throw new Error('WebGL2 is unavailable');
 		context.getExtension('WEBGL_lose_context')?.loseContext();
 	}
 
 	function loseRuntimeContexts(runtimeContainer: HTMLElement): void {
 		for (const canvas of runtimeContainer.querySelectorAll('canvas')) {
-			const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+			const context = canvas.getContext('webgl2');
 			context?.getExtension('WEBGL_lose_context')?.loseContext();
 		}
 	}
@@ -574,8 +582,15 @@
 			// buffer + first frame to match the laid-out container.
 			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
-				instance.resize();
-				onready?.(instance);
+				const reportSetupFailure = () => {
+					if (isCurrentAttempt(attempt)) failAttempt(attempt, 'setup');
+				};
+				try {
+					instance.resize();
+					onready?.(instance, reportSetupFailure);
+				} catch {
+					reportSetupFailure();
+				}
 			};
 			ownMapListener(attempt, instance, 'load', handleLoad);
 			let releaseIdle = () => {};
@@ -723,7 +738,11 @@
 		const handleStyleLoad = () => {
 			releaseWithoutEscape(releaseStyleLoad);
 			if (!isCurrentAttempt(attempt)) return;
-			onstyleload?.(m);
+			try {
+				onstyleload?.(m);
+			} catch {
+				failAttempt(attempt, 'setup');
+			}
 		};
 		releaseStyleLoad = ownMapListener(attempt, m, 'style.load', handleStyleLoad);
 		try {
