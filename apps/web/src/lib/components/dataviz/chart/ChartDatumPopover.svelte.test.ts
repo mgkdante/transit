@@ -137,6 +137,37 @@ describe('ChartDatumPopover activation and content', () => {
 		},
 	);
 
+	it('moves focus into each opened dialog only after its visible placement reaches the DOM', async () => {
+		const focus = HTMLElement.prototype.focus;
+		const attemptedPlacement: boolean[] = [];
+		vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (
+			this: HTMLElement,
+			options?: FocusOptions,
+		) {
+			if (this.getAttribute('role') === 'dialog') {
+				const placed =
+					this.getAttribute('data-placed') === 'true' &&
+					this.classList.contains('chart-datum-popover--placed');
+				attemptedPlacement.push(placed);
+				if (!placed) return;
+			}
+			focus.call(this, options);
+		});
+
+		render(ChartDatumPopoverHarness);
+		const trigger = screen.getByTestId('linked-trigger');
+		for (let opening = 0; opening < 2; opening++) {
+			trigger.focus();
+			await activate('linked-trigger', 'touch');
+			const dialog = await screen.findByRole('dialog', { name: LINKED_HEADING });
+			await waitFor(() => expect(dialog).toHaveFocus());
+			await fireEvent.keyDown(document, { key: 'Escape' });
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			expect(trigger).toHaveFocus();
+		}
+		expect(attemptedPlacement).toEqual([true, true]);
+	});
+
 	it('portals the named dialog outside the harness and renders semantic evidence', async () => {
 		render(ChartDatumPopoverHarness);
 		await activate('linked-trigger', 'touch');
