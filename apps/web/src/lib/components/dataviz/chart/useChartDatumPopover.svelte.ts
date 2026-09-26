@@ -26,6 +26,7 @@ export interface ChartDatumPopoverController {
 	readonly y: number;
 	readonly showNativeTooltip: boolean;
 	notePointerSource(event: PointerEvent, trigger?: HTMLElement): void;
+	openFromTrigger(trigger: HTMLElement | SVGElement, model: ChartDatumPopoverModel): void;
 	activate(event: MouseEvent, model: ChartDatumPopoverModel): boolean;
 	close(restoreFocus?: boolean): void;
 }
@@ -55,6 +56,10 @@ function triggerFrom(value: EventTarget | null): ChartDatumTrigger | null {
 	return null;
 }
 
+function isFocusableTrigger(element: Element): boolean {
+	return element.matches('button, a[href], input, select, textarea, [tabindex]');
+}
+
 function restoreAttribute(element: Element, name: string, value: string | null): void {
 	if (value == null) element.removeAttribute(name);
 	else element.setAttribute(name, value);
@@ -80,7 +85,7 @@ export function createChartDatumPopover(): ChartDatumPopoverController {
 		if (!restoreFocus || !state.element.isConnected) return;
 
 		const tabindex = state.element.getAttribute('tabindex');
-		if (!state.element.matches('button, a[href], input, select, textarea, [tabindex]')) {
+		if (!isFocusableTrigger(state.element)) {
 			state.element.setAttribute('tabindex', '-1');
 		}
 		state.element.focus({ preventScroll: true });
@@ -106,6 +111,14 @@ export function createChartDatumPopover(): ChartDatumPopoverController {
 		model = null;
 		releaseTrigger(restoreFocus);
 	};
+	const openFromTrigger = (trigger: ChartDatumTrigger, nextModel: ChartDatumPopoverModel): void => {
+		const rect = trigger.getBoundingClientRect();
+		x = rect.left + rect.width / 2;
+		y = rect.top + rect.height / 2;
+		associateTrigger(trigger);
+		model = nextModel;
+		open = true;
+	};
 
 	return {
 		get id() {
@@ -124,7 +137,7 @@ export function createChartDatumPopover(): ChartDatumPopoverController {
 			return y;
 		},
 		get showNativeTooltip() {
-			return pointerSource === 'mouse';
+			return pointerSource === 'mouse' && !open;
 		},
 		notePointerSource(event: PointerEvent, trigger?: HTMLElement): void {
 			const nextSource = recognizedPointerSource(event.pointerType);
@@ -136,6 +149,7 @@ export function createChartDatumPopover(): ChartDatumPopoverController {
 			}
 			if (nextSource === 'mouse') closePopover(false);
 		},
+		openFromTrigger,
 		activate(event: MouseEvent, nextModel: ChartDatumPopoverModel): boolean {
 			const pointerType = (event as Partial<PointerEvent>).pointerType;
 			const explicitSource = recognizedPointerSource(pointerType);
@@ -164,6 +178,8 @@ export function chartDatumPopoverBoundary(
 	node: HTMLElement,
 	controller: ChartDatumPopoverController,
 ): { destroy(): void } {
+	const originalTabindex = node.getAttribute('tabindex');
+	if (!isFocusableTrigger(node)) node.setAttribute('tabindex', '-1');
 	const note = (event: PointerEvent): void => controller.notePointerSource(event, node);
 	node.addEventListener('pointerover', note, true);
 	node.addEventListener('pointerdown', note, true);
@@ -174,6 +190,7 @@ export function chartDatumPopoverBoundary(
 			node.removeEventListener('pointerover', note, true);
 			node.removeEventListener('pointerdown', note, true);
 			node.removeEventListener('click', note, true);
+			restoreAttribute(node, 'tabindex', originalTabindex);
 		},
 	};
 }

@@ -36,7 +36,9 @@
 	const reals = $derived(spec.rows.filter((r) => r.value != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
+	const hasKeyboardRows = $derived(spec.rows.some((r) => r.tapPopover != null || r.href != null));
 	const popover = createChartDatumPopover();
+	let figure = $state<HTMLElement | null>(null);
 	// LayerChart retains scale context across reactive updates. Remount only its visual subtree when
 	// the scale or row topology changes, leaving the figure and AT links stable for keyboard focus.
 	const layerStructureKey = $derived(
@@ -47,9 +49,30 @@
 			spec.domain,
 			spec.ciLabel != null,
 			hasTapPopover,
-			spec.rows.map((row) => [row.key, row.label, row.value == null, row.severity ?? 'watch']),
+			spec.rows.map((row) => [
+				row.key,
+				row.label,
+				row.value == null,
+				row.severity ?? 'watch',
+				Boolean(row.href),
+				Boolean(row.tapPopover),
+			]),
 		]),
 	);
+	let lastStructureKey: string | undefined;
+	$effect.pre(() => {
+		const key = layerStructureKey;
+		const focused = document.activeElement;
+		if (lastStructureKey !== undefined && lastStructureKey !== key) {
+			// The dialog is portalled; close it before replacing its SVG return target.
+			const ownsFocus =
+				document.getElementById(popover.id)?.contains(focused) ||
+				(focused?.matches('.dv-barmark-keyboard-row') && figure?.contains(focused));
+			if (popover.open) popover.close(false);
+			if (ownsFocus) figure?.focus({ preventScroll: true });
+		}
+		lastStructureKey = key;
+	});
 
 	const bySeverity = (sev: SeverityCode): MagnitudeDatum[] =>
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
@@ -75,15 +98,29 @@
 		if (datum) activateMagnitudeRow(event, datum, popover, goto);
 	}
 
+	function onRowButtonActivate(event: KeyboardEvent | MouseEvent, datum: MagnitudeDatum): void {
+		if (event instanceof KeyboardEvent) {
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			event.preventDefault();
+		}
+		if (!(event.currentTarget instanceof SVGElement) || !datum.tapPopover) return;
+		event.stopPropagation();
+		popover.openFromTrigger(event.currentTarget, datum.tapPopover);
+	}
+
 	const fmt = (v: number | null): string => (v == null ? '' : String(v));
 	const fmtWithUnit = (v: number | null): string => (v == null ? '' : `${fmt(v)}${spec.unit}`);
 	// The full name still rides the tooltip header + the sr-only table + the drill, so a
 	// truncated tick is never a loss of information — only the axis label is shortened.
 </script>
 
+<!-- The figure is the visible keyboard entry while ChartFrame waits for viewport intersection. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <figure
+	bind:this={figure}
 	class={cn('dv-barmark m-0', className)}
 	aria-label={spec.title}
+	tabindex={hasKeyboardRows ? 0 : -1}
 	data-slot="magnitude-bars-mark"
 	use:chartDatumPopoverBoundary={popover}
 >
@@ -104,49 +141,76 @@
 					...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
 				}}
 			>
-				<Svg>
-					<Grid x class="dv-barmark-grid" />
-					<Axis
-						placement="bottom"
-						label={spec.xLabel}
-						labelPlacement="middle"
-						ticks={4}
-						format={(v) => `${v}`}
-						class="dv-barmark-axis"
-					/>
-					<Axis
-						placement="left"
-						rule={false}
-						format={(l: string) => gutter.truncate(l)}
-						class="dv-barmark-axis"
-					/>
-					<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
-					<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
-					<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
-					<!-- PR-WEB-5: the 95% Wilson CI whisker per row (only the windowed severe-rate path
+				{#snippet children({ context })}
+					<Svg>
+						<Grid x class="dv-barmark-grid" />
+						<Axis
+							placement="bottom"
+							label={spec.xLabel}
+							labelPlacement="middle"
+							ticks={4}
+							format={(v) => `${v}`}
+							class="dv-barmark-axis"
+						/>
+						<Axis
+							placement="left"
+							rule={false}
+							format={(l: string) => gutter.truncate(l)}
+							class="dv-barmark-axis"
+						/>
+						<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
+						<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
+						<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
+						<!-- PR-WEB-5: the 95% Wilson CI whisker per row (only the windowed severe-rate path
 				     carries a meaningful, bar-scale CI). Drawn ON TOP so the line + caps read over the
 				     bar; the CI was flipped onto the severe scale in the selector so it brackets the bar. -->
-					{#if spec.ciLabel}
-						<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
-					{/if}
-				</Svg>
-				{#if !hasTapPopover || popover.showNativeTooltip}
-					<Tooltip.Root>
-						{#snippet children({ data }: { data: MagnitudeDatum })}
-							<Tooltip.Header>{data.label}</Tooltip.Header>
-							<Tooltip.List>
-								<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
-								{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
-									<Tooltip.Item
-										label={spec.ciLabel}
-										value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
-									/>
+						{#if spec.ciLabel}
+							<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
+						{/if}
+						{#each spec.rows as row (row.key)}
+							{@const rowY = context.yScale(row.label) as number | undefined}
+							{@const rowHeight =
+								(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
+							{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
+								{#if row.tapPopover}
+									<g
+										role="button"
+										aria-label={row.label}
+										aria-haspopup="dialog"
+										aria-expanded="false"
+										tabindex="0"
+										class="dv-barmark-keyboard-row"
+										onkeydown={(event) => onRowButtonActivate(event, row)}
+										onclick={(event) => onRowButtonActivate(event, row)}
+									>
+										<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+									</g>
+								{:else if row.href}
+									<a href={row.href} aria-label={row.label} class="dv-barmark-keyboard-row">
+										<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+									</a>
 								{/if}
-								{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-							</Tooltip.List>
-						{/snippet}
-					</Tooltip.Root>
-				{/if}
+							{/if}
+						{/each}
+					</Svg>
+					{#if !hasTapPopover || popover.showNativeTooltip}
+						<Tooltip.Root>
+							{#snippet children({ data }: { data: MagnitudeDatum })}
+								<Tooltip.Header>{data.label}</Tooltip.Header>
+								<Tooltip.List>
+									<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
+									{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+										<Tooltip.Item
+											label={spec.ciLabel}
+											value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
+										/>
+									{/if}
+									{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+								</Tooltip.List>
+							{/snippet}
+						</Tooltip.Root>
+					{/if}
+				{/snippet}
 			</LcChart>
 		{/key}
 	</ChartFrame>
@@ -162,7 +226,7 @@
 			{#each spec.rows as r (r.key)}
 				<tr data-key={r.key}>
 					<th scope="row">
-						{#if r.href}<a href={r.href}>{r.label}</a>{:else}{r.label}{/if}
+						{#if r.href}<a href={r.href} tabindex="-1">{r.label}</a>{:else}{r.label}{/if}
 					</th>
 					<td>
 						{fmtWithUnit(
@@ -177,6 +241,10 @@
 </figure>
 
 <style>
+	.dv-barmark:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 	/* The tooltip's band overlay sits ON TOP of the bars and is the click target, so IT
 	   carries the drill cursor (scoped to this mark so other charts' bands stay default). */
 	:global([data-slot='magnitude-bars-mark'] rect.lc-tooltip-rect) {
@@ -191,6 +259,14 @@
 	}
 	:global(rect.dv-barmark-critical) {
 		fill: var(--dataviz-severity-critical);
+	}
+	.dv-barmark-keyboard-row rect {
+		fill: transparent;
+		pointer-events: none;
+	}
+	.dv-barmark-keyboard-row:focus-visible rect {
+		stroke: var(--ring);
+		stroke-width: 2;
 	}
 	:global(.dv-barmark-axis .tick text) {
 		fill: var(--muted-foreground);
