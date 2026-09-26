@@ -301,6 +301,62 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 	});
 });
 
+describe('MagnitudeBarsMark — categorical row identity', () => {
+	it('places distinct keyed rows with the same display name on separate bands', async () => {
+		const spec: MagnitudeBarsSpec = {
+			...baseSpec('95% CI'),
+			rows: [
+				rowWithCi,
+				{
+					...rowWithCi,
+					key: 's2',
+					value: 55,
+					severity: 'critical',
+					wilsonLo: 42,
+					wilsonHi: 65,
+					href: '/stop/s2',
+				},
+			],
+		};
+		const { container } = renderReadyMark(spec);
+		await rowOverlay(container);
+		const bars = [
+			...container.querySelectorAll<SVGRectElement>(
+				'rect.dv-barmark-high, rect.dv-barmark-critical',
+			),
+		];
+		expect(bars).toHaveLength(2);
+		expect(new Set(bars.map((bar) => bar.getAttribute('y'))).size).toBe(2);
+
+		const chartLinks = [
+			...container.querySelectorAll<SVGAElement>('svg a[href="/stop/s1"], svg a[href="/stop/s2"]'),
+		];
+		expect(chartLinks).toHaveLength(2);
+		expect(
+			new Set(chartLinks.map((link) => link.querySelector('rect')?.getAttribute('y'))).size,
+		).toBe(2);
+		const whiskers = [...container.querySelectorAll<SVGGElement>('g[data-slot="ci-whisker"]')];
+		expect(whiskers).toHaveLength(2);
+		expect(new Set(whiskers.map((g) => g.querySelector('line')?.getAttribute('y1'))).size).toBe(2);
+
+		const overlays = [...container.querySelectorAll<SVGRectElement>('rect.lc-tooltip-rect')];
+		expect(new Set(overlays.map((rect) => rect.getAttribute('y'))).size).toBe(2);
+		for (const overlay of new Map(
+			overlays.map((rect) => [rect.getAttribute('y'), rect]),
+		).values()) {
+			await pointerClick(overlay, 'mouse');
+		}
+		expect(navigate).toHaveBeenCalledTimes(2);
+		expect(new Set(navigate.mock.calls.map(([href]) => href))).toEqual(
+			new Set(['/stop/s1', '/stop/s2']),
+		);
+		const ticks = [...container.querySelectorAll<SVGTextElement>('svg text')].map((tick) =>
+			tick.textContent?.trim(),
+		);
+		expect(ticks.filter((label) => label === 'Stop One')).toHaveLength(2);
+	});
+});
+
 describe('MagnitudeBarsMark — touch datum popover integration', () => {
 	it.each(['Enter', ' '])(
 		'opens complete row evidence with %s and restores focus on Escape',

@@ -13,8 +13,8 @@ import type { MagnitudeDatum } from '../ChartSpec';
 
 /** A linear value → pixel scale (LayerChart's xScale). */
 export type LinearScale = (v: number) => number;
-/** A band label → pixel scale with an optional bandwidth (LayerChart's yScale). */
-export type BandScale = ((label: string) => number | undefined) & { bandwidth?: () => number };
+/** A row key → pixel scale with an optional bandwidth (LayerChart's yScale). */
+export type BandScale = ((key: string) => number | undefined) & { bandwidth?: () => number };
 
 /** One resolved whisker: a horizontal line [x0,x1] at row-centre `yc`, plus the caps' half-height. */
 export interface CiWhisker {
@@ -52,7 +52,7 @@ export function ciWhiskerGeometry(
 	return rows
 		.filter((r) => r.wilsonLo != null && r.wilsonHi != null)
 		.map((r) => {
-			const top = yScale(r.label);
+			const top = yScale(r.key);
 			return {
 				key: r.key,
 				x0: xScale(clampToDomain(r.wilsonLo as number, domain)),

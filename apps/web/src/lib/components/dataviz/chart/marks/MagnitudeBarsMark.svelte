@@ -31,12 +31,19 @@
 
 	let { spec, class: className }: MagnitudeBarsMarkProps = $props();
 
-	// Row labels in spec order (worst-on-top) = the band-y domain.
+	// Keys keep same-named rows in separate bands; labels remain the visible axis text.
 	const labels = $derived(spec.rows.map((r) => r.label));
+	const rowKeys = $derived(spec.rows.map((r) => r.key));
+	const labelsByKey = $derived(new Map(spec.rows.map((r) => [r.key, r.label] as const)));
 	const reals = $derived(spec.rows.filter((r) => r.value != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
 	const hasKeyboardRows = $derived(spec.rows.some((r) => r.tapPopover != null || r.href != null));
+	const hasPointerRows = $derived(
+		spec.rows.some((r) => r.value != null && (r.tapPopover != null || r.href != null)),
+	);
+	const BAND_PADDING = 0.42;
+	const MIN_POINTER_STEP_PX = 24;
 	const popover = createChartDatumPopover();
 	let figure = $state<HTMLElement | null>(null);
 	// LayerChart retains scale context across reactive updates. Remount only its visual subtree when
@@ -78,10 +85,8 @@
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
 
 	const xOf = (d: MagnitudeDatum) => d.value ?? 0;
-	const yOf = (d: MagnitudeDatum) => d.label;
+	const yOf = (d: MagnitudeDatum) => d.key;
 
-	// Grow with the row count (worst-N up to 100) so bars never crowd; the page scrolls.
-	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.35 + 3}rem`);
 	// Operator: the y-gutter is sized FROM the labels (char count × mono glyph advance), clamped —
 	// long stop / street names get the room they need (up to a cap) and a plain-number axis no
 	// longer wastes it. The truncation below is matched to THIS gutter, so a label is only cut where
@@ -89,6 +94,16 @@
 	// ("15" / "100") fully inside the plot instead of clipping at the edge.
 	const gutter = $derived(categoryGutter(labels, { min: 96, max: 216 }));
 	const padding = $derived({ top: 12, right: 28, bottom: 42, left: gutter.left });
+	// LayerChart measures integer clientHeight; round the pixel floor up before deriving the band.
+	const remHeight = $derived(Math.max(3, spec.rows.length) * 1.35 + 3);
+	const pointerHeight = $derived(
+		Math.ceil(
+			(spec.rows.length + BAND_PADDING) * MIN_POINTER_STEP_PX + padding.top + padding.bottom,
+		),
+	);
+	const frameHeight = $derived(
+		hasPointerRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
+	);
 
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick
@@ -132,8 +147,8 @@
 				y={yOf}
 				xScale={scaleLinear().clamp(true)}
 				{xDomain}
-				yScale={scaleBand().padding(0.42)}
-				yDomain={labels}
+				yScale={scaleBand().padding(BAND_PADDING)}
+				yDomain={rowKeys}
 				{padding}
 				tooltipContext={{
 					mode: 'band',
@@ -155,7 +170,7 @@
 						<Axis
 							placement="left"
 							rule={false}
-							format={(l: string) => gutter.truncate(l)}
+							format={(key: string) => gutter.truncate(labelsByKey.get(key) ?? key)}
 							class="dv-barmark-axis"
 						/>
 						<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
@@ -168,7 +183,7 @@
 							<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 						{/if}
 						{#each spec.rows as row (row.key)}
-							{@const rowY = context.yScale(row.label) as number | undefined}
+							{@const rowY = context.yScale(row.key) as number | undefined}
 							{@const rowHeight =
 								(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
 							{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
