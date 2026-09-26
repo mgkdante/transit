@@ -35,19 +35,6 @@ function mapRuntimeManualChunks(id: string): string | undefined {
 	}
 }
 
-function clientManualChunks(id: string): string | undefined {
-	const mapChunk = mapRuntimeManualChunks(id);
-	if (mapChunk) return mapChunk;
-	if (id.includes('?') || id.endsWith('.css')) return undefined;
-	if (
-		id.endsWith('/src/lib/components/dataviz/chart/Chart.svelte') ||
-		id.includes('/src/lib/components/dataviz/chart/marks/') ||
-		id.includes('/node_modules/layerchart/')
-	) {
-		return 'chart-renderer';
-	}
-}
-
 export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
 	if (!manifest || typeof manifest !== 'object') return manifest;
 	const source = manifest as { basemap?: unknown; provider?: unknown };
@@ -159,9 +146,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 			? undefined
 			: {
 					output: {
-						manualChunks: process.env.VITEST ? mapRuntimeManualChunks : clientManualChunks,
-						// Function-form chunks must not pull shared utilities and runtime dependencies with them.
-						...(process.env.VITEST ? {} : { onlyExplicitManualChunks: true }),
+						manualChunks: mapRuntimeManualChunks,
 					},
 				},
 	},

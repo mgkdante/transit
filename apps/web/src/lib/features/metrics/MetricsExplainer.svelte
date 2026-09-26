@@ -56,7 +56,8 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
+	import ConformanceBadge from '$lib/components/surface/ConformanceBadge.svelte';
+	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
 	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { StateNotice } from '$lib/components/edge';
 	import { SectionLabel } from '@yesid/ui/brand';

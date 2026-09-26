@@ -94,39 +94,6 @@ describe('vite production chunk contract', () => {
 		expect(manualChunks('/repo/src/lib/features/map/MapHero.svelte')).toBeUndefined();
 	});
 
-	it('separates chart renderer code from document-shared utilities', async () => {
-		const client = await resolveProductionConfig(false);
-		const build = Array.isArray(client) ? client[0]?.build : client.build;
-		const output = build?.rollupOptions?.output;
-		const firstOutput = Array.isArray(output) ? output[0] : output;
-		const manualChunks = firstOutput?.manualChunks;
-
-		expect(firstOutput?.onlyExplicitManualChunks).toBe(true);
-		expect(typeof manualChunks).toBe('function');
-		if (typeof manualChunks !== 'function') return;
-
-		const chart = '/repo/src/lib/components/dataviz/chart/';
-		expect(manualChunks(`${chart}Chart.svelte`)).toBe('chart-renderer');
-		expect(manualChunks(`${chart}marks/MagnitudeBarsMark.svelte`)).toBe('chart-renderer');
-		expect(manualChunks(`${chart}marks/ciWhiskerGeometry.ts`)).toBe('chart-renderer');
-		expect(manualChunks('/repo/node_modules/layerchart/dist/components/Chart.svelte')).toBe(
-			'chart-renderer',
-		);
-		for (const shared of [
-			'ChartViewport.svelte',
-			'ScrollFrame.svelte',
-			'ChartDatumPopover.svelte',
-			'useChartDatumPopover.svelte.ts',
-		]) {
-			expect(manualChunks(`${chart}${shared}`)).toBeUndefined();
-		}
-		expect(
-			manualChunks(`${chart}marks/MagnitudeBarsMark.svelte?svelte&type=style&lang.css`),
-		).toBeUndefined();
-		expect(manualChunks('/repo/node_modules/svelte/src/internal/client/index.js')).toBeUndefined();
-		expect(manualChunks('/repo/node_modules/d3-scale/src/index.js')).toBeUndefined();
-	});
-
 	it('does not emit the map vendor chunk for the SSR build', async () => {
 		const ssr = await resolveProductionConfig(true);
 		const build = Array.isArray(ssr) ? ssr[0]?.build : ssr.build;
@@ -134,7 +101,6 @@ describe('vite production chunk contract', () => {
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
 		expect(firstOutput?.manualChunks).toBeUndefined();
-		expect(firstOutput?.onlyExplicitManualChunks).toBeUndefined();
 		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
 	});
 
@@ -144,16 +110,6 @@ describe('vite production chunk contract', () => {
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
 		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
-		expect(firstOutput?.onlyExplicitManualChunks).toBeUndefined();
-		const manualChunks = firstOutput?.manualChunks;
-		if (typeof manualChunks === 'function') {
-			expect(
-				manualChunks('/repo/src/lib/components/dataviz/chart/Chart.svelte', {
-					getModuleIds: () => [][Symbol.iterator](),
-					getModuleInfo: () => null,
-				}),
-			).toBeUndefined();
-		}
 		expect(testConfig.environments?.client).toBeUndefined();
 	});
 });
