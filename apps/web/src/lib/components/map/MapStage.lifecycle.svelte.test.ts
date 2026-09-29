@@ -1280,10 +1280,10 @@ describe('MapStage boot lifecycle', () => {
 		view.unmount();
 	});
 
-	it('requests a desynchronized canvas without overriding native DPR', async () => {
+	it('keeps the canvas synchronized without overriding native DPR', async () => {
 		const { map } = await bootStage();
 
-		expect(map.options.canvasContextAttributes).toEqual({ desynchronized: true });
+		expect(map.options.canvasContextAttributes).toEqual({ desynchronized: false });
 		expect(map.options).not.toHaveProperty('pixelRatio');
 		expect(map.options.canvasContextAttributes).not.toHaveProperty('contextType');
 	});

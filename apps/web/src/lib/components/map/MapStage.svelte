@@ -545,7 +545,8 @@
 						center,
 						zoom,
 						...viewport,
-						canvasContextAttributes: { desynchronized: true },
+						// Keep the basemap in page composition after native context recovery.
+						canvasContextAttributes: { desynchronized: false },
 						locale,
 						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
