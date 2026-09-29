@@ -1,0 +1,26 @@
+diff --git a/src/runtime/client/client.js b/src/runtime/client/client.js
+index a0b858ba0ddbdcfed4fc69776d95d9ad6c76e7a9..3d297e87fe2a5ec2922b1e8051e8bafb02797d81 100644
+--- a/src/runtime/client/client.js
++++ b/src/runtime/client/client.js
+@@ -3152,7 +3152,11 @@ async function load_data(url, invalid) {
+  * @returns {Promise<void>}
+  */
+ async function process_stream(resolve, res) {
+-	const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
++	const content_type = res.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
++	const nodes =
++		content_type === 'application/json'
++			? [await res.json()]
++			: read_ndjson(/** @type {ReadableStream<Uint8Array>} */ (res.body).getReader());
+ 
+ 	/**
+ 	 * Map of deferred promises that will be resolved by a subsequent chunk of data
+@@ -3174,7 +3178,7 @@ async function process_stream(resolve, res) {
+ 		});
+ 	}
+ 
+-	for await (const node of read_ndjson(reader)) {
++	for await (const node of nodes) {
+ 		if (node.type === 'redirect') {
+ 			return resolve(node);
+ 		}

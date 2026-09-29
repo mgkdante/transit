@@ -38,6 +38,7 @@
   },
   "patchedDependencies": {
     "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
-    "vite@7.3.6": "patches/vite@7.3.6.patch"
+    "vite@7.3.6": "patches/vite@7.3.6.patch",
+    "@sveltejs/kit@2.70.3": "patches/@sveltejs%2Fkit@2.70.3.patch"
   }
 }
