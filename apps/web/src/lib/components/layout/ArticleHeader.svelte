@@ -313,11 +313,11 @@
 		/* Top padding clears the fixed floating nav: the wrapper's negative-
 		   margin trick extends the BACKGROUND up under the nav; the content
 		   still needs its own clearance or the back link hides beneath it. */
-		padding: 4.5rem 1.25rem 2.5rem;
+		padding: var(--chrome-offset) 1.25rem 2.5rem;
 	}
 	@media (min-width: 1024px) {
 		.header__content {
-			padding: 5.5rem 2rem 3.75rem;
+			padding: var(--chrome-offset) 2rem 3.75rem;
 		}
 	}
 
