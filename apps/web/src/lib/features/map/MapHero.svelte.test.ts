@@ -553,6 +553,7 @@ vi.mock('$lib/stores', async () => {
 				return signals.motionMode;
 			},
 			set: signals.setMotionMode,
+			toggle: () => signals.setMotionMode(signals.motionMode === 'raw' ? 'smooth' : 'raw'),
 		},
 		persisted: <T>(_key: string, initial: T) => ({ value: initial }),
 		dataRefresh: {},
@@ -2566,5 +2567,175 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 		expect(document.querySelector('[data-slot="bottom-sheet"]')).toBe(sheet);
 		expect(document.querySelector('.map-peek')).not.toBeInTheDocument();
 		expect(stage).toHaveAttribute('data-pick-count', '1');
+	});
+});
+
+describe('MapHero retained state during Stage-only recovery', () => {
+	it('resolves a URL focus that arrives while the map owner is absent', async () => {
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+		harness.setPageUrl('http://localhost/map?focus=stop:stop-1');
+		await tick();
+		expect(harness.focusCoordinate).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+		await waitFor(() => expect(harness.focusCoordinate).toHaveBeenCalledOnce());
+		expect(harness.focusCoordinate).toHaveBeenLastCalledWith(
+			expect.anything(),
+			[-73.57, 45.51],
+			16,
+		);
+		expect(
+			new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost').searchParams.has(
+				'focus',
+			),
+		).toBe(false);
+	});
+
+	it('reuses the parent shape request and motion mode across a new runtime feed', async () => {
+		harness.isDesktop = true;
+		render(MapHero);
+		const switchControl = screen.getAllByTestId('map-motion-switch')[0]!;
+		if (switchControl.getAttribute('aria-checked') !== 'true') await fireEvent.click(switchControl);
+		await waitFor(() => expect(harness.getRoute).toHaveBeenCalled());
+		const shapeRequests = harness.getRoute.mock.calls.length;
+		expect(mapHeroReceiptSignals.motionMode).toBe('smooth');
+		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+		await tick();
+		expect(mapHeroReceiptSignals.motionMode).toBe('smooth');
+		expect(harness.getRoute).toHaveBeenCalledTimes(shapeRequests);
+		expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: true });
+	});
+
+	it('lets the latest explicit point intent supersede an older one-shot URL focus', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition: vi.fn((success: PositionCallback) => success(position)) },
+		});
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+		harness.setPageUrl('http://localhost/map?focus=stop:stop-1');
+		await tick();
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await tick();
+		expect(harness.focusCoordinate).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+		await tick();
+		expect(harness.focusCoordinate).toHaveBeenCalledOnce();
+		expect(harness.focusCoordinate).toHaveBeenLastCalledWith(
+			expect.anything(),
+			[-73.594764, 45.525686],
+			14,
+		);
+		expect(
+			new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost').searchParams.has(
+				'focus',
+			),
+		).toBe(false);
+	});
+
+	it('keeps the parent selection and replays a device-origin focus requested while the map is absent', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition: vi.fn((success: PositionCallback) => success(position)) },
+		});
+		const onready = vi.fn();
+		const onrecovering = vi.fn();
+		render(MapHero, { props: { onready, onrecovering } });
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		expect(screen.getByTestId('map-stage-stub')).toHaveAttribute('data-pick-count', '1');
+		const leasesBefore = harness.activeLeaseCount();
+		harness.focusCoordinate.mockClear();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+		expect(onrecovering).toHaveBeenCalledOnce();
+		expect(onready).toHaveBeenCalledOnce();
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await tick();
+		expect(harness.focusCoordinate).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+		await tick();
+		expect(onready).toHaveBeenCalledTimes(2);
+		expect(harness.focusCoordinate).toHaveBeenCalledOnce();
+		expect(harness.focusCoordinate).toHaveBeenLastCalledWith(
+			expect.anything(),
+			[-73.594764, 45.525686],
+			14,
+		);
+		expect(harness.activeLeaseCount()).toBe(leasesBefore);
+		expect(harness.overlayScene.mock.lastCall?.[3]).toBe('bus-1');
+		expect(harness.toVehicleFeatures.mock.lastCall?.[3]).toBe('bus-1');
+		expect(screen.getByTestId('map-stage-stub')).toHaveAttribute('data-pick-count', '1');
+		for (const [target] of harness.goto.mock.calls) {
+			expect(new URL(String(target), 'http://localhost/map').searchParams.has('near')).toBe(false);
+		}
+	});
+
+	it('blurs an owned focused control before recovery and restores it only if focus stayed on body', async () => {
+		harness.isDesktop = true;
+		const onrecovering = vi.fn();
+		render(MapHero, { props: { onrecovering } });
+		const estimated = screen.getAllByTestId('map-motion-switch')[0] as HTMLElement;
+		estimated.focus();
+		expect(document.activeElement).toBe(estimated);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+		expect(onrecovering).toHaveBeenCalledOnce();
+		expect(document.activeElement).toBe(document.body);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+		await tick();
+		expect(document.activeElement).toBe(estimated);
+	});
+
+	it('leaves a newly focused outside control alone after reconstruction', async () => {
+		harness.isDesktop = true;
+		const outside = document.createElement('button');
+		outside.textContent = 'Outside focus';
+		document.body.append(outside);
+		try {
+			render(MapHero);
+			const estimated = screen.getAllByTestId('map-motion-switch')[0] as HTMLElement;
+			estimated.focus();
+			await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+			outside.focus();
+			await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+			await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+			await tick();
+			expect(document.activeElement).toBe(outside);
+		} finally {
+			outside.remove();
+		}
 	});
 });

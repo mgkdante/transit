@@ -167,6 +167,8 @@
 		 * Browser-only; never invoked under SSR.
 		 */
 		onready?: (map: MapLibreMap, reportSetupFailure: () => void) => void;
+		/** One guarded rebuild after a trusted native WebGL restoration. */
+		onrecovering?: () => void;
 		/** Fired ONCE when MapLibre first becomes idle for the current boot attempt. */
 		onidle?: (map: MapLibreMap) => void;
 		/**
@@ -210,6 +212,7 @@
 		fitPadding = 40,
 		label = 'Transit map',
 		onready,
+		onrecovering,
 		onidle,
 		onstyleload,
 		onthemerepaint,
@@ -266,6 +269,28 @@
 		disposers: Array<() => void>;
 		initializing: boolean;
 		cleaned: boolean;
+		recoveryQueued: boolean;
+		consumerReleaseStarted: boolean;
+		consumerReleasePromise: Promise<void> | null;
+	}
+
+	type CameraOwner = 'fit' | 'user' | 'focus';
+	type RecoveryFocus =
+		| { kind: 'canvas' }
+		| { kind: 'attribution'; href: string | null; expanded: boolean }
+		| null;
+	interface RecoveryView {
+		center: [number, number];
+		zoom: number;
+		bearing: number;
+		pitch: number;
+		roll: number;
+		padding: ReturnType<MapLibreMap['getPadding']>;
+		owner: CameraOwner;
+		fitInputsKey: string;
+		layoutInputsKey: string;
+		cameraInputsKey: string;
+		focus: RecoveryFocus;
 	}
 
 	let attemptKey = $state(0);
@@ -273,6 +298,7 @@
 	let retryPending = false;
 	let activeFailure: { kind: MapStageFailureKind; generation: number } | null = null;
 	let activeAttempt: BootAttempt | null = null;
+	let activeRecoveryView: RecoveryView | null = null;
 
 	function isCurrentAttempt(attempt: BootAttempt): boolean {
 		return (
@@ -332,8 +358,8 @@
 		}
 	}
 
-	function cleanupAttempt(attempt: BootAttempt): void {
-		if (attempt.cleaned) return;
+	function cleanupAttempt(attempt: BootAttempt): boolean {
+		if (attempt.cleaned) return true;
 		attempt.cleaned = true;
 		attempt.initializing = false;
 		const ownedMap = attempt.map;
@@ -356,7 +382,8 @@
 		};
 		release(() => attempt.controller.abort());
 		if (observer) release(() => observer.disconnect());
-		if (ownedMap && onbeforeremove) {
+		if (ownedMap && onbeforeremove && !attempt.consumerReleaseStarted) {
+			attempt.consumerReleaseStarted = true;
 			release(() => {
 				void Promise.resolve(onbeforeremove(ownedMap)).catch(reportCleanupFailure);
 			});
@@ -380,6 +407,20 @@
 		if (ownedMap) release(() => ownedMap.remove());
 		if (runtimeContainer) release(() => runtimeContainer.remove());
 		for (const error of cleanupErrors) reportCleanupFailure(error);
+		return cleanupErrors.length === 0 && pendingDisposers.length === 0;
+	}
+
+	function releaseConsumerForRecovery(attempt: BootAttempt): Promise<void> {
+		if (attempt.consumerReleasePromise) return attempt.consumerReleasePromise;
+		const ownedMap = attempt.map;
+		if (!ownedMap || !onbeforeremove) return Promise.resolve();
+		attempt.consumerReleaseStarted = true;
+		try {
+			attempt.consumerReleasePromise = Promise.resolve(onbeforeremove(ownedMap)).then(() => {});
+		} catch (error) {
+			attempt.consumerReleasePromise = Promise.reject(error);
+		}
+		return attempt.consumerReleasePromise;
 	}
 
 	function ownMapListener(
@@ -455,6 +496,107 @@
 		onerror?.({ kind, retry: () => retry(attempt.generation, kind) });
 	}
 
+	function reportRecoveryFailure(attempt: BootAttempt): void {
+		activeFailure = { kind: 'setup', generation: attempt.generation };
+		onerror?.({ kind: 'setup', retry: () => retry(attempt.generation, 'setup') });
+	}
+
+	function captureRecoveryFocus(attempt: BootAttempt, instance: MapLibreMap): RecoveryFocus {
+		const focused = document.activeElement;
+		if (focused === instance.getCanvas()) return { kind: 'canvas' };
+		if (!(focused instanceof HTMLElement) || !attempt.runtimeContainer?.contains(focused))
+			return null;
+		const attribution = focused.closest<HTMLDetailsElement>('.maplibregl-ctrl-attrib');
+		if (!attribution) return null;
+		return {
+			kind: 'attribution',
+			href: focused.closest('a[href]')?.getAttribute('href') ?? null,
+			expanded: attribution.open,
+		};
+	}
+
+	function restoreRecoveryFocus(
+		attempt: BootAttempt,
+		instance: MapLibreMap,
+		focus: RecoveryFocus,
+	): void {
+		if (!focus || !isCurrentAttempt(attempt) || document.activeElement !== document.body) return;
+		let target: HTMLElement | null = instance.getCanvas();
+		if (focus.kind === 'attribution') {
+			const attribution =
+				attempt.runtimeContainer?.querySelector<HTMLDetailsElement>('.maplibregl-ctrl-attrib');
+			if (attribution) {
+				attribution.open = focus.expanded;
+				attribution.classList.toggle('maplibregl-compact-show', focus.expanded);
+				target =
+					(focus.href
+						? Array.from(attribution.querySelectorAll<HTMLAnchorElement>('a[href]')).find(
+								(link) => link.getAttribute('href') === focus.href,
+							)
+						: null) ?? attribution.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-button');
+			}
+		}
+		if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
+	}
+
+	async function recoverAttempt(attempt: BootAttempt, instance: MapLibreMap): Promise<void> {
+		if (!isCurrentAttempt(attempt) || attempt.map !== instance) return;
+		const position = instance.getCenter();
+		const view: RecoveryView = {
+			center: [position.lng, position.lat],
+			zoom: instance.getZoom(),
+			bearing: instance.getBearing(),
+			pitch: instance.getPitch(),
+			roll: instance.getRoll(),
+			padding: { ...instance.getPadding() },
+			owner: cameraOwner,
+			fitInputsKey: `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`,
+			layoutInputsKey: fitPaddingKey(fitPadding),
+			cameraInputsKey: cameraKey(center, zoom),
+			focus: captureRecoveryFocus(attempt, instance),
+		};
+		activeRecoveryView = view;
+		try {
+			onrecovering?.();
+		} catch (error) {
+			reportCleanupFailure(error);
+			failAttempt(attempt, 'setup');
+			return;
+		}
+		try {
+			await releaseConsumerForRecovery(attempt);
+		} catch (error) {
+			reportCleanupFailure(error);
+			if (isCurrentAttempt(attempt)) failAttempt(attempt, 'setup');
+			return;
+		}
+		if (!isCurrentAttempt(attempt)) return;
+		if (!cleanupAttempt(attempt)) {
+			reportRecoveryFailure(attempt);
+			return;
+		}
+		const nextGeneration = ++attemptKey;
+		await tick();
+		if (mounted && attemptKey === nextGeneration) await startAttempt(nextGeneration, view);
+	}
+
+	function queueRecovery(attempt: BootAttempt, instance: MapLibreMap, value: unknown): void {
+		if (!isCurrentAttempt(attempt) || attempt.map !== instance || attempt.recoveryQueued) return;
+		const original = (value as { originalEvent?: WebGLContextEvent } | null)?.originalEvent;
+		if (!original?.isTrusted) return;
+		const canvas = instance.getCanvas();
+		if (original.target !== canvas) return;
+		const context = canvas.getContext('webgl2');
+		if (!context || context.isContextLost()) return;
+		attempt.recoveryQueued = true;
+		queueMicrotask(() => {
+			void recoverAttempt(attempt, instance).catch((error) => {
+				reportCleanupFailure(error);
+				if (isCurrentAttempt(attempt)) failAttempt(attempt, 'setup');
+			});
+		});
+	}
+
 	async function retry(generation: number, kind: MapStageFailureKind): Promise<void> {
 		if (
 			!mounted ||
@@ -474,7 +616,7 @@
 		attemptKey += 1;
 		await tick();
 		try {
-			if (mounted) await startAttempt(attemptKey);
+			if (mounted) await startAttempt(attemptKey, activeRecoveryView ?? undefined);
 		} finally {
 			retryPending = false;
 		}
@@ -486,7 +628,7 @@
 	// registers after maplibre, and construction waits for ALL of them so the
 	// first paint is hot — no post-mount setStyle rebuild. `failureKind` advances
 	// stage by stage so the single catch classifies honestly.
-	async function startAttempt(generation: number): Promise<void> {
+	async function startAttempt(generation: number, recoveryView?: RecoveryView): Promise<void> {
 		if (!mounted || !container || activeAttempt?.initializing) return;
 		const attempt: BootAttempt = {
 			generation,
@@ -498,6 +640,9 @@
 			disposers: [],
 			initializing: true,
 			cleaned: false,
+			recoveryQueued: false,
+			consumerReleaseStarted: false,
+			consumerReleasePromise: null,
 		};
 		activeAttempt = attempt;
 		const basemapPromise = Promise.resolve()
@@ -545,8 +690,7 @@
 						center,
 						zoom,
 						...viewport,
-						// Keep the basemap in page composition after native context recovery.
-						canvasContextAttributes: { desynchronized: false },
+						canvasContextAttributes: { desynchronized: true },
 						locale,
 						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
@@ -558,6 +702,33 @@
 				throw error;
 			}
 			attempt.map = instance;
+			const currentFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
+			const currentCameraKey = cameraKey(center, zoom);
+			const fitInputsChanged =
+				recoveryView?.owner === 'fit' &&
+				(recoveryView.fitInputsKey !== currentFitKey ||
+					recoveryView.cameraInputsKey !== currentCameraKey);
+			if (recoveryView && !fitInputsChanged) {
+				instance.jumpTo({
+					center: recoveryView.center,
+					zoom: recoveryView.zoom,
+					bearing: recoveryView.bearing,
+					pitch: recoveryView.pitch,
+					roll: recoveryView.roll,
+					padding: recoveryView.padding,
+				});
+			} else if (recoveryView && fitInputsChanged) {
+				// Current fit-owned bounds/center win; orientation and unaffected padding still survive.
+				instance.jumpTo({
+					...(recoveryView.cameraInputsKey !== currentCameraKey ? { center, zoom } : {}),
+					bearing: recoveryView.bearing,
+					pitch: recoveryView.pitch,
+					roll: recoveryView.roll,
+					...(recoveryView.layoutInputsKey === fitPaddingKey(fitPadding)
+						? { padding: recoveryView.padding }
+						: {}),
+				});
+			}
 			// Base's implicit control received { compact: true }; pass the same options
 			// while owning the control explicitly for teardown. `customAttribution`
 			// carries the provider's licence line VERBATIM next to the basemap's own
@@ -573,8 +744,9 @@
 			);
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
-			activeCameraKey = cameraKey(center, zoom);
-			cameraOwner = 'fit';
+			activeCameraKey = currentCameraKey;
+			cameraOwner = recoveryView?.owner ?? 'fit';
+			if (recoveryView) activeFitKey = currentFitKey;
 			map = instance;
 
 			failureKind = 'setup';
@@ -588,7 +760,11 @@
 				};
 				try {
 					instance.resize();
+					ownMapListener(attempt, instance, 'webglcontextrestored', (event) =>
+						queueRecovery(attempt, instance, event),
+					);
 					onready?.(instance, reportSetupFailure);
+					if (!isCurrentAttempt(attempt)) return;
 				} catch {
 					reportSetupFailure();
 				}
@@ -598,9 +774,13 @@
 			let idleDelivered = false;
 			const handleIdle = () => {
 				releaseWithoutEscape(releaseIdle);
-				if (idleDelivered || !isCurrentAttempt(attempt)) return;
+				if (idleDelivered || attempt.recoveryQueued || !isCurrentAttempt(attempt)) return;
 				idleDelivered = true;
 				onidle?.(instance);
+				if (recoveryView && activeRecoveryView === recoveryView) activeRecoveryView = null;
+				if (recoveryView?.focus) {
+					void tick().then(() => restoreRecoveryFocus(attempt, instance, recoveryView.focus));
+				}
 			};
 			releaseIdle = ownMapListener(attempt, instance, 'idle', handleIdle);
 			// One-shot attribution collapse: maplibre's compact control still STARTS
@@ -609,6 +789,7 @@
 			let releaseStyleData = () => {};
 			let releaseSourceData = () => {};
 			const collapseAttribution = () => {
+				if (recoveryView?.focus?.kind === 'attribution') return;
 				if (!isCurrentAttempt(attempt) || !collapsePopulatedAttribution(attempt.container)) return;
 				releaseWithoutEscape(releaseStyleData);
 				releaseWithoutEscape(releaseSourceData);
@@ -650,12 +831,12 @@
 		return () => {
 			mounted = false;
 			if (activeAttempt) cleanupAttempt(activeAttempt);
+			activeRecoveryView = null;
 		};
 	});
 
 	// Constructor framing owns boot/retry. Later HMR/prop-driven camera changes
 	// apply only while framing still owns the camera; user and focus moves persist.
-	type CameraOwner = 'fit' | 'user' | 'focus';
 	let cameraOwner: CameraOwner = 'fit';
 	let activeFitKey: string | null = null;
 	let activeLayoutSig: string | null = null;

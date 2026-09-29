@@ -18,7 +18,7 @@
   rides the brand surface palette; every mark rides a token, no hardcoded hex.
 -->
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -98,10 +98,11 @@
 	interface Props {
 		onready?: () => void;
 		onidle?: () => void;
+		onrecovering?: () => void;
 		onfailure?: (failure: MapStageFailure | null) => void;
 	}
 
-	let { onready, onidle, onfailure }: Props = $props();
+	let { onready, onidle, onrecovering, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -194,6 +195,13 @@
 			);
 		},
 	});
+	type RecoveryCameraIntent =
+		| { kind: 'point'; coord: [number, number]; minZoom: number }
+		| { kind: 'selection'; selection: MapSelection }
+		| { kind: 'url' };
+	let recovering = $state(false);
+	let recoveryCameraIntent: RecoveryCameraIntent | null = null;
+	let recoveryFocusTarget: HTMLElement | null = null;
 
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -203,7 +211,12 @@
 		ingestedUrlIdentity = urlIdentity;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
 		nearMeController.syncFromUrl(url.searchParams);
+		const previousFocus = focusController.pending;
 		focusController.syncFromUrl(url.searchParams);
+		if (recovering && focusController.pending !== previousFocus) {
+			if (focusController.pending) recoveryCameraIntent = { kind: 'url' };
+			else if (recoveryCameraIntent?.kind === 'url') recoveryCameraIntent = null;
+		}
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
@@ -614,28 +627,32 @@
 
 	// Zoom to a selection directly (click path) — data is already loaded, so no
 	// pending/retry needed. Shared with the URL-driven focus resolver below.
-	function focusSelection(selection: MapSelection): boolean {
-		if (selection.kind === 'stop') return focusStop(selection.id);
-		if (selection.kind === 'vehicle') return focusVehicle(selection.id);
-		return focusRoute(selection.id);
+	function focusSelection(selection: MapSelection, target: MapLibreMap | null = map): boolean {
+		if (recovering) {
+			recoveryCameraIntent = { kind: 'selection', selection };
+			return true;
+		}
+		if (selection.kind === 'stop') return focusStop(selection.id, target);
+		if (selection.kind === 'vehicle') return focusVehicle(selection.id, target);
+		return focusRoute(selection.id, target);
 	}
 
-	function focusStop(id: string): boolean {
+	function focusStop(id: string, target: MapLibreMap | null = map): boolean {
 		const stop = stopList.find((s) => s.id === id);
 		if (!stop) return false;
-		return focusCoordinate(map, [stop.lon, stop.lat], 16);
+		return focusCoordinate(target, [stop.lon, stop.lat], 16);
 	}
 
-	function focusVehicle(id: string): boolean {
+	function focusVehicle(id: string, target: MapLibreMap | null = map): boolean {
 		const vehicle = (live.vehicles?.vehicles ?? []).find((v) => v.id === id);
 		if (!vehicle) return false;
-		return focusCoordinate(map, [vehicle.lon, vehicle.lat], 16);
+		return focusCoordinate(target, [vehicle.lon, vehicle.lat], 16);
 	}
 
-	function focusRoute(id: string): boolean {
+	function focusRoute(id: string, target: MapLibreMap | null = map): boolean {
 		const route = routeList.find((r) => r.id === id);
 		if (!route) return false;
-		return fitRouteBounds(map, route);
+		return fitRouteBounds(target, route);
 	}
 
 	// Resolve the pending focus once the map AND the entity's data are available;
@@ -643,7 +660,7 @@
 	// pans/fits and strips the param so it fires exactly once.
 	$effect(() => {
 		const pending = focusController.pending;
-		if (!map || !pending) return;
+		if (recovering || !map || !pending) return;
 		if (
 			!isMapFocusReady(pending, {
 				stopsSettled: stops.settled,
@@ -659,13 +676,18 @@
 	});
 
 	function focusNearMeOrigin(origin: NearMeOrigin): void {
-		focusCoordinate(map, [origin.lon, origin.lat], zoomForNearMePrecision(origin.precision));
+		const coord: [number, number] = [origin.lon, origin.lat];
+		const minZoom = zoomForNearMePrecision(origin.precision);
+		if (recovering) recoveryCameraIntent = { kind: 'point', coord, minZoom };
+		else focusCoordinate(map, coord, minZoom);
 	}
 
 	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
 		commitPickedSelection({ kind: 'stop', id: stop.id });
 		detailCollapsed = false;
-		focusCoordinate(map, [stop.lon, stop.lat], 15);
+		if (recovering)
+			recoveryCameraIntent = { kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 };
+		else focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
 
 	function waitingForSelectedDetail(): boolean {
@@ -680,15 +702,54 @@
 	}
 
 	function onMapReady(m: MapLibreMap, reportSetupFailure?: () => void): void {
+		const wasRecovering = recovering;
 		hasFirstIdle = false;
 		runtime.ready(m, reportSetupFailure);
-		nearMeController.refocus();
+		if (wasRecovering) {
+			recovering = false;
+			const intent = recoveryCameraIntent;
+			recoveryCameraIntent = null;
+			if (intent?.kind === 'point' || intent?.kind === 'selection') {
+				// A later explicit action supersedes an older one-shot URL focus.
+				if (focusController.pending) focusController.consumeOnce(() => {});
+				if (intent.kind === 'point') focusCoordinate(m, intent.coord, intent.minZoom);
+				else focusSelection(intent.selection, m);
+			}
+			// A queued URL focus waits for its normal data-readiness effect.
+		} else nearMeController.refocus();
 		onready?.();
+	}
+
+	function onMapRecovering(): void {
+		const focused = document.activeElement;
+		const ownedFocus = focused instanceof HTMLElement && heroEl?.contains(focused) ? focused : null;
+		recoveryFocusTarget =
+			ownedFocus && !ownedFocus.closest('[data-slot="map-stage"]') ? ownedFocus : null;
+		// The live wrapper is about to become inert; do not hide an actively focused descendant.
+		ownedFocus?.blur();
+		recovering = true;
+		recoveryCameraIntent = focusController.pending ? { kind: 'url' } : null;
+		onrecovering?.();
 	}
 
 	function onMapIdle(): void {
 		hasFirstIdle = true;
+		const focused = recoveryFocusTarget;
+		recoveryFocusTarget = null;
 		onidle?.();
+		if (focused) {
+			void tick().then(() => {
+				if (
+					!recovering &&
+					focused.isConnected &&
+					heroEl?.contains(focused) &&
+					document.activeElement === document.body &&
+					!focused.closest('[inert]')
+				) {
+					focused.focus({ preventScroll: true });
+				}
+			});
+		}
 	}
 
 	function onMapFailure(failure: MapStageFailure | null): void {
@@ -842,6 +903,7 @@
 		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
+		onrecovering={onMapRecovering}
 		onidle={onMapIdle}
 		onstyleload={runtime.styleLoad}
 		onthemerepaint={runtime.repaint}

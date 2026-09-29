@@ -21,6 +21,7 @@
 		class?: string;
 		onready?: (map: unknown) => void;
 		onidle?: (map: unknown) => void;
+		onrecovering?: () => void;
 		onstyleload?: (map: unknown) => void;
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
@@ -34,6 +35,7 @@
 	let {
 		onready,
 		onidle,
+		onrecovering,
 		onstyleload,
 		onthemerepaint,
 		onerror,
@@ -187,6 +189,17 @@
 		onidle?.(map);
 	}
 
+	function beginRecovery(): void {
+		onrecovering?.();
+		void Promise.resolve(onbeforeremove?.(map)).catch(reportCleanupFailure);
+		rawFakeMap.remove();
+	}
+
+	function completeRecovery(): void {
+		style = { getSource: (id) => sources.get(id) };
+		onready?.(map);
+	}
+
 	function themeRepaint(): void {
 		onthemerepaint?.(map);
 	}
@@ -307,6 +320,17 @@
 		style load
 	</button>
 	<button type="button" data-testid="map-stage-stub-idle" onclick={idle} hidden>idle</button>
+	<button type="button" data-testid="map-stage-stub-begin-recovery" onclick={beginRecovery} hidden>
+		begin recovery
+	</button>
+	<button
+		type="button"
+		data-testid="map-stage-stub-complete-recovery"
+		onclick={completeRecovery}
+		hidden
+	>
+		complete recovery
+	</button>
 	<button type="button" data-testid="map-stage-stub-theme-repaint" onclick={themeRepaint} hidden>
 		theme repaint
 	</button>

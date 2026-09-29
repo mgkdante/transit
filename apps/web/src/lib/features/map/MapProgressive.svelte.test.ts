@@ -298,3 +298,63 @@ describe('MapProgressive automatic live boot', () => {
 		expect(view.getByTestId('map-progressive-live')).toHaveStyle({ transition: 'none' });
 	});
 });
+
+describe('MapProgressive owned recovery attempt', () => {
+	it('keeps the same Hero mounted while publishing one new ready/idle attempt', async () => {
+		const { default: MapProgressive } = await import('./MapProgressive.svelte');
+		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
+		const root = view.getByTestId('map-progressive');
+		const hero = await view.findByTestId('map-progressive-hero-stub');
+		const ready = vi.fn();
+		const idle = vi.fn();
+		root.addEventListener('transit:map-ready', ready);
+		root.addEventListener('transit:maplibre-idle', idle);
+		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		const firstAttempt = Number(root.dataset.mapAttempt);
+		expect(root).toHaveAttribute('data-map-progressive-state', 'ready');
+
+		await fireEvent.click(view.getByTestId('progressive-stub-recovering'));
+		expect(root).toHaveAttribute('data-map-progressive-state', 'booting');
+		expect(Number(root.dataset.mapAttempt)).toBe(firstAttempt + 1);
+		expect(root.dataset.mapReadyTime).toBeUndefined();
+		expect(root.dataset.mapIdleTime).toBeUndefined();
+		expect(view.getByTestId('map-progressive-hero-stub')).toBe(hero);
+		expect(view.getByTestId('map-progressive-live')).toHaveAttribute('inert');
+		expect(view.getByTestId('map-progressive-poster')).toHaveAttribute('data-visible', 'true');
+		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		expect(root).toHaveAttribute('data-map-progressive-state', 'ready');
+		expect(Number(root.dataset.mapAttempt)).toBe(firstAttempt + 1);
+		expect(ready).toHaveBeenCalledTimes(2);
+		expect(idle).toHaveBeenCalledTimes(2);
+	});
+
+	it('counts a later explicit retry once after recovery boot fails', async () => {
+		const { default: MapProgressive } = await import('./MapProgressive.svelte');
+		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
+		const root = view.getByTestId('map-progressive');
+		await view.findByTestId('map-progressive-hero-stub');
+		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		const first = Number(root.dataset.mapAttempt);
+		await fireEvent.click(view.getByTestId('progressive-stub-recovering'));
+		expect(Number(root.dataset.mapAttempt)).toBe(first + 1);
+		await fireEvent.click(view.getByTestId('progressive-stub-failure'));
+		await fireEvent.click(view.getByRole('button', { name: 'Try live map again' }));
+		await waitFor(() =>
+			expect(view.getByTestId('map-progressive-hero-stub')).toHaveAttribute(
+				'data-retry-count',
+				'1',
+			),
+		);
+		expect(Number(root.dataset.mapAttempt)).toBe(first + 2);
+		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		expect(root).toHaveAttribute('data-map-progressive-state', 'ready');
+		expect(Number(root.dataset.mapAttempt)).toBe(first + 2);
+	});
+});
