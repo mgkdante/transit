@@ -723,8 +723,9 @@
 	function onMapRecovering(): void {
 		const focused = document.activeElement;
 		const ownedFocus = focused instanceof HTMLElement && heroEl?.contains(focused) ? focused : null;
+		// AppShell also marks its main as map-stage; only runtime descendants are replaced.
 		recoveryFocusTarget =
-			ownedFocus && !ownedFocus.closest('[data-slot="map-stage"]') ? ownedFocus : null;
+			ownedFocus && !ownedFocus.closest('[data-map-runtime]') ? ownedFocus : null;
 		// The live wrapper is about to become inert; do not hide an actively focused descendant.
 		ownedFocus?.blur();
 		recovering = true;

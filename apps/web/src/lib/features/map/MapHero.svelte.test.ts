@@ -2703,21 +2703,25 @@ describe('MapHero retained state during Stage-only recovery', () => {
 		}
 	});
 
-	it('blurs an owned focused control before recovery and restores it only if focus stayed on body', async () => {
-		harness.isDesktop = true;
-		const onrecovering = vi.fn();
-		render(MapHero, { props: { onrecovering } });
-		const estimated = screen.getAllByTestId('map-motion-switch')[0] as HTMLElement;
-		estimated.focus();
-		expect(document.activeElement).toBe(estimated);
-		await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
-		expect(onrecovering).toHaveBeenCalledOnce();
-		expect(document.activeElement).toBe(document.body);
-		await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
-		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
-		await tick();
-		expect(document.activeElement).toBe(estimated);
-	});
+	it.each([false, true])(
+		'restores an owned control with the AppShell map-stage marker: %s',
+		async (insideShell) => {
+			harness.isDesktop = true;
+			const onrecovering = vi.fn();
+			const view = render(MapHero, { props: { onrecovering } });
+			if (insideShell) view.container.setAttribute('data-slot', 'map-stage');
+			const estimated = screen.getAllByTestId('map-motion-switch')[0] as HTMLElement;
+			estimated.focus();
+			expect(document.activeElement).toBe(estimated);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-begin-recovery'));
+			expect(onrecovering).toHaveBeenCalledOnce();
+			expect(document.activeElement).toBe(document.body);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-complete-recovery'));
+			await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+			await tick();
+			expect(document.activeElement).toBe(estimated);
+		},
+	);
 
 	it('leaves a newly focused outside control alone after reconstruction', async () => {
 		harness.isDesktop = true;
