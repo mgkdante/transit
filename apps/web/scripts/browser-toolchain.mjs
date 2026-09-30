@@ -51,6 +51,7 @@ function requireSafeComponent(value, label) {
 	return value;
 }
 
+/** @param {string} [platform] @param {string} [arch] */
 export function browserPlatform(platform = process.platform, arch = process.arch) {
 	if (platform === 'linux' && arch === 'x64') return 'linux-x64';
 	if (platform === 'win32' && arch === 'x64') return 'win32-x64';

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve, relative } from 'node:path';
+import { join, resolve, relative, sep } from 'node:path';
 
 const VENDOR = resolve(process.cwd(), 'vendor/design');
 const APP_SRC = resolve(process.cwd(), 'src');
@@ -170,7 +170,7 @@ describe('vendor/design integrity', () => {
 			version: string;
 			dependencies: Record<string, string>;
 		};
-		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
+		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
 		expect(packageJson.version).toBe('0.13.2');
@@ -194,7 +194,9 @@ describe('vendor/design integrity', () => {
 			name: string;
 			version: string;
 		};
-		const files = walkFiles(analyticsRoot).map((file) => relative(analyticsRoot, file));
+		const files = walkFiles(analyticsRoot).map((file) =>
+			relative(analyticsRoot, file).split(sep).join('/'),
+		);
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',

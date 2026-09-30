@@ -81,6 +81,7 @@
     "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
   },
   "overrides": {
+    "@yesid/motion": "file:./apps/web/vendor/design/motion",
     "brace-expansion": "5.0.9",
     "cookie": "0.7.2",
     "nanoid": "3.3.18",
@@ -1183,7 +1184,7 @@
 
     "wrap-ansi/ansi-styles": ["ansi-styles@6.2.3", "", {}, "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="],
 
-    "@transit/web/@yesid/ui/@yesid/motion": ["@yesid/motion@file:apps/web/vendor/design/motion", {}],
+    "@transit/web/@yesid/ui/@yesid/motion": ["@yesid/motion@file:./apps/web/vendor/design/motion", {}],
 
     "d3-sankey/d3-array/internmap": ["internmap@1.0.1", "", {}, "sha512-lDB5YccMydFBtasVtxnZ3MRBHuaoE8GKsppq+EchKL2U4nK/DmEpPHNH8MZe5HkMtpSiTSOZwfN0tzYjO/lJEw=="],
 
