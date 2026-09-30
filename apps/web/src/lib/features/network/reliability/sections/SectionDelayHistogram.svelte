@@ -35,7 +35,7 @@
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
 		{#snippet histogramInfo()}
-			<MetricInfo metricKey={'p50p90'} {locale} name={copy.delayHistogramSection} side="bottom" />
+			<MetricInfo metricKey="p50p90" {locale} name={copy.delayHistogramSection} side="bottom" />
 		{/snippet}
 		<NetworkTile
 			title={copy.delayHistogramSection}

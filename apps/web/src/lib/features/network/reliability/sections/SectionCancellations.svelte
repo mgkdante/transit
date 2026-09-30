@@ -44,7 +44,7 @@
 			size="md"
 		>
 			{#snippet info()}
-				<MetricInfo metricKey={'cancellation'} {locale} name={copy.cancelSection} side="bottom" />
+				<MetricInfo metricKey="cancellation" {locale} name={copy.cancelSection} side="bottom" />
 			{/snippet}
 		</ExplainedMetricCard>
 		<!-- Single-series trend spec: only the cancellation rate is plotted. -->

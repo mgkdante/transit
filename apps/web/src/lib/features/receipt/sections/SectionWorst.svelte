@@ -17,7 +17,7 @@
 <section class="receipt-panel receipt-worst-panel" data-slot="receipt-worst">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo metricKey={'otp'} {locale} name={heading} side="bottom" />
+			<MetricInfo metricKey="otp" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-worst">

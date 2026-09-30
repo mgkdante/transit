@@ -172,28 +172,28 @@
 
 {#snippet otpInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'otp'}
+		metricKey="otp"
 		{locale}
 		name={copy.strip.otpPct}
 		side="bottom"
 	/>{/snippet}
 {#snippet avgInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'avgDelay'}
+		metricKey="avgDelay"
 		{locale}
 		name={copy.strip.avgDelayMin}
 		side="bottom"
 	/>{/snippet}
 {#snippet p50Info()}<MetricInfo
 		class="cluster-info"
-		metricKey={'p50p90'}
+		metricKey="p50p90"
 		{locale}
 		name={copy.strip.p50Min}
 		side="bottom"
 	/>{/snippet}
 {#snippet p90Info()}<MetricInfo
 		class="cluster-info"
-		metricKey={'p50p90'}
+		metricKey="p50p90"
 		{locale}
 		name={copy.strip.p90Min}
 		side="bottom"
@@ -289,7 +289,7 @@
 						<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'p50p90'}
+							metricKey="p50p90"
 							{locale}
 							name={copy.strip.delayDistHeading}
 							side="bottom"
@@ -335,7 +335,7 @@
 						<SectionLabel text={copy.strip.severePct} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'severe'}
+							metricKey="severe"
 							{locale}
 							name={copy.strip.severePct}
 							side="bottom"

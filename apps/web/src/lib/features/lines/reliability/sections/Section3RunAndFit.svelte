@@ -290,21 +290,21 @@
 <!-- Per-KPI explainer snippets — the (i) trigger MetricBullet renders beside each tile label. -->
 {#snippet serviceComparisonInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'serviceComparison'}
+		metricKey="serviceComparison"
 		{locale}
 		name={t.serviceCompletenessPct}
 		side="bottom"
 	/>{/snippet}
 {#snippet cancellationInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'cancellation'}
+		metricKey="cancellation"
 		{locale}
 		name={t.cancellationRatePct}
 		side="bottom"
 	/>{/snippet}
 {#snippet skippedInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'skippedStop'}
+		metricKey="skippedStop"
 		{locale}
 		name={t.skippedStopRatePct}
 		side="bottom"
@@ -312,7 +312,7 @@
 {#snippet dominantBandInfo()}
 	<MetricInfo
 		class="cluster-info"
-		metricKey={'occupancy'}
+		metricKey="occupancy"
 		{locale}
 		name={dominant?.label ?? copy.clusters.crowding}
 		side="bottom"
@@ -406,7 +406,7 @@
 					/>
 					<MetricInfo
 						class="cluster-info"
-						metricKey={'occupancy'}
+						metricKey="occupancy"
 						{locale}
 						name={copy.clusters.crowding}
 						side="bottom"

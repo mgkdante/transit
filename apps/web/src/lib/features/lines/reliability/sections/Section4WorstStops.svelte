@@ -119,7 +119,7 @@
 					<SectionLabel text={weakStopsHeading} variant="metric" />
 					<MetricInfo
 						class="cluster-info"
-						metricKey={'weakStops'}
+						metricKey="weakStops"
 						{locale}
 						name={copy.strip.weakStopsHeading}
 						side="bottom"

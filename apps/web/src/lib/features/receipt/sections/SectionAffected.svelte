@@ -25,7 +25,7 @@
 <section class="receipt-panel receipt-affected" data-slot="receipt-affected">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo metricKey={'affectedCounts'} {locale} name={heading} side="bottom" />
+			<MetricInfo metricKey="affectedCounts" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<dl class="receipt-counts">

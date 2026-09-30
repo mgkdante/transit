@@ -25,7 +25,7 @@
 </script>
 
 {#snippet crowdingInfo()}
-	<MetricInfo metricKey={'occupancy'} {locale} name={copy.occupancyTrendSection} side="bottom" />
+	<MetricInfo metricKey="occupancy" {locale} name={copy.occupancyTrendSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

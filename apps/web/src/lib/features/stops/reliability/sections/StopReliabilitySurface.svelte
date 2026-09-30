@@ -518,7 +518,7 @@
 							{#snippet headerActions()}
 								<MetricInfo
 									class="stop-metric-info"
-									metricKey={'severe'}
+									metricKey="severe"
 									{locale}
 									name={copy.trend.heading}
 									side="bottom"
@@ -553,7 +553,7 @@
 								{#snippet headerActions()}
 									<MetricInfo
 										class="stop-metric-info"
-										metricKey={'p50p90'}
+										metricKey="p50p90"
 										{locale}
 										name={copy.percentiles.heading}
 										side="bottom"
@@ -613,7 +613,7 @@
 								{#snippet headerActions()}
 									<MetricInfo
 										class="stop-metric-info"
-										metricKey={'habits'}
+										metricKey="habits"
 										{locale}
 										name={copy.habits.heading}
 										side="bottom"
@@ -641,7 +641,7 @@
 								{#snippet headerActions()}
 									<MetricInfo
 										class="stop-metric-info"
-										metricKey={'seasonality'}
+										metricKey="seasonality"
 										{locale}
 										name={copy.weekday.heading}
 										side="bottom"
@@ -667,7 +667,7 @@
 								{#snippet headerActions()}
 									<MetricInfo
 										class="stop-metric-info"
-										metricKey={'severe'}
+										metricKey="severe"
 										{locale}
 										name={copy.timeOfDay.heading}
 										side="bottom"
@@ -700,7 +700,7 @@
 							{#snippet headerActions()}
 								<MetricInfo
 									class="stop-metric-info"
-									metricKey={'occupancy'}
+									metricKey="occupancy"
 									{locale}
 									name={copy.crowding.heading}
 									side="bottom"
@@ -731,7 +731,7 @@
 							{#snippet headerActions()}
 								<MetricInfo
 									class="stop-metric-info"
-									metricKey={'avgDelay'}
+									metricKey="avgDelay"
 									{locale}
 									name={copy.byRoute}
 									side="bottom"

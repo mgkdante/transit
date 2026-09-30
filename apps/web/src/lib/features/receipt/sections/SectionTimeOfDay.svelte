@@ -39,7 +39,7 @@
 <section class="receipt-tod" data-slot="receipt-time-of-day" aria-label={heading}>
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo metricKey={'severe'} {locale} name={heading} side="bottom" />
+			<MetricInfo metricKey="severe" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-tod-list" role="list" aria-label={heading}>

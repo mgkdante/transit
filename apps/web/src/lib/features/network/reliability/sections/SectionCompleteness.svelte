@@ -30,7 +30,7 @@
 	>
 		{#snippet info()}
 			<MetricInfo
-				metricKey={'serviceComparison'}
+				metricKey="serviceComparison"
 				{locale}
 				name={copy.completeness.section}
 				side="bottom"

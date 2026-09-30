@@ -81,7 +81,7 @@
 </script>
 
 {#snippet etaInfo()}
-	<MetricInfo metricKey={'avgDelay'} {locale} name={metricName('avgDelay', locale)} side="bottom" />
+	<MetricInfo metricKey="avgDelay" {locale} name={metricName('avgDelay', locale)} side="bottom" />
 {/snippet}
 
 {#snippet reportFreshness()}
@@ -152,7 +152,7 @@
 							<span class="trip-cell-head">
 								<SectionLabel text={t.verdictHeading} variant="metric" />
 								<MetricInfo
-									metricKey={'avgDelay'}
+									metricKey="avgDelay"
 									{locale}
 									name={metricName('avgDelay', locale)}
 									side="bottom"

@@ -734,7 +734,7 @@
 										<p class="offenders-def" data-slot="offenders-def">
 											{t.headline.explanation}
 											<MetricInfo
-												metricKey={'severe'}
+												metricKey="severe"
 												{locale}
 												name={t.ladder.severeRateLabel}
 												side="bottom"
@@ -749,7 +749,7 @@
 										<SectionHeading level={3} overline={t.listSection}>
 											{#snippet explainer()}
 												<MetricInfo
-													metricKey={'severe'}
+													metricKey="severe"
 													{locale}
 													name={t.ladder.severeRateLabel}
 													side="bottom"

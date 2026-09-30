@@ -79,7 +79,7 @@
 				{#snippet explainer()}
 					<MetricInfo
 						class="hotspot-info"
-						metricKey={'severe'}
+						metricKey="severe"
 						{locale}
 						name={copy.ladder.severeRateLabel}
 						side="bottom"

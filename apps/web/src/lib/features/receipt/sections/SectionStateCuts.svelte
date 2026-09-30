@@ -44,12 +44,7 @@
 			size="lg"
 		>
 			{#snippet info()}
-				<MetricInfo
-					metricKey={'serviceComparison'}
-					{locale}
-					name={completenessLabel}
-					side="bottom"
-				/>
+				<MetricInfo metricKey="serviceComparison" {locale} name={completenessLabel} side="bottom" />
 			{/snippet}
 		</ExplainedMetricCard>
 	</div>

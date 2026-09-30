@@ -25,7 +25,7 @@
 <section class="receipt-panel receipt-primary" data-slot="receipt-headline">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo metricKey={'otp'} {locale} name={heading} side="bottom" />
+			<MetricInfo metricKey="otp" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-metrics">

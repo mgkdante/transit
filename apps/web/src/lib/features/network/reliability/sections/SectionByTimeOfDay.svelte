@@ -33,7 +33,7 @@
 </script>
 
 {#snippet shiftInfo()}
-	<MetricInfo metricKey={'severe'} {locale} name={copy.shiftSection} side="bottom" />
+	<MetricInfo metricKey="severe" {locale} name={copy.shiftSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

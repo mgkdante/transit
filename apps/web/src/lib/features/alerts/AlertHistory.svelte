@@ -604,23 +604,23 @@
 {#snippet headlineInfo()}
 	<!-- Wired to the alert-duration explainer: the honest deep link replaces the surface's
 	     only bare `/metrics` href (its lone convention break) with metricInfoFor('alertDuration'). -->
-	<MetricInfo metricKey={'alertDuration'} {locale} name={t.headline.label} side="bottom" />
+	<MetricInfo metricKey="alertDuration" {locale} name={t.headline.label} side="bottom" />
 {/snippet}
 
 <!-- The five supplemental alert* explainer tips, each wired onto its heading. cause/effect/
      severity ride the three breakdown sub-headings; reach rides the log section (its rows
      carry the affected-lines/stops counts). duration rides the headline card above. -->
 {#snippet causeInfo()}
-	<MetricInfo metricKey={'alertCause'} {locale} name={t.breakdown.byCause} side="bottom" />
+	<MetricInfo metricKey="alertCause" {locale} name={t.breakdown.byCause} side="bottom" />
 {/snippet}
 {#snippet effectInfo()}
-	<MetricInfo metricKey={'alertEffect'} {locale} name={t.breakdown.byEffect} side="bottom" />
+	<MetricInfo metricKey="alertEffect" {locale} name={t.breakdown.byEffect} side="bottom" />
 {/snippet}
 {#snippet severityInfo()}
-	<MetricInfo metricKey={'alertSeverity'} {locale} name={t.breakdown.bySeverity} side="bottom" />
+	<MetricInfo metricKey="alertSeverity" {locale} name={t.breakdown.bySeverity} side="bottom" />
 {/snippet}
 {#snippet reachInfo()}
-	<MetricInfo metricKey={'alertReach'} {locale} name={t.meta.routes} side="bottom" />
+	<MetricInfo metricKey="alertReach" {locale} name={t.meta.routes} side="bottom" />
 {/snippet}
 
 <p

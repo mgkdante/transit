@@ -56,7 +56,7 @@
 				{#snippet explainer()}
 					<MetricInfo
 						class="offender-info"
-						metricKey={'severe'}
+						metricKey="severe"
 						{locale}
 						name={copy.ladder.severeRateLabel}
 						side="bottom"

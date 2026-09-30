@@ -26,7 +26,7 @@
 </script>
 
 {#snippet dayTypeInfo()}
-	<MetricInfo metricKey={'seasonality'} {locale} name={copy.dayTypeSection} side="bottom" />
+	<MetricInfo metricKey="seasonality" {locale} name={copy.dayTypeSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

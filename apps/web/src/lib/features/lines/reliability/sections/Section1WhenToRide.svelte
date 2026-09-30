@@ -354,7 +354,7 @@
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					<MetricInfo
 						class="cluster-info"
-						metricKey={'habits'}
+						metricKey="habits"
 						{locale}
 						name={band.heatmapHeading}
 						side="bottom"
@@ -389,7 +389,7 @@
 						<SectionLabel text={copy.priorDelta.onTimeHeading} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'otp'}
+							metricKey="otp"
 							{locale}
 							name={copy.priorDelta.onTimeHeading}
 							side="bottom"
@@ -410,7 +410,7 @@
 						<SectionLabel text={copy.peak.heading} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'severe'}
+							metricKey="severe"
 							{locale}
 							name={copy.peak.heading}
 							side="bottom"
@@ -450,7 +450,7 @@
 						<SectionLabel text={copy.crosstab.heading} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'otp'}
+							metricKey="otp"
 							{locale}
 							name={copy.crosstab.heading}
 							side="bottom"
@@ -468,7 +468,7 @@
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'seasonality'}
+							metricKey="seasonality"
 							{locale}
 							name={band.weekdayHeading}
 							side="bottom"

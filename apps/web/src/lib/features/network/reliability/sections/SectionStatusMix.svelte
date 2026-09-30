@@ -44,7 +44,7 @@
 	<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 	{#if hasOccupancy && occupancySpec}
 		{#snippet occupancyInfo()}
-			<MetricInfo metricKey={'occupancy'} {locale} name={copy.occupancySection} side="bottom" />
+			<MetricInfo metricKey="occupancy" {locale} name={copy.occupancySection} side="bottom" />
 		{/snippet}
 		<NetworkTile
 			title={copy.occupancySection}

@@ -549,7 +549,7 @@
 <!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
 {#snippet excessInfo()}<MetricInfo
 		class="cluster-info"
-		metricKey={'excessWait'}
+		metricKey="excessWait"
 		{locale}
 		name={terms.excessWait}
 		side="bottom"
@@ -613,14 +613,14 @@
 				<SectionLabel text={t.headwaySection} variant="metric" />
 				<MetricInfo
 					class="cluster-info"
-					metricKey={'headway'}
+					metricKey="headway"
 					{locale}
 					name={t.headwaySection}
 					side="bottom"
 				/>
 				<MetricInfo
 					class="cluster-info"
-					metricKey={'regularityCov'}
+					metricKey="regularityCov"
 					{locale}
 					name={copy.strip.headwayRegularityCov}
 					side="bottom"
@@ -674,7 +674,7 @@
 							<SectionLabel text={copy.priorDelta.waitHeading} variant="metric" />
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'headway'}
+								metricKey="headway"
 								{locale}
 								name={copy.priorDelta.waitHeading}
 								side="bottom"
@@ -701,7 +701,7 @@
 								<SectionLabel text={terms.excessWait} variant="metric" />
 								<MetricInfo
 									class="cluster-info"
-									metricKey={'excessWait'}
+									metricKey="excessWait"
 									{locale}
 									name={terms.excessWait}
 									side="bottom"
@@ -714,7 +714,7 @@
 								<SectionLabel text={terms.spread} variant="metric" />
 								<MetricInfo
 									class="cluster-info"
-									metricKey={'regularityCov'}
+									metricKey="regularityCov"
 									{locale}
 									name={terms.spread}
 									side="bottom"
@@ -727,7 +727,7 @@
 								<SectionLabel text={terms.clumped} variant="metric" />
 								<MetricInfo
 									class="cluster-info"
-									metricKey={'regularityCov'}
+									metricKey="regularityCov"
 									{locale}
 									name={terms.clumped}
 									side="bottom"
@@ -741,7 +741,7 @@
 						{copy.strip.excessWaitCaption}
 						<MetricInfo
 							class="cluster-info"
-							metricKey={'excessWait'}
+							metricKey="excessWait"
 							{locale}
 							name={terms.excessWait}
 							side="bottom"
@@ -800,7 +800,7 @@
 							<SectionLabel text={t.spanSection} variant="metric" />
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'serviceSpan'}
+								metricKey="serviceSpan"
 								{locale}
 								name={t.spanSection}
 								side="bottom"
@@ -828,7 +828,7 @@
 							/>
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'serviceSpan'}
+								metricKey="serviceSpan"
 								{locale}
 								name={t.serviceSpan}
 								side="bottom"
@@ -844,7 +844,7 @@
 							/>
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'serviceSpan'}
+								metricKey="serviceSpan"
 								{locale}
 								name={t.firstTripDelay}
 								side="bottom"
@@ -860,7 +860,7 @@
 							/>
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'serviceSpan'}
+								metricKey="serviceSpan"
 								{locale}
 								name={t.lastTripDelay}
 								side="bottom"
@@ -876,7 +876,7 @@
 							/>
 							<MetricInfo
 								class="cluster-info"
-								metricKey={'serviceSpan'}
+								metricKey="serviceSpan"
 								{locale}
 								name={t.tripCount}
 								side="bottom"

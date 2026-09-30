@@ -306,7 +306,7 @@
 							<h2 class="search-group-head">
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.linesLabel}</span>
-									<MetricInfo metricKey={'otp'} {locale} name={'OTP'} side="bottom" />
+									<MetricInfo metricKey="otp" {locale} name="OTP" side="bottom" />
 								</span>
 								<span class="search-group-count">{t.resultCount(matchedRoutes.length)}</span>
 							</h2>
@@ -379,13 +379,13 @@
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.vehiclesLabel}</span>
 									<MetricInfo
-										metricKey={'occupancy'}
+										metricKey="occupancy"
 										{locale}
 										name={metricName('occupancy', locale)}
 										side="bottom"
 									/>
 									<MetricInfo
-										metricKey={'avgDelay'}
+										metricKey="avgDelay"
 										{locale}
 										name={metricName('avgDelay', locale)}
 										side="bottom"
