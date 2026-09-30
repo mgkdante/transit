@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
-import fcntl
+import errno
 import hashlib
 import json
 import os
 import pathlib
 import re
 import stat
+import sys
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel
@@ -102,18 +109,43 @@ def _lock_for_key(
 
 @contextmanager
 def _exclusive_directory_lock(directory: pathlib.Path) -> Iterator[None]:
-    """Hold a process-safe advisory lock on an existing snapshot directory."""
+    """Serialize cooperating activators through publication, including process exit."""
 
     directory.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    if sys.platform == "win32":
+        # Keep this file permanently: deleting it could split existing waiters and
+        # new arrivals across different lock objects. Lock byte zero beyond EOF;
+        # no byte initialization or truncation is needed (or safe under contention).
+        descriptor = os.open(directory / _LOCAL_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            yield
+            while True:
+                try:
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    # The CRT reports nonblocking lock contention as EACCES.
+                    # Other errors must fail closed, rather than spin forever.
+                    if exc.errno != errno.EACCES:
+                        raise
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-    finally:
-        os.close(descriptor)
+            os.close(descriptor)
+        return
+
+    else:
+        descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 class SnapshotStorage:
@@ -553,13 +585,35 @@ class SnapshotStorage:
 
 
 _LOCAL_TEMPORARY_NAME = re.compile(r"\.transit-snapshot-[0-9a-f]{32}\.tmp")
+_LOCAL_LOCK_NAME = ".transit-snapshot.lock"
+
+
+def _reserved_local_name(name: str) -> bool:
+    if sys.platform == "win32":
+        # Win32 resolves case/dot/space aliases and NTFS alternate data streams.
+        name = name.split(":", 1)[0].rstrip(" .").casefold()
+    return name == _LOCAL_LOCK_NAME or _LOCAL_TEMPORARY_NAME.fullmatch(name) is not None
+
+
+def _resolved_local_path(path: pathlib.Path) -> pathlib.Path:
+    resolved = path.resolve()
+    if sys.platform == "win32":
+        # CPython 3.12 may retain the extended prefix if an absent object appears
+        # during resolve(). Compare equivalent DOS/UNC roots in the same spelling.
+        text = str(resolved)
+        if text.startswith("\\\\?\\UNC\\"):
+            return pathlib.Path("\\\\" + text[8:])
+        if text.startswith("\\\\?\\"):
+            return pathlib.Path(text[4:])
+    return resolved
 
 
 class LocalSnapshotStorage:
     """Publish complete local objects without adding fsync durability.
 
-    Names `.transit-snapshot-<32 lowercase hex>.tmp` are reserved preparations,
-    excluded from object inventories.
+    Names `.transit-snapshot-<32 lowercase hex>.tmp` and `.transit-snapshot.lock`
+    are reserved internal files, excluded from object inventories. Windows locks
+    persist so all cooperating processes continue to share one lock object.
     """
 
     def __init__(self, root: str, base_prefix: str) -> None:
@@ -570,8 +624,8 @@ class LocalSnapshotStorage:
             raise ValueError("unsafe_local_snapshot_path")
         self._provider_root = self._root.joinpath(*prefix_path.parts)
         try:
-            self._resolved_root = self._root.resolve()
-            self._resolved_provider_root = self._provider_root.resolve()
+            self._resolved_root = _resolved_local_path(self._root)
+            self._resolved_provider_root = _resolved_local_path(self._provider_root)
             self._resolved_provider_root.relative_to(self._resolved_root)
         except (OSError, RuntimeError, ValueError):
             raise ValueError("unsafe_local_snapshot_path") from None
@@ -588,11 +642,17 @@ class LocalSnapshotStorage:
                 or not rel_path.parts
                 or rel_path.is_absolute()
                 or ".." in rel_path.parts
-                or _LOCAL_TEMPORARY_NAME.fullmatch(rel_path.name) is not None
             ):
                 raise ValueError
             path = self._provider_root.joinpath(*rel_path.parts)
-            path.resolve().relative_to(self._resolved_provider_root)
+            resolved_relative = _resolved_local_path(path).relative_to(self._resolved_provider_root)
+            # Check native components too: backslashes are separators on Windows.
+            # Resolved components also protect aliases through directory links.
+            if any(
+                _reserved_local_name(part)
+                for part in (*path.relative_to(self._provider_root).parts, *resolved_relative.parts)
+            ):
+                raise ValueError
         except (OSError, RuntimeError, TypeError, ValueError):
             raise ValueError("unsafe_local_snapshot_path") from None
         return path
@@ -713,9 +773,13 @@ class LocalSnapshotStorage:
             return
         paths = [prefix_path] if prefix_path.is_file() else sorted(prefix_path.rglob("*"))
         for path in paths:
-            if _LOCAL_TEMPORARY_NAME.fullmatch(path.name) or not path.is_file():
+            relative = path.relative_to(provider_root)
+            if any(_reserved_local_name(part) for part in relative.parts) or not path.is_file():
                 continue
-            rel_key = path.relative_to(provider_root).as_posix()
+            rel_key = relative.as_posix()
+            resolved_relative = _resolved_local_path(path).relative_to(self._resolved_provider_root)
+            if any(_reserved_local_name(part) for part in resolved_relative.parts):
+                continue
             version = self.capture_object_version(rel_key)
             if version is None:
                 raise RuntimeError(f"snapshot object disappeared during inventory: {rel_key}")

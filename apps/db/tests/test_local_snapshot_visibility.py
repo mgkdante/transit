@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
@@ -204,8 +205,8 @@ def test_cleanup_failure_does_not_replace_the_original_write_failure(tmp_path, m
 
 
 @pytest.mark.parametrize("operation", ["ordinary", "conditional", "immutable"])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX umask permissions")
 def test_new_local_files_preserve_ordinary_umask_permissions(tmp_path, operation):
-    import os
     import stat
 
     store = LocalSnapshotStorage(str(tmp_path), "v1/stm")
@@ -225,6 +226,7 @@ def test_new_local_files_preserve_ordinary_umask_permissions(tmp_path, operation
 
 
 @pytest.mark.parametrize("operation", ["ordinary", "conditional"])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
 def test_local_replacement_retains_the_existing_file_mode(tmp_path, operation):
     import stat
 
@@ -290,7 +292,7 @@ def _publish_first_root_in_process(root, prepared, release, outcomes):
 def test_first_root_creation_is_atomic_to_another_process_reader(tmp_path):
     import multiprocessing
 
-    context = multiprocessing.get_context("fork")
+    context = multiprocessing.get_context("spawn")
     prepared, release = context.Event(), context.Event()
     outcomes = context.Queue()
     writer = context.Process(

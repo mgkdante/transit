@@ -4,6 +4,8 @@ import hashlib
 import io
 import json
 import multiprocessing
+import os
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -710,7 +712,16 @@ def test_local_snapshot_storage_rejects_existing_symlink_escape(tmp_path) -> Non
     outside = tmp_path / "outside"
     provider_root.mkdir(parents=True)
     outside.mkdir()
-    (provider_root / "escape").symlink_to(outside, target_is_directory=True)
+    if os.name == "nt":
+        # Directory junctions exercise the same resolved-path escape without
+        # requiring Windows developer mode or the create-symlink privilege.
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(provider_root / "escape"), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        (provider_root / "escape").symlink_to(outside, target_is_directory=True)
     store = LocalSnapshotStorage(str(root), "v1/stm")
 
     with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
@@ -1477,12 +1488,13 @@ def test_local_stable_activation_enforces_cross_instance_cas(tmp_path):
     assert idempotent.written is False
 
 
-def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
+@pytest.mark.parametrize("same_payload", [False, True])
+def test_local_stable_activation_enforces_cross_process_cas(tmp_path, same_payload):
     store = storage_module.LocalSnapshotStorage(str(tmp_path), "v1/stm")
     rel_key = "historic/history/index.json"
     store.put_json(rel_key, {"generation": "old"}, tier="historic")
     expected_version = store.capture_stable_version(rel_key)
-    context = multiprocessing.get_context("fork")
+    context = multiprocessing.get_context("spawn")
     read_barrier = context.Barrier(2)
     result_queue = context.Queue()
     processes = [
@@ -1492,7 +1504,7 @@ def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
                 str(tmp_path),
                 rel_key,
                 expected_version,
-                candidate,
+                0 if same_payload else candidate,
                 read_barrier,
                 result_queue,
             ),
@@ -1518,12 +1530,13 @@ def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
     assert not [result for result in results if result[0] == "error"]
     winners = [result for result in results if result[0] == "outcome"]
     conflicts = [result for result in results if result[0] == "conflict"]
-    assert len(winners) == 1 and winners[0][2] is True
-    assert len(conflicts) == 1
+    assert len(winners) == (2 if same_payload else 1)
+    assert sum(result[2] for result in winners) == 1
+    assert len(conflicts) == (0 if same_payload else 1)
     active = store.get_json(rel_key)
     assert active == {"generation": f"candidate-{winners[0][1]}"}
     history_dir = tmp_path / "v1/stm/historic/history"
-    assert not list(history_dir.glob("*.lock"))
+    assert {item.rel_key for item in store.iter_object_versions("historic/")} == {rel_key}
     assert not list(history_dir.glob(".*.tmp"))
 
 
