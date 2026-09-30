@@ -1590,43 +1590,73 @@ async function startPreview(replayBase) {
 	);
 	const stateDir = mkdtempSync(join(tmpdir(), 'transit-b9-preview-'));
 	const configPath = join(stateDir, 'wrangler.json');
-	writeFileSync(
-		configPath,
-		JSON.stringify({
-			name: 'transit-b9-preview',
-			main: join(BUILD_ROOT, '_worker.js'),
-			assets: { directory: BUILD_ROOT, binding: 'ASSETS' },
-			compatibility_date: '2025-01-01',
-			compatibility_flags: ['nodejs_compat'],
-			vars: { PUBLIC_V1_BASE: replayBase, PUBLIC_V1_PROVIDER: 'stm' },
-		}),
-	);
-	const { unstable_startWorker } = await import('wrangler');
-	let worker;
+	let devEnv;
+	let timeout;
+	let onStartupError;
 	try {
-		worker = await unstable_startWorker({
-			config: configPath,
-			dev: {
-				remote: false,
-				server: { hostname: '127.0.0.1', port: 0 },
-				inspector: false,
-				persist: false,
-				watch: false,
-				registry: undefined,
-				enableContainers: false,
-				logLevel: 'error',
-			},
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				name: 'transit-b9-preview',
+				main: join(BUILD_ROOT, '_worker.js'),
+				assets: { directory: BUILD_ROOT, binding: 'ASSETS' },
+				compatibility_date: '2025-01-01',
+				compatibility_flags: ['nodejs_compat'],
+				vars: { PUBLIC_V1_BASE: replayBase, PUBLIC_V1_PROVIDER: 'stm' },
+			}),
+		);
+		const { unstable_DevEnv } = await import('wrangler');
+		devEnv = new unstable_DevEnv();
+		const startupFailure = new Promise((_, reject) => {
+			onStartupError = (event) =>
+				reject(
+					event instanceof Error
+						? event
+						: new Error(`B9 preview startup failed: ${event.reason}`, { cause: event.cause }),
+				);
+			devEnv.on('error', onStartupError);
+			devEnv.on('buildFailed', onStartupError);
+			timeout = setTimeout(() => reject(new Error('B9 preview startup timed out')), 30_000);
 		});
-		return { worker, origin: (await worker.url).origin, stateDir };
+		const startup = async () => {
+			const worker = await devEnv.startWorker({
+				config: configPath,
+				dev: {
+					remote: false,
+					server: { hostname: '127.0.0.1', port: 0 },
+					inspector: false,
+					persist: false,
+					watch: false,
+					registry: undefined,
+					enableContainers: false,
+					logLevel: 'error',
+				},
+			});
+			const origin = (await worker.url).origin;
+			const response = await fetch(new URL('/privacy', origin), { redirect: 'manual' });
+			await response.arrayBuffer();
+			invariant(response.ok, `B9 preview readiness returned ${response.status}`);
+			return origin;
+		};
+		return { devEnv, origin: await Promise.race([startup(), startupFailure]), stateDir };
 	} catch (error) {
-		await worker?.dispose();
-		rmSync(stateDir, { recursive: true, force: true });
+		try {
+			await stopPreview({ devEnv, stateDir });
+		} catch (cleanupError) {
+			throw new Error(`${error}\nB9 preview cleanup failed: ${cleanupError}`, { cause: error });
+		}
 		throw error;
+	} finally {
+		clearTimeout(timeout);
+		if (onStartupError) {
+			devEnv.off('error', onStartupError);
+			devEnv.off('buildFailed', onStartupError);
+		}
 	}
 }
 
 async function stopPreview(preview) {
-	await preview.worker.dispose();
+	await preview.devEnv?.teardown();
 	rmSync(preview.stateDir, { recursive: true, force: true });
 }
 
