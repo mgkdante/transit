@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
@@ -1671,7 +1671,7 @@ function builtAssetPaths() {
 		readdirSync(BUILD_ROOT, { recursive: true })
 			.map(String)
 			.filter((path) => statSync(join(BUILD_ROOT, path)).isFile())
-			.map((path) => `/${path}`),
+			.map((path) => `/${path.split(sep).join('/')}`),
 	);
 }
 
