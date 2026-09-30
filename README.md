@@ -14,6 +14,13 @@ available data and attribution. Missing data remains unknown.
 | `apps/data-proxy` | Cloudflare Worker serving versioned snapshots | [package.json](apps/data-proxy/package.json) |
 | `apps/web` | SvelteKit dashboard consuming snapshots, without direct DB access | [package.json](apps/web/package.json) |
 
+The pipeline keeps archived source responses in Bronze, normalized records in
+Silver, and derived data in Gold. Capture/load receipts identify completed work;
+daily rollups retain separate completion dates for each metric family. Static,
+live and historic snapshots form the public contract. Repeated source bytes can
+still represent a new observation, so content identity and capture time remain
+distinct. Corrections and explicit recovery can revisit affected history.
+
 ## Start the web app
 
 Install the supported Node and Bun pins from [.nvmrc](.nvmrc) and
@@ -102,6 +109,22 @@ checks staged source for private residue; the
 [security workflow](.github/workflows/secret-scan.yml) adds secret scanning.
 Deployment requires the configured accounts, explicit targets and protected
 workflow checks. A local build or dry run does not establish production adoption.
+
+Operators use the supported Linux host with its configured database, object
+storage and account access. These are the executable owners of the operating
+procedures; inspect their inputs and target before running them:
+
+| Operation | Entry point and result |
+| --- | --- |
+| Runtime and resource settings | [Compose services](apps/db/docker-compose.yml), [settings](apps/db/src/transit_ops/settings.py) and [environment template](.env.example) own worker cadence, retention, pruning batches and storage targets. Worker, pruner and health services receive separate environment settings. |
+| Publish and verify | [Daily static pipeline](.github/workflows/daily-static-pipeline.yml) and [daily warm rollups](.github/workflows/daily-warm-rollups.yml) own ordered ingestion/build/publication. The historic publication gate and public proof receipts accompany the workflow artifacts. |
+| Recover publication | [Historic recovery](.github/workflows/historic-publish-recovery.yml) owns the explicit migration, archive sync, publish and public-proof sequence. It is a deliberate recovery operation, not an ordinary dashboard request. |
+| Back up and prove restoration | From `apps/db` on the host, [backup-postgres.sh](apps/db/scripts/backup-postgres.sh) streams a logical backup to configured Bronze S3/R2 storage. [restore-backup-proof.sh](apps/db/scripts/restore-backup-proof.sh) restores into a separate temporary local cluster and checks the expected migration revision; it does not restore over production. |
+| Pause, resume and cut over | [Pause](apps/db/scripts/pause-pipeline.sh) and [resume](apps/db/scripts/resume-pipeline.sh) change GitHub schedules and the local Compose worker while leaving Postgres running. [Cutover validation](apps/db/scripts/validate-oracle-cutover.sh) checks the selected deployment target. |
+
+Retain the actual deployed source, image, migration revision, configuration and
+publication/restore receipts when operating a release. Repository checks prove
+the candidate; live freshness, recovery and resource use require host evidence.
 
 Transit source uses the [MIT License](LICENSE). [NOTICE](NOTICE) records separate
 terms and attribution for design, GSAP, fonts, maps and provider data. Transit is
