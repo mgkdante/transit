@@ -282,6 +282,10 @@ export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
 };
 
 export const metricInfoCopy = {
+	confidenceIntervalLink: {
+		fr: 'Méthode et limites',
+		en: 'Method and limits',
+	},
 	fr: {
 		trigger: (name: string) => `À propos de ${name}`,
 		link: 'Comment c’est mesuré',

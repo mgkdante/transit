@@ -74,7 +74,7 @@
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
+	import type { MetricKey } from '$lib/metrics';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
 	import { absenceSentence } from '$lib/site/absence';

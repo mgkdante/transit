@@ -65,7 +65,7 @@
 	import { StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.summary';
+	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	// The shared occupancy band vocabulary (the SAME labels the lines surface renders).

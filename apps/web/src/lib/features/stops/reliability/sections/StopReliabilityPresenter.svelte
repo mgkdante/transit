@@ -11,7 +11,7 @@
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
+	import type { MetricKey } from '$lib/metrics';
 	import { cn } from '$lib/utils';
 
 	type Presentation = 'standalone' | 'article-body';

@@ -20,7 +20,7 @@
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue, StateNotice } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricName } from '$lib/features/metrics/metrics.summary';
+	import { metricName } from '$lib/metrics';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayMeasurement, delayTone, delayLabel } from '$lib/site/delayPresentation';

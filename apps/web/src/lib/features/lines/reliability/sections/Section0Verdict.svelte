@@ -27,7 +27,7 @@
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import MetricBullet from './MetricBullet.svelte';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { metricInfoCopy } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		shiftLabel as shiftGrainLabel,
@@ -62,7 +62,6 @@
 	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
 	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
-	const explainerCopy = $derived(metricsCopy[locale]);
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
@@ -275,7 +274,7 @@
 							href={localizeHref('/metrics#confidence-intervals', locale)}
 							data-card-interactive
 							class="underline underline-offset-2"
-							>{explainerCopy.provenance.howWeMeasure.confidenceInterval.link}</a
+							>{metricInfoCopy.confidenceIntervalLink[locale]}</a
 						>
 					</p>
 				{/if}

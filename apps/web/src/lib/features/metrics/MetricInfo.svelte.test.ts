@@ -13,7 +13,7 @@ import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricInfo from './MetricInfo.svelte';
-import { metricInfoFor } from './metrics.summary';
+import { metricInfoFor } from '$lib/metrics';
 
 const base = {
 	tip: 'The share of readings that landed on time.',

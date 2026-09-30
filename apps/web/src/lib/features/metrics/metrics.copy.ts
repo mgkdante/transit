@@ -11,7 +11,7 @@
 // the screen owns no inline strings.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { metricInfoCopy } from './metrics.summary';
+import { metricInfoCopy } from '$lib/metrics';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
@@ -42,7 +42,7 @@ export const metricsCopy = defineCopy({
 				confidenceInterval: {
 					heading: 'Lire un intervalle de confiance',
 					body: 'La méthode de Wilson vise une couverture d’environ 95 % sur des échantillons répétés, avec des observations indépendantes et une probabilité de ponctualité stable. Les mises à jour d’un même trajet peuvent être corrélées. Ces intervalles ne corrigent pas cette dépendance et peuvent sous-estimer l’incertitude.',
-					link: 'Méthode et limites',
+					link: metricInfoCopy.confidenceIntervalLink.fr,
 					reference: 'Intervalle de Wilson : référence NIST',
 				},
 				rounding: {
@@ -178,7 +178,7 @@ export const metricsCopy = defineCopy({
 				confidenceInterval: {
 					heading: 'Reading a confidence interval',
 					body: 'The Wilson method aims for about 95% coverage across repeated samples with independent observations and a stable on-time probability. Updates from the same trip can be correlated. These intervals do not adjust for that dependence and can understate uncertainty.',
-					link: 'Method and limits',
+					link: metricInfoCopy.confidenceIntervalLink.en,
 					reference: 'Wilson interval: NIST reference',
 				},
 				rounding: {

@@ -32,7 +32,7 @@
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
+	import type { MetricKey } from '$lib/metrics';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 

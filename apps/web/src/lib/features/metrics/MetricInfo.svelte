@@ -12,7 +12,7 @@
 		metricInfoCopy,
 		type MetricKey,
 		type SupplementalMetricKey,
-	} from './metrics.summary';
+	} from '$lib/metrics';
 	import { cn } from '$lib/utils';
 
 	type MetricInfoProps = {

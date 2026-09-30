@@ -1,7 +1,7 @@
 import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { METRIC_SUMMARIES, type MetricKey } from './metrics.summary';
-export { metricInfoFor, metricName, SUPPLEMENTAL_METRIC_TIPS } from './metrics.summary';
-export type { MetricKey, SupplementalMetricKey } from './metrics.summary';
+import { METRIC_SUMMARIES, type MetricKey } from '$lib/metrics';
+export { metricInfoFor, metricName, SUPPLEMENTAL_METRIC_TIPS } from '$lib/metrics';
+export type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 import type { Locale } from '$lib/i18n';
 
 /** Provenance confidence: every reliability metric is a feed-derived proxy. */

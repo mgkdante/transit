@@ -52,7 +52,7 @@
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
-	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
+	import type { MetricKey } from '$lib/metrics';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
 	import {

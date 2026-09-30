@@ -76,7 +76,7 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricName } from '$lib/features/metrics/metrics.summary';
+	import { metricName } from '$lib/metrics';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import {
 		stopGroupKey,
