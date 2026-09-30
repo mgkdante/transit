@@ -66,6 +66,29 @@ const ALERT_SOURCE_MESSAGE = {
 } as Alert;
 
 describe('AffectedAlerts — rendering', () => {
+	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
+		const { container } = render(AffectedAlerts, {
+			props: {
+				alerts: [
+					{
+						...ALERT_FULL,
+						header_key: 'Votre ligne',
+						header_text: 'Votre arrêt',
+						header_text_en: 'Your stop',
+						description: 'null',
+						description_en: '{"text": None}',
+					},
+				],
+				locale,
+				copy: locale === 'en' ? EN_COPY : FR_COPY,
+			},
+		});
+		expect(
+			screen.getByText(locale === 'en' ? 'Service alert' : 'Alerte de service'),
+		).toBeInTheDocument();
+		expect(container.textContent).not.toMatch(/Votre ligne|Votre arrêt|Your stop|None|null/);
+	});
+
 	it('renders the heading + a labelled list when alerts are present', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY } });
 

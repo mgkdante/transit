@@ -98,18 +98,16 @@
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
-		presentGrains,
-		defaultOffenderGrain,
-		ladderByGrain,
+		ladderGrains,
 		OFFENDER_GRAINS,
 		type OffenderGrainKey,
-	} from './data/presentGrains';
+	} from '$lib/reliability/ladderGrains';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from './data/ladderCap';
+	} from '$lib/reliability/ladderCap';
 	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
 	import { buildOffenderEvidenceRows } from './selectors/offenderEvidence';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
@@ -177,8 +175,9 @@
 	}
 
 	/* ── grain vocabulary + availability ──────────────────────────────────────────── */
-	const ladders = $derived(ladderByGrain(offenders.data?.by_grain));
-	const present = $derived(presentGrains(offenders.data?.by_grain));
+	const grains = $derived(ladderGrains(offenders.data?.by_grain, OFFENDER_GRAINS));
+	const ladders = $derived(grains.ladders);
+	const present = $derived(grains.present);
 
 	// CONTRACT: the codec ($lib/filters) owns the ?grain seam — fromSearchParams
 	// enum-parses the seed; invalid values drop. The SELECTION + the populated-grain
@@ -221,7 +220,7 @@
 	// Keep the selection on a POPULATED grain (the clamp): a chosen grain whose ladder
 	// is absent falls back to the richest present grain. Never a dead/empty grain.
 	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultOffenderGrain(present);
+		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
 	});
 
 	/* ── worst-N cap (codec ?n) ───────────────────────────────────────────────────── */

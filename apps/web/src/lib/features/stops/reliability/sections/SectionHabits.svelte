@@ -4,7 +4,7 @@
 	import { absenceShort } from '$lib/site/absence';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { selectHabitsHeatmap, selectHabitsHeatmapSpec } from '../selectors/habitsHeatmap';
+	import { buildHabitsHeatmap } from '$lib/reliability/habitsHeatmap';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
@@ -26,7 +26,7 @@
 	const WORST_GLYPH = '◆';
 
 	const spec = $derived(
-		selectHabitsHeatmapSpec(selectHabitsHeatmap(matrix), locale, {
+		buildHabitsHeatmap(matrix, locale, {
 			title: copy.habits.label,
 			valueLabel: copy.habits.cellValueLabel,
 			rowAxisLabel: copy.habits.dayAxisLabel,

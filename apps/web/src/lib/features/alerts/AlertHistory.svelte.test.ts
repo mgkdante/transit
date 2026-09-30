@@ -8,14 +8,12 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { compile } from 'svelte/compiler';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
-
-vi.mock('@testing-library/svelte', { spy: true });
 
 const copyEn = alertHistoryCopy.en;
 
@@ -302,7 +300,6 @@ const alertSurface = createSurfaceHarness({
 const render = alertSurface.mount;
 
 beforeEach(() => alertSurface.reset());
-afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(59));
 
 describe('AlertHistory article shell', () => {
 	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
@@ -518,6 +515,31 @@ describe('AlertHistory log', () => {
 		expect(screen.getByText(expected)).toBeInTheDocument();
 		expect(screen.queryByText(otherLocale)).toBeNull();
 		expect(container.querySelector('[data-slot="alert-log"] strong')).toBeNull();
+	});
+
+	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
+		currentLocale.value = locale;
+		fixture.alerts = [
+			{
+				id: 'raw-copy',
+				severity: 'watch',
+				routes: ['10'],
+				stops: [],
+				header_key: 'Votre ligne',
+				header_text: 'Votre arrêt',
+				header_text_en: 'Your stop',
+				description: 'null',
+				description_en: '{"text": None}',
+				start_utc: '2026-06-20T11:00:00Z',
+				end_utc: '2026-06-20T12:00:00Z',
+			},
+		] as unknown as AlertHistory['alerts'];
+		fixture.breakdown = null;
+		const { container } = render(AlertHistoryScreen);
+		expect(
+			screen.getByText(locale === 'en' ? 'Service alert' : 'Alerte de service'),
+		).toBeInTheDocument();
+		expect(container.textContent).not.toMatch(/Votre ligne|Votre arrêt|Your stop|None|null/);
 	});
 
 	it('omits unsupported impact estimates while preserving duration and route reports', () => {

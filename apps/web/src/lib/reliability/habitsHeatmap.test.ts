@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { selectHabitsHeatmap, type HabitsHeatmapOpts } from './habitsHeatmap';
-import type { HabitsVM } from '../clusters';
+import { buildHabitsHeatmap, hasHabits, type HabitsHeatmapOptions } from './habitsHeatmap';
 
-const OPTS: HabitsHeatmapOpts = {
+const OPTS: HabitsHeatmapOptions = {
 	title: 'Repeat-problem heatmap by day and hour',
 	valueLabel: 'Repeat problems',
 	rowAxisLabel: 'Day of week',
@@ -29,15 +28,9 @@ function makeMatrix(): (number | null)[][] {
 	return m;
 }
 
-const vm = (matrix: (number | null)[][], isEmpty = false): HabitsVM => ({
-	scale: 'repeat_problem_relative',
-	matrix,
-	isEmpty,
-});
-
-describe('selectHabitsHeatmap', () => {
+describe('buildHabitsHeatmap', () => {
 	it('builds an absolute heatmap spec on the fixed [0,1] domain', () => {
-		const s = selectHabitsHeatmap(vm(makeMatrix()), 'en', OPTS);
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
 		expect(s.kind).toBe('heatmap');
 		expect(s.mode).toBe('absolute');
 		expect(s.domain).toEqual([0, 1]);
@@ -48,7 +41,7 @@ describe('selectHabitsHeatmap', () => {
 	});
 
 	it('keeps a null cell honestly absent (never coerced to 0)', () => {
-		const s = selectHabitsHeatmap(vm(makeMatrix()), 'en', OPTS);
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
 		expect(s.cells[0][3].value).toBeNull();
 		expect(s.cells[0][3].absentReason).toBe('no-observations');
 		expect(s.cells[0][8].value).toBe(1);
@@ -56,7 +49,7 @@ describe('selectHabitsHeatmap', () => {
 	});
 
 	it('formats hour labels + a sparse clock-tick subset for the column axis', () => {
-		const s = selectHabitsHeatmap(vm(makeMatrix()), 'en', OPTS);
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
 		expect(s.colLabels[8]).toBe('08:00');
 		expect(s.colTicks).toEqual([
 			{ index: 0, label: '00:00' },
@@ -68,9 +61,21 @@ describe('selectHabitsHeatmap', () => {
 
 	it('pads short rows to 24 columns of honest no-data', () => {
 		const short: (number | null)[][] = [[0.5]]; // 1 row, 1 col
-		const s = selectHabitsHeatmap(vm(short), 'en', OPTS);
+		const s = buildHabitsHeatmap(short, 'en', OPTS);
 		// row 0 has 24 cols; the missing ones are null (no data)
 		expect(s.cells[0]).toHaveLength(24);
 		expect(s.cells[0][5].value).toBeNull();
+	});
+});
+
+describe('hasHabits', () => {
+	it.each([
+		[[[null, 0.5]], true],
+		[[[0]], true],
+		[[[null, null]], false],
+		[null, false],
+		[[], false],
+	] as const)('preserves matrix availability for %j', (matrix, present) => {
+		expect(hasHabits(matrix == null ? matrix : matrix.map((row) => [...row]))).toBe(present);
 	});
 });

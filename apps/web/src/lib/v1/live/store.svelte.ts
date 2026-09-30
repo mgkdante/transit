@@ -188,9 +188,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	let lifecycleWired = false;
 	let started = false;
 
-	const index = $derived(
-		buildLiveIndex({ vehicles, trips, stopDepartures: departures, alerts, network }),
-	);
+	const index = $derived(buildLiveIndex({ vehicles, trips, stopDepartures: departures }));
 
 	// Aggregate freshness is the oldest retained generation among ACTIVE families.
 	// Failed families keep participating while they retain data, so one fresher

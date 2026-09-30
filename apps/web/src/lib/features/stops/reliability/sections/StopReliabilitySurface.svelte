@@ -90,7 +90,7 @@
 	import { selectRankedRoutes } from '../selectors/rankedRoutes';
 	import { selectWeekdaySeasonality } from '../selectors/weekdaySeasonality';
 	import { selectTimeOfDay } from '../selectors/timeOfDay';
-	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
+	import { hasHabits } from '$lib/reliability/habitsHeatmap';
 	import { selectCrowdingMix } from '../selectors/crowdingMix';
 	import type { ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import { stopReliabilityCopy } from '../stops-reliability.copy';
@@ -303,7 +303,8 @@
 		}),
 	);
 
-	const habits = $derived(selectHabitsHeatmap(data.habits?.matrix));
+	const habitsMatrix = $derived(data.habits?.matrix ?? []);
+	const habitsPresent = $derived(hasHabits(habitsMatrix));
 
 	const occupancyBands = $derived(linesDetailCopy[locale].occupancyBands);
 	const crowding = $derived(
@@ -339,7 +340,7 @@
 				present: dayPercentiles != null,
 			},
 			{ id: 'stop-rel-pane', label: copy.paneHeading, present: gradedPeriods.length > 0 },
-			{ id: 'stop-rel-habits', label: copy.habits.heading, present: habits.hasHabits },
+			{ id: 'stop-rel-habits', label: copy.habits.heading, present: habitsPresent },
 			{ id: 'stop-rel-weekday', label: copy.weekday.heading, present: hasWeekday },
 			{ id: 'stop-rel-time', label: copy.timeOfDay.heading, present: timeOfDay.hasTimeOfDay },
 			{ id: 'stop-rel-crowding', label: copy.crowding.heading, present: true },
@@ -604,7 +605,7 @@
 					{/if}
 
 					<!-- ROW 1: habits (full-width hero). -->
-					{#if habits.hasHabits}
+					{#if habitsPresent}
 						<div class="stop-anchor" id="stop-rel-habits">
 							<CollapsibleSection
 								title={copy.habits.heading}
@@ -620,7 +621,7 @@
 								{#snippet headerActions()}
 									{@render metricInfo('habits', copy.habits.heading)}
 								{/snippet}
-								<SectionHabits matrix={habits.matrix} {locale} {copy} presentation="article-body" />
+								<SectionHabits matrix={habitsMatrix} {locale} {copy} presentation="article-body" />
 							</CollapsibleSection>
 						</div>
 					{/if}

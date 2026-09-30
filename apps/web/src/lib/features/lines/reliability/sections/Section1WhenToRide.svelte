@@ -47,7 +47,7 @@
 	import { priorDelta } from '../selectors/priorDelta';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
-	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
+	import { buildHabitsHeatmap } from '$lib/reliability/habitsHeatmap';
 	import { selectRelativeScorePeak } from '../selectors/relativeScorePeak';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
@@ -113,7 +113,7 @@
 	);
 
 	const heatmapSpec = $derived(
-		selectHabitsHeatmap(habits, locale, {
+		buildHabitsHeatmap(habits.matrix, locale, {
 			title: band.heatmapLabel,
 			valueLabel: band.cellValueLabel,
 			rowAxisLabel: band.dayAxisLabel,

@@ -64,18 +64,16 @@
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
-		presentGrains,
-		defaultHotspotGrain,
-		ladderByGrain,
+		ladderGrains,
 		HOTSPOT_GRAINS,
 		type HotspotGrainKey,
-	} from './data/presentGrains';
+	} from '$lib/reliability/ladderGrains';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from './data/ladderCap';
+	} from '$lib/reliability/ladderCap';
 	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
@@ -111,8 +109,9 @@
 	);
 	onDestroy(() => hotspots.destroy());
 	const generatedUtc = $derived(hotspots.data?.generated_utc ?? null);
-	const ladders = $derived(ladderByGrain(hotspots.data?.by_grain));
-	const present = $derived(presentGrains(hotspots.data?.by_grain));
+	const grains = $derived(ladderGrains(hotspots.data?.by_grain, HOTSPOT_GRAINS));
+	const ladders = $derived(grains.ladders);
+	const present = $derived(grains.present);
 	const availableDates = $derived(hotspots.availableDates);
 	const dateOptions = $derived(availableDates.map((date) => ({ date })));
 	const hasHistoryNavigator = $derived(availableDates.length > 0);
@@ -182,7 +181,7 @@
 	}
 
 	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultHotspotGrain(present);
+		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
 	});
 
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);

@@ -786,6 +786,45 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect.soft(store.index).toBe(firstIndex);
 	});
 
+	it.each(['alerts', 'network'] as const)(
+		'updates %s data and freshness without rebuilding unrelated lookup indexes',
+		async (family) => {
+			mocks[family]
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z' })
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z' });
+			const { store } = setup(30, [family]);
+			await store.refresh();
+			flushSync();
+			const firstPayload = store[family];
+			const firstIndex = store.index;
+
+			await store.refresh();
+			flushSync();
+			expect(store[family]).not.toBe(firstPayload);
+			expect(store.generatedUtc).toBe('2026-06-21T12:00:30Z');
+			expect(store.familyStates[family].retainedGeneration).toBe(store.generatedUtc);
+			expect(store.familyStates[family].successRevision).toBe(2);
+			expect(store.index).toBe(firstIndex);
+		},
+	);
+
+	it.each(['vehicles', 'trips', 'departures'] as const)(
+		'rebuilds lookup indexes when the %s generation advances',
+		async (family) => {
+			const port = family === 'departures' ? mocks.stopDepartures : mocks[family];
+			port
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z' })
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z' });
+			const { store } = setup(30, [family]);
+			await store.refresh();
+			flushSync();
+			const firstIndex = store.index;
+			await store.refresh();
+			flushSync();
+			expect(store.index).not.toBe(firstIndex);
+		},
+	);
+
 	it('updates only the family whose generation advances', async () => {
 		mocks.vehicles
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z', vehicles: [] })
