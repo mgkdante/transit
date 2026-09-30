@@ -594,7 +594,7 @@ def _memory_stats() -> dict[str, float]:
 def _load_average() -> tuple[float, float, float]:
     try:
         return tuple(round(value, 2) for value in os.getloadavg())
-    except OSError:
+    except (AttributeError, OSError):
         return (0.0, 0.0, 0.0)
 
 

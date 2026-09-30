@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -508,6 +509,53 @@ def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
 
     assert result.status == "degraded"
     assert "resource pressure" in result.message
+
+
+@pytest.mark.parametrize("missing_api", [True, False], ids=["missing-api", "os-error"])
+def test_runtime_vm_health_survives_unavailable_load_average(
+    monkeypatch: pytest.MonkeyPatch, missing_api: bool
+) -> None:
+    if missing_api:
+        monkeypatch.delattr(os, "getloadavg", raising=False)
+    else:
+        def unavailable_load_average() -> tuple[float, float, float]:
+            raise OSError("load average unavailable")
+
+        monkeypatch.setattr(os, "getloadavg", unavailable_load_average, raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status in {"ok", "degraded"}
+    assert result.details is not None
+    assert [result.details[key] for key in ("load_1m", "load_5m", "load_15m")] == [0.0, 0.0, 0.0]
+    assert result.details["disk_total_gb"] > 0
+
+
+def test_runtime_vm_health_preserves_available_load_average(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(os, "getloadavg", lambda: (1.234, 2.345, 3.456), raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status in {"ok", "degraded"}
+    assert result.details is not None
+    assert [result.details[key] for key in ("load_1m", "load_5m", "load_15m")] == [1.23, 2.35, 3.46]
+
+
+def test_runtime_vm_health_reports_unexpected_load_average_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_load_average() -> tuple[float, float, float]:
+        raise RuntimeError("metric collector failed")
+
+    monkeypatch.setattr(os, "getloadavg", broken_load_average, raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status == "down"
+    assert result.details is None
+    assert "metric collector failed" in result.message
 
 
 def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path) -> None:
