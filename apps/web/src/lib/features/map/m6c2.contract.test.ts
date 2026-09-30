@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { releaseCleanupReceipts } from './mapOwnerCleanup';
 
@@ -31,7 +31,7 @@ function productionTokenFingerprint(): string[] {
 			readFileSync(path, 'utf8')
 				.split('\n')
 				.filter((line) => /--(?:size-tap-min|strip-)/.test(line))
-				.map((line) => `${relative(root, path)}:${line.trim()}`),
+				.map((line) => `${relative(root, path).split(sep).join('/')}:${line.trim()}`),
 		)
 		.sort();
 }

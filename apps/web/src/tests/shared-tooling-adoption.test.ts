@@ -540,7 +540,8 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(b9Runner).toContain('verifyInstalledBrowserArtifact');
 		expect(b9Runner).not.toContain('chromium.executablePath()');
 		expect(b9Runner).not.toContain('/usr/bin/google-chrome');
-		expect(existsSync(join(ROOT, 'node_modules/.bin/wrangler'))).toBe(true);
+		const wranglerShim = process.platform === 'win32' ? 'wrangler.exe' : 'wrangler';
+		expect(existsSync(join(ROOT, 'node_modules/.bin', wranglerShim))).toBe(true);
 
 		for (const path of [
 			'apps/web/scripts/footer-parity-probe.mjs',

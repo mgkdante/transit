@@ -217,20 +217,19 @@ function v1Fetches(): string[] {
 const paths = (value: string): string[] => value.trim().split(/\s+/u).sort();
 
 function b9DisplayFiles(): Record<string, string[]> {
-	const sources = productionSources(SRC_ROOT);
+	const sourceLabel = (path: string): string => relative(SRC_ROOT, path).split(sep).join('/');
+	const sources = productionSources(SRC_ROOT).map(sourceLabel);
 	const relativePaths = (root: string, pattern: RegExp): string[] =>
 		productionSources(root)
-			.filter((path) => pattern.test(relative(SRC_ROOT, path)))
-			.map((path) => relative(SRC_ROOT, path))
+			.map(sourceLabel)
+			.filter((path) => pattern.test(path))
 			.sort();
 	return {
 		marks: relativePaths(MARKS_ROOT, /Mark\.svelte$/u),
 		presenters: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) => /reliability\/.+(?:Clusters|Presenter|Surface)\.svelte$/u.test(path))
 			.sort(),
 		surfaces: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) =>
 				/(?:features\/(?:lines|network|stops)\/reliability\/sections\/Section[^/]+|features\/lines\/(?:RouteDetail|LazyRouteReliabilityPane)|features\/stops\/StopDetail)\.svelte$/u.test(
 					path,
@@ -238,7 +237,6 @@ function b9DisplayFiles(): Record<string, string[]> {
 			)
 			.sort(),
 		selectors: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) =>
 				/features\/(?:lines|network|stops)\/reliability\/selectors\/[^/]+\.ts$/u.test(path),
 			)

@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 /** src/lib/features — the whole feature tree. */
@@ -76,8 +76,8 @@ function crossFeatureTarget(spec: string, filePath: string, ownFeature: string):
 	if (alias) return alias[1] !== ownFeature ? alias[1] : null;
 	// Relative form: resolve against the file, see if it lands in another feature dir.
 	if (spec.startsWith('.')) {
-		const resolved = join(filePath, '..', spec).replace(/\\/g, '/');
-		const rel = relative(FEATURES_DIR, resolved);
+		const resolved = join(filePath, '..', spec);
+		const rel = relative(FEATURES_DIR, resolved).split(sep).join('/');
 		if (rel.startsWith('..')) return null; // climbs out of features/ entirely (a shared kernel)
 		const target = featureOf(rel);
 		return target !== ownFeature ? target : null;

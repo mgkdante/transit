@@ -39,9 +39,17 @@
 //      Delete the cap or use one of the shared --measure-* tokens.
 
 import { describe, it, expect } from 'vitest';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { styleRegressionViolations, type ForbiddenPattern } from '@yesid/gates';
+
+// The immutable gate returns native paths; this app's inventories use slash labels.
+function scanStyleRegressions(config: Parameters<typeof styleRegressionViolations>[0]) {
+	return styleRegressionViolations(config).map((result) => ({
+		...result,
+		hits: result.hits.map((path) => path.split(sep).join('/')),
+	}));
+}
 
 const TOKEN_FALLBACK_PATTERN = /var\(--(duration|ease|radius|space|spacing|measure)[a-z0-9-]*,/;
 const BARE_PROSE_MEASURE_PATTERN =
@@ -182,12 +190,12 @@ describe('style regressions — prose-measure gate controls', () => {
 
 	it('does not mistake min-width declarations or @media max-width conditions for prose caps', () => {
 		const root = resolve(process.cwd(), 'src/lib/components/schedule');
-		const safeHits = styleRegressionViolations({
+		const safeHits = scanStyleRegressions({
 			root,
 			extensions: STYLE_SOURCE_EXTENSIONS,
 			forbidden: [BARE_PROSE_MEASURE],
 		})[0].hits;
-		const noCarveoutHits = styleRegressionViolations({
+		const noCarveoutHits = scanStyleRegressions({
 			root,
 			extensions: STYLE_SOURCE_EXTENSIONS,
 			forbidden: [
@@ -261,7 +269,7 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 		const root = resolve(process.cwd(), rel);
 
 		describe(rel, () => {
-			const results = styleRegressionViolations({
+			const results = scanStyleRegressions({
 				root,
 				extensions: STYLE_SOURCE_EXTENSIONS,
 				forbidden: FORBIDDEN,
@@ -296,7 +304,7 @@ describe('raw table inventory — WS5 shrinking gate', () => {
 	it('contains only DataTable, the dated migration debt, and the frozen marks prefix', () => {
 		const rawSites = FORBIDDEN_ROOTS.flatMap((rel) => {
 			const root = resolve(process.cwd(), rel);
-			return styleRegressionViolations({ root, forbidden: [RAW_TABLE] })[0].hits;
+			return scanStyleRegressions({ root, forbidden: [RAW_TABLE] })[0].hits;
 		}).sort();
 		const nonFrozen = rawSites.filter((site) => !site.startsWith(FROZEN_MARKS_PREFIX));
 

@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const APP_ROOT = join(process.cwd(), 'src');
@@ -29,7 +29,7 @@ describe('site-wide loading skeleton contract', () => {
 		const resourceSurfaces = svelteFiles(APP_ROOT)
 			.map((path) => ({
 				path,
-				relativePath: relative(APP_ROOT, path),
+				relativePath: relative(APP_ROOT, path).split(sep).join('/'),
 				source: readFileSync(path, 'utf8'),
 			}))
 			.filter(({ source }) => source.includes('createResource('));
@@ -48,7 +48,7 @@ describe('site-wide loading skeleton contract', () => {
 	it('keeps the progressive exclusion list exact and documented', () => {
 		const actualExclusions = svelteFiles(APP_ROOT)
 			.map((path) => ({
-				relativePath: relative(APP_ROOT, path),
+				relativePath: relative(APP_ROOT, path).split(sep).join('/'),
 				source: readFileSync(path, 'utf8'),
 			}))
 			.filter(
