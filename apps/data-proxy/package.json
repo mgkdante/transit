@@ -5,6 +5,6 @@
   "scripts": {
     "check": "node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs",
     "test": "node --test \"test/*.test.mjs\"",
-    "deploy": "../../node_modules/.bin/wrangler deploy"
+    "deploy": "node ../../node_modules/wrangler/bin/wrangler.js deploy"
   }
 }
