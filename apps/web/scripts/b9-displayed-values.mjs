@@ -1595,7 +1595,7 @@ async function startPreview(replayBase) {
 		JSON.stringify({
 			name: 'transit-b9-preview',
 			main: join(BUILD_ROOT, '_worker.js'),
-			assets: { directory: BUILD_ROOT },
+			assets: { directory: BUILD_ROOT, binding: 'ASSETS' },
 			compatibility_date: '2025-01-01',
 			compatibility_flags: ['nodejs_compat'],
 			vars: { PUBLIC_V1_BASE: replayBase, PUBLIC_V1_PROVIDER: 'stm' },
@@ -1849,6 +1849,11 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 								button.getAttribute('aria-expanded') === 'true',
 							control,
 							{ timeout: 5_000 },
+						);
+					} catch (error) {
+						throw new Error(
+							`${cell.fixture}/${cell.locale}/${cell.surface} detail did not open\nbrowser errors ${JSON.stringify(errors)}\nreplay ledger ${JSON.stringify(replay.state.ledger)}`,
+							{ cause: error },
 						);
 					} finally {
 						await control.dispose();
