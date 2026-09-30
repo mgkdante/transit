@@ -41,9 +41,10 @@ export async function downloadBrowserArchive({
 	fetchArchive = fetch,
 	timeoutMs = 180_000,
 }) {
-	if (new URL(url).protocol !== 'https:') throw new Error('browser artifact URL must use HTTPS');
+	const sourceUrl = new URL(url);
+	if (sourceUrl.protocol !== 'https:') throw new Error('browser artifact URL must use HTTPS');
 	const signal = AbortSignal.timeout(timeoutMs);
-	const response = await fetchArchive(url, { redirect: 'error', signal });
+	const response = await fetchArchive(sourceUrl.href, { redirect: 'error', signal });
 	if (response.status !== 200 || !response.body) {
 		await response.body?.cancel();
 		throw new Error(`browser archive download failed: HTTP ${response.status}`);
