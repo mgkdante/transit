@@ -11,6 +11,7 @@ import {
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
@@ -25,10 +26,10 @@ import {
 } from './b9-display-oracle.mjs';
 
 const args = new Set(process.argv.slice(2));
-const WEB_ROOT = new URL('..', import.meta.url).pathname;
-const OUTPUT = new URL('../.svelte-kit/output/server/index.js', import.meta.url).pathname;
+const WEB_ROOT = fileURLToPath(new URL('..', import.meta.url));
+const OUTPUT = fileURLToPath(new URL('../.svelte-kit/output/server/index.js', import.meta.url));
 const BUILD_ROOT = join(WEB_ROOT, '.svelte-kit/cloudflare');
-const WRANGLER = join(WEB_ROOT, '../../node_modules/.bin/wrangler');
+const WRANGLER = join(WEB_ROOT, '../../node_modules/wrangler/bin/wrangler.js');
 const EXPECTED_WRANGLER = JSON.parse(readFileSync(join(WEB_ROOT, '../../package.json'), 'utf8'))
 	.devDependencies?.wrangler;
 const REPLAY_PREFIX = '/v1/stm/';
@@ -1599,7 +1600,7 @@ async function startPreview(replayBase) {
 	const stateDir = mkdtempSync(join(tmpdir(), 'transit-b9-miniflare-'));
 	const configPath = join(stateDir, 'wrangler.toml');
 	writeFileSync(configPath, 'name = "transit-b9-preview"\n');
-	const version = await runChild(WRANGLER, ['--version'], {
+	const version = await runChild('node', [WRANGLER, '--version'], {
 		cwd: WEB_ROOT,
 		label: 'wrangler version',
 	});
@@ -1608,8 +1609,9 @@ async function startPreview(replayBase) {
 		`unexpected wrangler version ${version.trim()}`,
 	);
 	const child = spawn(
-		WRANGLER,
+		'node',
 		[
+			WRANGLER,
 			'dev',
 			join(WEB_ROOT, '.svelte-kit/cloudflare/_worker.js'),
 			'--config',

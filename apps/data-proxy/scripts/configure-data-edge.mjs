@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 
 const API_ORIGIN = "https://api.cloudflare.com/client/v4";
@@ -86,6 +87,25 @@ export async function configureDataEdge({
     allow404: true,
   });
 
+  const settingPaths = [
+    `${zonePath}/argo/tiered_caching`,
+    `${zonePath}/cache/tiered_cache_smart_topology_enable`,
+  ];
+  const settings = [];
+  for (const path of settingPaths) {
+    const setting = await cloudflareRequest({
+      apiToken: token,
+      fetch: fetchImpl,
+      path,
+    });
+    if (setting?.value !== "on" && setting?.value !== "off") {
+      throw new Error(
+        `Cloudflare API GET ${path} returned an invalid cache setting`,
+      );
+    }
+    settings.push(setting);
+  }
+
   let rulesetId;
   let ruleAction;
   if (entrypoint === null) {
@@ -105,21 +125,46 @@ export async function configureDataEdge({
     rulesetId = created.id;
     ruleAction = "ruleset-created";
   } else {
+    if (!entrypoint.id || !Array.isArray(entrypoint.rules)) {
+      throw new Error("Cloudflare cache-settings entrypoint is malformed");
+    }
     rulesetId = entrypoint.id;
-    const ownedRule = (entrypoint.rules ?? []).find(
+    const ownedRules = entrypoint.rules.filter(
       (rule) =>
         rule.ref === CACHE_RULE_REF ||
         rule.description === CACHE_RULE.description,
     );
+    if (
+      ownedRules.length > 1 ||
+      (ownedRules.length === 1 && !ownedRules[0].id)
+    ) {
+      throw new Error(
+        "Cloudflare cache rule ownership is ambiguous or malformed",
+      );
+    }
+    const ownedRule = ownedRules[0];
     if (ownedRule) {
-      await cloudflareRequest({
-        apiToken: token,
-        fetch: fetchImpl,
-        method: "PATCH",
-        path: `${zonePath}/rulesets/${rulesetId}/rules/${ownedRule.id}`,
-        body: CACHE_RULE,
-      });
-      ruleAction = "updated";
+      const unchanged = [
+        "expression",
+        "action",
+        "action_parameters",
+        "enabled",
+      ].every((field) =>
+        isDeepStrictEqual(
+          field === "enabled" ? (ownedRule.enabled ?? true) : ownedRule[field],
+          CACHE_RULE[field],
+        ),
+      );
+      ruleAction = unchanged ? "unchanged" : "updated";
+      if (!unchanged) {
+        await cloudflareRequest({
+          apiToken: token,
+          fetch: fetchImpl,
+          method: "PATCH",
+          path: `${zonePath}/rulesets/${rulesetId}/rules/${ownedRule.id}`,
+          body: CACHE_RULE,
+        });
+      }
     } else {
       await cloudflareRequest({
         apiToken: token,
@@ -132,34 +177,33 @@ export async function configureDataEdge({
     }
   }
 
-  await cloudflareRequest({
-    apiToken: token,
-    fetch: fetchImpl,
-    method: "PATCH",
-    path: `${zonePath}/argo/tiered_caching`,
-    body: { value: "on" },
-  });
-  await cloudflareRequest({
-    apiToken: token,
-    fetch: fetchImpl,
-    method: "PATCH",
-    path: `${zonePath}/cache/tiered_cache_smart_topology_enable`,
-    body: { value: "on" },
-  });
-  await cloudflareRequest({
-    apiToken: token,
-    fetch: fetchImpl,
-    method: "POST",
-    path: `${zonePath}/purge_cache`,
-    body: { prefixes: [PURGE_PREFIX] },
-  });
+  for (const [index, setting] of settings.entries()) {
+    if (setting.value === "off") {
+      await cloudflareRequest({
+        apiToken: token,
+        fetch: fetchImpl,
+        method: "PATCH",
+        path: settingPaths[index],
+        body: { value: "on" },
+      });
+    }
+  }
+  if (ruleAction !== "unchanged") {
+    await cloudflareRequest({
+      apiToken: token,
+      fetch: fetchImpl,
+      method: "POST",
+      path: `${zonePath}/purge_cache`,
+      body: { prefixes: [PURGE_PREFIX] },
+    });
+  }
 
   return {
     rulesetId,
     ruleAction,
     tieredCache: "on",
     smartTieredCache: "on",
-    purgedPrefix: PURGE_PREFIX,
+    purgedPrefix: ruleAction === "unchanged" ? null : PURGE_PREFIX,
   };
 }
 

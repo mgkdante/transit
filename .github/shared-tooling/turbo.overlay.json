@@ -2,7 +2,14 @@
 	"tasks": {
 		"build": {
 			"outputs": [".svelte-kit/**", "dist/**", ".wrangler/**"],
-			"env": ["PUBLIC_V1_BASE", "PUBLIC_V1_PROVIDER"]
+			"env": ["PUBLIC_V1_BASE", "PUBLIC_V1_PROVIDER"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/data-proxy/src/snapshot-response.js",
+				"$TURBO_ROOT$/apps/data-proxy/src/snapshot-response.d.ts",
+				"!**/.env.local",
+				"!**/.env.*.local"
+			]
 		},
 		"lint": {
 			"outputs": []

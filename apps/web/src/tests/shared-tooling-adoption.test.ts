@@ -283,7 +283,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(materialize).toBeGreaterThan(setup);
 		expect(drift).toBeGreaterThan(materialize);
 		expect(proxyPackage.scripts.check).toBe(
-			'node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs',
+			'node --check src/cors.js && node --check src/kpis.js && node --check src/snapshot-response.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs',
 		);
 		const proxyCheck = work.indexOf('bun run --cwd apps/data-proxy check');
 		const proxyTest = work.indexOf('bun run --cwd apps/data-proxy test');
@@ -533,7 +533,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(work).toContain('TRANSIT_BROWSER_ROOT');
 
 		const b9Runner = text('apps/web/scripts/b9-displayed-values.mjs');
-		expect(b9Runner).toContain("join(WEB_ROOT, '../../node_modules/.bin/wrangler')");
+		expect(b9Runner).toContain("join(WEB_ROOT, '../../node_modules/wrangler/bin/wrangler.js')");
 		expect(b9Runner).not.toContain('../data-proxy/node_modules/.bin/wrangler');
 		expect(b9Runner).not.toContain('4\\.115\\.0');
 		expect(b9Runner).toContain('devDependencies?.wrangler');
