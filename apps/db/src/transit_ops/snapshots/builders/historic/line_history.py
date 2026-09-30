@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
@@ -23,13 +24,15 @@ from transit_ops.snapshots.builders.historic.history_common import (
     encode_history_entity_id,
     group_history_entity_date_rows,
     history_coverage,
+    history_delay_metric,
     history_entity_directory_generation_id,
+    history_entity_occupancy_metrics,
+    history_entity_percentile_metrics,
     history_index_generation_id,
     history_metric_coverage,
     history_named_query_sha256,
     history_optional_sum,
     history_phase,
-    history_row_float,
     history_row_int,
     history_utc_timestamp,
     latest_history_timestamp,
@@ -42,10 +45,8 @@ from transit_ops.snapshots.contract import (
     HistoricCancellationMetric,
     HistoricCollectionIndex,
     HistoricDelayMetric,
-    HistoricDelayPercentiles,
     HistoricEntityDirectoryIndex,
     HistoricEntityIndexRef,
-    HistoricOccupancyMetric,
     HistoricPartitionRef,
     HistoricServiceSpanMetric,
     HistoricSkippedStopMetric,
@@ -416,31 +417,10 @@ def _delay_metrics(
     metrics: dict[str, dict[str, HistoricDelayMetric]] = {}
     timestamps: dict[str, dict[str, list[str]]] = {}
     for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
-        observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
-        if observation_count <= 0:
+        metric = history_delay_metric(grouped)
+        if metric is None:
             continue
-        in_clamp = sum(history_row_int(row, "in_clamp_observation_count") or 0 for row in grouped)
-        on_time = history_optional_sum(
-            history_row_int(row, "on_time_count", optional=True) for row in grouped
-        )
-        severe = history_optional_sum(
-            history_row_int(row, "severe_count", optional=True) for row in grouped
-        )
-        delay_sum = sum(
-            history_row_int(row, "sum_delay_seconds", minimum=None) or 0 for row in grouped
-        )
-        put_history_entity_metric(
-            metrics,
-            entity_id,
-            local_date,
-            HistoricDelayMetric(
-                observation_count=observation_count,
-                in_clamp_observation_count=in_clamp if in_clamp > 0 else None,
-                on_time_count=on_time,
-                severe_count=severe,
-                sum_delay_seconds=delay_sum if in_clamp > 0 else None,
-            ),
-        )
+        put_history_entity_metric(metrics, entity_id, local_date, metric)
         put_history_entity_timestamps(
             timestamps,
             entity_id,
@@ -450,33 +430,9 @@ def _delay_metrics(
     return metrics, timestamps
 
 
-def _percentile_metrics(
-    rows: Iterable[Mapping[str, Any]],
-) -> tuple[
-    dict[str, dict[str, HistoricDelayPercentiles]],
-    dict[str, dict[str, list[str]]],
-]:
-    metrics: dict[str, dict[str, HistoricDelayPercentiles]] = {}
-    timestamps: dict[str, dict[str, list[str]]] = {}
-    for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
-        if len(grouped) != 1:
-            raise ValueError(f"duplicate Line percentile day {entity_id}/{local_date}")
-        row = grouped[0]
-        observation_count = history_row_int(row, "observation_count") or 0
-        if observation_count <= 0:
-            raise ValueError("Line percentile observation_count must be positive")
-        put_history_entity_metric(
-            metrics,
-            entity_id,
-            local_date,
-            HistoricDelayPercentiles(
-                observation_count=observation_count,
-                p50_delay_seconds=history_row_float(row, "p50_delay_seconds"),
-                p90_delay_seconds=history_row_float(row, "p90_delay_seconds"),
-            ),
-        )
-        put_history_entity_timestamps(timestamps, entity_id, local_date, grouped)
-    return metrics, timestamps
+_percentile_metrics = partial(
+    history_entity_percentile_metrics, entity_id_of=_entity_id, label="Line"
+)
 
 
 def _cancellation_metrics(
@@ -528,30 +484,9 @@ def _cancellation_metrics(
     return metrics, timestamps
 
 
-def _occupancy_metrics(
-    rows: Iterable[Mapping[str, Any]],
-) -> tuple[
-    dict[str, dict[str, HistoricOccupancyMetric]],
-    dict[str, dict[str, list[str]]],
-]:
-    metrics: dict[str, dict[str, HistoricOccupancyMetric]] = {}
-    timestamps: dict[str, dict[str, list[str]]] = {}
-    bands = ("empty", "many_seats", "few_seats", "standing", "full")
-    for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
-        observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
-        counts = {band: sum(history_row_int(row, band) or 0 for row in grouped) for band in bands}
-        if observation_count != sum(counts.values()):
-            raise ValueError("Line occupancy observation_count must equal the sum of bands")
-        if observation_count <= 0:
-            continue
-        put_history_entity_metric(metrics, entity_id, local_date, HistoricOccupancyMetric(**counts))
-        put_history_entity_timestamps(
-            timestamps,
-            entity_id,
-            local_date,
-            (row for row in grouped if (history_row_int(row, "observation_count") or 0) > 0),
-        )
-    return metrics, timestamps
+_occupancy_metrics = partial(
+    history_entity_occupancy_metrics, entity_id_of=_entity_id, label="Line"
+)
 
 
 def _optional_utc(row: Mapping[str, Any], field_name: str) -> str | None:

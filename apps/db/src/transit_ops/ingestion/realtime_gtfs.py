@@ -289,7 +289,7 @@ def _capture_realtime_feed(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     bronze_storage_resolver: BronzeStorageResolver,
-) -> RealtimeIngestionResult:
+) -> tuple[RealtimeIngestionResult, bytes]:
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -321,8 +321,9 @@ def _capture_realtime_feed(
     persisted = False
     try:
         artifact = _download_to_tempfile(config, bronze_root / ".tmp")
+        payload = artifact.temp_path.read_bytes()
         metadata = extract_realtime_metadata(
-            artifact.temp_path.read_bytes(),
+            payload,
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
         )
@@ -370,7 +371,7 @@ def _capture_realtime_feed(
                 feed_timestamp_utc=feed_timestamp_utc,
             )
 
-        return RealtimeIngestionResult(
+        result = RealtimeIngestionResult(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             feed_kind=config.feed_kind,
@@ -390,6 +391,7 @@ def _capture_realtime_feed(
             started_at_utc=started_at_utc,
             completed_at_utc=completed_at_utc,
         )
+        return result, payload
     except Exception as exc:
         finish_failed_capture(
             engine=engine,
@@ -411,7 +413,7 @@ def capture_realtime_feed(
     engine: Engine | None = None,
 ) -> RealtimeIngestionResult:
     settings = settings or get_settings()
-    return _capture_realtime_feed(
+    result, _payload = _capture_realtime_feed(
         provider_id,
         endpoint_key,
         settings=settings,
@@ -423,3 +425,4 @@ def capture_realtime_feed(
             storage_backend=storage_backend,
         ),
     )
+    return result

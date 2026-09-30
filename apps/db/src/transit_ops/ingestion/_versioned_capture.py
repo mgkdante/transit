@@ -6,7 +6,7 @@ Static dataset promotion belongs to the transactional Silver load.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -113,13 +113,7 @@ class VersionedCaptureSpec:
 
 
 @dataclass(frozen=True)
-class _VersionedCaptureOutcome:
-    """Flat carrier with every field both result dataclasses need.
-
-    The adapters copy this into their own ``StaticIngestionResult`` /
-    ``GisIngestionResult`` so the two public types stay distinct.
-    """
-
+class VersionedCaptureResult:
     provider_id: str
     endpoint_key: str
     source_url: str
@@ -134,26 +128,42 @@ class _VersionedCaptureOutcome:
     status: str
     started_at_utc: datetime
     completed_at_utc: datetime
-    content_changed: bool
-    dataset_version_id: int | None
-    first_seen_at_utc: datetime | None
-    last_seen_at_utc: datetime | None
-    observed_from_utc: datetime | None
-    observed_until_utc: datetime | None
-    skipped_reason: str | None
+    content_changed: bool = True
+    dataset_version_id: int | None = None
+    first_seen_at_utc: datetime | None = None
+    last_seen_at_utc: datetime | None = None
+    observed_from_utc: datetime | None = None
+    observed_until_utc: datetime | None = None
+    skipped_reason: str | None = None
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["started_at_utc"] = self.started_at_utc.isoformat()
+        payload["completed_at_utc"] = self.completed_at_utc.isoformat()
+        for key in (
+            "first_seen_at_utc",
+            "last_seen_at_utc",
+            "observed_from_utc",
+            "observed_until_utc",
+        ):
+            value = payload[key]
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+        return payload
 
 
-def _run_versioned_capture(
+def _run_versioned_capture[ResultT: VersionedCaptureResult](
     provider_id: str,
     *,
     spec: VersionedCaptureSpec,
+    result_type: type[ResultT],
     manifest: object,
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
     bronze_root: Path,
     bronze_storage: BronzeStorage,
-) -> _VersionedCaptureOutcome:
+) -> ResultT:
     """Record the run, download the archive, then atomically register its capture."""
 
     config = spec.build_config(manifest, settings)
@@ -219,7 +229,7 @@ def _run_versioned_capture(
                     http_status_code=artifact.http_status_code,
                 )
                 artifact.temp_path.unlink(missing_ok=True)
-                return _VersionedCaptureOutcome(
+                return result_type(
                     provider_id=config.provider_id,
                     endpoint_key=config.endpoint_key,
                     source_url=config.source_url,
@@ -270,7 +280,7 @@ def _run_versioned_capture(
                 http_status_code=artifact.http_status_code,
             )
 
-        return _VersionedCaptureOutcome(
+        return result_type(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             source_url=config.source_url,

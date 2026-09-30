@@ -360,7 +360,7 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
         resolved_backends.append(storage_backend)
         return fake_storage
 
-    result = realtime_gtfs._capture_realtime_feed(
+    result, captured_payload = realtime_gtfs._capture_realtime_feed(
         "stm",
         "vehicle_positions",
         settings=settings,
@@ -369,6 +369,7 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
         bronze_storage_resolver=resolve_storage,
     )
 
+    assert captured_payload == payload
     assert resolved_backends == ["s3"]
     assert result.storage_backend == "s3"
     assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"

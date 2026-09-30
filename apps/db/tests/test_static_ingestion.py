@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from versioned_capture_fixtures import FakeEngine, FakeResult, RecordingConnection, prepare_capture
 
 import transit_ops.ingestion.static_gtfs as static_gtfs
 from transit_ops.ingestion.common import (
-    DownloadedArtifact,
     insert_ingestion_object,
     insert_ingestion_run,
     mark_ingestion_run_succeeded,
@@ -21,110 +21,6 @@ from transit_ops.ingestion.static_gtfs import (
 )
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings
-
-
-class FakeResult:
-    def __init__(
-        self,
-        scalar_value: int | None = None,
-        mapping_value: dict[str, object] | None = None,
-    ) -> None:
-        self.scalar_value = scalar_value
-        self.mapping_value = mapping_value
-
-    def scalar_one(self) -> int:
-        if self.scalar_value is None:
-            raise AssertionError("Expected a scalar value.")
-        return self.scalar_value
-
-    def scalar_one_or_none(self) -> int | None:
-        return self.scalar_value
-
-    def mappings(self) -> FakeResult:
-        return self
-
-    def one_or_none(self) -> dict[str, object] | None:
-        return self.mapping_value
-
-
-class RecordingConnection:
-    def __init__(
-        self,
-        *,
-        current_dataset_checksum: str | None = None,
-        current_dataset_version_id: int | None = None,
-        inserted_dataset_version_id: int = 303,
-        dataset_window: dict[str, datetime] | None = None,
-    ) -> None:
-        self.calls: list[tuple[str, dict[str, object]]] = []
-        self.current_dataset_checksum = current_dataset_checksum
-        self.current_dataset_version_id = current_dataset_version_id
-        self.inserted_dataset_version_id = inserted_dataset_version_id
-        self.dataset_window = dataset_window
-
-    def execute(self, statement, params: dict[str, object]) -> FakeResult:  # noqa: ANN001
-        sql_text = str(statement)
-        self.calls.append((sql_text, params))
-        if "SELECT feed_endpoint_id" in sql_text:
-            return FakeResult(11)
-        if "SELECT" in sql_text and "first_seen_at_utc" in sql_text:
-            return FakeResult(mapping_value=self.dataset_window)
-        if "SELECT" in sql_text and "core.dataset_versions" in sql_text:
-            if (
-                self.current_dataset_checksum is None
-                or self.current_dataset_version_id is None
-            ):
-                return FakeResult(mapping_value=None)
-            return FakeResult(
-                mapping_value={
-                    "dataset_version_id": self.current_dataset_version_id,
-                    "checksum_sha256": self.current_dataset_checksum,
-                }
-            )
-        if "RETURNING ingestion_run_id" in sql_text:
-            return FakeResult(101)
-        if "RETURNING dataset_version_id" in sql_text:
-            return FakeResult(self.inserted_dataset_version_id)
-        if "RETURNING ingestion_object_id" in sql_text:
-            return FakeResult(202)
-        return FakeResult(None)
-
-
-class _ContextManager:
-    def __init__(self, connection: RecordingConnection) -> None:
-        self.connection = connection
-
-    def __enter__(self) -> RecordingConnection:
-        return self.connection
-
-    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
-        return False
-
-
-class FakeEngine:
-    def __init__(self, connection: RecordingConnection) -> None:
-        self.connection = connection
-
-    def begin(self) -> _ContextManager:
-        return _ContextManager(self.connection)
-
-
-class FakeBronzeStorage:
-    def __init__(self, prefix: str) -> None:
-        self.prefix = prefix.rstrip("/")
-        self.persisted: list[tuple[Path, str]] = []
-        self.deleted: list[str] = []
-        self.delete_should_raise = False
-
-    def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
-        self.persisted.append((temp_path, storage_path))
-        temp_path.unlink(missing_ok=True)
-        return f"{self.prefix}/{storage_path}"
-
-    def delete_object(self, storage_path: str) -> None:
-        self.deleted.append(storage_path)
-        if self.delete_should_raise:
-            raise RuntimeError("simulated R2 delete failure")
 
 
 def test_build_static_object_storage_path() -> None:
@@ -257,40 +153,16 @@ def test_ingest_static_feed_uses_storage_abstraction_for_s3(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    temp_path = tmp_path / "download.zip"
-    payload = b"gtfs-static-zip"
-    temp_path.write_bytes(payload)
-    artifact = DownloadedArtifact(
-        temp_path=temp_path,
-        byte_size=len(payload),
-        checksum_sha256=compute_sha256_hex(temp_path),
-        http_status_code=200,
-        source_url="https://override.example.com/stm.zip",
-    )
-    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
-    connection = RecordingConnection()
-    settings = Settings(
-        _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
-        BRONZE_STORAGE_BACKEND="s3",
-        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
-        BRONZE_S3_BUCKET="bronze-bucket",
-        BRONZE_S3_ACCESS_KEY="access",
-        BRONZE_S3_SECRET_KEY="secret",
-        BRONZE_S3_REGION="auto",
-    )
-    registry = ProviderRegistry.from_project_root(
-        project_root=Path(__file__).resolve().parents[1],
-        settings=settings,
-    )
-
-    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
-    monkeypatch.setattr(
+    artifact, fake_storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
         static_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
+        filename="download.zip",
+        payload=b"gtfs-static-zip",
+        source_url="https://override.example.com/stm.zip",
+        url_setting="STM_STATIC_GTFS_URL",
     )
+    connection = RecordingConnection()
 
     result = ingest_static_feed(
         "stm",
@@ -304,8 +176,7 @@ def test_ingest_static_feed_uses_storage_abstraction_for_s3(
     assert result.storage_path.startswith("stm/static_schedule/ingested_at_utc=")
     assert fake_storage.persisted[0][1] == result.storage_path
     object_params = next(
-        params for sql, params in connection.calls
-        if "INSERT INTO raw.ingestion_objects" in sql
+        params for sql, params in connection.calls if "INSERT INTO raw.ingestion_objects" in sql
     )
     assert object_params["storage_backend"] == "s3"
     assert object_params["storage_path"] == result.storage_path
@@ -315,18 +186,17 @@ def test_ingest_static_feed_skips_unchanged_zip_without_bronze_or_raw_object(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    temp_path = tmp_path / "download.zip"
-    payload = b"same-static-zip"
-    temp_path.write_bytes(payload)
-    checksum = compute_sha256_hex(temp_path)
-    artifact = DownloadedArtifact(
-        temp_path=temp_path,
-        byte_size=len(payload),
-        checksum_sha256=checksum,
-        http_status_code=200,
+    artifact, fake_storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="download.zip",
+        payload=b"same-static-zip",
         source_url="https://override.example.com/stm.zip",
+        url_setting="STM_STATIC_GTFS_URL",
     )
-    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    temp_path = artifact.temp_path
+    checksum = artifact.checksum_sha256
     dataset_window = {
         "first_seen_at_utc": datetime(2026, 5, 24, 10, 0, 0, tzinfo=UTC),
         "last_seen_at_utc": datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC),
@@ -337,28 +207,6 @@ def test_ingest_static_feed_skips_unchanged_zip_without_bronze_or_raw_object(
         current_dataset_checksum=checksum,
         current_dataset_version_id=77,
         dataset_window=dataset_window,
-    )
-    settings = Settings(
-        _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
-        BRONZE_STORAGE_BACKEND="s3",
-        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
-        BRONZE_S3_BUCKET="bronze-bucket",
-        BRONZE_S3_ACCESS_KEY="access",
-        BRONZE_S3_SECRET_KEY="secret",
-        BRONZE_S3_REGION="auto",
-    )
-    registry = ProviderRegistry.from_project_root(
-        project_root=Path(__file__).resolve().parents[1],
-        settings=settings,
-    )
-
-    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
-    monkeypatch.setattr(
-        static_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
     )
 
     result = ingest_static_feed(
@@ -391,44 +239,19 @@ def test_ingest_static_feed_persists_changed_zip_without_promoting_dataset(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    temp_path = tmp_path / "download.zip"
-    payload = b"changed-static-zip"
-    temp_path.write_bytes(payload)
-    checksum = compute_sha256_hex(temp_path)
-    artifact = DownloadedArtifact(
-        temp_path=temp_path,
-        byte_size=len(payload),
-        checksum_sha256=checksum,
-        http_status_code=200,
+    artifact, fake_storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="download.zip",
+        payload=b"changed-static-zip",
         source_url="https://override.example.com/stm.zip",
+        url_setting="STM_STATIC_GTFS_URL",
     )
-    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
     connection = RecordingConnection(
         current_dataset_checksum="0" * 64,
         current_dataset_version_id=76,
         inserted_dataset_version_id=88,
-    )
-    settings = Settings(
-        _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
-        BRONZE_STORAGE_BACKEND="s3",
-        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
-        BRONZE_S3_BUCKET="bronze-bucket",
-        BRONZE_S3_ACCESS_KEY="access",
-        BRONZE_S3_SECRET_KEY="secret",
-        BRONZE_S3_REGION="auto",
-    )
-    registry = ProviderRegistry.from_project_root(
-        project_root=Path(__file__).resolve().parents[1],
-        settings=settings,
-    )
-
-    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
-    monkeypatch.setattr(
-        static_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
     )
 
     result = ingest_static_feed(
@@ -472,18 +295,15 @@ def test_ingest_static_feed_deletes_orphan_object_when_metadata_write_fails(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    temp_path = tmp_path / "download.zip"
-    payload = b"changed-static-zip"
-    temp_path.write_bytes(payload)
-    checksum = compute_sha256_hex(temp_path)
-    artifact = DownloadedArtifact(
-        temp_path=temp_path,
-        byte_size=len(payload),
-        checksum_sha256=checksum,
-        http_status_code=200,
+    artifact, fake_storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="download.zip",
+        payload=b"changed-static-zip",
         source_url="https://override.example.com/stm.zip",
+        url_setting="STM_STATIC_GTFS_URL",
     )
-    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
     boom = RuntimeError("metadata transaction blew up")
     # The first write after the upload is the ingestion_objects insert.
     connection = _MetadataFailingConnection(
@@ -492,28 +312,6 @@ def test_ingest_static_feed_deletes_orphan_object_when_metadata_write_fails(
         current_dataset_checksum="0" * 64,
         current_dataset_version_id=76,
         inserted_dataset_version_id=88,
-    )
-    settings = Settings(
-        _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
-        BRONZE_STORAGE_BACKEND="s3",
-        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
-        BRONZE_S3_BUCKET="bronze-bucket",
-        BRONZE_S3_ACCESS_KEY="access",
-        BRONZE_S3_SECRET_KEY="secret",
-        BRONZE_S3_REGION="auto",
-    )
-    registry = ProviderRegistry.from_project_root(
-        project_root=Path(__file__).resolve().parents[1],
-        settings=settings,
-    )
-
-    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
-    monkeypatch.setattr(
-        static_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
     )
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -534,18 +332,15 @@ def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    temp_path = tmp_path / "download.zip"
-    payload = b"changed-static-zip"
-    temp_path.write_bytes(payload)
-    checksum = compute_sha256_hex(temp_path)
-    artifact = DownloadedArtifact(
-        temp_path=temp_path,
-        byte_size=len(payload),
-        checksum_sha256=checksum,
-        http_status_code=200,
+    artifact, fake_storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="download.zip",
+        payload=b"changed-static-zip",
         source_url="https://override.example.com/stm.zip",
+        url_setting="STM_STATIC_GTFS_URL",
     )
-    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
     fake_storage.delete_should_raise = True
     boom = RuntimeError("metadata transaction blew up")
     connection = _MetadataFailingConnection(
@@ -554,28 +349,6 @@ def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
         current_dataset_checksum="0" * 64,
         current_dataset_version_id=76,
         inserted_dataset_version_id=88,
-    )
-    settings = Settings(
-        _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/transit",
-        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
-        BRONZE_STORAGE_BACKEND="s3",
-        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
-        BRONZE_S3_BUCKET="bronze-bucket",
-        BRONZE_S3_ACCESS_KEY="access",
-        BRONZE_S3_SECRET_KEY="secret",
-        BRONZE_S3_REGION="auto",
-    )
-    registry = ProviderRegistry.from_project_root(
-        project_root=Path(__file__).resolve().parents[1],
-        settings=settings,
-    )
-
-    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
-    monkeypatch.setattr(
-        static_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
     )
 
     with pytest.raises(RuntimeError) as exc_info:

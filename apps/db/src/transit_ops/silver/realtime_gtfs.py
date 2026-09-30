@@ -791,14 +791,17 @@ def _read_bronze_realtime_message(
     *,
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
+    captured_payload: bytes | None = None,
 ) -> gtfs_realtime_pb2.FeedMessage:
-    try:
-        payload = bronze_storage.read_bytes(snapshot.storage_path)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(
-            "Bronze realtime archive file not found: "
-            f"{bronze_storage.describe_location(snapshot.storage_path)}"
-        ) from exc
+    payload = captured_payload
+    if payload is None:
+        try:
+            payload = bronze_storage.read_bytes(snapshot.storage_path)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                "Bronze realtime archive file not found: "
+                f"{bronze_storage.describe_location(snapshot.storage_path)}"
+            ) from exc
     if snapshot.byte_size is not None and len(payload) != snapshot.byte_size:
         raise ValueError(
             f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} byte size mismatch"
@@ -1149,7 +1152,10 @@ def _load_realtime_to_silver(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     bronze_storage_resolver: BronzeStorageResolver,
+    captured_payload: bytes | None = None,
 ) -> RealtimeSilverLoadResult:
+    if captured_payload is not None and snapshot_id is None:
+        raise ValueError("Captured payload requires an explicit snapshot ID")
     if snapshot_id is not None and (type(snapshot_id) is not int or snapshot_id <= 0):
         raise ValueError("Snapshot ID must be a positive integer")
     registry = registry or ProviderRegistry.from_project_root(
@@ -1170,16 +1176,18 @@ def _load_realtime_to_silver(
             snapshot_id=snapshot_id,
         )
     with engine.begin() as connection:
-        batch = load_realtime_snapshots_to_silver(
-            connection,
-            provider_id=manifest.provider.provider_id,
-            snapshots=[snapshot],
-            bronze_storage_resolver=bronze_storage_resolver,
-            skip_existing=True,
-            provider_bounds=provider_bounds,
+        message = _read_bronze_realtime_message(
+            snapshot=snapshot,
+            bronze_storage=bronze_storage_resolver(snapshot.storage_backend),
+            captured_payload=captured_payload,
         )
-        return _realtime_load_result(
-            snapshot, batch.verified_row_counts[snapshot.realtime_snapshot_id]
+        _lock_realtime_snapshot(connection, snapshot)
+        verified_counts = _prepare_existing_load(connection, snapshot=snapshot, message=message)
+        if verified_counts is not None:
+            return _realtime_load_result(snapshot, verified_counts)
+        _ensure_snapshot_not_loaded(connection, snapshot=snapshot)
+        return _load_realtime_message_to_silver(
+            connection, snapshot=snapshot, message=message, provider_bounds=provider_bounds,
         )
 
 

@@ -638,6 +638,7 @@ def _capture_and_load_endpoint(
     engine: Engine,
     bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
+    captured_payload: bytes | None = None
     if bronze_storage_resolver is None:
         capture_step = partial(
             capture_realtime_feed,
@@ -656,15 +657,17 @@ def _capture_and_load_endpoint(
             engine=engine,
         )
     else:
-        capture_step = partial(
-            _capture_realtime_feed,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            bronze_storage_resolver=bronze_storage_resolver,
-        )
+        def capture_step() -> RealtimeIngestionResult:
+            nonlocal captured_payload
+            result, captured_payload = _capture_realtime_feed(
+                provider_id,
+                endpoint_key,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                bronze_storage_resolver=bronze_storage_resolver,
+            )
+            return result
         silver_load_step = partial(
             _load_realtime_to_silver,
             provider_id,
@@ -678,7 +681,12 @@ def _capture_and_load_endpoint(
     def load_capture(captured: RealtimeIngestionResult) -> RealtimeSilverLoadResult:
         if captured.provider_id != provider_id or captured.endpoint_key != endpoint_key:
             raise ValueError("Realtime capture receipt does not match the requested source")
-        loaded = silver_load_step(snapshot_id=captured.realtime_snapshot_id)
+        if bronze_storage_resolver is None:
+            loaded = silver_load_step(snapshot_id=captured.realtime_snapshot_id)
+        else:
+            loaded = silver_load_step(
+                snapshot_id=captured.realtime_snapshot_id, captured_payload=captured_payload,
+            )
         if (
             loaded.provider_id != provider_id
             or loaded.endpoint_key != endpoint_key

@@ -19,9 +19,12 @@ from sqlalchemy.sql.elements import TextClause
 from transit_ops.snapshots.contract import (
     HistoricCollectionIndex,
     HistoricCoverageGap,
+    HistoricDelayMetric,
+    HistoricDelayPercentiles,
     HistoricEntityDirectoryIndex,
     HistoricHotspotsDay,
     HistoricMetricCoverage,
+    HistoricOccupancyMetric,
     HistoricPartitionRef,
     HistoricRepeatOffendersDay,
     HistoryMetricAggregation,
@@ -1139,6 +1142,92 @@ def history_row_float(row: HistoryRow, field: str) -> float | None:
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"history row {field} must be numeric") from exc
+
+
+def history_entity_percentile_metrics(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    entity_id_of: Callable[[HistoryRow], str],
+    label: str,
+) -> tuple[
+    dict[str, dict[str, HistoricDelayPercentiles]],
+    dict[str, dict[str, list[str]]],
+]:
+    metrics: dict[str, dict[str, HistoricDelayPercentiles]] = {}
+    timestamps: dict[str, dict[str, list[str]]] = {}
+    groups = group_history_entity_date_rows(rows, entity_id_of=entity_id_of)
+    for (entity_id, local_date), grouped in groups.items():
+        if len(grouped) != 1:
+            raise ValueError(f"duplicate {label} percentile day {entity_id}/{local_date}")
+        row = grouped[0]
+        observation_count = history_row_int(row, "observation_count") or 0
+        if observation_count <= 0:
+            raise ValueError(f"{label} percentile observation_count must be positive")
+        put_history_entity_metric(
+            metrics,
+            entity_id,
+            local_date,
+            HistoricDelayPercentiles(
+                observation_count=observation_count,
+                p50_delay_seconds=history_row_float(row, "p50_delay_seconds"),
+                p90_delay_seconds=history_row_float(row, "p90_delay_seconds"),
+            ),
+        )
+        put_history_entity_timestamps(timestamps, entity_id, local_date, grouped)
+    return metrics, timestamps
+
+
+def history_entity_occupancy_metrics(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    entity_id_of: Callable[[HistoryRow], str],
+    label: str,
+) -> tuple[
+    dict[str, dict[str, HistoricOccupancyMetric]],
+    dict[str, dict[str, list[str]]],
+]:
+    metrics: dict[str, dict[str, HistoricOccupancyMetric]] = {}
+    timestamps: dict[str, dict[str, list[str]]] = {}
+    bands = ("empty", "many_seats", "few_seats", "standing", "full")
+    groups = group_history_entity_date_rows(rows, entity_id_of=entity_id_of)
+    for (entity_id, local_date), grouped in groups.items():
+        observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
+        counts = {band: sum(history_row_int(row, band) or 0 for row in grouped) for band in bands}
+        if observation_count != sum(counts.values()):
+            raise ValueError(f"{label} occupancy observation_count must equal the sum of bands")
+        if observation_count <= 0:
+            continue
+        put_history_entity_metric(metrics, entity_id, local_date, HistoricOccupancyMetric(**counts))
+        put_history_entity_timestamps(
+            timestamps,
+            entity_id,
+            local_date,
+            (row for row in grouped if (history_row_int(row, "observation_count") or 0) > 0),
+        )
+    return metrics, timestamps
+
+
+def history_delay_metric(grouped: Sequence[HistoryRow]) -> HistoricDelayMetric | None:
+    observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
+    if observation_count <= 0:
+        return None
+    in_clamp = sum(history_row_int(row, "in_clamp_observation_count") or 0 for row in grouped)
+    on_time = history_optional_sum(
+        history_row_int(row, "on_time_count", optional=True) for row in grouped
+    )
+    severe = history_optional_sum(
+        history_row_int(row, "severe_count", optional=True) for row in grouped
+    )
+    delay_sum = sum(
+        history_row_int(row, "sum_delay_seconds", minimum=None) or 0 for row in grouped
+    )
+    return HistoricDelayMetric(
+        observation_count=observation_count,
+        in_clamp_observation_count=in_clamp if in_clamp > 0 else None,
+        on_time_count=on_time,
+        severe_count=severe,
+        sum_delay_seconds=delay_sum if in_clamp > 0 else None,
+    )
 
 
 def group_history_entity_date_rows(
