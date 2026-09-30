@@ -1,33 +1,7 @@
-<!--
-  NavPill — the floating capsule nav (replaces TopBar). A fixed, full-width,
-  pointer-events-none rail centring an intrinsic-width pill (pointer-events-auto)
-  that floats OVER the map/document, edge-to-edge, and NEVER reserves a chrome
-  band — the single --chrome-offset knob (AppShell) reclaims the space on
-  non-full-bleed pages.
-
-  Content order (§C2.1, built exactly):
-    BrandWordmark ("Transit" + orange dot → /) · divider · Map / Lines / Stops /
-    Network · divider · search (≥lg compact in-pill field) · divider · Refresh +
-    compact Search + ThemeToggle + LangSwitch +
-    hamburger → the menu.
-
-	  The menu is a FLAT list of destinations (Map/Lines/Stops/Network on <lg ·
-	  Metrics · Status · Hotspots · Receipt · Repeat offenders · Alerts) closing
-	  with a "Yesid" link OUT to yesid.dev (external ↗).
-  No text group-headings — a quiet hairline is the only separator between the
-  primary surfaces and the secondary ones at compact widths. It opens as one
-  anchored dropdown at every width; compact widths retain the primary + search
-  groups. The dropdown wears the shared .glass-chrome recipe (§C4 P4).
-
-  --pill-h is set on :root per breakpoint by PLAIN CSS (no JS measurement): the
-  pill height is deterministic (content 44px + 2·padV + 2·2px border). Stage-1's
-  temporary 60px fallback in AppShell is removed — this owns the knob now.
-
-  DOCTRINE: orange --primary is INTERACTIVE-only; the live dot is the ONE
-  "system is live" affordance. Active link = --primary text + a 3×3 amber dot at
-  bottom 4px — NO text-shadow glow (glow-never-text, §C2.1 ruling). Tokens or the
-  measured yesid constants only; the pill chassis is SOLID-family glass.
--->
+<!-- Floating navigation rail with an anchored menu at every width. Compact
+     layouts retain the primary links and search in the menu. CSS sets the pill
+     height per breakpoint; no runtime measurement is needed. Active links use
+     the interactive primary color and a small indicator, without text glow. -->
 <script lang="ts">
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
@@ -112,7 +86,6 @@
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 	const currentPath = $derived(delocalizePath(url.pathname));
 
-	// --- Localized strings ---------------------------------------------------
 	const searchPlaceholder = $derived(
 		searchScope === 'route'
 			? locale === 'fr'
@@ -156,8 +129,6 @@
 	// read nothing but "(0)". Offer it where the blend is genuinely mixed (M6i F26).
 	const blendIsMixed = $derived(searchScope === 'map' || searchScope === 'all');
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
-	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
-	// with an external ↗ affordance. NOT the pill's main click anymore.
 	const yesidHouseLabel = $derived(YESID_HOUSE_LINK.label[locale]);
 	const yesidHouseAria = $derived(
 		locale === 'fr'

@@ -1,15 +1,7 @@
-// Shared wire schema for the Web-Vitals RUM beacon (slice-9.7 item D).
-//
-// One place defines the payload the browser collector POSTs to /api/vitals and
-// the endpoint validates against — so the two never drift. Kept dependency-free
-// (no Zod) so the collector stays in the browser bundle with zero extra weight.
-//
-// PRIVACY DOCTRINE: every field here is non-identifying. `path` is a PATHNAME
-// ONLY (query strings + hashes stripped at the source); there are NO user ids,
-// no full URLs, no cookies, no IPs. The endpoint never reads request headers
-// for identity. This shape is the contract that keeps it that way.
+// Dependency-free payload shared by the collector and endpoint. Collection uses
+// pathnames without query/hash; the endpoint stores no request-header identity.
 
-/** The five Core-Web-Vitals metric names we collect (web-vitals onCLS/…/onTTFB). */
+/** Collected web-vitals metrics. */
 export const VITALS_METRIC_NAMES = ['CLS', 'FCP', 'INP', 'LCP', 'TTFB'] as const;
 export type VitalsMetricName = (typeof VITALS_METRIC_NAMES)[number];
 

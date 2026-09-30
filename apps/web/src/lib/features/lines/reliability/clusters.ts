@@ -1,24 +1,8 @@
-// clusters.ts — pure view-model mapper for the slice-9.6 historic Reliability
-// surface (approach B: a clustered surface, one band per cluster).
-//
-// Maps the raw `RouteReliability` /v1 contract into six small, band-shaped
-// view-models. Each VM carries ONLY the data its band needs plus the honest-
-// state booleans the doctrine demands:
-//   - `isEmpty`   — the band has nothing to draw → render an explicit "no data"
-//                   note, NEVER a fake 0 or a silently dropped section.
-//   - `isRampIn`  — the metric has no historical backfill (cancellations,
-//                   skipped_stops) → label it so the reader doesn't read a low
-//                   early number as "good".
-//
-// DOCTRINE this mapper upholds (the bands consume the result verbatim):
-//   - Every numeric headline is `number | null`; null means "no data", never 0.
-//   - cancellations + skipped_stops are RAMP-IN (no backfill) — flagged.
-//   - occupancy_mix is null when there is no telemetry — the crowding VM is then
-//     empty (and the band must say so), not a zeroed bar.
-//   - habits matrix cells are `number | null` (null = no data, not zero) — kept
-//     verbatim for the Heatmap primitive.
-//   - PURE + DETERMINISTIC: no Date.now(), no Math.random(); ordering is the
-//     contract's array order or an explicit stable comparator.
+// Pure mapper from the /v1 RouteReliability contract to six band view-models.
+// Null means unavailable, never zero; `isEmpty` preserves each band's explicit
+// no-data path, and ramp-in metrics remain flagged because they lack backfill.
+// Occupancy and habit values retain contract nulls. Ordering stays contract-based
+// or uses an explicit stable comparator; this mapper is deterministic.
 
 import type {
 	RouteReliability,
@@ -1023,10 +1007,7 @@ export function toReliabilityClusters(
 			rawMix.few_seats > 0 ||
 			rawMix.standing > 0 ||
 			rawMix.full > 0);
-	// Per-band delay×crowding cells — kept VERBATIM (sparse), filtered to cells that
-	// carry a real signal so an all-null band never reads as present-but-blank. The
-	// band orders these by the natural occupancy order; a present band with a null
-	// delay shows an honest no-data message (never a fake 0).
+	// Keep sparse cells with a real signal; the band handles missing delay values.
 	const delayByCrowding = (data.delay_by_crowding ?? []).filter(crowdingDelayHasSignal);
 	// S7: grain-aware mix (the occupancy_by_grain entry for the selected grain) +
 	// weekday/weekend split (means of the per-ISO-weekday occupancy_by_dow shares).
@@ -1048,11 +1029,8 @@ export function toReliabilityClusters(
 					),
 				}
 			: null;
-	// P11: the RAW per-ISO-weekday mix on a FIXED Mon→Sun frame (iso 1..7). Index the
-	// sparse contract rows by their ISO weekday (last write wins for a dup), then walk
-	// the full 1..7 frame so every weekday gets a strip — a missing weekday OR a
-	// present-but-null mix both resolve to `mix: null` (honest absence). Gated on the
-	// same occByDow presence as weekdayWeekend so the small-multiple omits cleanly.
+	// Expand sparse weekday data onto the fixed Mon–Sun frame; duplicates use the
+	// last contract row. Omit the frame when the source has no weekday rows.
 	const byWeekday =
 		occByDow.length > 0
 			? (() => {
@@ -1074,11 +1052,8 @@ export function toReliabilityClusters(
 	};
 
 	/* 05 Time-of-day habits — GRAIN-INVARIANT (operator decision). */
-	// The repeat-problems heatmap is a 7x24 day-of-week x hour PATTERN; it reads the WHOLE-history
-	// `data.habits` regardless of the picked grain. Windowing it (habits_by_grain) produced confusing,
-	// near-imperceptible changes (Today floored to the week matrix; week vs month differ by only a few
-	// cells), so the rail no longer reshapes it — the §1 note states this plainly. The grain still
-	// drives the trend, the rates, and the on-time comparisons; this pattern just is not windowed.
+	// Keep the whole-history pattern independent of the selected grain; the grain
+	// still controls trends, rates, and on-time comparisons.
 	const rawHabits = data.habits ?? null;
 	const matrix = rawHabits?.matrix ?? [];
 	const matrixHasCell = matrix.some((row) => row.some((cell) => cell != null));

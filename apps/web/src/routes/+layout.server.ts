@@ -3,20 +3,9 @@ import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 import { bootV1, type V1Context } from '$lib/v1/boot';
 import { serverV1Context } from '$lib/v1/serverContext';
 
-// Server layout load — boots the /v1 snapshot contract through the direct R2
-// binding so the first paint ships real data without consuming data-proxy Worker
-// requests. DATA remains a compatibility fallback.
-//
-// FAIL-SOFT, two ways:
-//   · no binding (local `vite dev` / `vite preview`) → return `v1: null` and let
-//     the UNIVERSAL +layout.ts boot over the load `fetch` (the vite proxy serves
-//     /data in dev).
-//   · binding present but the boot throws (R2 / contract gap) →
-//     also return `v1: null`; +layout.ts fails soft to `v1Error` and
-//     +layout.svelte re-boots client-side (the browser reaches /data fine).
-//
-// The returned `v1` is plain JSON (manifest + labels + lang), so it serializes
-// into the SSR payload and rehydrates without a client round-trip.
+// Boot through R2 (DATA is the compatibility fallback) and serialize the context
+// for hydration. Missing bindings defer to the universal load; failed bindings
+// defer recovery to the mounted browser.
 export const load: LayoutServerLoad = async (event) => {
 	const { params, platform, locals } = event;
 	// [[lang=locale]] has already passed the locale matcher. Reading only this

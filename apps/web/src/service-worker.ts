@@ -1,34 +1,11 @@
 /// <reference types="@sveltejs/kit" />
 /// <reference lib="webworker" />
-//
-// service-worker.ts — the Transit PWA service worker.
-//
-// This is a STICKY artifact on a LIVE portfolio site: once installed it persists
-// in every visitor's browser until unregistered. It is therefore deliberately
-// CONSERVATIVE and REMOTELY KILLABLE. All routing decisions live in the pure,
-// unit-tested $lib/pwa/swPolicy module; this file only wires them to the real
-// Cache / fetch / registration APIs.
-//
-// STRATEGY
-//   navigations (HTML)        NETWORK-FIRST  — always fetch the live document;
-//                             fall back to the cached offline page ONLY when the
-//                             network throws (genuinely offline). Never serve a
-//                             cached HTML document when online -> the kill-switch
-//                             and any new deploy always take effect.
-//   /data/* + /v1 snapshots   PASSTHROUGH    — never intercepted, never cached.
-//   immutable build assets    CACHE-FIRST    — requested /_app/immutable/* files
-//                             are cached on demand, never during installation.
-//   non-map static files      CACHE-FIRST    — precached for established offline
-//                             shell guarantees; poster variants stay on demand.
-//   all other requests        PASSTHROUGH    — left to the browser default.
-//
-// KILL-SWITCH
-//   On activate AND (throttled) on navigations, the SW fetches /sw-kill.json
-//   (cache:'no-store'). If `{ "disabled": true }`, it deletes all caches,
-//   unregisters itself, claims clients, and tells them to reload. The operator
-//   kills a misbehaving SW by deploying static/sw-kill.json with disabled:true —
-//   no code change required. A second, independent lever runs client-side from
-//   the root layout (see $lib/pwa/register).
+// Routing policy lives in $lib/pwa/swPolicy. Navigations stay network-first so
+// deployments and the remote kill switch reach installed clients; snapshots
+// bypass the service worker. Build chunks and map posters cache only on demand.
+// Deploying /sw-kill.json with disabled:true clears caches and unregisters this
+// worker on activation or a throttled navigation check. $lib/pwa/register also
+// checks the flag independently from the page.
 
 import { files, version } from '$service-worker';
 import {

@@ -1,23 +1,6 @@
-// Web-Vitals RUM collector (slice-9.7 item D) — BROWSER-ONLY, INERT BY DEFAULT.
-//
-// THE INERT CONTRACT (the single most important property of this feature):
-//   * Gated on PUBLIC_VITALS_ENABLED. Unless it is EXACTLY the string 'true',
-//     startVitals() returns immediately — it imports nothing from web-vitals,
-//     registers no listeners, opens no network. Merging this code changes
-//     NOTHING in production until the operator flips the flag (see wrangler.toml).
-//   * web-vitals is loaded with a DYNAMIC import INSIDE the enabled branch, so
-//     the library is not even pulled into the critical path when the flag is off.
-//
-// PRIVACY DOCTRINE: we send a PATHNAME only (query string + hash stripped), the
-// metric name/value/id/rating/navigationType, and a coarse connection type when
-// the browser exposes one. NO full URLs, NO query params, NO user identifiers,
-// NO cookies. See $lib/vitals/schema.ts for the exact wire shape.
-//
-// FLUSH MODEL (the web-vitals recommended pattern): each onX handler buffers its
-// sample; we flush the WHOLE buffer in ONE beacon on the first of
-// visibilitychange->hidden / pagehide, using navigator.sendBeacon (a keepalive
-// fetch fallback when sendBeacon is missing). Batched — never one request per
-// metric.
+// Disabled collection must load no library, register no listeners and send no
+// requests. Enabled collection batches samples once on hide, without query/hash
+// or user identifiers. The shared schema owns the payload and limits.
 
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
