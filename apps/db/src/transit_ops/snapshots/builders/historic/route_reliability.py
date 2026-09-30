@@ -95,23 +95,11 @@ _ROUTE_HEADWAY_OBSERVED_SQL = named_query(
     """
 )
 
-# The scalar whole-history habits matrix reads through the SAME reader SQL as the
-# windowed habits_by_grain (gold/reader ROUTE_HABIT_SPINE_SQL — the ONE reconciled
-# repeat_problem_score, S14 2026-07-02), bound to an ALL-TIME window (score.all_time_window:
-# epoch floor → the route's spine anchor). This replaces the dropped gold.route_habit_score
-# mart (migration 0076) + its 'route.habit.score' read: the published `habits` field stays
-# VALUE-identical for identical spine content (parity proven by
-# tests/test_habit_score_reconciliation_realdb.py). ROUTE_HABIT_SPINE_SQL additionally
-# selects known_obs, which _build_habits_matrix ignores.
+# Scalar and windowed habits share ROUTE_HABIT_SPINE_SQL; scalar habits bind its
+# all-time window from the epoch floor to the route spine anchor.
 
-# Per-stop delay for this route — top weak stops by average delay, recomposed from the
-# daily gold.stop_delay_spine over the trailing-month window (DB-0067 Phase 2: the
-# stop_delay_weekly mart it used to read was dropped). weighted_delay_sec is the spine's
-# pooled SUM(sum_delay_seconds) (the rebaselined avg numerator). The mart was the ~10-day
-# open window; bounding to the trailing 30d (the month grain, via _grain_windows) keeps the
-# scalar from ballooning toward the spine's 730d retention while staying recent — its
-# windowed companion weak_stops_by_grain carries the per-grain breakdowns. A real route_id
-# never matches the spine's '__unrouted__' sentinel, so NULL-route obs are excluded.
+# Scalar weak stops use pooled delay seconds from the trailing 30 closed local days;
+# NULL-route observations use a sentinel and cannot match a real route_id.
 _ROUTE_WEAK_STOPS_SQL = named_query(
     "route.weak_stops.legacy",
     """
@@ -137,9 +125,7 @@ _ROUTE_PERCENTILE_DAILY_SQL = named_query(
     """
 )
 
-# The per-route day_of_week / by_shift / by_daytype / by_shift_daytype breakdowns now
-# derive at read time from gold.route_delay_spine (see _ROUTE_SPINE_* + the spine
-# consumer helpers in _spine); the stored fold tables were dropped in migration 0064.
+# Delay breakdowns derive at read time from gold.route_delay_spine.
 
 # Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
 # route_headway_by_shift is left untouched). Direction is encoded into the free shift string.
@@ -153,21 +139,10 @@ _ROUTE_HEADWAY_DIRECTION_SQL = named_query(
     """
 )
 
-# Per-route daily cancellation rate from the append-only rollup (last 30 closed
-# local days). cancellation_rate_pct is None when total_trip_days=0. The scheduled-
-# universe columns (GC2 H1) are NULL on pre-0073 history + no-schedule editions;
-# service_completeness_pct is derived read-time = 100 * delivered / scheduled, NULL
-# when scheduled is NULL or 0 (honest-unknown, never a fabricated 100%).
-# 2026-07-02 (GC2): delivered > scheduled is LEGITIMATE (added/unscheduled trips),
-# so the ratio is CLAMPED at 100 — over-delivery reads as fully complete rather than
-# >100% (which the publish gate's 0-100 rate check would otherwise ABORT on). The
-# batch-level id-drift detector (gate.py GATE_ID_DRIFT_WARN_FRACTION) is the signal
-# for systemic overshoot.
-# 2026-07-03 (P5.3e / GC2): the capture-day-vs-service-day overnight-spillover cause
-# of over-delivery is ELIMINATED at the source — the rollup now filters the observed
-# universe to the service day (rollups.py UPSERT_ROUTE_CANCELLATION_DAILY, 2-day
-# capture window + start_date = local_date), so numerator and denominator share ONE
-# universe. Remaining delivered > scheduled is real added/unscheduled service only.
+# Cancellation rates cover the last 30 closed local days and are NULL with no
+# reported trips. Completeness is 100 * delivered / scheduled, NULL for an unknown
+# or zero schedule, and capped at 100 because legitimate unscheduled service can
+# make delivered exceed scheduled. The rollup compares both counts on the service day.
 _ROUTE_CANCELLATION_DAILY_SQL = named_query(
     "route.cancellation.daily",
     """
@@ -206,12 +181,8 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     """
 )
 
-# S7 §04: crowding band-shares grouped by ISO weekday (1=Mon..7=Sun) over the same
-# trailing-30d window as occupancy_mix, for the weekday/weekend split. Reuses the
-# route_occupancy_band_daily source; honest-None per weekday with no band telemetry
-# (handled by _occupancy_mix_from_bands). provider_local_date is ALREADY provider-
-# local, so ISODOW needs NO timezone cast (unlike route_delay_day_of_week, which
-# extracts from a UTC timestamp).
+# Weekday crowding shares use provider-local dates directly; do not timezone-cast
+# before extracting ISO weekday. Missing band telemetry yields NULL; output is sparse.
 _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
     "route.occupancy.by_dow",
     f"""
@@ -230,9 +201,8 @@ _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
     """
 )
 
-# S7 §04: per-day band counts over the trailing-30d window, bucketed in Python into
-# grain-aware crowding mixes (day = most recent closed local day, week = trailing
-# 7d, month = full 30d — month reconciles with the scalar occupancy_mix).
+# Band counts cover 30 days and are bucketed as latest closed day, trailing 7 days,
+# and full 30 days; the month mix reconciles with scalar occupancy_mix.
 _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     "route.occupancy.by_grain",
     f"""
@@ -250,11 +220,8 @@ _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     """
 )
 
-# GC2 H3 §04: crowding band-shares grouped by LOCAL hour-of-day (0..23) over the same
-# trailing-30d window as occupancy_mix, for the time-of-day (rush-hour vs midday) split.
-# Reads gold.route_occupancy_band_hourly (migration 0074, daily == Σ hourly); honest-None
-# per hour with no band telemetry (handled by _occupancy_mix_from_bands). Clone of
-# _ROUTE_OCCUPANCY_BY_DOW_SQL keyed on hour_of_day_local instead of ISODOW.
+# Hourly crowding shares use local hours 0..23 over 30 days; daily counts equal
+# the sum of hourly counts. Missing band telemetry yields NULL and sparse output.
 _ROUTE_OCCUPANCY_BY_HOUR_SQL = named_query(
     "route.occupancy.by_hour",
     f"""
@@ -327,11 +294,7 @@ _ROUTE_CROWDING_DELAY_SQL = named_query(
 )
 
 
-# --------------------------------------------------------------------------
-# Per-section mappers (S7-close C3). Each wraps one contiguous slice of the
-# former build_route_reliability body verbatim; the orchestrator calls them in
-# source order so the executed-query sequence + count are unchanged.
-# --------------------------------------------------------------------------
+# Per-section mappers keep query execution in the builder's declared order.
 
 
 def _route_periods(conn: Connection, params: dict) -> list[ReliabilityPeriod]:
@@ -429,9 +392,7 @@ def _route_headway(
         )
 
     # --- per-direction + weekday/weekend headway (additive HeadwayPeriod rows).
-    #     S7-B Pattern A: the shift is the BARE time-of-day token; direction + day-type
-    #     are typed fields (no more {shift}_dir{N}_weekend packed string). The live
-    #     strip filters direction_id-bearing rows out; the surface renders them grouped.
+# Direction and day type are separate fields; shift remains the canonical bare token.
     for r in conn.execute(_ROUTE_HEADWAY_DIRECTION_SQL, params).mappings():
         dir_obs = r["observed_headway_min"]
         headway.append(

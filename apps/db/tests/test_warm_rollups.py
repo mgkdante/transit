@@ -5,6 +5,7 @@ import logging
 from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,7 @@ from transit_ops.maintenance.gold import (
     GOLD_APPEND_ONLY_DAILY_TABLES,
 )
 from transit_ops.settings import Settings
+from transit_ops.sql_registry import query_name
 
 
 @pytest.fixture(autouse=True)
@@ -181,6 +183,9 @@ class FakeConnection:
     def execute(self, statement, params=None):  # noqa: ANN001
         sql = str(statement)
         self.executed.append(sql)
+
+        if query_name(statement) == "rollup.daily.built_calendars":
+            return IterableResult([])
 
         if statement in (
             rollups.SELECT_AVAILABLE_CAPTURE_DAYS,
@@ -511,6 +516,15 @@ class SharedCalendarConnection(FakeConnection):
         sql = str(statement)
         bound = dict(params or {})
         self.bound_calls.append((sql, bound))
+        if query_name(statement) == "rollup.daily.built_calendars":
+            self.executed.append(sql)
+            return IterableResult(
+                [
+                    SimpleNamespace(
+                        rollup_kind="route_percentile_daily", local_date=self.capture_day.local_date
+                    )
+                ]
+            )
         if statement is rollups.SELECT_AVAILABLE_CAPTURE_DAYS:
             self.executed.append(sql)
             return IterableResult([self.capture_day])
@@ -968,6 +982,12 @@ def test_daily_program_uses_buffered_calendars_and_independent_watermarks() -> N
 
     assert [(item.kind, item.table) for item in receipts.values()] == list(APPEND_ONLY_DAILY_STAGES)
     assert all(item.stage == "append_only_daily" for item in receipts.values())
+    watermark_reads = [
+        sql
+        for sql, _ in conn.bound_calls
+        if query_name(sql) in {"rollup.daily.built_days", "rollup.daily.built_calendars"}
+    ]
+    assert len(watermark_reads) == 1
     assert receipts["route_percentile_daily"].rows == 0
     assert all(
         item.rows == 1 for name, item in receipts.items() if name != "route_percentile_daily"
@@ -1030,10 +1050,8 @@ def test_daily_program_failure_preserves_prior_day_commits_and_receipts(caplog) 
     ]
     assert events[-1]["status"] == "error"
     assert events[-1]["kind"] == "route_cancellation_daily"
-    assert [transaction["status"] for transaction in engine.transactions] == [
-        *(["committed"] * 6),
-        "rolled_back",
-    ]
+    assert engine.transactions[-1]["status"] == "rolled_back"
+    assert all(item["status"] == "committed" for item in engine.transactions[:-1])
     assert (
         sum(
             str(rollups.UPSERT_WARM_ROLLUP_PERIOD) in transaction["statements"]
