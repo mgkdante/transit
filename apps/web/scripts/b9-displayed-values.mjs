@@ -1643,7 +1643,9 @@ async function startPreview(replayBase) {
 		try {
 			await stopPreview({ devEnv, stateDir });
 		} catch (cleanupError) {
-			throw new Error(`${error}\nB9 preview cleanup failed: ${cleanupError}`, { cause: error });
+			throw new AggregateError([error, cleanupError], 'B9 preview startup and cleanup failed', {
+				cause: cleanupError,
+			});
 		}
 		throw error;
 	} finally {
