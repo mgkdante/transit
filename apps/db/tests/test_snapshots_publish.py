@@ -988,6 +988,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     through its contract model for round-trip validation.
     """
     import datetime
+    import pathlib
     from contextlib import contextmanager
 
     from transit_ops.snapshots.contract import NetworkTrend
@@ -1423,6 +1424,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     )
 
     # --- flat keys ---
+    keys = [pathlib.Path(key).as_posix() for key in keys]
     key_set = set(keys)
     assert any("historic/network_trend.json" in k for k in key_set)
     assert any("historic/hotspots.json" in k for k in key_set)
@@ -1459,8 +1461,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
-    import pathlib
-
     from transit_ops.snapshots.contract import Receipt, ReceiptsIndex, RouteReliabilityIndex
 
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
