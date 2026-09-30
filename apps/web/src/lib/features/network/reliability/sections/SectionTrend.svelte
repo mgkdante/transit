@@ -28,14 +28,16 @@
   the S9B trends lane once data accrues.
 -->
 <script lang="ts">
+	import type { Locale } from '$lib/i18n';
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionTrendProps {
+		locale: Locale;
 		/** The selector-emitted dual-axis trend spec (or an honest absence). */
 		trendSpec: ChartSpec;
 		/** The vehicles-in-service context spark (day-grain only; null = no real points). */
@@ -44,25 +46,14 @@
 		isDailyGrain: boolean;
 		/** Explainer family for the primary chart channel. */
 		metricKey: MetricKey;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { trendSpec, vehiclesSpark, isDailyGrain, metricKey, info, copy }: SectionTrendProps =
+	let { locale, trendSpec, vehiclesSpark, isDailyGrain, metricKey, copy }: SectionTrendProps =
 		$props();
-
-	const i = $derived(info(metricKey, copy.trendSection));
 </script>
 
 {#snippet trendInfo()}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo {metricKey} {locale} name={copy.trendSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

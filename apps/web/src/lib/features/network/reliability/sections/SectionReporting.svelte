@@ -20,7 +20,6 @@
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
 	import { NON_RESPONDING_DOMAIN, type SilentRow } from '../selectors/silentByRoute';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -31,19 +30,10 @@
 		cards: readonly KpiCardVM[];
 		/** The ranked silent-lines rows (empty → the list stands down). */
 		silentRows: readonly SilentRow[];
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
 	}
-	let { cards, silentRows, info, copy, locale }: SectionReportingProps = $props();
+	let { cards, silentRows, copy, locale }: SectionReportingProps = $props();
 
 	const hasSilentRows = $derived(silentRows.length > 0);
 </script>
@@ -59,16 +49,9 @@
 		<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
 		<DashboardGrid minTile="220px" gutter={false}>
 			{#each cards as card (card.label)}
-				{@const i = info(card.key, card.label)}
 				<ExplainedMetricCard label={card.label} value={card.value} {locale} size="lg">
 					{#snippet info()}
-						<MetricInfo
-							tip={i.tip}
-							href={i.href}
-							label={i.label}
-							linkLabel={i.linkLabel}
-							side="bottom"
-						/>
+						<MetricInfo metricKey={card.key} {locale} name={card.label} side="bottom" />
 					{/snippet}
 				</ExplainedMetricCard>
 			{/each}

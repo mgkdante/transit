@@ -90,8 +90,6 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
 		SurfaceRailContext,
 		SurfaceRailPresentation,
@@ -120,16 +118,6 @@
 		controls: 'repeat-offenders-controls',
 		toc: 'repeat-offenders-toc',
 	});
-
-	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>. The ladder ranks by the SEVERE-delay rate, so the (i) explains
-	// severe_pct (same wiring as the hotspots / lines surfaces).
-	const explainerCopy = $derived(metricsCopy[locale]);
-	function buildInfo(key: MetricKey, name: string) {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	}
-	const severeInfo = $derived(buildInfo('severe', t.ladder.severeRateLabel));
 
 	// The shared coordinator owns current/history discovery, cancellation, retry,
 	// refresh, and freshness. The page only derives presentation from accepted data.
@@ -746,10 +734,9 @@
 										<p class="offenders-def" data-slot="offenders-def">
 											{t.headline.explanation}
 											<MetricInfo
-												tip={severeInfo.tip}
-												href={severeInfo.href}
-												label={severeInfo.label}
-												linkLabel={severeInfo.linkLabel}
+												metricKey={'severe'}
+												{locale}
+												name={t.ladder.severeRateLabel}
 												side="bottom"
 											/>
 										</p>
@@ -762,10 +749,9 @@
 										<SectionHeading level={3} overline={t.listSection}>
 											{#snippet explainer()}
 												<MetricInfo
-													tip={severeInfo.tip}
-													href={severeInfo.href}
-													label={severeInfo.label}
-													linkLabel={severeInfo.linkLabel}
+													metricKey={'severe'}
+													{locale}
+													name={t.ladder.severeRateLabel}
 													side="bottom"
 												/>
 											{/snippet}
@@ -815,7 +801,6 @@
 										tray={tripTray}
 										evidence={tripEvidence}
 										{windowCaption}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>
@@ -826,7 +811,6 @@
 										tray={vehicleTray}
 										evidence={vehicleEvidence}
 										{windowCaption}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>

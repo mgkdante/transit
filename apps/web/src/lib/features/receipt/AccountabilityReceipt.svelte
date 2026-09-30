@@ -75,12 +75,6 @@
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY } from './receipt.copy';
 	// Selectors + data presenters (pure VMs — no transforms in this orchestrator).
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
@@ -103,14 +97,6 @@
 	const railDisclosures = createRailDisclosureController({
 		controls: 'receipt-controls',
 		toc: 'receipt-toc',
-	});
-
-	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>, wired onto every KPI + section heading (same wiring as RouteDetail).
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
@@ -571,14 +557,12 @@
 														kpis={headlineKpis}
 														heading={t.receiptSection}
 														headingLevel={3}
-														{info}
 														{locale}
 													/>
 													<SectionAffected
 														counts={affectedCounts}
 														heading={t.countsSection}
 														headingLevel={3}
-														{info}
 														{locale}
 													/>
 													{#if worst.hasWorst}
@@ -586,7 +570,6 @@
 															{worst}
 															heading={t.worstSection}
 															headingLevel={3}
-															{info}
 															{locale}
 														/>
 													{/if}
@@ -610,7 +593,6 @@
 										caveat={t.timeOfDay.caveat}
 										caveatLabel={t.caveatLabel}
 										headingLevel={3}
-										{info}
 										{locale}
 									/>
 								{:else if section.id === 'receipt-delivered'}
@@ -622,7 +604,6 @@
 										standDown={t.stateCuts.standDown}
 										splitLabel={t.stateCuts.splitLabel}
 										headingLevel={3}
-										{info}
 										{locale}
 									/>
 								{:else}

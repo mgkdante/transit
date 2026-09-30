@@ -16,12 +16,6 @@
 	import type { RepeatOffendersCopy } from '../repeatOffenders.copy';
 	import RepeatOffenderEvidenceTable from './RepeatOffenderEvidenceTable.svelte';
 
-	interface MetricInfoVM {
-		readonly tip: string;
-		readonly href: string;
-		readonly label: string;
-		readonly linkLabel: string;
-	}
 	interface TrayRow {
 		readonly key: string;
 		readonly title: string;
@@ -35,7 +29,6 @@
 		tray: readonly TrayRow[];
 		evidence: readonly OffenderEvidenceRow[];
 		windowCaption: string;
-		info: MetricInfoVM;
 		locale: Locale;
 		copy: RepeatOffendersCopy;
 	}
@@ -45,7 +38,6 @@
 		tray,
 		evidence,
 		windowCaption,
-		info,
 		locale,
 		copy,
 	}: RepeatOffendersSectionProps = $props();
@@ -64,10 +56,9 @@
 				{#snippet explainer()}
 					<MetricInfo
 						class="offender-info"
-						tip={info.tip}
-						href={info.href}
-						label={info.label}
-						linkLabel={info.linkLabel}
+						metricKey={'severe'}
+						{locale}
+						name={copy.ladder.severeRateLabel}
 						side="bottom"
 					/>
 				{/snippet}

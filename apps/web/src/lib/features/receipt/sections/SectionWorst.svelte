@@ -3,34 +3,21 @@
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { WorstOfDayVM } from '../selectors/day-worst';
 
 	interface SectionWorstProps {
 		worst: WorstOfDayVM;
 		heading: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
-	let { worst, heading, info, locale, headingLevel = 2 }: SectionWorstProps = $props();
-
-	const headingInfo = $derived(info('otp', heading));
+	let { worst, heading, locale, headingLevel = 2 }: SectionWorstProps = $props();
 </script>
 
 <section class="receipt-panel receipt-worst-panel" data-slot="receipt-worst">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo
-				tip={headingInfo.tip}
-				href={headingInfo.href}
-				label={headingInfo.label}
-				linkLabel={headingInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey={'otp'} {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-worst">

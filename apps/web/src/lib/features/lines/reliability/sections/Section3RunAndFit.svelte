@@ -10,12 +10,6 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import {
 		CANCEL_RATE_DOMAIN,
 		SKIPPED_RATE_DOMAIN,
 		SHARE_DOMAIN,
@@ -59,15 +53,6 @@
 		windowLabel,
 		showServiceCompleteness = false,
 	}: Section3RunAndFitProps = $props();
-
-	// ── Shared explainer (i) wiring ────────────────────────────────────────────
-	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
-	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	// ── "Will it run?" half (Cluster03 — service delivered) ─────────────────────
 	// A problem-rate is the late/amber voice on the dataviz scale (never --primary).
@@ -261,29 +246,6 @@
 		}),
 	);
 
-	// The in-app metric-explainer (i) for the occupancy band: the one-line tip + a
-	// localized deep link to /metrics#occupancy. An INTERACTIVE control beside the
-	// label, never a data mark.
-	const occupancyInfo = $derived.by(() => {
-		const i = metricInfoFor('occupancy', locale);
-		return {
-			...i,
-			label: explainerCopy.info.trigger(copy.clusters.crowding),
-			linkLabel: explainerCopy.info.link,
-		};
-	});
-	// The dominant-band tile's own (i): same occupancy tip + deep link, but a distinct
-	// aria-label naming THAT band (e.g. "About Crushed") so the trigger beside the
-	// headline never collides with the cluster-heading (i) above.
-	const dominantInfo = $derived.by(() => {
-		const i = metricInfoFor('occupancy', locale);
-		return {
-			...i,
-			label: explainerCopy.info.trigger(dominant?.label ?? copy.clusters.crowding),
-			linkLabel: explainerCopy.info.link,
-		};
-	});
-
 	/* ── Delay by crowding (G1) ────────────────────────────────────────────────
 	   Does crowding correlate with delay? The contract's per-band avg delay, laid
 	   out on the FIXED occupancy axis (empty→full) so the reading is consistent and
@@ -325,32 +287,34 @@
 	const sectionEmpty = $derived(service.isEmpty && dominant == null);
 </script>
 
-{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 <!-- Per-KPI explainer snippets — the (i) trigger MetricBullet renders beside each tile label. -->
-{#snippet serviceComparisonInfo()}{@render metricInfo(
-		'serviceComparison',
-		t.serviceCompletenessPct,
-	)}{/snippet}
-{#snippet cancellationInfo()}{@render metricInfo('cancellation', t.cancellationRatePct)}{/snippet}
-{#snippet skippedInfo()}{@render metricInfo('skippedStop', t.skippedStopRatePct)}{/snippet}
+{#snippet serviceComparisonInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey={'serviceComparison'}
+		{locale}
+		name={t.serviceCompletenessPct}
+		side="bottom"
+	/>{/snippet}
+{#snippet cancellationInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey={'cancellation'}
+		{locale}
+		name={t.cancellationRatePct}
+		side="bottom"
+	/>{/snippet}
+{#snippet skippedInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey={'skippedStop'}
+		{locale}
+		name={t.skippedStopRatePct}
+		side="bottom"
+	/>{/snippet}
 {#snippet dominantBandInfo()}
 	<MetricInfo
 		class="cluster-info"
-		tip={dominantInfo.tip}
-		href={dominantInfo.href}
-		label={dominantInfo.label}
-		linkLabel={dominantInfo.linkLabel}
+		metricKey={'occupancy'}
+		{locale}
+		name={dominant?.label ?? copy.clusters.crowding}
 		side="bottom"
 	/>
 {/snippet}
@@ -442,10 +406,9 @@
 					/>
 					<MetricInfo
 						class="cluster-info"
-						tip={occupancyInfo.tip}
-						href={occupancyInfo.href}
-						label={occupancyInfo.label}
-						linkLabel={occupancyInfo.linkLabel}
+						metricKey={'occupancy'}
+						{locale}
+						name={copy.clusters.crowding}
 						side="bottom"
 					/>
 				</span>

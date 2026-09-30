@@ -28,8 +28,6 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { selectWeakStops } from '../selectors/weakStops';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -43,13 +41,6 @@
 		copy: ReliabilityCopy;
 	}
 	let { punctuality, locale, copy }: Section4WorstStopsProps = $props();
-
-	// Metric-explainer (i) affordance — the same wiring every section uses.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	// Worst-N selector (S7): a selectable how-many-stops control reusing GrainPicker over a
 	// numeric-string union — the active chip is --primary (an interactive control), never a data
@@ -114,18 +105,6 @@
 	);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 <CollapsibleSection
 	dataSection="worst-stops"
 	number={5}
@@ -138,7 +117,13 @@
 			<div class="weak-stops-head">
 				<span class="label-with-info">
 					<SectionLabel text={weakStopsHeading} variant="metric" />
-					{@render metricInfo('weakStops', copy.strip.weakStopsHeading)}
+					<MetricInfo
+						class="cluster-info"
+						metricKey={'weakStops'}
+						{locale}
+						name={copy.strip.weakStopsHeading}
+						side="bottom"
+					/>
 				</span>
 				{#if weakStops.total > 5}
 					<GrainPicker

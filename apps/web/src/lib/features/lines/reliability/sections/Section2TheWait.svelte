@@ -19,12 +19,6 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WaitRegularityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 	import {
@@ -181,14 +175,6 @@
 	const dir1Label = $derived(directionHeadsigns[1] ?? t.directionCol(2));
 	/** Plain-language term microcopy (shared, FR canonical). */
 	const terms = $derived(copy.regularityTerms);
-
-	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
-	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	/* ── formatters (pure) ───────────────────────────────────────────────────
 	   Absence → null (MetricDisplay renders the shared typed absence); inline
@@ -560,20 +546,14 @@
 	);
 </script>
 
-{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 <!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
-{#snippet excessInfo()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
+{#snippet excessInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey={'excessWait'}
+		{locale}
+		name={terms.excessWait}
+		side="bottom"
+	/>{/snippet}
 
 {#snippet waitCompareRow(row: WaitCompareRow)}
 	<li
@@ -631,8 +611,20 @@
 		<div class="section-primary" data-slot="headway-dumbbell" data-card="primary">
 			<span class="label-with-info">
 				<SectionLabel text={t.headwaySection} variant="metric" />
-				{@render metricInfo('headway', t.headwaySection)}
-				{@render metricInfo('regularityCov', copy.strip.headwayRegularityCov)}
+				<MetricInfo
+					class="cluster-info"
+					metricKey={'headway'}
+					{locale}
+					name={t.headwaySection}
+					side="bottom"
+				/>
+				<MetricInfo
+					class="cluster-info"
+					metricKey={'regularityCov'}
+					{locale}
+					name={copy.strip.headwayRegularityCov}
+					side="bottom"
+				/>
 			</span>
 			<Chart spec={headwayDumbbell.spec} />
 			<!-- Plain-language "what is bunching + how to read this" (operator ask): the least
@@ -680,7 +672,13 @@
 					<div class="block" data-slot="wait-vs-prior" data-card>
 						<span class="label-with-info">
 							<SectionLabel text={copy.priorDelta.waitHeading} variant="metric" />
-							{@render metricInfo('headway', copy.priorDelta.waitHeading)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'headway'}
+								{locale}
+								name={copy.priorDelta.waitHeading}
+								side="bottom"
+							/>
 						</span>
 						<ul class="compare-list" data-slot="wait-compare">
 							{#each waitCompareRows as row (row.key)}{@render waitCompareRow(row)}{/each}
@@ -701,21 +699,39 @@
 						<div class="shift-chart" data-metric="excess" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.excessWait} variant="metric" />
-								{@render metricInfo('excessWait', terms.excessWait)}
+								<MetricInfo
+									class="cluster-info"
+									metricKey={'excessWait'}
+									{locale}
+									name={terms.excessWait}
+									side="bottom"
+								/>
 							</span>
 							<Chart spec={excessBars} />
 						</div>
 						<div class="shift-chart" data-metric="cov" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.spread} variant="metric" />
-								{@render metricInfo('regularityCov', terms.spread)}
+								<MetricInfo
+									class="cluster-info"
+									metricKey={'regularityCov'}
+									{locale}
+									name={terms.spread}
+									side="bottom"
+								/>
 							</span>
 							<Chart spec={covBars} />
 						</div>
 						<div class="shift-chart" data-metric="bunched" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.clumped} variant="metric" />
-								{@render metricInfo('regularityCov', terms.clumped)}
+								<MetricInfo
+									class="cluster-info"
+									metricKey={'regularityCov'}
+									{locale}
+									name={terms.clumped}
+									side="bottom"
+								/>
 							</span>
 							<Chart spec={bunchedBars} />
 						</div>
@@ -723,7 +739,13 @@
 					<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
 					<p class="shift-caption" data-slot="excess-wait-caption">
 						{copy.strip.excessWaitCaption}
-						{@render metricInfo('excessWait', terms.excessWait)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'excessWait'}
+							{locale}
+							name={terms.excessWait}
+							side="bottom"
+						/>
 					</p>
 					<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
 					     null), so the SeverityBar + scheduled/excess tiles are empty for them.
@@ -776,7 +798,13 @@
 					<div class="span-head">
 						<span class="label-with-info">
 							<SectionLabel text={t.spanSection} variant="metric" />
-							{@render metricInfo('serviceSpan', t.spanSection)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'serviceSpan'}
+								{locale}
+								name={t.spanSection}
+								side="bottom"
+							/>
 						</span>
 						<span class="span-window" data-slot="service-span-window">
 							{copy.windows.serviceSpan(latestSpan.date ?? null)}
@@ -798,7 +826,13 @@
 								label={t.serviceSpan}
 								size="sm"
 							/>
-							{@render metricInfo('serviceSpan', t.serviceSpan)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'serviceSpan'}
+								{locale}
+								name={t.serviceSpan}
+								side="bottom"
+							/>
 						</div>
 						<div class="metric-with-info">
 							<MetricDisplay
@@ -808,7 +842,13 @@
 								label={t.firstTripDelay}
 								size="sm"
 							/>
-							{@render metricInfo('serviceSpan', t.firstTripDelay)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'serviceSpan'}
+								{locale}
+								name={t.firstTripDelay}
+								side="bottom"
+							/>
 						</div>
 						<div class="metric-with-info">
 							<MetricDisplay
@@ -818,7 +858,13 @@
 								label={t.lastTripDelay}
 								size="sm"
 							/>
-							{@render metricInfo('serviceSpan', t.lastTripDelay)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'serviceSpan'}
+								{locale}
+								name={t.lastTripDelay}
+								side="bottom"
+							/>
 						</div>
 						<div class="metric-with-info">
 							<MetricDisplay
@@ -828,7 +874,13 @@
 								label={t.tripCount}
 								size="sm"
 							/>
-							{@render metricInfo('serviceSpan', t.tripCount)}
+							<MetricInfo
+								class="cluster-info"
+								metricKey={'serviceSpan'}
+								{locale}
+								name={t.tripCount}
+								side="bottom"
+							/>
 						</div>
 					</div>
 				</div>

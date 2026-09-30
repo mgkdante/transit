@@ -65,13 +65,8 @@
 	import { StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
+	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.summary';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	// The shared occupancy band vocabulary (the SAME labels the lines surface renders).
 	// The only sanctioned stops→lines import (crossFeatureImports EXEMPTION).
@@ -318,13 +313,6 @@
 		explicitHistory && historySelectionText != null ? historySelectionText : copy.crowding.window,
 	);
 
-	// The stop prediction summary's metric definitions.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
-
 	/* ── section ToC (P5.4 responsive left-rail wayfinding) ─────────────────────
 	   A vertical jump list of the PRESENT sections (built off the SAME conditions
 	   that mount each tile below, so the ToC never lists a stood-down section).
@@ -394,15 +382,7 @@
 </script>
 
 {#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
+	<MetricInfo class="stop-metric-info" metricKey={key} {locale} {name} side="bottom" />
 {/snippet}
 
 <div class="stop-reliability">
@@ -536,7 +516,13 @@
 							bulkCollapsed={quietModeStore.enabled}
 						>
 							{#snippet headerActions()}
-								{@render metricInfo('severe', copy.trend.heading)}
+								<MetricInfo
+									class="stop-metric-info"
+									metricKey={'severe'}
+									{locale}
+									name={copy.trend.heading}
+									side="bottom"
+								/>
 							{/snippet}
 							<SectionDailyTrend
 								daily={selectedData.daily}
@@ -565,7 +551,13 @@
 								bulkCollapsed={quietModeStore.enabled}
 							>
 								{#snippet headerActions()}
-									{@render metricInfo('p50p90', copy.percentiles.heading)}
+									<MetricInfo
+										class="stop-metric-info"
+										metricKey={'p50p90'}
+										{locale}
+										name={copy.percentiles.heading}
+										side="bottom"
+									/>
 								{/snippet}
 								<SectionPercentiles
 									percentiles={dayPercentiles}
@@ -619,7 +611,13 @@
 								bulkCollapsed={quietModeStore.enabled}
 							>
 								{#snippet headerActions()}
-									{@render metricInfo('habits', copy.habits.heading)}
+									<MetricInfo
+										class="stop-metric-info"
+										metricKey={'habits'}
+										{locale}
+										name={copy.habits.heading}
+										side="bottom"
+									/>
 								{/snippet}
 								<SectionHabits matrix={habitsMatrix} {locale} {copy} presentation="article-body" />
 							</CollapsibleSection>
@@ -641,7 +639,13 @@
 								bulkCollapsed={quietModeStore.enabled}
 							>
 								{#snippet headerActions()}
-									{@render metricInfo('seasonality', copy.weekday.heading)}
+									<MetricInfo
+										class="stop-metric-info"
+										metricKey={'seasonality'}
+										{locale}
+										name={copy.weekday.heading}
+										side="bottom"
+									/>
 								{/snippet}
 								<SectionWeekday rows={rankedWeekdays} {locale} {copy} presentation="article-body" />
 							</CollapsibleSection>
@@ -661,7 +665,13 @@
 								bulkCollapsed={quietModeStore.enabled}
 							>
 								{#snippet headerActions()}
-									{@render metricInfo('severe', copy.timeOfDay.heading)}
+									<MetricInfo
+										class="stop-metric-info"
+										metricKey={'severe'}
+										{locale}
+										name={copy.timeOfDay.heading}
+										side="bottom"
+									/>
 								{/snippet}
 								<SectionTimeOfDay
 									shiftRows={timeOfDay.shiftRows}
@@ -688,7 +698,13 @@
 							bulkCollapsed={quietModeStore.enabled}
 						>
 							{#snippet headerActions()}
-								{@render metricInfo('occupancy', copy.crowding.heading)}
+								<MetricInfo
+									class="stop-metric-info"
+									metricKey={'occupancy'}
+									{locale}
+									name={copy.crowding.heading}
+									side="bottom"
+								/>
 							{/snippet}
 							<SectionCrowding
 								vm={crowding}
@@ -713,7 +729,13 @@
 							bulkCollapsed={quietModeStore.enabled}
 						>
 							{#snippet headerActions()}
-								{@render metricInfo('avgDelay', copy.byRoute)}
+								<MetricInfo
+									class="stop-metric-info"
+									metricKey={'avgDelay'}
+									{locale}
+									name={copy.byRoute}
+									side="bottom"
+								/>
 							{/snippet}
 							<SectionByRoute
 								rows={rankedRoutes}

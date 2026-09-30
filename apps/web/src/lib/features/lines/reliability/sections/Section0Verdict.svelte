@@ -27,9 +27,8 @@
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import MetricBullet from './MetricBullet.svelte';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -63,18 +62,13 @@
 	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
 	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
+	const explainerCopy = $derived(metricsCopy[locale]);
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// Metric-explainer (i) affordance — the same wiring every band uses.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
 	const shiftShort = (g: string): string => shiftGrainLabelShort(g, locale);
 
@@ -177,21 +171,34 @@
 	);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
+{#snippet otpInfo()}<MetricInfo
 		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
+		metricKey={'otp'}
+		{locale}
+		name={copy.strip.otpPct}
 		side="bottom"
-	/>
-{/snippet}
-{#snippet otpInfo()}{@render metricInfo('otp', copy.strip.otpPct)}{/snippet}
-{#snippet avgInfo()}{@render metricInfo('avgDelay', copy.strip.avgDelayMin)}{/snippet}
-{#snippet p50Info()}{@render metricInfo('p50p90', copy.strip.p50Min)}{/snippet}
-{#snippet p90Info()}{@render metricInfo('p50p90', copy.strip.p90Min)}{/snippet}
+	/>{/snippet}
+{#snippet avgInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey={'avgDelay'}
+		{locale}
+		name={copy.strip.avgDelayMin}
+		side="bottom"
+	/>{/snippet}
+{#snippet p50Info()}<MetricInfo
+		class="cluster-info"
+		metricKey={'p50p90'}
+		{locale}
+		name={copy.strip.p50Min}
+		side="bottom"
+	/>{/snippet}
+{#snippet p90Info()}<MetricInfo
+		class="cluster-info"
+		metricKey={'p50p90'}
+		{locale}
+		name={copy.strip.p90Min}
+		side="bottom"
+	/>{/snippet}
 
 <CollapsibleSection
 	dataSection="verdict"
@@ -281,7 +288,13 @@
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
-						{@render metricInfo('p50p90', copy.strip.delayDistHeading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'p50p90'}
+							{locale}
+							name={copy.strip.delayDistHeading}
+							side="bottom"
+						/>
 					</span>
 					<span class="block-value" class:block-value--empty={!hasDist}>
 						{#if hasDist}
@@ -321,7 +334,13 @@
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.severePct} variant="metric" />
-						{@render metricInfo('severe', copy.strip.severePct)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'severe'}
+							{locale}
+							name={copy.strip.severePct}
+							side="bottom"
+						/>
 					</span>
 					<span class="block-value" class:block-value--empty={severePct == null}>
 						<MaybeValue value={pct(severePct)} reason="no-observations" {locale} />

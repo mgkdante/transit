@@ -14,7 +14,6 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import TypedInformationCard from '$lib/components/shared/TypedInformationCard.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { ReceiptShiftRow } from '../selectors/timeOfDay';
 
 	interface SectionTimeOfDayProps {
@@ -23,10 +22,6 @@
 		subtitle: string;
 		caveat: string;
 		caveatLabel: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
@@ -36,24 +31,15 @@
 		subtitle,
 		caveat,
 		caveatLabel,
-		info,
 		locale,
 		headingLevel = 2,
 	}: SectionTimeOfDayProps = $props();
-
-	const headingInfo = $derived(info('severe', heading));
 </script>
 
 <section class="receipt-tod" data-slot="receipt-time-of-day" aria-label={heading}>
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo
-				tip={headingInfo.tip}
-				href={headingInfo.href}
-				label={headingInfo.label}
-				linkLabel={headingInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey={'severe'} {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-tod-list" role="list" aria-label={heading}>

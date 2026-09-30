@@ -56,8 +56,6 @@
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
 		SurfaceRailContext,
 		SurfaceRailPresentation,
@@ -84,17 +82,6 @@
 		controls: 'hotspots-controls',
 		toc: 'hotspots-toc',
 	});
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const metric = metricInfoFor(key, locale);
-		return {
-			...metric,
-			label: explainerCopy.info.trigger(name),
-			linkLabel: explainerCopy.info.link,
-		};
-	});
-	const severeInfo = $derived(info('severe', t.ladder.severeRateLabel));
 
 	const hotspots = createHistoryDateResource<HistoricCollectionIndex, Hotspots>(
 		{
@@ -600,7 +587,6 @@
 										tray={routeTray}
 										{windowCaption}
 										chartScrollLabel={t.chart.scroll(t.cards.lines.title)}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>
@@ -611,7 +597,6 @@
 										tray={stopTray}
 										{windowCaption}
 										chartScrollLabel={t.chart.scroll(t.cards.stops.title)}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>

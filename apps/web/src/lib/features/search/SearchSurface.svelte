@@ -76,13 +76,7 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import {
-		metricInfoFor,
-		metricName,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { metricName } from '$lib/features/metrics/metrics.summary';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import {
 		stopGroupKey,
@@ -101,20 +95,6 @@
 	const locale: Locale = getLocale();
 	const t = $derived(copy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
-
-	// The metric-explainer (i) affordance on result-group headings (§C5.14): a
-	// one-line tip + a deep link into /metrics#<anchor>, the same `info()` shape every
-	// surface uses. OTP rides the Lines group; crowding + delay ride the Live-buses group.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
-	// The three result-group (i) payloads, hoisted to script level (an {@const} can't
-	// sit directly inside a plain element in the group headings below).
-	const otpInfo = $derived(info('otp', 'OTP'));
-	const crowdingInfo = $derived(info('occupancy', metricName('occupancy', locale)));
-	const delayInfo = $derived(info('avgDelay', metricName('avgDelay', locale)));
 
 	// Static discovery indexes — loaded client-side, gated by ResourceBoundary.
 	const routes = createResource(() => getRoutesIndex());
@@ -326,13 +306,7 @@
 							<h2 class="search-group-head">
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.linesLabel}</span>
-									<MetricInfo
-										tip={otpInfo.tip}
-										href={otpInfo.href}
-										label={otpInfo.label}
-										linkLabel={otpInfo.linkLabel}
-										side="bottom"
-									/>
+									<MetricInfo metricKey={'otp'} {locale} name={'OTP'} side="bottom" />
 								</span>
 								<span class="search-group-count">{t.resultCount(matchedRoutes.length)}</span>
 							</h2>
@@ -405,17 +379,15 @@
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.vehiclesLabel}</span>
 									<MetricInfo
-										tip={crowdingInfo.tip}
-										href={crowdingInfo.href}
-										label={crowdingInfo.label}
-										linkLabel={crowdingInfo.linkLabel}
+										metricKey={'occupancy'}
+										{locale}
+										name={metricName('occupancy', locale)}
 										side="bottom"
 									/>
 									<MetricInfo
-										tip={delayInfo.tip}
-										href={delayInfo.href}
-										label={delayInfo.label}
-										linkLabel={delayInfo.linkLabel}
+										metricKey={'avgDelay'}
+										{locale}
+										name={metricName('avgDelay', locale)}
 										side="bottom"
 									/>
 								</span>

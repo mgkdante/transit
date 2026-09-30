@@ -79,8 +79,6 @@
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	// The shared alert vocabulary, now in the $lib/v1 kernel (no cross-feature import).
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
@@ -112,16 +110,6 @@
 	const railDisclosures = createRailDisclosureController({
 		filters: 'alerts-filters',
 		toc: 'alerts-toc',
-	});
-
-	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>. Wires the five supplemental alert* dimensions (cause/effect/
-	// severity/duration/reach) onto their headings — the SAME `info()` shape every
-	// other surface uses (NetworkSurface / RouteDetail / StopReliabilitySurface).
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
 	// The current compatibility payload stays the fast default and supplies the honest
@@ -616,28 +604,23 @@
 {#snippet headlineInfo()}
 	<!-- Wired to the alert-duration explainer: the honest deep link replaces the surface's
 	     only bare `/metrics` href (its lone convention break) with metricInfoFor('alertDuration'). -->
-	{@const i = info('alertDuration', t.headline.label)}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'alertDuration'} {locale} name={t.headline.label} side="bottom" />
 {/snippet}
 
 <!-- The five supplemental alert* explainer tips, each wired onto its heading. cause/effect/
      severity ride the three breakdown sub-headings; reach rides the log section (its rows
      carry the affected-lines/stops counts). duration rides the headline card above. -->
 {#snippet causeInfo()}
-	{@const i = info('alertCause', t.breakdown.byCause)}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'alertCause'} {locale} name={t.breakdown.byCause} side="bottom" />
 {/snippet}
 {#snippet effectInfo()}
-	{@const i = info('alertEffect', t.breakdown.byEffect)}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'alertEffect'} {locale} name={t.breakdown.byEffect} side="bottom" />
 {/snippet}
 {#snippet severityInfo()}
-	{@const i = info('alertSeverity', t.breakdown.bySeverity)}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'alertSeverity'} {locale} name={t.breakdown.bySeverity} side="bottom" />
 {/snippet}
 {#snippet reachInfo()}
-	{@const i = info('alertReach', t.meta.routes)}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'alertReach'} {locale} name={t.meta.routes} side="bottom" />
 {/snippet}
 
 <p

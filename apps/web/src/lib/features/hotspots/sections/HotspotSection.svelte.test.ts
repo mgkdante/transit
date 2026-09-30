@@ -65,13 +65,6 @@ const tray = [
 	},
 ] as const;
 
-const info = {
-	tip: 'Définition du taux de retards graves',
-	href: '/fr/metrics#severe',
-	label: 'À propos du taux de retards graves',
-	linkLabel: 'Voir la méthodologie',
-};
-
 const resizeObservers: ResizeObserverStub[] = [];
 
 class ResizeObserverStub {
@@ -134,7 +127,7 @@ function renderSection() {
 			tray,
 			windowCaption: 'Classement sur la dernière journée de service.',
 			chartScrollLabel,
-			info,
+
 			locale: 'fr',
 			copy: COPY.fr,
 		},

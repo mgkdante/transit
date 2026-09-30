@@ -15,7 +15,6 @@
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { CancelTrendVM } from '../selectors/cancelTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -25,21 +24,10 @@
 		vm: CancelTrendVM;
 		/** The formatted latest reading ("2.6%"), or null → the styled chip. */
 		latestDisplay: string | null;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
 	}
-	let { vm, latestDisplay, info, copy, locale }: SectionCancellationsProps = $props();
-
-	const i = $derived(info('cancellation', copy.cancelSection));
+	let { vm, latestDisplay, copy, locale }: SectionCancellationsProps = $props();
 </script>
 
 <NetworkTile
@@ -56,13 +44,7 @@
 			size="md"
 		>
 			{#snippet info()}
-				<MetricInfo
-					tip={i.tip}
-					href={i.href}
-					label={i.label}
-					linkLabel={i.linkLabel}
-					side="bottom"
-				/>
+				<MetricInfo metricKey={'cancellation'} {locale} name={copy.cancelSection} side="bottom" />
 			{/snippet}
 		</ExplainedMetricCard>
 		<!-- Single-series trend spec: only the cancellation rate is plotted. -->

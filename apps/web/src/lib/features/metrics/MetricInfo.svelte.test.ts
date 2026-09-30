@@ -13,6 +13,7 @@ import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricInfo from './MetricInfo.svelte';
+import { metricInfoFor } from './metrics.summary';
 
 const base = {
 	tip: 'The share of readings that landed on time.',
@@ -27,6 +28,42 @@ const source = readFileSync(
 );
 
 describe('MetricInfo trigger', () => {
+	it('resolves definitions and follows metric, locale and name changes while open', async () => {
+		const { rerender } = render(MetricInfo, {
+			props: { metricKey: 'otp', locale: 'en', name: 'On time', side: 'bottom' },
+		});
+		const trigger = screen.getByRole('button', { name: 'About On time' });
+		trigger.focus();
+		await tick();
+		expect(screen.getByRole('dialog', { name: 'About On time' })).toBeInTheDocument();
+		expect(screen.getByText(metricInfoFor('otp', 'en').tip)).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /How this is measured/ })).toHaveAttribute(
+			'href',
+			'/metrics#otp',
+		);
+
+		await rerender({
+			metricKey: 'coverage',
+			locale: 'fr',
+			name: 'Véhicules connus',
+			side: 'bottom',
+		});
+		expect(screen.getByRole('button', { name: 'À propos de Véhicules connus' })).toBe(trigger);
+		expect(
+			screen.getByRole('dialog', { name: 'À propos de Véhicules connus' }),
+		).toBeInTheDocument();
+		expect(screen.queryByText(metricInfoFor('otp', 'en').tip)).not.toBeInTheDocument();
+		expect(screen.getByText(metricInfoFor('coverage', 'fr').tip)).toBeInTheDocument();
+		const link = screen.getByRole('link', { name: /Comment c’est mesuré/ });
+		expect(link).toHaveAttribute('href', '/fr/metrics#metrics-provenance');
+		expect(link).not.toHaveAttribute('target');
+		link.focus();
+		await fireEvent.keyDown(link, { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(trigger);
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	it('keeps the shared dashboard and network information popover free of colored glow', () => {
 		const popoverRule = source.match(/\.metric-info__pop\s*\{([\s\S]*?)\n\t\}/)?.[1] ?? '';
 

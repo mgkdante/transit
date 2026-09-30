@@ -9,33 +9,23 @@
   the orchestrator gates on the day-grain + a non-empty list.
 -->
 <script lang="ts">
+	import type { Locale } from '$lib/i18n';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { OccupancyDay } from '../selectors/occupancyTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionCrowdingByDayProps {
+		locale: Locale;
 		days: readonly OccupancyDay[];
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { days, info, copy }: SectionCrowdingByDayProps = $props();
-
-	const i = $derived(info('occupancy', copy.occupancyTrendSection));
+	let { locale, days, copy }: SectionCrowdingByDayProps = $props();
 </script>
 
 {#snippet crowdingInfo()}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'occupancy'} {locale} name={copy.occupancyTrendSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

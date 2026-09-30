@@ -18,7 +18,6 @@
 		type TerminalFooterItem,
 	} from '$lib/components/brand/TerminalPanel.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -26,16 +25,6 @@
 	interface SectionLiveHeadlineProps {
 		/** The four glance cards (already formatted + honesty-marked upstream). */
 		cards: readonly KpiCardVM[];
-		/** The orchestrator's metric-explainer resolver (key + name → the (i) wiring). */
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		locale: Locale;
 		copy: NetworkReliabilityCopy;
 		terminal: {
@@ -44,7 +33,7 @@
 			footerItems: TerminalFooterItem[];
 		};
 	}
-	let { cards, info, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
+	let { cards, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
 </script>
 
 <!-- Four scalars form two balanced rows, or one column when two cards cannot fit. -->
@@ -58,7 +47,6 @@
 	>
 		<DashboardGrid minTile="max(220px, calc((100% - var(--space-card-gap)) / 2))" gutter={false}>
 			{#each cards as card (card.label)}
-				{@const i = info(card.key, card.label)}
 				<ExplainedMetricCard
 					label={card.label}
 					value={card.value}
@@ -67,13 +55,7 @@
 					size="lg"
 				>
 					{#snippet info()}
-						<MetricInfo
-							tip={i.tip}
-							href={i.href}
-							label={i.label}
-							linkLabel={i.linkLabel}
-							side="bottom"
-						/>
+						<MetricInfo metricKey={card.key} {locale} name={card.label} side="bottom" />
 					{/snippet}
 				</ExplainedMetricCard>
 			{/each}

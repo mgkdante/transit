@@ -1,51 +1,41 @@
 <!--
-  MetricInfo — the reusable (i) affordance that sits next to a metric label on
-  the reliability surface. On hover/focus/click it reveals a one-line plain
-  explanation plus a keyboard-reachable link that deep-links into the in-app
-  /metrics explainer at this metric's anchor (NOT Notion, NOT a new tab by
-  default — first-party SPA content, back-button-friendly).
-
-  Why hand-rolled (not the bits-ui Tooltip): a tooltip dismisses on blur, so it
-  cannot host a focusable action link. This is a small click/focus POPOVER: the
-  trigger toggles it; the popover contains the tip + the link; Escape closes and
-  returns focus to the trigger; an outside click / focus-out dismisses it.
-
-  DOCTRINE: --primary is fine here — it is an INTERACTIVE affordance (the trigger
-  glyph + the link), never a data mark. (doctrine-allow: interactive)
-  AA: glyph + link sit on --popover/--popover-foreground; focus ring mirrors the
-  reliability segmented-control recipe (2px var(--ring), offset 2px).
-  Reduced-motion: the fade/scale transition is dropped under prefers-reduced-motion.
+  Metric definitions open a popover so its explainer link stays keyboard-reachable.
+  Hover/focus opens it; activation pins it; Escape closes and restores trigger focus.
+  Interactive glyph/link may use --primary (doctrine-allow: interactive).
+  Popover colors and focus rings use shared tokens; reduced motion drops transitions.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { Locale } from '$lib/i18n';
+	import {
+		metricInfoFor,
+		metricInfoCopy,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from './metrics.summary';
 	import { cn } from '$lib/utils';
 
-	interface MetricInfoProps {
-		/** Plain one-line explanation (already localized). */
-		tip: string;
-		/** Localized href to the explainer at this metric's anchor (e.g. "/fr/metrics#otp"). */
-		href: string;
-		/** Accessible name for the trigger (e.g. "About on-time %"), localized. */
-		label: string;
-		/** Link text shown inside the popover (e.g. "How this is measured"), localized. */
-		linkLabel: string;
-		/** Open the explainer in a new tab. Default false (in-app same-tab nav). */
+	type MetricInfoProps = {
 		newTab?: boolean;
-		/** Placement of the popover relative to the trigger. Default 'top'. */
 		side?: 'top' | 'bottom';
-		/** Extra classes on the inline wrapper. */
 		class?: string;
-	}
+	} & (
+		| { metricKey: MetricKey | SupplementalMetricKey; locale: Locale; name: string }
+		| { tip: string; href: string; label: string; linkLabel: string }
+	);
 
-	let {
-		tip,
-		href,
-		label,
-		linkLabel,
-		newTab = false,
-		side = 'top',
-		class: className,
-	}: MetricInfoProps = $props();
+	let props: MetricInfoProps = $props();
+	let { newTab = false, side = 'top', class: className } = $derived(props);
+	const content = $derived(
+		'metricKey' in props
+			? {
+					...metricInfoFor(props.metricKey, props.locale),
+					label: metricInfoCopy[props.locale].trigger(props.name),
+					linkLabel: metricInfoCopy[props.locale].link,
+				}
+			: props,
+	);
+	const { tip, href, label, linkLabel } = $derived(content);
 
 	let open = $state(false);
 	// Activation pins the explanation independently of automatic hover/focus opening.

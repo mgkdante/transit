@@ -20,8 +20,7 @@
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue, StateNotice } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, metricName } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { metricName } from '$lib/features/metrics/metrics.summary';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayMeasurement, delayTone, delayLabel } from '$lib/site/delayPresentation';
@@ -35,15 +34,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const delayInfo = $derived.by(() => {
-		const i = metricInfoFor('avgDelay', locale);
-		return {
-			...i,
-			label: explainerCopy.info.trigger(metricName('avgDelay', locale)),
-			linkLabel: explainerCopy.info.link,
-		};
-	});
 	// Trip links are noindex; keep this UI trail outside the indexed SEO breadcrumbs.
 	// Breadcrumb localizes these delocalized paths.
 	const trail = $derived<BreadcrumbTrailItem[]>([
@@ -91,13 +81,7 @@
 </script>
 
 {#snippet etaInfo()}
-	<MetricInfo
-		tip={delayInfo.tip}
-		href={delayInfo.href}
-		label={delayInfo.label}
-		linkLabel={delayInfo.linkLabel}
-		side="bottom"
-	/>
+	<MetricInfo metricKey={'avgDelay'} {locale} name={metricName('avgDelay', locale)} side="bottom" />
 {/snippet}
 
 {#snippet reportFreshness()}
@@ -168,10 +152,9 @@
 							<span class="trip-cell-head">
 								<SectionLabel text={t.verdictHeading} variant="metric" />
 								<MetricInfo
-									tip={delayInfo.tip}
-									href={delayInfo.href}
-									label={delayInfo.label}
-									linkLabel={delayInfo.linkLabel}
+									metricKey={'avgDelay'}
+									{locale}
+									name={metricName('avgDelay', locale)}
 									side="bottom"
 								/>
 							</span>

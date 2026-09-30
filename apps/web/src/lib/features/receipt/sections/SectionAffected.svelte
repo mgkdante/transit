@@ -11,34 +11,21 @@
 	import { MaybeValue } from '$lib/components/edge';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { AffectedCountVM } from '../selectors/affectedCounts';
 
 	interface SectionAffectedProps {
 		counts: readonly AffectedCountVM[];
 		heading: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
-	let { counts, heading, info, locale, headingLevel = 2 }: SectionAffectedProps = $props();
-
-	const headingInfo = $derived(info('affectedCounts', heading));
+	let { counts, heading, locale, headingLevel = 2 }: SectionAffectedProps = $props();
 </script>
 
 <section class="receipt-panel receipt-affected" data-slot="receipt-affected">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo
-				tip={headingInfo.tip}
-				href={headingInfo.href}
-				label={headingInfo.label}
-				linkLabel={headingInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey={'affectedCounts'} {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<dl class="receipt-counts">

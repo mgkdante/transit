@@ -1,23 +1,8 @@
 import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
+import { METRIC_SUMMARIES, type MetricKey } from './metrics.summary';
+export { metricInfoFor, metricName, SUPPLEMENTAL_METRIC_TIPS } from './metrics.summary';
+export type { MetricKey, SupplementalMetricKey } from './metrics.summary';
 import type { Locale } from '$lib/i18n';
-import { localizeHref } from '$lib/i18n';
-
-/** Stable identity for each explainer entry (drives the surface ↔ page link). */
-export type MetricKey =
-	| 'otp'
-	| 'avgDelay'
-	| 'p50p90'
-	| 'severe'
-	| 'regularityCov'
-	| 'headway'
-	| 'excessWait'
-	| 'cancellation'
-	| 'skippedStop'
-	| 'serviceSpan'
-	| 'occupancy'
-	| 'habits'
-	| 'seasonality'
-	| 'weakStops';
 
 /** Provenance confidence: every reliability metric is a feed-derived proxy. */
 export type Confidence = 'proxy' | 'medium';
@@ -82,16 +67,11 @@ export const METRICS: readonly MetricEntry[] = [
 	// ── 01 Punctuality ──────────────────────────────────────────────────────
 	{
 		key: 'otp',
-		anchor: 'otp',
+		...METRIC_SUMMARIES.otp,
 		cluster: 'punctuality',
 		family: 1,
 		confidence: 'proxy',
-		name: { fr: 'Ponctualité', en: 'On-time %' },
 		sciName: 'otp_pct',
-		oneLiner: {
-			fr: 'La part des prédictions à retard connu entre une minute d’avance et moins de cinq minutes de retard.',
-			en: 'The share of known-delay predictions between one minute early and less than five minutes late.',
-		},
 		definition: {
 			fr: 'Pour la sélection et la période affichées, ce pourcentage compte les relevés de retard prédit dans la bande à l’heure, de −60 secondes inclusivement à 300 secondes exclusivement. Chaque relevé à retard connu compte comme une observation; plusieurs relevés peuvent concerner le même voyage. Une valeur de 90 % signifie neuf observations sur dix dans cette bande. Les retards inconnus sont exclus du dénominateur. Cette mesure décrit les prédictions GTFS-RT, sans certifier les arrivées réelles ni compter les voyages ponctuels.',
 			en: 'For the displayed selection and period, this percentage counts predicted-delay readings in the on-time band, from −60 seconds inclusive to 300 seconds exclusive. Each known-delay reading is one observation; multiple readings can describe the same trip. A value of 90% means nine observations in ten fall within that band. Unknown delays are excluded from the denominator. This measures GTFS-RT predictions, without certifying actual arrivals or counting punctual trips.',
@@ -141,16 +121,11 @@ def otp_pct(on_time, known):
 	},
 	{
 		key: 'avgDelay',
-		anchor: 'avg-delay',
+		...METRIC_SUMMARIES.avgDelay,
 		cluster: 'punctuality',
 		family: 2,
 		confidence: 'proxy',
-		name: { fr: 'Retard moyen', en: 'Average delay' },
 		sciName: 'avg_delay_min',
-		oneLiner: {
-			fr: 'L’écart moyen prédit par rapport à l’horaire, en minutes : positif pour un retard, négatif pour une avance.',
-			en: 'Average predicted deviation from the timetable, in minutes: positive for late, negative for early.',
-		},
 		definition: {
 			fr: 'La somme des écarts prévus utilisables divisée par le nombre d’observations. Les valeurs manquantes et celles qui dépassent une heure en avance ou en retard sont exclues. Chaque observation compte, y compris les mises à jour répétées d’un même trajet.',
 			en: 'The sum of usable predicted deviations divided by their observation count. Missing values and deviations more than one hour early or late are excluded. Each observation counts, including repeated updates for the same trip.',
@@ -198,16 +173,11 @@ GROUP BY rd.provider_id, rd.route_id, local_date;`,
 	},
 	{
 		key: 'p50p90',
-		anchor: 'p50-p90',
+		...METRIC_SUMMARIES.p50p90,
 		cluster: 'punctuality',
 		family: 2,
 		confidence: 'proxy',
-		name: { fr: 'Retard médian et 90e percentile', en: 'Median and 90th-percentile delay' },
 		sciName: 'p50_min · p90_min',
-		oneLiner: {
-			fr: 'La médiane situe le centre des retards prédits rapportés; le 90e percentile décrit leur partie haute. Il ne représente pas le retard maximal.',
-			en: 'The median describes the centre of reported predicted delays; the 90th percentile describes their upper range. It is not the maximum delay.',
-		},
 		definition: {
 			fr: 'Les valeurs quotidiennes sont des percentiles continus des prédictions au retard connu et compris entre −3 600 et +3 600 secondes, pour une même date locale de capture. Chaque observation compte; un même trajet peut contribuer plusieurs fois. Le calcul interpole entre les valeurs triées. Avec des égalités ou de petits échantillons, exactement 10 % des observations ne sont pas forcément supérieures au p90. Les estimations sur des fenêtres plus longues utilisent les histogrammes regroupés lorsqu’ils sont disponibles; une moyenne de percentiles quotidiens ne reconstitue pas le percentile de la fenêtre.',
 			en: 'Daily values are continuous percentiles of known predicted delays between −3,600 and +3,600 seconds on one provider-local capture date. Each observation counts; one trip can contribute repeatedly. The calculation interpolates between sorted values. With ties or small samples, exactly 10% of observations need not exceed p90. Longer-window estimates use pooled histograms where available; averaging daily percentiles cannot reconstruct a window percentile.',
@@ -252,16 +222,11 @@ GROUP BY f.provider_id, f.route_id;`,
 	},
 	{
 		key: 'severe',
-		anchor: 'severe',
+		...METRIC_SUMMARIES.severe,
 		cluster: 'punctuality',
 		family: 3,
 		confidence: 'proxy',
-		name: { fr: 'Part des retards graves', en: 'Severe-delay share' },
 		sciName: 'severe_pct',
-		oneLiner: {
-			fr: 'La part des prédictions à plus de cinq minutes et au plus une heure de retard, parmi les observations de la vue affichée.',
-			en: 'The share of predictions more than five minutes and at most one hour late, among the displayed view’s observations.',
-		},
 		definition: {
 			fr: 'Un retard grave dépasse 300 secondes sans dépasser 3 600 secondes. Pour une ligne ou un bilan quotidien, le dénominateur comprend tous les relevés à retard connu, même ceux hors de la plage ±3 600 secondes. Pour les statistiques par arrêt, seuls les relevés dans cette plage comptent. Les classements des points chauds et des récidivistes utilisent aussi cette plage. Ces pourcentages décrivent des prédictions, pas des arrivées mesurées ni une part des voyageurs.',
 			en: 'A severe delay exceeds 300 seconds and is no more than 3,600 seconds. For a route or daily receipt, the denominator includes every known-delay reading, including those outside ±3,600 seconds. Stop statistics count only readings within that range. Hotspot and repeat-offender rankings also use that range. These percentages describe predictions, not measured arrivals or a share of passengers.',
@@ -310,16 +275,11 @@ def severe_pct(observations, severe):
 	},
 	{
 		key: 'weakStops',
-		anchor: 'weak-stops',
+		...METRIC_SUMMARIES.weakStops,
 		cluster: 'punctuality',
 		family: 11,
 		confidence: 'proxy',
-		name: { fr: 'Arrêts les plus en retard', en: 'Weak stops' },
 		sciName: 'weak_stops',
-		oneLiner: {
-			fr: 'Les arrêts d’une ligne où les prédictions de retard sont les moins favorables, selon la période affichée.',
-			en: 'Stops on a line with less favorable delay predictions, for the displayed period.',
-		},
 		definition: {
 			fr: 'Dans la vue par période, le classement utilise la borne inférieure de Wilson de la part sans retard grave : une borne plus basse place l’arrêt plus haut. Les barres montrent la part des retards graves, pas le score de classement. Seuls les arrêts ayant au moins 30 observations admissibles sont retenus, avec au plus 15 arrêts par période. Si cette vue est indisponible, le résumé classe les arrêts par retard moyen sur les 30 dates locales se terminant au dernier jour clos disponible. Les deux calculs excluent les retards inconnus ou hors de [−3 600, 3 600] secondes.',
 			en: 'In the period view, ranking uses the lower Wilson bound of the non-severe share: a lower bound places the stop higher. Bars show severe-delay share, not the ranking score. Only stops with at least 30 eligible observations qualify, with at most 15 stops per period. If this view is unavailable, the summary ranks stops by mean delay over the 30 local dates ending on the latest available closed day. Both calculations exclude unknown delays and values outside [−3,600, 3,600] seconds.',
@@ -370,16 +330,11 @@ mean_seconds = total_delay_seconds / observations
 	},
 	{
 		key: 'regularityCov',
-		anchor: 'regularity',
+		...METRIC_SUMMARIES.regularityCov,
 		cluster: 'waitRegularity',
 		family: 4,
 		confidence: 'proxy',
-		name: { fr: 'Régularité des intervalles (CV)', en: 'Headway regularity (CoV)' },
 		sciName: 'headway_cov · bunched_pct',
-		oneLiner: {
-			fr: 'La variabilité des intervalles entre apparitions de trajets dans le flux. Le CV augmente avec l’irrégularité; la part d’apparitions rapprochées estime les écarts inférieurs à la moitié de la médiane.',
-			en: 'Variation in the gaps between trips appearing in the feed. CoV rises with irregularity; the closely spaced share estimates gaps below half the median.',
-		},
 		definition: {
 			fr: 'Ces mesures décrivent les premières captures admissibles de trajets, pas des arrivées mesurées à un arrêt. Le CV divise l’écart-type des intervalles par leur moyenne. La part d’apparitions rapprochées mesure les écarts inférieurs à la moitié de la médiane. Les vues par jour, semaine et mois regroupent les statistiques quotidiennes conservées; elles couvrent la direction comptant le plus de trajets de semaine dans chaque fenêtre.',
 			en: 'These measures describe the first eligible feed captures of trips, not measured stop arrivals. CoV divides the sample standard deviation of gaps by their mean. The closely spaced share measures gaps below half the median. Day, week and month views pool retained daily statistics; they cover the direction with the most observed weekday trips in each window.',
@@ -419,16 +374,11 @@ bunched_pct_value = round_half_away(bunched, 1) if bunched is not None else None
 	},
 	{
 		key: 'headway',
-		anchor: 'headway',
+		...METRIC_SUMMARIES.headway,
 		cluster: 'waitRegularity',
 		family: 4,
 		confidence: 'proxy',
-		name: { fr: 'Intervalle dans le flux et prévu', en: 'Feed-appearance and scheduled headway' },
 		sciName: 'observed_min · scheduled_min',
-		oneLiner: {
-			fr: 'L’intervalle médian entre les premières apparitions de trajets dans le flux, comparé aux départs prévus au premier arrêt. Il ne mesure pas votre attente à un arrêt.',
-			en: 'The median gap between trips first appearing in the feed, compared with scheduled first-stop departures. It does not measure your wait at a stop.',
-		},
 		definition: {
 			fr: 'On retient la première capture admissible de chaque trajet et journée de service : retard prédit connu et compris entre −3 600 et 3 600 secondes. Les écarts entre apparitions successives restent dans la même ligne, direction, journée de service et période horaire; seuls les écarts strictement positifs et inférieurs à 240 minutes sont retenus. Les vues par jour, semaine et mois estiment une médiane à partir des histogrammes quotidiens regroupés. Le repère prévu vient du GTFS actuel, sur une journée de semaine représentative.',
 			en: 'Each trip and service day contributes its first eligible capture: a known predicted delay within −3,600 to 3,600 seconds. Gaps between successive appearances stay within the same route, direction, service day and shift; only gaps strictly above zero and below 240 minutes remain. The day, week and month views estimate a median from pooled daily histograms. The scheduled reference comes from the current GTFS timetable on a representative weekday.',
@@ -467,16 +417,11 @@ scheduled_min = round_half_away(statistics.median(gaps), 1) if gaps else None`,
 	},
 	{
 		key: 'excessWait',
-		anchor: 'excess-wait',
+		...METRIC_SUMMARIES.excessWait,
 		cluster: 'waitRegularity',
 		family: 4,
 		confidence: 'proxy',
-		name: { fr: 'Attente excédentaire', en: 'Excess wait' },
 		sciName: 'excess_wait_min',
-		oneLiner: {
-			fr: "Estimation d'attente excédentaire fondée sur les apparitions de trajets et des arrivées uniformes des usagers, ramenée à zéro au minimum.",
-			en: 'Modeled extra wait from trip appearances, assuming uniform rider arrivals and clamped to zero.',
-		},
 		definition: {
 			fr: "Pour une période de la fenêtre choisie, le modèle calcule AWT = somme(écart²) / (2·somme(écart)), puis retranche la moitié de l'intervalle prévu. Il suppose des arrivées uniformes pendant les écarts observés; aucune fréquentation réelle n'est utilisée. La carte résumée donne le même poids à chaque période rapportée. Cette moyenne de périodes n'est pas une attente calculée sur tous les écarts de la journée. Les anciennes lignes sans moments conservent le proxy max(0, médiane observée − médiane prévue).",
 			en: 'For each shift in the selected window, the model calculates AWT = sum(gap²) / (2·sum(gap)), then subtracts half the scheduled gap. It assumes uniform rider arrivals over the observed gaps; actual passenger counts are not used. The summary card gives each reporting shift equal weight. That shift mean is not a wait pooled from all gaps across the day. Older rows without gap moments retain the proxy max(0, observed median − scheduled median).',
@@ -512,16 +457,11 @@ scheduled_min = round_half_away(statistics.median(gaps), 1) if gaps else None`,
 	// ── 03 Service delivered ──────────────────────────────────────────────────
 	{
 		key: 'cancellation',
-		anchor: 'cancellation',
+		...METRIC_SUMMARIES.cancellation,
 		cluster: 'serviceDelivered',
 		family: 5,
 		confidence: 'proxy',
-		name: { fr: "Taux d'annulation", en: 'Cancellation rate' },
 		sciName: 'cancellation_rate_pct',
-		oneLiner: {
-			fr: "Des trajets que le flux temps réel a RAPPORTÉS pour une ligne ce jour-là, la part qu'il a marqués annulés, pas la part de l'horaire complet (les trajets jamais mentionnés ne comptent pas).",
-			en: 'Of the trips the realtime feed actually REPORTED for a route that day, the share it flagged canceled, not the share of the full timetable (trips the feed never mentions are not counted).',
-		},
 		definition: {
 			fr: "Des trajets que le flux temps réel a réellement rapportés pour une ligne un jour donné, la part que le flux a marqués annulés. Un « jour-trajet » regroupe les observations ayant le même identifiant de trajet et la même date de service; s’il est signalé annulé au moins une fois, il compte comme annulé. Donc « 3,2 % » signifie : sur 100 trajets dont le flux nous a parlé ce jour-là, environ 3 ont été annulés. C'est la part des trajets RAPPORTÉS annulés, pas la part de l'horaire publié complet, car les trajets jamais mentionnés ne sont pas dans le compte.",
 			en: 'Of the trips the realtime feed actually reported for a route on a given day, the share that the feed flagged as canceled. A “trip-day” groups observations with the same trip ID and service date; if the feed ever marked that run CANCELED at any point that day, it counts as canceled. So “3.2%” means: out of every 100 trips the feed told us about that day, about 3 were called off. It is the share of REPORTED trips that were canceled, not the share of the full published timetable, because trips the feed never mentions are not in the count at all.',
@@ -585,16 +525,11 @@ ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET ...`,
 	},
 	{
 		key: 'skippedStop',
-		anchor: 'skipped-stop',
+		...METRIC_SUMMARIES.skippedStop,
 		cluster: 'serviceDelivered',
 		family: 8,
 		confidence: 'proxy',
-		name: { fr: "Taux d'arrêts non desservis", en: 'Skipped-stop rate' },
 		sciName: 'skipped_stop_rate_pct',
-		oneLiner: {
-			fr: "La part des messages de prédiction d'arrêt qui portaient un drapeau « cet arrêt sera sauté », un drapeau déclaré par le flux, pas un dépassement physique vérifié.",
-			en: 'The share of stop-prediction messages that carried a “this stop will be skipped” flag, a feed-declared flag, not a verified physical pass-by.',
-		},
 		definition: {
 			fr: "Pour une ligne un jour clos, c'est la part des prédictions d'arrêt que le flux en direct a envoyées qui étaient marquées « cet arrêt sera sauté ». Autrement dit : sur toutes les mises à jour d'arrêt à venir diffusées ce jour-là, quel pourcentage disait « on ne s'arrête pas ici ». Un chiffre plus élevé = plus d'avis de saut. Mesuré par ligne, par jour local clos, et il n'a commencé à s'accumuler qu'à partir du jour de lancement, aucun historique rétroactif.",
 			en: 'For one bus route on one finished calendar day, this is the share of the stop predictions the agency’s live feed sent out that were flagged “this stop will be skipped.” Think of it as: out of all the upcoming-stop updates the route’s vehicles broadcast that day, what percentage said “we’re not stopping here.” A higher number means riders saw more “skip” notices. It is measured per route, per closed local day, and only started accumulating from the day the feature shipped, there is no backfilled history.',
@@ -657,19 +592,11 @@ count(*) FILTER (WHERE stc.schedule_relationship = 1)::integer
 	},
 	{
 		key: 'serviceSpan',
-		anchor: 'service-span',
+		...METRIC_SUMMARIES.serviceSpan,
 		cluster: 'serviceDelivered',
 		family: 7,
 		confidence: 'proxy',
-		name: {
-			fr: 'Écart entre premières apparitions de trajets',
-			en: 'Span of trip first appearances',
-		},
 		sciName: 'service_span_min · first/last_trip_delay_min',
-		oneLiner: {
-			fr: 'L’écart entre la plus précoce et la plus tardive des premières captures de trajets d’une ligne pour un jour de service GTFS. Il ne prouve ni des départs réels ni une période de fonctionnement continu.',
-			en: 'The gap between the earliest and latest first captured reports of a route’s trips for one GTFS service day. It establishes neither real departures nor continuous operation.',
-		},
 		definition: {
 			fr: 'Pour chaque identifiant de trajet du jour de service D, on conserve sa première capture trouvée dans les jours de capture D et D+1. Les extrémités sont la plus précoce et la plus tardive de ces premières captures. Le compte indique les identifiants de trajet distincts présents dans cette fenêtre. Le retard du premier trajet vient de son premier relevé; celui du dernier trajet vient de son dernier relevé dans la fenêtre. Ce dernier relevé peut être postérieur à l’extrémité droite et n’est pas nécessairement une arrivée au terminus.',
 			en: 'For each trip ID with GTFS service date D, we retain its earliest capture found on capture dates D and D+1. The endpoints are the earliest and latest of those first captures. The count is the number of distinct trip IDs present in that window. The first trip’s delay comes from its earliest report; the last trip’s delay comes from its latest report in the window. That latest report can be later than the right endpoint and need not be a terminal arrival.',
@@ -733,16 +660,11 @@ GROUP BY provider_id, route_id`,
 	// ── 04 Crowding ────────────────────────────────────────────────────────────
 	{
 		key: 'occupancy',
-		anchor: 'occupancy',
+		...METRIC_SUMMARIES.occupancy,
 		cluster: 'crowding',
 		family: 6,
 		confidence: 'proxy',
-		name: { fr: 'Achalandage (parts par palier)', en: 'Occupancy mix (crowding)' },
 		sciName: 'occupancy_mix',
-		oneLiner: {
-			fr: "La part des relevés de véhicules dans chacun des cinq paliers d'achalandage (vide, plusieurs places, peu de places, debout, plein), la part des bus-moments rapportés, PAS « % plein » ni « % d'usagers debout ».",
-			en: 'The share of vehicle reports in each of five crowding levels (empty, many seats, few seats, standing, full), the share of reported bus-moments, NOT “% full” or “% of riders standing.”',
-		},
 		definition: {
 			fr: "À quel point les bus sont pleins, exprimé comme la part des relevés de véhicules tombés dans chacun des cinq paliers : vide, plusieurs places libres, peu de places libres, debout, plein. C'est bâti uniquement sur le « niveau » d'achalandage que les véhicules diffusent en direct (une catégorie comme « debout »), pas sur un décompte de têtes ni un pourcentage-plein. Donc « debout = 0,32 » signifie « 32 % des relevés de véhicules ayant rapporté un niveau disaient debout », PAS « 32 % plein » et PAS « 32 % des usagers debout ». Les niveaux sont rapportés par relevé, donc les lignes achalandées (plus de véhicules, plus de relevés) contribuent davantage.",
 			en: 'How full the buses are, expressed as the share of vehicle reports that fell into each of five crowding levels: empty, many seats free, few seats free, standing room only, and full. It is built only from the crowding “level” that vehicles broadcast over the live feed (a category like “standing-room-only”), not from any head-count or percentage-full number. So a value like “standing = 0.32” means “32% of the vehicle pings that reported a crowding level said standing-room-only”, it is NOT “32% full” and NOT “32% of riders were standing.” Levels are reported per vehicle ping, so busy routes contribute more pings.',
@@ -809,16 +731,11 @@ if not total: return None        # honest-None, never an all-zero mix`,
 	// ── 05 Time-of-day habits ──────────────────────────────────────────────────
 	{
 		key: 'habits',
-		anchor: 'habits',
+		...METRIC_SUMMARIES.habits,
 		cluster: 'habits',
 		family: 12,
 		confidence: 'proxy',
-		name: { fr: 'Scores horaires relatifs (7×24)', en: 'Relative hourly scores (7×24)' },
 		sciName: 'habits.matrix · repeat_problem_relative · severe_relative',
-		oneLiner: {
-			fr: 'Un score relatif par jour et heure au sein d’une ligne ou d’un arrêt. 1 désigne son plus grand score fourni, 0 un score fourni nul; une case vide est indisponible. Ce score ne mesure pas une probabilité de retard et ne compare pas les entités.',
-			en: 'A relative score for each weekday and hour within one line or stop. 1 is its highest supplied score, 0 a supplied zero score; a blank cell is unavailable. The score measures neither delay probability nor differences between entities.',
-		},
 		definition: {
 			fr: 'Chaque grille utilise un seul maximum pour ses 7 jours et 24 heures. Les scores de ligne combinent un compte de relevés de retard grave et un retard moyen positif. Les scores d’arrêt utilisent seulement le compte de relevés de retard grave. Les quatre couleurs divisent l’échelle relative en [0; 0,25[, [0,25; 0,5[, [0,5; 0,75[ et [0,75; 1]. Le contour et le symbole ◆ marquent toute la dernière bande, y compris les valeurs inférieures au maximum. Une couleur pâle exprime un score relatif faible, sans prouver une faible fréquence de retard.',
 			en: 'Each grid uses one maximum across its 7 days and 24 hours. Line scores combine a severe-delay reading count and a positive mean delay. Stop scores use only the severe-delay reading count. The four colors divide the relative scale into [0,0.25), [0.25,0.5), [0.5,0.75) and [0.75,1]. The outline and ◆ mark the entire highest band, including values below the maximum. A pale color expresses a low relative score without establishing a low delay frequency.',
@@ -880,16 +797,11 @@ GROUP BY 1, 2
 	},
 	{
 		key: 'seasonality',
-		anchor: 'seasonality',
+		...METRIC_SUMMARIES.seasonality,
 		cluster: 'habits',
 		family: 9,
 		confidence: 'proxy',
-		name: { fr: 'Saisonnalité hebdomadaire', en: 'Weekday seasonality' },
 		sciName: 'day_of_week.severe_pct',
-		oneLiner: {
-			fr: 'Regroupe les relevés par jour de la semaine (lun-dim, heure locale) et montre par jour le retard moyen et la part de retards graves, sur TOUT l’historique accumulé du spine (rétention 730 jours), donc un motif de long terme, pas les derniers jours.',
-			en: 'Groups readings by weekday (Mon–Sun, local time) and shows, per weekday, the average lateness and severe-delay share over the route’s WHOLE accrued spine history (730-day retention), so a long-run pattern, not just the last few days.',
-		},
 		definition: {
 			fr: "Pour une ligne, ceci regroupe chaque relevé d'écart à l'horaire par le jour de la semaine où il s'est produit (lundi à dimanche, heure locale) et montre, pour chaque jour : le retard moyen en minutes, et la part des relevés « gravement en retard » (plus de 5 minutes derrière). Ça répond à « cette ligne est-elle fiablement pire le vendredi que le mardi ? » C'est calculé à la lecture depuis gold.route_delay_spine, sur TOUT l'historique accumulé du spine (rétention 730 jours, réconcilié S14 2026-07-02), donc un vrai motif hebdomadaire de long terme, pas un instantané des derniers jours.",
 			en: 'For one route, this groups every schedule-deviation reading the feed gave us by which day of the week it happened on (Monday through Sunday, in local time) and shows, for each weekday: the average lateness in minutes, and the share of readings that were “severely late” (more than 5 minutes behind). It answers “is this route reliably worse on, say, Fridays than on Tuesdays?” It is computed at read time from gold.route_delay_spine over the route’s WHOLE accrued spine history (730-day retention, reconciled S14 2026-07-02), so it is a genuine long-run weekday pattern, not a snapshot of the last few days.',
@@ -1007,161 +919,4 @@ export function methodologyNoteFor(
 	if (!provKey) return null;
 	const value = methodology[provKey];
 	return typeof value === 'string' && value.trim().length > 0 ? value : null;
-}
-
-/** Localized name for a metric key (FR canonical / EN mirror). */
-export function metricName(key: MetricKey, locale: Locale): string {
-	return METRICS_BY_KEY[key].name[locale];
-}
-
-// ── Supplemental (i) tips ──────────────────────────────────────────────────────
-//
-// Some surfaces label numbers that are NOT one of the 14 reliability families that
-// drive the /metrics explainer page (live feed coverage,
-// observation counts, and the /alerts GTFS-RT dimensions). They still deserve an
-// honest one-line (i) tip with a deep link into /metrics, but they do NOT get their
-// own explainer section, so they live here rather than in the METRICS array (which
-// the explainer page renders 1:1 and the coverage test pins exactly).
-//
-// Each entry identifies its own population and missing-data rules. Its `anchor`
-// links to the existing /metrics section that explains that source or methodology.
-export type SupplementalMetricKey =
-	| 'liveOtp'
-	| 'liveDelayPercentiles'
-	| 'stopNotSevere'
-	| 'coverage'
-	| 'serviceComparison'
-	| 'vehicleCount'
-	| 'affectedCounts'
-	| 'silentTrip'
-	| 'alertCause'
-	| 'alertEffect'
-	| 'alertSeverity'
-	| 'alertDuration'
-	| 'alertReach';
-
-interface SupplementalMetricEntry {
-	/** Deep-link target — an existing /metrics section anchor (no leading '#'). */
-	readonly anchor: string;
-	/** ONE-LINE plain explanation, the (i) hover tip (FR canonical / EN mirror). */
-	readonly oneLiner: BilingualText;
-}
-
-export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
-	Record<SupplementalMetricKey, SupplementalMetricEntry>
-> = {
-	serviceComparison: {
-		anchor: 'cancellation',
-		oneLiner: { en: serviceComparisonCopy.en.tip, fr: serviceComparisonCopy.fr.tip },
-	},
-	liveOtp: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: 'Parmi les véhicules actuels admissibles sur la carte et au statut connu, la part dont le retard prédit moyen du trajet est compris entre −60 s inclus et 300 s exclus. Les statuts inconnus sont exclus du dénominateur.',
-			en: 'Among current vehicle rows eligible for the map and with a known status, the share whose trip-average predicted delay is at least −60 s and below 300 s. Unknown statuses are excluded from the denominator.',
-		},
-	},
-	stopNotSevere: {
-		anchor: 'severe',
-		oneLiner: {
-			fr: 'La part des prévisions connues admissibles à cet arrêt dont le retard ne dépasse pas 300 secondes, y compris les avances. Les retards hors de [−3 600, 3 600] secondes sont exclus. Cette part est le complément des retards graves, pas une ponctualité mesurée.',
-			en: 'The share of eligible known predictions at this stop no more than 300 seconds late, including early predictions. Delays outside [−3,600, 3,600] seconds are excluded. This is the complement of severe-delay share, not measured on-time performance.',
-		},
-	},
-	liveDelayPercentiles: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: 'Médiane et 90e percentile des retards prédits moyens par trajet actuels, chaque agrégat de trajet ayant le même poids, arrondis à la minute. Valeur indisponible sans trajet mesuré; aucune pondération par les usagers.',
-			en: 'Median and 90th percentile of current trip-average predicted delays, with equal weight per trip aggregate, rounded to whole minutes. Unavailable without measured trips; no passenger weighting.',
-		},
-	},
-	coverage: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: 'La part des véhicules actuels admissibles sur la carte dont le statut de retard est connu. Sans position admissible, la valeur est indisponible. Les véhicules absents du flux ne sont pas au dénominateur.',
-			en: 'The share of current vehicle-position rows eligible for the map with a known delay status. Unavailable without eligible positions. Vehicles absent from the feed are outside the denominator.',
-		},
-	},
-	vehicleCount: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: 'Le nombre de positions de véhicules actuelles aux coordonnées valides dans la zone configurée, sans dédoublonnage supplémentaire par identifiant de véhicule. Ce décompte ne mesure ni la flotte officielle ni les véhicules distincts sur une journée.',
-			en: 'The count of current vehicle-position rows with valid coordinates within configured map bounds, without additional deduplication by vehicle ID. This is neither the official fleet size nor a count of distinct vehicles over a day.',
-		},
-	},
-	affectedCounts: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "Lignes et arrêts distincts ayant au moins une prévision attribuée de retard supérieur à 5 minutes et d'au plus 60 minutes ce jour-là. Les versions d'avis comptent les contenus distincts enregistrés, pas les incidents ni les usagers. Une source absente laisse le décompte de lignes ou d'arrêts inconnu.",
-			en: 'Distinct lines and stops with at least one attributed delay prediction greater than 5 and at most 60 minutes that day. Alert versions count distinct recorded message content, not incidents or riders. Missing route or stop data leaves that count unknown.',
-		},
-	},
-	silentTrip: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: 'Les trajets prévus en circulation maintenant, hors métro, sans véhicule correspondant dans l’instantané actuel. Un trajet peut avoir émis plus tôt; son absence actuelle ne confirme pas une annulation.',
-			en: 'Scheduled non-metro trips running now with no matching vehicle in the current snapshot. A trip may have reported earlier; its current absence does not confirm a cancellation.',
-		},
-	},
-	alertCause: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "La cause déclarée d'une alerte (p. ex. travaux, météo, panne), reprise telle quelle du flux GTFS-RT, pas une enquête ni une vérification indépendante.",
-			en: 'The declared cause of an alert (e.g. construction, weather, breakdown), taken as-is from the GTFS-RT feed, not an investigation or independent check.',
-		},
-	},
-	alertEffect: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "L'effet déclaré d'une alerte sur le service (p. ex. détour, retards, arrêt déplacé), repris tel quel du flux, pas un impact mesuré.",
-			en: 'The declared effect of an alert on service (e.g. detour, delays, stop moved), taken as-is from the feed, not a measured impact.',
-		},
-	},
-	alertSeverity: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "Le niveau de gravité que l'agence a attaché à l'alerte dans le flux, son propre étiquetage, pas un score calculé par nous.",
-			en: 'The severity level the agency attached to the alert in the feed, its own labelling, not a score we computed.',
-		},
-	},
-	alertDuration: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "La durée annoncée d'une alerte d'après ses fenêtres actives du flux, NULL quand la fenêtre est ouverte ou incohérente, jamais un 0 inventé.",
-			en: 'An alert’s announced duration from its active windows in the feed, NULL when the window is open-ended or inconsistent, never a fabricated 0.',
-		},
-	},
-	alertReach: {
-		anchor: 'metrics-provenance',
-		oneLiner: {
-			fr: "Le nombre de lignes et d'arrêts qu'une alerte déclare toucher d'après le flux, un décompte d'entités nommées, pas une estimation d'usagers affectés.",
-			en: 'How many routes and stops an alert declares it affects per the feed, a count of named entities, not an estimate of affected riders.',
-		},
-	},
-};
-
-/**
- * The (i)-affordance payload for a metric label on a data surface: the one-line
- * tip + a localized deep link to the explainer at that metric's anchor.
- *
- * Resolves BOTH the 14 reliability families (MetricKey, full explainer entry) and
- * the supplemental metrics (SupplementalMetricKey: coverage,
- * vehicle/silent-trip counts, the /alerts dimensions) that carry only a tip +
- * anchor. `localizeHref` strips/re-adds the locale prefix; the `#anchor` is
- * appended by us (localizeHref treats the hash as caller-owned), so EN →
- * `/metrics#otp` and FR → `/fr/metrics#otp`.
- */
-export function metricInfoFor(
-	key: MetricKey | SupplementalMetricKey,
-	locale: Locale,
-): { tip: string; href: string; anchor: string } {
-	const entry: { oneLiner: BilingualText; anchor: string } =
-		key in METRICS_BY_KEY
-			? METRICS_BY_KEY[key as MetricKey]
-			: SUPPLEMENTAL_METRIC_TIPS[key as SupplementalMetricKey];
-	return {
-		tip: entry.oneLiner[locale],
-		href: `${localizeHref('/metrics', locale)}#${entry.anchor}`,
-		anchor: entry.anchor,
-	};
 }

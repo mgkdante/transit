@@ -33,8 +33,6 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -82,12 +80,6 @@
 	// Honest absence → null; never a fabricated 0. Shared formatter for severe %.
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 
-	// Metric-explainer (i) affordance — the same wiring every section uses.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
 	const dayTypeLabel = (g: string): string => {
 		if (g === 'weekday') return copy.peak.weekday;
@@ -325,18 +317,6 @@
 	const sectionEmpty = $derived(!hasHeatmap && !hasPeak && !crosstabLines.hasData && !hasWeekday);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 {#snippet onTimeCompareRow(row: OnTimeRow)}
 	<li
 		class="compare-row"
@@ -372,7 +352,13 @@
 			<div class="section-primary" data-slot="habits-heatmap" data-card="primary">
 				<span class="label-with-info">
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
-					{@render metricInfo('habits', band.heatmapHeading)}
+					<MetricInfo
+						class="cluster-info"
+						metricKey={'habits'}
+						{locale}
+						name={band.heatmapHeading}
+						side="bottom"
+					/>
 				</span>
 				{#if relativePeakText}
 					<p class="heatmap-insight" data-slot="best-time-insight">{relativePeakText}</p>
@@ -401,7 +387,13 @@
 				<div class="block" data-slot="on-time-vs-prior" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.priorDelta.onTimeHeading} variant="metric" />
-						{@render metricInfo('otp', copy.priorDelta.onTimeHeading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'otp'}
+							{locale}
+							name={copy.priorDelta.onTimeHeading}
+							side="bottom"
+						/>
 					</span>
 					<ul class="compare-list" data-slot="on-time-compare">
 						{#each onTimeShiftRows as row (row.key)}{@render onTimeCompareRow(row)}{/each}
@@ -416,7 +408,13 @@
 				<div class="block" data-slot="peak-off-peak" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.peak.heading} variant="metric" />
-						{@render metricInfo('severe', copy.peak.heading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'severe'}
+							{locale}
+							name={copy.peak.heading}
+							side="bottom"
+						/>
 					</span>
 					{#if hasShiftStrip}
 						<!-- P10: a Cleveland DOT/STRIP plot — one dot per shift on ONE shared
@@ -450,7 +448,13 @@
 				<div class="block" data-slot="shift-daytype-crosstab" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.crosstab.heading} variant="metric" />
-						{@render metricInfo('otp', copy.crosstab.heading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'otp'}
+							{locale}
+							name={copy.crosstab.heading}
+							side="bottom"
+						/>
 					</span>
 					<Chart spec={crosstabLines.spec} />
 					<p class="caption" data-slot="crosstab-caption">{copy.crosstab.caption}</p>
@@ -462,7 +466,13 @@
 				<div class="block" data-slot="habits-weekday" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
-						{@render metricInfo('seasonality', band.weekdayHeading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey={'seasonality'}
+							{locale}
+							name={band.weekdayHeading}
+							side="bottom"
+						/>
 					</span>
 					<Chart spec={weekdayCycle.spec} />
 					<p class="caption" data-slot="habits-cycle-caption">{band.cycle.captionSingle}</p>

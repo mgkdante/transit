@@ -74,8 +74,7 @@
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
 	import { absenceSentence } from '$lib/site/absence';
@@ -111,14 +110,6 @@
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
-
-	// The in-app metric-explainer (i) affordance, same wiring as the reliability
-	// clusters: a one-line tip + a localized deep link to /metrics#<anchor>.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	const tabs = $derived<{ key: DetailTab; label: string }[]>([
 		{ key: 'detail', label: t.tabs.detail },
@@ -405,15 +396,7 @@
 <!-- The (i) metric-explainer affordance, reused inside the Schedule pane. Declared
      at the top level so the pane snippet (passed to EntityDetail) can render it. -->
 {#snippet scheduleInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="route-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
+	<MetricInfo class="route-metric-info" metricKey={key} {locale} {name} side="bottom" />
 {/snippet}
 
 {#snippet routeBanner()}

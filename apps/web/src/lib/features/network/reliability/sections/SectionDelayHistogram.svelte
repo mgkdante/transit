@@ -15,36 +15,27 @@
   (the chart canvas).
 -->
 <script lang="ts">
+	import type { Locale } from '$lib/i18n';
 	import { Chart, type HistogramSpec, type AbsenceSpec } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionDelayHistogramProps {
+		locale: Locale;
 		/** The A1 histogram spec, or an absence spec (the section stands down then). */
 		spec: HistogramSpec | AbsenceSpec;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { spec, info, copy }: SectionDelayHistogramProps = $props();
+	let { locale, spec, copy }: SectionDelayHistogramProps = $props();
 
 	const hasHistogram = $derived(spec.kind === 'histogram');
-	const i = $derived(info('p50p90', copy.delayHistogramSection));
 </script>
 
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
 		{#snippet histogramInfo()}
-			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+			<MetricInfo metricKey={'p50p90'} {locale} name={copy.delayHistogramSection} side="bottom" />
 		{/snippet}
 		<NetworkTile
 			title={copy.delayHistogramSection}

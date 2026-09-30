@@ -11,6 +11,7 @@
 // the screen owns no inline strings.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { metricInfoCopy } from './metrics.summary';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
@@ -149,10 +150,7 @@ export const metricsCopy = defineCopy({
 			crowding: '04 Encombrement',
 			habits: '05 Habitudes horaires',
 		},
-		info: {
-			trigger: (name: string) => `À propos de ${name}`,
-			link: 'Comment c’est mesuré',
-		},
+		info: metricInfoCopy.fr,
 	},
 	en: {
 		kicker: 'METHODOLOGY · METRIC SCIENCE',
@@ -288,10 +286,7 @@ export const metricsCopy = defineCopy({
 			crowding: '04 Crowding',
 			habits: '05 Time-of-day habits',
 		},
-		info: {
-			trigger: (name) => `About ${name}`,
-			link: 'How this is measured',
-		},
+		info: metricInfoCopy.en,
 	},
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
 

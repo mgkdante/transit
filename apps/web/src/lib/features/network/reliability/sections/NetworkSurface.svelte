@@ -52,12 +52,7 @@
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
-	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import type { MetricKey } from '$lib/features/metrics/metrics.summary';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
 	import {
@@ -101,15 +96,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(networkReliabilityCopy[locale]);
-
-	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>, wired onto every KPI + section heading so each number carries its
-	// honest definition (same wiring as RouteDetail / StopReliabilitySurface).
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	// Live tier — one store instance; the v1 context is booted by the time the tree renders.
 	const initialNetworkSeed = untrack(() => networkSeed);
@@ -639,8 +625,8 @@
 				{vehiclesSpark}
 				{isDailyGrain}
 				metricKey={trendMetricKey}
-				{info}
 				copy={t}
+				{locale}
 			/>
 		</div>
 
@@ -649,7 +635,6 @@
 				<SectionCancellations
 					vm={cancelTrend}
 					latestDisplay={fmtCancel(cancelTrend.latest)}
-					{info}
 					copy={t}
 					{locale}
 				/>
@@ -658,19 +643,18 @@
 
 		{#if hasOccupancyTrend}
 			<div class="network-history-row" data-slot="network-history-crowding-row">
-				<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
+				<SectionCrowdingByDay days={occupancyDays} copy={t} {locale} />
 			</div>
 		{/if}
 
 		<div class="network-history-companions" data-slot="network-history-companion-row">
-			<SectionCompleteness latestDisplay={completenessDisplay} {info} copy={t} {locale} />
+			<SectionCompleteness latestDisplay={completenessDisplay} copy={t} {locale} />
 
 			{#if hasShift}
 				<SectionByTimeOfDay
 					rows={shiftRows}
 					dataSlot="network-shift"
 					showCaveat={!hasDayType}
-					{info}
 					copy={t}
 					{locale}
 				/>
@@ -680,7 +664,6 @@
 					rows={dayTypeRows}
 					dataSlot={hasShift ? undefined : 'network-shift'}
 					showCaveat={true}
-					{info}
 					copy={t}
 					{locale}
 				/>
@@ -827,7 +810,6 @@
 					<ArticleSectionStack class="network-live-content">
 						<SectionLiveHeadline
 							cards={kpis.headline}
-							{info}
 							{locale}
 							copy={t}
 							terminal={{
@@ -841,15 +823,15 @@
 								],
 							}}
 						/>
-						<SectionReporting cards={kpis.reporting} {silentRows} {info} copy={t} {locale} />
+						<SectionReporting cards={kpis.reporting} {silentRows} copy={t} {locale} />
 						<SectionStatusMix
 							{statusSpec}
 							occupancySpec={occupancyMix.spec}
 							hasOccupancy={occupancyMix.hasOccupancy}
-							{info}
 							copy={t}
+							{locale}
 						/>
-						<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
+						<SectionDelayHistogram spec={delayHistogramSpec} copy={t} {locale} />
 					</ArticleSectionStack>
 				{:else if live.error}
 					<EdgeState

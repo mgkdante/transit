@@ -11,34 +11,24 @@
   --primary stays interactive-only; the marks own their scales.
 -->
 <script lang="ts">
+	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Chart, type ChartSpec } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionStatusMixProps {
+		locale: Locale;
 		/** The status-mix spec (5 StatusCodes by count, or an honest absence). */
 		statusSpec: ChartSpec;
 		/** The occupancy-mix spec; null when the tile stands down. */
 		occupancySpec: ChartSpec | null;
 		/** True when the cycle received real occupancy telemetry (gates the crowding bar). */
 		hasOccupancy: boolean;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { statusSpec, occupancySpec, hasOccupancy, info, copy }: SectionStatusMixProps = $props();
-
-	const occInfo = $derived(info('occupancy', copy.occupancySection));
+	let { locale, statusSpec, occupancySpec, hasOccupancy, copy }: SectionStatusMixProps = $props();
 </script>
 
 <DashboardGrid minTile="320px" gutter={false}>
@@ -54,13 +44,7 @@
 	<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 	{#if hasOccupancy && occupancySpec}
 		{#snippet occupancyInfo()}
-			<MetricInfo
-				tip={occInfo.tip}
-				href={occInfo.href}
-				label={occInfo.label}
-				linkLabel={occInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey={'occupancy'} {locale} name={copy.occupancySection} side="bottom" />
 		{/snippet}
 		<NetworkTile
 			title={copy.occupancySection}

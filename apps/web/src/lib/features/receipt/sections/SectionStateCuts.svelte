@@ -4,7 +4,6 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { StateCutsVM } from '../selectors/stateCuts';
 
 	interface SectionStateCutsProps {
@@ -14,10 +13,6 @@
 		explainer: string;
 		standDown: string;
 		splitLabel: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
@@ -28,12 +23,9 @@
 		explainer,
 		standDown,
 		splitLabel,
-		info,
 		locale,
 		headingLevel = 2,
 	}: SectionStateCutsProps = $props();
-
-	const i = $derived(info('serviceComparison', completenessLabel));
 </script>
 
 <section class="receipt-states" data-slot="receipt-state-cuts" aria-label={heading}>
@@ -53,10 +45,9 @@
 		>
 			{#snippet info()}
 				<MetricInfo
-					tip={i.tip}
-					href={i.href}
-					label={i.label}
-					linkLabel={i.linkLabel}
+					metricKey={'serviceComparison'}
+					{locale}
+					name={completenessLabel}
 					side="bottom"
 				/>
 			{/snippet}

@@ -16,7 +16,6 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import { SEVERE_DOMAIN } from '$lib/features/reliability/shiftGrains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { ShiftRow } from '../selectors/shiftRank';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -27,25 +26,14 @@
 		dataSlot?: string;
 		/** Render the trailing-window caveat under this tile (coordinated by the orchestrator). */
 		showCaveat: boolean;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
 	}
-	let { rows, dataSlot, showCaveat, info, copy, locale }: SectionByTimeOfDayProps = $props();
-
-	const i = $derived(info('severe', copy.shiftSection));
+	let { rows, dataSlot, showCaveat, copy, locale }: SectionByTimeOfDayProps = $props();
 </script>
 
 {#snippet shiftInfo()}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey={'severe'} {locale} name={copy.shiftSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

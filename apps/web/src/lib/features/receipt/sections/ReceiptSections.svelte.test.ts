@@ -11,24 +11,17 @@ import SectionWorst from './SectionWorst.svelte';
 import type { StateCutsVM } from '../selectors/stateCuts';
 import type { NotReportedVM } from '../selectors/notReportedLines';
 
-const info = (_key: string, name: string) => ({
-	tip: `${name} definition`,
-	href: '/metrics',
-	label: `About ${name}`,
-	linkLabel: 'Read methodology',
-});
-
 const headlineProps = {
 	kpis: [{ key: 'otp', label: 'On time', value: '82%', size: 'lg' }] as const,
 	heading: 'Headline',
-	info,
+
 	locale: 'en' as const,
 };
 
 const affectedProps = {
 	counts: [{ key: 'routes', label: 'Lines', value: '4' }] as const,
 	heading: 'Affected',
-	info,
+
 	locale: 'en' as const,
 };
 
@@ -44,7 +37,7 @@ const worstProps = {
 		hasWorst: true,
 	},
 	heading: 'Worst',
-	info,
+
 	locale: 'en' as const,
 };
 
@@ -65,7 +58,7 @@ const timeOfDayProps = {
 	subtitle: 'Severe delays',
 	caveat: 'Observed service periods only.',
 	caveatLabel: 'Caveat',
-	info,
+
 	locale: 'en' as const,
 };
 
@@ -92,7 +85,7 @@ const stateCutsProps = {
 	explainer: 'Observed scheduled service.',
 	standDown: 'Not available.',
 	splitLabel: 'Service states',
-	info,
+
 	locale: 'en' as const,
 };
 
