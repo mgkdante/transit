@@ -1498,21 +1498,6 @@ async function settleVisibleChartText(page) {
 	}
 }
 
-async function freePort() {
-	const server = createServer();
-	await new Promise((resolve, reject) => {
-		server.once('error', reject);
-		server.listen(0, '127.0.0.1', resolve);
-	});
-	const address = server.address();
-	invariant(address && typeof address === 'object', 'could not reserve a loopback port');
-	const port = address.port;
-	await new Promise((resolve, reject) =>
-		server.close((error) => (error ? reject(error) : resolve())),
-	);
-	return port;
-}
-
 function jsonHeaders(fixture) {
 	return {
 		'Access-Control-Expose-Headers': 'Date, Age',
@@ -1595,11 +1580,6 @@ async function ensureBuild() {
 }
 
 async function startPreview(replayBase) {
-	const port = await freePort();
-	const output = [];
-	const stateDir = mkdtempSync(join(tmpdir(), 'transit-b9-miniflare-'));
-	const configPath = join(stateDir, 'wrangler.toml');
-	writeFileSync(configPath, 'name = "transit-b9-preview"\n');
 	const version = await runChild('node', [WRANGLER, '--version'], {
 		cwd: WEB_ROOT,
 		label: 'wrangler version',
@@ -1608,79 +1588,45 @@ async function startPreview(replayBase) {
 		typeof EXPECTED_WRANGLER === 'string' && version.trim() === EXPECTED_WRANGLER,
 		`unexpected wrangler version ${version.trim()}`,
 	);
-	const child = spawn(
-		'node',
-		[
-			WRANGLER,
-			'dev',
-			join(WEB_ROOT, '.svelte-kit/cloudflare/_worker.js'),
-			'--config',
-			configPath,
-			'--assets',
-			join(WEB_ROOT, '.svelte-kit/cloudflare'),
-			'--local',
-			'--persist-to',
-			stateDir,
-			'--ip',
-			'127.0.0.1',
-			'--port',
-			String(port),
-			'--compatibility-date',
-			'2025-01-01',
-			'--compatibility-flag',
-			'nodejs_compat',
-			'--var',
-			`PUBLIC_V1_BASE:${replayBase}`,
-			'--var',
-			'PUBLIC_V1_PROVIDER:stm',
-			'--log-level',
-			'error',
-			'--show-interactive-dev-session=false',
-		],
-		{
-			cwd: WEB_ROOT,
-			env: process.env,
-			stdio: ['ignore', 'pipe', 'pipe'],
-		},
+	const stateDir = mkdtempSync(join(tmpdir(), 'transit-b9-preview-'));
+	const configPath = join(stateDir, 'wrangler.json');
+	writeFileSync(
+		configPath,
+		JSON.stringify({
+			name: 'transit-b9-preview',
+			main: join(BUILD_ROOT, '_worker.js'),
+			assets: { directory: BUILD_ROOT },
+			compatibility_date: '2025-01-01',
+			compatibility_flags: ['nodejs_compat'],
+			vars: { PUBLIC_V1_BASE: replayBase, PUBLIC_V1_PROVIDER: 'stm' },
+		}),
 	);
-	let childError = null;
-	child.once('error', (error) => (childError = error));
-	child.stdout.on('data', (chunk) => output.push(String(chunk)));
-	child.stderr.on('data', (chunk) => output.push(String(chunk)));
-	const origin = `http://127.0.0.1:${port}`;
-	for (let attempt = 0; attempt < 80; attempt += 1) {
-		if (childError) {
-			rmSync(stateDir, { recursive: true, force: true });
-			throw childError;
-		}
-		if (child.exitCode != null) {
-			rmSync(configPath, { force: true });
-			rmSync(stateDir, { recursive: true, force: true });
-			throw new Error(`B9 preview stopped\n${output.join('')}`);
-		}
-		try {
-			const response = await fetch(origin, { redirect: 'manual' });
-			if (response.status > 0) return { child, origin, output, configPath, stateDir };
-		} catch {
-			await new Promise((resolve) => setTimeout(resolve, 100));
-		}
+	const { unstable_startWorker } = await import('wrangler');
+	let worker;
+	try {
+		worker = await unstable_startWorker({
+			config: configPath,
+			dev: {
+				remote: false,
+				server: { hostname: '127.0.0.1', port: 0 },
+				inspector: false,
+				persist: false,
+				watch: false,
+				registry: undefined,
+				enableContainers: false,
+				logLevel: 'error',
+			},
+		});
+		return { worker, origin: (await worker.url).origin, stateDir };
+	} catch (error) {
+		await worker?.dispose();
+		rmSync(stateDir, { recursive: true, force: true });
+		throw error;
 	}
-	child.kill('SIGTERM');
-	rmSync(configPath, { force: true });
-	rmSync(stateDir, { recursive: true, force: true });
-	throw new Error(`B9 preview did not become ready\n${output.join('')}`);
 }
 
 async function stopPreview(preview) {
-	if (preview.child.exitCode == null) {
-		preview.child.kill('SIGTERM');
-		await Promise.race([
-			new Promise((resolve) => preview.child.once('exit', resolve)),
-			new Promise((resolve) => setTimeout(resolve, 2_000)),
-		]);
-		if (preview.child.exitCode == null) preview.child.kill('SIGKILL');
-	}
-	rmSync(preview.configPath, { force: true });
+	await preview.worker.dispose();
 	rmSync(preview.stateDir, { recursive: true, force: true });
 }
 

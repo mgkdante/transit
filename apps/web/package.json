@@ -21,7 +21,7 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "vitest run --maxWorkers=4",
-		"test:b9-display": "bun scripts/b9-displayed-values.mjs",
+		"test:b9-display": "node scripts/b9-displayed-values.mjs",
 		"test:unit": "vitest",
 		"test:mobile-geometry": "bun scripts/test-mobile-geometry.ts"
 	},
