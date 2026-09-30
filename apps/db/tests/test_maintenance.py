@@ -98,6 +98,33 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
 }
 
 
+EXPECTED_PRUNE_TABLE_COUNTS = {
+    "silver.stop_times": 12,
+    "silver.translations": 9,
+    "silver.shapes": 7,
+    "silver.route_patterns": 6,
+    "silver.directions": 5,
+    "silver.calendar_dates": 4,
+    "silver.calendar": 2,
+    "silver.trips": 8,
+    "silver.stops": 3,
+    "silver.routes": 1,
+    "silver.feed_info": 1,
+    "silver.agency": 1,
+    "silver.gtfs_extra_rows": 11,
+    "silver.gtfs_source_members": 10,
+    "silver.gis_gtfs_matches": 13,
+    "core.dataset_versions": 2,
+    "silver.rt_trip_update_stop_times": 400,
+    "silver.rt_trip_updates": 40,
+    "silver.rt_vehicle_positions": 30,
+    "silver.rt_entities": 60,
+    "silver.rt_feed_snapshots": 50,
+    "gold.fact_trip_delay_snapshot": 500,
+    "gold.fact_vehicle_snapshot": 300,
+}
+
+
 class ScalarResult:
     def __init__(self, value: int) -> None:
         self.value = value
@@ -201,106 +228,18 @@ class RecordingConnection:
                 return ScalarResult(rowcount)
         if "SELECT dataset_version_id" in sql_text:
             return IterableResult([(7,), (6,), (5,)])
-        # DELETE statements return rowcount
-        if "DELETE FROM silver.stop_times" in sql_text:
-            return RowcountResult(12)
-        if "DELETE FROM silver.translations" in sql_text:
-            return RowcountResult(9)
-        if "DELETE FROM silver.shapes" in sql_text:
-            return RowcountResult(7)
-        if "DELETE FROM silver.route_patterns" in sql_text:
-            return RowcountResult(6)
-        if "DELETE FROM silver.directions" in sql_text:
-            return RowcountResult(5)
-        if "DELETE FROM silver.calendar_dates" in sql_text:
-            return RowcountResult(4)
-        if "DELETE FROM silver.calendar" in sql_text:
-            return RowcountResult(2)
-        if "DELETE FROM silver.trips" in sql_text:
-            return RowcountResult(8)
-        if "DELETE FROM silver.stops" in sql_text:
-            return RowcountResult(3)
-        if "DELETE FROM silver.routes" in sql_text:
-            return RowcountResult(1)
-        if "DELETE FROM silver.feed_info" in sql_text:
-            return RowcountResult(1)
-        if "DELETE FROM silver.agency" in sql_text:
-            return RowcountResult(1)
-        if "DELETE FROM silver.gtfs_extra_rows" in sql_text:
-            return RowcountResult(11)
-        if "DELETE FROM silver.gtfs_source_members" in sql_text:
-            return RowcountResult(10)
-        if "DELETE FROM silver.gis_gtfs_matches" in sql_text:
-            return RowcountResult(13)
-        if "DELETE FROM core.dataset_versions" in sql_text:
-            return RowcountResult(2)
-        if "DELETE FROM silver.rt_trip_update_stop_times" in sql_text:
-            return RowcountResult(400)
-        if "DELETE FROM silver.rt_trip_updates" in sql_text:
-            return RowcountResult(40)
-        if "DELETE FROM silver.rt_vehicle_positions" in sql_text:
-            return RowcountResult(30)
-        if "DELETE FROM silver.rt_entities" in sql_text:
-            return RowcountResult(60)
-        if "DELETE FROM silver.rt_feed_snapshots" in sql_text:
-            return RowcountResult(50)
-        if "DELETE FROM gold.fact_trip_delay_snapshot" in sql_text:
-            return RowcountResult(500)
-        if "DELETE FROM gold.fact_vehicle_snapshot" in sql_text:
-            return RowcountResult(300)
+        for table_name, rowcount in EXPECTED_PRUNE_TABLE_COUNTS.items():
+            if f"DELETE FROM {table_name}" in sql_text:
+                return RowcountResult(rowcount)
         if "DELETE FROM raw.realtime_snapshot_index" in sql_text:
             return RowcountResult(3)
         if "DELETE FROM raw.ingestion_objects" in sql_text:
             return RowcountResult(3)
         if "DELETE FROM raw.ingestion_runs" in sql_text:
             return RowcountResult(1)
-        # COUNT statements return ScalarResult
-        if "SELECT COUNT(*) FROM silver.stop_times" in sql_text:
-            return ScalarResult(12)
-        if "SELECT COUNT(*) FROM silver.translations" in sql_text:
-            return ScalarResult(9)
-        if "SELECT COUNT(*) FROM silver.shapes" in sql_text:
-            return ScalarResult(7)
-        if "SELECT COUNT(*) FROM silver.route_patterns" in sql_text:
-            return ScalarResult(6)
-        if "SELECT COUNT(*) FROM silver.directions" in sql_text:
-            return ScalarResult(5)
-        if "SELECT COUNT(*) FROM silver.calendar_dates" in sql_text:
-            return ScalarResult(4)
-        if "SELECT COUNT(*) FROM silver.calendar" in sql_text:
-            return ScalarResult(2)
-        if "SELECT COUNT(*) FROM silver.trips" in sql_text:
-            return ScalarResult(8)
-        if "SELECT COUNT(*) FROM silver.stops" in sql_text:
-            return ScalarResult(3)
-        if "SELECT COUNT(*) FROM silver.routes" in sql_text:
-            return ScalarResult(1)
-        if "SELECT COUNT(*) FROM silver.feed_info" in sql_text:
-            return ScalarResult(1)
-        if "SELECT COUNT(*) FROM silver.agency" in sql_text:
-            return ScalarResult(1)
-        if "SELECT COUNT(*) FROM silver.gtfs_extra_rows" in sql_text:
-            return ScalarResult(11)
-        if "SELECT COUNT(*) FROM silver.gtfs_source_members" in sql_text:
-            return ScalarResult(10)
-        if "SELECT COUNT(*) FROM silver.gis_gtfs_matches" in sql_text:
-            return ScalarResult(13)
-        if "SELECT COUNT(*) FROM core.dataset_versions" in sql_text:
-            return ScalarResult(2)
-        if "SELECT COUNT(*) FROM silver.rt_trip_update_stop_times" in sql_text:
-            return ScalarResult(400)
-        if "SELECT COUNT(*) FROM silver.rt_trip_updates" in sql_text:
-            return ScalarResult(40)
-        if "SELECT COUNT(*) FROM silver.rt_vehicle_positions" in sql_text:
-            return ScalarResult(30)
-        if "SELECT COUNT(*) FROM silver.rt_entities" in sql_text:
-            return ScalarResult(60)
-        if "SELECT COUNT(*) FROM silver.rt_feed_snapshots" in sql_text:
-            return ScalarResult(50)
-        if "SELECT COUNT(*) FROM gold.fact_trip_delay_snapshot" in sql_text:
-            return ScalarResult(500)
-        if "SELECT COUNT(*) FROM gold.fact_vehicle_snapshot" in sql_text:
-            return ScalarResult(300)
+        for table_name, rowcount in EXPECTED_PRUNE_TABLE_COUNTS.items():
+            if f"SELECT COUNT(*) FROM {table_name}" in sql_text:
+                return ScalarResult(rowcount)
         # --- i3 retention (slice-9.1.1l) ---
         # i3 raw eligible COUNT references silver.i3_alerts in a NOT EXISTS
         # guard, so it MUST be matched before the silver.i3_alerts COUNT below.

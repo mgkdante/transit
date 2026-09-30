@@ -474,9 +474,7 @@ def ingest_static(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -492,9 +490,7 @@ def ingest_gis(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -700,9 +696,7 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -718,9 +712,7 @@ def capture_i3(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -736,9 +728,7 @@ def load_static_silver(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -754,9 +744,7 @@ def load_gis_silver(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -779,9 +767,7 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -796,9 +782,7 @@ def load_i3_silver(provider_id: str) -> None:
             provider_id,
             settings=settings,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -842,9 +826,7 @@ def build_gold(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -912,9 +894,7 @@ def replay_realtime_silver_command(
             settings=settings,
             registry=registry,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     payload: dict[str, object] = {
@@ -950,9 +930,7 @@ def replay_realtime_silver_command(
             settings=settings,
             registry=registry,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     payload["gold"] = gold_result.display_dict()
@@ -1002,9 +980,7 @@ def refresh_gold_realtime_command(
             registry=registry,
             bootstrap_from_archive=bootstrap_from_archive,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     payload = result.display_dict()
     payload["status"] = "refreshed" if snapshots else "no-archived-snapshots"
@@ -1040,9 +1016,7 @@ def backfill_dim_history_command(
             gtfs_zip_path=from_gtfs_zip,
             settings=settings,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -1058,9 +1032,7 @@ def refresh_gold_static_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -1263,9 +1235,7 @@ def run_static_pipeline_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
     # GIS failures report on stderr without blocking downstream static publication.
@@ -1287,9 +1257,7 @@ def run_realtime_cycle_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -1496,9 +1464,7 @@ def run_realtime_worker_command(
             registry=_provider_registry(settings),
             max_cycles=max_cycles,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
