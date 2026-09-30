@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _normalize_bronze_object_prefix(prefix: str) -> Path:
     prefix_path = Path(prefix)
-    if prefix_path.is_absolute() or ".." in prefix_path.parts:
+    if prefix_path.anchor or ".." in prefix_path.parts:
         raise BronzeStorageError(
             "Bronze object prefix must be a relative object-key prefix without parent traversal."
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from io import BytesIO
 from pathlib import Path
 
@@ -347,21 +348,50 @@ def test_local_bronze_storage_bulk_delete_preserves_per_path_failures(
     ]
     assert len(records) == 1
     assert "cannot-unlink" in records[0].getMessage()
-    assert "Is a directory" in records[0].getMessage()
+    error = records[0].args[-1]
+    assert isinstance(error, OSError)
+    assert error.filename == str(storage.root / "cannot-unlink")
+    assert str(error) in records[0].getMessage()
 
 
-def test_local_bronze_storage_list_objects_rejects_absolute_prefix(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "prefix",
+    ["/definitely-not-a-bronze-prefix"]
+    + (
+        [r"\outside", "C:outside", "D:outside", r"\\server\share\outside"]
+        if os.name == "nt"
+        else []
+    ),
+)
+def test_local_bronze_storage_list_objects_rejects_anchored_prefix(
+    tmp_path: Path, monkeypatch, prefix: str
+) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+
+    def unexpected_probe(path: Path) -> bool:
+        raise AssertionError("Invalid prefixes must be rejected before filesystem access")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "exists", unexpected_probe)
+        with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
+            list(storage.list_objects(prefix))
+
+
+def test_local_bronze_storage_list_objects_rejects_native_absolute_prefix(tmp_path: Path) -> None:
     storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
 
     with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
-        list(storage.list_objects("/definitely-not-a-bronze-prefix"))
+        list(storage.list_objects(str(tmp_path / "outside")))
 
 
-def test_local_bronze_storage_list_objects_rejects_parent_traversal(tmp_path: Path) -> None:
+@pytest.mark.parametrize("prefix", ["../outside"] + ([r"..\outside"] if os.name == "nt" else []))
+def test_local_bronze_storage_list_objects_rejects_parent_traversal(
+    tmp_path: Path, prefix: str
+) -> None:
     storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
 
     with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
-        list(storage.list_objects("../definitely-not-a-bronze-prefix"))
+        list(storage.list_objects(prefix))
 
 
 def test_s3_bronze_storage_list_objects_with_paginator() -> None:
