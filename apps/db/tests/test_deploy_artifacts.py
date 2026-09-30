@@ -1,6 +1,5 @@
 import math
 import os
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -335,44 +334,6 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert "Oracle VM Postgres" in env_example
     assert "local default does not require R2 credentials" in env_example
     assert "S3/R2 deployment" in env_example
-
-
-def test_root_readme_copies_the_db_runtime_template_to_the_db_app() -> None:
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "cp .env.example apps/db/.env" in readme
-    assert "cp .env.example .env" not in readme
-    assert "to `.env` from the repository root" not in readme
-
-
-def test_db_readme_documents_loopback_caddy_health_access() -> None:
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "http://127.0.0.1:8080" in readme
-    assert "8443" in readme
-    assert "CADDY_SITE_ADDRESS" in readme
-    assert "TLS" in readme
-    assert "CADDY_BIND_ADDRESS" in readme
-    assert "non-loopback" in readme
-    assert "reviewed" in readme
-    assert "HEALTH_SSH_TARGET" in readme
-    assert "validate-oracle-cutover.sh" in readme
-
-
-def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Existing Postgres volumes" in readme
-    assert "does not rotate" in readme
-    assert "read -rsp 'New Postgres password: ' POSTGRES_PASSWORD" in readme
-    assert "No service is recreated before the database role changes" in readme
-    assert "docker compose stop worker pruner health" in readme
-    assert "${POSTGRES_USER:-transit}" in readme
-    assert "${POSTGRES_DB:-transit}" in readme
-    assert r"\password" in readme
-    assert "docker compose up -d --force-recreate postgres worker pruner health" in readme
-    assert "destructive" in readme
-    assert "old password must fail" in readme
-    assert "owner approval" in readme
 
 
 def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
@@ -822,16 +783,18 @@ def test_env_example_documents_all_runtime_knobs() -> None:
     }.issubset(assignments)
 
 
-def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
-    # GOLD_FACT_RETENTION_DAYS default is 14 (settings.py); the prose must not
-    # contradict it with a stale "7 days" claim.
+def test_gold_fact_retention_default_matches_compose_and_env_template() -> None:
+    assert Settings.model_fields["GOLD_FACT_RETENTION_DAYS"].default == 14
+    services = _compose()["services"]
+    for service_name in ("worker", "pruner", "health"):
+        assert services[service_name]["environment"]["GOLD_FACT_RETENTION_DAYS"] == (
+            "${GOLD_FACT_RETENTION_DAYS:-14}"
+        )
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "GOLD_FACT_RETENTION_DAYS=14" in _active_lines(env_example)
     assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_example)
     assert "Gold facts keep 14 days" in env_example
     assert "keep 7 days" not in env_example
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-    assert re.search(r"^\|\s*Gold detail facts\s*\|\s*14 days\s*\|$", readme, re.MULTILINE)
-    assert "Gold detail facts 7 days" not in readme
 
 
 def test_compose_bronze_realtime_default_matches_the_ninety_day_runtime_contract() -> None:

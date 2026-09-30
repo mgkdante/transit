@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "transit-ops"
 version = "0.1.0"
 description = "STM-first, provider-ready GTFS and GTFS-RT analytics foundation."
-readme = "README.md"
+readme = {text = "Transit captures GTFS and GTFS-Realtime feeds, normalizes them in Postgres, and publishes versioned analytics snapshots.", content-type = "text/markdown"}
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic>=1.18.5,<2.0",
@@ -26,6 +26,9 @@ dependencies = [
 
 [project.scripts]
 transit-ops = "transit_ops.cli:app"
+
+[project.urls]
+Documentation = "https://www.notion.so/3ea3e863069081dca6a6ec9fa09052c0"
 
 [dependency-groups]
 dev = [

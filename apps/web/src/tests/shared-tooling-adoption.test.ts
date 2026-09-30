@@ -483,24 +483,9 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(posterScript).toContain('verifyInstalledBrowserArtifact');
 		expect(posterScript).toContain('browser.version()');
 
-		const contributing = text('CONTRIBUTING.md');
-		expect(contributing).toContain('Bun 1.3.11');
-		expect(contributing).toContain('Node.js 22.23.2');
-		expect(contributing).toContain('Python 3.12');
-		expect(contributing).toContain('uv 0.11.15');
-		expect(contributing).toContain('Gitleaks 8.30.1');
-		expect(contributing).toContain('.github/scripts/install-gitleaks.sh');
 		expect(text('.github/scripts/install-gitleaks.sh')).toContain(
 			'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
 		);
-		const contributingPosterCheck = contributing.indexOf('map-posters:check');
-		expect(contributingPosterCheck).toBeGreaterThanOrEqual(0);
-		expect(contributing).not.toContain('playwright-core install chromium-headless-shell');
-		expect(contributingPosterCheck).toBeLessThan(
-			contributing.indexOf('install-browser-toolchain.mjs'),
-		);
-		expect(contributing).toContain('TRANSIT_BROWSER_ROOT');
-		expect(contributing).toContain('node --test .github/scripts/refresh-basemap-r2.test.mjs');
 
 		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
 		expect(refresh).toBeDefined();

@@ -71,11 +71,6 @@ COMPATIBILITY_PROOFS = {
     "apps/web/src/tests/map-poster-assets.test.ts",
 }
 PUBLIC_RECEIPTS = {
-    "README.md",
-    "CONTRIBUTING.md",
-    "apps/db/README.md",
-    "apps/web/README.md",
-    "apps/web/CLOUDFLARE.md",
     "apps/web/static/map/basemap-montreal-posters.json",
     "apps/web/wrangler.toml",
 }

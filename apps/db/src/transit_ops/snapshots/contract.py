@@ -661,7 +661,8 @@ class CancellationPeriod(BaseModel):
     cancellation_rate_pct: float | None = None
     canceled_trip_days: int | None = None
     total_trip_days: int | None = None
-    # Aggregate observed/scheduled counts; definitions are in apps/db/README.md.
+    # Aggregate observed/scheduled counts; definitions:
+    # https://www.notion.so/3ea3e863069081dca6a6ec9fa09052c0
     scheduled_trip_days: int | None = None
     delivered_trip_days: int | None = None
     silent_trip_days: int | None = None

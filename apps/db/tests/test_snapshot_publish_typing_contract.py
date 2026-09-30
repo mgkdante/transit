@@ -33,7 +33,7 @@ def test_payload_sink_accepts_collection_without_historic_capabilities() -> None
     assert not isinstance(_CollectingStorage(), HistoricWriter)
 
 
-def test_ci_and_docs_use_the_configured_typing_scope() -> None:
+def test_ci_uses_the_configured_typing_scope() -> None:
     project = tomllib.loads((DB_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dev_dependencies = project["dependency-groups"]["dev"]
     mypy = project["tool"]["mypy"]
@@ -82,11 +82,6 @@ def test_ci_and_docs_use_the_configured_typing_scope() -> None:
     assert len(targets) == len(set(targets))
     assert all((DB_ROOT / target).exists() for target in targets)
     assert "run: uv run mypy\n" in workflow
-    for path in (REPO_ROOT / "CONTRIBUTING.md", DB_ROOT / "README.md"):
-        commands = path.read_text(encoding="utf-8").splitlines()
-        assert [line.strip() for line in commands if line.strip().startswith("uv run mypy")] == [
-            "uv run mypy"
-        ]
 
 
 def test_gold_reader_and_recovery_have_no_type_suppressions_or_any_annotations() -> None:
