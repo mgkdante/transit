@@ -53,6 +53,7 @@ function requireSafeComponent(value, label) {
 
 export function browserPlatform(platform = process.platform, arch = process.arch) {
 	if (platform === 'linux' && arch === 'x64') return 'linux-x64';
+	if (platform === 'win32' && arch === 'x64') return 'win32-x64';
 	throw new Error(`unsupported browser artifact platform: ${platform}-${arch}`);
 }
 
@@ -63,11 +64,20 @@ export async function sha256File(path) {
 	return hash.digest('hex');
 }
 
-/** @param {{ repoRoot?: string }} [options] */
-export async function readBrowserToolchain({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
+/** @param {{ repoRoot?: string, platform?: string, arch?: string }} [options] */
+export async function readBrowserToolchain({
+	repoRoot = DEFAULT_REPO_ROOT,
+	platform = process.platform,
+	arch = process.arch,
+} = {}) {
+	const selectedPlatform = browserPlatform(platform, arch);
+	const manifestName =
+		selectedPlatform === 'win32-x64'
+			? 'browser-toolchain.win32-x64.json'
+			: 'browser-toolchain.json';
 	const webRoot = resolve(repoRoot, 'apps/web');
 	const [manifest, webPackage, installedPackage, browsers] = await Promise.all([
-		readJson(resolve(webRoot, 'browser-toolchain.json'), 'browser-toolchain.json'),
+		readJson(resolve(webRoot, manifestName), manifestName),
 		readJson(resolve(webRoot, 'package.json'), 'apps/web/package.json'),
 		readJson(
 			resolve(webRoot, 'node_modules/playwright-core/package.json'),
@@ -83,6 +93,7 @@ export async function readBrowserToolchain({ repoRoot = DEFAULT_REPO_ROOT } = {}
 	const browser = manifest.browser;
 	if (!browser || typeof browser !== 'object')
 		throw new Error('browser toolchain entry is missing');
+	requireEqual(browser.platform, selectedPlatform, 'browser artifact platform');
 	for (const [key, value] of [
 		['name', browser.name],
 		['version', browser.version],
@@ -163,12 +174,18 @@ export function resolveBrowserArtifact({
 	};
 }
 
-/** @param {{ repoRoot?: string, browserRoot?: string }} [options] */
+/** @param {{ repoRoot?: string, browserRoot?: string, platform?: string, arch?: string }} [options] */
 export async function verifyInstalledBrowserArtifact({
 	repoRoot = DEFAULT_REPO_ROOT,
 	browserRoot,
+	platform = process.platform,
+	arch = process.arch,
 } = {}) {
-	const { browser, manifest, metadata, webRoot } = await readBrowserToolchain({ repoRoot });
+	const { browser, manifest, metadata, webRoot } = await readBrowserToolchain({
+		repoRoot,
+		platform,
+		arch,
+	});
 	const paths = resolveBrowserArtifact({ repoRoot, browserRoot, browser });
 	const [targetStat, executableStat, markerStat, receiptStat, receipt] = await Promise.all([
 		lstat(paths.targetDirectory),

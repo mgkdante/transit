@@ -32,9 +32,11 @@ async function launchInstalledBrowser({ executablePath }) {
 export async function verifyBrowserToolchain({
 	repoRoot = DEFAULT_REPO_ROOT,
 	browserRoot,
+	platform = process.platform,
+	arch = process.arch,
 	launchBrowser = launchInstalledBrowser,
 } = {}) {
-	const artifact = await verifyInstalledBrowserArtifact({ repoRoot, browserRoot });
+	const artifact = await verifyInstalledBrowserArtifact({ repoRoot, browserRoot, platform, arch });
 	const { browser, manifest, paths, webRoot } = artifact;
 	const receipt = await readJson(resolve(webRoot, 'static/map/basemap-montreal-posters.json'));
 

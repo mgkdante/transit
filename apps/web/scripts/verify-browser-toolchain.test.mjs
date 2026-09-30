@@ -12,15 +12,15 @@ async function writeJson(path, value) {
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-async function fixture({ launchedVersion = '151.0.7922.34' } = {}) {
+async function fixture({ launchedVersion = '151.0.7922.34', platform = 'linux-x64' } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'transit-browser-toolchain-'));
 	const browserRoot = join(root, 'browser');
 	const executableBody = 'authenticated chromium executable';
 	const executable = join(
 		browserRoot,
 		'chromium_headless_shell-1234',
-		'chrome-headless-shell-linux64',
-		'chrome-headless-shell',
+		platform === 'win32-x64' ? 'chrome-headless-shell-win64' : 'chrome-headless-shell-linux64',
+		platform === 'win32-x64' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell',
 	);
 	await writeJson(join(root, 'apps/web/package.json'), {
 		devDependencies: { 'playwright-core': '1.62.0' },
@@ -38,23 +38,34 @@ async function fixture({ launchedVersion = '151.0.7922.34' } = {}) {
 			},
 		],
 	});
-	await writeJson(join(root, 'apps/web/browser-toolchain.json'), {
-		schema: 1,
-		playwrightCoreVersion: '1.62.0',
-		browser: {
-			name: 'chromium-headless-shell',
-			version: '151.0.7922.34',
-			revision: '1234',
-			platform: 'linux-x64',
-			url: 'https://example.invalid/chromium.zip',
-			archiveBytes: 21,
-			archiveSha256: 'a'.repeat(64),
-			archiveRoot: 'chrome-headless-shell-linux64',
-			installDirectory: 'chromium_headless_shell-1234',
-			executable: 'chrome-headless-shell',
-			executableSha256: sha256(executableBody),
+	await writeJson(
+		join(
+			root,
+			'apps/web',
+			platform === 'win32-x64' ? 'browser-toolchain.win32-x64.json' : 'browser-toolchain.json',
+		),
+		{
+			schema: 1,
+			playwrightCoreVersion: '1.62.0',
+			browser: {
+				name: 'chromium-headless-shell',
+				version: '151.0.7922.34',
+				revision: '1234',
+				platform,
+				url: 'https://example.invalid/chromium.zip',
+				archiveBytes: 21,
+				archiveSha256: 'a'.repeat(64),
+				archiveRoot:
+					platform === 'win32-x64'
+						? 'chrome-headless-shell-win64'
+						: 'chrome-headless-shell-linux64',
+				installDirectory: 'chromium_headless_shell-1234',
+				executable:
+					platform === 'win32-x64' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell',
+				executableSha256: sha256(executableBody),
+			},
 		},
-	});
+	);
 	await mkdir(dirname(executable), { recursive: true });
 	await writeFile(executable, executableBody, { mode: 0o755 });
 	await writeFile(join(browserRoot, 'chromium_headless_shell-1234', 'INSTALLATION_COMPLETE'), '');
@@ -65,7 +76,7 @@ async function fixture({ launchedVersion = '151.0.7922.34' } = {}) {
 			name: 'chromium-headless-shell',
 			version: '151.0.7922.34',
 			revision: '1234',
-			platform: 'linux-x64',
+			platform,
 			archiveBytes: 21,
 			archiveSha256: 'a'.repeat(64),
 			executableSha256: sha256(executableBody),
@@ -103,6 +114,8 @@ test('accepts only consistent package metadata, receipt, executable, and browser
 	try {
 		const result = await verifyBrowserToolchain({
 			repoRoot: subject.root,
+			platform: 'linux',
+			arch: 'x64',
 			browserRoot: subject.browserRoot,
 			launchBrowser: subject.launchBrowser,
 		});
@@ -124,6 +137,8 @@ test('rejects a launched browser that drifts from installed Playwright metadata'
 		await assert.rejects(
 			verifyBrowserToolchain({
 				repoRoot: subject.root,
+				platform: 'linux',
+				arch: 'x64',
 				browserRoot: subject.browserRoot,
 				launchBrowser: subject.launchBrowser,
 			}),
@@ -143,6 +158,8 @@ test('rejects executable tampering before launching Chromium', async () => {
 		await assert.rejects(
 			verifyBrowserToolchain({
 				repoRoot: subject.root,
+				platform: 'linux',
+				arch: 'x64',
 				browserRoot: subject.browserRoot,
 				launchBrowser: subject.launchBrowser,
 			}),
@@ -150,6 +167,62 @@ test('rejects executable tampering before launching Chromium', async () => {
 		);
 		assert.equal(subject.launchedExecutable(), undefined);
 		assert.equal(subject.wasClosed(), false);
+	} finally {
+		await rm(subject.root, { recursive: true, force: true });
+	}
+});
+
+test('verifies the selected Windows executable and rejects a Linux receipt before launch', async () => {
+	const { verifyBrowserToolchain } = await import('./verify-browser-toolchain.mjs');
+	const subject = await fixture({ platform: 'win32-x64' });
+	try {
+		const receiptPath = join(
+			subject.browserRoot,
+			'chromium_headless_shell-1234',
+			'transit-browser-receipt.json',
+		);
+		await writeJson(receiptPath, {
+			schema: 1,
+			name: 'chromium-headless-shell',
+			version: '151.0.7922.34',
+			revision: '1234',
+			platform: 'linux-x64',
+			archiveBytes: 21,
+			archiveSha256: 'a'.repeat(64),
+			executableSha256: sha256('authenticated chromium executable'),
+		});
+		await assert.rejects(
+			verifyBrowserToolchain({
+				repoRoot: subject.root,
+				browserRoot: subject.browserRoot,
+				platform: 'win32',
+				arch: 'x64',
+				launchBrowser: subject.launchBrowser,
+			}),
+			/receipt platform mismatch/u,
+		);
+		assert.equal(subject.launchedExecutable(), undefined);
+		await writeJson(receiptPath, {
+			schema: 1,
+			name: 'chromium-headless-shell',
+			version: '151.0.7922.34',
+			revision: '1234',
+			platform: 'win32-x64',
+			archiveBytes: 21,
+			archiveSha256: 'a'.repeat(64),
+			executableSha256: sha256('authenticated chromium executable'),
+		});
+		assert.deepEqual(
+			await verifyBrowserToolchain({
+				repoRoot: subject.root,
+				browserRoot: subject.browserRoot,
+				platform: 'win32',
+				arch: 'x64',
+				launchBrowser: subject.launchBrowser,
+			}),
+			{ playwrightVersion: '1.62.0', chromiumVersion: '151.0.7922.34' },
+		);
+		assert.equal(subject.launchedExecutable(), subject.executable);
 	} finally {
 		await rm(subject.root, { recursive: true, force: true });
 	}

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import { execFile as execFileCallback } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import { chmod, lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
 	browserPlatform,
 	readBrowserToolchain,
@@ -31,34 +34,99 @@ async function pathExists(path) {
 	}
 }
 
-async function downloadWithCurl({ url, destination, archiveBytes }) {
-	await execFile(
-		'/usr/bin/curl',
-		[
-			'--fail',
-			'--silent',
-			'--show-error',
-			'--proto',
-			'=https',
-			'--max-filesize',
-			String(archiveBytes),
-			'--output',
-			destination,
-			url,
-		],
-		{ timeout: 180_000 },
+export async function downloadBrowserArchive({
+	url,
+	destination,
+	archiveBytes,
+	fetchArchive = fetch,
+	timeoutMs = 180_000,
+}) {
+	if (new URL(url).protocol !== 'https:') throw new Error('browser artifact URL must use HTTPS');
+	const signal = AbortSignal.timeout(timeoutMs);
+	const response = await fetchArchive(url, { redirect: 'error', signal });
+	if (response.status !== 200 || !response.body) {
+		await response.body?.cancel();
+		throw new Error(`browser archive download failed: HTTP ${response.status}`);
+	}
+	const contentLength = response.headers.get('content-length');
+	if (contentLength !== null && contentLength !== String(archiveBytes)) {
+		await response.body.cancel();
+		throw new Error('browser archive download Content-Length mismatch');
+	}
+	let receivedBytes = 0;
+	await pipeline(
+		Readable.fromWeb(response.body),
+		async function* (source) {
+			for await (const chunk of source) {
+				receivedBytes += chunk.length;
+				if (receivedBytes > archiveBytes)
+					throw new Error('browser archive download exceeds pinned byte count');
+				yield chunk;
+			}
+		},
+		createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
+		{ signal },
 	);
 }
 
 async function listWithUnzip({ archive }) {
-	const { stdout } = await execFile('/usr/bin/unzip', ['-Z1', archive], {
+	const { stdout } = await execFile('unzip', ['-Z1', archive], {
 		maxBuffer: 2 * 1024 * 1024,
+		timeout: 180_000,
 	});
 	return stdout.split(/\r?\n/u).filter(Boolean);
 }
 
 async function extractWithUnzip({ archive, destination }) {
-	await execFile('/usr/bin/unzip', ['-q', archive, '-d', destination], { timeout: 180_000 });
+	await execFile('unzip', ['-q', archive, '-d', destination], { timeout: 180_000 });
+}
+
+// Paths are environment values, never interpolated into PowerShell source.
+const WINDOWS_ZIP_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [IO.Compression.ZipFile]::OpenRead($env:TRANSIT_BROWSER_ZIP_ARCHIVE)
+try {
+  $members = @($zip.Entries | ForEach-Object {
+    $kind = ($_.ExternalAttributes -shr 16) -band 0xF000
+    if ($kind -ne 0 -and $kind -ne 0x8000 -and $kind -ne 0x4000) {
+      throw 'browser archive contains an unsupported member type'
+    }
+    $_.FullName
+  })
+  if ($env:TRANSIT_BROWSER_ZIP_OPERATION -eq 'list') {
+    ConvertTo-Json -InputObject $members -Compress
+  }
+} finally {
+  $zip.Dispose()
+}
+if ($env:TRANSIT_BROWSER_ZIP_OPERATION -eq 'extract') {
+  [IO.Compression.ZipFile]::ExtractToDirectory($env:TRANSIT_BROWSER_ZIP_ARCHIVE, $env:TRANSIT_BROWSER_ZIP_DESTINATION)
+}
+`;
+
+async function windowsZip({ archive, destination = '', operation }) {
+	const { stdout } = await execFile(
+		'powershell.exe',
+		[
+			'-NoProfile',
+			'-NonInteractive',
+			'-EncodedCommand',
+			Buffer.from(WINDOWS_ZIP_SCRIPT, 'utf16le').toString('base64'),
+		],
+		{
+			timeout: 180_000,
+			maxBuffer: 2 * 1024 * 1024,
+			windowsHide: true,
+			env: {
+				...process.env,
+				TRANSIT_BROWSER_ZIP_ARCHIVE: archive,
+				TRANSIT_BROWSER_ZIP_DESTINATION: destination,
+				TRANSIT_BROWSER_ZIP_OPERATION: operation,
+			},
+		},
+	);
+	return operation === 'list' ? JSON.parse(stdout.replace(/^\uFEFF/u, '')) : undefined;
 }
 
 async function verifyExtractedTree(root) {
@@ -81,6 +149,7 @@ export function validateBrowserArchiveEntries(entries, browser) {
 		throw new Error('browser archive has no members');
 	}
 	const executableMember = `${browser.archiveRoot}/${browser.executable}`;
+	const seen = new Set();
 	let executableCount = 0;
 	for (const entry of entries) {
 		const member = entry.endsWith('/') ? entry.slice(0, -1) : entry;
@@ -94,12 +163,20 @@ export function validateBrowserArchiveEntries(entries, browser) {
 					!part ||
 					part === '.' ||
 					part === '..' ||
-					[...part].some((character) => character <= '\u001f' || character === '\u007f'),
+					[...part].some((character) => character <= '\u001f' || character === '\u007f') ||
+					(browser.platform === 'win32-x64' &&
+						(/[<>:"|?*]/u.test(part) ||
+							/[. ]$/u.test(part) ||
+							/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(part))),
 			) ||
 			parts[0] !== browser.archiveRoot
 		) {
 			throw new Error(`unsafe browser archive member: ${JSON.stringify(entry)}`);
 		}
+		const identity = browser.platform === 'win32-x64' ? member.toLowerCase() : member;
+		if (seen.has(identity))
+			throw new Error(`duplicate browser archive member: ${JSON.stringify(entry)}`);
+		seen.add(identity);
 		if (member === executableMember) executableCount += 1;
 	}
 	if (executableCount !== 1) {
@@ -113,9 +190,9 @@ export async function installBrowserToolchain({
 	platform = process.platform,
 	arch = process.arch,
 	env = process.env,
-	downloadArchive = downloadWithCurl,
-	listArchive = listWithUnzip,
-	extractArchive = extractWithUnzip,
+	downloadArchive = downloadBrowserArchive,
+	listArchive,
+	extractArchive,
 } = {}) {
 	if (typeof installRoot !== 'string' || !isAbsolute(installRoot)) {
 		throw new Error('browser install root must be an absolute path');
@@ -126,12 +203,22 @@ export async function installBrowserToolchain({
 			throw new Error('Playwright browser environment overrides are not allowed');
 		}
 	}
-	const { browser } = await readBrowserToolchain({ repoRoot });
+	const { browser } = await readBrowserToolchain({ repoRoot, platform, arch });
 	if (browser.platform !== selectedPlatform) {
 		throw new Error(
 			`unsupported browser artifact platform: manifest has ${browser.platform}, host is ${selectedPlatform}`,
 		);
 	}
+	const listSelectedArchive =
+		listArchive ??
+		(selectedPlatform === 'win32-x64'
+			? (options) => windowsZip({ ...options, operation: 'list' })
+			: listWithUnzip);
+	const extractSelectedArchive =
+		extractArchive ??
+		(selectedPlatform === 'win32-x64'
+			? (options) => windowsZip({ ...options, operation: 'extract' })
+			: extractWithUnzip);
 	const paths = resolveBrowserArtifact({ repoRoot, browserRoot: installRoot, browser });
 	if (await pathExists(paths.targetDirectory)) {
 		throw new Error(`browser install target already exists: ${paths.targetDirectory}`);
@@ -166,10 +253,10 @@ export async function installBrowserToolchain({
 				`browser archive SHA-256 mismatch: expected ${browser.archiveSha256}, got ${actualArchiveSha256}`,
 			);
 		}
-		const entries = await listArchive({ archive });
+		const entries = await listSelectedArchive({ archive });
 		validateBrowserArchiveEntries(entries, browser);
 		await mkdir(stagedTarget, { mode: 0o755 });
-		await extractArchive({ archive, destination: stagedTarget });
+		await extractSelectedArchive({ archive, destination: stagedTarget });
 		await verifyExtractedTree(stagedTarget);
 
 		const extractedDirectory = resolve(stagedTarget, browser.archiveRoot);
@@ -190,7 +277,7 @@ export async function installBrowserToolchain({
 				`browser executable SHA-256 mismatch: expected ${browser.executableSha256}, got ${actualExecutableSha256}`,
 			);
 		}
-		await chmod(extractedExecutable, 0o755);
+		if (selectedPlatform === 'linux-x64') await chmod(extractedExecutable, 0o755);
 		await writeFile(
 			resolve(stagedTarget, 'transit-browser-receipt.json'),
 			`${JSON.stringify(
