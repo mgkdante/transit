@@ -28,7 +28,7 @@ dependencies = [
 transit-ops = "transit_ops.cli:app"
 
 [project.urls]
-Documentation = "https://www.notion.so/3ea3e863069081dca6a6ec9fa09052c0"
+Documentation = "https://github.com/mgkdante/transit#readme"
 
 [dependency-groups]
 dev = [
