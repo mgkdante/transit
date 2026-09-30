@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tomllib
 from functools import cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
@@ -53,6 +53,7 @@ VERSION_OWNERS = {
     "apps/db/Dockerfile.health",
     "apps/web/package.json",
     "apps/web/browser-toolchain.json",
+    "apps/web/browser-toolchain.win32-x64.json",
     ".github/scripts/install-gitleaks.sh",
 }
 COMPATIBILITY_PROOFS = {
@@ -174,7 +175,11 @@ def _inventory_violations(sources: dict[str, str]) -> list[str]:
             if isinstance(build, dict) and "dockerfile" in build:
                 dockerfiles.add(
                     posixpath.normpath(
-                        str(Path(path).parent / build.get("context", ".") / build["dockerfile"])
+                        str(
+                            PurePosixPath(path).parent
+                            / build.get("context", ".")
+                            / build["dockerfile"]
+                        )
                     )
                 )
     violations.extend(
@@ -308,6 +313,39 @@ def test_inventory_follows_compose_dockerfile_paths() -> None:
         "custom.build": "FROM node:22\n",
     }
     assert any("custom.build: external image" in issue for issue in _inventory_violations(sources))
+
+
+@pytest.mark.parametrize(
+    ("compose_path", "context", "dockerfile", "source_path"),
+    [
+        ("new/compose.yml", ".", "custom.build", "new/custom.build"),
+        ("new/compose.yml", "..", "custom.build", "custom.build"),
+        ("new/nested/compose.yml", "../..", "images/app.build", "images/app.build"),
+    ],
+)
+def test_inventory_accepts_reviewed_compose_dockerfiles(
+    compose_path: str, context: str, dockerfile: str, source_path: str
+) -> None:
+    sources = {
+        compose_path: (
+            "services:\n  app:\n    build:\n"
+            f"      context: {context}\n      dockerfile: {dockerfile}\n"
+        ),
+        source_path: f"FROM {POSTGRES_IMAGE}\n",
+    }
+    assert _inventory_violations(sources) == []
+
+
+def test_inventory_reports_missing_compose_dockerfile_with_repository_key() -> None:
+    sources = {
+        "new/compose.yml": (
+            "services:\n  app:\n    build:\n"
+            "      context: ../build\n      dockerfile: app.build\n"
+        )
+    }
+    assert _inventory_violations(sources) == [
+        "build/app.build: referenced Dockerfile must be tracked"
+    ]
 
 
 def _json(path: str) -> dict[str, object]:
