@@ -1,21 +1,3 @@
-// $lib/filters/store — the request-scoped, runes-backed filter store.
-//
-// CRITICAL DESIGN CONSTRAINTS (enforced by review + SSR):
-//   - NOT a module singleton. `createFilterStore` returns a FRESH store every
-//     call, so each SSR request (and each panel that wants isolated state) gets
-//     its own instance — module-level `$state` would leak one user's filters
-//     into another's response.
-//   - NO module-top `window`. This module is import-safe on the server. The URL
-//     is written through a caller-supplied `pushUrl` callback (the page wires it
-//     to SvelteKit's `goto`/`replaceState`), so the store never imports
-//     `$app/navigation` or touches the DOM itself.
-//   - URL is the source of truth. Every mutation produces the next state, then
-//     hands its canonical query string to `pushUrl`; the page is free to push,
-//     replace, or ignore (e.g. during SSR `pushUrl` is a no-op).
-//
-// The store exposes reactive getters (read through them to stay reactive) plus a
-// small mutation surface that mirrors the chip vocabulary of the filter bar.
-
 import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
 import {
 	type FilterState,
@@ -29,12 +11,6 @@ import {
 } from './state';
 import { toSearchString } from './url';
 
-/**
- * Called after every mutation with the next state's canonical query string
- * (no leading `?`, `''` when empty). The page wires this to navigation
- * (`goto`/`replaceState`); SSR passes a no-op. It is the store's ONLY side
- * channel to the URL — keeping the store itself DOM-free and SSR-safe.
- */
 export type PushUrl = (search: string) => void;
 
 export interface FilterWriteContext {
@@ -47,7 +23,6 @@ const DEFAULT_WRITE_CONTEXT: FilterWriteContext = {
 	ownership: 'release-touched',
 };
 
-/** A removable filter chip — discriminated by family, carrying its value. */
 export type Chip =
 	| { kind: 'route'; value: string }
 	| { kind: 'stop'; value: string }
@@ -60,7 +35,6 @@ export type Chip =
 	| { kind: 'grain' }
 	| { kind: 'window' };
 
-/** The id-set chip kinds, mapped to their FilterState fields. */
 const CHIP_TO_SET: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> = {
 	route: 'routes',
 	stop: 'stops',
@@ -75,9 +49,7 @@ const SET_TO_CHIP: Record<IdSetKey, 'route' | 'stop' | 'trip' | 'vehicle'> = {
 	vehicles: 'vehicle',
 };
 
-/** The reactive store returned by {@link createFilterStore}. */
 export interface FilterStore {
-	/** Live, value-equal snapshot of the current state (read to stay reactive). */
 	readonly state: FilterState;
 	readonly routes: ReadonlySet<string>;
 	readonly stops: ReadonlySet<string>;
@@ -89,9 +61,7 @@ export interface FilterStore {
 	readonly alerts: readonly AlertEntityKind[];
 	readonly grain: Grain | undefined;
 	readonly window: DateWindow | undefined;
-	/** True when no filter of any kind is applied. */
 	readonly isEmpty: boolean;
-	/** Flat, ordered list of removable chips for rendering the active-filter bar. */
 	readonly chips: Chip[];
 
 	addRoute(id: string): void;
@@ -115,38 +85,18 @@ export interface FilterStore {
 	setGrain(grain: Grain | undefined): void;
 	setWindow(window: DateWindow | undefined): void;
 
-	/** Remove a single chip (any family). */
 	removeChip(chip: Chip): void;
-	/** Reset every filter to empty. */
 	clear(): void;
-	/** Apply additive chips in one provenance-aware transaction. */
 	applyChips(chips: readonly Chip[], context?: FilterWriteContext): void;
-	/** Remove every filter value claimed by a selection in one transaction. */
 	clearSelectionOwned(): void;
-	/**
-	 * Replace the entire state (e.g. on a back/forward navigation when the page
-	 * re-parses the URL). Does NOT call `pushUrl` — the URL is already the source
-	 * of this change, so re-pushing would loop.
-	 */
 	replaceFromUrl(next: FilterState, cause: 'echo' | 'adopt'): void;
 }
 
-/**
- * Create a fresh, request-scoped filter store seeded from `init` (typically
- * `fromSearchParams(url.searchParams)` on the server/page). Every mutation
- * computes the next state immutably, commits it to the rune, and pushes its
- * canonical query string through `pushUrl`.
- *
- * @param init    seed state (cloned defensively — the caller keeps ownership)
- * @param pushUrl URL side-channel; defaults to a no-op so the store is usable in
- *                pure-SSR / test contexts without any navigation wiring.
- */
 export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}): FilterStore {
 	let current = $state<FilterState>(cloneFilterState(init));
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- provenance is private bookkeeping, not UI state
 	const selectionOwned = new Map<string, Chip>();
 
-	/** Commit only a changed canonical payload, optionally publishing it to the URL. */
 	function commit(next: FilterState, publish = true, clone = false): void {
 		const search = toSearchString(next);
 		if (search === toSearchString(current)) return;
@@ -203,7 +153,6 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 		}
 	}
 
-	/** Mutate via a transform that receives a fresh clone it may mutate in place. */
 	function mutate(
 		fn: (draft: FilterState) => void,
 		chips: readonly Chip[],

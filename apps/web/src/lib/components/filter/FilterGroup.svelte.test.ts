@@ -4,10 +4,6 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import FilterGroup from './FilterGroup.svelte';
 
-// No i18n provider ⇒ getLocale() returns DEFAULT_LOCALE ('en'), so allLabel resolves
-// to its en form. bits-ui ToggleGroup (type=single) renders each item as role=radio
-// with aria-checked, so the group is queryable exactly like a radiogroup.
-
 const ITEMS = [
 	{ key: 'lines', label: 'Lines' },
 	{ key: 'stops', label: 'Stops' },
@@ -173,7 +169,6 @@ describe('FilterGroup', () => {
 			props: { label: 'Affects', items: ITEMS, activeKey: null, onSelect: vi.fn() },
 		});
 		expect(screen.getByText('Affects')).toBeInTheDocument();
-		// "All" + the two items = three radios.
 		const group = screen.getByRole('group', { name: 'Affects' });
 		const radios = within(group).getAllByRole('radio');
 		expect(radios).toHaveLength(3);
@@ -240,8 +235,6 @@ describe('FilterGroup', () => {
 				onSelect: vi.fn(),
 			},
 		});
-		// Collapsible renders the label as a disclosure button and keeps closed
-		// controls out of the keyboard/accessibility tree while leaving them mounted.
 		const header = screen.getByRole('button', { name: /Severity/ });
 		expect(header).toBeInTheDocument();
 		expect(header).toHaveAttribute('aria-expanded', 'false');
@@ -252,7 +245,6 @@ describe('FilterGroup', () => {
 		expect(controlsId).toBeTruthy();
 		expect(collapse).toHaveAttribute('id', controlsId);
 
-		// The group + its items remain in the DOM for animation/state continuity.
 		const group = screen.getByRole('group', { hidden: true });
 		expect(within(group).getAllByRole('radio', { hidden: true })).toHaveLength(3);
 

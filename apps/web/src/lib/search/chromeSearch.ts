@@ -13,26 +13,10 @@ import {
 
 export type ChromeSearchKind = 'route' | 'stop' | 'vehicle' | 'address';
 
-/**
- * The surface context the chrome search runs in — derived from the active
- * (delocalized) path. It RESTRICTS the result blend and steers selection:
- *   `route` (/lines, /lines/*) → only lines, deep-link to /lines/<id>
- *   `stop`  (/stops, /stop/*)  → only stops, deep-link to /stop/<id>
- *   `map`   (/map)             → the full blend, every pick filters the map
- *   `all`   (hub/network/search/else) → today's blend, map deep-links
- */
 export type ChromeSearchScope = 'route' | 'stop' | 'map' | 'all';
 
 export interface ChromeSearchOptions {
-	/** Active surface context (delocalized). Default `'all'` (today's blend). */
 	readonly scope?: ChromeSearchScope;
-	/**
-	 * Combinable transit-mode narrowing — the SAME control the search surface
-	 * offers, so the chrome dropdown's chips narrow real matches. Empty (or
-	 * omitted) = every mode. A row whose mode is unknown, and an address (which
-	 * has no transit mode at all), stand down while the set is non-empty rather
-	 * than be guessed into a transit-mode answer.
-	 */
 	readonly modes?: ReadonlySet<TransitModeKey>;
 }
 
@@ -74,8 +58,6 @@ export function chromeSearchResults(
 	if (!q) return [];
 
 	const scope = options.scope ?? 'all';
-	// The mode narrowing runs on the MATCH set, before each family's slice — a
-	// post-slice filter would silently shrink a family below its cap.
 	const modes = options.modes?.size ? options.modes : null;
 	const keepsMode = (mode: TransitModeKey | null): boolean => !modes || (!!mode && modes.has(mode));
 
@@ -99,8 +81,6 @@ export function chromeSearchResults(
 		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
 		.filter((m) => keepsMode(stopModeKey(m.stop)))
 		.sort((a, b) => a.score - b.score);
-	// One row per logical stop: métro/station names collapse to a single station;
-	// ordinary stops collapse only true code duplicates.
 	const stops = dedupeBy(stopMatches, (m) => stopGroupKey(m.stop))
 		.map(
 			({ stop, score }): ChromeSearchResult => ({
@@ -113,8 +93,6 @@ export function chromeSearchResults(
 		)
 		.slice(0, 5);
 
-	// A vehicle has no mode field — it is always a bus, so an active mode set
-	// keeps buses only when 'bus' is among the picked modes.
 	const vehicles = (keepsMode('bus') ? (sources.vehicles ?? []) : [])
 		.filter((vehicle) => foldSearchText(vehicle.id) === q)
 		.map(
@@ -129,7 +107,6 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 3);
 
-	// An address is not a transit mode, so it stands down while modes are picked.
 	const addresses = (modes ? [] : (sources.addresses ?? []))
 		.map(
 			(address, index): ChromeSearchResult => ({
@@ -146,18 +123,11 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 3);
 
-	// Scope RESTRICTS, not merely re-ranks: a rider on /lines wants a line, so a
-	// stop here is noise (and an address can never deep-link). `map`/`all` keep
-	// the full blend — the map filters by every entity type.
 	if (scope === 'route') return routes.slice(0, 8);
 	if (scope === 'stop') return stops.slice(0, 8);
 	return [...routes, ...stops, ...vehicles, ...addresses].sort(collate).slice(0, 8);
 }
 
-/**
- * Scope for the active (DELOCALIZED) path. Mirrors `nav.ts` `activePrefixes`
- * (`/lines/`, `/stop/`) EXACTLY so search scope and nav highlight never disagree.
- */
 export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
 	if (delocalizedPath === '/lines' || delocalizedPath.startsWith('/lines/')) return 'route';
 	if (delocalizedPath === '/stops' || delocalizedPath.startsWith('/stop/')) return 'stop';
@@ -165,14 +135,6 @@ export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
 	return 'all';
 }
 
-/**
- * Context-aware destination for a picked result. In `route`/`stop` scope a
- * matching entity deep-links to its DETAIL page (`/lines/<id>`, `/stop/<id>`)
- * via the shared `routeFor` canonical map; everything else — `map`/`all` scope,
- * addresses, or a kind that does not match its scope — falls through to the
- * EXISTING `chromeSearchHref` map-filter behavior (unchanged). Returns an
- * UNLOCALIZED path; the caller localizes at the navigation boundary.
- */
 export function chromeSearchResultHref(
 	result: ChromeSearchResult,
 	scope: ChromeSearchScope,
@@ -216,7 +178,6 @@ export function chromeSearchHref(
 		if (target) setNearTargetSearchParams(searchParams, target);
 	} else {
 		if (scope !== 'map') copyNearTargetSearchParams(currentSearchParams, searchParams);
-		// Tell the map to zoom to the picked entity (one-shot; the map strips it).
 		setMapFocusSearchParams(searchParams, result.kind as MapFocusKind, result.id);
 	}
 

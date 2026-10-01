@@ -1,10 +1,3 @@
-// Public barrel for `$lib/components/map`. Keep this boundary to the map-kit
-// names consumed outside this directory; leaf-only helpers stay on their modules.
-//
-// SSR NOTE: MapStage is browser-only — it dynamic-imports maplibre-gl/pmtiles
-// inside onMount and renders nothing server-side, so importing this barrel does
-// not pull WebGL into a server/SSR bundle.
-
 export { default as MapStage } from './MapStage.svelte';
 
 export { centerFromProviderBbox } from './viewport';

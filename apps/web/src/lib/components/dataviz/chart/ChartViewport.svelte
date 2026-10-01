@@ -37,7 +37,6 @@
 			measure();
 			return;
 		}
-		// Its initial delivery measures the settled layout without an extra synchronous flush.
 		const observer = new ResizeObserver(measure);
 		observer.observe(element);
 		if (element.firstElementChild) observer.observe(element.firstElementChild);

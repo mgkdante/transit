@@ -1,5 +1,3 @@
-"""Whole-transaction retries for cooperating Gold writers."""
-
 from collections.abc import Callable
 
 from sqlalchemy import Connection, Engine

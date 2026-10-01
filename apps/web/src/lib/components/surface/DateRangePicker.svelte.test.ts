@@ -1,13 +1,3 @@
-// DateRangePicker.svelte.test.ts — the shared, availability-aware date-window control (S8B).
-//
-// Guards the primitive's contract: the native calendar pickers (<input type="date">) are
-// BOUNDED (min/max) to the surface's REAL dated span (an out-of-coverage pick is scoped
-// out by the OS calendar), any pick order normalizes to from<=to, a half pick emits NO
-// window (undefined — never a fabricated/inverted span), empty coverage renders honest
-// absence (not a dead control), the value binds in AND out, every label is a prop (the
-// primitive owns no copy), and a11y AA (a labelled group, per-input aria-labels, 44px
-// touch targets, native keyboard + OS calendar).
-
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import DateRangePicker from './DateRangePicker.svelte';
@@ -23,8 +13,6 @@ const LABELS = {
 	anyEnd: 'Latest',
 } as const;
 
-// A get/set-bound harness so a change to the primitive's `value` is observable and an
-// external `value` update re-seeds the inputs (the SurfaceControls bindable pattern).
 function renderPicker(
 	initial: DateWindow | undefined = undefined,
 	overrides: Record<string, unknown> = {},
@@ -52,7 +40,6 @@ describe('DateRangePicker — bounds + normalization', () => {
 		const { getByLabelText } = renderPicker();
 		const start = getByLabelText('Pick a date range · From') as HTMLInputElement;
 		const end = getByLabelText('Pick a date range · To') as HTMLInputElement;
-		// Native date pickers, min/max clamped to the first + last real dated day.
 		expect(start.type).toBe('date');
 		expect(end.type).toBe('date');
 		expect(start.min).toBe('2026-06-01');
@@ -66,7 +53,6 @@ describe('DateRangePicker — bounds + normalization', () => {
 		await fireEvent.change(getByLabelText('Pick a date range · From'), {
 			target: { value: '2026-06-01' },
 		});
-		// Half pick: only start chosen → NO window yet (never a fabricated span).
 		expect(box.value).toBeUndefined();
 		await fireEvent.change(getByLabelText('Pick a date range · To'), {
 			target: { value: '2026-06-03' },
@@ -76,14 +62,12 @@ describe('DateRangePicker — bounds + normalization', () => {
 
 	it('normalizes an INVERTED pick order (to < from is swapped)', async () => {
 		const { getByLabelText, box } = renderPicker();
-		// Pick the END first (earlier date), then the START (later date) — inverted.
 		await fireEvent.change(getByLabelText('Pick a date range · To'), {
 			target: { value: '2026-06-01' },
 		});
 		await fireEvent.change(getByLabelText('Pick a date range · From'), {
 			target: { value: '2026-06-03' },
 		});
-		// normalizeWindow swaps so the stored span always reads from<=to.
 		expect(box.value).toEqual({ from: '2026-06-01', to: '2026-06-03' });
 	});
 
@@ -97,7 +81,6 @@ describe('DateRangePicker — bounds + normalization', () => {
 		const { getByLabelText } = renderPicker();
 		const start = getByLabelText('Pick a date range · From') as HTMLInputElement;
 		const end = getByLabelText('Pick a date range · To') as HTMLInputElement;
-		// Before any pick, both bounds fall back to the surface's full coverage span.
 		expect(end.min).toBe('2026-06-01');
 		expect(start.max).toBe('2026-06-03');
 		await fireEvent.change(start, { target: { value: '2026-06-02' } });
@@ -130,7 +113,6 @@ describe('DateRangePicker — clear affordance', () => {
 describe('DateRangePicker — honest absence', () => {
 	it('renders an AbsentValue (not a dead control) when there are no available dates', () => {
 		const { container, queryByLabelText } = renderPicker(undefined, { availableDates: [] });
-		// No inputs at all — the honest-absence block stands in.
 		expect(queryByLabelText('Pick a date range · From')).toBeNull();
 		expect(container.querySelector('[data-slot="date-range"]')).toBeNull();
 		expect(container.textContent).not.toBe('');
@@ -166,9 +148,6 @@ describe('DateRangePicker — single mode (S13 receipt)', () => {
 	it('bounds the calendar to the published span (earliest→latest, seeded value reflected)', () => {
 		const { getByLabelText } = renderSingle('2026-06-03');
 		const input = getByLabelText('Receipt day') as HTMLInputElement;
-		// A native date picker bounded to the calendar span. Degradation from the old
-		// <select>: an interior gap-day (2026-06-02) is now pickable (native calendars can't
-		// DISABLE an interior day) and resolves HONESTLY through the receipt's absent-day path.
 		expect(input.type).toBe('date');
 		expect(input.min).toBe('2026-06-01');
 		expect(input.max).toBe('2026-06-03');
@@ -232,8 +211,6 @@ describe('DateRangePicker — a11y AA', () => {
 	it('gives each native date input a 44px minimum touch target (WCAG 2.2 AA)', () => {
 		const { getByLabelText } = renderPicker();
 		const start = getByLabelText('Pick a date range · From') as HTMLInputElement;
-		// The 44px floor is declared on the .date-range__input class (jsdom carries no
-		// layout, so assert the class the min-height rule targets is present).
 		expect(start.classList.contains('date-range__input')).toBe(true);
 	});
 });

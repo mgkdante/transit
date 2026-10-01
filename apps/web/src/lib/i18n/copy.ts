@@ -22,11 +22,6 @@ export type LocalizedCopy<Canonical extends object, SupportedLocale extends stri
 	readonly [Key in SupportedLocale]: Key extends 'fr' ? Canonical : CopyShape<NoInfer<Canonical>>;
 };
 
-/**
- * Defines localized copy from the canonical French shape. Every other configured
- * locale must provide the same keys and function signatures; the returned contract
- * is deeply readonly without cloning or reordering the supplied object.
- */
 export function defineCopy<Canonical extends object>(
 	copy: LocalizedCopy<Canonical>,
 ): Readonly<Record<Locale, CopyShape<Canonical>>> {

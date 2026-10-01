@@ -3,7 +3,6 @@ name: Daily Warm Rollups
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions cron is UTC-based. This runs after the 06:00 UTC static lane.
     - cron: "0 7 * * *"
 
 permissions:
@@ -109,8 +108,6 @@ jobs:
   rollups:
     needs: prepare
     runs-on: ubuntu-24.04
-    # Three first attempts plus one deferred 75-minute retry and kill grace fit
-    # inside the aggregate step; job headroom preserves the always-run upload.
     timeout-minutes: 325
     defaults:
       run:
@@ -437,8 +434,6 @@ jobs:
     needs: [prepare, publish]
     if: needs.publish.result == 'success'
     runs-on: ubuntu-24.04
-    # The previous provider job allowed 45 minutes. Each serial prune group is
-    # hard-bounded at 40 minutes plus kill grace, with aggregate upload headroom.
     timeout-minutes: 150
     defaults:
       run:

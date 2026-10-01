@@ -51,11 +51,8 @@
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
 
 	interface StopDetailProps {
-		/** The stop id from the route param. */
 		id: string;
-		/** Server-resolved identity used by the article cover on the first render. */
 		seed: IdentitySeed;
-		/** Server-loaded static stop; absent only when that read failed. */
 		stopSeed?: ResourceSeed<StopFile | null>;
 	}
 
@@ -67,7 +64,6 @@
 	const articleNav = $derived(articleNavigationCopy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	// Bound compatibility snapshots; the overflow count includes only published samples.
 	const SCHEDULE_CAP = 30;
 
 	const tabs = $derived([
@@ -109,8 +105,6 @@
 		closeAria: articleNav.closeAria,
 	});
 
-	// One controller owns both directions: external URL changes update the selected tab,
-	// while local tab clicks use replaceState and omit the canonical Detail parameter.
 	const detailTabController = createDetailTabController(page.url);
 	$effect(() => detailTabController.syncFromUrl(page.url));
 
@@ -119,13 +113,10 @@
 	const { live: alertLive, resource: alertReport } = createLiveResource(manifest, 'alerts');
 
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	// Departures for THIS stop from the authoritative per-stop board. null before
-	// the first tick (skeleton); [] means this report contains no predictions for the stop.
 	const departures = $derived<readonly StopDeparture[] | null>(
 		live.departures ? (live.index.byStopId.get(id) ?? []) : null,
 	);
 
-	// --- static tier: stop detail (info + schedule) --------------------------
 	const stop = createResource((signal) => getStop(id, { signal }), {
 		key: () => id,
 		seed: () => stopSeed,
@@ -136,12 +127,10 @@
 			: seed.name,
 	);
 
-	// Static code/route associations are optional; direct stop-ID alerts remain usable.
 	const stopAlerts = $derived(
 		alertsForStop(alertLive.alerts?.alerts, id, stop.data?.code, stop.data?.routes_served),
 	);
 
-	// Stops carry no availability flag; a missing reliability report is an empty result.
 	const reliability = createResource((signal) => getStopReliability(id, { signal }), {
 		key: () => id,
 	});
@@ -178,7 +167,6 @@
 			.sort((a, b) => a.date.localeCompare(b.date))
 			.at(-1),
 	);
-	// Both overview metrics use one reported period; only a dated daily row supplies a date.
 	const useDailySummary = $derived(
 		stopSummaryPeriod?.severe_pct == null && stopSummaryPeriod?.avg_delay_min == null,
 	);
@@ -242,13 +230,8 @@
 			(value.by_route?.length ?? 0) === 0 &&
 			(value.daily?.length ?? 0) === 0);
 
-	// Missing delay remains unclassified and visible under the unfiltered board.
 	const DEPARTURE_TONES: readonly ChipTone[] = ['on-time', 'late', 'severe', 'early'];
 
-	// Map a departure tone → the closed StatusCode so the chips + row status read the
-	// ONE shared bilingual vocabulary (STATUS_LABELS) — no invented per-surface labels.
-	// The tone → glyph/fill mapping (TONE_GLYPH / toneColorVar / delayTone) is the shared
-	// delayPresentation kernel, reused verbatim by the ScheduleTable board rows.
 	const TONE_STATUS: Record<ChipTone, StatusCode> = {
 		early: 'early',
 		'on-time': 'on_time',
@@ -260,7 +243,6 @@
 	const statusFilter = new SvelteSet<ChipTone>();
 	let routeFilter = $state<string | null>(null);
 
-	// Detail instances survive stop navigation; reset only per-stop board filters.
 	$effect(() => {
 		void id;
 		statusFilter.clear();
@@ -272,7 +254,6 @@
 		else statusFilter.add(s);
 	}
 
-	// Distinct routes on the current board (stable, board order), for the chips.
 	const departureRoutes = $derived.by<string[]>(() => {
 		const seen = new SvelteSet<string>();
 		const out: string[] = [];
@@ -285,8 +266,6 @@
 		return out;
 	});
 
-	// A route that leaves the board (filter narrowed away) is cleared so the view
-	// never pins to a route with no departures.
 	$effect(() => {
 		if (routeFilter != null && !departureRoutes.includes(routeFilter)) routeFilter = null;
 	});
@@ -546,8 +525,6 @@
 														aria-pressed={statusFilter.has(tone)}
 														onclick={() => toggleStatus(tone)}
 													>
-														<!-- colour + glyph redundancy: the tone's status fill tints the dot,
-										     and the glyph carries the meaning without colour (a11y). -->
 														<span
 															class="stop-chip-glyph"
 															style:color={toneColorVar(tone)}
@@ -767,9 +744,6 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
-	/* The live-departures ROW LIST styles (.stop-departures / .stop-departure*) now
-	   live with <ScheduleTable> (P5.3e board mode); StopDetail keeps only the board
-	   CHROME — the filter chips, the count, and the empty state. */
 	.stop-chip-glyph {
 		margin-inline-end: 0.375rem;
 		font-size: var(--text-micro);
@@ -782,10 +756,7 @@
 		gap: 1.25rem;
 	}
 
-	/* The Detail facts card is an explicit 2-column grid — stop facts on the left, the
-	   live alerts on the right. Reflows to one column on mobile (below). */
 	.stop-info > :only-child {
-		/* the pair-mate (alerts) rendered nothing — the survivor takes the row */
 		grid-column: 1 / -1;
 	}
 	.stop-info {
@@ -801,11 +772,6 @@
 		min-width: 0;
 	}
 
-	/* The reliability tile chrome + the per-tile / per-section reliability layout now
-	   live with <StopReliabilitySurface> and its section components (S8A re-seat); the
-	   per-route schedule grid (.stop-schedule-route* / .stop-schedule-times*) now lives
-	   with <ScheduleTable> (P5.3e grid mode), so StopDetail carries only the schedule
-	   pane WRAPPER (.stop-schedule) + the detail-card chrome. */
 	.stop-info-metrics {
 		display: flex;
 		flex-wrap: wrap;
@@ -825,7 +791,6 @@
 		gap: 0.375rem;
 	}
 
-	/* Live-departures filter chips + count (laid out inside the ControlsRail body). */
 	.stop-chip-group {
 		display: flex;
 		flex-wrap: wrap;
@@ -851,7 +816,6 @@
 	.stop-chip:hover {
 		color: var(--foreground);
 	}
-	/* Active chip is an INTERACTION accent — --primary belongs here, never a data mark. */
 	.stop-chip--active {
 		color: var(--primary-foreground);
 		background-color: var(--primary);
@@ -874,7 +838,6 @@
 	}
 
 	@media (max-width: 48rem) {
-		/* The 2-column facts card collapses to one column on a phone. */
 		.stop-info {
 			grid-template-columns: minmax(0, 1fr);
 		}

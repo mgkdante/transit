@@ -27,9 +27,6 @@ from sqlalchemy import create_engine, text
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_PATH = REPO_ROOT / "data" / "exports" / "stm-route-lines.geojson"
 
-# 0.0001 degrees ~= 11m. Tight enough that simplified lines look identical
-# to raw at city/neighbourhood zoom; permissive enough to drop ~80% of
-# redundant vertices.
 SIMPLIFY_TOLERANCE_DEG = 0.0001
 
 
@@ -81,7 +78,7 @@ def main() -> None:
     fc = {"type": "FeatureCollection", "features": features}
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with OUTPUT_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(fc, fh, separators=(",", ":"))  # compact, no whitespace
+        json.dump(fc, fh, separators=(",", ":"))
 
     size_kb = OUTPUT_PATH.stat().st_size / 1024
     print(f"Wrote {len(features):,} features to {OUTPUT_PATH}")

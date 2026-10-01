@@ -10,9 +10,6 @@ import {
 	stripLocaleSegment,
 } from './routing';
 
-// localizeHref's non-prefix-locale branch is deliberately uncovered with 'de':
-// Locale is 'en' | 'fr', so that call is uninhabited without a cast.
-
 describe('Transit locale routing wrapper', () => {
 	it('preserves locale levers and core path behavior', () => {
 		const pathLocaleFixtures: readonly [string, Locale][] = [

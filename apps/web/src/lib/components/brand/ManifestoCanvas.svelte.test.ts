@@ -161,7 +161,6 @@ describe('ManifestoCanvas — geometry and lifecycle', () => {
 		const containerEl = host();
 		const view = render(ManifestoCanvas, { props: { containerEl } });
 		const canvas = view.container.querySelector('canvas') as HTMLCanvasElement;
-		// The host can change before the browser delivers its initial observation.
 		containerEl.getBoundingClientRect = () =>
 			({ width: 480, height: 360, left: 0, top: 0 }) as DOMRect;
 		document.documentElement.style.setProperty('--primary-rgb', '4 5 6');

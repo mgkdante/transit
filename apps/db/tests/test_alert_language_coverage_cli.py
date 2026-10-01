@@ -1,4 +1,3 @@
-"""CLI contract for the D2 alert-language coverage JSON receipt."""
 
 from __future__ import annotations
 

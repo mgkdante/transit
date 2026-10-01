@@ -11,7 +11,6 @@ export interface MapFocusController {
 	consumeOnce(handle: (focus: MapFocus) => void): boolean;
 }
 
-/** Owns the rune that wakes MapHero's resolver effect after one-shot URL ingestion. */
 export function createMapFocusController(
 	dependencies: MapFocusControllerDependencies,
 ): MapFocusController {

@@ -1,12 +1,3 @@
-<!--
-  SectionTimeOfDay — the by-shift + weekday-vs-weekend ranked lists.
-
-  Pure presenter of `selectTimeOfDay`. SHIFT buckets (ranked by severe share on the
-  FIXED SEVERE_DOMAIN) + a weekday-vs-weekend day-type comparison, surfaced from the
-  granular grains the pipeline emits alongside the calendar ones (these never enter
-  the grain rail). A trailing-window proxy. Rendered only when the caller has at
-  least one shift OR day-type row.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { SectionLabel } from '@yesid/ui/brand';

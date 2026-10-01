@@ -14,8 +14,7 @@ from sqlalchemy.engine import Connection, Engine
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
 
-# ASCII Unit Separator — non-printable so it won't collide with real text in
-# alert headers/descriptions. MUST match the SQL backfill in migration 0021.
+# Identity separator must match migration 0021.
 _HASH_FIELD_SEP = "\x1f"
 
 
@@ -33,31 +32,6 @@ def compute_alert_content_hash(
     updated_at_utc: datetime | None,
     extra_active_periods: list[tuple[datetime | None, datetime | None]] | None = None,
 ) -> str:
-    """SCD2 content hash for silver.i3_alerts.
-
-    Base identity (first 10 fields) matches the md5() expression in migration
-    0021 exactly:
-      - Same 10 fields in the same order
-      - NULL → empty string
-      - Timestamps → integer epoch seconds (sub-second precision dropped on
-        purpose — content identity, not snapshot identity)
-      - Joined by ASCII Unit Separator (U+001F)
-      - md5 over UTF-8 bytes
-
-    S15 EXTRA-PERIODS DIGEST (hash cutover, surgical): a genuinely multi-window
-    alert now carries its extra windows (active_period[1:]) in the identity, so a
-    change to those windows honestly re-rows the SCD-2 record. The digest of the
-    extra periods contributes the EMPTY STRING when the alert is single-period
-    (extra_active_periods is None/empty) — so EVERY existing single-period row
-    hashes byte-identically to the pre-S15 formula and does NOT re-row on deploy.
-    period[0] stays represented by the scalar pair above (unchanged); only
-    indices >= 1 feed this trailing field.
-
-    EN fields (alert_header_text_en, description_text_en) and url/url_en are
-    deliberately EXCLUDED: content identity is fr-based (0021/slice-9.1.1h
-    invariant); EN and url are non-identity payload refreshed in place on the
-    surviving SCD-2 row.
-    """
 
     def _ts(value: datetime | None) -> str:
         if value is None:
@@ -76,10 +50,7 @@ def compute_alert_content_hash(
         _ts(published_at_utc),
         _ts(updated_at_utc),
     ]
-    # Append the extra-windows digest ONLY when the alert is genuinely multi-
-    # period. A single-period alert appends NOTHING, so its canonical string —
-    # and md5 — is byte-identical to the pre-S15 10-field form (no re-row churn
-    # on deploy). Multi-period alerts append one trailing separated field.
+    # Append extra-window identity only for multi-period alerts to preserve single-period hashes.
     if extra_active_periods:
         parts.append(",".join(f"{_ts(start)}:{_ts(end)}" for start, end in extra_active_periods))
     canonical = _HASH_FIELD_SEP.join(parts)
@@ -216,12 +187,7 @@ INSERT_I3_ACTIVE_PERIODS = text(
     """
 )
 
-# After the alert upsert, every batch content_hash has exactly one active row —
-# either freshly inserted under this snapshot, or the pre-existing row the
-# ON CONFLICT redirect bumped. Entities must be keyed to THAT row or the FK
-# fk_silver_i3_alert_informed_entities_alert rejects the whole transaction
-# (prod incident 2026-06-09: alerts.json frozen because one persisting alert
-# with entities rolled back every load).
+# Key entities to the surviving alert after an ON CONFLICT redirect.
 SELECT_ACTIVE_ALERT_KEYS = text(
     """
     SELECT content_hash, i3_alert_snapshot_id, alert_index
@@ -232,11 +198,7 @@ SELECT_ACTIVE_ALERT_KEYS = text(
     """
 ).bindparams(bindparam("content_hashes", expanding=True))
 
-# SCD-2 close-out: active hashed rows whose content no longer appears in the
-# feed get valid_to stamped. Legacy NULL-hash rows are intentionally excluded
-# (bulk cleanup belongs to slice-9.1.1l, not the 300s hot path), and callers
-# must skip this when the batch is empty (a feed hiccup must not close every
-# active alert).
+# Exclude legacy NULL hashes and skip close-out for empty batches.
 SUPERSEDE_VANISHED_ALERTS = text(
     """
     UPDATE silver.i3_alerts
@@ -374,12 +336,6 @@ def _value(payload: dict[str, Any], *keys: str) -> object:
 
 
 def _primary_language(value: object) -> str:
-    """BCP-47 primary language subtag, lowercased.
-
-    ``fr-CA`` -> ``fr``, ``en_US`` -> ``en``, ``EN`` -> ``en``. Region/script
-    subtags are dropped so region-tagged feeds (STO / STS publish ``fr-CA`` /
-    ``en-CA``) match the same language buckets as bare ``fr`` / ``en``.
-    """
     if not isinstance(value, str):
         return ""
     return value.strip().lower().replace("_", "-").split("-", 1)[0]
@@ -413,19 +369,6 @@ def _text(payload: object) -> str | None:
 
 
 def _text_en(payload: object) -> str | None:
-    """Strict English extractor for the bilingual citizen contract.
-
-    EN is non-identity payload (excluded from compute_alert_content_hash, the
-    0021 dedup key, and the 0024 synthesized hash — slice-9.1.1h invariant).
-    Honesty rule: only return text when an EXPLICIT English language marker
-    exists, so the web client can render a faithful "French only" state.
-
-      - None -> None
-      - str -> None (a bare string carries no language marker)
-      - list -> first non-empty _text() of items whose language is en/eng
-      - dict -> _text(payload['en']) only (no 'text'/'value' fallthrough;
-        those are language-less)
-    """
     if isinstance(payload, list):
         for item in payload:
             if isinstance(item, dict) and _primary_language(item.get("language")) in {"en", "eng"}:
@@ -442,7 +385,6 @@ def _text_en(payload: object) -> str | None:
 
 
 def _has_explicit_language(payload: object, accepted: set[str]) -> bool:
-    """Return whether non-empty text carries an explicit accepted language tag."""
 
     if isinstance(payload, list):
         return any(
@@ -492,9 +434,6 @@ def _without_explicit_english(payload: object) -> object:
             )
         ]
     if isinstance(payload, dict):
-        # The single-object translation form ({"language": "en", "text": ...})
-        # IS the English variant — strip the whole object, matching the form
-        # _has_explicit_language already accepts (S5-378 B2 shape F).
         if _primary_language(payload.get("language")) in {"en", "eng"}:
             return {}
         return {
@@ -521,10 +460,8 @@ def _fallback_alert_logical_id(raw_alert: dict[str, Any]) -> str:
             continue
         if key in text_keys and has_non_english_identity_text:
             stripped = text_without_english[key]
-            # A field that only ever held English must be ABSENT from the
-            # identity, not present-and-empty — otherwise the alert that gains
-            # an English description mid-day mints a second logical id and the
-            # day double-counts (S5-378 B2 shape B).
+            # English-only fields are absent from identity so translation additions preserve logical
+            # IDs.
             if _text(stripped) is None:
                 continue
             enrichment_neutral[key] = stripped
@@ -549,14 +486,6 @@ def _provider_local_observation_date(snapshot: RawI3AlertSnapshot) -> date:
 def build_alert_language_observations(
     snapshot: RawI3AlertSnapshot,
 ) -> list[AlertLanguageObservation]:
-    """Classify the raw alert translations before any Silver SCD enrichment.
-
-    A provider id is the preferred logical identity. Providers that omit ids use
-    a content identity that excludes explicit EN when FR or untagged identity
-    text exists. EN appearing later therefore updates that same daily
-    observation. When EN is the only identity text, it stays in the hash so
-    distinct EN-only alerts cannot collapse.
-    """
 
     observation_date = _provider_local_observation_date(snapshot)
     latest_by_logical_id: dict[str, AlertLanguageObservation] = {}
@@ -593,7 +522,6 @@ def record_alert_language_observations(
     *,
     snapshot: RawI3AlertSnapshot,
 ) -> int:
-    """Upsert the latest per-alert and feed-level evidence for a provider day."""
 
     observations = build_alert_language_observations(snapshot)
     observation_date = _provider_local_observation_date(snapshot)
@@ -644,12 +572,6 @@ def _period_bounds(period: object) -> tuple[datetime | None, datetime | None]:
 
 
 def _active_periods(alert: dict[str, Any]) -> list[tuple[datetime | None, datetime | None]]:
-    """Every active window as (start, end) tuples, order preserved (S15).
-
-    The i3 shape may carry a single dict or a list. period_index is the list
-    position; the scalar columns keep period[0] (backward-compat) and the child
-    table persists the full list. An empty/blank period yields (None, None) but
-    is still positional so period_index stays stable across ingest cycles."""
     period = _value(alert, "activePeriod", "active_period", "activePeriods", "active_periods")
     if isinstance(period, list):
         return [_period_bounds(item) for item in period]
@@ -684,14 +606,6 @@ def _informed_entities(alert: dict[str, Any]) -> list[dict[str, object]]:
 def normalize_i3_alert_payload(
     snapshot: RawI3AlertSnapshot,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
-    """Normalize a raw i3 alert payload into (alert_rows, entity_rows, period_rows).
-
-    period_rows carry the FULL active-period list (S15): one row per (alert,
-    period_index). The scalar active_period_start/_end on the alert row stay =
-    period[0] (backward-compat); index >= 1 rows are the newly-captured extra
-    windows and also feed the content hash's extra-periods digest. url / url_en
-    are additive display passthroughs (honest-NULL where the feed omits them,
-    e.g. STM's i3 which carries no url key)."""
     alert_rows: list[dict[str, object]] = []
     entity_rows: list[dict[str, object]] = []
     period_rows: list[dict[str, object]] = []
@@ -715,8 +629,7 @@ def normalize_i3_alert_payload(
         severity = _text(_value(raw_alert, "severity", "priority"))
         cause = _text(_value(raw_alert, "cause"))
         effect = _text(_value(raw_alert, "effect"))
-        # url is a display passthrough (NOT hashed): fr-preferred for `url`, an
-        # explicit English variant for `url_en`, mirroring the header handling.
+        # URL is a display passthrough and is excluded from identity.
         url = _text(_value(raw_alert, "url", "link"))
         url_en = _text_en(_value(raw_alert, "url", "link"))
         published_at_utc = _timestamp(_value(raw_alert, "publishedAt", "published_at"))
@@ -732,8 +645,6 @@ def normalize_i3_alert_payload(
             active_period_end_utc=active_end,
             published_at_utc=published_at_utc,
             updated_at_utc=updated_at_utc,
-            # period[0] is already the scalar pair above; indices >= 1 are the
-            # extra windows that change identity when they change.
             extra_active_periods=periods[1:] if len(periods) > 1 else None,
         )
         alert_rows.append(
@@ -797,13 +708,7 @@ def normalize_i3_alert_payload(
                 }
             )
 
-    # The i3 feed can emit multiple alerts with identical content (e.g. one
-    # "Service normal du métro" per metro line), which collapse to the same
-    # content_hash. The SCD-2 unique index is on (provider_id, content_hash),
-    # so a single batch INSERT ... ON CONFLICT cannot carry two rows with the
-    # same hash (Postgres: "ON CONFLICT DO UPDATE command cannot affect row a
-    # second time"). Dedup by content_hash, keeping the first occurrence, and
-    # drop the now-orphaned informed entities so the FK stays consistent.
+    # Deduplicate content hashes before INSERT ON CONFLICT and discard orphaned entities.
     if alert_rows:
         seen: set[tuple[object, object]] = set()
         kept_indexes: set[object] = set()
@@ -879,12 +784,7 @@ def load_i3_snapshot_to_silver(
             ).mappings()
         }
 
-    # Re-key each entity to its alert's surviving row. For redirected alerts
-    # the surviving row already carries its original entities, so the entity
-    # PK ON CONFLICT DO NOTHING makes unchanged sets a no-op and scope
-    # EXTENSIONS additive. Known v1 limit: an entity REPLACED at the same
-    # entity_index without any content change keeps the old value (in
-    # practice STM edits bump updated_at_utc, which changes the hash).
+    # A redirected entity at an existing index keeps its old value until alert identity changes.
     hash_by_index = {row["alert_index"]: row["content_hash"] for row in alert_rows}
     redirected = sum(
         1
@@ -905,12 +805,6 @@ def load_i3_snapshot_to_silver(
         rekeyed_entities.append(entity)
     entity_count = _execute_insert(connection, INSERT_I3_ENTITIES, rekeyed_entities)
 
-    # Re-key active periods to the surviving alert row, mirroring the entity
-    # re-key. A redirected alert's surviving row already carries its periods, so
-    # the (snapshot, alert, period_index) PK ON CONFLICT DO NOTHING makes the
-    # unchanged set a no-op; genuinely new windows on a redirected row insert.
-    # Periods whose parent alert did not survive (never happens for a hashed
-    # row, but defensive) are dropped so the FK stays consistent.
     rekeyed_periods: list[dict[str, object]] = []
     for period in period_rows:
         surviving = surviving_by_hash.get(hash_by_index.get(period["alert_index"]))

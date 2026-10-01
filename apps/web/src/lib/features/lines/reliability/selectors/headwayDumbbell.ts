@@ -1,12 +1,3 @@
-// selectHeadwayDumbbell — the §02 scheduled-vs-observed headway dumbbell (A8).
-//
-// One row per shift: the scheduled headway ● —— ● the observed headway, on the fixed
-// HEADWAY_DOMAIN, so the GAP (excess wait) reads at a glance ("scheduled every 8 min,
-// actually every 13"). The observed dot is severity-coloured (bunching), the scheduled dot
-// is the muted reference. Honest absence: a shift missing either endpoint keeps its
-// labelled row but reads "no data" (never a fabricated bar); when no shift has BOTH
-// endpoints the one <Chart> shows the absence chip itself.
-
 import type { Locale } from '$lib/i18n';
 import type { AbsenceSpec, DumbbellSpec, DumbbellDatum } from '$lib/components/dataviz/chart';
 import { HEADWAY_DOMAIN } from '$lib/features/reliability/domains';
@@ -19,27 +10,20 @@ export interface DumbbellInputRow {
 	observed: number | null;
 	excess: number | null;
 	severity?: SeverityCode;
-	/** Pre-built secondary tooltip line (e.g. "CoV 0.42 · 28% bunched"). */
 	note?: string;
 }
 
 export interface HeadwayDumbbellLabels {
 	title: string;
-	/** Localized value-axis title (e.g. "Headway"). */
 	xLabel: string;
-	/** Value unit suffix (e.g. " min"). */
 	unit: string;
-	/** Legend/tooltip label for the scheduled endpoint. */
 	scheduledLabel: string;
-	/** Legend/tooltip label for the observed endpoint. */
 	observedLabel: string;
-	/** Short marker appended to a row missing an endpoint (e.g. "no data"). */
 	noDataMarker: string;
 }
 
 export interface HeadwayDumbbellResult {
 	spec: DumbbellSpec | AbsenceSpec;
-	/** True when at least one shift carries BOTH a scheduled + observed headway. */
 	hasData: boolean;
 }
 

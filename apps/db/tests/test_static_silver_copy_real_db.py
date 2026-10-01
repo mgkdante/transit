@@ -1,4 +1,3 @@
-"""Real-Postgres parity and rollback gates for static GTFS COPY loading."""
 
 from __future__ import annotations
 

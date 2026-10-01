@@ -1,14 +1,3 @@
-"""Real-database regression tests for alert counts by content hash.
-
-These tests run only against a disposable Postgres database with the Transit
-schema migrated through wave-2 car 3:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_alert_count_real_db_regression.py -v
-
-Each test runs in one transaction and rolls back. Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -58,11 +47,6 @@ def _migration_0032():
 
 
 def _install_alert_count_views(connection) -> None:  # noqa: ANN001
-    # The migrated head already carries the history view. Do not reapply an old
-    # CREATE OR REPLACE body here: later additive columns (0037, then 0079)
-    # cannot be dropped that way. Only restore the 0032 impact view that 0059
-    # intentionally removed; these regression assertions still exercise its
-    # content-hash semantics against the current history superset.
     impact_migration = _migration_0032()
     connection.execute(text(impact_migration._IMPACT_VIEW))
 
@@ -116,13 +100,6 @@ def _seed_provider_and_snapshots(connection, seed_provider) -> None:  # noqa: AN
 
 
 def _seed_alert_rows(connection) -> None:  # noqa: ANN001
-    # The two D1 "Elevator issue" rows are the same legacy alert seen twice in a
-    # day. Pre-wave-3 they were seeded with content_hash NULL (synthesized hash
-    # deduped them to 1); wave-3 slice-l 0039 makes content_hash NOT NULL. The
-    # faithful post-l model is an SCD-2 supersession sharing one content_hash:
-    # the first occurrence is CLOSED (valid_to = the second's capture) and the
-    # second stays ACTIVE — both carry the same hash (legal under the active-only
-    # partial unique index) and the reporting view still dedups them to 1.
     rows = [
         _alert_row(
             SNAP_IDS[0],
@@ -272,20 +249,6 @@ def test_alert_count_distinct_content_across_eras(conn) -> None:  # noqa: ANN001
 
 
 def test_alerts_only_day_is_honest_no_delay_data(conn) -> None:  # noqa: ANN001
-    """Truth-audit honesty fix (slice/truth-audit-fixes).
-
-    This fixture seeds ONLY alert rows — no route_delay_hourly / stop_delay_hourly
-    telemetry — so the route_daily and stop_daily CTEs both LEFT-JOIN-miss for the
-    date. The rollup must NOT fabricate data on such a day:
-
-      * affected_route_count / affected_stop_count publish NULL (the honest "no
-        data"), NEVER a fabricated 0 that reads as "zero entities affected".
-      * rider_impact_score publishes NULL, NEVER a composite (it would otherwise
-        collapse to pure alerts*2 — here 2*2=4.0 — while every reliability input
-        is honest-NULL, an internally inconsistent receipt).
-
-    alert_count itself is real (alerts ARE present) so it stays populated.
-    """
     _run_citizen_rollup(conn)
 
     row = _daily_row(conn, date(2026, 6, 9))

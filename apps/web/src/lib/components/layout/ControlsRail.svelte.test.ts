@@ -1,12 +1,3 @@
-// ControlsRail.svelte.test.ts — DOM gate for the surface control panel.
-//
-// Guards the contract: a bordered control panel (a non-landmark `role="group"`
-// div, NOT a <section> region) that hosts the caller's controls via `children`,
-// an optional bilingual mono group label that both renders and names the group,
-// and an opt-in desktop-sticky modifier. The
-// rail itself is quiet chrome — the test asserts the label is present, not that
-// it carries any --primary cue (that belongs to the caller's active chips).
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -75,9 +66,6 @@ describe('ControlsRail', () => {
 	});
 
 	it('lifts the sticky rail above scrolling content with z-index (the sticky/z-index trap)', () => {
-		// jsdom does not compute Svelte-scoped <style> z-index, so we assert the CSS
-		// contract from source: the sticky rule must carry z-index: var(--z-rail) so
-		// POSITIONED data-mark cards scrolling under the stuck rail can't paint over it.
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
 			'utf-8',
@@ -86,8 +74,6 @@ describe('ControlsRail', () => {
 	});
 
 	it('parks the sticky rail off the single --chrome-offset knob (no literal, no --rail-sticky-top)', () => {
-		// B1: every sticky top derives from --chrome-offset. Assert the sticky rule
-		// uses it and that the old per-surface --rail-sticky-top override is gone.
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
 			'utf-8',
@@ -98,8 +84,6 @@ describe('ControlsRail', () => {
 	});
 
 	it('flushes tight under the chrome when stuck (B2: hairline + backdrop, no dead band)', () => {
-		// The stuck state is toggled by the observeStuck action via data-stuck; the
-		// flush rule must key off it so there is no dead padding band under the pill.
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
 			'utf-8',
@@ -113,7 +97,6 @@ describe('ControlsRail', () => {
 			props: { label: 'CONTRÔLES', children: controls, class: 'surface-controls' },
 		});
 		const rail = container.querySelector('[data-slot="controls-rail"]')!;
-		// A control cluster is a labelled group, NOT a top-level region landmark.
 		expect(rail.tagName.toLowerCase()).toBe('div');
 		expect(rail.getAttribute('role')).toBe('group');
 		expect(rail.classList).toContain('surface-controls');

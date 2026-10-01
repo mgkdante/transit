@@ -1,7 +1,3 @@
-// securityHeaders.test.ts — pins the SSR security headers and gates drift between
-// the TS source of truth (applied to documents in hooks.server.ts) and the
-// static `_headers` file (applied to assets by the Cloudflare assets binding).
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -11,7 +7,6 @@ import {
 	devContentSecurityPolicy,
 } from './securityHeaders';
 
-/** Parse the `/*` block of the Cloudflare `_headers` file into a header map. */
 function parseHeadersFileGlobBlock(): Record<string, string> {
 	const text = readFileSync(resolve(process.cwd(), '_headers'), 'utf-8');
 	const lines = text.split('\n');
@@ -55,9 +50,7 @@ describe('securityHeaders — production set', () => {
 
 	it('keeps geolocation enabled (near-me) but denies the unused powerful features', () => {
 		const pp = headers['Permissions-Policy'];
-		// near-me needs geolocation — must stay self-allowed, never ().
 		expect(pp).toContain('geolocation=(self)');
-		// every powerful feature the app never uses is explicitly denied.
 		for (const feature of [
 			'accelerometer',
 			'bluetooth',
@@ -112,8 +105,6 @@ describe('contentSecurityPolicy — invariants', () => {
 		expect(csp).toContain(
 			"img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev",
 		);
-		// the old broad `https:` wildcard token is gone from img-src (a bare
-		// `https:` source, not the `https://host` scheme prefix of a real origin).
 		expect(csp).not.toMatch(/img-src[^;]*\bhttps:(?!\/\/)/);
 	});
 });
@@ -123,7 +114,6 @@ describe('devContentSecurityPolicy — local HMR relaxations only', () => {
 		const dev = devContentSecurityPolicy();
 		expect(dev).toContain('ws:');
 		expect(dev).toContain("'unsafe-eval'");
-		// every prod source must still be present (dev is a strict superset)
 		expect(dev).toContain('https://protomaps.github.io');
 		expect(dev).toContain("frame-ancestors 'self'");
 	});

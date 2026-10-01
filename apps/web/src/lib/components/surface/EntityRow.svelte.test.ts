@@ -93,7 +93,6 @@ describe('EntityRow meta slot', () => {
 			},
 		});
 		expect(screen.getByTestId('meta-content')).toBeInTheDocument();
-		// The plain meta string is superseded by the slot.
 		expect(screen.queryByText('IGNORED')).toBeNull();
 	});
 });

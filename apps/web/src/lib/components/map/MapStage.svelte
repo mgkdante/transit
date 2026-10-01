@@ -1,36 +1,4 @@
-<!--
-  MapStage — the browser-only MapLibre GL canvas host.
-
-  SSR DISCIPLINE (critical): this component renders NOTHING server-side and
-  touches NO browser globals at module scope. `maplibre-gl`, its CSS, and the
-  `pmtiles` protocol are ALL pulled in via dynamic `await import(...)` inside
-  `onMount`, behind an `if (browser)` guard — so the server bundle never loads
-  WebGL/canvas code and prerender/SSR never sees `window`.
-
-  Pattern: a hand-rolled `new maplibregl.Map({...})` in onMount (NOT a Svelte
-  wrapper lib). The style comes from the pure, null-safe `resolveBasemapStyle`
-  resolver, so the "no PMTiles archive yet" state degrades to a self-contained
-  minimal dark style with zero external fetches.
-
-  Lifecycle (attempt-based since M2d):
-    - onMount → the FIRST boot attempt: basemap fetch starts up front (abort-
-      aware, fail-soft), vendor+CSS imports overlap it, pmtiles registers ONCE
-      globally, then the Map constructs against the resolved basemap.
-    - a FAILED attempt (importer/protocol/style/construct/setup) cleans up its
-		own map/observer/abort scope and signals `onerror`; Retry bumps the keyed
-		host (MapLibre needs an empty container) and re-boots — except importer
-		failures, which reload the document (module-import failures cache).
-    - $effect → after the map exists, keep center/zoom/basemap in sync when the
-      camera props actually change (jumpTo for camera, setStyle for basemap);
-      theme-only changes repaint via `onthemerepaint`, never setStyle.
-    - teardown → the active attempt's cleanup releases the GL context.
--->
 <script module lang="ts">
-	// Module-scoped (shared across every MapStage instance). The pmtiles protocol
-	// "must be added once globally" (per the pmtiles docs), so registration is one
-	// shared promise — reset only on ITS OWN rejection (identity-guarded) so a
-	// retry can re-attempt while a concurrent success is never clobbered.
-	// Type-only imports here are erased and never reach the server bundle.
 	import type { addProtocol } from 'maplibre-gl';
 
 	export interface MapStageImporters {
@@ -62,12 +30,6 @@
 
 	let pmtilesRegistration: Promise<void> | null = null;
 
-	/**
-	 * Register the pmtiles `Protocol` with MapLibre exactly once, process-wide.
-	 * Dynamically imports `pmtiles` so it stays out of the server bundle. Takes
-	 * the already-dynamically-imported maplibre `addProtocol` to avoid a second
-	 * import of the (large) maplibre module.
-	 */
 	export async function registerPmtilesProtocol(
 		add: typeof addProtocol,
 		loadPmtiles: MapStageImporters['pmtiles'],
@@ -111,96 +73,33 @@
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
 	import { constructRecoverableMap } from './maplibreConstructorCleanup';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
-	// Type-only import — erased at compile time, so it never pulls maplibre-gl
-	// into the server bundle. The RUNTIME import happens dynamically in onMount.
 	import type { Map as MapLibreMap, MapEventType, StyleSpecification } from 'maplibre-gl';
 
 	interface MapStageProps {
-		/** Initial map centre as [lng, lat] (GeoJSON/MapLibre order). */
 		center?: [number, number];
-		/** Initial zoom level. */
 		zoom?: number;
-		/**
-		 * Resolved BasemapFile pointer for the current snapshot, or null when the
-		 * manifest ships no hosted PMTiles archive. null → self-contained minimal
-		 * dark style (no external glyphs/tiles).
-		 *
-		 * This prop drives GENUINE LATER style swaps (theme/pointer change). For the
-		 * FIRST paint, prefer `basemapLoader` so the resolved basemap is present at
-		 * construction and the map paints hot, with no post-mount `setStyle` wipe.
-		 *
-		 * `undefined` means "deferred to `basemapLoader`": the swap effect ignores it
-		 * so the transient `null` of a not-yet-settled resource never triggers a
-		 * downgrade-to-minimal `setStyle` after the loader already painted the real
-		 * basemap. Pass an explicit `BasemapFile`/`null` only to drive a real swap.
-		 */
 		basemap?: BasemapFile | null | undefined;
-		/**
-		 * Optional async resolver for the basemap, awaited ONCE inside onMount before
-		 * the Map is constructed — so the very first paint already carries the hosted
-		 * basemap (or null) and never suffers a post-mount `setStyle` rebuild/flicker.
-		 * Its resolved value seeds the style key, so the basemap-arrival `$effect`
-		 * below treats it as the initial style and only swaps on a genuine LATER
-		 * theme/pointer change. When omitted, MapStage falls back to the `basemap`
-		 * prop value at construction (the legacy behaviour).
-		 */
 		basemapLoader?: (ctx: { signal: AbortSignal }) => Promise<BasemapFile | null>;
-		/** Import indirection used by the behavioral boot harness; defaults are the production chunks. */
 		importers?: MapStageImporters;
-		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
 		theme?: BasemapTheme;
-		/** Bbox the initial camera FITS to, as [minLon, minLat, maxLon, maxLat]. */
 		bounds?: readonly number[];
-		/**
-		 * Optional pan limit, LOOSER than `bounds`, so a left fit-padding can reveal
-		 * map west of the fit window without MapLibre clamping. Defaults to `bounds`.
-		 */
 		maxBounds?: readonly number[];
-		/** Fit padding used when the provider bbox seeds the initial camera. */
 		fitPadding?: MapFitPadding;
-		/** Accessible name for the map region (icon-/canvas-only control). */
 		label?: string;
-		/**
-		 * Fired ONCE with the Map after its style `load` event — the safe point to
-		 * install consumer layers/foreground. The second callback reports a later
-		 * consumer setup failure against this exact boot attempt for guarded retry.
-		 * Browser-only; never invoked under SSR.
-		 */
 		onready?: (map: MapLibreMap, reportSetupFailure: () => void) => void;
-		/** One guarded rebuild after a trusted native WebGL restoration. */
 		onrecovering?: () => void;
-		/** Fired ONCE when MapLibre first becomes idle for the current boot attempt. */
 		onidle?: (map: MapLibreMap) => void;
-		/**
-		 * Fired after a later style swap caused by a theme/basemap change. Consumers
-		 * must re-add custom images/sources/layers because MapLibre clears them when
-		 * `setStyle` runs.
-		 */
 		onstyleload?: (map: MapLibreMap) => void;
-		/** Fired after a theme-only token repaint; sources and data remain installed. */
 		onthemerepaint?: (map: MapLibreMap) => void;
-		/** Fatal initialization state. null clears the state before an in-place retry. */
 		onerror?: (failure: MapStageFailure | null) => void;
-		/** Release consumer-owned map state before MapLibre removal. */
 		onbeforeremove?: (map: MapLibreMap) => void | PromiseLike<unknown>;
-		/** Receives each teardown error after every cleanup step has run. */
 		oncleanupfailure?: (error: unknown) => unknown;
-		/**
-		 * Extra credit rendered in the attribution control alongside the basemap's
-		 * own source attribution. The map carries the provider's licence obligation
-		 * (STM CC BY 4.0), which is a RUNTIME manifest value, so it arrives as a
-		 * prop and is passed through VERBATIM — never reworded, abbreviated or
-		 * truncated (M6f-2 F19).
-		 */
 		customAttribution?: string | null;
-		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
-		/** Consumer styling on the host wrapper. */
 		class?: string;
 	}
 
 	let {
-		// Default centre: STM service area (downtown Montréal).
 		center = [-73.5673, 45.5017],
 		zoom = 11,
 		basemap = undefined,
@@ -224,15 +123,9 @@
 		class: className,
 	}: MapStageProps = $props();
 
-	/** The host <div> MapLibre attaches its canvas to. */
 	let container = $state<HTMLDivElement | null>(null);
-	/** The live Map instance (browser-only; null until mounted / after teardown). */
 	let map = $state.raw<MapLibreMap | null>(null);
 
-	// Basemap-swap baseline. Declared up here (not beside the effect) because onMount
-	// SEEDS them at construction to the basemap it paints — so the swap effect treats
-	// the first hot paint as the initial style and only fires `setStyle` on a genuine
-	// LATER theme/pointer change (the B2 hot-load + no-flicker contract).
 	let styleInited = false;
 	let activeStyleKey: string | null = null;
 	let activeTheme: BasemapTheme | null = null;
@@ -401,8 +294,6 @@
 			}
 			pendingDisposers = retainedDisposers;
 		}
-		// MapLibre remove() can throw in control teardown before it reaches its own
-		// style destruction. Isolate that resource release so sources still reach zero.
 		if (ownedMap) release(() => ownedMap.setStyle(null));
 		if (ownedMap) release(() => ownedMap.remove());
 		if (runtimeContainer) release(() => runtimeContainer.remove());
@@ -435,8 +326,6 @@
 			instance.off(type, listener);
 			active = false;
 		};
-		// Ledger first: Evented registration can mutate and then throw. Cleanup must
-		// still know the exact listener identity in that partial-registration state.
 		attempt.disposers.push(dispose);
 		try {
 			instance.on(type, listener);
@@ -622,12 +511,6 @@
 		}
 	}
 
-	// One boot attempt, end to end. Ordering is the protect-#5 contract: the
-	// basemap promise starts FIRST (network-bound, abort-aware, fail-soft → null
-	// → the self-contained fallback), the vendor+CSS imports overlap it, pmtiles
-	// registers after maplibre, and construction waits for ALL of them so the
-	// first paint is hot — no post-mount setStyle rebuild. `failureKind` advances
-	// stage by stage so the single catch classifies honestly.
 	async function startAttempt(generation: number, recoveryView?: RecoveryView): Promise<void> {
 		if (!mounted || !container || activeAttempt?.initializing) return;
 		const attempt: BootAttempt = {
@@ -692,7 +575,6 @@
 						...viewport,
 						canvasContextAttributes: { desynchronized: true },
 						locale,
-						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
 					},
 					reportCleanupFailure,
@@ -718,7 +600,6 @@
 					padding: recoveryView.padding,
 				});
 			} else if (recoveryView && fitInputsChanged) {
-				// Current fit-owned bounds/center win; orientation and unaffected padding still survive.
 				instance.jumpTo({
 					...(recoveryView.cameraInputsKey !== currentCameraKey ? { center, zoom } : {}),
 					bearing: recoveryView.bearing,
@@ -729,11 +610,6 @@
 						: {}),
 				});
 			}
-			// Base's implicit control received { compact: true }; pass the same options
-			// while owning the control explicitly for teardown. `customAttribution`
-			// carries the provider's licence line VERBATIM next to the basemap's own
-			// OpenStreetMap/Protomaps credit, in the one surface that already holds
-			// map credits (M6f-2 F19).
 			ownMapControl(
 				attempt,
 				instance,
@@ -750,9 +626,6 @@
 			map = instance;
 
 			failureKind = 'setup';
-			// resize() on load is idiomatic insurance: if the container's final size
-			// wasn't settled when the GL context was created, this forces the drawing
-			// buffer + first frame to match the laid-out container.
 			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
 				const reportSetupFailure = () => {
@@ -783,9 +656,6 @@
 				}
 			};
 			releaseIdle = ownMapListener(attempt, instance, 'idle', handleIdle);
-			// One-shot attribution collapse: maplibre's compact control still STARTS
-			// expanded; once attribution populates (never on the empty fallback), we
-			// land the exact end state a user click produces, then detach.
 			let releaseStyleData = () => {};
 			let releaseSourceData = () => {};
 			const collapseAttribution = () => {
@@ -806,9 +676,6 @@
 			};
 			ownMapListener(attempt, instance, 'movestart', claimCamera);
 			ownMapListener(attempt, instance, 'boxzoomend', claimBoxZoom);
-			// MapLibre measures the container at construction; in a flex/grid parent
-			// layout may not have settled, so observing keeps the viewport in sync
-			// (fires once immediately, repainting the initial frame).
 			attempt.observer = new ResizeObserver(() => {
 				if (isCurrentAttempt(attempt)) instance.resize();
 			});
@@ -820,14 +687,10 @@
 	}
 
 	onMount(() => {
-		// Hard SSR guard: never instantiate WebGL on the server. (onMount already
-		// only runs client-side, but the explicit guard documents the contract and
-		// keeps the dynamic import dead-code on the server.)
 		if (!browser) return;
 		mounted = true;
 		void startAttempt(attemptKey);
 
-		// Teardown — release the GL context, event listeners, and DOM nodes.
 		return () => {
 			mounted = false;
 			if (activeAttempt) cleanupAttempt(activeAttempt);
@@ -835,8 +698,6 @@
 		};
 	});
 
-	// Constructor framing owns boot/retry. Later HMR/prop-driven camera changes
-	// apply only while framing still owns the camera; user and focus moves persist.
 	let cameraOwner: CameraOwner = 'fit';
 	let activeFitKey: string | null = null;
 	let activeLayoutSig: string | null = null;
@@ -874,22 +735,12 @@
 		if (cameraOwner === 'fit') m.jumpTo({ center: nextCenter, zoom: nextZoom });
 	});
 
-	// Swap the basemap style ONLY when the basemap pointer or theme changes after
-	// the initial render. The constructor already applied the first style (seeding
-	// the baseline above), so skip the mount run — a redundant setStyle would wipe
-	// any layers a consumer added via `onready` (e.g. the vehicle layer). Later
-	// swaps intentionally re-fire onstyleload so the consumer can re-add layers.
 	$effect(() => {
 		const m = map;
 		const b = basemap;
 		const t = theme;
 		if (!m) return;
-		// `undefined` = deferred to the loader: never act on it for a style swap. This
-		// keeps the transient `null` of a not-yet-settled basemap resource (passed as
-		// the prop alongside the loader) from downgrading the already-painted basemap
-		// to minimal. A real pointer swap passes an explicit BasemapFile or null.
 		if (b === undefined) {
-			// Still honour a pure theme change while the basemap stays deferred.
 			if (activeTheme !== t) {
 				applyBasemapTheme(m, t);
 				activeTheme = t;
@@ -937,10 +788,6 @@
 	});
 </script>
 
-<!--
-  Server render: nothing. The host div only exists in the browser, so the SSR
-  payload carries no empty map shell that would flash before hydration.
--->
 {#if browser}
 	{#key attemptKey}
 		<div
@@ -959,22 +806,16 @@
 		position: relative;
 		width: 100%;
 		height: 100%;
-		/* Solid surface (no alpha) — matches the minimal dark style background so
-		   the container reads as one piece before the GL canvas paints. */
 		background-color: var(--background);
 		border-radius: var(--radius-lg);
 		overflow: hidden;
 	}
 
-	/* Visible focus for keyboard users landing on the map region. */
 	.map-stage:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
 
-	/* Re-theme MapLibre's default control chrome to brand surfaces. These are
-	   the only places we reach into maplibre-gl's own class names; scoped via
-	   :global so Svelte doesn't tree-shake them as unused selectors. */
 	.map-stage :global(.maplibregl-ctrl-bottom-right) {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		bottom: 1rem;
@@ -983,11 +824,6 @@
 		transition: right var(--duration-normal) var(--ease-out);
 	}
 
-	/* M6f-2 F16: MapLibre's own `.maplibregl-ctrl-bottom-right .maplibregl-ctrl`
-	   sets `margin: 0 10px 10px 0`, so the credit's VISIBLE right edge sat 10px
-	   inside the container inset while the location peel sat exactly on it. Zero
-	   the margin (specificity (0,3,0) beats maplibre's (0,2,0)) so the container
-	   inset IS the visible inset and both surfaces share one right edge. */
 	.map-stage :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
 		margin: 0;
 	}
@@ -1010,10 +846,6 @@
 		color: var(--accent-text);
 	}
 
-	/* The collapsed credit is a 24px maplibre glyph carrying a LEGAL obligation —
-	   it has to be openable on a touch screen. Grow the hit area to 44px around
-	   the button without growing the visible control (M6f-2 F19); the button is
-	   already absolutely positioned, so the overlay centres on it. */
 	.map-stage :global(.maplibregl-ctrl-attrib-button)::after {
 		content: '';
 		position: absolute;
@@ -1030,12 +862,6 @@
 		}
 	}
 
-	/* M6f-2 F16: 1023.98px, NOT 768px. The credit was the last surface on the old
-	   768 line while both peels, the panel hide and the JS `layout.isDesktop`
-	   snapshot had already converged on 1024 — so through the whole 769–1023 band
-	   the credit kept its desktop inset while the peels used the compact one, and
-	   the two right edges disagreed by more than they do on desktop. One line for
-	   every map surface. */
 	@media (max-width: 1023.98px) {
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;

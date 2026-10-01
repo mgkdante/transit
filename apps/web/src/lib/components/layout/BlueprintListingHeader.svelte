@@ -1,12 +1,3 @@
-<!--
-  BlueprintListingHeader — the shared Blog/Projects listing-header grammar.
-
-  The artwork is a composition of real SVG components supplied by the feature,
-  not a responsive raster card. It fills the complete header band behind the
-  bottom-left title/subtitle overlay. The desktop edge title lives in
-  ListingPageShell, so this h1 is visually hidden there while remaining the one
-  semantic page heading.
--->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
@@ -141,8 +132,6 @@
 			gap: clamp(2rem, 5vw, 5rem);
 		}
 
-		/* The giant sticky edge word is the desktop visual title. Keep this h1 in
-		   the accessibility tree while suppressing only its duplicate paint. */
 		.listing-mobile-heading {
 			position: absolute;
 			width: 1px;

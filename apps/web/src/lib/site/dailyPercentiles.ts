@@ -2,7 +2,6 @@ import type { Locale } from '$lib/i18n';
 import { fmtCount, fmtDelayMin } from '$lib/utils';
 import type { LineHistoryRange, StopHistoryRange } from '$lib/v1/history/families';
 
-/** Only a selected, accepted day can supply an exact percentile difference. */
 export function selectDailyPercentiles(
 	range: Pick<LineHistoryRange | StopHistoryRange, 'window' | 'delayPercentiles'> | null,
 ) {

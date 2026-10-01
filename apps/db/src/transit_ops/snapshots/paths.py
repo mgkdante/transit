@@ -1,5 +1,3 @@
-"""Shared path validation for public snapshot graph edges and inventory keys."""
-
 from __future__ import annotations
 
 import re
@@ -10,7 +8,6 @@ _ENCODED_UNSAFE_BYTES = {ord(character) for character in "./\\?#:@"}
 
 
 def safe_public_path(path: str) -> str:
-    """Return a canonical relative snapshot path or reject encoded/control escapes."""
 
     canonical = path
     while True:

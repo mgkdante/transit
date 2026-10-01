@@ -367,8 +367,6 @@ describe('root layout data-independent legal routes', () => {
 				complete: Promise.resolve(),
 			};
 
-			// No beforeNavigate delivery is assumed. Kit may suppress those callbacks
-			// while an accepted navigation is active; onNavigate still owns this transaction.
 			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
 
 			expect(harness.runViewTransition).toHaveBeenCalledOnce();

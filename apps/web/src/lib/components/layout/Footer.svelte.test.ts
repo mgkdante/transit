@@ -159,7 +159,6 @@ describe('Footer', () => {
 				expect(group?.style.getPropertyValue('--size-tap-min')).toBe('');
 			}
 
-			// The house link belongs to BrandCluster, not a third CONNECT group.
 			const houseLinks = footer.querySelectorAll('a[href="https://yesid.dev"]');
 			expect(houseLinks).toHaveLength(1);
 			expect(houseLinks[0]).toHaveAttribute('target', '_blank');
@@ -265,7 +264,6 @@ describe('Footer', () => {
 				const lineAmber = rootStyle.getPropertyValue('--line-amber').trim();
 				expect(lineAmber).not.toBe('');
 
-				// Owner directive: "EXACTLY like yesid.dev full bleed. same divider color same layout etc".
 				const statusStyle = getComputedStyle(status!);
 				expect(statusStyle.borderTopWidth).toBe('2px');
 				expect(resolveCssColor(statusStyle.borderTopColor)).toBe(resolveCssColor(lineAmber));

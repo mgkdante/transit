@@ -47,8 +47,6 @@ test("tracked workspace inputs resolve with a frozen lock on the current host", 
       copyFileSync(join(root, path), destination);
     }
     const original = readFileSync(join(scratch, "bun.lock"));
-    // Exercise resolution without installing packages or running lifecycle scripts.
-    // In particular, nested file: dependencies must not rewrite path separators.
     const install = spawnSync(
       "bun",
       ["install", "--frozen-lockfile", "--lockfile-only", "--ignore-scripts"],

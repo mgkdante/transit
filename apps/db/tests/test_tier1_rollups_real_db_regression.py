@@ -1,23 +1,3 @@
-"""Real-database regression tests for Tier-1 rollups (cancellation + occupancy band).
-
-Run only against a disposable Postgres database with the full Transit schema
-migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_tier1_rollups_real_db_regression.py -v
-
-Never point this at production.
-
-These exercise the two correctness-critical Tier-1 properties that the
-FakeConnection unit tests cannot (they don't execute SQL):
-  - cancellation dedup + denominator honesty: multiple polls of one canceled
-    (trip_id, start_date) collapse to one canceled trip-day, and scheduled trips
-    with a NULL schedule_relationship STAY in the denominator (the adversary fix).
-  - occupancy band counts: code 4 (CRUSHED_STANDING) folds into standing and
-    NO_DATA/NOT_BOARDABLE codes are excluded from observation_count; the daily
-    reduction is append-only (idempotent on rebuild).
-"""
 
 from __future__ import annotations
 
@@ -66,12 +46,6 @@ class _Seed:
 def conn(real_db_engine, seed_provider):
     with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        # Anchor in the provider timezone (America/Toronto) — the same calendar
-        # the closed-day rollup filter uses (local_date < (now() AT TIME ZONE
-        # provider)::date). A UTC-anchored base flakes at the UTC/Toronto date
-        # boundary: once Toronto crosses midnight, the UTC-derived today_local lags
-        # the build's, so the open-day seed rows land on a day already treated as
-        # closed. Noon-today local keeps today_local == the build's at any hour.
         base_utc = (
             datetime.now(TORONTO)
             .replace(hour=12, minute=0, second=0, microsecond=0)
@@ -105,28 +79,20 @@ def _seed(connection, seed: _Seed, seed_provider) -> None:  # noqa: ANN001
 
     local_date = seed.closed_local_date
 
-    # Cancellation: three polls of the closed day. C1 (canceled) + N1 (NULL,
-    # scheduled) appear in all three polls — dedup must collapse each to ONE
-    # trip-day. C2 (canceled) + N2 (schedule_relationship=0, scheduled) appear
-    # once. Expected: total_trip_days=4 (C1,C2,N1,N2), canceled_trip_days=2.
     for poll in range(3):
         captured_at = seed.closed_day_utc + timedelta(minutes=poll)
         snapshot_id = _insert_snapshot(connection, seed, captured_at, TU_ENDPOINT_ID, 4)
         rows = [
-            ("C1", "99C", local_date, 3),  # canceled, every poll
-            ("N1", "99C", local_date, None),  # scheduled (NULL), every poll
+            ("C1", "99C", local_date, 3),
+            ("N1", "99C", local_date, None),
         ]
         if poll == 0:
             rows += [
-                ("C2", "99C", local_date, 3),  # canceled, once
-                ("N2", "99C", local_date, 0),  # scheduled (0), once
+                ("C2", "99C", local_date, 3),
+                ("N2", "99C", local_date, 0),
             ]
         _insert_trip_delay_rows(connection, snapshot_id, captured_at, rows)
 
-    # Occupancy: one vehicle snapshot on the closed day with seven pings on route
-    # 99C. Codes 1,1,2,3,4,5 are band-bearing (6); code 7 (NO_DATA) is excluded.
-    # Expected bands: empty=0, many_seats=2, few_seats=1, standing=2 (code 3+4),
-    # full=1; observation_count=6.
     occ_captured = seed.closed_day_utc + timedelta(minutes=10)
     occ_snapshot = _insert_snapshot(connection, seed, occ_captured, VP_ENDPOINT_ID, 7)
     _insert_vehicle_rows(
@@ -291,15 +257,10 @@ def test_cancellation_dedups_polls_and_keeps_null_scheduled_in_denominator(conn)
         .one()
     )
 
-    # Dedup: C1 (3 polls) + C2 (1 poll) = 2 distinct canceled trip-days, not 4.
     assert row["canceled_trip_days"] == 2
-    # Denominator includes the NULL-schedule scheduled trip N1 (the adversary fix):
-    # C1, C2, N1, N2 = 4 distinct (trip_id, start_date). If NULL were dropped the
-    # denominator would be 3 and the rate would inflate to 66.67%.
     assert row["total_trip_days"] == 4
     assert _decimal(row["cancellation_rate_pct"]) == Decimal("50.00")
 
-    # The open (current) local day is never built.
     today_rows = connection.execute(
         text(
             "SELECT COUNT(*) FROM gold.route_cancellation_daily "
@@ -330,13 +291,12 @@ def test_occupancy_band_counts_fold_code4_and_exclude_no_data(conn) -> None:  # 
         .one()
     )
 
-    assert daily["observation_count"] == 6  # code 7 (NO_DATA) excluded
+    assert daily["observation_count"] == 6
     assert daily["empty_count"] == 0
     assert daily["many_seats_count"] == 2
     assert daily["few_seats_count"] == 1
-    assert daily["standing_count"] == 2  # code 3 + code 4 (CRUSHED_STANDING)
+    assert daily["standing_count"] == 2
     assert daily["full_count"] == 1
-    # Band counts partition observation_count exactly.
     band_sum = (
         daily["empty_count"]
         + daily["many_seats_count"]
@@ -357,12 +317,10 @@ def test_tier1_daily_rollups_are_append_only_idempotent(conn) -> None:  # noqa: 
         ).scalar_one()
 
     before = (_count("route_cancellation_daily"), _count("route_occupancy_band_daily"))
-    # Re-running skips already-watermarked days — no duplicate/rewritten rows.
     _build_rollups(connection)
     after = (_count("route_cancellation_daily"), _count("route_occupancy_band_daily"))
     assert after == before
 
-    # Watermark kinds recorded for both new append-only daily rollups.
     kinds = {
         k
         for (k,) in connection.execute(

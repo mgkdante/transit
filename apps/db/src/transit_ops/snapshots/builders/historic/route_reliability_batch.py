@@ -1,10 +1,3 @@
-"""Set-based provider preload for historic route-reliability payloads.
-
-The public per-route builder remains the only payload assembler. This module
-replaces its physical per-route reads with provider-wide typed result sets,
-then serves the unchanged assembler through a fail-closed in-memory adapter.
-"""
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -964,7 +957,6 @@ def build_all_route_reliability(
     provider_id: str = "stm",
     generated_utc: str,
 ) -> dict[str, RouteReliability]:
-    """Build every historic route payload with a constant physical query budget."""
 
     inventory = _inventory_rows(
         conn.execute(_ROUTE_INVENTORY_SQL, {"provider_id": provider_id})

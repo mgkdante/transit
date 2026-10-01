@@ -1,5 +1,3 @@
-<!-- Mobile Controls trigger + anchored modal drawer. The shared controls snippet
-     remains the single filter/motion owner; this shell owns only open/close. -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
@@ -49,9 +47,6 @@
 		panel?.querySelector<HTMLButtonElement>(target)?.focus();
 	}
 
-	// The detail overlay removes the trigger from the DOM, so an open drawer would
-	// be left with no owner. Nothing else closes it: a feed that is not responding
-	// leaves the Controls fully present and open (M6f-2 F14).
 	$effect(() => {
 		if (!hidden || !drawerOpen) return;
 		drawerOpen = false;
@@ -182,11 +177,6 @@
 	}
 
 	:global([data-m6b-controls-drawer][data-slot='sheet-content']) {
-		/* The Sheet is portaled under body, so derive its nav clearance directly from
-		   the root-published pill height and the pill's fixed top inset. Add this
-		   drawer's established 10px surface gap to the pill's actual lower edge. The
-		   max-height cap enforces that minimum top inset only when needed; naturally
-		   shorter drawers (including 390×844) keep their position. */
 		--map-controls-drawer-gap: 10px;
 		--map-controls-drawer-top: calc(
 			1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--map-controls-drawer-gap)

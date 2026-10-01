@@ -155,9 +155,6 @@ describe('toRouteLineFeatures', () => {
 	});
 
 	it('highlights every direction of a route selected via a vehicle (no direction → whole route)', () => {
-		// Click-a-bus-shows-its-route: the vehicle carries only a route id (buses have
-		// no direction), so the selection is { id, direction: null } and BOTH directions
-		// of the route light up.
 		const features = toRouteLineFeatures([route161, route24], {
 			id: '161',
 			direction: null,
@@ -168,8 +165,6 @@ describe('toRouteLineFeatures', () => {
 	});
 
 	it('renders no highlighted line when the selected vehicle route has no geometry', () => {
-		// Honest fallback: a route whose directions all have null shapes yields no line
-		// features at all — nothing fabricated, no error.
 		const shapeless: RouteFile = {
 			generated_utc: utc('2026-06-16T00:00:00Z'),
 			id: '999',

@@ -30,7 +30,7 @@ describe('wilsonInterval', () => {
 });
 
 describe('selectVerdict — value bands (with a confident large n)', () => {
-	const N = 4000; // large n → tight CI, never tentative
+	const N = 4000;
 
 	it('≥80% reads reliable, with a Wilson hedge', () => {
 		const v = selectVerdict(h(85, N, 3400), 'week', 'en', en);
@@ -48,7 +48,6 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 		expect(v.sentence).toContain('Ran unreliably');
 	});
 	it('is two-sided: on-time + late natural frequencies add to ten', () => {
-		// 78% → 8 in 10 on time, 2 in 10 late.
 		const v = selectVerdict(h(78, N, 3120), 'week', 'en', en);
 		expect(v.sentence).toContain('8 in 10');
 		expect(v.sentence).toContain('2 in 10');
@@ -74,7 +73,6 @@ describe('selectVerdict — n-aware confidence pipeline', () => {
 		expect(v.sentence).toContain('12');
 	});
 	it('a wide Wilson interval (n≥30 but imprecise) → tentative', () => {
-		// n=30 at p≈0.5 → width well over 0.30.
 		const v = selectVerdict(h(50, 30, 15), 'week', 'en', en);
 		expect(v.status).toBe('tentative');
 		expect(v.sentence).toContain('Limited data');
@@ -95,15 +93,11 @@ describe('selectVerdict — graceful pre-republish degradation (no denominator)'
 		expect(v.sentence).not.toContain('95% sure');
 	});
 	it('derives the numerator from otp×n when on_time is null but n is present', () => {
-		// 85% (not 80) so the CI stays inside the reliable band — this test is about the derived
-		// numerator + the Wilson hedge, not the band edge.
 		const v = selectVerdict(h(85, 1000, null), 'week', 'en', en);
 		expect(v.status).toBe('reliable');
 		expect(v.sentence).toContain('95% CI:');
 	});
 	it('reads tentative when the Wilson CI straddles a band boundary (80% at n=1000)', () => {
-		// 80% with n=1000 → Wilson CI ≈ [77, 82], crossing the 80 reliable/patchy line: the verdict
-		// can't honestly commit to a band, so it hedges as tentative rather than asserting "reliable".
 		const v = selectVerdict(h(80, 1000, 800), 'week', 'en', en);
 		expect(v.status).toBe('tentative');
 	});

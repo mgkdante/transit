@@ -23,7 +23,7 @@ describe('routeColor', () => {
 		expect(routeColor('transparent')).toBeNull();
 		expect(routeColor('red')).toBeNull();
 		expect(routeColor('var(--primary)')).toBeNull();
-		expect(routeColor('#0011')).toBeNull(); // 4 digits
+		expect(routeColor('#0011')).toBeNull();
 		expect(routeColor('00ff00; background:url(x)')).toBeNull();
 	});
 });

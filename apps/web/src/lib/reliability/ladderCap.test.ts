@@ -1,5 +1,3 @@
-// ladderCap.test.ts — the S12 worst-N ladder cap helpers (cap + segments).
-
 import { describe, it, expect } from 'vitest';
 import { worstNCap, worstNSegments, SMALLEST_WORST_N, DEFAULT_WORST_N } from './ladderCap';
 import { WORST_N_LADDER } from '$lib/filters';
@@ -19,7 +17,6 @@ describe('worstNSegments', () => {
 		const segs = worstNSegments('All');
 		expect(segs.map((s) => s.key)).toEqual([...WORST_N_LADDER, 'all']);
 		expect(segs.at(-1)).toEqual({ key: 'all', label: 'All' });
-		// numeric rungs use their own number as the label.
 		expect(segs[0]).toEqual({ key: '5', label: '5' });
 	});
 });

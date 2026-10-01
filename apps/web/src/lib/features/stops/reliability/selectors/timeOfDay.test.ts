@@ -11,14 +11,14 @@ const labels = {
 describe('selectTimeOfDay', () => {
 	it('partitions shift + day-type grains (calendar grains stay OUT) and ranks by severe share', () => {
 		const periods: StopReliabilityPeriod[] = [
-			{ grain: 'day', p50_min: 2, p90_min: 5 }, // calendar → excluded
+			{ grain: 'day', p50_min: 2, p90_min: 5 },
 			{ grain: 'am_peak', severe_pct: 8 },
 			{ grain: 'pm_peak', severe_pct: 14 },
 			{ grain: 'weekday', severe_pct: 10 },
 			{ grain: 'weekend', severe_pct: 4 },
 		];
 		const vm = selectTimeOfDay(periods, labels);
-		expect(vm.shiftRows.map((r) => r.key)).toEqual(['pm_peak', 'am_peak']); // worst severe first
+		expect(vm.shiftRows.map((r) => r.key)).toEqual(['pm_peak', 'am_peak']);
 		expect(vm.shiftRows[0].domain).toEqual(SEVERE_DOMAIN);
 		expect(vm.dayTypeRows.map((r) => r.key)).toEqual(['weekday', 'weekend']);
 		expect(vm.hasTimeOfDay).toBe(true);

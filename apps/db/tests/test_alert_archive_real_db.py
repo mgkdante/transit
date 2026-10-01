@@ -1,4 +1,3 @@
-"""Transactional PostgreSQL proof for the bounded alert archive sync."""
 
 from __future__ import annotations
 

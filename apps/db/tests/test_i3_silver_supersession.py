@@ -1,11 +1,3 @@
-"""Offline contract tests for the slice-9.1.1h i3 loader fix.
-
-Covers the SQL-shape contract and the pure-Python rekey/supersede sequencing
-with a dispatching fake connection. The cross-snapshot FK semantics themselves
-(the prod incident) are locked in by tests/test_i3_real_db_regression.py
-against a real Postgres — these tests intentionally stay offline per the
-repo's no-live-DB convention.
-"""
 
 from __future__ import annotations
 
@@ -43,7 +35,6 @@ class _Result:
 
 
 class _DispatchConnection:
-    """Answers the surviving-key SELECT from a canned map and records calls."""
 
     def __init__(self, surviving_rows, supersede_rowcount=0) -> None:  # noqa: ANN001
         self.calls: list[tuple[str, object]] = []
@@ -78,25 +69,18 @@ def _hash_of(connection, alert_index: int):  # noqa: ANN201
 
 
 def test_insert_carries_en_columns_and_refreshes_them_on_conflict() -> None:
-    # slice-9.1.1s: EN columns ride the INSERT, and an EN-only edit must
-    # self-heal onto the surviving SCD-2 row without re-keying identity.
     import re
 
     sql = str(INSERT_I3_ALERTS)
     flat = re.sub(r"\s+", " ", sql)
 
-    # column + VALUES lists carry both EN columns
     assert "alert_header_text_en" in sql
     assert "description_text_en" in sql
     assert ":alert_header_text_en" in sql
     assert ":description_text_en" in sql
 
-    # The legacy first SET clause is preserved (test_i3_alerts_scd2_dedup.py:178
-    # source-greps this exact substring) and stays the FIRST clause.
     assert "DO UPDATE SET last_seen_at = excluded.last_seen_at" in sql
 
-    # EN refresh COALESCEs the new value over the stored one so a transient
-    # en-less payload can't wipe stored EN (whitespace-tolerant).
     assert (
         "alert_header_text_en = COALESCE( "
         "excluded.alert_header_text_en, silver.i3_alerts.alert_header_text_en )"
@@ -133,9 +117,7 @@ def test_redirected_alert_entities_are_rekeyed_to_surviving_row() -> None:
 
     connection = _DispatchConnection(
         surviving_rows=[
-            # ALERT-A redirected to an older snapshot's active row (777, 3).
             {"content_hash": persisting_hash, "i3_alert_snapshot_id": 777, "alert_index": 3},
-            # ALERT-C inserted fresh under this snapshot.
             {"content_hash": fresh_hash, "i3_alert_snapshot_id": SNAP_ID, "alert_index": 1},
         ],
         supersede_rowcount=2,

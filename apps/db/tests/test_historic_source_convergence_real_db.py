@@ -1,4 +1,3 @@
-"""Real publication remains coherent while a later correction awaits repair."""
 
 import json
 from concurrent.futures import ThreadPoolExecutor

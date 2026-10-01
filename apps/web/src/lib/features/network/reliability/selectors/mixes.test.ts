@@ -21,9 +21,7 @@ describe('selectStatusMix', () => {
 		});
 		expect(spec.kind).toBe('stacked-share');
 		if (spec.kind !== 'stacked-share') throw new Error('unreachable');
-		// zero-count bands are DROPPED (legacy StackedBar semantics)…
 		expect(spec.segments.map((s) => s.key)).toEqual(['on_time', 'late']);
-		// …and shares normalise to 100.
 		expect(spec.segments.find((s) => s.key === 'on_time')?.share).toBe(80);
 		expect(spec.segments.find((s) => s.key === 'late')?.href).toBe('/map?status=late');
 		expect(spec.legend).toBe(true);
@@ -56,7 +54,6 @@ describe('selectOccupancyMix', () => {
 		if (vm.spec?.kind !== 'stacked-share') throw new Error('unreachable');
 		expect(vm.spec.segments).toHaveLength(5);
 		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.occupancy).toBe('many_seats');
-		// fractions normalise to shares of 100
 		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.share).toBeCloseTo(40, 6);
 	});
 });
@@ -120,7 +117,6 @@ describe('selectHeadlineKpis', () => {
 			'liveDelayPercentiles',
 		]);
 		expect(vm.headline.every((c) => c.absentReason === 'not-reported')).toBe(true);
-		// p90 is null this cycle → the card value is null (renders the styled chip).
 		expect(vm.headline[3].value).toBeNull();
 	});
 

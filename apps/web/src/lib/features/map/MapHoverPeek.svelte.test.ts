@@ -81,7 +81,6 @@ describe('MapHoverPeek', () => {
 	it.each([
 		['vehicle-stale', vehicleStale],
 		['vehicle-fresh', vehicleFresh],
-		// The AbsentValue pill branch stays inert and uses the shared chassis.
 		['vehicle-delay-unknown', { ...vehicleFresh, delayMin: null }],
 		['route-populated', route],
 		['stop-populated', stop],

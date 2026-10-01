@@ -1,22 +1,3 @@
-<!--
-  ReliabilityBadge — a compact at-a-glance reliability mark for a LIST ROW.
-
-  The visible payoff of the shared lazy loader (reliabilitySnapshot.svelte.ts):
-  a tiny status-dot + headline OTP% that turns
-  a bare navigational row into a health reading. Used by BOTH the /lines index
-  and /search result rows.
-
-  FAIL-SOFT BY CONSTRUCTION: renders NOTHING until the loader has a real verdict
-  (phase 'ready' with a non-null OTP). A row still loading, or one whose history
-  404s/errors (phase 'empty'), shows no badge — never a spinner, never an error,
-  never a fabricated 0% (HONESTY: a null OTP is no badge, never a zero).
-
-  DOCTRINE: the dot is a DATA mark on the dataviz status scale
-  (StatusBadge 'dot'), never --primary. Colour is paired
-  with the StatusBadge glyph so the verdict survives monochrome / colour-blind
-  reading. Intrinsic OTP vocabulary (the "% on time" a11y phrasing) is local +
-  bilingual — provider-agnostic.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import type { StatusCode } from '$lib/v1/schemas';
@@ -24,18 +5,13 @@
 	import { StatusBadge } from '$lib/components/dataviz';
 
 	export interface ReliabilityBadgeProps {
-		/** The reactive snapshot for this row's entity, from the lazy loader. */
 		snapshot: ReliabilitySnapshot;
-		/** Active locale for the intrinsic OTP a11y phrasing + number grouping. */
 		locale: Locale;
-		/** Optional extra classes on the badge. */
 		class?: string;
 	}
 
 	let { snapshot, locale, class: className }: ReliabilityBadgeProps = $props();
 
-	// Intrinsic, provider-agnostic bilingual vocabulary (the screen-reader phrasing
-	// + the verdict words). Kept local: this is component-intrinsic, not surface copy.
 	const L = {
 		en: {
 			onTime: (pct: string) => `${pct} on time`,
@@ -59,7 +35,6 @@
 			: `${snapshot.otpPct.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`,
 	);
 
-	// Only paint when we have a real verdict + OTP — the fail-soft gate.
 	const show = $derived(snapshot.phase === 'ready' && snapshot.verdict != null && pctText != null);
 	const verdict = $derived(snapshot.verdict as StatusCode);
 	const verdictLabel = $derived(snapshot.verdict ? (t.verdict[snapshot.verdict] ?? '') : '');
@@ -67,12 +42,6 @@
 </script>
 
 {#if show}
-	<!--
-	  ONE accessible name for the whole mark: the wrapper is role="img" with the
-	  composed "<verdict> · <pct> on time" aria-label, and every visible inner part
-	  is aria-hidden. Without this the dot's own sr-only label + the visible %% +
-	  a standalone sr-only span announced the reading THREE times to a screen reader.
-	-->
 	<span
 		class={['reliability-badge', className].filter(Boolean).join(' ')}
 		data-slot="reliability-badge"
@@ -99,8 +68,6 @@
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
-	/* The dot wrapper is a pure a11y-hiding shell — it must not perturb the row's
-	   inline-flex layout, so it collapses to its contents. */
 	.reliability-badge-mark {
 		display: contents;
 	}

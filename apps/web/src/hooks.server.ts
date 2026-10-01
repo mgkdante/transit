@@ -70,7 +70,6 @@ function applyDocumentHeaders(response: Response): void {
 	}
 
 	if (isHtml(response)) {
-		// Kit's HTTP module preloads are discovered before the font links in app.html.
 		const existing = response.headers.get('link') ?? '';
 		const fonts = ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2']
 			.map((file) => encodeURI(`${assets}/fonts/${file}`))
@@ -85,11 +84,8 @@ function applyDocumentHeaders(response: Response): void {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Per-request /v1 fetch memo — discarded when the request ends.
 	event.locals.v1Cache = new Map();
 
-	// Path-derived locale → <html lang>. No Vary header: the representation is a
-	// pure function of the URL path, so each URL is independently cacheable.
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
 	const cache = await edgeCache(event.platform);
@@ -119,10 +115,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 
-	// Security headers on the SSR-rendered document. The static `_headers` file
-	// only covers static *assets* in Worker mode, so without this every HTML
-	// document shipped zero CSP/HSTS/frame protection. Source of truth +
-	// _headers parity gate: $lib/site/securityHeaders.
 	applyDocumentHeaders(response);
 
 	if (cache != null) {

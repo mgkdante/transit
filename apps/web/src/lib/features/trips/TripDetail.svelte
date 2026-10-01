@@ -1,4 +1,3 @@
-<!-- Trip IDs may expire. ETA values are predictions; missing delays remain unknown. -->
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
@@ -34,8 +33,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
-	// Trip links are noindex; keep this UI trail outside the indexed SEO breadcrumbs.
-	// Breadcrumb localizes these delocalized paths.
 	const trail = $derived<BreadcrumbTrailItem[]>([
 		{ name: t.crumbHome, path: '/' },
 		{ name: t.heading(id), path: `/trip/${encodeURIComponent(id)}` },
@@ -47,7 +44,6 @@
 
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
 	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
-	// A failed optional stop-name lookup preserves the raw stop IDs.
 	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
 	const stopNameById = $derived.by<Record<string, string>>(() => {
 		const m: Record<string, string> = {};
@@ -56,7 +52,6 @@
 	});
 
 	const stopNameFor = (stopId: string): string => stopNameById[stopId] ?? stopId;
-	// The report is capped at one hour; its last row does not establish the terminal.
 	const reportedPredictions = $derived(trip?.stops ?? []);
 	const predictionCount = $derived(reportedPredictions.length);
 	const lastReportedStopName = $derived.by<string | null>(() => {
@@ -249,7 +244,6 @@
 </Surface>
 
 <style>
-	/* Masthead owns the responsive spacing around these decorative corners. */
 	.trip-corner {
 		white-space: nowrap;
 	}
@@ -301,7 +295,6 @@
 		align-items: center;
 		gap: 0.375rem;
 
-		/* Preserve the shared touch-target floor. */
 		min-height: var(--size-tap-min);
 		text-decoration: none;
 		color: var(--foreground);

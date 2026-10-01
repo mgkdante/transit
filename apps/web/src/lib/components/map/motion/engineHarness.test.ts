@@ -15,8 +15,6 @@ import { BLEND_MS } from './constants';
 import { STALE_CUTOFF_S } from '../vehicleProjection';
 
 const RAF_HZ = 60;
-// This epsilon is still 60 Hz for any meaningful clock resolution, but avoids the
-// floating-point equality trap between 2 * (1000 / 60) and MIN_RENDER_INTERVAL_MS.
 const FRAME_MS = 1000 / RAF_HZ + 1e-9;
 const EXPECTED_EVALUATIONS_PER_SECOND = 30;
 const MEASURE_SECONDS = 3;

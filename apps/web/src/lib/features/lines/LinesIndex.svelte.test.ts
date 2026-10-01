@@ -4,9 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
 import LinesIndex from './LinesIndex.svelte';
 
-// A controllable per-id reliability map the mocked loader reads. Tests seed it
-// before render so the badge / sort / filter behaviour is deterministic (no real
-// fetch, no viewport gating).
 const snapshots = new SvelteMap<string, ReliabilitySnapshot>();
 const requested: string[] = [];
 let viewportRequestsEnabled = true;
@@ -39,9 +36,6 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 		return {
 			get: (id: string) => snapshots.get(id) ?? snap({}),
 			request: record,
-			// The action immediately registers interest (no real IntersectionObserver).
-			// The row now passes { id, known } — record just the id (matches prod, which
-			// dedupes on id), so the lazy-request assertions still read plain ids.
 			reliability: (_node: Element, target: string | { id: string; known?: boolean }) => {
 				if (viewportRequestsEnabled) record(target);
 				return { destroy() {} };
@@ -259,7 +253,6 @@ describe('LinesIndex reliability badge', () => {
 		snapshots.set('161', snap({ phase: 'ready', otpPct: 82, verdict: 'late' }));
 		render(LinesIndex);
 
-		// The badge surfaces the OTP% inline on the row.
 		expect(screen.getByText('82%')).toBeInTheDocument();
 	});
 
@@ -269,16 +262,13 @@ describe('LinesIndex reliability badge', () => {
 		snapshots.set('24', snap({ phase: 'empty' }));
 		const { container } = render(LinesIndex);
 
-		// No reliability badge node renders for loading / empty rows.
 		expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
-		// The name + glyph still render — the row degrades to today's bare link.
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 	});
 
 	it('requests reliability only for the rendered rows (lazy)', () => {
 		reset();
 		render(LinesIndex);
-		// Every rendered row registered interest via the action — and only those ids.
 		expect(new Set(requested)).toEqual(new Set(['24', '161', '99']));
 	});
 });
@@ -291,17 +281,12 @@ describe('LinesIndex worst-first sort', () => {
 		snapshots.set('99', snap({ phase: 'ready', otpPct: 80, verdict: 'late' }));
 		render(LinesIndex);
 
-		// Each row carries the detail link first, then the map drilldown — read the
-		// first (the entity-row link) for the row's identity.
 		const rowName = (li: HTMLElement) => within(li).getAllByRole('link')[0].textContent;
 
-		// Default alphabetical order: 24, 99, 161.
 		expect(rowName(screen.getAllByRole('listitem')[0])).toContain('24');
 
-		// Flip to worst-first.
 		await screen.getByTestId('lines-sort-worst').click();
 
-		// 161 is severe → it leads worst-first.
 		expect(rowName(screen.getAllByRole('listitem')[0])).toContain('161');
 	});
 
@@ -324,7 +309,6 @@ describe('LinesIndex worst-first sort', () => {
 
 		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'severe' }));
 		await waitFor(() => expect(screen.getByText('55%')).toBeInTheDocument());
-		// A partial answer never reshuffles the catalogue.
 		expect(lineOrder()).toEqual(['/lines/24', '/lines/99', '/lines/161']);
 		expect(screen.getByRole('status')).toHaveTextContent(
 			'Calculating reliability ranking for the filtered lines…',
@@ -347,7 +331,6 @@ describe('LinesIndex reliability status filter', () => {
 
 		await screen.getByTestId('lines-status-problem').click();
 
-		// The on-time line (24) drops; the late/severe lines remain.
 		expect(screen.queryByRole('link', { name: /24.*Sherbrooke/i })).toBeNull();
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /99.*Villeray/i })).toBeInTheDocument();
@@ -356,7 +339,6 @@ describe('LinesIndex reliability status filter', () => {
 	it('keeps a row whose verdict has not loaded yet (never blanks the list on load)', async () => {
 		reset();
 		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
-		// 161 + 99 still loading (verdict null) — they must stay under the problem filter.
 		render(LinesIndex);
 
 		await screen.getByTestId('lines-status-problem').click();
@@ -367,16 +349,13 @@ describe('LinesIndex reliability status filter', () => {
 
 	it('announces a checking caption while any filtered verdict is idle or loading', async () => {
 		reset();
-		// All three rows still loading → the filtered list is non-empty but verdict-less.
 		render(LinesIndex);
 
 		const liveRegion = screen.getByRole('status');
-		// Silent under the default "all" status (no premature announcement).
 		expect(liveRegion).toHaveTextContent('');
 
 		await screen.getByTestId('lines-status-problem').click();
 
-		// Now the problem filter is on with no loaded verdict yet → the caption speaks.
 		expect(liveRegion).toHaveTextContent('Checking reliability for the filtered lines…');
 	});
 
@@ -397,7 +376,6 @@ describe('LinesIndex reliability status filter', () => {
 			expect(screen.queryByRole('link', { name: /24.*Sherbrooke/i })).toBeNull();
 			expect(screen.queryByRole('link', { name: /99.*Villeray/i })).toBeNull();
 		});
-		// The unresolved line is temporarily retained with honest checking copy.
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 		expect(screen.getByRole('status')).toHaveTextContent(
 			'Checking reliability for the filtered lines…',

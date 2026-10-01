@@ -1,11 +1,3 @@
-"""Real-DB regression for the route_headway_shift_daily BUILDER (DB-PR-2, M1).
-
-Seeds gold.fact_trip_delay_snapshot with staggered trip-starts -> runs build_warm_rollups ->
-asserts the produced gold.route_headway_shift_daily row. This is the facts->builder->table
-gate the diff-review proved was missing: without it, a 10x gap-unit bug or a broken clamp
-passes the whole suite (the recompose tests direct-INSERT pre-computed rows). Mirrors
-test_route_delay_spine_real_db_regression. Self-skips when TRANSIT_TEST_DATABASE_URL is unset.
-"""
 
 from __future__ import annotations
 
@@ -61,7 +53,6 @@ def _provider_and_endpoint(connection, seed_provider) -> None:  # noqa: ANN001
 
 
 def _insert_one_trip(connection, local_date, sid, rid, captured_at, trip_id, direction) -> None:  # noqa: ANN001
-    # One snapshot carrying ONE trip's first (and only) observation -> MIN(captured_at) = its start.
     connection.execute(
         text(
             "INSERT INTO raw.ingestion_runs (ingestion_run_id, provider_id, feed_endpoint_id, "
@@ -143,9 +134,6 @@ def _conn(real_db_engine):  # noqa: ANN001, ANN202
 
 
 def test_builder_exact_moments_histogram_and_bunched(real_db_engine, seed_provider) -> None:  # noqa: ANN001
-    """4 trip-starts on a weekday am_peak (gaps 2,10,10 min) -> exact stored moments/histogram.
-    Oracle: gap_count=3, Σgap=22, Σgap²=204, bunched=1 (gap<0.5*median(=10)), trip_count=4,
-    histogram bin3 ([2,3))=1 + bin9 ([10,12))=2 (sum 3)."""
     cld = _recent_weekday()
     with _conn(real_db_engine) as conn:
         _provider_and_endpoint(conn, seed_provider)
@@ -155,31 +143,28 @@ def test_builder_exact_moments_histogram_and_bunched(real_db_engine, seed_provid
     assert row is not None, "builder produced NO headway row from staggered trip-starts"
     assert row["gap_count"] == 3
     assert float(row["sum_gap_min"]) == 22.0
-    assert float(row["sum_gap_sq_min"]) == 204.0  # 2²+10²+10² = 4+100+100
+    assert float(row["sum_gap_sq_min"]) == 204.0
     assert row["bunched_gap_count"] == 1
     assert row["trip_count"] == 4
     hist = list(row["gap_histogram"])
     assert sum(hist) == 3
-    assert hist[3] == 1  # gap 2 -> [2,3)
-    assert hist[9] == 2  # gap 10 -> [10,12)
+    assert hist[3] == 1
+    assert hist[9] == 2
 
 
 def test_builder_clamp_drops_zero_and_over_240(real_db_engine, seed_provider) -> None:  # noqa: ANN001
-    """Gaps of 0 (identical starts) and >=240 min are clamped out; only 0<gap<240 survive."""
     cld = _recent_weekday()
     with _conn(real_db_engine) as conn:
         _provider_and_endpoint(conn, seed_provider)
-        # starts: 7:00, 7:00 (gap 0 -> dropped), 7:05 (gap 5 -> kept), 11:05 (gap 240 -> dropped)
         _seed_starts(conn, cld, [time(7, 0), time(7, 0), time(7, 5), time(11, 5)])
         _build(conn)
         row = _headway_row(conn)
     assert row is not None
-    assert row["gap_count"] == 1  # only the 5-min gap survives the 0<gap<240 clamp
+    assert row["gap_count"] == 1
     assert float(row["sum_gap_min"]) == 5.0
 
 
 def test_builder_weekday_guard_skips_weekend_service_day(real_db_engine, seed_provider) -> None:  # noqa: ANN001
-    """M2: a WEEKEND service day produces NO headway rows (the inner+outer ISODOW guards)."""
     sat = _recent_weekday(weekend=True)
     with _conn(real_db_engine) as conn:
         _provider_and_endpoint(conn, seed_provider)

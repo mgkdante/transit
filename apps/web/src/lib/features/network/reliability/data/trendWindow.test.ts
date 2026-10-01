@@ -21,12 +21,9 @@ describe('trendWindow', () => {
 		const series = { daily: day(40), weekly: [], monthly: [] };
 		const out = windowedSeries('day', series, 7);
 		expect(out).toHaveLength(7);
-		// The tail is the most-recent 7 days (…, 05-40 would overflow, so last real is index 39).
 		expect(out[out.length - 1].date).toBe(series.daily[39].date);
 	});
 
-	// The flat-week/month bug guard: the DAY window must NEVER slice a coarse grain — week/month
-	// render their FULL (short) series un-sliced, so they are not flattened to a 7d tail.
 	it('WEEK grain renders the full weekly series un-sliced (never flattened to a 7d tail)', () => {
 		const weekly = day(3).map((p, i) => ({ ...p, date: `2026-0${i + 1}-01` }));
 		const out = windowedSeries('week', { daily: day(40), weekly, monthly: [] }, 7);

@@ -1,5 +1,3 @@
-"""Measure explicit alert-language coverage from pre-coalescing observations."""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -165,31 +163,6 @@ class AlertLanguageCoverageReceipt:
         }
 
 
-# LATER additive-only DataHealth mapping (D2 designs this; it does not publish it):
-#
-#   DataHealth.alert_language_coverage: optional list[AlertLanguageCoverage]
-#   provider_id / provider_timezone / window_days / window_start / window_end
-#       map directly from each retained measurement row.
-#   state:
-#       unsupported = no alert feed in the provider registry
-#       unavailable = feed configured, no feed observations in the window
-#       no-alerts   = feed observations exist, zero alert observations
-#       available   = at least one alert observation
-#   explicit_en_pct / explicit_fr_pct:
-#       nullable; denominator excludes undetermined observations. A zero
-#       denominator is None, never a fabricated 0%.
-#   undetermined_pct:
-#       nullable only when there are no alert observations; otherwise uses all
-#       alert observations so a 100% untagged window remains visible.
-#   denominator:
-#       count of observations with at least one explicit FR or EN tag.
-#
-# The whole block must remain optional when a later slice adds it to DataHealth:
-# absence means "payload predates this additive field", while the explicit state
-# values above carry current measurement availability. No lane row or heartbeat
-# is fabricated in this slice, and snapshots/contract.py stays unchanged.
-
-
 def _percentage(numerator: int, denominator: int) -> Decimal | None:
     if denominator == 0:
         return None
@@ -313,7 +286,6 @@ def run_alert_language_coverage_measurement(
     measured_at_utc: datetime,
     retain: bool = False,
 ) -> AlertLanguageCoverageReceipt:
-    """Measure all registry providers and optionally retain daily receipt rows."""
 
     if measured_at_utc.utcoffset() is None:
         raise ValueError("measured_at_utc must be timezone-aware")

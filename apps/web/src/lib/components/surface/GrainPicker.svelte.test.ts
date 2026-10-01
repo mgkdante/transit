@@ -1,10 +1,3 @@
-// GrainPicker.svelte.test.ts — DOM gate for the day|week|month segmented control.
-//
-// Guards the WAI-ARIA radiogroup contract: aria-checked semantics, disabled
-// segments are never selectable, roving tabindex (only the checked segment is
-// tab-focusable), and the arrow-key keyboard pattern (next/previous ENABLED
-// segment, wrapping, skipping disabled).
-
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { render, fireEvent, within } from '@testing-library/svelte';
@@ -184,13 +177,11 @@ describe('GrainPicker — variants', () => {
 			sharedSource.match(/\n\t\.segmented-choice-segment\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 		const buttonMarkup = sharedSource.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
 
-		// tap-press uses the individual scale property; boop and pressBounce write transform.
 		expect(segmentModifier).toContain('scale: 1 !important');
 		expect(segmentModifier).toContain('transform: none !important');
 		expect(baseSegment).not.toContain('scale: 1 !important');
 		expect(baseSegment).not.toContain('transform: none !important');
 
-		// Default segments retain the existing pointer/touch feedback wiring.
 		expect(buttonMarkup).toContain("'tap-press segmented-choice-segment'");
 		expect(buttonMarkup).toContain('use:boop={{ scale: 1.04 }}');
 		expect(buttonMarkup).toContain('use:pressBounce');
@@ -262,7 +253,6 @@ describe('GrainPicker — roving tabindex', () => {
 	});
 });
 
-/** The currently-checked radio (the roving-tabindex focus anchor) — keydown fires here. */
 function checkedRadio(getByRole: (role: string, opts?: object) => HTMLElement): HTMLElement {
 	const group = getByRole('radiogroup', { name: 'Roll-up period' });
 	const radios = within(group).getAllByRole('radio');
@@ -293,11 +283,9 @@ describe('GrainPicker — arrow-key keyboard pattern', () => {
 	it('wraps around at the ends', async () => {
 		const { getByRole } = renderPicker(ALL_ENABLED, 'month');
 
-		// month → (wrap) → day
 		await fireEvent.keyDown(checkedRadio(getByRole), { key: 'ArrowRight' });
 		expect(getByRole('radio', { name: 'Day' })).toHaveAttribute('aria-checked', 'true');
 
-		// day → (wrap) → month
 		await fireEvent.keyDown(checkedRadio(getByRole), { key: 'ArrowLeft' });
 		expect(getByRole('radio', { name: 'Month' })).toHaveAttribute('aria-checked', 'true');
 	});
@@ -305,7 +293,6 @@ describe('GrainPicker — arrow-key keyboard pattern', () => {
 	it('skips a disabled segment when moving', async () => {
 		const { getByRole } = renderPicker(MONTH_DISABLED, 'week');
 
-		// week → ArrowRight would land on month (disabled) → wraps past it to day.
 		await fireEvent.keyDown(checkedRadio(getByRole), { key: 'ArrowRight' });
 		expect(getByRole('radio', { name: 'Day' })).toHaveAttribute('aria-checked', 'true');
 		expect(getByRole('radio', { name: 'Month' })).toHaveAttribute('aria-checked', 'false');

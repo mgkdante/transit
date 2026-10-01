@@ -1,35 +1,3 @@
-<!--
-  LinesIndex — the Lines index screen (slice-9.3 · data-depth batch 4).
-
-  Composes the surface spine: a BlueprintListingHeader over a filterable EntityList of
-  every route from the static routes_index. Each row now carries an at-a-glance
-  RELIABILITY BADGE (status verdict + OTP%) lazily loaded per-route, plus two
-  combinable controls: a SORT toggle (alphabetical | worst reliability first) and
-  a reliability STATUS filter (all | late/severe only). The search-to-filter box
-  is unchanged.
-
-  Data:
-    · static routes_index via createResource(getRoutesIndex) — gated by a
-      ResourceBoundary so skeleton / error / empty render without bespoke plumbing.
-    · per-route headline reliability via the SHARED lazy loader
-      (createReliabilityLoader): a per-id cache + a concurrency cap + viewport-gated
-      fetches (the `reliability` action), so the catalogue never fans out hundreds
-      of /v1 requests. Rows still loading / with no data show the name + glyph as
-      before (no badge, no spinner) — fail-soft + honest.
-
-  Locale comes from getLocale(); non-intrinsic copy is co-located. Tokens, no hex
-  (the route GTFS colour is not surfaced here — that is the search swatch's job);
-  --primary stays interactive-only (the active sort/filter segment).
-
-  Near-me / distance sort is intentionally NOT offered here: a line is a whole
-  route (a polyline across the network), not a single point, so "nearest line"
-  has no honest single-distance definition — the near-me affordance lives on /map
-  ("Stops near me", the amber conversion CTA) where a stop IS a point. (P5.3d
-  resolved the former near-me DEFER: no orphan scaffold, no dead follow-up.)
-
-  DEFER (DB-blocked, owned by S16 data work): no per-row reliability grain
-  selection (always the latest day); no accessible-only filter (needs a DB field).
--->
 <script lang="ts">
 	import { getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
@@ -65,16 +33,11 @@
 
 	const routes = createResource(() => getRoutesIndex());
 
-	// The SHARED lazy reliability loader, scoped to this surface (one cache +
-	// concurrency budget, torn down with the page). Rows request their id through
-	// the `observeReliability` action so only on-screen rows fetch.
 	const reliability = createReliabilityLoader('route');
 	const observeReliability = reliability.reliability;
 
-	// Filter query (mono input); empty ⇒ the full catalogue.
 	let query = $state('');
 
-	// Sort + reliability-status controls (both WAI-ARIA radiogroups via GrainPicker).
 	type SortKey = 'alpha' | 'worst';
 	let sort = $state<SortKey>('alpha');
 	const sortAllLabel = { en: indexCopy.en.sortAlpha, fr: indexCopy.fr.sortAlpha };
@@ -125,7 +88,6 @@
 		},
 	]);
 
-	// The text-filtered, alphabetical base set (numeric-aware on short name).
 	const filtered = $derived.by<RouteIndexEntry[]>(() => {
 		const all = routes.data?.routes ?? [];
 		const sorted = [...all]
@@ -133,16 +95,9 @@
 			.sort((a, b) => collator.compare(a.short, b.short));
 		const q = foldSearchText(query);
 		if (!q) return sorted;
-		// Accent-blind, word-order-free match over id/short/long; numeric short-name
-		// order is preserved within the filtered set.
 		return sorted.filter((r) => tokenMatchScore([r.id, r.short, r.long], q) != null);
 	});
 
-	// Reliability-dependent controls request every filtered candidate through the
-	// shared loader's existing capped queue. A least-reliable ranking is committed
-	// once, only after every candidate reaches ready or empty; until then source
-	// order is stable. The Late filter shares the same full-coverage request so an
-	// off-screen idle row can never keep its checking state alive forever.
 	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityListing = createReliabilityListingController({
 		loader: reliability,
@@ -155,9 +110,6 @@
 	const worstPending = $derived(reliabilityListing.rankingPending);
 	const sorted = $derived(reliabilityListing.order(filtered));
 
-	// The reliability-status filter includes only explicit problem verdicts once a
-	// row is terminal. Idle/loading candidates remain temporarily while the shared
-	// full-coverage probe runs; terminal empty/unknown and healthy rows stand down.
 	const visible = $derived.by<readonly RouteIndexEntry[]>(() => {
 		if (status === 'all') return sorted;
 		return sorted.filter((r) => {
@@ -166,9 +118,6 @@
 		});
 	});
 
-	// With the problem filter on, idle/loading candidates remain temporarily while
-	// the complete filtered set is checked. Announce that work until every candidate
-	// is terminal; empty/unknown terminal rows cannot leave the message running.
 	const statusPending = $derived(status === 'problem' && reliabilityListing.coveragePending);
 </script>
 

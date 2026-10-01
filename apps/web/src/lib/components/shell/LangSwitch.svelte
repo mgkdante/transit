@@ -1,31 +1,9 @@
-<!--
-  LangSwitch — a fingerpost signpost (the wayfinding direction pole),
-  drawn FLAT — line-art, like the ThemeToggle traffic-light beside it.
-
-  A small vertical pole with one pointed fingerboard per published locale
-  (EN / FR), the CURRENT locale's board emphasised with a solid --primary
-  fill + an amber rule (--border-rule-accent) underline — exactly the way the
-  theme toggle fills its current signal lens. Pure SVG, simple strokes, solid
-  fills: NO gradients, NO drop-shadow glows, NO filter animations. A drawing.
-
-  Data-driven by PUBLISHED_LOCALES: one board per published locale, cycling on
-  click, path-preserving. Renders NOTHING when fewer than 2 are published — so
-  it is absent when only ['en'] ships and appears EN⇄FR the instant French is on.
-
-  On switch the boards give a gentle swing (a signpost catching the change);
-  disabled under prefers-reduced-motion.
-
-  A real <a> to the localized URL so it preserves path + query + hash and works
-  without JS (progressive enhancement). locale + url are PROPS (ThemeToggle
-  convention). Extracted from TopBar for reuse + isolated testing.
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { type Locale, PUBLISHED_LOCALES, localizeUrl } from '$lib/i18n';
 
 	interface Props {
 		locale: Locale;
-		/** Full current URL — the switch preserves its path, query AND hash. */
 		url: URL;
 		availableLocales?: readonly Locale[];
 		class?: string;
@@ -33,8 +11,6 @@
 
 	let { locale, url, availableLocales = PUBLISHED_LOCALES, class: className }: Props = $props();
 
-	// Two-letter codes on the boards (legible at signpost scale); full self-names
-	// drive the accessible label/title (a French speaker hears theirs).
 	const CODE: Record<Locale, string> = { en: 'EN', fr: 'FR' };
 	const NAMES: Record<Locale, string> = { en: 'English', fr: 'Français' };
 
@@ -46,18 +22,14 @@
 		`${locale === 'fr' ? 'Changer de langue' : 'Switch language'}: ${nextName}`,
 	);
 
-	// One fingerboard per locale, alternating sides of the pole, current emphasised.
-	// Pointed-pennant silhouette is the locked shape — drawn flat (outline + label).
 	const boards = $derived(
 		availableLocales.map((loc, k) => {
 			const n = availableLocales.length;
 			const span = 36 / n;
-			// Keep labels clear of the outline at the mobile SVG scale.
 			const h = Math.min(14, span - 2);
 			const yTop = 4 + k * span + (span - h) / 2;
 			const mid = yTop + h / 2;
 			const right = k % 2 === 1;
-			// Plate outline (pointed pennant) — the locked silhouette.
 			const path = right
 				? `M30 ${yTop} H49 L54 ${mid} L49 ${yTop + h} H30 Z`
 				: `M26 ${yTop} H7 L2 ${mid} L7 ${yTop + h} H26 Z`;
@@ -88,7 +60,6 @@
 		data-slot="lang-switch"
 	>
 		<svg viewBox="0 0 56 44" width="46" height="36" aria-hidden="true">
-			<!-- POLE: simple shaft with a small finial cap. -->
 			<line class="pole" x1="28" y1="6" x2="28" y2="41" stroke-linecap="round" />
 			<circle class="finial" cx="28" cy="4" r="2" />
 
@@ -100,9 +71,7 @@
 							class:active={b.active}
 							style="--d:{b.delay}ms; transform-origin:28px {b.ty - 4.8}px;"
 						>
-							<!-- fingerboard: flat outline (current locale fills solid --primary) -->
 							<path class="plate" d={b.path} />
-							<!-- amber rule beneath the current plate (signage underline) -->
 							{#if b.active}
 								<line class="rule" x1={b.ruleX1} y1={b.ruleY} x2={b.ruleX2} y2={b.ruleY} />
 							{/if}
@@ -132,7 +101,6 @@
 		color: var(--foreground);
 	}
 	.lang-post:active {
-		/* Keep language text contrast while the shared press effect scales the sign. */
 		opacity: 1;
 	}
 	.lang-post:focus-visible {
@@ -140,7 +108,6 @@
 		outline-offset: 2px;
 	}
 
-	/* POLE — flat line, matching the signal head's stroke weight. */
 	.pole {
 		stroke: currentColor;
 		stroke-width: 1.5;
@@ -149,7 +116,6 @@
 		fill: currentColor;
 	}
 
-	/* FINGERBOARD — flat line-art: transparent outline, current locale solid. */
 	.plate {
 		fill: transparent;
 		stroke: currentColor;
@@ -166,7 +132,6 @@
 		text-anchor: middle;
 	}
 
-	/* CURRENT locale — solid --primary fill (like the theme toggle's lit lens), flat. */
 	.board.active .plate {
 		fill: var(--primary);
 		stroke: var(--primary);
@@ -174,14 +139,12 @@
 	.board.active text {
 		fill: var(--primary-foreground);
 	}
-	/* amber rule under the current plate — the signage underline (no glow). */
 	.rule {
 		stroke: var(--border-rule-accent);
 		stroke-width: 1.4;
 		stroke-linecap: round;
 	}
 
-	/* MOTION — a gentle swing on switch + a small per-board stagger. No filters. */
 	.boards {
 		transform-origin: 28px 22px;
 		animation: post-swing var(--duration-slower) var(--ease-out) both;
@@ -229,9 +192,6 @@
 		}
 	}
 
-	/* Mobile: the fingerpost is the widest pill control (svg is 46px wide) and it
-	   can overflow the floating nav pill at ≤360px. Shrink the drawing on phones —
-	   the tap target stays comfortably ≥24px (AA). */
 	@media (max-width: 479px) {
 		.lang-post {
 			min-width: 38px;

@@ -59,7 +59,6 @@ IMMUTABLE_RECEIPT_HISTORY_TABLES: tuple[str, ...] = (
 SOURCE_FACTORY_RESET_TABLES: tuple[str, ...] = (
     "gold.report_labels",
     "gold.repeated_problem_route_stop",
-    # gold.route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "gold.trip_delay_summary_5m",
     "gold.warm_rollup_periods",
     "gold.realtime_serving_state",
@@ -120,11 +119,7 @@ def build_source_factory_catalog(
     *,
     present_feed_kinds: set[str] | None = None,
 ) -> SourceFactoryCatalog:
-    # The realtime feeds are required for the rebuild only when the provider
-    # actually publishes them. A static-only / static+alerts agency (e.g. STS)
-    # has no trip/vehicle bronze, so marking those sources required=True would
-    # fail its rebuild on a legitimately-absent feed. When present_feed_kinds is
-    # None (legacy callers / tests) the historical "required" behavior is kept.
+    # Require realtime Bronze only when the manifest declares its feeds.
     def _rt_required(feed_kind: str) -> bool:
         if present_feed_kinds is None:
             return True
@@ -169,7 +164,6 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.public_route_reliability_daily",
                     "gold.public_stop_delay_daily",
-                    # gold.route_habit_score DROPPED (0076, S14) — recomposed at read time.
                     "gold.repeated_problem_route_stop",
                     "gold.citizen_accountability_daily",
                     "gold.report_labels",
@@ -196,8 +190,6 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.fact_stop_time_delay_observation",
                     "gold.route_delay_hourly",
-                    # GC1 / Step G1 added delayed_trip_count to the spine so the delay-metric
-                    # readers re-point onto it (route_delay_hourly stays for the public view).
                     "gold.route_delay_spine",
                     "gold.stop_delay_hourly",
                     "gold.repeated_problem_route_stop",
@@ -268,7 +260,6 @@ def build_source_factory_catalog(
 
 
 def build_source_factory_reset_statement() -> TextClause:
-    """All-provider source TRUNCATE; surviving daily metrics keep their warm state."""
     return _SOURCE_FACTORY_RESET_STATEMENT
 
 
@@ -293,20 +284,6 @@ def reset_source_factory_tables(
     *,
     all_providers: bool = False,
 ) -> dict[str, object]:
-    """Clear the source-factory tables ahead of a rebuild.
-
-    Per-provider (the default): DELETE only ``provider_id``'s rows from every
-    reset table that carries a ``provider_id`` column, walking the list
-    child-to-parent so foreign keys hold. Tables with no ``provider_id`` column
-    (shared seeds such as ``gold.report_labels``) are left untouched — rebuilding
-    one provider must NEVER wipe another provider's rows or shared seed data.
-
-    Both paths preserve the seven capture-day metric kinds and internal day
-    coordination because their daily tables survive source reset. Deleting the
-    sources does not prove those metrics repaired or authorize clearing dirty flags.
-    ``all_providers=True`` truncates source tables and resets their sequences,
-    then deletes only non-daily warm state; it is an explicit opt-in operation.
-    """
     if all_providers:
         connection.execute(build_source_factory_reset_statement())
         result = connection.execute(
@@ -334,8 +311,7 @@ def reset_source_factory_tables(
         if not _table_has_provider_id(connection, qualified_table):
             skipped_tables.append(qualified_table)
             continue
-        # qualified_table is a fixed identifier from SOURCE_FACTORY_RESET_TABLES
-        # (never user input); the provider_id value is bound as a parameter.
+        # Identifiers come from the fixed reset registry; bind provider_id as a value.
         result = connection.execute(
             text(
                 f"DELETE FROM {qualified_table} WHERE provider_id = :provider_id"

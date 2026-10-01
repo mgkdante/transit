@@ -1,4 +1,3 @@
-"""Daily dirty-state core, tested independently of future caller integration."""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta

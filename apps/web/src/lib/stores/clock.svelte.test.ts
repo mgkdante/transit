@@ -2,10 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { sharedClock as reactiveSharedClock } from './clock.svelte';
 
-// sharedClock's server-time anchor (PR-6 clock-skew fix). `serverNow` is the
-// freshness clock: the per-second client tick PLUS a recorded client→server
-// offset, so age computed against it is immune to a skewed client clock.
-
 const mocks = vi.hoisted(() => ({ browser: true, reducedMotion: false }));
 vi.mock('$app/environment', () => ({
 	get browser() {
@@ -36,7 +32,6 @@ describe('sharedClock — server-time anchor', () => {
 				},
 			}),
 		});
-		// Pin the client clock so `Date.now()` is deterministic.
 		vi.setSystemTime(new Date('2026-06-21T12:00:00Z'));
 	});
 
@@ -86,26 +81,23 @@ describe('sharedClock — server-time anchor', () => {
 	it('noteServerEpochMs sets the offset to serverEpoch - Date.now()', async () => {
 		const { sharedClock } = await loadClock();
 		const clientNow = Date.now();
-		// Server reports a time 9 minutes AHEAD of the (skewed) client clock.
 		const serverEpoch = clientNow + 9 * 60_000;
 
 		sharedClock.noteServerEpochMs(serverEpoch);
 
-		// serverNow == now + offset == clientNow + 9min.
 		expect(sharedClock.serverNow).toBe(sharedClock.now + 9 * 60_000);
 		expect(sharedClock.serverNow).toBe(serverEpoch);
 	});
 
 	it('serverNow stays equal to now + offset as the client tick advances', async () => {
 		const { sharedClock } = await loadClock();
-		const serverEpoch = Date.now() - 5_000; // client is 5s fast
+		const serverEpoch = Date.now() - 5_000;
 		sharedClock.noteServerEpochMs(serverEpoch);
 
 		const before = sharedClock.serverNow;
 		sharedClock.subscribe();
 		await vi.advanceTimersByTimeAsync(3_000);
 
-		// Both now and serverNow advanced by the same 3s; the offset is preserved.
 		expect(sharedClock.serverNow - before).toBe(3_000);
 		expect(sharedClock.serverNow).toBe(sharedClock.now - 5_000);
 	});

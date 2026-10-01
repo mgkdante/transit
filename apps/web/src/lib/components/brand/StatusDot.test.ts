@@ -1,24 +1,7 @@
-// StatusDot.test.ts — the LED status-indicator primitive, DOM gate.
-//
-// StatusDot is a coloured dot: the COLOUR channel is a class on the span, and
-// the a11y text channel is an optional visually-hidden `label` (colour is never
-// the sole channel — the call site pairs the dot with a glyph + this label).
-//
-// Gates:
-//   - COLOUR per status: every v1 StatusCode maps to its DATAVIZ status class
-//     (bg-dataviz-status-*, hyphenated per the SHARED CONTRACT: 'on_time' ->
-//     bg-dataviz-status-on-time) — NEVER an affordance token. The signal
-//     aspects map to the signal palette; `orange` (default) is the lone --primary
-//     (interactive) touch (bg-primary).
-//   - a11y: when `label` is provided it renders as sr-only text (the text
-//     equivalent for the colour); absent label = no text node.
-//   - the data-slot hook + arbitrary HTML attributes pass through.
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import StatusDot from './StatusDot.svelte';
 
-// v1 StatusCode -> expected dataviz colour class (hyphenated suffix).
 const STATUS_COLOUR: Record<string, string> = {
 	early: 'bg-dataviz-status-early',
 	on_time: 'bg-dataviz-status-on-time',
@@ -27,9 +10,8 @@ const STATUS_COLOUR: Record<string, string> = {
 	unknown: 'bg-dataviz-status-unknown',
 };
 
-// Signal aspects + the lone interactive default.
 const SIGNAL_COLOUR: Record<string, string> = {
-	orange: 'bg-primary', // INTERACTIVE — the only --primary touch (default)
+	orange: 'bg-primary',
 	green: 'bg-[var(--signal-proceed)]',
 	caution: 'bg-[var(--signal-caution)]',
 	stop: 'bg-[var(--signal-stop)]',
@@ -80,7 +62,6 @@ describe('StatusDot — a11y label (text equivalent for colour)', () => {
 		const label = getByText('Delayed');
 		expect(label).toBeInTheDocument();
 		expect(label).toHaveClass('sr-only');
-		// The label lives inside the dot span.
 		expect(dot(container).contains(label)).toBe(true);
 	});
 

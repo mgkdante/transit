@@ -26,9 +26,6 @@ export type MapSelection =
 			readonly variantKey?: string | null;
 	  };
 
-// A route selection's direction / variant only — null for point entities. Used by
-// the identity check so picking the SAME route in a different direction reads as a
-// different selection (the line re-highlights), while a bus/stop ignores both.
 function selectionDirection(selection: MapSelection): number | null {
 	return selection.kind === 'route' ? (selection.direction ?? null) : null;
 }
@@ -37,9 +34,6 @@ function selectionVariantKey(selection: MapSelection): string | null {
 	return selection.kind === 'route' ? (selection.variantKey ?? null) : null;
 }
 
-/** Two selections refer to the SAME entity: kind + id match, and (for a route) the
- *  same picked direction + variant. The map orchestrator uses it to dedupe hover
- *  churn and to decide whether a detail pick pushes onto the back-stack. */
 export function sameSelection(a: MapSelection, b: MapSelection): boolean {
 	return (
 		a.kind === b.kind &&
@@ -49,7 +43,6 @@ export function sameSelection(a: MapSelection, b: MapSelection): boolean {
 	);
 }
 
-/** Null-tolerant {@link sameSelection}: two nulls are equal; one null is not. */
 export function sameNullableSelection(a: MapSelection | null, b: MapSelection | null): boolean {
 	if (!a && !b) return true;
 	if (!a || !b) return false;
@@ -63,11 +56,6 @@ export interface ResolveContext {
 	readonly routes?: readonly RouteFile[] | null;
 	readonly stopFiles?: readonly StopFile[] | null;
 	readonly alerts?: readonly Alert[] | null;
-	/**
-	 * Whether the departures family has a successful file available for this
-	 * resolution. Omitted preserves the historical successful/available behavior.
-	 * Retained departures count as available even when the latest request failed.
-	 */
 	readonly departuresAvailable?: boolean;
 	readonly now?: Date;
 }
@@ -78,12 +66,6 @@ export interface MapStopRef {
 	readonly seq: number | null;
 	readonly etaUtc?: string | null;
 	readonly delayMin?: number | null;
-	/**
-	 * True when no name resolved from the static index — `name` then carries the
-	 * bare id only as a stable handle, and the surface renders the honest labelled
-	 * fallback ("Stop {id} (name unavailable)") through the absence layer instead of
-	 * leaking the id as if it were a name.
-	 */
 	readonly nameAbsent: boolean;
 }
 
@@ -92,7 +74,6 @@ export interface StopRouteTimes {
 	readonly headsign: string | null;
 	readonly pastTimes: readonly string[];
 	readonly futureTimes: readonly string[];
-	/** Null when the live departures source is unavailable; [] is an honest empty board. */
 	readonly liveDepartures: readonly StopDeparture[] | null;
 }
 
@@ -103,11 +84,6 @@ export interface RouteDirectionStops {
 	readonly label: string;
 	readonly terminalLabel: string | null;
 	readonly stops: readonly MapStopRef[];
-	/**
-	 * True when `label` is the SYNTHESIZED "Direction {dir}" placeholder (no
-	 * terminal, no headsign). The surface marks it "(inferred)" via the absence
-	 * layer so a computed direction never reads as a published headsign.
-	 */
 	readonly labelInferred: boolean;
 }
 
@@ -125,11 +101,6 @@ export interface VehicleMapDetail {
 	readonly pastStops: readonly MapStopRef[];
 	readonly nextStops: readonly MapStopRef[];
 	readonly alerts: readonly Alert[] | null;
-	/**
-	 * GTFS route_type of this vehicle's route (null when unknown). The surface uses
-	 * route_type 1 (metro) plus the metro realtime gap to explain a missing delay
-	 * as "no live data" rather than "not reported".
-	 */
 	readonly routeType: number | null;
 }
 
@@ -138,7 +109,6 @@ export interface StopMapDetail {
 	readonly id: string;
 	readonly title: string;
 	readonly stop: StopIndexEntry;
-	/** Null when the live departures source is unavailable; [] is an honest empty board. */
 	readonly departures: readonly StopDeparture[] | null;
 	readonly vehicles: readonly Vehicle[];
 	readonly routeTimes: readonly StopRouteTimes[];
@@ -222,8 +192,6 @@ function orderedRouteStops(direction: RouteDirection | null | undefined): RouteS
 	return [...(direction?.stops ?? [])].sort((a, b) => a.seq - b.seq);
 }
 
-/** Resolve a stop's display name, or null when neither the route stop nor the
- *  static index names it (the caller then marks the ref name-absent). */
 function resolveStopName(
 	stopId: string,
 	stops: readonly StopIndexEntry[],
@@ -241,8 +209,6 @@ function toStopRef(
 	const resolved = resolveStopName(stopId, stops, routeStop);
 	return {
 		id: stopId,
-		// Keep the bare id as the stable handle when unresolved; the surface renders
-		// the honest "Stop {id} (name unavailable)" fallback from `nameAbsent`.
 		name: resolved ?? stopId,
 		nameAbsent: resolved == null,
 		seq: routeStop?.seq ?? null,
@@ -416,8 +382,6 @@ function routeDirectionStops(
 		labelInferred: variant.labelInferred,
 		stops: variant.stops.map((stop) => ({
 			id: stop.id,
-			// Keep the id as a stable handle when the route stop has no name; the
-			// surface renders the honest labelled fallback from `nameAbsent`.
 			name: stop.name ?? stop.id,
 			nameAbsent: stop.name == null,
 			seq: stop.seq,

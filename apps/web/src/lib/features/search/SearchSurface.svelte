@@ -1,49 +1,3 @@
-<!--
-  SearchSurface — the Search screen (slice-9.3 · data-depth batch 4).
-
-  Was a bare navigational index over the two static discovery indexes; now a
-  signal-rich finder over THREE result families:
-    · getRoutesIndex() → RouteIndexEntry[]  (lines)
-    · getStopsIndex()  → StopIndexEntry[]   (stops)
-    · the live vehicles store               (buses — exact unit-id match)
-
-  Every result row carries at-a-glance depth:
-    · LINE rows  — a guarded GTFS colour swatch + a mode glyph/tag (Métro/Tram/
-      Bus…) + an inline RELIABILITY badge (status verdict + OTP%) via the SHARED
-      lazy loader (per-id cache + concurrency cap + viewport-gated fetch).
-    · STOP rows  — a visible mode tag for EVERY mode (today only metro/rail tagged)
-      + the same inline reliability badge.
-    · BUS rows   — a status chip, a crowding indicator, the signed delay, a
-      'next: <stop>' subtitle (resolved against the stops index) + a heading arrow.
-
-  Two combinable controls sit above the results, drawn by the SHARED
-  SearchControls surface ($lib/components/surface) — the same component the nav
-  pill's focus dropdown mounts, so the filters a rider learns in one place are
-  literally the ones offered in the other (M6i F26):
-    · an entity-type SCOPE segmented filter (All / Lines / Stops / Buses) with
-      per-group counts — exposing the chrome's ChromeSearchScope concept as a
-      visible radiogroup.
-    · a transit-MODE chip filter (Métro / Tram / Bus / Train / Ferry), reusing the
-      map's combinable-facet chip pattern.
-  That surface also carries this page's DATA-COLLECTION DISCLOSURE. The in-pill
-  chrome field is desktop-only, so the search page is the only search a phone ever
-  sees — and it is the honest place to say what this page does and does not
-  transmit (M6i F25).
-
-  DOCTRINE: Svelte 5 runes; tokens, no hex (the route GTFS colour is DATA, guarded
-  via routeColor + an inline style — the one allowed dynamic colour); --primary
-  interactive-only; bilingual via getLocale + co-located copy; keyed {#each};
-  fail-soft — never invent data, never crash.
-
-  Near-me / distance sort is intentionally NOT offered here: search is a finder,
-  flat by design (§C5.14) — ranking is by match quality, not geography. The
-  near-me affordance lives on /map ("Stops near me", the amber conversion CTA),
-  the one surface where proximity is the story. (P5.3d resolved the former
-  near-me DEFER: no orphan scaffold, no dead follow-up.)
-
-  DEFER (DB-blocked, owned by S16 data work): per-row reliability grain
-  selection; accessible-only filter (needs a DB field).
--->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -96,44 +50,30 @@
 	const t = $derived(copy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	// Static discovery indexes — loaded client-side, gated by ResourceBoundary.
 	const routes = createResource(() => getRoutesIndex());
 	const stops = createResource(() => getStopsIndex());
 
-	// Live tier: one store for this surface (the v1 context is booted before mount
-	// in the root layout). Polls vehicles on the live ttl; an exact unit-id query
-	// surfaces the matching bus. start()/stop() are browser-only + idempotent.
 	const live = createLiveStore(getV1Context().manifest, { families: ['vehicles'] });
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
 
-	// One shared lazy reliability loader per kind (per-id cache + concurrency cap +
-	// viewport-gated fetch — never a fan-out across the whole catalogue).
 	const routeReliability = createReliabilityLoader('route');
 	const stopReliability = createReliabilityLoader('stop');
 	const observeRouteReliability = routeReliability.reliability;
 	const observeStopReliability = stopReliability.reliability;
 
-	// Max rows rendered per group — a broad query can't flood the surface.
 	const MAX_RESULTS = 50;
 
-	// Seed the query from the URL `q` param once (deep-link hydration).
 	let query = $state($page.url.searchParams.get('q') ?? '');
 	const normalized = $derived(foldSearchText(query));
 	const hasQuery = $derived(normalized.length > 0);
 
-	// ── Filter state (the SHARED SearchControls surface draws the controls) ──────
-	// The entity-family scope, and a reactive Set of picked transit modes mutated
-	// in place (SvelteSet is reactive, so the derived results recompute on toggle
-	// without a fresh-Set reassign). The mode VOCABULARY lives in stopMode.ts, the
-	// same single source the row tags read.
 	let scope = $state<SearchScopeKey>('all');
 	const modes = new SvelteSet<TransitModeKey>();
 	const modeActive = $derived(modes.size > 0);
 
-	// ── Matching (accent-blind, word-order-free, token-AND, tier-ranked) ─────────
 	const matchedRoutesAll = $derived.by<RouteIndexEntry[]>(() => {
 		if (!hasQuery || !routes.data) return [];
 		return routes.data.routes
@@ -149,20 +89,14 @@
 			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
 			.sort((a, b) => a.score - b.score)
 			.map((m) => m.s);
-		// One row per logical stop — métro/station names collapse to a single station.
 		return dedupeBy(ranked, stopGroupKey);
 	});
-	// Vehicles match ONLY on an exact unit-id (the id is the precise thing a rider
-	// knows), mirroring the chrome blend — never a fuzzy bus flood.
 	const matchedVehiclesAll = $derived.by<Vehicle[]>(() => {
 		if (!hasQuery) return [];
 		const all = live.vehicles?.vehicles ?? [];
 		return all.filter((v) => foldSearchText(v.id) === normalized);
 	});
 
-	// Mode filter narrows each family (combinable, OR within the mode set). A row
-	// whose mode is unknown is kept only when no mode is selected (honest: we don't
-	// guess its mode to include or exclude it).
 	const matchedRoutes = $derived(
 		modeActive
 			? matchedRoutesAll.filter((r) => {
@@ -179,13 +113,10 @@
 				})
 			: matchedStopsAll,
 	);
-	// A vehicle has no mode field — it's always a bus, so the mode filter keeps
-	// buses only when 'bus' is among the selected modes (else hides them).
 	const matchedVehicles = $derived(
 		modeActive ? (modes.has('bus') ? matchedVehiclesAll : []) : matchedVehiclesAll,
 	);
 
-	// Per-scope visibility (the scope control RESTRICTS which families render).
 	const showRoutes = $derived((scope === 'all' || scope === 'route') && matchedRoutes.length > 0);
 	const showStops = $derived((scope === 'all' || scope === 'stop') && matchedStops.length > 0);
 	const showVehicles = $derived(
@@ -193,8 +124,6 @@
 	);
 	const hasResults = $derived(showRoutes || showStops || showVehicles);
 
-	// Scope segments carry per-family counts (post mode-filter) so the rider sees
-	// where the matches live before narrowing.
 	const scopeSegments = $derived([
 		{ key: 'all' as const, label: t.scopeAll },
 		{ key: 'route' as const, label: t.scopeCount(t.linesLabel, matchedRoutes.length) },
@@ -202,7 +131,6 @@
 		{ key: 'vehicle' as const, label: t.scopeCount(t.vehiclesLabel, matchedVehicles.length) },
 	]);
 
-	// In-memory stop-name lookup for resolving a vehicle's next_stop id → a name.
 	const stopNameById = $derived.by<SvelteMap<string, string>>(() => {
 		const m = new SvelteMap<string, string>();
 		for (const s of stops.data?.stops ?? []) m.set(s.id, s.name);
@@ -212,7 +140,6 @@
 		return v.next_stop ? (stopNameById.get(v.next_stop) ?? null) : null;
 	}
 
-	// A line's title is its short name; the long name (when present) is subtitle.
 	function routeTitle(r: RouteIndexEntry): string {
 		return r.short || r.id;
 	}
@@ -221,9 +148,6 @@
 	const occupancyLabelFor = (o: OccupancyCode | null | undefined): string | null =>
 		o ? OCCUPANCY_LABELS[locale][o] : null;
 
-	// ── Idle-state census (§C5.14) ──────────────────────────────────────────────
-	// Live network counts from the already-fetched indices + a live freshness stamp
-	// + tappable example queries — turning the dead prompt into a live way in.
 	const lineCount = $derived(routes.data?.routes?.length ?? null);
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
 	const numberFmt = $derived(new Intl.NumberFormat(locale));
@@ -252,9 +176,6 @@
 	<ResourceBoundary resource={routes} lang={locale}>
 		<ResourceBoundary resource={stops} lang={locale}>
 			{#if !hasQuery}
-				<!-- IDLE (§C5.14): a network census band instead of a dead prompt — live
-				     counts from the fetched indices + a live freshness stamp + tappable
-				     example queries that fill the search box. -->
 				<div class="search-idle" role="note">
 					<span class="search-idle-glyph" aria-hidden="true">⌕</span>
 					<p class="search-idle-title">{t.idleTitle}</p>
@@ -393,8 +314,6 @@
 								</span>
 								<span class="search-group-count">{t.resultCount(matchedVehicles.length)}</span>
 							</h2>
-							<!-- No max/truncatedLabel: vehicles match on an EXACT unit-id, so this
-							     group caps at one row — the truncation affordance would be inert. -->
 							<EntityList items={matchedVehicles} key={(v) => v.id}>
 								{#snippet row(v)}
 									<VehicleResultRow
@@ -416,14 +335,11 @@
 </Surface>
 
 <style>
-	/* Group heading label + its (i) affordance sit inline. */
 	.search-group-labelrow {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
 	}
-	/* Idle census band — live counts + freshness + example chips. Not a data mark;
-	   the chips are interactive affordances (--primary on hover/focus). */
 	.search-census {
 		display: flex;
 		flex-direction: column;

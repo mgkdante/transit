@@ -258,8 +258,6 @@ describe('HealthStatus — async reveal navigation', () => {
 	});
 
 	it('collapses cards that mount after the remembered start signal', async () => {
-		// No stale per-card session seed: the collapsed start must come from the
-		// remembered bulk mode alone, even for cards that mount once data resolves.
 		sessionStorage.removeItem('transit.persisted:status-card-health-lanes');
 		const { container } = render(HealthStatus);
 		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
@@ -274,9 +272,6 @@ describe('HealthStatus — async reveal navigation', () => {
 	});
 
 	it('reopens a stale session CLOSE choice on an unremembered mount once data arrives', async () => {
-		// Unremembered article mount: the reset-to-expanded signal is authoritative
-		// over the stale session CLOSE seeded in beforeEach, including for cards
-		// that mount only after their resource resolves.
 		localStorage.removeItem('transit:quiet-mode');
 		const { container } = render(HealthStatus);
 		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));

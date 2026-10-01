@@ -62,7 +62,6 @@ def _load(path: Path) -> dict:
 
 
 def _on_block(document: dict) -> dict:
-    # PyYAML 1.1 resolves the bare key `on:` to the boolean True.
     return document.get("on", document.get(True, {}))
 
 

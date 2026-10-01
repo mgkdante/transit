@@ -1,13 +1,3 @@
-// Shared table-of-contents model + DOM helpers. ONE source for every detail
-// page's TOC (e.g. /metrics). The desktop nav (TocNav) and the mobile floating
-// pill (TocPill) both consume this, so a card and its TOC entry always render
-// the SAME badge (systematic, no ad-hoc per-page copies).
-//
-// Ported from yesid.dev shared/toc.ts. The observer selector is adapted to
-// transit's anchor reality: CollapsibleSection emits `data-toc="<id>"`, so that
-// is the primary scheme. `data-section-index` / `section-N` and plain element
-// ids are kept so the resolver stays general across future surfaces.
-
 import { tick } from 'svelte';
 import type { TocBadgeSpec } from '@yesid/ui/brand';
 
@@ -17,11 +7,7 @@ export interface TocEntry {
 	id: string;
 	title: string;
 	level: number;
-	/** Leading badge; omitted for nested sub-headings. */
 	badge?: TocBadgeSpec;
-	/** True for sections that live in the desktop SIDE RAIL. The desktop TocNav
-	 *  omits these (the rail already shows them); the mobile TocPill keeps them
-	 *  (there they sit in the page flow). */
 	rail?: boolean;
 	children: TocEntry[];
 }
@@ -33,8 +19,6 @@ export interface RevealTocTargetOptions {
 	block?: ScrollLogicalPosition;
 }
 
-/** Flatten entries + their children into one ordered list for the "N / total"
- *  counter and the active-entry lookup. */
 export function flattenToc(entries: TocEntry[]): TocEntry[] {
 	const flat: TocEntry[] = [];
 	for (const entry of entries) {
@@ -44,9 +28,6 @@ export function flattenToc(entries: TocEntry[]): TocEntry[] {
 	return flat;
 }
 
-/** Resolve the visible counter shared by desktop TocNav and mobile TocPill.
- * A flat all-numbered run carries canonical section numbers, so conditional
- * gaps stay honest (02 / 08). Mixed, icon, and nested ToCs remain positional. */
 export function resolveTocCounter(
 	entries: TocEntry[],
 	activeId: string,
@@ -95,11 +76,6 @@ export function reconcileActiveToc(
 	return winner;
 }
 
-/** Resolve a TOC id to its scroll-target element. Supports three anchor schemes
- *  so one resolver serves every detail page:
- *   - `section-N`            -> a locale-stable `[data-section-index="N"]`
- *   - `[data-toc="<id>"]`    -> CollapsibleSection sections; desktop+mobile dupes resolve to the first VISIBLE
- *   - plain element id       -> any heading with an `id` */
 export function tocElement(id: string): Element | null {
 	if (/^section-\d+$/.test(id)) {
 		const el = document.querySelector(`[data-section-index="${id.slice('section-'.length)}"]`);
@@ -113,7 +89,6 @@ export function tocElement(id: string): Element | null {
 	return document.getElementById(id);
 }
 
-/** Open the shared disclosure that owns a TOC target before scrolling to it. */
 export function openCollapsedTocTarget(id: string): boolean {
 	const target = tocElement(id);
 	const trigger = target?.querySelector<HTMLButtonElement>(
@@ -124,15 +99,6 @@ export function openCollapsedTocTarget(id: string): boolean {
 	return true;
 }
 
-/** Wait until the target's scroll container stops changing height. The card
- *  expand/collapse animates 300ms (grid-rows), and `scrollIntoView` computes —
- *  and CLAMPS — its destination against the geometry at call time, so
- *  positioning before the layout settles lands wrong: over-scroll when a
- *  remembered collapse shrinks the page under the scroll, short landings when
- *  the target's expansion grows it. Resolves after two consecutive same-height
- *  frames, or after `maxWaitMs` as a hard cap (fonts/images may keep trickling
- *  in). Reduced motion sets the transitions to `none`, so this settles in two
- *  frames there. */
 export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<void> {
 	if (!target || typeof requestAnimationFrame !== 'function') return Promise.resolve();
 	let scroller: Element | null = null;
@@ -173,10 +139,6 @@ export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<v
 				stable = 0;
 				last = height;
 			}
-			// Mount-time bulk signals can update aria state one paint before the
-			// disclosure transition starts. Do not mistake those initial equal frames
-			// for the final layout; once movement is observed, reduced-motion and
-			// already-running transitions can still settle in the normal two frames.
 			const transitionHadTimeToStart = performance.now() - startedAt >= transitionGraceMs;
 			if (stable >= 2 && (sawChange || transitionHadTimeToStart)) finish();
 			else frameId = requestAnimationFrame(frame);
@@ -199,10 +161,6 @@ export async function revealTocTarget(
 	return true;
 }
 
-/** Observe every TOC-target element on the page and report the active id as the
- *  user scrolls. One observer drives BOTH the desktop nav and the mobile pill
- *  (the page owns the active id and passes it down; no duplicate observers).
- *  Returns a cleanup fn for onMount. */
 export function observeActiveToc(setActive: (id: string) => void): () => void {
 	const els = document.querySelectorAll('[data-section-index], [data-toc]');
 	if (els.length === 0) return () => {};

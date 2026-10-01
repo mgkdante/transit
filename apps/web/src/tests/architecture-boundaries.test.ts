@@ -12,7 +12,6 @@ const FEATURES_ROOT = join(SRC_ROOT, 'lib/features');
 const REPOSITORIES_ROOT = join(V1_ROOT, 'repositories');
 const V1_CONFIG_ROOT = join(V1_ROOT, 'config');
 const MARKS_ROOT = join(COMPONENTS_ROOT, 'dataviz/chart/marks');
-// The snapshot-URL capability, denied to repositories by name rather than by module path.
 const URL_BUILDER_CAPABILITY = ['resolveUrl', 'entityUrl', 'v1BaseUrl', 'v1Provider'] as const;
 
 interface SourceBlock {
@@ -109,9 +108,6 @@ function forbiddenImports(scanRoot: string, forbiddenRoot: string): string[] {
 	});
 }
 
-// Path denial is not capability denial: `$lib/v1/config`'s URL builders are re-exported from the
-// `$lib/v1` barrel, so a specifier-only rule is evaded by importing the same function from there.
-// This arm denies the CAPABILITY by binding name, whatever module it arrives through.
 function forbiddenCapabilityImports(root: string, symbols: readonly string[]): string[] {
 	const banned = new Set(symbols);
 	return productionSources(root).flatMap((path) => {
@@ -130,7 +126,6 @@ function forbiddenCapabilityImports(root: string, symbols: readonly string[]): s
 					const bindings = node.importClause.namedBindings;
 					if (ts.isNamedImports(bindings)) {
 						for (const element of bindings.elements) {
-							// `propertyName` is the imported name when aliased (`import { a as b }`).
 							const imported = (element.propertyName ?? element.name).text;
 							if (!banned.has(imported)) continue;
 							hits.push(
@@ -138,7 +133,6 @@ function forbiddenCapabilityImports(root: string, symbols: readonly string[]): s
 							);
 						}
 					} else if (ts.isNamespaceImport(bindings)) {
-						// `import * as ns` hands over every export, including the banned ones.
 						const specifier = ts.isStringLiteralLike(node.moduleSpecifier)
 							? node.moduleSpecifier.text
 							: '';

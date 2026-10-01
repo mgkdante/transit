@@ -68,7 +68,6 @@ async function withServerV1Deadline(
 	}
 }
 
-/** Build the per-request repository context for server loaders. */
 export function serverV1Context(event: ServerV1Event): AdapterCtx {
 	const snapshots = event.platform?.env?.SNAPSHOTS;
 	const binding = event.platform?.env?.DATA;

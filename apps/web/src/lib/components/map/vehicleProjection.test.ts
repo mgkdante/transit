@@ -9,14 +9,10 @@ import {
 } from './vehicleProjection';
 import { cumulativeLengths, projectToPolyline, type Coord } from './polyline';
 
-// A long, due-east straight shape near Montréal so an advanced point stays on it
-// for any plausible projection distance (km of headroom). East leg only → the
-// tangent is ~90° (due east) everywhere.
 const W = [-73.7, 45.5] as Coord;
-const E = [-73.4, 45.5] as Coord; // ~23 km east of W
+const E = [-73.4, 45.5] as Coord;
 const STRAIGHT: Coord[] = [W, E];
 
-// A fixed reference instant + ISO timestamps derived from it so age math is exact.
 const NOW_MS = Date.parse('2026-06-22T12:00:00Z');
 function isoAgo(seconds: number): string {
 	return new Date(NOW_MS - seconds * 1000).toISOString();
@@ -31,7 +27,6 @@ describe('constants', () => {
 
 describe('fixAgeS', () => {
 	it('uses reported_utc when present (the bus own fix time)', () => {
-		// reported 30s ago, updated 5s ago → age tracks REPORTED (30s), not updated.
 		const age = fixAgeS(isoAgo(30), isoAgo(5), NOW_MS);
 		expect(age).toBeCloseTo(30, 3);
 	});
@@ -42,7 +37,6 @@ describe('fixAgeS', () => {
 	});
 
 	it('clamps a future (negative) age to 0', () => {
-		// reported 10s in the FUTURE (clock skew) → clamp to 0, never negative.
 		const age = fixAgeS(isoAgo(-10), isoAgo(-10), NOW_MS);
 		expect(age).toBe(0);
 	});
@@ -52,8 +46,6 @@ describe('fixAgeS', () => {
 	});
 
 	it('returns Infinity when reported is junk and falls back ONLY via the ?? (junk reported still used)', () => {
-		// reported_utc is present-but-unparseable → `?? ` does NOT fall back (it is
-		// non-null), so the junk is parsed → Infinity. Honest: a corrupt fix is stale.
 		expect(fixAgeS('garbage', isoAgo(5), NOW_MS)).toBe(Infinity);
 	});
 });
@@ -76,8 +68,8 @@ describe('isVehicleStale', () => {
 });
 
 describe('projectedDistanceM', () => {
-	const v = 10; // m/s
-	const H = PROJECTION_HORIZON_S; // 50
+	const v = 10;
+	const H = PROJECTION_HORIZON_S;
 
 	it('returns 0 for non-positive speed', () => {
 		expect(projectedDistanceM(0, 10)).toBe(0);
@@ -87,14 +79,11 @@ describe('projectedDistanceM', () => {
 	it('is ~v·a for tiny ages (decay negligible) and below the linear estimate', () => {
 		const a = 1;
 		const d = projectedDistanceM(v, a);
-		// Closed form: v·(a − a²/2H) = 10·(1 − 1/100) = 9.9.
 		expect(d).toBeCloseTo(9.9, 6);
-		// Strictly less than the naive v·a (=10) because effective speed already decayed.
 		expect(d).toBeLessThan(v * a);
 	});
 
 	it('pins at v·H/2 exactly at a = H', () => {
-		// d(H) = v·(H − H²/2H) = v·H/2.
 		expect(projectedDistanceM(v, H)).toBeCloseTo((v * H) / 2, 6);
 	});
 
@@ -133,22 +122,16 @@ describe('projectedDistanceM', () => {
 
 describe('projectVehicle', () => {
 	it('advances FORWARD along a straight shape and reports the tangent heading', () => {
-		// Bus at the west end, moving east at 10 m/s, fixed 5s ago. It should advance
-		// EAST (lon increases) by ~ projectedDistanceM(10, 5) metres, heading ~90°.
 		const ageS = 5;
 		const speedMps = 10;
 		const res = projectVehicle({ coord: W, shape: STRAIGHT, speedMps, ageS, bearing: 17 });
 
 		expect(res.frozen).toBe(false);
 		expect(res.stale).toBe(false);
-		// Advanced eastward: lon strictly greater than the start.
 		expect(res.coord[0]).toBeGreaterThan(W[0]);
-		// Stayed on the parallel (due-east shape).
 		expect(res.coord[1]).toBeCloseTo(45.5, 5);
-		// Heading is the SHAPE tangent (~due east), NOT the reported bearing (17).
 		expect(res.bearing).toBeCloseTo(90, 0);
 
-		// The advanced arc-length matches projectedDistanceM within a metre.
 		const lengths = cumulativeLengths(STRAIGHT);
 		const back = projectToPolyline(STRAIGHT, res.coord, lengths)!;
 		const expected = projectedDistanceM(speedMps, ageS);
@@ -166,13 +149,13 @@ describe('projectVehicle', () => {
 			coord: W,
 			shape: STRAIGHT,
 			speedMps: 10,
-			ageS: STALE_CUTOFF_S, // exactly the cutoff → stale (inclusive)
+			ageS: STALE_CUTOFF_S,
 			bearing: 200,
 		});
 		expect(res.stale).toBe(true);
 		expect(res.frozen).toBe(true);
 		expect(res.coord).toEqual(W);
-		expect(res.bearing).toBe(200); // reported bearing kept, NOT a tangent
+		expect(res.bearing).toBe(200);
 	});
 
 	it('FREEZES (not stale) when there is no shape — never dead-reckons on the raw bearing', () => {
@@ -226,7 +209,6 @@ describe('projectVehicle', () => {
 	it('does not advance at age 0 even when projecting (distance is 0)', () => {
 		const res = projectVehicle({ coord: W, shape: STRAIGHT, speedMps: 10, ageS: 0, bearing: 0 });
 		expect(res.frozen).toBe(false);
-		// Projected onto the shape at its start → same lon as W (within rounding).
 		expect(res.coord[0]).toBeCloseTo(W[0], 5);
 		expect(res.coord[1]).toBeCloseTo(W[1], 5);
 	});
@@ -246,9 +228,7 @@ describe('projectVehicle', () => {
 	});
 
 	it('snaps a bus that started mid-shape forward from its projection, not from arc 0', () => {
-		// Start the bus already partway along (its coord projects to s>0); the result
-		// must be EAST of that start, i.e. advanced from the projection — never reset.
-		const mid = [-73.55, 45.5] as Coord; // ~halfway along the east shape
+		const mid = [-73.55, 45.5] as Coord;
 		const res = projectVehicle({ coord: mid, shape: STRAIGHT, speedMps: 10, ageS: 8, bearing: 0 });
 		expect(res.frozen).toBe(false);
 		expect(res.coord[0]).toBeGreaterThan(mid[0]);

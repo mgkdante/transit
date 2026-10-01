@@ -1,12 +1,3 @@
-// data_health.test.ts — additive-contract gate for the S11 DataHealth payload +
-// the manifest data_health pointer.
-//
-// The payload is additive: a LEGACY manifest (no live.data_health pointer) must
-// still validate, and a LEGACY publish (no data_health.json) resolves to null at
-// the adapter (covered by the adapter's 404-as-null contract). Here we prove the
-// Zod facts directly: minimal + full parse, honest-NULL gate blocks survive, the
-// envelope fields are optional, and the legacy manifest without the pointer parses.
-
 import { describe, it, expect } from 'vitest';
 import { DataHealthSchema, DataHealthGateSchema, LaneHealthSchema } from './data_health';
 import { ManifestSchema } from './manifest';
@@ -17,8 +8,6 @@ describe('DataHealthSchema — minimal + additive', () => {
 	it('parses the minimal payload (generated_utc only); lanes/feeds default to []', () => {
 		const parsed = DataHealthSchema.parse({ generated_utc: ISO });
 		expect(parsed.generated_utc).toBe(ISO);
-		// Optional arrays are absent (not defaulted by Zod), which the selector treats
-		// as an empty lane/feed list — the section stands down honestly.
 		expect(parsed.lanes ?? []).toEqual([]);
 		expect(parsed.feeds ?? []).toEqual([]);
 	});
@@ -50,8 +39,6 @@ describe('DataHealthSchema — minimal + additive', () => {
 	});
 
 	it('accepts an honest-NULL gate block (lane predates 0078 / gate disabled)', () => {
-		// A lane with a null gate AND a gate whose every field is null both parse — the
-		// gate outcome is UNKNOWN, never coerced to a fabricated pass.
 		expect(() =>
 			LaneHealthSchema.parse({ lane: 'live', last_publish_utc: ISO, age_s: 12, gate: null }),
 		).not.toThrow();

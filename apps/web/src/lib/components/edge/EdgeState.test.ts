@@ -1,17 +1,3 @@
-// EdgeState.test.ts — the 6-variant edge-condition primitive, the DOM gate.
-//
-// Gates:
-//   - ALL 6 VARIANTS RENDER in BOTH locales (FR + EN): skeleton + the five
-//     message variants (stale-offline, no-results, empty, empty-avis, error-v1).
-//     Each carries its data-variant attribute and (for message variants) its
-//     localized title.
-//   - a11y verdict surface: message variants expose a live region (role=status,
-//     escalating to role=alert for error-v1); the skeleton announces aria-busy.
-//   - DOCTRINE: the verdict glyph is aria-hidden (colour + glyph + text, never
-//     colour alone — the visible text carries the meaning for AT).
-//   - error-v1 shows the RETRY button only when an onRetry handler is supplied,
-//     and clicking it fires the handler.
-
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import EdgeState from './EdgeState.svelte';
@@ -23,8 +9,6 @@ vi.mock('$app/environment', () => ({ browser: true }));
 
 const LOCALES: Locale[] = ['en', 'fr'];
 
-// Localized titles per variant (mirrors the component's COPY object) — proves
-// the right language slotted in, not just that *something* rendered.
 const TITLES = {
 	'stale-offline': { en: 'Data is behind', fr: 'Données en retard' },
 	'no-results': { en: 'No results', fr: 'Aucun résultat' },
@@ -45,7 +29,6 @@ describe('EdgeState — all 6 variants render in FR + EN', () => {
 			expect(root).not.toBeNull();
 			expect(root).toHaveAttribute('data-variant', 'skeleton');
 			expect(root).toHaveAttribute('aria-busy', 'true');
-			// Loading label is announced to AT (sr-only), localized.
 			expect(root!.textContent).toContain(lang === 'fr' ? 'Chargement' : 'Loading');
 		});
 
@@ -105,7 +88,6 @@ describe('EdgeState — a11y verdict surface', () => {
 
 	it('the verdict glyph is decorative (aria-hidden) — meaning carried by the text', () => {
 		const { container } = render(EdgeState, { props: { variant: 'empty-avis', lang: 'fr' } });
-		// The glyph span is aria-hidden; the title text is what AT announces.
 		const glyph = container.querySelector('[data-slot="state-notice-glyph"]');
 		expect(glyph).not.toBeNull();
 		expect(glyph).toHaveAttribute('aria-hidden', 'true');
@@ -177,7 +159,7 @@ describe('EdgeState — error-v1 retry affordance', () => {
 	});
 
 	it('shows the localized last-MAJ delta on the stale variant when lastUpdated is given', () => {
-		const recent = new Date(Date.now() - 4 * 60 * 1000).toISOString(); // 4 min ago
+		const recent = new Date(Date.now() - 4 * 60 * 1000).toISOString();
 		const { container } = render(EdgeState, {
 			props: { variant: 'stale-offline', lang: 'fr', lastUpdated: recent },
 		});
@@ -193,7 +175,6 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 			props: { variant: 'empty', lang: 'en', emptyReason: { key: 'metro-no-realtime' } },
 		});
 		expect(en.getByText('live positions are not published here')).toBeInTheDocument();
-		// The generic empty body must NOT also render.
 		expect(en.queryByText('No data has been published for this view yet.')).toBeNull();
 
 		const fr = render(EdgeState, {

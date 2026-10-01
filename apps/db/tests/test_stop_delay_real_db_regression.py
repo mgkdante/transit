@@ -1,13 +1,3 @@
-"""Real-database regressions for per-stop delay attribution and stop rollups.
-
-These tests run only against a disposable Postgres database migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_stop_delay_real_db_regression.py -v
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 

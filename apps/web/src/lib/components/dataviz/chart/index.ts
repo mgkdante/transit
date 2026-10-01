@@ -1,10 +1,3 @@
-// The LayerChart-backed chart layer (S7). One spec type + one renderer.
-//
-// A selector emits a `ChartSpec`; `<Chart spec />` renders it. The magnitude marks ride
-// LayerChart on an absolute domain the SELECTOR supplies (this layer stays
-// domain-agnostic, so `components/` never imports `features/`). P5.2: this is THE chart
-// layer for every surface — the legacy raw-SVG dataviz primitives are retired.
-
 export { default as Chart } from './Chart.svelte';
 export type { ChartProps } from './Chart.svelte';
 

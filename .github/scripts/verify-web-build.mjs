@@ -109,7 +109,6 @@ export async function verifyBuiltWorker(root, target, publicEnv) {
     config: join(web, "wrangler.toml"),
     env: target === "dev" ? "dev" : "",
     entrypoint: join(web, ".svelte-kit/cloudflare/_worker.js"),
-    // Data-independent pages use empty local R2; the compatibility service is offline too.
     bindings: {
       DATA: {
         type: "fetcher",

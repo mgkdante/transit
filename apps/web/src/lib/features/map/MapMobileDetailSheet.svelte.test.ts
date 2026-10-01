@@ -221,7 +221,6 @@ describe('MapMobileDetailSheet', () => {
 	it('renders the selected detail inside the bottom sheet when open', async () => {
 		render(MapMobileDetailSheet, { props: baseProps() });
 
-		// The sheet (bits-ui Sheet portal) renders with the detail body.
 		await waitFor(() => {
 			expect(document.querySelector('[data-slot="bottom-sheet"]')).toBeInTheDocument();
 		});

@@ -5,31 +5,13 @@ export const DEFAULT_SITE_ORIGIN = 'https://transit.yesid.dev';
 export interface PublicSiteConfig {
 	readonly siteOrigin: string;
 	readonly indexing: boolean;
-	/**
-	 * Provider copy identity for SSR (the manifest is client-booted on Cloudflare,
-	 * so it is absent at SSR — these env values keep the crawler-visible <title>/
-	 * description provider-specific). Each deploy sets its own; undefined falls back
-	 * to generic, provider-neutral copy. Mirror of manifest.short_name / .city.
-	 */
 	readonly providerShortName?: string;
 	readonly providerCity?: string;
-	/**
-	 * Social / authorship identity for the document head (Twitter card + author
-	 * meta). `twitterSite` is the publishing account's @handle (twitter:site),
-	 * `twitterCreator` the content author's @handle (twitter:creator), `author`
-	 * the human-readable byline. All optional — absent values are simply omitted
-	 * from the head (no empty meta tags). Set per-deploy via PUBLIC_* env.
-	 */
 	readonly twitterSite?: string;
 	readonly twitterCreator?: string;
 	readonly author?: string;
 }
 
-/**
- * Normalize a Twitter/X handle to the canonical `@handle` form, or undefined
- * when empty. Accepts a bare handle, a leading `@`, or a full profile URL and
- * always renders the single-`@` form the Twitter card meta expects.
- */
 export function normalizeTwitterHandle(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	if (!trimmed) return undefined;
@@ -41,7 +23,6 @@ export function normalizeTwitterHandle(value: string | undefined): string | unde
 	return handle ? `@${handle}` : undefined;
 }
 
-/** Trim a public env string to a value, or undefined when empty/unset. */
 export function normalizeOptionalText(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;

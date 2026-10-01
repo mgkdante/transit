@@ -1,12 +1,3 @@
-// MetricInfo.svelte.test.ts — the (i) affordance, DOM gate.
-//
-// MetricInfo is a click/focus popover: the trigger toggles a tip + a
-// keyboard-reachable deep-link into the explainer. Gates:
-//   - the trigger is a real <button> with an accessible name + aria-expanded,
-//   - clicking reveals the tip text and the action link (with the right href),
-//   - the link is a same-tab in-app nav by default; newTab opts into _blank,
-//   - Escape closes the popover.
-
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -94,7 +85,6 @@ describe('MetricInfo trigger', () => {
 		expect(screen.getByText('The share of readings that landed on time.')).toBeInTheDocument();
 		const link = screen.getByRole('link', { name: /How this is measured/ });
 		expect(link).toHaveAttribute('href', '/metrics#otp');
-		// In-app, same-tab nav by default (no target).
 		expect(link).not.toHaveAttribute('target');
 	});
 
@@ -150,7 +140,6 @@ describe('MetricInfo trigger', () => {
 			await tick();
 			expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-			// DOM tests dispatch the click that a native button produces for Enter/Space.
 			await fireEvent.keyDown(trigger, { key });
 			await fireEvent.keyUp(trigger, { key });
 			await fireEvent.click(trigger, { detail: 0 });
@@ -209,13 +198,9 @@ describe('MetricInfo hover group', () => {
 		const { container } = render(MetricInfo, { props: base });
 		const root = container.querySelector('.metric-info') as HTMLElement;
 
-		// Hover the group → opens.
 		await fireEvent.mouseEnter(root);
 		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-		// Pointer crosses the gap toward the tip: leaving the trigger schedules a
-		// short grace close, but re-entering the group (onto the tip) inside the
-		// grace window cancels it, so the in-popover link stays reachable.
 		await fireEvent.mouseLeave(root);
 		await fireEvent.mouseEnter(root);
 
@@ -232,9 +217,8 @@ describe('MetricInfo hover group', () => {
 		await fireEvent.mouseEnter(root);
 		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-		// Leave and never come back: the grace timer elapses and it closes.
 		await fireEvent.mouseLeave(root);
-		expect(screen.queryByRole('dialog')).toBeInTheDocument(); // still open during grace
+		expect(screen.queryByRole('dialog')).toBeInTheDocument();
 		await vi.advanceTimersByTimeAsync(200);
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});

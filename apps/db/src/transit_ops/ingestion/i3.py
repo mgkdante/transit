@@ -341,12 +341,6 @@ def _run_alert_capture(
     missing_endpoint_message: str,
     bronze_storage_resolver: BronzeStorageResolver,
 ) -> I3IngestionResult:
-    """Shared capture body for proprietary i3 JSON and standard GTFS-RT alerts.
-
-    Both store a normalized alert payload in raw.i3_alert_snapshots behind an
-    ingestion run/object; only the config, the bytes→payload extractor, the
-    bronze object name, and the missing-endpoint message differ.
-    """
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
     bronze_storage = bronze_storage_resolver(config.storage_backend)
     started_at_utc = utc_now()

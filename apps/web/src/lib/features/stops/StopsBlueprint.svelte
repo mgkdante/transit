@@ -1,4 +1,3 @@
-<!-- Station-led layered SVG composition for the Stops listing header. -->
 <script lang="ts">
 	import { BlueprintShell } from '@yesid/ui/brand';
 	import BlueprintGlassShelter from '$lib/components/svg/stops/BlueprintGlassShelter.svelte';

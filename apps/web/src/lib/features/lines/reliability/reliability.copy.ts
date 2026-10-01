@@ -4,7 +4,6 @@ import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { VerdictCopy } from '$lib/v1/verdict';
 import { routeVerdictCopy } from './routeVerdict.copy';
 
-/** The five cluster keys, in surface order. */
 export type ReliabilityClusterKey =
 	| 'punctuality'
 	| 'waitRegularity'

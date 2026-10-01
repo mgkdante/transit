@@ -154,7 +154,6 @@
 
 <style>
 	.reliability-pane {
-		/* Keep the footer below the viewport while the article loads. */
 		min-block-size: 100svh;
 	}
 </style>

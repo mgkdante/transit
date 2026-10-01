@@ -1,13 +1,3 @@
-// toc.test.ts - the shared TOC model + DOM helpers.
-//
-// Gates:
-//   - flattenToc orders parents then their children into one flat list (drives
-//     the "N / total" counter + active lookup);
-//   - tocElement resolves the data-toc anchor scheme (the one CollapsibleSection
-//     emits) and falls back to a plain element id;
-//   - observeActiveToc returns a no-op cleanup when there are no targets (the
-//     IntersectionObserver path needs a browser, exercised in the render tests).
-
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tick } from 'svelte';
@@ -123,7 +113,6 @@ describe('observeActiveToc', () => {
 	it('returns a no-op cleanup when there are no TOC targets', () => {
 		const cleanup = observeActiveToc(() => {});
 		expect(typeof cleanup).toBe('function');
-		// Must not throw.
 		cleanup();
 	});
 });
@@ -139,7 +128,6 @@ describe('settleLayout', () => {
 		const target = document.createElement('div');
 		scroller.appendChild(target);
 		document.body.appendChild(scroller);
-		// Height grows for three frames (an expanding disclosure), then stabilizes.
 		let reads = 0;
 		Object.defineProperty(scroller, 'scrollHeight', {
 			configurable: true,
@@ -150,7 +138,6 @@ describe('settleLayout', () => {
 		});
 		try {
 			await settleLayout(target);
-			// Kept polling frames until two consecutive stable readings (4, 5, 6).
 			expect(reads).toBeGreaterThanOrEqual(5);
 		} finally {
 			document.body.removeChild(scroller);

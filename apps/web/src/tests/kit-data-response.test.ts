@@ -58,8 +58,6 @@ type DataNode = {
 	};
 };
 
-// Execute Kit's installed function declarations. The VM supplies their imports;
-// it does not reimplement load_data, process_stream or node deserialization.
 const ast = acorn.parse(clientSource, { ecmaVersion: 'latest', sourceType: 'module' });
 const internalAst = acorn.parse(internalSource, { ecmaVersion: 'latest', sourceType: 'module' });
 const httpErrorClass = internalAst.body

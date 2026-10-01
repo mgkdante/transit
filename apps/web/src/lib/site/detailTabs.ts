@@ -5,11 +5,6 @@ export function detailTabFromSearchParams(searchParams: URLSearchParams): Detail
 	return value === 'schedule' || value === 'reliability' ? value : 'detail';
 }
 
-/**
- * Return a relative redirect target when the detail-tab query is not canonical.
- * The default Detail view has no `tab` parameter; Schedule and Reliability keep
- * one explicit value. Every unrelated query parameter stays untouched.
- */
 export function canonicalDetailTabLocation(url: URL): string | null {
 	const values = url.searchParams.getAll('tab');
 	if (

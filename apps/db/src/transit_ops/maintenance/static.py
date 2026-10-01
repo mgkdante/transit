@@ -1,5 +1,3 @@
-"""Static silver/dataset retention tier (slice-9.1.1-zeta split)."""
-
 from __future__ import annotations
 
 from sqlalchemy import text
@@ -28,12 +26,7 @@ STATIC_DATASET_REFERENCE_TABLES = (
     "silver.gis_gtfs_matches",
 )
 
-# Every gold table holding an FK to core.dataset_versions
-# (fk_gold_dim_*_dataset_version_id, migrations 0004:33/67/104 + 0011:35).
-# A static dataset version still referenced by any of these must NOT be deleted
-# by the prune (it would FK-violate); it is deferred until gold dims re-point to
-# the current version. Extend this tuple if a future migration adds a gold table
-# with an FK to core.dataset_versions.
+# Keep every Gold FK holder here; referenced dataset versions must survive pruning.
 GOLD_DATASET_REFERENCE_TABLES = (
     "gold.dim_route",
     "gold.dim_stop",
@@ -58,10 +51,6 @@ SELECT_STATIC_DATASET_VERSION_IDS = text(
     """
 )
 
-# Dataset versions still referenced by any gold dim FK-holder
-# (GOLD_DATASET_REFERENCE_TABLES). Deferred from pruning so the DELETE on
-# core.dataset_versions can never FK-violate. UNION (not UNION ALL) is fine —
-# we only need the distinct set of referenced ids.
 SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS = text(
     """
     SELECT DISTINCT dataset_version_id FROM gold.dim_route WHERE provider_id = :provider_id
@@ -128,16 +117,6 @@ def prune_static_silver_datasets(
     retention_count: int,
     dry_run: bool = False,
 ) -> tuple[list[int], list[int], list[int], dict[str, int]]:
-    """Prune superseded static silver datasets, deferring gold-referenced ones.
-
-    Returns (retained, pruned, deferred, deleted_row_counts). A candidate
-    version still referenced by any gold dim FK-holder
-    (GOLD_DATASET_REFERENCE_TABLES) is DEFERRED — it keeps BOTH its silver rows
-    and its core.dataset_versions row (whole-version retention keeps the
-    silver/dim joins consistent) — instead of being deleted, which would
-    FK-violate. The next worker cycle prunes it once gold dims re-point to the
-    current version (slice-9.1.1j).
-    """
     if retention_count <= 0:
         retention_count = 1
 
@@ -149,8 +128,6 @@ def prune_static_silver_datasets(
     retained_dataset_version_ids = dataset_version_ids[:retention_count]
     candidate_dataset_version_ids = dataset_version_ids[retention_count:]
     if not candidate_dataset_version_ids:
-        # No candidates → skip the gold-reference lookup entirely (zero added
-        # steady-state cost at the ~57s worker cadence).
         return retained_dataset_version_ids, [], [], _zero_static_prune_counts()
 
     gold_referenced_ids = {
@@ -178,7 +155,6 @@ def prune_static_silver_datasets(
             provider_id,
         )
     if not pruned_dataset_version_ids:
-        # Everything is deferred — execute no DELETEs/COUNTs.
         return (
             retained_dataset_version_ids,
             [],

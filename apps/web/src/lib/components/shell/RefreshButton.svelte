@@ -46,7 +46,6 @@
 			aria-hidden="true"
 			fill="none"
 		>
-			<!-- Two circular sync arrows. -->
 			<path
 				d="M16.5 5.5A7 7 0 0 0 4 7.2M3.5 14.5A7 7 0 0 0 16 12.8"
 				stroke="currentColor"

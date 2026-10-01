@@ -1,10 +1,3 @@
-// SurfaceRail.svelte.test.ts — the shared bare desktop rail + merged mobile sheet (P5.4).
-//
-// Guards: the desktop rail renders the `rail` snippet without page-local card chrome; the mobile pill is a labelled
-// disclosure (closed by default); tapping it opens ONE sheet (role="dialog") that renders the
-// SAME rail content (grain/filters + ToC together — one menu); a ToC jump link auto-closes the
-// sheet while a filter tap does not; Escape closes.
-
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -23,9 +16,6 @@ const source = readFileSync(
 	'utf-8',
 );
 
-// The rail content: a filter button + a ToC jump link, so we can prove the sheet renders both
-// and that a link closes the sheet while the button does not. The snippet receives the shared
-// rail context (unused here; the seam and presentation tests below inspect it).
 const rail = createRawSnippet(() => ({
 	render: () =>
 		`<div data-testid="rail-body">
@@ -34,9 +24,6 @@ const rail = createRawSnippet(() => ({
 		</div>`,
 }));
 
-// A rail that wires the snippet's { closeSheet } param onto a component-style ToC button —
-// the EXPLICIT dismissal seam TocNav consumers use (onNavigate → closeSheet), replacing the
-// old private `.toc-item` class sniffing.
 const railWithSeam = createRawSnippet<
 	[{ closeSheet: () => void; presentation: 'desktop' | 'mobile' }]
 >((getArgs) => ({
@@ -226,7 +213,6 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		expect(sheet).not.toBeNull();
 		expect(sheet).toHaveAttribute('aria-modal', 'true');
 		expect(sheet).toHaveAccessibleName('View');
-		// The dialog receives the already-mounted caller content rather than creating a copy.
 		expect(sheet.querySelector('[data-testid="rail-body"]')).toBe(railBody);
 		expect(container.querySelectorAll('[data-testid="rail-body"]')).toHaveLength(1);
 		expect(sheet.querySelector('[data-testid="rail-filter"]')).not.toBeNull();
@@ -260,14 +246,12 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		const pill = mobile.querySelector('button') as HTMLButtonElement;
 
 		await fireEvent.click(pill);
-		// A filter tap does NOT close the sheet (filters can be changed freely).
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-filter"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
 		expect(document.activeElement).toBe(
 			mobile.querySelector('[data-testid="rail-filter"]') as HTMLElement,
 		);
 
-		// A ToC jump link (in-page #anchor) DOES close the sheet so the reader lands on the section.
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-jump"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
 		expect(document.activeElement).toBe(pill);
@@ -296,8 +280,6 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		await fireEvent.click(pill);
 		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
 
-		// The seam button is a plain <button> (NOT an #anchor, NOT any special class) —
-		// only the snippet-param wiring closes the sheet, proving the seam is explicit.
 		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		await fireEvent.click(sheet.querySelector('[data-testid="rail-seam-jump"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).toBeNull();

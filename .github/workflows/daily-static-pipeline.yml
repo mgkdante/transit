@@ -3,10 +3,6 @@ name: Daily Static Pipeline
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions cron is UTC-based.
-    # 06:00 UTC corresponds to 2:00 AM Eastern while EDT is in effect.
-    # If this workflow remains on GitHub cron during EST, this UTC value may
-    # need a seasonal adjustment to keep the local run time at 2:00 AM Eastern.
     - cron: "0 6 * * *"
 
 permissions:
@@ -20,7 +16,6 @@ concurrency:
 jobs:
   run-static-pipeline:
     runs-on: ubuntu-24.04
-    # Three 30-minute provider budgets plus bounded setup and publish headroom.
     timeout-minutes: 110
     defaults:
       run:
@@ -40,8 +35,6 @@ jobs:
       SNAPSHOT_STORAGE_BACKEND: s3
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
-      # Public basemap pointer URLs (repo variables, not secrets). Unset -> empty
-      # string -> falsy -> manifest.basemap stays null and no basemap.json is written.
       SNAPSHOT_BASEMAP_PMTILES_URL: ${{ vars.SNAPSHOT_BASEMAP_PMTILES_URL }}
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
@@ -60,12 +53,7 @@ jobs:
       - name: Run static + GIS Bronze -> Silver -> Gold pipeline (all active providers)
         id: run-static-providers
         continue-on-error: true
-        # Explicit so the executable workflow test's bash -eo pipefail matches
-        # what actually runs here (S5-383 N3).
         shell: bash
-        # One looped job over every configured provider so onboarding a provider
-        # needs no workflow edit and the expensive setup (uv sync / init-db /
-        # seed-core) is paid once per cron, not once per provider (a matrix would).
         run: |
           aggregate_status=0
           # Assignment (unlike a for-list substitution) DOES trip errexit, and an

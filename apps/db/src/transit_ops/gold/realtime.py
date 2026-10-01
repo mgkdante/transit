@@ -243,7 +243,6 @@ def initialize_realtime_serving(
     engine: Engine | None = None,
     settings: Settings | None = None,
 ) -> None:
-    """Preserve proven caches or fix an unknown lane's cutoff before fresh capture."""
     endpoints = tuple(sorted(set(endpoint_keys)))
     if any(endpoint not in _SNAPSHOT_PROJECTIONS for endpoint in endpoints):
         raise ValueError("Serving initialization supports trip_updates and vehicle_positions")
@@ -289,7 +288,6 @@ def refresh_gold_realtime(
     engine: Engine | None = None,
     bootstrap_from_archive: bool = False,
 ) -> GoldRealtimeRefreshResult:
-    """Project exact Silver successes and advance each live lane in capture order."""
     snapshots = tuple(snapshots)
     if any(not isinstance(snapshot, RealtimeSilverLoadResult) for snapshot in snapshots):
         raise TypeError("Gold live projection requires typed Silver load receipts")
@@ -480,7 +478,6 @@ def refresh_gold_snapshots(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
 ) -> GoldSnapshotRefreshResult:
-    """Project selected complete populations while preserving the current serving identity."""
     if not expected_rows or any(type(key) is not int or key <= 0 for key in expected_rows):
         raise ValueError("Snapshot replay requires explicit positive snapshot IDs")
     if any(

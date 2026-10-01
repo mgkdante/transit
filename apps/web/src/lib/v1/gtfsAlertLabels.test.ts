@@ -12,8 +12,6 @@ describe('causeLabel', () => {
 	it('humanizes an unknown/vendor cause instead of showing it raw', () => {
 		expect(causeLabel('POLICE_ACTIVITY', 'en')).toBe('Police activity');
 		expect(causeLabel('POLICE_ACTIVITY', 'fr')).toBe('Activité policière');
-		// A vendor extension we have no mapping for is still humanized, never
-		// shown raw-uppercase-with-underscores.
 		expect(causeLabel('SPECIAL_EVENT', 'en')).toBe('Special event');
 		expect(causeLabel('SPECIAL_EVENT', 'fr')).toBe('Special event');
 	});
@@ -24,7 +22,6 @@ describe('causeLabel', () => {
 		expect(causeLabel(null, 'en')).toBeNull();
 		expect(causeLabel(undefined, 'fr')).toBeNull();
 		expect(causeLabel('', 'en')).toBeNull();
-		// A bare str(int) vendor code carries no meaning.
 		expect(causeLabel('7', 'en')).toBeNull();
 	});
 });

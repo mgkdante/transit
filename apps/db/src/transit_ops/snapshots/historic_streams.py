@@ -1,5 +1,3 @@
-"""Consume historic children and compose their checked parent graph."""
-
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypeVar, cast
@@ -39,7 +37,6 @@ def consume_point_days(
     record_payloads: bool = True, force: bool = False, concurrency: int = 1,
     batch_size: int = 32,
 ) -> tuple[PointHistorySummary, list[str]]:
-    """Observe and check point days once; publication drains each bounded batch."""
     summary = PointHistorySummary(family)
     written: list[str] = []
     batch: list[PutItem] = []
@@ -108,11 +105,6 @@ def consume_history_children(
     force: bool = False,
     run: _HistoricPublishRun | None = None,
 ) -> HistoricChildSummaries:
-    """Consume lazy plans before their connection closes; retain only detached summaries.
-
-    A supplied writer must drain submitted work before returning or raising.
-    Without a writer this collects findings without publication enforcement.
-    """
     if batch_size < 1:
         raise ValueError("Historic child batch size must be positive")
     result = HistoricChildSummaries(
@@ -240,8 +232,7 @@ class HistoricParentComposer:
         check: _PartitionCheck,
         stream_check: Callable[[], list[gate.CheckResult]],
     ) -> None:
-        # Publication checks stream truth before recording payloads; validation
-        # records first. Preserve both report order and gate invocation order.
+        # Preserve publication and validation report order relative to gate invocation.
         findings = stream_check() if self.force is not None else []
         for path, payload in items:
             if self.record_payloads:

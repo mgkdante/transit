@@ -4,12 +4,6 @@ import { describe, expect, it } from 'vitest';
 
 const APP_ROOT = join(process.cwd(), 'src');
 
-/**
- * These surfaces fetch progressive enhancements without blocking their primary UI:
- * - MapHero mounts the full-bleed map immediately and owns targeted overlay loading states.
- * - MetricsExplainer is readable static methodology; only its optional provenance metadata loads.
- * - The root layout's search indexes stay idle until someone types and never gate the page tree.
- */
 const INTENTIONAL_PROGRESSIVE_EXCLUSIONS = new Set([
 	'lib/features/map/MapHero.svelte',
 	'lib/features/metrics/MetricsExplainer.svelte',

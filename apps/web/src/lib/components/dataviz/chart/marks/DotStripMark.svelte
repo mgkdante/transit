@@ -1,16 +1,3 @@
-<!--
-  DotStripMark — the LayerChart renderer for a `kind: 'dot-strip'` ChartSpec (A8, S7).
-
-  A Cleveland dot plot: one dot per group (e.g. the 5 time-of-day shifts) on ONE shared,
-  fixed value axis (the spec's absolute domain). The dot's POSITION encodes the value (the
-  primary channel); its colour is the severity band (secondary). Dots are NEVER connected.
-  The all-day mean is a vertical reference rule. A null-value group is an honest gap.
-
-  CLEAR AXES + MAX DATA: a labelled value x-axis (with its title + unit + grid) and a
-  labelled group y-axis; a hover tooltip surfaces the exact value per dot. Dots split into
-  per-severity `<Points>` so each colours via a class on its circles. Domains from the
-  spec; ChartFrame-gated; sr-table fallback.
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Points, Rule, Axis, Grid, Highlight, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
@@ -63,7 +50,6 @@
 		>
 			<Svg>
 				<Grid x class="dv-stripmark-grid" />
-				<!-- Value x-axis: the severe-share scale, titled + units, with grid ticks. -->
 				<Axis
 					placement="bottom"
 					label={spec.unit ? `${spec.title} (${spec.unit})` : spec.title}
@@ -72,7 +58,6 @@
 					format={(v) => `${v}`}
 					class="dv-stripmark-axis"
 				/>
-				<!-- Group y-axis: the row labels (no rule line — the dots carry the read). -->
 				<Axis placement="left" rule={false} class="dv-stripmark-axis" />
 				{#if spec.medianRef != null}
 					<Rule x={spec.medianRef} class="dv-stripmark-mean" />
@@ -93,7 +78,6 @@
 		</LcChart>
 	</ChartFrame>
 
-	<!-- AT fallback: the strip as a table (value per group + honest absence). -->
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
@@ -108,8 +92,6 @@
 </figure>
 
 <style>
-	/* LayerChart renders these in its own components → :global. The class lands on the
-	   circle (Points) / line (Rule) / axis group (Axis) / grid line. */
 	:global(circle.dv-stripmark-watch) {
 		fill: var(--dataviz-severity-watch);
 	}
@@ -124,7 +106,6 @@
 		stroke-width: 0.75;
 		stroke-dasharray: 3 3;
 	}
-	/* Axis: muted mono labels + a faint axis rule + title; grid a faint neutral. */
 	:global(.dv-stripmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);

@@ -29,8 +29,6 @@ const forwardedArgs = [
 ];
 const sentinel = "environment value with spaces";
 
-// Copy only the known local command shapes. Unexpected changes fail before a
-// subprocess starts; this fixture must never run a real deployment or build.
 const localDeploy =
   /^(?:\.\.\/\.\.\/node_modules\/\.bin\/wrangler|node \.\.\/\.\.\/node_modules\/wrangler\/bin\/wrangler\.js) deploy$/;
 
@@ -123,7 +121,6 @@ process.exit(Number(process.env.${exitVariable} || 0));
     "apps/web/build.cjs",
     recorder("build", "DEPLOY_COMMAND_TEST_BUILD_EXIT"),
   );
-  // No executable shim exists, and every package/file here is fixture-owned.
   assert.equal(existsSync(join(root, "node_modules/.bin")), false);
   const eventsPath = join(root, "events.jsonl");
   const env = {};

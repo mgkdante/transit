@@ -188,9 +188,6 @@ const harness = vi.hoisted(() => {
 		header_key: 'Your stop',
 		description_en: '<p>Board at the temporary stop &amp; follow signs.</p>',
 		routes: ['24'],
-		// The alert belongs to the picked stop, but its first affected stop is a
-		// different one. That makes the real orchestrator perform an observable
-		// in-sheet selection swap while preserving stop-1 on its Back stack.
 		stops: ['stop-2', 'stop-1'],
 	};
 	const alert = new Proxy(alertSource, {
@@ -992,12 +989,7 @@ describe('MapHero near-me device location', () => {
 			expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy(),
 		);
 
-		// A filter toggle rewrites the query string; the device origin is not
-		// URL-backed, so the URL sync-from must not destroy it.
 		harness.setPageUrl('http://localhost/map?routes=55');
-		// tick() flushes the URL-sync effect AND its DOM fallout before the
-		// assertion — a waitFor here would pass on its first pre-flush check and
-		// green-light a build that destroys the fix a microtask later.
 		await tick();
 		expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy();
 
@@ -1039,9 +1031,6 @@ describe('MapHero near-me device location', () => {
 	});
 
 	it('retires a URL-adopted origin when the URL drops the near params (S5-377 B1 inverse)', async () => {
-		// A shared deep-link seeds the origin FROM the URL. That origin is owned
-		// by the URL (urlBacked) even though adopting it must not echo a write
-		// back — so when navigation drops the near params, the pin retires.
 		harness.setPageUrl('http://localhost/map?near=45.525686,-73.594764&nearLabel=Place+des+Arts');
 		render(MapHero);
 		await waitFor(() =>
@@ -1077,10 +1066,6 @@ describe('MapHero one-shot focus readiness', () => {
 });
 
 describe('MapHero detail-panel camera isolation (protect #11)', () => {
-	// The ONE orchestrator-excepted behavioral test (fable-plan-m3-FROZEN.md,
-	// ORCHESTRATOR EXCEPTION): panel drag, keyboard resize, and collapse must
-	// produce ZERO camera calls — on the live map handle (stub counters) AND
-	// through the mapCamera module (mocked call counts).
 	it('drag, keyboard resize, and collapse never touch the camera', async () => {
 		harness.isDesktop = true;
 		const { container } = render(MapHero);
@@ -1237,8 +1222,6 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				harness.startNavigation('http://localhost/lines', from, { type: 'link' })
 					.beforeNavigateDelivered,
 			).toBe(true);
-			// Kit suppresses the second callback and may normalize accepted /map/ only
-			// when it publishes the committed page URL. No flush is guaranteed here.
 			expect(
 				harness.startNavigation(accepted, from, { redirect: true }).beforeNavigateDelivered,
 			).toBe(false);
@@ -1979,8 +1962,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 	});
 
 	it('commits and closes a selection-owned vehicle through affected layers only', async () => {
-		// Hold the newly selected route resource pending so this spy window measures
-		// only the selection/filter mutation, not a later independent network settle.
 		harness.getRoute.mockImplementation(() => new Promise<null>(() => {}) as never);
 		render(MapHero);
 		await tick();
@@ -2487,8 +2468,6 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);
-		// WHY(M1 #45): MapHero now keeps only vehicles + alerts as constructor
-		// baselines; stop departures are a committed-selection lease.
 		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
 			families: ['vehicles', 'alerts'],
 		});
@@ -2528,9 +2507,6 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			).toBeInTheDocument();
 		});
 
-		// The proxy records the receiver used by MapHero when it reads the alert's
-		// routing fields. Every receiver remains the exact published Alert object;
-		// no presenter or orchestrator clone was inserted along the callback path.
 		expect(harness.identityReceivers.length).toBeGreaterThan(0);
 		expect(harness.identityReceivers.every((receiver) => receiver === harness.alert)).toBe(true);
 

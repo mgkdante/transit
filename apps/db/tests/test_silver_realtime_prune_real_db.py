@@ -1,4 +1,3 @@
-"""Capture-time retention, replay ordering, and bounded native Postgres deletion."""
 
 from __future__ import annotations
 
@@ -14,8 +13,6 @@ TU_ENDPOINT_ID = 994010
 VP_ENDPOINT_ID = 994011
 RUN_BASE = 994100
 
-# Retention is anchored at NOW with retention_days; "old" rows sit well before the
-# cutoff, "recent" rows sit inside the window.
 NOW = datetime.now(UTC)
 RETENTION_DAYS = 14
 CUTOFF = NOW - timedelta(days=RETENTION_DAYS)
@@ -56,7 +53,6 @@ def _seed_refs(connection, seed_provider) -> None:
 
 
 def _insert_snapshot(connection, *, snapshot_id: int, endpoint_key: str, captured_at) -> None:
-    """Create a feed snapshot (+ its ingestion_run) for one endpoint at a time."""
     endpoint_id = TU_ENDPOINT_ID if endpoint_key == "trip_updates" else VP_ENDPOINT_ID
     run_id = RUN_BASE + snapshot_id
     connection.execute(
@@ -95,7 +91,6 @@ def _insert_snapshot(connection, *, snapshot_id: int, endpoint_key: str, capture
 def _insert_entity_chain(
     connection, *, snapshot_id: int, endpoint_key: str, captured_at, entity_index: int = 0
 ) -> None:
-    """Insert rt_entities + the endpoint-specific child rows under a snapshot."""
     connection.execute(
         text(
             """
@@ -141,15 +136,7 @@ def _insert_entity_chain(
 
 
 def _seed_monotonic_history(connection) -> None:
-    """Seed a monotonic id/captured_at history across both endpoints.
-
-    trip_updates snapshots: ids 1..5 ; vehicle_positions: ids 6..10. Each endpoint
-    has 3 OLD snapshots (before cutoff) and 2 RECENT (inside window). ids ascend
-    with captured_at (the production invariant the id-range prune relies on).
-    """
-    # Interleave capture times so ids and captured_at both ascend monotonically.
     plan = [
-        # (snapshot_id, endpoint_key, captured_at)
         (1, "trip_updates", CUTOFF - timedelta(days=5)),
         (2, "trip_updates", CUTOFF - timedelta(days=4)),
         (3, "trip_updates", CUTOFF - timedelta(days=3)),
@@ -171,13 +158,6 @@ def _seed_monotonic_history(connection) -> None:
 
 
 def _expected_old_predicate_counts(connection) -> dict[str, int]:
-    """The OLD captured_at retention predicate's delete set, computed inline.
-
-    For each child table: rows whose snapshot has captured_at < cutoff AND whose
-    snapshot is NOT the latest snapshot for its endpoint_key. This is the EXACT
-    semantics the prior ctid-JOIN-on-captured_at prune implemented; the id-range
-    prune must produce identical counts.
-    """
 
     def _count(table: str, child_endpoint: str | None) -> int:
         endpoint_filter = "AND rfs.endpoint_key = :endpoint" if child_endpoint else ""
@@ -249,7 +229,6 @@ def _live_counts(connection) -> dict[str, int]:
 
 
 def test_dry_run_count_matches_capture_time_retention(conn) -> None:
-    """Dry runs count all expired children without a batch cap."""
     _seed_monotonic_history(conn)
     expected = _expected_old_predicate_counts(conn)
 
@@ -263,8 +242,6 @@ def test_dry_run_count_matches_capture_time_retention(conn) -> None:
     )
 
     assert counts == expected
-    # Sanity: 3 old snapshots/endpoint, latest-of-old kept? No — the 2 RECENT are
-    # latest; all 3 OLD are eligible. 3 trip_updates + 3 vehicle_positions deleted.
     assert expected["silver.rt_trip_update_stop_times"] == 3
     assert expected["silver.rt_vehicle_positions"] == 3
     assert expected["silver.rt_entities"] == 6
@@ -272,13 +249,12 @@ def test_dry_run_count_matches_capture_time_retention(conn) -> None:
 
 
 def test_delete_drains_exactly_the_expired_capture_set(conn) -> None:
-    """Running the prune to completion deletes exactly the old-predicate rows."""
     _seed_monotonic_history(conn)
     expected = _expected_old_predicate_counts(conn)
     before = _live_counts(conn)
 
     total_deleted = {table: 0 for table in expected}
-    for _ in range(20):  # generous pass budget for the batched deletes
+    for _ in range(20):
         _cutoff, counts = prune_realtime_silver_history(
             conn,
             provider_id=PROVIDER,
@@ -295,12 +271,10 @@ def test_delete_drains_exactly_the_expired_capture_set(conn) -> None:
     after = _live_counts(conn)
     for table in expected:
         assert after[table] == before[table] - expected[table]
-    # The 2 RECENT snapshots per endpoint (the latest two) always survive.
     assert after["silver.rt_feed_snapshots"] == 4
 
 
 def test_dead_feed_keeps_single_latest_snapshot(conn) -> None:
-    # All trip_updates snapshots are OLD (feed dead longer than retention).
     for snapshot_id, captured_at in (
         (1, CUTOFF - timedelta(days=5)),
         (2, CUTOFF - timedelta(days=4)),
@@ -329,11 +303,10 @@ def test_dead_feed_keeps_single_latest_snapshot(conn) -> None:
         if all(v == 0 for v in counts.values()):
             break
 
-    # Old predicate keeps the single latest (id=3); deletes the other two.
     assert expected["silver.rt_feed_snapshots"] == 2
     assert total_deleted == expected
     after = _live_counts(conn)
-    assert after["silver.rt_feed_snapshots"] == 1  # the latest, id=3, survives
+    assert after["silver.rt_feed_snapshots"] == 1
     surviving_id = int(
         conn.execute(
             text("SELECT rt_feed_snapshot_id FROM silver.rt_feed_snapshots WHERE provider_id = :p"),

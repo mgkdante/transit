@@ -1,14 +1,3 @@
-<!--
-  SectionIcon - the single source of truth for the small "badge" icons on
-  collapsible section / panel headers AND in the table of contents. Reuse this
-  instead of inlining SVGs, so a card and its TOC entry always render the SAME
-  mark (systematic, no ad-hoc per-site copies).
-
-  Names are SHAPES (not page concepts) so they compose across surfaces:
-  toc, image, eye, layers, chart, grid, list, arrow, briefcase, github.
-
-  Ported from yesid.dev shared/SectionIcon; pure SVG (currentColor), no deps.
--->
 <script lang="ts">
 	export type SectionIconName =
 		| 'toc'

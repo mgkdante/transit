@@ -1,23 +1,6 @@
-// easterWordHover — the browser-only GSAP flourish for an easter word span.
-//
-// Reuses the house wordmarkHover EFFECT FAMILY (bounce / wiggle / wave / spin,
-// rotating one per hover) but WITHOUT the wordmark's mandatory orange-dot pulse:
-// an easter word is a run of prose, not the brand mark. The effect is pure
-// decoration, so it self-disables on touch + under prefers-reduced-motion (the
-// caller also guards, but the action is defensive) and GSAP is imported lazily so
-// reduced-motion / touch readers never fetch it.
-//
-// SplitText wraps each character in a <div> for the transform; those wrappers are
-// decoration artifacts, so the host span is marked aria-hidden-safe by the caller
-// keeping the ORIGINAL text as the accessible content (SplitText reverts on
-// destroy, restoring the plain text node). Zero layout shift: the split chars keep
-// inline flow and only translate/rotate, and revert on cleanup.
-
 import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 import { isTouchDevice } from '@yesid/motion/utils/device';
 
-// The four effect builders, byte-mirrored from wordmarkHover's family (minus the
-// dot pulse). Each returns a gsap timeline over the split chars.
 type Chars = Element[];
 type EffectFn = (chars: Chars, gsap: typeof import('gsap').gsap) => gsap.core.Timeline;
 
@@ -52,16 +35,6 @@ const effectSpin: EffectFn = (chars, gsap) =>
 
 const EFFECTS: readonly EffectFn[] = [effectBounce, effectWiggle, effectWave, effectSpin];
 
-/**
- * A Svelte action for an easter-word span. On mouseenter it plays the next effect
- * in the rotating family. No-op (returns an empty destroy) on the server, on touch
- * devices, and under prefers-reduced-motion — those readers see the plain word.
- *
- * `startEffect` seeds the rotation so different words on the page do not all fire
- * the same effect first (the caller passes the word's index). `autoPlay` fires the
- * first effect once shortly after mount (used for the page title, mirroring the
- * BrandWordmark autoplay) — hover still rotates the family thereafter.
- */
 export function easterWordHover(
 	node: HTMLElement,
 	params: { startEffect?: number; autoPlay?: boolean; autoPlayDelay?: number } = {},
@@ -74,7 +47,6 @@ export function easterWordHover(
 	let isAnimating = false;
 	let destroyed = false;
 	let autoId: ReturnType<typeof setTimeout> | undefined;
-	// Loaded lazily on first hover; kept for revert on destroy.
 	let split: { chars: Element[]; revert(): void } | null = null;
 	let gsapRef: typeof import('gsap').gsap | null = null;
 
@@ -92,7 +64,6 @@ export function easterWordHover(
 			};
 			return true;
 		} catch {
-			// GSAP failed to load — the word simply stays a plain, static word.
 			return false;
 		}
 	}

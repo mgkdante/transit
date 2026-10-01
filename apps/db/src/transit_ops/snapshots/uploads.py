@@ -1,5 +1,3 @@
-"""Ordered upload barriers, bounded batches and shared executor ownership."""
-
 from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import Executor, ThreadPoolExecutor, wait
 from contextlib import contextmanager
@@ -22,7 +20,6 @@ _ACTIVE_PUBLISH_EXECUTOR: ContextVar[Executor | None] = ContextVar(
 
 @contextmanager
 def provider_executor(concurrency: int) -> Iterator[None]:
-    """Reuse one executor across a provider's barriers and drain it on exit."""
     if concurrency <= 1 or _ACTIVE_PUBLISH_EXECUTOR.get() is not None:
         yield
         return
@@ -35,7 +32,6 @@ def provider_executor(concurrency: int) -> Iterator[None]:
 
 
 def concurrency(settings: Settings) -> int:
-    """Resolve the bounded upload fan-out from settings (default 16, floor 1)."""
     value = getattr(settings, "SNAPSHOT_PUBLISH_CONCURRENCY", 16)
     try:
         return max(1, int(value))
@@ -51,11 +47,6 @@ def put_batch(
     write_mode: str = "normal",
     executor: Executor | None = None,
 ) -> list[str]:
-    """Upload items through an owned or provider executor, preserving item order.
-
-    Every barrier drains all submitted work before a submission-order exception
-    is raised. ``concurrency <= 1`` stays deterministic and inline.
-    """
     if not items:
         return []
     if write_mode not in {"normal", "immutable"}:
@@ -95,7 +86,6 @@ def put_stages(
     *,
     concurrency: int,
 ) -> list[str]:
-    """Publish ordered stages, waiting for every child stage before its pointer."""
 
     written: list[str] = []
     for stage, write_mode in stages:
@@ -111,19 +101,16 @@ def put_stages(
 
 
 def stable_item_total(items: Sequence[PutItem]) -> int:
-    """Logical surface count, excluding immutable generation objects."""
 
     return sum(1 for item in items if not is_immutable_item(item[0], item[2]))
 
 
 def is_immutable_item(rel_key: str, tier: str | None = None) -> bool:
-    """Recognize immutable items by declared tier or generation-path identity."""
 
     return tier == "historic_immutable" or "/generations/" in rel_key
 
 
 def stable_outcome_total(storage: SnapshotOutcomeWriter) -> int:
-    """Count stable mutable outcomes while path-filtering mislabeled generations."""
 
     mutable_outcomes = [
         *storage.written,
@@ -140,7 +127,6 @@ def put_batches(
     batch_size: int,
     write_mode: str = "normal",
 ) -> list[str]:
-    """Consume one bounded batch at a time, finishing each before requesting more."""
     if batch_size < 1:
         raise ValueError("Snapshot upload batch size must be positive")
     written: list[str] = []

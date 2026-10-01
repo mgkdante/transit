@@ -18,7 +18,7 @@ describe('selectWeekdaySeasonality', () => {
 		const rows = selectWeekdaySeasonality(dow, labels);
 		expect(rows.map((r) => r.key)).toEqual([5, 1]);
 		expect(rows[0].domain).toEqual(DELAY_DOW_DOMAIN);
-		expect(rows[0].severity).toBe('high'); // 6.5 >= 5
+		expect(rows[0].severity).toBe('high');
 	});
 
 	it('shows the severe share ONLY when enough observations back it', () => {
@@ -34,8 +34,8 @@ describe('selectWeekdaySeasonality', () => {
 		const rows = selectWeekdaySeasonality(dow, labels);
 		const d1 = rows.find((r) => r.key === 1)!;
 		const d2 = rows.find((r) => r.key === 2)!;
-		expect(d1.subtitle).toContain('20.0%'); // trusted severe share
-		expect(d2.subtitle).toBe('Avg delay'); // thin sample → plain caption
+		expect(d1.subtitle).toContain('20.0%');
+		expect(d2.subtitle).toBe('Avg delay');
 	});
 
 	it('DROPS null-avg weekdays (no fabricated 0-delay bar)', () => {

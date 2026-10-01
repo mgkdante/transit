@@ -1,5 +1,3 @@
-"""Silver-layer GTFS loaders."""
-
 from transit_ops.silver.gis import (
     BronzeGisArchive,
     GisSilverLoadResult,

@@ -3,11 +3,6 @@ import { emitAlternateSitemapEntries, emitSitemapDocument } from '@yesid/seo-kit
 
 export { toW3CDate } from '@yesid/seo-kit/sitemap';
 
-// Static surfaces — the always-present, data-independent pages. Per-entity URLs
-// (/lines/[id], /stop/[id]) are NOT listed here; they are enumerated at request
-// time by the dynamic sitemap handler (routes/sitemap.xml/+server.ts), which
-// fetches the routes_index / stops_index over the DATA binding and passes the id
-// lists into buildSitemapXml(). This module stays PURE — no fetch inside the lib.
 export const PATHS = [
 	'/',
 	'/map',
@@ -25,50 +20,19 @@ export const PATHS = [
 	'/terms',
 ] as const;
 
-// sitemaps.org caps a single sitemap file at 50,000 URLs / 50 MB. EN and FR are
-// SEPARATE <url> elements, so each locale counts toward the cap (a 25k-entity
-// provider emits 50k <url>s). STM is ~18k entities so a single file is fine, but
-// the cap is enforced provider-agnostically below — see SITEMAP_URL_CAP usage.
-// The 50,000-URL cap subsumes the 50 MB byte limit: 50k <url>s × the worst-case
-// ~460 B/block ≈ 23 MB < 50 MB, so no separate byte guard is needed.
 export const SITEMAP_URL_CAP = 50_000;
 
-// Entity URL prefixes the app routes serve. Provider-agnostic — the id lists are
-// supplied by the caller from the snapshot indexes, never hardcoded here.
 const ROUTE_PREFIX = '/lines/';
 const STOP_PREFIX = '/stop/';
 
-// Percent-encode an entity id into a single path segment, EXACTLY matching how
-// the app links to the entity. `routeFor()` (src/lib/nav/intent.svelte.ts) and
-// `entityUrl()` (src/lib/v1/config.ts) both build the segment via
-// `encodeURIComponent(id)`, so an id with a space/'/'/'#'/'?' becomes
-// `%20`/`%2F`/`%23`/`%3F` and the sitemap <loc> == the app's real URL. The
-// assembled URL is THEN XML-escaped by alternates()/urlBlock() (a separate
-// concern: percent-encoding makes the URL valid; XML-escaping makes the
-// document valid).
 function entityPath(prefix: string, id: string): string {
 	return `${prefix}${encodeURIComponent(id)}`;
 }
 
-/**
- * Per-entity id lists + a dataset-publish lastmod, threaded from the snapshot
- * indexes by the dynamic handler. All optional: when omitted (local dev / no
- * binding / fetch failed) the sitemap degrades to STATIC-only.
- */
 export interface SitemapEntities {
-	/** Route ids (RouteIndexEntry.id) → /lines/<id> + /fr/lines/<id>. */
 	readonly routeIds?: readonly string[];
-	/** Stop ids (StopIndexEntry.id) → /stop/<id> + /fr/stop/<id>. */
 	readonly stopIds?: readonly string[];
-	/**
-	 * Dataset publish time (manifest static `generated_utc`) used as <lastmod> for
-	 * entity pages. Omitted/empty → entity URLs carry NO lastmod (never fabricated).
-	 */
 	readonly entityLastmod?: string | null;
-	/**
-	 * Stable stamp for the static surfaces' <lastmod>. Omitted/empty → static URLs
-	 * carry NO lastmod (never fabricated).
-	 */
 	readonly staticLastmod?: string | null;
 }
 
@@ -103,21 +67,10 @@ function localizedEntries(siteOrigin: string, path: string, lastmod: string | nu
 	});
 }
 
-/**
- * Exposed for testing: one <url> block per STATIC surface per locale (EN + /fr),
- * each carrying the xhtml:link alternate cluster and an optional <lastmod>.
- */
 export function _sitemapEntries(siteOrigin: string, staticLastmod: string | null = null): string[] {
 	return PATHS.flatMap((path) => localizedEntries(siteOrigin, path, staticLastmod));
 }
 
-/**
- * Exposed for testing: one <url> block per ENTITY per locale (EN + /fr) under
- * `prefix` (e.g. '/lines/'), each with the alternate cluster and optional
- * lastmod. The id is percent-encoded into the path segment (so the <loc> matches
- * the app's real link, e.g. a space → `%20`), THEN the assembled URL is
- * XML-escaped in both the <loc> and every alternate href.
- */
 export function _entitySitemapEntries(
 	siteOrigin: string,
 	prefix: string,
@@ -127,33 +80,12 @@ export function _entitySitemapEntries(
 	return ids.flatMap((id) => localizedEntries(siteOrigin, entityPath(prefix, id), entityLastmod));
 }
 
-/**
- * Build the full sitemap XML. PURE — no fetch. The dynamic handler wires the
- * binding fetch and passes the enumerated entity ids + lastmod stamps here.
- *
- * When indexing is disabled the sitemap is an EMPTY urlset (never the entity
- * list). Otherwise it is: static surfaces (×2 locales) + every route (×2) +
- * every stop (×2), capped at SITEMAP_URL_CAP urls.
- */
 export function buildSitemapXml(config: PublicSiteConfig, entities: SitemapEntities = {}): string {
 	const urls: string[] = config.indexing ? collectUrlBlocks(config.siteOrigin, entities) : [];
 
 	return emitSitemapDocument(urls, { trailingNewline: true });
 }
 
-/**
- * Assemble the ordered <url> blocks, enforcing the 50k cap. Order is static →
- * routes → stops so that if the cap is hit, the always-present surfaces and the
- * (smaller) route set survive and only the tail of the stop list is dropped.
- *
- * 50k GUARD: sitemaps.org limits a single file to 50,000 URLs. STM is ~18k so a
- * single file is fine, but this caps provider-agnostically. When the cap would
- * be exceeded the over-cap tail (stops, then routes if even static+routes
- * overflow) is TRUNCATED — i.e. silently dropped — so the file stays valid.
- * Those entity pages simply won't appear in the sitemap until the real fix
- * lands. FOLLOW-UP: split into a <sitemapindex> of per-tier child sitemaps once
- * any provider's static + route + stop count exceeds 50k (then nothing drops).
- */
 function collectUrlBlocks(siteOrigin: string, entities: SitemapEntities): string[] {
 	const staticBlocks = _sitemapEntries(siteOrigin, entities.staticLastmod ?? null);
 	const routeBlocks = _entitySitemapEntries(
@@ -172,15 +104,8 @@ function collectUrlBlocks(siteOrigin: string, entities: SitemapEntities): string
 	const all = [...staticBlocks, ...routeBlocks, ...stopBlocks];
 	if (all.length <= SITEMAP_URL_CAP) return all;
 
-	// Over cap: keep static + routes, then fill with as many stops as fit.
 	const head = [...staticBlocks, ...routeBlocks];
-	// EDGE: if static + routes ALONE already exceed the cap, truncate `head`
-	// itself rather than returning an over-cap list. (Only reachable past 50k —
-	// never for STM.)
 	if (head.length >= SITEMAP_URL_CAP) return head.slice(0, SITEMAP_URL_CAP);
-	// Floor the stop budget to an EVEN number so an EN/FR entity pair is never
-	// split — a lone EN <url> whose FR alternate 404s would be worse than dropping
-	// both. _entitySitemapEntries emits the pair as [EN, FR] back-to-back.
 	const remaining = SITEMAP_URL_CAP - head.length;
 	const evenRemaining = remaining - (remaining % 2);
 	return [...head, ...stopBlocks.slice(0, evenRemaining)];

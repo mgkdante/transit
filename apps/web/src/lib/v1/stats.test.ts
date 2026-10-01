@@ -116,6 +116,6 @@ describe('rankByLowerBound — the tiny-n fluke never out-ranks a real bad actor
 		];
 		const ranked = rankByLowerBound(items, (x) => x.lo);
 		expect(ranked.map((x) => x.id)).toEqual(['d', 'b', 'a', 'c']);
-		expect(items[0].id).toBe('a'); // original order intact
+		expect(items[0].id).toBe('a');
 	});
 });

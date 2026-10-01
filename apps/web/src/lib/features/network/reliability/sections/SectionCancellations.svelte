@@ -1,15 +1,3 @@
-<!--
-  SectionCancellations — the network-wide cancellation-rate trend + its latest reading.
-
-  Pure presenter of `selectCancelTrend` (P5.2: the selector emits a single-series
-  `trend` ChartSpec rendered by the ONE <Chart> renderer). The latest-day value is an
-  ExplainedMetricCard (glance mode): a historic rollup → a null latest-day reads through
-  the styled honest-absence chip with the 'no-observations' reason (too few readings),
-  never a plain "no data". The trend plots ONLY the cancellation rate on the FIXED
-  CANCEL_RATE_DOMAIN [0,100] (a percentage's honest domain IS the whole — a near-zero
-  rate truthfully reads "rare"). The whole block stands DOWN when the series carries no
-  cancellation data (never a flat zero line) — the orchestrator gates on `hasCancel`.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -20,9 +8,7 @@
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionCancellationsProps {
-		/** The cancellation-trend view-model (series + latest + the fixed domain). */
 		vm: CancelTrendVM;
-		/** The formatted latest reading ("2.6%"), or null → the styled chip. */
 		latestDisplay: string | null;
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
@@ -47,7 +33,6 @@
 				<MetricInfo metricKey="cancellation" {locale} name={copy.cancelSection} side="bottom" />
 			{/snippet}
 		</ExplainedMetricCard>
-		<!-- Single-series trend spec: only the cancellation rate is plotted. -->
 		<Chart spec={vm.spec} />
 	</div>
 </NetworkTile>

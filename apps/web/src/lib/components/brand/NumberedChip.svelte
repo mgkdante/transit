@@ -20,11 +20,8 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	export interface NumberedChipProps extends HTMLAttributes<HTMLSpanElement> {
-		/** 1-based section index (rendered zero-padded, e.g. 1 → "01"). */
 		value: number;
-		/** Emphasis: `rest` (quiet outline) or `active` (primary-tinted). */
 		tone?: 'rest' | 'active';
-		/** Announce the number to assistive tech. Default false (decorative). */
 		decorative?: boolean;
 		class?: string;
 	}
@@ -37,7 +34,6 @@
 		...restProps
 	}: NumberedChipProps = $props();
 
-	// Zero-pad to at least two digits; three-digit sections keep all their digits.
 	const label = $derived(String(Math.trunc(value)).padStart(2, '0'));
 </script>
 
@@ -64,14 +60,12 @@
 		font-size: var(--text-micro);
 		font-weight: 600;
 		letter-spacing: var(--tracking-eyebrow);
-		/* tabular-nums → every index is the same width, so ToC chips column-align. */
 		font-variant-numeric: tabular-nums;
 		color: var(--muted-foreground);
 		flex-shrink: 0;
 		line-height: 1;
 	}
 
-	/* Active section → the wayfinding-orange tint (interactive affordance, not data). */
 	.numbered-chip[data-tone='active'] {
 		border-color: color-mix(in srgb, var(--primary) 30%, transparent);
 		background: color-mix(in srgb, var(--primary) 15%, transparent);

@@ -1,8 +1,3 @@
-"""Capture changed static and GIS archives to Bronze with durable source lineage.
-
-Static dataset promotion belongs to the transactional Silver load.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -164,7 +159,6 @@ def _run_versioned_capture[ResultT: VersionedCaptureResult](
     bronze_root: Path,
     bronze_storage: BronzeStorage,
 ) -> ResultT:
-    """Record the run, download the archive, then atomically register its capture."""
 
     config = spec.build_config(manifest, settings)
     started_at_utc = utc_now()

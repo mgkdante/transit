@@ -2,13 +2,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { flushSync } from 'svelte';
 import type { RouteReliability, RoutesIndex, StopReliability } from './schemas';
 
-// Hoisted fetch spies the loader reaches through the exact repository leaves.
 const routeFetch = vi.fn<(id: string) => Promise<RouteReliability | null>>();
 const stopFetch = vi.fn<(id: string) => Promise<StopReliability | null>>();
-// The internal availability index the ROUTE loader consults for `known:undefined`.
 const routesIndexFetch = vi.fn<() => Promise<RoutesIndex>>();
-// The always-current route_reliability discovery index (the new PRIMARY availability
-// source); the routes_index flag above is only the rollout fallback when this 404s.
 const routeReliabilityIndexFetch = vi.fn<() => Promise<Set<string> | null>>();
 
 vi.mock('./repositories/historic', () => ({
@@ -23,7 +19,6 @@ vi.mock('./repositories/static', () => ({
 
 import { createReliabilityLoader } from './reliabilitySnapshot.svelte';
 
-/** A minimal routes_index with the given id→reliability-flag entries. */
 function routesIndex(entries: Array<{ id: string; reliability?: boolean }>): RoutesIndex {
 	return {
 		generated_utc: '2026-06-18T00:00:00Z',
@@ -36,7 +31,6 @@ function routesIndex(entries: Array<{ id: string; reliability?: boolean }>): Rou
 	} as RoutesIndex;
 }
 
-/** A deferred promise so a test can hold fetches open and probe the cap. */
 function deferred<T>() {
 	let resolve!: (v: T) => void;
 	let reject!: (e: unknown) => void;
@@ -64,13 +58,7 @@ beforeEach(() => {
 	stopFetch.mockReset();
 	routesIndexFetch.mockReset();
 	routeReliabilityIndexFetch.mockReset();
-	// Default: the discovery index is ABSENT (404 → null) so the loader falls back to the
-	// legacy routes_index `reliability` flag — the path the (a)-(d) fallback tests assert.
-	// The discovery-index describe overrides this with a membership Set.
 	routeReliabilityIndexFetch.mockResolvedValue(null);
-	// Default: an empty routes_index ⇒ every `known:undefined` route id is "absent from
-	// the index" ⇒ legacy fail-soft probe. Tests that exercise the internal skip
-	// override this with their own routesIndex(...).
 	routesIndexFetch.mockResolvedValue(routesIndex([]));
 });
 
@@ -123,15 +111,11 @@ describe('createReliabilityLoader — concurrency cap', () => {
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
 			loaderRef = loader;
-			// Request 8 ids at once with an explicit `known: true` so they probe
-			// immediately (the cap is independent of the internal index gate, which
-			// is exercised separately below).
 			for (let i = 0; i < 8; i++) loader.request({ id: `r${i}`, known: true });
 			flushSync();
 			expect(loader.inFlight).toBe(4);
 			expect(routeFetch).toHaveBeenCalledTimes(4);
 		});
-		// Resolve two — two queued ones should start.
 		gates.get('r0')!.resolve(routeFile('r0', [90]));
 		gates.get('r1')!.resolve(routeFile('r1', [90]));
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledTimes(6));
@@ -156,7 +140,6 @@ describe('createReliabilityLoader — known-absent skip (kills the 404 flood)', 
 			flushSync();
 			expect(phase).toBe('empty');
 		});
-		// The whole point: zero network probe for a known-absent id.
 		expect(routeFetch).not.toHaveBeenCalled();
 		cleanup();
 	});
@@ -176,7 +159,6 @@ describe('createReliabilityLoader — known-absent skip (kills the 404 flood)', 
 		routeFetch.mockResolvedValue(routeFile('162', [88]));
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			// object form without `known`, and bare-string form, both probe.
 			loader.request({ id: '162' });
 			loader.request('163');
 			flushSync();
@@ -188,8 +170,6 @@ describe('createReliabilityLoader — known-absent skip (kills the 404 flood)', 
 
 describe('createReliabilityLoader — internal index gate (bulletproof, known:undefined)', () => {
 	it('(a) does NOT probe a route the index marks reliability:false, even with known undefined', async () => {
-		// The metro case: a stale call site drops `known`, but the loader consults
-		// the index and skips the probe anyway → no 404 flood.
 		routesIndexFetch.mockResolvedValue(
 			routesIndex([
 				{ id: '1', reliability: false },
@@ -200,7 +180,7 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 		let phase = 'idle';
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			loader.request('1'); // bare id ⇒ known undefined
+			loader.request('1');
 			flushSync();
 			$effect(() => {
 				phase = loader.get('1').phase;
@@ -210,7 +190,6 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 			flushSync();
 			expect(phase).toBe('empty');
 		});
-		// The whole point: zero network probe for an index-known-absent id.
 		expect(routeFetch).not.toHaveBeenCalled();
 		cleanup();
 	});
@@ -220,7 +199,7 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 		routeFetch.mockResolvedValue(routeFile('11', [92, 95]));
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			loader.request('11'); // bare id ⇒ known undefined ⇒ index says probe
+			loader.request('11');
 			flushSync();
 		});
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledWith('11'));
@@ -229,7 +208,6 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 	});
 
 	it('(c) STILL probes a route ABSENT from the index (fail-soft, known undefined)', async () => {
-		// Only route 1 is in the index; 999 is unknown ⇒ legacy fail-soft probe.
 		routesIndexFetch.mockResolvedValue(routesIndex([{ id: '1', reliability: false }]));
 		routeFetch.mockResolvedValue(routeFile('999', [88]));
 		const cleanup = $effect.root(() => {
@@ -260,13 +238,11 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 		});
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledWith('11'));
 		expect(routesIndexFetch).toHaveBeenCalledTimes(1);
-		// 1 + 2 skipped (index false); only 11 probed.
 		expect(routeFetch).toHaveBeenCalledTimes(1);
 		cleanup();
 	});
 
 	it('is race-safe: an undecided id raced ahead of the index is parked, never probe-then-discovered', async () => {
-		// Hold the index open; the request must NOT probe while the flags are unknown.
 		const idxGate = deferred<RoutesIndex>();
 		routesIndexFetch.mockReturnValue(idxGate.promise);
 		routeFetch.mockResolvedValue(routeFile('1', [90]));
@@ -274,13 +250,11 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
 			loaderRef = loader;
-			loader.request('1'); // known undefined, raced ahead of the index
+			loader.request('1');
 			flushSync();
 		});
-		// Index still in flight → the id is parked, NOT probed.
 		expect(routeFetch).not.toHaveBeenCalled();
 		expect(loaderRef.inFlight).toBe(0);
-		// Now the index lands marking route 1 absent → it resolves to empty, still no probe.
 		idxGate.resolve(routesIndex([{ id: '1', reliability: false }]));
 		await vi.waitFor(() => {
 			flushSync();
@@ -306,7 +280,6 @@ describe('createReliabilityLoader — internal index gate (bulletproof, known:un
 			expect(phase).toBe('empty');
 		});
 		expect(routeFetch).not.toHaveBeenCalled();
-		// known:null skips immediately — it must not even consult the index.
 		expect(routesIndexFetch).not.toHaveBeenCalled();
 		cleanup();
 	});
@@ -323,14 +296,12 @@ describe('createReliabilityLoader — stop loader is NOT index-gated (no regress
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('stop');
 			loaderRef = loader;
-			loader.request('s1'); // bare id, stop kind
+			loader.request('s1');
 			flushSync();
-			// Stop probes SYNCHRONOUSLY (no async index gate) — unchanged behaviour.
 			expect(loaderRef.inFlight).toBe(1);
 		});
 		await vi.waitFor(() => expect(stopFetch).toHaveBeenCalledWith('s1'));
 		expect(stopFetch).toHaveBeenCalledTimes(1);
-		// The stop loader must never touch the routes_index.
 		expect(routesIndexFetch).not.toHaveBeenCalled();
 		cleanup();
 	});
@@ -406,7 +377,7 @@ describe('createReliabilityLoader — route_reliability discovery index (primary
 		routeFetch.mockResolvedValue(routeFile('11', [92, 95]));
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			loader.request('11'); // bare id ⇒ decided by the discovery index
+			loader.request('11');
 			flushSync();
 		});
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledWith('11'));
@@ -415,14 +386,11 @@ describe('createReliabilityLoader — route_reliability discovery index (primary
 	});
 
 	it('does NOT probe a route ABSENT from the discovery index (membership = no file)', async () => {
-		// The fix: the discovery index is the source of truth — a route not in it has no
-		// published file, so we resolve to no-data WITHOUT a probe (and never hide data
-		// for a route that IS in it, regardless of the stale routes_index flag).
 		routeReliabilityIndexFetch.mockResolvedValue(new Set(['11']));
 		let phase = 'idle';
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			loader.request('1'); // absent from the index ⇒ no-data, no probe
+			loader.request('1');
 			flushSync();
 			$effect(() => {
 				phase = loader.get('1').phase;
@@ -441,19 +409,19 @@ describe('createReliabilityLoader — route_reliability discovery index (primary
 		routeFetch.mockResolvedValue(routeFile('11', [90]));
 		const cleanup = $effect.root(() => {
 			const loader = createReliabilityLoader('route');
-			loader.request('1'); // absent ⇒ skip
-			loader.request('2'); // absent ⇒ skip
-			loader.request('11'); // present ⇒ probe
+			loader.request('1');
+			loader.request('2');
+			loader.request('11');
 			flushSync();
 		});
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledWith('11'));
 		expect(routeReliabilityIndexFetch).toHaveBeenCalledTimes(1);
-		expect(routeFetch).toHaveBeenCalledTimes(1); // only the in-index route probed
+		expect(routeFetch).toHaveBeenCalledTimes(1);
 		cleanup();
 	});
 
 	it('falls back to the routes_index flag when the discovery index is absent (404 → null)', async () => {
-		routeReliabilityIndexFetch.mockResolvedValue(null); // not published yet
+		routeReliabilityIndexFetch.mockResolvedValue(null);
 		routesIndexFetch.mockResolvedValue(routesIndex([{ id: '11', reliability: true }]));
 		routeFetch.mockResolvedValue(routeFile('11', [91]));
 		const cleanup = $effect.root(() => {

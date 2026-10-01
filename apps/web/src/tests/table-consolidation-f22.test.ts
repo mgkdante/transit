@@ -1,43 +1,3 @@
-// table-consolidation-f22.test.ts — the F22 table-consolidation receipts.
-//
-// F22 is the owner's "table styling componentization and consolidation across
-// pages". The consolidation itself already shipped: `components/data/DataTable`
-// is the ONE page-level table primitive, and it is the only non-chart file in
-// the tree that renders a raw `<table>`. What never shipped were the acceptance
-// receipts. This file is those receipts. It builds NOTHING; it measures.
-//
-// Three things live here, each with its own gate:
-//
-//   A. THE CHART-MARK CLASSIFICATION. Nine files under
-//      `components/dataviz/chart/marks/**` render a raw `<table>`. The owner
-//      asked for each one to be classified IN or OUT of the shared table
-//      contract with a stated reason, not assumed. All nine are classified OUT
-//      below, one entry per file, each reason read off that file. The
-//      classification is not a comment that can rot: the gate asserts the
-//      classified set EQUALS the observed set, and asserts the load-bearing
-//      fact behind every OUT verdict (`<table class="sr-only">` — a visually
-//      hidden accessible fallback for an SVG chart, never a rendered surface).
-//      If a mark's fallback ever becomes visible, or a tenth mark appears, the
-//      classification fails rather than silently going stale.
-//
-//   B. THE DECLARATION FINGERPRINT. The owner's receipt: "a declaration-
-//      fingerprint check that page-level tables no longer carry bespoke
-//      styling". The scanner walks every DataTable consumer, extracts every CSS
-//      rule whose selector reaches a table element or a `data-table` internal,
-//      and asserts the observed set EQUALS the pinned ledger below. A new
-//      bespoke rule in any consumer — including a consumer that carries none
-//      today — turns this RED. Each pinned rule carries an adjudication
-//      verdict; the drift entries are the scoped follow-on work, recorded here
-//      so the debt is named rather than invisible.
-//
-//   C. THE ABSENCE COMPOSITION. F21 shipped the in-table empty state; that
-//      state is part of the table's contract, so no host may reach past the
-//      primitive to restyle an absence sitting inside a cell.
-//
-// NOT IN SCOPE HERE: real overflow geometry. happy-dom performs no layout
-// (`getBoundingClientRect().width === 0`), so a geometry assertion in vitest is
-// a false receipt. Every assertion below is source/DOM-shaped on purpose.
-
 import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -63,10 +23,6 @@ function svelteFiles(root: string): string[] {
 
 const ALL_SVELTE = svelteFiles(SRC);
 
-// ---------------------------------------------------------------------------
-// A. the chart-mark classification
-// ---------------------------------------------------------------------------
-
 const PRIMITIVE = 'src/lib/components/data/DataTable.svelte';
 const MARKS_DIR = 'src/lib/components/dataviz/chart/marks/';
 
@@ -78,15 +34,6 @@ interface MarkClassification {
 	readonly reason: string;
 }
 
-// Read one file at a time on 2026-08-04 at base 95907930. Every one of the nine
-// is the same shape and the shape is why they are OUT: a `<table class="sr-only">`
-// sibling of the SVG inside the mark's `<figure>`, carrying the chart's values as
-// text for assistive tech. It is never painted, so structure, density, header
-// treatment, alignment, zebra/hairlines, overflow/scroll and responsive collapse
-// — everything the shared primitive owns — are all inapplicable to it. Routing
-// them through DataTable would mean handing a visual contract to markup that has
-// no visual presentation, and would drag the chart layer into a dependency on
-// `components/data` for zero rendered benefit.
 const MARK_CLASSIFICATION: readonly MarkClassification[] = [
 	{
 		file: `${MARKS_DIR}DotStripMark.svelte`,
@@ -159,25 +106,15 @@ describe('F22 A — chart-internal tables are classified, not assumed', () => {
 			const source = read(resolve(WEB_ROOT, file));
 			expect(verdict, file).toBe('out:sr-only-chart-fallback');
 			expect(reason.length, file).toBeGreaterThan(40);
-			// The whole verdict rests on this: the table is visually hidden.
-			// (Several marks describe their fallback in a doc comment, so the
-			// comments come out before the markup is counted.)
 			const markup = source.replace(/<!--[\s\S]*?-->/g, '');
 			const tables = markup.match(/<table[^>]*>/g) ?? [];
 			expect(tables, file).toHaveLength(1);
 			expect(tables[0], file).toMatch(/class="sr-only"/);
-			// A fallback without a caption would be an accessibility defect, not
-			// an out-of-scope layout scaffold.
 			expect(markup, file).toMatch(/<caption>/);
-			// And it must not be reaching for the shared primitive.
 			expect(source, file).not.toMatch(/\bDataTable\b/);
 		}
 	});
 });
-
-// ---------------------------------------------------------------------------
-// B. the declaration fingerprint
-// ---------------------------------------------------------------------------
 
 interface CssRule {
 	readonly atRule: string;
@@ -189,7 +126,6 @@ function styleBlocks(source: string): string[] {
 	return [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((match) => match[1]);
 }
 
-/** Flattens a CSS block to leaf rules, hoisting at-rule conditions onto each leaf. */
 function cssRules(css: string, atRule = ''): CssRule[] {
 	const out: CssRule[] = [];
 	let index = 0;
@@ -217,11 +153,6 @@ function cssRules(css: string, atRule = ''): CssRule[] {
 	return out;
 }
 
-/**
- * A selector "reaches into the table" when it names a DataTable internal or a
- * bare table element. Both forms are bespoke table styling: the first reaches
- * past the primitive's props, the second styles table markup directly.
- */
 const TABLE_ELEMENT_SELECTOR = /(^|[\s,>+~(])(table|thead|tbody|tfoot|tr|th|td)([\s,.:[)#]|$)/;
 const reachesIntoTable = (selector: string): boolean =>
 	/data-table/.test(selector) || TABLE_ELEMENT_SELECTOR.test(selector);
@@ -238,13 +169,9 @@ function tableRules(source: string): string[] {
 }
 
 const RENDER_SITE = /<DataTable\b/;
-const RENDER_SITE_COUNT = /<DataTable\b/g; // .match()-only twin: String.match ignores lastIndex; never .test() a /g regex
+const RENDER_SITE_COUNT = /<DataTable\b/g;
 
 type Verdict =
-	// Drift: the declaration re-specifies something the primitive's own contract
-	// names (structure, density, header treatment, alignment, zebra/hairlines,
-	// overflow, responsive collapse). It belongs in DataTable's API as a prop or
-	// a documented variant, not in a `:global()` reaching into its internals.
 	| 'drift:type-scale'
 	| 'drift:density'
 	| 'drift:hairline'
@@ -252,9 +179,6 @@ type Verdict =
 	| 'drift:frame-surface'
 	| 'drift:responsive-collapse'
 	| 'drift:redundant'
-	// Legitimate: the declaration is about this instance's HOST, its content
-	// shape, or an editorial emphasis — none of which the primitive can own
-	// without becoming a config surface for every page that uses it.
 	| 'legitimate:host-layout'
 	| 'legitimate:content-shape'
 	| 'legitimate:editorial-emphasis';
@@ -281,27 +205,6 @@ interface RenderSite {
 	readonly bespoke: readonly PinnedRule[];
 }
 
-// The before/after inventory of every page-level table render site, measured on
-// 2026-08-04 at base 95907930. `renders` is the count of `<DataTable …/>` in the
-// file; `bespoke` is the exact, whitespace-normalised set of rules in that
-// file's `<style>` that reach a table element or a `data-table` internal.
-//
-// ADJUDICATION SUMMARY (the honest read, per the owner's ask):
-//   * FOUR of the six consumers override the table's font-size, three of them
-//     with a different value and two of them identically. The primitive
-//     hardcodes `font-size: var(--text-small)`. That is a MISSING API, not six
-//     independent taste calls — the strongest drift signal in the tree.
-//   * THREE consumers each invent their own cell padding. Density is named in
-//     the primitive's own contract, so a consumer setting it bespoke is drift
-//     by definition.
-//   * TWO consumers disagree with the primitive's row hairline, one by colour
-//     and one by replacing the model wholesale with per-cell borders.
-//   * ONE consumer (SectionHistoryCoverage) re-authors the primitive's tablet
-//     stacked-collapse metrics. That is the heaviest single piece of drift.
-// Fixing these is a CONSTRUCTION slice (a type-scale + density + hairline API on
-// DataTable, then six migrations, then browser-lane geometry proof at the mobile
-// ladder). F22 is verification: the drift is named and pinned here so it cannot
-// grow while it waits.
 const RENDER_SITES: readonly RenderSite[] = [
 	{
 		file: 'src/lib/components/schedule/ScheduleTable.svelte',
@@ -477,8 +380,6 @@ describe('F22 B — the page-level declaration fingerprint', () => {
 			":global(table[data-slot='direction-table'].data-table td) { padding: 2rem; }",
 		]);
 
-		// …and the scanner is not fooled by a comment, an at-rule, or a
-		// non-table selector that happens to contain the letters.
 		expect(tableRules('<style>/* td { padding: 2rem } */ .thread { gap: 0; }</style>')).toEqual([]);
 		expect(
 			tableRules(
@@ -493,8 +394,6 @@ describe('F22 B — the page-level declaration fingerprint', () => {
 				.filter(({ verdict }) => (DRIFT_VERDICTS as readonly string[]).includes(verdict))
 				.map(({ verdict }) => `${file} :: ${verdict}`),
 		);
-		// 19 bespoke rules total: 17 drift + 2 legitimate, across 4 of the 5
-		// consumers. Section2TheWait is the only clean one.
 		expect(drift).toHaveLength(17);
 		expect(
 			new Set(RENDER_SITES.filter(({ bespoke }) => bespoke.length > 0).map(({ file }) => file))
@@ -508,10 +407,6 @@ describe('F22 B — the page-level declaration fingerprint', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// C. the absence composition (F21 x F22)
-// ---------------------------------------------------------------------------
-
 describe('F22 C — the in-table empty state is part of the table contract', () => {
 	it('lets no host restyle an absence sitting inside a table cell', () => {
 		for (const { file, bespoke } of RENDER_SITES) {
@@ -524,9 +419,6 @@ describe('F22 C — the in-table empty state is part of the table contract', () 
 	});
 
 	it('keeps every in-table absence site inside the fingerprint inventory', () => {
-		// The sites absence-containment.test.ts pins for `variant="row"`. Every
-		// one of them must also be a fingerprinted render site, so the empty
-		// state and the styling contract can never be pinned in different places.
 		const absenceSites = [
 			'src/lib/components/schedule/ScheduleTable.svelte',
 			'src/lib/features/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
@@ -547,28 +439,9 @@ describe('F22 C — the in-table empty state is part of the table contract', () 
 	});
 });
 
-// ---------------------------------------------------------------------------
-// D. the third-consumer (extraction) verdict
-// ---------------------------------------------------------------------------
-
 describe('F22 D — extraction verdict for yesid.dev-design', () => {
 	it('records that DataTable serves ONE app and therefore stays app-side', () => {
-		// The owner's rule: an export serving one app stays app-side. DataTable
-		// has 5 consumer files / 7 render sites, every one of them in this app.
-		//
-		// The third-consumer test was run against the other two repos on
 		// 2026-08-04. `@yesid/ui` ships no table primitive. yesid.dev has
-		// exactly ONE raw table — `apps/web/src/lib/components/home/
-		// HeroSqlPanel.svelte`, a hero panel dressed as a psql result grid —
-		// and it would NOT take DataTable as-is: it is chrome, not a data
-		// surface, so it wants no caption (DataTable throws on an empty one),
-		// no stacked collapse, no scroll region and no absence contract, and it
-		// sets its own `text-xs md:text-sm` scale. Adopting the primitive there
-		// would mean re-introducing exactly the `:global()` overrides pinned
-		// above as drift. The API is also shaped by transit's needs (a `numeric`
-		// column flag, a `terminal` header band, two named stack breakpoints).
-		// VERDICT: does NOT earn extraction today. Re-test if a second product
-		// grows a real data-table surface.
 		const consumerFiles = RENDER_SITES.length;
 		const renderSites = RENDER_SITES.reduce((sum, site) => sum + site.renders, 0);
 

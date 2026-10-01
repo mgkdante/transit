@@ -1,4 +1,3 @@
-"""Full rebuild corrects retained Silver cohorts and preserves frozen history."""
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor

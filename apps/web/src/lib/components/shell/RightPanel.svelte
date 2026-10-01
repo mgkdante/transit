@@ -1,20 +1,3 @@
-<!--
-  RightPanel — the desktop detail dock (w360), the "volet" that swaps to show a
-  selected surface (vehicle / stop / line / network-health detail).
-
-  Structure: an optional header row, a scrolling body (the swapped detail), and
-  a STICKY footer slot pinned to the bottom (for the surface's primary actions /
-  provenance line). Close clears the selected surface; collapse keeps the
-  selection alive and narrows the dock into a slim rail.
-
-  "swap-volet" = the body is keyed on the active surface so each swap re-enters
-  cleanly (a subtle slide-in, reduced-motion-guarded). No data is wired in 9.2;
-  the page provides body + footer via named snippets, with quiet empty states.
-
-  Adapted from the yesid.dev panel/aside chrome idioms — re-themed to transit
-  tokens, gsap/lenis stripped. Surfaces SOLID (bg-card). a11y: complementary
-  landmark, labelled region, icon-only controls have aria-labels.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
@@ -27,36 +10,19 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface RightPanelProps {
-		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
-		/** Optional panel title shown in the header row. */
 		title?: string;
-		/** Stable id for the shell-owned identity heading. */
 		headingId?: string;
-		/** Optional entity identity rendered inside the shell-owned heading. */
 		identity?: Snippet;
-		/**
-		 * A stable key for the active surface; changing it re-keys the body so the
-		 * swap-in transition replays. Wire to the active SurfaceTarget id.
-		 */
 		surfaceKey?: string;
-		/** Whether a close control is shown in the header. */
 		dismissible?: boolean;
-		/** Whether the active detail surface has a previous item to return to. */
 		canGoBack?: boolean;
-		/** Fired when the back control is activated. */
 		onback?: () => void;
-		/** Fired when the close control is activated. */
 		onclose?: () => void;
-		/** The detail body — the swapped surface content. */
 		children?: Snippet;
-		/** Sticky footer slot — primary actions / provenance, pinned to the bottom. */
 		footer?: Snippet;
-		/** Fill a parent resizable pane instead of owning a fixed pixel width. */
 		resizable?: boolean;
-		/** Controlled collapsed state for parent-owned resizable panes. */
 		collapsed?: boolean;
-		/** Fired when the collapse/expand control is activated. */
 		ontogglecollapse?: () => void;
 		class?: string;
 	}
@@ -121,7 +87,6 @@
 	data-resizable={resizable ? 'true' : undefined}
 	data-surface-key={surfaceKey}
 >
-	<!-- Header row -->
 	<div class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
 		<button
 			type="button"
@@ -180,7 +145,6 @@
 		{/if}
 	</div>
 
-	<!-- Swap-volet body — keyed so each surface swap re-enters with a slide-in. -->
 	{#if !collapsed}
 		<ScrollArea id={panelBodyId} class="min-h-0 flex-1" data-slot="right-panel-body">
 			{#key surfaceKey}
@@ -199,7 +163,6 @@
 		<div id={panelBodyId} hidden data-slot="right-panel-body"></div>
 	{/if}
 
-	<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
 	{#if footer && !collapsed}
 		<div
 			class="empty:hidden shrink-0 border-t border-border-subtle bg-card px-4 py-3"
@@ -214,13 +177,7 @@
 	.right-panel {
 		width: var(--size-detail-panel);
 		overflow: hidden;
-		/* Lift the dock off the map: a tight left-cast shadow + a hairline edge
-		   highlight on the leading border (yesid edge-highlight idiom), so the
-		   volet reads as a raised surface over the live canvas in both themes. */
 		box-shadow: var(--shadow-detail-panel);
-		/* Size container so the swapped detail content can reflow against the dock's
-		   OWN width as it is dragged narrower in a resizable pane (grab-resize),
-		   independent of the viewport — content degrades gracefully, never clips. */
 		container: right-panel / inline-size;
 	}
 	.right-panel-identity {
@@ -245,29 +202,18 @@
 		width: var(--size-detail-rail);
 	}
 
-	/* EXPANDED in a resizable pane: fill the pane's allotted width (paneforge owns
-	   the rem floor/ceiling on the pane itself). */
 	.right-panel[data-resizable='true'] {
 		width: 100%;
 		min-width: 0;
 	}
-	/* COLLAPSED in a resizable pane: shrink to the icon-strip rem floor instead of
-	   filling 100% — that override used to leave RightPanel's good 3.7rem collapsed
-	   width dead, so the "collapsed" rail was as wide as the pane percent (the B1
-	   too-wide-strip bug). 3.7rem is just the toggle/back icon column; it matches
-	   the pane's collapsedSize percent (both derive from 3.7rem), so the strip is a
-	   constant width across desktop widths and never leaves a gap in the pane. */
 	.right-panel[data-resizable='true'][data-open='false'] {
 		width: var(--size-detail-rail);
 		min-width: var(--size-detail-rail);
 	}
 
-	/* Reserve a stable scrollbar gutter so the dock body never shifts horizontally
-	   when a scrollbar appears as the detail content reflows mid-drag. */
 	.right-panel-body-inner {
 		scrollbar-gutter: stable;
 	}
-	/* Swap-volet entrance — a subtle slide-in on each keyed surface change. */
 	.swap-volet {
 		animation: volet-in var(--duration-normal) var(--ease-out) both;
 	}

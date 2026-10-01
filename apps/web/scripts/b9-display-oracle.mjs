@@ -358,7 +358,6 @@ function compareDisplay(row, key, locale, type) {
 	const value = type === 'onTime' ? finite(row.otp_pct) : finite(row.observed_min);
 	const prior = type === 'onTime' ? finite(row.prior_otp_pct) : finite(row.prior_observed_min);
 	const difference = value == null || prior == null ? null : finite(value - prior);
-	// Intl supplies an independent decimal half-away oracle at each metric's precision.
 	const change =
 		difference == null
 			? null

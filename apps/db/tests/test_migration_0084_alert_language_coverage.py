@@ -1,4 +1,3 @@
-"""Migration contract for pre-coalescing alert-language observations."""
 
 from __future__ import annotations
 

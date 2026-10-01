@@ -1,12 +1,3 @@
-<!--
-  LineMark — the UNIVERSAL multi-series line/area chart (S7 "one chart paradigm"). N series
-  over a shared ordered categorical x (shifts / weekdays / hours) on ONE fixed zero-based y
-  domain. Series are told apart by SOLID/DASHED + markers + a legend — colour is never the
-  sole channel (a11y). CLEAR AXES + MAX DATA: a labelled value y-axis + the category x-axis
-  + grid + a hover crosshair whose tooltip lists EVERY series at the hovered x. Null points
-  are honest GAPS (the line breaks, never connects across no-data). ChartFrame-gated; the
-  dated dual-axis OTP trend keeps its own `trend` mark.
--->
 <script lang="ts">
 	import {
 		Chart as LcChart,
@@ -36,8 +27,6 @@
 	let { spec, class: className }: LineMarkProps = $props();
 	const structure = $derived(structuralLabels(spec.locale));
 
-	// Neutral default sequence — the first series is the value voice, the rest mute + dash
-	// so they stay distinct without a colour zoo. The selector may override per series.
 	const PALETTE = ['var(--foreground)', 'var(--muted-foreground)', 'var(--dataviz-status-late)'];
 	const colorOf = (s: LineSeries, i: number): string => s.colorVar ?? PALETTE[i % PALETTE.length];
 	const yVal = (d: Row, key: string): number => (d[key] as number | null) ?? 0;
@@ -52,8 +41,6 @@
 	);
 	const xDomain = $derived(spec.xLabels.slice());
 	const yDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
-	// LayerChart needs a Chart-level y accessor (not only on the marks) or the band-mode
-	// Highlight/tooltip bisect throws "accessor2 is not a function". Use the first series' y.
 	const primaryKey = $derived(spec.series[0]?.key ?? '');
 
 	const legendItems = $derived(
@@ -65,7 +52,6 @@
 	);
 
 	const padding = { top: 12, right: 20, bottom: 44, left: 56 };
-	// Null → the brand no-data glyph (never an em-dash, never a fabricated 0).
 	const num = (v: unknown): string => (v == null ? '·' : String(v));
 </script>
 

@@ -1,17 +1,3 @@
-"""Real-database DST regression tests for GTFS service-time conversion.
-
-These tests run only against a disposable Postgres 16 database with the Transit
-schema migrated to head. The throwaway schema must include gold tables because
-the trip-delay refresh writes gold.fact_trip_delay_snapshot directly:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_gold_dst_real_db_regression.py -v
-
-For a schema-only rebuild, create postgis before restore and include `-n gold`
-with the usual `-n core -n raw -n silver` dump filters. Never point this at
-production.
-"""
 
 from __future__ import annotations
 

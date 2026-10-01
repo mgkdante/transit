@@ -1,25 +1,3 @@
-<!--
-  §4 Where it's worst — "Where does the delay pile up?"
-
-  The accountability section: the worst-N stops as ONE always-visible lollipop (A13)
-  on a FIXED absolute domain (the same value renders the same length on every route /
-  grain / refresh). S7-B has two magnitude semantics, picked by the VM's
-  weakStopsWindowed flag: WINDOWED reads weak_stops_by_grain (DB-ranked worst-first by
-  the not-severe Wilson lower bound) and the bar is the SEVERE-DELAY RATE on
-  SEVERE_DOMAIN [0,100] — the rank variable, always >= 0, so a worst-by-rate stop whose
-  pooled avg delay is <= 0 still draws an honest bar; FALLBACK (pre-deploy scalar) keeps
-  the avg-delay bar on DELAY_POS_DOMAIN. Click a row → that stop's page; the heading
-  carries the honest shown/total count.
-
-  This section has NO <Detail> layer: the worst-N selector IS the disclosure — a
-  GrainPicker that appears once there's more than a screenful (total > 5) with a 5 / 10 /
-  All cap (the windowed slice stores <= 15). The window caption keeps it honest about the
-  trailing aggregate the ranking reads.
-
-  Reads ONLY the PunctualityVM's `weakStops` + `weakStopsWindowed`. Honest absence
-  throughout: when the selector returns no measured stop (`weakStops.shown === 0`) the
-  section degrades to its header + the styled AbsentValue chip (says WHY), never a fake 0.
--->
 <script lang="ts">
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { SectionLabel } from '@yesid/ui/brand';
@@ -33,19 +11,12 @@
 	import type { ReliabilityCopy } from '../reliability.copy';
 
 	interface Section4WorstStopsProps {
-		/** The punctuality view-model from `toReliabilityClusters` — only `weakStops` is read. */
 		punctuality: PunctualityVM;
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
 	}
 	let { punctuality, locale, copy }: Section4WorstStopsProps = $props();
 
-	// Worst-N selector (S7): a selectable how-many-stops control reusing GrainPicker over a
-	// numeric-string union — the active chip is --primary (an interactive control), never a data
-	// mark. The windowed weak_stops_by_grain stores <= 15, so the cap is 5 / 10 / All(=15); the
-	// scalar fallback can carry more but the heading's shown/total stays honest at the cap.
 	const WORST_N_SEGMENTS = $derived<GrainSegment<string>[]>([
 		{ key: '5', label: '5' },
 		{ key: '10', label: '10' },
@@ -54,10 +25,6 @@
 	let worstN = $state('10');
 	const worstNCount = $derived(Number(worstN));
 
-	// S7-B §4: when the windowed weak_stops_by_grain slice is present, each row carries the
-	// severe-rate evidence — a compact, null-guarded tooltip note (severe% · avg min · n). A plain
-	// closure (NOT $derived): it is invoked inside the $derived `weakStops` below, which re-runs on
-	// copy/locale change, so it always reads the current copy.
 	const weakStopNote = (w: {
 		severe_pct?: number | null;
 		avg_delay_min?: number | null;
@@ -73,12 +40,6 @@
 		return parts.join(' · ');
 	};
 
-	// Worst-N accountability LOLLIPOP (A13) — selectWeakStops owns the rank + the worst-N slice +
-	// the spec; rendered via the one <Chart>. WINDOWED: the bar is the severe-delay rate on
-	// SEVERE_DOMAIN [0,100] (the rank variable, always >= 0), DB-ranked worst-first by the
-	// not-severe Wilson lower bound (preRanked → no re-sort), avg+Wilson+n in the row note.
-	// FALLBACK (pre-deploy scalar): avg delay on DELAY_POS_DOMAIN, ranked by avg. Click a row →
-	// the stop page; the heading carries the honest shown/total count.
 	const weakStops = $derived(
 		selectWeakStops(
 			punctuality.weakStops,
@@ -112,7 +73,6 @@
 	question={copy.sections.worstStops.question}
 >
 	{#if weakStops.shown > 0}
-		<!-- PRIMARY — the worst-N stops lollipop + the worst-N selector (the disclosure). -->
 		<div class="section-primary" data-slot="weak-stops" data-card="primary">
 			<div class="weak-stops-head">
 				<span class="label-with-info">
@@ -139,7 +99,6 @@
 			</div>
 		</div>
 	{:else}
-		<!-- Whole-section honest empty: the selector returned no measured stop. -->
 		<div data-slot="worst-stops-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
@@ -147,16 +106,11 @@
 </CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on the 8px grid.
-	   The section shell + header now live in CollapsibleSection; this file styles only its body. */
 	.section-primary {
 		display: flex;
 		flex-direction: column;
 		gap: 0.625rem;
 	}
-	/* Weak-stops heading row: the label + (i) on the left, the worst-N selector on
-	   the right; wraps to its own row on narrow/mobile so the selector never crowds
-	   the heading. */
 	.weak-stops-head {
 		display: flex;
 		flex-wrap: wrap;
@@ -167,7 +121,6 @@
 	.label-with-info {
 		min-width: 0;
 	}
-	/* Quiet mono caption (window label), AA both themes. */
 	.caption {
 		margin: 0;
 		font-family: var(--font-mono);

@@ -20,9 +20,7 @@ describe('selectOccupancyShare', () => {
 		expect(s).not.toBeNull();
 		expect(s!.kind).toBe('stacked-share');
 		expect(s!.scale).toBe('occupancy');
-		// zero-share bands (empty) are dropped — no slivers
 		expect(s!.segments.map((x) => x.key)).toEqual(['many_seats', 'few_seats', 'standing', 'full']);
-		// shares normalise to 100
 		const sum = s!.segments.reduce((a, x) => a + x.share, 0);
 		expect(Math.round(sum)).toBe(100);
 		expect(Math.round(s!.segments[1].share)).toBe(35);

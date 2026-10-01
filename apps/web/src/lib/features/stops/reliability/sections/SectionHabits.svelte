@@ -1,4 +1,3 @@
-<!-- This stop’s normalized scores keep one fixed domain across all days and hours. -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { absenceShort } from '$lib/site/absence';
@@ -9,7 +8,6 @@
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionHabitsProps {
-		/** The 7×24 severe-delay matrix (null cell = no data). */
 		matrix: (number | null)[][];
 		locale: Locale;
 		copy: StopReliabilityCopy;
@@ -17,10 +15,8 @@
 	}
 	let { matrix, locale, copy, presentation = 'standalone' }: SectionHabitsProps = $props();
 
-	// Full weekday names in row order (drop the ISO index-0 placeholder).
 	const habitsFullDays = $derived(copy.habits.weekdays.slice(1));
 
-	// Four relative-score bands on the supplied [0,1] scale.
 	const tierLabels = $derived([...copy.habits.legend.tiers]);
 	const noDataLabel = $derived(absenceShort('no-observations', locale));
 	const WORST_GLYPH = '◆';
@@ -41,7 +37,6 @@
 		}),
 	);
 
-	// The same relative labels appear in the legend, cell tooltip and accessible table.
 	const habitsLegend = $derived([
 		{ colorVar: 'var(--dataviz-heatmap-tier-0)', label: tierLabels[0], swatch: 'square' as const },
 		{ colorVar: 'var(--dataviz-heatmap-tier-1)', label: tierLabels[1], swatch: 'square' as const },

@@ -1,4 +1,3 @@
-"""Completed typed reads preserve raw provenance without rereading each member."""
 
 import hashlib
 from collections import Counter
@@ -79,7 +78,7 @@ def test_completed_reads_preserve_raw_bom_newlines_and_unknown_member_provenance
     assert metadata["notes.txt"]["row_count"] == 2
     assert metadata["notes.txt"]["manifest_json"]["columns"] == ["note_id", "note"]
     assert result.extra_row_counts == {"notes.txt": 2}
-    assert opens["stops.txt"] <= 2  # Header and typed pass; inventory reuses completed facts.
+    assert opens["stops.txt"] <= 2
     assert opens["feed/notes.txt"] <= 3
 
 

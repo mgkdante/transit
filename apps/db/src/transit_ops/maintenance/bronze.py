@@ -1,5 +1,3 @@
-"""Retain referenced Bronze archives and prune expired objects through their recorded backend."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
@@ -24,7 +22,6 @@ RAW_BRONZE_METADATA_TABLES = (
     "raw.ingestion_runs",
 )
 
-# Bronze / raw retention SQL
 
 _BRONZE_REALTIME_LATEST_CTE = """
 WITH latest_by_endpoint_key AS MATERIALIZED (
@@ -165,18 +162,8 @@ DELETE_INGESTION_OBJECTS_BY_IDS = text(
     """
 )
 
-# Age-gated so a worker capture that committed its ingestion_run but has not
-# yet registered the object (two-transaction pattern) can never be deleted:
-# in-flight runs are seconds old, the phase cutoff is 30/365 days in the past.
-#
-# An i3 run owns its raw.i3_alert_snapshots row (fk_raw_i3_alert_snapshots_-
-# ingestion_run_id, 0013:164-166 — non-cascading, 1:1 UNIQUE on ingestion_run_id)
-# rather than a raw.ingestion_objects row. An i3 run older than the bronze cutoff
-# with no ingestion_objects but a surviving i3_alert_snapshots row (kept under the
-# 90-day silver-closed retention) would otherwise match this "orphaned" DELETE and
-# FK-violate, aborting the whole bronze-realtime prune. The NOT EXISTS against
-# raw.i3_alert_snapshots is the same guard the i3 variant
-# (DELETE_ORPHANED_I3_INGESTION_RUNS) already carries.
+# Age-gate orphan cleanup to protect captures between their two registration transactions.
+# An i3 snapshot owns its ingestion run directly; preserve runs with surviving snapshots.
 DELETE_ORPHANED_INGESTION_RUNS = text(
     """
     DELETE FROM raw.ingestion_runs ir
@@ -279,7 +266,6 @@ def prune_bronze_realtime_objects(
     max_objects: int = 5000,
     excluded_object_ids: Sequence[int] = (),
 ) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int]]:
-    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts, failed_object_ids)."""
     zero_object_counts: dict[str, int] = {"realtime": 0}
     zero_meta_counts: dict[str, int] = {
         "raw.realtime_snapshot_index": 0,
@@ -335,12 +321,7 @@ def prune_bronze_realtime_objects(
         rows = [row for row in rows if int(row[0]) in eligible_object_ids]
 
     if not rows:
-        # No eligible objects this cycle, but still sweep aged orphaned runs:
-        # slice-o silver_load failure telemetry writes object-less runs that
-        # must stay retention-bounded even when no captures are being pruned
-        # (e.g. the worker failing every cycle → no objects, but failure runs
-        # accumulating). DELETE_ORPHANED_INGESTION_RUNS is age-gated, so
-        # in-flight runs are never touched.
+        # Sweep aged object-less failure runs even when no objects are eligible.
         runs_deleted = _safe_rowcount(
             connection.execute(
                 DELETE_ORPHANED_INGESTION_RUNS,
@@ -419,7 +400,6 @@ def prune_bronze_static_objects(
     max_objects: int = 5000,
     excluded_object_ids: Sequence[int] = (),
 ) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int]]:
-    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts, failed_object_ids)."""
     zero_object_counts: dict[str, int] = {"static": 0}
     zero_meta_counts: dict[str, int] = {
         "raw.ingestion_objects": 0,
@@ -528,13 +508,6 @@ def _run_bronze_prune_phase(
     max_objects: int,
     max_batches: int,
 ) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int], int, bool]:
-    """Drain one Bronze phase in bounded batches, one transaction per batch.
-
-    Carries failed object ids forward so they are excluded from re-selection
-    (a poisoned queue head cannot stall or double-count), and stops early when
-    a batch selects rows but deletes none (storage outage guard). Designed to
-    be reusable for further raw prune phases (slice-9.1.1l).
-    """
     phase_now_utc = utc_now()
     cutoff_utc: datetime | None = None
     object_counts: dict[str, int] = {}

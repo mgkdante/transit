@@ -1,38 +1,21 @@
-// Internal data-viz token + glyph helpers (dataviz kit only).
-//
-// DOCTRINE: data marks are encoded with the dataviz scale exclusively
-// (`var(--dataviz-status-*|occupancy-*|severity-*|heatmap-*|vehicle-*)`).
-// Orange `--primary` is INTERACTIVE-ONLY and never encodes data. The lone
-// permitted `--primary` touch in this kit is Distribution's median affordance
-// MARKER line — that is a UI affordance, not a data mark.
-//
-// Token mapping rule (SHARED CONTRACT): map an enum value to a CSS token suffix
-// by replacing '_' with '-' (e.g. status 'on_time' -> --dataviz-status-on-time).
-// Glyphs: early ▼ on_time ● late ▲ severe ◆ unknown ○ (stops ■).
-
 import type { OccupancyCode, SeverityCode, StatusCode } from '$lib/v1/schemas';
 
-/** Enum value -> token suffix (underscores become hyphens). */
 export function tokenSuffix(code: string): string {
 	return code.replace(/_/g, '-');
 }
 
-/** A `var(--dataviz-status-*)` reference for a StatusCode. */
 export function statusVar(code: StatusCode): string {
 	return `var(--dataviz-status-${tokenSuffix(code)})`;
 }
 
-/** A `var(--dataviz-occupancy-*)` reference for an OccupancyCode. */
 export function occupancyVar(code: OccupancyCode): string {
 	return `var(--dataviz-occupancy-${tokenSuffix(code)})`;
 }
 
-/** A `var(--dataviz-severity-*)` reference for a SeverityCode. */
 export function severityVar(code: SeverityCode): string {
 	return `var(--dataviz-severity-${tokenSuffix(code)})`;
 }
 
-/** Glyph for each StatusCode — colour is never the sole channel. */
 export const STATUS_GLYPH: Record<StatusCode, string> = {
 	early: '▼',
 	on_time: '●',
@@ -41,12 +24,6 @@ export const STATUS_GLYPH: Record<StatusCode, string> = {
 	unknown: '○',
 };
 
-/**
- * Fill-level glyph per OccupancyCode — a DOUBLE channel paired with the
- * `--dataviz-occupancy-*` purple luminance ramp. Luminance alone fails AA on
- * near-black (the `empty` band is ~2.4:1), so the glyph is load-bearing, never
- * decorative: four rising fill rungs ▁▃▅▇, then a boxed terminal mark for full.
- */
 export const OCCUPANCY_GLYPH: Record<OccupancyCode, string> = {
 	empty: '▁',
 	many_seats: '▃',
@@ -55,22 +32,14 @@ export const OCCUPANCY_GLYPH: Record<OccupancyCode, string> = {
 	full: '⊠',
 };
 
-/** No-telemetry occupancy glyph — the honesty mark; NEVER the `empty` band. */
 export const OCCUPANCY_NODATA_GLYPH = '◌';
 
-/** Glyph for an occupancy code; `null`/`undefined` (no telemetry) → the no-data glyph. */
 export function occupancyGlyph(code: OccupancyCode | null | undefined): string {
 	return code == null ? OCCUPANCY_NODATA_GLYPH : OCCUPANCY_GLYPH[code];
 }
 
-/** The stop marker glyph (per SHARED CONTRACT: stops ■). */
 export const STOP_GLYPH = '■';
 
-/**
- * The discrete heatmap ramp tokens (5 buckets, dark -> hot). A normalized
- * value in [0,1] maps to one of these; `null` MUST resolve to the no-data
- * token — NEVER bucket 0 / a sentinel.
- */
 export const HEATMAP_RAMP = [
 	'var(--dataviz-heatmap-0)',
 	'var(--dataviz-heatmap-1)',
@@ -81,11 +50,6 @@ export const HEATMAP_RAMP = [
 
 export const HEATMAP_NODATA = 'var(--dataviz-heatmap-nodata)';
 
-/**
- * Map a normalized value in [0,1] to a heatmap ramp token. `null`/`undefined`
- * (and NaN) resolve to the no-data token — the honesty rule: surface "no data"
- * rather than colouring it like a real 0.
- */
 export function heatmapColor(norm: number | null | undefined): string {
 	if (norm == null || Number.isNaN(norm)) return HEATMAP_NODATA;
 	const clamped = Math.min(1, Math.max(0, norm));

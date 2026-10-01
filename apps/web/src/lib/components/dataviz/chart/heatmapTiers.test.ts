@@ -31,7 +31,6 @@ describe('heatmapTier', () => {
 	});
 
 	it('positions the value within an arbitrary absolute domain (not /max)', () => {
-		// On [0,100] the same fractions land in the same tiers — a fixed, stable binning.
 		expect(heatmapTier(10, [0, 100])).toBe(0);
 		expect(heatmapTier(60, [0, 100])).toBe(2);
 		expect(heatmapTier(90, [0, 100])).toBe(3);

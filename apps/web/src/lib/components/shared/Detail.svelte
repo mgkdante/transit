@@ -1,4 +1,3 @@
-<!-- Analyst disclosure: native controls, retained content and token-based grid transitions. -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
@@ -11,17 +10,13 @@
 		class: className,
 		children,
 	}: {
-		/** Control text when collapsed, e.g. "Show the detail". */
 		label: string;
-		/** Optional control text when expanded, e.g. "Hide the detail". Falls back to `label`. */
 		labelOpen?: string;
-		/** Expanded state — closed by default (progressive disclosure). Bindable. */
 		open?: boolean;
 		class?: string;
 		children?: Snippet;
 	} = $props();
 	const contentId = $props.id();
-	// SSR controls must not accept an activation before their handlers are attached.
 	let ready = $state(false);
 	onMount(() => {
 		ready = true;
@@ -39,7 +34,6 @@
 		open = !open;
 	}
 
-	// Closed analyst content mounts once; retain it for state and closing transitions.
 	let hasOpened = $state(false);
 	$effect(() => {
 		if (open) hasOpened = true;
@@ -82,24 +76,15 @@
 </div>
 
 <style>
-	/* A QUIET text+chevron control (operator: "make it simpler, not as sharp" — the heavy
-	   tinted-orange pill was over-weighted for a one-tap disclosure). It is still an
-	   interactive control, so the brand ORANGE stays on the LABEL (an affordance cue, not a
-	   data mark) — but the pill background + border are gone: just the rotating chevron + the
-	   label, underlined on hover. The tap target is held by padding (min-height 44px). */
 	.detail__toggle {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-		/* WCAG 2.2 (2.5.8) tap target, via padding rather than a heavy box. */
 		min-height: 44px;
 		padding: 0.375rem 0.125rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		font-weight: 500;
-		/* Quiet at REST (muted caption voice, normal tracking) so the disclosure reads as calm
-		   chrome, not a CTA; the brand orange lifts in only on hover/focus. The rotating chevron
-		   is the persistent non-colour affordance that keeps it legible as interactive. */
 		color: var(--muted-foreground);
 		background: none;
 		border: none;
@@ -119,7 +104,6 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 3px;
 		border-radius: var(--radius-sm);
-		/* Keyboard users get the same orange + underline affordance hover gives. */
 		color: var(--primary-hover);
 		text-decoration: underline;
 		text-underline-offset: 3px;
@@ -147,9 +131,6 @@
 		}
 	}
 
-	/* Generous breathing room: the toggle-to-content gap PLUS a large gap BETWEEN every
-	   revealed analyst block, in EVERY section (operator: opened details felt too plump).
-	   A flex column with a clamp gap so the blocks read as distinct, uncrowded units. */
 	.detail__body {
 		display: flex;
 		flex-direction: column;

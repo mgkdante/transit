@@ -9,8 +9,6 @@ describe('MapFreshness', () => {
 	it('centralizes map freshness placement so desktop and mobile do not duplicate visibly', () => {
 		const s = source();
 
-		// The map shares the ONE site-wide FreshnessStamp (variant="live"), never a
-		// bespoke chip — it only owns the placement chrome around it.
 		expect(s).toContain(
 			"import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte'",
 		);

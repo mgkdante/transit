@@ -187,8 +187,6 @@ def test_overall_health_result_ok_has_no_attention_flag_and_counts() -> None:
 
 
 def test_component_public_dict_omits_message_details_and_latency() -> None:
-    # x-security#4: the public /health must not echo error strings, feed URLs,
-    # DB/storage detail, or latency — only the coarse name + status survive.
     checked_at = datetime(2026, 5, 22, 12, 30, tzinfo=UTC)
     result = ComponentHealthResult(
         name="stm_trip_updates_feed",
@@ -260,11 +258,9 @@ def test_overall_public_dict_trims_to_coarse_status_and_freshness_age() -> None:
             {"name": "stm_trip_updates", "status": "ok"},
             {"name": "stm_vehicle_positions", "status": "ok"},
         ],
-        # freshness age = max feed-capture age across providers, a non-sensitive scalar
         "pipeline_freshness_age_seconds": 300,
     }
     serialized = json.dumps(payload)
-    # No URLs, hosts, credentials, DB DSNs, or raw error strings leak.
     assert "SECRET" not in serialized
     assert "feed.example.com" not in serialized
     assert "postgresql://" not in serialized

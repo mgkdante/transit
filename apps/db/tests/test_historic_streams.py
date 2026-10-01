@@ -1,4 +1,3 @@
-"""Child-stream ownership: one pass, bounded writes, collect-only validation."""
 
 from collections import Counter
 

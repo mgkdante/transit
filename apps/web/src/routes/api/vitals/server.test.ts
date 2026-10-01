@@ -13,15 +13,11 @@ const sample = {
 	conn: '4g',
 };
 
-/** Build the minimal RequestEvent the handler reads: `request` + `platform`. */
 function event(opts: {
 	body?: string;
 	binding?: unknown;
 	contentLength?: string;
 }): Parameters<Handler>[0] {
-	// A minimal request stub the handler reads: headers.get('content-length') +
-	// text(). We avoid a real Request so a custom content-length survives (the
-	// platform Request impl recomputes it from the body, defeating the guard test).
 	const headers = new Map<string, string>([['content-type', 'application/json']]);
 	if (opts.contentLength !== undefined) headers.set('content-length', opts.contentLength);
 	const request = {

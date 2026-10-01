@@ -1,4 +1,3 @@
-"""Partitioned retained-alert publication contract and builder tests."""
 
 from __future__ import annotations
 
@@ -12,7 +11,6 @@ from transit_ops.snapshots import contract
 
 
 def test_alert_archive_contract_and_manifest_pointer_exist() -> None:
-    """RED: the retained collection has explicit bounded page/index contracts."""
     page_type = contract.AlertArchivePage
     index_type = contract.AlertArchiveIndex
 
@@ -598,9 +596,6 @@ def test_archive_tie_break_is_id_ascending_and_coverage_uses_provider_local_date
     page = bundle.page_items[0][1]
     ref = bundle.index.months[0].pages[0]
     assert [entry.id for entry in page.alerts] == ["a-alert", "z-alert"]
-    # 00:30Z is still the prior Montréal service date. The future active period
-    # must widen both the page and collection bounds so the public picker can
-    # actually select the advertised page coverage.
     assert ref.coverage_start == "2026-07-01"
     assert ref.coverage_end == "2026-08-04"
     assert bundle.index.first_available_date == "2026-07-01"

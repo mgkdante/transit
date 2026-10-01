@@ -29,8 +29,6 @@ def _stubbed_env(
     psql_log.write_text("", encoding="utf-8")
 
     if with_pg_repack:
-        # Honors PG_REPACK_STUB_EXIT so tests can simulate a mid-run failure
-        # (the disconnect that leaves orphaned repack objects); defaults to 0.
         _make_executable(
             bin_dir / "pg_repack",
             "#!/usr/bin/env bash\n"
@@ -41,8 +39,6 @@ def _stubbed_env(
         )
 
     if with_psql:
-        # Logs its args; emits the leftover count for the leftover-detection
-        # query (recognised by 'repack' or 'nspname'), otherwise a size row.
         _make_executable(
             bin_dir / "psql",
             "#!/usr/bin/env bash\n"
@@ -100,12 +96,6 @@ def test_pg_repack_guardrail_requires_pg_repack_binary(tmp_path: Path) -> None:
     assert command_log.read_text(encoding="utf-8") == ""
 
 
-# The 7 current churn tables the guardrail must repack — mirrors maintenance.py +
-# run-pg-repack.sh (REALTIME_SILVER_TABLES minus the 29GB stop_times, plus the
-# gold.latest_* live tables and gold.trip_delay_summary_5m). The two hot gold.fact_*
-# tables were carved out of the CI default 2026-06-22 (see FORBIDDEN_DEFAULT_TABLES)
-# after their hot-table WAN lock-swap repeatedly orphaned repack objects; the dead
-# gold.vehicle/occupancy_summary_5m sinks were dropped in migration 0061.
 CURRENT_DEFAULT_TABLES = (
     "silver.rt_trip_updates",
     "silver.rt_vehicle_positions",
@@ -116,13 +106,6 @@ CURRENT_DEFAULT_TABLES = (
     "gold.trip_delay_summary_5m",
 )
 
-# Names dropped by migration 0014 (or deliberately excluded) — the guardrail must
-# NEVER target these BY DEFAULT. The first three are the exact relations the
-# broken default named (gh run 27088244828: exit 21). Then the 29GB stop_times
-# table, and the two hot gold.fact_* tables carved out 2026-06-22 (their WAN
-# lock-swap orphaned repack objects — repack on-box instead). The carved-out
-# tables remain reachable via an explicit PG_REPACK_TABLES override. None is a
-# substring of any CURRENT_DEFAULT_TABLES entry.
 FORBIDDEN_DEFAULT_TABLES = (
     "--table silver.trip_updates",
     "--table silver.trip_update_stop_time_updates",
@@ -174,9 +157,6 @@ def test_pg_repack_guardrail_live_mode_keeps_conservative_lock_policy(
 def test_pg_repack_guardrail_disables_parallel_maintenance_workers(
     tmp_path: Path,
 ) -> None:
-    # pg_repack's CREATE INDEX phase can spawn parallel maintenance workers that
-    # each grab a DSM segment (0017 parallel-VACUUM crash precedent). The script
-    # must export PGOPTIONS disabling them for every repack connection.
     result, command_log = _run_guardrail(tmp_path)
 
     assert result.returncode == 0, result.stderr
@@ -239,11 +219,6 @@ def test_pg_repack_guardrail_fails_when_repack_leftovers_detected(
 def test_pg_repack_guardrail_runs_leftover_sweep_when_repack_fails(
     tmp_path: Path,
 ) -> None:
-    # The regression this fix guards: a mid-run pg_repack failure (non-zero exit)
-    # is the EXACT scenario that orphans repack.log_* tables / repack_trigger
-    # triggers. Under `set -euo pipefail` the failure must NOT abort the script
-    # before the leftover sweep — the sweep has to run and surface the orphans
-    # (exit 3) rather than the run dying silently on the repack exit code.
     result, _ = _run_guardrail(
         tmp_path,
         with_psql=True,
@@ -261,9 +236,6 @@ def test_pg_repack_guardrail_runs_leftover_sweep_when_repack_fails(
 def test_pg_repack_guardrail_propagates_repack_failure_without_leftovers(
     tmp_path: Path,
 ) -> None:
-    # When pg_repack fails but leaves no orphaned objects, the guardrail must not
-    # swallow the failure: it runs the (clean) leftover sweep and then exits with
-    # the original non-zero repack code so CI still goes red.
     result, _ = _run_guardrail(
         tmp_path,
         with_psql=True,
@@ -275,15 +247,10 @@ def test_pg_repack_guardrail_propagates_repack_failure_without_leftovers(
 
     assert result.returncode == 5, result.stdout
     psql_log = (tmp_path / "psql.log").read_text(encoding="utf-8")
-    # The leftover-detection query still ran despite the repack failure.
     assert "repack" in psql_log or "nspname" in psql_log
 
 
 def test_pg_repack_guardrail_skips_size_report_without_psql(tmp_path: Path) -> None:
-    # A size report path IS configured but psql is absent from PATH: the run must
-    # succeed and note the capture was skipped (the guardrail never fails just
-    # because reporting can't run). Build a minimal tools dir holding only the
-    # shell utilities the script needs, so no real /usr/bin/psql leaks in.
     tools = tmp_path / "tools"
     tools.mkdir()
     for util in ("bash", "tr", "env", "command", "printf", "cat", "wget", "rm"):

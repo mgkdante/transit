@@ -1,8 +1,3 @@
-// Detail.test.ts — the lightweight "Show the detail" progressive-disclosure
-// expander. Covers the contract every rider-question section depends on: closed
-// by default, the trigger is a real aria-expanded button (not a link), the label
-// flips on open (with a fallback), and the detail children render in the body.
-
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import { createRawSnippet, hydrate, tick, unmount } from 'svelte';

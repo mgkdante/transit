@@ -109,8 +109,6 @@ function canvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 			const data = new Uint8ClampedArray(sw * sh * 4);
 			for (const copy of copies.length ? copies : [{ canvas, x: 0, y: 0 }]) {
 				const source = canvasRecords.get(copy.canvas)!;
-				// A source identifier in RGB lets the ImageData stub recover the drawing
-				// commands after real production atlas slicing. Alpha keeps its own oracle.
 				data[(copy.y * sw + copy.x) * 4] = source.index + 1;
 				for (let pixel = 0; pixel < source.alphaPixels; pixel += 1) {
 					const x = copy.x + (pixel % copy.canvas.width);
@@ -360,14 +358,11 @@ describe('vehicle sprite palette contract', () => {
 	});
 
 	it('paints the directional chevron with a neutral foreground tick so it reads on any bus colour', () => {
-		// ONE chevron sprite, rotated per-feature by the layer — neutral so it
-		// contrasts on every (orange / status / occupancy) bus fill.
 		expect(HEADING_FILL_TOKEN).toBe('var(--foreground)');
 		expect(HEADING_HALO_TOKEN).toBe(BUS_HALO_TOKEN);
 	});
 
 	it('keeps a single consolidated bus sprite plus a stop pin and a heading chevron with distinct ids', () => {
-		// One bus glyph (no directional variants), one stop pin, one chevron.
 		const ids = [BUS_ICON, STOP_ICON, HEADING_ICON];
 		expect(new Set(ids).size).toBe(ids.length);
 		expect(BUS_ICON).toBe('veh-bus');

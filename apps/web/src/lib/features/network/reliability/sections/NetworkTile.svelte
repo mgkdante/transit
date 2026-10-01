@@ -1,10 +1,3 @@
-<!--
-  NetworkTile — the thin /network adapter around the shared article disclosure card.
-
-  Network sections own only their responsive grid placement here. The shared
-  CollapsibleSection owns the solid card surface, accessible trigger, article-summary
-  header, chevron, persisted open state, whole-card pointer behavior, and bulk signals.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';

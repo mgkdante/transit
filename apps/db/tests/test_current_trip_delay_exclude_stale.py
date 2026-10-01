@@ -1,4 +1,3 @@
-"""Static contract test for migration 0018: stale-trip filter on current_trip_delay_computed."""
 from __future__ import annotations
 
 import re
@@ -38,15 +37,12 @@ def test_filtered_view_excludes_null_delays() -> None:
 
 
 def test_filtered_view_caps_delay_at_one_hour() -> None:
-    """3600s sanity bound — real transit delays virtually never exceed
-    this; anything bigger is a stale-trip leak from STM."""
     sql = _sql_block("_FILTERED_VIEW")
 
     assert "abs(lts.delay_seconds) <= 3600" in sql
 
 
 def test_filtered_view_excludes_stale_start_dates() -> None:
-    """Trips older than yesterday (in provider local time) are stale."""
     sql = _sql_block("_FILTERED_VIEW")
 
     assert "provider_now" in sql
@@ -85,6 +81,5 @@ def test_downgrade_restores_legacy_unfiltered_view() -> None:
     sql = _sql_block("_LEGACY_VIEW")
 
     assert "CREATE OR REPLACE VIEW gold.current_trip_delay_computed" in sql
-    # Legacy: no filters
     assert "WHERE" not in sql
     assert "delay_seconds IS NOT NULL" not in sql

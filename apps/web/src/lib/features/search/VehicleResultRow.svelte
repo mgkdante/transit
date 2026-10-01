@@ -11,13 +11,9 @@
 	interface Props {
 		vehicle: Vehicle;
 		locale: Locale;
-		/** Resolved next-stop name (from the stops index), or null when unresolved. */
 		nextStopName: string | null;
-		/** Localized status/occupancy labels + the row's intrinsic phrasing. */
 		copy: VehicleResultCopy;
-		/** Localized StatusCode label (e.g. "Late"). */
 		statusLabel: string;
-		/** Localized OccupancyCode label, or null when no telemetry. */
 		occupancyLabel: string | null;
 	}
 
@@ -28,17 +24,10 @@
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
-	// Live-tier absence reason for every omitted bus field on this row: the feed
-	// carried the vehicle but left this value out → "Unknown · not reported".
 	const NOT_REPORTED = 'not-reported' as const;
 
-	// Next-stop subtitle: the RESOLVED stop name only. An unresolved/omitted id
-	// falls to the styled honest-absence chip ("Unknown · not reported") — we never
-	// surface the raw GTFS id ("Next: 99999"), which is meaningless to a rider.
 	const nextStop = $derived(nextStopName);
 
-	// Heading arrow: a north-up glyph rotated by the GTFS bearing (0°=N). Absent
-	// bearing → no arrow (no fabricated heading).
 	const hasBearing = $derived(vehicle.bearing != null);
 
 	const occGlyph = $derived(occupancyGlyph(vehicle.occupancy));
@@ -133,8 +122,6 @@
 		width: 1.5rem;
 		height: 1.5rem;
 	}
-	/* The heading arrow is an interactive entity's affordance glyph — it rides the
-	   --primary accent (the bus's identity colour on the map), not a data mark. */
 	.vehicle-row-arrow {
 		font-size: var(--text-subheading);
 		line-height: 1;
@@ -196,8 +183,6 @@
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
-	/* The crowding glyph carries the occupancy band on the dataviz occupancy scale
-	   (luminance + a fill glyph — a double channel; never --primary). */
 	.vehicle-row-crowd-glyph {
 		color: var(--occ);
 		line-height: 1;

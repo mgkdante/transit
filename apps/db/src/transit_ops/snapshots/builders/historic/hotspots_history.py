@@ -1,5 +1,3 @@
-"""Full-retention Hotspots payloads recomposed as of each closed local day."""
-
 from __future__ import annotations
 
 from collections import deque
@@ -547,7 +545,6 @@ class HotspotsHistoryPlan:
         )
 
     def materialize(self) -> list[HistoricHotspotsDay]:
-        """Compatibility helper for bounded pure-test callers."""
 
         return list(self.iter_days())
 
@@ -559,7 +556,6 @@ def build_hotspots_history_plan_from_rows(
     name_rows: Iterable[Mapping[str, Any]],
     provider_timezone: str,
 ) -> HotspotsHistoryPlan:
-    """Build the streaming plan from already ordered source rows."""
 
     return HotspotsHistoryPlan(
         route_rows=route_rows,
@@ -572,7 +568,6 @@ def build_hotspots_history_plan(
     conn: Connection,
     provider_id: str = "stm",
 ) -> HotspotsHistoryPlan:
-    """Read the four fixed production streams exactly once."""
 
     params = {"provider_id": provider_id}
     timezone_row = conn.execute(_HOTSPOTS_HISTORY_TIMEZONE_SQL, params).mappings().fetchone()

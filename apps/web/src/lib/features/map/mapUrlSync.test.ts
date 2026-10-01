@@ -15,10 +15,8 @@ describe('buildNearTargetSearch', () => {
 		const current = new URLSearchParams('status=late&route=24');
 		const path = buildNearTargetSearch(current, '/map', target);
 		const next = new URLSearchParams(path.slice(1));
-		// The filter spine is untouched…
 		expect(next.get('status')).toBe('late');
 		expect(next.get('route')).toBe('24');
-		// …and the near-me target is present (a non-empty `near` token + label).
 		expect(next.has('near')).toBe(true);
 		expect(next.get('nearLabel')).toBe('Place des Arts');
 	});

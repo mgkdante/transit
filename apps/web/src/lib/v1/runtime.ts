@@ -1,4 +1,3 @@
-/** Dependency-free runtime ports supplied by the app at client startup. */
 export interface ClockPort {
 	readonly serverNow: number;
 	noteServerEpochMs(serverEpochMs: number): void;

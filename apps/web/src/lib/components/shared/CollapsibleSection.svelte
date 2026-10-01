@@ -1,6 +1,3 @@
-<!-- Persistent disclosure state, article signals and whole-card pointer behavior.
-     The native button supplies keyboard activation; the body stays mounted so
-     charts and reader state survive closing. CSS owns height transitions. -->
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
@@ -28,27 +25,18 @@
 		children,
 	}: {
 		title: string;
-		/** Visible with the card open or closed. */
 		subtitle?: string;
 		headerVariant?: CollapsibleSectionHeaderVariant;
 		open?: boolean;
-		/** Stable, locale-free sessionStorage key; when set, persisted state owns open. */
 		sectionKey?: string;
 		index?: number | null;
 		accentColor?: string;
 		collapsible?: boolean;
-		/** Shared ToC target emitted as data-toc on the card root. */
 		anchor?: string;
-		/** A changed counter closes the card; null is inert. */
 		closeSignal?: number | null;
-		/** A changed counter opens the card; null is inert. */
 		openSignal?: number | null;
-		/** Current bulk mode for late-mounted cards. Applied once, overriding the
-		 *  initial/session value; null leaves that value intact. */
 		bulkCollapsed?: boolean | null;
 		icon?: Snippet;
-		/** Interactive actions rendered beside an article-summary disclosure button.
-		 *  Kept outside the button so popovers and links remain valid, independent controls. */
 		headerActions?: Snippet;
 		children?: Snippet;
 	} = $props();
@@ -59,7 +47,6 @@
 	const usesArticleSummary = $derived(collapsible && headerVariant === 'article-summary');
 	const hasHeaderMark = $derived(index !== null || icon !== undefined);
 
-	// Capture the key and seed once; later prop updates must not recreate storage.
 	const persistedOpen = untrack(() => (sectionKey ? persisted(sectionKey, open) : null));
 
 	let isOpen = $derived(persistedOpen ? persistedOpen.value : open);
@@ -81,7 +68,6 @@
 		},
 	});
 
-	// Initial counters must not override restored state. Only later changes signal.
 	let lastCloseSignal = untrack(() => closeSignal);
 	$effect(() => {
 		const signal = closeSignal;
@@ -98,21 +84,17 @@
 		if (collapsible && signal !== null) setOpen(true);
 	});
 
-	// A late-mounted card cannot observe earlier signal changes; adopt bulk mode once.
 	untrack(() => {
 		if (collapsible && bulkCollapsed !== null) setOpen(!bulkCollapsed);
 	});
 
-	// The header already toggles itself; interactive descendants retain their own action.
 	const INTERACTIVE_CHILD =
 		'a,button,input,select,textarea,[role="button"],[data-card-interactive]';
 	function onCardClick(event: MouseEvent) {
 		const target = event.target as Element | null;
 		if (!target) return;
 		if (target.closest(INTERACTIVE_CHILD)) return;
-		// A nested card owns its own clicks; never toggle an ancestor card.
 		if (target.closest('[data-slot="card"]') !== event.currentTarget) return;
-		// A click that ends a text selection is content interaction, not a toggle.
 		if (window.getSelection()?.toString()) return;
 		setOpen(!isOpen);
 	}
@@ -232,7 +214,6 @@
 </Card>
 
 <style>
-	/* Keep the stronger article-card rule above the shared Card defaults. */
 	:global([data-slot='card'].section-card) {
 		border-width: 3px;
 	}
@@ -245,7 +226,6 @@
 		border-color: var(--accent);
 	}
 
-	/* Interactive descendants keep their own feedback; only the card surface scales. */
 	.section-header {
 		cursor: pointer;
 	}
@@ -340,7 +320,6 @@
 		scale: 0.97;
 		opacity: 0.92;
 	}
-	/* Reduced motion retains color feedback without the card scale transition. */
 	@media (prefers-reduced-motion: reduce) {
 		.section-header {
 			cursor: pointer;
@@ -361,7 +340,6 @@
 		transition: color var(--duration-normal) var(--ease-default);
 	}
 
-	/* The summary remains visible while the body is closed. */
 	.section-subtitle {
 		font-size: var(--text-caption);
 		line-height: 1.5;

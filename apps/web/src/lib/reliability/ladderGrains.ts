@@ -18,7 +18,6 @@ export function ladderGrains<K extends string, T extends GrainLadder>(
 		const key = known.find((grain) => grain === row.grain);
 		if (key !== undefined) ladders.set(key, row);
 	}
-	// The last duplicate wins, including a duplicate that empties an earlier ladder.
 	const present = new Set<K>();
 	for (const [key, row] of ladders) {
 		if ((row.entries?.length ?? 0) > 0 || (row.tray?.length ?? 0) > 0) present.add(key);

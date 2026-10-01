@@ -1,15 +1,3 @@
-<!--
-  DumbbellMark — the LayerChart renderer for a `kind: 'dumbbell'` ChartSpec (A8, S7). One
-  row per category; two endpoints (scheduled ● —— ● observed) joined by a connector so the
-  GAP reads at a glance (e.g. "scheduled every 8 min, actually every 13"). Both endpoints
-  share ONE fixed zero-based value domain (never /max). The connector is a thin floating
-  <Bar> (x→x1); the endpoints are <Points> (scheduled = muted reference, observed =
-  severity-coloured). CLEAR AXES + MAX DATA: a labelled value x-axis + the category y-axis
-  + grid + a two-endpoint legend + a hover tooltip (scheduled · observed · gap). Honest
-  absence: a row missing either endpoint keeps its labelled row but reads "no data" (the
-  selector bakes the marker into the label) — never a fabricated bar. ChartFrame-gated;
-  sr-table fallback.
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Bar, Points, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
@@ -28,7 +16,6 @@
 	let { spec, class: className }: DumbbellMarkProps = $props();
 
 	const labels = $derived(spec.rows.map((r) => r.label));
-	// A row needs BOTH endpoints to draw a connector + both dots.
 	const reals = $derived(spec.rows.filter((r) => r.scheduled != null && r.observed != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const structure = $derived(structuralLabels(spec.locale));
@@ -52,8 +39,6 @@
 	const yOf = (d: DumbbellDatum) => d.label;
 
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.5 + 4}rem`);
-	// Operator: size the category gutter FROM the labels so short shift labels don't waste room and
-	// a longer "AM peak · dir 0" variant still fits (truncated to the gutter when it can't).
 	const gutter = $derived(categoryGutter(labels, { min: 88, max: 168 }));
 	const padding = $derived({ top: 12, right: 18, bottom: 42, left: gutter.left });
 
@@ -61,7 +46,6 @@
 </script>
 
 <figure class={cn('dv-dumbbell m-0', className)} aria-label={spec.title} data-slot="dumbbell-mark">
-	<!-- Two-endpoint legend: which dot is scheduled vs observed. -->
 	<div class="dv-dumbbell-legend" aria-hidden="true">
 		<span class="dv-dumbbell-key"
 			><span class="dv-dumbbell-swatch sched"></span>{spec.scheduledLabel}</span
@@ -100,13 +84,10 @@
 						format={(l: string) => gutter.truncate(l)}
 						class="dv-dumbbell-axis"
 					/>
-					<!-- Connectors: a thin floating bar from scheduled (chart x) to observed (x1). -->
 					{#each reals as row (row.key)}
 						<Bar data={row} x1={obsOf} radius={2} class="dv-dumbbell-conn" />
 					{/each}
-					<!-- Scheduled endpoint (muted reference). -->
 					<Points r={4} class="dv-dumbbell-sched" />
-					<!-- Observed endpoint, severity-coloured (the "is it bad" signal). -->
 					<Points data={obsBySeverity('watch')} x={obsOf} r={5} class="dv-dumbbell-obs-watch" />
 					<Points data={obsBySeverity('high')} x={obsOf} r={5} class="dv-dumbbell-obs-high" />
 					<Points
@@ -184,7 +165,6 @@
 	.dv-dumbbell-swatch.obs {
 		background: var(--dataviz-severity-high);
 	}
-	/* Connector + endpoints (LayerChart puts the class on each rect/circle). */
 	:global(rect.dv-dumbbell-conn) {
 		fill: var(--border);
 		opacity: 0.7;

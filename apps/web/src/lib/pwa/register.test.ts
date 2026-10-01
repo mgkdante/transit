@@ -104,7 +104,6 @@ describe('runServiceWorkerLifecycle', () => {
 		);
 		expect(result).toBe('skipped');
 		expect(sw.register).not.toHaveBeenCalled();
-		// Stale prod SW from a prior visit is torn down even in dev.
 		expect(unregister).toHaveBeenCalledTimes(1);
 	});
 

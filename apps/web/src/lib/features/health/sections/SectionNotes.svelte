@@ -1,9 +1,3 @@
-<!--
-  SectionNotes — the pipeline-notes list: one label + verbatim methodology string
-  per published key with no /metrics card. The parent passes the FULL derived note
-  list (iterated off the whole published dict), so no key is dropped. Mechanical
-  move out of HealthStatus.svelte. Stands DOWN (parent guards) when the list empty.
--->
 <script lang="ts">
 	import { TypedInformationCard } from '$lib/components/shared';
 	import type { PipelineNote } from '../selectors/provenanceViews';
@@ -37,10 +31,6 @@
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 	}
-	/* Kept local alongside the local base rule above: the scoped base (0,2,0) would
-	   otherwise shadow the shared sheet's unscoped desktop override (0,1,0) — a
-	   section keeping a local override of any property the shared @media sets must
-	   keep its local @media too (S5-028 B-1). */
 	@media (min-width: 1024px) {
 		.health-note {
 			font-size: var(--text-detail-body-desktop);

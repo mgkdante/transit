@@ -185,8 +185,6 @@ describe('vehicle moving foreground', () => {
 		overlay.draw(features);
 		expect(overlay.receipt).toMatchObject({ projectedCount: 3, paintedBodyCount: 2 });
 		expect(overlay.pick([410, 300])).toBe('a');
-		// At z11, the body visually ends near x410.14; MapLibre's collision box
-		// includes its next-bucket layout size and default icon padding.
 		expect(overlay.pick([414, 300])).toBe('b');
 		expect(overlay.pick([386.5, 300])).toBe('a');
 		expect(overlay.pick([385, 300])).toBeNull();
@@ -231,8 +229,6 @@ describe('vehicle moving foreground', () => {
 			['mark-a', 0.45],
 			[SILENT_ICON, 1],
 		]);
-		// At the camera center P=1. An explicit icon-offset suppresses the
-		// perspective size multiplier for heading/badge layers in MapLibre 6.4.1.
 		expect(sprites[0]?.values?.[2]).toBeCloseTo(26 * 0.78, 3);
 		expect(sprites[1]?.values?.[2]).toBeCloseTo(26 * 0.78, 3);
 		expect(sprites[2]?.values?.[2]).toBeCloseTo(26 * 0.78 * 0.6, 3);

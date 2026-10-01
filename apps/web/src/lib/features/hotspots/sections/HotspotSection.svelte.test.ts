@@ -86,8 +86,6 @@ function mockHorizontalLayout(
 	element: HTMLElement,
 	initial: { clientWidth: number; scrollWidth: number; scrollLeft?: number },
 ) {
-	// happy-dom does not evaluate the component media query; model its mobile/tablet
-	// `overflow-x: auto` mode so the test can exercise real scroll-range measurement.
 	element.style.overflowX = 'auto';
 	let clientWidth = initial.clientWidth;
 	let scrollWidth = initial.scrollWidth;
@@ -282,7 +280,6 @@ describe('HotspotSection evidence presentation', () => {
 		expect(source).not.toContain('ResizeObserver');
 		expect(source).not.toContain('hotspot-chart-viewport');
 		expect(source).not.toContain('hotspot-chart-canvas');
-		// HF guards the chart viewport contract only; it does not constrain the tray DataTable.
 		expect(source).not.toMatch(/min-width:\s*48rem/);
 		expect(source).toMatch(
 			/<Chart\s+spec=\{ladder\.spec\}\s+scrollLabel=\{chartScrollLabel\}\s*\/>/,

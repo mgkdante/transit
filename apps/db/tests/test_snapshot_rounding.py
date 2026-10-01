@@ -1,4 +1,3 @@
-"""Live publication preserves raw quantiles and rounded-minute bin semantics."""
 
 import pytest
 from _sqlfakes import NamedQueryConn
@@ -13,7 +12,6 @@ from transit_ops.snapshots.builders import build_network
         ([-30], -1, -1, [0, 0, 1, 0, 0, 0, 0, 0]),
         ([150], 3, 3, [0, 0, 0, 0, 1, 0, 0, 0]),
         ([-150], -3, -3, [0, 1, 0, 0, 0, 0, 0, 0]),
-        # Quantiles use raw .4/1.6 min; quantizing observations first gives p90=2.
         ([24, 96], 1, 1, [0, 0, 0, 1, 1, 0, 0, 0]),
         (
             [269.4, 270, 270.6, 869.4, 870, 870.6],

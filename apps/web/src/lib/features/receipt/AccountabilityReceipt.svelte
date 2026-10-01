@@ -1,27 +1,3 @@
-<!--
-  AccountabilityReceipt — the /receipt surface ORCHESTRATOR (S13 re-seat).
-
-  A daily accountability article whose primary card preserves the brand TerminalPanel
-  receipt metaphor. A SMART availability-aware single-date calendar in the combined
-  rail picks the day, driving a per-date fetch composed as fixed, conditional cards —
-    · headline figures  — on-time prediction share, average delay, severe share;
-    · affected counts   — lines / stops with severe reports, alert message versions;
-    · worst of the day   — worst line (→ /lines/[id]) + worst stop (→ /stop/[id]);
-  and the S13 re-granulated cuts in their own article cards:
-    · by time of day    — severe-delay share ranked by shift (absolute SEVERE_DOMAIN);
-    · service delivered  — the ONE completeness number + delivered/cancelled/silent split;
-    · scheduled but never appeared — the not-reported lines list (silent, not cancelled).
-
-  This file owns the two resources, raw ?date seeding, stale-date guard, combined rail,
-  conditional card/TOC registry, and shared reading/navigation signals. Formatting and
-  receipt truth remain in ./selectors, ./data, and ./sections.
-
-  HONESTY: null/absent → the localized styled honest-absence chip, NEVER a fabricated 0;
-  an empty index → the localized empty state; loss of an advertised receipt → error/retry.
-  The new cuts stand DOWN (their `hasData`) during the GC2 ramp — an absent list is honest-absence,
-  never a fabricated "everything delivered". DOCTRINE: --primary only on the interactive
-  picker; every magnitude mark reads an ABSOLUTE domain literal (chart-doctrine).
--->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
@@ -76,14 +52,12 @@
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { copy as COPY } from './receipt.copy';
-	// Selectors + data presenters (pure VMs — no transforms in this orchestrator).
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
 	import { selectAffectedCounts } from './selectors/affectedCounts';
 	import { selectWorstOfDay } from './selectors/day-worst';
 	import { selectReceiptTimeOfDay } from './selectors/timeOfDay';
 	import { selectStateCuts } from './selectors/stateCuts';
 	import { selectNotReportedLines } from './selectors/notReportedLines';
-	// Sections.
 	import SectionHeadline from './sections/SectionHeadline.svelte';
 	import SectionAffected from './sections/SectionAffected.svelte';
 	import SectionWorst from './sections/SectionWorst.svelte';
@@ -101,15 +75,12 @@
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	// Discovery index — the published receipt dates + S13 availability metadata.
-	// createResource is browser-only ($effect), so v1 base resolves same-origin.
 	const index = createResource((signal) => getReceiptsIndex({ signal }));
 	const historyAvailability = $derived(availabilityFromReceiptsIndex(index.data));
 	const availableDates = $derived(datesForAvailability(historyAvailability));
 	const dateOptions = $derived(availableDates.map((date) => ({ date })));
 	const hasDates = $derived(availableDates.length > 0);
 
-	// Capture the raw value before any URL mirror can erase blank/malformed evidence.
 	const seededDate = page.url.searchParams.get('date');
 	let selectedDate = $state('');
 	let canonicalDate = $state<string | null>(null);
@@ -157,9 +128,6 @@
 		selectedDate ? t.history.selection(formatDateKey(selectedDate, locale)) : null,
 	);
 
-	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked, so
-	// changing the day re-runs the fetch (the spine drops out-of-order responses). Hold
-	// off until the index advertises a selected date.
 	const receipt = createResource<Receipt | null>((signal) => {
 		const indexData = index.data;
 		const date = selectedDate;
@@ -182,7 +150,6 @@
 			: null,
 	);
 
-	// ── Formatters (null on no-data → the styled honest-absence chip; a real 0 stays 0) ──
 	const fmtPct = (v: number | null | undefined) => sharedFmtPct(v, { suffix: t.units.pct });
 	const fmtMinTile = (v: number | null | undefined) =>
 		sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min });
@@ -191,7 +158,6 @@
 	const fmtCount = (v: number | null | undefined) => sharedFmtCount(v, { locale });
 	const fmtSharePct = (v: number | null) =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
-	// Inline (concatenated into meta text) → uses the central localized absence label.
 	const fmtMinInline = (v: number | null | undefined) =>
 		sharedFmtDelayMin(v, {
 			rounding: 'auto',
@@ -203,7 +169,6 @@
 		return `${v > 0 ? '+' : ''}${v}${t.units.pts}`;
 	};
 
-	// ── Section view-models (pure selectors) ─────────────────────────────────────────
 	const headlineKpis = $derived(
 		currentReceipt
 			? selectHeadlineKpis(currentReceipt, {
@@ -250,7 +215,6 @@
 			fmtSharePct,
 		}),
 	);
-	// The highest-mean-delay route's OTP difference uses the same day's network baseline.
 	const dayVerdict = $derived.by<string | null>(() => {
 		const r = currentReceipt;
 		if (r == null) return null;
@@ -261,8 +225,6 @@
 			clauses.push(t.dayVerdict.worst(wr.name, fmtDelta(wr.otp_delta_pts)));
 		}
 		if (r.affected_routes != null) clauses.push(t.dayVerdict.affected(r.affected_routes));
-		// Completeness: the ONE service_completeness_pct if the S13 cut is live, else the
-		// honest stand-down (never a fabricated baseline during the GC2 ramp).
 		const comp = r.service_states?.service_completeness_pct ?? null;
 		clauses.push(
 			comp != null
@@ -649,14 +611,10 @@
 		margin-inline: auto;
 	}
 
-	/* The receipt is a COMPOSED document. A @container drives the composition off the
-	   frame's own width (not the viewport). Default (narrow): a clean single stack. */
 	.receipt-frame {
 		container-type: inline-size;
 		container-name: receipt;
 	}
-	/* §C5.11 day-verdict sentence — the day in one line, at foreground weight so it reads
-	   as the headline before the tile figures and fills the already-bounded receipt lane. */
 	.receipt-day-verdict {
 		margin: 0 0 1rem;
 		font-family: var(--font-body);
@@ -683,19 +641,12 @@
 		grid-area: worst;
 	}
 
-	/* Wide frame: the headline banner spans full width; affected + worst share a balanced
-	   two-column secondary row. When the worst panel stands down, affected keeps the full
-	   width — never a lopsided gap. */
 	@container receipt (min-width: 34rem) {
 		.receipt-layout {
 			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 			grid-template-areas:
 				'headline headline'
 				'affected worst';
-			/* affected (a one-row count summary) and worst (a two-entry detail list) are
-			   inherently different heights. Top-align them at their NATURAL height rather than
-			   stretch the short one — a stretched summary card just leaves dead space under its
-			   counts (un-geometric), which reads worse than an honest ragged baseline. */
 			align-items: start;
 		}
 		.receipt-layout.no-worst {

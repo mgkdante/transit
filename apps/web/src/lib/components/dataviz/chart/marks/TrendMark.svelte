@@ -47,8 +47,6 @@
 	);
 	const hasSecondary = $derived(!!spec.secondary && spec.points.some((p) => p.y2 != null));
 
-	// Both overlaid contexts share IDENTICAL padding so their plot areas align (left axis
-	// on the primary, right axis on the secondary, shared bottom axis).
 	const padding = { top: 12, right: 48, bottom: 40, left: 48 };
 
 	const yDefined = (d: TrendDatum) => d.y != null && !Number.isNaN(d.y);
@@ -65,10 +63,6 @@
 	};
 	const primaryColor = $derived(spec.colorVar ?? 'var(--dataviz-status-on-time)');
 
-	// Confidence Comet: the OTP dot SIZE encodes the sample size (3 fixed-radius buckets —
-	// LayerChart's per-point r-scale is unreliable, but the Points `r` prop is a stable
-	// fixed override), so a small dot + a fat Wilson band BOTH read as "low confidence" at a
-	// glance. Only DEFINED points get a dot — a null-y gap never dots at 0.
 	const otpReals = $derived(data.filter((p) => p.y != null));
 	const dotsLowN = $derived(otpReals.filter((p) => (p.n ?? 0) < 30));
 	const dotsMidN = $derived(otpReals.filter((p) => (p.n ?? 0) >= 30 && (p.n ?? 0) < 100));
@@ -92,9 +86,7 @@
 
 <figure class={cn('dv-trendmark m-0', className)} aria-label={spec.title} data-slot="trend-mark">
 	<ChartFrame height="9rem" class="dv-trendmark-plot">
-		<!-- Replace scale contexts together so time/point domains never mix during an update. -->
 		{#key spec.xScale}
-			<!-- Primary context: on-time line + Wilson band + target, with the LEFT y-axis. -->
 			<LcChart
 				{data}
 				x={xOf}
@@ -142,7 +134,6 @@
 						style={`stroke:${primaryColor}`}
 						class="dv-trendmark-otp"
 					/>
-					<!-- Confidence Comet: a dot per real point, radius bucketed by observation_count. -->
 					<Points
 						data={dotsLowN}
 						r={2.5}
@@ -200,7 +191,6 @@
 			</LcChart>
 
 			{#if spec.secondary && hasSecondary && secYDomain}
-				<!-- Secondary context overlaid (same x + padding + box) on its OWN domain + RIGHT axis. -->
 				<div class="dv-trendmark-overlay" aria-hidden="true">
 					<LcChart
 						{data}
@@ -236,7 +226,6 @@
 
 	<ChartLegend class="mt-1.5" items={legendItems} />
 
-	<!-- AT fallback: the chart as a table. -->
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
@@ -262,13 +251,9 @@
 	.dv-trendmark-overlay {
 		position: absolute;
 		inset: 0;
-		/* The secondary (right-axis) chart is purely visual + aria-hidden — let pointer
-		   events pass THROUGH to the primary chart underneath, or it eats the hover and the
-		   trend reads as "not hoverable". The primary tooltip already lists the y2 series. */
 		pointer-events: none;
 	}
 
-	/* Mark fills/strokes reach the LayerChart-emitted SVG via :global. */
 	:global(.dv-trendmark-otp) {
 		fill: none;
 		stroke: var(--dataviz-status-on-time);
@@ -276,7 +261,6 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
-	/* Confidence Comet dots — radius (set via the Chart r accessor) encodes sample size. */
 	:global(circle.dv-trendmark-otp-dot) {
 		fill: var(--dataviz-status-on-time);
 	}
@@ -298,7 +282,6 @@
 		stroke-width: 0.75;
 		stroke-dasharray: 4 3;
 	}
-	/* Axes: muted mono tick labels + titles; faint grid. */
 	:global(.dv-trendmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);

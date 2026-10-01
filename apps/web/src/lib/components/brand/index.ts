@@ -1,17 +1,3 @@
-// $lib/components/brand — the transit brand primitives.
-//
-// Small, opinionated building blocks that carry the metro-board visual
-// language: status dots, metric readouts, section labels/headings, stop +
-// metro-station labels, corner registration marks and the chevron toggle.
-// They compose into shell/layout/dataviz surfaces and stay on the brand
-// tokens (no hardcoded colour, no chart library).
-//
-// DOCTRINE: StatusDot encodes DATA with the dataviz scale + a glyph (never
-// colour alone). Orange --primary stays INTERACTIVE-ONLY — these primitives
-// never paint a data mark with it.
-//
-// Import from `$lib/components/brand`.
-
 export { default as StatusDot } from './StatusDot.svelte';
 export type { StatusDotProps } from './StatusDot.svelte';
 

@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 
-// `chromeSearchResultHref` reaches `routeFor` via `$lib/nav`, whose `intent`
-// module imports `goto` from `$app/navigation` — the SvelteKit client runtime
-// touches `window` at module load, which the node "data" project lacks. Stub it
-// so the (pure) `routeFor`/`chromeSearchResultHref` graph loads; `goto` is never
-// called in these unit tests.
 vi.mock('$app/navigation', () => ({ goto: () => Promise.resolve() }));
 
 import {
@@ -119,17 +114,14 @@ describe('chromeSearchResults', () => {
 			{ id: '11000', code: '11000', name: 'Station Crémazie', lat: 45.55, lon: -73.62 },
 		];
 
-		// space where the data has a hyphen
 		expect(chromeSearchResults('berri uqam', { stops: metro })[0]).toMatchObject({
 			kind: 'stop',
 			id: '10146',
 		});
-		// reversed token order
 		expect(chromeSearchResults('uqam berri', { stops: metro })[0]).toMatchObject({
 			kind: 'stop',
 			id: '10146',
 		});
-		// no accent on an EN keyboard
 		expect(chromeSearchResults('cremazie', { stops: metro })[0]).toMatchObject({
 			kind: 'stop',
 			id: '11000',
@@ -188,7 +180,6 @@ describe('chromeSearchResults', () => {
 
 describe('chromeSearchHref', () => {
 	it('routes every selected result into the map filter spine', () => {
-		// Each pick also carries a one-shot `focus` so the map zooms to the entity.
 		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe('/map?route=161&focus=route%3A161');
 		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe(
 			'/map?stop=52819&focus=stop%3A52819',
@@ -274,8 +265,6 @@ describe('scopeForPath', () => {
 
 describe('chromeSearchResults scope', () => {
 	it('restricts route scope to lines, dropping stops, vehicles, and addresses', () => {
-		// "van horne" matches route 161 (long) AND stop 57191 (name) — without scope
-		// the blend carries both; route scope must keep ONLY the line.
 		const blended = chromeSearchResults('van horne', { routes, stops, vehicles });
 		expect(blended.some((result) => result.kind === 'route')).toBe(true);
 		expect(blended.some((result) => result.kind === 'stop')).toBe(true);
@@ -390,11 +379,6 @@ describe('chromeSearchResultHref', () => {
 	});
 });
 
-// ── M6i · F26 — the transit-mode filter the search page already offers ─────────
-// The chrome blend now accepts the SAME combinable mode set the search surface
-// uses, so the nav dropdown's chips narrow real results instead of decorating.
-// The narrowing happens INSIDE the blend (before the per-family slice), so a
-// filtered family is not silently truncated by matches the filter would drop.
 describe('chromeSearchResults mode filter', () => {
 	it('keeps every family when no mode is selected', () => {
 		const results = chromeSearchResults(
@@ -419,7 +403,6 @@ describe('chromeSearchResults mode filter', () => {
 			{ routes, stops, vehicles },
 			{ modes: new Set(['metro' as const]) },
 		);
-		// 161 is a bus line and 57191 a bus stop — the métro filter drops both.
 		expect(metroOnly).toEqual([]);
 
 		const metroLine = chromeSearchResults(
@@ -450,8 +433,6 @@ describe('chromeSearchResults mode filter', () => {
 		const bus = chromeSearchResults('40061', { vehicles }, { modes: new Set(['bus' as const]) });
 		expect(bus.map((r) => r.id)).toContain('40061');
 
-		// An address has no transit mode — an active mode set is a transit-mode
-		// question, so addresses stand down rather than be guessed into the blend.
 		const withModes = chromeSearchResults(
 			'casgrain',
 			{ addresses },

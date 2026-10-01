@@ -9,7 +9,6 @@
 
 	interface FooterProps {
 		locale?: Locale;
-		/** Render the caller's licence verbatim; omission must not invent an attribution. */
 		attribution?: string;
 		providerName?: string;
 	}

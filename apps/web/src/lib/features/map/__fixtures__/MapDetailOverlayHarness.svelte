@@ -1,9 +1,3 @@
-<!--
-  Test-only harness for MapDetailOverlay — owns the two-way bound state (widthPx /
-  collapsed / dragging) the orchestrator normally owns, so a render-based test can
-  observe the child writing back through bind: exactly as MapHero does. Exposes the
-  live values via callbacks so assertions can read them. Not a route component.
--->
 <script lang="ts">
 	import { createRawSnippet, type Snippet } from 'svelte';
 	import MapDetailOverlay from '../MapDetailOverlay.svelte';
@@ -28,7 +22,6 @@
 		onstate,
 	}: Props = $props();
 
-	// Surface the live bound values to the test on every change.
 	$effect(() => {
 		onstate?.({ widthPx, collapsed, dragging });
 	});

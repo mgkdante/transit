@@ -64,8 +64,7 @@ BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER = {
     "trips.txt": {"route_pattern_id"},
 }
 REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
-    # agency_id is GTFS-optional for single-agency feeds; synthesized in
-    # _build_agency_record when absent (silver.agency PK still gets a value).
+    # Single-agency feeds may omit agency_id; synthesize the Silver primary key.
     "agency.txt": {
         "agency_name",
         "agency_url",
@@ -73,8 +72,7 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
     },
     "routes.txt": {"route_id", "route_type"},
     "trips.txt": {"route_id", "service_id", "trip_id"},
-    # stop_name is GTFS-conditional (required for location_type 0/1/2, optional
-    # for 3/4); enforced per-row in _build_stop_record, not as a header gate.
+    # Validate conditional stop_name requirements per row, not at the header gate.
     "stops.txt": {"stop_id"},
     "stop_times.txt": {"trip_id", "stop_id", "stop_sequence"},
     "calendar.txt": {
@@ -97,8 +95,6 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
         "direction",
         "direction_legacy",
     },
-    # feed_start_date/feed_end_date/feed_version are GTFS-optional; parsed only
-    # when present in _build_feed_info_record. Publisher fields stay required.
     "feed_info.txt": {
         "feed_publisher_name",
         "feed_publisher_url",
@@ -125,11 +121,7 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
     },
 }
 SUPPORTED_STATIC_MEMBER_KEYS = set(REQUIRED_COLUMNS_BY_MEMBER)
-# Spine members: their required columns are the PK/FK join keys gold depends on,
-# so a missing required column is always a hard failure even in tolerant mode.
-# Every other supported member is non-spine: under strict_gtfs=False a missing
-# required column downgrades to a recorded conformance warning + a skipped load
-# instead of failing the whole transaction.
+# Missing spine join keys always fail; tolerant mode applies only to non-spine members.
 SPINE_STATIC_MEMBERS = {
     "routes.txt",
     "trips.txt",
@@ -502,9 +494,6 @@ class StaticSilverLoadResult:
     unsupported_members: list[str] = field(default_factory=list)
     typed_row_counts: dict[str, int] = field(default_factory=dict)
     extra_row_counts: dict[str, int] = field(default_factory=dict)
-    # Non-fatal feed conformance notes accumulated during a tolerant load: each
-    # {member, kind, detail} where kind is one of unknown_member,
-    # missing_required_column, missing_service_calendar.
     conformance_warnings: list[dict[str, str]] = field(default_factory=list)
 
     def display_dict(self) -> dict[str, object]:
@@ -541,11 +530,6 @@ def _require_value(row: Mapping[str, str], column_name: str, member_name: str) -
 
 
 def _synthesized_agency_id(provider_id: str) -> str:
-    """GTFS makes ``agency_id`` optional for single-agency feeds, but
-    ``silver.agency`` keys on ``(dataset_version_id, agency_id)`` with
-    ``agency_id NOT NULL``. Synthesize a stable surrogate from the provider id so
-    a compliant single-agency feed still loads. Nothing joins
-    ``routes -> agency`` on this key, so the surrogate stays internal."""
     return provider_id
 
 
@@ -673,9 +657,6 @@ def validate_required_static_members(
         missing_display = ", ".join(missing_members)
         raise ValueError(f"Missing required GTFS members: {missing_display}")
     if not (OPTIONAL_SERVICE_MEMBERS & set(member_map)):
-        # GTFS requires at least one of calendar.txt / calendar_dates.txt. In
-        # tolerant mode let the rest of the schedule dims load (the service
-        # calendar will simply be empty) but record the gap.
         if strict_gtfs:
             raise ValueError(
                 "At least one of calendar.txt or calendar_dates.txt must be present."
@@ -789,12 +770,6 @@ def _member_should_load(
     strict_gtfs: bool,
     conformance: list[dict[str, str]],
 ) -> bool:
-    """Decide whether a member's typed load proceeds under the tolerance flag.
-
-    Returns True to load, False to skip (downgraded). Raises when a spine column
-    is missing (always) or when any required column is missing under strict mode.
-    A skipped non-spine member records a ``missing_required_column`` conformance
-    warning so the gap is surfaced instead of silently failing the whole load."""
     missing = REQUIRED_COLUMNS_BY_MEMBER[member_key] - header
     if not missing:
         return True
@@ -845,7 +820,7 @@ def _iter_gtfs_rows(
         for row in reader:
             row_count += 1
             yield _normalize_row(row)
-        # Publish facts only after EOF; a failed or abandoned load has no complete receipt.
+        # Publish a complete receipt only after EOF.
         if member_metadata is not None:
             member_metadata[member_name] = _MemberMetadata(columns, row_count, digest.hexdigest())
 
@@ -907,8 +882,7 @@ def _build_stop_record(
     provider_id: str,
     dataset_version_id: int,
 ) -> dict[str, object]:
-    # GTFS: stop_name is required for stops/stations/entrances (location_type
-    # 0/1/2, default 0) and optional for generic nodes (3) / boarding areas (4).
+    # GTFS requires stop_name for location types 0/1/2; types 3/4 may omit it.
     location_type = _parse_optional_int(row.get("location_type"))
     stop_name = _blank_to_none(row.get("stop_name"))
     if stop_name is None and location_type not in (3, 4):
@@ -1090,8 +1064,6 @@ def _build_translation_record(
         "record_id": _require_value(row, "record_id", "translations.txt"),
         "translation": _require_value(row, "translation", "translations.txt"),
     }
-
-
 
 
 def _load_member_rows(
@@ -1543,10 +1515,6 @@ def load_static_zip_to_silver(
         archive=archive,
     )
 
-    # Non-fatal feed conformance notes accumulated under tolerant mode. Spine
-    # members (routes/trips/stops/stop_times/calendar) always hard-fail on a
-    # missing required column regardless of strict_gtfs, so they are not threaded
-    # the flag; only the non-spine optional members can downgrade.
     conformance: list[dict[str, str]] = []
 
     with ZipFile(BytesIO(archive_bytes)) as zip_file:
@@ -1770,11 +1738,7 @@ def load_latest_static_to_silver(
         )
         for table in _POST_LOAD_ANALYZE_TABLES:
             connection.execute(text(f"ANALYZE {table}"))
-        # NOTE: static dataset pruning is intentionally NOT done here. Running it
-        # inside the load transaction (before refresh_gold_static re-points the
-        # gold dims) FK-violates with STATIC_DATASET_RETENTION_COUNT=1 and rolls
-        # back the entire silver load on every content change. Worker-cycle
-        # prune_silver_storage owns all static cleanup now (slice-9.1.1j).
+        # Prune static datasets after Gold dimensions move, outside the Silver load transaction.
 
 
     return result

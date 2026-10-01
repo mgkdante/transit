@@ -1,4 +1,3 @@
-"""Capture-day delay cohorts use one DST-safe calendar and explicit bounded recovery."""
 
 import json
 from contextlib import contextmanager
@@ -535,7 +534,6 @@ def test_explicit_bounded_rebuild_moves_old_feed_day_rows_and_removes_empty_old_
     old_day = DAY - timedelta(days=1)
     seed(conn, midnight(old_day), empty=True)
     seed(conn, midnight(DAY), feed=midnight(DAY) - timedelta(seconds=30))
-    # A historical row/watermark was materialized under feed-day attribution.
     conn.execute(
         text("""
         INSERT INTO gold.route_delay_spine

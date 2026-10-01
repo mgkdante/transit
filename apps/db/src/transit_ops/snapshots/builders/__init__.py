@@ -1,5 +1,3 @@
-"""Public snapshot builders mapping gold/silver rows to /v1 contract models."""
-
 from __future__ import annotations
 
 from transit_ops.snapshots.builders.historic import (

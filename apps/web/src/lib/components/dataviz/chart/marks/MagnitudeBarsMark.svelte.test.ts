@@ -11,8 +11,6 @@ import type { MagnitudeBarsSpec } from '../ChartSpec';
 
 const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
 
-// A row carrying Wilson bounds, used to prove the CI surfaces ONLY when spec.ciLabel is set (the
-// defensive guard). The sr-only table is the structure-independent AT mirror.
 const rowWithCi = {
 	key: 's1',
 	label: 'Stop One',
@@ -122,8 +120,8 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 	it('shows NO CI when ciLabel is unset, even though the row carries Wilson bounds (the guard)', () => {
 		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec(undefined) } });
 		const txt = cell(container);
-		expect(txt).toBe('44%'); // the value still renders with its unit
-		expect(txt).not.toContain('('); // no fabricated CI parenthetical
+		expect(txt).toBe('44%');
+		expect(txt).not.toContain('(');
 		expect(txt).not.toContain('31');
 		expect(txt).not.toContain('57');
 	});

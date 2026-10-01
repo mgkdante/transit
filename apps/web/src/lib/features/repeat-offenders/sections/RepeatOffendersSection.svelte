@@ -1,10 +1,3 @@
-<!--
-  RepeatOffendersSection — one offender kind inside an article-summary card.
-
-  The board owns kind presence and the shared top-N state. This pure presenter
-  renders exactly one supplied recurrence ladder and its below-floor tray,
-  preserving links, metric context, and honest absence.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -65,7 +58,6 @@
 			</SectionHeading>
 		</div>
 		<p class="caption" data-slot="offender-window">{windowCaption}</p>
-		<!-- HF guards the chart contract only; it imposes no constraint on the adjacent DataTable. -->
 		<div data-slot="offender-ladder" data-card-interactive>
 			<Chart spec={ladder.spec} />
 		</div>

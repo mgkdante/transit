@@ -1,22 +1,15 @@
-// Disabled collection must load no library, register no listeners and send no
-// requests. Enabled collection batches samples once on hide, without query/hash
-// or user identifiers. The shared schema owns the payload and limits.
-
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import { MAX_VITALS_SAMPLES, type VitalsBeacon, type VitalsSample } from './schema';
 
 const BEACON_PATH = '/api/vitals';
 
-/** Idempotency guard — startVitals() wires the listeners at most once per page. */
 let started = false;
 
-/** True only when the PUBLIC flag is EXACTLY 'true'. Anything else = inert. */
 export function vitalsEnabled(): boolean {
 	return env.PUBLIC_VITALS_ENABLED === 'true';
 }
 
-/** Pathname only — strips query string + hash so no params/PII ever leave. */
 function currentPath(): string {
 	try {
 		return window.location.pathname || '/';
@@ -25,7 +18,6 @@ function currentPath(): string {
 	}
 }
 
-/** Coarse connection type (e.g. '4g'), when the Network Information API exists. */
 function connectionType(): string | undefined {
 	const nav = navigator as Navigator & {
 		connection?: { effectiveType?: string };
@@ -34,10 +26,6 @@ function connectionType(): string | undefined {
 	return typeof effective === 'string' && effective ? effective : undefined;
 }
 
-/**
- * Start the collector. No-op (returns a no-op disposer) unless we are in the
- * browser AND PUBLIC_VITALS_ENABLED === 'true'. Safe to call from onMount.
- */
 export function startVitals(): () => void {
 	const noop = () => {};
 	if (!browser || started || !vitalsEnabled()) return noop;
@@ -47,8 +35,6 @@ export function startVitals(): () => void {
 	let flushed = false;
 
 	const record = (sample: VitalsSample) => {
-		// Key by the web-vitals instance id so a re-reported metric (e.g. INP
-		// updating before flush) overwrites rather than duplicates. Bounded.
 		if (buffer.size >= MAX_VITALS_SAMPLES && !buffer.has(sample.id)) return;
 		buffer.set(sample.id, sample);
 	};
@@ -56,7 +42,7 @@ export function startVitals(): () => void {
 	const flush = () => {
 		if (flushed) return;
 		if (buffer.size === 0) return;
-		flushed = true; // single-shot: the page is going away
+		flushed = true;
 
 		const beacon: VitalsBeacon = { samples: [...buffer.values()] };
 		const body = JSON.stringify(beacon);
@@ -68,10 +54,9 @@ export function startVitals(): () => void {
 				if (ok) return;
 			}
 		} catch {
-			// fall through to the keepalive fetch
+			// Fall through to the keepalive fetch.
 		}
 
-		// Fallback: keepalive fetch survives the unload the same way sendBeacon does.
 		try {
 			void fetch(BEACON_PATH, {
 				method: 'POST',
@@ -86,8 +71,6 @@ export function startVitals(): () => void {
 
 	let dispose = noop;
 
-	// Dynamic import so web-vitals is NOT bundled into the hot path when the flag
-	// is off (the early return above already prevents this call when disabled).
 	void import('web-vitals')
 		.then(({ onCLS, onFCP, onINP, onLCP, onTTFB }) => {
 			const toSample = (metric: {
@@ -109,7 +92,6 @@ export function startVitals(): () => void {
 				};
 			};
 
-			// reportAllChanges:true so the latest value is buffered before unload.
 			const opts = { reportAllChanges: true };
 			onCLS((m) => record(toSample(m)), opts);
 			onFCP((m) => record(toSample(m)), opts);
@@ -128,11 +110,7 @@ export function startVitals(): () => void {
 				window.removeEventListener('pagehide', flush);
 			};
 		})
-		.catch(() => {
-			// web-vitals failed to load — stay inert, never throw.
-		});
+		.catch(() => {});
 
-	// The disposer detaches whatever got wired (a no-op if the import is still
-	// in flight or failed). startVitals stays single-shot regardless.
 	return () => dispose();
 }

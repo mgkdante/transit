@@ -47,9 +47,7 @@ def run_migrations_online(url: str) -> None:
     connectable = create_engine(url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
-        # transaction_per_migration: each migration commits in its own
-        # transaction so a long chain against prod is resumable from the failed
-        # step instead of rolling the whole chain back (wave-2 deploy hardening).
+        # Commit migrations individually so a failed chain resumes without replaying completed work.
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

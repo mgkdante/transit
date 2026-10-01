@@ -1,4 +1,3 @@
-"""Daily first builds and explicit repairs preserve dirty evidence."""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -413,6 +412,4 @@ def test_retained_source_still_completes_each_kind_even_when_every_delay_is_inel
         )
         assert built == 1
         assert delay_days.delay_day_state(conn, PROVIDER, kind, DAY) == "clean"
-        # Route spine retains the total-observation denominator; the other six
-        # builders can legitimately reduce a present but unusable population to zero.
         assert bool(rows(conn, table, PROVIDER)) == (delay == 60 or kind == "route_delay_spine")

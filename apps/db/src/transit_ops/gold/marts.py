@@ -57,13 +57,7 @@ ANALYZE_REALTIME_SILVER_TABLES = named_query(
     """,
 )
 
-# Seconds since the most-recent ANALYZE (manual or autoanalyze) across the five
-# realtime silver tables, or NULL if none has ever been analyzed. Used to
-# throttle the per-cycle ANALYZE below: the full ANALYZE (incl. the ~500M-row
-# rt_trip_update_stop_times) takes SHARE UPDATE EXCLUSIVE + heavy sampling I/O
-# inside the advisory-locked gold-refresh TX and ran unconditionally ~1500x/day.
-# We take the MIN age (the table analyzed longest ago) so a table that has gone
-# stale forces a refresh even if a sibling was just analyzed.
+# Use recorded ANALYZE ages to throttle expensive sampling under the refresh lock.
 SELECT_REALTIME_ANALYZE_AGE_SECONDS = named_query(
     "mart.realtime.analyze_age",
     """
@@ -85,23 +79,10 @@ SELECT_REALTIME_ANALYZE_AGE_SECONDS = named_query(
 
 
 def _realtime_analyze_is_due(connection: Connection, *, min_interval_seconds: int) -> bool:
-    """Return True when the per-cycle realtime-silver ANALYZE should run.
-
-    The ANALYZE is throttled to at most once per ``min_interval_seconds`` so the
-    heavy, advisory-locked ANALYZE of the ~500M-row realtime tables no longer
-    runs on every ~57s cycle. Per-snapshot upserts filter on a constant
-    rt_feed_snapshot_id, so stale stats barely move the plan between refreshes.
-
-    Runs the ANALYZE when the throttle is disabled (interval <= 0) or when the
-    realtime tables have never been analyzed (no pg_stat row / NULL age — the
-    fresh-DB bootstrap case), and otherwise only once the oldest table's stats
-    are at least ``min_interval_seconds`` old.
-    """
     if min_interval_seconds <= 0:
         return True
     age_seconds = connection.execute(SELECT_REALTIME_ANALYZE_AGE_SECONDS).scalar()
     if age_seconds is None:
-        # No recorded ANALYZE yet (fresh DB, or stats reset) — refresh now.
         return True
     return float(age_seconds) >= float(min_interval_seconds)
 
@@ -148,14 +129,7 @@ ACQUIRE_GOLD_BUILD_LOCK = named_query(
     """,
 )
 
-# Empty-silver guard (slice-9.1.1j): refresh_gold_static DELETEs all dims and
-# re-INSERTs them from the current version's silver rows. If the current version
-# has zero silver.routes rows (the wedged prod state where ingestion flipped
-# is_current but the silver load rolled back), an unguarded refresh would wipe
-# gold dims and INSERT nothing, then the prune would delete the old version's
-# silver too — emptying the static tier. routes.txt is a REQUIRED static member
-# and gold.dim_route is the FK-holder at issue, so silver.routes is the right
-# sentinel.
+# Require current Silver routes before replacing Gold dimensions and pruning older Silver.
 SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = named_query(
     "mart.silver_routes.exists",
     """
@@ -379,12 +353,7 @@ INSERT_DIM_DATE = named_query(
 )
 
 
-# --- dim name history (slice-9.1.1u) -------------------------------------
-# Append-only SCD-lite writers for gold.dim_route_history / dim_stop_history.
-# Diffed against the NEW-version silver rows (never the old version: the
-# per-cycle silver prune deletes the previous dataset within ~one realtime
-# cycle of a GTFS edition flip). CLOSE must run before OPEN on the same
-# connection; rerunning with the same dataset version is a no-op.
+# Close name history before opening new rows on the same connection.
 
 CLOSE_DIM_ROUTE_HISTORY = named_query(
     "mart.dim_route_history.close",
@@ -500,13 +469,7 @@ OPEN_DIM_STOP_HISTORY = named_query(
 )
 
 
-# --- schedule-version service summary (migration 0069) -------------------
-# Append-only, permanent per-GTFS-edition scheduled-service preservation keyed
-# by (provider_id, dataset_version_id, route_id, day_type). Written INSIDE
-# refresh_gold_static from the NEW version's silver.calendar/trips/stop_times
-# while the OLD version's silver still exists (deferred-prune window). Idempotent:
-# DELETE-by-full-dataset_version then INSERT, so re-running the same edition
-# re-writes identical rows. Never pruned — permanent edition history.
+# Preserve service summaries per dataset edition indefinitely.
 DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
     "mart.schedule_summary.delete",
     """
@@ -774,11 +737,7 @@ def _trip_delay_snapshot_statement(
     latest_snapshot_filter = (
         "AND rfs.source_realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
     )
-    # The per-cycle refresh must not aggregate the whole 14-day
-    # rt_trip_update_stop_times table (prod: ~252M rows / 29 GB -> ~691s
-    # cycles); scope the counts CTE to the snapshot being refreshed. The
-    # full-rebuild path repopulates every retained snapshot, so it keeps the
-    # unscoped aggregate.
+    # Per-cycle counts must scan only the refreshed snapshot; full rebuilds scan retained history.
     stop_time_counts_scope_join = (
         """
             INNER JOIN silver.rt_feed_snapshots AS sfs
@@ -1259,13 +1218,6 @@ def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContex
 
 
 def _record_dim_name_history(connection: Connection, *, context: GoldBuildContext) -> None:
-    """Maintain the append-only name-history tables from new-version silver.
-
-    CLOSE before OPEN, per entity: a renamed/retired id gets its open row
-    closed first, then (if still present in silver) a fresh open row. Both
-    statement pairs are no-ops when rerun for the same dataset version.
-    History rows are never deleted here or anywhere else in the refresh paths.
-    """
     params = {
         "provider_id": context.provider_id,
         "dataset_version_id": context.dataset_version_id,
@@ -1279,15 +1231,6 @@ def _record_dim_name_history(connection: Connection, *, context: GoldBuildContex
 def _record_schedule_version_service_summary(
     connection: Connection, *, context: GoldBuildContext
 ) -> None:
-    """Preserve the NEW GTFS edition's scheduled service (migration 0069).
-
-    Reads the current version's silver.calendar/trips/stop_times/calendar_dates
-    while they still exist (the per-cycle silver prune defers the old version
-    until dims re-point). Idempotent per edition: DELETE-by-full-dataset_version
-    then INSERT, so a re-run of the same version re-writes identical rows.
-    day_type is a MEMBERSHIP model — a 7-day service's trips count under weekday,
-    saturday AND sunday. Never pruned (permanent edition history).
-    """
     params = {
         "provider_id": context.provider_id,
         "dataset_version_id": context.dataset_version_id,
@@ -1351,15 +1294,13 @@ def _refresh_gold_tables(
         "provider_timezone": context.provider_timezone,
         "dataset_version_id": context.dataset_version_id,
     }
-    # Retained frames include empty populations. Discarded Gold-only
-    # history is operational source expiry, not a correction to its frozen day.
+    # Source expiry is not a correction to a frozen day.
     snapshot_ids = connection.execute(SELECT_RETAINED_TRIP_CAPTURE_IDS, params).scalars().all()
     lock_delay_hours(connection, context.provider_id)
     for snapshot_id in snapshot_ids:
         invalidate_delay_snapshot(connection, context.provider_id, snapshot_id)
     invalidate_delay_days(connection, context.provider_id, snapshot_ids)
-    # Daily workers hold their day lock before reading facts. Acquiring these
-    # exclusive locks earlier would invert that order and deadlock with a build.
+    # Acquire day locks before fact locks to avoid deadlocking daily workers.
     connection.execute(LOCK_GOLD_TABLES)
     _delete_existing_provider_rows(connection, provider_id=context.provider_id)
     connection.execute(INSERT_DIM_ROUTE, params)
@@ -1370,7 +1311,7 @@ def _refresh_gold_tables(
     _record_schedule_version_service_summary(connection, context=context)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
     connection.execute(INSERT_FACT_TRIP_DELAY_SNAPSHOT, params)
-    # A full historical rebuild cannot advance or erase the independently served caches.
+    # Historical rebuilds must preserve independently served caches.
     latest_row_counts = {
         table: _count_gold_rows(connection, provider_id=context.provider_id, table_name=table)
         for table in ("latest_trip_delay_snapshot", "latest_vehicle_snapshot")

@@ -1,5 +1,3 @@
-"""Full-retention Repeat Offenders payloads as of each closed local day."""
-
 from __future__ import annotations
 
 from collections import deque
@@ -174,7 +172,6 @@ def _daily_counts(
 
 
 def _postgres_avg_seconds(counts: _Counts) -> Decimal | None:
-    """Mirror ``ROUND(AVG(delay_seconds)::numeric, 1)`` from the fixed mart."""
 
     if counts.observation_count <= 0:
         return None
@@ -184,7 +181,6 @@ def _postgres_avg_seconds(counts: _Counts) -> Decimal | None:
 
 
 def _scalar_severity(recurrence_days: int, average_seconds: Decimal) -> str:
-    """Apply the mutable mart's CASE to its already rounded seconds value."""
 
     if (
         recurrence_days >= OFFENDER_SEVERITY_CRITICAL_RECURRENCE
@@ -202,13 +198,6 @@ def _scalar_offenders(
     local_date: str,
     names: HistoryNameIndex,
 ) -> list[Offender]:
-    """Recompose the fixed scalar doctrine over 14 closed provider-local dates.
-
-    The mutable mart follows configured fact retention (14 days by default) and can
-    include an open local day and a partial oldest day. Exact newest scalar
-    parity requires 14-day retention aligned to these same closed dates;
-    immutable history always keeps its fixed closed-day window.
-    """
 
     ranked: list[tuple[int, Decimal, str, str, str, Offender]] = []
     for (kind, entity_id, route_id), value in counts.items():
@@ -218,8 +207,8 @@ def _scalar_offenders(
         average_seconds = _postgres_avg_seconds(value)
         if average_seconds is None:
             continue
-        # The scalar mart applies its CASE after rounding avg seconds to 1 dp.
-        # By-grain severity deliberately remains on the unrounded pooled mean.
+        # Scalar severity uses rounded mean seconds; windowed severity uses the unrounded pooled
+        # mean.
         severity = _scalar_severity(recurrence_days, average_seconds)
         ranked.append(
             (
@@ -362,7 +351,6 @@ class RepeatOffendersHistoryPlan:
         return _iter_repeat_offender_days(daily_rows=self.daily_rows, names=self.names)
 
     def materialize(self) -> list[HistoricRepeatOffendersDay]:
-        """Compatibility helper for bounded pure-test callers."""
 
         return list(self.iter_days())
 
@@ -373,7 +361,6 @@ def build_repeat_offenders_history_plan_from_rows(
     name_rows: Iterable[Mapping[str, Any]],
     provider_timezone: str,
 ) -> RepeatOffendersHistoryPlan:
-    """Build the streaming plan from an already ordered retained source."""
 
     return RepeatOffendersHistoryPlan(
         daily_rows=daily_rows,
@@ -387,7 +374,6 @@ def build_repeat_offenders_history_plan(
     *,
     names: HistoryNameIndex | None = None,
 ) -> RepeatOffendersHistoryPlan:
-    """Read the daily stream, resolving provider names when they are not shared."""
 
     params = {"provider_id": provider_id}
     if names is None:

@@ -302,10 +302,6 @@ def _write_beta_gtfs_zip(
 
 
 def _minimal_compliant_members() -> dict[str, str]:
-    """The members of a fully GTFS-compliant single-agency feed that exercises the
-    loader relaxations: agency.txt with no agency_id column, feed_info.txt with no
-    date range / version, and a generic-node stop (location_type 3) with no
-    stop_name. Mirrors the minimal shape a small third-party provider may ship."""
     return {
         "agency.txt": (
             "agency_name,agency_url,agency_timezone\n"
@@ -629,8 +625,6 @@ def test_build_agency_record_synthesizes_agency_id_when_absent() -> None:
         dataset_version_id=700,
     )
 
-    # GTFS allows omitting agency_id on a single-agency feed; the loader
-    # synthesizes a stable surrogate so silver.agency (agency_id NOT NULL) loads.
     assert record["agency_id"] == "sto"
     assert record["agency_name"] == "Societe de transport de l'Outaouais"
 
@@ -702,8 +696,6 @@ def test_load_static_zip_to_silver_welcomes_minimal_compliant_feed(
         bronze_storage=bronze_storage,
     )
 
-    # A single-agency feed with no agency_id, no feed_info dates/version, and a
-    # nameless generic-node stop loads end-to-end without raising.
     assert result.row_counts["agency"] == 1
     assert result.row_counts["feed_info"] == 1
     assert result.row_counts["routes"] == 1
@@ -715,7 +707,6 @@ def test_strict_gtfs_hard_fails_on_non_spine_member_missing_required_column(
     tmp_path: Path,
 ) -> None:
     members = _minimal_compliant_members()
-    # agency.txt missing the required agency_timezone column.
     members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
     zip_path = tmp_path / "broken-agency.zip"
     _write_members_zip(zip_path, members)
@@ -748,9 +739,8 @@ def test_tolerant_gtfs_downgrades_non_spine_member_to_conformance_warning(
         strict_gtfs=False,
     )
 
-    # The rest of the feed loads; the broken member is skipped and surfaced.
     assert result.row_counts["routes"] == 1
-    assert "agency" not in result.row_counts  # skipped, recorded zero
+    assert "agency" not in result.row_counts
     assert {
         "member": "agency.txt",
         "kind": "missing_required_column",
@@ -762,7 +752,6 @@ def test_tolerant_gtfs_still_hard_fails_on_spine_member_missing_column(
     tmp_path: Path,
 ) -> None:
     members = _minimal_compliant_members()
-    # routes.txt missing the spine route_type column -- always fatal.
     members["routes.txt"] = "route_id,route_short_name,route_long_name\n1,1,Centre-ville\n"
     zip_path = tmp_path / "broken-routes.zip"
     _write_members_zip(zip_path, members)
@@ -1139,8 +1128,6 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "translations": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
-    # The post-load ANALYZE batch runs in the same begin() connection after the
-    # seed: one statement per bulk-seeded silver table, seed statements first.
     analyze_calls = [sql for sql, _ in engine.begin_connection.calls if sql.startswith("ANALYZE ")]
     assert analyze_calls == [
         f"ANALYZE {table}" for table in static_silver_module._POST_LOAD_ANALYZE_TABLES
@@ -1205,13 +1192,6 @@ def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_m
 
 
 def test_load_latest_static_to_silver_does_not_prune_inside_the_load_transaction() -> None:
-    """Pruning must not run inside the silver-load transaction.
-
-    With STATIC_DATASET_RETENTION_COUNT=1 an in-load prune FK-fails against gold
-    dims (which still reference the previous version) and rolls back the entire
-    load on every content change — the prod wedge. Worker-cycle pruning
-    (prune_silver_storage) owns all static cleanup now (slice-9.1.1j).
-    """
     import inspect
 
     source = inspect.getsource(load_latest_static_to_silver)

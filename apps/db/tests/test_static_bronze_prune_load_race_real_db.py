@@ -1,4 +1,3 @@
-"""A static archive remains available while its Silver load is using it."""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta

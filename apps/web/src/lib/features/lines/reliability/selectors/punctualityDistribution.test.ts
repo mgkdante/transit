@@ -27,9 +27,9 @@ function vmWithHistogram(
 const hist = [
 	{ lo_sec: -60, hi_sec: -30, count: 3 },
 	{ lo_sec: -30, hi_sec: 0, count: 12 },
-	{ lo_sec: 0, hi_sec: 30, count: 20 }, // the peak
+	{ lo_sec: 0, hi_sec: 30, count: 20 },
 	{ lo_sec: 30, hi_sec: 60, count: 8 },
-	{ lo_sec: 1800, hi_sec: null, count: 1 }, // the [3600+] overflow shape (hi=null)
+	{ lo_sec: 1800, hi_sec: null, count: 1 },
 ];
 
 describe('selectPunctualityDistribution — the A1 signed-delay histogram', () => {
@@ -38,15 +38,13 @@ describe('selectPunctualityDistribution — the A1 signed-delay histogram', () =
 		expect(spec.kind).toBe('histogram');
 		if (spec.kind !== 'histogram') return;
 		expect(spec.domain).toBe(DELAY_HISTOGRAM_DOMAIN);
-		expect(spec.domain[0]).toBeLessThan(0); // straddles 0 (signed)
+		expect(spec.domain[0]).toBeLessThan(0);
 		expect(spec.domain[1]).toBeGreaterThan(0);
-		// countDomain = [0, the distribution's own peak] — readable shape, zero-based.
 		expect(spec.countDomain).toEqual([0, 20]);
 		expect(spec.bins.map((b) => b.count)).toEqual([3, 12, 20, 8, 1]);
-		expect(spec.bins[4].hi).toBeNull(); // the overflow bin keeps hi=null
-		// p50/p90 are MINUTES on the headline → SECONDS on the bins' axis.
-		expect(spec.medianRef).toBe(60); // 1.0 min → 60 s
-		expect(spec.p90Ref).toBe(300); // 5.0 min → 300 s
+		expect(spec.bins[4].hi).toBeNull();
+		expect(spec.medianRef).toBe(60);
+		expect(spec.p90Ref).toBe(300);
 	});
 
 	it('null delay_histogram (day grain / range) → honest absence, never a fabricated shape', () => {

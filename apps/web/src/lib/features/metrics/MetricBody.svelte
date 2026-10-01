@@ -1,7 +1,6 @@
 <script module lang="ts">
 	import type { MetricKey } from './metrics.content';
 
-	/** Svelte-rendered static body HTML for the request locale. */
 	export type MetricBodies = Readonly<Record<MetricKey, string>>;
 </script>
 
@@ -20,13 +19,11 @@
 	}: {
 		entry: MetricEntry;
 		locale: Locale;
-		/** Only HTML produced by metrics.server.ts from this component. */
 		serverHtml?: string;
 	} = $props();
 	const t = $derived(metricsCopy[locale]);
 	let host = $state<HTMLDivElement>();
 
-	// The opaque SSR branch keeps its markup; restore only the existing word actions.
 	$effect(() => {
 		if (serverHtml === undefined || !host) return;
 		const actions = Array.from(host.querySelectorAll<HTMLElement>('[data-easter-effect]'), (node) =>
@@ -75,7 +72,6 @@
 {/if}
 
 <style>
-	/* Preserve the information stack's existing direct-child layout. */
 	.metric__static-information {
 		display: contents;
 	}

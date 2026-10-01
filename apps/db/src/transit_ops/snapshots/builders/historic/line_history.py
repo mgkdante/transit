@@ -1,5 +1,3 @@
-"""Full-retention per-Line daily metrics partitioned by entity and local month."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence

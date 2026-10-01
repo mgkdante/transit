@@ -16,10 +16,8 @@ import { VEHICLE_SOURCE, type VehicleFC, type VehicleFeature } from './vehicleLa
 import { STALE_CUTOFF_S } from './vehicleProjection';
 import { cumulativeLengths, projectToPolyline, type Coord } from './polyline';
 
-// A long, due-east straight shape near Montréal so an advanced point stays on it
-// for any plausible projection distance (km of headroom). East leg → tangent ~90°.
 const W = [-73.7, 45.5] as Coord;
-const E = [-73.4, 45.5] as Coord; // ~23 km east of W
+const E = [-73.4, 45.5] as Coord;
 const STRAIGHT: Coord[] = [W, E];
 const N = [-73.7, 45.7] as Coord;
 const NORTHBOUND: Coord[] = [W, N];
@@ -29,7 +27,6 @@ function isoAgo(seconds: number): string {
 	return new Date(NOW_MS - seconds * 1000).toISOString();
 }
 
-/** A one-bus FC at lon/lat on route '161' with an explicit feed bearing. */
 function fcAt(lon: number, lat: number, bearing = 0, id = '40061'): VehicleFC {
 	return {
 		type: 'FeatureCollection',
@@ -59,7 +56,6 @@ function feature(lon: number, lat: number, bearing = 0): VehicleFeature {
 const straightShape: ShapeResolver = () => STRAIGHT;
 const noShape: ShapeResolver = () => null;
 
-/** Fix resolver: every bus reported `ageS` ago, moving at `speedMps`. */
 function fixFor(ageS: number, speedMps: number | null): FixResolver {
 	const fix: VehicleFix = {
 		reportedUtc: isoAgo(ageS),
@@ -69,7 +65,6 @@ function fixFor(ageS: number, speedMps: number | null): FixResolver {
 	return () => fix;
 }
 
-/** Stub MapLibre map: only getSource('vehicles').setData is exercised. */
 function stubMap() {
 	const setData = vi.fn();
 	const setFeatureState = vi.fn();
@@ -91,11 +86,6 @@ function lastFeature(setData: ReturnType<typeof vi.fn>): VehicleFeature {
 	return fc.features[0];
 }
 
-/**
- * Controlled runtime: the test owns the frame scheduler + the monotonic + server
- * clocks, so projection is fully deterministic. `tick(ms, serverDeltaMs?)` advances
- * both clocks and fires exactly one queued frame.
- */
 function controlledRuntime() {
 	let nowMs = 1000;
 	let serverNow = NOW_MS;
@@ -126,7 +116,7 @@ describe('power1Out', () => {
 	it('is the out-quad curve 1−(1−t)², clamped to [0,1]', () => {
 		expect(power1Out(0)).toBe(0);
 		expect(power1Out(1)).toBe(1);
-		expect(power1Out(0.5)).toBeCloseTo(0.75, 6); // decelerating: past the midpoint
+		expect(power1Out(0.5)).toBeCloseTo(0.75, 6);
 		expect(power1Out(-1)).toBe(0);
 		expect(power1Out(2)).toBe(1);
 	});
@@ -140,9 +130,9 @@ describe('projectEntry (pure)', () => {
 		};
 		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
 		expect(result.frozen).toBe(false);
-		expect(out.geometry.coordinates[0]).toBeGreaterThan(W[0]); // advanced east
+		expect(out.geometry.coordinates[0]).toBeGreaterThan(W[0]);
 		expect(out.geometry.coordinates[1]).toBeCloseTo(45.5, 5);
-		expect(out.properties.bearing).toBeCloseTo(90, 0); // shape tangent, not 17
+		expect(out.properties.bearing).toBeCloseTo(90, 0);
 		expect(out.properties.stale).toBe(0);
 	});
 
@@ -170,7 +160,7 @@ describe('projectEntry (pure)', () => {
 		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
 		expect(result.frozen).toBe(true);
 		expect(result.stale).toBe(true);
-		expect(out.properties.stale).toBe(1); // the per-bus "!" flag
+		expect(out.properties.stale).toBe(1);
 		expect(out.geometry.coordinates).toEqual([W[0], W[1]]);
 	});
 
@@ -178,7 +168,7 @@ describe('projectEntry (pure)', () => {
 		const entry = { feature: feature(W[0], W[1], 5), fix: null };
 		const { result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
 		expect(result.frozen).toBe(true);
-		expect(result.stale).toBe(true); // null fix ⇒ Infinity age ⇒ stale
+		expect(result.stale).toBe(true);
 	});
 
 	it('blends from the ease-correct origin toward the projection (continuous, no snap)', () => {
@@ -186,12 +176,9 @@ describe('projectEntry (pure)', () => {
 			feature: feature(W[0], W[1], 90),
 			fix: { reportedUtc: isoAgo(5), updatedUtc: isoAgo(5), speedMps: 10 },
 		};
-		// Projection target (no blend) — the destination of the ease.
 		const target = projectEntry(entry, NOW_MS, 0, straightShape, undefined).feature.geometry
 			.coordinates[0];
-		const origin = -73.71; // clearly WEST of the projection (target ≈ -73.6994)
-		// At blend start (e=0) the dot sits at the origin; partway it is between; at
-		// the end it reaches the projection — monotone, never overshooting.
+		const origin = -73.71;
 		const at0 = projectEntry(entry, NOW_MS, 1000, straightShape, {
 			fromCoord: [origin, 45.5],
 			fromBearing: 90,
@@ -288,8 +275,8 @@ describe('createVehicleMotionController — forward projection', () => {
 		});
 
 		expect(setData).toHaveBeenCalledTimes(1);
-		expect(lastLon(setData)).toBe(-73.58); // exact reported position, no projection
-		expect(hasPending()).toBe(false); // no loop scheduled
+		expect(lastLon(setData)).toBe(-73.58);
+		expect(hasPending()).toBe(false);
 		c.destroy();
 	});
 
@@ -314,7 +301,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const c = createVehicleMotionController(map, runtime);
 
-		// Bus at W, moving east at 10 m/s, fixed 5s ago. First feed renders at once.
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: 't1',
 			animate: true,
@@ -323,11 +309,9 @@ describe('createVehicleMotionController — forward projection', () => {
 			serverNowFn,
 		});
 		const afterFeed = lastLon(setData);
-		expect(afterFeed).toBeGreaterThan(W[0]); // already projected forward from the fix
+		expect(afterFeed).toBeGreaterThan(W[0]);
 
-		// Advance the server clock 10s and fire a frame: the bus advances FURTHER east
-		// (the fix ages → more distance under the decaying-speed model).
-		frame(40, 10_000); // >33ms monotonic clears the throttle
+		frame(40, 10_000);
 		expect(lastLon(setData)).toBeGreaterThan(afterFeed);
 		c.destroy();
 	});
@@ -340,14 +324,14 @@ describe('createVehicleMotionController — forward projection', () => {
 		c.set(fcAt(W[0], W[1], 200), {
 			tickKey: 't1',
 			animate: true,
-			fixFor: fixFor(STALE_CUTOFF_S, 10), // already past the cutoff
+			fixFor: fixFor(STALE_CUTOFF_S, 10),
 			shapeFor: straightShape,
 			serverNowFn,
 		});
-		expect(lastLon(setData)).toBe(W[0]); // frozen at the reported coord
-		expect(lastFeature(setData).properties.stale).toBe(1); // the "!" flag
+		expect(lastLon(setData)).toBe(W[0]);
+		expect(lastFeature(setData).properties.stale).toBe(1);
 
-		frame(40, 20_000); // even more time passes → still frozen
+		frame(40, 20_000);
 		expect(lastLon(setData)).toBe(W[0]);
 		expect(lastFeature(setData).properties.stale).toBe(1);
 		c.destroy();
@@ -358,7 +342,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const c = createVehicleMotionController(map, runtime);
 
-		// Fresh at first feed (5s old, well under the 150s cutoff).
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: 't1',
 			animate: true,
@@ -368,8 +351,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		});
 		expect(lastFeature(setData).properties.stale).toBe(0);
 
-		// Jump the server clock past the cutoff WITHOUT a new poll → the rAF loop
-		// re-stamps the per-bus stale flag off the live projection.
 		frame(40, STALE_CUTOFF_S * 1000);
 		expect(lastFeature(setData).properties.stale).toBe(1);
 		c.destroy();
@@ -380,7 +361,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const c = createVehicleMotionController(map, runtime);
 
-		// Poll 1: bus at W. Let it project forward a little.
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: 't1',
 			animate: true,
@@ -391,9 +371,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		frame(40, 5_000);
 		const displayedBeforeJump = lastLon(setData);
 
-		// Poll 2: a NEW fix that has the bus much further EAST (a correction). The
-		// re-feed must NOT snap there — the first rendered lon stays near where the
-		// dot was, then eases toward the new projection over the blend window.
 		c.set(fcAt(-73.55, 45.5), {
 			tickKey: 't2',
 			animate: true,
@@ -402,12 +379,8 @@ describe('createVehicleMotionController — forward projection', () => {
 			serverNowFn,
 		});
 		const justAfterRefeed = lastLon(setData);
-		// The blend ORIGIN is the prior displayed dot, so the first frame after the
-		// new fix is close to it — not jumped onto the far new projection.
 		expect(justAfterRefeed).toBeCloseTo(displayedBeforeJump, 3);
 
-		// Step through the blend window: the dot eases EAST toward the new projection,
-		// monotonically (no rubber-band back-and-forth).
 		frame(450, 450);
 		const mid = lastLon(setData);
 		frame(450, 450);
@@ -431,7 +404,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		});
 		frame(40, 5_000);
 		const before = lastLon(setData);
-		// New fix → blend begins.
 		c.set(fcAt(-73.55, 45.5), {
 			tickKey: 't2',
 			animate: true,
@@ -440,10 +412,8 @@ describe('createVehicleMotionController — forward projection', () => {
 			serverNowFn,
 		});
 		const afterNew = lastLon(setData);
-		expect(afterNew).toBeCloseTo(before, 3); // eased from the displayed dot
+		expect(afterNew).toBeCloseTo(before, 3);
 
-		// Same tickKey re-feed midway (e.g. a hover): blend continues, no reset to the
-		// origin. The re-feed renders at the blend's current point, further east.
 		frame(450, 0);
 		const midBlend = lastLon(setData);
 		c.set(fcAt(-73.55, 45.5, 0, '40061'), {
@@ -454,7 +424,6 @@ describe('createVehicleMotionController — forward projection', () => {
 			serverNowFn,
 		});
 		const afterSameTick = lastLon(setData);
-		// Continues forward from the blend (>= the mid-blend point), not reset west.
 		expect(afterSameTick).toBeGreaterThanOrEqual(midBlend - 1e-6);
 		c.destroy();
 	});
@@ -471,16 +440,14 @@ describe('createVehicleMotionController — forward projection', () => {
 			shapeFor: straightShape,
 			serverNowFn,
 		});
-		expect(setData).toHaveBeenCalledTimes(1); // the re-feed renders unthrottled
+		expect(setData).toHaveBeenCalledTimes(1);
 		setData.mockClear();
 
-		// Two sub-33ms frames coalesce; the loop keeps rescheduling but only the one
-		// past the gate pushes setData.
 		frame(16, 1000);
 		frame(16, 1000);
-		expect(setData).toHaveBeenCalledTimes(0); // both inside the ~33ms gate
+		expect(setData).toHaveBeenCalledTimes(0);
 		frame(40, 1000);
-		expect(setData).toHaveBeenCalledTimes(1); // cleared the gate
+		expect(setData).toHaveBeenCalledTimes(1);
 		c.destroy();
 	});
 
@@ -868,8 +835,6 @@ describe('createVehicleMotionController — forward projection', () => {
 			get(target, property, receiver) {
 				if (property === 'length') {
 					lengthReads += 1;
-					// The first four reads build valid lengths; only projectToPolyline's
-					// own guard sees an empty shape and returns null.
 					return lengthReads >= 5 ? 0 : 2;
 				}
 				return Reflect.get(target, property, receiver);
@@ -1096,11 +1061,10 @@ describe('createVehicleMotionController — forward projection', () => {
 			serverNowFn,
 		});
 		const out = lastFeature(setData).geometry.coordinates as Coord;
-		// Projecting the displayed point back onto the shape gives a positive arc.
 		const lengths = cumulativeLengths(STRAIGHT);
 		const back = projectToPolyline(STRAIGHT, out, lengths)!;
 		expect(back.s).toBeGreaterThan(0);
-		expect(back.distance).toBeLessThan(1); // sits ON the shape
+		expect(back.distance).toBeLessThan(1);
 		c.destroy();
 	});
 });
@@ -1125,8 +1089,6 @@ describe('vehicle source delivery', () => {
 				});
 			},
 		};
-		// Use the installed source's real coalescing, mirror and error behavior;
-		// only the actor settlement is controlled. No worker or WebGL is started.
 		const source = new GeoJSONSource(
 			VEHICLE_SOURCE,
 			{ type: 'geojson', data: { type: 'FeatureCollection', features: [] }, promoteId: 'id' },
@@ -1146,8 +1108,6 @@ describe('vehicle source delivery', () => {
 			if (!call) throw new Error('expected a pending source write');
 			if (error) call.reject(error);
 			else call.resolve();
-			// Settle the real source/controller promise chains without advancing
-			// either projection clock or inventing a browser animation frame.
 			await setImmediate();
 		}
 		return { source, setData, updateData, on, off, messages, errors, settle };

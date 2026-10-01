@@ -1,4 +1,3 @@
-"""Real-PostgreSQL proof for retained-alert publication mapping and isolation."""
 
 from __future__ import annotations
 
@@ -75,7 +74,6 @@ def _insert(
             "end": end,
             "periods": json.dumps(periods),
             "url": "https://www.stm.info/fr/infos/etat-du-service",
-            # 00:30Z is the prior provider-local date in Montréal.
             "first_seen": start - timedelta(minutes=30),
             "last_seen": (end or start) + timedelta(minutes=5),
             "content_hash": f"hash-{provider}-{alert_id}",

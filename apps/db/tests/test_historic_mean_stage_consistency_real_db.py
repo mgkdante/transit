@@ -1,4 +1,3 @@
-"""Historic publication must not mix repaired daily values with stale exact means."""
 
 import json
 from datetime import UTC, datetime, timedelta

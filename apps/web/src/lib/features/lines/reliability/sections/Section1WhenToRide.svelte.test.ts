@@ -15,7 +15,7 @@ const row = (
 	grain,
 	otpPct,
 	avgDelayMin: null,
-	severePct: 5, // keeps hasShiftStrip true so the section isn't the honest-empty branch
+	severePct: 5,
 	observationCount,
 	onTime,
 	priorOtpPct,

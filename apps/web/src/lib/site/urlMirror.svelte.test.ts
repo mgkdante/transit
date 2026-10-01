@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mutable mock of the SvelteKit page URL + a spy replaceState — the helper's only two dependencies.
 let mockUrl = new URL('http://localhost/lines/51');
 const replaceState = vi.fn();
 vi.mock('$app/state', () => ({
@@ -89,18 +88,16 @@ describe('mirrorSearchParams (batched, race-free)', () => {
 	});
 
 	it('clears grain+from+to in ONE replaceState (the per-param clobber fix)', () => {
-		// the real-app bug: three separate single writes each cloned the async-stale url and the LAST
-		// won, leaving ?grain=range&from=… stuck. One batched write deletes all three cleanly.
 		mockUrl = new URL(
 			'http://localhost/lines/51?grain=range&from=2026-06-20&to=2026-06-25&tab=reliability',
 		);
 		mirrorSearchParams({ grain: null, from: null, to: null });
-		expect(replaceState).toHaveBeenCalledOnce(); // ONE write, not three
+		expect(replaceState).toHaveBeenCalledOnce();
 		const u = new URL(replaceState.mock.calls[0][0] as string, 'http://localhost');
 		expect(u.searchParams.get('grain')).toBeNull();
 		expect(u.searchParams.get('from')).toBeNull();
 		expect(u.searchParams.get('to')).toBeNull();
-		expect(u.searchParams.get('tab')).toBe('reliability'); // an untouched param is preserved
+		expect(u.searchParams.get('tab')).toBe('reliability');
 	});
 
 	it('sets and deletes in a single write (mixed)', () => {

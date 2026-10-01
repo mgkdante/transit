@@ -55,7 +55,6 @@ describe('VehicleResultRow', () => {
 		expect(screen.getByText('+4 min')).toBeInTheDocument();
 		expect(screen.getByText('Route 161')).toBeInTheDocument();
 		expect(screen.getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
-		// A bearing → a rotated heading arrow.
 		const arrow = container.querySelector('.vehicle-row-arrow') as HTMLElement | null;
 		expect(arrow?.getAttribute('style')).toContain('rotate(90deg)');
 	});
@@ -71,15 +70,10 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: null,
 			},
 		});
-		// No crowding telemetry + no delay reading + no next stop → three styled
-		// honest-absence chips ("Unknown · not reported"), never a fabricated band /
-		// "No delay" / 0, and never a plain easy-to-miss "no data".
 		const chips = container.querySelectorAll('[data-slot="absent-value"]');
 		expect(chips.length).toBe(3);
-		// Each chip says it is unknown AND why (the live feed omitted it).
 		expect(screen.getAllByText('Unknown').length).toBe(3);
 		expect(screen.getAllByText('not reported in the live feed').length).toBe(3);
-		// The fabricated plain strings are gone.
 		expect(screen.queryByText('No crowding data')).toBeNull();
 		expect(screen.queryByText('No delay')).toBeNull();
 	});
@@ -96,8 +90,6 @@ describe('VehicleResultRow', () => {
 			},
 		});
 		expect(container.querySelector('.vehicle-row-arrow')).toBeNull();
-		// Falls back to the static bus glyph + the styled honest-absence chip for the
-		// next stop (the next-stop subtitle carries an "absent-value" chip).
 		expect(container.querySelector('.vehicle-row-glyph')).not.toBeNull();
 		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
 		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
@@ -115,9 +107,7 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: null,
 			},
 		});
-		// The meaningless raw GTFS id is never surfaced to a rider…
 		expect(screen.queryByText('Next: 99999')).toBeNull();
-		// …the next-stop subtitle falls to the styled honest-absence chip instead.
 		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
 		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(screen.queryByText('No next stop')).toBeNull();

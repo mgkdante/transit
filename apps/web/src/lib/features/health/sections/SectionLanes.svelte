@@ -1,22 +1,3 @@
-<!--
-  SectionLanes — the /status "Pipeline lanes" section (S11).
-
-  One row per PUBLISH lane (live / static / rollup) from data_health.json: the
-  lane label + scheduled cadence, the last-publish age (relative, off the shared
-  clock via FreshnessStamp variant='updated'), the file counts written/total, and
-  the last value-gate verdict as a chip on the dataviz status scale. Plus the
-  MAINTENANCE honest not-applicable row (built from static copy — no DB heartbeat).
-
-  HONESTY: a null age/count/gate renders the styled honest-absence, never a
-  fabricated 0 or an assumed pass. The section STANDS DOWN entirely when the
-  data_health payload is absent (legacy publish) — the parent passes an empty
-  rows[] and this renders nothing.
-
-  DOCTRINE: the gate chip rides StatusDot on the status scale (on_time/late/
-  unknown), never --primary. Tokens only. The gate explainer is honest, not
-  alarmist: it states WHAT the gate checks (value-level rules that block a bad
-  historic publish) in plain words.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
@@ -36,13 +17,9 @@
 	const t = $derived(copy.lanes);
 </script>
 
-<!-- D3: the existing pipeline-lanes board framed in the ONE TerminalPanel idiom.
-     The section content is wrapped untouched — NOT a new top-of-page aggregate
-     panel (that is P5.3d). -->
 <TerminalPanel title={t.terminal.title} tag={t.terminal.tag} class="lanes-terminal">
 	<div class="health-block" data-slot="lanes-section">
 		<p class="health-note">{t.note}</p>
-		<!-- The gate explainer: one honest, not-alarmist sentence for the whole section. -->
 		<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>
 
 		<ul class="lanes-list" role="list" aria-label={t.listLabel} data-slot="lanes-list">
@@ -62,14 +39,11 @@
 
 					{#if row.applicable}
 						<div class="lane-meta">
-							<!-- Last publish: relative age off the shared clock (or "unknown" when the
-						     lane has never published). -->
 							<div class="lane-cell" data-slot="lane-last-publish">
 								<span class="lane-cell-label">{t.lastPublishLabel}</span>
 								<FreshnessStamp variant="updated" generatedUtc={row.lastPublishUtc} {locale} />
 							</div>
 
-							<!-- File counts: written of total. Absent → the honest absence chip. -->
 							<div class="lane-cell" data-slot="lane-files">
 								<span class="lane-cell-label">{t.filesLabel}</span>
 								{#if row.filesWritten != null && row.filesTotal != null}
@@ -84,8 +58,6 @@
 								{/if}
 							</div>
 
-							<!-- Gate verdict chip: a StatusDot on the status scale + the verdict word.
-						     Null gate → the honest "not checked" absence (never an assumed pass). -->
 							<div class="lane-cell" data-slot="lane-gate">
 								<span class="lane-cell-label">{t.gateLabel}</span>
 								{#if row.gate}
@@ -99,7 +71,6 @@
 							</div>
 						</div>
 					{:else}
-						<!-- MAINTENANCE not-applicable row: no heartbeat, a plain honest reason. -->
 						<div class="lane-na" data-slot="lane-not-applicable">
 							<span class="lane-na-chip">{t.notApplicable}</span>
 							<p class="lane-na-reason">{row.notApplicableReason}</p>
@@ -188,7 +159,6 @@
 		color: var(--foreground);
 	}
 
-	/* Not-applicable (MAINTENANCE) row: a calm neutral chip + the honest reason. */
 	.lane-na {
 		display: flex;
 		flex-direction: column;

@@ -21,16 +21,10 @@ from transit_ops.ingestion.storage import (
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
-# A feed is stale once it misses this many of its own declared refresh cycles
-# (floored at HEALTH_MAX_PIPELINE_AGE_SECONDS). Deriving the budget from each
-# feed's refresh_interval_seconds lets a daily static feed and a 30s realtime
-# feed share one check without a per-feed-kind threshold table.
+# Staleness follows each feed refresh interval, floored by the configured pipeline age.
 FRESHNESS_GRACE_CYCLES = 3
 
-# Latest successful capture per enabled feed of every ACTIVE provider. Driven by
-# core.feed_endpoints (seeded from the manifests) + raw.ingestion_runs, so health
-# is holistic per provider with no hardcoded provider id. run_kind = feed_kind
-# excludes derived runs (e.g. silver_load) from the feed's capture recency.
+# Use successful capture runs for enabled feeds; exclude derived Silver load runs.
 _PROVIDER_FEED_FRESHNESS_SQL = """
     SELECT
         fe.provider_id,
@@ -105,18 +99,6 @@ def check_provider_feed_freshness(
     engine_factory: EngineFactory | None = None,
     now: datetime | None = None,
 ) -> list[ComponentHealthResult]:
-    """Per-provider, per-feed capture freshness — one component per enabled feed
-    of every active provider, named ``{provider_id}_{endpoint_key}``.
-
-    Registry/DB-driven (no hardcoded provider): reads ``core.feed_endpoints``
-    (seeded from the manifests) joined to the latest successful
-    ``raw.ingestion_runs`` capture, so onboarding a provider automatically adds
-    its feed components and health becomes holistic per provider. Each feed's
-    staleness threshold is derived from its own ``refresh_interval_seconds`` so a
-    daily static feed is not judged by a realtime cadence, floored at
-    ``HEALTH_MAX_PIPELINE_AGE_SECONDS``. Detail blocks (provider ids, timestamps)
-    stay off the anonymous ``public_dict`` via the model's redaction.
-    """
     resolved_settings = settings or get_settings()
     checked_at = _checked_at(now)
     started = time.perf_counter()
@@ -327,17 +309,6 @@ def check_feed_conformance(
     engine_factory: EngineFactory | None = None,
     now: datetime | None = None,
 ) -> ComponentHealthResult:
-    """Surface "out-of-norm payload" providers whose latest static feed shipped
-    members this pipeline does not natively model.
-
-    Pure surfacing over data the loader already captures: unknown / extra GTFS
-    members are preserved verbatim in ``silver.gtfs_extra_rows`` (never dropped),
-    and a feed that omits a required member or spine column never produced a
-    current dataset_version in the first place (the load fails loud). So the
-    observable states here are conformant (ok) or out_of_norm (degraded). The
-    detailed per-provider breakdown stays off ``public_dict`` via the model's
-    redaction.
-    """
     resolved_settings = settings or get_settings()
     checked_at = _checked_at(now)
     started = time.perf_counter()

@@ -74,13 +74,6 @@ class _DisplayResult(Protocol):
 
 
 def realtime_endpoints_for_manifest(manifest: ProviderManifest) -> tuple[str, ...]:
-    """Realtime endpoint keys this provider actually publishes, in canonical order.
-
-    Drives the realtime cycle from the manifest rather than a fixed tuple, so a
-    provider that omits a feed (no i3 alerts; a static-plus-alerts agency with no
-    live vehicle feed) is simply not polled for it — instead of failing that
-    endpoint every cycle. Considers the full endpoint set (incl. service_alerts).
-    """
     return tuple(
         endpoint_key
         for endpoint_key in ALL_REALTIME_ENDPOINTS
@@ -104,7 +97,6 @@ class StaticPipelineResult:
     gold_build: dict[str, object] | None
     static_changed: bool
     skipped_reason: str | None
-    # GIS failure does not block static publication.
     gis_ingestion: dict[str, object] | None = None
     gis_silver_load: dict[str, object] | None = None
     gis_ingestion_duration_seconds: float | None = None
@@ -292,13 +284,6 @@ def _run_gis_steps_best_effort(
     registry: ProviderRegistry,
     engine: Engine,
 ) -> _GisStepsOutcome:
-    """Run the GIS chain (ingest + silver load) as a best-effort tail.
-
-    GIS must NEVER fail the static publish: any exception is logged and recorded,
-    the static pipeline result stays status='succeeded'. The silver loader is
-    evaluated even when GIS content is unchanged; its pair receipt skips exact
-    GIS/static/parser repeats while a GTFS change still re-keys gis_gtfs_matches.
-    """
     try:
         gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
             "ingest-gis",
@@ -476,20 +461,6 @@ def _persist_silver_load_failure(
     error_message: str,
     started_at_utc: datetime,
 ) -> None:
-    """Best-effort: record a run_kind='silver_load' failed run for DB telemetry.
-
-    The realtime silver-load failure left zero DB trace before slice-9.1.1o
-    (a multi-hour alerts.json freeze was invisible to every DB query). This
-    writes a completed status='failed' row so the freshness probe can detect
-    the failure-burst incident class.
-
-    A FRESH engine.begin() transaction is used because the load transaction
-    just rolled back. The whole body is swallowed: this MUST never raise or
-    change the cycle's status semantics — failure telemetry is strictly
-    additive. If the run_kind CHECK constraint has not yet been migrated
-    (deploy-ordering mistake), the insert raises here and is logged, leaving
-    behavior identical to before.
-    """
     try:
         with engine.begin() as connection:
             feed_endpoint_id = get_feed_endpoint_id(
@@ -851,12 +822,6 @@ def _best_effort_publish_live(
     engine: Engine,
     registry: ProviderRegistry | None = None,
 ) -> int:
-    """Publish the live /v1 snapshot as a best-effort side effect of the cycle.
-
-    Returns the number of publish failures (0 or 1). Never raises: an R2/publish
-    error is logged and counted so the realtime cycle stays green even when the
-    public snapshot bucket is unavailable.
-    """
     if not (
         getattr(settings, "SNAPSHOT_R2_BUCKET", None)
         or getattr(settings, "SNAPSHOT_STORAGE_BACKEND", None) == "local"
@@ -891,7 +856,7 @@ def _run_realtime_cycle(
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
-    # Worker calls pass capture times for interval gating; single calls run each configured feed.
+    # Capture times gate worker intervals; single calls run every configured feed.
     manifest = registry.get_provider(provider_id)
     cycle_endpoints = realtime_endpoints_for_manifest(manifest)
     initialize_realtime_serving(
@@ -1005,8 +970,6 @@ def _run_realtime_cycle(
 
     step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
 
-    # Best-effort: publish the live /v1 snapshot after Gold refresh succeeds.
-    # Never fails the cycle — an R2/publish error is logged and counted only.
     live_publish_failures = 0
     if successful_endpoint_count and gold_error_message is None:
         live_publish_failures = _best_effort_publish_live(
@@ -1052,18 +1015,6 @@ def run_realtime_cycle(
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
 ) -> RealtimeCycleResult:
-    """Run one realtime cycle for a provider.
-
-    When ``last_captures`` is provided, each endpoint is gated by the manifest's
-    ``refresh_interval_seconds`` — endpoints whose last successful capture was
-    within ``refresh_interval_seconds`` are skipped (returning a ``"skipped"``
-    status). The dict is mutated in place so the caller (typically
-    :func:`run_realtime_worker_loop`) can preserve state across cycles.
-
-    When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
-    gating happens — every endpoint the provider's manifest publishes runs
-    unconditionally.
-    """
     return _run_realtime_cycle(
         provider_id,
         settings=settings,
@@ -1090,8 +1041,6 @@ def _validate_realtime_worker_startup(
     for endpoint_key in GTFS_REALTIME_ENDPOINTS:
         if endpoint_key in manifest.feeds:
             build_realtime_ingestion_config(manifest, settings, endpoint_key)
-    # Alert feeds are optional and provider-specific: STM uses i3, others use
-    # the generic GTFS-RT service-alerts feed. Validate whichever is configured.
     if I3_ALERT_ENDPOINT in manifest.feeds:
         build_i3_ingestion_config(manifest, settings)
     if SERVICE_ALERTS_ENDPOINT in manifest.feeds:
@@ -1100,17 +1049,6 @@ def _validate_realtime_worker_startup(
 
 
 def _install_worker_shutdown_handlers() -> Callable[[], bool]:
-    """Install SIGTERM/SIGINT handlers that flip a shutdown flag.
-
-    Returns a predicate the worker loop polls at the top of each iteration so a
-    deploy's SIGTERM (or an operator's Ctrl-C) lets the worker drain the current
-    cycle and return cleanly instead of being SIGKILLed mid-capture.
-
-    Signal registration only works on the main thread; off the main thread (e.g.
-    inside a test runner) ``signal.signal`` raises ``ValueError``. In that case we
-    skip registration and return an always-false predicate so the loop is governed
-    solely by ``max_cycles`` / an injected ``should_shutdown``.
-    """
     shutdown_requested = threading.Event()
 
     def _request_shutdown(signum: int, _frame: object) -> None:
@@ -1128,8 +1066,7 @@ def _install_worker_shutdown_handlers() -> Callable[[], bool]:
         try:
             signal.signal(sig, _request_shutdown)
         except (ValueError, OSError):
-            # Not on the main thread, or the platform disallows this signal —
-            # fall back to a flag that only an injected predicate can flip.
+            # Without a signal handler, only the injected predicate can request shutdown.
             logger.debug("Could not register handler for signal %s; skipping.", sig)
 
     return shutdown_requested.is_set
@@ -1153,7 +1090,7 @@ def _run_realtime_worker_loop(
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("max_cycles must be greater than 0 when provided.")
 
-    # Shutdown signals drain the current cycle before the worker exits.
+    # Drain the current cycle before exiting.
     if should_shutdown is None:
         should_shutdown = _install_worker_shutdown_handlers()
 
@@ -1232,8 +1169,7 @@ def _run_realtime_worker_loop(
             previous_cycle_start_utc = cycle_start_utc
             if max_cycles is not None and cycle_number >= max_cycles:
                 break
-            # Preserve start-to-start cadence: back off by the remaining poll
-            # budget after the (partial) failed cycle before retrying.
+            # Failure backoff preserves start-to-start cadence.
             computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
             logger.info(
                 (
@@ -1362,22 +1298,6 @@ def run_pruner_loop(
     max_cycles: int | None = None,
     should_shutdown: Callable[[], bool] | None = None,
 ) -> None:
-    """Run the dedicated retention pruner loop for a provider (PR-B / slice-9.8).
-
-    Retention pruning is DECOUPLED from the realtime cycle and runs here, in an
-    always-on service. Each pass runs ``prune_silver_storage`` then
-    ``prune_gold_storage``, each in its OWN try/except so one prune failing never
-    kills the loop and never skips the other — the 0034 "prune must run regardless
-    of gold/endpoint success" invariant, satisfied unconditionally because this
-    loop has no capture/gold step that could throw first and skip it.
-
-    Mirrors ``run_realtime_worker_loop``: SIGTERM/SIGINT -> drain-then-exit-0 via
-    ``_install_worker_shutdown_handlers``; ``PIPELINE_PAUSED`` honored (sleep +
-    continue); ``max_cycles`` / ``sleep_fn`` / ``should_shutdown`` injection for
-    tests. Sleeps ``PRUNER_SLEEP_SECONDS`` between passes — with the index-driven
-    rt_feed_snapshot_id-range deletes a steady-state pass is sub-second, so a short
-    sleep drains a backlog at index speed without spinning.
-    """
     settings = settings or get_settings()
     engine = _engine(settings, engine)
     require_database_url(settings)
@@ -1418,8 +1338,7 @@ def run_pruner_loop(
         cycle_number += 1
         logger.info("Starting pruner pass %s for provider '%s'.", cycle_number, provider_id)
 
-        # Each prune is independent: a silver-prune failure must not skip the gold
-        # prune (and vice versa), and neither must kill the loop.
+        # Prune failures are independent and must not stop the loop.
         try:
             silver_result = prune_silver_storage(provider_id, settings=settings, engine=engine)
             logger.info(

@@ -1,6 +1,3 @@
-// history.ts — Zod mirrors of the shared retained-history collection and
-// availability contracts.
-
 import { z } from 'zod';
 import { encodeHistoryEntityId } from '../history/entity';
 import {

@@ -256,10 +256,6 @@ async function collectFooterGeometry(page) {
 		};
 	}, FOOTER_SELECTOR);
 
-	// Validate exactly-one date against the collected snapshot; the Range
-	// measurement re-matches IN-PAGE in a single evaluate — hydration can
-	// re-split text nodes between evaluates, so a cross-evaluate node index
-	// + offset handoff throws IndexSizeError on the re-rendered DOM.
 	const dateMatch = findSystemDateNodeMatch(collected.statusTextNodes);
 	const systemDate = await page.evaluate(
 		({ selector, pattern, expectedValue }) => {

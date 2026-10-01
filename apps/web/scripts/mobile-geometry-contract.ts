@@ -288,7 +288,6 @@ export function validateMobileRouteGeometry(route: MobileRouteGeometry): string[
 
 	if (route.map?.expanded) {
 		const { stage, attribution, collapsedAttribution, controls } = route.map;
-		// COLLAPSED — the resting state. It shares the bottom row with both peels,
 		// so it must clear every one of them.
 		if (!rectContains(stage, collapsedAttribution)) {
 			errors.push(`${label}: collapsed attribution escapes the map stage`);
@@ -296,17 +295,9 @@ export function validateMobileRouteGeometry(route: MobileRouteGeometry): string[
 		if (controls.some((control) => rectsOverlap(collapsedAttribution, control))) {
 			errors.push(`${label}: collapsed attribution overlaps a mobile map control`);
 		}
-		// EXPANDED — transient and user-initiated. The owner ruled the credit
-		// collapses by default and overlays UPWARD on tap, so an overlap here is
-		// sanctioned; what is NOT sanctioned is the overlay escaping the stage or
-		// leaving the controls gone. Dismissibility and the absence of a focus trap
-		// are structural (a native <details>/<summary>) and asserted in vitest, not
-		// derivable from rectangles.
 		if (!rectContains(stage, attribution)) {
 			errors.push(`${label}: expanded attribution escapes the map stage`);
 		}
-		// "Overlays upward" was sanctioned; SWALLOWING a control whole was not. A
-		// partially covered control is still reachable — a fully contained one is not.
 		if (controls.some((control) => rectContains(attribution, control))) {
 			errors.push(`${label}: expanded attribution fully covers a mobile map control`);
 		}

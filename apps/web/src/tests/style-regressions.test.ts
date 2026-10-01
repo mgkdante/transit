@@ -1,49 +1,8 @@
-// style-regressions.test.ts — the FORBIDDEN guard (P5.3d §C4).
-//
-// The vibe kill-table sweep (P1–P12) retired four recurring anti-patterns from
-// the `<style>` blocks. This gate makes those kills permanent: once a pattern is
-// swept out of a directory, it can never come back. The detection engine is the
-// vendored `styleRegressionViolations` (byte-equivalent to yesid.dev's
-// style-regressions gate); the FORBIDDEN table + the scan roots are transit's
-// per-app taste contract and live here.
-//
-// SCOPE (P5.3d stage B): the sweep is COMPLETE site-wide. Stage A cleared
-// `lib/features/{map,lines}`; stage B cleared everything else —
-// `lib/components/**` (ui/brand/dataviz edge, shared, shell, layout, surface,
-// map canvas), `routes/**`, and the remaining `lib/features/**` surfaces. The
-// guard now runs over the whole component + route tree with EMPTY selector/value
-// allowlists (§C4: "Allowlists start and stay EMPTY."). Structural/legacy files
-// outside the prose-measure law use the documented path-prefix exclusions below.
-// Slice 040's binding owner directive restores one exact full-width footer
-// divider; that declaration is inventory-pinned below while every other hit
-// remains forbidden.
-//
-// FROZEN EXEMPTION (§C4 P8): the P5.2 chart marks under
-// `lib/components/dataviz/chart/marks/**` are FROZEN — the sweep does not touch
-// them and this guard does not scan them. Their stroke/dash literals and any
-// pre-existing token fallbacks are the mark contract's business, out of scope
-// for the vibe kill-table. This is a directory exclusion, NOT an allowlist: no
-// individual violation is ever pinned, and the exclusion is expressed as a path
-// prefix so nothing in the swept tree can hide behind it.
-//
-// The FORBIDDEN patterns (§C4 + WS4 A6):
-//   1. STRIPES — border-(left|inline-start|top) accent rules on the brand tokens
-//      (dataviz/primary/accent/rule). Retired by P7; they can't return.
-//   2. RAW MS — a bare `<n>ms` duration/easing literal in a transition/animation.
-//      All motion flows through `--duration-*`/`--ease-*` (P2).
-//   3. TOKEN FALLBACKS — `var(--duration|ease|radius|space|measure…, <fallback>)`. tokens
-//      are always loaded; the fallback is where the drift/lies lived (P2).
-//   4. TEXT-SHADOW GLOW — `text-shadow` on a glow/primary/accent token. Glow is
-//      never text (P-glow law); a neutral legibility halo is fine.
-//   5. BARE PROSE MEASURES — max-width/max-inline-size with a ch/rem literal.
-//      Delete the cap or use one of the shared --measure-* tokens.
-
 import { describe, it, expect } from 'vitest';
 import { resolve, sep } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { styleRegressionViolations, type ForbiddenPattern } from '@yesid/gates';
 
-// The immutable gate returns native paths; this app's inventories use slash labels.
 function scanStyleRegressions(config: Parameters<typeof styleRegressionViolations>[0]) {
 	return styleRegressionViolations(config).map((result) => ({
 		...result,
@@ -62,7 +21,6 @@ const BARE_PROSE_MEASURE: ForbiddenPattern = {
 		'bare prose measure: max-width/max-inline-size with a ch/rem literal. Delete the cap or use a --measure-* token.',
 };
 
-// The FORBIDDEN table — site-final (§C4). No entry may be relaxed or removed.
 const FORBIDDEN: readonly ForbiddenPattern[] = [
 	{
 		pattern:
@@ -100,13 +58,9 @@ describe('style regressions — token-fallback falsification', () => {
 	});
 });
 
-// Swept roots — site-wide after stage B. The whole component + route tree is
-// under the guard.
 const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes'] as const;
 const STYLE_SOURCE_EXTENSIONS = ['.svelte', '.css'] as const;
 
-// A6 path-prefix exclusions. These are structural files/subtrees outside the
-// prose-measure law, never a selector/value allowlist.
 const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 	{
 		prefix: 'src/lib/components/shared/ErrorIllustration.svelte',
@@ -151,12 +105,6 @@ const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 ] as const;
 const EMPTY_MEASURE_LITERAL_ALLOWLIST: readonly string[] = [];
 
-// Frozen-marks exclusion (§C4 P8). Any hit whose path is under the chart-marks
-// directory is dropped from the report: the P5.2 chart marks are off-limits to
-// the sweep, so the guard must not force an edit inside them. The engine emits
-// hit paths with the SCAN ROOT replaced by 'src' (so under the
-// 'src/lib/components' root a mark reads 'src/dataviz/chart/marks/…'); match on
-// the directory segment to stay independent of which root produced the hit.
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
 const OWNER_DIRECTED_FOOTER_DIVIDER = 'src/layout/Footer.svelte';
 const OWNER_DIRECTED_FOOTER_DECLARATION = 'border-top: 2px solid var(--border-rule-accent)';
@@ -219,9 +167,6 @@ const RAW_TABLE: ForbiddenPattern = {
 	reason: 'raw table inventory',
 };
 
-// S5-375 probe 4: the stacked cell wrapper's track pin is the CI-escape
-// mechanism — its PRESENCE is component-tested, its PLACEMENT was not.
-// Both stack blocks must pin .data-table-cell-content to track two.
 it('pins the DataTable cell wrapper to stack track two in both stack blocks', () => {
 	const source = readFileSync(
 		resolve(import.meta.dirname, '../lib/components/data/DataTable.svelte'),
@@ -234,8 +179,6 @@ it('pins the DataTable cell wrapper to stack track two in both stack blocks', ()
 const EMPTY_RAW_TABLE_ALLOWLIST: readonly string[] = [];
 const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
 const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
-// Exact migration debt as of 2026-07-30. Each later WS5 PR deletes its migrated site.
-// This is deliberately not a permissive allowlist: the observed inventory must equal it.
 const TO_MIGRATE_2026_07_30 = [] as const;
 
 it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelte', () => {
@@ -276,18 +219,14 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 			}).map((r) => ({
 				...r,
 				hits: r.hits
-					// Drop frozen-marks hits (§C4 P8) — the sweep never edits those files.
 					.filter((h) => !h.includes(FROZEN_MARKS_SEGMENT))
-					// Slice 040's owner-directed footer divider (pinned below).
 					.filter((h) => !(r.reason === FORBIDDEN[0].reason && h === OWNER_DIRECTED_FOOTER_DIVIDER))
-					// A6 exceptions are path-prefix exclusions for this pattern only.
 					.filter(
 						(h) => r.pattern !== BARE_PROSE_MEASURE_PATTERN || !isMeasurePathExcluded(rel, h),
 					),
 			}));
 
 			it('scans a non-empty tree (guards against a wrong path)', () => {
-				// Every root has .svelte files; if the walk found none the path is wrong.
 				expect(results.length).toBe(FORBIDDEN.length);
 			});
 

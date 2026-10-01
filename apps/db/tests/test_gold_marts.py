@@ -78,9 +78,6 @@ class RecordingConnection:
     ) -> None:
         self.dataset_row = dataset_row
         self.silver_routes_exists = silver_routes_exists
-        # Seconds since the realtime tables were last ANALYZEd, as the throttle
-        # query (SELECT_REALTIME_ANALYZE_AGE_SECONDS) would report it. Default
-        # None models "never analyzed" (fresh DB) → the ANALYZE is due.
         self.analyze_age_seconds = analyze_age_seconds
         self.calls: list[tuple[str, object]] = []
 
@@ -99,9 +96,6 @@ class RecordingConnection:
             return FakeMappingResult(self.dataset_row)
         if "FROM pg_stat_user_tables" in sql_text:
             return FakeScalarResult(self.analyze_age_seconds)
-        # Empty-silver guard (slice-9.1.1j): EXISTS over silver.routes for the
-        # current version. Routed before the dim-history branches (which key on
-        # gold.dim_*_history, not silver.routes) so it cannot be swallowed.
         if "SELECT EXISTS" in sql_text and "FROM silver.routes" in sql_text:
             return FakeScalarResult(self.silver_routes_exists)
         if (
@@ -116,8 +110,6 @@ class RecordingConnection:
             return FakeScalarResult(1)
         if "SELECT count(*)" in sql_text and "gold.dim_route_pattern" in sql_text:
             return FakeScalarResult(578)
-        # history branches MUST precede their dim branches: 'gold.dim_route'
-        # is a substring of 'gold.dim_route_history' (ditto stop).
         if "SELECT count(*)" in sql_text and "gold.dim_route_history" in sql_text:
             return FakeScalarResult(231)
         if "SELECT count(*)" in sql_text and "gold.dim_route" in sql_text:
@@ -373,19 +365,12 @@ def test_migration_0034_adds_delay_stop_columns_and_repairs_stop_history() -> No
     assert "_INSERT_STOP_DELAY_MONTHLY" in source
     assert "_DELETE_REPEATED_PROBLEM_ROUTE_STOP" in source
     assert "_INSERT_REPEATED_PROBLEM_ROUTE_STOP" in source
-    # wave-2 prod hardening: the heavy pre-deploy fact backfill is DEFERRED
-    # (unbounded 500M-row scan blew prod /dev/shm, 2h40m hang). The constants
-    # stay defined (recovery) but must NOT be executed in upgrade(); ramp-in
-    # only, per the car-5 reviewer-approved design. Guard against silent re-enable.
     assert "# op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" in source
     assert "\n    op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
     assert "\n    op.execute(_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
 
 
 def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:
-    """slice-9.1.1i: the per-cycle (latest_only) refresh must not aggregate the
-    whole rt_trip_update_stop_times table inside stop_time_counts — prod
-    measured ~252M rows / 29 GB, making the refresh ~691s instead of <30s."""
     latest_sql = str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)
     full_sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
 
@@ -393,8 +378,6 @@ def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:
     assert "INNER JOIN silver.rt_feed_snapshots AS sfs" in latest_counts_cte
     assert "sfs.source_realtime_snapshot_id = :realtime_snapshot_id" in latest_counts_cte
 
-    # The full-rebuild variant intentionally keeps the unscoped aggregate
-    # (it repopulates every retained snapshot) and binds no latest param.
     full_counts_cte = full_sql.split("stop_time_candidates AS")[0]
     assert "INNER JOIN silver.rt_feed_snapshots AS sfs" not in full_counts_cte
     assert ":realtime_snapshot_id" not in full_sql
@@ -457,13 +440,6 @@ def test_realtime_analyze_throttle(age, interval, expected):
 
 
 def test_realtime_analyze_age_query_targets_only_realtime_silver_tables() -> None:
-    """SQL-marker: the throttle reads pg_stat_user_tables for the five rt tables.
-
-    It must take the MIN age (max() over the most-recent analyze/autoanalyze per
-    table, then now() - that) so a single stale table forces a refresh, and must
-    return NULL (HAVING ... IS NOT NULL) when none has ever been analyzed so the
-    fresh-DB bootstrap case still runs ANALYZE.
-    """
     sql = str(SELECT_REALTIME_ANALYZE_AGE_SECONDS)
 
     assert "pg_stat_user_tables" in sql
@@ -478,7 +454,6 @@ def test_realtime_analyze_age_query_targets_only_realtime_silver_tables() -> Non
         assert relname in sql
     assert "last_analyze" in sql
     assert "last_autoanalyze" in sql
-    # NULL when never analyzed → _realtime_analyze_is_due treats it as due.
     assert "IS NOT NULL" in sql
 
 
@@ -520,20 +495,15 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
         "dim_stop_history": 9203,
     }
     sql_calls = [call[0] for call in connection.calls]
-    # Advisory lock acquired — serializes with realtime refresh
     assert any("pg_advisory_xact_lock" in sql for sql in sql_calls)
-    # Dimension tables are refreshed
     assert any("DELETE FROM gold.dim_route" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_route_pattern" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.dim_route_pattern" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_stop" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_date" in sql for sql in sql_calls)
-    # Per-edition scheduled-service summary is captured (migration 0069).
     assert any("INSERT INTO gold.schedule_version_service_summary" in sql for sql in sql_calls)
-    # ACCESS EXCLUSIVE table lock is NOT acquired
     assert not any("LOCK TABLE" in sql for sql in sql_calls)
-    # Fact and latest tables are NOT touched
     assert not any("fact_vehicle_snapshot" in sql for sql in sql_calls)
     assert not any("fact_trip_delay_snapshot" in sql for sql in sql_calls)
     assert not any("latest_vehicle_snapshot" in sql for sql in sql_calls)
@@ -543,8 +513,6 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
 def _assert_name_history_recorded(connection: RecordingConnection) -> None:
     sql_calls = [call[0] for call in connection.calls]
 
-    # Close-then-open per entity: the UPDATE must run before the INSERT on the
-    # same connection so a renamed id gets its old row closed first.
     for entity in ("route", "stop"):
         close_index = next(
             index
@@ -560,7 +528,6 @@ def _assert_name_history_recorded(connection: RecordingConnection) -> None:
         assert connection.calls[close_index][1]["dataset_version_id"] == 2
         assert connection.calls[open_index][1]["dataset_version_id"] == 2
 
-    # Append-only: no refresh path may ever delete history rows.
     assert not any("DELETE FROM gold.dim_route_history" in sql for sql in sql_calls)
     assert not any("DELETE FROM gold.dim_stop_history" in sql for sql in sql_calls)
 
@@ -603,7 +570,6 @@ def test_dim_history_statements_sql_contract() -> None:
 
     for close_sql in (close_route, close_stop):
         assert "valid_to_utc IS NULL" in close_sql
-        # NULL-safe attribute comparison — plain '=' would treat NULL names as changed
         assert "IS NOT DISTINCT FROM" in close_sql
         assert "DELETE" not in close_sql
     for open_sql in (open_route, open_stop):
@@ -611,7 +577,6 @@ def test_dim_history_statements_sql_contract() -> None:
         assert "valid_to_utc IS NULL" in open_sql
         assert "DELETE" not in open_sql
 
-    # Diffed against NEW-version silver, never the (already pruned) old version.
     assert "silver.routes" in close_route and "silver.routes" in open_route
     assert "silver.stops" in close_stop and "silver.stops" in open_stop
 
@@ -620,7 +585,6 @@ def test_schedule_version_service_summary_insert_sql_contract() -> None:
     sql = str(INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY)
 
     assert "INSERT INTO gold.schedule_version_service_summary" in sql
-    # Reads the NEW edition's scheduled silver — never realtime facts.
     for silver_table in (
         "silver.calendar",
         "silver.trips",
@@ -629,37 +593,23 @@ def test_schedule_version_service_summary_insert_sql_contract() -> None:
     ):
         assert silver_table in sql
     assert ":dataset_version_id" in sql
-    # day_type membership (not partition): weekday OR-of-weekday-booleans + the
-    # explode VALUES over the three day_types.
     assert "(monday OR tuesday OR wednesday OR thursday OR friday)" in sql
     assert "'weekday'" in sql and "'saturday'" in sql and "'sunday'" in sql
-    # service-seconds via split_part; overnight >24:00 preserved (no modulo 86400).
     assert "split_part" in sql
     assert "86400" not in sql
-    # honest calendar_dates exception counts.
     assert "exception_type = 1" in sql and "exception_type = 2" in sql
-    # fan-out-free: exceptions are pre-aggregated at (route_id, day_type) grain in
-    # a dedicated CTE, then joined once — never summed on the per-trip trip_dep,
-    # which would multiply each service's exc counts by its trip count into this
-    # never-pruned permanent-history table.
     assert "route_day_exceptions AS (" in sql
-    # exc is joined inside the dedicated CTE, before the final INSERT ... SELECT
-    # FROM trip_dep (the LAST trip_dep reference), and never on trip_dep itself.
     exc_join_idx = sql.index("LEFT JOIN exc")
     final_trip_dep_idx = sql.rindex("FROM trip_dep AS td")
     assert exc_join_idx < final_trip_dep_idx
     assert "LEFT JOIN exc" not in sql[final_trip_dep_idx:]
     assert "LEFT JOIN route_day_exceptions AS rde" in sql
-    # reserved headway columns are written NULL in v1.
     assert "scheduled_median_headway_min" in sql
     assert "scheduled_p10_headway_min" in sql
     assert "scheduled_p90_headway_min" in sql
 
 
 def test_refresh_gold_static_raises_when_current_version_has_no_silver_rows() -> None:
-    # Wedged prod state: is_current version exists but has zero silver.routes
-    # rows. refresh_gold_static must hard-error BEFORE deleting any dim, so it
-    # cannot wipe gold dims and INSERT zero rows (slice-9.1.1j guard).
     connection = RecordingConnection(
         dataset_row={"dataset_version_id": 2},
         silver_routes_exists=False,

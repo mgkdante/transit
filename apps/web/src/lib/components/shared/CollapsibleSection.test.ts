@@ -655,11 +655,6 @@ describe('CollapsibleSection - whole-card toggling', () => {
 });
 
 describe('CollapsibleSection - mount-time bulk mode', () => {
-	// Data-gated cards mount AFTER the article's mount-time bulk signal bumped the
-	// counters, so the edge-detectors never see a change. `bulkCollapsed` carries
-	// the page's current bulk mode; on mount it is authoritative over the `open`
-	// default and any restored session choice (state model #8/#10).
-
 	it('adopts a collapsed bulk mode when mounting after the close signal fired', () => {
 		const { container } = render(CollapsibleSection, {
 			props: { title: 'Late', open: true, closeSignal: 1, openSignal: 0, bulkCollapsed: true },

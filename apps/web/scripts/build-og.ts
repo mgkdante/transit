@@ -1,5 +1,3 @@
-// Generate static/og/{en,fr}.png with `bun run og:build`; verify with `bun run og:check`.
-
 import { Resvg } from '@resvg/resvg-js';
 import { renderSatoriPng } from '@yesid/seo-kit/satori';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -16,13 +14,12 @@ const OUT_DIR = resolve(webRoot, 'static/og');
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-// Mirrors the dark theme in src/lib/styles/tokens.css.
-const BG = '#141414'; // --background (dark)
-const BORDER = '#3A3A3A'; // --border
-const TEXT_PRIMARY = '#F5F5F0'; // --foreground
-const TEXT_MUTED = '#949494'; // --muted-foreground
-const ACCENT = '#E07800'; // --primary (brand orange; brand graphic, not a data mark)
-const ACCENT_TEXT = '#FFB627'; // --accent-text
+const BG = '#141414';
+const BORDER = '#3A3A3A';
+const TEXT_PRIMARY = '#F5F5F0';
+const TEXT_MUTED = '#949494';
+const ACCENT = '#E07800';
+const ACCENT_TEXT = '#FFB627';
 
 const WORDMARK = 'transit';
 const SITE_HANDLE = 'transit.yesid.dev';
@@ -116,7 +113,6 @@ function buildTree(copy: CardCopy): El {
 							},
 						},
 						[
-							// Static cards cannot report network health.
 							el(
 								'div',
 								{

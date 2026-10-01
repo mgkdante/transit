@@ -1,4 +1,3 @@
-"""One retained provider/day for real historic publication and recovery."""
 
 import hashlib
 import json

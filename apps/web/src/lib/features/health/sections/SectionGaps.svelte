@@ -1,14 +1,8 @@
-<!--
-  SectionGaps — the known-data-gaps honesty callout: one humanized line per
-  provenance.gaps[] token. Mechanical move out of HealthStatus.svelte; the token
-  humanizer is passed in. Stands DOWN (parent guards) when gaps is empty.
--->
 <script lang="ts">
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionGapsProps {
 		gaps: readonly string[];
-		/** Humanizes a raw gap token into a citizen sentence. */
 		humanizeGap: (token: string) => string;
 		copy: HealthCopy;
 	}
@@ -33,7 +27,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.875rem 1rem;
-		/* P7: the late-tone signal is carried by a full border-color, not a left stripe. */
 		border: 1px solid var(--dataviz-status-late);
 		border-radius: var(--radius-md);
 		background: var(--muted);

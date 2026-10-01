@@ -1,5 +1,3 @@
-"""VACUUM maintenance tier (slice-9.1.1-zeta split)."""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -58,8 +56,7 @@ def vacuum_storage(
 ) -> VacuumResult:
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
-    # PARALLEL 0: parallel vacuum workers allocate DSM in /dev/shm, which the
-    # A1 VM's postgres container caps at 64MB. PARALLEL is invalid with FULL.
+    # PARALLEL 0 avoids shared-memory exhaustion; PostgreSQL forbids it with FULL.
     vacuum_mode = "FULL, ANALYZE" if full else "PARALLEL 0, ANALYZE"
 
     target_tables = tables if tables is not None else list(VACUUM_TABLES)

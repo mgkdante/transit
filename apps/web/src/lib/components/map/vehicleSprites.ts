@@ -1,19 +1,3 @@
-// map/vehicleSprites.ts — browser-only canvas baker for vehicle + stop icons.
-//
-// A vehicle is a single PAINTED BUS pictogram — the filter REPAINTS the bus
-// fill (default orange → a status/occupancy colour) and HIDES non-matches. A
-// separate neutral vector state badge preserves a shape channel, so colour is
-// never the only state signal. The bus glyph is baked UPRIGHT and legible at every bearing:
-// heading is rendered by a SEPARATE rotated CHEVRON layer (see vehicleLayer.ts)
-// that points the way the bus is going, so the bus-front never reads upside-down.
-// SHAPE encodes the entity:
-//   · bus → a BUS-FRONT pictogram (PAINTED with the bus fill);
-//   · heading → a small CHEVRON (separate rotated layer; ONE sprite, neutral);
-//   · stop → a MAP-PIN pictogram (PAINTED with --map-stop-fill).
-// Colours are read from live CSS tokens via a probe element (NEVER hardcoded
-// hex), so a theme swap re-bakes to the active palette. Baked at devicePixelRatio
-// so glyphs stay crisp on retina.
-
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
 	STATUS_CODES,
@@ -28,7 +12,6 @@ import {
 	statusVar,
 } from '$lib/components/dataviz/tokens';
 
-/** Frozen marker geometry: the map layer and non-Chromium receipt runner share this table. */
 export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
 	box: 26,
 	bodyIconSize: Object.freeze({ z11: 0.78, z15: 1.3 }),
@@ -47,20 +30,13 @@ export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
 	plateMargin: 2.4,
 });
 
-/** Logical icon box (px); baked at RATIO for retina crispness. */
 const SIZE = VEHICLE_MARKER_GEOMETRY.box;
-/** Bake at the device pixel ratio (>=2) so glyphs stay crisp on retina. */
 const RATIO =
 	typeof window !== 'undefined' ? Math.max(2, Math.ceil(window.devicePixelRatio || 1)) : 2;
 
-/** Default (no-filter) bus icon id — yesid brand orange. ONE sprite for every
- *  bus (no directional variants); the heading chevron is a separate layer. */
 export const BUS_ICON = 'veh-bus';
-/** The directional chevron icon id — ONE neutral sprite, rotated by the layer. */
 export const HEADING_ICON = 'veh-heading';
-/** The per-bus "!" not-reporting badge icon id — drawn ABOVE a frozen/stale bus. */
 export const SILENT_ICON = 'veh-silent';
-/** The stop map-pin icon id. */
 export const STOP_ICON = 'veh-stop';
 
 export const BUS_FILL_TOKEN = 'var(--primary)';
@@ -71,19 +47,15 @@ export const STOP_FILL_TOKEN = 'var(--map-stop-fill)';
 export const STOP_FILL_FALLBACK = 'rgb(255, 182, 39)';
 export const STOP_HALO_TOKEN = BUS_HALO_TOKEN;
 export const STOP_HALO_FALLBACK = BUS_HALO_FALLBACK;
-/** The chevron is a neutral direction tick that must read on ANY bus colour. */
 export const HEADING_FILL_TOKEN = 'var(--foreground)';
 export const HEADING_FILL_FALLBACK = '#f5f5f5';
 export const HEADING_HALO_TOKEN = BUS_HALO_TOKEN;
 export const HEADING_HALO_FALLBACK = BUS_HALO_FALLBACK;
-/** The silent "!" badge disc is a high-contrast foreground dot; the "!" is cut in
- *  the halo colour so it reads on ANY bus colour beneath it. */
 export const SILENT_FILL_TOKEN = 'var(--foreground)';
 export const SILENT_FILL_FALLBACK = '#f5f5f5';
 export const SILENT_HALO_TOKEN = 'var(--background)';
 export const SILENT_HALO_FALLBACK = '#141414';
 
-/** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
 export function resolveColor(varExpr: string, fallback: string): string {
 	if (typeof document === 'undefined') return fallback;
 	const probe = document.createElement('span');
@@ -105,7 +77,6 @@ function spriteContext(): CanvasRenderingContext2D {
 	return ctx;
 }
 
-/** Trace a rounded rectangle path (no stroke/fill — caller decides). */
 function roundedRect(
 	ctx: CanvasRenderingContext2D,
 	x: number,
@@ -124,17 +95,10 @@ function roundedRect(
 	ctx.closePath();
 }
 
-/**
- * Bake the BUS-FRONT pictogram, PAINTED with `fill` and ringed by `halo`. Drawn
- * upright (the heading chevron is a separate rotated layer), so it reads at
- * every bearing: a rounded body, a windshield band, and two headlights cut from
- * the halo colour so the silhouette stays a bus, not a blob, even at small zoom.
- */
 function busCanvas(fill: string, halo: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 
-	// Body — a tall rounded rect (bus front), centred with a small margin.
 	const bx = 6.5;
 	const by = 3.5;
 	const bw = SIZE - bx * 2;
@@ -146,15 +110,13 @@ function busCanvas(fill: string, halo: string): HTMLCanvasElement {
 	ctx.strokeStyle = halo;
 	ctx.stroke();
 
-	// Windshield — a halo-coloured band across the top third (reads as "front").
-	const wm = 2.4; // inset from the body edge
+	const wm = 2.4;
 	roundedRect(ctx, bx + wm, by + 2.4, bw - wm * 2, 5.6, 2);
 	ctx.fillStyle = halo;
 	ctx.globalAlpha = 0.9;
 	ctx.fill();
 	ctx.globalAlpha = 1;
 
-	// Headlights — two small halo-coloured dots near the bottom corners.
 	const ly = SIZE - by - 3.4;
 	for (const lx of [bx + wm + 1.2, bx + bw - wm - 1.2]) {
 		ctx.beginPath();
@@ -166,17 +128,12 @@ function busCanvas(fill: string, halo: string): HTMLCanvasElement {
 	return ctx.canvas;
 }
 
-/**
- * Bake the STOP map-pin pictogram, PAINTED with `fill` and ringed by `halo`,
- * with a halo-cut hole so the pin reads as a stop marker, not a solid teardrop.
- */
 function stopPinCanvas(fill: string, halo: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 	const c = SIZE / 2;
 
-	// Teardrop body — head arc + tapered point.
 	const headY = c - 2.5;
 	const headR = 6.6;
 	const tipY = SIZE - 3.5;
@@ -199,7 +156,6 @@ function stopPinCanvas(fill: string, halo: string): HTMLCanvasElement {
 	ctx.strokeStyle = halo;
 	ctx.stroke();
 
-	// Inner hole — halo-coloured, so the pin reads hollow (a stop, not a blob).
 	ctx.beginPath();
 	ctx.arc(c, headY, 2.5, 0, Math.PI * 2);
 	ctx.fillStyle = halo;
@@ -208,18 +164,11 @@ function stopPinCanvas(fill: string, halo: string): HTMLCanvasElement {
 	return ctx.canvas;
 }
 
-/**
- * Bake the directional CHEVRON — a single neutral arrowhead (nose up), PAINTED
- * with `fill` and ringed by `halo`. ONE sprite; the layer rotates it by bearing
- * and floats it just ahead of the bus, so the bus glyph itself stays upright.
- */
 function chevronCanvas(fill: string, halo: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	const c = SIZE / 2;
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
-	// A compact chevron near the TOP of the box so it sits ahead of the bus
-	// once the layer offsets + rotates it.
 	ctx.beginPath();
 	ctx.moveTo(c, 3);
 	ctx.lineTo(c + 5, 9.5);
@@ -234,15 +183,6 @@ function chevronCanvas(fill: string, halo: string): HTMLCanvasElement {
 	return ctx.canvas;
 }
 
-/**
- * Bake the SILENT "!" badge — a BIG, bold alert mark that FILLS most of its
- * sprite box (it reads at a glance as a real alert flag, not a tiny corner dot).
- * A high-contrast rounded-square badge (`fill`, ringed by a `halo` stroke) holds
- * a FAT rounded vertical bar + a fat dot, both cut in the halo colour, centred so
- * the "!" dominates the glyph. Drawn as a SEPARATE layer ABOVE a frozen/stale bus
- * so a no-longer-reporting vehicle is FLAGGED, not hidden. The flag is per-bus
- * (each bus's own reported_utc age), not the old global silence.
- */
 function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
@@ -251,9 +191,6 @@ function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
 	const cx = SIZE / 2;
 	const cy = SIZE / 2;
 
-	// Badge background — a rounded square filling most of the box (small margin so
-	// the halo ring stays inside the sprite). This is the prominent alert plate the
-	// fat "!" sits on, high-contrast against any bus colour beneath it.
 	const margin = VEHICLE_MARKER_GEOMETRY.plateMargin;
 	const side = SIZE - margin * 2;
 	roundedRect(ctx, margin, margin, side, side, side * 0.28);
@@ -263,8 +200,6 @@ function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
 	ctx.strokeStyle = halo;
 	ctx.stroke();
 
-	// "!" — a FAT rounded vertical bar cut in the halo colour, spanning most of the
-	// badge height so the glyph dominates. Drawn as a thick round-capped stroke.
 	ctx.strokeStyle = halo;
 	ctx.lineWidth = SIZE * 0.16;
 	ctx.beginPath();
@@ -272,7 +207,6 @@ function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
 	ctx.lineTo(cx, cy + side * 0.07);
 	ctx.stroke();
 
-	// …and a FAT dot beneath the bar.
 	ctx.beginPath();
 	ctx.arc(cx, cy + side * 0.28, SIZE * 0.085, 0, Math.PI * 2);
 	ctx.fillStyle = halo;
@@ -281,11 +215,9 @@ function silentBadgeCanvas(fill: string, halo: string): HTMLCanvasElement {
 	return ctx.canvas;
 }
 
-/** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
 export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
 	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
 
-/** The compact glyph plate layered above a status/occupancy-painted bus body. */
 export const stateBadgeIconId = (mode: 'status' | 'occupancy', code: string): string =>
 	`veh-m-${mode === 'status' ? 's' : 'o'}-${code}`;
 
@@ -302,12 +234,6 @@ export type VehicleSpriteReceipt = StateBadgeReceipt &
 		pixelRatio: number;
 	}>;
 
-/**
- * Count alpha-painted canvas pixels from an actual baked image (registered badge
- * or glyph-only mask), normalize its DPR, then apply the frozen MapLibre
- * state-badge scale. This stays pure so a non-Chromium runner can consume real
- * ImageData without browser rasterization.
- */
 export function countStateBadgePaintedPixels(image: ImageData): number {
 	if (image.width !== image.height || image.width % SIZE !== 0) {
 		throw new Error('[vehicleSprites] state badge image must be a square 26px DPR multiple');
@@ -418,7 +344,6 @@ function drawStateGlyph(
 	ctx.fill();
 }
 
-/** Bake a compact halo-cut state mark using only vector paths, never font glyphs. */
 function stateBadgeCanvas(glyph: string, fill: string, halo: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
@@ -437,7 +362,6 @@ function stateBadgeCanvas(glyph: string, fill: string, halo: string): HTMLCanvas
 	return ctx.canvas;
 }
 
-/** Bake only the shared vector glyph path on transparency for pixel-threshold receipts. */
 function stateGlyphMaskCanvas(glyph: string, fill: string): HTMLCanvasElement {
 	const ctx = spriteContext();
 	ctx.lineJoin = 'round';
@@ -446,15 +370,6 @@ function stateGlyphMaskCanvas(glyph: string, fill: string): HTMLCanvasElement {
 	return ctx.canvas;
 }
 
-/**
- * Bake + register every vehicle icon: the default orange bus, plus one painted
- * bus per status code and per occupancy code (the "repaint" palette the filter
- * swaps in), the single directional chevron, the per-bus silent "!" badge, and
- * the stop map-pin. Idempotent (re-removes before adding, so it re-bakes on a
- * theme change). Browser-only. Returns distinct alpha-derived registered-badge
- * and glyph-mask receipts; threshold runners derive provenance from the exact
- * `stateGlyphMaskImages` whose counts are recorded in `stateGlyphMasks`.
- */
 export function bakeVehicleSprites(
 	map: MapLibreMap,
 	registerVehicleImages = true,
@@ -534,9 +449,6 @@ export function bakeVehicleSprites(
 	});
 }
 
-/** Keep the original per-sprite rasterization, then read one vertical atlas.
- *  Equal-width sprites occupy contiguous RGBA blocks; every image is complete
- *  before MapLibre installation and the alpha-derived receipts are computed. */
 function readSpriteCanvases(canvases: readonly HTMLCanvasElement[]): ImageData[] {
 	const px = SIZE * RATIO;
 	const atlas = document.createElement('canvas');

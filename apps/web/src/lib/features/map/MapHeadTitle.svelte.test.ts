@@ -18,13 +18,10 @@ describe('MapHeadTitle', () => {
 
 		const head = container.querySelector('.map-head')!;
 		expect(head).toBeInTheDocument();
-		// The kicker overline + the title row are the two stacked blocks.
 		expect(head.querySelector('.map-kicker')).toHaveTextContent(MAP_COPY.en.kicker);
 		const heading = head.querySelector('.map-heading')!;
 		expect(heading).toHaveTextContent(MAP_COPY.en.heading);
-		// The brand dot is a distinct span so it can be tinted --primary.
 		expect(heading.querySelector('.map-dot')).toHaveTextContent('.');
-		// It is the single H1 for the surface.
 		expect(container.querySelector('h1.map-heading')).toBeInTheDocument();
 	});
 
@@ -32,7 +29,6 @@ describe('MapHeadTitle', () => {
 		const { container } = render(MapHeadTitle, { props: baseProps });
 
 		const kickerRow = container.querySelector('.map-kicker-row')!;
-		// MapFreshness rides the kicker row at the head placement (data-placement="head").
 		const chip = kickerRow.querySelector('[data-placement="head"]');
 		expect(chip).toBeInTheDocument();
 	});
@@ -40,7 +36,6 @@ describe('MapHeadTitle', () => {
 	it('positions the block as an absolute overlay anchored to the canvas edge', () => {
 		const { container } = render(MapHeadTitle, { props: baseProps });
 
-		// It is a .map-overlay (absolute, z-10) so it floats over the full-bleed canvas.
 		expect(container.querySelector('.map-overlay.map-head')).toBeInTheDocument();
 	});
 });

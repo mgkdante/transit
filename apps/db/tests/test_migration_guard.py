@@ -1,4 +1,3 @@
-"""Database migration target intent tests."""
 
 from __future__ import annotations
 

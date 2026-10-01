@@ -1,18 +1,5 @@
-// directionAsymmetry.ts — the §2 "the wait depends which way you're going" callout.
-//
-// The contract carries per-direction observed headway for the advanced (per-direction) shift rows,
-// but it was buried inside a reveal table. This pure selector finds the shift with the LARGEST
-// inbound-vs-outbound wait gap (both directions present) above a minimum, so the section can surface
-// the single most useful asymmetry as an always-visible callout: "the ride home waits longer."
-//
-// HONEST: a row missing either direction is skipped (never a fabricated 0). Returns null when no
-// shift clears `minDiffMin`, so a symmetric line shows no callout (nothing to say). No DOM/i18n —
-// the direction labels arrive resolved via opts.
-
 export interface DirectionAsymmetryRow {
-	/** Resolved shift label (e.g. "PM peak"). */
 	readonly label: string;
-	/** Observed gap (min) toward direction 0 / direction 1; null = not observed. */
 	readonly dir0: number | null;
 	readonly dir1: number | null;
 }
@@ -20,19 +7,15 @@ export interface DirectionAsymmetryRow {
 export interface DirectionAsymmetryOpts {
 	readonly dir0Label: string;
 	readonly dir1Label: string;
-	/** Minimum gap (min) worth flagging. Default 2 — below that it is noise to a rider. */
 	readonly minDiffMin?: number;
 }
 
 export interface DirectionAsymmetry {
 	readonly shiftLabel: string;
-	/** The longer-wait (slower) direction + its observed gap. */
 	readonly slowerLabel: string;
 	readonly slowerMin: number;
-	/** The shorter-wait (faster) direction + its observed gap. */
 	readonly fasterLabel: string;
 	readonly fasterMin: number;
-	/** The gap between the two directions (min, 1 dp). */
 	readonly diffMin: number;
 }
 

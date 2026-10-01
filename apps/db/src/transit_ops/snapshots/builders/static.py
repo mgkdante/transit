@@ -1,12 +1,3 @@
-"""Static-tier builders: gold/silver -> /v1 static snapshot pydantic models.
-
-STATIC sources: ``gold.dim_route``/``dim_stop``, ``gold.map_route_lines`` (``geojson`` is
-jsonb), ``silver.trips``/``stop_times``/``calendar``, ``gold.report_labels``.
-Static schedules are computed for a deterministic *representative service date*
-(busiest weekday / weekend in the dataset's current window) so headways and stop
-times reflect one coherent day rather than the union of all 144 service calendars.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -49,12 +40,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
 
 
-# ---------------------------------------------------------------------------
-# Static labels
-# ---------------------------------------------------------------------------
-
-# Keep both languages' keys aligned. Live OTP includes the on_time + late
-# status buckets [-60s, 300s); historical fields retain their own populations.
+# Live OTP includes on_time + late [-60s,300s); historic populations differ.
 _STATIC_LABELS_FR: dict[str, str] = {
     "status.early": "En avance",
     "status.on_time": "À l'heure",
@@ -132,10 +118,6 @@ _STATIC_LABELS_EN: dict[str, str] = {
 }
 
 
-# Provider-specific citizen copy (attribution + provider-specific gaps), kept out
-# of the shared universal labels above. STM's curated bilingual copy is preserved
-# verbatim; other providers derive attribution from core.providers at build time
-# (see _provider_label_copy) and carry no metro gap.
 _PROVIDER_LABEL_COPY: dict[str, dict[str, dict[str, str]]] = {
     "stm": {
         "fr": {
@@ -179,12 +161,6 @@ _PROVIDER_ATTRIBUTION_SQL = named_query(
 
 
 def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[str, str]:
-    """Attribution + provider-specific gap copy for one provider and language.
-
-    Curated providers (STM) return their hand-written bilingual copy. Others
-    derive a licensing-correct attribution from core.providers (the manifest's
-    attribution_text + display_name) and carry no metro-realtime gap.
-    """
     curated = _PROVIDER_LABEL_COPY.get(provider_id)
     if curated is not None:
         return dict(curated[lang])
@@ -213,7 +189,7 @@ _LABELS_SQL = named_query(
     FROM gold.report_labels
     ORDER BY sort_order NULLS LAST, label_key
     """
-)  # not provider-scoped
+)
 
 
 def build_labels(
@@ -223,19 +199,6 @@ def build_labels(
     lang: str = "fr",
     generated_utc: str,
 ) -> "LabelsFile":  # noqa: UP037
-    """Build labels/{lang}.json: static code translations + metric catalog labels.
-
-    Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
-    fallback) so fr.json and en.json always carry an identical key set.
-
-    Two UI conventions for the slice-9.1.1t copy (methodology.*, gap.*, attribution.*):
-      1. For each gap g in provenance.gaps, the client shows labels['gap.' + g] on the
-         affected surface; gap.metro_realtime applies to routes_index entries whose
-         type == 1 (métro), with gap.metro_realtime.short as the compact badge.
-      2. The attribution surface is labels['attribution.data_source'] +
-         labels['attribution.disclaimer']; manifest.attribution is the unlocalized
-         machine-level fallback from the provider manifest.
-    """
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
     labels: dict[str, str] = dict(static)
     labels.update(_provider_label_copy(conn, provider_id, lang))
@@ -249,10 +212,6 @@ def build_labels(
     return LabelsFile(generated_utc=generated_utc, labels=labels)
 
 
-# ---------------------------------------------------------------------------
-# STATIC indexes
-# ---------------------------------------------------------------------------
-
 _ROUTES_INDEX_SQL = named_query(
     "static.routes_index",
     """
@@ -263,11 +222,7 @@ _ROUTES_INDEX_SQL = named_query(
     """
 )
 
-# Routes that get a per-route historic/route_reliability/{id}.json file. MUST
-# match the route IDs in historic.route_reliability_batch._ROUTE_INVENTORY_SQL
-# so the `reliability` flag matches the files actually written. Sourced from the
-# route delay spine (S7-B), which filters route_id IS NOT NULL at build, so the
-# '__unrouted__' sentinel never appears.
+# Reliability flags must match route_reliability_batch inventory.
 _RELIABILITY_ROUTE_IDS_SQL = named_query(
     "static.reliability_route_ids",
     """
@@ -297,14 +252,6 @@ _STOPS_INDEX_SQL = named_query(
 def build_routes_index(
     conn: Connection, *, provider_id: str = "stm", generated_utc: str
 ) -> "RoutesIndex":  # noqa: UP037
-    """Build static/routes_index.json from gold.dim_route.
-
-    Each entry carries a ``reliability`` flag (True when a per-route
-    historic/route_reliability/{id}.json is published for it), so the client can
-    skip probing routes with no weekly/monthly reliability history. The set is
-    fetched once from the SAME source publish.py uses to decide which files to
-    write, so the flag matches the published files exactly.
-    """
     reliability_ids = {
         str(row["route_id"])
         for row in conn.execute(
@@ -320,7 +267,7 @@ def build_routes_index(
                 short=str(r["route_short_name"] or r["route_id"]),
                 long=r["route_long_name"],
                 color=r["route_color"],
-                # preserve legitimate GTFS route_type 0 (tram); only NULL -> bus(3)
+                # Preserve GTFS route_type 0; only NULL falls back to bus.
                 type=int(r["route_type"]) if r["route_type"] is not None else 3,
                 reliability=route_id in reliability_ids,
             )
@@ -329,22 +276,15 @@ def build_routes_index(
     return RoutesIndex(generated_utc=generated_utc, routes=routes)
 
 
-# GTFS route_type -> contract mode. A stop served by several modes reports its
-# highest-priority one (metro on a metro+bus interchange); NULL/unknown
-# route_type folds to bus, mirroring build_routes_index.
+# Choose the highest-priority mode across all served routes.
 _ROUTE_TYPE_TO_MODE = {0: "tram", 1: "metro", 2: "rail", 3: "bus", 4: "ferry"}
 _MODE_PRIORITY = {"metro": 0, "tram": 1, "rail": 2, "bus": 3, "ferry": 4}
 
 
 def _mode_from_route_types(route_types: list[int | None]) -> str | None:
-    """Highest-priority transit mode among the GTFS route_types serving a stop.
-
-    Priority metro > tram > rail > bus > ferry. A NULL/unknown route_type folds
-    to bus (same convention as build_routes_index). Returns None for empty input.
-    """
     best: str | None = None
     for rt in route_types:
-        mode = _ROUTE_TYPE_TO_MODE.get(rt, "bus")  # NULL/unknown -> bus
+        mode = _ROUTE_TYPE_TO_MODE.get(rt, "bus")
         if best is None or _MODE_PRIORITY[mode] < _MODE_PRIORITY[best]:
             best = mode
     return best
@@ -358,16 +298,6 @@ def build_stops_index(
     routes_served_by_stop: dict[str, list[str]] | None = None,
     route_type_by_id: dict[str, int] | None = None,
 ) -> "StopsIndex":  # noqa: UP037
-    """Build static/stops_index.json from gold.dim_stop.
-
-    When *routes_served_by_stop* and *route_type_by_id* are supplied (threaded
-    from the same publish pass — see publish._publish_static), each entry also
-    carries a short top-5 ``routes`` list plus a derived ``mode`` (the
-    highest-priority GTFS mode among ALL routes serving the stop). With neither
-    argument the index still builds standalone (mode null, routes []), so old
-    callers and tests keep working. No second heavy query: both maps are built
-    in memory from build_routes_index + build_all_stops_data, which run anyway.
-    """
     routes_by_stop = routes_served_by_stop or {}
     type_by_id = route_type_by_id or {}
     stops = []
@@ -377,8 +307,6 @@ def build_stops_index(
             continue
         sid = str(r["stop_id"])
         full_routes = routes_by_stop.get(sid, [])
-        # mode from the FULL served set (metro sorts first so it survives the
-        # cap anyway, but deriving from the full set is robust regardless).
         mode = (
             _mode_from_route_types([type_by_id.get(rt) for rt in full_routes])
             if full_routes
@@ -397,10 +325,6 @@ def build_stops_index(
         )
     return StopsIndex(generated_utc=generated_utc, stops=stops)
 
-
-# ---------------------------------------------------------------------------
-# STATIC route file
-# ---------------------------------------------------------------------------
 
 _ROUTE_SHAPES_SQL = named_query(
     "static.route_shapes",
@@ -568,7 +492,6 @@ def _assemble_route_file(
     stops_by_shape: Mapping[object, Sequence[_Row]],
     schedule_rows: Sequence[_Row],
 ) -> RouteFile:
-    """Map already-fetched route rows to the canonical static route contract."""
 
     from collections import defaultdict
 
@@ -662,14 +585,6 @@ def build_route(
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
 ) -> "RouteFile":  # noqa: UP037
-    """Build static/routes/{route_id}.json — branches + shapes + stops + schedule.
-
-    One RouteDirection is emitted per real branch ((direction, headsign) with its
-    most-used shape + that shape's full stop list), so multi-branch routes are not
-    truncated.  Headways are the median gap between DISTINCT first-stop departures
-    of the busiest direction on a representative weekday, per time-of-day shift,
-    plus one 'weekend' period.  Times are wall-clock (GTFS >=24:00 normalised).
-    """
     context = static_context or _static_schedule_context(conn, provider_id=provider_id)
     if context.dataset_version_id is None:
         return RouteFile(generated_utc=generated_utc, id=route_id)
@@ -723,7 +638,6 @@ def build_all_routes_data(
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
 ) -> dict[str, RouteFile]:
-    """Build every static route file with four set-based queries."""
 
     from collections import defaultdict
 
@@ -784,10 +698,6 @@ def build_all_routes_data(
     return routes
 
 
-# ---------------------------------------------------------------------------
-# STATIC stop files (batch — one pass for all stops)
-# ---------------------------------------------------------------------------
-
 _ALL_STOPS_SQL = named_query(
     "static.all_stops",
     f"""
@@ -799,9 +709,7 @@ _ALL_STOPS_SQL = named_query(
     """
 )
 
-# Distinct departures per (stop, route, headsign) for the representative WEEKDAY
-# service only, so each stop shows one coherent day's schedule (not the union of
-# all 144 calendars).  DISTINCT collapses simultaneous branch departures.
+# Use one representative weekday, deduplicating simultaneous branch departures.
 _ALL_STOP_SCHEDULES_SQL = named_query(
     "static.all_stop_schedules",
     """
@@ -827,11 +735,6 @@ def build_all_stops_data(
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
 ) -> "dict[str, StopFile]":  # noqa: UP037
-    """Build all StopFile objects in a single two-query pass (representative weekday).
-
-    Returns stop_id -> StopFile. The schedule is a representative all-day sample
-    of the busiest weekday's service; weekend-only stops have an empty schedule.
-    """
     import logging
     from collections import defaultdict
 
@@ -851,8 +754,7 @@ def build_all_stops_data(
         if lat is None or lon is None:
             continue
         raw = r["wheelchair_boarding"]
-        # GTFS: 1=accessible, 2=not accessible, 0/NULL=unknown. The contract field
-        # is a bare bool with no 'unknown'; STM only emits 1/2 today.
+        # GTFS 0/NULL means unknown; the legacy bool cannot represent that state.
         if raw not in (1, 2):
             logger.warning(
                 "stop %s wheelchair_boarding=%r not in (1,2); publishing wheelchair=False", sid, raw
@@ -880,7 +782,7 @@ def build_all_stops_data(
     ).mappings():
         sid = str(r["stop_id"])
         key = (str(r["route_id"]), r["trip_headsign"] or "")
-        schedule[sid][key].append(str(r["departure_time"]))  # raw, already chronological
+        schedule[sid][key].append(str(r["departure_time"]))
 
     for sid, route_map in schedule.items():
         stop = stops.get(sid)
@@ -913,19 +815,9 @@ def build_all_stops_data(
     return stops
 
 
-# --------------------------------------------------------------------------
-# build_basemap (settings-driven PMTiles pointer)
-# --------------------------------------------------------------------------
-
-
 def build_basemap(
     settings: object, *, generated_utc: str
 ) -> "BasemapFile | None":  # noqa: UP037
-    """Build static/basemap.json — a pointer to the hosted PMTiles archive.
-
-    Pure function (no DB): returns ``None`` when SNAPSHOT_BASEMAP_PMTILES_URL is
-    unset/falsy, so the basemap artifact ships only once a real archive exists.
-    """
     url = getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None)
     if not url:
         return None

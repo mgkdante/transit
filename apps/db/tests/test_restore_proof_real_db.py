@@ -1,4 +1,3 @@
-"""Data and durability checks for a retained local restore drill."""
 
 from __future__ import annotations
 

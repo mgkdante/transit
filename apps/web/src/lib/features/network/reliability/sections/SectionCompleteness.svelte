@@ -6,7 +6,6 @@
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionCompletenessProps {
-		/** The formatted latest-bucket completeness reading ("94.2%"), or null → the styled chip. */
 		latestDisplay: string | null;
 		copy: NetworkReliabilityCopy;
 		locale: Locale;

@@ -1,41 +1,15 @@
-<!--
-  StatusDot — LED status indicator (Set A).
-  Brand primitive: replaces scattered LED-dot implementations.
-  Adapted from yesid.dev StatusDot; re-themed to transit tokens.
-
-  DOCTRINE: this dot can encode DATA (the v1 StatusCode aspects map to the
-  dataviz status scale, never --primary). Signal aspects (green/caution/stop/
-  lunar) speak the interlocking-signal palette. `orange` is the lone
-  INTERACTIVE/default accent and is the only value that touches --primary.
-  a11y: colour is never the sole channel — pass `label` for a visually-hidden
-  text equivalent (and pair with a glyph at the call site).
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	/** v1 StatusCode aspects — encoded with the dataviz status scale (DATA). */
 	type StatusAspect = 'early' | 'on_time' | 'late' | 'severe' | 'unknown';
-	/** Interlocking-signal aspects + the lone interactive accent. */
 	type SignalAspect = 'orange' | 'green' | 'caution' | 'stop' | 'lunar';
 
 	export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
-		/**
-		 * Dot colour. Signal aspects (orange/green/caution/stop/lunar) or a v1
-		 * StatusCode (early/on_time/late/severe/unknown). StatusCodes resolve to
-		 * the dataviz status scale so the mark stays doctrine-clean.
-		 */
 		color?: SignalAspect | StatusAspect;
-		/** Enable the LED pulse-glow animation. */
 		pulse?: boolean;
-		/** Dot size. */
 		size?: 'sm' | 'md';
-		/**
-		 * Halo ring in muted card colour — for dots overlaid on busy surfaces.
-		 * Uses CSS outline so it composes with the box-shadow pulse animation.
-		 */
 		ring?: boolean;
-		/** Visually-hidden text label (a11y: colour is never the sole channel). */
 		label?: string;
 		class?: string;
 	}
@@ -52,10 +26,6 @@
 
 	const sizeMap = { sm: 'size-1.5', md: 'size-2.5' } as const;
 
-	// Signal-aspect palette: orange = the interactive accent (the only --primary
-	// touch); green/caution/stop/lunar = interlocking-signal lamp colours.
-	// v1 StatusCodes map to the dataviz status scale (CSS keys use hyphens —
-	// 'on_time' -> --dataviz-status-on-time), keeping every DATA mark on-scale.
 	const colorMap = {
 		orange: 'bg-primary',
 		green: 'bg-[var(--signal-proceed)]',

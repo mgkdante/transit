@@ -41,7 +41,6 @@ function compactCss(value: string): string {
 		.trim();
 }
 
-// Stand-in for the orchestrator's detailPanel snippet (RightPanel + MapSelectionDetail).
 const detailPanel = createRawSnippet(() => ({
 	render: () => `<div data-testid="detail-panel-body">detail</div>`,
 }));
@@ -105,7 +104,6 @@ describe('MapDetailOverlay', () => {
 		expect(handle).toHaveAttribute('aria-valuemax', String(MAX_DETAIL_PANEL_WIDTH));
 		expect(handle).toHaveAttribute('aria-valuenow', '400');
 
-		// Collapsed → the icon strip is fixed-width, so the handle is gone.
 		await rerender({
 			widthPx: 400,
 			collapsed: true,
@@ -201,7 +199,6 @@ describe('MapDetailOverlay', () => {
 		const handle = container.querySelector('.map-detail-handle')!;
 		const setItem = vi.spyOn(Storage.prototype, 'setItem');
 
-		// Left-edge handle: ArrowLeft grows (+16), ArrowRight shrinks (-16).
 		await fireEvent.keyDown(handle, { key: 'ArrowLeft' });
 		expect(live.widthPx).toBe(416);
 		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('416');

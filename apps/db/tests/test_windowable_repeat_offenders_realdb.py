@@ -1,15 +1,3 @@
-"""Real-DB recompose gate for the S14 windowable repeat-offenders build (DB lane D3).
-
-Self-skips when TRANSIT_TEST_DATABASE_URL is unset. Seeds gold.repeat_offender_daily_spine DIRECTLY
-(the recompose reads only that table) with rows that CLEAR MIN_N (>=30 obs/entity/window), so the
-ranking + Wilson paths run real assertions (the DB-PR-1 lesson: a too-sparse seed makes them
-vacuous). Two mutation killers:
-  * the MIN_N footgun (a 4-of-4-severe fluke pins the not-severe Wilson LB at 0.0% and would rank #1
-    without the `if obs < _MIN_N_OFFENDER` exclude), and
-  * the recurrence_days PARITY invariant: recurrence_days == COUNT(DISTINCT date WHERE the entity
-    was severe that day) over the window, seeded across multiple dated rows so a wrong aggregation
-    (SUM of severe days, or an un-DISTINCT count) reds.
-"""
 
 from __future__ import annotations
 
@@ -26,14 +14,11 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
 
 _PROVIDER = "stm_dense_ro"
 _ROUTE = "RO1"
-_ANCHOR = date(2026, 6, 30)  # week window = [anchor-6, anchor]; month = [anchor-29, anchor]
+_ANCHOR = date(2026, 6, 30)
 
 
 @contextmanager
 def _seeded(rows, real_db_engine, seed_provider):  # noqa: ANN001
-    """rows = list of (entity_kind, entity_id, provider_local_date, obs, severe, sum_delay_seconds).
-    Rollback-isolated; clears any leftover committed rows for this provider at entry so a stale row
-    can never inflate a window past MIN_N (the pollution-defeat guard). The DELETE is in-tx."""
     with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
@@ -72,7 +57,6 @@ def _seeded(rows, real_db_engine, seed_provider):  # noqa: ANN001
 
 
 def _one_day(rows):  # noqa: ANN001
-    """rows = (kind, eid, obs, severe, sum) on the single anchor date."""
     return [(k, e, _ANCHOR, n, sev, sm) for (k, e, n, sev, sm) in rows]
 
 
@@ -85,13 +69,11 @@ def _month(grains):  # noqa: ANN001
 
 
 def test_ranks_per_kind_by_not_severe_wilson_lower_bound(real_db_engine, seed_provider) -> None:
-    """trip and vehicle rank on SEPARATE ladders (rank restarts per kind); within a kind the
-    high-n chronic-severe entity ranks worse (lower not-severe Wilson LB)."""
     with _seeded(
         _one_day(
             [
-                ("trip", "T_BAD", 900, 360, 900 * 200),  # 40% severe
-                ("trip", "T_OK", 100, 20, 100 * 90),  # 20% severe
+                ("trip", "T_BAD", 900, 360, 900 * 200),
+                ("trip", "T_OK", 100, 20, 100 * 90),
                 ("vehicle", "V_BAD", 200, 100, 200 * 220),
             ]
         ),
@@ -102,20 +84,18 @@ def test_ranks_per_kind_by_not_severe_wilson_lower_bound(real_db_engine, seed_pr
     trips = [e for e in week.entries if e.type == "trip"]
     vehs = [e for e in week.entries if e.type == "vehicle"]
     assert [e.id for e in trips] == ["T_BAD", "T_OK"]
-    assert [e.rank for e in trips] == [1, 2]  # rank restarts per kind
+    assert [e.rank for e in trips] == [1, 2]
     assert [e.rank for e in vehs] == [1]
     assert trips[0].wilson_lo < trips[1].wilson_lo
 
 
 def test_min_n_floor_excludes_tiny_fluke(real_db_engine, seed_provider) -> None:
-    """THE MUTATION KILLER. A 4-of-4-severe fluke pins the not-severe Wilson LB at 0.0% and would
-    rank #1 without the MIN_N=30 exclude. Deleting `if obs < _MIN_N_OFFENDER` must red this."""
     assert _wilson_lo(0, 4) == 0.0
     with _seeded(
         _one_day(
             [
-                ("trip", "fluke", 4, 4, 4 * 600),  # n<30 -> excluded from ranking
-                ("trip", "chronic", 900, 360, 900 * 200),  # clears MIN_N
+                ("trip", "fluke", 4, 4, 4 * 600),
+                ("trip", "chronic", 900, 360, 900 * 200),
             ]
         ),
         real_db_engine,
@@ -128,18 +108,12 @@ def test_min_n_floor_excludes_tiny_fluke(real_db_engine, seed_provider) -> None:
 
 
 def test_recurrence_days_equals_distinct_severe_days_parity(real_db_engine, seed_provider) -> None:
-    """PARITY (the 0075 invariant): recurrence_days == COUNT(DISTINCT date WHERE severe that day)
-    over the window. Seed one entity across 4 distinct dates, 3 of them severe (>=1 severe obs) and
-    1 clean, ALL inside the week window. A correct build reports recurrence_days=3, observed_days=4.
-    A SUM-of-severe-days or an un-DISTINCT count would report a different number."""
-    days = [_ANCHOR - timedelta(days=k) for k in range(4)]  # 4 distinct dates in the week window
+    days = [_ANCHOR - timedelta(days=k) for k in range(4)]
     rows = [
-        # 3 severe days (severe_delay_count > 0) + 1 clean day (severe = 0). Each day >=? obs; the
-        # WINDOW sum clears MIN_N (4 x 30 = 120 obs).
-        ("trip", "T", days[0], 30, 5, 30 * 200),  # severe day
-        ("trip", "T", days[1], 30, 8, 30 * 200),  # severe day
-        ("trip", "T", days[2], 30, 3, 30 * 200),  # severe day
-        ("trip", "T", days[3], 30, 0, 30 * 60),  # CLEAN day (0 severe) -> not counted
+        ("trip", "T", days[0], 30, 5, 30 * 200),
+        ("trip", "T", days[1], 30, 8, 30 * 200),
+        ("trip", "T", days[2], 30, 3, 30 * 200),
+        ("trip", "T", days[3], 30, 0, 30 * 60),
     ]
     with _seeded(rows, real_db_engine, seed_provider) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
@@ -148,17 +122,15 @@ def test_recurrence_days_equals_distinct_severe_days_parity(real_db_engine, seed
         "recurrence_days must be DISTINCT severe days (3), not 16 severe or 4 days"
     )
     assert entry.observed_days == 4, "observed_days = DISTINCT observed dates (4)"
-    assert entry.observation_count == 120  # 30 x 4 days summed over the window
+    assert entry.observation_count == 120
 
 
 def test_sub_floor_tray_only_when_recurred(real_db_engine, seed_provider) -> None:
-    """A sub-MIN_N entity reaches the tray ONLY if it recurred (recurrence_days>=2); a single-day
-    sub-floor fluke is dropped. Seed a 2-severe-day sub-floor entity and a 1-day sub-floor fluke."""
     days = [_ANCHOR, _ANCHOR - timedelta(days=1)]
     rows = [
-        ("vehicle", "V_TRAY", days[0], 10, 3, 10 * 300),  # sub-floor, day 1 severe
-        ("vehicle", "V_TRAY", days[1], 10, 2, 10 * 300),  # sub-floor, day 2 severe -> recurrence 2
-        ("vehicle", "V_FLUKE", days[0], 5, 5, 5 * 600),  # sub-floor, single severe day -> dropped
+        ("vehicle", "V_TRAY", days[0], 10, 3, 10 * 300),
+        ("vehicle", "V_TRAY", days[1], 10, 2, 10 * 300),
+        ("vehicle", "V_FLUKE", days[0], 5, 5, 5 * 600),
     ]
     with _seeded(rows, real_db_engine, seed_provider) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
@@ -169,13 +141,11 @@ def test_sub_floor_tray_only_when_recurred(real_db_engine, seed_provider) -> Non
     tray_e = next(e for e in week.tray if e.id == "V_TRAY")
     assert tray_e.rank is None
     assert tray_e.recurrence_days == 2
-    assert tray_e.wilson_lo is None  # uninformative below the floor
+    assert tray_e.wilson_lo is None
 
 
 def test_avg_and_severity_from_own_window(real_db_engine, seed_provider) -> None:
-    """avg_delay_min = round(Σsum/Σobs/60,1); severity uses the mart vocabulary on the entry's own
-    window (recurrence>=10 OR avg>600 critical; >=5 high; else watch)."""
-    obs, severe, total = 60, 12, 60 * 660  # avg 660s = 11.0 min (> 600 -> critical)
+    obs, severe, total = 60, 12, 60 * 660
     with _seeded(
         _one_day([("trip", "s1", obs, severe, total)]),
         real_db_engine,
@@ -186,11 +156,10 @@ def test_avg_and_severity_from_own_window(real_db_engine, seed_provider) -> None
     assert e.avg_delay_min == 11.0
     assert e.severe_pct == 20.0
     assert e.wilson_lo == _wilson_lo(obs - severe, obs)
-    assert e.severity == "critical"  # avg 660s > 600s
+    assert e.severity == "critical"
 
 
 def test_window_days_and_grain_set(real_db_engine, seed_provider) -> None:
-    """Grains are week (window_days=7) + month (window_days=30) ONLY — never a 'day' grain."""
     with _seeded(
         _one_day([("trip", "t", 40, 8, 40 * 120)]),
         real_db_engine,
@@ -204,18 +173,15 @@ def test_window_days_and_grain_set(real_db_engine, seed_provider) -> None:
 
 
 def test_honest_absence_omits_grain(real_db_engine, seed_provider) -> None:
-    """No qualifying entity -> the grain is OMITTED; an empty spine -> no grains at all."""
     with _seeded(
         _one_day([("trip", "tiny", 5, 1, 5 * 120)]),
         real_db_engine,
         seed_provider,
-    ) as conn:  # sub-floor, 1 day -> dropped
+    ) as conn:
         assert _repeat_offenders_by_grain(conn, _PROVIDER, {}) == []
 
 
 def test_end_to_end_build_emits_by_grain(real_db_engine, seed_provider) -> None:
-    """Wiring gate: build_repeat_offenders() (the full publisher path) must recompose + attach
-    by_grain. A missing call or dropped kwarg leaves by_grain=[] -> this fails."""
     with _seeded(
         _one_day(
             [
@@ -233,12 +199,9 @@ def test_end_to_end_build_emits_by_grain(real_db_engine, seed_provider) -> None:
 
 
 def test_byte_ceiling_probe(real_db_engine, seed_provider) -> None:
-    """S14 real-DB size probe: the full published repeat_offenders.json (scalar + by_grain) off a
-    dense seed stays under REPEAT_OFFENDERS_BYTE_CEILING. Prints the measured size as a gauge."""
     from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body
 
-    # a wide dense seed: 120 trips + 120 vehicles clearing MIN_N across the month window.
     rows = []
     for i in range(120):
         rows.append(("trip", f"T{i:03d}", _ANCHOR, 200, 200 - (i % 60), 200 * 300))
@@ -264,9 +227,6 @@ def test_byte_ceiling_probe(real_db_engine, seed_provider) -> None:
 def test_as_of_history_executes_one_closed_spine_stream_and_recomposes_windows(
     real_db_engine, seed_provider
 ) -> None:
-    """The immutable scalar parity target is the equivalent 14 CLOSED local-date spine
-    window. The fixed mutable mart's instant `now()-14d` window can include the open local day,
-    so literal newest parity is asserted only when those source windows are aligned."""
     from transit_ops.snapshots.builders import historic
 
     days = [_ANCHOR - timedelta(days=offset) for offset in range(4)]

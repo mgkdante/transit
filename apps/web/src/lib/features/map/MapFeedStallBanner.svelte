@@ -1,21 +1,3 @@
-<!--
-  MapFeedStallBanner — the map's one live announcement owner.
-
-  Always mounted, empty at rest, and prioritized:
-  selected-family failure > global stall > live edge. The global stall still
-  means the oldest active retained generation crossed the 3x-ttl budget. Vehicle
-  motion uses its own vehicles-only staleness and is not controlled here.
-
-  Calm CAUTION, not alarm: it is informational (role="status" + aria-live=polite,
-  NOT alert), states a fact, and the rest of the map (basemap, stops, near-me)
-  stays fully usable behind it (pointer-events: none). It mirrors the stale
-  freshness chrome — the caution hue warms the border; the text carries meaning.
-
-  The global-stall age comes from the SAME aggregate freshness the floating
-  freshness chip uses (generatedUtc + the ticking ageSeconds), formatted through
-  the shared relative-time helper so it reads "2 minutes ago" / "il y a 2 minutes"
-  and ticks in lockstep with the rest of the chrome.
--->
 <script lang="ts" module>
 	export type MapFeedBannerState =
 		| 'selected-family-failure'
@@ -49,25 +31,13 @@
 	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {
-		/** ISO 8601 (UTC) timestamp of the last live build, or null when unknown. */
 		generatedUtc: string | null;
-		/**
-		 * Pre-computed ticking age in seconds from the live store. OPTIONAL — when
-		 * omitted the banner derives the age itself from `generatedUtc` off the
-		 * shared clock (so the readout still ticks).
-		 */
 		ageSeconds?: number | null;
-		/** True once the whole live feed is past its freshness budget. */
 		isStale: boolean;
-		/** UI language for the intrinsic label. */
 		locale: Locale;
-		/** Highest-priority selected-family failure, already localized. */
 		selectedFamilyFailureMessage?: string | null;
-		/** Lowest-priority live-edge recovery/absence state. */
 		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
-		/** Lowest-priority live-edge recovery/absence message. */
 		liveEdgeMessage?: string | null;
-		/** Shared precedence result supplied by MapOverlayChrome. */
 		state?: MapFeedBannerState;
 	}
 
@@ -84,12 +54,8 @@
 
 	const t = $derived(MAP_COPY[locale]);
 
-	// Keep the shared clock alive while the banner is on screen so the relative
-	// age ticks in lockstep with every other time label in the chrome.
 	$effect(() => sharedClock.subscribe());
 
-	// The effective age: the live store's ticking age wins; otherwise derive it
-	// from generatedUtc off the shared SERVER clock. Both re-derive every tick.
 	const effectiveAge = $derived<number | null>(
 		ageSeconds !== undefined
 			? ageSeconds
@@ -124,8 +90,6 @@
 	);
 </script>
 
-<!-- M1 #34: one stable live region owns every map-live announcement. Keeping it
-     mounted makes priority changes update one assistive-technology surface. -->
 <div
 	class="map-overlay map-live-edge"
 	class:map-feed-stall={resolvedState === 'global-stall'}
@@ -142,10 +106,7 @@
 		position: absolute;
 		z-index: var(--z-map-overlay);
 	}
-	/* Reserve the 16rem controls and 1rem gutters, and stay clear of the published
-	   detail edge. Announcements sit below freshness and never intercept map input. */
 	.map-live-edge {
-		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
 		top: calc(var(--chrome-offset) + 2.5rem);
 		left: calc(var(--app-left-rail-offset, 0rem) + 18rem);
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
@@ -165,7 +126,6 @@
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
@@ -184,12 +144,6 @@
 	.map-live-edge[data-state='global-stall'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
-	/* M6f-2 F14: the banner used to sit ON the control row's own anchor
-	   (--map-mobile-control-bottom, left 0.75rem) — the controls peel's exact
-	   origin — which only worked because the peel was being hidden. The peel now
-	   survives a stall, so the banner STACKS ABOVE the row: one 44px control
-	   height plus the 10px gap this file already uses. Clear of both peels, it
-	   spans the full row width instead of dodging near-me. */
 	@media (max-width: 1023.98px) {
 		.map-live-edge:is(
 			[data-state='unavailable'],

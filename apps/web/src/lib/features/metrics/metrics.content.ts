@@ -3,10 +3,8 @@ import { METRIC_SUMMARIES, type MetricKey } from '$lib/metrics';
 export { metricInfoFor, metricName, SUPPLEMENTAL_METRIC_TIPS } from '$lib/metrics';
 export type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 
-/** Provenance confidence: every reliability metric is a feed-derived proxy. */
 export type Confidence = 'proxy' | 'medium';
 
-/** The five reliability-surface clusters that group the explainer sections. */
 export type MetricClusterKey =
 	| 'punctuality'
 	| 'waitRegularity'
@@ -24,36 +22,21 @@ interface BilingualList {
 }
 
 export interface MetricEntry {
-	/** Stable identity (icon lookup, #each keys, surface ↔ page link). */
 	readonly key: MetricKey;
-	/** URL fragment, stable + unique kebab-case (e.g. 'avg-delay'). No leading '#'. */
 	readonly anchor: string;
-	/** Which surface cluster band this metric belongs under. */
 	readonly cluster: MetricClusterKey;
-	/** Notion family number (1..21), a provenance trace back to the science doc. */
 	readonly family: number;
-	/** Feed-derived estimate ('proxy') vs point-in-time census ('medium'). */
 	readonly confidence: Confidence;
-	/** Display name (FR canonical, EN mirror). */
 	readonly name: BilingualText;
-	/** The metric's science-doc name (mono, language-neutral identifier label). */
 	readonly sciName: string;
-	/** ONE-LINE plain explanation, the (i) hover tip. */
 	readonly oneLiner: BilingualText;
-	/** Full plain-language definition (ported from the Notion lead paragraph). */
 	readonly definition: BilingualText;
-	/** The math, plain + formula (ported from the Notion "Formula:" line). */
 	readonly math: BilingualText;
-	/** Representative SQL and publication arithmetic, shared by both locales. */
 	readonly sql: string;
-	/** "A citizen reads X, but it's actually Y" (ported from the Notion "Not:"). */
 	readonly notReally: BilingualText;
-	/** Honest caveats (ported from the Notion "Caveats" bullets). */
 	readonly caveats: BilingualList;
 }
 
-// The five-cluster surface order (mirrors reliability.copy ReliabilityClusterKey),
-// used to group the ToC + section overlines on the explainer page.
 export const METRIC_CLUSTER_ORDER: readonly MetricClusterKey[] = [
 	'punctuality',
 	'waitRegularity',
@@ -63,7 +46,6 @@ export const METRIC_CLUSTER_ORDER: readonly MetricClusterKey[] = [
 ] as const;
 
 export const METRICS: readonly MetricEntry[] = [
-	// ── 01 Punctuality ──────────────────────────────────────────────────────
 	{
 		key: 'otp',
 		...METRIC_SUMMARIES.otp,
@@ -453,7 +435,6 @@ scheduled_min = round_half_away(statistics.median(gaps), 1) if gaps else None`,
 			],
 		},
 	},
-	// ── 03 Service delivered ──────────────────────────────────────────────────
 	{
 		key: 'cancellation',
 		...METRIC_SUMMARIES.cancellation,
@@ -656,7 +637,6 @@ GROUP BY provider_id, route_id`,
 		},
 	},
 
-	// ── 04 Crowding ────────────────────────────────────────────────────────────
 	{
 		key: 'occupancy',
 		...METRIC_SUMMARIES.occupancy,
@@ -727,7 +707,6 @@ if not total: return None        # honest-None, never an all-zero mix`,
 			],
 		},
 	},
-	// ── 05 Time-of-day habits ──────────────────────────────────────────────────
 	{
 		key: 'habits',
 		...METRIC_SUMMARIES.habits,
@@ -858,29 +837,12 @@ ORDER BY 1;`,
 	},
 ] as const;
 
-/** Quick lookup by metric key (build-time stable; the array is the source order). */
 export const METRICS_BY_KEY: Readonly<Record<MetricKey, MetricEntry>> = Object.fromEntries(
 	METRICS.map((m) => [m.key, m]),
 ) as Record<MetricKey, MetricEntry>;
 
-/** The metric ids in surface order, for the ToC + the parity test's coverage set. */
 export const METRIC_KEYS: readonly MetricKey[] = METRICS.map((m) => m.key);
 
-/**
- * Map each /v1 provenance.methodology key to the explainer MetricEntry it best
- * describes, so /metrics can render the live "Pipeline note (current run)" string
- * inside the matching metric's card. ONE methodology key → ONE metric (no
- * fan-out): each key annotates its single most relevant metric (`delay_unit` is
- * about delay-in-minutes/the ghost guard → avg delay; `headway` covers
- * excess-wait too), and keys with no citizen-metric home (`history_freeze`,
- * `service_time_conversion`, `alert_text_en`, `network_no_data`,
- * `alert_breakdown`) are deliberately left out — they render on the /status
- * data-health surface's Pipeline-notes section instead, so no string is lost.
- *
- * Keyed by the PROVENANCE key (the published string's dictionary key); the value
- * is the explainer MetricKey. A provenance key absent here, or absent from the
- * published methodology dict, simply yields no note (the card is unchanged).
- */
 export const METHODOLOGY_METRIC_KEY: Readonly<Record<string, MetricKey>> = {
 	otp_definition: 'otp',
 	delay_unit: 'avgDelay',
@@ -893,22 +855,11 @@ export const METHODOLOGY_METRIC_KEY: Readonly<Record<string, MetricKey>> = {
 	occupancy: 'occupancy',
 };
 
-/**
- * Invert METHODOLOGY_METRIC_KEY to a MetricKey → provenance-key lookup, so the
- * explainer can ask "which methodology string, if any, annotates THIS metric?".
- * One metric maps to at most one methodology key by construction.
- */
 export const METRIC_METHODOLOGY_KEY: Readonly<Partial<Record<MetricKey, string>>> =
 	Object.fromEntries(
 		Object.entries(METHODOLOGY_METRIC_KEY).map(([provKey, metricKey]) => [metricKey, provKey]),
 	) as Partial<Record<MetricKey, string>>;
 
-/**
- * Resolve the live methodology note for a metric from a published methodology
- * dict (provenance.methodology). Returns the verbatim published string when the
- * metric has a mapped key AND that key holds a non-empty string, else null (→ the
- * card renders no pipeline note). The value is rendered as-is (a published string).
- */
 export function methodologyNoteFor(
 	key: MetricKey,
 	methodology: Record<string, unknown> | null | undefined,

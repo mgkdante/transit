@@ -1,13 +1,3 @@
-<!--
-  SectionCrowdingByDay — the per-day crowding small-multiple (one 100% bar per day).
-
-  Pure presenter of `selectOccupancyTrend` (P5.2: selector-emitted stacked-share
-  ChartSpecs through the ONE <Chart> renderer). One strip per day WITH occupancy
-  telemetry — a day with no telemetry is SKIPPED upstream (never an even split). The
-  100% stacked strips are self-normalising (EXEMPT from the absolute-magnitude domain
-  law). The whole tile stands down (renders nothing) when no day carries crowding data —
-  the orchestrator gates on the day-grain + a non-empty list.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { Chart } from '$lib/components/dataviz/chart';

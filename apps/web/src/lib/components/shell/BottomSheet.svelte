@@ -1,19 +1,3 @@
-<!--
-  BottomSheet — the mobile detail surface (the phone-shaped stand-in for the
-  desktop RightPanel volet). A bottom-anchored sheet (built on the ui/sheet
-  bits-ui primitive) that slides up over the full-bleed map to show the selected
-  surface; it carries the same body + sticky-footer slots the RightPanel does so
-  page code can target both with one set of snippets.
-
-  `open` is bindable so the shell (or page) owns the open/close state; closing
-  via the backdrop, the X, or Escape all flow back through the binding. No data
-  is wired in 9.2 — body + footer are named snippets with quiet empty states.
-
-  Adapted from the shadcn-svelte sheet usage + transit board theming. Surfaces
-  SOLID (the sheet content is bg-popover from the primitive). a11y: the sheet
-  primitive supplies role=dialog + focus trap; we supply a labelled title (the
-  primitive requires a title for the description-less case) and an aria-label.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
@@ -24,23 +8,14 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface BottomSheetProps {
-		/** Whether the sheet is open (bindable — the shell/page owns this). */
 		open?: boolean;
-		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
-		/** Sheet title (visible heading + accessible name). */
 		title?: string;
-		/** Optional entity identity rendered inside the Sheet title. */
 		identity?: Snippet;
-		/** A stable key for the active surface; re-keys the body on swap. */
 		surfaceKey?: string;
-		/** Whether the active detail surface has a previous item to return to. */
 		canGoBack?: boolean;
-		/** Fired when the back control is activated. */
 		onback?: () => void;
-		/** The detail body — the swapped surface content. */
 		children?: Snippet;
-		/** Sticky footer slot — primary actions / provenance, pinned to the bottom. */
 		footer?: Snippet;
 		class?: string;
 	}
@@ -114,7 +89,6 @@
 				</div>
 			</Sheet.Header>
 
-			<!-- Body — keyed on the active surface so swaps re-enter cleanly. -->
 			<div class="bottom-sheet-body min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
 				{#key surfaceKey}
 					<div class="p-4">
@@ -129,7 +103,6 @@
 				{/key}
 			</div>
 
-			<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
 			{#if footer}
 				<div
 					class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"

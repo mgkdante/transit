@@ -1,5 +1,3 @@
-"""Full-retention Network daily metrics partitioned into provider-local months."""
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -265,7 +263,6 @@ class NetworkHistoryPlan:
     def iter_partition_items(
         self,
     ) -> Iterator[tuple[HistoricPartitionRef, NetworkHistoryPartition]]:
-        """Yield one content-addressed month, releasing it before building the next."""
 
         for month, dates in iter_history_month_groups(self.available_dates):
             yield history_month_partition_ref(
@@ -292,7 +289,6 @@ class NetworkHistoryPlan:
             )
 
     def build_index(self, refs: Iterable[HistoricPartitionRef]) -> HistoricCollectionIndex:
-        """Build the stable pointer from compact refs after every month has succeeded."""
 
         first, last, gaps = history_coverage(self.available_dates)
         metrics = [
@@ -334,7 +330,6 @@ class NetworkHistoryPlan:
         return index
 
     def materialize(self) -> NetworkHistoryBundle:
-        """Compatibility helper for pure tests and direct analytical callers."""
 
         items = list(self.iter_partition_items())
         refs = [ref for ref, _partition in items]
@@ -483,7 +478,6 @@ def build_network_history_plan_from_rows(
     occupancy_rows: Iterable[Mapping[str, Any]],
     generated_utc: str,
 ) -> NetworkHistoryPlan:
-    """Merge retained daily sources into a plan that yields one month at a time."""
 
     delay, delay_timestamps = _delay_metrics(delay_rows)
     percentiles, vehicles, fact_timestamps = _fact_metrics(fact_rows)
@@ -526,7 +520,6 @@ def build_network_history_from_rows(
     occupancy_rows: Iterable[Mapping[str, Any]],
     generated_utc: str,
 ) -> NetworkHistoryBundle:
-    """Materialize retained Network history for pure analytical callers."""
 
     return build_network_history_plan_from_rows(
         delay_rows=delay_rows,
@@ -544,7 +537,6 @@ def build_network_history_plan(
     generated_utc: str,
     phase_context: HistoryPhaseContext | None = None,
 ) -> NetworkHistoryPlan:
-    """Read each retained source once and return a bounded month publication plan."""
 
     settings = get_settings()
     warm_params = {
@@ -598,7 +590,6 @@ def build_network_history(
     provider_id: str = "stm",
     generated_utc: str,
 ) -> NetworkHistoryBundle:
-    """Materialize retained Network history for direct analytical callers."""
 
     return build_network_history_plan(
         conn,

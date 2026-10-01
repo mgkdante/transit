@@ -5,11 +5,8 @@ export interface RouteSeo {
 	description: string;
 }
 
-/** One resolved breadcrumb crumb: a localized label and a delocalized path. */
 export interface BreadcrumbTrailItem {
-	/** Already-localized, human-facing label. */
 	name: string;
-	/** Delocalized path for this crumb (locale prefix applied by the consumer). */
 	path: string;
 }
 
@@ -27,7 +24,6 @@ const DATASET_COPY = {
 	},
 } satisfies Record<'name' | 'description', BilingualText>;
 
-/** Use provider-specific copy only when both identity fields are present. */
 export interface ProviderSeoIdentity {
 	shortName?: string | null;
 	city?: string | null;
@@ -47,7 +43,6 @@ interface BilingualSeo {
 	readonly title: BilingualText;
 	readonly description: (id: ResolvedIdentity) => BilingualText;
 	readonly neutralDescription: BilingualText;
-	/** Keyworded title override (home only); falls back to `title` otherwise. */
 	readonly keywordTitle?: (id: ResolvedIdentity) => BilingualText;
 }
 
@@ -256,7 +251,6 @@ function entryFor(path: string): BilingualSeo {
 	return HOME;
 }
 
-/** Report-specific trip pages may become unavailable; keep them out of search. */
 export function isEphemeralPath(pathname: string): boolean {
 	return delocalizePath(pathname).startsWith('/trip/');
 }
@@ -268,7 +262,6 @@ function resolveIdentity(identity?: ProviderSeoIdentity): ResolvedIdentity | nul
 	return { shortName, city };
 }
 
-/** Resolve localized route metadata, using neutral copy for incomplete provider identity. */
 export function resolveRouteSeo(
 	pathname: string,
 	locale: Locale,
@@ -283,7 +276,6 @@ export function resolveRouteSeo(
 	return { title: entry.title[locale], description: entry.neutralDescription[locale] };
 }
 
-/** Use URL identifiers for detail breadcrumbs; entity names are not guaranteed during SSR. */
 export function resolveBreadcrumbTrail(pathname: string, locale: Locale): BreadcrumbTrailItem[] {
 	const path = delocalizePath(pathname);
 	const home: BreadcrumbTrailItem = { name: CRUMB_LABELS.home[locale], path: '/' };
@@ -301,12 +293,10 @@ export function resolveBreadcrumbTrail(pathname: string, locale: Locale): Breadc
 	return [];
 }
 
-/** Bilingual Dataset JSON-LD copy (name + description) for the active locale. */
 export function resolveDatasetSeo(locale: Locale): { name: string; description: string } {
 	return { name: DATASET_COPY.name[locale], description: DATASET_COPY.description[locale] };
 }
 
-/** Build absolute, locale-prefixed breadcrumb items for the BreadcrumbList node. */
 export function breadcrumbItemsForHead(
 	pathname: string,
 	locale: Locale,

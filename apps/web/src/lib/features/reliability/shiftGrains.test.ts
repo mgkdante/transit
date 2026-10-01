@@ -41,21 +41,15 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 		}
 	});
 	it('lock the exact real-units domains the audit specified', () => {
-		expect(DELAY_STOP_DOMAIN).toEqual([-2, 8]); // signed: early stops left of zero
+		expect(DELAY_STOP_DOMAIN).toEqual([-2, 8]);
 		expect(DELAY_POS_DOMAIN).toEqual([0, 8]);
-		// Widened [0,6]→[0,8] (deep-audit): a chronically late route's weekday avg ran past 6 min.
 		expect(DELAY_DOW_DOMAIN).toEqual([0, 8]);
-		// Severe share is a % of ALL arrivals → the FULL [0,100] scale (like OTP), so a 7%
-		// share reads as 7%, not the ~20% a zoomed [0,35] domain exaggerated it to.
 		expect(SEVERE_DOMAIN).toEqual([0, 100]);
 		expect(OTP_DOMAIN).toEqual([0, 100]);
 		expect(HEADWAY_DOMAIN).toEqual([0, 35]);
-		// ALL percentages share the full [0,100] scale (operator decision) — a share of a
-		// whole reads as that fraction, never an exaggerated slice of a zoomed max.
 		expect(BUNCHED_DOMAIN).toEqual([0, 100]);
 		expect(CANCEL_RATE_DOMAIN).toEqual([0, 100]);
 		expect(SKIPPED_RATE_DOMAIN).toEqual([0, 100]);
-		// Widened [0,1.2]→[0,1.5] (deep-audit): real STM night/weekend bunching reaches CoV ~1.27.
 		expect(COV_DOMAIN).toEqual([0, 1.5]);
 	});
 });
@@ -73,7 +67,6 @@ describe('covToSeverity (S7)', () => {
 describe('shiftGrains — membership predicates', () => {
 	it('isShiftGrain is true for every canonical shift token', () => {
 		for (const g of SHIFT_GRAIN_ORDER) expect(isShiftGrain(g)).toBe(true);
-		// The membership set mirrors the order array exactly.
 		expect([...SHIFT_GRAINS].sort()).toEqual([...SHIFT_GRAIN_ORDER].sort());
 	});
 
@@ -128,10 +121,10 @@ describe('shiftGrains — localized labels', () => {
 
 	it('falls back to the raw token for an unknown grain (no fabricated label)', () => {
 		expect(shiftLabel('day', 'en')).toBe('day');
-		expect(shiftLabel('weekday', 'en')).toBe('weekday'); // a day-type token is not a shift token
+		expect(shiftLabel('weekday', 'en')).toBe('weekday');
 		expect(shiftLabel('mystery', 'fr')).toBe('mystery');
 		expect(dayTypeLabel('month', 'fr')).toBe('month');
-		expect(dayTypeLabel('am_peak', 'en')).toBe('am_peak'); // a shift token is not a day-type token
+		expect(dayTypeLabel('am_peak', 'en')).toBe('am_peak');
 		expect(dayTypeLabel('junk', 'en')).toBe('junk');
 	});
 });

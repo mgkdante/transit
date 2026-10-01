@@ -1,19 +1,3 @@
-// quiet-mode.svelte.ts — the ONE site-wide article-collapse preference store.
-//
-// Ported from yesid.dev's state/quiet-mode.svelte while retaining Transit's
-// localStorage key.
-//
-// Semantics (the yesid contract):
-//   · enabled=false (the default): article surfaces render default-OPEN.
-//   · toggle ON  → closeSignal bumps: every subscribed card + ToC rail folds.
-//   · toggle OFF → openSignal bumps: every subscribed card + ToC rail reopens.
-//   · "Always start collapsed" engages + persists the collapsed state under one
-//     site-wide key; "Don't start collapsed" clears only that preference.
-//
-// The signals are monotonic counters consumed by CollapsibleSection/TocNav's
-// edge-triggered effects. `init()` intentionally emits the stored state after an
-// article mounts. `syncDocument` stamps `data-quiet-mode` on <html> for CSS.
-
 import { browser } from '$app/environment';
 
 const STORAGE_KEY = 'transit:quiet-mode';
@@ -52,7 +36,7 @@ function setRemembered(next: boolean): void {
 			if (next) localStorage.setItem(STORAGE_KEY, 'true');
 			else localStorage.removeItem(STORAGE_KEY);
 		} catch {
-			/* private mode / disabled storage — the in-memory state still works */
+			// Private mode or disabled storage leaves the state in memory.
 		}
 	}
 }
@@ -73,22 +57,18 @@ export const quietModeStore = {
 	toggle(): void {
 		setEnabled(!enabled);
 	},
-	/** Engage the collapsed state and remember it across visits. */
 	rememberCurrent(): void {
 		setEnabled(true);
 		setRemembered(true);
 	},
-	/** Clear the default; the on-screen state is untouched. */
 	forgetDefault(): void {
 		setRemembered(false);
 	},
-	/** Mount-time restore: every article starts from the stored boolean. */
 	init(): void {
 		const stored = readRemembered();
 		remembered = stored;
 		setEnabled(stored);
 	},
-	/** Test seam — resets state + storage + the document stamp. */
 	resetForTest(): void {
 		enabled = false;
 		remembered = false;
@@ -98,7 +78,7 @@ export const quietModeStore = {
 			try {
 				localStorage.removeItem(STORAGE_KEY);
 			} catch {
-				/* no-op */
+				// Disabled storage must not block the in-memory reset.
 			}
 		}
 		syncDocument(false);

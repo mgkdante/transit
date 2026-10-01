@@ -36,8 +36,6 @@ describe('DeltaStat — the delta doctrine (glyph + dataviz colour + aria)', () 
 	});
 
 	it('a null delta WITH context folds the localized reason into the aria (not "no change data")', () => {
-		// the honest-state distinction (within-noise vs no-prior) must reach assistive tech, never
-		// the bare "no change data" which misreads a measured-but-insignificant change as absent.
 		const { container } = render(DeltaStat, {
 			props: { delta: null, context: 'within noise', ariaNoun: 'AM peak on-time' },
 		});

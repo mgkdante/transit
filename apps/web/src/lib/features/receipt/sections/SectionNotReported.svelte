@@ -1,19 +1,3 @@
-<!--
-  SectionNotReported — the receipt's NOT-REPORTED lines list (S13, NEW · the operator item).
-
-  Pure presenter of selectNotReportedLines: lines scheduled today yet never seen in the
-  live feed ('silent = scheduled but never appeared', distinct from an explicit
-  cancellation). Mirrors the S9 SectionReporting silent-lines list — each row is a ranked
-  link to /lines/[id]; list > listitem > link (the <li> owns the listitem role, the <a>
-  the interactivity + accessible name, the inner RankedRow is `bare`). The bar rides
-  RankedRow/SeverityBar on the FIXED absolute NOT_REPORTED_DOMAIN (doctrine-coded).
-
-  SHOWN/TOTAL HONESTY (DB4): the pre-cap total drives a "showing N of M" note when the
-  list is capped. Mounted by the orchestrator only when hasData — an ABSENT list is
-  honest-absence upstream, never an empty list reading as 'every line reported'. A
-  receipt line-group below the frame (WEB4 documented hoist — a list breaks the tile
-  metaphor).
--->
 <script lang="ts">
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -24,7 +8,6 @@
 		list: NotReportedVM;
 		heading: string;
 		caveat: string;
-		/** "Showing 50 of 200" — rendered only when the list is capped below the total. */
 		shownOfTotal: (shown: number, total: number) => string;
 		locale: Locale;
 		headingLevel?: 2 | 3;
@@ -38,7 +21,6 @@
 		headingLevel = 2,
 	}: SectionNotReportedProps = $props();
 
-	// Show the shown/total note only when the pre-cap total exceeds the shown rows.
 	const truncated = $derived(list.total != null && list.total > list.shown);
 </script>
 

@@ -41,20 +41,6 @@ logger = logging.getLogger(__name__)
 
 
 def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
-    """Return True if the provider has a ``gold.dim_provider`` row.
-
-    Multi-provider: a provider can be *enrolled* (registered in the provider
-    registry / has a YAML manifest, so ``list-providers`` returns it) yet never
-    *seeded* (its static pipeline has never run, so there is no
-    ``gold.dim_provider`` row). Per-provider gold steps that look up the provider
-    calendar (e.g. ``build_warm_rollups`` via ``dp.timezone``) crash with
-    ``NoResultFound`` on such a provider. This cheap EXISTS probe lets each
-    entry point skip an unseeded provider gracefully instead of aborting the
-    whole all-providers run.
-
-    Accepts either a live Connection or an Engine; a bare Engine is opened in a
-    short-lived ``connect()`` block.
-    """
     sql = named_query(
         "rollup.provider.exists",
         "SELECT 1 FROM gold.dim_provider WHERE provider_id = :provider_id LIMIT 1",
@@ -75,7 +61,7 @@ OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
 
 
 def _feed_day_calendar(name: str, fact_table: str, *, missing: bool = False):
-    # Vehicle and trip calendars stay separate: their facts prune independently.
+    # Vehicle and trip calendars remain separate because their facts prune independently.
     watermark_filter = (
         """
       AND timezone('UTC', f.snapshot_local_date::timestamp) NOT IN (
@@ -116,8 +102,7 @@ SELECT_AVAILABLE_OCCUPANCY_DAYS = _feed_day_calendar(
 )
 
 
-# Delay observations belong to capture day. Convert both local midnights separately:
-# adding 24 elapsed hours would include/exclude a neighboring hour on DST changes.
+# Convert both local midnights independently so DST days need not last 24 hours.
 _CAPTURE_DAY_PREDICATE_SQL = """
       f.captured_at_utc >= timezone(
           (SELECT timezone FROM gold.dim_provider WHERE provider_id = :provider_id),
@@ -127,8 +112,6 @@ _CAPTURE_DAY_PREDICATE_SQL = """
           (CAST(:local_date AS date) + 1)::timestamp)
 """.strip()
 
-# One single-row existence probe per retained day, with provider/capture index bounds.
-# The provider-local date series is timestamp WITHOUT time zone.
 _CAPTURE_DAY_CALENDAR_SQL = """
     WITH days AS (
         SELECT d.local_midnight::date AS local_date,
@@ -234,8 +217,7 @@ UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = _daily_percentile_upsert("route", "route_i
 UPSERT_STOP_DELAY_PERCENTILE_DAILY = _daily_percentile_upsert("stop", "delay_stop_id")
 
 
-# Count distinct trips for one service day across its two capture dates.
-# NULL schedule relationships count as scheduled; missing start_date is excluded.
+# Trip service days may span two capture dates; NULL relationships are scheduled.
 UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
     "rollup.route_cancellation.upsert",
     """
@@ -334,8 +316,7 @@ UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
     """,
 )
 
-# Resolve scheduled trips against the current static edition, including calendar_dates-only
-# service. This denominator includes scheduled trips never observed in realtime.
+# Scheduled counts include calendar_dates-only service and trips absent from realtime.
 UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY = named_query(
     "rollup.route_scheduled_trips.upsert",
     """
@@ -419,7 +400,6 @@ def _occupancy_upsert(entity: str, *, hourly: bool = False):
         keys = ["provider_id", "route_id", "provider_local_date", "hour_of_day_local"]
         values = ["f.provider_id", identity, ":local_date", f"{hour}::smallint"]
         groups.append(hour)
-    # Codes 3 and 4 share a band. Counts remain additive across grains.
     bands = {
         "observation_count": "IN (0, 1, 2, 3, 4, 5)",
         "empty_count": "= 0",
@@ -461,8 +441,7 @@ UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY = _occupancy_upsert("route", hourly=True)
 UPSERT_STOP_OCCUPANCY_BAND_DAILY = _occupancy_upsert("stop")
 
 
-# Group delay by occupancy observed on the same fact, excluding missing vehicle matches.
-# Sums/counts pool exactly; medians across days remain an approximation.
+# Pool sums and counts; daily medians cannot be pooled exactly.
 UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = named_query(
     "rollup.route_crowding.upsert",
     f"""
@@ -510,9 +489,7 @@ UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = named_query(
     """,
 )
 
-# Build the preceding service day from its two capture dates so overnight trips stay together.
-# This intentionally lags one closed capture day. Starts use the first observation; terminal
-# delay uses the final observation. The indexed two-date scan preserves bounded work.
+# Lag one closed capture day to include overnight trips on their service day.
 UPSERT_ROUTE_SERVICE_SPAN_DAILY = named_query(
     "rollup.route_service_span.upsert",
     """
@@ -584,14 +561,7 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = named_query(
     """,
 )
 
-# Per-route skipped-stop rate over one CLOSED provider-local day (append-only).
-# Sums the per-trip skipped_stop_count + stop_time_update_count (both carried on
-# the fact by the ETL) for one local day. rate = 100 * skipped / total stop-time
-# updates; None when no stop-time updates were observed. The denominator is ALL
-# stop-time updates (matching the carried stop_time_update_count), NOT filtered on
-# schedule_relationship — a NULL stop-level relationship is SCHEDULED and stays in
-# the denominator. Binds {provider_id, local_date, built_at_utc} for
-# _build_percentile_days. RAMP-IN: no history before this metric shipped.
+# Skipped-stop rates include all observed stop-time updates, including NULL relationships.
 UPSERT_ROUTE_SKIPPED_STOP_DAILY = named_query(
     "rollup.route_skipped_stop.upsert",
     """
@@ -624,11 +594,7 @@ UPSERT_ROUTE_SKIPPED_STOP_DAILY = named_query(
 )
 
 
-# --- S7-B route_delay_spine: finest-grain additive DELAY metric family ---
-# Single source for the 21 histogram edges (sec, left-closed/right-open). The
-# headline SHARES come from the EXACT delay_seconds-predicate count columns below
-# (NOT bins) — a left-closed edge at 300 cannot represent the strict >300 severe
-# band — so the histogram is used only for p50/p90 (CDF interpolation) + the chart.
+# Compute strict severe-delay shares from count predicates, not histogram edges.
 DELAY_HISTOGRAM_EDGES = (
     -3600,
     -300,
@@ -657,14 +623,7 @@ _SPINE_HIST_EDGES_SQL = (
     "ARRAY[-3600,-300,-180,-120,-90,-60,-30,0,30,60,90,120,150,180,240,300,420,600,900,1800,3600]"
 )
 
-# --- S7-B route_headway_shift_daily: finest-grain additive HEADWAY family ---
-# Fixed gap-histogram edges (MINUTES, left-closed/right-open). 21 edges -> 20 finite bins,
-# mirroring the 21-bin spine so the read helper is a 21-entry walk. Edges START AT 0 (D6)
-# so sub-1-min gaps bin honestly (an edges[0]=1 would fold (0,1) into bin 0 and poison the
-# 0.5*median bunched threshold for high-frequency routes). The clamp is 0 < gap_min < 240,
-# so 240 is the finite domain ceiling — NO +inf overflow bin (the read helper's terminal
-# branch is dead code here, unlike the delay spine's Finding B). Fine at the low end so the
-# median CDF-interp + the 0.5*median bunched threshold reconstruct accurately.
+# Headway bins cover 0<gap<240 minutes without an overflow bin.
 HEADWAY_GAP_HISTOGRAM_EDGES = (
     0.0,
     0.5,
@@ -687,28 +646,12 @@ HEADWAY_GAP_HISTOGRAM_EDGES = (
     120,
     180,
     240,
-)  # 21 edges -> 20 bins; width_bucket -> [1,20], LEAST(.,20)-1 -> bin_idx [0,19]
+)
 
 _HEADWAY_GAP_HIST_EDGES_SQL = "ARRAY[0.0,0.5,1,2,3,4,5,6,8,10,12,15,20,25,30,40,60,90,120,180,240]"
 
-# Append-only / closed-day builder for gold.route_delay_spine (rollup_kind=
-# "route_delay_spine"). Reads one CLOSED provider-local day of the trip-delay fact,
-# groups to (route, hour-of-day-local, direction), and stores EXACT additive counts
-# computed with the SAME predicates as UPSERT_TRIP_DELAY_SUMMARY_5M (so otp_pct /
-# severe_pct are byte-identical ratios), plus a SEPARATE 21-bin histogram + the
-# pooled sum_delay_seconds. Binds {provider_id, local_date, date_key, built_at_utc}
-# so it drops straight into _build_percentile_days. Unknown direction COALESCEs to 0
-# (matching the directional headway builder). delayed_trip_count (GC1 / Step G1) is the
-# EDGE: a trip emitting BOTH a NULL-direction (COALESCE -> 0) and a direction-1 row in
-# the same 5m bucket would count once per direction here vs once in the direction-less
-# legacy distinct count; unobserved in the adversarial seed and in STM feeds (a trip
-# update carries one direction per bucket) — revisit if a provider violates that.
-# SUM over 5-minute sub-buckets of COUNT(DISTINCT trip_id) FILTER (delay>0) within the
-# (route, hour, direction) grain — reproducing the legacy route_delay_hourly
-# SUM-of-per-5m-distinct chain BYTE-FOR-BYTE (a single hour-grain distinct count would
-# under-count a trip seen in two 5m buckets of the same hour; verified on an adversarial
-# multi-bucket seed). Predicate mirrors the 5m builder: delay_seconds > 0, NO ghost clamp
-# (the 5m delayed_trip_count carries no |delay|<=3600 guard, unlike on_time/severe).
+# Count distinct delayed trips per five-minute sub-bucket; then sum at hour/direction grain.
+# Different direction rows can count a trip twice; delayed_trip_count has no ghost clamp.
 UPSERT_ROUTE_DELAY_SPINE = named_query(
     "rollup.route_delay_spine.upsert",
     f"""
@@ -843,15 +786,7 @@ UPSERT_ROUTE_DELAY_SPINE = named_query(
 )
 
 
-# --- S7-B stop_delay_spine: finest-grain additive STOP-DELAY family (rollup_kind=
-#     "stop_delay_spine"). Closed capture day, indexed by provider/capture time,
-#     ALL-DAYS (no ISODOW filter — the stop lineage is dow-agnostic, unlike the headway
-#     builder), no dim_provider join (the lean grain has no hour). The GHOST clamp lives
-#     in the WHERE so observation_count = COUNT(*) IS the in-clamp delay count (= the
-#     severe-rate denominator AND the pooled-avg n, over ONE row set — no contamination).
-#     Byte-identical denominator to the legacy stop_delay_hourly (which also clamps in its
-#     WHERE then COUNT(*)s). route_id COALESCEs to '__unrouted__'; a real per-route read
-#     never matches the sentinel. Drops straight into _build_percentile_days. ---
+# Stop counts and pooled means share the same in-clamp row set, including unrouted observations.
 UPSERT_STOP_DELAY_SPINE = named_query(
     "rollup.stop_delay_spine.upsert",
     f"""
@@ -888,17 +823,7 @@ UPSERT_STOP_DELAY_SPINE = named_query(
 )
 
 
-# --- GC1 / Step G4 stop_delay_shift_daily: shift grain of the STOP-DELAY family
-#     (rollup_kind="stop_delay_shift_daily"). Closed-day, sargable on
-#     (provider_id, captured_at_utc). Mirrors UPSERT_STOP_DELAY_SPINE EXACTLY (same GHOST
-#     clamp + stop/delay non-null WHERE, same COUNT(*)/severe FILTER/SUM measures, same
-#     '__unrouted__' COALESCE) but adds the shift dimension computed ONCE at build time from
-#     EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc)) via the ONE gold.reader.buckets
-#     shift CASE (shift_case_sql) — byte-identical to the read-time _SPINE_SHIFT_CASE the route
-#     projector uses, so /stop and /lines bucket the same observation to the same shift. Because
-#     the WHERE is identical to the spine, SUM-over-shifts == the stop_delay_spine
-#     per-(stop,route,date) counts (a finer partition of the same in-clamp row set). Drops
-#     straight into _build_percentile_days. ---
+# Compute shift once from provider-local capture time; shifted totals match the stop spine.
 _STOP_DELAY_SHIFT_HOUR_SQL = "EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::int"
 UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
     "rollup.stop_delay_shift_daily.upsert",
@@ -949,19 +874,7 @@ UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
 )
 
 
-# --- S14 repeat_offender_daily_spine: daily per-entity offender spine (rollup_kind=
-#     "repeat_offender_daily_spine"). Closed capture day, indexed by provider/capture time.
-#     FACT PREDICATES BYTE-IDENTICAL to UPSERT_REPEAT_OFFENDER_DAILY (the scalar mart): delay
-#     non-null + |delay| <= 3600 (GHOST clamp) + route_id IS NOT NULL, so the mart's per-entity
-#     aggregates are exactly a SUM of this spine's daily rows over the same window/predicate set.
-#     Grain (provider, entity_kind trip|vehicle, entity_id, route_id, date): a trip-id row and a
-#     vehicle-id row are emitted per fact row via UNION ALL (the same fact row contributes to
-#     both kinds, exactly as the mart's two GROUP BY arms do). observation_count / severe /
-#     sum_delay mirror the stop spine's measures over ONE in-clamp row set. PARITY: a spine day
-#     has severe_delay_count > 0 iff the day had >=1 severe (>300s) observation, so
-#     COUNT(DISTINCT date WHERE severe_delay_count>0) over a window == the mart's recurrence_days
-#     (COUNT(DISTINCT local_day) FILTER (delay>300)) by construction. Drops straight into
-#     _build_percentile_days. ---
+# Each fact contributes to both trip and vehicle kinds; recurrence counts severe days.
 _REPEAT_OFFENDER_DATE_PREDICATE_SQL = f"          AND {_CAPTURE_DAY_PREDICATE_SQL}"
 _REPEAT_OFFENDER_GHOST_PREDICATE_SQL = (
     f"          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    "
@@ -1024,20 +937,8 @@ UPSERT_REPEAT_OFFENDER_DAILY_SPINE = named_query(
 
 
 REPORTING_AGGREGATE_TABLES = (
-    # GC1 / Step G1 re-pointed every metric READER off route_delay_hourly onto
-    # gold.route_delay_spine (spine column delayed_trip_count added in 0070), but the table
-    # is KEPT + still built here because gold.public_route_reliability_daily (a VIEW read by
-    # receipts.worst_route + route_reliability's daily period) still depends on it. Dropping
-    # it requires re-pointing that view onto the spine first, which rebaselines its
-    # avg_delay_seconds (and thus the worst-route ranking) — out of Step G1 scope; deferred.
     "route_delay_hourly",
     "stop_delay_hourly",
-    # route_habit_score DROPPED (migration 0076, S14): the scalar habits matrix now
-    # recomposes the reconciled repeat_problem_score from gold.route_delay_spine at read
-    # time (gold/reader ROUTE_HABIT_SPINE_SQL, all-time window) — the mart is redundant.
-    # repeated_problem_route_stop derives route-grain AND stop-grain recurrence
-    # from the route + stop delay spines (built earlier, in the append-only
-    # section); DB-0067 dropped the stop_delay_weekly/monthly folds it used to read.
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
     "route_headway_by_shift",
@@ -1052,8 +953,6 @@ WINDOWED_HISTORY_TABLES = (
 )
 
 DERIVED_REBUILD_TABLES = (
-    # route_habit_score DROPPED (migration 0076, S14) — recomposed at read time from
-    # the spine (gold/reader/score.py); no longer a stored derived-rebuild table.
     "repeated_problem_route_stop",
 )
 
@@ -1110,8 +1009,7 @@ DELETE_REPORTING_AGGREGATES = {
     },
 }
 
-# Keep route_delay_hourly for the public daily reliability view and worst-route ranking.
-# Legacy hourly rows retain an unrouted bucket; the delay spine excludes it.
+# Keep hourly rows for the public daily view; they include an unrouted bucket absent from the spine.
 UPSERT_ROUTE_DELAY_HOURLY = delay_hour_statement(
     "rollup.route_delay_hourly.upsert",
     f"period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}",
@@ -1491,7 +1389,6 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
     """,
 )
 
-# Headway builders share provider-local shift and service-day definitions with readers.
 _TRIP_START_HOUR_EXPR = "EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))"
 _TRIP_SHIFT_CASE_WRAPPED = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True, wrap=True)
 _TRIP_SHIFT_CASE = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True)
@@ -1645,7 +1542,6 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
     """,
 )
 
-# Retain every direction and service-day kind over the configured rolling fact window.
 UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
     "rollup.route_headway_direction.upsert",
     f"""
@@ -1729,8 +1625,6 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
     """,
 )
 
-# Closed-day headways retain every direction. Histograms and moment sums support pooled
-# median/variance/bunching reads without raw facts; gaps remain strictly between 0 and 240 minutes.
 _HEADWAY_HISTOGRAM_BIN_SQL = (
     "            LEAST(GREATEST(width_bucket(gap_min, "
     f"{_HEADWAY_GAP_HIST_EDGES_SQL}), 1), 20) - 1 AS bin_idx"
@@ -1964,17 +1858,12 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
 REPORTING_AGGREGATE_UPSERTS = {
     "route_delay_hourly": UPSERT_ROUTE_DELAY_HOURLY,
     "stop_delay_hourly": UPSERT_STOP_DELAY_HOURLY,
-    # route_habit_score DROPPED (migration 0076, S14) — no upsert; recomposed at read time.
     "repeated_problem_route_stop": UPSERT_REPEATED_PROBLEM_ROUTE_STOP,
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
     "route_headway_by_shift": UPSERT_ROUTE_HEADWAY_DAILY,
     "repeat_offender": UPSERT_REPEAT_OFFENDER_DAILY,
     "route_headway_by_direction_shift": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
 }
-
-# ---------------------------------------------------------------------------
-# Result dataclass
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -2022,8 +1911,6 @@ class WarmRollupBuildResult:
     built_stop_delay_spine_days: int = 0
     built_stop_delay_shift_daily_days: int = 0
     built_repeat_offender_daily_spine_days: int = 0
-    # True when the provider is enrolled but not yet seeded (no gold.dim_provider
-    # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
     completed_stage_receipts: tuple[WarmRollupStageReceipt, ...] = field(default_factory=tuple)
     daily_delay_state: dict[str, object] = field(default_factory=dict)
@@ -2057,11 +1944,6 @@ class WarmRollupBuildResult:
                 receipt.display_dict() for receipt in self.completed_stage_receipts
             ],
         }
-
-
-# ---------------------------------------------------------------------------
-# Public function
-# ---------------------------------------------------------------------------
 
 
 def _safe_rowcount(result) -> int:  # noqa: ANN001
@@ -2143,8 +2025,7 @@ def _write_daily_rollup(
     retention_days: int,
 ) -> None:
     period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
-    # Per-day sorts need enough memory; disabling nested loops avoids route-ordered
-    # plans that rescan large fact slices. Both settings end with this transaction.
+    # Transaction-local sort memory and disabled nested loops prevent repeated fact scans.
     conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
     conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
     kind = REBUILDABLE_KINDS.get(rollup_kind)
@@ -2187,11 +2068,6 @@ def _build_percentile_days(
     retained_since_utc: datetime | None = None,
     retention_days: int = 14,
 ) -> int:
-    """Build unwatermarked days from the supplied metric calendar, committing one day at a time.
-
-    Capture kinds coordinate first builds, reject dirty retained days, and check
-    retention before and after materialization. Explicit repair owns replacement.
-    """
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
         if rollup_kind in DAILY_DELAY_TABLES:
@@ -2238,8 +2114,8 @@ def _build_percentile_days(
                         f"Daily delay kind {rollup_kind} has a dirty day {local_date}; "
                         "explicit repair requires complete recorded cohorts."
                     )
-                # Reset/retention can remove a buffered candidate. Missing facts
-                # cannot authorize an empty first build; explicit repair proves that.
+                # Missing facts cannot authorize an empty first build; explicit repair must prove
+                # it.
                 present = conn.execute(
                     SELECT_AVAILABLE_CAPTURE_DAYS,
                     {
@@ -2273,7 +2149,7 @@ class DailyRollupCalendars:
     occupancy: Sequence[Row[tuple[date, int]]]
 
 
-# Normal builds need scheduled trips before cancellation; repair keeps its registry order.
+# Build scheduled trips before cancellation; repairs preserve their registry order.
 DAILY_BUILD_ORDER = (
     "route_percentile_daily",
     "stop_percentile_daily",
@@ -2302,11 +2178,6 @@ def build_daily_rollups(
     now: datetime,
     retention_days: int,
 ) -> dict[str, WarmRollupStageReceipt]:
-    """Build missing daily metrics from buffered source dates and return ordered receipts.
-
-    Calendar dates are builder run dates; service-span SQL assigns the preceding
-    service day. Each metric excludes its own watermarks and commits per day.
-    """
     calendars_by_source: dict[object, Sequence[Row[tuple[date, int]]]] = {
         SELECT_MISSING_CAPTURE_DAYS: calendars.capture,
         SELECT_MISSING_PERCENTILE_DAYS: calendars.feed,
@@ -2366,12 +2237,6 @@ def build_warm_rollups(
     engine: Engine | None = None,
     since_utc: datetime | None = None,
 ) -> WarmRollupBuildResult:
-    """Build 5-minute warm rollups for missing periods.
-
-    Resumable and idempotent: each summary + watermark commits atomically, and a
-    later run skips every period already recorded in warm_rollup_periods.
-    Optionally restricted to periods with captured_at_utc >= since_utc.
-    """
     if settings is None:
         settings = get_settings()
     open_window_days = getattr(settings, "GOLD_REPORTING_OPEN_WINDOW_DAYS", 10)
@@ -2384,9 +2249,6 @@ def build_warm_rollups(
     if engine is None:
         engine = make_engine(settings)
 
-    # Enrolled-but-unseeded providers have no gold.dim_provider row, so the
-    # dp.timezone calendar lookup below would raise NoResultFound and abort the
-    # all-providers Daily Warm Rollups run. Skip cleanly instead (exit 0).
     with engine.begin() as conn:
         seeded = provider_is_seeded(conn, provider_id)
     if not seeded:
@@ -2405,9 +2267,7 @@ def build_warm_rollups(
     completed_stage_receipts: list[WarmRollupStageReceipt] = []
     now = utc_now()
 
-    # Local dates bound the closed-day candidates. Capture calendars additionally
-    # check the actual UTC cutoff: a DST offset change can make the coarse oldest
-    # local day partially retained. Other kinds keep their existing calendars.
+    # Check UTC capture cutoffs as well as local dates near DST retention boundaries.
     percentile_lookback_days = fact_retention_days - 1
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
@@ -2472,8 +2332,7 @@ def build_warm_rollups(
     )
     completed_stage_receipts.extend(daily_receipts.values())
 
-    # Each reporting aggregate has its own transaction so a late-table failure
-    # preserves all completed earlier refreshes as well as the 5m + daily work.
+    # Commit each reporting aggregate independently so later failure preserves completed refreshes.
     for table_name in REPORTING_AGGREGATE_TABLES:
 
         def refresh_reporting_aggregate(table_name: str = table_name) -> int:
@@ -2481,10 +2340,6 @@ def build_warm_rollups(
             upsert_params = {
                 "provider_id": provider_id,
                 "built_at_utc": now,
-                # Binds the ~14d fact window into the three fact-coupled headway/
-                # repeat-offender upserts so they track GOLD_FACT_RETENTION_DAYS
-                # instead of a drift-prone literal. Harmless on rollup-fed upserts
-                # that never reference it.
                 "fact_retention_days": fact_retention_days,
             }
             if table_name in WINDOWED_HISTORY_TABLES:
@@ -2578,21 +2433,15 @@ def build_warm_rollups(
     )
 
 
-# ---------------------------------------------------------------------------
-# Windowed rebuild of the append-only daily rollups (present-but-wrong days)
-# ---------------------------------------------------------------------------
-
-
-# Rebuilds accept row dates. Most watermark dates match; service spans use row date + 1.
-# Capture-day corrections require complete cohorts and preserve dirty evidence on failure.
+# Rebuild bounds are row dates; service spans use run date = row date + 1.
 @dataclass(frozen=True)
 class RebuildableKind:
-    rollup_kind: str  # == warm_rollup_periods.rollup_kind and the --kinds key
-    table: str  # gold.<table> ROW table (bare name, from this trusted registry)
-    date_column: str  # ROW date column; capture/reporting/service meaning belongs to the metric
-    upsert: object  # the UPSERT_* text() the builder runs per day
-    select_missing: object  # Metric-specific capture, feed or occupancy calendar
-    service_day_offset: int  # watermark/run date = ROW date + this (0 or 1)
+    rollup_kind: str
+    table: str
+    date_column: str
+    upsert: object
+    select_missing: object
+    service_day_offset: int
 
 
 REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
@@ -2644,8 +2493,6 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
         SELECT_MISSING_OCCUPANCY_DAYS,
         0,
     ),
-    # route_service_span_daily attributes to the just-completed GTFS service day:
-    # ROW provider_local_date = run_date - 1, watermark = run_date. offset = 1.
     "route_service_span_daily": RebuildableKind(
         "route_service_span_daily",
         "route_service_span_daily",
@@ -2720,7 +2567,6 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
     ),
 }
 
-# Non-daily kinds have no per-day watermark; refuse window rebuilds and name their owner.
 _NON_REBUILDABLE_KINDS: dict[str, str] = {
     "trip_delay_summary_5m": (
         "trip_delay_summary_5m is a 5-minute grain, not a closed-day rollup; "
@@ -2737,9 +2583,7 @@ _NON_REBUILDABLE_KINDS: dict[str, str] = {
 
 
 def _rebuild_row_delete_sql(kind: RebuildableKind, *, dry_run: bool) -> object:
-    # Table + date column come ONLY from the trusted REBUILDABLE_KINDS registry;
-    # the window bounds are bound parameters. Mirrors the count/delete toggle of
-    # _gold_aggregate_retention_statement.
+    # Table/date identifiers come from the trusted registry; bind date bounds.
     operation = "SELECT COUNT(*) FROM" if dry_run else "DELETE FROM"
     verb = "count" if dry_run else "delete"
     return named_query(
@@ -2753,15 +2597,12 @@ def _rebuild_row_delete_sql(kind: RebuildableKind, *, dry_run: bool) -> object:
     )
 
 
-# Provider-local "today" — the closed-day fact-retention floor anchor.
 _PROVIDER_TODAY_LOCAL_SQL = named_query(
     "rollup.provider.today_local",
     "SELECT (now() AT TIME ZONE dp.timezone)::date "
     "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id",
 )
 
-# Windowed watermark delete/count. The MORE-SPECIFIC rollup_kind clause keeps it
-# distinct from the retention-prune's generic `DELETE FROM gold.warm_rollup_periods`.
 _REBUILD_WATERMARK_DELETE = named_query(
     "rollup.rebuild_watermark.delete",
     """
@@ -2793,8 +2634,6 @@ class WarmRollupRebuildResult:
     dry_run: bool
     aborted: bool
     completed_at_utc: datetime
-    # Per-kind {rollup_kind: count}. On a dry run, deleted_* hold the counts that
-    # WOULD be deleted; rebuilt_* is empty (nothing is rebuilt).
     deleted_row_counts: dict[str, int] = field(default_factory=dict)
     deleted_watermark_counts: dict[str, int] = field(default_factory=dict)
     rebuilt_day_counts: dict[str, int] = field(default_factory=dict)
@@ -2842,23 +2681,6 @@ def rebuild_warm_rollups(
     dry_run: bool = False,
     confirm: Callable[[WarmRollupRebuildResult], bool] | None = None,
 ) -> WarmRollupRebuildResult:
-    """Rebuild present-but-wrong closed days for the append-only daily rollups.
-
-    from_date/to_date are ROW dates (the dates visible as wrong in the gold
-    tables / serving), inclusive. For each requested kind this deletes the rollup
-    ROWs for the window AND the corresponding watermark rows, then re-runs the
-    existing builder over exactly that window so the shielded days are recomputed.
-
-    Selected capture-day kinds share one recorded-cohort proof and atomic transaction
-    per day, including clean empty replacements. Retention is checked before deletion
-    and after materialization. Other kinds keep
-    their existing rebuild path. Refresh reporting marts with build-warm-rollups
-    afterward; they are not part of this bounded daily replacement.
-
-    Guardrails (raise ValueError before any mutation): from_date <= to_date, and
-    the whole window must sit within GOLD_FACT_RETENTION_DAYS — a window older
-    than the fact window would rebuild EMPTY days (facts are already pruned).
-    """
     if settings is None:
         settings = get_settings()
     if from_date > to_date:
@@ -2870,9 +2692,6 @@ def rebuild_warm_rollups(
     target_kinds = _resolve_rebuild_kinds(kinds)
     now = utc_now()
 
-    # Provider-local "today" anchors the closed-day fact-retention floor, exactly
-    # as build_warm_rollups does. floor = today - (fact_retention_days - 1) is the
-    # oldest day whose facts are still intact; today excludes the still-open day.
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
         today_local = conn.execute(
@@ -2891,10 +2710,7 @@ def rebuild_warm_rollups(
         with engine.begin() as conn:
             set_daily_warm_transaction_timeouts(conn)
             _check_retained_capture_day(conn, provider_id, from_date, fact_retention_days)
-    # Per-kind open-day guard. The RUN date = ROW date + service_day_offset, and a
-    # rebuild whose run date lands on (or after) today_local would recompute the
-    # still-open capture day. offset-1 kinds (route_service_span_daily) map
-    # to_date=today-1 onto TODAY, so a flat to_date < today_local is not enough.
+    # Open-day guards apply to run dates, including service-day offsets.
     for kind in target_kinds:
         max_to = today_local - timedelta(days=kind.service_day_offset + 1)
         if to_date > max_to:
@@ -2925,9 +2741,7 @@ def rebuild_warm_rollups(
             deleted_watermark_counts=deleted_watermarks,
         )
 
-    # When a confirmation is needed, run the dry-run COUNT pass first so the plan
-    # shows the operator total rows + watermarks per kind. The --yes fast path
-    # passes confirm=None and skips both this count pass and the prompt.
+    # Preview counts precede confirmation; confirm=None skips both.
     plan_rows: dict[str, int] = {}
     plan_watermarks: dict[str, int] = {}
     if confirm is not None:
@@ -3023,8 +2837,6 @@ def rebuild_warm_rollups(
         if kind.rollup_kind in DAILY_DELAY_TABLES:
             continue
         from_utc, to_utc = _rebuild_watermark_window(from_date, to_date, kind)
-        # Delete phase — one transaction per kind (matches the per-kind isolation
-        # of the reporting rebuild). Rows first, then their watermarks.
         with engine.begin() as conn:
             set_daily_warm_transaction_timeouts(conn)
             deleted_rows[kind.rollup_kind] = _safe_rowcount(
@@ -3048,10 +2860,6 @@ def rebuild_warm_rollups(
                     },
                 )
             )
-        # Rebuild phase — reuse _build_percentile_days UNCHANGED. The watermarks it
-        # keys on were just deleted, so its missing-day SELECT now re-enumerates
-        # exactly this window. floor_key/today_key bound it to the RUN-date window
-        # (ROW window shifted by service_day_offset), so nothing outside is touched.
         run_from = from_date + timedelta(days=kind.service_day_offset)
         run_to = to_date + timedelta(days=kind.service_day_offset)
         rebuilt_days[kind.rollup_kind] = _build_percentile_days(
@@ -3083,8 +2891,7 @@ def rebuild_warm_rollups(
 def _rebuild_watermark_window(
     from_date: date, to_date: date, kind: RebuildableKind
 ) -> tuple[datetime, datetime]:
-    # Watermark = midnight-UTC of the builder's RUN date. For offset kinds the run
-    # date = ROW date + service_day_offset (see RebuildableKind).
+    # Watermarks use midnight UTC of the run date, including the service-day offset.
     run_from = from_date + timedelta(days=kind.service_day_offset)
     run_to = to_date + timedelta(days=kind.service_day_offset)
     from_utc = datetime(run_from.year, run_from.month, run_from.day, tzinfo=UTC)
@@ -3100,9 +2907,6 @@ def _count_rebuild_window(
     to_date: date,
     target_kinds: list[RebuildableKind],
 ) -> tuple[dict[str, int], dict[str, int]]:
-    # Read-only COUNT pass over the rebuild window. Returns per-kind
-    # {rollup_kind: count} for the rollup ROWs and their watermark rows that a
-    # non-dry-run would delete. Shared by --dry-run and the confirm preview.
     deleted_rows: dict[str, int] = {}
     deleted_watermarks: dict[str, int] = {}
     with engine.begin() as conn:

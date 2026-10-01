@@ -871,7 +871,6 @@ def test_normalize_rt_vehicle_positions_classifies_against_provider_bounds(
     message = gtfs_realtime_pb2.FeedMessage()
     message.ParseFromString(archive_path.read_bytes())
 
-    # the fixture vehicle sits at 45.501, -73.567 (inside Montréal)
     montreal = ProviderBounds(
         min_latitude=45.25, max_latitude=45.75, min_longitude=-74.1, max_longitude=-73.2
     )
@@ -891,7 +890,6 @@ def test_normalize_rt_vehicle_positions_classifies_against_provider_bounds(
 
     assert in_bounds[0]["position_quality"] == "valid_provider_bbox"
     assert out_of_bounds[0]["position_quality"] == "outside_provider_bbox"
-    # with no provider bounds, the check falls back to generic WGS84 validity
     assert no_bounds[0]["position_quality"] == "valid_wgs84"
 
 

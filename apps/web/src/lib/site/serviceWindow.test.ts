@@ -1,10 +1,3 @@
-// serviceWindow.test.ts — the pure honest-absence inference gate.
-//
-// Covers serviceWindowState (no-wrap + overnight-wrap + boundaries) and
-// inferAbsenceReason (metro, closed, overnight, before-open, silent, last-seen,
-// and the no-signal fallback to null). All deterministic — `now` is passed as
-// minutes-since-midnight, never read from a clock.
-
 import { describe, it, expect } from 'vitest';
 import {
 	parseWallClockMinutes,
@@ -31,7 +24,7 @@ describe('parseWallClockMinutes', () => {
 		expect(parseWallClockMinutes(undefined)).toBeNull();
 		expect(parseWallClockMinutes('')).toBeNull();
 		expect(parseWallClockMinutes('nope')).toBeNull();
-		expect(parseWallClockMinutes('24:00')).toBeNull(); // GTFS-normalised away
+		expect(parseWallClockMinutes('24:00')).toBeNull();
 		expect(parseWallClockMinutes('12:60')).toBeNull();
 	});
 });
@@ -44,9 +37,9 @@ describe('serviceWindowState — no-wrap window (06:00 → 23:00)', () => {
 		expect(serviceWindowState(first, last, hm(0))).toBe('before-open');
 	});
 	it('inside the window → open (incl. both boundaries)', () => {
-		expect(serviceWindowState(first, last, hm(6))).toBe('open'); // first boundary
+		expect(serviceWindowState(first, last, hm(6))).toBe('open');
 		expect(serviceWindowState(first, last, hm(12))).toBe('open');
-		expect(serviceWindowState(first, last, hm(23))).toBe('open'); // last boundary
+		expect(serviceWindowState(first, last, hm(23))).toBe('open');
 	});
 	it('past last departure → closed', () => {
 		expect(serviceWindowState(first, last, hm(23, 1))).toBe('closed');
@@ -57,7 +50,6 @@ describe('serviceWindowState — no-wrap window (06:00 → 23:00)', () => {
 describe('serviceWindowState — overnight wrap (05:11 → 01:17)', () => {
 	const first = '05:11';
 	const last = '01:17';
-	// The three operator-named probe times.
 	it('03:00 sits in the dead gap → overnight', () => {
 		expect(serviceWindowState(first, last, hm(3))).toBe('overnight');
 	});
@@ -68,12 +60,12 @@ describe('serviceWindowState — overnight wrap (05:11 → 01:17)', () => {
 		expect(serviceWindowState(first, last, hm(12))).toBe('open');
 	});
 	it('boundaries: exactly first / exactly last → open', () => {
-		expect(serviceWindowState(first, last, hm(5, 11))).toBe('open'); // first
-		expect(serviceWindowState(first, last, hm(1, 17))).toBe('open'); // last (post-midnight)
+		expect(serviceWindowState(first, last, hm(5, 11))).toBe('open');
+		expect(serviceWindowState(first, last, hm(1, 17))).toBe('open');
 	});
 	it('just outside each boundary in the gap → overnight', () => {
-		expect(serviceWindowState(first, last, hm(1, 18))).toBe('overnight'); // 1 min after close
-		expect(serviceWindowState(first, last, hm(5, 10))).toBe('overnight'); // 1 min before open
+		expect(serviceWindowState(first, last, hm(1, 18))).toBe('overnight');
+		expect(serviceWindowState(first, last, hm(5, 10))).toBe('overnight');
 	});
 });
 
@@ -99,10 +91,8 @@ describe('stopServiceWindow — first/last from raw GTFS schedule times', () => 
 		expect(stopServiceWindow(['06:15', '22:45'])).toEqual({ first: '06:15', last: '22:45' });
 	});
 	it('past-midnight GTFS time (>=24:00) folds + wraps the window', () => {
-		// last = 25:30 → 01:30 next day; window wraps (last < first).
 		const w = stopServiceWindow(['05:11:00', '25:30:00']);
 		expect(w).toEqual({ first: '05:11', last: '01:30' });
-		// And the wrapped window reads 'overnight' at 03:00, 'open' at 12:00.
 		expect(serviceWindowState(w!.first, w!.last, hm(3))).toBe('overnight');
 		expect(serviceWindowState(w!.first, w!.last, hm(12))).toBe('open');
 	});

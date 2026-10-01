@@ -1,13 +1,3 @@
-"""Historic snapshot builders over gold reliability rollups.
-
-OTP is round(100 * on_time / known), or None for missing counts or known == 0.
-Published rounding is half-away-from-zero for Postgres ROUND parity.
-Stop reliability uses the severe-delay proxy over actual stop observations.
-Average delay is round(avg_delay_seconds / 60, 1); severe_pct is round(100 * sev / known, 1).
-Daily percentiles use route-local days and the most recent closed stop day.
-Weekly and monthly percentiles stay None because percentiles are not additive.
-"""
-
 from __future__ import annotations
 
 from transit_ops.snapshots.builders.historic import hotspots_history as hotspots_history

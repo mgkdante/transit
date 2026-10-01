@@ -88,8 +88,6 @@ export class KitNavigationSimulator {
 			fulfil = redirected.fulfil;
 			reject = redirected.reject;
 		} else {
-			// Kit rejects cancellation/supersession. Keep the simulator faithful without
-			// turning an intentionally unobserved app goto into test-runner noise.
 			void complete.catch(() => {});
 		}
 		const navigation: SimulatedNavigation = {

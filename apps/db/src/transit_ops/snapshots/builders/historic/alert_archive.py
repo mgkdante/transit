@@ -1,5 +1,3 @@
-"""Build the immutable, partitioned retained-alert collection."""
-
 from __future__ import annotations
 
 import hashlib
@@ -77,7 +75,6 @@ _ALERT_ARCHIVE_SQL = named_query(
 class AlertArchiveBundle:
     page_items: list[tuple[str, AlertArchivePage]]
     index: AlertArchiveIndex
-    # Internal verification context, not part of the public JSON contract.
     provider_timezone: str = "UTC"
 
 
@@ -159,9 +156,7 @@ def _provider_local_date(value: str, provider_timezone: str) -> str:
 
 
 def _page_coverage(page: AlertArchivePage, provider_timezone: str) -> tuple[str, str]:
-    # Observation bounds are the honest minimum baseline. Active periods may
-    # widen it (including long-running/future/open periods) but can never erase
-    # the dates on which the alert was actually observed.
+    # Active periods may widen observation bounds but never erase observed dates.
     bounds: list[str] = []
     for entry in page.alerts:
         bounds.extend([entry.first_seen_utc, entry.last_seen_utc])
@@ -228,7 +223,6 @@ def build_alert_archive(
     *,
     generated_utc: str,
 ) -> AlertArchiveBundle:
-    """Build all retained alerts as immutable monthly pages plus a stable index."""
     rows = [
         dict(row)
         for row in conn.execute(
@@ -300,8 +294,7 @@ def build_alert_archive(
                     page=page_number,
                     alerts=[entry],
                 )
-                # Compact JSON adds one comma per preceding entry. Measure the
-                # envelope separately so page sizing never re-encodes prior alerts.
+                # Size the envelope separately and add one comma per preceding entry.
                 envelope_bytes = len(candidate.model_dump_json(exclude={"alerts"}).encode("utf-8"))
                 candidate_bytes = (
                     envelope_bytes + len(b',"alerts":[]')

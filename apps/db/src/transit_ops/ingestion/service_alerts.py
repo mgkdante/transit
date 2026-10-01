@@ -1,19 +1,3 @@
-"""Convert a GTFS-RT Service Alerts feed into the i3-shaped JSON the silver
-alert normalizer already understands.
-
-STM publishes alerts through its proprietary i3 JSON API; STO / OC Transpo / STS
-publish the standard GTFS-RT Service Alerts protobuf. Rather than build a second
-SCD-2 silver path, we translate the protobuf Alert entities into the same payload
-shape ``transit_ops.silver.i3.normalize_i3_alert_payload`` consumes (it already
-handles ``[{language, text}]`` TranslatedStrings, ``informedEntities`` with
-route/stop/trip ids, and ``activePeriod`` epoch ranges). The converted payload is
-stored in ``raw.i3_alert_snapshots`` and flows through the existing silver merge
-and ``gold.current_i3_alerts`` view unchanged.
-
-This module is intentionally dependency-light (only the protobuf bindings) so the
-conversion is a pure, unit-testable function.
-"""
-
 from __future__ import annotations
 
 from google.transit import gtfs_realtime_pb2
@@ -27,13 +11,6 @@ def _has_field(message: object, field_name: str) -> bool:
 
 
 def _enum_name(enum_type, value: int) -> str:  # noqa: ANN001
-    """Decode a protobuf enum int to its name, tolerating vendor extensions.
-
-    GTFS-RT lets providers carry enum values outside the published Cause / Effect
-    / SeverityLevel sets; ``EnumType.Name(unknown_int)`` raises ``ValueError`` on
-    those. Fall back to the raw int as a string so an extension value degrades
-    gracefully instead of failing the whole alerts capture. Mirrors
-    ``transit_ops.silver.realtime_gtfs._enum_name``."""
     try:
         return enum_type.Name(value)
     except ValueError:
@@ -41,7 +18,6 @@ def _enum_name(enum_type, value: int) -> str:  # noqa: ANN001
 
 
 def _translations(translated_string: object) -> list[dict[str, str]]:
-    """TranslatedString -> [{"language": .., "text": ..}] (language optional)."""
     out: list[dict[str, str]] = []
     for translation in translated_string.translation:
         text = translation.text
@@ -70,13 +46,6 @@ def _informed_entity(selector: object) -> dict[str, object]:
 
 
 def _active_period(alert: object) -> list[dict[str, int]] | None:
-    """Every active window, not just the first (S15 truncation fix).
-
-    GTFS-RT carries a LIST of TimeRanges; the old path emitted only
-    active_period[0], collapsing genuinely multi-window alerts. The silver
-    normalizer keeps period[0] as the scalar pair and persists the rest as child
-    rows. A range with neither bound is skipped (an empty window carries nothing);
-    the list order is preserved so period_index is stable."""
     periods: list[dict[str, int]] = []
     for time_range in alert.active_period:
         period: dict[str, int] = {}
@@ -90,12 +59,6 @@ def _active_period(alert: object) -> list[dict[str, int]] | None:
 
 
 def convert_gtfs_rt_alerts_to_i3_payload(protobuf_bytes: bytes) -> dict[str, object]:
-    """Parse a GTFS-RT Service Alerts FeedMessage into the i3-shaped JSON payload.
-
-    Language note: header/description carry the feed's language tags verbatim. The
-    silver normalizer prefers ``fr``/``fra``; a feed tagged ``fr-CA`` still loads
-    (it falls through to the first non-empty translation) — fine for v1.
-    """
     message = gtfs_realtime_pb2.FeedMessage()
     message.ParseFromString(protobuf_bytes)
 
@@ -118,9 +81,6 @@ def convert_gtfs_rt_alerts_to_i3_payload(protobuf_bytes: bytes) -> dict[str, obj
                 gtfs_realtime_pb2.Alert.SeverityLevel, alert.severity_level
             )
         if _has_field(alert, "url"):
-            # alert.url is a TranslatedString, same shape as header/description.
-            # Emit it as [{language, text}] so the silver normalizer's _text /
-            # _text_en pickers surface fr as url and en as url_en (S15).
             url = _translations(alert.url)
             if url:
                 record["url"] = url

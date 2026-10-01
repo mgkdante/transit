@@ -1,20 +1,3 @@
-"""Real-DB regression for gold.stop_delay_shift_daily (GC1 / Step G4, migration 0071).
-
-Proves the two invariants the shift grain must hold:
-  (i)  BUILD-TIME PARITY WITH THE ROUTE SPINE — a boundary-straddling fact (05:59 vs 06:00
-       local -> night vs am_peak) buckets to the SAME shift the route spine's hour->shift
-       CASE would, because both splice shift_case_sql over the SAME localized-hour expr.
-  (ii) CROSS-TABLE ADDITIVE PARITY — SUM over shifts == the stop_delay_spine
-       per-(stop,route,date) observation_count (a finer partition of the same in-clamp rows).
-
-Runs only against a disposable Postgres migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55434/transit_test" \
-        uv run pytest tests/test_stop_delay_shift_daily_real_db.py -v
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -112,13 +95,11 @@ def _at_local(hour: int, minute: int) -> datetime:
 
 
 def _seed_boundary_facts(connection) -> None:  # noqa: ANN001
-    """Facts straddling the night/am_peak shift edge (05:59 vs 06:00 local) for one (stop,route)."""
     sid, run_id = 994500, 994600
-    # 05:59 local -> hour 5 -> night ; 06:00 local -> hour 6 -> am_peak ; 07:00 -> am_peak.
     facts = [
-        (_at_local(5, 59), 100),  # night
-        (_at_local(6, 0), 200),  # am_peak (severe: >300? no -> not severe)
-        (_at_local(7, 0), 400),  # am_peak, severe (>300)
+        (_at_local(5, 59), 100),
+        (_at_local(6, 0), 200),
+        (_at_local(7, 0), 400),
     ]
     _snapshot(connection, sid, run_id, _at_local(6, 0), len(facts))
     for idx, (ts, delay) in enumerate(facts):
@@ -141,7 +122,6 @@ def test_shift_bucketing_matches_route_spine_at_boundary(conn) -> None:  # noqa:
     _seed_boundary_facts(conn)
     _run_builders(conn)
 
-    # Stop shift grain: night has the 05:59 obs, am_peak has the 06:00 + 07:00 obs.
     shift_rows = {
         r["shift"]: r
         for r in conn.execute(
@@ -156,11 +136,9 @@ def test_shift_bucketing_matches_route_spine_at_boundary(conn) -> None:  # noqa:
     assert shift_rows["night"]["observation_count"] == 1
     assert shift_rows["night"]["sum_delay_seconds"] == 100
     assert shift_rows["am_peak"]["observation_count"] == 2
-    assert shift_rows["am_peak"]["severe_delay_count"] == 1  # only the 400s obs is severe
+    assert shift_rows["am_peak"]["severe_delay_count"] == 1
     assert shift_rows["am_peak"]["sum_delay_seconds"] == 600
 
-    # Route spine (hour_of_day_local pre-localized): the same three facts land at hours 5/6/7,
-    # which the route projector's shift CASE buckets identically (5 -> night, 6/7 -> am_peak).
     route_by_hour = {
         int(r["hour_of_day_local"]): r["observation_count"]
         for r in conn.execute(
@@ -171,8 +149,8 @@ def test_shift_bucketing_matches_route_spine_at_boundary(conn) -> None:  # noqa:
             {"p": PROVIDER},
         ).mappings()
     }
-    assert route_by_hour[5] == 1  # night
-    assert route_by_hour[6] + route_by_hour[7] == 2  # am_peak
+    assert route_by_hour[5] == 1
+    assert route_by_hour[6] + route_by_hour[7] == 2
 
 
 def test_cross_table_additive_parity_with_stop_spine(conn) -> None:  # noqa: ANN001
@@ -206,8 +184,6 @@ def test_cross_table_additive_parity_with_stop_spine(conn) -> None:  # noqa: ANN
         .one()
     )
 
-    # The shift table is a FINER PARTITION of the same in-clamp row set -> SUM-over-shifts
-    # equals the stop_delay_spine per-(stop,route,date) counts exactly.
     assert shift_sum["obs"] == spine["observation_count"]
     assert shift_sum["severe"] == spine["severe_delay_count"]
     assert shift_sum["delay"] == spine["sum_delay_seconds"]

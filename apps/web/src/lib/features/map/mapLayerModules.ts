@@ -147,7 +147,6 @@ const vehiclesModule: LayerModule = {
 	},
 };
 
-/** Install order is visual stack order; pick priority is an independent contract. */
 export const MAP_LAYER_MODULES: readonly LayerModule[] = Object.freeze([
 	routesModule,
 	stopsModule,
@@ -187,13 +186,10 @@ export function createMapLayerFeedController(): MapLayerFeedController {
 	};
 }
 
-// Bake once before installing stops, which consume STOP_ICON. Vehicle and pin
-// sprite bytes remain in the CPU foreground; only the stop image reaches GL.
 export function retintMapLayers(
 	map: MapLibreMap,
 	beforeId?: string,
 ): { sprites: VehicleSpriteReceipt; pin: ImageData } {
-	// The stop icon remains MapLibre-owned; moving images stay in one CPU atlas.
 	const sprites = bakeVehicleSprites(map, false);
 	const pin = bakeLocationPinImage();
 	for (const module of MAP_LAYER_MODULES) module.install?.(map, beforeId);
@@ -238,7 +234,6 @@ export function installMapInteractions(
 		};
 	};
 	const register = (install: () => void, rollback: () => void): void => {
-		// Ledger first: a hostile Evented/DOM implementation may mutate and then throw.
 		rollbacks.push(once(rollback));
 		install();
 	};

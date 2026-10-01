@@ -66,9 +66,6 @@ describe('selection grace', () => {
 		const grace = createSelectionGrace<Detail>();
 		grace.update({ selection, resolvedDetail: detail, vehicles: vehicles() });
 
-		// Even a malformed failed response reporting a later revision, an aborted lifecycle
-		// request, and refresh/visibility/online/static-publish triggers are not evidence
-		// that the bus disappeared.
 		grace.update({
 			selection,
 			resolvedDetail: null,

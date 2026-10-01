@@ -1,10 +1,3 @@
-"""Static contract test for migration 0044: drop the unused rt_feed_snapshots index.
-
-slice-9.1.1-alpha shipped 0043's composite index on the audit's #1 recommendation;
-prod EXPLAIN proved the planner never adopts it (the existing single-column
-source_realtime_snapshot_id index serves the selective hot-path; non-selective
-filters prefer a Seq Scan). 0044 drops it; downgrade recreates it (restores 0043).
-"""
 from __future__ import annotations
 
 import re
@@ -32,7 +25,7 @@ def test_upgrade_drops_index_concurrently_in_autocommit_block() -> None:
         "DROP INDEX CONCURRENTLY IF EXISTS silver.ix_silver_rt_feed_snapshots_provider_endpoint_srsid"  # noqa: E501
         in flat
     )
-    assert ".autocommit_block(" in text  # CONCURRENTLY cannot run in a txn
+    assert ".autocommit_block(" in text
 
 
 def test_downgrade_recreates_the_partial_index() -> None:

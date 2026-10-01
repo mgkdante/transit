@@ -111,7 +111,6 @@ function safeRelative(path) {
   }
 }
 
-// Check every ancestor: lstat of the leaf alone would follow a parent symlink.
 function plainDirectories(path, allowMissing = false) {
   const parent = dirname(path);
   if (parent !== path) plainDirectories(parent, allowMissing);
@@ -336,7 +335,6 @@ export function restore(
     env,
     required(env, "TRANSIT_PRODUCER_ATTEMPT", /^[1-9][0-9]*$/),
   );
-  // Validate every destination before deleting any build output.
   for (const tree of BUILD_TREES) plainDirectories(join(root, tree), true);
   for (const tree of BUILD_TREES)
     rmSync(join(root, tree), { recursive: true, force: true });

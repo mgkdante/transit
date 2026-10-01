@@ -792,13 +792,8 @@ describe('MapStage boot lifecycle', () => {
 		expect(order).toEqual(['consumer', 'map']);
 	});
 
-	// M6f-2 F19 RECEIPT (behavioural DOM contract, not geometry). The provider's
 	// licence line is a RUNTIME manifest value, so the only thing that can be
-	// asserted in-repo is that the string reaches the attribution control
-	// UNTOUCHED — no rewording, no abbreviation, no truncation. RED before the
-	// fix: MapStage had no way to carry it at all, so the credit never shipped.
 	it('carries the provider licence into the attribution control byte-for-byte', async () => {
-		// The value the STM manifest actually publishes (apps/db provider config).
 		const licence = 'Contains STM data made available under CC BY 4.0.';
 		const { map } = await bootStage({ customAttribution: licence });
 
@@ -806,7 +801,6 @@ describe('MapStage boot lifecycle', () => {
 		const options = map.controls[0]!.options;
 		expect(options.compact).toBe(true);
 		expect(options.customAttribution).toBe(licence);
-		// Byte-for-byte, including the trailing period and the exact casing.
 		expect(String(options.customAttribution)).toHaveLength(licence.length);
 	});
 
@@ -1729,7 +1723,7 @@ describe('MapStage trusted native recovery', () => {
 		expect(document.activeElement).toBe(next.canvas);
 		await view.rerender({ ...props, fitPadding: 72 });
 		await settle();
-		expect(next.fitBounds).not.toHaveBeenCalled(); // Focus still owns the camera.
+		expect(next.fitBounds).not.toHaveBeenCalled();
 	});
 
 	it('awaits one consumer release and applies newer fit-owned props before replacement', async () => {

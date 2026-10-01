@@ -58,9 +58,9 @@ const mount = async (wait: WaitRegularityVM, mode: 'day' | 'week' | 'month' = 'w
 
 describe('Section2TheWait — reported gap comparisons', () => {
 	const headway: HeadwayPeriod[] = [
-		hw('am_peak', 18, 60, 0.2, 9, 60), // +9 min
-		hw('midday', 29.4, 20, 0.39, 29.2, 24), // +0.2 min with fewer reports
-		hw('night', 21, 30, 0.3, null, null), // no prior → honest absence
+		hw('am_peak', 18, 60, 0.2, 9, 60),
+		hw('midday', 29.4, 20, 0.39, 29.2, 24),
+		hw('night', 21, 30, 0.3, null, null),
 	];
 
 	it('renders a reported gap increase as "+9.0 min vs prior week", flagged regression', async () => {
@@ -69,7 +69,6 @@ describe('Section2TheWait — reported gap comparisons', () => {
 		const worse = changed.find((el) => el.textContent?.includes('+9.0'));
 		expect(worse?.textContent).toContain('+9.0 min');
 		expect(worse?.textContent).toContain('vs prior week');
-		// a RISING wait is the bad direction → the regression glyph, not the improvement one.
 		expect(worse?.textContent).toContain('▲');
 	});
 
@@ -159,8 +158,6 @@ describe('Section2TheWait — direction DataTable contract', () => {
 	});
 });
 
-// Two equally sampled shifts can still have different exposure: gaps [10,10] and
-// [10,30] give modeled EWT 0 and 7.5. Their mean is 3.75; pooled moments give 5.0.
 describe('Section2TheWait — reporting-shift summary', () => {
 	it.each(['en', 'fr'] as const)(
 		'labels the unweighted shift mean and model limits in %s',
@@ -193,7 +190,6 @@ describe('Section2TheWait — reporting-shift summary', () => {
 	it.each(['en', 'fr'] as const)(
 		'compares the published medians, not means, in %s',
 		async (locale) => {
-			// [2,2,26] has median2 and mean10; [6,6,6] has median6 and mean6.
 			const wait = waitVm([hw('am_peak', 2, 3, 1.39, 6, 3)], true);
 			const view = render(Section2TheWait, {
 				props: { wait, locale, copy: reliabilityCopy[locale], mode: 'week' },

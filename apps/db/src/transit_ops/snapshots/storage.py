@@ -1,5 +1,3 @@
-"""Versioned snapshots and conditional publication on local disk or S3."""
-
 from __future__ import annotations
 
 import errno
@@ -38,15 +36,7 @@ from transit_ops.snapshots.protocols import StableActivationOutcome as StableAct
 from transit_ops.snapshots.protocols import StableObjectVersion as StableObjectVersion
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
-# Cache-Control header per data tier.
-# live    — 30 s TTL; realtime vehicle positions / alerts
-# static  — 1-day TTL + stale-while-revalidate; GTFS-derived shapes, stops, routes
-# historic — 1-hour TTL + stale-while-revalidate; the tier is REWRITTEN daily and
-#            its indexes/aggregates are mutable, so a 24 h client cache could pin a
-#            returning visitor a full publish behind (observed 2026-07-09: a cached
-#            receipts index kept the picker a week stale). Per-day files are
-#            immutable and only pay a cheap ETag 304 on revalidation.
-# internal — private, no-store; per-tier hash-state objects (never client-cached)
+# Mutable historic indexes use shorter TTLs than static files; hash state is private, no-store.
 CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
@@ -55,13 +45,10 @@ CACHE_CONTROL: dict[str, str] = {
     "internal": "private, no-store",
 }
 
-# S3/R2 error codes that mean "object does not exist" (mirror ingestion/storage).
 _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 _PRECONDITION_FAILED_CODES = {"412", "PreconditionFailed"}
 
 
-# Backward-compatible import surface for older tests and callers. Serialization
-# itself lives only in snapshots.serialization.
 _body = snapshot_json_bytes
 
 
@@ -113,9 +100,8 @@ def _exclusive_directory_lock(directory: pathlib.Path) -> Iterator[None]:
 
     directory.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
-        # Keep this file permanently: deleting it could split existing waiters and
-        # new arrivals across different lock objects. Lock byte zero beyond EOF;
-        # no byte initialization or truncation is needed (or safe under contention).
+        # Never delete or truncate this permanent lock file: waiters must share the same lock
+        # object.
         descriptor = os.open(directory / _LOCAL_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             while True:
@@ -123,8 +109,7 @@ def _exclusive_directory_lock(directory: pathlib.Path) -> Iterator[None]:
                     msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
                     break
                 except OSError as exc:
-                    # The CRT reports nonblocking lock contention as EACCES.
-                    # Other errors must fail closed, rather than spin forever.
+                    # Only EACCES means CRT lock contention; other errors fail closed.
                     if exc.errno != errno.EACCES:
                         raise
                     time.sleep(0.05)
@@ -322,7 +307,7 @@ class SnapshotStorage:
             modified = modified.replace(tzinfo=UTC)
         else:
             modified = modified.astimezone(UTC)
-        # LIST may preserve milliseconds that GET/HEAD HTTP-date headers cannot represent.
+        # LIST may preserve milliseconds absent from GET/HEAD HTTP-date timestamps.
         modified = modified.replace(microsecond=0)
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             raise RuntimeError(f"snapshot object has invalid size: {rel_key}")
@@ -590,7 +575,7 @@ _LOCAL_LOCK_NAME = ".transit-snapshot.lock"
 
 def _reserved_local_name(name: str) -> bool:
     if sys.platform == "win32":
-        # Win32 resolves case/dot/space aliases and NTFS alternate data streams.
+        # Reject Win32 case/dot/space aliases and NTFS alternate data streams.
         name = name.split(":", 1)[0].rstrip(" .").casefold()
     return name == _LOCAL_LOCK_NAME or _LOCAL_TEMPORARY_NAME.fullmatch(name) is not None
 
@@ -598,8 +583,7 @@ def _reserved_local_name(name: str) -> bool:
 def _resolved_local_path(path: pathlib.Path) -> pathlib.Path:
     resolved = path.resolve()
     if sys.platform == "win32":
-        # CPython 3.12 may retain the extended prefix if an absent object appears
-        # during resolve(). Compare equivalent DOS/UNC roots in the same spelling.
+        # Normalize extended DOS/UNC prefixes before comparing resolved roots.
         text = str(resolved)
         if text.startswith("\\\\?\\UNC\\"):
             return pathlib.Path("\\\\" + text[8:])
@@ -646,8 +630,8 @@ class LocalSnapshotStorage:
                 raise ValueError
             path = self._provider_root.joinpath(*rel_path.parts)
             resolved_relative = _resolved_local_path(path).relative_to(self._resolved_provider_root)
-            # Check native components too: backslashes are separators on Windows.
-            # Resolved components also protect aliases through directory links.
+            # Check native and resolved components to reject Windows separators and directory
+            # aliases.
             if any(
                 _reserved_local_name(part)
                 for part in (*path.relative_to(self._provider_root).parts, *resolved_relative.parts)
@@ -935,15 +919,9 @@ class HashGatedStorage:
         self.skipped: list[str] = []
         self.immutable_written: list[str] = []
         self.immutable_skipped: list[str] = []
-        # True after load() iff a prior state object existed AND carried the current
-        # fingerprint (cache-policy / format version unchanged). Lets a caller make a
-        # dataset-level skip decision (skip the whole rebuild) without trusting stale
-        # hashes across a format change. False on absence or fingerprint mismatch.
+        # Trust loaded hashes only when the state object carries the current fingerprint.
         self.fingerprint_matched: bool = False
-        # Guards the shared _new / written / skipped state so put_json can be
-        # called concurrently from a ThreadPoolExecutor (slice-9.1.1r stage 2).
-        # The actual PUT (slow, network) runs OUTSIDE the lock so threads still
-        # upload in parallel — only the bookkeeping is serialised.
+        # Serialize hash bookkeeping while keeping network PUTs outside the lock.
         self._lock = threading.Lock()
 
     def load(self) -> None:
@@ -977,9 +955,6 @@ class HashGatedStorage:
     def put_json(self, rel_key: str, payload: SnapshotPayload, *, tier: str) -> str:
         body = snapshot_json_bytes(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
-        # Decide skip-vs-write under the lock so the shared hash map and the
-        # written/skipped lists stay consistent across worker threads. A skipped
-        # file does NO put_bytes (network) — the stage-1 hash-gate is preserved.
         with self._lock:
             self._new[rel_key] = digest
             skip = self._prior.get(rel_key) == digest
@@ -987,8 +962,6 @@ class HashGatedStorage:
                 self.skipped.append(rel_key)
         if skip:
             return self._inner.full_key(rel_key)
-        # PUT happens outside the lock: the slow network round-trips run in
-        # parallel; only the bookkeeping below is serialised again.
         key = self._inner.put_bytes(rel_key, body, tier=tier)
         with self._lock:
             self.written.append(rel_key)

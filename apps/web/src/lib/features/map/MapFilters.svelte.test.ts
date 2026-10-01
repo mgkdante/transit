@@ -326,7 +326,6 @@ describe('MapFilters', () => {
 		expect(getByRole('button', { name: 'Collapse controls' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
 		expect(container.querySelector('.mf-title')).toHaveTextContent('Controls');
-		// The panel group's accessible name follows the same swap.
 		expect(container.querySelector('.map-filters')).toHaveAttribute('aria-label', 'Controls');
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'true');
 	});
@@ -346,7 +345,6 @@ describe('MapFilters', () => {
 
 		const head = container.querySelector('.mf-head')!;
 		const headerWrap = container.querySelector('[data-testid="map-filter-header"]')!;
-		// The collapse icon + title (.mf-head) sit at the TOP, ABOVE the motion header.
 		expect(
 			head.compareDocumentPosition(headerWrap) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();

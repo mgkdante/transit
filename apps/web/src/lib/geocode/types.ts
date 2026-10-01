@@ -1,9 +1,5 @@
 export type GeocodePrecision = 'address' | 'street' | 'neighbourhood' | 'postal' | 'place';
 
-/**
- * The Montréal bounds shared by Geo.ca result filtering and the near-me
- * coordinate guard.
- */
 export const MONTREAL_BOUNDS = {
 	minLat: 45.35,
 	maxLat: 45.75,
@@ -11,7 +7,6 @@ export const MONTREAL_BOUNDS = {
 	maxLon: -73.35,
 } as const;
 
-/** Is a coordinate inside the Montréal bias rectangle? */
 export function isInsideMontrealBounds(lat: number, lon: number): boolean {
 	return (
 		lat >= MONTREAL_BOUNDS.minLat &&

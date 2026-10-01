@@ -41,13 +41,12 @@ describe('selectDailyTrend', () => {
 		if (spec.kind !== 'trend') throw new Error('expected trend');
 		expect(spec.xScale).toBe('time');
 		expect(spec.domain).toEqual(SEVERE_DOMAIN);
-		expect(spec.domain[0]).toBe(0); // zero-based
+		expect(spec.domain[0]).toBe(0);
 		expect(spec.secondary?.domain).toEqual(DELAY_POS_DOMAIN);
 		expect(spec.points).toHaveLength(3);
-		// x is epoch-ms (time scale), sorted ascending.
 		expect(spec.points[0].x).toBeLessThan(spec.points[2].x as number);
-		expect(spec.points[0].y).toBe(10); // severe_pct plotted directly
-		expect(spec.points[0].y2).toBe(1.5); // avg delay secondary
+		expect(spec.points[0].y).toBe(10);
+		expect(spec.points[0].y2).toBe(1.5);
 	});
 
 	it('rides a per-day Wilson band from the served counts', () => {

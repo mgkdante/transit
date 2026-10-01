@@ -1,8 +1,3 @@
-// route.ts — Zod mirror of static_route.schema.json (title: "RouteFile").
-// The per-route detail page: directions (each with an ordered stop list,
-// headsign and an opaque GeoJSON-ish shape), service-period headways, and
-// first/last departure. Fetched per route id under routes_prefix.
-
 import { z } from 'zod';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
@@ -16,8 +11,6 @@ export type RouteStop = z.infer<typeof RouteStopSchema>;
 export const RouteDirectionSchema = z.object({
 	dir: z.number().int(),
 	headsign: z.string().nullable().optional(),
-	// Opaque shape geometry (GeoJSON-ish object, additionalProperties allowed);
-	// null when no shape is published. Kept loose — the map layer owns parsing.
 	shape: z.record(z.string(), z.unknown()).nullable().optional(),
 	stops: z.array(RouteStopSchema).optional(),
 });
@@ -34,10 +27,6 @@ export const RouteFileSchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
 	long: z.string().nullable().optional(),
-	// GTFS route_type integer (0=tram,1=metro,3=bus,...), mirroring
-	// RouteIndexEntry.type. Optional/nullable so snapshots published before this
-	// field still parse. Lets the detail surface infer "metro has no realtime"
-	// from the self-describing route file (no routes_index cross-ref needed).
 	type: z.number().int().nullable().optional(),
 	directions: z.array(RouteDirectionSchema).optional(),
 	service_periods: z.array(ServicePeriodSchema).optional(),

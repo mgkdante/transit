@@ -74,7 +74,6 @@ describe('ScrollFrame', () => {
 		const scroller = container.querySelector('[data-slot="scroll-frame-scroller"]');
 		expect(gutter?.querySelector('[data-testid="g"]')).not.toBeNull();
 		expect(scroller?.querySelector('[data-testid="s"]')).not.toBeNull();
-		// the gutter is a decorative pin of the row axis (the data lives in the plot + sr-table).
 		expect(gutter?.getAttribute('aria-hidden')).toBe('true');
 		expect(scroller).not.toHaveAttribute('role');
 		expect(scroller).not.toHaveAttribute('tabindex');
@@ -134,7 +133,6 @@ describe('ScrollFrame', () => {
 	});
 
 	it('shows NO edge shadows when the content does not overflow (no fake affordance)', () => {
-		// jsdom has no layout → scrollWidth == clientWidth == 0 → no overflow → both shadows off.
 		const { container } = render(ScrollFrame, {
 			props: {
 				scrollLabel: 'Chart data',

@@ -1,5 +1,3 @@
-"""One transaction-scoped lane shared by publishers and historic collection."""
-
 from sqlalchemy.engine import Connection
 
 from transit_ops.sql_registry import named_query
@@ -23,7 +21,6 @@ class PublishLockUnavailableError(RuntimeError):
 
 
 def acquire_publication_lane(conn: Connection, *, provider_id: str, tier: str) -> None:
-    """Fail fast unless this transaction owns the provider/tier publish lane."""
 
     acquired = conn.execute(
         _PUBLISH_LOCK_SQL,

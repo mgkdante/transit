@@ -1,10 +1,3 @@
-// Cluster05Habits.copy.ts — band-intrinsic bilingual copy for the 05 Time-of-day
-// habits band. The shared cluster overline + honest-state notes live in
-// `reliability.copy.ts` (passed in as the ReliabilityCopy prop); the strings
-// here are the ones only this band needs: weekday names, the heatmap a11y
-// summary, the scale legend (low/high/no-data), and the two sub-section
-// headings. FR is the canonical product voice; EN mirrors it.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const habitsBandCopy = defineCopy({

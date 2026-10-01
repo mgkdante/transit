@@ -1,4 +1,3 @@
-"""Migration 0081 adds a nullable logical-surface publish baseline."""
 
 from __future__ import annotations
 

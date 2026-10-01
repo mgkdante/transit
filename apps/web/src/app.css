@@ -1,11 +1,8 @@
-/* Semantic CSS custom properties (--background, --foreground, --dataviz-*, etc.) */
 @import '$lib/styles/tokens.css';
 
-/* Tailwind CSS v4 (CSS-first config, no tailwind.config.js) */
 @import 'tailwindcss';
 @source '../vendor/design/ui/src';
 
-/* Cross-browser mobile resets — Brave/Chrome/Safari Android consistency */
 *,
 *::before,
 *::after {
@@ -14,8 +11,6 @@
 html {
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
-	/* Respect the user's browser default while giving rem-based tokens a stable
-	   baseline. Never lock text scaling or disable pinch zoom. */
 	font-size: 100%;
 }
 button,
@@ -32,49 +27,28 @@ select {
 	appearance: none;
 }
 
-/* Tap-target floor (P5.3d §C4 P10). Transit-local constant — the minimum
-   comfortable touch size (WCAG 2.5.5 / Apple HIG). Kept local, NOT in the
-   generated @theme block: it is transit's taste contract, not a design-repo
-   token (§C4 governance — census-born constants stay transit-local). */
 :root {
 	--size-tap-min: 44px;
 	--size-detail-panel: 360px;
 	--size-detail-rail: 3.7rem;
 	--shadow-detail-panel:
 		-12px 0 28px -20px rgb(0 0 0 / 0.45), inset 1px 0 0 var(--edge-highlight);
-	/* Plan 035 promotes this calibrated app-local strip height into the shared token set. */
 	--strip-h: 68px;
-	/* One desktop measure for article controls and listing filters. Consumers keep
-	   their own mobile single-column/disclosure behavior below 1024px. */
 	--layout-control-rail-width: clamp(16rem, 24vw, 22rem);
-	/* A real third column is reserved for distinct supporting information. It stays
-	   useful rather than collapsing into the old narrow fractional side track. */
 	--layout-support-rail-width: clamp(16rem, 18vw, 20rem);
 	--layout-article-main-min: 40rem;
-	/* One lifted body offset for every ArticleHeader + DetailShell composition.
-	   Rails, verdicts, and first cards all begin on this same grid line. */
 	--layout-article-top-space: var(--space-card-gap);
-	/* Transit-local blueprint depth roles. The listing compositions share this
-	   three-step ladder; the hero artwork keeps BlueprintShell's own layer. */
 	--blueprint-ink-quiet: 0.14;
 	--blueprint-ink-mid: 0.22;
 	--blueprint-ink-accent: 0.3;
 }
 
-/* BlueprintShell uses !important light/mobile opacity boosts. Repeating the part
-   attribute makes this app-owned role selector more specific than the vendor's
-   scoped selectors regardless of CSS chunk order, without touching the hero. */
 [data-slot='blueprint-listing-header']
 	.edge-details
 	[data-blueprint-part][data-blueprint-part].edge-detail {
 	opacity: var(--blueprint-part-ink) !important;
 }
 
-/* Below the desktop breakpoint the listing copy stacks through the drawing, so
-   the protected-copy-zone rule implies every detail part renders quiet: the
-   drawing becomes a uniform wash and the copy stays the subject. Same selector
-   strength as the role rule above; the theme blocks keep the quiet VALUE right
-   per theme. */
 @media (max-width: 1023px) {
 	[data-slot='blueprint-listing-header']
 		.edge-details
@@ -83,7 +57,6 @@ select {
 	}
 }
 
-/* Tap-feedback primitives (reduced-motion-guarded). */
 @utility tap-press {
 	transition:
 		scale var(--duration-instant) var(--ease-out),
@@ -111,7 +84,6 @@ select {
 	}
 }
 
-/* shadcn-svelte component animations */
 @import 'tw-animate-css';
 
 @media (prefers-reduced-motion: reduce) {
@@ -123,16 +95,8 @@ select {
 	}
 }
 
-/* Map the dark: variant to attribute-based theme switching.
-   .theme-dark wrapper included so dark: utilities also fire inside pinned-dark scenes. */
 @custom-variant dark (&:is([data-theme="dark"] *, .theme-dark *));
 
-/*
-  Static (non-theme-switching) tokens in Tailwind v4 @theme format: type scale,
-  radii, shadows, spacing, z-index, container widths.
-  GENERATED — owned by tools/tokens/build.ts. Do NOT hand-edit the sentinel region.
-  v4 naming: --color-NAME makes bg-NAME / text-NAME / border-NAME; --font-NAME makes font-NAME; --radius-NAME makes rounded-NAME.
-*/
 /* ===== TOKENS:START ===== */
 /* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
 /* Hand-edits to this region will be overwritten on the next build. */
@@ -185,11 +149,7 @@ select {
 }
 /* ===== TOKENS:END ===== */
 
-/* Dynamic theme values — reference tokens.css via var(), resolve at runtime so
-   utilities flip with [data-theme]. shadcn convention: --color-{role} →
-   bg-{role}/text-{role}/border-{role}. */
 @theme inline {
-	/* Core semantic — shadcn convention */
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-card: var(--card);
@@ -210,7 +170,6 @@ select {
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
 
-	/* Sidebar — maps to existing semantic tokens for shadcn sidebar parts */
 	--color-sidebar: var(--background);
 	--color-sidebar-foreground: var(--foreground);
 	--color-sidebar-accent: var(--accent);
@@ -220,7 +179,6 @@ select {
 	--color-sidebar-primary: var(--primary);
 	--color-sidebar-primary-foreground: var(--primary-foreground);
 
-	/* Brand extensions */
 	--color-terminal: var(--terminal);
 	--color-manifesto: var(--manifesto);
 	--color-accent-text: var(--accent-text);
@@ -232,8 +190,6 @@ select {
 	--color-signage-bg: var(--signage-bg);
 	--color-signage-text: var(--signage-text);
 
-	/* Data-viz scale (SEPARATE from semantic affordance tokens; slice-9.2 P0.8).
-	   Components encode DATA with these, never with --primary/--success/--destructive. */
 	--color-dataviz-status-early: var(--dataviz-status-early);
 	--color-dataviz-status-on-time: var(--dataviz-status-on-time);
 	--color-dataviz-status-late: var(--dataviz-status-late);
@@ -259,15 +215,12 @@ select {
 	--color-dataviz-vehicle-no-data: var(--dataviz-vehicle-no-data);
 }
 
-/* Self-hosted variable fonts — re-declare outside @theme so Tailwind v4 doesn't
-   strip the multi-word font names. */
 :root {
 	--font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
 	--font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
 	--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
-/* Dark theme is the default — tokens.css handles var(--background) etc. */
 html {
 	background-color: var(--background);
 	color: var(--foreground);
@@ -276,7 +229,6 @@ html {
 	overscroll-behavior: none;
 }
 
-/* No-overflow guarantees */
 body {
 	font-size: var(--text-body);
 	overflow-wrap: anywhere;
@@ -297,17 +249,11 @@ table {
 	max-width: 100%;
 }
 
-/* Brand text selection — yellow highlight, signage ink (theme-aware token). */
 ::selection {
 	background: var(--accent);
 	color: var(--accent-foreground);
 }
 
-/* ── LayerChart "same face": every chart speaks the brand fonts (S7) ──────────────
-   LayerChart sets no font-family of its own — its SVG axis text + the body-portaled
-   HTML tooltip would otherwise inherit --font-body. Pin them to the brand MONO voice
-   (the numeric data register) so EVERY chart on the surface reads identically. Global
-   (incl. the portaled tooltip) → covers every current + future LayerChart mark. */
 .lc-axis-tick-label,
 .lc-axis-label,
 .lc-axis text,
@@ -322,9 +268,6 @@ table {
 	font-variant-numeric: tabular-nums;
 	font-feature-settings: 'tnum' 1;
 }
-/* Legibility floor (S7 P8, operator: "make them BIG and legible"): chart text never
-   sits below the per-mark default — axis text at 14px, tooltips a tier above so the
-   read-at-attention number is largest. rem so WCAG 1.4.4 200% resize actually scales. */
 .lc-axis-tick-label,
 .lc-axis-label,
 .lc-axis text,
@@ -344,8 +287,6 @@ table {
 	font-weight: 600;
 }
 
-/* Keyboard-focus polish — engineered, on-brand ring everywhere.
-   @layer base so component focus utilities still win; :where() keeps specificity low. */
 @layer base {
 	:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
 		outline: 2px solid var(--primary);
@@ -353,7 +294,6 @@ table {
 	}
 }
 
-/* Skip-to-content link (a11y; slice-9.2 P1.3). Off-screen until focused. */
 .skip-link {
 	position: fixed;
 	left: -9999px;
@@ -371,7 +311,6 @@ table {
 	top: 0.5rem;
 }
 
-/* Brand scrollbar — orange thumb on transparent track */
 * {
 	scrollbar-width: thin;
 	scrollbar-color: color-mix(in srgb, var(--primary) 40%, transparent) transparent;
@@ -399,9 +338,6 @@ table {
 	background: color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
-/* Circuit-grid schematic background — blueprint feel. The grid is the element's
-   OWN background-image so solid surfaces genuinely occlude it (no isolation/
-   stacking-context, so a fixed nav can still compete with overlays). */
 .circuit-grid {
 	position: relative;
 	background-image:
@@ -412,12 +348,6 @@ table {
 		repeating-linear-gradient(0deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px);
 }
 
-/* Glass chrome — the ONE floating-chrome glass recipe (§C4 P4). The NavPill menu
-   (dropdown + full-height sheet) consumes it; the map overlay family (currently
-   drifting 8/10/12px) standardizes onto it in P5.3d. Background + border are the
-   pill chassis family (92% surface mix + brand hairline); the blur is fixed at
-   16px (the documented GL escape hatch to blur(12px) lives on /map only, applied
-   there, never here). Radius is a CONTEXT concern — the consumer sets pill/xl. */
 .glass-chrome {
 	background: color-mix(in srgb, var(--background) 92%, transparent);
 	border: 1px solid var(--border-brand);
@@ -426,13 +356,6 @@ table {
 	box-shadow: var(--shadow-nav);
 }
 
-/* Detail-header dot-grid — the "Manifesto schematic" chrome behind the measured
-   article headers (ported 1:1 from yesid.dev's shared .detail-header-grid in
-   app.css). Single source of truth for the grid lines + solder-dot
-   pseudo-element; each surface sets --header-accent to its own accent colour
-   (default --primary). The consumer must give the element
-   `position: absolute; inset: 0` + a z-index — those are surface-layout
-   concerns, not part of the shared dot pattern. */
 .detail-header-grid {
 	background-image:
 		repeating-linear-gradient(90deg, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 0px, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 1px, transparent 1px, transparent 80px),
@@ -451,10 +374,6 @@ table {
 	background-size: 320px 320px;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Light-theme hand overrides (hand-maintained; the generator owns only the
-   sentinel region). Dark = brand default; these fire under [data-theme="light"].
-   ═══════════════════════════════════════════════════════════════ */
 [data-theme='light'],
 .theme-light {
 	--blueprint-ink-quiet: 0.28;
@@ -469,13 +388,9 @@ table {
 	--shadow-sheet: 0 -8px 32px rgba(28, 24, 19, 0.12);
 	--shadow-detail-panel:
 		-12px 0 28px -20px rgb(28 24 19 / 0.18), inset 1px 0 0 var(--edge-highlight);
-	/* Stronger brand grid on paper (operator: light needs more structural demarcation). */
 	--border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Global keyframes — single source, referenced by brand primitives.
-   ═══════════════════════════════════════════════════════════════ */
 @keyframes blink {
 	0%,
 	100% {
@@ -516,14 +431,6 @@ table {
 	}
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   View Transitions — a tasteful root cross-fade between surfaces.
-   Cross-document opt-in (@view-transition) for any MPA-style nav; the SPA path
-   is driven by the root +layout `onNavigate` hook (see runViewTransition). We
-   keep it to a fast OPACITY cross-fade — no slide/scale, which would feel jarring
-   on a data dashboard (restraint per the yesid.dev operator bar). Fully disabled
-   under prefers-reduced-motion via the guard below.
-   ═══════════════════════════════════════════════════════════════ */
 @view-transition {
 	navigation: auto;
 }
@@ -553,12 +460,6 @@ table {
 	}
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Brand utility classes — shared patterns extracted from primitives.
-   Four-colour doctrine: label-section = quiet caption (muted); label-station =
-   the YELLOW wayfinding voice (overlines/section labels); label-metric = quiet
-   metric caption (the metric VALUE carries the yellow callout).
-   ═══════════════════════════════════════════════════════════════ */
 .label-section {
 	font-family: var(--font-mono);
 	font-size: var(--text-caption);
@@ -581,18 +482,15 @@ table {
 	color: var(--muted-foreground);
 }
 
-/* Gradient separator — brand orange fading to transparent */
 .brand-fade-line {
 	background: linear-gradient(90deg, var(--primary), transparent);
 	height: 1px;
 }
 
-/* Dashed divider — filter group separators (route-set orange voice, 2px). */
 .divider-dashed {
 	border-top: 2px dashed var(--border-rule);
 }
 
-/* Hidden scrollbar — preserves scroll, hides chrome */
 .scrollbar-hidden {
 	scrollbar-width: none;
 	-ms-overflow-style: none;
@@ -601,21 +499,16 @@ table {
 	display: none;
 }
 
-/* LED pulse — status dots and indicators */
 .led-pulse {
 	animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* MetricDisplay value — mobile shrink for the lg (text-title) size */
 @media (max-width: 768px) {
 	.metric-value.text-title {
 		font-size: var(--text-heading);
 	}
 }
 
-/* Anchor-link scroll offset so ANY deep-linked element lands clear of the
-   floating chrome. ONE rule off the single --chrome-offset knob (AppShell) —
-   replaces every per-surface scroll-margin hack (metrics/health/lines). */
 [id],
 [data-section-index],
 [data-toc] {

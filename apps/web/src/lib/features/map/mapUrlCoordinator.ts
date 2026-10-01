@@ -1,16 +1,3 @@
-// mapUrlCoordinator — the single latest-intent URL composer for the /map runtime
-// (M4a A5). THE PROBLEM IT KILLS: any writer composing against the SETTLED
-// $page.url can resurrect state another writer just cleared (the near-pin race —
-// clear() starts a goto, a filter write reads the stale URL, near comes back).
-// THE DESIGN: three writers (filter, near, focus) all compose against the last
-// REQUESTED URL (`latestIntent`), never the settled one. Requested identities are
-// FIFO CONSUME-ONCE tokens: a settle matching a token is an 'echo' for FILTER
-// ownership and retires the matched prefix — a later genuine navigation onto
-// the SAME URL finds no token and classifies 'adopt' (user-owned rehydration).
-// An unmatched settle clears the queue; whenever the queue is empty the base
-// RESETS to the settled URL, so an externally aborted/superseded navigation can
-// never leave the base stale. Identities are origin-free pathname+search with
-// relative targets resolved at request time, so /fr/map composes against itself.
 import { FILTER_SEARCH_PARAM_KEYS } from '$lib/filters';
 
 export interface MapUrlRewriteOptions {
@@ -36,7 +23,6 @@ export interface MapUrlCoordinator {
 	readonly settle: (url: URL) => MapUrlSettlement;
 }
 
-// FIFO token matching stays origin-free pathname+search.
 function identity(url: URL): string {
 	return `${url.pathname}${url.search}`;
 }

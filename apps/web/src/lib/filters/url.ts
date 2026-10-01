@@ -1,29 +1,3 @@
-// $lib/filters/url — the URL ⇄ FilterState codec.
-//
-// The URL is the canonical home of filter state: it is shareable, bookmarkable,
-// survives a locale switch (the switcher preserves `url.search`), and SSR reads
-// it before the store ever exists. This module is the ONLY place that knows the
-// wire format:
-//
-//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, date, n, affects, severity (stable order)
-//   sets  : comma-joined, sorted, deduped (route=10,165,80)
-//   empty : an empty set / absent enum / absent lever is OMITTED entirely
-//   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
-//
-// Invalid values are dropped on the way IN (enum guards in ./state), so the URL
-// is self-healing: a hand-edited `?status=bogus,late` parses to `late` only.
-//
-// The date window is a `?from=…&to=…` PAIR (each an ISO `YYYY-MM-DD`). A window
-// is present ONLY when both bounds decode and normalize to a complete span —
-// "range mode" is exactly "a window is present". A half/inverted/malformed pair
-// yields NO window (honest-absence; the surface falls to its grain default). The
-// LEGACY `?window=` scalar had zero producers and is no longer read — it drops as
-// an unknown key. `?grain=range` (an old lines-only token) is not a valid Grain,
-// so it drops on the way in; combined with `?from`/`?to` the window carries the
-// range intent, reproducing the old rendered view.
-//
-// SSR-safe: operates purely on URLSearchParams; never touches `window`.
-
 import type { FilterState, IdSetKey } from './state';
 import {
 	emptyFilterState,
@@ -39,13 +13,6 @@ import {
 	isIsoDate,
 } from './state';
 
-/**
- * Stable, intentional key order for the serialized URL. Sets first (the primary
- * subject), then the enum chip families, then the time levers. Iterating this
- * (rather than Object.keys) guarantees a byte-stable query string regardless of
- * insertion order in the source state — which is what makes the round-trip and
- * equality checks deterministic.
- */
 const KEY_ORDER = [
 	'route',
 	'stop',
@@ -66,7 +33,6 @@ const KEY_ORDER = [
 
 export const FILTER_SEARCH_PARAM_KEYS = Object.freeze(KEY_ORDER);
 
-/** Wire key → the FilterState id-set field it maps to. */
 const SET_KEY_TO_FIELD: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> = {
 	route: 'routes',
 	stop: 'stops',
@@ -74,12 +40,6 @@ const SET_KEY_TO_FIELD: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> 
 	vehicle: 'vehicles',
 };
 
-/**
- * Split one raw query value into trimmed, non-empty tokens. Accepts both the
- * canonical comma-joined form (`?route=10,80`) and repeated keys
- * (`?route=10&route=80`) by being called per-value; blank tokens (from
- * `?route=` or `10,,80`) are discarded.
- */
 function splitTokens(raw: string): string[] {
 	return raw
 		.split(',')
@@ -87,14 +47,12 @@ function splitTokens(raw: string): string[] {
 		.filter((t) => t.length > 0);
 }
 
-/** Collect every token across all occurrences of `key` (comma + repeated). */
 function collect(sp: URLSearchParams, key: string): string[] {
 	const out: string[] = [];
 	for (const raw of sp.getAll(key)) out.push(...splitTokens(raw));
 	return out;
 }
 
-/** Dedupe while preserving first-seen order. */
 function dedupe(values: readonly string[]): string[] {
 	const seen = new Set<string>();
 	const out: string[] = [];
@@ -107,20 +65,6 @@ function dedupe(values: readonly string[]): string[] {
 	return out;
 }
 
-/**
- * Parse a URLSearchParams into a normalized {@link FilterState}.
- *
- * - id sets (route/stop/trip): comma + repeated keys both accepted, blanks and
- *   duplicates dropped;
- * - status/occupancy: invalid enum values DROPPED, deduped, absent when empty;
- * - grain: kept only if a valid {@link import('./state').FilterState['grain']}
- *   (a legacy `?grain=range` is NOT a valid Grain → dropped);
- * - window: the `?from`/`?to` PAIR, normalized to a complete `{from,to}` span
- *   (inverted bounds swapped); absent unless BOTH bounds are valid ISO dates.
- *
- * Unknown query keys are ignored. The result is canonical, so feeding it back
- * through {@link toSearchParams} and re-parsing is a fixed point.
- */
 export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const state = emptyFilterState();
 
@@ -147,42 +91,24 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const grain = grainTokens.find((g) => isGrain(g));
 	if (grain && isGrain(grain)) state.grain = grain;
 
-	// The date window is the ?from/?to pair. Both bounds must be valid ISO dates
-	// for a window to form (a half/malformed pair is no window — the surface falls
-	// to its grain default). An inverted from>to is swapped by normalizeWindow.
 	const window = normalizeWindow(sp.get('from'), sp.get('to'));
 	if (window) state.window = window;
 
-	// The receipt's single chosen day (?date) — a lone ISO date, ORTHOGONAL to the
-	// ?from/?to window pair. A malformed value drops to absent (the surface falls to
-	// its latest-published default), so a hand-edited ?date self-heals.
 	const date = sp.get('date');
 	if (isIsoDate(date)) state.date = date;
 
-	// The worst-N ladder cap (?n) — a fixed rung or 'all'; a junk value drops to
-	// absent (the surface default), so the URL never carries a cap the ladder can't render.
 	const worstN = normalizeWorstN(sp.get('n'));
 	if (worstN) state.worstN = worstN;
 
-	// The alerts "affects" axis (?affects) — a single lines|stops scalar; a junk value
-	// drops to absent (= the unfiltered "all" view). Single-select, not a chip family.
 	const alertAffects = normalizeAlertAffects(sp.get('affects'));
 	if (alertAffects) state.alertAffects = alertAffects;
 
-	// The alerts severity axis (?severity) — one SeverityCode scalar; a value outside
-	// the closed enum drops to absent (= "all"). Distinct from the status/occupancy families.
 	const alertSeverity = normalizeSeverity(sp.get('severity'));
 	if (alertSeverity) state.alertSeverity = alertSeverity;
 
 	return state;
 }
 
-/**
- * Serialize a {@link FilterState} to URLSearchParams in the canonical wire
- * format. Sets are sorted + comma-joined; absent/empty fields are omitted; keys
- * are appended in {@link KEY_ORDER} so the resulting query string is byte-stable
- * for a given logical state (idempotent round-trip, stable history entries).
- */
 export function toSearchParams(s: FilterState): URLSearchParams {
 	const sp = new URLSearchParams();
 
@@ -246,10 +172,6 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 	return sp;
 }
 
-/**
- * Canonical query string (no leading `?`) for a state, or `''` when empty.
- * Convenience for callers building an href: `path + (qs ? '?' + qs : '')`.
- */
 export function toSearchString(s: FilterState): string {
 	return toSearchParams(s).toString();
 }

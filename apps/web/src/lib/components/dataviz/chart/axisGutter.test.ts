@@ -26,7 +26,6 @@ describe('categoryGutter', () => {
 		const out = g.truncate('y'.repeat(200));
 		expect(out.length).toBe(g.maxChars);
 		expect(out.endsWith('…')).toBe(true);
-		// the truncation budget is derived from the gutter, not a blanket constant
 		expect(g.maxChars).toBeGreaterThan(16);
 	});
 

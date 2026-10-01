@@ -15,7 +15,6 @@ from transit_ops.snapshots.storage import ImmutableKeyCollisionError, StableActi
 
 
 class MemorySnapshotStore:
-    """Byte-backed publication adapter with immutable collision and CAS behavior."""
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}

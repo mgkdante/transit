@@ -546,12 +546,6 @@ describe('NetworkSurface article shell', () => {
 });
 
 describe('NetworkSurface drilldown', () => {
-	// P5.2: the cross-filter rides each band's spec `href` (a focusable SVG link
-	// rendered by StackedShareBar) — the legacy onSelect callback is gone. LayerChart
-	// paints nothing in happy-dom's zero-size containers (house pattern: marks are
-	// asserted via their layout-independent sr-only tables; see the mark tests), so
-	// these specs are proven here via the AT mirror; the href VALUES are pinned in
-	// mixes.test.ts (hrefFor plumbing) and the band links are browser-verified.
 	const rowFor = (container: HTMLElement, label: string): string | null => {
 		for (const row of container.querySelectorAll('table.sr-only tbody tr')) {
 			if (row.querySelector('th')?.textContent?.trim() === label)
@@ -679,10 +673,8 @@ describe('NetworkSurface reporting row (S9C vehicles-reporting own row)', () => 
 		render(NetworkSurface);
 		const section = document.querySelector('[data-slot="reporting-section"]') as HTMLElement;
 		expect(section).not.toBeNull();
-		// The non_responding total card + the vehicles card live in the reporting row.
 		expect(within(section).getByText('Vehicle positions')).toBeInTheDocument();
 		expect(within(section).getByText('Trips without a signal')).toBeInTheDocument();
-		// The silent-by-route list lives inside the same section.
 		const list = within(section).getByRole('list', {
 			name: /scheduled trips currently running with no live vehicle/i,
 		});
@@ -714,7 +706,6 @@ describe('NetworkSurface reporting row (S9C vehicles-reporting own row)', () => 
 		network.non_responding_by_route = null;
 		render(NetworkSurface);
 		expect(document.querySelector('[data-slot="non-responding-by-route"]')).toBeNull();
-		// The reporting section still stands (the non_responding scalar card carries the total).
 		expect(document.querySelector('[data-slot="reporting-section"]')).not.toBeNull();
 	});
 });
@@ -726,16 +717,13 @@ describe('NetworkSurface delay distribution (ChartSpec re-seat)', () => {
 		expect(section).not.toBeNull();
 		const canvas = document.querySelector('[data-slot="delay-histogram"]');
 		expect(canvas).not.toBeNull();
-		// The Chart renders the A1 HistogramMark (not the old hand-rolled /max <ul>).
 		expect(canvas!.querySelector('[data-slot="histogram-mark"]')).not.toBeNull();
-		// The section is NOT nested inside a DashboardGrid cell (its own deliberate row).
 		expect(canvas!.closest('[data-slot="dashboard-grid"]')).toBeNull();
 	});
 
 	it('carries all 8 signed-minute buckets in the mark sr-only table', () => {
 		render(NetworkSurface);
 		const mark = document.querySelector('[data-slot="histogram-mark"]') as HTMLElement;
-		// The AT-fallback table carries EVERY bucket (incl. the clipped 15+ overflow bin).
 		const rows = mark.querySelectorAll('table tbody tr');
 		expect(rows).toHaveLength(8);
 	});
@@ -787,9 +775,6 @@ describe('NetworkSurface trend window + series', () => {
 	});
 
 	it('switches the retard channel from p90 to the mean series when "Average" is picked', async () => {
-		// P5.2: TrendMark's sr-only table is the layout-independent read (LayerChart
-		// paints nothing in happy-dom). The secondary column header carries the resolved
-		// retard label; its cells carry the series.
 		const { container } = render(NetworkSurface);
 		const figure = () => container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
 		expect(figure()).not.toBeNull();
@@ -797,7 +782,6 @@ describe('NetworkSurface trend window + series', () => {
 			figure().querySelectorAll('table.sr-only thead th')[2]?.textContent ?? '';
 		const lastY2 = () => {
 			const rows = figure().querySelectorAll('table.sr-only tbody tr');
-			// The daily fixture's last REAL reading sits on the second row (day 2 of 2 real).
 			const cells = rows[1]?.querySelectorAll('td');
 			return cells?.[1]?.textContent ?? '';
 		};
@@ -982,7 +966,6 @@ describe('NetworkSurface by time of day + weekday/weekend', () => {
 });
 
 describe('NetworkSurface trend window re-slice', () => {
-	// Unique dates (TrendMark keys its sr-table rows by xLabel — real series never repeat a day).
 	const longSeries = Array.from({ length: 40 }, (_, i) => ({
 		date: `2026-${String(5 + Math.floor(i / 28)).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
 		otp_pct: 70 + (i % 20),
@@ -1013,14 +996,10 @@ describe('NetworkSurface trend window re-slice', () => {
 });
 
 describe('NetworkSurface OTP trend zoom (S9B min-span domain + reference)', () => {
-	// P5.2: the zoom VALUE lives in the selector-emitted spec (LayerChart draws the axis
-	// only in a real layout); the floored-span + clamp behaviour is pinned in
-	// trendChart.test.ts against otpTrendDomain, and the rendered axis is browser-verified.
 	it('mounts the trend as the spec-driven TrendMark (the S9B zoom rides the spec domain)', () => {
 		const { container } = render(NetworkSurface);
 		const figure = container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
 		expect(figure).not.toBeNull();
-		// The sr-only table (the AT mirror) carries both series for every plotted day.
 		expect(figure.querySelectorAll('table.sr-only tbody tr').length).toBeGreaterThanOrEqual(2);
 	});
 });
@@ -1029,8 +1008,6 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 	const original = trendSeries.slice();
 
 	it('renders the completeness tile WITH its honest-absence note when every rate is null (B4)', () => {
-		// The base fixture carries no service_completeness_rate → the tile stays rendered
-		// and says why the value is absent (no data + why, never a missing section).
 		render(NetworkSurface);
 		const tile = document.querySelector('[data-slot="completeness-section"]') as HTMLElement;
 		expect(tile).not.toBeNull();
@@ -1049,7 +1026,6 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 		expect(tile).not.toBeNull();
 		expect(within(tile).getByText('Observed / scheduled trips')).toBeInTheDocument();
 		expect(within(tile).getByText('94.2%')).toBeInTheDocument();
-		// Count parity does not establish that scheduled trip identities were observed.
 		expect(within(tile).getByText(/Trips are not matched by identity/)).toBeInTheDocument();
 	});
 });
@@ -1079,15 +1055,12 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 
 	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(NetworkSurface);
-		// The SurfaceRail mobile pill replaces the old top-rail SurfaceControls + ControlsRail.
 		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		expect(railMobile).not.toBeNull();
 		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
 		expect(pillBtn).not.toBeNull();
-		// Labelled with the View heading + the active grain (default 'day' → Day).
 		expect(pillBtn.textContent).toContain(copy.viewControlsLabel);
 		expect(pillBtn.textContent).toContain(copy.grain.day);
-		// The sheet is closed by default (no dialog rendered yet).
 		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
 	});
 
@@ -1099,7 +1072,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
 		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
 		expect(sheet).not.toBeNull();
-		// The ONE sheet merges the view controls (the delay-series toggle) AND the region ToC.
 		expect(within(sheet).getByRole('radiogroup', { name: 'Delay series' })).toBeInTheDocument();
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
@@ -1154,11 +1126,8 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 
 	it('minted a two-region ToC (Live now + Historic trend) on the shared TocNav', () => {
 		const { container } = render(NetworkSurface);
-		// The two minted anchors carry data-toc so the observer + the ToC jump buttons resolve.
 		expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
 		expect(container.querySelector('[data-toc="net-historic"]')).not.toBeNull();
-		// The rail region jump-list now rides the ONE shared TocNav (button-driven), not the
-		// old bespoke ↻/∞ anchor nav.
 		const toc = container.querySelector('[data-slot="section-toc"]') as HTMLElement;
 		expect(toc).not.toBeNull();
 		const items = Array.from(toc.querySelectorAll('.toc-item'));
@@ -1166,7 +1135,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		const labels = items.map((b) => b.textContent ?? '');
 		expect(labels.some((l) => l.includes(copy.liveRegion))).toBe(true);
 		expect(labels.some((l) => l.includes(copy.historicRegion))).toBe(true);
-		// The old per-region scope glyph is gone — no ↻/∞ anywhere in the rail ToC.
 		expect(toc.textContent).not.toMatch(/[↻∞]/);
 	});
 });

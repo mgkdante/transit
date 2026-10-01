@@ -51,7 +51,6 @@ export interface HistoryRangeResource<TIndex, TValue> {
 	destroy(): void;
 }
 
-/** An accepted server read, with its original request and resolved index kept together. */
 export interface HistoryRangeSeed<TIndex, TValue> {
 	readonly request: RawHistoryRangeRequest;
 	readonly index: TIndex | null;
@@ -61,7 +60,6 @@ export interface HistoryRangeSeed<TIndex, TValue> {
 
 export interface HistoryRangeResourceOptions<TIndex = unknown, TValue = unknown> {
 	readonly initialRequest: RawHistoryRangeRequest;
-	/** Read once at construction; subsequent requests and retries exclusively own this resource. */
 	readonly seed?: () => HistoryRangeSeed<TIndex, TValue> | undefined;
 }
 
@@ -120,7 +118,6 @@ function resolveAgainst<TIndex, TValue>(
 	);
 }
 
-/** Load through the same repository, selection and builder contract used after hydration. */
 export async function loadHistoryRangeSeed<TIndex, TValue>(
 	loader: HistoryRangeLoader<TIndex, TValue>,
 	initialRequest: RawHistoryRangeRequest,

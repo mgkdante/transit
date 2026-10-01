@@ -1,17 +1,3 @@
-<!--
-  TocPill - floating pill at the bottom-center of the viewport on mobile (<lg).
-  Shared across detail pages. Shows the active heading + counter; tapping opens a
-  drawer with the full TOC (same badge marks as the section cards, via TocBadge).
-
-  The PAGE owns the active id (one IntersectionObserver via observeActiveToc) and
-  passes it in. The pill renders, it doesn't track. a11y labels come in as props
-  so each page sources its own localized chrome.
-
-  Ported from yesid.dev shared/TocPill. Deviation: yesid wraps the drawer in
-  `use:scrollChain` (a scroll-containment action transit lacks). Dropped in
-  favour of `overscroll-behavior: contain` on the scroll container, which gives
-  the same "don't scroll the page behind me" behaviour without the action.
--->
 <script lang="ts">
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { TocBadge } from '@yesid/ui/brand';
@@ -28,11 +14,6 @@
 		activeId: string;
 		openAria: string;
 		closeAria: string;
-		/**
-		 * Page-owned navigation override (S10): on a default-closed page a jump must
-		 * REVEAL its target, not land on a shut card — the page passes its open+scroll
-		 * path here (same contract as TocNav's onNavigate). Absent → internal scroll.
-		 */
 		onNavigate?: (id: string) => void;
 	} = $props();
 
@@ -62,8 +43,6 @@
 		}
 	}
 
-	// Move focus into the drawer when it opens (first item) so keyboard users land
-	// inside it; focus returns to the pill button when it closes (closeDrawer).
 	$effect(() => {
 		if (drawerOpen && drawerEl) {
 			drawerEl.querySelector<HTMLElement>('.toc-drawer-item')?.focus();
@@ -71,9 +50,6 @@
 	});
 
 	function scrollTo(id: string): void {
-		// A page-owned navigate path (open-then-scroll on default-closed pages) takes
-		// precedence over the internal scroll — S10 review F1: the mobile drawer must
-		// never land a reader on a shut card.
 		if (onNavigate) {
 			onNavigate(id);
 			closeDrawer(true);
@@ -81,8 +57,6 @@
 		}
 		const el = tocElement(id);
 		if (el) {
-			// Honour prefers-reduced-motion: a reader who opts out of motion gets an instant jump,
-			// not a smooth scroll (WCAG 2.3.3 animation-from-interactions).
 			const reduce =
 				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 			el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
@@ -94,13 +68,6 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="toc-pill-container lg:hidden" data-testid="toc-pill">
-	<!--
-		A11y: the button shows visible text ("{activeName} {n}/{total}") while
-		openAria carries the purpose ("Table of contents"). Lighthouse 2.5.3
-		(label-content-name-mismatch) requires the visible text to appear as a
-		prefix of the accessible name. Compose aria-label so it starts with the
-		same visible string, then appends the purpose.
-	-->
 	<button
 		bind:this={pillBtn}
 		class="tap-press toc-pill"
@@ -140,7 +107,6 @@
 						>
 						<span class="toc-drawer-label">{entry.title}</span>
 					</button>
-					<!-- Nested sub-headings -->
 					{#each entry.children as child (child.id)}
 						<button
 							class="tap-press toc-drawer-item toc-drawer-sub"
@@ -172,7 +138,6 @@
 		gap: 8px;
 		padding: 12px 20px;
 		min-height: 44px;
-		/* Never wider than the viewport (with a little breathing room). */
 		max-width: calc(100vw - 2rem);
 		background: color-mix(in srgb, var(--background) 95%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
@@ -182,8 +147,6 @@
 		white-space: nowrap;
 	}
 
-	/* The active title shrinks + ellipsizes when the pill hits its max-width; the
-	   dot, counter and chevron stay fixed. min-width:0 lets the flex item shrink. */
 	.toc-pill-name {
 		min-width: 0;
 		overflow: hidden;
@@ -215,8 +178,6 @@
 		max-width: 90vw;
 		max-height: 60dvh;
 		overflow-y: auto;
-		/* Replaces yesid's use:scrollChain: keep wheel/touch scroll inside the
-		   drawer instead of chaining to the page behind it. */
 		overscroll-behavior: contain;
 		background: color-mix(in srgb, var(--background) 97%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
@@ -245,7 +206,6 @@
 		width: 100%;
 	}
 
-	/* Fixed-width badge slot keeps labels aligned across number/icon/sub rows. */
 	.toc-drawer-badge {
 		display: inline-flex;
 		align-items: center;
@@ -274,7 +234,6 @@
 		outline-offset: 2px;
 	}
 
-	/* Sub-headings indented (no badge slot; align under the parent's label). */
 	.toc-drawer-sub {
 		padding-left: 40px;
 		font-size: var(--text-caption);

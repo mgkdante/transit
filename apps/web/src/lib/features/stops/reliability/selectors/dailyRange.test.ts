@@ -3,8 +3,6 @@ import { poolDailyRange } from './dailyRange';
 import { wilsonBoundsProportion } from '$lib/v1/stats';
 import type { StopDailyPoint } from '$lib/v1';
 
-// The DB lane's stop_daily.test.ts CLIENT-POOLING invariant, exercised through the
-// real selector: summing served counts reproduces the per-day + pooled rate EXACTLY.
 const DAILY: StopDailyPoint[] = [
 	{
 		date: '2026-06-01',
@@ -34,8 +32,6 @@ describe('poolDailyRange', () => {
 		const v = poolDailyRange(DAILY);
 		expect(v.observations).toBe(150);
 		expect(v.severeCount).toBe(18);
-		// 100 * 18 / 150 = 12.0 — a value equal to NO single day's rate, so the pool is
-		// a real re-computation off the counts, not a stored average.
 		expect(v.severePct).toBe(12);
 		expect(v.daysWithData).toBe(3);
 		expect(v.from).toBe('2026-06-01');
@@ -55,12 +51,11 @@ describe('poolDailyRange', () => {
 		expect(v.daysWithData).toBe(2);
 		expect(v.observations).toBe(100);
 		expect(v.severeCount).toBe(13);
-		expect(v.severePct).toBe(13); // 100*13/100
+		expect(v.severePct).toBe(13);
 	});
 
 	it('observation-weights the avg delay (never a naive per-day mean)', () => {
 		const v = poolDailyRange(DAILY);
-		// (1.5*40 + 2.1*60 + 1.8*50) / 150 = (60 + 126 + 90) / 150 = 1.84
 		expect(v.avgDelayMin).toBe(1.8);
 	});
 
@@ -109,8 +104,6 @@ describe('poolDailyRange', () => {
 			sumDelaySeconds: -90,
 		});
 
-		// -90 seconds / 30 observations / 60 = -0.05 min, which the wire contract
-		// rounds half away from zero rather than collapsing to negative zero.
 		expect(v.avgDelayMin).toBe(-0.1);
 	});
 
@@ -119,7 +112,7 @@ describe('poolDailyRange', () => {
 			{ date: '2026-06-01', observation_count: 5, severe_count: 1, severe_pct: 20 },
 			{ date: '2026-06-02', observation_count: 4, severe_count: 0, severe_pct: 0 },
 		];
-		const v = poolDailyRange(thin); // 9 obs < MIN_N (30)
+		const v = poolDailyRange(thin);
 		expect(v.observations).toBe(9);
 		expect(v.reliable).toBe(false);
 		expect(v.severePct).toBeNull();

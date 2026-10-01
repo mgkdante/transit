@@ -1,18 +1,3 @@
-<!--
-  ScheduleTable — one semantic timetable chassis for rider-facing schedule data.
-
-  The three modes keep their own row contracts while sharing the same caption,
-  scoped headers, row rhythm and mobile overflow; tabular numerics ride the
-  numeric columns only (DataTable's data-numeric law - S5-386 F3):
-
-    grid     planned departures grouped by route and destination
-    board    live departures with scheduled/estimated time and realtime status
-    service  planned line service periods and headways
-
-  Empty cells remain explicit through AbsentValue. The component owns table
-  semantics only; filters, loading, whole-table empty states and disclosures stay
-  with the caller.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { formatUtc } from '$lib/utils/time';

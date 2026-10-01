@@ -1,6 +1,5 @@
 import { roundHalfAwayFromZero } from '$lib/utils/rounding';
 
-/** Descriptive difference between the same metric in adjacent windows; null means unavailable. */
 export function priorDelta(
 	value: number | null | undefined,
 	priorValue: number | null | undefined,

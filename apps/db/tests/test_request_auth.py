@@ -1,4 +1,3 @@
-"""Settings env-var convention + request auth, incl. STO's signed scheme."""
 
 from __future__ import annotations
 
@@ -64,7 +63,6 @@ def test_build_request_details_signed_appends_key_and_minute_hash(
         signature_query_param="hash",
         signature_scheme=SignatureScheme.SHA256_UTC_MINUTE,
     )
-    # 14:30:45 -> minute granularity drops the seconds.
     now = datetime(2026, 6, 19, 14, 30, 45, tzinfo=UTC)
 
     details = build_request_details(
@@ -75,7 +73,7 @@ def test_build_request_details_signed_appends_key_and_minute_hash(
     )
 
     expected_hash = hashlib.sha256(b"priv-secret20260619T1430Z").hexdigest()
-    assert "file=tripupdates" in details.request_url  # original query preserved
+    assert "file=tripupdates" in details.request_url
     assert "key=pub-key" in details.request_url
     assert f"hash={expected_hash}" in details.request_url
     assert details.request_headers == {}

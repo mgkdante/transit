@@ -1,22 +1,3 @@
-"""Value-level publish gate — inspects built /v1 payloads BEFORE any upload.
-
-The contract models (:mod:`transit_ops.snapshots.contract`) only enforce Pydantic
-TYPE coercion at construction; nothing inspects the VALUES a builder produced. This
-module is a pure-Python, no-DB inspector that walks the in-memory payloads (Pydantic
-models or plain dicts) for out-of-range rates, negative counts, sentinel/NaN/Inf
-leaks, broken invariants (on_time<=observations, sum(non_responding_by_route)==
-non_responding, rank 1..N, ...), and coverage regressions. ERROR-severity findings
-abort a static/historic publish (unless --force); WARN findings are logged only.
-
-Honest-NULL law: None is a legitimate value on an empty denominator (contract.py
-NetworkFile + every *_pct/observation_count on the historic models), so EVERY check
-skips None leaves — a None is never flagged as a violation and never coerced to 0.
-
-No maintenance/gold.py registry entry is needed: this module creates NO tables and
-reads NO new tables. Prior-generation coverage baseline reuses the already-persisted
-core.snapshot_publish_state.files_total (migration 0042), passed in by the caller.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -64,26 +45,14 @@ from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sh
 
 logger = logging.getLogger(__name__)
 
-# --- tunable constants (config-free — trust-gate thresholds) ------------------
-# Catches ONLY the historical Numeric(8,4) overflow sentinel 9999.9999 (a float leaf
-# within GATE_SENTINEL_EPS of it). It is NOT a magnitude band: legitimate large leaves
-# exist (observation_count ~1.7M, alert duration_min ~108k, a ~9999-minute ≈7-day alert
-# duration), so any |v|>=9999 band would false-flag real data. NaN/Inf stay universal.
-GATE_SENTINEL_VALUE = 9999.9999  # the Numeric(8,4) overflow sentinel (exact float family)
-GATE_SENTINEL_EPS = 1e-6  # float tolerance around GATE_SENTINEL_VALUE
-GATE_DELAY_MIN_ABS = 90.0  # signed-delay minutes cap (fact cap 3600s=60min + margin)
-GATE_MIX_SUM_TOL = 0.01  # occupancy-mix share sum tolerance around 1.0
-GATE_ROUTE_DROP_FRACTION = 0.30  # total-file-count drop that fires the coverage-delta ERROR
-GATE_EMPTY_ROUTE_WARN_FRACTION = 0.50  # >half empty route files -> coverage-regression WARN
-# GC2 DECISIONS #12 — trip-id drift detector. When RT-observed trip-days exceed the
-# scheduled universe on > this fraction of scheduled route-days, silent_trip_days was
-# systematically clamped to 0 (see the read-time completeness clamp in
-# route_reliability / network_trend): the scheduled and RT trip_id namespaces are
-# drifting apart, so silent counts UNDER-report. WARN (not ERROR) — over-delivery is
-# legitimate per-day; only the systemic share is a data-quality signal.
+GATE_SENTINEL_VALUE = 9999.9999
+GATE_SENTINEL_EPS = 1e-6
+GATE_DELAY_MIN_ABS = 90.0
+GATE_MIX_SUM_TOL = 0.01
+GATE_ROUTE_DROP_FRACTION = 0.30
+GATE_EMPTY_ROUTE_WARN_FRACTION = 0.50
 GATE_ID_DRIFT_WARN_FRACTION = 0.05
 
-# Occupancy bands shared with OccupancyMix / route_occupancy_band_daily.
 _MIX_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
 _CROWDING_BANDS = frozenset(_MIX_BANDS)
 _SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
@@ -91,18 +60,18 @@ _DELAY_LO, _DELAY_HI = -GATE_DELAY_MIN_ABS, GATE_DELAY_MIN_ABS
 
 
 class Severity(StrEnum):
-    ERROR = "error"  # aborts publish (unless --force)
-    WARN = "warn"  # logged + in report, never aborts
+    ERROR = "error"
+    WARN = "warn"
 
 
 @dataclass(frozen=True)
 class CheckResult:
-    check: str  # stable id, e.g. "rate_range"
-    kind: str  # payload kind, e.g. "historic_route_reliability"
-    rel_key: str  # "historic/route_reliability/51.json" (or "<batch>" pre-key)
+    check: str
+    kind: str
+    rel_key: str
     severity: Severity
-    message: str  # human-readable, includes offending field + value
-    field_path: str | None = None  # e.g. "periods[2].otp_pct"
+    message: str
+    field_path: str | None = None
     value: object | None = None
 
     def to_dict(self) -> dict:  # type: ignore[type-arg]
@@ -165,18 +134,13 @@ class GateError(RuntimeError):
         )
 
 
-# --- coercion + shared range helpers -----------------------------------------
-
-
 def _as_dict(payload: object) -> object:
-    """Normalize a Pydantic model to a native dict (enums/None preserved); pass dicts through."""
     if isinstance(payload, BaseModel):
         return payload.model_dump(mode="python")
     return payload
 
 
 def _payload_bytes(payload: object) -> int | None:
-    """The exact publisher byte size, or ``None`` for unsupported test stubs."""
     try:
         if isinstance(payload, BaseModel | dict):
             return len(snapshot_json_bytes(payload))
@@ -190,33 +154,28 @@ def _is_number(v: object) -> bool:
 
 
 def _in_range(v: object, lo: float, hi: float) -> bool:
-    """True when v is a number inside [lo, hi]. None-safe (None -> True: skip)."""
     if v is None or not _is_number(v):
         return True
     return lo <= v <= hi
 
 
 def _nonneg(v: object) -> bool:
-    """True when v is a non-negative number. None-safe (None -> True: skip)."""
     if v is None or not _is_number(v):
         return True
     return v >= 0
 
 
 def _le(a: object, b: object) -> bool:
-    """True when a <= b (both numbers). None-safe: if either is None -> True (skip)."""
     if a is None or b is None or not _is_number(a) or not _is_number(b):
         return True
     return a <= b
 
 
 def _is_neg(v: object) -> bool:
-    """True only when v is a NUMBER strictly below zero (None-safe: None -> False)."""
     return _is_number(v) and v < 0
 
 
 def _mix_ok(mix: object) -> tuple[bool, bool]:
-    """Return (all buckets in [0,1], sum within tolerance of 1.0). None mix -> (True, True)."""
     if mix is None or not isinstance(mix, dict):
         return (True, True)
     total = 0.0
@@ -232,9 +191,6 @@ def _mix_ok(mix: object) -> tuple[bool, bool]:
             buckets_ok = False
     sum_ok = (not any_value) or abs(total - 1.0) <= GATE_MIX_SUM_TOL
     return (buckets_ok, sum_ok)
-
-
-# --- emitter: binds (kind, rel_key) so per-check call sites stay compact ------
 
 
 class _Emitter:
@@ -288,7 +244,6 @@ class _Emitter:
         for condition, check, fp, value, msg in rules:
             self.reject(condition, check, fp, value, msg)
 
-    # typed guards -----------------------------------------------------------
     def rate(self, d: dict, fp: str, lo: float = 0, hi: float = 100) -> None:
         v = d.get(fp)
         if not _in_range(v, lo, hi):
@@ -327,7 +282,6 @@ class _Emitter:
 
 
 def _prefixed(emit: _Emitter, prefix: str) -> _Emitter:
-    """A view of *emit* whose helpers prepend *prefix* to every field path."""
     return _PrefixEmitter(emit, prefix)
 
 
@@ -340,7 +294,7 @@ class _PrefixEmitter(_Emitter):
         self.kind = parent.kind
         self.rel_key = parent.rel_key
 
-    @property  # keep .out pointing at the parent's list
+    @property
     def out(self) -> list[CheckResult]:  # type: ignore[override]
         return self._parent.out
 
@@ -351,11 +305,7 @@ class _PrefixEmitter(_Emitter):
         self._parent.warn(check, f"{self._prefix}{fp}", value, f"{self._prefix}{msg}")
 
 
-# --- universal sentinel / NaN scan (runs on EVERY payload) -------------------
-
-
 def _walk_numbers(node: object, path: str):  # noqa: ANN201
-    """Yield (field_path, value) for every numeric leaf in a nested dict/list/model dump."""
     if isinstance(node, dict):
         for key, val in node.items():
             child = f"{path}.{key}" if path else str(key)
@@ -368,12 +318,6 @@ def _walk_numbers(node: object, path: str):  # noqa: ANN201
 
 
 def _universal_scan(rel_key: str, kind: str, as_dict: object) -> list[CheckResult]:
-    """Flag the exact 9999.9999 Numeric(8,4) overflow sentinel + NaN/Inf. None skipped.
-
-    Only float leaves within GATE_SENTINEL_EPS of GATE_SENTINEL_VALUE are flagged — a
-    magnitude band would false-flag legitimate large integers (observation counts,
-    alert durations). NaN/Inf is a universal ERROR on any float leaf.
-    """
     emit = _Emitter(kind, rel_key)
     for fpath, v in _walk_numbers(as_dict, ""):
         if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
@@ -381,10 +325,6 @@ def _universal_scan(rel_key: str, kind: str, as_dict: object) -> list[CheckResul
         elif isinstance(v, float) and abs(v - GATE_SENTINEL_VALUE) < GATE_SENTINEL_EPS:
             emit.err("sentinel", fpath, v, f"{fpath}={v} is the 9999.9999 Numeric(8,4) sentinel")
     return emit.out
-
-
-# --- per-kind checkers -------------------------------------------------------
-# Rates are PERCENT 0..100 unless noted; counts are integers >= 0; None always skipped.
 
 
 def _check_habits(emit: _Emitter, habits: object, prefix: str) -> None:
@@ -475,16 +415,14 @@ def _check_trend_point(emit: _Emitter, p: dict) -> None:
     emit.delay(p, "p90_min")
     emit.count(p, "vehicles")
     emit.rate(p, "cancellation_rate")
-    emit.rate(p, "service_completeness_rate")  # GC2 H1 (None-skip on pre-0073 history)
+    emit.rate(p, "service_completeness_rate")
     emit.count(p, "observation_count")
     emit.wilson(p)
     emit.mix(p.get("occupancy_mix"), "occupancy_mix")
 
 
 def check_network_trend(payload: object, *, rel_key: str) -> list[CheckResult]:
-    # The empty-series decision is prior-aware (WARN on a first publish, ERROR once a
-    # prior publish existed for this provider/tier) so it is routed through
-    # finalize_batch, NOT emitted here where prior state is unknown.
+    # Empty-series severity depends on prior publication and is decided in finalize_batch.
     emit = _Emitter("historic_network_trend", rel_key)
     d = _as_dict(payload)
     if not isinstance(d, dict):
@@ -620,9 +558,6 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
                 c.get("canceled_trip_days"),
                 "canceled_trip_days > total_trip_days",
             )
-        # Scheduled-universe split (GC2 H1). All None-skip (honest-unknown on pre-0073
-        # history). Invariants: delivered<=total (RT-observed subset), silent<=scheduled
-        # (silent is a subset of the scheduled universe), delivered+canceled==total.
         sub.count(c, "scheduled_trip_days")
         sub.count(c, "delivered_trip_days")
         sub.count(c, "silent_trip_days")
@@ -701,7 +636,7 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
             continue
         emit.mix(o.get("mix"), f"occupancy_by_dow[{i}].mix")
         _prefixed(emit, f"occupancy_by_dow[{i}].").count(o, "n")
-    for i, o in enumerate(d.get("occupancy_by_hour") or []):  # GC2 H3
+    for i, o in enumerate(d.get("occupancy_by_hour") or []):
         if not isinstance(o, dict):
             continue
         emit.mix(o.get("mix"), f"occupancy_by_hour[{i}].mix")
@@ -740,9 +675,6 @@ def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult
         if isinstance(br, dict):
             _prefixed(emit, f"by_route[{i}].").delay(br, "avg_delay_min")
     emit.mix(d.get("occupancy_mix"), "occupancy_mix")
-    # S8 per-day series (SERVE-THE-COUNTS): counts non-negative, severe<=obs (the
-    # served ingredients must be poolable into an honest rate), severe_pct in
-    # [0,100], avg_delay_min bounded. None-safe so honest-NULL never trips a finding.
     for i, dp in enumerate(d.get("daily") or []):
         if not isinstance(dp, dict):
             continue
@@ -763,9 +695,6 @@ def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult
 
 
 def _check_hotspot_entry(emit: _Emitter, h: dict) -> None:
-    """The shared per-entry checks for a by_grain HotspotEntry (S12). Deliberately does
-    NOT assert rank sequence: a by_grain ladder is ranked independently THEN truncated,
-    so its ranks need not be a globally-sequential run (only the scalar hotspots[] does)."""
     if h.get("type") not in ("route", "stop"):
         emit.err(
             "unknown_type", "type", h.get("type"), f"type={h.get('type')!r} not in {{route,stop}}"
@@ -810,9 +739,7 @@ def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
                 "sentinel_entity", "id", h.get("id"), f"id={h.get('id')!r} is a sentinel entity"
             )
         sub.rate(h, "otp_delta_pts", -100, 100)
-    # S12 by_grain ladders: walk entries + tray, reusing the sub.rate/delay/wilson checks;
-    # NO rank_sequence inside a ladder (ranked-then-truncated), so the scalar list above
-    # keeps its sequential-rank invariant and the ladders do not inherit it.
+    # Ranked then truncated ladders do not require sequential ranks across kinds.
     for i, hg in enumerate(d.get("by_grain") or []):
         if not isinstance(hg, dict):
             continue
@@ -826,11 +753,6 @@ def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
 
 
 def _check_offender_entry(emit: _Emitter, o: dict) -> None:
-    """The shared per-entry checks for a by_grain RepeatOffenderEntry (S14), mirroring
-    _check_hotspot_entry. Deliberately does NOT assert rank sequence: a by_grain ladder is
-    ranked PER KIND independently THEN truncated, so ranks restart per kind (no globally-
-    sequential run). type is the offender discriminator trip|vehicle (NOT route|stop). No
-    rank field is asserted here (the ladders carry per-kind rank, not a global sequence)."""
     if o.get("type") not in ("trip", "vehicle"):
         emit.err(
             "unknown_type", "type", o.get("type"), f"type={o.get('type')!r} not in {{trip,vehicle}}"
@@ -870,15 +792,11 @@ def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult
                 f"type={o.get('type')!r} not a known offender type",
             )
         sub.delay(o, "avg_delay_min")
-        # S14 additive scalar twins: recurrence_days is a non-negative distinct-day count.
         sub.count(o, "recurrence_days")
         if o.get("id") in _SENTINEL_ENTITY_IDS:
             sub.err("sentinel_entity", "id", o.get("id"), "id is a sentinel entity")
         if o.get("route") in _SENTINEL_ENTITY_IDS:
             sub.err("sentinel_entity", "route", o.get("route"), "route is a sentinel entity")
-    # S14 by_grain recurrence ladders: walk entries + tray, reusing the sub.rate/delay/count/
-    # wilson checks; NO rank_sequence inside a ladder (ranked-then-truncated PER KIND), so the
-    # scalar offenders[] list above keeps its own invariants and the ladders do not inherit one.
     for i, og in enumerate(d.get("by_grain") or []):
         if not isinstance(og, dict):
             continue
@@ -892,9 +810,6 @@ def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult
 
 
 def _iso_le(a: object, b: object) -> bool:
-    """True when ISO-8601 strings a <= b (lexicographic on normalized UTC). None
-    on either side skips (honest-NULL: an open-ended window is not an ordering
-    violation). Unparseable strings skip rather than false-flag."""
     if not isinstance(a, str) or not isinstance(b, str):
         return True
     try:
@@ -912,9 +827,6 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return emit.out
-    # S15 window disclosure: window_start <= window_end (both ISO dates when
-    # present); total_in_window >= the emitted count when truncated (the cap
-    # cannot hide fewer alerts than it shows).
     win_start, win_end = d.get("window_start"), d.get("window_end")
     if not _iso_le(win_start, win_end):
         emit.err(
@@ -932,7 +844,6 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
             total,
             f"total_in_window={total} < emitted alerts ({len(alerts)}) while truncated",
         )
-    # S15 byte ceiling: a runaway window must not bloat the file.
     from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
 
     size = _payload_bytes(payload)
@@ -966,7 +877,6 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
 
 
 def _check_alert_entry(emit: _Emitter, alert: dict, *, prefix: str) -> None:  # type: ignore[type-arg]
-    """Shared alert invariants for legacy history and retained archive pages."""
     sub = _prefixed(emit, prefix)
     if _is_neg(alert.get("duration_min")):
         sub.err(
@@ -1096,7 +1006,6 @@ def check_alert_archive_page(payload: object, *, rel_key: str) -> list[CheckResu
         if body is not None and hashlib.sha256(body).hexdigest() != digest:
             emit.err("page_sha256", "", digest, "archive path SHA does not match page bytes")
     keys = [_archive_entry_key(alert) for alert in alerts if isinstance(alert, dict)]
-    # Timestamps newest-first. Stable ids are the deterministic tie breaker.
     expected = sorted(keys, key=lambda key: key[2])
     expected.sort(key=lambda key: key[:2], reverse=True)
     if keys != expected:
@@ -1208,7 +1117,6 @@ def check_alert_archive_bundle(
     *,
     provider_timezone: str = "UTC",
 ) -> list[CheckResult]:
-    """Cross-check the stable index against the exact page bytes that will upload."""
     findings = check_alert_archive_index(index, rel_key="historic/alerts/index.json")
     built: dict[str, object] = {}
     duplicate_built: set[str] = set()
@@ -2508,7 +2416,6 @@ def check_point_history_day_ref(
     *,
     family: str,
 ) -> list[CheckResult]:
-    """Bind one point-date ref to the exact self-identifying payload bytes."""
 
     rel_key = str(getattr(ref, "path", None) or "<point-day>")
     emit = _Emitter(f"historic_{family}_day_ref", rel_key)
@@ -2542,7 +2449,6 @@ def check_point_history_day_ref(
 
 
 def check_point_history_day(payload: object, *, rel_key: str) -> list[CheckResult]:
-    """Run family semantics and bind a point-day path to the payload bytes."""
 
     family = _point_history_family_from_path(rel_key, index=False)
     emit = _Emitter(f"historic_{family or 'point'}_history_day", rel_key)
@@ -2584,7 +2490,6 @@ def check_point_history_index(
     expected_refs: object | None = None,
     fallback_generated_utc: str | None = None,
 ) -> list[CheckResult]:
-    """Validate one immutable point-family index and its exact date-ref summary."""
 
     family = family or _point_history_family_from_path(rel_key, index=True)
     emit = _Emitter(f"historic_{family or 'point'}_history_index", rel_key)
@@ -2749,7 +2654,6 @@ def check_point_history_index(
 
 
 def check_history_availability_index(payload: object, *, rel_key: str) -> list[CheckResult]:
-    """Validate the exact stable seven-family retained-history discovery root."""
 
     emit = _Emitter("historic_availability_index", rel_key)
     root = _as_dict(payload)
@@ -2980,7 +2884,6 @@ def check_history_availability_graph(
     hotspots_index_path: str | None = None,
     repeat_offenders_index_path: str | None = None,
 ) -> list[CheckResult]:
-    """Reconcile the root against detached exact child indexes in this build."""
 
     emit = _Emitter("historic_availability_graph", _STOP_HISTORY_ROOT_PATH)
     missing_point_children = [
@@ -3220,7 +3123,6 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     ws = d.get("worst_stop")
     if isinstance(ws, dict):
         _prefixed(emit, "worst_stop.").delay(ws, "avg_delay_min")
-    # S13 time-of-day cuts: rate/delay/count guards per shift (honest-NULL None-skips).
     for i, sc in enumerate(d.get("by_shift") or []):
         if not isinstance(sc, dict):
             continue
@@ -3229,8 +3131,6 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
         sub.count(sc, "severe_count")
         sub.rate(sc, "severe_pct")
         sub.delay(sc, "avg_delay_min")
-    # S13 service-state cut: count/rate guards + per not-reported-route count + the
-    # sentinel invariant (a not-reported route id must NEVER be a phantom sentinel).
     ss = d.get("service_states")
     if isinstance(ss, dict):
         sub = _prefixed(emit, "service_states.")
@@ -3259,9 +3159,6 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
 
 
 def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
-    # S13: sanity-check the additive availability metadata. available[].date must be a
-    # SUBSET of dates (never advertise availability for an unpublished date) and has_data
-    # / has_schedule must be real bools (honest, not a coerced truthy string).
     emit = _Emitter("historic_receipts_index", rel_key)
     d = _as_dict(payload)
     if not isinstance(d, dict):
@@ -3320,7 +3217,6 @@ def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
 
 
 def check_receipts_collection(index: object, receipt_items: object) -> list[CheckResult]:
-    """Reconcile the Receipt pointer against exact stamped child semantics."""
 
     emit = _Emitter("historic_receipts_collection", "historic/receipts/index.json")
     index_dict = _as_dict(index)
@@ -3406,7 +3302,6 @@ def check_data_health(payload: object, *, rel_key: str) -> list[CheckResult]:
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return emit.out
-    # S11 byte ceiling: the three-lane summary must stay tiny.
     from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
 
     size = _payload_bytes(payload)
@@ -3422,7 +3317,6 @@ def check_data_health(payload: object, *, rel_key: str) -> list[CheckResult]:
         if not isinstance(lane, dict):
             continue
         sub = _prefixed(emit, f"lanes[{i}].")
-        # age_s / file counts are non-negative or honest-NULL (None-skipped by .count).
         sub.count(lane, "age_s")
         for f in ("files_written", "files_skipped", "files_total"):
             sub.count(lane, f)
@@ -3459,7 +3353,6 @@ def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
         sev = a.get("severity")
         if sev is not None and sev not in ("critical", "high", "watch"):
             sub.err("unknown_severity", "severity", sev, f"severity={sev!r} not a known severity")
-        # S15: url must be a string when present; each active window well-ordered.
         url = a.get("url")
         if url is not None and not isinstance(url, str):
             sub.err("not_string", "url", url, f"url={url!r} is not a string")
@@ -3473,9 +3366,6 @@ def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
                 )
     return emit.out
 
-
-# --- rel_key -> checker routing ----------------------------------------------
-# Exact keys route directly; per-entity prefixes route by startswith.
 
 _EXACT_CHECKERS = {
     "live/network.json": (check_network, "live_network"),
@@ -3492,9 +3382,7 @@ _EXACT_CHECKERS = {
     ),
 }
 
-# Exact discovery-index keys must be matched BEFORE the broader per-entity directory
-# prefixes they nest under. Most route via the generic model-validate + universal scan
-# only (checker None); _INDEX_CHECKERS below gives an index a dedicated checker.
+# Match exact discovery keys before their broader per-entity prefixes.
 _INDEX_KINDS = {
     "historic/route_reliability/index.json": "historic_route_reliability_index",
     "historic/receipts/index.json": "historic_receipts_index",
@@ -3504,7 +3392,6 @@ _INDEX_KINDS = {
     "historic/history/index.json": "historic_availability_index",
 }
 
-# S13: index keys that carry a dedicated structural checker (beyond model-validate).
 _INDEX_CHECKERS = {
     "historic/receipts/index.json": check_receipts_index,
     "historic/history/network/index.json": check_network_history_index,
@@ -3541,7 +3428,6 @@ _PREFIX_CHECKERS = (
 
 
 def _route_checker(rel_key: str):  # noqa: ANN202
-    """Return (checker_or_None, kind): exact match, then index key, then prefix, then unknown."""
     if rel_key in _EXACT_CHECKERS:
         return _EXACT_CHECKERS[rel_key]
     if rel_key in _INDEX_KINDS:
@@ -3583,7 +3469,6 @@ def _route_checker(rel_key: str):  # noqa: ANN202
 
 
 def check_payload(rel_key: str, payload: object) -> list[CheckResult]:
-    """Route rel_key to its checker (exact key or known prefix) + ALWAYS the universal scan."""
     checker, kind = _route_checker(rel_key)
     results: list[CheckResult] = []
     if checker is not None:
@@ -3603,7 +3488,6 @@ def record(
     *,
     retain_sha: bool = True,
 ) -> None:
-    """Run check_payload for one payload; append results; bump payloads_checked/checks_run."""
     findings = check_payload(rel_key, payload)
     report.results.extend(findings)
     if retain_sha:
@@ -3618,12 +3502,6 @@ def check_route_coverage_delta(
     *,
     drop_frac: float = GATE_ROUTE_DROP_FRACTION,
 ) -> CheckResult | None:
-    """ERROR when the WHOLE-tier file count shrank > drop_frac vs the prior publish.
-
-    prior_files_total is core.snapshot_publish_state.files_total (the WHOLE-tier count,
-    all historic files — not the route subset). None prior (first publish) -> None: a
-    first publish is never blocked (DECISIONS #2).
-    """
     if prior_files_total is None or prior_files_total <= 0 or current_total is None:
         return None
     if current_total < prior_files_total * (1 - drop_frac):
@@ -3643,7 +3521,6 @@ def check_route_coverage_delta(
 
 
 def _is_empty_route_file(payload: object) -> bool:
-    """A route reliability payload with NO data: empty periods, None habits, empty weak_stops."""
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return False
@@ -3653,14 +3530,6 @@ def _is_empty_route_file(payload: object) -> bool:
 
 
 def _id_drift_counts(route_payloads: list[tuple[str, object]]) -> tuple[int, int]:
-    """Count (scheduled route-days, overshoot route-days) across route payloads.
-
-    A route-day is 'scheduled' when its cancellation row carries a known
-    scheduled_trip_days (the scheduled universe was resolved for that date); it is an
-    'overshoot' when the RT-observed total_trip_days EXCEEDS that scheduled count — the
-    over-delivery case where silent_trip_days was clamped to 0 (DECISIONS #12). Only
-    numeric leaves are counted; honest-NULL scheduled rows are skipped entirely.
-    """
     scheduled_days = 0
     overshoot_days = 0
     for _rel_key, payload in route_payloads:
@@ -3685,13 +3554,6 @@ def check_id_drift(
     *,
     warn_frac: float = GATE_ID_DRIFT_WARN_FRACTION,
 ) -> CheckResult | None:
-    """WARN when RT-observed > scheduled on > warn_frac of scheduled route-days.
-
-    Batch-level trip-id drift signal (DECISIONS #12): a high overshoot share means the
-    scheduled and RT trip_id namespaces are drifting, so the clamped silent counts
-    under-report. Returns None when there are no scheduled route-days (nothing to
-    measure) or the share is within tolerance.
-    """
     if not route_payloads:
         return None
     scheduled_days, overshoot_days = _id_drift_counts(route_payloads)
@@ -3716,7 +3578,6 @@ def check_id_drift(
 
 
 def _network_trend_series_empty(payload: object) -> bool:
-    """True when a network_trend payload carries an empty daily `series`."""
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return False
@@ -3726,15 +3587,6 @@ def _network_trend_series_empty(payload: object) -> bool:
 def check_network_trend_coverage(
     payload: object, *, rel_key: str, has_prior: bool, has_realtime_payloads: bool
 ) -> CheckResult | None:
-    """Empty network_trend series, severity keyed on what the batch proves:
-
-    * batch carries NO route reliability files -> the provider has no
-      realtime-derived data at all (a static-only provider, e.g. enrolled before
-      its realtime worker runs): expected emptiness, WARN — a daily red here
-      would drown real failures;
-    * no prior publish state -> legitimate cold start, WARN;
-    * otherwise (realtime data exists AND a prior publish existed) -> the daily
-      trend silently dropped: ERROR. Non-empty series -> None."""
     if not _network_trend_series_empty(payload):
         return None
     if not has_realtime_payloads:
@@ -3765,21 +3617,6 @@ def finalize_batch(
     prior_files_total: int | None = None,
     network_trend: tuple[str, object] | None = None,
 ) -> None:
-    """Report-level aggregates that need the WHOLE published set (not per-file).
-
-    * coverage-delta ERROR when the total file count shrank vs the prior publish;
-    * over-half-empty route set WARN (a coverage regression signal);
-    * trip-id drift WARN when RT-observed > scheduled on > GATE_ID_DRIFT_WARN_FRACTION
-      of scheduled route-days (clamped silent counts under-report);
-    * empty network_trend series: WARN when the batch carries no route files
-      (static-only provider) or on a first publish; ERROR only when realtime
-      data exists AND a prior publish existed (routed here because per-file
-      checks cannot see prior state or the batch shape).
-
-    prior_files_total None means no prior publish row exists (first publish), which
-    both suppresses the coverage-delta ERROR and downgrades the empty-series finding
-    to WARN.
-    """
     has_prior = prior_files_total is not None
     if network_trend is not None:
         rel_key, payload = network_trend
@@ -3794,7 +3631,7 @@ def finalize_batch(
     delta = check_route_coverage_delta(current_total, prior_files_total)
     if delta is not None:
         report.results.append(delta)
-    drift = check_id_drift(route_payloads)  # GC2 DECISIONS #12 (WARN on systemic overshoot)
+    drift = check_id_drift(route_payloads)
     if drift is not None:
         report.results.append(drift)
     if route_payloads:
@@ -3818,11 +3655,6 @@ def finalize_batch(
 
 
 def enforce(report: GateReport, *, force: bool) -> None:
-    """Log a structured summary; raise GateError when errors exist and not force.
-
-    force=True downgrades a failing gate to a logged "GATE OVERRIDDEN" warning (the
-    live tier and --force paths), so findings are recorded but the publish proceeds.
-    """
     top = [r.to_dict() for r in (report.errors + report.warnings)][:10]
     summary = {
         "provider_id": report.provider_id,

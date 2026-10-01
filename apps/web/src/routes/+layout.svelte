@@ -1,29 +1,3 @@
-<!--
-  Root layout — the app-shell backbone and the i18n / v1 context provider.
-
-  This is the integration linchpin: every page renders inside the AppShell
-  (TopBar + responsive 3-zone body) and reads the active locale + the v1 snapshot
-  context that this layout provides ONCE here.
-
-    fonts + app.css   side-effect imports (variable fonts BEFORE the stylesheet)
-    themeStore.init() onMount — re-syncs the runes theme store with the pre-paint
-                      <html data-theme> the app.html inline script applied
-    locale context    setLocaleContext(() => lang) — a reader so late readers stay
-                      reactive across EN⇄FR; lang is path-derived in +layout.ts
-    v1 context        setV1Context(data.v1) — the booted snapshot context the whole
-                      app reads via getV1Context(); booted fail-soft in +layout.ts
-    children → main    the page tree renders into the shell's `main` zone; the
-                      skip-link target #main lives on the wrapper inside it
-
-  FAIL-SOFT: if +layout.ts could not boot the /v1 contract (manifest 404 /
-  unreachable), `data.v1` is null. Data-dependent routes then render the
-  `error-v1` edge state instead of their page tree, so they never read a missing
-  context. Static legal documents remain available and carry static footer
-  attribution while the data contract is down.
-
-  Adapted from the yesid.dev +layout.svelte chrome composition: gsap/lenis/seo/
-  marketing stripped, re-themed to the transit shell. Tokens only.
--->
 <script module lang="ts">
 	import { LEGAL_NAV } from '$lib/content/nav';
 
@@ -33,10 +7,6 @@
 </script>
 
 <script lang="ts">
-	// Self-hosted variable fonts — latin + latin-ext subsets ONLY (EN + FR), via
-	// a local @font-face sheet instead of the bare @fontsource-variable imports
-	// that pulled all 7 subsets (cyrillic/greek/vietnamese/…). Side-effect import
-	// BEFORE app.css. See $lib/styles/fonts.css for the why + the pinned woff2.
 	import '$lib/styles/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
@@ -95,53 +65,21 @@
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
-	// Active request locale (path-derived in +layout.ts). A reader is provided to
-	// context so deep call sites that read it at init stay reactive across page
-	// swaps (the root layout never remounts).
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
 	setLocaleContext(() => data.lang ?? DEFAULT_LOCALE);
 
-	// Per-route document head config. One <SeoHead> resolves title/description/
-	// canonical/OG/hreflang per surface (routeSeo, derived below once v1 is in
-	// scope) instead of a single global title on every page. siteOrigin + indexing
-	// + the provider identity fallback come from the public site config
-	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING / PUBLIC_PROVIDER_*) so the dev lane is
-	// noindex and SSR copy stays provider-specific before the manifest boots.
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
 
-	// noindex when the dev lane is off-index OR the surface is EPHEMERAL (a /trip/
-	// [id] deep link whose id rotates within minutes — indexing it would fill
-	// search with dead pages). Stable detail surfaces (/route, /stop) stay indexed.
 	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath($page.url.pathname));
 
-	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
-	// NOT carry a footer. The map fills height:100%, so a trailing footer would
-	// force the main column to scroll with the footer crammed under the canvas
-	// (the "squeezed footer" artifact). Only /map today. By the owner's 2026-08-03
-	// decision, the full-bleed /map omits the footer and therefore carries no legal
-	// links.
 	const isFullBleed = $derived(seoPath === '/map');
 	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
 
-	// Context-aware chrome search: the active surface RESTRICTS the result blend
-	// and steers selection — /lines + /lines/* search only lines (→ /lines/<id>),
-	// /stops + /stop/* only stops (→ /stop/<id>), /map keeps the full blend, and
-	// the hub/network/search default to today's blend. Derived from the same
-	// delocalized path the nav highlight uses, so the two never disagree.
 	const searchScope = $derived<ChromeSearchScope>(scopeForPath(seoPath));
 
-	// Surface-appropriate `<main>` landmark name (the shell renders ONE persistent
-	// <main> across routes). Derived from the SAME delocalized path the nav highlight
-	// + search scope use, so the landmark, the highlight, and the scope never diverge.
 	const mainLabel = $derived(mainLandmarkLabel(seoPath));
 
-	// v1 snapshot context. Production SSR prefers the direct R2 binding. If that
-	// authoritative attempt fails, the mounted browser gets one recovery attempt
-	// against the public R2 custom domain.
-	// `clientV1` holds that recovery; `v1` prefers the SSR value and falls back to
-	// it. The context reader stays live, so once the client boot lands every
-	// descendant that read getV1Context() at init sees the data without a remount.
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => v1 ?? undefined);
@@ -150,17 +88,9 @@
 	);
 	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
 
-	// Provider copy identity for the document head (resolved AFTER v1, since the
-	// keyworded SEO copy reads it). Manifest-first (live; SSR via the SNAPSHOTS
-	// binding, client via boot) then env fallback (PUBLIC_PROVIDER_* — SSR-visible
-	// when the manifest is absent / not yet republished). Absent identity → neutral.
 	const providerShortName = $derived(v1?.manifest.short_name ?? siteConfig.providerShortName);
 	const providerCity = $derived(v1?.manifest.city ?? siteConfig.providerCity);
 
-	// Per-route document head. The same identity drives BOTH the per-surface
-	// title/description (routeSeo) AND the brand siteName appended to every <title>/
-	// og:site_name / WebSite JSON-LD — so an absent or non-STM provider never leaks
-	// a hardcoded agency name in the head.
 	const seo = $derived(
 		resolveRouteSeo($page.url.pathname, locale, {
 			shortName: providerShortName,
@@ -171,21 +101,12 @@
 		providerShortName ? `${providerShortName} Analytics` : 'Transit Analytics',
 	);
 
-	// Soft-404 / error renders: a bare or invalid deep link (e.g. /trip with no id,
-	// or any surface that resolved to an error status) renders the +error page with
-	// $page.status >= 400. Such a URL must NOT be indexed and must NOT advertise a
-	// self-canonical (it would tell crawlers a broken URL is the canonical one).
 	const isErrorStatus = $derived(($page.status ?? 200) >= 400);
 	const errorHead = $derived(errorDocumentHead($page.status ?? 500, locale));
 	const headTitle = $derived(isErrorStatus ? errorHead.title : seo.title);
 	const headDescription = $derived(isErrorStatus ? errorHead.description : seo.description);
 	const headSiteName = $derived(isErrorStatus ? 'Transit' : seoSiteName);
 
-	// Site-wide structured data plus the per-surface BreadcrumbList on the stable
-	// detail surfaces (/route, /stop). The WebSite+SearchAction node is always-on
-	// inside SeoHead; here we add the Organization (publisher identity), a Dataset
-	// node for the open /v1 transit data (CC BY 4.0), and a path-derived breadcrumb
-	// trail. Error renders carry no meaningful structured data, so we emit none.
 	const datasetCopy = $derived(resolveDatasetSeo(locale));
 	const jsonLd = $derived.by(() => {
 		if (isErrorStatus) return [];
@@ -205,17 +126,8 @@
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
 	});
-	// AUTO-REFRESH-ON-NEW-PUBLISH (slice-9.8 A): subscribe the dataPulse engine ONCE
-	// here at the app root. It re-reads the manifest on the min-tier-ttl cadence and
-	// bumps dataRefresh.epoch on a strictly-newer publish, which re-runs every
-	// createResource surface AND re-polls the live store — so the whole site swaps to
-	// the latest data on its own, no per-page wiring. Browser-only + ref-counted +
-	// visibility/network aware inside the store; the boot manifest seeds its
-	// monotonic baseline before the first fresh check, and cleanup disposes it.
 	$effect(() => dataPulse.subscribe(v1?.manifest ?? null));
 
-	// True while a client-side (re-)boot is in flight — lets the edge state show a
-	// "retrying" affordance rather than a dead button.
 	let rebooting = $state(false);
 
 	async function clientBoot(): Promise<void> {
@@ -224,22 +136,16 @@
 		try {
 			clientV1 = await bootV1(data.lang ?? DEFAULT_LOCALE);
 		} catch {
-			// Still unreachable — keep the edge state up; the user can retry.
+			// Keep the edge state up; the user can retry the unreachable service.
 		} finally {
 			rebooting = false;
 		}
 	}
 
-	// Shell desktop/mobile split drives the edge-state skeleton/error density.
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
-	// The transit-mode narrowing the NavPill dropdown exposes (M6i F26) — the same
-	// combinable filter the search page has always offered. Owned here because the
-	// blend is computed here; the chips mutate the reactive set in place.
 	const searchModes = new SvelteSet<TransitModeKey>();
-	// Search indexes are interaction data, not page prerequisites. Keep the three
-	// requests idle on ordinary navigation and open them as soon as the user types.
 	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
 	const searchRoutes = createResource(() => getRoutesIndex(), {
 		enabled: () => chromeSearchEnabled,
@@ -265,12 +171,7 @@
 
 	$effect(() => {
 		const query = topSearch.trim();
-		// Only map/all scope surfaces addresses; skip the geocode fetch entirely on
-		// the line/stop catalogue surfaces.
 		const wantsAddress = searchScope === 'map' || searchScope === 'all';
-		// A picked transit-mode set is a transit-mode question: an address carries no
-		// mode, so the blend stands it down — don't spend a geocode call on a row
-		// that would be dropped on arrival.
 		if (!browser || !wantsAddress || searchModes.size > 0 || !shouldSuggestAddress(query)) {
 			addressSuggestions = [];
 			return;
@@ -296,19 +197,9 @@
 	});
 
 	onMount(() => {
-		// Re-sync the theme store with the pre-paint <html data-theme> attribute
-		// and back-fill the theme-color meta (SSR'd dark).
 		themeStore.init();
-		// Recover a failed SSR boot — the browser can reach /data even when the SSR
-		// worker could not. No-op when SSR already produced a context.
 		if (data.v1Error && !data.v1) void clientBoot();
 
-		// PWA service-worker lifecycle + remote kill-switch (browser + production +
-		// secure-context only). This ALSO enforces the kill-flag client-side on
-		// every load: a misbehaving / killed SW is torn down here before any
-		// (re-)registration. The network-first shell guarantees this code re-runs
-		// with the latest deploy, so the kill-switch can always reach an installed SW.
-		// A killed SW posts SW_KILLED → reload into the now-SW-free live site.
 		if (browser && navigator.serviceWorker) {
 			navigator.serviceWorker.addEventListener('message', (event) => {
 				if ((event.data as { type?: string } | undefined)?.type === 'SW_KILLED') {
@@ -320,9 +211,6 @@
 
 		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
 
-		// Web-Vitals RUM (slice-9.7 D). INERT BY DEFAULT: a no-op unless
-		// PUBLIC_VITALS_ENABLED === 'true'. When off it registers no listeners and
-		// never imports web-vitals. Returns a disposer onMount tears down on unmount.
 		const disposeVitals = startVitals();
 		return () => {
 			disposeRipple();
@@ -330,27 +218,12 @@
 		};
 	});
 
-	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
-	// helper feature-detects `document.startViewTransition` AND respects
-	// `prefers-reduced-motion: reduce` (returning `undefined` so SvelteKit does
-	// its instant swap in both cases). On the happy path it resolves the DOM swap
-	// INSIDE startViewTransition and awaits `navigation.complete`, so the new
-	// surface settles within the transition. CSS side lives in app.css
-	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
-	// guarded). Canonical SvelteKit + View Transitions recipe.
 	onNavigate((navigation) => runViewTransition(navigation));
 
 	afterNavigate(({ to }) => {
 		if (to) void transitAnalytics.trackPageview(to.url);
 	});
 
-	// Freshness upgrade for long-lived sessions. SvelteKit's version poll
-	// (kit.version.pollInterval in svelte.config.js) flips `updated.current` true
-	// once a new deploy is live; we then replace the NEXT in-app navigation with a
-	// full-page load of its target, so a tab left open / resumed standalone PWA
-	// lands on the fresh build with at most one reload. No-op until a deploy is
-	// detected, so steady-state SPA navigation (and View Transitions) is unchanged.
-	// Cold loads are already kept fresh by the network-first service worker.
 	beforeNavigate((navigation) => {
 		const decision = decideFreshnessReload({
 			hasNewVersion: updated.current,
@@ -362,8 +235,6 @@
 		}
 	});
 
-	// Retry from the error edge state: re-boot client-side (a full reload would
-	// just re-run the same failing SSR boot). Browser-only via clientBoot's guard.
 	function retryBoot() {
 		void clientBoot();
 	}
@@ -393,8 +264,6 @@
 			return;
 		}
 
-		// The line/stop catalogues never resolve an address — no fallback there, and
-		// neither does a transit-mode narrowing (an address has no mode).
 		if (searchScope === 'route' || searchScope === 'stop') return;
 		if (searchModes.size > 0) return;
 		if (!shouldSuggestAddress(query)) return;
@@ -455,27 +324,15 @@
 	{mainLabel}
 >
 	{#snippet main()}
-		<!-- Skip-link target. Layout splits on `isFullBleed` (see the derived above):
-		     full-bleed surfaces (the map) fill the viewport, do NOT scroll, and omit
-		     the Footer (a trailing footer would cram under the height:100% canvas);
-		     document surfaces scroll, with the Footer at the natural bottom of the
-		     flow — content grows to at least the viewport, tall content scrolls. -->
 		<div
 			id="main"
 			class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
 			tabindex="-1"
 		>
-			<!-- Non-full-bleed pages reclaim the chrome band with a single top pad off
-			     --chrome-offset (the yesid --nav-clearance analog) so page content clears
-			     the floating chrome — pages never hand-roll it. The map (full-bleed) owns
-			     its own viewport-top chrome clearance and takes no pad. -->
 			<div
 				class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
 			>
 				{#if !v1 && !isDataIndependentRoute(seoPath)}
-					<!-- /v1 contract unreachable: render the honest error state, never a
-					     crash. Retry (and an automatic client re-boot on mount) re-fetch
-					     the contract; the page tree renders the moment a context lands. -->
 					<div class="mx-auto flex h-full max-w-2xl items-center justify-center p-6">
 						<EdgeState
 							variant="error-v1"

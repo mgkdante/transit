@@ -66,14 +66,10 @@ const labelFreeConsumers = [
 const immutableListings = [
 	{
 		file: 'src/lib/features/lines/LinesIndex.svelte',
-		// Deliberately re-based in 028: the lock hashes everything after </script>,
-		markupSha256:
-			// style block included, despite the test's "markup" name.
-			'ddb5948aabfce2a48d2a73f080799d29a704d26cedde57ce5639866be3556830',
+		markupSha256: 'ddb5948aabfce2a48d2a73f080799d29a704d26cedde57ce5639866be3556830',
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
-		// WS4 rebases the whole post-script lock after deleting the StopsIndex prose cap.
 		markupSha256: '2a3f371e08911eb8c6234d3381823df1c44482648c90485bc4209dc70bb478d7',
 	},
 ] as const;

@@ -96,7 +96,6 @@
 	<path d="M770 155 v-20 h60 v20" stroke="currentColor" stroke-width="2" />
 	<rect x="778" y="128" width="44" height="8" rx="2" stroke="currentColor" stroke-width="1" />
 	<line x1="140" y1="490" x2="1660" y2="490" stroke="currentColor" stroke-width="1.5" />
-	<!-- Doors -->
 	<rect
 		x="260"
 		y="240"
@@ -173,7 +172,6 @@
 		stroke-width="1.5"
 		stroke-dasharray="5 2"
 	/>
-	<!-- Windows -->
 	<rect x="170" y="260" width="70" height="80" rx="8" stroke="currentColor" stroke-width="1.5" />
 	<rect
 		x="330"
@@ -219,7 +217,6 @@
 		stroke="currentColor"
 		stroke-width="1.5"
 	/><rect x="1510" y="260" width="70" height="80" rx="8" stroke="currentColor" stroke-width="1.5" />
-	<!-- Couplers -->
 	<path d="M140 350 h-40 v30 h40" stroke="currentColor" stroke-width="2" /><circle
 		cx="85"
 		cy="365"
@@ -234,10 +231,8 @@
 		stroke="currentColor"
 		stroke-width="1.5"
 	/>
-	<!-- Bogies -->
 	<rect x="220" y="498" width="180" height="36" rx="8" stroke="currentColor" stroke-width="1.5" />
 	<rect x="1400" y="498" width="180" height="36" rx="8" stroke="currentColor" stroke-width="1.5" />
-	<!-- Wheels -->
 	<circle cx="265" cy="540" r="22" stroke="currentColor" stroke-width="2" /><circle
 		cx="265"
 		cy="540"
@@ -268,7 +263,6 @@
 		stroke-width="1"
 	/><circle cx="1535" cy="540" r="3" fill="currentColor" />
 	<line x1="1445" y1="540" x2="1535" y2="540" stroke="currentColor" stroke-width="1.5" />
-	<!-- Guide wheels -->
 	<circle cx="235" cy="520" r="10" stroke="currentColor" stroke-width="1" /><circle
 		cx="385"
 		cy="520"
@@ -283,7 +277,6 @@
 		stroke="currentColor"
 		stroke-width="1"
 	/>
-	<!-- Dimension lines -->
 	<line
 		x1="100"
 		y1="600"
@@ -335,7 +328,6 @@
 		stroke-width="0.5"
 		stroke-dasharray="20 5 2 5"
 	/>
-	<!-- Title block -->
 	<rect x="1420" y="630" width="280" height="55" stroke="currentColor" stroke-width="1" />
 	<line x1="1420" y1="648" x2="1700" y2="648" stroke="currentColor" stroke-width="0.5" />
 	<line x1="1420" y1="666" x2="1700" y2="666" stroke="currentColor" stroke-width="0.5" />

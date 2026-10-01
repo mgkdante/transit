@@ -32,7 +32,6 @@ function setState(
 	target: MapEmphasisTarget,
 	property: 'hovered' | 'selected',
 ): void {
-	// Vehicle emphasis is painted by the moving foreground, without a GL source.
 	if (target.kind === 'stop') {
 		map.setFeatureState({ source: STOPS_SOURCE, id: target.id }, { [property]: true });
 	}

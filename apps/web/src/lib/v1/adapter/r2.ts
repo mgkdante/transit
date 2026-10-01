@@ -20,10 +20,6 @@ const loadLive = () => import('./r2.live');
 const loadStatic = () => import('./r2.static');
 const loadHistoric = () => import('./r2.historic');
 
-/**
- * Stable R2 adapter facade. Manifest and labels stay in the boot closure; each
- * data tier crosses one literal dynamic-import boundary on first use.
- */
 export const r2Adapter = {
 	manifest: manifestPort,
 	labels: labelsPort,

@@ -1,20 +1,8 @@
-// transit-data-proxy — read-only Cloudflare Worker serving the public /v1
-// snapshot contract from the transit-snapshots R2 bucket on the route
-// transit.yesid.dev/data/*, plus the aggregated public KPI
-// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js). The compatibility route
-// also quarantines the retired /data/v1/sto/* prefix with 410 responses.
-//
-// Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
-// time (db/src/transit_ops/snapshots/storage.py) pass through unchanged via
-// writeHttpMetadata; errors are never cacheable (no-store); CORS is wide open
-// (public read-only data) so consumers can fetch the canonical host directly
-// from any dev or prod origin. This worker never writes to the bucket.
+// Public snapshots retain object metadata; errors use no-store. The bucket is read-only.
 import { CORS_HEADERS, PREFLIGHT_HEADERS } from "./cors.js";
 import { serveKpis } from "./kpis.js";
 import { serveSnapshot } from "./snapshot-response.js";
 
-// Only keys under v1/ are servable; the URL prefix /data/ is stripped to map
-// onto bucket keys (e.g. /data/v1/stm/manifest.json -> v1/stm/manifest.json).
 const KEY_PREFIX = "/data/";
 const SERVABLE_PREFIX = "/data/v1/";
 
@@ -23,8 +11,7 @@ const API_PREFIX = "/api/v1/";
 const RETIRED_STO_PREFIX = "/data/v1/sto/";
 
 function errorResponse(status, extraHeaders = {}) {
-  // no-store: a transient 404/405 must never stick in any browser or
-  // intermediary cache in front of the 30 s live tier.
+  // Do not cache transient errors.
   return new Response(null, {
     status,
     headers: { ...CORS_HEADERS, "cache-control": "no-store", ...extraHeaders },
@@ -45,7 +32,7 @@ export default {
     try {
       decodedPathname = decodeURIComponent(pathname);
     } catch {
-      return errorResponse(404); // malformed percent-encoding
+      return errorResponse(404);
     }
     if (decodedPathname.startsWith(RETIRED_STO_PREFIX)) {
       return errorResponse(410);
@@ -54,8 +41,7 @@ export default {
       return serveKpis(request, env, ctx);
     }
     if (decodedPathname.startsWith(API_PREFIX)) {
-      // The /api/v1/* zone route lands here for paths this worker doesn't
-      // define yet — a clean, uncacheable 404 (never the web app's HTML).
+      // Undefined API routes return an uncacheable 404.
       return errorResponse(404);
     }
     if (!decodedPathname.startsWith(SERVABLE_PREFIX)) {
@@ -64,7 +50,6 @@ export default {
 
     const key = decodedPathname.slice(KEY_PREFIX.length);
     if (key.includes("..")) {
-      // URL() normalizes literal dot-segments; this guards the encoded form.
       return errorResponse(404);
     }
 

@@ -1,9 +1,3 @@
-<!--
-  SectionFreshness — one EntityRow-style row per provenance.freshness[] entry:
-  the feed + a StatusDot encoding the last ingestion-run verdict + a humanized age.
-  Mechanical move out of HealthStatus.svelte; the verdict + age humanization are
-  passed in as pure functions so this component holds no data logic.
--->
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
@@ -13,9 +7,7 @@
 
 	interface SectionFreshnessProps {
 		items: readonly ProvenanceFreshness[];
-		/** Maps a run status to a dataviz aspect + localized verdict label. */
 		verdictFor: (status: string | null | undefined) => FreshnessVerdict;
-		/** Humanizes an age in seconds (or the localized "no age" note). */
 		humanizeAge: (ageS: number | null | undefined) => string;
 		copy: HealthCopy;
 	}
@@ -30,8 +22,6 @@
 			{@const v = verdictFor(f.status)}
 			<div class="health-row" data-slot="freshness-row">
 				<span class="health-row-lead">
-					<!-- Decorative: the verdict is already visible text, so the dot carries no
-					     sr-only label (AT would otherwise announce the verdict twice). -->
 					<StatusDot color={v.aspect} aria-hidden="true" />
 					<span class="health-row-feed">{f.feed}</span>
 				</span>

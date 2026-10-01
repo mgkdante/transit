@@ -1,21 +1,3 @@
-"""Real-DB guard: a per-provider source-factory reset must not touch other providers.
-
-Phase 1 (multi-provider). ``reset_source_factory_tables(connection, provider_id)``
-DELETEs only that provider's rows, walking the reset list child-to-parent and
-skipping shared seeds. This proves — against the REAL schema and its foreign
-keys — that rebuilding provider A leaves provider B's rows intact, which the
-offline fake-connection tests cannot verify (they can't see real FK ordering).
-
-Seeds a shallow but FK-complete chain for two providers:
-    core.providers -> core.feed_endpoints -> raw.ingestion_runs -> raw.ingestion_objects
-``ingestion_objects`` (child) is deleted before ``ingestion_runs`` (parent) in the
-reset order, so a passing run also confirms the child->parent walk is correct.
-
-Runs ONLY with TRANSIT_TEST_DATABASE_URL pointing at a disposable Postgres at
-head; CI/local-only, never production. Basic isolation cases roll back their
-transaction. The serving-lifecycle case commits reset and initialization separately,
-then removes only its two fixture providers.
-"""
 
 from __future__ import annotations
 
@@ -92,17 +74,13 @@ def test_per_provider_reset_leaves_other_providers_untouched(conn: Connection) -
 
     summary = reset_source_factory_tables(conn, PROVIDER_A)
 
-    # provider A's rows are gone (child ingestion_objects before parent runs)...
     assert _count(conn, "raw.ingestion_runs", PROVIDER_A) == 0
     assert _count(conn, "raw.ingestion_objects", PROVIDER_A) == 0
-    # ...provider B is fully intact...
     assert _count(conn, "raw.ingestion_runs", PROVIDER_B) == 1
     assert _count(conn, "raw.ingestion_objects", PROVIDER_B) == 1
-    # ...shared core config (not in the reset set) survives for both providers...
     assert _count(conn, "core.providers", PROVIDER_A) == 1
     assert _count(conn, "core.feed_endpoints", PROVIDER_A) == 1
     assert _count(conn, "core.providers", PROVIDER_B) == 1
-    # ...and the shared seed table with no provider_id column is skipped, not deleted.
     assert summary["mode"] == "per_provider"
     assert "gold.report_labels" in summary["skipped_tables"]
 
@@ -226,7 +204,6 @@ def test_provider_reset_reinitializes_only_its_selected_serving_lane(real_db_eng
                 ),
                 {"pid": provider_id},
             )
-            # Copied identities remain valid marker state after source retention.
             connection.execute(
                 text(
                     "INSERT INTO gold.realtime_serving_state "

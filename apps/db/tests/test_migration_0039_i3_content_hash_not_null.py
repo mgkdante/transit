@@ -1,10 +1,3 @@
-"""Static contract test for migration 0039: content_hash SET NOT NULL.
-
-slice-9.1.1l enables the deferred 0021 SET NOT NULL on silver.i3_alerts
-.content_hash after 0038 collapses the legacy NULL-hash backlog. A DO-block
-guard RAISEs if any NULL-hash row survives; the constraint scopes to
-content_hash only.
-"""
 
 from __future__ import annotations
 
@@ -44,7 +37,6 @@ def test_upgrade_guards_against_remaining_null_rows() -> None:
     guard = _normalize(m._GUARD_NO_NULL_HASH)
     assert "RAISE EXCEPTION" in guard
     assert "content_hash IS NULL" in guard
-    # the guard runs before the constraint change in upgrade()
     src = inspect.getsource(m.upgrade)
     assert src.index("_GUARD_NO_NULL_HASH") < src.index("_SET_NOT_NULL")
 
@@ -54,7 +46,6 @@ def test_upgrade_sets_not_null_on_content_hash_only() -> None:
     sql = _normalize(m._SET_NOT_NULL)
     assert sql.count("SET NOT NULL") == 1
     assert "ALTER COLUMN content_hash SET NOT NULL" in sql
-    # scope is content_hash ONLY — not first_seen_at / last_seen_at
     assert "first_seen_at" not in sql
     assert "last_seen_at" not in sql
 

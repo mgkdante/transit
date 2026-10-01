@@ -1,14 +1,7 @@
-// clusters.test.ts — the pure mapper's contract:
-//   1. an empty contract → every VM `isEmpty`, strip empty, no throw.
-//   2. a populated fixture → correct selection (selected-grain strip, busiest-
-//      direction CoV, most-recent ramp-in rates) + ramp-in flags set.
-//   3. sparse / all-null fields never crash and resolve to honest empties.
-
 import { describe, expect, it } from 'vitest';
 import type { RouteReliability, IsoUtc, LineHistoryRange } from '$lib/v1';
 import { toReliabilityClusters } from './clusters';
 
-/** Brand a plain string as the IsoUtc the contract requires (matches the codebase fixture idiom). */
 const utc = (value: string): IsoUtc => value as IsoUtc;
 
 const empty: RouteReliability = {
@@ -59,7 +52,6 @@ const populated: RouteReliability = {
 		{ grain: 'month', otp_pct: 68, avg_delay_min: 3.9, p50_min: 1.2, p90_min: 9.1, severe_pct: 5 },
 	],
 	headway: [
-		// First row has no CoV; the busiest-direction regularity row carries it.
 		{ shift: 'am_peak', scheduled_min: 6, observed_min: 7.2, excess_wait_min: 1.1 },
 		{
 			shift: 'am_peak',
@@ -78,7 +70,6 @@ const populated: RouteReliability = {
 	cancellations: [
 		{ grain: 'day', date: '2026-06-16', cancellation_rate_pct: 1.5, canceled_trip_days: 3 },
 		{ grain: 'day', date: '2026-06-17', cancellation_rate_pct: 2.4, canceled_trip_days: 6 },
-		// most-recent row carries no rate → mapper falls back to the prior row.
 		{ grain: 'day', date: '2026-06-18', canceled_trip_days: 0, total_trip_days: 240 },
 	],
 	skipped_stops: [
@@ -94,13 +85,12 @@ const populated: RouteReliability = {
 		],
 	},
 	day_of_week: [
-		// Out of ISO order on purpose — the mapper must sort Mon→Sun.
 		{ day_of_week_iso: 3, avg_delay_min: 2.5, observation_count: 90 },
 		{ day_of_week_iso: 1, avg_delay_min: 1.8, observation_count: 100 },
 	],
 	weak_stops: [
 		{ id: 'S1', name: 'Côte-des-Neiges', avg_delay_min: 4.2 },
-		{ id: 'S2', name: 'Van Horne' }, // no delay → filtered out
+		{ id: 'S2', name: 'Van Horne' },
 	],
 };
 
@@ -122,15 +112,13 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 
 	it('falls back to the first CALENDAR period when the grain is absent', () => {
-		// The mapper partitions periods into calendar (day→week→month) groups, so
-		// the first calendar period is the day row regardless of contract order.
 		const c = toReliabilityClusters(populated, { grain: 'year' });
-		expect(c.strip.otpPct).toBe(82); // first calendar period (day)
+		expect(c.strip.otpPct).toBe(82);
 	});
 
 	it('carries p50 onto the strip (daily grain)', () => {
 		const c = toReliabilityClusters(populated);
-		expect(c.strip.p50Min).toBe(0.5); // the day period's median delay
+		expect(c.strip.p50Min).toBe(0.5);
 	});
 
 	it('pulls the busiest-direction CoV (first row carrying cov)', () => {
@@ -140,11 +128,7 @@ describe('toReliabilityClusters — populated fixture', () => {
 
 	it('POOLS the latest day ramp-in rate from its counts, falling back to the last published rate', () => {
 		const c = toReliabilityClusters(populated);
-		// Cancellations: the latest day (06-18) carries counts (0 of 240 canceled) → the POOLED
-		// rate is its true 0%, not the older 06-17 rate (the pooled tile now matches its "X of Y").
 		expect(c.strip.cancellationRatePct).toBe(0);
-		// Skipped: the rows carry no stop_time_update_count denominator → no pooled rate, so it
-		// falls back to the most-recent published skipped_stop_rate_pct (06-18 = 1.1%).
 		expect(c.strip.skippedStopRatePct).toBe(1.1);
 	});
 
@@ -181,8 +165,6 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 
 	it('keeps only signal-carrying headway / span / cancellation / skipped rows', () => {
-		// grain='week' windows §03 to the last 7 days, which spans the whole 06-16..06-18
-		// fixture — so this isolates the SIGNAL filtering from the grain windowing below.
 		const c = toReliabilityClusters(populated, { grain: 'week' });
 		expect(c.waitRegularity.headway).toHaveLength(2);
 		expect(c.serviceDelivered.serviceSpans).toHaveLength(2);
@@ -191,18 +173,14 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 
 	it('windows §03 service-delivered to the grain the rail selects (S7 backbone)', () => {
-		// day grain → only the LATEST dated row of each ramp-in history survives, so the
-		// section RESPONDS to the filter (was: always the full ~30-day history).
 		const day = toReliabilityClusters(populated, { grain: 'day' });
 		expect(day.serviceDelivered.cancellations).toHaveLength(1);
 		expect(day.serviceDelivered.cancellations[0].date).toBe('2026-06-18');
 		expect(day.serviceDelivered.skippedStops).toHaveLength(1);
 		expect(day.serviceDelivered.serviceSpans).toHaveLength(1);
-		// week grain → the last 7 days spans the whole 3-day fixture → all rows return.
 		expect(
 			toReliabilityClusters(populated, { grain: 'week' }).serviceDelivered.cancellations,
 		).toHaveLength(3);
-		// an explicit date range narrows it to the rows inside [start, end].
 		const ranged = toReliabilityClusters(populated, {
 			grain: 'day',
 			dateRange: { start: '2026-06-17', end: '2026-06-18' },
@@ -211,14 +189,10 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 });
 
-/* F1 — week/month rows arrive ASC; the strip must pick the MOST-RECENT, not the
-   first (oldest). Plus the trend day-only-ascending split, peak/off-peak, and the
-   selectedDate picker resolution. */
 const granular: RouteReliability = {
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '10',
 	periods: [
-		// Daily rows arrive newest→oldest in the contract; the trend must sort ASC.
 		{
 			grain: 'day',
 			date: '2026-06-18',
@@ -243,13 +217,10 @@ const granular: RouteReliability = {
 			p50_min: 0.5,
 			p90_min: 6.0,
 		},
-		// Weekly rows ASC (oldest → newest) — F1: most-recent must win.
 		{ grain: 'week', date: '2026-05-25', otp_pct: 70, avg_delay_min: 3.5 },
 		{ grain: 'week', date: '2026-06-15', otp_pct: 76, avg_delay_min: 2.9 },
-		// Monthly rows ASC.
 		{ grain: 'month', date: '2026-05-01', otp_pct: 68, avg_delay_min: 3.9 },
 		{ grain: 'month', date: '2026-06-01', otp_pct: 74, avg_delay_min: 3.1 },
-		// Granular grains (date:null) — the peak/off-peak source.
 		{ grain: 'am_peak', otp_pct: 90, avg_delay_min: 0.7, severe_pct: 4.7 },
 		{ grain: 'pm_peak', otp_pct: 75, avg_delay_min: 3.4, severe_pct: 22.6 },
 		{ grain: 'midday', otp_pct: 86, avg_delay_min: 1.2, severe_pct: 6 },
@@ -261,12 +232,12 @@ const granular: RouteReliability = {
 describe('toReliabilityClusters — F1 most-recent week/month + grain partition', () => {
 	it('picks the MOST-RECENT week, not the oldest (F1)', () => {
 		const c = toReliabilityClusters(granular, { grain: 'week' });
-		expect(c.strip.otpPct).toBe(76); // 2026-06-15, not 2026-05-25 (70)
+		expect(c.strip.otpPct).toBe(76);
 	});
 
 	it('picks the MOST-RECENT month, not the oldest (F1)', () => {
 		const c = toReliabilityClusters(granular, { grain: 'month' });
-		expect(c.strip.otpPct).toBe(74); // 2026-06-01, not 2026-05-01 (68)
+		expect(c.strip.otpPct).toBe(74);
 	});
 
 	it('trend is the dated DAY-grain series only, chronological ascending', () => {
@@ -276,7 +247,6 @@ describe('toReliabilityClusters — F1 most-recent week/month + grain partition'
 			'2026-06-17',
 			'2026-06-18',
 		]);
-		// No week/month/shift/daytype rows leak into the trend.
 		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
 	});
 
@@ -294,37 +264,28 @@ describe('toReliabilityClusters — F1 most-recent week/month + grain partition'
 
 	it('honours selectedDate — resolves the strip to that exact day', () => {
 		const c = toReliabilityClusters(granular, { grain: 'day', selectedDate: '2026-06-16' });
-		expect(c.strip.otpPct).toBe(80); // the 2026-06-16 day, not the most-recent
+		expect(c.strip.otpPct).toBe(80);
 	});
 
 	it('default day grain resolves to the MOST-RECENT day', () => {
 		const c = toReliabilityClusters(granular, { grain: 'day' });
-		expect(c.strip.otpPct).toBe(84); // 2026-06-18 (max date)
+		expect(c.strip.otpPct).toBe(84);
 	});
 });
 
-/* (A) DATE-RANGE — the start+end window aggregates the in-range days: mean OTP +
-   avg delay; percentiles null on a multi-day span, exact on a single day; the
-   trend zooms to the range; an empty/out-of-window range fabricates nothing. */
 describe('toReliabilityClusters — date range', () => {
 	it('aggregates a multi-day range: mean OTP + avg delay, null percentiles', () => {
-		// In-range days 06-16 (80) / 06-17 (82) / 06-18 (84) → mean OTP = 82.
 		const c = toReliabilityClusters(granular, {
 			grain: 'day',
 			dateRange: { start: '2026-06-16', end: '2026-06-18' },
 		});
-		expect(c.strip.otpPct).toBe(82); // round((80+82+84)/3)
-		expect(c.strip.avgDelayMin).toBeCloseTo(2.1, 5); // (2.4+2.1+1.9)/3 → 2.1
-		// Percentiles are not averageable across days → null on a multi-day range.
+		expect(c.strip.otpPct).toBe(82);
+		expect(c.strip.avgDelayMin).toBeCloseTo(2.1, 5);
 		expect(c.strip.p50Min).toBeNull();
 		expect(c.strip.p90Min).toBeNull();
 	});
 
 	it('POOLS a multi-day range by denominator, not a mean of daily rates (H1/H2)', () => {
-		// A tiny 50%-day (n=100) beside a huge 90%-day (n=10000): the mean-of-rates = 70%, but the
-		// POOLED rate = (50+9000)/(100+10000) = 89.6% → 90. The §0 verdict's Wilson CI is built from
-		// these same pooled counts, so the headline BAN must equal the pooled rate (it must never
-		// fall outside its own CI). Avg delay is observation-count-WEIGHTED the same way.
 		const data: RouteReliability = {
 			generated_utc: utc('2026-06-22T02:00:00Z'),
 			id: '51',
@@ -351,9 +312,8 @@ describe('toReliabilityClusters — date range', () => {
 			grain: 'day',
 			dateRange: { start: '2026-06-20', end: '2026-06-21' },
 		});
-		expect(c.strip.otpPct).toBe(90); // POOLED, not the 70 mean-of-rates
-		expect(c.strip.avgDelayMin).toBeCloseTo(1.0, 1); // observation-weighted, not the 2.5 mean
-		// The headline carries the additive numerator/denominator the verdict CI pools from.
+		expect(c.strip.otpPct).toBe(90);
+		expect(c.strip.avgDelayMin).toBeCloseTo(1.0, 1);
 		expect(c.punctuality.headline.observationCount).toBe(10100);
 		expect(c.punctuality.headline.onTime).toBe(9050);
 	});
@@ -383,7 +343,6 @@ describe('toReliabilityClusters — date range', () => {
 		expect(c.strip.avgDelayMin).toBe(2.1);
 		expect(c.strip.p50Min).toBe(0.5);
 		expect(c.strip.p90Min).toBe(6.0);
-		// One exact day is NOT an "average" → no aggregate caption metadata.
 		expect(c.strip.rangeAggregate).toBeNull();
 		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-06-17']);
 	});
@@ -401,20 +360,18 @@ describe('toReliabilityClusters — date range', () => {
 			grain: 'day',
 			dateRange: { start: '2026-01-01', end: '2026-01-31' },
 		});
-		// No in-range day → normal day selection (most-recent), full trend, no aggregate.
-		expect(c.strip.otpPct).toBe(84); // 2026-06-18
+		expect(c.strip.otpPct).toBe(84);
 		expect(c.strip.rangeAggregate).toBeNull();
 		expect(c.punctuality.trend).toHaveLength(3);
 	});
 
 	it('clips the range to the available days when it overhangs the window', () => {
-		// 06-15 has no day row; the range clips to the two in-range days.
 		const c = toReliabilityClusters(granular, {
 			grain: 'day',
 			dateRange: { start: '2026-06-15', end: '2026-06-17' },
 		});
 		expect(c.strip.rangeAggregate).toEqual({ days: 2, start: '2026-06-16', end: '2026-06-17' });
-		expect(c.strip.otpPct).toBe(81); // round((80+82)/2)
+		expect(c.strip.otpPct).toBe(81);
 	});
 });
 
@@ -534,17 +491,14 @@ describe('toReliabilityClusters — retained scheduled-service honesty', () => {
 	});
 });
 
-/* Duplicate-day dedup — the contract can emit two rows for the same local day (a
-   late re-publish). The trend must draw that day ONCE and the range mean must
-   count it ONCE; the last occurrence (the re-publish) wins. */
 describe('toReliabilityClusters — duplicate-day dedup', () => {
 	const dupDay: RouteReliability = {
 		generated_utc: utc('2026-06-19T02:00:00Z'),
 		id: '11',
 		periods: [
 			{ grain: 'day', date: '2026-06-16', otp_pct: 80, avg_delay_min: 2.0 },
-			{ grain: 'day', date: '2026-06-17', otp_pct: 60, avg_delay_min: 5.0 }, // stale first write
-			{ grain: 'day', date: '2026-06-17', otp_pct: 90, avg_delay_min: 1.0 }, // re-publish wins
+			{ grain: 'day', date: '2026-06-17', otp_pct: 60, avg_delay_min: 5.0 },
+			{ grain: 'day', date: '2026-06-17', otp_pct: 90, avg_delay_min: 1.0 },
 		],
 	};
 
@@ -555,8 +509,6 @@ describe('toReliabilityClusters — duplicate-day dedup', () => {
 	});
 
 	it('counts a duplicate day only ONCE in the range mean', () => {
-		// 06-16 (80) + deduped 06-17 (90) → round((80+90)/2) = 85.
-		// A double-count would give round((80+60+90)/3) ≈ 77.
 		const c = toReliabilityClusters(dupDay, {
 			grain: 'day',
 			dateRange: { start: '2026-06-16', end: '2026-06-17' },
@@ -574,10 +526,7 @@ describe('toReliabilityClusters — delay_by_crowding (G1)', () => {
 			delay_by_crowding: [
 				{ band: 'many_seats', avg_delay_min: 1.2, p50_min: 0.4, observation_count: 50 },
 				{ band: 'standing', avg_delay_min: 4.5, day_count: 7 },
-				// A present-but-null band still has a non-delay signal (day_count) → kept,
-				// but the band must show the no-data message for its delay downstream.
 				{ band: 'full', avg_delay_min: null, day_count: 3 },
-				// An all-null cell carries no signal → dropped.
 				{ band: 'empty' },
 			],
 		};
@@ -596,8 +545,6 @@ describe('toReliabilityClusters — delay_by_crowding (G1)', () => {
 	});
 });
 
-/* S7 — the §01 trend follows the SELECTED calendar grain (day/week/month), not
-   always day. dayTrend dedupes-by-date + sorts ASC, so it works for any dated grain. */
 describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 	it('default (day) trend = the dated day series, ASC', () => {
 		const c = toReliabilityClusters(granular);
@@ -611,8 +558,6 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 
 	it('grain=week → the DAILY series WINDOWED to the last 7 days (folded daily detail, S7)', () => {
 		const c = toReliabilityClusters(granular, { grain: 'week' });
-		// The daily span (06-16..06-18) is inside the last 7 days → the trend keeps the
-		// DAILY points, NOT the coarse weekly aggregate (which was 2 dots spanning a month).
 		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
 			'2026-06-16',
 			'2026-06-17',
@@ -632,7 +577,6 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 	});
 
 	it('week vs month window the daily series differently (last 7 vs last 30 days, S7)', () => {
-		// 10 consecutive daily points (06-09..06-18) → week keeps the last 7, month keeps all.
 		const days = Array.from({ length: 10 }, (_, i) => ({
 			grain: 'day' as const,
 			date: `2026-06-${String(9 + i).padStart(2, '0')}`,
@@ -647,8 +591,8 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 		const month = toReliabilityClusters(data, { grain: 'month' });
 		expect(week.punctuality.trend).toHaveLength(7);
 		expect(month.punctuality.trend).toHaveLength(10);
-		expect(week.punctuality.trend[0].date).toBe('2026-06-12'); // 7 days back from 06-18
-		expect(month.punctuality.trend[0].date).toBe('2026-06-09'); // all of them
+		expect(week.punctuality.trend[0].date).toBe('2026-06-12');
+		expect(month.punctuality.trend[0].date).toBe('2026-06-09');
 	});
 
 	it('a date range still zooms the DAY series regardless of grain', () => {
@@ -660,8 +604,6 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 	});
 });
 
-/* S7 §04 — grain-aware crowding mix + weekday/weekend split from the new
-   occupancy_by_grain / occupancy_by_dow contract fields (PR-DB). */
 describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)', () => {
 	const crowdingGrains: RouteReliability = {
 		generated_utc: utc('2026-06-19T02:00:00Z'),
@@ -672,7 +614,6 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 				grain: 'week',
 				mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
 			},
-			// honest absence — a window with no band telemetry carries mix: null.
 			{ grain: 'month', mix: null },
 		],
 		occupancy_by_dow: [
@@ -709,10 +650,8 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 	it('aggregates weekday (ISO 1-5) and weekend (ISO 6-7) from occupancy_by_dow', () => {
 		const ww = toReliabilityClusters(crowdingGrains).crowding.weekdayWeekend;
 		expect(ww).not.toBeNull();
-		// weekday = unweighted mean of ISO 1 + ISO 5: many_seats (0.8+0.6)/2 = 0.7, few_seats (0.2+0.4)/2 = 0.3
 		expect(ww?.weekday?.many_seats).toBeCloseTo(0.7, 5);
 		expect(ww?.weekday?.few_seats).toBeCloseTo(0.3, 5);
-		// weekend = ISO 6 only
 		expect(ww?.weekend?.empty).toBe(0.5);
 	});
 
@@ -725,13 +664,10 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 	it('exposes the RAW per-ISO-weekday mix on a fixed Mon→Sun (1..7) frame (P11)', () => {
 		const bw = toReliabilityClusters(crowdingGrains).crowding.byWeekday;
 		expect(bw).not.toBeNull();
-		// Always the full 7-day frame, ISO ascending, regardless of contract sparsity.
 		expect(bw?.map((d) => d.iso)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-		// Present weekdays keep their mix VERBATIM (not the weekday/weekend mean).
 		expect(bw?.find((d) => d.iso === 1)?.mix?.many_seats).toBe(0.8);
 		expect(bw?.find((d) => d.iso === 5)?.mix?.few_seats).toBe(0.4);
 		expect(bw?.find((d) => d.iso === 6)?.mix?.empty).toBe(0.5);
-		// A weekday the contract omits → honest mix:null (not a fabricated zero mix).
 		expect(bw?.find((d) => d.iso === 2)?.mix).toBeNull();
 		expect(bw?.find((d) => d.iso === 7)?.mix).toBeNull();
 	});
@@ -754,8 +690,6 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 });
 
 describe('toReliabilityClusters — trip-weighted weekday/weekend meanMix (FIX-5)', () => {
-	// Skewed mixes so weighting visibly diverges from the plain mean: a high-volume day
-	// (n:90/80) and a low-volume day (n:10/20) with opposite band shares.
 	const skewed = (withN: boolean): RouteReliability => ({
 		generated_utc: utc('2026-06-19T02:00:00Z'),
 		id: '12',
@@ -785,9 +719,7 @@ describe('toReliabilityClusters — trip-weighted weekday/weekend meanMix (FIX-5
 
 	it('trip-weights the weekday/weekend fold by per-DOW n when present', () => {
 		const ww = toReliabilityClusters(skewed(true)).crowding.weekdayWeekend;
-		// weekday many_seats = (90·1 + 10·0)/100 = 0.9 (unweighted would be 0.5).
 		expect(ww?.weekday?.many_seats).toBeCloseTo(0.9, 5);
-		// weekend empty = (80·1 + 20·0)/100 = 0.8 (unweighted would be 0.5).
 		expect(ww?.weekend?.empty).toBeCloseTo(0.8, 5);
 	});
 
@@ -807,7 +739,6 @@ describe('toReliabilityClusters — trip-weighted weekday/weekend meanMix (FIX-5
 					mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
 					n: 90,
 				},
-				// no n on this weekday → the whole weekday fold must stay unweighted, never iso1-only.
 				{
 					day_of_week_iso: 5,
 					mix: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
@@ -827,8 +758,6 @@ describe('toReliabilityClusters — by_shift_daytype crosstab (G1)', () => {
 			by_shift_daytype: [
 				{ shift: 'am_peak', day_type: 'weekday', otp_pct: 88, avg_delay_min: 1.1 },
 				{ shift: 'pm_peak', day_type: 'weekday', otp_pct: 74, severe_pct: 9 },
-				// SPARSE: am_peak/weekend, midday/*, evening/*, night/* are simply absent.
-				// An all-null cell carries no signal → dropped (not present-but-blank).
 				{ shift: 'night', day_type: 'weekend' },
 			],
 		};
@@ -846,14 +775,10 @@ describe('toReliabilityClusters — by_shift_daytype crosstab (G1)', () => {
 	});
 });
 
-/* S7-B windowable §1/§2/§4: the periods_by_grain / habits_by_grain / headway_by_grain /
-   weak_stops_by_grain companions feed §1/§2/§4 for the selected grain, with an honest scalar
-   fallback (and the per-section windowed flag) when the windowed array is absent (pre-deploy). */
 describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', () => {
 	const windowed: RouteReliability = {
 		generated_utc: utc('2026-06-19T02:00:00Z'),
 		id: '51',
-		// SCALAR whole-history values — DISTINCT from the windowed ones so a read can be attributed.
 		day_of_week: [{ day_of_week_iso: 1, avg_delay_min: 9, severe_pct: 9, observation_count: 90 }],
 		weak_stops: [{ id: 'scalar-stop', name: 'Scalar', avg_delay_min: 5 }],
 		headway: [{ shift: 'am_peak', observed_min: 9, cov: 0.9 }],
@@ -862,7 +787,6 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 			{ shift: 'am_peak', day_type: 'weekday', otp_pct: 50, observation_count: 100 },
 		],
 		habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] },
-		// WINDOWED companions — only a 'week' entry (no 'day').
 		periods_by_grain: [
 			{
 				grain: 'week',
@@ -901,9 +825,6 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 			{
 				grain: 'week',
 				stops: [
-					// the genuinely-worst stop (ranked first by the DB) carries a NULL pooled avg —
-					// it MUST survive (the feed gates on observation_count, NOT avg_delay_min). This
-					// makes the gate discriminating: a wrong `avg_delay_min != null` gate drops it.
 					{
 						id: 'win-worst',
 						name: 'Worst',
@@ -913,8 +834,6 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 						wilson_lo: 30,
 						wilson_hi: 50,
 					},
-					// a second worst stop whose pooled avg is <= 0 — also MUST survive (never dropped
-					// for a non-positive avg).
 					{
 						id: 'win-2',
 						name: 'Second',
@@ -937,14 +856,10 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.punctuality.windowed).toBe(true);
 		expect(c.punctuality.weakStopsWindowed).toBe(true);
 		expect(c.waitRegularity.windowed).toBe(true);
-		// §1 reads the WINDOWED values (distinct from scalar)
 		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(2);
 		expect(c.punctuality.peakOffPeak.byShift[0]?.otpPct).toBe(80);
 		expect(c.punctuality.peakOffPeak.byDayType[0]?.otpPct).toBe(81);
 		expect(c.punctuality.byShiftDaytype[0]?.otp_pct).toBe(82);
-		// §2 reads the windowed headway; the §1 heatmap is GRAIN-INVARIANT (operator decision) — it
-		// ALWAYS reads the whole-history habits, NEVER the windowed slice, so the windowed [[0.3]] is
-		// ignored and the scalar [[0.9]] is used even at grain='week'.
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(7);
 		expect(c.habits.matrix).toEqual([[0.9]]);
 	});
@@ -959,16 +874,12 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		const wd = c.punctuality.peakOffPeak.byDayType[0];
 		expect(wd?.priorOtpPct).toBe(80);
 		expect(wd?.priorObservationCount).toBe(210);
-		// the scalar (non-windowed) fallback carries no prior — honest absence, nothing to compare.
 		const day = toReliabilityClusters(windowed, { grain: 'day' });
 		expect(day.punctuality.peakOffPeak.byShift[0]?.priorOtpPct ?? null).toBeNull();
 	});
 
 	it('keeps a null-avg AND a <=0-avg worst stop, gated on observation_count not avg (§4)', () => {
 		const c = toReliabilityClusters(windowed, { grain: 'week' });
-		// both worst-by-rate stops survive in DB order — the NULL-avg one proves the feed gates on
-		// observation_count (a wrong `avg_delay_min != null` gate would drop it); the -2 one proves a
-		// non-positive avg is never dropped.
 		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['win-worst', 'win-2']);
 		expect(c.punctuality.weakStops[0]?.avg_delay_min).toBeNull();
 		expect(c.punctuality.weakStops[0]?.severe_pct).toBe(40);
@@ -980,21 +891,17 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.punctuality.weakStopsWindowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
-		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(9); // scalar
-		expect(c.waitRegularity.headway[0]?.observed_min).toBe(9); // scalar
-		// The heatmap is GRAIN-INVARIANT (operator decision): it always reads the whole-history scalar
-		// matrix ([[0.9]]) at every grain, never a windowed slice — so day grain reads scalar too.
+		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(9);
+		expect(c.waitRegularity.headway[0]?.observed_min).toBe(9);
 		expect(c.habits.matrix).toEqual([[0.9]]);
-		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['scalar-stop']); // scalar (avg-gated)
+		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['scalar-stop']);
 	});
 
 	it('ignores habits_by_grain entirely — the heatmap is grain-invariant (always the scalar matrix)', () => {
 		const gi: RouteReliability = {
 			generated_utc: utc('2026-06-19T02:00:00Z'),
 			id: '51',
-			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] }, // whole-history scalar
-			// A DISTINCT windowed 'week' matrix that must be IGNORED (grain-invariance), plus a null
-			// 'month' entry that must NOT zero the heatmap (it reads the scalar regardless).
+			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] },
 			habits_by_grain: [
 				{ grain: 'week', habits: { scale: 'repeat_problem_relative', matrix: [[0.3]] } },
 				{ grain: 'month', habits: null },
@@ -1002,7 +909,7 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		};
 		for (const grain of ['day', 'week', 'month'] as const) {
 			const c = toReliabilityClusters(gi, { grain });
-			expect(c.habits.matrix).toEqual([[0.9]]); // the scalar, never the windowed [[0.3]] / null
+			expect(c.habits.matrix).toEqual([[0.9]]);
 			expect(c.habits.isEmpty).toBe(false);
 		}
 	});
@@ -1014,8 +921,6 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.waitRegularity.windowed).toBe(false);
 	});
 
-	// Each flag is wired 1:1 to its OWN array — asymmetric presence (one companion published, the
-	// others not) pins the wiring against a cross-wire (e.g. punctuality.windowed reading headwayGrain).
 	it('flags each section independently — only periods_by_grain present', () => {
 		const c = toReliabilityClusters(
 			{

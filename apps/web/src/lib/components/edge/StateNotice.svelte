@@ -38,8 +38,6 @@
 		...restProps
 	}: StateNoticeProps = $props();
 
-	// A plain field-level pill remains valid inline markup. Notices with arbitrary
-	// snippets use block-capable markup so their content cannot invalidate SSR.
 	const element = $derived(
 		(presentation === 'pill' || presentation === 'row') && !meta && !action ? 'span' : 'div',
 	);

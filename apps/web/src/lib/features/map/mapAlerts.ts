@@ -1,12 +1,3 @@
-// mapAlerts.ts — the MAP-RUNTIME alert helpers.
-//
-// The alert→entity index (which routes/stops any alert touches) + the per-vehicle
-// "has an alert" test the live map paints with. These are map-runtime (they read a
-// Vehicle's route/next_stop), so they STAY in features/map (S15). The pure i18n
-// alert helpers moved to $lib/v1: `alertDisplayText` → $lib/v1/alertDisplay,
-// `causeLabel`/`effectLabel` → $lib/v1/gtfsAlertLabels — so the alerts surface (and
-// every consumer) reads them from the shared kernel without a cross-feature import.
-
 import type { Alert, Vehicle } from '$lib/v1/schemas';
 
 export interface AlertEntitySets {

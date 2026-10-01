@@ -1,11 +1,3 @@
-<!--
-  Test-only harness for MapOverlayChrome — wires the REAL unified Controls snippet
-  (MapFilters in controlsMode + the inline MapMotionControl header) into the chrome
-  exactly as MapHero does, so the desktop-overlays-render-the-shared-controls
-  contract can be asserted without standing up the whole MapHero. Not a route
-  component; it exists purely to give MapOverlayChrome.svelte.test.ts a real
-  `controls` snippet plus sensible defaults for the live/near-me/peek props.
--->
 <script lang="ts">
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
@@ -25,24 +17,18 @@
 		locale: Locale;
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
-		// Live-store reads.
 		generatedUtc?: string | null;
 		ageSeconds?: number | null;
 		isStale?: boolean;
 		degraded?: boolean;
 		selectedFamilyFailureMessage?: string | null;
-		// Near-me.
 		nearMeOrigin?: NearMeOrigin | null;
 		nearbyStops?: readonly WithDistance<StopIndexEntry>[];
-		// Layout gate for the peek.
 		isDesktop?: boolean;
 		detailOpen?: boolean;
-		// Live-edge.
 		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage?: string | null;
-		// Hover peek.
 		hoverPeek?: MapHoverPeek | null;
-		// Spies.
 		onstopselect?: (stop: WithDistance<StopIndexEntry>) => void;
 	}
 

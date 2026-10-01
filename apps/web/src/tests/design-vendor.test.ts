@@ -1,8 +1,3 @@
-// design-vendor.test.ts — integrity gates on the vendored design system.
-//
-// The upstream adoption tool owns the hash algorithm and validates the complete
-// schema-2 trust record. Transit pins one exact immutable Release and keeps only
-// product tests plus this fast consumer-side integrity gate.
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';

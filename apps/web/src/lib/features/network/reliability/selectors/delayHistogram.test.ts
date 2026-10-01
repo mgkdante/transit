@@ -34,7 +34,6 @@ describe('selectDelayHistogram', () => {
 	it('scales the minute edges to SECONDS so the network distribution reads on the shared axis', () => {
 		const spec = selectDelayHistogram(buckets, 1, 6, 'en', labels);
 		if (spec.kind !== 'histogram') throw new Error('expected histogram');
-		// -5..-2 min → -300..-120 s; the unbounded edges stay null.
 		expect(spec.bins[0]).toMatchObject({ lo: null, hi: -300 });
 		expect(spec.bins[1]).toMatchObject({ lo: -300, hi: -120 });
 		expect(spec.bins[7]).toMatchObject({ lo: 900, hi: null });
@@ -43,15 +42,14 @@ describe('selectDelayHistogram', () => {
 	it('pins the count domain to the distribution OWN peak (zero-based, never in-view cross-view max)', () => {
 		const spec = selectDelayHistogram(buckets, 1, 6, 'en', labels);
 		if (spec.kind !== 'histogram') throw new Error('expected histogram');
-		// The tallest bucket is 30 (2..5 min); the count axis is [0, 30], zero-anchored.
 		expect(spec.countDomain).toEqual([0, 30]);
 	});
 
 	it('converts the p50/p90 refs from minutes to seconds', () => {
 		const spec = selectDelayHistogram(buckets, 1, 6, 'en', labels);
 		if (spec.kind !== 'histogram') throw new Error('expected histogram');
-		expect(spec.medianRef).toBe(60); // 1 min
-		expect(spec.p90Ref).toBe(360); // 6 min
+		expect(spec.medianRef).toBe(60);
+		expect(spec.p90Ref).toBe(360);
 	});
 
 	it('keeps null refs null (no fabricated reference line)', () => {

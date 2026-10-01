@@ -1,6 +1,3 @@
-# Monthly grouped GitHub Actions updates (pattern ported from yesid.dev).
-# Target main: it is the protected release branch. The divergent develop branch
-# is handled separately rather than receiving automated dependency updates.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -16,26 +13,17 @@ updates:
         patterns:
           - "*"
 
-  # JS workspace (bun): root package.json + apps/web + apps/data-proxy.
-  # Grouped monthly to keep noise low; if a PR arrives without a bun.lock
-  # update, dependabot's bun support has regressed — pause this block and
-  # bump manually until fixed.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
     target-branch: "main"
-    # PAUSED 2026-07-30 per the doctrine above: the July group PR (#358) arrived
-    # without a bun.lock update, so bun support has regressed. Safe bumps land
-    # manually; the maplibre-gl 6 + web-vitals 6 majors are a deliberate
-    # post-map-program upgrade slice. Restore the limit when bun support returns.
     open-pull-requests-limit: 0
     groups:
       js-dependencies:
         patterns:
           - "*"
 
-  # Python pipeline (uv): apps/db pyproject + uv.lock.
   - package-ecosystem: "uv"
     directory: "/apps/db"
     schedule:

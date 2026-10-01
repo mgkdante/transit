@@ -34,8 +34,6 @@ COMPLETED_AT = datetime(2026, 5, 25, 12, 1, tzinfo=UTC)
 
 class _FakeManifest:
     provider = SimpleNamespace(provider_id="stm", strict_gtfs=False)
-    # Full STM-shaped feed set so the source-factory catalog keeps trip_updates /
-    # vehicle_positions required (present_feed_kinds = these keys).
     feeds = {
         "static_schedule": object(),
         "gis_static": object(),
@@ -564,11 +562,8 @@ def test_execute_calls_operations_in_required_order(tmp_path) -> None:
     ]
     assert result.phase_status[FactoryPhase.DB_RESET] == PhaseStatus.OK
     assert result.phase_status[FactoryPhase.SOURCE_BACKFILL] == PhaseStatus.OK
-    # Honesty: the silver/gold phases report a BUILD completing, not a
-    # validation check (none runs in this path), so the phases are *_BUILD.
     assert result.phase_status[FactoryPhase.SILVER_BUILD] == PhaseStatus.OK
     assert result.phase_status[FactoryPhase.GOLD_BUILD] == PhaseStatus.OK
-    # The retired "*_validation: ok" claim must not reappear in the report.
     assert "silver_validation" not in result.phase_status
     assert "gold_validation" not in result.phase_status
 

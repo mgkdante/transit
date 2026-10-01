@@ -304,7 +304,6 @@ describe('map layer feed invariants', () => {
 		expect(feeds.stops).toHaveBeenCalledTimes(2);
 		expect(feeds.vehicles).toHaveBeenCalledTimes(3);
 
-		// A nonempty stop filter already marks each retained stop selected in GeoJSON.
 		const selectedPinned = {
 			...filtered,
 			stops: { ...filtered.stops, selectedId: 'stop-1' },

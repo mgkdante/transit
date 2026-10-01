@@ -1,8 +1,3 @@
-<!--
-  MapDetailAlerts — the severity-coded alerts rail shared by every selection detail
-  (vehicle / route / stop). Known-empty stands down to a quiet healthy note;
-  unavailable data stays neutral. Self-contained: owns markup + scoped styling.
--->
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
@@ -114,7 +109,6 @@
 </section>
 
 <style>
-	/* ── Alerts — severity-coded signage rail ─────────────────── */
 	.map-alerts {
 		display: flex;
 		flex-direction: column;
@@ -193,9 +187,6 @@
 		padding-block: 0.5rem;
 	}
 
-	/* The provider text and its language marker travel together; only the
-	   chevron sits at the far edge. The marker reads as a quiet annotation,
-	   never as part of the provider's own headline. */
 	.map-alert-text {
 		min-width: 0;
 	}
@@ -235,9 +226,6 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	/* Cause / effect metadata — a labeled mono caption line under the headline.
-	   Each entry is a small uppercase caption + value pill, tinted by the alert's
-	   own severity tone so it reads as part of the same signage block. */
 	.map-alert-meta {
 		display: flex;
 		flex-wrap: wrap;

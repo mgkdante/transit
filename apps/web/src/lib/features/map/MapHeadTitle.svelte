@@ -8,7 +8,6 @@
 		heading: string;
 		generatedUtc: string | null;
 		ageSeconds: number | null;
-		/** Replaces the relative age when the feed is not responding (M6f-2 F14). */
 		ageLabel?: string | null;
 		isStale: boolean;
 		degraded?: boolean;
@@ -50,9 +49,6 @@
 		z-index: var(--z-map-overlay);
 	}
 	.map-head {
-		/* Clears the floating chrome via the single --chrome-offset knob: the map
-		   stage now starts at viewport top (chrome floats over it), so the title
-		   parks below the chrome instead of the old fixed 60px-band assumption. */
 		top: var(--chrome-offset);
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 		display: flex;
@@ -101,7 +97,6 @@
 
 	@media (max-width: 1023.98px) {
 		.map-head {
-			/* Clear the floating chrome (single --chrome-offset knob) on mobile too. */
 			top: var(--chrome-offset);
 			left: 0.75rem;
 			right: 0.75rem;

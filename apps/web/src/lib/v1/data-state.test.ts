@@ -3,7 +3,6 @@ import { asDataState } from './data-state';
 import type { Resource } from './resource.svelte';
 import type { AbsenceReason } from '$lib/site/serviceWindow';
 
-// A minimal Resource<T> stub (settled + idle by default).
 function res<T>(p: Partial<Resource<T>>): Resource<T> {
 	return { data: null, error: null, loading: false, settled: true, reload: () => {}, ...p };
 }

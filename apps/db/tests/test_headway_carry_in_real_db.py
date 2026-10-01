@@ -1,4 +1,3 @@
-"""D7 drops known carry-in starts without adding a cross-midnight gap."""
 
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo

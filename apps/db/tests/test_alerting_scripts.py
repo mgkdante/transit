@@ -1,16 +1,3 @@
-"""PATH-stubbed bash tests for the alerting plane (slice-9.1.1o).
-
-Two pure-bash scripts live at the REPO ROOT under .github/scripts (no uv, no
-python — they run on the Ubuntu 24.04 hosted image with gh/curl/jq/psql):
-
-  alert-issue.sh    — open/close a labeled GitHub issue as the alert channel.
-  freshness-probe.sh — live manifest age + DB heartbeat/capture ages +
-                       failed-run-burst probe, firing/resolving via alert-issue.sh.
-
-These tests stub gh / curl / psql / alert-issue.sh on PATH (harness cloned
-from tests/test_pipeline_scripts.py) and assert the command stream + exit
-codes — no network, no database, no GitHub.
-"""
 
 from __future__ import annotations
 
@@ -20,7 +7,6 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-# REPO ROOT (parents[3] of apps/db/tests/) — the scripts live under .github/scripts.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GH_SCRIPTS_DIR = REPO_ROOT / ".github" / "scripts"
 ALERT_ISSUE = GH_SCRIPTS_DIR / "alert-issue.sh"
@@ -36,9 +22,6 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
 
-    # gh stub: logs every call; honors GH_ISSUE_LIST_OUTPUT for the list query
-    # (so a test can simulate "an issue is already open"), and GH_FAIL_PATTERN
-    # to force a nonzero exit.
     _make_executable(
         bin_dir / "gh",
         "#!/usr/bin/env bash\n"
@@ -55,8 +38,6 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "fi\n"
         'printf \'gh %s\\n\' "$*"\n',
     )
-    # curl stub: emits CURL_OUTPUT verbatim (manifest JSON for the probe);
-    # honors CURL_FAIL_PATTERN to force a nonzero exit (-f behavior).
     _make_executable(
         bin_dir / "curl",
         "#!/usr/bin/env bash\n"
@@ -68,8 +49,6 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "fi\n"
         'printf \'%s\' "${CURL_OUTPUT:-}"\n',
     )
-    # psql stub: pops the next line from PSQL_OUTPUTS (newline-separated) per
-    # invocation, simulating the five scalar queries the probe runs.
     _make_executable(
         bin_dir / "psql",
         "#!/usr/bin/env bash\n"
@@ -90,7 +69,6 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
 
 def _stub_alert_issue(bin_dir: Path) -> None:
-    """Replace alert-issue.sh with a logging stub for freshness-probe tests."""
     _make_executable(
         bin_dir / "alert-issue.sh",
         "#!/usr/bin/env bash\n"
@@ -116,9 +94,6 @@ def _run(script: Path, args: list[str], env: dict[str, str]) -> subprocess.Compl
     )
 
 
-# --- alert-issue.sh ----------------------------------------------------------
-
-
 def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None:
     env, _bin = _stubbed_env(tmp_path)
     log = tmp_path / "cmd.log"
@@ -127,7 +102,7 @@ def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
         GH_REPO="mgkdante/transit",
-        GH_ISSUE_LIST_OUTPUT="",  # no open issue
+        GH_ISSUE_LIST_OUTPUT="",
     )
 
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stm stale", "details"], env)
@@ -136,7 +111,6 @@ def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None
     lines = _read_log(log)
     create = [ln for ln in lines if ln.startswith("gh|issue create")]
     assert len(create) == 1
-    # Both labels must be applied so resolve can find the issue later.
     assert "pipeline-alert" in create[0]
     assert "alert:freshness" in create[0]
 
@@ -149,14 +123,13 @@ def test_alert_issue_fire_is_noop_when_issue_already_open(tmp_path) -> None:
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
         GH_REPO="mgkdante/transit",
-        GH_ISSUE_LIST_OUTPUT="123",  # an issue is already open
+        GH_ISSUE_LIST_OUTPUT="123",
     )
 
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stm stale", "details"], env)
 
     assert result.returncode == 0, result.stderr
     lines = _read_log(log)
-    # No new issue, no comment spam during an ongoing outage.
     assert not any(ln.startswith("gh|issue create") for ln in lines)
 
 
@@ -168,7 +141,7 @@ def test_alert_issue_resolve_comments_and_closes(tmp_path) -> None:
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
         GH_REPO="mgkdante/transit",
-        GH_ISSUE_LIST_OUTPUT="123",  # open issue to resolve
+        GH_ISSUE_LIST_OUTPUT="123",
     )
 
     result = _run(ALERT_ISSUE, ["resolve", "freshness", "recovered"], env)
@@ -187,7 +160,7 @@ def test_alert_issue_resolve_noop_without_open_issue(tmp_path) -> None:
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
         GH_REPO="mgkdante/transit",
-        GH_ISSUE_LIST_OUTPUT="",  # nothing open
+        GH_ISSUE_LIST_OUTPUT="",
     )
 
     result = _run(ALERT_ISSUE, ["resolve", "freshness", "recovered"], env)
@@ -213,9 +186,6 @@ def test_alert_issue_propagates_gh_failure(tmp_path) -> None:
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stm stale", "details"], env)
 
     assert result.returncode != 0
-
-
-# --- freshness-probe.sh ------------------------------------------------------
 
 
 def _manifest_json(live_generated_utc: datetime) -> str:

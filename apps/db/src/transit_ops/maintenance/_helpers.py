@@ -1,5 +1,3 @@
-"""Shared transaction and result contracts for maintenance tiers."""
-
 from __future__ import annotations
 
 import logging

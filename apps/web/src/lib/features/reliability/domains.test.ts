@@ -1,8 +1,3 @@
-// domains.test.ts — pins the S9B OTP-trend zoom helper + the DECISIONS A2 "keep the pair"
-// (network [0,15] p90-capable vs lines [0,8] avg-only). The zoom must be DATA-ANCHORED,
-// MIN-SPAN-floored, and [0,100]-CLAMPED — never an in-view /max normalization, never a
-// fabricated slope on a genuinely flat series.
-
 import { describe, expect, it } from 'vitest';
 import {
 	DELAY_POS_DOMAIN,
@@ -23,7 +18,6 @@ describe('otpTrendDomain — data-anchored, min-span-floored, [0,100]-clamped (S
 	it('a near-flat 87/88 week gets a floored span so the wiggle shows slope (never sub-pixel)', () => {
 		const [min, max] = otpTrendDomain([87, 88, 87, 88]);
 		expect(max - min).toBeGreaterThanOrEqual(OTP_TREND_MIN_SPAN);
-		// The real values sit strictly INSIDE the padded window (honest, not edge-pinned).
 		expect(min).toBeLessThan(87);
 		expect(max).toBeGreaterThan(88);
 	});
@@ -33,7 +27,6 @@ describe('otpTrendDomain — data-anchored, min-span-floored, [0,100]-clamped (S
 		expect(max - min).toBeGreaterThanOrEqual(OTP_TREND_MIN_SPAN);
 		expect(min).toBeLessThanOrEqual(88);
 		expect(max).toBeGreaterThanOrEqual(88);
-		// The value is NOT normalized to an edge — it lands somewhere inside the frame.
 		expect(min).toBeLessThan(88);
 		expect(max).toBeGreaterThan(88);
 	});
@@ -68,8 +61,6 @@ describe('otpTrendDomain — data-anchored, min-span-floored, [0,100]-clamped (S
 	});
 
 	it('keeps the 80% reference INSIDE the zoom on prod-shaped data (87-88 wiggle)', () => {
-		// Prod OTP runs above the target; a domain anchored only to the data would
-		// clamp the target hairline to the floor, a falsely positioned anchor.
 		const [min, max] = otpTrendDomain([87, 88, 87, 88, 87]);
 		expect(min).toBeLessThanOrEqual(OTP_TREND_REFERENCE);
 		expect(max).toBeGreaterThanOrEqual(88);

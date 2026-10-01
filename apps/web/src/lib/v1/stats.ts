@@ -1,33 +1,11 @@
-// $lib/v1/stats — the Chart Doctrine honesty spine (client side).
-//
-// The single place the web defines "reliable enough" and the confidence channel,
-// mirroring the server-authoritative values surfaced in Provenance.methodology
-// (min_n_rate / wilson_z). See the Transit Chart Doctrine § "Constants Registry"
-// (Notion → Architecture). DISPLAY-ONLY: the pipeline never suppresses a rate, so
-// the web keeps the raw observation_count and gates presentation here.
-//
-// SSR-safe: pure functions + constants, no DOM, no `window`, no Math.random.
-
-/** Proportion reliability floor (OTP / cancellation / silent / on-time-band %). */
 export const MIN_N_RATE = 30;
-/** Below this denominator, show the raw fraction — a percentage string is forbidden. */
 const RATE_DISPLAY_FLOOR = 10;
-/** n ≤ this → prose, never a chart. */
 const SENTENCE_FLOOR = 3;
-/** A connected time-series line needs at least this many real points. */
 export const MIN_POINTS_FOR_LINE = 7;
-/** 95% two-sided Wilson score interval. */
 export const WILSON_Z = 1.96;
 
-/** Degradation ladder bucket for a sample of size `n` (Doctrine §4.0). */
 export type DisplayTier = 'full' | 'strip' | 'sentence' | 'none';
 
-/**
- * The honest display tier for a sample size. `none` when n is missing/zero;
- * `sentence` for n ≤ {@link SENTENCE_FLOOR}; `strip` for 4..<MIN_N_RATE;
- * `full` at/above {@link MIN_N_RATE}. Unknown depth (null/undefined) → `none` so a
- * caller never assumes `full` off a missing count.
- */
 export function tierFor(n: number | null | undefined): DisplayTier {
 	if (n == null || !Number.isFinite(n) || n <= 0) return 'none';
 	if (n <= SENTENCE_FLOOR) return 'sentence';
@@ -35,23 +13,14 @@ export function tierFor(n: number | null | undefined): DisplayTier {
 	return 'full';
 }
 
-/** True when a rate has enough observations to print as a reliable percentage. */
 export function isReliableRate(n: number | null | undefined): boolean {
 	return n != null && Number.isFinite(n) && n >= MIN_N_RATE;
 }
 
-/** True when a non-zero count is too small to show even as a raw figure. */
 export function isSuppressedCount(n: number | null | undefined): boolean {
 	return n != null && n > 0 && n < RATE_DISPLAY_FLOOR;
 }
 
-/**
- * 95% Wilson score interval [lo, hi] as a PROPORTION (0..1) for `successes`/`n`, or
- * null when the numerator is unknown or the denominator is falsy/≤0. UNROUNDED —
- * the single Wilson kernel both {@link wilsonBounds} (percent, rounded) and the §0
- * verdict consume, so proportion- and percent-domain callers agree on z and clamp.
- * `successes` is clamped into [0, n]; the bounds are clamped into [0, 1].
- */
 export function wilsonBoundsProportion(
 	successes: number | null | undefined,
 	n: number | null | undefined,
@@ -70,13 +39,6 @@ export function wilsonBoundsProportion(
 	return [lo, hi];
 }
 
-/**
- * 95% Wilson score interval [lo, hi] in PERCENT (0..100) for `successes`/`n`, or
- * null when the numerator is unknown or the denominator is falsy/≤0. Byte-for-byte
- * the server's `_wilson_bounds` (same z, same clamp, same rounding) so a
- * client-computed bound (live tier) matches a server-emitted one. `successes` is
- * clamped into [0, n].
- */
 export function wilsonBounds(
 	successes: number | null | undefined,
 	n: number | null | undefined,
@@ -87,7 +49,6 @@ export function wilsonBounds(
 	return [round1(p[0] * 100), round1(p[1] * 100)];
 }
 
-/** Wilson lower bound in percent, or null. Rank on THIS, never the raw rate. */
 export function wilsonLo(
 	successes: number | null | undefined,
 	n: number | null | undefined,
@@ -96,7 +57,6 @@ export function wilsonLo(
 	return wilsonBounds(successes, n, z)?.[0] ?? null;
 }
 
-/** Wilson upper bound in percent, or null. */
 export function wilsonHi(
 	successes: number | null | undefined,
 	n: number | null | undefined,
@@ -105,12 +65,6 @@ export function wilsonHi(
 	return wilsonBounds(successes, n, z)?.[1] ?? null;
 }
 
-/**
- * Stable descending rank by a lower-bound accessor (the Wilson lower bound a
- * period already carries, or a client-computed one). Items whose bound is
- * null/NaN sort LAST in their original order — a missing bound never out-ranks a
- * real one. Returns a new array; the input is not mutated.
- */
 export function rankByLowerBound<T>(
 	items: readonly T[],
 	lowerBound: (item: T) => number | null | undefined,
@@ -120,7 +74,7 @@ export function rankByLowerBound<T>(
 		.sort((a, b) => {
 			const av = a.lb == null || Number.isNaN(a.lb) ? -Infinity : a.lb;
 			const bv = b.lb == null || Number.isNaN(b.lb) ? -Infinity : b.lb;
-			return bv - av || a.i - b.i; // ties + missing keep input order (stable)
+			return bv - av || a.i - b.i;
 		})
 		.map((entry) => entry.item);
 }

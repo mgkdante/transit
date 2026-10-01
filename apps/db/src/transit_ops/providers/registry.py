@@ -9,7 +9,6 @@ from transit_ops.settings import Settings, get_settings
 
 
 def load_provider_manifest(path: Path) -> ProviderManifest:
-    """Load and validate a single provider manifest file."""
 
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):

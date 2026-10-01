@@ -1,5 +1,3 @@
-// provenanceViews.test.ts — the provenance section view-model selectors.
-
 import { describe, it, expect } from 'vitest';
 import {
 	verdictFor,
@@ -51,11 +49,8 @@ describe('pipelineNotesOf', () => {
 		const keys = notes.map((n) => n.key);
 		expect(keys).toContain('network_no_data');
 		expect(keys).toContain('wilson_z');
-		// An UNKNOWN key still renders, humanized (never dropped).
 		expect(keys).toContain('brand_new_key');
-		// The threaded key is excluded.
 		expect(keys).not.toContain('otp_definition');
-		// A labelled key uses its label; an unlabelled one falls back to the humanized key.
 		expect(notes.find((n) => n.key === 'network_no_data')?.label).toBe('Network no-data honesty');
 		expect(notes.find((n) => n.key === 'brand_new_key')?.label).toBe('brand new key');
 	});

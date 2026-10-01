@@ -155,8 +155,6 @@ function retainedDay(
 	};
 }
 
-// The daily adapter rounds these to 1.1 and 1.0 minutes. Pooling those rounded
-// points would print 1.0; pooling the exact sums prints the truthful 1.1.
 const retainedPartitions = [
 	partition('2026-01', [
 		retainedDay(WINDOW.from, 40, 0, 2_758, {

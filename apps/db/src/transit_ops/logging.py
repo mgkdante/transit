@@ -4,7 +4,6 @@ import logging
 
 
 def configure_logging(log_level: str) -> None:
-    """Configure a simple process-wide logging format."""
 
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.basicConfig(

@@ -1,16 +1,3 @@
-// TerminalPanel.test.ts — the ONE terminal idiom (§C2.3), DOM gate.
-//
-// TerminalPanel absorbed (and retired) TerminalChrome: strict superset (signal head + hazard
-// separator + title/tag/status/footer) PLUS the meta/footer snippet slots and
-// a flat data chassis. This gate locks:
-//   - the chassis rides the SOLID surface + border-rule frame with no decorative
-//     cursor overlay or text shadow;
-//   - the titlebar renders the three-aspect signal head (aria-hidden furniture)
-//     and the mono title/tag;
-//   - the right meta slot (snippet) and, failing that, the status string;
-//   - the footer readout in both snippet and string (label/value) forms;
-//   - the signal head is static rather than pulse-glowing.
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
@@ -33,13 +20,8 @@ describe('TerminalPanel — flat data chassis', () => {
 	it('rides the SOLID surface, border-rule frame and radius-lg — no alpha', () => {
 		const { container } = render(TerminalPanel, { props: { title: 'demo' } });
 		const style = getComputedStyle(root(container));
-		// Chassis tokens are set on the inline/authored style; assert the class
-		// carries them via the stylesheet (jsdom resolves to the var() references).
 		const css = root(container).outerHTML;
 		expect(css).toContain('terminal-panel');
-		// The style block (module-scoped) declares the tokens — sanity via the
-		// computed style falling back to empty in jsdom is not reliable, so we
-		// assert structurally that the panel is the styled root, not the body.
 		expect(style).toBeTruthy();
 	});
 

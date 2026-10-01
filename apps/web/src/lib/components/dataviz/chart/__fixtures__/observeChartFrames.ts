@@ -1,6 +1,5 @@
 import { vi } from 'vitest';
 
-/** Happy DOM has no layout delivery; leave other observers and chart rendering intact. */
 export function observeChartFrames(width: number, height: number): void {
 	vi.stubGlobal(
 		'ResizeObserver',

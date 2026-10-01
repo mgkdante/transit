@@ -1,14 +1,3 @@
-"""Real-DB: GTFS-RT service alerts reuse the i3 SCD-2 silver + gold path.
-
-Proves the reuse end to end against the real schema: a converted GTFS-RT alerts
-payload stored in raw.i3_alert_snapshots behind a ``run_kind='service_alerts'``
-ingestion run (exercises migration 0053) merges through load_i3_snapshot_to_silver
-into silver.i3_alerts / silver.i3_alert_informed_entities and surfaces in the
-gold.current_i3_alerts view — with zero new silver/gold code.
-
-Runs ONLY with TRANSIT_TEST_DATABASE_URL on a disposable Postgres at head;
-CI/local-only. One transaction, rolled back.
-"""
 
 from __future__ import annotations
 
@@ -33,8 +22,8 @@ def _service_alerts_payload() -> dict[str, object]:
     entity.id = "alert-A1"
     alert = entity.alert
     period = alert.active_period.add()
-    period.start = 1_700_000_000  # past
-    period.end = 4_000_000_000  # far future, so the alert is current
+    period.start = 1_700_000_000
+    period.end = 4_000_000_000
     alert.cause = gtfs_realtime_pb2.Alert.CONSTRUCTION
     alert.effect = gtfs_realtime_pb2.Alert.DETOUR
     header = alert.header_text.translation.add()

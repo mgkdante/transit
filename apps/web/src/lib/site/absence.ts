@@ -1,5 +1,3 @@
-// Provider-independent absence vocabulary; service-window reasons retain their original owner.
-
 import type { Locale } from '$lib/i18n';
 import type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
 
@@ -7,7 +5,6 @@ export type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow
 export type { AbsenceReason, AbsenceSignals } from './serviceWindow';
 export { inferAbsenceReason } from './serviceWindow';
 
-/** Field absence is distinct from the service-window reason for a whole block. */
 export type ValueAbsenceKey =
 	| 'not-reported'
 	| 'not-reporting'
@@ -24,10 +21,8 @@ export type ValueAbsenceKey =
 	| 'no-metric-inventory'
 	| 'no-retained-data';
 
-/** Service-window and field-level reasons share one presentation vocabulary. */
 export type AbsenceReasonKey = ServiceWindowReasonKey | ValueAbsenceKey;
 
-/** Narrow on `known`; a measured zero remains a present value. */
 export type Maybe<T> =
 	| { readonly known: true; readonly value: T }
 	| {
@@ -36,12 +31,10 @@ export type Maybe<T> =
 			readonly params?: Readonly<Record<string, string | number>>;
 	  };
 
-/** Wrap a present value. */
 export function known<T>(value: T): Maybe<T> {
 	return { known: true, value };
 }
 
-/** Mark a value absent with a typed reason + optional copy params. */
 export function absent<T>(
 	reason: AbsenceReasonKey,
 	params?: Readonly<Record<string, string | number>>,
@@ -49,19 +42,16 @@ export function absent<T>(
 	return params ? { known: false, reason, params } : { known: false, reason };
 }
 
-/** Localized copy uses {first}/{age} parameters supplied by the caller, never invented values. */
 type ReasonCopy = { readonly short: string; readonly why: string };
 
 export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> = {
 	en: {
-		// service-window keys (block-level)
 		'metro-no-realtime': { short: 'No live data', why: 'live positions are not published here' },
 		'closed-opens-at': { short: 'Closed', why: 'service is closed, opens at {first}' },
 		'overnight-opens-at': { short: 'No service', why: 'no service at this hour, opens at {first}' },
 		'before-open': { short: 'Not started', why: 'service has not started yet, opens at {first}' },
 		'scheduled-silent': { short: 'No signal', why: 'scheduled, but nothing is reporting live' },
 		'last-seen': { short: 'No recent position', why: 'last seen {age}' },
-		// value-absence keys (per-field)
 		'not-reported': { short: 'Unknown', why: 'not reported in the live feed' },
 		'not-reporting': { short: 'Stale', why: 'this vehicle is not reporting' },
 		'not-in-schedule': { short: 'Unknown', why: 'not in the schedule' },
@@ -99,7 +89,6 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		},
 	},
 	fr: {
-		// service-window keys (block-level)
 		'metro-no-realtime': {
 			short: 'Aucune donnée en direct',
 			why: 'les positions en direct ne sont pas publiées ici',
@@ -115,7 +104,6 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 			why: 'prévu à l’horaire, mais rien ne se signale',
 		},
 		'last-seen': { short: 'Aucune position récente', why: 'dernière position {age}' },
-		// value-absence keys (per-field)
 		'not-reported': { short: 'Inconnu', why: 'non signalé dans le flux en direct' },
 		'not-reporting': { short: 'Obsolète', why: 'ce véhicule ne se signale pas' },
 		'not-in-schedule': { short: 'Inconnu', why: 'absent de l’horaire' },
@@ -154,18 +142,12 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 	},
 };
 
-/**
- * The resolved, render-ready absence description. `tone` is a SEMANTIC token
- * string (not a colour) the visual layer maps to a class/var — always "unknown"
- * here: an honest absence is calm + neutral, never an error or a warning.
- */
 export interface AbsenceDescription {
 	readonly label: string;
 	readonly why: string;
 	readonly tone: 'unknown';
 }
 
-/** Interpolate `{name}` placeholders in a copy string from params (missing → left as-is). */
 function interpolate(template: string, params?: Readonly<Record<string, string | number>>): string {
 	if (!params) return template;
 	return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
@@ -173,7 +155,6 @@ function interpolate(template: string, params?: Readonly<Record<string, string |
 	);
 }
 
-/** Unknown keys fall back to not-reported copy rather than exposing an internal key. */
 export function describeAbsence(
 	reason: AbsenceReasonKey,
 	locale: Locale,
@@ -188,12 +169,10 @@ export function describeAbsence(
 	};
 }
 
-/** Canonical terse form for string-only chart, SVG, aria, and control consumers. */
 export function absenceShort(reason: AbsenceReasonKey, locale: Locale): string {
 	return describeAbsence(reason, locale).label;
 }
 
-/** Canonical complete text form for string-only consumers that cannot render the chassis. */
 export function absenceSentence(
 	reason: AbsenceReasonKey,
 	locale: Locale,
@@ -203,23 +182,19 @@ export function absenceSentence(
 	return `${description.label} · ${description.why}`;
 }
 
-/** A stale entity is not-reporting; a missing field on a present entity is not-reported. */
 export function fieldAbsenceReason(signals: { stale?: boolean }): ValueAbsenceKey {
 	return signals.stale ? 'not-reporting' : 'not-reported';
 }
 
-/** Preserve actionable IDs: unknown stops disclose their missing name; routes use their public number. */
 const NAME_FALLBACK_COPY: Record<Locale, { stop: string; route: string }> = {
 	en: { stop: 'Stop {id} (name unavailable)', route: 'Route {id}' },
 	fr: { stop: 'Arrêt {id} (nom indisponible)', route: 'Ligne {id}' },
 };
 
-/** Labelled fallback for an unresolved STOP name (keeps the id, says it is unavailable). */
 export function stopNameFallback(id: string, locale: Locale): string {
 	return interpolate((NAME_FALLBACK_COPY[locale] ?? NAME_FALLBACK_COPY.en).stop, { id });
 }
 
-/** Labelled fallback for an unresolved ROUTE long name (explicit "Route {id}"). */
 export function routeNameFallback(id: string, locale: Locale): string {
 	return interpolate((NAME_FALLBACK_COPY[locale] ?? NAME_FALLBACK_COPY.en).route, { id });
 }

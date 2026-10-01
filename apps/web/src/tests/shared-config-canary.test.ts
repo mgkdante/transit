@@ -148,7 +148,7 @@ describe('Transit shared-config canary', () => {
 		try {
 			packageManifestPath = createRequire(import.meta.url).resolve('@yesid/config/package.json');
 		} catch {
-			// The assertion below reports the missing Release dependency as contract drift.
+			// The assertion below reports the missing release dependency as contract drift.
 		}
 		expect(packageManifestPath).toBeDefined();
 		if (!packageManifestPath) return;

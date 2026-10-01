@@ -34,7 +34,6 @@ export type ArticleCopy<F extends Input, O extends ArticleCopyOptions = object> 
 		Omit<F, 'watermark' | 'tags'>
 >;
 
-/** Adds the shared ArticleHeader chrome without changing caller field order. */
 export function articleCopy<const F extends Input, const O extends ArticleCopyOptions = object>(
 	locale: Locale,
 	fragment: F,

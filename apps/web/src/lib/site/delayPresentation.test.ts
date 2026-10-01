@@ -1,4 +1,3 @@
-// delayPresentation.test.ts — the shared delay-reading helpers (slice-S6).
 import { describe, expect, it } from 'vitest';
 import {
 	delayTone,
@@ -56,8 +55,6 @@ describe('delayLabel', () => {
 	});
 
 	it('falls back to onTime for an absent delay when noDelay copy is omitted', () => {
-		// Scheduled-board / known-only surfaces (StopDetail, the map) omit noDelay so
-		// an absent delay reads "on time" rather than "no data".
 		const noNoDelay = { early: copy.early, late: copy.late, onTime: 'On time' };
 		expect(delayLabel(null, noNoDelay)).toBe('On time');
 		expect(delayLabel(undefined, noNoDelay)).toBe('On time');

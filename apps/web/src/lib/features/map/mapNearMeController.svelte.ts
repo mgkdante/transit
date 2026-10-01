@@ -59,7 +59,6 @@ const NAVIGATION_OPTIONS = {
 	noScroll: true,
 } as const;
 
-/** Owns the externally coupled near-me state machine behind injected browser seams. */
 export function createMapNearMeController(
 	dependencies: MapNearMeControllerDependencies,
 ): MapNearMeController {
@@ -71,10 +70,6 @@ export function createMapNearMeController(
 	let urlKey = $state('');
 	let disposed = false;
 	const lifetime = new AbortController();
-	// S5-377 B1: syncUrl ("write this origin to the URL?") and urlBacked
-	// ("does the URL own it?") are separate questions — a URL-adopted origin
-	// is owned by the URL yet must not echo back into it; a device fix is
-	// neither written nor owned.
 	let urlBacked = $state(true);
 
 	function syncToUrl(nextOrigin: NearMeOrigin): void {
@@ -104,8 +99,6 @@ export function createMapNearMeController(
 		const nearTarget = dependencies.readTarget(searchParams);
 		if (!nearTarget) {
 			urlKey = '';
-			// Only a URL-backed origin answers to the URL; a device fix (privacy:
-			// coordinates never enter the query string) must survive URL moves.
 			if (urlBacked) origin = null;
 			return;
 		}
@@ -156,8 +149,6 @@ export function createMapNearMeController(
 			(position) => {
 				if (disposed) return;
 				loading = false;
-				// A device fix never enters the URL (WS8-A privacy: no coordinate
-				// leak) and honestly frames at place precision, not street level.
 				setOrigin(
 					{
 						lat: position.coords.latitude,

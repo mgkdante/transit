@@ -1,9 +1,3 @@
-// Co-located copy for the map selection-detail panel (the right-overlay / mobile
-// sheet body). Bilingual vocabulary as DATA, lifted out of MapSelectionDetail.svelte
-// so the component is markup + wiring only (logic/copy separation). Some entries are
-// count/age formatters, so the shape is inferred via `as const` rather than a hand-
-// written interface.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const MAP_SELECTION_DETAIL_COPY = defineCopy({
@@ -57,12 +51,10 @@ export const MAP_SELECTION_DETAIL_COPY = defineCopy({
 		detailRetrying: 'Refreshing live detail',
 		detailFailed: 'Live detail is unavailable',
 		retry: 'Retry',
-		// The "Open full analysis →" exit out of the map walled garden (§C5.2).
 		openFull: 'Open full analysis',
 		openFullRoute: (route: string) => `Open the full analysis for route ${route}`,
 		openFullStop: (stop: string) => `Open the full analysis for stop ${stop}`,
 		openFullTrip: (trip: string) => `Open the full analysis for trip ${trip}`,
-		// (i) explainer link text inside the map popover.
 		infoLink: 'How this is measured',
 		infoTrigger: (name: string) => `About ${name}`,
 	},
@@ -116,16 +108,13 @@ export const MAP_SELECTION_DETAIL_COPY = defineCopy({
 		detailRetrying: 'Actualisation des données en direct',
 		detailFailed: 'Détail en direct indisponible',
 		retry: 'Réessayer',
-		// The "Open full analysis →" exit out of the map walled garden (§C5.2).
 		openFull: 'Voir l’analyse complète',
 		openFullRoute: (route: string) => `Voir l’analyse complète de la ligne ${route}`,
 		openFullStop: (stop: string) => `Voir l’analyse complète de l’arrêt ${stop}`,
 		openFullTrip: (trip: string) => `Voir l’analyse complète du trajet ${trip}`,
-		// (i) explainer link text inside the map popover.
 		infoLink: 'Comment c’est mesuré',
 		infoTrigger: (name: string) => `À propos de ${name}`,
 	},
 });
 
-/** The selection-detail copy for one locale (the shape both locales share). */
 export type MapSelectionDetailCopy = (typeof MAP_SELECTION_DETAIL_COPY)[Locale];

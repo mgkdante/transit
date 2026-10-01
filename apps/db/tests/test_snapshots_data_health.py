@@ -1,12 +1,3 @@
-"""FakeConn tests for build_data_health (S11 status/data_health.json).
-
-No real DB — canned snapshot_publish_state + feed_freshness_current rows fed
-through the same FakeConn the other builder tests use. Covers: all three lanes
-present with gate telemetry; a pre-0078 lane (NULL gate columns) emitting an
-honest-NULL gate block; a missing tier row omitted (honest-null lane, never a
-fabricated zero-age lane); the historic tier surfacing as the 'rollup' lane; and
-feeds mirroring feed_freshness_current.
-"""
 
 from __future__ import annotations
 
@@ -63,25 +54,19 @@ def test_build_data_health_all_three_lanes_present() -> None:
     )
     out = build_data_health(conn, provider_id="stm", generated_utc="2026-07-02T12:00:00Z")
     assert isinstance(out, DataHealth)
-    # Fixed presentation order: live, static, rollup.
     assert [lane.lane for lane in out.lanes] == ["live", "static", "rollup"]
     live, static, rollup = out.lanes
     assert live.gate is not None and live.gate.verdict == "pass"
     assert static.gate is not None and static.gate.verdict == "warn"
-    # historic tier -> 'rollup' citizen label; fail verdict carried through.
     assert rollup.lane == "rollup" and rollup.gate is not None
     assert rollup.gate.verdict == "fail" and rollup.gate.errors == 2
-    # age_s is the server-computed integer (Decimal coerced), not a client clock.
     assert live.age_s == 42 and isinstance(live.age_s, int)
     assert live.files_total == 12
-    # feeds mirror feed_freshness_current.
     assert [f.feed for f in out.feeds] == ["trip_updates", "vehicle_positions"]
     assert out.feeds[0].age_s == 30 and out.feeds[0].status == "fresh"
 
 
 def test_build_data_health_pre_0078_lane_emits_null_gate_block() -> None:
-    """A lane published before migration 0078 has every gate_* column NULL — the
-    gate block is honestly ABSENT (None), never a fabricated all-null/pass shape."""
     conn = FakeConn(
         {
             _lanes_key(): [
@@ -106,16 +91,14 @@ def test_build_data_health_pre_0078_lane_emits_null_gate_block() -> None:
     assert len(out.lanes) == 1
     lane = out.lanes[0]
     assert lane.lane == "live"
-    assert lane.gate is None  # honest-NULL: gate outcome UNKNOWN, not assumed pass
+    assert lane.gate is None
     assert lane.age_s == 100 and lane.files_total == 6
 
 
 def test_build_data_health_missing_tier_row_omitted_not_fabricated() -> None:
-    """A tier with no publish-state row is ABSENT from lanes (the web renders it as
-    honest not-applicable) — build_data_health never emits a zero-age placeholder."""
     conn = FakeConn(
         {
-            _lanes_key(): [_row("live"), _row("historic")],  # no 'static' row
+            _lanes_key(): [_row("live"), _row("historic")],
             _feeds_key(): [],
         }
     )
@@ -125,8 +108,6 @@ def test_build_data_health_missing_tier_row_omitted_not_fabricated() -> None:
 
 
 def test_build_data_health_never_published_lane_has_null_age() -> None:
-    """A row whose generated_utc is NULL (lane exists but never completed a publish)
-    carries honest-NULL last_publish_utc + age_s, never a fabricated 0."""
     conn = FakeConn(
         {
             _lanes_key(): [

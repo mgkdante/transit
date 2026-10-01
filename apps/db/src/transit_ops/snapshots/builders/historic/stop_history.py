@@ -1,5 +1,3 @@
-"""Full-retention per-Stop daily metrics partitioned by entity and local month."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -496,7 +494,6 @@ class StopHistoryStreamSummary:
             yield index
 
     def build_indexes(self, *, fallback_generated_utc: str) -> list[HistoricCollectionIndex]:
-        """Compatibility materializer; publisher and validator must use ``iter_indexes``."""
 
         return list(self.iter_indexes(fallback_generated_utc=fallback_generated_utc))
 

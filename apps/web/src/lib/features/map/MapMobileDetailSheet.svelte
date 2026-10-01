@@ -1,11 +1,3 @@
-<!--
-  MapMobileDetailSheet — the mobile detail BottomSheet, sibling of the desktop overlay.
-
-  SINGLE RESPONSIBILITY: render the selected detail in a bottom sheet on mobile (the
-  desktop detail lives in the right overlay). Deliberately a SEPARATE sibling so the
-  desktop overlay vs mobile sheet split stays explicit. Owns no state: the `{#if
-  detailOpen && !layout.isDesktop}` gate stays in MapHero; this is the BODY. No CSS.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import type { Snippet } from 'svelte';

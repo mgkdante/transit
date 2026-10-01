@@ -1,25 +1,3 @@
-"""Real-database drill-test for the rebuild-from-raw realtime replay gate.
-
-This is the PROOF behind thin-silver retention and disaster recovery: the
-windowed replay functions (``find_realtime_bronze_snapshots`` +
-``load_realtime_snapshots_to_silver``) have NO production callers today, yet the
-nightly pg_dump excludes realtime stop-times and bets recovery on this path. The
-drill seeds a small window of RAW Bronze realtime .pb snapshots on local disk,
-loads them to Silver + builds Gold to capture the TRUTH, DELETES the realtime
-Silver rows (simulating a thin-silver prune), then RE-DERIVES Silver from the raw
-.pb via the real replay path (``replay-realtime-silver`` CLI core) and asserts the
-reconstructed Silver row counts AND key Gold delay facts MATCH the captured truth
-exactly. The truth is captured dynamically from the first normal load (never
-hardcoded), so a tautology cannot pass.
-
-Runs ONLY against a disposable Postgres migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://transit_ci@localhost:5433/transit_ci \
-        uv run pytest tests/test_replay_realtime_silver_real_db.py -v
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -64,15 +42,10 @@ from transit_ops.silver.realtime_gtfs import (
 def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN001
     engine, settings, seed_provider
 ) -> None:
-    # --- 1. Seed raw bronze window + static schedule (committed). ---------------
     with engine.begin() as connection:
         _seed_provider_and_static(connection, seed_provider)
         _seed_raw_realtime_snapshots(connection)
 
-    # --- 2. NORMAL load + Gold build -> capture the TRUTH. ----------------------
-    # Establish ground truth via the standard per-snapshot load path
-    # (skip_existing=False), DISTINCT from the windowed replay path exercised in
-    # step 4, so equality in step 5 is a real cross-path proof, not a tautology.
     bronze_storage = get_bronze_storage(settings, project_root=Path("/tmp"))
     with engine.connect() as connection:
         truth_snapshots = find_realtime_bronze_snapshots(
@@ -99,14 +72,12 @@ def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN0
         truth_silver = _silver_counts(connection)
         truth_delays = _delay_facts(connection)
 
-    # Non-tautology guards: the truth must be NON-EMPTY and reflect both snapshots.
     assert truth_silver["silver.rt_feed_snapshots"] == len(SNAPSHOTS)
     assert truth_silver["silver.rt_trip_updates"] == len(SNAPSHOTS)
     assert truth_silver["silver.rt_trip_update_stop_times"] == len(SNAPSHOTS)
     assert len(truth_delays) == len(SNAPSHOTS)
     assert all(n > 0 for (n, _total) in truth_delays.values())
 
-    # --- 3. PRUNE realtime Silver (simulate thin-silver retention). -------------
     with engine.begin() as connection:
         for table_name in REALTIME_SILVER_TABLES:
             connection.execute(
@@ -119,7 +90,6 @@ def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN0
         "thin-silver prune must remove every realtime Silver row"
     )
 
-    # --- 4. REPLAY from RAW Bronze (the gated DR path) + rebuild Gold. ----------
     replay_result = replay_realtime_silver_window(
         PROVIDER,
         start_utc=WINDOW_START,
@@ -134,7 +104,6 @@ def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN0
     )
     build_gold_marts(PROVIDER, settings=settings, registry=_StubRegistry(), engine=engine)
 
-    # --- 5. ASSERT reconstruction MATCHES the captured truth. -------------------
     with engine.connect() as connection:
         rebuilt_silver = _silver_counts(connection)
         rebuilt_delays = _delay_facts(connection)
@@ -148,8 +117,6 @@ def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN0
 
 
 def test_replay_empty_window_is_clean_noop(engine, settings, seed_provider) -> None:  # noqa: ANN001
-    # Seed the provider + static (so the registry/manifest resolve) but NO raw
-    # realtime snapshots in the window.
     with engine.begin() as connection:
         _seed_provider_and_static(connection, seed_provider)
 

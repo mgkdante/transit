@@ -1,5 +1,3 @@
-"""Prepare compatibility surfaces and their pointer-last publication stages."""
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -38,7 +36,6 @@ def build(conn: Connection, *, provider_id: str, settings: Settings, stamp: str)
 
 
 def _receipts_collection_generation_id(receipts: Mapping[str, object]) -> str:
-    """Hash exact Receipt semantics while excluding only run-volatile envelope fields."""
 
     canonical: list[dict[str, object]] = []
     for date_str, receipt in sorted(receipts.items()):
@@ -55,7 +52,6 @@ def _receipts_collection_generation_id(receipts: Mapping[str, object]) -> str:
 
 
 def _finalize_receipts_collection_generation(items: Sequence[PutItem]) -> None:
-    """Pin the Receipts index after every Receipt carries its published semantics."""
 
     receipts = {
         payload.date: payload
@@ -79,11 +75,6 @@ def _finalize_receipts_collection_generation(items: Sequence[PutItem]) -> None:
 def _build_items(
     conn: Connection, *, provider_id: str, settings: Settings, stamp: str
 ) -> tuple[list[PutItem], list[PutItem], list[PublishStage], builders.AlertArchiveBundle]:
-    """Build compatibility surfaces sequentially on the caller's connection.
-
-    Each discovery stage follows its complete child stage. The returned objects
-    are stamped and receipt generations finalized before any gate or upload.
-    """
 
     items: list[PutItem] = []
 
@@ -130,7 +121,7 @@ def _build_items(
         for route_id in route_ids
     ]
 
-    # Upload discovery after its route files; this index controls reliability badges.
+    # Publish discovery after its referenced route files.
     route_index_item = (
         "historic/route_reliability/index.json",
         RouteReliabilityIndex(
@@ -154,7 +145,7 @@ def _build_items(
         for date_str, receipt in sorted(all_receipts.items())
     ]
 
-    # Publish receipt availability after its date files; preserve unknown data and schedule state.
+    # Publish receipt availability after date files.
     receipts_generation_id = envelope.publish_generation_id(provider_id, stamp)
     receipts_available = [
         ReceiptAvailability(
@@ -212,7 +203,6 @@ def _build_items(
 
 
 def _find_network_trend(items: Sequence[PutItem]) -> CollectedItem | None:
-    """Return the (rel_key, payload) of the historic network_trend file, or None."""
     for rel_key, payload, *_ in items:
         if rel_key == "historic/network_trend.json":
             return (rel_key, payload)

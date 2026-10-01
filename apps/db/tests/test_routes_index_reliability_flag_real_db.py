@@ -1,22 +1,3 @@
-"""Real-database test for the routes_index `reliability` availability flag.
-
-build_routes_index sets RouteIndexEntry.reliability=True exactly for the routes
-that appear in gold.route_reliability_weekly / route_reliability_monthly (the
-SAME set publish.py uses to decide which historic/route_reliability/{id}.json
-files to write), so the web loader can skip probing routes with no history and
-the 404 flood disappears. This exercises that join against a live Postgres —
-the FakeConn unit tests cannot prove the real DISTINCT/UNION over real tables.
-
-Runs ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres with
-the transit schema at head 0057, e.g.:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://transit_ci@localhost:5433/transit_ci" \
-        uv run pytest tests/test_routes_index_reliability_flag_real_db.py -v
-
-Each test runs inside one transaction and rolls back — nothing persists.
-Never point this at production. (CI has no Postgres — skipped there.)
-"""
 
 from __future__ import annotations
 
@@ -31,7 +12,6 @@ PROVIDER = "stm_reliability_flag_test"
 ENDPOINT_ID = 920_001
 RUN_ID = 920_001
 VERSION_ID = 920_001
-# Route 100 HAS weekly reliability history; route 200 has none.
 ROUTE_WITH = "100"
 ROUTE_WITHOUT = "200"
 LOADED = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
@@ -89,7 +69,6 @@ def _seed(connection) -> None:
             "loaded": LOADED,
         },
     )
-    # Two routes in the dimension; only one gets reliability history.
     for route_id, sort_order in ((ROUTE_WITH, 1), (ROUTE_WITHOUT, 2)):
         connection.execute(
             text(
@@ -102,8 +81,6 @@ def _seed(connection) -> None:
             ),
             {"p": PROVIDER, "v": VERSION_ID, "route": route_id, "sort": sort_order},
         )
-    # Spine rows for ROUTE_WITH only — this is what flips its flag True (S7-B:
-    # build_routes_index enumerates routes from gold.route_delay_spine).
     connection.execute(
         text(
             """
@@ -123,7 +100,5 @@ def test_reliability_flag_true_only_for_routes_with_history(conn) -> None:
     by_id = {r.id: r for r in idx.routes}
 
     assert set(by_id) == {ROUTE_WITH, ROUTE_WITHOUT}
-    # The route with weekly history is flagged available.
     assert by_id[ROUTE_WITH].reliability is True
-    # The route with NO history is flagged absent (the loader will skip it).
     assert by_id[ROUTE_WITHOUT].reliability is False

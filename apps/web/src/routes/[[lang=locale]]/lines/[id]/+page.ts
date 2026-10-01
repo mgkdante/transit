@@ -5,7 +5,6 @@ import { detailTabFromSearchParams } from '$lib/site/detailTabs';
 import { formatUtc } from '$lib/utils/time';
 
 export const load: PageLoad = async ({ data, url, parent }) => {
-	// Universal data can carry the constructor on both sides of hydration without serializing it.
 	let initialClusters;
 	let initialImportFailed = false;
 	let preparedArticleTime:
@@ -15,7 +14,6 @@ export const load: PageLoad = async ({ data, url, parent }) => {
 		url.searchParams.has('from') ||
 		url.searchParams.has('to') ||
 		url.searchParams.get('grain') === 'range';
-	// Corrections and optional-index fallback remain owned by the existing client coordinator.
 	const settledSelection = !explicitRange || data.lineHistorySeed?.result != null;
 	const grain = url.searchParams.get('grain');
 	const settledGrain =
@@ -40,7 +38,6 @@ export const load: PageLoad = async ({ data, url, parent }) => {
 				const { lang } = await parent();
 				const locale = lang ?? DEFAULT_LOCALE;
 				preparedArticleTime = { routeId: data.seed.id, iso, locale, text: formatUtc(iso, locale) };
-				// Let Kit hydrate in a new task after preparing the label the article actually uses.
 				await new Promise<void>((resolve) => setTimeout(resolve, 0));
 			}
 		}

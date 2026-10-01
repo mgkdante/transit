@@ -20,11 +20,10 @@ const OPTS: HabitsHeatmapOptions = {
 	hourTicks: [0, 6, 12, 18],
 };
 
-/** A 7×24 matrix with one real value + one null in row 0, the rest 0. */
 function makeMatrix(): (number | null)[][] {
 	const m: (number | null)[][] = Array.from({ length: 7 }, () => Array<number | null>(24).fill(0));
-	m[0][8] = 1; // Monday 08:00 = the route's worst hour
-	m[0][3] = null; // Monday 03:00 = no data
+	m[0][8] = 1;
+	m[0][3] = null;
 	return m;
 }
 
@@ -60,9 +59,8 @@ describe('buildHabitsHeatmap', () => {
 	});
 
 	it('pads short rows to 24 columns of honest no-data', () => {
-		const short: (number | null)[][] = [[0.5]]; // 1 row, 1 col
+		const short: (number | null)[][] = [[0.5]];
 		const s = buildHabitsHeatmap(short, 'en', OPTS);
-		// row 0 has 24 cols; the missing ones are null (no data)
 		expect(s.cells[0]).toHaveLength(24);
 		expect(s.cells[0][5].value).toBeNull();
 	});

@@ -1,10 +1,3 @@
-// map/stopsLayer.ts — the static stops layer.
-//
-// One calm yellow diamond, ZOOM-GATED to z≥9 so stops appear as soon as the
-// low-zoom street network appears, with a tiny early ramp to avoid blanketing.
-// Rendered UNDER the vehicle layers (stops are context; buses ride on top).
-// State (e.g. alert=has_alert) will tint via the filter.
-
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { StopIndexEntry } from '$lib/v1/schemas';
 import type { FilterState } from '$lib/filters';
@@ -44,7 +37,6 @@ function matchesStopFilter(stop: StopIndexEntry, filter: FilterState | undefined
 	return !filter || filter.stops.size === 0 || filter.stops.has(stop.id);
 }
 
-/** Build the GeoJSON FeatureCollection for the stop catalogue. */
 export function toStopFeatures(
 	stops: readonly StopIndexEntry[],
 	filter?: FilterState,
@@ -69,7 +61,6 @@ export function toStopFeatures(
 	};
 }
 
-/** Register the (initially empty) stops source. Idempotent. */
 export function addStopsSource(map: MapLibreMap): void {
 	if (map.getSource(STOPS_SOURCE)) return;
 	map.addSource(STOPS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
@@ -78,8 +69,6 @@ export function addStopsSource(map: MapLibreMap): void {
 const FEATURE_HOVERED = ['boolean', ['feature-state', 'hovered'], false];
 const FEATURE_SELECTED = ['boolean', ['feature-state', 'selected'], false];
 
-/** Owner-retunable companion to the vehicle candidate: a primary outer stroke
- * separated from the stop glyph by a background casing disc. */
 export const STOP_HIGHLIGHT_STYLE = Object.freeze({
 	casingToken: 'var(--background)',
 	ringToken: 'var(--primary)',
@@ -153,9 +142,6 @@ function addStopHighlightLayer(map: MapLibreMap): void {
 	);
 }
 
-/** Add the stops layer — yellow DIAMOND sprite, single colour, zoom-gated.
- * Dimmer + smaller than the buses so the live vehicles keep primacy (hierarchy
- * by weight + shape, not hue). Idempotent. */
 export function addStopsLayer(map: MapLibreMap): void {
 	addStopHighlightLayer(map);
 	if (map.getLayer(STOPS_LAYER)) return;
@@ -275,7 +261,6 @@ export function addStopsLayer(map: MapLibreMap): void {
 	} as unknown as LayerSpecification);
 }
 
-/** Replace the rendered stops. */
 export function setStops(
 	map: MapLibreMap,
 	stops: readonly StopIndexEntry[],

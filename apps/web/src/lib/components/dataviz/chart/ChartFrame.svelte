@@ -1,11 +1,8 @@
-<!-- Mount charts near the viewport only after a nonzero size is observed.
-     Keep observing hidden tabs so their charts recover when shown. -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 
 	export interface ChartFrameProps {
-		/** Plot height (any CSS length). Width is fluid (100%). */
 		height?: string;
 		class?: string;
 		children?: Snippet;
@@ -38,7 +35,6 @@
 					io = null;
 				},
 				{
-					// An inner scrolling panel can itself be outside the reader's viewport.
 					root: node.closest('#main'),
 					rootMargin: '200px 0px',
 					threshold: 0,
@@ -70,7 +66,6 @@
 	.chart-frame {
 		position: relative;
 		width: 100%;
-		/* Reserve the plot box before its marks mount, including in flex/grid parents. */
 		min-height: var(--chart-frame-h);
 	}
 </style>

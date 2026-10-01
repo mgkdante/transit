@@ -52,13 +52,12 @@ def _static_already_applied(monkeypatch):
 
 
 class _FakeEngine:
-    """Minimal engine stub supporting 'with engine.connect() as conn'."""
 
     def connect(self):
         return self
 
     def __enter__(self):
-        return self  # used as connection object
+        return self
 
     def __exit__(self, *args):
         pass
@@ -197,7 +196,6 @@ def _skipped_gis_silver_result() -> GisSilverLoadResult:
 
 
 def _patch_gis_steps(monkeypatch, call_order: list[str] | None = None) -> None:
-    """Default-success GIS monkeypatches so static-pipeline tests never hit the network."""
 
     def _ingest(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
         if call_order is not None:
@@ -422,12 +420,9 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(
         )
 
     monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
-    # PR-B / slice-9.8: pruning is DECOUPLED from the cycle. The cycle must NOT
-    # call prune_silver_storage / prune_gold_storage — fail loudly if it does.
 
     result = realtime_cycle("stm")
 
-    # Decoupled cycle: capture -> silver-load -> refresh-gold -> (publish). No prune.
     assert call_order == [
         "capture:trip_updates",
         "load:trip_updates",
@@ -449,7 +444,6 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(
     assert result.step_timings_seconds["capture_i3_alerts"] is not None
     assert result.step_timings_seconds["load_i3_alerts_to_silver"] is not None
     assert result.step_timings_seconds["refresh_gold_realtime"] is not None
-    # Prune timings are gone from the cycle — the pruner service owns them now.
     assert "prune_silver_storage" not in result.step_timings_seconds
     assert "prune_gold_storage" not in result.step_timings_seconds
     assert not hasattr(result, "silver_maintenance")
@@ -634,7 +628,6 @@ def test_run_realtime_worker_loop_rejects_invalid_max_cycles() -> None:
 
 
 def _worker_loop_cycle_result(provider_id: str, *, step_timings=None):
-    """Build a minimal succeeded RealtimeCycleResult for worker-loop tests."""
     return orchestration.RealtimeCycleResult(
         provider_id=provider_id,
         status="succeeded",
@@ -679,7 +672,6 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
     monkeypatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """An uncaught in-cycle exception is logged and the loop continues to the next cycle."""
     cycle_calls: list[str] = []
     storage_identities: list[tuple[int, int]] = []
     sleep_calls: list[float] = []
@@ -722,7 +714,6 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
         max_cycles=2,
     )
 
-    # The first cycle raised; the loop must NOT die — a second cycle ran.
     assert cycle_calls == ["stm", "stm"]
     assert storage_identities[0] == storage_identities[1]
     assert construction_calls == 1
@@ -733,7 +724,6 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
 def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
     monkeypatch,
 ) -> None:
-    """Flipping the shutdown flag at the top of the loop breaks cleanly without a crash."""
     cycle_calls: list[str] = []
     shutdown = {"requested": False}
 
@@ -748,7 +738,6 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
         bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
-        # After draining this cycle, ask the worker to shut down.
         shutdown["requested"] = True
         return _worker_loop_cycle_result(provider_id)
 
@@ -764,12 +753,10 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
         registry=object(),
         engine=object(),
         sleep_fn=lambda _seconds: None,
-        # No max_cycles cap: only the shutdown flag can stop this loop.
         max_cycles=None,
         should_shutdown=lambda: shutdown["requested"],
     )
 
-    # Exactly one cycle drained, then the flag broke the loop.
     assert cycle_calls == ["stm"]
 
 
@@ -1105,9 +1092,6 @@ def test_realtime_orchestration_public_signatures_are_unchanged() -> None:
     ]
 
 
-# --- PR-B / slice-9.8: dedicated pruner loop (decoupled retention) -------------
-
-
 def _pruner_settings(**overrides) -> Settings:
     base = {
         "_env_file": None,
@@ -1119,7 +1103,6 @@ def _pruner_settings(**overrides) -> Settings:
 
 
 def test_run_pruner_loop_runs_both_prunes_each_pass(monkeypatch) -> None:
-    """One pass runs prune_silver_storage THEN prune_gold_storage."""
     call_order: list[str] = []
     monkeypatch.setattr(
         orchestration,
@@ -1151,8 +1134,6 @@ def test_run_pruner_loop_runs_both_prunes_each_pass(monkeypatch) -> None:
 
 
 def test_run_pruner_loop_runs_gold_even_when_silver_prune_raises(monkeypatch) -> None:
-    """0034 invariant: a silver-prune failure must NOT skip the gold prune nor the
-    loop, and vice versa — each prune is independent and best-effort."""
     call_order: list[str] = []
 
     def _failing_silver(provider_id, *, settings, engine):  # noqa: ANN001
@@ -1169,7 +1150,6 @@ def test_run_pruner_loop_runs_gold_even_when_silver_prune_raises(monkeypatch) ->
         )[1],
     )
 
-    # Must not raise — the loop swallows the per-prune failure and continues.
     run_pruner_loop(
         "stm",
         settings=_pruner_settings(),
@@ -1179,12 +1159,10 @@ def test_run_pruner_loop_runs_gold_even_when_silver_prune_raises(monkeypatch) ->
         should_shutdown=lambda: False,
     )
 
-    # Gold still ran despite silver raising.
     assert call_order == ["silver", "gold"]
 
 
 def test_run_pruner_loop_is_interruptible_via_shutdown(monkeypatch) -> None:
-    """A shutdown predicate that flips true after one pass stops the loop cleanly."""
     passes = {"silver": 0}
     shutdown = {"requested": False}
 
@@ -1207,16 +1185,14 @@ def test_run_pruner_loop_is_interruptible_via_shutdown(monkeypatch) -> None:
         settings=_pruner_settings(),
         engine=object(),
         sleep_fn=lambda _seconds: None,
-        max_cycles=None,  # only the shutdown flag can stop it
+        max_cycles=None,
         should_shutdown=lambda: shutdown["requested"],
     )
 
-    # Exactly one pass ran, then the flag broke the loop on the next iteration.
     assert passes["silver"] == 1
 
 
 def test_run_pruner_loop_honors_pipeline_paused(monkeypatch) -> None:
-    """PIPELINE_PAUSED=true sleeps and skips pruning (mirrors the worker loop)."""
     monkeypatch.setattr(
         orchestration,
         "prune_silver_storage",
@@ -1231,7 +1207,6 @@ def test_run_pruner_loop_honors_pipeline_paused(monkeypatch) -> None:
     stop = {"after": 0}
 
     def _should_shutdown() -> bool:
-        # Let the paused branch sleep once, then stop the loop.
         stop["after"] += 1
         return stop["after"] > 2
 
@@ -1244,7 +1219,6 @@ def test_run_pruner_loop_honors_pipeline_paused(monkeypatch) -> None:
         should_shutdown=_should_shutdown,
     )
 
-    # It slept on the paused branch rather than pruning.
     assert sleep_calls == [15.0, 15.0]
 
 
@@ -1346,7 +1320,6 @@ def test_run_static_pipeline_retries_unapplied_content_after_unchanged_capture(
 def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(
     static_pipeline, monkeypatch
 ) -> None:
-    """Changed static ingestion: Silver load and Gold refresh both run."""
     call_order: list[str] = []
 
     _patch_static_steps(monkeypatch, call_order, labels=("ingest", "silver", "gold"))
@@ -1366,7 +1339,6 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
     static_pipeline,
     monkeypatch,
 ) -> None:
-    """A new static dataset version runs steps 2 and 3."""
     call_order: list[str] = []
 
     _patch_static_steps(monkeypatch, call_order, labels=("ingest", "silver", "gold"))
@@ -1380,13 +1352,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
     assert result.gold_build is not None
 
 
-# ---------------------------------------------------------------------------
-# GIS best-effort tail (slice-9.1.1v)
-# ---------------------------------------------------------------------------
-
-
 def test_run_static_pipeline_runs_gis_after_static_chain(static_pipeline, monkeypatch) -> None:
-    """GIS chain runs after the full static chain on the changed path."""
     call_order: list[str] = []
 
     _patch_static_steps(monkeypatch, call_order)
@@ -1476,7 +1442,6 @@ def test_run_static_pipeline_reports_gis_pair_skip_as_success(static_pipeline, m
 def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(
     static_pipeline, monkeypatch
 ) -> None:
-    """An ingest-gis exception is isolated: pipeline still succeeds, silver load skipped."""
     silver_called = False
 
     _patch_static_steps(monkeypatch)
@@ -1505,7 +1470,6 @@ def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(
 def test_run_static_pipeline_gis_silver_failure_recorded_not_raised(
     static_pipeline, monkeypatch
 ) -> None:
-    """A load-gis-silver exception is isolated; the successful ingest dict is kept."""
     _patch_static_steps(monkeypatch)
 
     def _gis_silver_raises(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
@@ -1532,7 +1496,6 @@ def test_run_static_pipeline_gis_silver_failure_recorded_not_raised(
 
 
 def test_run_static_pipeline_display_dict_carries_gis_fields(static_pipeline, monkeypatch) -> None:
-    """display_dict() is json-serializable and carries every gis_* field."""
     _patch_static_steps(monkeypatch)
 
     result = static_pipeline()
@@ -1550,15 +1513,9 @@ def test_run_static_pipeline_display_dict_carries_gis_fields(static_pipeline, mo
     json.dumps(payload)
 
 
-# ---------------------------------------------------------------------------
-# Per-endpoint cadence gating (slice-8.7 i3 cadence work)
-# ---------------------------------------------------------------------------
-
-
 def _fake_registry_with_intervals(
     *, trip_updates: int = 30, vehicle_positions: int = 30, i3_alerts: int = 300
 ):
-    """Fake provider registry whose manifest exposes refresh_interval_seconds."""
     manifest = SimpleNamespace(
         feeds={
             "trip_updates": SimpleNamespace(
@@ -1580,7 +1537,6 @@ def _fake_registry_with_intervals(
 
 
 def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
-    """Common monkeypatches for run_realtime_cycle dependencies."""
 
     def fake_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
         call_order.append(f"capture:{endpoint_key}")
@@ -1620,8 +1576,6 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
             _gold_refresh_result(),
         )[1],
     )
-    # PR-B / slice-9.8: the cycle is decoupled from pruning. These guards fail the
-    # test if run_realtime_cycle ever calls a prune again.
     monkeypatch.setattr(
         orchestration,
         "prune_silver_storage",
@@ -1638,19 +1592,17 @@ def test_run_realtime_cycle_skips_i3_when_interval_not_elapsed(realtime_cycle, m
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    # Freeze now so elapsed math is exact
     frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(orchestration, "utc_now", lambda: frozen_now)
 
     last_captures = {
-        "trip_updates": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),  # 30s ago
-        "vehicle_positions": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),  # 30s ago
-        "i3_alerts": datetime(2026, 5, 26, 21, 58, 0, tzinfo=UTC),  # 120s ago (<300)
+        "trip_updates": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
+        "vehicle_positions": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
+        "i3_alerts": datetime(2026, 5, 26, 21, 58, 0, tzinfo=UTC),
     }
 
     result = realtime_cycle("stm", last_captures=last_captures)
 
-    # i3 should be skipped; trip_updates + vehicle_positions still ran (30s elapsed == 30s interval)
     assert "capture:i3_alerts" not in call_order
     assert "load:i3_alerts" not in call_order
     assert "capture:trip_updates" in call_order
@@ -1673,7 +1625,7 @@ def test_run_realtime_cycle_runs_i3_when_interval_elapsed(realtime_cycle, monkey
     last_captures = {
         "trip_updates": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
         "vehicle_positions": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
-        "i3_alerts": datetime(2026, 5, 26, 21, 54, 30, tzinfo=UTC),  # 330s ago (>=300)
+        "i3_alerts": datetime(2026, 5, 26, 21, 54, 30, tzinfo=UTC),
     }
 
     result = realtime_cycle("stm", last_captures=last_captures)
@@ -1683,18 +1635,15 @@ def test_run_realtime_cycle_runs_i3_when_interval_elapsed(realtime_cycle, monkey
 
     i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
     assert i3_result.status == "succeeded"
-    # last_captures was mutated to record this cycle's start
     assert last_captures["i3_alerts"] == frozen_now
 
 
 def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(
     realtime_cycle, monkeypatch
 ) -> None:
-    """Backward compatibility: omitting last_captures bypasses all gating."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
-    # Bare registry — never accessed when last_captures is None
     result = realtime_cycle("stm")
 
     assert "capture:trip_updates" in call_order
@@ -1717,9 +1666,6 @@ def _fake_registry_with_service_alerts():
 def test_single_shot_cycle_is_manifest_driven_captures_service_alerts(
     realtime_cycle, monkeypatch
 ) -> None:
-    # Holistic per provider: a single-shot cycle for a provider that publishes
-    # the generic service-alerts feed (and no i3) captures its alerts and never
-    # polls the STM-specific i3 feed it doesn't have.
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
     monkeypatch.setattr(
@@ -1748,7 +1694,6 @@ def test_single_shot_cycle_is_manifest_driven_captures_service_alerts(
 def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(
     realtime_cycle, monkeypatch
 ) -> None:
-    """Empty last_captures dict (worker startup) means no prior capture, so endpoint runs."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -1768,7 +1713,6 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(
 def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(
     realtime_cycle, monkeypatch
 ) -> None:
-    """Gold refresh failure must leave retention in the separate pruner."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -1780,8 +1724,6 @@ def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(
 
     result = realtime_cycle("stm")
 
-    # Gold refresh failed, but NO prune ran this cycle (the guards would have
-    # failed the test) and the result no longer carries maintenance fields.
     assert result.gold_error_message is not None
     assert "refresh-gold-realtime" in call_order
     assert "prune-silver-storage" not in call_order
@@ -1793,7 +1735,6 @@ def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(
 def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(
     realtime_cycle, monkeypatch
 ) -> None:
-    """A busy/failing cycle no longer touches retention (decoupled pruner)."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -1815,21 +1756,11 @@ def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(
 
     assert result.successful_endpoint_count == 0
     assert "refresh-gold-realtime" not in call_order
-    # Pruning is decoupled — the cycle never prunes (the guards would have failed).
     assert "prune-silver-storage" not in call_order
     assert "prune-gold-storage" not in call_order
 
 
-# --- slice-9.1.1o: silver-load failure persistence ----------------------------
-
-
 class _RecordingFailureEngine:
-    """Fake engine whose .begin() yields a recording connection.
-
-    Records every insert_failed_ingestion_run call the orchestrator makes
-    inside its fresh failure-persistence transaction. _explode=True makes
-    .begin() raise to prove the persistence path is strictly best-effort.
-    """
 
     def __init__(self, *, explode: bool = False) -> None:
         self.inserts: list[dict] = []
@@ -1851,12 +1782,6 @@ class _RecordingFailureEngine:
 
 
 def _install_failure_persistence_spies(monkeypatch, engine: _RecordingFailureEngine) -> None:
-    """Stub the two DB primitives the failure-persistence helper calls.
-
-    get_feed_endpoint_id resolves a deterministic id per endpoint;
-    insert_failed_ingestion_run records its kwargs onto the engine so tests
-    can assert exactly what would be written.
-    """
 
     def fake_get_feed_endpoint_id(connection, *, provider_id, endpoint_key, missing_message):  # noqa: ANN001
         return {"trip_updates": 11, "vehicle_positions": 12, "i3_alerts": 13}[endpoint_key]
@@ -2182,12 +2107,10 @@ def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(
 
     result = realtime_cycle("stm", engine=engine)
 
-    # Cycle semantics unchanged: one endpoint failed, the rest succeeded.
     assert result.status == "partial_failure"
     assert result.endpoint_results[0].error_message == (
         "load-realtime-silver failed: silver loader exploded"
     )
-    # Exactly one silver_load failure row persisted, for trip_updates.
     assert len(engine.inserts) == 1
     insert = engine.inserts[0]
     assert insert["provider_id"] == "stm"
@@ -2226,7 +2149,6 @@ def test_run_realtime_cycle_persists_i3_silver_load_failure_row(
 
 
 def test_silver_load_failure_persistence_is_best_effort(realtime_cycle, monkeypatch) -> None:
-    """If the persistence helper itself raises, the cycle result is identical."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -2238,13 +2160,11 @@ def test_silver_load_failure_persistence_is_best_effort(realtime_cycle, monkeypa
 
     monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
 
-    # engine.begin() explodes -> persistence is impossible, but must not propagate.
     engine = _RecordingFailureEngine(explode=True)
     _install_failure_persistence_spies(monkeypatch, engine)
 
     result = realtime_cycle("stm", engine=engine)
 
-    # No insert recorded (begin exploded before any write), cycle still partial.
     assert engine.inserts == []
     assert result.status == "partial_failure"
     assert result.endpoint_results[0].error_message == (
@@ -2253,8 +2173,6 @@ def test_silver_load_failure_persistence_is_best_effort(realtime_cycle, monkeypa
 
 
 def test_capture_failures_do_not_write_silver_load_rows(realtime_cycle, monkeypatch) -> None:
-    """Capture failures persist via mark_ingestion_run_failed already — no
-    silver_load row may be written for a capture-phase failure."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -2329,8 +2247,6 @@ def _fake_registry_without_i3(*, trip_updates: int = 30, vehicle_positions: int 
 
 
 def test_run_realtime_cycle_does_not_poll_an_absent_i3_feed(realtime_cycle, monkeypatch) -> None:
-    # A provider without an i3 alerts feed (e.g. STO/OC Transpo) must not be
-    # polled for it every worker cycle.
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
     frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)

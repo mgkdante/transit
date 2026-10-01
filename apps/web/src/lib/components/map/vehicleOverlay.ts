@@ -10,7 +10,6 @@ import {
 	type VehicleSpriteReceipt,
 } from './vehicleSprites';
 
-/** Private browser receipt; a property getter adds no per-frame DOM mutation. */
 export const VEHICLE_OVERLAY_RECEIPT = Symbol.for('transit.map.vehicleOverlayReceipt');
 
 export interface VehicleOverlayReceipt {
@@ -58,7 +57,7 @@ interface ProjectedVehicle {
 }
 
 const BOX = VEHICLE_MARKER_GEOMETRY.box;
-const ICON_PADDING = 2; // MapLibre 6.4.1's default symbol icon-padding.
+const ICON_PADDING = 2;
 const RAD = Math.PI / 180;
 let nextGeneration = 0;
 
@@ -94,7 +93,6 @@ function spriteAtlas(sprites: VehicleSpriteReceipt): ReadonlyMap<string, HTMLCan
 	);
 }
 
-/** The app-owned moving foreground; MapLibre still owns projection and static layers. */
 export function createVehicleOverlay(
 	map: MapLibreMap,
 	sprites: VehicleSpriteReceipt,
@@ -199,8 +197,6 @@ export function createVehicleOverlay(
 	}
 
 	function collisionHalfBox(y: number, height: number, zoom: number): number {
-		// MapLibre lays symbol collision boxes out at the tile bucket's next zoom.
-		// The bucket can lag camera zoom, so edge parity is a browser gate.
 		const layoutSize = lerp(
 			Math.floor(zoom) + 1,
 			11,
@@ -301,12 +297,8 @@ export function createVehicleOverlay(
 				x <= width + BOX * 4 &&
 				y <= height + BOX * 4,
 		);
-		// MapLibre's overlap-enabled point symbols sort by rotated tile Y, then
-		// descending source index. Screen Y preserves that order within a flat tile;
-		// cross-tile and quantized ties remain native parity gates.
 		const symbols = [...visible].sort((a, b) => a.y - b.y || b.index - a.index);
 
-		// Match MapLibre's layer-wide order, not one complete marker per vehicle.
 		for (const { feature, x, y } of visible) {
 			const hovered = feature.properties.id === hoveredId;
 			const selected = feature.properties.id === selectedId;
@@ -541,7 +533,6 @@ export function createVehicleOverlay(
 		},
 	};
 	try {
-		// Record ownership before each call: a host method may mutate then throw.
 		canvasPending = true;
 		map.getCanvasContainer().appendChild(canvas);
 		canvasLossListenerPending = true;

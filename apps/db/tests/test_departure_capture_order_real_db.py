@@ -1,4 +1,3 @@
-"""Capture order must survive replay/import order in live departure selection."""
 
 import json
 from datetime import UTC

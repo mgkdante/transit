@@ -1,13 +1,3 @@
-// stops-reliability.copy.ts — co-located bilingual copy for the Stops RELIABILITY
-// surface (S8A re-seat). Lifted verbatim out of stops.copy.ts's `reliability`
-// subtree so the reliability sections + selectors read ONE bundle, and EXTENDED
-// with the S8A daily-trend + range-verdict strings (the new dated-series section).
-//
-// FR is the canonical product voice; `locale` is threaded as a prop and this
-// bundle is passed to every section, so no section performs its own i18n lookup.
-// Domain-intrinsic labels (OTP / delay / occupancy bands) still live in the
-// shared primitives / lines vocabulary and are NOT duplicated here.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';

@@ -8,8 +8,6 @@ const labels = {
 	recurrenceUnknown: 'recurrence not recorded',
 	fmtMin: (v: number | null) => (v == null ? null : `${v.toFixed(1)} min`),
 	viewDetail: (title: string) => `View detail for ${title}`,
-	// A minimal href builder mirroring the orchestrator's target resolution (pure — the
-	// selector no longer imports $lib/nav, keeping it node-safe in the "data" project).
 	href: (o: Offender) =>
 		o.type === 'stop'
 			? `/stop/${o.id}`
@@ -55,7 +53,6 @@ describe('buildOffenderLedger — the doctrine-clean fallback ledger', () => {
 		];
 		const rows = buildOffenderLedger(list, labels);
 		expect(rows.map((r) => r.rank)).toEqual([1, 2]);
-		// RAW minute value (NOT a /worst quotient) — the caller pairs it with the absolute domain.
 		expect(rows[0].value).toBe(12.4);
 		expect(rows[1].value).toBe(6.2);
 		expect(rows[0].display).toBe('12.4 min');

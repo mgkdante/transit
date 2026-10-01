@@ -1,22 +1,3 @@
-"""Real-database regression tests for core.snapshot_publish_state (slice-9.1.1r).
-
-These exercise the actual Postgres constraints that fake-connection tests
-structurally cannot see — the (provider_id, tier) PK + ON CONFLICT upsert, the
-FK to core.providers, and the tier CHECK — plus build_manifest reading real
-tier-state rows.
-
-They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
-with the transit schema applied and migration 0042 present, e.g. a throwaway
-local cluster restored from ``pg_dump --schema-only`` of prod then
-``alembic upgrade head`` (which applies 0042 on top). Each test runs inside one
-transaction and rolls back — nothing persists, reruns are idempotent.
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/snaprepro \
-        uv run pytest tests/test_snapshots_real_db_state.py -v
-
-Never point this at production. (CI has no Postgres — skipped there.)
-"""
 
 from __future__ import annotations
 
@@ -75,8 +56,6 @@ def _state_rows(connection) -> list[dict]:
 
 
 def test_state_upsert_is_idempotent(conn) -> None:
-    """Calling _record_publish_state twice on (provider, tier) leaves one row;
-    the second call's values win and updated_at_utc advances."""
     _record_publish_state(
         conn,
         provider_id=PROVIDER,
@@ -111,7 +90,6 @@ def test_state_upsert_is_idempotent(conn) -> None:
 
 
 def test_state_fk_rejects_unknown_provider(conn) -> None:
-    """A row for a provider absent from core.providers violates the FK."""
     from sqlalchemy.exc import IntegrityError
 
     with pytest.raises(IntegrityError):
@@ -127,7 +105,6 @@ def test_state_fk_rejects_unknown_provider(conn) -> None:
 
 
 def test_tier_check_constraint(conn) -> None:
-    """tier outside {live,static,historic} violates the CHECK constraint."""
     from sqlalchemy.exc import IntegrityError
 
     with pytest.raises(IntegrityError):
@@ -143,7 +120,6 @@ def test_tier_check_constraint(conn) -> None:
 
 
 def test_build_manifest_reads_tier_state(conn) -> None:
-    """build_manifest fills files.static/historic generated_utc from the table."""
     _record_publish_state(
         conn,
         provider_id=PROVIDER,
@@ -171,7 +147,7 @@ def test_build_manifest_reads_tier_state(conn) -> None:
     )
     assert manifest.files.static.generated_utc == "2026-06-01T00:00:00Z"
     assert manifest.files.historic.generated_utc == "2026-06-13T00:00:00Z"
-    assert manifest.basemap is None  # no PMTILES URL configured
+    assert manifest.basemap is None
 
 
 def test_historic_state_tracks_physical_and_stable_totals_separately(conn) -> None:

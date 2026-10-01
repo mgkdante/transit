@@ -1,20 +1,3 @@
-<!--
-  SectionEnvelope — the /status "Build accountability" section (S11).
-
-  Surfaces the in-band accountability envelope every /v1 payload carries but that
-  /status previously RENDERED NONE OF:
-
-    · publish_generation_id — the deterministic stamp of the ONE publish run that
-      produced everything on the page. Rendered in a dedicated stacked card with
-      an always-visible plain-language explanation after the break-safe run ID.
-    · schema_version         — the contract version, as a MetricDisplay row.
-    · methodology_version    — the methodology family version, as a MetricDisplay row.
-
-  HONESTY: each field is null-safe — an absent value renders the styled honest-
-  absence chip ("not reported") via AbsentValue / MetricDisplay, never a fabricated
-  value. The section STANDS DOWN only when all three are absent (the parent guards
-  that). DOCTRINE: no data mark painted (quiet card + rows), tokens only.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { SectionLabel } from '@yesid/ui/brand';
@@ -37,8 +20,6 @@
 <div class="health-block" data-slot="envelope-section">
 	<p class="health-note">{t.note}</p>
 
-	<!-- publish_generation_id: the stacked card keeps the run ID full-width and
-	     places the explanation after it in reading order. -->
 	<article class="publish-run-card" data-slot="publish-run-card">
 		<header class="publish-run-header">
 			<SectionLabel text={t.generationIdLabel} variant="metric" />
@@ -56,7 +37,6 @@
 		</p>
 	</article>
 
-	<!-- schema_version + methodology_version: quiet MetricDisplay rows. -->
 	<div class="envelope-rows">
 		<MetricDisplay
 			value={envelope.schemaVersion}

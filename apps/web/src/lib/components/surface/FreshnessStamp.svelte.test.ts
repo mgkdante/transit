@@ -4,11 +4,6 @@ import { render, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import FreshnessStamp from './FreshnessStamp.svelte';
 
-// Pin a fixed, skewed serverNow so the relative age is deterministic and proves
-// the stamp anchors to the SERVER clock (via the centralized freshnessAgeSeconds),
-// not Date.now(). serverNow = generated_utc + 5 minutes → "5 minutes ago". We mock
-// BOTH the clock module (freshnessAgeSeconds reads it) and the barrel (the
-// component's subscribe call) so the readout is fully deterministic.
 const clockStub = vi.hoisted(() => ({
 	get now() {
 		return Date.parse('2026-06-20T12:05:00Z');
@@ -44,10 +39,8 @@ describe('FreshnessStamp — live variant', () => {
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
 		expect(chip).not.toBeNull();
 		expect(chip.getAttribute('data-variant')).toBe('live');
-		// "LIVE" appears twice (the StatusDot's sr-only label + the visible label).
 		expect(within(chip).getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(chip.querySelector('.freshness-stamp-label')?.textContent).toBe('LIVE');
-		// Age derived centrally off the mocked serverNow → exactly "5 minutes ago".
 		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
 		expect(chip.querySelector('time')).toHaveAttribute('datetime', GEN);
 	});
@@ -66,7 +59,6 @@ describe('FreshnessStamp — live variant', () => {
 			props: { variant: 'live', generatedUtc: GEN, ageSeconds: 120, locale: 'en' },
 		});
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		// 120s → "2 minutes ago", overriding the internal derivation.
 		expect(within(chip).getByText('2 minutes ago')).toBeInTheDocument();
 	});
 });
@@ -102,7 +94,6 @@ describe('FreshnessStamp — honesty (no timestamp)', () => {
 		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: null, locale: 'en' } });
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
 		expect(within(chip).getByText('unknown')).toBeInTheDocument();
-		// No fabricated age / no datetime attribute on the <time>.
 		expect(chip.querySelector('time')).not.toHaveAttribute('datetime');
 	});
 
@@ -115,15 +106,14 @@ describe('FreshnessStamp — honesty (no timestamp)', () => {
 
 describe('FreshnessStamp — ≥24h absolute switch + aria-live (doctrine §3.5)', () => {
 	it('shows an absolute America/Toronto timestamp at/above 24h, not "ago"', () => {
-		// ageSeconds ≥ 86400 → absolute (GEN 12:00Z = 08:00 EDT on Jun 20).
 		render(FreshnessStamp, {
 			props: { variant: 'updated', generatedUtc: GEN, ageSeconds: 90_000, locale: 'en' },
 		});
 		const time = document.querySelector('[data-slot="freshness-stamp"] time') as HTMLElement;
 		const text = time.textContent ?? '';
 		expect(text).not.toMatch(/ago/);
-		expect(text).toMatch(/Jun/); // the real month, not a vague "2 days ago"
-		expect(text).toMatch(/\d{1,2}:\d{2}/); // a wall-clock time
+		expect(text).toMatch(/Jun/);
+		expect(text).toMatch(/\d{1,2}:\d{2}/);
 	});
 
 	it('still shows a relative age under 24h', () => {

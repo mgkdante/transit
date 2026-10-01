@@ -1,7 +1,3 @@
-"""Windowed alert history and versioned enrichment against disposable Postgres.
-
-Seed through the Silver loader; every test rolls its transaction back.
-"""
 
 from __future__ import annotations
 
@@ -18,13 +14,11 @@ from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
 PROVIDER = "stm_alerthistwin_test"
 ENDPOINT_ID = 994014
 NOW = datetime.now(UTC)
-# One capture well INSIDE the 90d window (a multi-window alert), one WELL OUTSIDE.
 IN_SNAP, IN_RUN = 994001, 994101
 OUT_SNAP, OUT_RUN = 994002, 994102
 IN_TIME = NOW - timedelta(days=10)
 OUT_TIME = NOW - timedelta(days=200)
 
-# In-window alert with TWO active windows (multi-period capture).
 IN_ALERT = {
     "id": "WIN-A",
     "header": "Fermeture de fin de semaine",
@@ -48,7 +42,6 @@ IN_ALERT = {
         },
     ],
 }
-# Out-of-window alert (200 days old) — must be clamped OUT.
 OUT_ALERT = {"id": "OLD-A", "header": "Vieil avis", "routes": ["24"]}
 
 
@@ -129,21 +122,17 @@ def test_window_clamps_and_serves_multi_period(conn, capsys) -> None:  # noqa: A
     out = build_alert_history(conn, PROVIDER, generated_utc="t")
     elapsed = time.perf_counter() - t0
 
-    # Window bounds: end = provider-local today, start = end - retention.
     assert out.window_start is not None and out.window_end is not None
     assert out.window_start < out.window_end
-    # The 200-day-old alert is clamped OUT; the in-window one survives.
     headers = {e.header_text for e in out.alerts}
     assert "Fermeture de fin de semaine" in headers
     assert "Vieil avis" not in headers
-    # The in-window entry serves BOTH active windows + url + raw passthroughs.
     entry = next(e for e in out.alerts if e.header_text == "Fermeture de fin de semaine")
     assert entry.url == "https://stm.info/avis/win-a"
     assert len(entry.active_periods) == 2
     assert all(p.start_utc is not None and p.end_utc is not None for p in entry.active_periods)
     assert entry.cause == "CONSTRUCTION"
     assert entry.effect == "DETOUR"
-    # Byte-ceiling probe + a timing sanity note on the 90d scan.
     size = len(out.model_dump_json().encode("utf-8"))
     with capsys.disabled():
         print(
@@ -154,10 +143,7 @@ def test_window_clamps_and_serves_multi_period(conn, capsys) -> None:  # noqa: A
 
 
 def test_pre_0077_row_falls_back_to_scalar_period(conn) -> None:  # noqa: ANN001
-    """A row with NO child periods (simulating pre-0077 history) still surfaces a
-    1-element active_periods list from the scalar pair."""
     _load(conn, IN_SNAP, IN_TIME, [IN_ALERT])
-    # Delete the child periods for the in-window alert to simulate legacy history.
     conn.execute(
         text(
             """
@@ -172,7 +158,6 @@ def test_pre_0077_row_falls_back_to_scalar_period(conn) -> None:  # noqa: ANN001
     )
     out = build_alert_history(conn, PROVIDER, generated_utc="t")
     entry = next(e for e in out.alerts if e.header_text == "Fermeture de fin de semaine")
-    # scalar period[0] survives on the alert row -> exactly 1 fallback window.
     assert len(entry.active_periods) == 1
     assert entry.url is None or isinstance(entry.url, str)
 
@@ -200,8 +185,6 @@ def test_enrichment_matches_nullable_identity_across_all_versions(conn, seed_pro
     def period(start):
         return {"start": start, "end": start + 10}
 
-    # The older capture has the larger snapshot ID. Index 1 overrides index 0
-    # only for periods it carries; older indexes still supply missing positions.
     _load(
         conn,
         OUT_SNAP,

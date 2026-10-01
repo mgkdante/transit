@@ -20,9 +20,8 @@ describe('selectRankedRoutes', () => {
 		expect(rows.map((r) => r.title)).toEqual(['80', '51', '24']);
 		expect(rows[0].domain).toEqual(DELAY_POS_DOMAIN);
 		expect(rows[0].domain[0]).toBe(0);
-		// severity bands off the absolute delay, not the rank.
-		expect(rows[0].severity).toBe('critical'); // >=10
-		expect(rows[1].severity).toBe('high'); // >=5
+		expect(rows[0].severity).toBe('critical');
+		expect(rows[1].severity).toBe('high');
 		expect(rows[2].severity).toBe('watch');
 	});
 

@@ -23,7 +23,6 @@ export type MapRuntimeFeed = Omit<MapLayerFeedContext, 'vehicles'> & {
 	readonly vehicles: Omit<MapLayerFeedContext['vehicles'], 'motion'>;
 };
 
-/** Owns the custom layers for one mounted map; create inside the Svelte owner. */
 export function createMapRuntime(options: {
 	selection: Pick<MapSelectionController, 'selected' | 'hovered' | 'setHovered'>;
 	readFeed: () => MapRuntimeFeed;
@@ -74,7 +73,6 @@ export function createMapRuntime(options: {
 		try {
 			release(ownedMap);
 		} catch (error) {
-			// Parent-first destruction and receipts still pending after MapStage's cleanup.
 			ownerCleanup.reportCleanupFailure('Map runtime cleanup failed', error);
 		}
 	});
@@ -135,7 +133,6 @@ export function createMapRuntime(options: {
 			reinstallAfterStyleLoad(m);
 		} catch (error) {
 			ownerCleanup.reportCleanupFailure('Map context restoration failed', error);
-			// Stage owns map-generation cleanup and the existing user-visible retry.
 			reportSetupFailure?.();
 		}
 	}
@@ -155,7 +152,6 @@ export function createMapRuntime(options: {
 	}
 
 	function install(m: MapLibreMap): void {
-		// Static MapLibre layers and the CPU foreground share one sprite bake.
 		const { sprites, pin } = retintMapLayers(m);
 		if (!foreground) {
 			try {
@@ -188,9 +184,7 @@ export function createMapRuntime(options: {
 			vehicleMotionMap = m;
 		}
 		ensureInteractions(m);
-		// A style swap clears custom sources; force their feed before emphasis replay.
 		layerRevision += 1;
-		// The first projected canvas frame is painted before onready returns.
 		feedNow(m);
 	}
 
@@ -212,7 +206,6 @@ export function createMapRuntime(options: {
 		);
 		layers.feed(m, { ...feed, vehicles: { ...feed.vehicles, motion: vehicleMotion } }, revision);
 		if (sceneChanged && overlay?.receipt.drawSequence === before) overlay.redraw();
-		// This diagnostic readiness count must correspond to a completed canvas draw.
 		processedMotion =
 			expectedMotion &&
 			overlay?.receipt.drawable &&

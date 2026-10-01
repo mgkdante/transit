@@ -1,5 +1,3 @@
-"""Shared ranking doctrine for current and immutable point-in-time surfaces."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
@@ -48,7 +46,6 @@ def otp_delta_points(
     network_successes: int | None,
     network_observations: int | None,
 ) -> float | None:
-    """Compare unrounded proportions, then round the percentage-point difference."""
     if cell_successes is None or network_successes is None:
         return None
     if not cell_observations or not network_observations:
@@ -156,7 +153,6 @@ def build_hotspot_kind_ladder(
     kind: HotspotKind,
     names: EntityNameMap,
 ) -> HotspotKindLadder | None:
-    """Rank one route or stop ladder while preserving the established doctrine."""
 
     materialized_rows: list[RankingRow] = list(rows)
     if not materialized_rows:
@@ -198,7 +194,6 @@ def merge_hotspot_grain(
     window_start: date | None,
     window_end: date | None,
 ) -> HotspotGrain | None:
-    """Assemble the two per-kind hotspot ladders and their shared below-floor tray."""
 
     route_entries = route_ladder.entries if route_ladder else []
     stop_entries = stop_ladder.entries if stop_ladder else []
@@ -235,7 +230,6 @@ def merge_hotspot_grain(
 
 
 def offender_severity(recurrence_days: int | None, average_seconds: float | None) -> str | None:
-    """Apply the established repeat-offender severity vocabulary."""
 
     if recurrence_days is None and average_seconds is None:
         return None
@@ -348,7 +342,6 @@ def build_offender_kind_ladder(
     kind: OffenderKind,
     route_names: EntityNameMap,
 ) -> OffenderKindLadder:
-    """Rank one trip or vehicle ladder with stable input-order tie behavior."""
 
     ranked: list[tuple[float, float, str, RepeatOffenderEntry]] = []
     tray: list[RepeatOffenderEntry] = []

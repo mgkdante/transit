@@ -1,36 +1,13 @@
-<!--
-  CornerMeta — four absolute corner readouts for a hero zone (§C2.4).
-
-  Blueprint-margin annotations: mono --text-micro in --muted-foreground pinned
-  to the four corners of a position:relative host. REAL data only — provider
-  name · generated_utc · route/stop counts · build short-hash. Never
-  decoration-only text. Hero zones ONLY (detail heads, /metrics
-  masthead); never on dense data sections.
-
-  Decorative by contract: aria-hidden + pointer-events:none — it annotates,
-  it never carries the accessible name (the real head does). Hidden < 768px
-  (the corners crowd on mobile). Opt-in crosshair ornament (§1.3 design
-  language) via `crosshair` — L-tick registration marks in --primary at the
-  four corners, drawn behind the readouts.
-
-  The host must be position:relative. Drop this as the first child of the hero
-  zone: <div class="hero" style="position:relative"> <CornerMeta ... /> … </div>
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import CornerMarks from './CornerMarks.svelte';
 	import { cn } from '$lib/utils';
 
 	export interface CornerMetaProps {
-		/** Top-left readout (real data). */
 		topLeft?: Snippet;
-		/** Top-right readout (real data). */
 		topRight?: Snippet;
-		/** Bottom-left readout (real data). */
 		bottomLeft?: Snippet;
-		/** Bottom-right readout (real data). */
 		bottomRight?: Snippet;
-		/** Opt-in crosshair registration ornament (§1.3). Default off. */
 		crosshair?: boolean;
 		class?: string;
 		[key: string]: unknown;
@@ -70,12 +47,10 @@
 		position: absolute;
 		inset: 0;
 		pointer-events: none;
-		/* Below content, above the panel surface — annotation, not chrome. */
 		z-index: var(--z-content);
 		display: none;
 	}
 
-	/* Corners crowd the head on mobile — surface only >= 768px. */
 	@media (min-width: 768px) {
 		.corner-meta {
 			display: block;
@@ -90,11 +65,6 @@
 		letter-spacing: var(--tracking-wide);
 		color: var(--muted-foreground);
 		white-space: nowrap;
-		/* A margin annotation, never load-bearing (aria-hidden). Cap each corner to
-		   its own half of the host (minus the two 0.75rem gutters + a 0.75rem gap)
-		   and ellipsize — a long readout (e.g. a full dataset-edition string) then
-		   truncates inside its quadrant instead of overrunning the opposite corner
-		   or the hero content below it. */
 		max-width: calc(50% - 1.5rem);
 		overflow: hidden;
 		text-overflow: ellipsis;

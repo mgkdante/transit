@@ -1,4 +1,3 @@
-<!-- Stop summaries: the source field otpPct carries a non-severe prediction share. -->
 <script lang="ts">
 	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
@@ -9,36 +8,20 @@
 	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
 
-	/** A stop prediction summary for one period. */
 	export interface ReliabilityPeriodVM {
-		/** Period label / grain (e.g. "7j", "Last 30 days"). */
 		grain: string;
-		/** Non-severe share of eligible known predictions [0,100], or null when unmeasured. */
 		otpPct: number | null;
-		/** Delay in minutes, a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
-		/**
-		 * Per-period override of the delay caption; falls back to the
-		 * pane-level `delayLabelKind`. Lets a real-p50 grain say "median"
-		 * while observation-mean grains in the same pane say "avg".
-		 */
 		delayKind?: 'avg' | 'median';
-		/** Optional p90 delay in minutes. */
 		p90Min?: number | null;
-		/** Optional severe share as a percent [0,100]. */
 		severePct?: number | null;
 	}
 
 	export interface ReliabilityPaneProps {
-		/** Periods to render (one card each). Empty ⇒ renders nothing. */
 		periods: readonly ReliabilityPeriodVM[];
-		/** UI language for the intrinsic domain labels. */
 		locale: Locale;
-		/** Whether `delayMin` is an average or a median, drives the delay caption. */
 		delayLabelKind?: 'avg' | 'median';
-		/** Explanation for each rendered metric, supplied by the owning surface. */
 		metricInfo?: Snippet<[key: 'stopNotSevere' | 'avgDelay' | 'p50p90' | 'severe', label: string]>;
-		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
@@ -50,17 +33,14 @@
 		class: className,
 	}: ReliabilityPaneProps = $props();
 
-	/* Intrinsic domain vocabulary, FR is the canonical product voice. */
 	type Labels = {
 		readonly notSevere: string;
 		readonly delayAvg: string;
 		readonly delayMedian: string;
 		readonly p90: string;
-		/** Plain caption under the p90 tile (what "p90" means to a rider). */
 		readonly p90Caption: string;
 		readonly severe: string;
 		readonly trend: string;
-		/** Unit suffix for the prediction-share sparkline tooltip. */
 		readonly unitPct: string;
 	};
 	const L: Record<Locale, Labels> = {
@@ -93,7 +73,6 @@
 
 	const nonSevereSeries = $derived(periods.map((p) => p.otpPct));
 
-	// The prediction-share sparkline domain stays inside [0,100].
 	const sparkSpec = $derived.by<SparklineSpec | null>(() => {
 		const domain = sparkZoomDomain(nonSevereSeries, { clampHi: 100 });
 		if (domain == null) return null;

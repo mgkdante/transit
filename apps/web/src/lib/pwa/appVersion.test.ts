@@ -25,8 +25,6 @@ describe('decideFreshnessReload', () => {
 	});
 
 	it('does not double-reload a navigation that already unloads the document', () => {
-		// External link / location.href assignment: the browser already does a full
-		// load, so forcing another would be wasteful (and could fight it).
 		expect(
 			decideFreshnessReload({
 				hasNewVersion: true,
@@ -48,15 +46,10 @@ describe('decideFreshnessReload', () => {
 
 describe('version poll cadence contract', () => {
 	it('is a positive interval (polling is armed)', () => {
-		// SvelteKit only polls /_app/version.json when pollInterval is truthy
-		// (runtime: create_updated_store). A zero/negative value silently disables
-		// the freshness lever, so guard the invariant.
 		expect(VERSION_POLL_INTERVAL_MS).toBeGreaterThan(0);
 	});
 
 	it('matches kit.version.pollInterval declared in svelte.config.js', () => {
-		// The constant and the build config MUST agree or the documented cadence is
-		// a lie. svelte.config.js cross-references this constant by value; assert it.
 		const configPath = fileURLToPath(new URL('../../../svelte.config.js', import.meta.url));
 		const source = readFileSync(configPath, 'utf8');
 		const match = source.match(/pollInterval:\s*([0-9_]+)/);

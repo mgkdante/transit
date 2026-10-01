@@ -1,22 +1,7 @@
-<!--
-  MapDrilldownLink — the shared "view on map" pill anchor (slice-9.4).
-
-  The lines/stops index rows and the line/stop detail heads each carried a
-  near-identical primary-tinted pill (.line-map-link / .stop-map-link /
-  .route-map-action / .stop-map-action) that deep-links to the live map filtered
-  to one entity. This carries that affordance once: a hover-preloaded pill
-  anchor over a caller-supplied href + visible label + accessible name.
-
-  Tokens, no hex; --primary is interactive-only (this IS an interactive
-  affordance). Reduced-motion-guarded transitions; focus-visible ring.
--->
 <script lang="ts">
 	export interface MapDrilldownLinkProps {
-		/** Target href (callers pass mapHrefFor(...)). */
 		href: string;
-		/** Visible pill text. */
 		label: string;
-		/** Accessible name (e.g. "View route 161 on map"). */
 		ariaLabel: string;
 	}
 
@@ -32,9 +17,6 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		/* Tap-target floor (P5.3d §C4 P10): 32px → 44px. Clears the "View on map"
-		   chip everywhere it renders (line/stop detail heads + ~200 lines-index rows
-		   + trip line/map chips) in one shared change. */
 		min-height: var(--size-tap-min);
 		padding: 0.25rem 0.65rem;
 		font-family: var(--font-mono);

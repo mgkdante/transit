@@ -1,13 +1,4 @@
-// LineDirections.svelte.test.ts — gate for the extracted bidirectional pane
-// (slice-S6 de-monolith). Pins:
-//   1. The clickable stops + live readout (the behaviour that lived in RouteDetail
-//      before the extraction): each stop links to its detail page; a predicted
-//      stop shows the approaching bus's reading; an unpredicted stop shows an
-//      honest "no prediction", never a fabricated time.
-//   2. The self-contained @container contract (the contract that moved here from
-//      RouteDetail): container-type rides the PARENT .line-directions-pane and the
-//      side-by-side grid targets the DESCENDANT .line-directions (never the same
-//      element — the self-target trap).
+// Container-type belongs on the parent; the grid query targets a descendant.
 
 import { render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
@@ -28,7 +19,6 @@ const DIRECTIONS: RouteFile['directions'] = [
 	},
 ];
 
-// sA has an approaching bus (2 min late); sB has NONE → honest "no prediction".
 const PREDICTIONS = new Map<string, StopPrediction>([
 	['sA', { etaUtc: '2026-06-15T12:05:00Z', delayMin: 2 }],
 ]);
@@ -66,7 +56,6 @@ describe('LineDirections', () => {
 				},
 			});
 
-			// A missing prediction says nothing about whether a vehicle is present.
 			expect(
 				screen.getByText(locale === 'en' ? '2 min late' : '2 min en retard'),
 			).toBeInTheDocument();
@@ -93,22 +82,16 @@ describe('LineDirections', () => {
 });
 
 describe('LineDirections — self-contained @container contract', () => {
-	// Container queries cannot be evaluated in jsdom, so we assert the STRUCTURE +
-	// the CSS contract from source (the self-target-trap guard from the slice-9.8 E
-	// lesson): container-type on the PARENT wrapper, the grid on the DESCENDANT.
 	const source = readFileSync(
 		resolve(process.cwd(), 'src/lib/features/lines/LineDirections.svelte'),
 		'utf-8',
 	);
 
 	it('declares container-type on the parent pane and targets the descendant list', () => {
-		// container-type rides .line-directions-pane (the PARENT)…
 		expect(source).toMatch(/\.line-directions-pane\s*\{[^}]*container-type:\s*inline-size/);
-		// …and the side-by-side layout targets the DESCENDANT .line-directions list.
 		expect(source).toMatch(
 			/@container line-directions \(min-width: 44rem\)\s*\{[\s\S]*?\.line-directions\s*\{[\s\S]*?grid-template-columns/,
 		);
-		// The .line-directions list is NOT the element declaring the container.
 		expect(source).not.toMatch(/\.line-directions\s*\{[^}]*container-type/);
 	});
 });

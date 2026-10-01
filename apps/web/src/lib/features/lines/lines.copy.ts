@@ -1,10 +1,3 @@
-// lines.copy.ts — co-located bilingual copy for the Lines surface (slice-9.3).
-//
-// The Lines index + the route detail screen own their non-intrinsic, user-facing
-// strings here so the .svelte stays markup-only (domain-intrinsic component
-// labels — OTP / delay / p90 / severe — already live in the spine's
-// ReliabilityPane). FR is the canonical product voice; EN mirrors it.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import { articleCopy } from '$lib/components/layout/articleCopy';

@@ -61,13 +61,6 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-// Regression guard for the signage-active tab look (yesid StationTabs parity).
-// EntityDetail's tab strip renders each bits-ui TabsTrigger through a `child`
-// snippet <button> so behavior/ARIA stay on bits-ui while the active VISUAL is the
-// theme-invariant metro-signage chip (--signage-bg/--signage-text). A vitest can't
-// compile the scoped CSS, so we scan the source for the load-bearing pieces (same
-// approach as the tabs-trigger variant guard). The rendered behavior is covered by
-// the RouteDetail/StopDetail feature tests that mount the real EntityDetail.
 const src = readFileSync(
 	join(process.cwd(), 'src/lib/components/surface/EntityDetail.svelte'),
 	'utf8',
@@ -243,7 +236,6 @@ describe('EntityDetail — signage-active tab pattern', () => {
 			clientWidth: { configurable: true, value: 320 },
 			scrollWidth: { configurable: true, value: 377 },
 		});
-		// The test DOM has no native input-modality state; supply the browser's focus-visible result.
 		const matches = selected.matches.bind(selected);
 		vi.spyOn(selected, 'matches').mockImplementation(
 			(selector) => selector === ':focus-visible' || matches(selector),

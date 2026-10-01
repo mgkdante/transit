@@ -1,8 +1,3 @@
-// ResourceBoundary.svelte.test.ts — the boundary branches on the reason-typed
-// DataState (asDataState). Locks the render ladder, especially the now-reachable
-// `no_results` variant (a filter excluded everything — distinct from no data at
-// all, which was previously rendered as a plain `empty`).
-
 import { fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -15,7 +10,6 @@ function res<T>(p: Partial<Resource<T>>): Resource<T> {
 	return { data: null, error: null, loading: false, settled: true, reload: () => {}, ...p };
 }
 
-// A trivial children snippet that marks the loaded ("ok") branch.
 const okChild = createRawSnippet(() => ({ render: () => `<p data-testid="ok">loaded</p>` }));
 
 function variant(container: HTMLElement): string | null {

@@ -119,18 +119,6 @@ def _provider_registry(settings: Settings) -> ProviderRegistry:
 
 
 def _skip_if_unseeded(settings: Settings, provider_id: str, *, step: str) -> bool:
-    """Return True (and emit a skip marker) when the provider has no gold data.
-
-    An enrolled-but-unseeded provider (no gold.dim_provider row — its static
-    pipeline has never run) has nothing for the per-provider warm-rollup /
-    prune / retention steps to act on. The Daily Warm Rollups workflow loops
-    these over EVERY registered provider under ``set -e``, so each must skip
-    cleanly (logged no-op, exit 0) rather than crash the all-providers run.
-
-    The prune/retention bodies already filter on ``provider_id`` and no-op on
-    empty result sets, so this guard is a cheap, explicit short-circuit that
-    also avoids spending an R2 / DB round-trip on a provider with zero data.
-    """
     with make_engine(settings).connect() as conn:
         if provider_is_seeded(conn, provider_id):
             return False
@@ -832,11 +820,6 @@ def build_gold(provider_id: str) -> None:
 
 
 def _parse_replay_instant(value: str, *, flag: str) -> datetime:
-    """Parse an ISO-8601 datetime for a replay window flag and normalize to UTC.
-
-    Accepts both naive (assumed UTC) and timezone-aware ISO strings. A bare date
-    (YYYY-MM-DD) is accepted and treated as midnight UTC.
-    """
 
     try:
         parsed = datetime.fromisoformat(value)
@@ -1238,7 +1221,6 @@ def run_static_pipeline_command(provider_id: str) -> None:
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
-    # GIS failures report on stderr without blocking downstream static publication.
     if getattr(result, "gis_error_message", None):
         typer.echo(
             f"WARNING: GIS step failed (static pipeline succeeded): {result.gis_error_message}",
@@ -1360,7 +1342,7 @@ def publish_all_command(
     failures: list[str] = []
     skipped: list[str] = []
     for provider_id in registry.list_active_provider_ids():
-        # Newly enrolled providers have nothing to publish before their static pipeline runs.
+        # An enrolled provider may have no data before its first static pipeline run.
         if not provider_is_seeded(engine, provider_id):
             logger.info(
                 "provider %r not seeded (no gold.dim_provider row) — skipping publish-all",
@@ -1379,7 +1361,6 @@ def publish_all_command(
                 full_historic_rebuild=full_historic_rebuild,
             )
             results.append(result.display_dict())
-            # Successful and failed attempts both produce a gate report for CI/status.
             if report_dir is not None and result.gate_report is not None:
                 (report_dir / f"publish-gate-{provider_id}.json").write_text(
                     json.dumps(result.gate_report, indent=2, sort_keys=True) + "\n",
@@ -1609,7 +1590,6 @@ def repair_delay_periods_command(
 
 
 def _rebuild_prompt(plan) -> str:  # noqa: ANN001
-    """Destructive-rebuild confirmation showing total rows + watermarks per kind."""
     kinds = sorted(set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts))
     lines = [
         f"Rebuild {plan.provider_id} append-only daily rollups for rows "
@@ -1691,17 +1671,14 @@ def rebuild_warm_rollups_command(
             to_date=d_to,
             kinds=kind_list,
             dry_run=dry_run,
-            # --yes = fast path: confirm=None skips both the preview COUNT pass and
-            # the prompt. Otherwise the prompt renders the plan's per-kind counts.
+            # confirm=None skips both the preview count and prompt.
             confirm=None if yes else (lambda plan: typer.confirm(_rebuild_prompt(plan))),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
     if not dry_run and not result.aborted:
-        # Advisory: the DELETE+UPSERT reporting marts (route_delay_hourly,
-        # habit/repeat/headway, ...) derive from these spines but are refreshed
-        # only by a full build-warm-rollups run.
+        # Reporting marts require a full build-warm-rollups after these spines change.
         typer.echo(
             f"Advisory: run `run-static-pipeline`/`build-warm-rollups {provider_id}` "
             "to refresh the derived DELETE+UPSERT reporting marts.",
@@ -1875,7 +1852,6 @@ def verify_backup_freshness_command(
         typer.echo("Backup freshness check FAILED: no backup objects found in R2", err=True)
         raise typer.Exit(code=1)
 
-    # Backup inventory is ordered by its timestamped key, newest first.
     newest = backups[0]
     last_modified_raw = newest.get("last_modified")
     if not isinstance(last_modified_raw, str):

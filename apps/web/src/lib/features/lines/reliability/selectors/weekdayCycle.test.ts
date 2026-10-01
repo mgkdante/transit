@@ -17,14 +17,14 @@ describe('selectWeekdayCycle', () => {
 		const dow: RouteDayOfWeek[] = [
 			{ day_of_week_iso: 1, avg_delay_min: 2.1 },
 			{ day_of_week_iso: 3, avg_delay_min: 3.4 },
-			{ day_of_week_iso: 5, avg_delay_min: null }, // present-but-null → gap
+			{ day_of_week_iso: 5, avg_delay_min: null },
 		];
 		const { spec, hasData } = selectWeekdayCycle(dow, 'en', labels);
 		expect(hasData).toBe(true);
 		if (spec.kind !== 'line') throw new Error('expected line');
 		expect(spec.domain).toEqual(DELAY_DOW_DOMAIN);
-		expect(spec.domain[0]).toBe(0); // zero-based
-		expect(spec.xLabels).toEqual(WK); // fixed cycle order, never sorted by value
+		expect(spec.domain[0]).toBe(0);
+		expect(spec.xLabels).toEqual(WK);
 		expect(spec.xLabel).toBe('Day of week');
 		expect(spec.series).toHaveLength(1);
 		expect(spec.series[0].points).toEqual([2.1, null, 3.4, null, null, null, null]);

@@ -1,17 +1,3 @@
-"""Real-database regression for gold.route_delay_spine (S7-B PR1 Task 2).
-
-Runs ONLY against a disposable Postgres database migrated to head (incl. 0063);
-self-skips when TRANSIT_TEST_DATABASE_URL is unset, so the offline gate stays green:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
-        uv run pytest tests/test_route_delay_spine_real_db_regression.py -v
-
-Exercises what the FakeConnection unit tests cannot (they do not execute SQL): that the
-builder computes the EXACT count columns from the live delay_seconds predicates (NOT from
-histogram bins), bins the histogram correctly, splits direction, accrues only closed days,
-and is watermark-idempotent. The seed is a hand-computed oracle (see the per-test comments).
-"""
 
 from __future__ import annotations
 
@@ -78,18 +64,14 @@ def _seed(connection, seed_provider) -> None:  # noqa: ANN001
 
     h8 = datetime.combine(cld, time(8, 0), tzinfo=TORONTO).astimezone(UTC)
     h9 = datetime.combine(cld, time(9, 0), tzinfo=TORONTO).astimezone(UTC)
-    # hour 8, dir 0: 14 in-clamp delays + a 7200 ghost (ABS>3600) + a NULL.
     dir0_h8 = [-3600, -120, -61, -60, -30, 0, 59, 60, 61, 200, 299, 301, 1800, 3599, 7200, None]
-    dir1_h8 = [0, 60]  # second direction, same hour
-    dir0_h9 = [60, 60, 90]  # for the additivity property
+    dir1_h8 = [0, 60]
+    dir0_h9 = [60, 60, 90]
     _insert_rows(
         connection, cld, 997101, 997201, h8, [(d, 0) for d in dir0_h8] + [(d, 1) for d in dir1_h8]
     )
     _insert_rows(connection, cld, 997102, 997202, h9, [(d, 0) for d in dir0_h9])
 
-    # hour 10, dir 0: delayed-trip parity across adversarial 5m buckets. The repeated
-    # trip counts once in the first bucket and once again in the second; the positive
-    # ghost counts, while zero/negative delays and a NULL trip_id do not.
     h10a = datetime.combine(cld, time(10, 1), tzinfo=TORONTO).astimezone(UTC)
     h10b = datetime.combine(cld, time(10, 7), tzinfo=TORONTO).astimezone(UTC)
     _insert_rows(
@@ -111,7 +93,6 @@ def _seed(connection, seed_provider) -> None:  # noqa: ANN001
         trip_ids=["repeat"],
     )
 
-    # An OPEN (today) row that must NOT be built (closed-day watermark).
     today = datetime.now(TORONTO).replace(hour=8, minute=0, second=0, microsecond=0)
     _insert_rows(connection, today.date(), 997103, 997203, today.astimezone(UTC), [(100, 0)])
 
@@ -196,34 +177,28 @@ def _spine_row(connection, hour, direction):  # noqa: ANN001
 def test_spine_hour8_dir0_exact_counts_and_histogram(conn) -> None:  # noqa: ANN001
     r = _spine_row(conn, 8, 0)
     assert r is not None
-    # observation_count = every fact row in the grain: 14 in-clamp + ghost(7200) + NULL.
     assert r["observation_count"] == 16
-    # delay_observation_count = COUNT(delay_seconds): NULL excluded, ghost INCLUDED.
     assert r["delay_observation_count"] == 15
-    # on-time = delays in [-60, 300): -60,-30,0,59,60,61,200,299.
     assert r["on_time_observation_count"] == 8
-    # severe = delay > 300 AND ABS <= 3600: 301, 1800, 3599 (ghost 7200 excluded).
     assert r["severe_delay_count"] == 3
-    # pooled, ghost-excluded: sum of the 14 in-clamp delays.
     assert r["sum_delay_seconds"] == 2508
     hist = list(r["delay_histogram"])
     assert len(hist) == 21
-    # in-clamp only -> 14, NOT delay_observation_count(15) (the ghost has no bin).
     assert sum(hist) == 14
-    assert hist[5] == 1  # bin 5 = [-60,-30): the -60
-    assert hist[9] == 2  # bin 9 = [60,90): 60, 61
-    assert hist[14] == 1  # bin 14 = [240,300): 299 (NOT severe)
+    assert hist[5] == 1
+    assert hist[9] == 2
+    assert hist[14] == 1
     assert (
         hist[15] == 1
-    )  # bin 15 = [300,420): 301 (severe shares the bin -> why severe is a count, not a bin sum)
+    )
 
 
 def test_spine_direction_split_not_merged(conn) -> None:  # noqa: ANN001
     r0 = _spine_row(conn, 8, 0)
     r1 = _spine_row(conn, 8, 1)
     assert r1 is not None
-    assert r1["observation_count"] == 2  # dir 1 is its OWN PK row
-    assert r0["observation_count"] == 16  # not merged into dir 0
+    assert r1["observation_count"] == 2
+    assert r0["observation_count"] == 16
 
 
 def test_spine_open_day_excluded(conn) -> None:  # noqa: ANN001
@@ -235,17 +210,16 @@ def test_spine_open_day_excluded(conn) -> None:  # noqa: ANN001
         ),
         {"p": PROVIDER, "d": today},
     ).scalar_one()
-    assert n == 0  # the open (today) day is never built
+    assert n == 0
 
 
 def test_spine_histograms_are_additive_across_hours(conn) -> None:  # noqa: ANN001
     h8 = list(_spine_row(conn, 8, 0)["delay_histogram"])
     h9 = list(_spine_row(conn, 9, 0)["delay_histogram"])
-    # hour 9 dir 0 = [60, 60, 90] -> bin 9 = 2, bin 10 = 1.
     assert h9[9] == 2 and h9[10] == 1
     assert sum(h9) == 3
     combined = [a + b for a, b in zip(h8, h9, strict=False)]
-    assert combined[9] == 4  # 2 (h8) + 2 (h9): bins re-merge by addition
+    assert combined[9] == 4
     assert sum(combined) == sum(h8) + sum(h9) == 17
 
 
@@ -292,7 +266,7 @@ def test_spine_watermark_idempotent(conn) -> None:  # noqa: ANN001
         text("SELECT count(*) FROM gold.route_delay_spine WHERE provider_id = :p"),
         {"p": PROVIDER},
     ).scalar_one()
-    _build(conn)  # re-run in the same transaction; the watermark must skip the closed day
+    _build(conn)
     after = conn.execute(
         text("SELECT count(*) FROM gold.route_delay_spine WHERE provider_id = :p"),
         {"p": PROVIDER},

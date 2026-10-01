@@ -1,4 +1,3 @@
-"""Selected Gold projection dirties daily history in the same transaction."""
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor

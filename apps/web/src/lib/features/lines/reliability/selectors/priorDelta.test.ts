@@ -5,8 +5,6 @@ describe('priorDelta', () => {
 	it('compares the published metric values without inferring sampling significance', () => {
 		expect(priorDelta(90, 85)).toBe(5);
 		expect(priorDelta(81, 90)).toBe(-9);
-		// These gap distributions both have mean 7, but their medians are 3 and 1.
-		// The observed median difference remains descriptive; no mean test applies.
 		expect(priorDelta(3, 1, 1)).toBe(2);
 	});
 

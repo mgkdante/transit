@@ -1,4 +1,3 @@
-"""Package materialized test bundles without restamping or copying their children."""
 
 from transit_ops.snapshots import builders, gate
 from transit_ops.snapshots.builders.historic.history_common import history_pointer_path

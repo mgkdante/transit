@@ -1,34 +1,3 @@
-<!--
-  StopReliabilitySurface — the composed Stops RELIABILITY surface (S8A re-seat).
-
-  The single component StopDetail mounts in its reliability pane (mirroring how
-  RouteDetail mounts RouteReliabilityClusters). It owns:
-    - the shared responsive left rail (SurfaceRail) + $lib/filters codec: grain is
-      seeded ONCE from ?grain (ENUM-GUARDED to day|week|month — never a cast),
-      mirrored back via mirrorSearchParam (day default omitted), and availability =
-      EXPLICIT `available` flags per grain (a stop has ONE snapshot per grain, not an
-      N-bucket series, so NOT the MIN_POINTS bucket clamp — that would wrongly disable
-      every stop grain). The rail holds the grain picker, the shared retained-history
-      navigator, and a vertical section ToC of the PRESENT sections
-      (active-highlighted via observeActiveToc); it renders as a sticky bare rail on
-      desktop and ONE glass pill→sheet on mobile (single source);
-    - ONE mapping pass through the pure selectors, each section a pure presenter;
-    - the operator 2-col board (dow + time-of-day on one row, crowding + by-route
-      next; percentiles + habits full-width heroes) + the daily-trend hero, all in the
-      content column beside the rail;
-    - a test-only {from,to} DateWindow override for the daily trend + verdict. In
-      production the shared navigator owns the retained range; that range also drives
-      crowding when retained occupancy is available.
-
-  DATE-RANGE HONESTY: grain is a day|week|month current-snapshot RADIOGROUP. Retained
-  ranges replace only the dated daily[] and occupancy views; periods[], habits,
-  weekday, time-of-day, and by-line data stay explicitly labelled current-only.
-
-  Two-rail note: StopDetail's `next` tab keeps its own ControlsRail (status/route
-  chips). The grain radiogroup here binds ONE `grain` state; SurfaceRail is a layout
-  composer only, so the two rails never collide. --primary lives only on the active
-  grain chip.
--->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { localizeHref, type Locale } from '$lib/i18n';
@@ -68,8 +37,6 @@
 	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
-	// The shared occupancy band vocabulary (the SAME labels the lines surface renders).
-	// The only sanctioned stops→lines import (crossFeatureImports EXEMPTION).
 	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
 
 	import {
@@ -99,17 +66,11 @@
 	import SectionDailyTrend from './SectionDailyTrend.svelte';
 
 	interface StopReliabilitySurfaceProps {
-		/** The stop's historic reliability archive. */
 		data: StopReliability;
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** Test-only daily verdict/chart override; production uses the history resource. */
 		window?: DateWindow | null;
-		/** Stop-keyed retained range resource, owned by StopDetail. */
 		history?: StopHistoryResource;
-		/** Shared detail-page summary, aligned above the article cards beside the rail. */
 		articleSummary?: Snippet;
-		/** Only the visible reliability pane owns grain and retained-range URL state. */
 		syncUrl?: boolean;
 	}
 	let {
@@ -130,36 +91,24 @@
 		toc: 'stop-reliability-toc',
 	});
 
-	/* ── grain: codec-seeded, SurfaceRail-driven ──────────────────────────────── */
-	// The set of calendar grains this stop's periods[] actually carry (availability).
 	const present = $derived(presentGrains(data.periods));
 	const dfltGrain = $derived(defaultStopGrain(present));
 
-	// Seed grain ONCE from the shared codec. ENUM-GUARD (not a cast): seed.grain is a
-	// codec Grain (may be 'live'/'day'/undefined) — only the two coarse calendar grains
-	// this surface serves pass through; anything else falls to 'day'. The availability
-	// $effect below then clamps a day-default that the stop lacks to its richest grain.
 	const seed = fromSearchParams(page.url.searchParams);
 	let grain = $state<StopGrain>(
 		seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
 	);
 
-	// Availability clamp (one-shot): a URL-seeded grain the stop can't serve falls back
-	// to its richest available grain so the rail never resolves to an empty grain. The
-	// URL is a hint, never a data source.
 	let settled = $state(false);
 	$effect(() => {
 		if (settled) return;
 		settled = true;
 		if (!present.has(grain)) grain = dfltGrain;
 	});
-	// Keep the selection on a grain that has data if the stop changes under us (the
-	// keyed re-mount usually handles this, but a defensive clamp costs nothing).
 	$effect(() => {
 		if (settled && !present.has(grain)) grain = dfltGrain;
 	});
 
-	/* ── retained date-range ownership ─────────────────────────────────────────── */
 	const currentHistoryDates = $derived(
 		[...new Set((data.daily ?? []).map((point) => point.date))].sort(),
 	);
@@ -209,10 +158,6 @@
 		if (syncUrl) mirrorSearchParams(historyWire);
 	});
 
-	// Grain radiogroup wiring: EXPLICIT `available` flags (NOT the bucket clamp) — one
-	// snapshot per grain, so a grain is enabled iff the stop carries that grain. The
-	// SAME segments + `grain` binding drive the ONE GrainPicker SurfaceRail renders in
-	// both the bare desktop rail AND the mobile sheet (single source, no divergence).
 	const grainLabels = $derived<Partial<Record<StopGrain, string>>>({
 		day: copy.grain.day,
 		week: copy.grain.week,
@@ -222,10 +167,8 @@
 		STOP_GRAINS.map((g) => ({ key: g, label: grainLabels[g] ?? g, available: present.has(g) })),
 	);
 	const windowCaption = $derived(copy.grain.window(grain));
-	// The mobile rail pill's collapsed summary — the active grain label.
 	const grainSummary = $derived(grainLabels[grain] ?? grain);
 
-	/* ── ONE mapping pass — each section reads its pure VM slice ────────────────── */
 	const selectedData = $derived.by<StopReliability>(() => {
 		if (!explicitHistory) return data;
 		if (retainedReady && history?.value != null) {
@@ -259,8 +202,6 @@
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	// Stop otp_pct is the non-severe proxy. Its nominal bounds reconstruct a numerator
-	// from the rounded share; the stop copy identifies the population and dependence limit.
 	const gradedPeriodRaw = $derived.by(() => {
 		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
 		return rows.length > 0 ? rows[rows.length - 1] : null;
@@ -313,12 +254,6 @@
 		explicitHistory && historySelectionText != null ? historySelectionText : copy.crowding.window,
 	);
 
-	/* ── section ToC (P5.4 responsive left-rail wayfinding) ─────────────────────
-	   A vertical jump list of the PRESENT sections (built off the SAME conditions
-	   that mount each tile below, so the ToC never lists a stood-down section).
-	   Retained selection applies to the trend, daily percentiles and crowding sections; all other
-	   sections keep their explicit current-only scope. The observer keys on each
-	   tile's [data-toc] anchor (minted below, locale-free). */
 	const sectionNav = $derived(
 		[
 			{ id: 'stop-rel-trend', label: copy.trend.heading, present: true },
@@ -336,9 +271,6 @@
 		].filter((s) => s.present),
 	);
 
-	// Map the present sections to numbered TocEntry rows for the shared TocNav (badge =
-	// station-style SEC number; flat list, no children) — the SAME jump-list every other
-	// surface's rail renders, so wayfinding looks identical site-wide.
 	const tocEntries: TocEntry[] = $derived(
 		sectionNav.map((s, i) => ({
 			id: s.id,
@@ -352,8 +284,6 @@
 	const sectionIndex = (id: string): number => sectionNav.findIndex((section) => section.id === id);
 	const sectionKey = (id: string): string => `stop-reliability-card-${id}`;
 
-	// One IntersectionObserver over the present tiles' [data-toc] anchors owns the
-	// active section the rail ToC highlights (client-only).
 	let activeId = $state('');
 	let cardOpenSignals = $state<Record<string, number>>({});
 	let navigationGeneration = 0;
@@ -369,8 +299,6 @@
 		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
 	}
 
-	// A ToC jump first opens its data disclosure, waits for its layout to settle,
-	// then scrolls. Filters and the ToC itself remain visible in the independent rail.
 	async function navigate(id: string): Promise<void> {
 		const generation = ++navigationGeneration;
 		await revealTocTarget(id, {
@@ -386,14 +314,7 @@
 {/snippet}
 
 <div class="stop-reliability">
-	<!-- P5.4: the grain picker + retained-history navigator + section ToC live in the
-	     shared SurfaceRail — a sticky bare rail beside the sections on desktop, and
-	     ONE merged glass pill→sheet menu on mobile. -->
 	<div data-slot="stop-reliability-sections">
-		<!-- The rail content — the grain radiogroup (+ resolved-window caption) + the
-		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the bare desktop
-		     rail AND the mobile sheet (single source; both bind the same grain + track
-		     activeId). -->
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			{#snippet historyControls()}
 				<HistoryNavigator
@@ -435,11 +356,6 @@
 				/>
 			</ArticleControlDisclosure>
 
-			<!-- Section ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
-			     status / network / lines rails: a numbered jump list of the PRESENT sections
-			     with TocNav's own "SEC n/m" readout (the rail's ONLY position counter), the
-			     active one amber-highlighted. Picking a section also dismisses the mobile
-			     sheet through SurfaceRail's explicit closeSheet seam. -->
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
@@ -467,7 +383,6 @@
 				{historyLiveAnnouncement}
 			</p>
 
-			<!-- The sections — the content column beside the rail. -->
 			<div class="stop-reliability-content">
 				{#if historyAnnouncement}
 					<p class="stop-history-correction" data-slot="history-correction">
@@ -498,11 +413,7 @@
 						</div>
 					{/if}
 				{/if}
-				<!-- Every present reliability disclosure follows one connected, source-ordered
-			     article sequence. Conditional cards stand down without leaving a grid hole. -->
 				<ArticleSectionStack>
-					<!-- Daily-trend + range-verdict section: the dated retained series selected by
-				     the rail navigator. A `window` prop exists only for presenter-level tests. -->
 					<div class="stop-anchor" id="stop-rel-trend">
 						<CollapsibleSection
 							title={copy.trend.heading}
@@ -535,8 +446,6 @@
 						</CollapsibleSection>
 					</div>
 
-					<!-- Each present tile keeps its locale-free id/data-toc anchor so the rail ToC
-				     can jump to and highlight it. -->
 					{#if dayPercentiles != null}
 						<div class="stop-anchor" id="stop-rel-percentiles">
 							<CollapsibleSection
@@ -596,7 +505,6 @@
 						</div>
 					{/if}
 
-					<!-- ROW 1: habits (full-width hero). -->
 					{#if habitsPresent}
 						<div class="stop-anchor" id="stop-rel-habits">
 							<CollapsibleSection
@@ -624,7 +532,6 @@
 						</div>
 					{/if}
 
-					<!-- ROW: dow + time-of-day (operator pairing). An absent mate lets the survivor span. -->
 					{#if hasWeekday}
 						<div class="stop-anchor" id="stop-rel-weekday">
 							<CollapsibleSection
@@ -684,7 +591,6 @@
 						</div>
 					{/if}
 
-					<!-- ROW: crowding + by-route (operator pairing). -->
 					<div class="stop-anchor" id="stop-rel-crowding">
 						<CollapsibleSection
 							title={copy.crowding.heading}
@@ -769,7 +675,6 @@
 		width: 100%;
 	}
 
-	/* The content column — the daily-trend hero + the readouts board. */
 	.stop-reliability-content {
 		display: flex;
 		flex-direction: column;
@@ -818,9 +723,6 @@
 		color: var(--muted-foreground);
 	}
 
-	/* The rail section jump-list rides the ONE shared TocNav (same component the metrics /
-	   status / network / lines rails use), so every surface's wayfinding looks identical.
-	   Only this thin flex wrapper is local; TocNav owns the rest. */
 	.rail-toc {
 		display: flex;
 		flex-direction: column;
@@ -828,7 +730,6 @@
 		min-width: 0;
 	}
 
-	/* Section anchor wrapper: the locale-free id complements the card's data-toc target. */
 	.stop-anchor {
 		display: flex;
 		flex-direction: column;
@@ -838,7 +739,6 @@
 		flex: 1;
 		min-width: 0;
 	}
-	/* Smooth jump-to from the ToC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {
 		:global([data-slot='reliability-rail-layout']) {
 			scroll-behavior: smooth;

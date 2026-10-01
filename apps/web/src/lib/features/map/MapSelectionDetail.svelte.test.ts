@@ -76,8 +76,6 @@ function splitContainerRules(css: string): {
 const RIGHT_PANEL_INLINE_BORDER_PX = 1;
 
 function containerConditionMatches(condition: string, outerWidthPx: number): boolean {
-	// RightPanel owns one leading border. Translate both the named outer ladder
-	// threshold and the sampled outer box into the content-box values queried by CSS.
 	const contentWidthPx = outerWidthPx - RIGHT_PANEL_INLINE_BORDER_PX;
 	const range = condition.match(/\(width\s*([<>])\s*([\d.]+)rem\)/);
 	if (range) {
@@ -101,8 +99,6 @@ function installContainerSizeSeam(outerWidthPx: number): HTMLStyleElement {
 		.map(({ body }) => body)
 		.join('\n');
 	const style = document.createElement('style');
-	// Put activated query rules first on purpose: hides must beat later-emitted leaf defaults by
-	// specificity, not by a lucky bundle order. Happy DOM then computes the real flattened cascade.
 	style.textContent = [
 		activeQueries,
 		compiledCss(PRESENCE_CSS_FILES[1]),
@@ -1387,14 +1383,12 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 180 } },
 		});
 
-		// The honest caution note uses the shared vocabulary and is not a hover-driven live region.
 		const note = container.querySelector('.map-not-reporting')!;
 		expect(note).toBeInTheDocument();
 		expect(note).not.toHaveAttribute('role');
 		expect(note).toHaveAttribute('data-density', 'chip');
 		expect(note).toHaveTextContent('No recent position');
 		expect(note).toHaveTextContent('3 min');
-		// No em-dash in the copy (brand rule) — a middot separates the two halves.
 		expect(note.textContent).not.toContain('—');
 		expect(getByText(/last seen 3 min ago/)).toBeInTheDocument();
 	});
@@ -1571,7 +1565,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('renders a null delay as the honest absence (unknown + why), never "No delay" or "On time"', () => {
-		// A vehicle the feed reports with a null delay — must NOT read as on-time.
 		const nullDelayIndex = buildLiveIndex({
 			vehicles: {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -1602,12 +1595,10 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The status cell owns the honest delay absence (calm "unknown" tone), not a second row.
 		const status = detailValue(container, 'Status');
 		const absent = status.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
 		expect(absent).toHaveAttribute('data-density', 'chip');
-		// The reason: the feed simply omitted it (not-reported), not on-time, not "No delay".
 		expect(absent!.textContent).toContain('not reported in the live feed');
 		expect(queryByText('On time')).not.toBeInTheDocument();
 		expect(queryByText('No delay')).not.toBeInTheDocument();
@@ -1644,7 +1635,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 200 } },
 		});
 
-		// The delay-grid cell (first absent-value in the detail grid) reads stale.
 		const absent = [
 			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
 		].find((node) => node.textContent?.includes('this vehicle is not reporting'));
@@ -1653,8 +1643,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('explains a metro vehicle null delay as metro-no-realtime ("No live data"), never not-reported or on-time', () => {
-		// A metro route (route_type 1) carries NO realtime in the feed by design, so a
-		// null delay is honestly "no live data" (metro-no-realtime), not "not reported".
 		const metroIndex = buildLiveIndex({
 			vehicles: {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -1694,7 +1682,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The delay-grid cell (first absent-value in the detail grid) reads metro-no-realtime.
 		const absent = [
 			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
 		].find((node) => node.textContent?.includes('live positions are not published here'));
@@ -1717,7 +1704,6 @@ describe('MapSelectionDetail', () => {
 						updated_utc: utc('2026-06-15T00:00:00Z'),
 						route: '24',
 						trip: null,
-						// A next-stop id that is NOT in the static stop index.
 						next_stop: 'ghost-stop-999',
 						bearing: null,
 						delay_min: 2,
@@ -1736,7 +1722,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The raw id never leaks; the layer says the next stop is unknown.
 		expect(queryByText('ghost-stop-999')).not.toBeInTheDocument();
 		const absent = container.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
@@ -1744,8 +1729,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('renders a null stop name as the labelled fallback, never the bare id', () => {
-		// stop-2 (the next stop) is present but UNNAMED in this index — its name must
-		// render the honest "Stop {id} (name unavailable)" fallback, never the id alone.
 		const unnamedStops: StopIndexEntry[] = [
 			{ id: 'stop-1', name: 'Sherbrooke / Saint-Denis', code: '52618', lat: 45.51, lon: -73.57 },
 			{ id: 'stop-3', name: 'Van Horne / Rockland', code: '57191', lat: 45.53, lon: -73.59 },
@@ -1777,7 +1760,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The honest labelled fallback shows; the bare id alone is never rendered.
 		expect(getByText('Stop stop-2 (name unavailable)')).toBeInTheDocument();
 	});
 });
@@ -1920,7 +1902,6 @@ describe('vehicle attribute definition groups', () => {
 				];
 				expect(cells).toHaveLength(3);
 				for (const cell of cells) {
-					// Native geometry remains required; this checks the grid stretch contract.
 					expect(getComputedStyle(cell).display).toBe('grid');
 					expectHard44(cell.querySelector('button')!);
 					const columns = getComputedStyle(cell.parentElement!).gridTemplateColumns.replace(

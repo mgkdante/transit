@@ -1,4 +1,3 @@
-"""Root composition keeps checked object identity and trusted reference inventory."""
 
 from collections import Counter
 from types import SimpleNamespace

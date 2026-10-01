@@ -1,14 +1,6 @@
-# transit-data-proxy — serves the public /v1 snapshot contract from the
-# transit-snapshots R2 bucket on the canonical host, plus the
-# aggregated public KPI endpoint /api/v1/kpis (src/kpis.js).
-#
-# Deliberately narrow zone routes: the compatibility data/API surfaces beat the
-# web app's wider transit.yesid.dev/* route; every other path falls through.
-# /api/v1/* stays one level below /api/* so the web app keeps /api/vitals.
 name = "transit-data-proxy"
 main = "src/worker.js"
 compatibility_date = "2026-06-10"
-# Keep this production account aligned with the transit-web Wrangler config.
 account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
 workers_dev = false
 

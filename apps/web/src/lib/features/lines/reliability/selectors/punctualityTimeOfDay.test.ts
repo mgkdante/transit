@@ -45,7 +45,6 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		if (spec.kind !== 'dot-strip') return;
 		expect(spec.domain).toBe(SEVERE_DOMAIN);
 		expect(spec.points.map((p) => p.key)).toEqual(['am_peak', 'midday', 'pm_peak']);
-		// severeShareToSeverity: >=10 critical, >=5 high, else watch.
 		expect(spec.points.map((p) => p.severity)).toEqual(['watch', 'high', 'critical']);
 		expect(spec.medianRef).toBeNull();
 	});
@@ -63,9 +62,7 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		);
 		expect(spec.kind).toBe('dot-strip');
 		if (spec.kind !== 'dot-strip') return;
-		// Weighted: (4·1000 + 8·200 + 12·1000 + 30·50) / 2250 = 19100/2250 ≈ 8.49.
 		expect(spec.medianRef).toBeCloseTo(19100 / 2250, 5);
-		// The naive mean-of-rates would be (4+8+12+30)/4 = 13.5 — the weighted line sits well below it.
 		expect(spec.medianRef as number).toBeLessThan(13.5);
 	});
 

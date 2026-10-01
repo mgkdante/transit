@@ -1,13 +1,3 @@
-// absence.test.ts — the pure unknown-data LOGIC gate.
-//
-// Gates the shared missing-data layer:
-//   - the unified AbsenceReasonKey covers the service-window keys + the new
-//     value-absence keys, and ABSENCE_COPY has EN+FR short+why for EVERY one
-//     (parity, non-empty, no em dash, no provider literal);
-//   - Maybe helpers known()/absent() build the discriminated value;
-//   - describeAbsence interpolates params + returns the calm "unknown" tone;
-//   - fieldAbsenceReason picks not-reporting (stale) vs not-reported.
-
 import { describe, it, expect } from 'vitest';
 import {
 	ABSENCE_COPY,
@@ -22,7 +12,6 @@ import type { Locale } from '$lib/i18n';
 
 const LOCALES: Locale[] = ['en', 'fr'];
 
-// Every key the unified vocabulary must carry (service-window + value-absence).
 const ALL_KEYS: AbsenceReasonKey[] = [
 	'metro-no-realtime',
 	'closed-opens-at',
@@ -46,7 +35,6 @@ const ALL_KEYS: AbsenceReasonKey[] = [
 	'no-retained-data',
 ];
 
-// Provider literals copy must NEVER contain (provider-agnostic invariant).
 const PROVIDER_LITERALS = ['STM', 'STO', 'OC', 'STS', 'métro', 'metro'];
 
 const STATUS_KEYS = [
@@ -118,7 +106,7 @@ describe('Maybe helpers — known() / absent()', () => {
 	it('known() wraps a present value with the true discriminant', () => {
 		const m = known(42);
 		expect(m).toEqual({ known: true, value: 42 });
-		if (m.known) expect(m.value).toBe(42); // narrows
+		if (m.known) expect(m.value).toBe(42);
 	});
 
 	it('absent() carries the reason key (no params)', () => {

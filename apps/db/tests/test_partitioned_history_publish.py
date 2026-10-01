@@ -289,7 +289,6 @@ class _MalformedStopIndexSummary:
 
 @pytest.fixture(autouse=True)
 def _default_empty_line_history(monkeypatch):
-    """Keep pre-Line publisher tests scoped to their original Network subject."""
 
     monkeypatch.setattr(
         publish.builders,
@@ -320,7 +319,6 @@ class _MaterializedNetworkPlan:
 
 
 class _SelfConsistentEmptyIndexPlan:
-    """Streams real children, then lies with a self-consistent empty pointer."""
 
     def __init__(self, plan) -> None:  # noqa: ANN001
         self.plan = plan
@@ -345,7 +343,6 @@ class _SelfConsistentEmptyIndexPlan:
 
 
 class _ClearsIndexRefInputsPlan:
-    """Mutates the supplied ref list before returning an otherwise honest index."""
 
     def __init__(self, plan) -> None:  # noqa: ANN001
         self.plan = plan
@@ -359,7 +356,6 @@ class _ClearsIndexRefInputsPlan:
 
 
 class _PoisonsIndexRefInputsPlan:
-    """Repoints a supplied ref after its real immutable child was uploaded."""
 
     def __init__(self, plan) -> None:  # noqa: ANN001
         self.plan = plan
@@ -378,7 +374,6 @@ class _PoisonsIndexRefInputsPlan:
 
 
 class _SelfConsistentOmittingLineSummary:
-    """Streams every Line child, then omits one entity from both mutable parents."""
 
     def __init__(self) -> None:
         self.summary = BuilderLineHistoryStreamSummary()
@@ -397,7 +392,6 @@ class _SelfConsistentOmittingLineSummary:
 
 
 class _ClearsLineDirectoryInputsSummary:
-    """Clears the supplied entity-index list before returning an empty directory."""
 
     def __init__(self) -> None:
         self.summary = BuilderLineHistoryStreamSummary()
@@ -417,7 +411,6 @@ class _ClearsLineDirectoryInputsSummary:
 
 
 class _PoisonsLineIndexSummary:
-    """Returns a self-consistent entity index that drops its streamed months."""
 
     def __init__(self) -> None:
         self.summary = BuilderLineHistoryStreamSummary()
@@ -449,7 +442,6 @@ class _PoisonsLineIndexSummary:
 
 
 class _MutatesSuppliedLineRefSummary:
-    """Mutates an observed ref object after its immutable child was uploaded."""
 
     def __init__(self) -> None:
         self.summary = BuilderLineHistoryStreamSummary()
@@ -483,7 +475,6 @@ class _MutatesSuppliedLineRefSummary:
 
 
 class _MutatesLineIndexBeforeDirectorySummary:
-    """Poisons a supplied child-index object while building a self-consistent directory."""
 
     def __init__(self) -> None:
         self.summary = BuilderLineHistoryStreamSummary()

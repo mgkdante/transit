@@ -35,7 +35,6 @@ describe('selectShiftBars', () => {
 		expect(mid.value).toBeNull();
 		expect(mid.label).toBe('Midday · no data');
 		expect(mid.absentReason).toBe('no-observations');
-		// a real value keeps its bare label + carries its note
 		const pm = s.rows.find((r) => r.key === 'pm')!;
 		expect(pm.label).toBe('PM peak');
 		expect(pm.note).toBe('28% bunched');

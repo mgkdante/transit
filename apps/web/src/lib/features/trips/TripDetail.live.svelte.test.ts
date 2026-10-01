@@ -83,7 +83,7 @@ const stamp = () => document.querySelector('[data-slot="freshness-stamp"]')!;
 
 beforeEach(() => {
 	vi.useFakeTimers();
-	vi.setSystemTime(base - 300_000); // Client clock is five minutes behind the report clock.
+	vi.setSystemTime(base - 300_000);
 	fixture.ttl = 30;
 	fixture.now = base;
 	fixture.epoch = 0;

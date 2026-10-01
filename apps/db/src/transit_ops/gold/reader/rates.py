@@ -1,31 +1,13 @@
-"""Rate + confidence kernel — the single owner of the published proportion math.
-
-Moved from snapshots/builders/_helpers.py (which re-exports for its callers)
-so gold rollups and snapshot builders share ONE definition. All rounding here
-is half-away-from-zero (matching Postgres ROUND; 2026-07-01 rebaseline — see
-the provenance methodology `rounding` note). Honest-NULL throughout: a missing
-numerator or empty denominator returns None, never a fabricated rate.
-"""
-
 from __future__ import annotations
 
 from transit_ops.gold.reader.histogram import SqlNumber, round_half_away
 
-# --- Chart Doctrine honesty spine (slice-S3) ---------------------------------
-# The single server-authoritative definitions of "reliable enough" and the
-# confidence channel. MIN_N_RATE is DISPLAY-ONLY: the builders always emit the
-# raw observation_count + honest rate + Wilson bounds and NEVER null a rate below
-# it (so the web keeps the n it needs for data-depth gating, and the threshold
-# stays tunable without a republish). Surfaced in Provenance.methodology so the
-# web reads ONE value. See the Transit Chart Doctrine, section 4.0 (Constants
-# Registry). The pre-existing metric-specific floors (headway COV n>=2, repeat-
-# offender recurrence_days>=3) are unrelated and stay as-is.
-MIN_N_RATE = 30  # proportion reliability floor (OTP / cancellation / silent / on-time-band)
-WILSON_Z = 1.96  # 95% two-sided Wilson score interval
+# MIN_N_RATE controls display confidence; emit raw counts, rates and Wilson bounds below it.
+MIN_N_RATE = 30
+WILSON_Z = 1.96
 
 
 def otp_pct(on_time: SqlNumber | None, known: SqlNumber | None) -> int | None:
-    """round(100 * on_time / known) as int; None when numerator or denominator is unknown."""
     if on_time is None or not known:
         return None
     known_obs = float(known)
@@ -49,14 +31,6 @@ def otp_pct_severe_proxy(
 def wilson_bounds(
     successes: SqlNumber | None, n: SqlNumber | None, *, z: float = WILSON_Z
 ) -> tuple[float, float] | None:
-    """95% Wilson score interval (lo, hi) in PERCENT (0..100) for successes/n.
-
-    The Chart Doctrine honesty channel for proportions: ranking on the LOWER
-    bound stops a tiny-n fluke (1-of-1 = 100%) from out-ranking a high-volume
-    bad actor. Pure Python, no scipy. Returns None when the numerator is unknown
-    or the denominator is falsy/<=0 — mirrors the otp_pct honest-NULL guard so a
-    missing rate never gets a fabricated band. successes is clamped into [0, n].
-    """
     if successes is None or not n:
         return None
     total = float(n)

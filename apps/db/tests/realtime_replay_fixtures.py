@@ -1,4 +1,3 @@
-"""Provider-scoped local Bronze and disposable Postgres fixtures for replay tests."""
 
 from __future__ import annotations
 
@@ -22,11 +21,9 @@ STATIC_RUN_ID = 994500
 DATASET_VERSION_ID = 994800
 STATIC_OBJECT_ID = 994900
 
-# Two trip-update snapshots five minutes apart inside one window.
 WINDOW_START = datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
 WINDOW_END = datetime(2026, 6, 20, 13, 0, tzinfo=UTC)
 SNAPSHOTS = (
-    # (realtime_snapshot_id, ingestion_run_id, ingestion_object_id, captured_at_utc, delay)
     (994601, 994701, 994901, datetime(2026, 6, 20, 12, 10, tzinfo=UTC), 60),
     (994602, 994702, 994902, datetime(2026, 6, 20, 12, 15, tzinfo=UTC), 180),
 )
@@ -39,8 +36,6 @@ REALTIME_SILVER_TABLES = (
     "silver.rt_feed_snapshots",
 )
 
-# Bounds covering Montreal; trip-update-only feed has no positions so this is a
-# no-op, but it keeps the replay provider-agnostic via the manifest bounds path.
 PROVIDER_BOUNDS = ProviderBounds(
     min_latitude=45.0,
     max_latitude=46.0,
@@ -54,7 +49,6 @@ def _storage_path(realtime_snapshot_id: int) -> str:
 
 
 def _build_trip_update_bytes(*, captured_at: datetime, delay_seconds: int) -> bytes:
-    """A one-entity, one-stop trip update whose arrival time encodes a delay."""
 
     message = gtfs_realtime_pb2.FeedMessage()
     message.header.gtfs_realtime_version = "2.0"
@@ -76,7 +70,6 @@ def _build_trip_update_bytes(*, captured_at: datetime, delay_seconds: int) -> by
     stop_update = entity.trip_update.stop_time_update.add()
     stop_update.stop_sequence = 2
     stop_update.stop_id = "S2"
-    # arrival time = scheduled 12:08 America/Toronto (= 16:08 UTC in June) + delay.
     scheduled_arrival = datetime(2026, 6, 20, 16, 8, tzinfo=UTC)
     stop_update.arrival.time = int(scheduled_arrival.timestamp()) + delay_seconds
     stop_update.arrival.delay = delay_seconds
@@ -88,7 +81,6 @@ def _build_trip_update_bytes(*, captured_at: datetime, delay_seconds: int) -> by
 
 @pytest.fixture()
 def bronze_root(tmp_path: Path) -> Path:
-    """Write the raw .pb bytes to a real local bronze tree for the replay to read."""
 
     root = tmp_path / "bronze"
     for snapshot_id, _run, _obj, captured_at, delay in SNAPSHOTS:
@@ -102,7 +94,6 @@ def bronze_root(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def settings(bronze_root: Path) -> Settings:
-    """Settings wired to a real LOCAL bronze backend rooted at the tmp tree."""
 
     return Settings(
         _env_file=None,
@@ -121,7 +112,6 @@ def engine(real_db_engine):
 
 
 def _cleanup(eng) -> None:  # noqa: ANN001
-    """Remove every row this drill could have committed, provider-scoped."""
 
     with eng.begin() as connection:
         for table_name in (
@@ -160,13 +150,6 @@ def _cleanup(eng) -> None:  # noqa: ANN001
 
 
 class _StubRegistry:
-    """Manifest-driven registry stub so the replay stays provider-agnostic.
-
-    Mirrors ProviderManifest.provider (provider_id, timezone, bounds) that the
-    replay/gold paths read; no STM hardcoding leaks into the code under test.
-    Bounds are None here (generic WGS84 fallback) since the drill feed is
-    trip-updates-only and the position-quality bbox is unused.
-    """
 
     class _Provider:
         provider_id = PROVIDER
@@ -174,7 +157,7 @@ class _StubRegistry:
         bounds = None
 
     class _Manifest:
-        provider = None  # populated in __init__
+        provider = None
 
         def realtime_feed(self, endpoint_key):
             return SimpleNamespace(endpoint_key=endpoint_key)
@@ -356,11 +339,6 @@ def _silver_counts(connection) -> dict[str, int]:  # noqa: ANN001
 
 
 def _delay_facts(connection) -> dict[int, tuple[int, int]]:  # noqa: ANN001
-    # Per-snapshot (row_count, total_delay_seconds) — a DETERMINISTIC, complete
-    # projection of the Gold delay facts. (Keying {snapshot_id: delay_seconds}
-    # over many rows/snapshot would keep an arbitrary last row — physical-order
-    # dependent — so it could differ between two builds even when the facts are
-    # identical. Count + sum catch both a row-count drift AND any value drift.)
     rows = connection.execute(
         text(
             """

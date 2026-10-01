@@ -1,9 +1,3 @@
-<!--
-  SectionRetention — the detail/aggregate retention stat pair. Both windows render
-  whenever the section is up; a missing one shows the styled honest-absence chip via
-  MetricDisplay rather than vanishing. Mechanical move out of HealthStatus.svelte;
-  the day-count formatter is passed in. Stands DOWN (parent guards) when BOTH absent.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -12,7 +6,6 @@
 	interface SectionRetentionProps {
 		detail: number | null;
 		aggregate: number | null;
-		/** Formats a retention day-count as "14 days", or null on no-data. */
 		fmtDays: (v: number | null) => string | null;
 		copy: HealthCopy;
 		locale: Locale;

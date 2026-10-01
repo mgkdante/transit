@@ -8,8 +8,6 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
-// Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
-// / ?n seed and the round-trip mirror remain covered while the page changes shells.
 let mockUrl = new URL('http://localhost/hotspots');
 const replaceState = vi.hoisted(() =>
 	vi.fn((u: string | URL) => {
@@ -97,8 +95,6 @@ const source = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/features/hotspots/HotspotsBoard.svelte'), 'utf-8');
 import { copy as hotspotsCopy } from './hotspots.copy';
 
-// A populated day ladder (both kinds + one tray) and a populated week ladder, so
-// the article has all three cards and the combined rail offers its grain control.
 function seed(): Hotspots {
 	return {
 		generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,

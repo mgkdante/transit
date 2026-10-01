@@ -28,7 +28,6 @@ LEGACY_SILVER_REALTIME_TABLES = {
 REPORTING_AGGREGATE_TABLES = (
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    # gold.route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
     "gold.report_labels",
@@ -54,13 +53,6 @@ class _ProviderScopedResult:
 
 
 class _ProviderScopedConnection:
-    """Fake connection for the per-provider reset path.
-
-    Answers the ``information_schema`` provider_id probes (every table is scoped
-    except those passed in ``tables_without_provider_id``) and records each
-    DELETE the reset issues, so the test can assert what got deleted, in what
-    order, and with which bound parameters — without a real database.
-    """
 
     def __init__(self, tables_without_provider_id: set[str]) -> None:
         self._tables_without_provider_id = tables_without_provider_id
@@ -76,7 +68,6 @@ class _ProviderScopedConnection:
             qualified = f"{params['schema']}.{params['table']}"
             has_provider_id = qualified not in self._tables_without_provider_id
             return _ProviderScopedResult((1,) if has_provider_id else None)
-        # DELETE FROM <schema.table> WHERE provider_id = :provider_id
         table = sql.split("DELETE FROM ", 1)[1].split(" WHERE", 1)[0].strip()
         self.deletes.append((table, params))
         self.delete_sql.append(sql)
@@ -107,8 +98,6 @@ def test_catalog_covers_expected_stm_source_families() -> None:
 
 
 def test_catalog_marks_realtime_optional_for_static_only_provider() -> None:
-    # A static-only / static+alerts provider has no trip/vehicle bronze, so the
-    # rebuild must not hard-require those sources.
     catalog = build_source_factory_catalog(
         "sts", present_feed_kinds={"static_schedule", "service_alerts"}
     )
@@ -173,10 +162,8 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
     assert "gold.fact_trip_delay_snapshot" in by_family["trip_updates"].gold_outputs
     assert "gold.trip_delay_summary_5m" in by_family["trip_updates"].gold_outputs
     assert "gold.route_delay_hourly" in by_family["trip_updates"].gold_outputs
-    # GC1 / Step G1 added the spine as a delay-metric read surface (route_delay_hourly kept).
     assert "gold.route_delay_spine" in by_family["trip_updates"].gold_outputs
     assert "gold.stop_delay_hourly" in by_family["trip_updates"].gold_outputs
-    # DB-0067 dropped the stop_delay weekly/monthly folds — no longer outputs.
     assert "gold.stop_delay_weekly" not in by_family["trip_updates"].gold_outputs
     assert "gold.stop_delay_monthly" not in by_family["trip_updates"].gold_outputs
 
@@ -203,7 +190,6 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.gis_line_features",
         "silver.gis_gtfs_matches",
     )
-    # map_gis_line_features + map_stops were dropped (migration 0059 — probe-only, no reader).
     assert by_family["gis_static"].gold_outputs == ("gold.map_route_lines",)
 
     assert by_family["i3_alerts"].endpoint_key == "i3_alerts"
@@ -323,8 +309,6 @@ def test_reset_requires_provider_id_without_all_providers() -> None:
 
 
 def test_reset_per_provider_deletes_only_scoped_rows_and_skips_shared_seeds() -> None:
-    # gold.report_labels is the one reset table with no provider_id column; it is
-    # a shared seed and must survive a single-provider rebuild.
     connection = _ProviderScopedConnection(tables_without_provider_id={"gold.report_labels"})
 
     summary = reset_source_factory_tables(connection, "sto")
@@ -333,8 +317,6 @@ def test_reset_per_provider_deletes_only_scoped_rows_and_skips_shared_seeds() ->
     assert summary["provider_id"] == "sto"
     assert summary["skipped_tables"] == ["gold.report_labels"]
 
-    # Every scoped table is deleted exactly once, in the catalog's child->parent
-    # order, scoped to the provider; the shared seed is never deleted.
     expected_deleted = [
         table for table in SOURCE_FACTORY_RESET_TABLES if table != "gold.report_labels"
     ]

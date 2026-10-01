@@ -14,7 +14,6 @@ describe('ReliabilityBadge', () => {
 		});
 		expect(screen.getByText('82%')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="reliability-badge"]')).not.toBeNull();
-		// The status mark carries the verdict band as a data attribute.
 		expect(container.querySelector('[data-verdict="late"]')).not.toBeNull();
 	});
 
@@ -22,13 +21,10 @@ describe('ReliabilityBadge', () => {
 		const { container } = render(ReliabilityBadge, {
 			props: { snapshot: snap({ phase: 'ready', otpPct: 82, verdict: 'late' }), locale: 'en' },
 		});
-		// The badge wrapper is the single role=img carrying the whole composed name;
-		// no separate sr-only span, no second img from the inner dot.
 		const imgs = screen.getAllByRole('img');
 		expect(imgs).toHaveLength(1);
 		expect(imgs[0]).toHaveAttribute('data-slot', 'reliability-badge');
 		expect(imgs[0]).toHaveAccessibleName('Late · 82% on time');
-		// The visible pct + the inner status dot are removed from the a11y tree.
 		expect(container.querySelector('.reliability-badge-pct')).toHaveAttribute(
 			'aria-hidden',
 			'true',
@@ -37,7 +33,6 @@ describe('ReliabilityBadge', () => {
 			'aria-hidden',
 			'true',
 		);
-		// No standalone sr-only echo of the reading remains.
 		expect(container.querySelector('.sr-only')).toBeNull();
 	});
 
@@ -56,14 +51,10 @@ describe('ReliabilityBadge', () => {
 		expect(screen.queryByText('0%')).toBeNull();
 	});
 
-	// P5.2: the decorative inline sparkline path was removed with the legacy
-	// Sparkline primitive (it was never enabled by any consumer).
-
 	it('localizes the percent grouping in FR', () => {
 		render(ReliabilityBadge, {
 			props: { snapshot: snap({ phase: 'ready', otpPct: 82, verdict: 'late' }), locale: 'fr' },
 		});
-		// FR puts a space before the percent sign (vs EN "82%").
 		const pct = document.querySelector('.reliability-badge-pct');
 		expect(pct?.textContent).toMatch(/82\s%/u);
 	});

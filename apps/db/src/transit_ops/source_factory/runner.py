@@ -7,8 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 
-# Re-exported for backwards compatibility; canonical home is core.errors so that
-# ingestion modules can raise it without importing source_factory (import cycle).
+# Keep the compatibility export here; core.errors avoids ingestion import cycles.
 from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.gis import GisIngestionResult

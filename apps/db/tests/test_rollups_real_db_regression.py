@@ -1,14 +1,3 @@
-"""Real-database ghost-trip regression tests for capped historic delay stats.
-
-These tests run only against a disposable Postgres database with the full
-Transit schema migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_rollups_real_db_regression.py -v
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -42,13 +31,6 @@ class _NoCommitEngine:
 def conn(real_db_engine, seed_provider, monkeypatch):
     with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        # Anchor in the provider timezone (America/Toronto) — the same calendar
-        # the percentile rollup's closed-day filter uses (local_date < (now() AT
-        # TIME ZONE provider)::date). A UTC-anchored base flakes at the UTC/Toronto
-        # date boundary: once real Toronto time crosses midnight, base_local_date
-        # (derived from UTC) lags the build's today_local, so the "today" open-day
-        # seed rows fall on a day the build already treats as closed. Noon-today
-        # local keeps base_local_date == today_local at any wall-clock hour.
         base_utc = (
             datetime.now(TORONTO)
             .replace(hour=12, minute=0, second=0, microsecond=0)
@@ -356,16 +338,10 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
         """,
         {"provider_id": PROVIDER, "provider_local_date": seed.base_local_date},
     )
-    # Post-0034 per-stop attribution: L1 (delay 400s, severe, attributed to S_A on
-    # the base date) makes S_A a genuinely affected stop — the pre-attribution
-    # expectation of 0 reflected smear-era seeds, not ghost exclusion. The ghost
-    # (base-2d) still contributes nothing to this date.
     assert daily["affected_stop_count"] == 1
 
 
 def test_ghost_trip_excluded_from_repeat_offender(conn) -> None:  # noqa: ANN001
-    # (The route_delay_day_of_week half was dropped in 0064 — the spine's read-time
-    # ISO-dow projection + ghost handling is covered by the cutover gate.)
     connection, _seed = conn
 
     ghost_count = _scalar(
@@ -490,18 +466,14 @@ def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  
         .all()
     )
     dates = {r["provider_local_date"] for r in rows}
-    # The open (current) local day is never built; both closed past days are.
     assert today not in dates
     assert today - timedelta(days=1) in dates
     assert today - timedelta(days=2) in dates
-    # Ghost (|delay| > 3600) excluded — only the 400s observation survives, so
-    # p50 == p90 == 400 over a single observation per closed day.
     for r in rows:
         assert r["delay_observation_count"] == 1
         assert _decimal(r["p50_delay_seconds"]) == Decimal("400.00")
         assert _decimal(r["p90_delay_seconds"]) == Decimal("400.00")
 
-    # Both append-only percentile watermark kinds recorded.
     kinds = {
         k
         for (k,) in connection.execute(
@@ -513,7 +485,6 @@ def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  
     }
     assert {"route_percentile_daily", "stop_percentile_daily"} <= kinds
 
-    # Stop percentile mirrors the closed-day set for the attributed stop.
     stop_dates = {
         r["provider_local_date"]
         for r in connection.execute(
@@ -531,7 +502,6 @@ def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN0
     connection, _seed = conn
     count_sql = "SELECT count(*) FROM gold.route_delay_percentile_daily WHERE provider_id = :p"
     before = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
-    # Re-running skips already-watermarked days (append-only — no duplicate rows).
     rollups.build_warm_rollups(
         PROVIDER,
         settings=Settings.model_construct(DATABASE_URL=None),
@@ -545,8 +515,6 @@ def test_percentile_rollups_interpolate_signed_cohort_and_exclude_unusable_delay
     connection, seed = conn
     captured_at = seed.base_utc - timedelta(days=1)
     local_date = captured_at.astimezone(TORONTO).date()
-    # Eligible sorted delays [-60, 0, 120, 300]: continuous ranks 1.5 and 2.7
-    # give p50=60 and p90=246. Ghost and unknown values must not increase n.
     delays = [-60, 0, 120, 300, 3601, None]
     _insert_snapshot(connection, seed, captured_at, entity_count=len(delays))
     _insert_trip_delay_rows(
@@ -577,8 +545,6 @@ def test_percentile_rollups_interpolate_signed_cohort_and_exclude_unusable_delay
             "PCT_STOP",
         ),
     ):
-        # Exercise the production upsert directly: this fixture has already built
-        # its closed-day markers, so an ordinary warm run may correctly skip it.
         connection.execute(statement, params)
         observed = connection.execute(
             text(

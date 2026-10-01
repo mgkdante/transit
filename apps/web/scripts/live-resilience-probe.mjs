@@ -148,7 +148,6 @@ async function waitForProbeRequestIdle(page, harness) {
 	});
 }
 
-// A request the app aborts mid-fulfillment throws from route.fulfill and emits
 // neither requestfinished nor requestfailed; the barrier must still count it.
 async function fulfillCountingAborts(route, family, completed, failed, response) {
 	try {
@@ -196,10 +195,6 @@ async function installLiveRoutes(
 	page.on('requestfinished', markFinished);
 	page.on('requestfailed', markFailed);
 
-	// `/api/stops/slim` may return its documented fail-soft 503 in Vite dev, after
-	// which the map falls back to the full static stops index. It is deliberately
-	// passed through: this probe owns only the five live families, and treating the
-	// static-catalogue fast path as a sixth routed family would corrupt the barrier.
 	await page.route('**/live/*.json', async (route) => {
 		const family = familyFromUrl(route.request().url());
 		if (!family || route.request().method() !== 'GET') {
@@ -217,7 +212,6 @@ async function installLiveRoutes(
 
 		if (failureFamilies.has(family)) {
 			// An unread error body never emits requestfinished (the app throws on
-			// !res.ok without consuming it); an empty body completes immediately.
 			const delivered = await fulfillCountingAborts(route, family, completed, failed, {
 				status: 500,
 				headers: { ...headers, 'content-length': '0' },
@@ -399,9 +393,6 @@ async function waitForProbeVehicleAtPoint(page, point, attempt) {
 	const timeoutMs = attempt === 1 ? 4_000 : 1_500;
 	const started = Date.now();
 	while (Date.now() - started < timeoutMs) {
-		// Re-fire MapHero's real mousemove picker while SwiftShader catches up. The
-		// vehicle-specific hover detail is produced by the same queryRenderedFeatures
-		// path as click, so it proves more than canvas/style load.
 		await page.mouse.move(point.x + 32, point.y + 32);
 		await page.mouse.move(point.x, point.y);
 		await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
@@ -518,8 +509,6 @@ async function openScenario(
 	const context = await browser.newContext({
 		viewport: { width: 1280, height: 900 },
 		colorScheme: 'dark',
-		// URL focus becomes a synchronous jump, leaving GL render readiness as the
-		// only selection wait. Receipts assert controller inputs, not interpolation.
 		reducedMotion: 'reduce',
 		serviceWorkers: 'block',
 	});
@@ -538,9 +527,6 @@ async function openScenario(
 		}
 
 		await settle(page, harness);
-		// Freeze autonomous TTL + manifest-pulse triggers after the constructor
-		// baseline. The real refresh epoch and lease paths still run, so each exact
-		// request delta below belongs to the receipt action that triggered it.
 		await pauseBackgroundLiveCadence(page, harness);
 		const selectionProof = selectVehicle ? await selectProbeVehicle(page, harness) : null;
 		return { context, page, harness, selectionProof, url };
@@ -607,8 +593,7 @@ async function waitForRefreshAcknowledgement(page) {
 			{ polling: 25, timeout: REFRESH_ACKNOWLEDGEMENT_TIMEOUT_MS },
 		);
 	} catch {
-		// Return the raw state below; the contract distinguishes a missing
-		// observation from a valid false-to-true transition.
+		// Return the raw state; the contract distinguishes missing observation from a valid transition.
 	}
 	return page.evaluate((key) => globalThis[key]?.state ?? null, REFRESH_ACKNOWLEDGEMENT_KEY);
 }
@@ -740,9 +725,6 @@ async function forcePoll(page, harness) {
 		x: buttonBox.x + buttonBox.width / 2,
 		y: buttonBox.y + buttonBox.height / 2,
 	};
-	// Requests are the ground truth: a click during an in-flight cycle coalesces
-	// (single-flight) and produces neither a busy flip nor new requests, so verify
-	// by per-family request arrival and retry the click when a cycle absorbed it.
 	let acknowledged = false;
 	for (let attempt = 1; attempt <= 4 && !acknowledged; attempt++) {
 		await armRefreshAcknowledgement(page);
@@ -760,7 +742,7 @@ async function forcePoll(page, harness) {
 				([family, expected]) => harness.requests[family] >= expected,
 			);
 			if (arrived) {
-				acknowledged = true; // coalesced flip was unobservable; requests prove the cycle
+				acknowledged = true;
 			} else if (attempt === 4) {
 				throw error;
 			} else {
@@ -924,9 +906,6 @@ async function alertsFailureReceipt(browser) {
 				thresholdSeconds: staleThresholdS,
 			},
 		};
-		// Frozen adjudication C: this aggregate is fresh only because every active
-		// family's retained stamp remains inside 3×TTL during this receipt. A failed
-		// family may honestly age past 3×TTL and make the aggregate stale later.
 		assert(
 			after.freshness?.stale === 'false',
 			`alerts failure made healthy vehicles stale; evidence=${JSON.stringify(freshnessEvidence)}`,

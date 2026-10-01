@@ -1,7 +1,3 @@
-// Shift severe shares on one fixed axis; missing rates remain gaps. The reference
-// approximates the observation-weighted mean among displayed reporting shifts and
-// requires a valid known-delay count for every contributing shift.
-
 import type { Locale } from '$lib/i18n';
 import type { AbsenceSpec, DotStripDatum, DotStripSpec } from '$lib/components/dataviz/chart';
 import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
@@ -9,11 +5,8 @@ import { SHIFT_GRAIN_ORDER, severeShareToSeverity } from '$lib/features/reliabil
 import type { PunctualityVM } from '../clusters';
 
 export interface TimeOfDayLabels {
-	/** Accessible name (e.g. "Severe-delay share by time of day"). */
 	title: string;
-	/** Value unit suffix (e.g. "%"). */
 	unit: string;
-	/** Localized shift label for a shift-grain key. */
 	shiftLabel: (grain: string) => string;
 }
 
@@ -43,7 +36,6 @@ export function selectPunctualityTimeOfDay(
 		};
 	}
 
-	// Published shift rates are rounded to 0.1 percentage point before weighting.
 	let weightedTotal = 0;
 	let observations = 0;
 	for (const r of rows) {

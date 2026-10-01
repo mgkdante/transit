@@ -53,8 +53,6 @@ describe('M6C-2 token and protected-surface contract', () => {
 	});
 
 	it('keeps disclosure summaries as list-items so the ::marker affordance survives', () => {
-		// display:flex/grid/block on a summary drops the UA disclosure triangle —
-		// the collapsed sections' only expand cue (red-team blocker, cured).
 		for (const file of [
 			'src/lib/features/map/detail/DetailSection.svelte',
 			'src/lib/features/map/MapSelectionDetail.svelte',

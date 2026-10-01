@@ -10,7 +10,6 @@ export function delayTone(delay: number | null | undefined): DelayTone {
 	return 'on-time';
 }
 
-/** A rounded measurement never reclassifies the publisher's raw-second status. */
 export function delayMeasurement(delay: number | null | undefined): string | null {
 	if (delay == null) return null;
 	return `${delay < 0 ? '−' : delay > 0 ? '+' : ''}${Math.abs(delay)} min`;

@@ -66,7 +66,6 @@
 					title={spec.title}
 				/>
 			</Svg>
-			<!-- Trip-appearance span and separate first/last-trip delay observations. -->
 			<Tooltip.Root>
 				<Tooltip.Header>{spec.title}</Tooltip.Header>
 				<Tooltip.List>
@@ -87,7 +86,6 @@
 		</LcChart>
 	</ChartFrame>
 
-	<!-- First-report instants; the last-trip delay can come from a later report. -->
 	<div class="dv-span-ends">
 		<div class="dv-span-end" data-end="first">
 			<span class="dv-span-end-label">{spec.firstLabel}</span>
@@ -121,7 +119,6 @@
 		</div>
 	</div>
 
-	<!-- Span length + trip-count annotations (honest: omitted when absent). -->
 	{#if spec.spanLabel || spec.tripsLabel}
 		<div class="dv-span-annot">
 			{#if spec.spanLabel}<span class="dv-span-annot-item" data-slot="span-length"

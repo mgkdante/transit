@@ -1,19 +1,6 @@
-// gradedPeriods + dayPercentiles — the calendar-grain readouts.
-//
-// Ports the StopDetail inline `gradedPeriods` + `dayPercentiles` transforms
-// VERBATIM. gradedPeriods maps the selected-grain periods → the shared
-// ReliabilityPane VM: the DAY grain carries a real p50/p90 (captioned "median"),
-// week/month carry only an observation-weighted mean (captioned "avg") — never a
-// mean wearing a "median" label. dayPercentiles surfaces the day period's median
-// (p50) and 90th percentile (p90) as its own prominent pair; both null ⇒ no pair.
-
 import type { ReliabilityPeriodVM } from '$lib/components/surface';
 import type { StopReliabilityPeriod } from '$lib/v1/schemas';
 
-/**
- * Map the selected-grain periods → the ReliabilityPane view-model. `grainLabel`
- * localizes the raw contract grain string (never the raw 'day'/'week' token).
- */
 export function selectGradedPeriods(
 	periods: readonly StopReliabilityPeriod[] | null | undefined,
 	grain: string,
@@ -34,11 +21,6 @@ export function selectGradedPeriods(
 		});
 }
 
-/**
- * The day period's median (p50) and 90th percentile (p90). The pipeline emits at most
- * one day period, so we read the single (last) row. Returns null when the day
- * grain is not selected, no day period exists, or both percentiles are absent.
- */
 export function selectDayPercentiles(
 	periods: readonly StopReliabilityPeriod[] | null | undefined,
 	grain: string,

@@ -276,7 +276,6 @@ def test_ingest_static_feed_persists_changed_zip_without_promoting_dataset(
 
 
 class _MetadataFailingConnection(RecordingConnection):
-    """Raises when the post-upload metadata write is attempted."""
 
     def __init__(self, fail_marker: str, error: Exception, **kwargs: object) -> None:
         super().__init__(**kwargs)
@@ -305,7 +304,6 @@ def test_ingest_static_feed_deletes_orphan_object_when_metadata_write_fails(
         url_setting="STM_STATIC_GTFS_URL",
     )
     boom = RuntimeError("metadata transaction blew up")
-    # The first write after the upload is the ingestion_objects insert.
     connection = _MetadataFailingConnection(
         "INSERT INTO raw.ingestion_objects",
         boom,
@@ -359,6 +357,5 @@ def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
             engine=FakeEngine(connection),
         )
 
-    # A failing best-effort delete must NOT mask the original metadata exception.
     assert exc_info.value is boom
     assert fake_storage.deleted == [fake_storage.persisted[0][1]]

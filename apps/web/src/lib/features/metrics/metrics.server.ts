@@ -5,7 +5,6 @@ import MetricBody, { type MetricBodies } from './MetricBody.svelte';
 
 const bodiesByLocale = new Map<Locale, MetricBodies>();
 
-/** Static repository content is rendered once per locale and worker instance. */
 export function getMetricBodies(locale: Locale): MetricBodies {
 	let bodies = bodiesByLocale.get(locale);
 	if (!bodies) {

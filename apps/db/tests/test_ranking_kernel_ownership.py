@@ -1,4 +1,3 @@
-"""Architecture ownership for the shared current/history ranking doctrine."""
 
 from __future__ import annotations
 

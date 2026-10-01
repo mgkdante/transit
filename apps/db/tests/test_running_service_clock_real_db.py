@@ -1,4 +1,3 @@
-"""Installed scheduled-running view behavior on a rollback-only disposable database."""
 
 from datetime import UTC, date, datetime, time, timedelta
 from importlib import import_module
@@ -23,7 +22,6 @@ def conn(real_db_engine):
 
 
 def _instant(day, offset, timezone="America/Toronto"):
-    # UTC subtraction is elapsed time; subtracting on a zoned datetime is wall time.
     noon_utc = datetime.combine(day, time(12), ZoneInfo(timezone)).astimezone(UTC)
     hours, minutes, seconds = map(int, offset.split(":"))
     return noon_utc - timedelta(hours=12) + timedelta(hours=hours, minutes=minutes, seconds=seconds)

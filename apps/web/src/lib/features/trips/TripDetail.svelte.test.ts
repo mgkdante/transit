@@ -61,7 +61,6 @@ vi.mock('$lib/v1/boot', () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),
 }));
-// The optional stop-name lookup deliberately falls back to raw IDs in this fixture.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		get data() {
@@ -73,7 +72,6 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		reload: vi.fn(),
 	}),
 }));
-// Pin server time five minutes after generation, independent of client wall time.
 const clockStub = vi.hoisted(() => ({
 	get now() {
 		return Date.parse('2026-06-15T12:05:00Z');

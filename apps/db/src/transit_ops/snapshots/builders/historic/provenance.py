@@ -1,5 +1,3 @@
-"""Publish source lineage, freshness, retention and metric methodology."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -43,10 +41,6 @@ _PROVENANCE_FRESHNESS_SQL = named_query(
     """
 )
 
-# Feed conformance for the provider's current static load: the out-of-norm signal
-# is the unknown/extra GTFS members captured verbatim in silver.gtfs_extra_rows
-# (mirrors /health check_feed_conformance, scoped to this provider). Empty result
-# => no current static dataset => no conformance block.
 _PROVENANCE_CONFORMANCE_SQL = named_query(
     "provenance.conformance",
     """
@@ -75,17 +69,9 @@ _PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
 def build_provenance(
     conn: Connection, provider_id: str = "stm", *, generated_utc: str
 ) -> Provenance:
-    """Build provenance.json — feed lineage, freshness, retention policy, methodology.
-
-    Sources from gold.source_lineage_reporting (is_current=true only).
-    Freshness from gold.feed_freshness_current.
-    Retention follows runtime settings; methodology describes the published fields.
-    gaps lists known missing feeds (STM metro publishes no realtime feed).
-    """
     params = {"provider_id": provider_id}
 
-    # Provider-specific known gaps. metro_realtime is STM's: it runs a métro whose
-    # realtime is unpublished. Bus/LRT-only networks (STO/OC/STS) have no such gap.
+    # The unpublished metro-realtime gap applies only to STM.
     gaps = list(_PROVIDER_GAPS.get(provider_id, []))
 
     sources: list[ProvenanceSource] = []
@@ -117,9 +103,7 @@ def build_provenance(
 
     conformance = _build_provenance_conformance(conn, params)
 
-    # Retention numbers derive from settings so the citizen-facing policy can
-    # never drift from the actual prune defaults (detail = capped facts, aggregate
-    # = warm rollups). The methodology copy below mirrors aggregate_days verbatim.
+    # Publish retention settings from their executable owners.
     _settings = get_settings()
     return Provenance(
         generated_utc=generated_utc,
@@ -146,8 +130,6 @@ def build_provenance(
                 "Wilson score bounds (wilson_lo / wilson_hi) so the UI gates display "
                 "by depth and ranks on the lower bound, not the raw rate."
             ),
-            # Machine-readable so the web reads ONE authoritative value (methodology
-            # is additionalProperties:true / z.unknown() — no schema or Zod change).
             "min_n_rate": MIN_N_RATE,
             "wilson_z": WILSON_Z,
             "rounding": (
@@ -302,8 +284,6 @@ def build_provenance(
 def _build_provenance_conformance(
     conn: Connection, params: dict
 ) -> ProvenanceConformance | None:
-    """Feed conformance for the provider's current static load, or None when the
-    provider has no current static dataset (nothing to describe)."""
     rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
     if not rows:
         return None

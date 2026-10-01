@@ -1,11 +1,3 @@
-<!--
-  HeatmapCells — the cell layer for HeatmapMark, rendered INSIDE the LayerChart <Svg> so it
-  can read the chart context's band scales (LayerChart's <Cell> treats a numeric x/y as a raw
-  pixel, not a scaled band position, so we scale here via ctx.xScale / ctx.yScale). One tier-
-  classed <rect> per (day, hour); the worst tier gets a contrasting outline AND a centred ◆
-  glyph (colour is never the sole channel). Hover/value lives on the parent's LayerChart
-  Tooltip (bounds mode reads the same scales), so this layer is purely the visual grid.
--->
 <script lang="ts">
 	import { getChartContext } from 'layerchart';
 	import { cn } from '$lib/utils';

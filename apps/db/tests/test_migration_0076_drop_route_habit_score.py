@@ -1,4 +1,3 @@
-"""Migration-source assertions for 0076_drop_route_habit_score (S14). Clones test_migration_0075."""
 
 from __future__ import annotations
 
@@ -43,13 +42,10 @@ def test_0076_upgrade_drops_the_mart() -> None:
 
 
 def test_0076_downgrade_recreates_empty_shell_from_0014_shape() -> None:
-    """Downgrade recreates the empty shell with the original 0014 columns + PK/FK (structure
-    only — the producer + registry wiring are gone, so it stays empty)."""
     src = _source()
     assert 'op.create_table(\n        "route_habit_score"' in src
     assert "pk_gold_route_habit_score" in src
     assert "fk_gold_route_habit_score_provider_id" in src
-    # the original 0014 column set (incl. the Numeric(8,4) score + Numeric(12,2) avg).
     for col in (
         "provider_id",
         "route_id",

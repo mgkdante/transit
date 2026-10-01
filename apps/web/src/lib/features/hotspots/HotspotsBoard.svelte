@@ -1,11 +1,3 @@
-<!--
-  HotspotsBoard — the /hotspots accountability article.
-
-  The page owns the published resource, URL-backed grain and worst-N state, the
-  conditional article-card model, and one combined controls/contents rail. The
-  category presenter below receives one already-built ladder at a time; no tabs
-  or category-local filter state remain.
--->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';

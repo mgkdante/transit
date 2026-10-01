@@ -28,9 +28,7 @@ describe('selectStateCuts', () => {
 		expect(vm.rows.map((r) => r.key)).toEqual(['delivered', 'cancelled', 'silent']);
 		expect(vm.rows[0].value).toBe(80);
 		expect(vm.rows[0].domain).toBe(CANCEL_RATE_DOMAIN);
-		// A delivered share is the GOOD reading — never a hot severity.
 		expect(vm.rows[0].severity).toBe('watch');
-		// A 15% silent gap reads critical.
 		expect(vm.rows[2].severity).toBe('critical');
 	});
 
@@ -52,7 +50,7 @@ describe('selectStateCuts', () => {
 			},
 			labels,
 		);
-		expect(vm.hasData).toBe(true); // real completeness alone stands it up
+		expect(vm.hasData).toBe(true);
 		expect(vm.completeness).toBe(91);
 		expect(vm.rows.every((r) => r.value === null)).toBe(true);
 	});

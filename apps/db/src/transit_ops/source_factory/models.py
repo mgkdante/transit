@@ -15,11 +15,7 @@ class FactoryPhase(StrEnum):
     R2_POST_INVENTORY = "r2_post_inventory"
     DB_RESET = "db_reset"
     SOURCE_BACKFILL = "source_backfill"
-    # Honesty: these phases mark that the silver/gold layers were BUILT, not
-    # that a validation check ran. The factory backfills and builds gold but
-    # runs no validation between them (collect_source_factory_validation_evidence
-    # is not wired into this path), so naming them "*_build" keeps the
-    # final-report from claiming a "validation: ok" check that never happened.
+    # Build phases record completed builds; they do not assert validation.
     SILVER_BUILD = "silver_build"
     GOLD_BUILD = "gold_build"
     PARITY = "parity"

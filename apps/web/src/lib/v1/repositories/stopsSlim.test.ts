@@ -1,10 +1,3 @@
-// stopsSlim.test.ts — the slim stops-index projection (§C8 item 3).
-//
-// Guards the ADDITIVE FAST-PATH invariant: the slim projection carries exactly
-// {id,name,lat,lon,code} (map/near-me's minimum), drops the bulky mode + routes[]
-// reverse index, and the runtime guard accepts a slim payload while rejecting a
-// malformed one — so `getStopsIndexSlim`'s fail-soft branch is well-defined.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopsIndex } from '$lib/v1/schemas';
 import { isSlimStopsIndex, toSlimStop, toSlimStopsIndex } from './stopsSlim';
@@ -47,7 +40,6 @@ describe('toSlimStopsIndex', () => {
 		const slim = toSlimStopsIndex(FULL);
 		expect(slim.generated_utc).toBe('2026-07-03T00:00:00Z');
 		expect(slim.stops).toHaveLength(3);
-		// No slim entry leaks mode/routes.
 		for (const s of slim.stops) {
 			expect(s).not.toHaveProperty('mode');
 			expect(s).not.toHaveProperty('routes');
@@ -78,12 +70,6 @@ describe('isSlimStopsIndex — runtime guard for the endpoint payload', () => {
 	});
 });
 
-// WHY(M1-#50 rider): cancellation must stay cancellation. Before M1, an aborted
-// slim fetch fell into the catch-all and triggered the full 1.15 MB projection
-// the consumer had just cancelled — an abort must reject as AbortError and never
-// reach the fallback. The mocked adapter proves the fallback is NOT invoked (a
-// rejection alone is satisfiable by the unfixed code, whose fallback re-throws
-// the same AbortError through the shared fetch).
 const stopsIndex = vi.hoisted(() => vi.fn(async () => ({ generated_utc: 'x', stops: [] })));
 vi.mock('$lib/v1/adapter', () => ({ adapter: { static: { stopsIndex } } }));
 

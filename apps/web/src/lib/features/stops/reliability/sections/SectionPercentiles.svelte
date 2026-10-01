@@ -7,7 +7,6 @@
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionPercentilesProps {
-		/** Daily predicted-delay percentiles; null fields remain unavailable. */
 		percentiles: { p50: number | null; p90: number | null };
 		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 		locale: Locale;

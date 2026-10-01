@@ -242,8 +242,6 @@ describe('buildRetainedLineHistory', () => {
 		const result = buildRetainedLineHistory(ENTITY_ID, index, partitions, WINDOW);
 
 		expect(result.status).toBe('complete');
-		// A percentile-only or service-only calendar day does not contribute to the
-		// pooled delay reading and must not inflate the range's "N days" claim.
 		expect(result.value?.retainedDayCount).toBe(2);
 		expect(result.value?.aggregate).toMatchObject({
 			family: 'lines',

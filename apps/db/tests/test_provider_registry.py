@@ -72,12 +72,6 @@ def _provider_manifest_payload() -> dict[str, object]:
 
 
 def _gtfs_only_manifest_payload() -> dict[str, object]:
-    """A standard GTFS agency: schedule + RT only.
-
-    Route geometry comes from shapes.txt inside the GTFS zip, so there is no
-    separate GIS feed (the STM-specific stm_sig.zip), and no proprietary alerts
-    feed. This is the shape STO / OC Transpo / STS publish.
-    """
     payload = _provider_manifest_payload()
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
@@ -97,11 +91,6 @@ def test_gtfs_only_manifest_validates_without_gis() -> None:
 
 
 def _static_only_manifest_payload() -> dict[str, object]:
-    """A schedule-only GTFS agency: no realtime trip/vehicle feeds, no alerts.
-
-    Fully GTFS-compliant — it simply produces no realtime / reliability facts.
-    The realtime cycle is manifest-driven, so the absent feeds are never polled.
-    """
     payload = _provider_manifest_payload()
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
@@ -118,7 +107,6 @@ def test_static_only_manifest_validates() -> None:
 
 
 def test_static_plus_alerts_manifest_validates() -> None:
-    # The STS shape: schedule + GTFS-RT service alerts, no live trip/vehicle feeds.
     payload = _static_only_manifest_payload()
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
@@ -161,7 +149,6 @@ def test_gtfs_only_feed_endpoint_seeds_omit_gis() -> None:
 
 
 def test_only_static_schedule_is_universally_required() -> None:
-    # static_schedule is the sole universally-required feed: dropping it fails.
     payload = _gtfs_only_manifest_payload()
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
@@ -169,8 +156,6 @@ def test_only_static_schedule_is_universally_required() -> None:
     with pytest.raises(ValidationError, match="Missing required feed definitions"):
         ProviderManifest.model_validate(payload)
 
-    # The realtime feeds are NOT required — a schedule-only / schedule+alerts
-    # agency is fully GTFS-compliant and must validate.
     for optional_feed in ("trip_updates", "vehicle_positions"):
         payload = _gtfs_only_manifest_payload()
         feeds = payload["feeds"]
@@ -234,9 +219,6 @@ def test_manifest_without_service_alerts_returns_none() -> None:
 
 
 def test_static_only_feed_endpoint_seeds_no_keyerror() -> None:
-    # Regression: a schedule-only provider (no trip/vehicle feeds) must seed
-    # without KeyError. The previous implementation indexed self.feeds with the
-    # realtime kinds unconditionally and crashed for static-only manifests.
     manifest = ProviderManifest.model_validate(_static_only_manifest_payload())
 
     seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
@@ -245,7 +227,6 @@ def test_static_only_feed_endpoint_seeds_no_keyerror() -> None:
 
 
 def test_static_plus_alerts_feed_endpoint_seeds_no_keyerror() -> None:
-    # The STS shape: schedule + GTFS-RT service alerts, no trip/vehicle feeds.
     payload = _static_only_manifest_payload()
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
@@ -327,13 +308,6 @@ def test_stm_manifest_has_live_current_static_gis_and_no_current_fallback() -> N
 
 
 def test_stm_display_name_is_accented() -> None:
-    """The public-facing provider name must carry its French accents end-to-end.
-
-    The accented display_name flows: stm.yaml -> seed-core upsert -> core.providers
-    -> gold.dim_provider -> build_manifest -> manifest.json display_name. This locks
-    the YAML source of truth so the citizen web-app shows 'Société de transport de
-    Montréal', not the ASCII-folded 'Societe de transport de Montreal' (slice-9.1.1t).
-    """
     settings = Settings(_env_file=None)
     registry = ProviderRegistry.from_project_root(
         project_root=Path(__file__).resolve().parents[1],

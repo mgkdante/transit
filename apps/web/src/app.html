@@ -3,9 +3,6 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<!-- Pre-paint theme resolution. Markup default stays dark (no-JS, crawlers, OG).
-		     Synchronous + before CSSOM => zero flash on every edge-cached page.
-		     localStorage choice wins; otherwise dark. (slice-9.2 P1.3) -->
 		<script>
 			(function () {
 				var d = document.documentElement,
@@ -19,20 +16,8 @@
 				d.dataset.theme = t;
 			})();
 		</script>
-		<!-- No-JS / pre-hydration theme-color: two media-scoped metas so the first
-		     paint's address bar / PWA surface matches the OS theme before the runtime
-		     theme store (theme.svelte.ts) takes over. The runtime override mutates the
-		     non-media <meta name="theme-color"> emitted in the SvelteKit head (SeoHead),
-		     which it targets via the :not([media]) selector so these two are left
-		     intact. Colors are the resolved --background tokens (dark #141414 / light
-		     #F3F6FB). -->
 		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414" />
 		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6FB" />
-		<!-- Fonts: vendored from pinned Fontsource packages (no external requests). Preload
-		     the latin variable woff2 for Inter (body/headings) + JetBrains Mono (mono
-		     numerals) on the LCP path. These point at content-stable copies under
-		     /fonts/ (cached immutable by _headers); the @font-face that consumes them
-		     is the latin-subset CSS imported in +layout.svelte. -->
 		<link
 			rel="preload"
 			as="font"
@@ -54,9 +39,6 @@
 			href="%sveltekit.assets%/apple-touch-icon-180.png"
 		/>
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
-		<!-- Standalone (Add to Home Screen) chrome. The standard
-		     `mobile-web-app-capable` is the modern, cross-browser token; the
-		     `apple-` prefixed one is kept for older iOS that still needs it. -->
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

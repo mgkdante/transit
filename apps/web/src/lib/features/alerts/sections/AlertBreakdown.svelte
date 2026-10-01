@@ -1,13 +1,3 @@
-<!--
-  AlertBreakdown — the Tier-2 cause/effect/severity distribution PRESENTER (S15).
-
-  A pure view over the three pre-built {@link BreakdownRow} lists. The magnitude bar
-  rides the dataviz severity scale (RankedRow owns it); --primary stays interactive-
-	  only. Each distribution stands DOWN on its own {#if} when its bucket list is empty;
-	  a published dimension narrowed to zero by current filters renders the ONE styled
-	  honest-absence chip, never a silent vanish. All logic (bucket filtering, label
-	  resolution) lives in the orchestrator; this file only tiles the rows.
--->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { BreakdownRow } from '../selectors/alertLog';
@@ -25,7 +15,6 @@
 		hasBreakdown: boolean;
 		copy: AlertHistoryCopy;
 		locale: Locale;
-		/** Optional (i) explainer snippets on the three distribution sub-headings. */
 		causeInfo?: Snippet;
 		effectInfo?: Snippet;
 		severityInfo?: Snippet;
@@ -45,7 +34,6 @@
 
 <div class="alert-history-block" data-slot="alert-breakdown">
 	{#if !hasBreakdown}
-		<!-- The analytical dimension is published, but the current filters match no rows. -->
 		<AbsentValue variant="block" reason="no-observations" {locale} />
 	{:else}
 		<DashboardGrid minTile="240px" gutter={false} class="alert-breakdown-grid">
@@ -121,15 +109,11 @@
 			grid-template-columns: repeat(auto-fit, minmax(min(var(--min-tile), 100%), 1fr));
 		}
 	}
-	/* Each cause / effect / severity distribution is a quiet bordered tile that fills
-	   its DashboardGrid cell. Chrome only (--card bg, --border) — never a data mark;
-	   the RankedRow bars bring their own dataviz-severity scale colour. */
 	.alert-history-dist {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-		/* Fill the grid cell so cause / effect / severity read as one equal-height row. */
 		height: 100%;
 		padding: 1rem;
 		border: 1px solid var(--border);

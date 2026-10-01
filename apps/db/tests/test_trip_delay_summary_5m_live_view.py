@@ -1,4 +1,3 @@
-"""Static contract test for migration 0019: gold.trip_delay_summary_5m_live view."""
 from __future__ import annotations
 
 import re
@@ -38,9 +37,6 @@ def test_upgrade_creates_view_at_expected_name() -> None:
 
 
 def test_view_reads_from_fact_table_not_batch_mart() -> None:
-    """The live view must read from the same source as the batch rollup
-    (gold.fact_trip_delay_snapshot), not from the batch mart itself —
-    otherwise it inherits the batch staleness."""
     sql = _sql_block("_CREATE_LIVE_VIEW")
 
     assert "FROM gold.fact_trip_delay_snapshot" in sql
@@ -48,24 +44,18 @@ def test_view_reads_from_fact_table_not_batch_mart() -> None:
 
 
 def test_view_window_is_bounded_to_last_24h() -> None:
-    """Window must be bounded so Power BI DirectQuery doesn't aggregate
-    over all history on every refresh."""
     sql = _sql_block("_CREATE_LIVE_VIEW")
 
     assert "captured_at_utc >= now() - INTERVAL '24 hours'" in sql
 
 
 def test_view_uses_same_5min_date_bin_as_batch_rollup() -> None:
-    """Period buckets must align with the batch rollup so the two are
-    comparable downstream."""
     sql = _sql_block("_CREATE_LIVE_VIEW")
 
     assert "DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01')" in sql
 
 
 def test_view_returns_same_column_shape_as_batch_mart() -> None:
-    """Live view must mirror gold.trip_delay_summary_5m's columns so it's
-    a drop-in source for any visual that already binds to the batch mart."""
     sql = _sql_block("_CREATE_LIVE_VIEW")
 
     for col in (

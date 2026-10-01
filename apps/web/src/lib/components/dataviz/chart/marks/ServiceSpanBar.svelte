@@ -30,5 +30,4 @@
 	</rect>
 	<circle class="dv-span-dot" cx={x(elapsedMin)} cy={trackY} r="3.5" />
 {/if}
-<!-- A zero-length interval is a point, not a minimum-width duration bar. -->
 <circle class="dv-span-dot" cx={x(0)} cy={trackY} r="3.5" />

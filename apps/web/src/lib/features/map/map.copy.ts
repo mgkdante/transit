@@ -1,9 +1,3 @@
-// Co-located copy for the live map hero (Family A, slice-9.3).
-//
-// Surface-level prose only. The StatusCode / OccupancyCode display labels now live
-// beside the enums they render, in the shared $lib/v1/enumLabels vocabulary (S7.5
-// P3), so the map legend and the network band never drift again.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const copy = defineCopy({
@@ -95,8 +89,6 @@ export const copy = defineCopy({
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
 				: `Live data for ${family} is unavailable right now.`,
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
-		// The same verdict, shortened to fit the freshness chip's age slot: under a
-		// stall the readout states the fact instead of an age (M6f-2 F14).
 		feedNotRespondingShort: 'not responding',
 		motion: {
 			label: 'Positions',

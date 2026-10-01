@@ -1,8 +1,3 @@
-// alertLog.test.ts — the PURE alert-log selectors (S15). Runs in the node "data"
-// project (no DOM). Covers severity banding, multi-period window clipping (incl. the
-// legacy scalar fallback), the filter axes, span derivation, date enumeration, the
-// safe-URL guard, and the breakdown/median builders.
-
 import { describe, it, expect } from 'vitest';
 import type { AlertHistoryEntry } from '$lib/v1/schemas';
 import {
@@ -20,8 +15,6 @@ import {
 	toBreakdownRows,
 } from './alertLog';
 
-// ISO instants are branded (IsoUtc) at the type level; test fixtures pass plain
-// strings, so accept a loose shape and cast once (matching the surface test pattern).
 type LooseEntry = {
 	id?: string;
 	severity?: string | null;
@@ -99,8 +92,8 @@ describe('alertMatchesWindow — inclusive, multi-period aware', () => {
 	it('matches when ANY of several active periods intersects the span', () => {
 		const e = entry({
 			active_periods: [
-				{ start_utc: '2026-05-01T00:00:00Z', end_utc: '2026-05-02T00:00:00Z' }, // before
-				{ start_utc: '2026-06-15T00:00:00Z', end_utc: '2026-06-16T00:00:00Z' }, // inside
+				{ start_utc: '2026-05-01T00:00:00Z', end_utc: '2026-05-02T00:00:00Z' },
+				{ start_utc: '2026-06-15T00:00:00Z', end_utc: '2026-06-16T00:00:00Z' },
 			],
 		});
 		expect(alertMatchesWindow(e, win)).toBe(true);

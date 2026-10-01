@@ -49,26 +49,19 @@ describe('RightPanel', () => {
 		expect(source).toMatch(
 			/\.right-panel\[data-open='false'\]\s*\{\s*width:\s*var\(--size-detail-rail\);\s*\}/,
 		);
-		// The shell no longer animates width or its shadow: the map overlay owns motion.
 		expect(source).not.toMatch(/transition(?:-property)?\s*:\s*[^;{}]*(?:width|box-shadow)/);
 		expect(source).toContain('box-shadow: var(--shadow-detail-panel)');
 		expect(source).not.toContain('rgba(0, 0, 0, 0.45)');
 		expect(source).not.toContain('@container right-panel (max-width: 18rem)');
 	});
 
-	// B1 — inside a resizable pane the EXPANDED panel fills the pane (width:100%),
-	// but the COLLAPSED panel must shrink to the icon-strip rem floor (3.7rem)
-	// instead of filling 100% — otherwise the "collapsed" rail is as wide as the
-	// pane percent (the operator's too-wide-strip complaint).
 	it('shrinks the collapsed resizable panel to the icon-strip rem floor (B1)', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/shell/RightPanel.svelte'),
 			'utf-8',
 		);
 
-		// Expanded resizable still fills the pane.
 		expect(source).toMatch(/\.right-panel\[data-resizable='true'\]\s*\{\s*width:\s*100%;/);
-		// Collapsed resizable shrinks to 3.7rem, NOT 100%.
 		const collapsedResizable =
 			source.match(
 				/\.right-panel\[data-resizable='true'\]\[data-open='false'\]\s*\{[\s\S]*?\}/,
@@ -76,7 +69,6 @@ describe('RightPanel', () => {
 		expect(collapsedResizable).toContain('width: var(--size-detail-rail)');
 		expect(collapsedResizable).toContain('min-width: var(--size-detail-rail)');
 		expect(collapsedResizable).not.toContain('width: 100%');
-		// The dead combined selector that forced collapsed back to 100% is gone.
 		expect(source).not.toMatch(
 			/\.right-panel\[data-resizable='true'\],\s*\.right-panel\[data-resizable='true'\]\[data-open='false'\]/,
 		);

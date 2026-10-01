@@ -37,8 +37,6 @@ const SERVICE_LABELS = {
 	headway: 'Planned headway',
 };
 
-// The plain-language delay copy (mirrors StopDetail's t.next): no `noDelay`, so an
-// absent delay falls back to `onTime` — the scheduled-board semantics.
 const DELAY_COPY: DelayLabelCopy = {
 	early: (m) => `${Math.abs(m)} min early`,
 	late: (m) => `+${m} min late`,
@@ -176,8 +174,6 @@ describe('ScheduleTable — shared scroll chassis', () => {
 
 describe('ScheduleTable — grid mode', () => {
 	it('exposes a row header in every mode and no scroll region without real overflow (S5-386 F4)', () => {
-		// rowHeader semantics moved off bespoke th markup onto a pure prop in the
-		// DataTable migration - nothing else pins the choice per mode.
 		const cases: Pick<ScheduleTableProps, 'rows' | 'mode' | 'labels'>[] = [
 			{
 				rows: [{ kind: 'grid', route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -199,8 +195,6 @@ describe('ScheduleTable — grid mode', () => {
 			const view = render(ScheduleTable, { props: { ...props, locale: 'en' } });
 			expect(view.getAllByRole('rowheader').length).toBeGreaterThan(0);
 			const frame = view.container.querySelector('.data-table-frame');
-			// jsdom reports no overflow, so the conditional keyboard region must
-			// be ABSENT here (the DataTable grain pins the positive arm).
 			expect(frame).not.toHaveAttribute('role');
 			expect(frame).not.toHaveAttribute('tabindex');
 			view.unmount();
@@ -274,7 +268,6 @@ describe('ScheduleTable — grid mode', () => {
 	});
 
 	it('caps the shown times and prints the honest "+N more" overflow note via moreLabel', () => {
-		// 32 times, cap 30 → 30 shown + a "+2 more times" note.
 		const times = Array.from({ length: 32 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 		const rows: ScheduleRow[] = [{ kind: 'grid', route: '80', times }];
 		const { container } = render(ScheduleTable, {
@@ -287,9 +280,7 @@ describe('ScheduleTable — grid mode', () => {
 				moreLabel: (n) => `+${n} more times`,
 			},
 		});
-		// Exactly 30 time cells rendered (the cap), not all 32.
 		expect(container.querySelectorAll('.stop-schedule-time').length).toBe(30);
-		// The remainder is carried by the honest note.
 		expect(screen.getByText('+2 more times')).toBeInTheDocument();
 	});
 
@@ -298,7 +289,6 @@ describe('ScheduleTable — grid mode', () => {
 		render(ScheduleTable, {
 			props: { rows, mode: 'grid', locale: 'en', labels: GRID_LABELS },
 		});
-		// The route row remains in the schedule and its departure cell states the gap.
 		expect(screen.getByText('99')).toBeInTheDocument();
 		const chip = document.querySelector('[data-slot="absent-value"]');
 		expect(chip).not.toBeNull();
@@ -346,7 +336,7 @@ describe('ScheduleTable — board mode', () => {
 
 	it('tints each departure caption with the shared status fill AND a redundant glyph', () => {
 		const rows: ScheduleRow[] = [
-			{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 }, // late
+			{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 },
 		];
 		const { container } = render(ScheduleTable, {
 			props: {
@@ -362,7 +352,6 @@ describe('ScheduleTable — board mode', () => {
 		expect(late).not.toBeNull();
 		expect(late.getAttribute('data-tone')).toBe('late');
 		expect(late.getAttribute('style') ?? '').toContain('--dataviz-status-late');
-		// Redundant glyph (▲ = behind schedule) + the plain-language delay label.
 		expect(late.querySelector('.stop-departure-glyph')?.textContent).toBe('▲');
 		expect(late.textContent).toContain('+4 min late');
 	});

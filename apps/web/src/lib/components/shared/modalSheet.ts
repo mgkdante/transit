@@ -62,11 +62,6 @@ function isolateBackground(dialog: HTMLElement, exempt: readonly Element[]): () 
 	};
 }
 
-/**
- * Shared modal behavior for the mobile listing-filter and article-rail sheets.
- * Presentation stays component-owned; focus, keyboard, scroll, and background
- * isolation are one contract.
- */
 export function modalSheet(node: HTMLElement, initialOptions: ModalSheetOptions) {
 	let options = initialOptions;
 	let deactivate: (() => void) | undefined;

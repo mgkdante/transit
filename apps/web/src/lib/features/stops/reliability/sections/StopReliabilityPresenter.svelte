@@ -1,11 +1,3 @@
-<!--
-  Shared shell for Stop reliability presenters.
-
-  Standalone presenters own their heading and surface. Inside the article, the
-  surrounding CollapsibleSection already owns both, so `article-body` emits only
-  the presenter's data body. This keeps composition explicit without parent CSS
-  reaching into a child's frame or hiding a duplicate heading.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';

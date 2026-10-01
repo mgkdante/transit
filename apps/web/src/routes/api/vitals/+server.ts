@@ -1,6 +1,3 @@
-// Best-effort collection: absent Analytics Engine bindings and write failures
-// return 204. Only validated sample fields are stored; request headers are not.
-
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { MAX_VITALS_BODY_BYTES, parseVitalsBeacon, type VitalsSample } from '$lib/vitals/schema';
@@ -15,7 +12,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		return json({ error: 'payload_too_large' }, { status: 413 });
 	}
 
-	// Enforce the body limit even when the declared length is absent or false.
 	let raw: string;
 	try {
 		raw = await request.text();
@@ -33,7 +29,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		return json({ error: 'invalid_json' }, { status: 400 });
 	}
 
-	// Invalid envelopes fail; a valid envelope with no valid samples is a no-op.
 	const samples = parseVitalsBeacon(parsed);
 	if (samples === null) {
 		return json({ error: 'invalid_shape' }, { status: 400 });
@@ -48,18 +43,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			dataset.writeDataPoint(toDataPoint(sample));
 		}
 	} catch {
-		// Analytics Engine write failed — RUM is best-effort; still 204.
+		// Analytics Engine writes are best effort; still return 204.
 	}
 
 	return NO_CONTENT();
 };
 
-/**
- * Analytics Engine schema for one sample:
- *   indexes: [metric name]                          (sampling/grouping key)
- *   blobs:   [name, rating, path, navType, conn]    (dimensions)
- *   doubles: [value]                                (the measurement)
- */
 function toDataPoint(sample: VitalsSample): {
 	indexes: string[];
 	blobs: (string | null)[];

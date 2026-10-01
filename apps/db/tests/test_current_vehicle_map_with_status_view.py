@@ -1,4 +1,3 @@
-"""Static contract test for migration 0020: gold.current_vehicle_map_with_status view."""
 from __future__ import annotations
 
 import re
@@ -38,8 +37,6 @@ def test_upgrade_creates_view_at_expected_name() -> None:
 
 
 def test_view_left_joins_vehicle_map_with_trip_delay() -> None:
-    """LEFT JOIN so vehicles without delay data still show on the map
-    (with status_band = 'Inconnu')."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "FROM gold.current_vehicle_map AS cvm" in sql
@@ -49,9 +46,6 @@ def test_view_left_joins_vehicle_map_with_trip_delay() -> None:
 
 
 def test_view_emits_all_five_status_bands() -> None:
-    """The categorical column the map's Legend role binds to. Must include
-    the 'Inconnu' / 'Unknown' fallback so vehicles without delay data don't
-    silently drop off the map."""
     sql = _sql_block("_CREATE_VIEW")
 
     for band in (
@@ -65,8 +59,6 @@ def test_view_emits_all_five_status_bands() -> None:
 
 
 def test_view_status_thresholds_match_operator_buckets() -> None:
-    """Thresholds: <-60s early, -60..60s on-time, 60..300s late, ≥300s severe.
-    Matches what an operator considers operationally meaningful."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "ctc.avg_delay_seconds IS NULL" in sql
@@ -76,8 +68,6 @@ def test_view_status_thresholds_match_operator_buckets() -> None:
 
 
 def test_view_preserves_original_vehicle_map_columns() -> None:
-    """Drop-in replacement for gold.current_vehicle_map — all original
-    columns must still be present so existing Power BI bindings keep working."""
     sql = _sql_block("_CREATE_VIEW")
 
     for col in (
@@ -96,8 +86,6 @@ def test_view_preserves_original_vehicle_map_columns() -> None:
 
 
 def test_view_adds_delay_passthrough_columns() -> None:
-    """trip_avg_delay_seconds + trip_max_delay_seconds added as Tooltip
-    fields so hover shows the exact delay number, not just the band."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "ctc.avg_delay_seconds AS trip_avg_delay_seconds" in sql

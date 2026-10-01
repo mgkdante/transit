@@ -23,13 +23,6 @@ export interface RouteDirectionVariant {
 	readonly lastStop: RouteStop | null;
 	readonly stops: readonly RouteStop[];
 	readonly direction: RouteDirection;
-	/**
-	 * True when `label` is a SYNTHESIZED "Direction {dir}" placeholder — i.e. we
-	 * had no terminal stop AND no rider-facing headsign to name this direction, so
-	 * the label was inferred from the bare direction index. The honest-absence
-	 * layer marks this "(inferred)" so a synthesized direction never reads as a
-	 * published headsign. False whenever a real terminal/headsign named it.
-	 */
 	readonly labelInferred: boolean;
 }
 
@@ -121,8 +114,6 @@ export function routeDirectionVariants(
 		const headsign = riderFacingHeadsign(direction.headsign, locale);
 		const fallback = headsign || `Direction ${direction.dir}`;
 		const duplicateDir = (dirCounts.get(direction.dir) ?? 0) > 1;
-		// The label is INFERRED only when we fell all the way back to the bare
-		// "Direction {dir}" index — no terminal stop AND no rider-facing headsign.
 		const labelInferred = !terminal && !headsign;
 
 		return {

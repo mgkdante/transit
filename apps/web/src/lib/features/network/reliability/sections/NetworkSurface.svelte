@@ -97,7 +97,6 @@
 	const locale: Locale = getLocale();
 	const t = $derived(networkReliabilityCopy[locale]);
 
-	// Live tier — one store instance; the v1 context is booted by the time the tree renders.
 	const initialNetworkSeed = untrack(() => networkSeed);
 	const live = createLiveStore(getV1Context().manifest, {
 		families: ['network'],
@@ -108,7 +107,6 @@
 		return () => live.stop();
 	});
 
-	// Historic tier — the daily network trend (createResource, browser-only).
 	const trend = createResource(() => getNetworkTrend(), {
 		key: () => 'network-trend',
 		seed: () => trendSeed,
@@ -117,8 +115,6 @@
 		historyRangeRequestFromSearchParams(page.url.searchParams),
 	);
 	onMount(() => () => history.destroy());
-	// Honesty layer — the provider's feed-conformance verdict (provenance.json). Supplementary:
-	// a null/errored fetch renders nothing, never a blocking boundary.
 	const provenance = createResource(() => getProvenance(), {
 		key: () => 'provenance',
 		seed: () => provenanceSeed,
@@ -128,29 +124,21 @@
 	const noObservationLabel = $derived(absenceShort('no-observations', locale));
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 
-	/* ── formatters (locale-bound; kept out of the selectors) ─────────────────────── */
 	const fmtMin = (v: number | null): string =>
 		sharedFmtDelayMin(v, { suffix: t.units.min, noData: noObservationLabel });
 	const fmtCount = (v: number): string => sharedFmtCount(v, { locale, noData: '' });
-	// MetricDisplay-fed variants return NULL (not the noData string) on no-data so the tile
-	// renders the STYLED honest-absence chip (AbsentValue) instead of a plain "no data".
 	const pctOrNull = (v: number | null): string | null => sharedFmtPct(v, { suffix: t.units.pct });
 	const minOrNull = (v: number | null): string | null =>
 		sharedFmtDelayMin(v, { suffix: t.units.min });
 	const fmtCancel = (v: number | null): string | null =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
 
-	// Worker-cycle feed staleness (distinct from the snapshot-publish age the FreshnessStamp
-	// shows). feed_freshness_s is the seconds since the worker last refreshed the feed AS OF the
-	// snapshot; we add live.ageSeconds (the ticking shared-clock delta) so the age advances
-	// between the 30s polls in lockstep with the FreshnessStamp. null → honest no-data.
 	const feedAge = $derived.by<string | null>(() => {
 		const s = live.network?.feed_freshness_s ?? null;
 		if (s == null) return null;
 		return formatRelativeSeconds(s + (live.ageSeconds ?? 0), locale);
 	});
 
-	/* ── LIVE mapping pass ────────────────────────────────────────────────────────── */
 	const kpis = $derived.by(() =>
 		live.network
 			? selectHeadlineKpis(live.network, {
@@ -166,10 +154,6 @@
 				})
 			: null,
 	);
-	// §0 NETWORK VERDICT (§C5.7): the plain-language at-a-glance answer between the LIVE
-	// and HISTORIC regions, via the SHARED VerdictBanner + selectVerdict off the SAME live
-	// on_time_pct the headline reads. n=null → the sentence carries no fabricated Wilson
-	// hedge (the live tier has no OTP trip-day denominator — honest degradation).
 	const networkHeadline = $derived<VerdictHeadline>({
 		otpPct: live.network?.on_time_pct ?? null,
 		observationCount: null,
@@ -228,10 +212,6 @@
 		}),
 	);
 
-	// Live map cross-filters (DECISIONS A1) ride each band's spec `href` now (P5.2) —
-	// the legacy onSelect callbacks were plain navigations, so the URL IS the contract.
-
-	/* ── HISTORIC: retained range ownership + grain (day/week/month) ──────────────── */
 	const historyUi = createRetainedHistoryUi({
 		resource: () => history,
 		copy: () => ({
@@ -240,14 +220,11 @@
 		}),
 		formatDate: (date) => formatDateKey(date, locale),
 	});
-	// Optional discovery can legitimately be absent. The coordinator reports that as `current`,
-	// so a stale deep link must fall back to the singleton instead of leaving a permanent skeleton.
 	const explicitHistory = $derived(historyUi.explicit);
 	const retainedReady = $derived(historyUi.ready);
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
-	// Compare the last two published daily points, which need not be consecutive dates.
 	const dailyChange = $derived.by(() => {
 		const series = selectedTrend?.series ?? [];
 		const latest = series.at(-1);
@@ -284,10 +261,6 @@
 	);
 	const historyAnnouncement = $derived(historyUi.announcement);
 
-	// CONTRACT: the codec ($lib/filters) owns the URL seams — fromSearchParams enum-parses the
-	// ?grain seed (invalid values dropped); toSearchParams serializes it back (day = default →
-	// omitted). The SELECTION STATE + the populated-grain clamp stay SURFACE-LOCAL: only this
-	// surface knows which grains its series populate.
 	let grainKey = $state<NetworkGrain>(
 		(() => {
 			const seeded = fromSearchParams(page.url.searchParams).grain;
@@ -302,15 +275,8 @@
 		week: t.grain.week,
 		month: t.grain.month,
 	});
-	// The grain picker is a dead control when only one grain carries data, so it renders ONLY
-	// when MORE THAN ONE grain is populated.
 	const showGrainPicker = $derived(present.size > 1);
 
-	// P5.4: the grain radiogroup now rides a plain GrainPicker seated in the map-style GLASS
-	// LEFT RAIL (SurfaceRail) — replacing the SurfaceControls top-rail. The enable/disable
-	// semantics stay EXACTLY today's (enable-iff-populated, `present`): a grain the trend has no
-	// series for renders disabled with the honest-absence reason, never selectable. `uid` keys
-	// the visually-hidden disabled-reason spans so they never collide with another surface.
 	const uid = $props.id();
 	const grainDisabledReason = $derived(absenceSentence('no-observations', locale));
 	const grainSegments = $derived<GrainSegment<NetworkGrain>[]>(
@@ -334,15 +300,10 @@
 		);
 	}
 
-	// Keep the selection on a POPULATED grain — the codec-owned clamp: a chosen coarse grain
-	// whose series is absent falls back to the richest present grain (day→week→month); an empty
-	// daily series falls the day grain FORWARD. Never a dead/empty grain.
 	$effect(() => {
 		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultNetworkGrain(present);
 	});
 
-	// Mirror grain + retained range in ONE write. While discovery is pending, preserve the raw
-	// deep-link values; after resolution, only an accepted canonical range remains in the URL.
 	const historyWire = $derived.by<{
 		grain: string | null;
 		from: string | null;
@@ -358,7 +319,6 @@
 	});
 	$effect(() => mirrorSearchParams(historyWire));
 
-	/* ── HISTORIC: trend window (7/30/90-day, DAY grain only) ─────────────────────── */
 	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
 	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
 
@@ -375,16 +335,12 @@
 			30: t.window.d30,
 			90: t.window.d90,
 		};
-		// A window is offered when ANY data exists; DISABLED when it would exceed the length —
-		// except the smallest window, which is always offered (there is always one enabled segment).
 		return WINDOWS.map((d, i) => ({
 			key: String(d),
 			label: labels[d],
 			available: n > 0 && (i === 0 || d <= n),
 		}));
 	});
-	// Default to the richest-fit window once the data settles, then clamp DOWN if a later
-	// (smaller) series no longer fits. The 7-day window always fits, so this never loops.
 	$effect(() => {
 		if (explicitHistory) return;
 		const n = currentDailySeries.length;
@@ -397,7 +353,6 @@
 		}
 	});
 
-	/* ── HISTORIC mapping pass — ONE window slice shared by every mark ────────────── */
 	const windowed = $derived<readonly TrendPoint[]>(
 		explicitHistory
 			? grain === 'week'
@@ -408,7 +363,6 @@
 			: windowedSeries(grain, allSeries, windowDays),
 	);
 
-	/* ── HISTORIC: delay-series toggle (p90 vs avg) ───────────────────────────────── */
 	let retardKey = $state('p90');
 	const delayAvailabilityKnown = $derived(
 		explicitHistory &&
@@ -426,18 +380,13 @@
 		history.index != null || showGrainPicker || showSecondaryControls,
 	);
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
-		// p90 has no week/month data → disabled on a coarse grain (never a flat-null line).
 		{ key: 'p90', label: t.trend.retardP90, available: p90Available },
 		{ key: 'avg', label: t.trend.retardAvg, available: avgAvailable },
 	]);
-	// The EFFECTIVE retard series: the rider's pick on the day grain, forced to avg on week/month.
 	const effectiveRetard = $derived<'p90' | 'avg'>(
 		retardKey === 'p90' && p90Available ? 'p90' : avgAvailable ? 'avg' : 'p90',
 	);
-	// Keep the highlighted choice on a channel that actually carries selected-range readings.
 	$effect(() => {
-		// Preserve the singleton contract: p90 has never existed at week/month grain, so the
-		// enabled Average control must own both the plotted channel and the roving-radio state.
 		if (!explicitHistory && !isDailyGrain && retardKey === 'p90') {
 			retardKey = 'avg';
 			return;
@@ -488,8 +437,6 @@
 			pctUnit: t.units.pct,
 		}),
 	);
-	// Service completeness (GC2 service_completeness_rate): stands UP only once a windowed point
-	// carries a non-null rate (null across the whole retained window on prod today — ramp-in).
 	const completeness = $derived(selectCompleteness(windowed));
 	const completenessDisplay = $derived(fmtCancel(completeness.latest));
 	const occupancyDays = $derived(
@@ -521,19 +468,10 @@
 	const hasShift = $derived(shiftRows.length > 0);
 	const hasDayType = $derived(dayTypeRows.length > 0);
 
-	/* ── P5.4: the map-style GLASS LEFT RAIL region ToC ────────────────────────────
-	   The surface has TWO numbered regions — §1 Live now + §2 Historic trend. The rail
-	   holds the view controls (which re-shape ONLY the historic region) + the ONE shared
-	   TocNav jumping between the two regions — the same numbered jump-list every other
-	   surface's rail renders, so wayfinding looks identical site-wide. (The old per-region
-	   ↻/∞ view-scope glyph is gone: it read as a "reload" affordance and broke the
-	   cross-page sameness.) The mobile pill's summary names the active grain. */
 	const regionNav = $derived([
 		{ id: 'net-live', label: t.liveRegion },
 		{ id: 'net-historic', label: t.historicRegion },
 	]);
-	// Map the regions to numbered TocEntry rows for the shared TocNav (badge = station-style
-	// SEC number; flat list, no children).
 	const tocEntries: TocEntry[] = $derived(
 		regionNav.map((s, i) => ({
 			id: s.id,
@@ -543,20 +481,16 @@
 			children: [],
 		})),
 	);
-	// DetailShell owns the one IntersectionObserver over the two regions' [data-toc]
-	// anchors and writes the active region back into this shared rail state.
 	let activeId = $state('');
 	const railDisclosures = createRailDisclosureController({
 		controls: 'network-controls',
 		toc: 'network-toc',
 	});
-	// Scroll to a region when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
 		void revealTocTarget(id, {
 			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 		});
 	}
-	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
 </script>
@@ -571,11 +505,7 @@
 	{historyAnnouncement ?? ''}
 </p>
 
-<!-- The window + delay-series toggles — DAY-grain window slicer + the p90/avg series. Their
-     own snippet so it seats inside the combined rail body after the grain picker. -->
 {#snippet windowControls()}
-	<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render
-	     their full short series → no window. -->
 	{#if isDailyGrain && !explicitHistory}
 		<GrainPicker
 			segments={windowSegments}
@@ -584,7 +514,6 @@
 			class="network-window"
 		/>
 	{/if}
-	<!-- Delay-series toggle: p90 vs avg. p90 disables on a coarse grain (no week/month data). -->
 	{#if showRetardPicker}
 		<GrainPicker
 			segments={retardSegments}
@@ -596,7 +525,6 @@
 {/snippet}
 
 {#snippet historicBoard()}
-	<!-- The readouts share the one selected range and one mapping pass. -->
 	<ArticleSectionStack class="network-history-board" data-slot="network-history-board">
 		{#if dailyChange && dailyChangeText}
 			<p
@@ -709,7 +637,6 @@
 						label={live.error ? t.snapshotRefreshFailed : undefined}
 						{locale}
 					/>
-					<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
 					{#if feedAge != null}
 						<span
 							class="network-feed-age"
@@ -726,8 +653,6 @@
 		</ArticleHeader>
 	{/snippet}
 
-	<!-- The View controls and two-region ToC are one combined-rail definition. DetailShell
-	     presents it once on desktop and once in the single mobile sheet. -->
 	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
 		{#snippet historyControls()}
@@ -775,11 +700,6 @@
 			</ArticleControlDisclosure>
 		{/if}
 
-		<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
-			     status / lines / stops rails: a numbered jump list with TocNav's own
-			     "SEC n/m" readout (the rail's ONLY position counter), the active region
-			     amber-highlighted. Picking a region also dismisses the mobile sheet through
-			     SurfaceRail's explicit closeSheet seam. -->
 		<div class="rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
@@ -796,15 +716,6 @@
 
 	{#snippet center()}
 		<div class="network-content">
-			<!-- ── LIVE region ──────────────────────────────────────────────────────────────
-			     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
-			     lines + the global-signal caveat) · the two distribution bars · the re-seated
-			     delay histogram. -->
-			<!-- PIPELINE-BLOCKED: when net.vehicles_in_service === 0 (live zero / overnight), we would
-			     surface an honest-absence banner above the headline board via
-			     $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a NETWORK-WIDE view with
-			     no single first/last window, so a "service closed / overnight" verdict needs a network
-		     service-span signal /v1 does not yet publish — not actionable web-side. -->
 			<section class="network-region" id="net-live" data-toc="net-live" aria-label={t.liveRegion}>
 				{#if kpis}
 					<ArticleSectionStack class="network-live-content">
@@ -845,15 +756,10 @@
 				{/if}
 			</section>
 
-			<!-- The verdict uses current known-status vehicle positions. -->
 			<section class="network-verdict" aria-label={t.verdictDelta.label}>
 				<VerdictBanner result={networkVerdict} />
 			</section>
 
-			<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
-	     The readout board (the main trend spanning a wide cell). The three view controls
-	     (grain · window · delay series) live in the GLASS LEFT RAIL above (P5.4) — they
-	     re-shape this region only. -->
 			<section
 				class="network-region"
 				id="net-historic"
@@ -919,7 +825,6 @@
 		gap: 0.5rem 1.25rem;
 	}
 
-	/* The content column — the LIVE + verdict + HISTORIC regions stacked at page rhythm. */
 	.network-content {
 		display: flex;
 		flex-direction: column;
@@ -942,8 +847,6 @@
 		margin: 0;
 	}
 
-	/* Visually-hidden disabled-reason description (mobile drawer + desktop rail) — carried for
-	   screen readers via aria-describedby on the disabled radio; never shown, never a layout box. */
 	.network-reason {
 		position: absolute;
 		width: 1px;
@@ -956,16 +859,12 @@
 		border: 0;
 	}
 
-	/* The rail region jump-list rides the ONE shared TocNav (same component the metrics /
-	   status / lines / stops rails use), so every surface's wayfinding looks identical.
-	   Only this thin flex wrapper is local; TocNav owns the rest. */
 	.rail-toc {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	/* A surface region owns a ToC anchor; its article cards stay independently collapsible. */
 	.network-region {
 		display: flex;
 		flex-direction: column;
@@ -984,15 +883,12 @@
 		width: 100%;
 		min-width: 0;
 	}
-	/* Current-position verdict stays separate from the dated historical comparison. */
 	.network-verdict {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 0.5rem 1.25rem;
 	}
-	/* Δ-vs-prior chip: a quiet mono pill whose glyph + colour + sign read the direction
-	   (colour is never the sole channel — the ▲/▼ + the +/− sign carry it too). */
 	.network-daily-change {
 		display: inline-flex;
 		align-items: center;
@@ -1005,7 +901,6 @@
 	.network-daily-change__mark {
 		line-height: 1;
 	}
-	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */
 	.network-feed-age {
 		display: inline-flex;
 		align-items: center;

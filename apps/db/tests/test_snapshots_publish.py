@@ -1,14 +1,3 @@
-"""Tests for the publish_snapshot orchestrator (live tier).
-
-Uses a fake engine/connection that returns empty results for every builder
-query so each builder produces a valid empty/default model without touching
-a real database.
-
-Key coverage:
-  - All 5 files are uploaded in the correct order (manifest last).
-  - PublishResult carries provider_id, tier, and keys_written.
-  - Unimplemented tiers raise ValueError.
-"""
 
 from __future__ import annotations
 
@@ -24,24 +13,8 @@ from transit_ops.snapshots.builders.historic.route_reliability_batch import (
 from transit_ops.snapshots.publish import PublishResult, publish_snapshot
 from transit_ops.sql_registry import query_name
 
-# ---------------------------------------------------------------------------
-# Fakes
-# ---------------------------------------------------------------------------
-
 
 class FakeResult:
-    """Mimics SQLAlchemy's result object.
-
-    Supports:
-    - ``.mappings()`` — returns self (iterable, yields zero rows)
-    - ``__iter__``     — yields nothing (empty result set)
-    - ``.scalar_one()``— returns 0  (scalar aggregates, e.g. freshness)
-    - ``.scalar()``    — returns 0  (alternate scalar accessor)
-
-    build_network uses scalar_one() for its freshness query;
-    all other builders iterate .mappings().  build_manifest iterates .mappings()
-    via next(iter(...)) which safely returns None on an empty result.
-    """
 
     def mappings(self) -> FakeResult:
         return self
@@ -50,7 +23,7 @@ class FakeResult:
         return []
 
     def __iter__(self):
-        return iter([])  # no rows -> builders produce empty/default models
+        return iter([])
 
     def scalar_one(self) -> int:
         return 0
@@ -60,7 +33,6 @@ class FakeResult:
 
 
 class FakeConn:
-    """Connection that returns FakeResult for every execute() call."""
 
     def execute(self, statement, params=None):  # noqa: ANN001
         if query_name(statement) == "publish.lock.try_acquire":
@@ -69,7 +41,6 @@ class FakeConn:
 
 
 class FakeEngine:
-    """Engine whose begin() context-manager yields a FakeConn."""
 
     def begin(self):  # noqa: ANN201
         @contextmanager
@@ -111,11 +82,6 @@ class RecordingNamedConn:
 
 
 class FakeStore:
-    """Live-tier storage backend: records rel_keys and returns them.
-
-    Used for the live tier only, which is NOT hash-gated; this fake deliberately
-    omits get_json so any accidental gating of the live path fails loudly.
-    """
 
     def __init__(self) -> None:
         self.keys: list[str] = []
@@ -145,11 +111,6 @@ class CloseTrackingStore(FakeStore):
 
 
 class StatefulFakeStore(MemorySnapshotStore):
-    """Hash-gate-compatible in-memory store (get_json / put_bytes / full_key).
-
-    ``keys`` records put_json keys (compat with old assertions); ``store`` keeps
-    the raw bytes so a HashGatedStorage second pass can read prior state.
-    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -180,19 +141,11 @@ class StatefulFakeStore(MemorySnapshotStore):
 
 
 class FakeSettings:
-    """Minimal settings stub exposing what builders and storage need."""
 
     SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 def test_publish_live_uploads_all_files_manifest_last() -> None:
-    """All 6 live files are written, manifest.json is LAST, and every PUT is
-    tier='live' (slice-9.1.1q added live/stop_departures.json before manifest)."""
     store = FakeStore()
     res = publish_snapshot(
         "stm",
@@ -213,13 +166,10 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
     ]
     assert set(store.keys[:-1]) == set(expected_keys[:-1]), f"got {store.keys}"
     assert store.keys[-1] == "manifest.json"
-    # stop_departures + data_health are uploaded before the manifest (manifest-last)
     assert store.keys.index("live/stop_departures.json") < store.keys.index("manifest.json")
     assert store.keys.index("status/data_health.json") < store.keys.index("manifest.json")
-    # every live PUT (manifest included) carries tier='live'
     assert store.tiers == ["live"] * len(expected_keys)
 
-    # PublishResult fields
     assert isinstance(res, PublishResult)
     assert res.provider_id == "stm"
     assert res.tier == "live"
@@ -285,14 +235,12 @@ def test_publish_never_closes_caller_owned_storage(fail_on_write: bool) -> None:
 
 
 def test_publish_live_stamps_h4_envelope_on_every_payload() -> None:
-    """GC2 H4: every live payload carries ONE shared publish_generation_id + a
-    methodology_version, stamped once per run."""
     store = FakeStore()
     publish_snapshot(
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
     gen_ids = {p.publish_generation_id for p in store.payloads}
-    assert len(gen_ids) == 1  # exactly one generation id across the whole snapshot
+    assert len(gen_ids) == 1
     gen_id = next(iter(gen_ids))
     assert gen_id is not None and gen_id.startswith("stm@")
     for p in store.payloads:
@@ -301,8 +249,6 @@ def test_publish_live_stamps_h4_envelope_on_every_payload() -> None:
 
 
 def test_collect_payloads_stamps_h4_envelope() -> None:
-    """FIX-5: the validate-snapshots collect path stamps the H4 envelope too, so the
-    pre-publish audit inspects the SAME bytes a real publish uploads (not un-stamped)."""
     from transit_ops.snapshots.contract import PayloadEnvelope
     from transit_ops.snapshots.publish import collect_payloads
 
@@ -326,7 +272,6 @@ def test_collect_payloads_stamps_h4_envelope() -> None:
 
 
 def test_publish_result_display_dict() -> None:
-    """display_dict() exposes all three fields."""
     store = FakeStore()
     res = publish_snapshot(
         "stm",
@@ -339,11 +284,10 @@ def test_publish_result_display_dict() -> None:
     assert d["provider_id"] == "stm"
     assert d["tier"] == "live"
     assert isinstance(d["keys_written"], list)
-    assert len(d["keys_written"]) == 7  # + status/data_health.json (S11)
+    assert len(d["keys_written"]) == 7
 
 
 def test_publish_rejects_unimplemented_tier() -> None:
-    """Unknown tiers raise ValueError."""
     with pytest.raises(ValueError, match="unknown tier"):
         publish_snapshot(
             "stm",
@@ -615,7 +559,6 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
 
 
 def test_publish_accepts_registry_kwarg() -> None:
-    """registry= is accepted without error (signature-compat with callers)."""
     store = FakeStore()
     res = publish_snapshot(
         "stm",
@@ -623,18 +566,13 @@ def test_publish_accepts_registry_kwarg() -> None:
         settings=FakeSettings(),
         engine=FakeEngine(),
         storage=store,
-        registry=object(),  # should be silently ignored
+        registry=object(),
     )
     assert res.tier == "live"
-    assert len(store.keys) == 7  # + status/data_health.json (S11)
+    assert len(store.keys) == 7
 
 
 def test_publish_static_writes_expected_keys() -> None:
-    """Static tier writes indexes, labels, per-route and per-stop files.
-
-    Uses a SQL-text-dispatching fake connection so it is robust to changes
-    in query ordering within build_all_routes_data / build_all_stops_data.
-    """
     import datetime
     from contextlib import contextmanager
 
@@ -658,7 +596,6 @@ def test_publish_static_writes_expected_keys() -> None:
             return M()
 
         def __iter__(self):
-            # active-services query iterates row[0]
             return iter(self._rows)
 
         def fetchone(self):
@@ -680,16 +617,11 @@ def test_publish_static_writes_expected_keys() -> None:
 
     import datetime as _dt
 
-    # Name-keyed dispatch (each query dispatches on its `-- q:<name>` marker).
-    # Covers every query issued by build_routes_index, build_stops_index,
-    # build_labels, build_all_routes_data, and build_all_stops_data.
     dispatch = {
         "publish.lock.try_acquire": [True],
-        # _static_stamp: loaded_at_utc of the current dataset version.
         "publish.static_stamp": [
             {"loaded_at_utc": _dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.UTC)},
         ],
-        # reliability-availability set for build_routes_index; 165 has reliability history.
         "static.reliability_route_ids": [{"route_id": "165"}],
         "static.routes_index": [
             {
@@ -712,21 +644,17 @@ def test_publish_static_writes_expected_keys() -> None:
         "static.labels": [
             {"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}
         ],
-        # Dataset version shared by both batched static builders.
         "static.dataset_version": [{"dataset_version_id": 1}],
         "static.rep_dates": [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}
         ],
-        # active-services (returns tuples for row[0] iteration).
         "static.active_services": [("svc_wd",)],
-        # One set-based route build: metadata plus the three dataset-backed families.
         "static.all_route_metadata": [
             {"route_id": "165", "route_long_name": "Côte-Vertu", "route_type": 3}
         ],
         "static.all_route_shapes": [],
         "static.all_route_stops": [],
         "static.all_route_schedules": [],
-        # all stops (build_all_stops_data) — empty → no stop files written.
         "static.all_stops": [],
         "static.all_stop_schedules": [],
     }
@@ -761,18 +689,13 @@ def test_publish_static_writes_expected_keys() -> None:
     assert "labels/fr.json" in written
     assert "labels/en.json" in written
     assert "static/routes/165.json" in written
-    # no stop files since build_all_stops_data got empty stops
     assert not any(k.startswith("static/stops/") for k in written)
-    # no basemap without SNAPSHOT_BASEMAP_PMTILES_URL on FakeSettings
     assert "static/basemap.json" not in written
-    # the hash-state object lands under _meta/ (internal tier), not in keys_written
     assert "_meta/publish_state_static.json" in store.store
-    # all data files carry the dataset loaded_at stamp, not upload time
     import json as _json
 
     ri = _json.loads(store.store["static/routes_index.json"])
     assert ri["generated_utc"] == "2026-06-01T00:00:00Z"
-    # 165 is in the reliability-availability set -> its entry carries reliability=True
     assert ri["routes"][0]["id"] == "165"
     assert ri["routes"][0]["reliability"] is True
 
@@ -980,13 +903,6 @@ def test_publish_historic_hoists_name_catalogs_for_two_routes(monkeypatch) -> No
 
 
 def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> None:
-    """Historic tier writes network_trend, hotspots, repeat_offenders, alert_history,
-    provenance (top-level), per-route reliability, per-stop reliability and receipts.
-
-    Uses a SQL-text-dispatching fake connection and LocalSnapshotStorage into
-    tmp_path so all files are written to disk.  At least one file is parsed back
-    through its contract model for round-trip validation.
-    """
     import datetime
     import pathlib
     from contextlib import contextmanager
@@ -1034,11 +950,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         def scalar_one(self):
             return self._rows[0] if self._rows else 0
 
-    # Name-keyed dispatch: each query dispatches on its `-- q:<name>` registry
-    # marker (no ordering, no column-alias sniffing). Covers every query issued by
-    # all 8 historic builders. Distinct names replace the old substring hazards:
-    # weekly/monthly/weak-stop reads that once shared spine SQL now carry unique
-    # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
         "publish.lock.try_acquire": [True],
         "history.hotspots.timezone": [{"timezone": "UTC"}],
@@ -1048,8 +959,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
         "history.repeat_offenders.names": [],
         "history.repeat_offenders.daily": [],
-        # One real retained Network day proves the historic publisher wires the
-        # content-addressed month outside the compatibility payload list.
         "history.network.delay": [
             {
                 "local_date": datetime.date(2026, 6, 1),
@@ -1094,7 +1003,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ],
-        # build_network_trend: WEEK + MONTH grain re-aggregation of the daily sources.
         "network.trend.week_hourly": [
             {
                 "local_date": datetime.date(2026, 6, 1),
@@ -1189,7 +1097,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         "static.route_names": [
             {"route_id": "165", "route_name": "Ligne 165"},
         ],
-        # build_stop_reliability: shift + day-type grains + weekday seasonality.
         "stop.reliability.by_grain": [
             {
                 "stop_id": "51234",
@@ -1222,7 +1129,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "weighted_delay_sec": None,
             },
         ],
-        # route IDs with history (per-route reliability enumerator).
         "route.spine.route_ids": [
             ("101",),
             ("202",),
@@ -1233,16 +1139,12 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "cancellation_rate_pct": 2.5,
                 "canceled_trip_days": 3,
                 "total_trip_days": 120,
-                # GC2 H1 scheduled-universe split (delivered = total - canceled = 117).
                 "scheduled_trip_days": 130,
                 "delivered_trip_days": 117,
                 "silent_trip_days": 10,
                 "service_completeness_pct": 90.0,
             },
         ],
-        # tier-3 2D shift×day_type crosstab: the windowed spine projector runs per grain
-        # (S14 maps route.spine.anchor for the scalar habits read); its windowed reads are
-        # unmapped here → [] → no crosstab rows, so the by-grain output stays empty.
         "route.delay.by_crowding": [
             {
                 "band": "many_seats",
@@ -1322,23 +1224,15 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "severe": 5,
             },
         ],
-        # route.spine.weekly / .monthly / by_shift / by_daytype are the spine
-        # projectors (h1..h21 histogram shape); the old publish dispatch fed them
-        # dead needles that never matched, so route periods came only from the daily
-        # read. Left unmapped ([]) to preserve that exact published output.
         "route.headway.observed_by_shift": [
             {"shift": "am_peak", "observed_headway_min": 8.0, "sample_count": 20},
         ],
-        # _scheduled_headway_by_shift -> dataset version / rep dates / services / schedule.
         "static.dataset_version": [{"dataset_version_id": 1}],
         "static.rep_dates": [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)},
         ],
         "static.active_services": [("svc_wd",)],
         "static.route_schedule": [],
-        # S14: scalar habits reads route.habit.spine over an all-time window (the dropped
-        # route_habit_score mart is gone); route.spine.anchor drives it. known_obs below
-        # MIN_N so the same dispatch fed to habits_by_grain is suppressed there.
         "route.spine.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "route.habit.spine": [
             {
@@ -1348,23 +1242,19 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "known_obs": 0,
             },
         ],
-        # DB-0067: stop spine anchor drives the windowed weak-stop + stop-grain reads.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "stop.reliability.by_route": [
             {"stop_id": "51234", "route_id": "101", "obs": 100, "weighted_delay_sec": 9000},
         ],
-        # build_stop_reliability weekly/monthly (GROUP BY stop_id) -> surviving stop.
         "stop.reliability.weekly": [
             {"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
         ],
         "stop.reliability.monthly": [
             {"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
         ],
-        # scalar per-route weak_stops (legacy read, weighted_delay_sec): surviving stop ranks.
         "route.weak_stops.legacy": [
             {"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
         ],
-        # weak_stops_by_grain (sum_delay_sec): obs<30 -> below MIN_N -> [] (not asserted).
         "route.weak_stops.by_grain": [
             {"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
@@ -1423,7 +1313,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         settings=FakeSettings(),
     )
 
-    # --- flat keys ---
     keys = [pathlib.Path(key).as_posix() for key in keys]
     key_set = set(keys)
     assert any("historic/network_trend.json" in k for k in key_set)
@@ -1446,21 +1335,16 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     root_index_key = next(key for key in keys if "historic/history/index.json" in key)
     assert keys.index(network_index_key) < keys.index(root_index_key)
     assert keys[-1] == root_index_key
-    # provenance is top-level (not under historic/)
     assert not any(k.endswith("historic/provenance.json") for k in key_set)
 
-    # --- per-route files for routes 101 and 202 ---
     assert any("historic/route_reliability/101.json" in k for k in key_set)
     assert any("historic/route_reliability/202.json" in k for k in key_set)
 
-    # --- per-stop file for stop 51234 ---
     assert any("historic/stop_reliability/51234.json" in k for k in key_set)
 
-    # --- every current-run retained receipt, including a date >31 days old ---
     assert any("historic/receipts/2025-01-01.json" in k for k in key_set)
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
-    # --- receipts discovery index (T7): exact set of receipt dates written ---
     from transit_ops.snapshots.contract import Receipt, ReceiptsIndex, RouteReliabilityIndex
 
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
@@ -1479,28 +1363,19 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         published_receipts
     )
 
-    # --- route-reliability discovery index: the EXACT set of routes published this
-    # run (so the web list-badge gate never lags the published files like the static
-    # routes_index flag does). The spine returns routes 101 + 202 (see the FakeConn). ---
     rr_index_path = next(k for k in keys if "historic/route_reliability/index.json" in k)
     rri = RouteReliabilityIndex.model_validate_json(pathlib.Path(rr_index_path).read_bytes())
     assert rri.route_ids == ["101", "202"]
 
-    # --- round-trip parse: network_trend.json through its contract model ---
     network_trend_path = next(k for k in keys if "historic/network_trend.json" in k)
     raw = pathlib.Path(network_trend_path).read_bytes()
     parsed = NetworkTrend.model_validate_json(raw)
     assert isinstance(parsed.series, list)
-    # WEEK + MONTH grains landed: the canned trend:week:* / trend:month:* rows
-    # dispatched above must produce non-empty weekly/monthly series, and the
-    # None-on-coarse-grain contract must hold — p90_min and vehicles come from the
-    # ~14d raw fact window only, so they are ALWAYS None on every coarse point.
     assert isinstance(parsed.weekly, list) and len(parsed.weekly) > 0
     assert isinstance(parsed.monthly, list) and len(parsed.monthly) > 0
     assert all(p.p90_min is None and p.vehicles is None for p in parsed.weekly)
     assert all(p.p90_min is None and p.vehicles is None for p in parsed.monthly)
 
-    # --- PublishResult via publish_snapshot ---
     res = publish_snapshot(
         "stm",
         tier="historic",
@@ -1511,21 +1386,10 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     assert isinstance(res, PublishResult)
     assert res.tier == "historic"
     assert res.provider_id == "stm"
-    assert len(res.keys_written) >= 5  # flat files + provenance at minimum
-
-
-# ---------------------------------------------------------------------------
-# T3 / T6 / T8 — state upsert, basemap, hash-gating semantics
-# ---------------------------------------------------------------------------
+    assert len(res.keys_written) >= 5
 
 
 class _RecordingConn:
-    """Records executed SQL text (pattern: test_snapshots_builders FakeConn).
-
-    Routes the static-stamp SELECT to a fixed loaded_at_utc; every other query
-    returns an empty result so the static publisher writes only the two indexes
-    + labels (no routes/stops/basemap).
-    """
 
     def __init__(self):
         self.sql: list[str] = []
@@ -1606,7 +1470,6 @@ def test_publish_records_state_row_per_tier() -> None:
     inserts = [s for s in conn.sql if "INSERT INTO core.snapshot_publish_state" in s]
     assert len(inserts) == 1
     assert "ON CONFLICT (provider_id, tier)" in inserts[0]
-    # S11: the state upsert now carries the gate-telemetry columns.
     for col in (
         "gate_checks_run",
         "gate_errors",
@@ -1615,9 +1478,6 @@ def test_publish_records_state_row_per_tier() -> None:
         "gate_generated_utc",
     ):
         assert col in inserts[0], f"{col} missing from state upsert SQL"
-
-
-# --- S11: gate-summary derivation + live-lane state persistence ----------------
 
 
 def test_gate_summary_none_report_is_all_null() -> None:
@@ -1636,28 +1496,24 @@ def test_gate_summary_none_report_is_all_null() -> None:
 def test_gate_summary_verdict_pass_warn_fail() -> None:
     from transit_ops.snapshots.publish import _gate_summary
 
-    # errors>0 -> fail (dominates warnings).
     assert (
         _gate_summary({"checks_run": 5, "errors": 2, "warnings": 3, "generated_utc": "t"})[
             "gate_verdict"
         ]
         == "fail"
     )
-    # warnings>0, no errors -> warn.
     assert (
         _gate_summary({"checks_run": 5, "errors": 0, "warnings": 3, "generated_utc": "t"})[
             "gate_verdict"
         ]
         == "warn"
     )
-    # clean -> pass.
     s = _gate_summary({"checks_run": 5, "errors": 0, "warnings": 0, "generated_utc": "t"})
     assert s["gate_verdict"] == "pass"
     assert s["gate_checks_run"] == 5 and s["gate_generated_utc"] == "t"
 
 
 class _ParamRecordingConn(FakeConn):
-    """FakeConn that also captures the params of the state-upsert INSERT."""
 
     def __init__(self) -> None:
         self.state_params: list[dict] = []
@@ -1669,8 +1525,6 @@ class _ParamRecordingConn(FakeConn):
 
 
 def test_publish_live_persists_state_with_gate_summary() -> None:
-    """The live lane now upserts snapshot_publish_state with the just-computed gate
-    summary (verdict derived from the report counts), so data-health can serve it."""
     conn = _ParamRecordingConn()
 
     class _Engine:
@@ -1688,11 +1542,9 @@ def test_publish_live_persists_state_with_gate_summary() -> None:
     assert len(conn.state_params) == 1
     p = conn.state_params[0]
     assert p["tier"] == "live"
-    # Empty FakeConn feeds -> a clean gate over 7 payloads -> pass verdict, no errors.
     assert p["gate_verdict"] == "pass"
     assert p["gate_errors"] == 0 and p["gate_warnings"] == 0
-    assert p["gate_checks_run"] == 7  # 6 live payloads + data_health itself
-    # file counts reflect the live upload (no skips on the un-gated live lane).
+    assert p["gate_checks_run"] == 7
     assert p["written"] == 7 and p["skipped"] == 0 and p["total"] == 7
 
 
@@ -1701,7 +1553,7 @@ def test_publish_result_reports_skip_counts() -> None:
     res = _publish_static_once(StatefulFakeStore(), conn)
     d = res.display_dict()
     assert d["files_written"] == len(res.keys_written)
-    assert d["files_skipped"] == 0  # first run: nothing skipped
+    assert d["files_skipped"] == 0
     assert d["files_written"] > 0
 
 
@@ -1710,24 +1562,20 @@ def test_static_stamp_uses_dataset_loaded_at() -> None:
 
     store = StatefulFakeStore()
     _publish_static_once(store, _RecordingConn())
-    # every static payload carries the dataset loaded_at, not upload time
     for key in ("static/routes_index.json", "static/stops_index.json", "labels/fr.json"):
         assert json.loads(store.store[key])["generated_utc"] == "2026-06-01T00:00:00Z"
 
 
 def test_publish_static_second_run_skips_unchanged() -> None:
     store = StatefulFakeStore()
-    # Run 1 writes everything + the state object.
     res1 = _publish_static_once(store, _RecordingConn())
     assert res1.keys_skipped == []
     run1_written = set(res1.keys_written)
 
-    # Run 2 through the SAME stateful bucket: identical bytes -> all skipped.
     store.get_json_calls.clear()
     res2 = _publish_static_once(store, _RecordingConn())
     assert set(res2.keys_skipped) == run1_written
     assert res2.keys_written == []
-    # exactly one state GET per run (the load())
     assert store.get_json_calls.count("_meta/publish_state_static.json") == 1
 
 
@@ -1740,7 +1588,6 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
     res1 = _publish_static_once(store, _RecordingConn())
     run1_written = set(res1.keys_written)
 
-    # Prior static output must rebuild even when the cache headers are unchanged.
     state = json.loads(store.store["_meta/publish_state_static.json"])
     state["fingerprint"] = f"v1|cc:{CACHE_CONTROL['static']}"
     store.store["_meta/publish_state_static.json"] = _body(state)
@@ -1751,7 +1598,6 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
 
 
 def test_publish_live_is_not_hash_gated() -> None:
-    """The live path must never call get_json (no per-cycle state read)."""
 
     class GuardStore(FakeStore):
         def get_json(self, rel_key):  # pragma: no cover - must not be reached
@@ -1762,13 +1608,11 @@ def test_publish_live_is_not_hash_gated() -> None:
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
     assert res.tier == "live"
-    assert len(store.keys) == 7  # + status/data_health.json (S11)
+    assert len(store.keys) == 7
     assert res.keys_skipped == []
 
 
 def test_live_gate_checker_crash_never_aborts_cycle(monkeypatch) -> None:
-    """A checker that raises during live gate.record must be logged and swallowed —
-    the ~57s live cycle still uploads all 6 files."""
     from transit_ops.snapshots import gate as _gate
 
     def _boom(rel_key, payload):  # noqa: ANN001, ARG001
@@ -1780,15 +1624,12 @@ def test_live_gate_checker_crash_never_aborts_cycle(monkeypatch) -> None:
     res = publish_snapshot(
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
-    # gate crashed on every file, yet the cycle completed and uploaded everything
     assert res.tier == "live"
-    assert len(store.keys) == 7  # + status/data_health.json (S11)
+    assert len(store.keys) == 7
     assert store.keys[-1] == "manifest.json"
 
 
 def test_static_gate_blocks_sentinel_payload(monkeypatch) -> None:
-    """The static tier runs the universal sentinel/NaN scan before upload: a 9999.9999
-    sentinel in a built static payload raises GateError (nothing uploaded) unless force."""
     from transit_ops.snapshots import gate as _gate
     from transit_ops.snapshots import publish as _pub
 
@@ -1802,12 +1643,10 @@ def test_static_gate_blocks_sentinel_payload(monkeypatch) -> None:
     store = StatefulFakeStore()
     with pytest.raises(_gate.GateError):
         _publish_static_once(store, _RecordingConn())
-    # gate ran BEFORE upload -> the poisoned payload never reached the hash-gate store
     assert "static/routes_index.json" not in store.store
 
 
 def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
-    """--force downgrades the static gate ERROR to a logged override and uploads."""
     from transit_ops.snapshots import publish as _pub
 
     def _poison(conn, storage, *, provider_id, settings, stamp):  # noqa: ANN001, ARG001
@@ -1830,7 +1669,6 @@ def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
 
 
 def test_static_gate_reports_on_success(monkeypatch) -> None:
-    """A clean static publish attaches a gate_report to the result (FIX-6 consumer)."""
     store = StatefulFakeStore()
     res = _publish_static_once(store, _RecordingConn())
     assert res.gate_report is not None
@@ -1853,12 +1691,6 @@ def test_publish_static_writes_basemap_when_configured() -> None:
 
 
 def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
-    """Per-route reliability files must not be emitted for '__unrouted__'.
-
-    The enumeration is sourced from gold.route_delay_spine (S7-B), which filters
-    route_id IS NOT NULL at build, so the '__unrouted__' sentinel never appears —
-    the exclusion is a build-time invariant, not a SQL-level filter.
-    """
     sql = str(_ROUTE_INVENTORY_SQL)
     assert "FROM gold.route_delay_spine" in sql
     assert "MAX(provider_local_date) AS spine_anchor" in sql
@@ -1869,10 +1701,6 @@ def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
 
 
 def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monkeypatch) -> None:
-    """The static dataset-level gate (DB-perf fix) skips the whole ~9k-file rebuild ONLY
-    when the dataset stamp is unchanged AND the hash-state fingerprint still matches; a new
-    GTFS edition (stamp differs) or a format/cache change (fingerprint differs) forces the
-    full rebuild so a real schedule change never stalls."""
     import datetime as _dt
     from contextlib import contextmanager
 
@@ -1912,8 +1740,6 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
                 return _Res([True])
             if "loaded_at_utc FROM core.dataset_versions" in s:
                 return _Res([{"loaded_at_utc": _STAMP}])
-            # the dataset-skip probe: the ONLY query that CASTs the stamp against the state row.
-            # Returns a positional Row (tuple) like real SQLAlchemy, so match[0] = files_total.
             if "core.snapshot_publish_state" in s and "CAST" in s:
                 return _Res([(9222,)] if self._skip_row else [])
             return _Res([])
@@ -1965,18 +1791,15 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
             storage=_Store(fp_doc=fp_doc),
         )
 
-    # 1) unchanged dataset + matching fingerprint -> SKIP (publisher never runs).
     calls.clear()
     res = _run(skip_row=True, fp_doc=good_fp)
     assert calls == [], "rebuild should be skipped when the dataset is unchanged"
     assert res.keys_written == [] and res.keys_skipped == []
 
-    # 2) new GTFS edition (no matching state row) -> FULL REBUILD (never stalls a real change).
     calls.clear()
     _run(skip_row=False, fp_doc=good_fp)
     assert len(calls) == 1, "a new dataset edition must trigger the full rebuild"
 
-    # 3) format/cache change (fingerprint mismatch) -> FULL REBUILD even though a state row exists.
     calls.clear()
     _run(skip_row=True, fp_doc=stale_fp)
     assert len(calls) == 1, "a fingerprint change must force a full re-stamp rebuild"

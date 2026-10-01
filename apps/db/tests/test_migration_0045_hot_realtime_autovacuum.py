@@ -1,4 +1,3 @@
-"""Static contract test for migration 0045: hot realtime autovacuum settings."""
 
 from __future__ import annotations
 

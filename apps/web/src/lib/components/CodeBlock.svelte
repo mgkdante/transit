@@ -1,17 +1,11 @@
-<!-- Verbatim, keyboard-scrollable code with local light/dark syntax colors. -->
 <script lang="ts">
 	import { tokenizeSql, type CodeToken } from './sql-highlight';
 
 	export interface CodeBlockProps {
-		/** The verbatim source to render. Language-neutral; highlighting is SQL-aware. */
 		code: string;
-		/** Language label shown in the chrome tag (e.g. "SQL"). Default 'SQL'. */
 		lang?: string;
-		/** Accessible label for the scrollable code region. */
 		ariaLabel?: string;
-		/** Render inside an existing terminal chassis without a second frame or titlebar. */
 		embedded?: boolean;
-		/** Extra classes on the figure wrapper. */
 		class?: string;
 	}
 
@@ -32,8 +26,7 @@
 			<span class="codeblock__lang">{lang}</span>
 		</figcaption>
 	{/if}
-	<!-- Scrollable code region: keyboard-focusable so the overflow is reachable
-	     without a pointer (mirrors the dataviz scrollable-region pattern). -->
+	<!-- Keyboard access to overflow. -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<pre
 		class="codeblock__pre"
@@ -46,8 +39,6 @@
 </figure>
 
 <style>
-	/* Theme-aware syntax palette — LOCAL custom properties (not global tokens).
-	   Dark is the default register; the light pair re-pins for AA on warm paper. */
 	.codeblock {
 		--code-keyword: #c98a5e;
 		--code-string: #7fae6f;
@@ -71,7 +62,6 @@
 		background: var(--terminal);
 	}
 
-	/* Light theme re-pin — darker, AA-readable hues on the paper card. */
 	:global([data-theme='light']) .codeblock,
 	:global(.theme-light) .codeblock {
 		--code-keyword: #9a4a14;

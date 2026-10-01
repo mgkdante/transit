@@ -1,15 +1,3 @@
-"""Shared spine kernel leaf for the historic builders (S7-close C3 de-monolith).
-
-The value-domain helpers, the ONE spine projector fold catalog, the spine consumer
-helpers, and the windowable headway / weak-stop kernels shared by
-``network_trend`` and ``route_reliability``. Split out of the former monolithic
-``historic.py`` verbatim — a pure mechanical move, byte-identical SQL and math.
-
-Import graph (acyclic): ``historic/__init__ -> {network_trend, route_reliability,
-stop_reliability, small_surfaces, provenance} -> _spine -> {gold.reader, _helpers,
-contract}``; ``_helpers -> gold.reader`` (gold.reader never imports snapshots).
-"""
-
 from __future__ import annotations
 
 from transit_ops.gold.reader import (
@@ -68,35 +56,16 @@ _OCCUPANCY_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
 
 
 def _pctile_from_hist(hist: list[int] | None, q: float) -> float | None:
-    """q-th percentile (minutes) over the 21-bin spine histogram (gold.reader kernel).
-
-    ``hist[i]`` is the observation count in bin ``i`` = ``[_SPINE_EDGES[i],
-    _SPINE_EDGES[i+1])`` seconds for i in 0..19; bin 20 is the ``[3600, +inf)``
-    overflow (no upper edge). Honest-None on empty/all-zero; rounded to 0.1 min
-    to match ``_avg_delay_min``. Finding B (terminal floor): mass landing in bin
-    20 pins at ``_SPINE_EDGES[20] / 60`` = 60.0 min — the kernel's shared
-    overflow-floor branch, locked by a test; bin-0 mass interpolates to a
-    negative-minute value without indexing past the edge array.
-    """
     return pctile_min_from_hist(hist, q, _SPINE_EDGES)
 
 
 def _band_total(row: object) -> int | None:
-    """Sum of the 5 occupancy band counts (the mix share denominator), or None when
-    the row itself is absent. A real 0 (data-day present, no band telemetry) is kept
-    as 0 so consumers can distinguish "no data-days" (row omitted) from "0 band obs"."""
     if row is None:
         return None
     return sum(int(row[band] or 0) for band in _OCCUPANCY_BANDS)
 
 
 def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
-    """Build OccupancyMix from summed band counts; honest-None when total is 0.
-
-    Mirrors the live build_network occupancy honesty: an all-zero distribution is
-    indistinguishable from a real all-empty fleet, so absence of telemetry must
-    surface as None rather than a fabricated all-zero mix.
-    """
     if row is None:
         return None
     counts = {band: int(row[band] or 0) for band in _OCCUPANCY_BANDS}
@@ -107,21 +76,9 @@ def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
 
 
 def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
-    """Build per-band delay×crowding cells from the CO-OBSERVED per-band daily rollup (FIX-3).
-
-    Each delay observation already carries its OWN occupancy band (matched to the vehicle's
-    occupancy_status by the delay-fact build's vpm LATERAL), so a band gets its TRUE delay
-    distribution — the full/standing tail is no longer censored by a day's dominant band.
-    avg_delay_min = Σdelay_seconds / Σobs over the window (the rollup's additive sum/count);
-    p50_min is a best-effort observation-weighted mean of the daily band p50s (an approximation —
-    daily percentiles are not exactly additively composable); observation_count sums the
-    co-observed delay observations; day_count counts the contributing days. Each field is
-    honest-None when its input is absent; emitted in canonical band order; bands with no
-    co-observed delay in the window are omitted (the result is empty until the rollup ramps in).
-    """
     by_band = {str(r["band"]): r for r in rows if r["band"] is not None}
     cells: list[CrowdingDelayCell] = []
-    for band in _OCCUPANCY_BANDS:  # canonical band order
+    for band in _OCCUPANCY_BANDS:
         r = by_band.get(band)
         if r is None:
             continue
@@ -141,29 +98,12 @@ def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
     return cells
 
 
-# --------------------------------------------------------------------------
-# S7-B PR1 Task 3 — route delay-cube reads via ONE spine projector
-# --------------------------------------------------------------------------
-# build_route_reliability derives every route delay-cube
-# breakdown (by_shift / by_daytype / weekly / monthly / day_of_week / crosstab)
-# at READ time from gold.route_delay_spine through this one parameterized
-# projector, instead of one stored fold table per breakdown. The count/share
-# columns are plain SUMs of the spine's additive counts, so otp_pct / severe_pct
-# / observation_count are BYTE-IDENTICAL to the fact path; avg_delay_min (pooled
-# sum / in-clamp count) and p50/p90 (CDF interpolation over the summed histogram)
-# are the allowed rebaseline. The shift / day_type / dow / week / month grain
-# expressions read hour_of_day_local and provider_local_date DIRECTLY — both are
-# already provider-local in the spine, so timezone() is NEVER re-applied — and
-# mirror the fold builders' CASE / EXTRACT / date_trunc logic exactly.
+# Read provider-local date/hour columns directly without another timezone conversion.
 
-# Shift + day_type buckets over the spine's pre-localized columns, emitted from
-# the ONE gold.reader.buckets source (the same bounds every rollup CASE uses).
 _SPINE_SHIFT_CASE = shift_case_sql("hour_of_day_local")
 
 _SPINE_DAYTYPE_CASE = daytype_case_sql("provider_local_date")
 
-# Projector mechanics (template, hist cols, entity clause) live in
-# gold.reader.projector; this module owns only the fold catalog below.
 _spine_project_sql = spine_project_sql
 
 
@@ -194,10 +134,7 @@ _ROUTE_SPINE_CROSSTAB_SQL = _route_spine_sql(
     "1, 2",
 )
 
-# Network-wide reads: the SAME projector with NO route filter -> aggregate the spine
-# across ALL routes by shift / day_type. otp_known == known_obs here because a spine
-# cell's on_time is NULL iff delay_obs=0 (so SUM(delay_obs) FILTER(on_time NOT NULL)
-# equals SUM(delay_obs)), reproducing the fact network's scoped-OTP denominator.
+# Network reads include all attributed routes; silent cells add nothing to known-delay sums.
 _NETWORK_SPINE_BY_SHIFT_SQL = _spine_project_sql(
     "network.spine.by_shift", f"{_SPINE_SHIFT_CASE} AS grain,", "1", ""
 )
@@ -205,14 +142,7 @@ _NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(
     "network.spine.by_daytype", f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", ""
 )
 
-# --- S7-B windowable §1 ("When to ride" follows the grain rail) ---------------
-# The breakdowns + heatmap recomputed per TIME WINDOW off the spine, so §1 answers
-# Today / This week / This month (the scalar reads above stay whole-history). Windows
-# are trailing-N-days anchored on the route's newest CLOSED day, matching the web's
-# windowByGrain so the windowed arrays need no client re-trim.
-_MIN_N_HABIT_CELL = 30  # per-(dow,hour)-cell known-delay floor for the windowed heatmap
-# _SPINE_WINDOW_CLAUSE + _ROUTE_HABIT_SPINE_SQL are imported from gold.reader
-# (window policy + the spine habit read with its divergence note).
+_MIN_N_HABIT_CELL = 30
 
 _SPINE_ANCHOR_SQL = named_query(
     "route.spine.anchor",
@@ -220,7 +150,6 @@ _SPINE_ANCHOR_SQL = named_query(
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
-# Windowed twins of the whole-history breakdown projectors (only :win_start/:win_end vary).
 _W_BY_SHIFT = _route_spine_sql(
     "route.spine.by_shift_windowed", f"{_SPINE_SHIFT_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE
 )
@@ -244,23 +173,13 @@ _W_CROSSTAB = _route_spine_sql(
 )
 
 def _grain_windows(anchor):  # noqa: ANN001, ANN202
-    """Trailing-N-day [start, end] windows anchored on the route's latest closed day."""
     return GrainWindows(anchor)
 
 
-# (21-bin summed histogram, ghost-excluded pooled avg seconds-or-None) from a row —
-# the gold.reader kernel helper (Finding C: ghost-excluded numerator AND denominator).
 _spine_hist_and_avg = hist_and_avg
 
 
 def _spine_delay_histogram(hist: list[int]) -> list[RouteDelayHistogramBin] | None:
-    """Signed-delay distribution bins from the 21-bin spine histogram (honest-None).
-
-    bin i = [_SPINE_EDGES[i], _SPINE_EDGES[i + 1]) seconds for i in 0..19; bin 20 is
-    the [3600s, +inf) overflow (hi_sec=None). None when there are no in-window
-    observations; otherwise ALL 21 bins are emitted (zeros included) so the UI draws
-    the full shape. Edges are the same DELAY_HISTOGRAM_EDGES that power p50/p90.
-    """
     bins = delay_histogram_bins(hist, _SPINE_EDGES)
     if bins is None:
         return None
@@ -270,9 +189,7 @@ def _spine_delay_histogram(hist: list[int]) -> list[RouteDelayHistogramBin] | No
 def _spine_reliability_period(  # noqa: ANN001
     r, *, grain: str, date, with_histogram: bool = True
 ) -> ReliabilityPeriod:
-    # with_histogram=False suppresses the bulky 21-bin array on windowed by_shift/by_daytype
-    # periods (the scalar percentiles p50/p90 are still computed from the same hist) — the §1
-    # distribution chart reads the whole-window/daily series, not per-window-per-shift bins.
+    # Windowed shift/day-type rows omit histogram arrays; scalar percentiles still use them.
     hist, avg_sec = _spine_hist_and_avg(r)
     return ReliabilityPeriod(
         grain=grain,
@@ -291,7 +208,6 @@ def _spine_reliability_period(  # noqa: ANN001
 
 
 def _spine_route_periods(conn, params) -> list[ReliabilityPeriod]:  # noqa: ANN001
-    """Weekly + monthly + by-shift + by-daytype ReliabilityPeriod rows from the spine."""
     periods: list[ReliabilityPeriod] = []
     for grain, sql, has_date in (
         ("week", _ROUTE_SPINE_WEEKLY_SQL, True),
@@ -311,7 +227,6 @@ def _spine_route_periods(conn, params) -> list[ReliabilityPeriod]:  # noqa: ANN0
 
 
 def _spine_route_dow(conn, params, sql=_ROUTE_SPINE_DOW_SQL) -> list[RouteDayOfWeek]:  # noqa: ANN001
-    # sql defaults to the whole-history projector; pass _W_DOW for a windowed read.
     out: list[RouteDayOfWeek] = []
     for r in conn.execute(sql, params).mappings():
         _hist, avg_sec = _spine_hist_and_avg(r)
@@ -327,7 +242,6 @@ def _spine_route_dow(conn, params, sql=_ROUTE_SPINE_DOW_SQL) -> list[RouteDayOfW
 
 
 def _spine_route_crosstab(conn, params, sql=_ROUTE_SPINE_CROSSTAB_SQL) -> list[CrosstabCell]:  # noqa: ANN001
-    # sql defaults to the whole-history projector; pass _W_CROSSTAB for a windowed read.
     out: list[CrosstabCell] = []
     for r in conn.execute(sql, params).mappings():
         _hist, avg_sec = _spine_hist_and_avg(r)
@@ -345,13 +259,6 @@ def _spine_route_crosstab(conn, params, sql=_ROUTE_SPINE_CROSSTAB_SQL) -> list[C
 
 
 def _network_spine_rows(conn, sql, params, order) -> list[NetworkShift]:  # noqa: ANN001
-    """Network NetworkShift rows from the spine projector (all routes, no filter).
-
-    otp_pct = on_time/known_obs (== fact's on_time/otp_known: the spine's
-    on_time-NULL-iff-delay_obs=0 invariant makes the FILTER a no-op); severe_pct over
-    the full known_obs; avg = ghost-excluded pooled mean (rebaseline, allow-move).
-    Honest-None when the grain has no known-delay observations.
-    """
     by_grain: dict[str, NetworkShift] = {}
     for r in conn.execute(sql, params).mappings():
         known = r["known_obs"]
@@ -372,8 +279,6 @@ def _network_spine_rows(conn, sql, params, order) -> list[NetworkShift]:  # noqa
 
 
 def _windowed_periods(conn, sql, params, *, with_histogram=False):  # noqa: ANN001, ANN202
-    """ReliabilityPeriod rows from a windowed by_shift/by_daytype projector (grain = the
-    bucket label). Histograms suppressed by default (payload)."""
     return [
         _spine_reliability_period(
             r, grain=str(r["grain"]), date=None, with_histogram=with_histogram
@@ -383,8 +288,6 @@ def _windowed_periods(conn, sql, params, *, with_histogram=False):  # noqa: ANN0
 
 
 def _windowed_otp_index(conn, sql, params):  # noqa: ANN001, ANN202
-    """bucket label -> (on_time, known_obs) for the PRIOR window, for the period-over-period
-    delta. Keyed by the same grain label the current periods carry."""
     return {
         str(r["grain"]): (r["on_time"], r["known_obs"])
         for r in conn.execute(sql, params).mappings()
@@ -392,8 +295,6 @@ def _windowed_otp_index(conn, sql, params):  # noqa: ANN001, ANN202
 
 
 def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
-    """Set prior_observation_count (= prior KNOWN_obs, matching observation_count) + the prior
-    OTP on each current period for descriptive comparison. No prior -> left None."""
     for p in periods:
         pri = prior_index.get(p.grain)
         if pri is None:
@@ -405,15 +306,11 @@ def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
 
 
 def _spine_anchor(conn, params):  # noqa: ANN001, ANN202
-    """The route's newest CLOSED day in the spine (MAX(provider_local_date)), or None when the
-    route has no spine rows. Read ONCE per route and threaded into both windowed builders."""
     row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
     return row["anchor"] if row else None
 
 
 def _spine_periods_by_grain(conn, params, anchor=None) -> list[ReliabilityByGrain]:  # noqa: ANN001
-    """The §1 breakdowns (by_shift / by_daytype / day_of_week / crosstab) per trailing window,
-    each by_shift/by_daytype period carrying its prior-window n + OTP for a delta."""
     if anchor is None:
         anchor = _spine_anchor(conn, params)
     if anchor is None:
@@ -445,7 +342,6 @@ def _spine_periods_by_grain(conn, params, anchor=None) -> list[ReliabilityByGrai
 
 
 def _spine_habits_by_grain(conn, params, anchor=None) -> list[RouteHabitsByGrain]:  # noqa: ANN001
-    """The §1 7x24 repeat-problem heatmap recomposed per trailing window (B1)."""
     if anchor is None:
         anchor = _spine_anchor(conn, params)
     if anchor is None:
@@ -468,8 +364,6 @@ def _spine_habits_by_grain(conn, params, anchor=None) -> list[RouteHabitsByGrain
                     "repeat_problem_score": float(r["repeat_problem_score"]),
                 }
             )
-        # Explicit guard: _build_habits_matrix([]) returns an all-None 7x24 (route_max=0) —
-        # the forbidden "sea of grey cells". An empty/too-sparse window -> honest habits=None.
         habits = _build_habits_matrix(cells) if cells else None
         out.append(
             RouteHabitsByGrain(
@@ -483,34 +377,25 @@ def _spine_habits_by_grain(conn, params, anchor=None) -> list[RouteHabitsByGrain
     return out
 
 
-# ── S7-B §2 windowable headway: read-time recompose off gold.route_headway_shift_daily ──
-_GAP_NBINS = len(_GAP_EDGES) - 1  # 20 finite bins (no overflow — the clamp is finite 0<gap<240)
+_GAP_NBINS = len(_GAP_EDGES) - 1
 
 
-# Half-away-from-zero round (Python's builtin round() is banker's) — the
-# gold.reader kernel convention, matching Postgres ROUND(::numeric, n).
+# Match PostgreSQL ties-away-from-zero rounding.
 _round_half_away = round_half_away
 
 
 def _shift_key(s: str) -> tuple[int, str]:
-    """Canonical time-of-day order for shift buckets (am_peak<midday<...); unknown labels last."""
     return (_SHIFT_ORDER.index(s), "") if s in _SHIFT_ORDER else (len(_SHIFT_ORDER), s)
 
 
 def _headway_pctile_from_hist(hist, q, edges):  # noqa: ANN001, ANN202
-    """q-th percentile (MINUTES) over the gap histogram — the ONE gold.reader CDF walk.
-
-    Honest-None on empty/all-zero. The final round is done by the caller in half-away
-    (D3); this returns the raw float. The kernel's overflow-floor terminal branch is
-    dead code here (the finite 0<gap<240 clamp means bin_idx caps at 19 over 21 edges)."""
     return cdf_percentile(hist, q, edges)
 
 
-# Windowed %bunched: pooled-histogram mass below 0.5*median / total (D4) — kernel-owned.
 _bunched_pct_from_hist = bunched_pct
 
 
-# Own anchor (NEVER reuse the delay-spine anchor — the headway table's newest closed day differs).
+# Headway and delay spines have independent newest-closed-day anchors.
 _HEADWAY_SHIFT_ANCHOR_SQL = named_query(
     "route.headway.anchor",
     "SELECT MAX(provider_local_date) AS anchor FROM gold.route_headway_shift_daily "
@@ -519,10 +404,6 @@ _HEADWAY_SHIFT_ANCHOR_SQL = named_query(
 
 _GAP_HIST_COLS = hist_cols("gap_histogram", "g", _GAP_NBINS)
 
-# Windowed projector. CoV recomposed in SQL (D2): the gold.reader Bessel n-1 fragment
-# (sample SD / mean, guarded n>=2 AND mean>0, ROUND(::numeric,4) half-away) —
-# byte-identical to the legacy stddev_samp. Median / %bunched are recomposed in
-# Python from the element-wise-summed gap histogram.
 _HEADWAY_WINDOW_SQL = named_query(
     "route.headway.window",
     f"""
@@ -549,14 +430,12 @@ def _headway_shift_anchor(conn, params):  # noqa: ANN001, ANN202
 
 
 def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
-    """{shift: HeadwayPeriod} for the WINDOW's busiest direction. cov comes from SQL (frozen);
-    median / %bunched are recomposed in Python (median ALLOW_MOVE). Honest-None throughout."""
     by_dir: dict[int, list] = {}
     for r in rows:
         by_dir.setdefault(int(r["direction_id"]), []).append(r)
     if not by_dir:
         return {}
-    # D5: argmax SUM(trip_count) (legacy trip-COUNT basis), tie-break direction_id ASC.
+    # Choose the busiest direction by trip count, then ascending direction ID.
     busiest = min(by_dir, key=lambda d: (-sum(int(x["trips"] or 0) for x in by_dir[d]), d))
     out: dict[str, HeadwayPeriod] = {}
     for r in by_dir[busiest]:
@@ -565,13 +444,11 @@ def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
         hist = [int(r[f"g{k}"] or 0) for k in range(1, _GAP_NBINS + 1)]
         raw_med = _headway_pctile_from_hist(hist, 0.5, _GAP_EDGES)
         median = float(_round_half_away(raw_med, 1)) if raw_med is not None else None
-        cov = float(r["cov"]) if r["cov"] is not None else None  # frozen, from SQL (D2)
+        cov = float(r["cov"]) if r["cov"] is not None else None
         raw_b = _bunched_pct_from_hist(hist, _GAP_EDGES, median)
         bunched_pct = float(_round_half_away(raw_b, 1)) if raw_b is not None else None
         sched = scheduled.get(shift)
-        # FIX-1: true passenger-weighted Excess Wait Time (Welding/Osuna-Newell; see
-        # gold.reader.ewt_min), windowed grain only — the additive moment sums
-        # (Σgap, Σgap²) are on route_headway_shift_daily.
+        # Windowed excess wait is passenger-weighted using pooled gap moments.
         excess = ewt_min(float(r["sum_gap_min"] or 0.0), float(r["sum_gap_sq_min"] or 0.0), sched)
         out[shift] = HeadwayPeriod(
             shift=shift,
@@ -586,8 +463,6 @@ def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
 
 
 def _headway_by_grain(conn, params, scheduled, anchor=None) -> list[HeadwayByGrain]:  # noqa: ANN001
-    """§2 per-shift headway recomposed per trailing window (busiest direction), with the prior
-    window's n + observed median attached for a period-over-period delta."""
     if anchor is None:
         anchor = _headway_shift_anchor(conn, params)
     if anchor is None:
@@ -602,7 +477,7 @@ def _headway_by_grain(conn, params, scheduled, anchor=None) -> list[HeadwayByGra
             list(conn.execute(_HEADWAY_WINDOW_SQL, cur).mappings()), scheduled
         )
         if not cur_by_shift:
-            continue  # honest absence: no in-clamp gaps in the window -> omit the grain
+            continue
         prior_by_shift = _headway_period_from_summed(
             list(conn.execute(_HEADWAY_WINDOW_SQL, pri).mappings()), scheduled
         )
@@ -618,25 +493,17 @@ def _headway_by_grain(conn, params, scheduled, anchor=None) -> list[HeadwayByGra
     return out
 
 
-# ── S7-B §4 windowable weak-stops: read-time recompose off gold.stop_delay_spine ──
-# MIN_N is the LOAD-BEARING window floor (NEW path only): the Wilson lower bound does NOT
-# demote an extreme tiny-n fluke — a 4-of-4-severe stop pins the not-severe LB at exactly
-# 0.0% (n-independent), so a hard exclude is the only rail. Non-removable.
-_MIN_N_WEAK_STOP = MIN_N_RATE      # 30
-_WEAK_STOPS_BY_GRAIN_CAP = 15      # stored per-grain cap (byte budget; web "All" = all 15 stored)
+# Enforce MIN_N even with Wilson bounds: an all-severe tiny sample has lower bound zero.
+_MIN_N_WEAK_STOP = MIN_N_RATE
+_WEAK_STOPS_BY_GRAIN_CAP = 15
 
-# Own anchor (NEVER reuse the delay-spine / headway anchors — a different builder + a different
-# newest-closed-day front means the stop spine's anchor differs).
+# Stop history has its own newest-closed-day anchor.
 _STOP_DELAY_ANCHOR_SQL = named_query(
     "stop.delay.anchor",
     "SELECT MAX(provider_local_date) AS anchor FROM gold.stop_delay_spine "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
-# Windowed projector: additive per-stop counts over a trailing window for ONE route. A real
-# route_id never matches '__unrouted__', so NULL-route obs are correctly excluded (mirrors the
-# legacy per-route _ROUTE_WEAK_STOPS_SQL). avg = pooled raw sum/n (a documented rebaseline vs the
-# legacy triple-ROUND weekly avg); severe_k = obs - severe; ranked on _wilson_lo(severe_k, obs) ASC.
 _STOP_WEAK_WINDOW_SQL = named_query(
     "route.weak_stops.by_grain",
     """
@@ -659,10 +526,6 @@ def _stop_delay_anchor(conn, params):  # noqa: ANN001, ANN202
 
 
 def _weak_stops_by_grain(conn, params, names, anchor=None) -> list[WeakStopGrain]:  # noqa: ANN001
-    """§4 worst-N stops recomposed per trailing window, ranked by the Wilson LOWER bound of the
-    NOT-severe rate ASC (a low LB = chronically severe = worst), MIN_N=30 hard EXCLUDE floor,
-    honest-absence omit. `names` is the _STOP_NAMES_SQL dict built ONCE in build_route_reliability.
-    """
     if anchor is None:
         anchor = _stop_delay_anchor(conn, params)
     if anchor is None:
@@ -670,17 +533,16 @@ def _weak_stops_by_grain(conn, params, names, anchor=None) -> list[WeakStopGrain
     out: list[WeakStopGrain] = []
     for grain, (win_start, win_end) in _grain_windows(anchor).items():
         cur = {**params, "win_start": win_start, "win_end": win_end}
-        ranked: list[tuple] = []  # (wilson_lo, -avg_min, stop_id, WeakStop)
+        ranked: list[tuple] = []
         for r in conn.execute(_STOP_WEAK_WINDOW_SQL, cur).mappings():
             obs = int(r["obs"] or 0)
-            if obs < _MIN_N_WEAK_STOP:  # D-C: hard floor — EXCLUDE (never a fabricated avg=0)
+            if obs < _MIN_N_WEAK_STOP:
                 continue
             severe = int(r["severe"] or 0)
-            # not-severe successes (design S, the build_stop_reliability shape)
             severe_k = obs - severe
-            w_lo = _wilson_lo(severe_k, obs)  # [0,100] PERCENT; lower band of the NOT-severe rate
+            w_lo = _wilson_lo(severe_k, obs)
             w_hi = _wilson_hi(severe_k, obs)
-            if w_lo is None:  # defensive: obs>=30 guarantees non-None
+            if w_lo is None:
                 continue
             sum_sec = r["sum_delay_sec"]
             avg_min = _avg_delay_min(float(sum_sec) / obs) if sum_sec is not None else None
@@ -688,18 +550,17 @@ def _weak_stops_by_grain(conn, params, names, anchor=None) -> list[WeakStopGrain
             stop = WeakStop(
                 id=sid,
                 name=names.get(sid),
-                avg_delay_min=avg_min,  # displayed lollipop magnitude (honest-null)
+                avg_delay_min=avg_min,
                 observation_count=_opt_int(obs),
-                severe_pct=_severe_pct(obs, severe),  # the severe-delay rate %
-                wilson_lo=w_lo,  # rank key + whisker floor (not-severe lower bound)
+                severe_pct=_severe_pct(obs, severe),
+                wilson_lo=w_lo,
                 wilson_hi=w_hi,
             )
-            # rank: LOW not-severe wilson_lo = worst (ASC). Tie-break: HIGHER avg worst, then id ASC
-            # (stable, deterministic). Rank the FULL set, THEN truncate — a smaller display-N never
-            # rescales (mirrors the scalar weak_stops + the web selectWeakStops invariant).
+            # Rank before truncating: lower not-severe Wilson bound, higher mean delay, then stable
+            # ID.
             ranked.append((w_lo, -(avg_min or 0.0), sid, stop))
         if not ranked:
-            continue  # honest absence: no stop clears MIN_N in this window -> omit the grain
+            continue
         ranked.sort(key=lambda t: (t[0], t[1], t[2]))
         stops = [t[3] for t in ranked[:_WEAK_STOPS_BY_GRAIN_CAP]]
         out.append(WeakStopGrain(grain=grain, date=_iso_date(win_start), stops=stops))

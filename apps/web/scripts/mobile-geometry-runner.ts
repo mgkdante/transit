@@ -689,8 +689,6 @@ export async function runMobileGeometryHarness(
 		const routes: MobileRouteGeometry[] = [];
 		for (const route of MOBILE_GEOMETRY_ROUTES) {
 			await navigate(client, baseUrl, route);
-			// The credit rests COLLAPSED, so measure it there first; only then open
-			// it and measure the expanded overlay. Both states are swept (M6f-2 F19).
 			let collapsedAttribution: GeometryRect | null = null;
 			if (route.id === 'map') {
 				collapsedAttribution = await evaluate<GeometryRect | null>(

@@ -1,13 +1,8 @@
-// Distinct line/stop IDs with severe predictions and recorded alert-content versions.
-// Null counts remain unknown; zero remains zero. The producer supplies no vehicle count.
-
 import type { Receipt } from '$lib/v1/schemas';
 
-/** One affected-count cell VM (MaybeValue-ready — null value → the styled chip). */
 export interface AffectedCountVM {
 	readonly key: 'routes' | 'stops' | 'alerts' | 'vehicles';
 	readonly label: string;
-	/** Formatted count, or null → the styled honest-absence chip. */
 	readonly value: string | null;
 }
 
@@ -16,11 +11,9 @@ export interface AffectedCountLabels {
 	readonly stops: string;
 	readonly alerts: string;
 	readonly vehicles: string;
-	/** "1,234" (localized thousands) or null. */
 	readonly fmtCount: (v: number | null | undefined) => string | null;
 }
 
-/** Build the affected-count VMs. `vehicles` surfaces only when a real count exists. */
 export function selectAffectedCounts(
 	receipt: Pick<Receipt, 'affected_routes' | 'affected_stops' | 'alerts' | 'vehicles'>,
 	labels: AffectedCountLabels,
@@ -30,8 +23,6 @@ export function selectAffectedCounts(
 		{ key: 'stops', label: labels.stops, value: labels.fmtCount(receipt.affected_stops) },
 		{ key: 'alerts', label: labels.alerts, value: labels.fmtCount(receipt.alerts) },
 	];
-	// `vehicles` is structurally always-null on /v1 → the cell is dropped rather than a
-	// permanent no-data row. A real count would surface it again.
 	if (receipt.vehicles != null) {
 		cells.push({
 			key: 'vehicles',

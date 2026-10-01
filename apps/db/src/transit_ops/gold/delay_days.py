@@ -1,5 +1,3 @@
-"""Dirty state for retained capture-day delay metrics; independent of live serving."""
-
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import Literal
@@ -18,9 +16,7 @@ DAILY_DELAY_TABLES = {
     "repeat_offender_daily_spine": "repeat_offender_daily_spine",
 }
 
-# Internal MVCC coordination, not a metric or capture ledger. Retain this one
-# row/day with surviving daily history across source resets; age by its day key,
-# not built_at_utc (the last lock acquisition). Metric status excludes this kind.
+# Retain coordination rows by day with surviving daily history, excluding them from metric status.
 DAY_COORDINATION_KIND = "delay_day_coordination"
 DAILY_DELAY_STATE_KINDS = (*DAILY_DELAY_TABLES, DAY_COORDINATION_KIND)
 
@@ -113,13 +109,10 @@ def day_key(local_date: date) -> datetime:
 
 
 def lock_delay_day(conn: Connection, provider_id: str, local_date: date) -> None:
-    """Acquired after Gold/hour/5m locks; daily workers never request those earlier locks."""
     conn.execute(
         _DAY_LOCK, {"lock_key": f"transit.delay_day|{provider_id}|{local_date.isoformat()}"}
     )
-    # Waiting on an advisory lock does not refresh an RR snapshot. This write
-    # raises 40001 if another holder committed after that snapshot, so the caller
-    # retries its whole transaction instead of missing a newly built metric.
+    # This write raises 40001 for a stale RR snapshot; retry the entire transaction.
     conn.execute(
         _DAY_COORDINATION,
         {"provider_id": provider_id, "period_start_utc": day_key(local_date)},
@@ -127,7 +120,6 @@ def lock_delay_day(conn: Connection, provider_id: str, local_date: date) -> None
 
 
 def invalidate_delay_days(conn: Connection, provider_id: str, snapshot_ids: Sequence[int]) -> None:
-    """Mark old/new capture days before fact replacement in the caller's transaction."""
     if any(type(snapshot_id) is not int or snapshot_id <= 0 for snapshot_id in snapshot_ids):
         raise ValueError("Daily invalidation requires positive capture IDs")
     if not snapshot_ids:
@@ -140,7 +132,7 @@ def invalidate_delay_days(conn: Connection, provider_id: str, snapshot_ids: Sequ
         .all()
     )
     for local_date in dates:
-        # Lock even without a watermark: a simultaneous first build must see the correction.
+        # Lock even without a watermark so concurrent first builds see the correction.
         lock_delay_day(conn, provider_id, local_date)
         conn.execute(
             _INVALIDATE_DAY,
@@ -178,7 +170,6 @@ def daily_delay_status(
     to_date: date | None = None,
     kinds: Sequence[str] | None = None,
 ) -> dict[str, object]:
-    """Dirty metric days over inclusive local-date bounds; coordination rows are excluded."""
     selected = tuple(DAILY_DELAY_TABLES) if kinds is None else tuple(dict.fromkeys(kinds))
     if any(kind not in DAILY_DELAY_TABLES for kind in selected):
         raise ValueError("Daily delay status supports only capture-day delay kinds")
@@ -216,7 +207,6 @@ def assert_daily_delay_history_clean(
     to_date: date | None = None,
     kinds: Sequence[str] | None = None,
 ) -> dict[str, object]:
-    """Check visible DB state; the publisher owns its consistent read/CAS boundary."""
     status = daily_delay_status(
         conn, provider_id, from_date=from_date, to_date=to_date, kinds=kinds
     )

@@ -1,10 +1,3 @@
-<!--
-  HotspotSection — one category body inside an article-summary card.
-
-  The board owns category presence and the shared top-N state. This presenter
-  renders exactly one supplied ladder and its below-floor tray, preserving the
-  absolute severe-rate chart, links, metric explainer, and honest absence.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';

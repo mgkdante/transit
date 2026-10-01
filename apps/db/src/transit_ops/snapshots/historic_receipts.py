@@ -1,5 +1,3 @@
-"""Fail-closed evidence and persistence for historic publish receipts."""
-
 from __future__ import annotations
 
 import ast
@@ -366,7 +364,6 @@ def digest_file_manifest(
     *,
     required_relative_paths: Sequence[str] | None = None,
 ) -> str:
-    """Hash sorted relative POSIX paths plus length-framed bytes, rejecting escapes."""
 
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -749,7 +746,6 @@ def prepare_historic_receipt_preflight(
     package_root: Path | None = None,
     project_root: Path | None = None,
 ) -> HistoricReceiptPreflight:
-    """Collect provider/file/runtime/schema evidence once; non-DB fakes stay receipt-inert."""
 
     if not historic_receipts_supported(conn):
         return HistoricReceiptPreflight(
@@ -1002,7 +998,6 @@ def build_historic_detached_contribution(
     artifact_ref: object,
     partition: object,
 ) -> dict[str, Any]:
-    """Detach the exact compact state needed to rebuild builder and gate summaries."""
 
     if family not in _FAMILIES:
         raise HistoricReceiptEvidenceError(f"unsupported historic family: {family!r}")
@@ -1819,7 +1814,6 @@ def persist_historic_receipts(
     receipts: Iterable[HistoricEntityReceipt],
     complete_families: Sequence[str],
 ) -> HistoricReceiptPersistenceStats:
-    """Replace complete entity maps, suppress identical writes, and remove stale entities."""
 
     families = tuple(sorted(set(complete_families)))
     if not families or any(family not in _FAMILIES for family in families):
@@ -2035,7 +2029,6 @@ class _HistoricPhaseLedger:
         scope_class: str | None = None,
         scope_metric: str | None = None,
     ) -> Iterator[None]:
-        """Switch the one active phase, restoring the caller's phase on exit."""
 
         detail: tuple[str, str, str] | None = None
         detail_values = (family, scope_class, scope_metric)
@@ -2325,7 +2318,6 @@ def _prepare_historic_receipt_run(
     plans: tuple[object, object, object],
     prepare_preflight: Callable[..., HistoricReceiptPreflight],
 ) -> None:
-    """Resolve all common envelopes before the first historic upload."""
 
     if run is None:
         return
@@ -2369,7 +2361,6 @@ def _next_historic_partition[HistoricRefT, HistoricPartitionT](
     iterator: Iterator[tuple[HistoricRefT, HistoricPartitionT]],
     run: _HistoricPublishRun | None,
 ) -> tuple[HistoricRefT, HistoricPartitionT, int]:
-    """Advance a lazy plan while keeping nested source SQL out of build time."""
 
     if run is None:
         ref, partition = next(iterator)
@@ -2609,7 +2600,6 @@ def _assemble_historic_receipt_envelopes(
     gate_enabled: bool,
     force: bool,
 ) -> None:
-    """Pair exact emitted refs with source evidence and stage entity maps."""
 
     if not run.receipt_evidence_available:
         for family, observations in run.observations.items():

@@ -1,22 +1,3 @@
-"""Gate A: the web JSON-Schema mirror must stay byte-identical to the DB export.
-
-The /v1 contract's canonical shape is the JSON Schema generated from contract.py
-(itself byte-gated against the Pydantic models by test_snapshots_schema_export).
-The web app keeps a verbatim copy under apps/web/src/lib/v1/schemas/json/ as its
-reference. That copy was a manual hand-copy with NO test, so it could silently
-rot the moment a contract change re-exported the DB schemas without re-syncing
-the web mirror.
-
-This gate asserts the two directories hold the same schema basenames and
-byte-identical content. On failure: re-run
-``uv run python scripts/export_snapshot_schemas.py`` and copy
-``apps/db/src/transit_ops/snapshots/schemas/*.schema.json`` to
-``apps/web/src/lib/v1/schemas/json/``.
-
-(Catches the producer-side drift direction — a DB schema change that forgets the
-web mirror. A symmetric web-side check belongs in apps/web's vitest run for the
-reverse direction.)
-"""
 
 from __future__ import annotations
 

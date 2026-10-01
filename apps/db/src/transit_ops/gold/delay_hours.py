@@ -150,7 +150,6 @@ _HISTORIC_MEANS_PENDING = named_query(
 
 
 def assert_historic_delay_means_current(conn: Connection, provider_id: str) -> None:
-    """Reject recorded pending mean dependencies for represented history, including empty days."""
     if conn.execute(_HISTORIC_MEANS_PENDING, {"provider_id": provider_id}).scalar_one():
         raise ValueError(
             f"Historic delay means for {provider_id!r} need five-minute/hourly reporting refresh; "

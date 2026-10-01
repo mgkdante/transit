@@ -1,7 +1,6 @@
 import type { HabitsVM } from '../clusters';
 
 export interface RelativeScorePeakOpts {
-	/** Full weekday names in matrix row order (Mon..Sun). */
 	readonly fullRowLabels: readonly string[];
 	readonly hourLabel: (hour: number) => string;
 }
@@ -11,7 +10,6 @@ export interface RelativeScorePeak {
 	readonly hourLabel: string;
 }
 
-/** One observed peak, only when valid cells vary. Tied peaks use matrix order. */
 export function selectRelativeScorePeak(
 	habits: HabitsVM,
 	opts: RelativeScorePeakOpts,

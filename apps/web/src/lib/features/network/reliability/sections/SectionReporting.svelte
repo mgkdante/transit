@@ -1,19 +1,3 @@
-<!--
-  SectionReporting — the dedicated vehicles-reporting / coverage row (S9C · DECISIONS C1).
-
-  The "who's reporting" story, lifted wholly out of the headline board into ONE coherent
-  full-width row: the vehicles_in_service + non_responding scalar cards (ExplainedMetricCards,
-  glance mode), the non_responding_by_route ranked list, and the GLOBAL-SIGNAL caveat (the S5
-  "vehicle updated_utc is uniform" finding — per-vehicle silence is a network-wide feed signal,
-  so this is a per-line silent-trip tally, never identifiable buses).
-
-  The ranked list keeps its DOCTRINE MARK: RankedRow's SeverityBar on the FIXED absolute
-  NON_RESPONDING_DOMAIN [0,10] (never the in-view max). Each row is a ranked link to
-  /lines/[id]; list > listitem > link (the <li> owns the listitem role, the anchor the
-  interactivity + accessible name, the inner RankedRow is `bare`). The whole section stands
-  down only when there are no reporting cards AND no silent rows — but the cards are
-  required ints, so the row always carries the two scalars.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
@@ -26,9 +10,7 @@
 	import NetworkTile from './NetworkTile.svelte';
 
 	interface SectionReportingProps {
-		/** The reporting scalar cards (vehicles-in-service + non-responding, required ints). */
 		cards: readonly KpiCardVM[];
-		/** The ranked silent-lines rows (empty → the list stands down). */
 		silentRows: readonly SilentRow[];
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
@@ -46,7 +28,6 @@
 	aria-label={copy.reporting.heading}
 >
 	<div class="network-reporting">
-		<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
 		<DashboardGrid minTile="220px" gutter={false}>
 			{#each cards as card (card.label)}
 				<ExplainedMetricCard label={card.label} value={card.value} {locale} size="lg">
@@ -103,7 +84,6 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
-	/* The global-signal caveat: quiet mono, AA both themes. */
 	.network-reporting-caveat {
 		margin: 0;
 		max-width: 100%;
@@ -118,9 +98,6 @@
 		gap: 0.5rem;
 		width: 100%;
 	}
-	/* Non-responding-by-route ranked list — list > listitem > link; the whole row is a link,
-	   strip anchor chrome so RankedRow owns the visuals. Auto-fit grid: one column on a phone,
-	   several across a wide desktop, so the row reads as a deliberate block sized for its list. */
 	.network-silent {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));

@@ -1,26 +1,3 @@
-<!--
-  AlertFilters — the /alerts filter rail body (P5.4e: map-style GLASS LEFT RAIL).
-
-  The filter WIDGETS themselves (no chrome container): SurfaceRail owns the glass
-  panel + the mobile pill→sheet, and renders THIS content as the single rail source
-  in both. The shared ArticleControlStack fixes the canonical rail order:
-    · retained-history range first
-    · entity-type (Affects) — a joined FilterGroup (All | Lines | Stops)
-    · severity — a joined FilterGroup (All | Critical | High | Watch)
-    · Line — a typeahead Combobox over the distinct lines in the log
-    · Stop — a typeahead Combobox over the distinct stops in the log
-	    · result count / clear affordance last when filters are active
-
-  The two entity-type/severity radiogroups ride the shared $lib/components/filter
-  FilterGroup joined variant (shared segmented-choice engine + explicit "All"), and the clear affordance
-  rides FilterSummary. FilterGroup is CONTROLLED (activeKey + onSelect), so this file
-  threads the surface's existing $bindable scalars through: the built-in "All" maps to
-  the codec's 'all' sentinel (activeKey = x==='all' ? null : x; onSelect = (k)=> x = k
-  ?? 'all'). The orchestrator still owns the codec seed + batched URL mirror + every
-  predicate — nothing about state or the URL changed. The two comboboxes carry the type
-  in their GROUP label ONCE (no per-row prefix). --primary lives only on the active chip
-  / highlighted option, never on the rail.
--->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { Locale } from '$lib/i18n';
@@ -32,35 +9,22 @@
 	import { foldSearchText } from '$lib/search/normalize';
 
 	interface Props {
-		/** Entity-type axis: 'all' | 'lines' | 'stops' (bindable; 'all' = absent codec value). */
 		affects: 'all' | AlertAffects;
-		/** Severity axis: 'all' | SeverityCode (bindable). */
 		severity: 'all' | SeverityCode;
-		/** The chosen line id, or null (bindable — mirrors ?route). */
 		route: string | null;
-		/** The chosen stop id, or null (bindable — mirrors ?stop). */
 		stop: string | null;
-		/** The page-owned retained-history window. */
 		window: DateWindow | undefined;
-		/** Line picker options (distinct lines in the log). */
 		lineOptions: readonly ComboboxOption[];
-		/** Stop picker options (distinct stops in the log). */
 		stopOptions: readonly ComboboxOption[];
-		/** The served span, every day selectable (empty ⇒ the picker hides via honest absence). */
 		availableDates: readonly string[];
-		/** True when any axis is active (shows the "clear filters" affordance). */
 		filtersActive: boolean;
-		/** The count of alerts matching the active filters (already computed upstream). */
 		matchCount: number | null;
 		copy: AlertHistoryCopy;
 		locale: Locale;
-		/** Localized retained-history captions and polite correction text. */
 		historyCoverageText: string | null;
 		historySelectionText: string | null;
 		historyAnnouncement: string | null;
-		/** Controlled range callback; the page resolves/fetches/mirrors it. */
 		onWindowChange: (window: DateWindow | undefined) => void;
-		/** Reset every axis to its unfiltered default. */
 		onClear: () => void;
 	}
 	let {
@@ -83,7 +47,6 @@
 		onClear,
 	}: Props = $props();
 
-	// FilterGroup items exclude the built-in "All" (its own reset row supplies it).
 	const entityItems = $derived<{ key: string; label: string }[]>([
 		{ key: 'lines', label: copy.filters.entity.lines },
 		{ key: 'stops', label: copy.filters.entity.stops },
@@ -92,8 +55,6 @@
 		SEVERITY_CODES.map((code) => ({ key: code, label: copy.severity[code] })),
 	);
 
-	// Controlled ↔ codec bridge: 'all' sentinel ⇄ FilterGroup's null "All". The
-	// $bindable scalars stay the surface's state; we only translate the null reset.
 	function setAffects(key: string | null): void {
 		affects = (key ?? 'all') as 'all' | AlertAffects;
 	}
@@ -116,8 +77,6 @@
 >
 	<ArticleControlStack caption={filtersActive && matchCount != null ? summaryControls : undefined}>
 		{#snippet history()}
-			<!-- Presentation-only retained-history navigator. The page owns its selection,
-			     URL codec, catalog, range resource, and correction announcement. -->
 			<div class="alert-history-pick" data-slot="window-pick">
 				<HistoryNavigator
 					mode="range"
@@ -156,8 +115,6 @@
 		{/snippet}
 
 		{#snippet secondary()}
-			<!-- The two specific-entity typeahead pickers. The group label names the type once;
-			     each option is the bare id (no per-row prefix). Single-select, codec-mirrored. -->
 			<div class="alert-filter-specifics">
 				<div class="alert-history-pick" data-slot="line-pick">
 					<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.line.label}</span>
@@ -198,7 +155,6 @@
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	/* Each labeled picker seats full-width in the narrow rail column (one per row). */
 	.alert-history-pick {
 		display: flex;
 		flex-direction: column;
@@ -213,9 +169,6 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
-	/* The shared FilterSummary seats full-width on its own row in the rail so the
-	   count + clear link never crowd the pickers. It carries its own --primary link
-	   treatment (an interaction control), so no bespoke clear styles remain here. */
 	.alert-history-summary {
 		width: 100%;
 	}

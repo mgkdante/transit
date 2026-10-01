@@ -1,4 +1,3 @@
-"""Scoped Gold replay preserves retained history and the current serving lanes."""
 
 from __future__ import annotations
 
@@ -128,7 +127,6 @@ def _prune_silver(connection, snapshot_id):
 
 
 def _stale_fact(connection, snapshot_id, table="fact_trip_delay_snapshot"):
-    # A stale extra entity proves replacement removes rows absent from Silver.
     connection.execute(
         text(
             f"INSERT INTO gold.{table} SELECT (jsonb_populate_record("

@@ -1,21 +1,3 @@
-"""Real-database test for the per-route file `type` (GTFS route_type) field.
-
-build_route now emits RouteFile.type from gold.dim_route.route_type — the
-self-describing mode field that lets the web detail surface infer "metro has no
-realtime" (route_type 1 + the metro_realtime gap) without cross-referencing
-routes_index. This exercises the real name+type SELECT against a live Postgres;
-the FakeConn unit test cannot prove the column actually flows from dim_route.
-
-Runs ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres with
-the transit schema at head 0057, e.g.:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://transit_ci@localhost:5433/transit_ci" \
-        uv run pytest tests/test_route_file_type_real_db.py -v
-
-Each test runs inside one transaction and rolls back — nothing persists.
-Never point this at production. (CI has no Postgres — skipped there.)
-"""
 
 from __future__ import annotations
 
@@ -31,7 +13,6 @@ PROVIDER = "stm_route_type_test"
 ENDPOINT_ID = 930_001
 RUN_ID = 930_001
 VERSION_ID = 930_001
-# A metro route (route_type 1) and a bus route (route_type 3).
 ROUTE_METRO = "1"
 ROUTE_BUS = "165"
 LOADED = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
@@ -96,7 +77,6 @@ def _seed(connection, seed_provider) -> None:
             "loaded": LOADED,
         },
     )
-    # A metro route (route_type 1) and a bus route (route_type 3).
     for route_id, route_type, sort_order in ((ROUTE_METRO, 1, 1), (ROUTE_BUS, 3, 2)):
         connection.execute(
             text(
@@ -245,8 +225,6 @@ def _replace_conflicting_trips(connection, *, reverse: bool) -> None:
 def test_route_file_emits_metro_route_type(conn) -> None:
     rf = build_route(conn, provider_id=PROVIDER, route_id=ROUTE_METRO, generated_utc="t")
     assert rf.id == ROUTE_METRO
-    # The GTFS route_type (1 = metro) flows from gold.dim_route onto the route file —
-    # the signal the web surface needs for the "metro has no realtime" inference.
     assert rf.type == 1
 
 
@@ -257,8 +235,6 @@ def test_route_file_emits_bus_route_type(conn) -> None:
 
 
 def test_route_file_type_is_none_for_unknown_route(conn) -> None:
-    # An id not in dim_route has no name/type row — the additive-optional `type`
-    # field stays None (never a fabricated default).
     rf = build_route(conn, provider_id=PROVIDER, route_id="does_not_exist", generated_utc="t")
     assert rf.type is None
 

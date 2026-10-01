@@ -31,29 +31,11 @@
 	} from '$lib/features/reliability/shiftGrains';
 
 	interface Section2TheWaitProps {
-		/** The wait-regularity VM (headway rows carrying a signal, contract order). */
 		wait: WaitRegularityVM;
-		/**
-		 * Service-span history (foundation VM: only rows carrying a signal). The
-		 * section reads the most-recent row for the span + first/last punctuality
-		 * block. Empty array → the sub-block is omitted with no fabrication.
-		 */
 		serviceSpans?: ServiceSpanPeriod[];
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The shared reliability copy, section overline/question + honest-state notes. */
 		copy: ReliabilityCopy;
-		/**
-		 * dir (direction_id) → real destination headsign, from the route file. The
-		 * observed-gap-by-direction table labels its columns with these ("Est"/"Ouest")
-		 * instead of "Direction 1/2"; a dir with no headsign falls back to "Direction N".
-		 */
 		directionHeadsigns?: Record<number, string>;
-		/**
-		 * Active window (day|week|month|range) — names the "vs prior {window}" wait comparison.
-		 * The headway breakdown re-shapes on this window via the mapper (headway_by_grain);
-		 * `range` reads the day-anchored windowed breakdown, so it borrows the 'day' phrasing.
-		 */
 		mode?: 'day' | 'week' | 'month' | 'range';
 	}
 
@@ -66,18 +48,10 @@
 		mode = 'day',
 	}: Section2TheWaitProps = $props();
 
-	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
 	const win = $derived<'day' | 'week' | 'month'>(
 		mode === 'week' || mode === 'month' ? mode : 'day',
 	);
 
-	/* ── band-local copy ──────────────────────────────────────────────────────
-	   Labels this section needs that are NOT in the shared copy live here, co-located
-	   and bilingual (FR canonical). The plain wait-regularity term microcopy
-	   (scheduled gap / observed gap / excess wait / spread / clumped) lives in the
-	   shared `copy.regularityTerms`; the section overline/question + the ramp-in /
-	   no-data notes are read from the passed `copy` so the surface stays the one
-	   source of truth for those. */
 	interface BandCopy {
 		readonly headwaySection: string;
 		readonly spanSection: string;
@@ -85,29 +59,17 @@
 		readonly firstTripDelay: string;
 		readonly lastTripDelay: string;
 		readonly tripCount: string;
-		/** "more detail" reveal label for the per-direction / weekend shift rows. */
 		readonly moreDetail: string;
-		/** Heading for the per-direction observed-gap comparison inside the reveal. */
 		readonly directionGap: string;
-		/** Direction-table column header for the shift/row axis. */
 		readonly directionShiftCol: string;
-		/** Direction-table column header, 1-indexed (Direction 1 / Direction 2). */
 		readonly directionCol: (n: number) => string;
-		/** Direction-table row-label suffix for the weekend variant. */
 		readonly weekendSuffix: string;
-		/** The headline gives each reporting shift equal weight. */
 		readonly shiftMean: string;
 		readonly priorDirectionNote: string;
-		/** Excess-wait model and reporting-shift aggregation limits. */
 		readonly excessWaitExplain: string;
-		/** Excess-wait explainer for the SCALAR whole-history rows (the typical-gap proxy, which
-		 *  carries no variance term — those rows read off route_headway_by_shift, no moment sums). */
 		readonly excessWaitProxyExplain: string;
-		/** Value-axis title for the scheduled-vs-observed headway dumbbell. */
 		readonly headwayAxis: string;
-		/** Overline for the always-visible direction-asymmetry callout. */
 		readonly directionAsymmetryLabel: string;
-		/** The callout sentence: the shift + the slower/faster direction waits. */
 		readonly directionAsymmetry: (
 			shift: string,
 			slowerDir: string,
@@ -168,28 +130,18 @@
 
 	const t = $derived(BAND_COPY[locale]);
 
-	// Column labels for the direction table: the real headsign when the route publishes one
-	// (dir0 → "Direction 1" position, dir1 → "Direction 2"), else the neutral fallback. A
-	// rider reads "Est / Ouest", never "direction 0/1".
 	const dir0Label = $derived(directionHeadsigns[0] ?? t.directionCol(1));
 	const dir1Label = $derived(directionHeadsigns[1] ?? t.directionCol(2));
-	/** Plain-language term microcopy (shared, FR canonical). */
 	const terms = $derived(copy.regularityTerms);
 
-	/* ── formatters (pure) ───────────────────────────────────────────────────
-	   Absence → null (MetricDisplay renders the shared typed absence); inline
-	   string consumers fall back to `valueNoData`. Never a bare "·", never 0. */
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 	const fmtCov = (v: number | null | undefined): string | null => (v == null ? null : v.toFixed(2));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v, { rounding: 'round' });
 	const count = (v: number | null | undefined): string | null => fmtCount(v);
-	/** Short value-level no-data label for chart and inline string consumers. */
 	const valueNoData = $derived(absenceShort('no-observations', locale));
 
-	// Preserve the selected row's published whole-minute span and trip-count annotations.
 	const spanCopy = $derived(copy.serviceSpanTimeline);
-	/** A whole-minute span → a compact "{H}h {MM}m" / "{M}m" duration. null when absent. */
 	const spanDuration = (v: number | null | undefined): string | null => {
 		if (v == null || Number.isNaN(v)) return null;
 		const total = Math.max(0, Math.round(v));
@@ -198,15 +150,8 @@
 		return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 	};
 
-	/* ── headway rows → per-shift magnitude rows ───────────────────────────────
-	   S7: magnitude = the ABSOLUTE excess wait (min), scaled by the fixed HEADWAY_DOMAIN
-	   at the bar — identical across routes/grains/refreshes (no more excess/maxExcess
-	   in-view normalization). The severity band is derived from bunching: heavier
-	   bunching = a worse rider experience. Nulls stay null → empty bar. */
-
 	interface ShiftRow {
 		readonly shift: string;
-		/** Bare time-of-day token (am_peak/…) for label + primary/advanced split. */
 		readonly baseShift: string;
 		readonly directionId: number | null;
 		readonly dayType: string | null;
@@ -215,20 +160,12 @@
 		readonly excessWait: number | null;
 		readonly cov: number | null;
 		readonly bunched: number | null;
-		/** ABSOLUTE excess wait (min), scaled by HEADWAY_DOMAIN at the bar; null = no signal. */
 		readonly magnitude: number | null;
-		/** Severity from BUNCHING — drives the excess-wait row + the bunched-share bar. */
 		readonly severity: SeverityCode;
-		/** Severity from the headway CoV — drives the dedicated regularity bar. */
 		readonly covSeverity: SeverityCode;
-		/** PR-WEB-3 comparison-vs-prior: this window's gap-sample n + the prior window's observed
-		 *  median + n (only on the windowed headway_by_grain rows; null on the scalar history). */
 		readonly priorObserved: number | null;
 	}
 
-	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
-	   legacy packed `{shift}_dir{N}_weekend` string for snapshots published before the
-	   cutover, so the section renders correctly across the deploy window. */
 	function decodeShift(h: HeadwayPeriod): {
 		baseShift: string;
 		directionId: number | null;
@@ -266,14 +203,6 @@
 		})),
 	);
 
-	/* ── primary vs advanced shifts ────────────────────────────────────────────
-	   The base periods (am/pm peak · midday · evening · night) show by default;
-	   per-direction (`_dir*`) and weekend variants are a noisier advanced grain
-	   tucked behind a "more detail" reveal, per the 9.6 control-spine doctrine
-	   (advanced grains never crowd the headline). Raw shift keys decode to
-	   readable, bilingual labels: the base am_peak/midday/… token resolves through
-	   the SHARED shift vocabulary (so every surface speaks one language), and this
-	   section keeps its own per-direction / weekend suffix decoration on top. */
 	function shiftLabel(row: ShiftRow): string {
 		const baseLabel = baseShiftLabel(row.baseShift, locale);
 		const extras: string[] = [];
@@ -281,17 +210,12 @@
 		if (row.dayType === 'weekend') extras.push(locale === 'fr' ? 'fin de sem.' : 'weekend');
 		return extras.length > 0 ? `${baseLabel} · ${extras.join(' · ')}` : baseLabel;
 	}
-	// Primary = the headline busiest-direction rows (no direction / day-type); the
-	// per-direction + weekend siblings are the advanced grain.
 	const isPrimaryShift = (row: ShiftRow): boolean => row.directionId == null && row.dayType == null;
 	const primaryRows = $derived(shiftRows.filter((r) => isPrimaryShift(r)));
 	const advancedRows = $derived(shiftRows.filter((r) => !isPrimaryShift(r)));
-	// Show primary by default; if a route only has advanced rows, surface those
-	// in the open list rather than hiding everything behind the reveal.
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
 
-	// Compare reported medians for adjacent windows; this is descriptive, not inference.
 	interface WaitCompareRow {
 		readonly key: string;
 		readonly label: string;
@@ -301,9 +225,6 @@
 	const waitCompareRows = $derived<WaitCompareRow[]>(
 		mainRows
 			.filter((r) => r.observed != null)
-			// Index-suffix the key: when a route has only per-direction/weekend rows (no busiest-
-			// direction primary), mainRows falls back to those and `r.shift` is the bare base token
-			// (am_peak, …) shared across siblings — `${shift}-${i}` keeps the {#each} keys unique.
 			.map((r, i) => ({
 				key: `${r.shift}-${i}`,
 				label: shiftLabel(r),
@@ -312,17 +233,8 @@
 			})),
 	);
 	const hasWaitCompare = $derived(wait.windowed && waitCompareRows.length > 0);
-	// "+0.8 min" / "-1.2 min" — ASCII sign (the no-em-dash gate forbids U+2014, not hyphen-minus).
 	const fmtMinDelta = (d: number): string => `${d > 0 ? '+' : ''}${d.toFixed(1)}${copy.units.min}`;
 
-	// §02 headway DUMBBELL (A8): ALL primary shifts in ONE comparable chart on the fixed
-	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the observed-vs-scheduled
-	// median gap, so the gap reads at a glance AND across shifts. Severity (bunching) colours the
-	// observed dot; CoV + bunched ride the hover tooltip. Replaces the N isolated per-row dumbbells
-	// with one cross-shift comparison (the per-shift detail rows stay below for the drill).
-	// NOTE (FIX-1): excess wait is now the passenger-weighted EWT, which is NOT the scheduled→observed
-	// dot span, so it is NOT fed into the dumbbell (that would label a contradictory "gap"). EWT lives
-	// in its own all-day bullet + the per-shift excess-wait magnitude bars below, correctly labelled.
 	const headwayDumbbell = $derived(
 		selectHeadwayDumbbell(
 			mainRows.map((r, i) => ({
@@ -352,10 +264,6 @@
 		),
 	);
 
-	// The "observed gap by direction" disclosure as a real TABLE, not a tile cloud (operator
-	// ask). The advanced rows are a clean cube — shift × direction(0/1) × day-type(week/wknd)
-	// — so we PIVOT to one row per (shift, day-type) with the two directions as columns. A
-	// missing cell routes through the honest no-data chip, never a bare/zero tile.
 	const SHIFT_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'];
 	interface DirectionRow {
 		readonly key: string;
@@ -365,17 +273,11 @@
 		readonly order: number;
 	}
 	const directionRows = $derived.by<DirectionRow[]>(() => {
-		// Plain object (not a Map) — this is throwaway computation inside the derivation,
-		// not reactive state, so SvelteMap would be the wrong tool (and the lint rule agrees).
 		const groups: Record<
 			string,
 			{ base: string; weekend: boolean; dir0: number | null; dir1: number | null }
 		> = {};
 		for (const r of advancedRows) {
-			// Read the decoded TYPED fields (decodeShift already applied the legacy
-			// fallback) — NOT the raw shift token: post-cutover r.shift is the bare
-			// base token with no _dir/_weekend suffix to parse, so the old string
-			// regex would silently yield an empty table on fresh snapshots.
 			const weekend = r.dayType === 'weekend';
 			const dir = r.directionId != null ? String(r.directionId) : null;
 			const base = r.baseShift;
@@ -398,21 +300,16 @@
 						: baseShiftLabel(g.base, locale),
 					dir0: g.dir0,
 					dir1: g.dir1,
-					// canonical shift order; weekday before its weekend twin.
 					order: (si < 0 ? 99 : si) * 2 + (g.weekend ? 1 : 0),
 				};
 			})
 			.sort((a, b) => a.order - b.order);
 	});
 
-	// Tier-1 (telling-metrics): the single LARGEST inbound-vs-outbound wait gap, surfaced as an
-	// always-visible callout (promoted out of the buried per-direction reveal table). null on a
-	// symmetric line (nothing to flag) → no callout. Threshold lives in the selector.
 	const directionAsymmetry = $derived(
 		selectDirectionAsymmetry(directionRows, { dir0Label, dir1Label }),
 	);
 
-	// Per-shift values lack additive gap moments: this is an unweighted shift mean.
 	const excessWaitValues = $derived(
 		mainRows.map((r) => r.excessWait).filter((v): v is number => v != null && Number.isFinite(v)),
 	);
@@ -433,11 +330,6 @@
 		}),
 	);
 
-	// S7 P5: the per-shift regularity breakdown becomes THREE clean cross-shift magnitude-bars
-	// charts (excess wait / spread (CoV) / bunching by shift), each on its own fixed domain in
-	// am→night order — replacing the cramped per-shift row stack (a RankedRow + two SeverityBars
-	// per shift). "Which shift is worst?" now reads at a glance per metric; honest no-data per
-	// shift (a null reading keeps its labelled row, never a fake-0 bar).
 	const shiftBarRows = $derived(mainRows.map((r, i) => ({ row: r, key: `${r.shift}-${i}` })));
 	const excessBars = $derived(
 		selectShiftBars(
@@ -504,15 +396,11 @@
 		),
 	);
 
-	/* ── service span, the most-recent row carrying a signal ──────────────────
-	   serviceSpans arrives in contract order (chronological); the foundation VM
-	   has already dropped signal-less rows, so the tail is the latest day. */
 	const latestSpan = $derived<ServiceSpanPeriod | null>(
 		serviceSpans.length > 0 ? serviceSpans[serviceSpans.length - 1] : null,
 	);
 	const hasSpan = $derived(latestSpan != null);
 
-	// Geometry uses elapsed instants; endpoint labels retain provider-local dates and offsets.
 	const serviceSpanSpec = $derived(
 		latestSpan
 			? selectServiceSpan(
@@ -546,7 +434,6 @@
 	);
 </script>
 
-<!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
 {#snippet excessInfo()}<MetricInfo
 		class="cluster-info"
 		metricKey="excessWait"
@@ -600,14 +487,10 @@
 	question={copy.sections.theWait.question}
 >
 	{#if wait.isEmpty && !hasSpan}
-		<!-- Honest empty: the styled honest-absence chip (says WHY), nothing to draw in either sub-block. -->
 		<div data-slot="the-wait-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
 	{:else}
-		<!-- PRIMARY — the consolidated scheduled-vs-observed DUMBBELL (A8): ALL shifts in ONE chart
-		     on the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
-		     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
 		<div class="section-primary" data-slot="headway-dumbbell" data-card="primary">
 			<span class="label-with-info">
 				<SectionLabel text={t.headwaySection} variant="metric" />
@@ -627,14 +510,9 @@
 				/>
 			</span>
 			<Chart spec={headwayDumbbell.spec} />
-			<!-- Plain-language "what is bunching + how to read this" (operator ask): the least
-			     intuitive concept on the page, taught in rider language right under the chart. -->
 			<p class="bunching-help" data-slot="bunching-help">{terms.bunchingHelp}</p>
 		</div>
 
-		<!-- Tier-1 (telling-metrics): direction asymmetry — "the ride home can wait longer." Surfaced
-		     as an always-visible callout when a shift's two directions differ enough; the full per-
-		     direction table still lives in the Detail below for the breakdown. -->
 		{#if directionAsymmetry}
 			<div class="direction-callout" data-slot="direction-asymmetry">
 				<SectionLabel text={t.directionAsymmetryLabel} variant="metric" />
@@ -650,9 +528,7 @@
 			</div>
 		{/if}
 
-		<!-- DETAIL — excess-wait headline + per-shift breakdown + direction table + service span. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
-			<!-- Headway-by-shift sub-block. -->
 			<div class="cluster-sub" data-sub="headway">
 				{#if hasExcessHeadline}
 					<MetricBullet
@@ -691,10 +567,6 @@
 				{/if}
 
 				{#if shiftRows.length > 0}
-					<!-- S7 P5: the per-shift regularity breakdown as THREE cross-shift magnitude-bars
-					     charts (excess wait / spread (CoV) / bunching by shift) in am→night order — one
-					     clean comparison per metric, replacing the cramped per-shift row stack. Each
-					     <Chart> renders its own honest-absence chip when no shift carries that reading. -->
 					<div class="shift-charts" data-slot="shift-regularity-charts">
 						<div class="shift-chart" data-metric="excess" data-card>
 							<span class="label-with-info">
@@ -736,7 +608,6 @@
 							<Chart spec={bunchedBars} />
 						</div>
 					</div>
-					<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
 					<p class="shift-caption" data-slot="excess-wait-caption">
 						{copy.strip.excessWaitCaption}
 						<MetricInfo
@@ -747,11 +618,6 @@
 							side="bottom"
 						/>
 					</p>
-					<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
-					     null), so the SeverityBar + scheduled/excess tiles are empty for them.
-					     Present them as a compact observed-gap-by-direction comparison instead
-					     of an empty RankedRow, their only real signal. The whole block already
-					     lives inside <Detail>, so it shows inline (no nested <details> reveal). -->
 					{#if hasAdvancedReveal}
 						<div class="shift-direction" data-slot="direction-gaps">
 							<SectionLabel text={t.directionGap} variant="metric" />
@@ -792,7 +658,6 @@
 				{/if}
 			</div>
 
-			<!-- Service-span sub-block, only when a signal-carrying day exists. -->
 			{#if hasSpan && latestSpan}
 				<div class="cluster-sub" data-sub="service-span" data-card>
 					<div class="span-head">
@@ -811,7 +676,6 @@
 						</span>
 					</div>
 
-					<!-- The timeline uses instants; the tiles retain the selected row's published metrics. -->
 					{#if serviceSpanSpec}
 						<Chart spec={serviceSpanSpec} />
 					{/if}
@@ -890,18 +754,12 @@
 </CollapsibleSection>
 
 <style>
-	/* The always-visible PRIMARY dumbbell block + its label/info head. */
 	.section-primary {
 		display: flex;
 		flex-direction: column;
 		gap: 0.625rem;
 	}
 
-	/* Tier-1 direction-asymmetry callout — the "which way you go changes the wait" takeaway,
-	   in the same insight register as §1's takeaway (yellow overline + accent left-rule + a
-	   foreground sentence), distinct from the bordered data cards. */
-	/* Tier-1 direction-asymmetry callout — carries the insight via the yellow overline
-	   + foreground sentence (§C4 P7: the former 3px accent left-stripe is retired). */
 	.direction-callout {
 		display: flex;
 		flex-direction: column;
@@ -924,11 +782,6 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* A sub-block overline + its explainer (i)s, kept centred on the label. The
-	   label keeps a measure (min-width:0) so a long overline wraps cleanly; each
-	   (i) wrapper never shrinks (flex:none) so the glyphs stay whole beside it. */
-	/* S7 P5: the three per-shift regularity charts (excess / spread / bunching by shift),
-	   each its own labelled LayerChart magnitude-bars block, generous BETWEEN-chart air. */
 	.shift-charts {
 		display: flex;
 		flex-direction: column;
@@ -944,9 +797,6 @@
 		flex-wrap: wrap;
 		gap: 1.25rem;
 	}
-	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. The
-	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper
-	   never shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
@@ -958,7 +808,6 @@
 	.metric-with-info :global(.cluster-info) {
 		flex: none;
 	}
-	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {
 		margin: 0;
 		font-family: var(--font-mono);
@@ -966,9 +815,6 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* Wait-by-shift · vs-prior comparison (PR-WEB-3): a label | value | Δ-badge row list,
-	   mirroring the §1 on-time comparison. The label keeps a measure so the wait values align;
-	   the DeltaStat badge trails and wraps to its own line on a narrow phone. */
 	.block {
 		display: flex;
 		flex-direction: column;
@@ -1015,20 +861,16 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* The (i) flows after the caption text; keep the glyph whole and hugging the last
-	   word so it never shrinks or breaks across the caption's wrap. */
 	.shift-caption :global(.cluster-info) {
 		flex: none;
 		white-space: nowrap;
 	}
-	/* A3: the per-direction observed-gap comparison. */
 	.shift-direction {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		margin-top: 0.875rem;
 	}
-	/* Service-span sub-block heading + its window label. */
 	.span-head {
 		display: flex;
 		flex-wrap: wrap;
@@ -1041,7 +883,6 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--muted-foreground);
 	}
-	/* What the first/last-trip endpoint markers encode (early ▼ / late ▲). */
 	.span-caption {
 		margin: 0;
 		font-family: var(--font-mono);
@@ -1049,8 +890,6 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* Bunching explainer: plain-language "how to read this", slightly stronger than a
-	   quiet caption (it teaches the page's least-intuitive concept). */
 	.bunching-help {
 		margin: 0.25rem 0 0;
 		font-family: var(--font-mono);

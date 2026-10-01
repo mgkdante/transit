@@ -44,9 +44,6 @@ class FakeConnection:
         self.queries.append(query)
         if self.exc:
             raise self.exc
-        # The feed-conformance check runs a distinct query against
-        # silver.gtfs_extra_rows; route it to its own fixture so freshness rows
-        # never leak into it (they lack provider_id).
         if "gtfs_extra_rows" in str(query):
             return self.conformance_rows
         return self.rows
@@ -210,8 +207,6 @@ def test_feed_conformance_degraded_when_out_of_norm_members_present() -> None:
     assert "sto" in result.message
     assert "silver.gtfs_extra_rows" in result.message
     assert result.details["label"] == "out_of_norm"
-    # The detail block carries the per-provider breakdown but is dropped from the
-    # anonymous-safe public_dict (name + status only).
     assert set(result.public_dict()) == {"name", "status"}
 
 
@@ -232,8 +227,6 @@ def _feed_row(
 
 
 def test_provider_feed_freshness_emits_ok_component_per_fresh_feed() -> None:
-    # Holistic per provider: one component per (provider, feed), and a second
-    # provider's feeds appear automatically — no hardcoded provider.
     rows = [
         _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=60)),
         _feed_row("sto", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=120)),
@@ -266,13 +259,10 @@ def test_provider_feed_freshness_degraded_when_feed_is_stale() -> None:
     assert results[0].name == "stm_trip_updates"
     assert results[0].status == "degraded"
     assert "exceeds" in results[0].message
-    # 30s refresh * 3 grace = 90, floored at the 900s pipeline budget.
     assert results[0].details["threshold_seconds"] == 900
 
 
 def test_provider_feed_freshness_uses_per_feed_cadence_for_daily_static() -> None:
-    # A daily static feed 2h old is fresh: its threshold derives from its own
-    # 86400s refresh, not the 900s realtime floor.
     rows = [
         _feed_row(
             "stm", "static_schedule", "static_schedule", 86400, NOW - timedelta(hours=2)
@@ -588,8 +578,6 @@ def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path
         requester=forbidden_requester,
     )
 
-    # database, then one component per (provider, feed) from the freshness query,
-    # then feed_conformance, bronze_storage, runtime_vm.
     assert [result.name for result in results] == [
         "database",
         "stm_trip_updates",

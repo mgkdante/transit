@@ -1,5 +1,4 @@
 # Composite run steps do not inherit job defaults.run. Match .github/actions/setup:
-# every run step declares shell and working-directory explicitly.
 name: Setup Transit Python workspace
 description: Install Python, uv, and the Transit database workspace dependencies.
 

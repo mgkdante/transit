@@ -87,8 +87,8 @@ describe('map copy', () => {
 
 	it('keeps the edge-state notices em-dash-free (repo doctrine)', () => {
 		const all = [copy.en, copy.fr].flatMap((c) => [c.liveUnavailable, c.liveNoVehicles]).join(' ');
-		expect(all).not.toContain('—'); // em dash
-		expect(all).not.toContain('–'); // en dash
+		expect(all).not.toContain('—');
+		expect(all).not.toContain('–');
 	});
 
 	it('carries a bilingual feed-stall banner that interpolates the last-update age', () => {
@@ -105,8 +105,8 @@ describe('map copy', () => {
 
 	it('keeps the feed-stall banner em-dash-free (repo doctrine)', () => {
 		const all = [copy.en, copy.fr].map((c) => c.feedNotResponding('2 minutes ago')).join(' ');
-		expect(all).not.toContain('—'); // em dash
-		expect(all).not.toContain('–'); // en dash
+		expect(all).not.toContain('—');
+		expect(all).not.toContain('–');
 	});
 
 	it('carries the bilingual motion-mode switch copy (raw default + almost real-time)', () => {

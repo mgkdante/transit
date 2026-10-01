@@ -1,4 +1,3 @@
-"""Live projection follows exact verified captures, including empty and late cycles."""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace

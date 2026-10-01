@@ -1,5 +1,3 @@
-"""Build, gate, and upload live, static, and historic snapshot tiers."""
-
 from __future__ import annotations
 
 import logging
@@ -61,7 +59,7 @@ _STATIC_SKIP_MATCH_SQL = named_query(
     "AND generated_utc = CAST(:stamp AS timestamptz) AND files_total > 0",
 )
 
-# Coverage uses the previous whole-tier total; the first publish has no baseline.
+# Coverage compares whole-tier totals; first publications have no baseline.
 _PRIOR_FILES_TOTAL_SQL = named_query(
     "publish.prior_files_total",
     "SELECT COALESCE(stable_files_total, files_total) FROM core.snapshot_publish_state "
@@ -98,7 +96,7 @@ class PublishResult:
         return result
 
 
-# Publish state commits after uploads in the owning database transaction.
+# Commit publish state after uploads within the owning transaction.
 _RECORD_STATE_SQL = named_query(
     "publish.state.upsert",
     "INSERT INTO core.snapshot_publish_state "
@@ -130,13 +128,6 @@ _RECORD_STATE_SQL = named_query(
 
 
 def _gate_summary(report: Mapping[str, object] | None) -> dict[str, object]:
-    """Extract the persistable gate summary from a GateReport.to_dict() dict.
-
-    verdict = 'fail' when any ERROR finding exists, else 'warn' when any WARN
-    finding exists, else 'pass'. Returns all-None when *report* is None (the gate
-    did not run for this tier — --no-gate, or a static dataset-level SKIP), so the
-    honest-NULL boundary of migration 0078 is preserved (never a fabricated pass).
-    """
     if report is None:
         return {
             "gate_checks_run": None,
@@ -170,12 +161,6 @@ def _record_publish_state(
     gate_report: Mapping[str, object] | None = None,
     historic_telemetry: Mapping[str, object] | None = None,
 ) -> None:
-    """Upsert the per-tier publish-state row inside the caller's transaction.
-
-    *gate_report* is a GateReport.to_dict() dict (or None when the gate did not
-    run); its counts + derived verdict are persisted alongside the file counts so
-    the S11 data-health payload can serve the last gate outcome per lane.
-    """
 
     conn.execute(
         _RECORD_STATE_SQL,
@@ -203,12 +188,6 @@ _STATIC_STAMP_SQL = named_query(
 )
 
 def _static_stamp(conn: Connection, provider_id: str) -> str:
-    """Static-tier stamp = loaded_at_utc of the current static dataset version.
-
-    Stable across unchanged daily reloads (the touch path never bumps
-    loaded_at_utc), so static bytes only change when the dataset actually
-    changes. Falls back to day-truncated now() when no version row exists.
-    """
 
     row = (
         conn.execute(
@@ -224,11 +203,6 @@ def _static_stamp(conn: Connection, provider_id: str) -> str:
 
 def _build_live_items(
     conn: Connection, *, provider_id: str, settings: Settings, gen: str) -> list[PutItem]:
-    """Build every live-tier payload into an ordered (rel_key, payload, tier) list.
-
-    Builders share the caller's database snapshot. The manifest uploads last;
-    its timestamp is the build start, not proof of atomic multi-file visibility.
-    """
     return [
         (
             "live/vehicles.json",
@@ -255,7 +229,7 @@ def _build_live_items(
             builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),
             "live",
         ),
-        # Health reads the prior completed publish; this cycle saves its state after upload.
+        # Health reads the prior completed publication.
         (
             "status/data_health.json",
             builders.build_data_health(conn, provider_id=provider_id, generated_utc=gen),
@@ -284,17 +258,6 @@ def _publish_live(
     gate_report: gate.GateReport | None = None,
     gen: str | None = None,
 ) -> list[str]:
-    """Build and upload all live-tier snapshot files; return the list of keys written.
-
-    When *gate_report* is supplied the payloads are inspected before upload, but the
-    live tier is WARN-ONLY (enforced with force=True by the caller) so a transient blip
-    never aborts the realtime cycle. Child files upload through the
-    bounded pool; the manifest starts only after they all finish successfully.
-
-    *gen* is the cycle's ONE publish stamp: the caller threads the same value it
-    persists to snapshot_publish_state, so the manifest, envelope stamps, gate
-    report, and the data-health lane row use the same timestamp.
-    """
     if gen is None:
         gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
@@ -322,11 +285,6 @@ def _publish_static(
     conn: Connection, storage: PayloadSink, *,
     provider_id: str, settings: Settings, stamp: str | None = None,
 ) -> list[str]:
-    """Build and upload all static-tier snapshot files; return the list of keys written.
-
-    *stamp* is the dataset-loaded DATA-time every artifact carries; when omitted
-    it is derived from the current static dataset version.
-    """
 
     if stamp is None:
         stamp = _static_stamp(conn, provider_id)
@@ -337,7 +295,6 @@ def _publish_static(
         conn, provider_id=provider_id
     )
 
-    # Reuse route and stop data for discovery fields and entity uploads.
     routes_idx = builders.build_routes_index(
         conn, provider_id=provider_id, generated_utc=stamp
     )
@@ -405,11 +362,6 @@ def _publish_static(
 
 
 def _prior_files_total(conn: Connection, *, provider_id: str, tier: str) -> int | None:
-    """Return the last publish's WHOLE-tier files_total for the gate's coverage-delta.
-
-    One cheap indexed row lookup; None when no prior row (first publish -> the gate
-    skips the coverage-delta check, never blocks a first publish).
-    """
 
     row = conn.execute(
         _PRIOR_FILES_TOTAL_SQL, {"provider_id": provider_id, "tier": tier}
@@ -424,19 +376,13 @@ def publish_snapshot(
     *,
     tier: str = "live",
     settings: Settings | None = None,
-    registry: object = None,  # accepted for signature parity; reserved for route registry
+    registry: object = None,
     engine: Engine | None = None,
     storage: PayloadSink | SnapshotObjectStore | None = None,
     gate_enabled: bool = True,
     force: bool = False,
     full_historic_rebuild: bool = False,
 ) -> PublishResult:
-    """Publish *provider_id* to the configured live, static, or historic tier.
-
-    Missing settings, engine, and storage dependencies are constructed here.
-    Historic payload quality-gate errors can be forced; dirty daily history
-    cannot. Live quality gates are warn-only. Full rebuild is historic-only.
-    """
     if full_historic_rebuild and tier != "historic":
         raise ValueError("--full-historic-rebuild requires tier='historic'")
 
@@ -467,7 +413,7 @@ def publish_snapshot(
     if tier == "live":
         if not isinstance(storage, PayloadSink):
             raise TypeError("live publication requires a payload sink")
-        # Live files change each cycle, so hash-state IO would add no reuse.
+        # Live payloads change every cycle, so hash-state lookup adds no reuse.
         with engine.begin() as conn:
             conn.execute(_REPEATABLE_READ_SQL)
             acquire_publication_lane(conn, provider_id=provider_id, tier=tier)
@@ -545,7 +491,7 @@ def publish_snapshot(
                 fingerprint=state_fingerprint(tier),
             )
         gated.load()
-        # Static output changes must bump state_fingerprint even when the dataset is unchanged.
+        # Output changes require a new state_fingerprint even without a new dataset.
         if tier == "static" and gated.fingerprint_matched:
             match = conn.execute(
                 _STATIC_SKIP_MATCH_SQL,
@@ -560,9 +506,10 @@ def publish_snapshot(
                 return PublishResult(
                     provider_id=provider_id, tier=tier, keys_written=[], keys_skipped=[]
                 )
-        report = None  # the value-gate report for a successful gated publish (FIX-6)
+        report = None
         if tier == "historic":
-            # Gates precede pointer writes; failed streams may leave unreferenced immutable objects.
+            # Run gates before pointer writes; failed streams may leave unreferenced immutable
+            # objects.
             report = gate.new_report(provider_id, tier, stamp) if gate_enabled else None
             prior_total = (
                 _prior_files_total(conn, provider_id=provider_id, tier=tier)
@@ -582,7 +529,6 @@ def publish_snapshot(
                 _historic_run=historic_run,
             )
         elif tier == "static" and gate_enabled:
-            # Validate collected static payloads before uploading those same bytes.
             store = _CollectingStorage()
             _publish_static(conn, store, provider_id=provider_id, settings=settings, stamp=stamp)
             report = gate.new_report(provider_id, tier, stamp)
@@ -663,14 +609,6 @@ def collect_payloads(
     include_point_bundle: bool = False,
     _historic_consumer: Callable[[HistoricValidationInputs], object] | None = None,
 ) -> _LegacyCollected | HistoricValidationInputs | object:
-    """Build every payload for *tier* WITHOUT uploading; return the collected set.
-
-    Returns the legacy ``(all_items, route_items, stamp, prior_files_total)`` tuple when
-    no optional historic bundle is requested; otherwise returns named
-    ``HistoricValidationInputs``. Both paths reuse the exact build code the publisher
-    runs, so validation sees publish-identical payloads. Reads run on a plain
-    ``engine.connect()`` and never write to the bucket.
-    """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
 
@@ -678,7 +616,6 @@ def collect_payloads(
         if tier == "live":
             gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
             items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
-            # Stamp audit payloads exactly as the live publisher does.
             envelope.stamp_envelope(items, provider_id=provider_id, stamp=gen)
             return ([(k, p) for (k, p, _t) in items], [], gen, None)
 
@@ -721,12 +658,6 @@ def validate_snapshots(
     engine: Engine | None = None,
     _collected: HistoricValidationInputs | _LegacyCollected | None = None,
 ) -> gate.GateReport:
-    """Read-only pre-publish audit: build every payload, run the gate, return the report.
-
-    Never uploads and never raises on findings (the caller decides its exit code from
-    the returned report). The historic tier additionally runs the batch-level
-    coverage-delta + empty-route aggregates via ``gate.finalize_batch``.
-    """
     if _collected is None and tier == "historic":
         result = collect_payloads(
             provider_id,

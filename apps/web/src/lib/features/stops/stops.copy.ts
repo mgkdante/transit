@@ -1,10 +1,3 @@
-// stops.copy.ts — co-located bilingual copy for the Stops surface (slice-9.3).
-//
-// All user-facing strings the StopsIndex + StopDetail screens render live here,
-// keyed by Locale, so the .svelte files carry zero inline copy. Domain-intrinsic
-// labels (OTP / delay / "LIVE" / tab vocabulary inside the spine primitives)
-// already live in those primitives and are NOT duplicated here.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import { articleCopy } from '$lib/components/layout/articleCopy';

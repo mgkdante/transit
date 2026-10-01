@@ -19,23 +19,11 @@ interface ReliabilityListingOptions<T> {
 }
 
 export interface ReliabilityListingController<T> {
-	/** Any eligible candidate is still idle or loading while full coverage is requested. */
 	readonly coveragePending: boolean;
-	/** Ranking is active and still waiting for at least one terminal snapshot. */
 	readonly rankingPending: boolean;
-	/**
-	 * Keep the supplied source order until every candidate is terminal, then apply
-	 * the one frozen ranking committed for the current candidate set.
-	 */
 	order(items: readonly T[]): readonly T[];
 }
 
-/**
- * Coordinate reliability-dependent listing controls without bypassing the
- * loader's cache or concurrency queue. Explicit ranking/filter modes request
- * every eligible candidate, treat idle and loading as pending, and freeze source
- * order until one complete ranking can be committed.
- */
 export function createReliabilityListingController<T>(
 	options: ReliabilityListingOptions<T>,
 ): ReliabilityListingController<T> {
@@ -52,9 +40,6 @@ export function createReliabilityListingController<T>(
 	let committedKey = $state<string | null>(null);
 	let committedOrder = $state<readonly string[] | null>(null);
 
-	// `request` is the existing capped/deduped queue entrypoint. Ranking and
-	// problem-filter modes deliberately request the complete eligible set rather
-	// than relying on viewport actions that can leave off-screen rows idle forever.
 	$effect(() => {
 		if (!requestEnabled) return;
 		for (const candidate of candidates) {
@@ -72,8 +57,6 @@ export function createReliabilityListingController<T>(
 		const key = candidateKey;
 		const current = candidates;
 		if (hasPending) {
-			// A new/changed candidate set stands in its source order until every
-			// snapshot reaches ready or empty. Never publish a partial ranking.
 			committedKey = null;
 			committedOrder = null;
 			return;

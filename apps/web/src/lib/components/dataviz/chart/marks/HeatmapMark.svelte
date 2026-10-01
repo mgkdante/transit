@@ -1,17 +1,3 @@
-<!--
-  HeatmapMark — the LayerChart renderer for a `kind: 'heatmap'` ChartSpec (B10, S7 P4).
-
-  A day × hour grid where each cell's value is BINNED onto N discrete, plain-language tiers
-  (heatmapTiers.ts) over the spec's FIXED absolute domain — never a per-row / in-view scale,
-  so the same value reads the same tier on every route and refresh. The tier colour is a
-  perceptually-uniform, CVD-safe sequential ramp (the `--dataviz-heatmap-tier-*` tokens,
-  luminance-inverted per theme); the WORST tier ALSO carries a contrasting outline + the ◆
-  glyph (in the tooltip / legend / table) so the read never rests on hue alone (WCAG 1.4.1).
-  A null cell paints the dedicated no-data swatch, never bucket-0.
-
-  Hover/focus reveals the day, hour, and plain-language tier via a LayerChart tooltip (bounds
-  mode → the cell under the pointer). A full sr-only <table> is the accessible fallback.
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Axis, Tooltip } from 'layerchart';
 	import { scaleBand } from 'd3-scale';
@@ -84,12 +70,7 @@
 	const tickLabel = (i: number): string =>
 		(spec.colTicks ?? []).find((t) => t.index === i)?.label ?? '';
 
-	// A tier band's height grows the frame so cells stay tappable; on a phone the cell grid
-	// scrolls horizontally inside ScrollFrame while the day labels stay FROZEN in the gutter.
 	const frameHeight = $derived(`${Math.max(3, rows) * 1.6 + 2.5}rem`);
-	// The two contexts share the SAME top/bottom padding + frameHeight so their row bands line up
-	// EXACTLY (the frozen day labels sit on the same rows as the scrolling cells). The gutter keeps
-	// the left room for the day labels; the cell grid drops the left axis (it lives in the gutter).
 	const gutterPadding = { top: 10, right: 0, bottom: 34, left: 44 };
 	const cellPadding = { top: 10, right: 12, bottom: 34, left: 4 };
 </script>
@@ -105,9 +86,6 @@
 		class="dv-heatmap-scroll"
 	>
 		{#snippet gutter()}
-			<!-- FROZEN gutter: the day (row) axis ONLY, on the SAME band scale as the cells so the
-			     labels stay aligned to their rows while the grid scrolls. xDomain is a trivial single
-			     band (an axis-only context); the chart-doctrine domain gate is still satisfied. -->
 			<ChartFrame height={frameHeight} class="dv-heatmap-gutter">
 				<LcChart
 					data={[]}
@@ -132,8 +110,6 @@
 			</ChartFrame>
 		{/snippet}
 		{#snippet scroller()}
-			<!-- Scrolling cell grid + the hour axis. min-width gives the 24 columns room so they never
-			     squash on a phone; on a wide viewport it fills 100% and nothing scrolls. -->
 			<ChartFrame height={frameHeight} class="dv-heatmap-cells">
 				<LcChart
 					{data}
@@ -147,7 +123,6 @@
 					tooltipContext={{ mode: 'bounds', touchEvents: 'auto' }}
 				>
 					<Svg>
-						<!-- Hour (col) axis — a sparse clock-tick subset so 24 columns stay legible. -->
 						<Axis
 							placement="bottom"
 							ticks={tickIdx}
@@ -157,9 +132,6 @@
 							labelPlacement="middle"
 							class="dv-heatmap-axis"
 						/>
-						<!-- Cells: one tier-classed rect per (day, hour), scaled via the band context.
-						     null cells render the no-data swatch; the worst tier gets a contrasting
-						     outline + the centred ◆ glyph. -->
 						<HeatmapCells cells={data} worstTier={HEATMAP_WORST_TIER} {worstGlyph} />
 					</Svg>
 					<Tooltip.Root contained="window" anchor="top">
@@ -178,7 +150,6 @@
 		{/snippet}
 	</ScrollFrame>
 
-	<!-- AT fallback: the grid as a table (tier word per day × hour + honest absence). -->
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
@@ -208,16 +179,9 @@
 </figure>
 
 <style>
-	/* The scrolling cell grid needs the 24 columns to breathe — a min intrinsic width so it
-	   OVERFLOWS its ScrollFrame scroller on a phone (swipe to read) instead of squashing; on a
-	   wide viewport it fills 100% and nothing scrolls. The frozen day-label gutter (3rem) sits
-	   beside it, so 27rem here keeps the total ~30rem (the pre-split width). */
 	:global(.dv-heatmap-cells) {
 		min-width: 27rem;
 	}
-	/* The classed-tier ramp (CVD-safe blue, luminance-inverted per theme). LayerChart puts
-	   the class on the cell <rect>, so target the rect directly; :where() in the lib default
-	   has 0 specificity, so these win. */
 	:global(rect.dv-heatmap-cell) {
 		stroke: var(--card);
 		stroke-width: 0.5;
@@ -237,13 +201,10 @@
 	:global(rect.dv-hm-nodata) {
 		fill: var(--dataviz-heatmap-nodata);
 	}
-	/* Worst tier: a contrasting outline so it pops via a SECOND channel, not hue alone. */
 	:global(rect.dv-heatmap-worst) {
 		stroke: var(--foreground);
 		stroke-width: 1.25;
 	}
-	/* The ◆ glyph stamped on each worst cell — a THIRD channel. `--background` flips with
-	   the theme so it always contrasts the worst-tier fill (bright on dark / deep on light). */
 	.dv-heatmap-glyph {
 		fill: var(--background);
 		pointer-events: none;

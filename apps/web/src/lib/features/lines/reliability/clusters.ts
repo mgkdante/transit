@@ -1,9 +1,3 @@
-// Pure mapper from the /v1 RouteReliability contract to six band view-models.
-// Null means unavailable, never zero; `isEmpty` preserves each band's explicit
-// no-data path, and ramp-in metrics remain flagged because they lack backfill.
-// Occupancy and habit values retain contract nulls. Ordering stays contract-based
-// or uses an explicit stable comparator; this mapper is deterministic.
-
 import type {
 	RouteReliability,
 	ReliabilityPeriod,
@@ -23,167 +17,76 @@ import { roundHalfAwayFromZero } from '$lib/utils';
 import type { RetainedLineHistory } from './data/retainedHistory';
 import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 
-/* ── VM types ────────────────────────────────────────────────────────────── */
-
-/**
- * 01-strip headline — the single-glance answer for the SELECTED grain. Every
- * value is `number | null` (null = no data this grain). `perMetric.rampIn`
- * flags the two ramp-in metrics so the strip can mark them inline.
- */
 export interface SnapshotStripVM {
-	/** The grain these values were selected for (e.g. 'day'). */
 	readonly grain: string;
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
-	/** Typical (median) delay, minutes — daily grain only; null otherwise. */
 	readonly p50Min: number | null;
-	/** 90th-percentile delay, minutes; null when unavailable. */
 	readonly p90Min: number | null;
-	/** Busiest-direction headway CoV (first headway row carrying `cov`). */
 	readonly headwayRegularityCov: number | null;
-	/** Most-recent cancellation rate, % (ramp-in). */
 	readonly cancellationRatePct: number | null;
-	/** Most-recent skipped-stop rate, % (ramp-in). */
 	readonly skippedStopRatePct: number | null;
-	/** Per-metric ramp-in flags — only the no-backfill metrics are true. */
 	readonly perMetric: {
 		readonly cancellationRatePct: boolean;
 		readonly skippedStopRatePct: boolean;
 	};
-	/**
-	 * Set ONLY when the strip answers for a multi-day date range (an AGGREGATE of
-	 * several closed days). Carries the in-range day count + bounds so the band can
-	 * caption the headline honestly ("Average across N days, start to end"). null
-	 * for a single day / week / month grain (those are an exact, not-averaged read).
-	 * When set, `otpPct` + `avgDelayMin` are the MEAN across the in-range days, and
-	 * `p50Min` / `p90Min` are null (percentiles are not averageable across days).
-	 */
 	readonly rangeAggregate: {
 		readonly days: number;
 		readonly start: string;
 		readonly end: string;
 	} | null;
-	/** True when EVERY headline value above is null. */
 	readonly isEmpty: boolean;
 }
 
-/**
- * A single time-of-day / day-type comparison row for the peak vs off-peak block.
- * Each carries the SELECTED-grain punctuality signal for that bucket; `label` is
- * the RAW grain string (e.g. 'am_peak', 'weekday') — the band resolves the human
- * label so this VM stays i18n-free. Every value is `number | null` (no fake 0).
- */
 export interface PeriodComparisonRow {
-	/** Raw grain string (e.g. 'am_peak' / 'pm_peak' / 'weekday' / 'weekend'). */
 	readonly grain: string;
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
 	readonly severePct: number | null;
-	/** Current/prior known-delay counts and rates, preserved from windowed source rows. */
 	readonly observationCount: number | null;
 	readonly onTime: number | null;
 	readonly priorOtpPct: number | null;
 	readonly priorObservationCount: number | null;
-	/** Exact prior on-time count; nullable for older or unavailable windows. */
 	readonly priorOnTime: number | null;
 }
 
-/**
- * Peak vs off-peak punctuality — time-of-day shift buckets + weekday/weekend
- * day-type buckets, surfaced from the granular grains the contract already
- * carries (am_peak/pm_peak/midday/evening/night + weekday/weekend). These are a
- * trailing-window observation-weighted proxy (date:null), NOT certified OTP.
- */
 export interface PeakOffPeakVM {
-	/** Time-of-day shift rows (am_peak/midday/pm_peak/evening/night), contract order. */
 	readonly byShift: PeriodComparisonRow[];
-	/** Day-type rows (weekday/weekend), contract order. */
 	readonly byDayType: PeriodComparisonRow[];
 	readonly isEmpty: boolean;
 }
 
-/** 01 Punctuality — OTP / delay / percentiles per grain period + weekday seasonality + weak stops. */
 export interface PunctualityVM {
-	/**
-	 * The GRAIN-AWARE headline aggregate for the selected window (today / this week /
-	 * this month / range) — the SAME values the snapshot strip shows. §01's headline
-	 * tiles, the median/p90 distribution, and the severe-share bar read this so
-	 * they answer for the picked grain; the trend (below) carries the daily detail.
-	 */
 	readonly headline: {
 		readonly otpPct: number | null;
 		readonly avgDelayMin: number | null;
 		readonly p50Min: number | null;
 		readonly p90Min: number | null;
 		readonly severePct: number | null;
-		/** Signed-delay distribution (#158) for the A1 histogram; null on day grain / range. */
 		readonly delayHistogram: RouteDelayHistogramBin[] | null;
-		/** OTP denominator (#158) — tracked arrivals behind otpPct; null pre-republish. Powers
-		 *  the §0 verdict's natural-frequency + n-aware confidence (Wilson). */
 		readonly observationCount: number | null;
-		/** OTP numerator (#158) — on-time arrivals behind otpPct; null pre-republish. */
 		readonly onTime: number | null;
 	};
-	/**
-	 * The dated DAY-grain series, WINDOWED to a DISTINCT recent window per grain (day →
-	 * last 14 days of context, week → last 7, month → last 30, range → the range),
-	 * chronological ascending. Daily detail at every grain (a true time axis), never the
-	 * coarse weekly/monthly aggregate dots — and the windows differ so day ≠ month.
-	 */
 	readonly trend: ReliabilityPeriod[];
-	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). Carries severe_pct + observation_count. */
 	readonly dayOfWeek: RouteDayOfWeek[];
-	/** Weakest stops by mean delay (contract order; only rows with a delay). */
 	readonly weakStops: WeakStop[];
-	/** Peak vs off-peak comparison (shift + day-type), surfaced from the granular grains. */
 	readonly peakOffPeak: PeakOffPeakVM;
-	/**
-	 * Tier-3 shift × day_type OTP/delay crosstab — kept VERBATIM from the contract
-	 * (SPARSE: only cells with observations are present). The band lays them out on
-	 * a fixed 5-shift × 2-day-type grid; an absent (shift, day_type) cell renders an
-	 * explicit no-data message, never a fake 0. Empty array → the band omits the
-	 * crosstab (its honest-empty path), never a fabricated grid.
-	 */
 	readonly byShiftDaytype: CrosstabCell[];
-	/**
-	 * S7-B windowable §1: true only when periods_by_grain carries an entry for the selected
-	 * grain (drives the §1 ∞→↻ badge). False on pre-deploy snapshots (the §1 breakdowns then
-	 * read the scalar whole-history fields — honest degradation, never a fake ↻).
-	 */
 	readonly windowed: boolean;
-	/**
-	 * S7-B windowable §4: true only when weak_stops_by_grain carries an entry for the selected
-	 * grain (drives the §4 ∞→↻ badge AND the severe-rate magnitude switch). False pre-deploy.
-	 */
 	readonly weakStopsWindowed: boolean;
 	readonly isEmpty: boolean;
 }
 
-/** 02 Wait regularity — scheduled-vs-observed headway + excess wait + CoV/bunching by shift. */
 export interface WaitRegularityVM {
-	/** Headway rows carrying at least one signal, in contract order. */
 	readonly headway: HeadwayPeriod[];
-	/**
-	 * S7-B windowable §2: true only when headway_by_grain carries an entry for the selected
-	 * grain (drives the §2 ∞→↻ badge). False pre-deploy (reads scalar whole-history headway).
-	 */
 	readonly windowed: boolean;
 	readonly isEmpty: boolean;
 }
 
-/** 03 Service delivered — span / first-last punctuality history + ramp-in cancellations. */
 export interface ServiceDeliveredVM {
-	/** Per-day service-span rows carrying at least one signal, in contract order. */
 	readonly serviceSpans: ServiceSpanPeriod[];
-	/** Per-day/grain cancellation history (ramp-in), in contract order. */
 	readonly cancellations: CancellationPeriod[];
-	/** Per-day skipped-stop history (ramp-in), in contract order. */
 	readonly skippedStops: SkippedStopPeriod[];
-	/**
-	 * The grain-windowed cancellation / skipped rate (MEAN over the picked window, with a
-	 * most-recent fallback when the latest day lags) — the SAME values the snapshot strip
-	 * shows, so the §03 headline rate tile and the strip never disagree across grains.
-	 */
 	readonly cancellationRatePct: number | null;
 	readonly skippedStopRatePct: number | null;
 	readonly serviceCompletenessPct: number | null;
@@ -192,66 +95,29 @@ export interface ServiceDeliveredVM {
 		readonly delivered: number;
 		readonly silent: number | null;
 	} | null;
-	/** True for the cancellations + skipped-stop slices (no historical backfill). */
 	readonly isRampIn: boolean;
 	readonly isEmpty: boolean;
 }
 
-/** 04 Crowding — trailing-window occupancy band-shares; null when no telemetry. */
 export interface CrowdingVM {
-	/** The raw band-share record, or null when there is no occupancy telemetry. */
 	readonly mix: OccupancyMix | null;
-	/**
-	 * Per-occupancy-band avg delay over the trailing window — the "does crowding
-	 * correlate with delay?" sub-block, kept VERBATIM from the contract (SPARSE:
-	 * only bands whose dominant-day occupancy was that band are present). The band
-	 * orders these by the natural occupancy order (empty→full); a present band with
-	 * a null delay renders an explicit no-data message, never a fake 0. Empty array
-	 * → the sub-block shows one honest no-data note (or is omitted).
-	 */
 	readonly delayByCrowding: CrowdingDelayCell[];
-	/**
-	 * S7: the occupancy mix at the SELECTED grain (day/week/month) from
-	 * occupancy_by_grain, or null when that grain has no telemetry / the field is
-	 * absent. The band prefers this over `mix` when present (grain-aware crowding),
-	 * falling back to the scalar trailing-window `mix`.
-	 */
 	readonly mixByGrain: OccupancyMix | null;
-	/**
-	 * S7: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy mix for the 2-col split,
-	 * each the unweighted mean of the per-weekday shares from occupancy_by_dow. null
-	 * when occupancy_by_dow is absent/empty; each side null when that side has no
-	 * telemetry. (Mean-of-shares is an approximation — the contract carries per-day
-	 * shares, not raw counts — honest for a "typical weekday/weekend" display.)
-	 */
 	readonly weekdayWeekend: {
 		readonly weekday: OccupancyMix | null;
 		readonly weekend: OccupancyMix | null;
 	} | null;
-	/**
-	 * P11: the RAW per-ISO-weekday occupancy mix kept VERBATIM from occupancy_by_dow,
-	 * for the Mon→Sun small-multiple. Always the full 7-day frame (iso 1..7), ASC, so
-	 * the band can render one strip per weekday with a fixed Mon→Sun axis: a weekday
-	 * the contract omits, OR a present weekday with mix:null, both carry `mix: null`
-	 * (honest absence — that day renders the no-telemetry chip, never a fabricated bar
-	 * or a silently dropped strip). null only when occupancy_by_dow is absent/empty
-	 * (then the small-multiple is omitted, same gate as weekdayWeekend).
-	 */
 	readonly byWeekday:
 		| readonly {
 				readonly iso: number;
 				readonly mix: OccupancyMix | null;
 		  }[]
 		| null;
-	/** True when `mix` is null OR every band share is zero/absent. */
 	readonly isEmpty: boolean;
 }
 
-/** 05 Time-of-day habits — the heatmap matrix kept verbatim (cells number|null). */
 export interface HabitsVM {
-	/** Raw normalization scale string (e.g. 'repeat_problem_relative'); never resolveLabel. */
 	readonly scale: string | null;
-	/** 2-D heatmap; each cell number|null (null = no data, not zero). */
 	readonly matrix: (number | null)[][];
 	readonly isEmpty: boolean;
 }
@@ -266,41 +132,12 @@ export interface ReliabilityClusters {
 }
 
 export interface ToReliabilityClustersOpts {
-	/** The selected grain the snapshot strip answers for. Defaults to 'day'. */
 	readonly grain?: string;
-	/**
-	 * When set (and `grain` resolves to 'day'), the strip/headline resolves to the
-	 * dated day-grain period matching this ISO date — so the specific-date picker
-	 * selects THAT day, not merely the most-recent one. No match → falls back to
-	 * the normal grain selection (an absent date fabricates nothing).
-	 */
 	readonly selectedDate?: string;
-	/**
-	 * A closed date RANGE (inclusive, ISO `YYYY-MM-DD`) over the dated day-grain
-	 * series. When set (with `grain` resolving to 'day') it overrides `selectedDate`
-	 * and drives BOTH the strip and the trend:
-	 *   - the strip's on-time % + avg delay become the MEAN across the in-range
-	 *     days (an aggregate, captioned as such by the band);
-	 *   - percentiles (p50/p90) are NOT averageable across days, so a MULTI-day
-	 *     range nulls them (the band shows the no-data mark), while a SINGLE-day
-	 *     range (`start === end`, or only one in-range day) keeps that day's exact
-	 *     percentiles;
-	 *   - the punctuality trend is ZOOMED to the in-range days only.
-	 * `start > end`, an empty range, or no in-range days fabricates nothing — the
-	 * strip falls back to the normal day selection and the trend stays full.
-	 */
 	readonly dateRange?: { readonly start: string; readonly end: string };
-	/** Exact additive retained-range values; daily rows remain the chart source. */
 	readonly retained?: Pick<RetainedLineHistory, 'aggregate' | 'retainedDayCount'>;
 }
 
-/**
- * Periods partitioned by grain GROUP so each consumer reads a clean grain:
- *   - `calendar`  — day / week / month (the dated headline grains)
- *   - `byShift`   — am_peak / pm_peak / midday / evening / night (date:null)
- *   - `byDayType` — weekday / weekend (date:null)
- * The mixed-grain contract array is split ONCE; nothing downstream re-mixes them.
- */
 export interface PartitionedPeriods {
 	readonly calendar: {
 		day: ReliabilityPeriod[];
@@ -311,14 +148,8 @@ export interface PartitionedPeriods {
 	readonly byDayType: ReliabilityPeriod[];
 }
 
-/* ── helpers (pure) ──────────────────────────────────────────────────────── */
-
 const num = (v: number | null | undefined): number | null => (v == null ? null : v);
 
-// The SHIFT + DAY-TYPE grain token sets are the shared reliability vocabulary
-// (imported above) so the lines + stops surfaces partition on identical tokens.
-
-/** A reliability period carries a signal if any of its numeric fields is present. */
 const periodHasSignal = (p: ReliabilityPeriod): boolean =>
 	p.otp_pct != null ||
 	p.avg_delay_min != null ||
@@ -326,7 +157,6 @@ const periodHasSignal = (p: ReliabilityPeriod): boolean =>
 	p.p90_min != null ||
 	p.severe_pct != null;
 
-/** A headway row carries a signal if any of its numeric fields is present. */
 const headwayHasSignal = (h: HeadwayPeriod): boolean =>
 	h.scheduled_min != null ||
 	h.observed_min != null ||
@@ -334,7 +164,6 @@ const headwayHasSignal = (h: HeadwayPeriod): boolean =>
 	h.cov != null ||
 	h.bunched_pct != null;
 
-/** A service-span row carries a signal if any of its numeric fields is present. */
 const spanHasSignal = (s: ServiceSpanPeriod): boolean =>
 	s.service_span_min != null ||
 	s.first_trip_delay_min != null ||
@@ -354,21 +183,18 @@ const skippedHasSignal = (s: SkippedStopPeriod): boolean =>
 const dayOfWeekHasSignal = (d: RouteDayOfWeek): boolean =>
 	d.avg_delay_min != null || d.severe_pct != null || d.observation_count != null;
 
-/** A delay×crowding cell carries a signal if any of its numeric fields is present. */
 const crowdingDelayHasSignal = (c: CrowdingDelayCell): boolean =>
 	c.avg_delay_min != null ||
 	c.p50_min != null ||
 	c.observation_count != null ||
 	c.day_count != null;
 
-/** A shift×day_type crosstab cell carries a signal if any of its numeric fields is present. */
 const crosstabHasSignal = (c: CrosstabCell): boolean =>
 	c.otp_pct != null ||
 	c.avg_delay_min != null ||
 	c.severe_pct != null ||
 	c.observation_count != null;
 
-/** Split the mixed-grain contract array into clean grain groups (F4). */
 function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPeriods {
 	const day: ReliabilityPeriod[] = [];
 	const week: ReliabilityPeriod[] = [];
@@ -381,13 +207,10 @@ function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPer
 		else if (p.grain === 'month') month.push(p);
 		else if (SHIFT_GRAINS.has(p.grain)) byShift.push(p);
 		else if (DAY_TYPE_GRAINS.has(p.grain)) byDayType.push(p);
-		// Any unrecognised grain is intentionally dropped from every clean group.
 	}
 	return { calendar: { day, week, month }, byShift, byDayType };
 }
 
-/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple
- *  + the comparison-vs-prior pair, kept verbatim for the descriptive §1 comparison). */
 const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	grain: p.grain,
 	otpPct: num(p.otp_pct),
@@ -400,14 +223,6 @@ const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	priorOnTime: num(p.prior_on_time),
 });
 
-/**
- * Chronological-ascending day-grain dated series — the trend source (oldest→newest),
- * DEDUPED by date. The contract can emit two rows for the same local day (a late
- * re-publish); without this collapse that day would draw twice on the trend chart
- * AND count twice in the date-range mean. Last occurrence wins (the contract tail
- * is the most-recent write for a date). This is the single source of truth for both
- * the trend and the range aggregate, so deduping here fixes both at once.
- */
 function dayTrend(dayPeriods: readonly ReliabilityPeriod[]): ReliabilityPeriod[] {
 	const byDate = new Map<string, ReliabilityPeriod>();
 	for (const p of dayPeriods) {
@@ -416,12 +231,6 @@ function dayTrend(dayPeriods: readonly ReliabilityPeriod[]): ReliabilityPeriod[]
 	return [...byDate.values()].sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
 }
 
-/**
- * The dated day-grain rows whose `date` falls inside the inclusive [start, end]
- * range (ISO `YYYY-MM-DD` string ordering = chronological). An inverted or empty
- * range yields no rows (the caller then falls back to the full series — never a
- * fabricated window).
- */
 function daysInRange(
 	dayTrendAsc: readonly ReliabilityPeriod[],
 	range: { start: string; end: string },
@@ -431,21 +240,12 @@ function daysInRange(
 	return dayTrendAsc.filter((p) => p.date != null && p.date >= lo && p.date <= hi);
 }
 
-/** ISO date (YYYY-MM-DD) minus `n` days, in UTC. */
 function isoMinusDays(iso: string, n: number): string {
 	const d = new Date(`${iso}T00:00:00Z`);
 	d.setUTCDate(d.getUTCDate() - n);
 	return d.toISOString().slice(0, 10);
 }
 
-/**
- * Filter a dated ramp-in history (cancellations / skipped / spans) to the window the
- * grain rail selects, so §03 Service-delivered RESPONDS to the filter like §01 does:
- *   - explicit dateRange → rows inside [start, end];
- *   - day (+ selectedDate) → that one day; day (no date) → the latest dated row;
- *   - week / month → the last 7 / 30 days ending at the latest dated row.
- * Undated rows (no `date`) pass through unchanged — there is nothing to window them by.
- */
 function windowByGrain<T extends { date?: string | null }>(
 	rows: readonly T[],
 	grain: string,
@@ -468,12 +268,6 @@ function windowByGrain<T extends { date?: string | null }>(
 	return dated.filter((r) => r.date >= cutoff);
 }
 
-/**
- * The dated rows within the last `n` days (ending at the latest dated row). The TREND
- * window primitive: each grain maps to a DISTINCT recent window so the day / week / month
- * trends never look identical (the bug where day = the full ~30-day history collided with
- * month = the last 30 days). Undated rows pass through.
- */
 function lastNDays<T extends { date?: string | null }>(
 	rows: readonly T[],
 	n: number,
@@ -485,7 +279,6 @@ function lastNDays<T extends { date?: string | null }>(
 	return dated.filter((r) => r.date >= cutoff);
 }
 
-/** Arithmetic mean of the non-null values `pick` returns, rounded to `dp`. null when none. */
 function meanOf<T>(
 	rows: readonly T[],
 	pick: (row: T) => number | null | undefined,
@@ -505,13 +298,6 @@ function meanOf<T>(
 	return Math.round((sum / n) * factor) / factor;
 }
 
-/**
- * Observation-count-WEIGHTED mean: Σ(value·weight) / Σ(weight), rounded to `dp`. The honest
- * aggregate for a per-day rate/mean pooled across days whose sample sizes span 100×–1000×
- * (an unweighted mean badly over-represents a tiny day). Falls back to the unweighted mean of
- * the values when NO row carries a positive weight (pre-#158 snapshots without observation_count),
- * so a value is never lost — only its weighting degrades. null when there is no value at all.
- */
 function weightedMean<T>(
 	rows: readonly T[],
 	value: (row: T) => number | null | undefined,
@@ -535,16 +321,9 @@ function weightedMean<T>(
 		const factor = 10 ** dp;
 		return Math.round((wNum / wSum) * factor) / factor;
 	}
-	// No weights anywhere → honest fallback to the plain mean (never drop the reading).
 	return meanOf(rows, value, dp);
 }
 
-/**
- * POOLED rate across rows: (Σ numerator / Σ denominator) × 100, rounded to `dp`. The honest
- * windowed rate (cancellation / skipped-stop) — the SAME pooled value the §3 "X of Y" caption
- * sums, so the rate tile and its caption can never disagree (a mean-of-daily-rates did). null
- * when no row carries a positive denominator.
- */
 function pooledRate<T>(
 	rows: readonly T[],
 	numer: (row: T) => number | null | undefined,
@@ -556,8 +335,6 @@ function pooledRate<T>(
 	for (const row of rows) {
 		const d = denom(row);
 		const nu = numer(row);
-		// Need BOTH counts: a present denom with a NULL numerator means the numerator is unknown for
-		// that row (not a real 0), so it is skipped — never assumed 0. A genuine 0 numerator counts.
 		if (d == null || d <= 0 || nu == null || Number.isNaN(nu)) continue;
 		dSum += d;
 		nSum += nu;
@@ -567,17 +344,6 @@ function pooledRate<T>(
 	return Math.round((nSum / dSum) * 100 * factor) / factor;
 }
 
-/**
- * Mean of the present band-share mixes (each share vector sums to ~1, so the mean also
- * sums to ~1 — no re-normalization). null when no present mix. Used to fold the per-ISO-
- * weekday occupancy_by_dow shares into a typical weekday/weekend mix.
- *
- * TRIP-WEIGHTED by the per-DOW count `n` (FIX-5) — a low-volume Sunday no longer counts as
- * much as a high-volume Saturday. ALL-OR-NOTHING guard: weight only when EVERY present row
- * carries a positive `n`; otherwise (any null/absent n — e.g. a pre-republish snapshot, or
- * mixed) degrade to the plain UNWEIGHTED mean, which is byte-identical to the prior behavior
- * so back-compat is exact and a partial-n window never silently drops a real weekday.
- */
 function meanMix(
 	rows: readonly { mix: OccupancyMix | null; n?: number | null }[],
 ): OccupancyMix | null {
@@ -597,13 +363,11 @@ function meanMix(
 	};
 }
 
-/** First headway row carrying a CoV (the busiest-direction regularity row). */
 function selectHeadwayCov(headway: readonly HeadwayPeriod[]): number | null {
 	const row = headway.find((h) => h.cov != null);
 	return row ? num(row.cov) : null;
 }
 
-/** Most-recent (last) entry carrying the named rate, scanning from the array tail. */
 function mostRecentRate<T>(
 	rows: readonly T[],
 	pick: (row: T) => number | null | undefined,
@@ -639,13 +403,6 @@ function scheduledServiceSummary(rows: readonly CancellationPeriod[]): {
 	return hasScheduled ? { scheduled, delivered, silent: hasSilent ? silent : null } : null;
 }
 
-/* ── mapper ──────────────────────────────────────────────────────────────── */
-
-/**
- * Shape a `RouteReliability` contract into the six cluster view-models. Pure +
- * deterministic; guards every nullable/optional field so a sparse or empty
- * contract never throws and resolves each band to an honest empty state.
- */
 export function toReliabilityClusters(
 	data: RouteReliability,
 	opts?: ToReliabilityClustersOpts,
@@ -663,46 +420,20 @@ export function toReliabilityClusters(
 	const allDayOfWeek = data.day_of_week ?? [];
 	const allWeakStops = data.weak_stops ?? [];
 
-	// S7-B windowable §1/§2/§4: the per-grain companions to the scalar whole-history fields
-	// above. find() returns undefined pre-deploy (the *_by_grain arrays are additive-optional
-	// and absent until the DB deploys + republishes) OR for a grain the DB didn't compute -> each
-	// VM feed falls back to its scalar source + the section badge stays ∞ (honest degradation).
 	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
-	// Heatmap is GRAIN-INVARIANT (operator decision): the 7x24 day-of-week x hour repeat-problems
-	// PATTERN needs the whole record to read reliably, and windowing it produced confusing,
-	// near-imperceptible changes (a single day cannot fill 7 rows, and week vs month differ by only
-	// a few cells). So habits_by_grain is intentionally NOT consulted; the heatmap always reads the
-	// whole-history data.habits (see the 05 block). The grain rail still reshapes the trend, the
-	// rates, and the on-time comparisons.
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 
-	// Split the mixed-grain bag ONCE so every consumer reads a clean grain (F4).
 	const partition = partitionPeriods(allPeriods);
-	// The strip selects only against the calendar (dated headline) grains.
 	const calendarPeriods = [
 		...partition.calendar.day,
 		...partition.calendar.week,
 		...partition.calendar.month,
 	];
 
-	// The dated day-grain series (ascending) — the source for BOTH the trend and
-	// the date-range aggregate. Resolve the in-range day rows ONCE (empty when no
-	// range is set, the range is inverted/empty, or no day falls inside it — the
-	// strip + trend then fall back to their normal full-series behaviour).
 	const dayTrendAsc = dayTrend(partition.calendar.day);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
-	// S7 (systematic grain): the §01 trend ALWAYS shows the DAILY series; week/month just
-	// WINDOW it (the last 7 / 30 days) via the SAME windowByGrain helper §03 uses — they
-	// no longer switch to the coarse weekly/monthly aggregate periods, which collapsed the
-	// month to two dots and made "this week" span a whole month on the x-axis. So every
-	// grain keeps daily detail folded in, on a window that matches the picked grain.
-	// Each grain maps to a DISTINCT recent daily window so day / week / month never render
-	// the same trend: Today shows the recent 2-week context (14d — a single day is not a
-	// trend), This week the last 7d, This month the last 30d. (Was: day = the FULL history,
-	// which equalled month on a route with only ~a month of data — the "broken" the
-	// operator saw.) §03's "day" stays the single latest day — a count, not a time series.
 	const TREND_DAYS_DAY = 14;
 	const TREND_DAYS_WEEK = 7;
 	const TREND_DAYS_MONTH = 30;
@@ -713,20 +444,6 @@ export function toReliabilityClusters(
 				? [...lastNDays(dayTrendAsc, TREND_DAYS_MONTH)]
 				: [...lastNDays(dayTrendAsc, TREND_DAYS_DAY)];
 
-	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
-	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
-	   delay are the MEAN across them; percentiles are NOT averageable, so a multi-
-	   day range nulls them while a single in-range day keeps that day's exact ones. */
-	// MATRIX: the strip's cancellation/skipped rate follows the picked window like §03's
-	// completeness does (Today = the day's rate, week = the 7-day mean, month = the 30-day
-	// mean, range = in-range mean) via the SAME windowByGrain helper — so the strip no
-	// longer contradicts the §03 section below it. These are RAMP-IN metrics whose latest
-	// day often lags (not yet computed); when the picked window carries no rate, fall back
-	// to the most-recent KNOWN rate so the tile shows the last real reading, never a false
-	// blank. (Was: unconditionally most-recent over the full archive — ignored the grain.)
-	// POOLED windowed rate (Σ canceled / Σ total, Σ skipped / Σ updates) — the SAME pooled value the
-	// §3 "X of Y" caption sums, so the rate tile and its caption agree (a mean-of-daily-rates made
-	// them disagree). Falls back to the most-recent published rate when the window carries no counts.
 	const exactCancellation = retained?.aggregate.cancellation.value ?? null;
 	const exactSkippedStops = retained?.aggregate.skippedStops.value ?? null;
 	const cancellationRatePct =
@@ -754,21 +471,13 @@ export function toReliabilityClusters(
 	let p50Min: number | null;
 	let p90Min: number | null;
 	let severePct: number | null;
-	// The grain-aggregate signed-delay distribution (#158) for the §01 A1 histogram. Null
-	// on the day grain + any date range (only the week/month/shift aggregate periods carry
-	// it) → the histogram renders honest absence there.
 	let delayHistogram: RouteDelayHistogramBin[] | null = null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
-	// OTP numerator/denominator behind the headline % — drive the §0 verdict's natural
-	// frequency + n-aware (Wilson) confidence. Additive across a range; null pre-republish.
-	// (Assigned in both the range + strip branches below, so no dead initialiser.)
 	let observationCount: number | null;
 	let onTime: number | null;
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
-		// OTP numerator/denominator are ADDITIVE across the in-range days (sum, not mean) — computed
-		// FIRST so the headline rate is the SAME pooled estimate the §0 verdict's Wilson CI uses.
 		observationCount = rangeDays.reduce<number | null>(
 			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
 			null,
@@ -777,17 +486,11 @@ export function toReliabilityClusters(
 			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
 			null,
 		);
-		// OTP = the POOLED rate (Σ on_time / Σ n), NOT a mean of daily rates. A mean-of-rates
-		// equal-weights a 64-obs day against a 64020-obs day AND fell outside its own Wilson CI on
-		// ~48% of multi-day windows (the verdict CI is built from these pooled counts). When the
-		// counts are absent (pre-#158), fall back to the unweighted daily-rate mean (honest degrade).
 		otpPct = singleDay
 			? num(rangeDays[0].otp_pct)
 			: observationCount != null && observationCount > 0 && onTime != null
 				? Math.round((onTime / observationCount) * 100)
 				: meanOf(rangeDays, (p) => p.otp_pct, 0);
-		// Avg delay + severe share: observation-count-WEIGHTED across the in-range days (the same
-		// denominator-weighting as OTP), so a tiny day cannot swing the headline.
 		avgDelayMin = singleDay
 			? num(rangeDays[0].avg_delay_min)
 			: weightedMean(
@@ -804,12 +507,8 @@ export function toReliabilityClusters(
 					(p) => p.observation_count,
 					1,
 				);
-		// Percentiles are not averageable across days: only a single in-range day
-		// carries them; a multi-day range shows the honest no-data mark.
 		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
 		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
-		// A single in-range day reads as an exact day (no "average" caption); a
-		// multi-day range carries the aggregate metadata for an honest caption.
 		rangeAggregate = singleDay
 			? null
 			: {
@@ -871,25 +570,14 @@ export function toReliabilityClusters(
 			skippedStopRatePct == null,
 	};
 
-	/* 01 Punctuality. */
-	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
-	// A date range ZOOMS the trend to the in-range days (otherwise the full series).
 	const trend = hasRange ? rangeDays : grainTrendAsc;
-	// S7-B §1 windowable: weekday seasonality from the per-grain slice (scalar fallback pre-deploy).
 	const dayOfWeek = (periodsGrain?.day_of_week ?? allDayOfWeek)
 		.filter(dayOfWeekHasSignal)
 		.slice()
 		.sort((a, b) => a.day_of_week_iso - b.day_of_week_iso);
-	// S7-B §4 windowable: the windowed slice arrives DB-ranked worst-first (not-severe Wilson LB)
-	// and is gated on observation_count (NOT avg_delay_min) so a genuinely-worst stop whose pooled
-	// avg is null/<=0 is NOT dropped; the selector renders its severe-rate magnitude. The scalar
-	// fallback keeps today's avg_delay_min gate (ranked by avg in the selector).
 	const weakStops = weakStopsGrain
 		? (weakStopsGrain.stops ?? []).filter((w) => w.observation_count != null)
 		: allWeakStops.filter((w) => w.avg_delay_min != null);
-	// Peak vs off-peak: the windowed by_shift/by_daytype are raw ReliabilityPeriod[] already scoped
-	// to this grain (NOT pre-partitioned) -> feed the SAME filter+map. Scalar fallback = the
-	// whole-history shift/day-type grains partitioned out of `periods`.
 	const byShift = (periodsGrain?.by_shift ?? partition.byShift)
 		.filter(periodHasSignal)
 		.map(toComparisonRow);
@@ -901,19 +589,10 @@ export function toReliabilityClusters(
 		byDayType,
 		isEmpty: byShift.length === 0 && byDayType.length === 0,
 	};
-	// Tier-3 shift × day_type crosstab — kept VERBATIM (sparse), filtered to cells
-	// that carry a real signal so an all-null cell never reads as present-but-blank.
-	// The band lays them on a fixed 5×2 grid; absent cells show an honest no-data
-	// message (the per-empty-cell honesty the operator requires).
 	const byShiftDaytype = (periodsGrain?.by_shift_daytype ?? data.by_shift_daytype ?? []).filter(
 		crosstabHasSignal,
 	);
 	const punctuality: PunctualityVM = {
-		// The GRAIN-AWARE headline aggregate (the same selected-grain values the strip
-		// computes): §01's headline tiles + the median/p90 distribution + the
-		// severe-share bar read THIS, so they answer for the picked window (today / this
-		// week / this month / range), while the trend shows the daily detail. Systematic:
-		// one aggregate, not the trend tail.
 		headline: {
 			otpPct,
 			avgDelayMin,
@@ -929,8 +608,6 @@ export function toReliabilityClusters(
 		weakStops,
 		peakOffPeak,
 		byShiftDaytype,
-		// S7-B: the §1 breakdowns follow the grain rail when periods_by_grain is published; the §4
-		// worst-stops follow it when weak_stops_by_grain is. Both gate the section's ∞→↻ badge.
 		windowed: periodsGrain != null,
 		weakStopsWindowed: weakStopsGrain != null,
 		isEmpty:
@@ -941,9 +618,6 @@ export function toReliabilityClusters(
 			byShiftDaytype.length === 0,
 	};
 
-	/* 02 Wait regularity. */
-	// S7-B §2 windowable: the busiest-direction headway recomposed for the selected grain
-	// (scalar fallback to the whole-history headway pre-deploy).
 	const headway = (headwayGrain?.headway ?? allHeadway).filter(headwayHasSignal);
 	const waitRegularity: WaitRegularityVM = {
 		headway,
@@ -951,8 +625,6 @@ export function toReliabilityClusters(
 		isEmpty: headway.length === 0,
 	};
 
-	/* 03 Service delivered — windowed to the grain the rail selects (the §03 completeness
-	   read then aggregates over that window, so the section RESPONDS to the filter). */
 	const serviceSpans = windowByGrain(allSpans, grain, selectedDate, dateRange).filter(
 		spanHasSignal,
 	);
@@ -998,7 +670,6 @@ export function toReliabilityClusters(
 			!(retained != null && serviceCompletenessPct != null),
 	};
 
-	/* 04 Crowding. */
 	const rawMix = data.occupancy_mix ?? null;
 	const mixHasShare =
 		rawMix != null &&
@@ -1007,10 +678,7 @@ export function toReliabilityClusters(
 			rawMix.few_seats > 0 ||
 			rawMix.standing > 0 ||
 			rawMix.full > 0);
-	// Keep sparse cells with a real signal; the band handles missing delay values.
 	const delayByCrowding = (data.delay_by_crowding ?? []).filter(crowdingDelayHasSignal);
-	// S7: grain-aware mix (the occupancy_by_grain entry for the selected grain) +
-	// weekday/weekend split (means of the per-ISO-weekday occupancy_by_dow shares).
 	const occByGrain = data.occupancy_by_grain ?? [];
 	const occByDow = data.occupancy_by_dow ?? [];
 	const mixByGrain = occByGrain.find((g) => g.grain === grain)?.mix ?? null;
@@ -1029,8 +697,6 @@ export function toReliabilityClusters(
 					),
 				}
 			: null;
-	// Expand sparse weekday data onto the fixed Mon–Sun frame; duplicates use the
-	// last contract row. Omit the frame when the source has no weekday rows.
 	const byWeekday =
 		occByDow.length > 0
 			? (() => {
@@ -1045,15 +711,9 @@ export function toReliabilityClusters(
 		mixByGrain,
 		weekdayWeekend,
 		byWeekday,
-		// The mix drives the headline + stacked bar; the delay×crowding sub-block has
-		// its OWN empty path. `isEmpty` stays mix-driven so a route WITH delay data but
-		// no occupancy mix still surfaces the delay sub-block under the band.
 		isEmpty: !mixHasShare,
 	};
 
-	/* 05 Time-of-day habits — GRAIN-INVARIANT (operator decision). */
-	// Keep the whole-history pattern independent of the selected grain; the grain
-	// still controls trends, rates, and on-time comparisons.
 	const rawHabits = data.habits ?? null;
 	const matrix = rawHabits?.matrix ?? [];
 	const matrixHasCell = matrix.some((row) => row.some((cell) => cell != null));

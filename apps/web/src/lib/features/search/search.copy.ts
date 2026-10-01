@@ -1,25 +1,3 @@
-// search.copy.ts — co-located bilingual copy for the Search surface (slice-9.3 ·
-// data-depth batch 4).
-//
-// EVERY user-facing string for SearchSurface lives here, keyed by Locale. The
-// domain-intrinsic component labels (edge-state titles/bodies, the "+N more"
-// truncation note formatting, the StatusBadge/occupancy glyphs) live in the spine
-// + dataviz kit; this object owns the surface-specific voice: the head, the input
-// affordance, the section labels, the scope + mode filter controls, the vehicle
-// result row phrasing, and the instructional empty state. FR is the canonical
-// product voice; EN is the parallel translation. No strings inline in the .svelte.
-//
-// Provider-agnostic: no 'STM' / 'Montréal'. The transit-mode chip labels are NOT
-// here: Métro / Tram / Bus / Train / Ferry are proper nouns that read the same in
-// both languages, so they live once in $lib/search/stopMode (TRANSIT_MODE_FILTERS)
-// beside the row tags they must match.
-//
-// `collectionNotice` is this SURFACE's data-collection disclosure, and it is not a
-// copy of the chrome's. The chrome field geocodes; this page does not — matching
-// runs against the already-loaded indexes — so the honest sentence here names what
-// each search actually does (the S5-377 B3 scope-accuracy rule, applied to a
-// second surface).
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 

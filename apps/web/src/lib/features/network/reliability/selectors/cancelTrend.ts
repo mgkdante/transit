@@ -1,13 +1,3 @@
-// selectCancelTrend — the network-wide cancellation-rate trend + its latest reading.
-//
-// P5.2: emits a single-series `trend` ChartSpec for the ONE <Chart> renderer (the
-// legacy TrendLine primitive is retired). Stand the whole block DOWN when the series
-// carries no cancellation data (every point null) — never a flat zero line. FIXED
-// absolute [0,100] domain (CANCEL_RATE_DOMAIN): cancellation rate is a PERCENTAGE (a
-// share of a whole), so its honest domain IS the whole — a near-zero network rate
-// truthfully reads "rare" instead of an in-view max that made 2% today fill the frame
-// and 4% tomorrow only half. No secondary series. Consumes the ALREADY-windowed series.
-
 import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/shiftGrains';
 import type { ChartSpec, TrendDatum } from '$lib/components/dataviz/chart';
 import type { Locale } from '$lib/i18n/config';
@@ -15,20 +5,14 @@ import type { TrendPoint } from '$lib/v1';
 
 export interface CancelTrendOptions {
 	readonly locale: Locale;
-	/** Accessible title (the legacy summary label). */
 	readonly title: string;
-	/** Series label (axis + tooltip). */
 	readonly seriesLabel: string;
 	readonly pctUnit: string;
 }
 
-/** The cancellation-trend view-model. */
 export interface CancelTrendVM {
-	/** True when at least one point carries a cancellation reading (else stand the block down). */
 	readonly hasCancel: boolean;
-	/** The latest non-null cancellation reading (%), or null. */
 	readonly latest: number | null;
-	/** The single-series trend spec (only meaningful when hasCancel). */
 	readonly spec: ChartSpec;
 }
 

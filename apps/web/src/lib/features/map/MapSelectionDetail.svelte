@@ -105,7 +105,6 @@
 		data-kind={detail.kind}
 		data-slot="detail-body"
 	>
-		<!-- D1: identity is supplied by the desktop/mobile shell through detailIdentity(). -->
 		<div class="detail-status-band" data-slot="detail-status-band">
 			{#if selectionPresence === 'missing-grace'}
 				<p class="detail-source-state" data-source-health={selectionSourceHealth ?? 'stale'}>
@@ -507,7 +506,6 @@
 		padding-block: 0.5rem;
 		padding-inline: 0.75rem;
 	}
-	/* List-item display preserved: the ::marker triangle is the affordance. */
 	.map-selection-detail :global([data-slot='detail-schedule-tail'] > summary) {
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;

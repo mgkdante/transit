@@ -18,7 +18,6 @@
 	const ON_TIME_LO = -60;
 	const ON_TIME_HI = 300;
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
-	/** The minute landmarks (in seconds) to tick on the linear x-axis (those inside the window). */
 	const landmarksSec = $derived(
 		[-300, -60, 0, 60, 300, 600, 1800].filter((s) => s >= xDomain[0] && s <= xDomain[1]),
 	);
@@ -38,9 +37,6 @@
 		density: number;
 		group: 'early' | 'ontime' | 'late';
 	};
-	// Only bins that fall WHOLLY inside the clipped delay window render — the rare extreme-early /
-	// extreme-late tail bins are omitted from the plot (the p90 rule + the sr-table carry them) so
-	// no bar is partially clipped and area remains proportional to its count.
 	const bars = $derived<Bar[]>(
 		spec.bins
 			.map((b, i) => ({ b, i }))
@@ -66,7 +62,6 @@
 	const yDomain = $derived<[number, number]>([0, maxDensity > 0 ? maxDensity : 1]);
 	const total = $derived(spec.bins.reduce((s, b) => s + b.count, 0));
 
-	/** Median / p90 reference positions (seconds), only when inside the visible window. */
 	const medianRef = $derived(
 		spec.medianRef != null && spec.medianRef >= xDomain[0] && spec.medianRef <= xDomain[1]
 			? spec.medianRef
@@ -104,7 +99,6 @@
 		>
 			<Svg>
 				<Grid y class="dv-histmark-grid" />
-				<!-- A real LINEAR delay axis (minutes), ticked at the landmark minute marks. -->
 				<Axis
 					placement="bottom"
 					label={spec.xLabel}
@@ -133,7 +127,6 @@
 		</LcChart>
 	</ChartFrame>
 
-	<!-- AT fallback: the full distribution as a table (EVERY bin, incl. the clipped tail bins). -->
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
@@ -152,8 +145,6 @@
 </figure>
 
 <style>
-	/* LayerChart puts the class ON each rect/line; target the element directly + beat
-	   LayerChart's default fill. :global because LayerChart renders the marks. */
 	:global(rect.dv-histmark-early) {
 		fill: var(--dataviz-status-early);
 	}
@@ -177,7 +168,6 @@
 		stroke-width: 0.75;
 		stroke-dasharray: 3 3;
 	}
-	/* Axis: muted mono labels + title; faint grid. */
 	:global(.dv-histmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);

@@ -18,10 +18,6 @@ import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
-// Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
-// / ?n seed AND the round-trip mirror are testable (the HotspotsBoard urlseed pattern).
-// getLocale stays REAL → 'en'; $lib/i18n + $lib/nav stay REAL so the deep links resolve
-// to genuine /lines/<id> hrefs.
 const nav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/repeat-offenders'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
@@ -124,9 +120,6 @@ class ReconciliationIntersectionObserver {
 	}
 }
 
-// A populated week ladder (one trip + one vehicle ranked entry + one tray) + a
-// populated month ladder, so the grain rail renders and a seed to a different grain
-// is observable.
 function seed(): RepeatOffendersData {
 	return {
 		generated_utc: GENERATED,

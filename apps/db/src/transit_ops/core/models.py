@@ -15,9 +15,6 @@ class FeedKind(StrEnum):
     TRIP_UPDATES = "trip_updates"
     VEHICLE_POSITIONS = "vehicle_positions"
     I3_ALERTS = "i3_alerts"
-    # Generic GTFS-RT Service Alerts protobuf (STO/OC/STS and most agencies).
-    # STM's proprietary i3 JSON stays I3_ALERTS; both normalize into the same
-    # alert gold surface.
     SERVICE_ALERTS = "service_alerts"
 
 
@@ -38,14 +35,11 @@ class StorageBackend(StrEnum):
 class AuthType(StrEnum):
     NONE = "none"
     API_KEY = "api_key"
-    # Static key plus a per-request derived signature (e.g. STO: key=<public> +
-    # hash=SHA256(private_key + UTC timestamp)). Both go in query params.
     API_KEY_SIGNED = "api_key_signed"
 
 
 class SignatureScheme(StrEnum):
-    # hex SHA-256 of (signing_secret + current UTC time as yyyymmddTHHMMZ),
-    # recomputed per request at minute granularity. Used by STO GTFS-RT.
+    # SHA256(signing_secret + UTC yyyymmddTHHMMZ), recomputed per request.
     SHA256_UTC_MINUTE = "sha256_utc_minute"
 
 
@@ -54,8 +48,6 @@ class AuthConfig(BaseModel):
     credential_env_var: str | None = None
     auth_header_name: str | None = None
     auth_query_param: str | None = None
-    # API_KEY_SIGNED only: the secret that is hashed into a per-request signature,
-    # and where/how that signature is attached.
     signing_secret_env_var: str | None = None
     signature_query_param: str | None = None
     signature_scheme: SignatureScheme | None = None
@@ -106,8 +98,6 @@ class ProviderBoundsConfig(BaseModel):
 class ProviderConfig(BaseModel):
     provider_id: str
     display_name: str
-    # Copy identity (additive, optional): a snappy brand for chips/SEO ("STM",
-    # "OC Transpo") and the primary place name for SEO + copy ("Montréal").
     short_name: str | None = None
     city: str | None = None
     timezone: str
@@ -117,11 +107,7 @@ class ProviderConfig(BaseModel):
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True
-    # When False, the static loader tolerates a compliant-but-minimal feed whose
-    # non-spine optional members are missing a required column (skip + record a
-    # conformance warning instead of failing the whole load). STM stays True so a
-    # real schema regression still fails loud. Falls back to Settings.STRICT_GTFS
-    # when omitted from the manifest.
+    # Tolerant mode skips non-spine members with missing columns and records a warning.
     strict_gtfs: bool | None = None
 
 
@@ -237,14 +223,7 @@ class ProviderManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest_shape(self) -> ProviderManifest:
-        # The only universally required feed is the GTFS schedule. GIS is
-        # provider-specific (STM ships a separate stm_sig.zip; standard agencies
-        # carry geometry in shapes.txt), the GTFS-RT trip/vehicle feeds power the
-        # delay/reliability facts but a fully GTFS-compliant agency may publish
-        # schedule only (or schedule + alerts, like STS), and the alert feeds are
-        # optional too. A provider that omits the realtime feeds simply produces
-        # no realtime/reliability facts — the realtime cycle is manifest-driven
-        # (realtime_endpoints_for_manifest) and skips whatever is absent.
+        # Only the static schedule is required; capture optional feeds when declared.
         required_feeds = {FeedKind.STATIC_SCHEDULE.value}
         missing_feeds = required_feeds - set(self.feeds)
         if missing_feeds:
@@ -265,12 +244,6 @@ class ProviderManifest(BaseModel):
         return feed
 
     def gis_feed(self) -> GisStaticFeedConfig | None:
-        """Return the GIS feed, or ``None`` when the provider ships no GIS bundle.
-
-        Optional because only STM publishes a separate shapefile; standard GTFS
-        agencies derive route geometry from shapes.txt. Mirrors the absence
-        handling callers already use for the optional i3 alerts feed.
-        """
         feed = self.feeds.get(FeedKind.GIS_STATIC.value)
         if feed is None:
             return None
@@ -285,7 +258,6 @@ class ProviderManifest(BaseModel):
         return feed
 
     def service_alerts_feed(self) -> ServiceAlertsFeedConfig | None:
-        """Return the generic GTFS-RT service-alerts feed, or None when absent."""
         feed = self.feeds.get(FeedKind.SERVICE_ALERTS.value)
         if feed is None:
             return None
@@ -327,9 +299,6 @@ class ProviderManifest(BaseModel):
         )
 
     def to_feed_endpoint_seeds(self, settings: Settings) -> list[FeedEndpointSeed]:
-        # Only seed feeds the manifest actually declares. The realtime trip/vehicle
-        # feeds are optional (a schedule-only or schedule+alerts agency omits them),
-        # so guard every non-static kind by presence to avoid a KeyError below.
         ordered_feed_keys = [FeedKind.STATIC_SCHEDULE.value]
         for optional_kind in (
             FeedKind.GIS_STATIC,

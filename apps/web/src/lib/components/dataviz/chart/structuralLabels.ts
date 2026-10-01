@@ -27,10 +27,6 @@ const STRUCTURAL_LABELS = {
 	},
 } as const;
 
-/**
- * Shared mark-level structural copy. Mathematical notation `n` and `%` is intentionally
- * language-neutral and must not be localized.
- */
 export function structuralLabels(locale: Locale) {
 	return STRUCTURAL_LABELS[locale];
 }

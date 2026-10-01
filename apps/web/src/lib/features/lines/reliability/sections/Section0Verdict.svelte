@@ -1,21 +1,3 @@
-<!--
-  §0 Verdict — "Can you count on this line?"
-
-  The first rider-question section + the page's at-a-glance answer. Leads with the
-  punctuality KPI tiles (on-time, avg delay, median/p90), then the ONE
-  always-visible primary chart — the on-time / avg-delay trend — and tucks the
-  analyst detail (the delay distribution + severe-delay share) behind the
-  progressive-disclosure `<Detail>` expander.
-
-  Reads ONLY the PunctualityVM: the old snapshot strip's cancellation/skip rates
-  move to §3 and its headway CoV to §2, so this section is punctuality-pure. The
-  grain rail (mounted by the orchestrator) only re-shapes the trend; the headline
-  tiles already carry the grain-aware aggregate.
-
-  Honest absence throughout: a null value renders the styled AbsentValue chip
-  (says WHY), never a fabricated 0; each chart degrades to its own absence mark.
-
--->
 <script lang="ts">
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
@@ -46,20 +28,14 @@
 	import type { ReliabilityCopy } from '../reliability.copy';
 
 	interface Section0VerdictProps {
-		/** The punctuality view-model from `toReliabilityClusters`. */
 		vm: PunctualityVM;
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
-		/** Active window (day|week|month|range) — names the verdict window + drives the trend. */
 		mode?: 'day' | 'week' | 'month' | 'range';
 		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 	}
 	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
-	// A date range uses the retained dated series. Only the literal day mode uses
-	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
 	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
@@ -71,9 +47,6 @@
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
 	const shiftShort = (g: string): string => shiftGrainLabelShort(g, locale);
 
-	// KPI bullets — each headline number gets a scale-context bullet beneath it (the
-	// "every KPI is a LayerChart mark" mandate). On-time carries the 80% SLA target tick +
-	// the band tone; the delay metrics ride a fixed delay domain with a neutral tone.
 	const otpBullet = $derived(
 		selectBullet(headline.otpPct, locale, {
 			title: copy.strip.otpPct,
@@ -111,7 +84,6 @@
 		}),
 	);
 
-	// PRIMARY — OTP/avg-delay trend (grain-aware: day → 5 shifts, else dated series).
 	const isDayGrain = $derived(grain === 'day');
 	const trendSpec = $derived(
 		selectPunctualityTrend(vm, grain, locale, {
@@ -129,7 +101,6 @@
 	const hasTrend = $derived(trendSpec.kind === 'trend');
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
-	// DETAIL — signed-delay histogram with median and 90th-percentile markers.
 	const distSpec = $derived(
 		selectPunctualityDistribution(vm, locale, {
 			title: copy.strip.delayDistHeading,
@@ -142,9 +113,6 @@
 	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
 
-	// DETAIL — severe-delay share (its own metric, not the p90), now a LayerChart bullet
-	// on the fixed SEVERE_DOMAIN [0,100]. Tone tracks the severe-share bands (>=10% bad,
-	// >=5% warn) so the bar colour matches the severity read; null → no bar (honest absence).
 	const severePct = $derived<number | null>(headline.severePct);
 	const severeTone = (v: number | null): 'bad' | 'warn' | 'neutral' =>
 		v == null ? 'neutral' : v >= 10 ? 'bad' : v >= 5 ? 'warn' : 'neutral';
@@ -158,7 +126,6 @@
 		}),
 	);
 
-	// Whole-section honest empty: nothing punctuality-shaped to show at all.
 	const sectionEmpty = $derived(
 		headline.otpPct == null &&
 			headline.avgDelayMin == null &&
@@ -205,21 +172,14 @@
 	eyebrow={copy.sections.verdict.label}
 	question={copy.sections.verdict.question}
 >
-	<!-- D3: the §0 verdict block framed in the ONE TerminalPanel idiom. The existing
-	     at-a-glance answer (VerdictBanner + the KPI tiles) is wrapped untouched — no
-	     new verdict copy is authored. -->
 	<TerminalPanel
 		title={copy.sections.verdict.terminal.title}
 		tag={copy.sections.verdict.terminal.tag}
 		class="verdict-terminal"
 	>
-		<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
-		     §0's honest absence ("still measuring") when there's no percentage to read. -->
 		<VerdictBanner result={verdict} />
 
 		{#if !sectionEmpty}
-			<!-- KPI tiles — each a text-led number + a LayerChart bullet (scale context). The
-			     bullet handles honest absence (no bar) + on-time carries the 80% target tick. -->
 			<div class="verdict-kpis" data-slot="verdict-kpis">
 				<MetricBullet
 					label={copy.strip.otpPct}
@@ -257,7 +217,6 @@
 	</TerminalPanel>
 
 	{#if !sectionEmpty}
-		<!-- PRIMARY — the on-time / avg-delay trend. -->
 		{#if hasTrend}
 			<div class="section-primary" data-slot="otp-trend" data-card="primary">
 				<div class="block-head">
@@ -281,7 +240,6 @@
 			</div>
 		{/if}
 
-		<!-- DETAIL — distribution + severe-delay share, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
 			<div class="block" data-slot="delay-distribution" data-card>
 				<div class="block-head">
@@ -353,7 +311,6 @@
 </CollapsibleSection>
 
 <style>
-	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
 		display: grid;
 		gap: var(--space-card-gap);

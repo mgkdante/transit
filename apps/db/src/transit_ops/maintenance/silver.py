@@ -1,5 +1,3 @@
-"""Capture-time retention with bounded, child-first Silver deletion."""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -196,7 +194,7 @@ def _expired_snapshot_ids(
     if dry_run or not snapshots:
         return [int(row[0]) for row in snapshots]
 
-    # Replay locks Raw before loading Silver; skip active captures in that order.
+    # Replay locks Raw before Silver; skip active captures in the same order.
     locked_sources = {
         int(row[0])
         for row in connection.execute(
@@ -282,20 +280,10 @@ def prune_silver_storage(
     engine: Engine | None = None,
     dry_run: bool = False,
 ) -> SilverStoragePruneResult:
-    """Prune silver storage in TWO independent transactions (realtime FIRST).
-
-    Realtime retention and static dataset pruning run in separate
-    engine.begin() blocks, realtime first, so a static-prune failure can never
-    roll back or starve the realtime retention. (A single shared transaction
-    with static-first ordering let an FK abort in the static half kill the
-    realtime DELETEs before they ran — the wave-2 prod regression this fixes,
-    slice-9.1.1j.)
-    """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
 
-    # Transaction 1: realtime retention — must commit independently of the
-    # static prune below.
+    # Commit realtime retention independently of static pruning.
     with engine.begin() as connection:
         set_daily_warm_transaction_timeouts(connection)
         realtime_cutoff_utc, realtime_deleted_row_counts = prune_realtime_silver_history(
@@ -306,7 +294,6 @@ def prune_silver_storage(
             dry_run=dry_run,
         )
 
-    # Transaction 2: static dataset prune (with gold-reference deferral).
     with engine.begin() as connection:
         set_daily_warm_transaction_timeouts(connection)
         (

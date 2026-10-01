@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { motionFeedAnimate } from './motionFeed';
 
-// The raw/smooth wiring MapHero feeds into vehicleMotion.set. Proven here because
-// the GL canvas can't be screenshotted from CI (same rationale as mapGeo).
-//
-// CONTRACT: animate (forward-projection) iff the user chose SMOOTH and OS
-// reduced-motion is off. Raw mode OR reduced motion => false => the controller
-// snaps to reported positions, never estimating a position the feed did not send.
-
 describe('motionFeedAnimate', () => {
 	it('RAW mode does not animate (snap to reported positions, no estimation)', () => {
 		expect(motionFeedAnimate({ smoothMotion: false, reduceMotion: false })).toBe(false);

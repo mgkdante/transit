@@ -31,12 +31,8 @@ const source = () =>
 		'utf-8',
 	);
 
-/** Brand a plain string as IsoUtc for fixture literals (mirrors clusters.test.ts). */
 const utc = (value: string): IsoUtc => value as IsoUtc;
 
-// A fully-populated archive: every section has a signal, so all five rider-question
-// sections render their data (not their empty state). The 'day' and 'week' periods
-// carry DIFFERENT OTP so a grain switch is observable.
 const populated: RouteReliability = {
 	id: '141',
 	generated_utc: utc('2026-06-19T02:00:00Z'),
@@ -140,7 +136,6 @@ const populated: RouteReliability = {
 	],
 };
 
-/** The active-window caption text, the structure-independent grain/range readout. */
 const activeWindowText = (container: HTMLElement): string =>
 	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
 
@@ -259,17 +254,14 @@ describe('RouteReliabilityClusters', () => {
 	it('renders all five rider-question section overlines + the §0 headline with populated data', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
 
-		// All five rider-question section overlines present, in surface order.
 		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
-		// §0 Verdict rendered its KPI tiles: the default 'day' grain OTP (82%) headline.
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
-		// The control spine offers the three discrete grains.
 		expect(screen.getAllByText(copy.controls.latestDay).length).toBeGreaterThan(0);
 		expect(screen.getByText(copy.controls.thisWeek)).toBeInTheDocument();
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
@@ -280,31 +272,23 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: populated, locale: 'en' },
 		});
 
-		// The rail's ONE wayfinding stamp is TocNav's own zero-padded footer counter
-		// over the total section count (5). Before the scroll observer resolves an
-		// active id, it falls back to section 1 → "SEC 01 / 05".
 		const readout = container.querySelector('.toc-counter-text');
 		expect(readout).not.toBeNull();
 		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 01 / 05');
 	});
 
 	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
-		// A minimal valid contract: only the two required identity fields, no data
-		// arrays — every section must fall to its honest empty state.
 		const empty: RouteReliability = { id: '141', generated_utc: utc('2026-06-19T02:00:00Z') };
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: empty, locale: 'en' },
 		});
 
-		// Sections are NEVER silently dropped: all five overlines still anchor their sections.
 		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
 		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
-		// The styled honest-absence chip appears (sections fall to it, each saying WHY
-		// data is missing), never a fabricated value.
 		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThan(0);
 	});
 
@@ -313,10 +297,8 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: populated, locale: 'en' },
 		});
 
-		// The date comes from the selected delay period.
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day('2026-06-19'));
 
-		// Switch to "This week" → the caption re-answers for the week window.
 		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.thisWeek }));
 		await tick();
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.week);
@@ -375,7 +357,6 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: multiDay, locale: 'en' },
 		});
 
-		// Switch to "Date range" → the start + end pair appears.
 		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.dateRange }));
 		await tick();
 		const startSelect = screen.getByLabelText(
@@ -385,7 +366,6 @@ describe('RouteReliabilityClusters', () => {
 			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
 		);
 
-		// Pick the full 3-day window → the caption reflects the aggregate (no em dash; "to" joins).
 		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
 		await fireEvent.change(endSelect, { target: { value: '2026-06-18' } });
 		await tick();
@@ -408,7 +388,6 @@ describe('RouteReliabilityClusters', () => {
 			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
 		);
 
-		// A single day (06-16) reads exact + uses the single-day caption.
 		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
 		await fireEvent.change(endSelect, { target: { value: '2026-06-16' } });
 		await tick();
@@ -416,8 +395,6 @@ describe('RouteReliabilityClusters', () => {
 	});
 });
 
-// A multi-day archive (three dated day-periods, contract order newest→oldest) so
-// the date-range aggregation + single-day path can be exercised end-to-end.
 const multiDay: RouteReliability = {
 	id: '10',
 	generated_utc: utc('2026-06-19T02:00:00Z'),
@@ -529,17 +506,13 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		// The SurfaceRail mobile pill replaces the old two floating pills.
 		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		expect(railMobile).not.toBeNull();
 		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
 		expect(pillBtn).not.toBeNull();
-		// Labelled with the View heading + the active window (default 'day' → Today).
 		expect(pillBtn.textContent).toContain(copy.controls.viewLabel);
 		expect(pillBtn.textContent).toContain(copy.controls.latestDay);
-		// The sheet is closed by default (no dialog rendered yet).
 		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
-		// The old collapse toggle + the separate toc/filter pills are gone.
 		expect(container.querySelector('[data-slot="controls-toggle"]')).toBeNull();
 		expect(container.querySelector('[data-testid="reliability-filter-pill"]')).toBeNull();
 		expect(container.querySelector('[data-testid="toc-pill"]')).toBeNull();
@@ -555,7 +528,6 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
 		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
 		expect(sheet).not.toBeNull();
-		// The ONE sheet merges the grain controls (active-window readout) AND the section ToC.
 		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
@@ -617,9 +589,6 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		}
 	});
 });
-
-// (The §1/§2/§4 ↻/∞ scope-badge tests were removed with the scope glyph itself: the rail
-// now renders the shared TocNav, a plain numbered jump-list with no per-row scope marker.)
 
 describe('RouteReliabilityClusters canonical article-control stack', () => {
 	it('orders label, primary period, conditional range, and caption before the section ToC', () => {

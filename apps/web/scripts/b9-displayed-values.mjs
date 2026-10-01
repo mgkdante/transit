@@ -904,8 +904,6 @@ function verifyLedger(cell, fixture, ledger) {
 					refs.push(...(fixture.files[entityPath]?.partitions ?? []).slice(-1));
 				for (const ref of refs) {
 					if (lane === 'ssr') {
-						// The initial selected partition is read by SSR. Synthetic controls later
-						// make the first browser read; the server seed does not populate its cache.
 						expected.push(['ssr', ref.path, 200, 1]);
 						if (cell.fixture !== 'live') expected.push(['browser', ref.path, 200, 1]);
 					} else {
@@ -946,8 +944,6 @@ async function verifySsr(page, cell, fixture, html) {
 			);
 			return;
 		}
-		// An unattached template parses only the captured response. It executes no
-		// scripts or resource loads and cannot borrow values from the hydrated page.
 		const ssr = await page.evaluate((source) => {
 			const template = document.createElement('template');
 			template.innerHTML = source;
@@ -1868,7 +1864,6 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				const ssrHtml = await response.text();
 				await settleSurface(page, cell, fixture);
 				await verifySsr(page, cell, fixture, ssrHtml);
-				// Open analyst content through its real control before reading its values.
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					const control = await toggle.elementHandle();
 					invariant(control != null, `${cell.path} detail control disappeared`);
@@ -1907,7 +1902,6 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						{ cause: error },
 					);
 				}
-				// Both transcripts include the same opened, viewport-mounted chart text.
 				await settleVisibleChartText(page);
 				const initialHydrated = normalizeObservation(await page.locator('main').innerText());
 				await verifyAccessibleMirrors(page, cell);

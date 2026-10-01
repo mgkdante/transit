@@ -1,20 +1,5 @@
-// alertDisplay.ts — the ONE locale-aware alert headline resolver (S15 relocation).
-//
-// Every alert surface (the map detail, AffectedAlerts, the /alerts history log)
-// renders an alert's headline through THIS resolver so a past alert reads exactly
-// like the live ones a rider already knows. It scrubs HTML, drops the generic
-// "your stop"/"your line" placeholders, and falls back to the shared bilingual
-// "Service alert" string — never a raw or fabricated headline.
-//
-// Pure i18n over the Alert contract shape: zero Svelte, zero DOM, provider-agnostic.
-// Lives in $lib/v1 (beside schemas/enumLabels) — hoisted out of features/map so the
-// alerts surface reads it without a cross-feature import (S15 exemption removal).
-// The map-RUNTIME helpers (buildAlertEntitySets/vehicleHasAlert) stay in
-// features/map/mapAlerts, which imports alertDisplayText from here when it needs it.
-
 import type { Locale } from '$lib/i18n';
 
-/** The shared source-copy shape carried by live, current-history, and archive alerts. */
 export interface AlertDisplaySource {
 	readonly header_key?: string | null;
 	readonly header_text?: string | null;

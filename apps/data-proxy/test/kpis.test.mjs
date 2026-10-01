@@ -1,7 +1,3 @@
-// Behavioral suite for GET /api/v1/kpis (src/kpis.js). Zero-dependency:
-// node:test + node:assert/strict + global Request/Response. The Cache API is
-// absent under node by default, so most tests exercise the memo + R2 layers;
-// the edge-cache layer is exercised via a caches.default shim below.
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
@@ -11,8 +7,6 @@ import { __resetKpisCachesForTests } from "../src/kpis.js";
 const BASE = "https://transit.yesid.dev";
 const KPIS = "/api/v1/kpis";
 
-// R2 fake for the kpis read path (plain get -> { json() }); counts reads so
-// the caching tests can assert R2 traffic, and lets bodies be swapped mid-test.
 class FakeKpisBucket {
   constructor(objects) {
     this.objects = new Map(Object.entries(objects));
@@ -31,8 +25,6 @@ function iso(msAgo) {
   return new Date(Date.now() - msAgo).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-// 10 vehicles across 6 routes; route 10 is busiest. Route 60's vehicle has no
-// usable route on one entry (null) to exercise the routesLive guard.
 function liveDocs({ snapshotMsAgo = 5_000 } = {}) {
   const stamp = iso(snapshotMsAgo);
   const vehicles = [
@@ -55,8 +47,6 @@ function liveDocs({ snapshotMsAgo = 5_000 } = {}) {
     { id: "e0", route: "50", delay_min: null },
     { id: "f0", route: null, delay_min: 1 },
   ];
-  // Tracked trips outnumber vehicles (matches prod: trips.json ~2× vehicles).
-  // Delays (min): 10 -> [2, 4], 20 -> [0], 30 -> [-1], 40 -> [5], 50 -> [null].
   const trips = {
     t1: { route: "10", delay_min: 2 },
     t2: { route: "10", delay_min: 4 },
@@ -165,17 +155,16 @@ test("GET /api/v1/kpis returns the frozen v1 contract with correct aggregation",
     `freshnessS=${body.freshnessS}`,
   );
   assert.equal(body.vehicles, 10);
-  // Trip delays with data: 2,4,0,-1,5,2 min -> mean = 2 min = 120 s.
   assert.equal(body.avgDelayS, 120);
   assert.equal(body.coverage, 0.97);
-  assert.equal(body.routesLive, 5); // route null excluded
-  assert.equal(body.routesTotal, 6); // buses only — métro (type 1) excluded
+  assert.equal(body.routesLive, 5);
+  assert.equal(body.routesTotal, 6);
   assert.deepEqual(body.topRoutes, [
     { route: "10", vehicles: 3, avgDelayS: 180 },
     { route: "20", vehicles: 2, avgDelayS: 0 },
     { route: "30", vehicles: 2, avgDelayS: -60 },
     { route: "40", vehicles: 1, avgDelayS: 300 },
-    { route: "50", vehicles: 1, avgDelayS: null }, // tracked, but no usable delay
+    { route: "50", vehicles: 1, avgDelayS: null },
   ]);
 });
 
@@ -219,7 +208,7 @@ test("freshnessS is recomputed at serve time on cache hits", async () => {
   );
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 20_000; // 20 s later, still within the 30 s cache window
+  Date.now = () => realNow() + 20_000;
   try {
     const response = await fetchKpis(env);
     assert.equal(response.headers.get("x-kpis-cache"), "hit");
@@ -294,13 +283,11 @@ for (const cacheLayer of ["memo", "edge", "revalidating"]) {
 test("expired cache serves stale and revalidates in the background (SWR)", async () => {
   const bucket = new FakeKpisBucket(liveDocs({ snapshotMsAgo: 2_000 }));
   const env = { SNAPSHOTS: bucket };
-  await fetchKpis(env); // prime
+  await fetchKpis(env);
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 45_000; // memo expired (45 s > 30 s), snapshot ~47 s (< 90 s)
+  Date.now = () => realNow() + 45_000;
   try {
-    // A fresher snapshot lands in R2 with different numbers. liveDocs stamps
-    // via the (patched) Date.now, so this is ~1 s old on the shifted clock.
     const fresher = liveDocs({ snapshotMsAgo: 1_000 });
     fresher["v1/stm/live/network.json"] = JSON.stringify({
       generated_utc: iso(1_000),
@@ -315,8 +302,8 @@ test("expired cache serves stale and revalidates in the background (SWR)", async
       ctx,
     );
     assert.equal(staleResponse.headers.get("x-kpis-cache"), "stale");
-    assert.equal((await staleResponse.json()).coverage, 0.97); // still the cached numbers
-    await ctx.settle(); // background rebuild completes
+    assert.equal((await staleResponse.json()).coverage, 0.97);
+    await ctx.settle();
 
     const revalidated = await fetchKpis(env);
     assert.equal(revalidated.headers.get("x-kpis-cache"), "hit");
@@ -329,10 +316,10 @@ test("expired cache serves stale and revalidates in the background (SWR)", async
 test("failed SWR rebuilds are throttled while the stale core remains usable", async () => {
   const bucket = new FakeKpisBucket(liveDocs({ snapshotMsAgo: 2_000 }));
   const env = { SNAPSHOTS: bucket };
-  await fetchKpis(env); // prime
+  await fetchKpis(env);
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 45_000; // cache expired, snapshot still usable
+  Date.now = () => realNow() + 45_000;
   try {
     const broken = liveDocs({ snapshotMsAgo: 1_000 });
     delete broken["v1/stm/live/vehicles.json"];
@@ -345,7 +332,7 @@ test("failed SWR rebuilds are throttled while the stale core remains usable", as
       firstCtx,
     );
     assert.equal(firstStale.headers.get("x-kpis-cache"), "stale");
-    await firstCtx.settle(); // background rebuild fails and starts the failure window
+    await firstCtx.settle();
     const readsAfterFailure = bucket.reads.length;
 
     const secondCtx = makeCtx();
@@ -366,10 +353,10 @@ test("snapshot older than 90 s returns 503 with Retry-After, even from cache", a
   const env = {
     SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 3_000 })),
   };
-  await fetchKpis(env); // prime with a healthy snapshot
+  await fetchKpis(env);
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 120_000; // pipeline stalls; cached snapshot ages out
+  Date.now = () => realNow() + 120_000;
   try {
     const response = await fetchKpis(env);
     assert.equal(response.status, 503);
@@ -447,19 +434,19 @@ test("unknown /api/v1/* paths return an uncacheable 404", async () => {
 test("a stalled trips/network lane nulls its own fields while the fresh anchor serves", async () => {
   const docs = liveDocs();
   docs["v1/stm/live/trips.json"] = JSON.stringify({
-    generated_utc: iso(2_700_000), // 45 min stale
+    generated_utc: iso(2_700_000),
     trips: { t: { route: "10", delay_min: 25 } },
   });
   docs["v1/stm/live/network.json"] = JSON.stringify({
-    generated_utc: iso(259_200_000), // 3 days stale
+    generated_utc: iso(259_200_000),
     coverage_pct: 12,
   });
   const env = { SNAPSHOTS: new FakeKpisBucket(docs) };
   const response = await fetchKpis(env);
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.avgDelayS, null); // never the 45-min-old delays
-  assert.equal(body.coverage, null); // never the 3-day-old coverage
+  assert.equal(body.avgDelayS, null);
+  assert.equal(body.coverage, null);
   assert.equal(body.vehicles, 10);
   assert.equal(body.topRoutes[0].avgDelayS, null);
 });
@@ -467,7 +454,7 @@ test("a stalled trips/network lane nulls its own fields while the fresh anchor s
 test("a stalled vehicles anchor is cold (503) even when trips are fresh", async () => {
   const docs = liveDocs();
   docs["v1/stm/live/vehicles.json"] = JSON.stringify({
-    generated_utc: iso(2_700_000), // 45 min stale
+    generated_utc: iso(2_700_000),
     vehicles: [{ id: "a", route: "10", delay_min: 1 }],
   });
   const env = { SNAPSHOTS: new FakeKpisBucket(docs) };
@@ -492,7 +479,7 @@ test("cold-pipeline rebuilds are negative-cached — no per-request R2 amplifica
   assert.equal((await fetchKpis(env)).status, 503);
   const readsAfterFirst = bucket.reads.length;
   assert.equal((await fetchKpis(env)).status, 503);
-  assert.equal(bucket.reads.length, readsAfterFirst); // served from the failure memo
+  assert.equal(bucket.reads.length, readsAfterFirst);
 });
 
 test("pipeline recovery is picked up on the next rebuild window after a cold spell", async () => {
@@ -503,11 +490,11 @@ test("pipeline recovery is picked up on the next rebuild window after a cold spe
   assert.equal((await fetchKpis(env)).status, 503);
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 11_000; // past the 10 s failure memo
+  Date.now = () => realNow() + 11_000;
   try {
     bucket.objects = new Map(
       Object.entries(liveDocs({ snapshotMsAgo: 2_000 })),
-    ); // fresh publish
+    );
     const response = await fetchKpis(env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-kpis-cache"), "miss");
@@ -532,13 +519,13 @@ test("edge cache (Cache API) carries the core across isolate recycles", async ()
   try {
     const bucket = new FakeKpisBucket(liveDocs());
     const env = { SNAPSHOTS: bucket };
-    await fetchKpis(env); // miss -> builds core, writes the edge cache
-    __resetKpisCachesForTests(); // isolate recycle: memo gone, colo cache kept
+    await fetchKpis(env);
+    __resetKpisCachesForTests();
     const readsBefore = bucket.reads.length;
     const response = await fetchKpis(env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-kpis-cache"), "hit");
-    assert.equal(bucket.reads.length, readsBefore); // served from the edge cache, no R2
+    assert.equal(bucket.reads.length, readsBefore);
   } finally {
     delete globalThis.caches;
   }

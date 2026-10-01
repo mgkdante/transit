@@ -289,9 +289,6 @@
 			background-color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default);
 	}
-	/* THE amber conversion CTA (§C1/§C5.2, operator-CONFIRMED): the ONE signage-pair
-	   yellow per view — amber #FFB627 ground (--accent) / #1C1814 ink (--accent-
-	   foreground). No other yellow anywhere. min 44px tap target. */
 	.map-near-toggle {
 		display: inline-flex;
 		align-items: center;
@@ -308,7 +305,6 @@
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
 	}
-	/* The amber CTA keeps its signage colour when open; the icon reads on the ink. */
 	.map-near-toggle:hover,
 	.map-near-toggle:focus-visible,
 	.map-near-toggle[aria-expanded='true'] {
@@ -316,8 +312,6 @@
 		background: color-mix(in srgb, var(--accent) 88%, var(--accent-foreground) 12%);
 		border-color: var(--accent);
 	}
-	/* The near-me toggle's icon rides the ink colour (it sits on the amber ground),
-	   overriding the shared --primary icon rule below. */
 	.map-near-toggle :global(.map-near-icon) {
 		color: var(--accent-foreground);
 	}
@@ -352,7 +346,6 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px), see .map-near-toggle. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 	}
@@ -426,8 +419,6 @@
 		gap: 0.25rem;
 		max-height: min(18rem, calc(100dvh - 10rem));
 		overflow-y: auto;
-		/* Reserve the scrollbar track so the suggestion rows do not shift left
-		   the moment the list grows tall enough to scroll. */
 		scrollbar-gutter: stable;
 		padding: 0.375rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);

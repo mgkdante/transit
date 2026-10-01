@@ -1,10 +1,3 @@
-"""Real-DB parity + honest-absence gate for the S7-B windowable §2 headway build (DB-PR-2).
-
-Self-skips when TRANSIT_TEST_DATABASE_URL is unset (the real-db-tests job sets it). Seeds
-gold.route_headway_shift_daily DIRECTLY (the recompose reads only that table) with rows that
-CLEAR the n>=2 guard, so the CoV / median / argmax paths run real assertions (the DB-PR-1
-lesson: a too-sparse seed makes the tests vacuous).
-"""
 
 from __future__ import annotations
 
@@ -20,11 +13,10 @@ from transit_ops.snapshots.builders.historic._spine import _headway_by_grain
 
 _PROVIDER = "stm_dense_hw"
 _ROUTE = "H1"
-_D = date(2026, 6, 1)  # one date inside every grain window (anchor = max(date) = _D)
+_D = date(2026, 6, 1)
 
 
 def _bin(gap: float) -> int:
-    # Replicates the builder's LEAST(GREATEST(width_bucket(gap, EDGES), 1), 20) - 1.
     return min(max(bisect.bisect_right(EDGES, gap), 1), 20) - 1
 
 
@@ -41,7 +33,6 @@ def _moments(gaps: list[float]) -> tuple[int, float, float]:
 
 @contextmanager
 def _seeded(rows, real_db_engine, seed_provider):  # noqa: ANN001
-    """rows = list of (shift, direction_id, trip_count, gaps[]). Seeds one date (_D)."""
     with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
@@ -70,8 +61,6 @@ def _params() -> dict:
 
 
 def test_cov_recompose_byte_identical_to_sample_sd_over_mean(real_db_engine, seed_provider) -> None:
-    """D2: the recomposed CoV (Bessel n-1 pooled SD / mean, computed in SQL) is byte-identical
-    to statistics.stdev(gaps)/mean(gaps) — the legacy stddev_samp semantics."""
     gaps = [4.0, 5.0, 6.0, 7.0, 8.0]
     with _seeded([("am_peak", 0, 10, gaps)], real_db_engine, seed_provider) as conn:
         out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
@@ -84,13 +73,8 @@ def test_cov_recompose_byte_identical_to_sample_sd_over_mean(real_db_engine, see
 def test_busiest_direction_argmax_on_trip_count_not_gap_count(
     real_db_engine, seed_provider
 ) -> None:
-    """D5 (discriminating): the published shift comes from the direction with the larger
-    SUM(trip_count), even when that direction has FEWER gaps. dir 0 has n=2 gaps but
-    trip_count=20 (busiest); dir 1 has n=5 gaps but trip_count=3. A gap_count-based argmax
-    would pick dir 1 (n=5) -> we'd see observation_count=5; the correct trip_count argmax
-    picks dir 0 -> observation_count=2."""
-    few_gaps_busy = [5.0, 5.0]  # dir 0: n=2, trip_count=20 (BUSIEST by trips)
-    many_gaps_quiet = [4.0, 5.0, 6.0, 7.0, 8.0]  # dir 1: n=5, trip_count=3
+    few_gaps_busy = [5.0, 5.0]
+    many_gaps_quiet = [4.0, 5.0, 6.0, 7.0, 8.0]
     with _seeded(
         [("am_peak", 0, 20, few_gaps_busy), ("am_peak", 1, 3, many_gaps_quiet)],
         real_db_engine,
@@ -102,25 +86,19 @@ def test_busiest_direction_argmax_on_trip_count_not_gap_count(
 
 
 def test_median_is_cdf_interp_rebaseline_and_ewt(real_db_engine, seed_provider) -> None:
-    """D3: observed_min is the histogram CDF-interp median (a documented rebaseline, in range);
-    FIX-1: excess_wait is the TRUE passenger-weighted Excess Wait Time computed from the pooled
-    moments, EWT = max(0, sum(g^2)/(2*sum(g)) - scheduled/2) — NOT the old max(0, median-scheduled)
-    gap proxy (for these gaps the median≈6 → proxy≈1.0, while EWT≈0.7; they differ)."""
     gaps = [4.0, 5.0, 6.0, 7.0, 8.0]
     with _seeded([("am_peak", 0, 10, gaps)], real_db_engine, seed_provider) as conn:
         out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
     am = next(p for p in out["month"].headway if p.shift == "am_peak")
     assert am.observed_min is not None and 4.0 <= am.observed_min <= 8.0
-    _n, sg, sq = _moments(gaps)  # 5, 30.0, 190.0 → AWT = 190/60 = 3.1667
-    expected_ewt = round(max(0.0, sq / (2.0 * sg) - 5.0 / 2.0), 1)  # max(0, 0.6667) = 0.7
+    _n, sg, sq = _moments(gaps)
+    expected_ewt = round(max(0.0, sq / (2.0 * sg) - 5.0 / 2.0), 1)
     assert expected_ewt == 0.7
     assert am.excess_wait_min == expected_ewt
 
 
 def test_cross_day_week_grain_pools_moments(real_db_engine, seed_provider) -> None:
-    """S3: the week grain SUMS moments across distinct days (not 'newest day only'). Two days in
-    the week window with different gaps -> week CoV + n == the pooled cross-check over both days."""
-    d1, d2 = date(2026, 6, 1), date(2026, 6, 2)  # anchor = max = d2; week window covers both
+    d1, d2 = date(2026, 6, 1), date(2026, 6, 2)
     day1, day2 = [4.0, 6.0], [5.0, 5.0]
     with real_db_engine.connect() as conn:
         tx = conn.begin()
@@ -146,7 +124,6 @@ def test_cross_day_week_grain_pools_moments(real_db_engine, seed_provider) -> No
 
 
 def test_honest_absence_empty_window_omits_grain(real_db_engine) -> None:
-    """A route with no headway rows -> _headway_by_grain returns [] (no fabricated buckets)."""
     with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
@@ -157,9 +134,7 @@ def test_honest_absence_empty_window_omits_grain(real_db_engine) -> None:
 
 
 def test_prior_window_attached_when_prior_has_data(real_db_engine, seed_provider) -> None:
-    """The prior-window n + observed median attach to the day grain when the prior day has gaps."""
     gaps = [4.0, 5.0, 6.0, 7.0, 8.0]
-    # seed BOTH the anchor day and the day before it (the day-grain prior window).
     with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
@@ -171,12 +146,12 @@ def test_prior_window_attached_when_prior_has_data(real_db_engine, seed_provider
                 "VALUES (:p, :r, :d, 'am_peak', 0, :n, :sg, :sq, 0, 10, CAST(:h AS smallint[]))"
             )
             n, sg, sq = _moments(gaps)
-            for d in (date(2026, 6, 2), date(2026, 6, 1)):  # anchor + the prior day
+            for d in (date(2026, 6, 2), date(2026, 6, 1)):
                 conn.execute(ins, {"p": _PROVIDER, "r": _ROUTE, "d": d, "n": n, "sg": sg, "sq": sq,
                                    "h": "{" + ",".join(str(x) for x in _hist(gaps)) + "}"})
             out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
         finally:
             tx.rollback()
     am = next(p for p in out["day"].headway if p.shift == "am_peak")
-    assert am.prior_observation_count == 5  # identical prior day
+    assert am.prior_observation_count == 5
     assert am.prior_observed_min == am.observed_min

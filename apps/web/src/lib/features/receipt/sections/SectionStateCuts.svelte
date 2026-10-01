@@ -31,8 +31,6 @@
 <section class="receipt-states" data-slot="receipt-state-cuts" aria-label={heading}>
 	<SectionHeading level={headingLevel} overline={heading} />
 
-	<!-- The ONE completeness reading (heroed from service_completeness_pct). A null
-	     reading reads the styled honest-absence chip + the ramp-in note, never a 0. -->
 	<div class="receipt-states-hero" data-slot="receipt-completeness">
 		<ExplainedMetricCard
 			label={completenessLabel}
@@ -49,13 +47,10 @@
 		</ExplainedMetricCard>
 	</div>
 
-	<!-- The delivered / cancelled / silent share bars on the absolute [0,100] whole. -->
 	<div class="receipt-states-split" data-slot="receipt-state-split">
 		<SectionLabel text={splitLabel} variant="metric" />
 		<div class="receipt-states-list" role="list" aria-label={splitLabel}>
 			{#each state.rows as row (row.key)}
-				<!-- A FIXED-category split (delivered/cancelled/silent) — the row order is the
-				     meaning, so the 1..N ordinal is suppressed (showRank=false, doctrine). -->
 				<RankedRow
 					rank={0}
 					showRank={false}
@@ -80,9 +75,6 @@
 		gap: 0.875rem;
 	}
 	.receipt-states-hero {
-		/* Structural KPI-card wrapper (ExplainedMetricCard), NOT prose — the
-		   lane keeps its calibrated cap; measure tokens never apply (S5-382 B1,
-		   A4 "never prose tokens" law). Path-excluded from the A6 gate. */
 		max-width: 24rem;
 	}
 	.receipt-states-split {

@@ -358,11 +358,6 @@ def _has_field(message, field_name: str) -> bool:  # noqa: ANN001
 
 
 def _manifest_provider_bounds(manifest: ProviderManifest) -> ProviderBounds | None:
-    """Convert a provider manifest's WGS84 bounds into ProviderBounds, if set.
-
-    Bounds are optional per provider; when absent the position-quality check
-    falls back to a generic WGS84 validity test (no bbox).
-    """
     bounds = manifest.provider.bounds
     if bounds is None:
         return None
@@ -1225,7 +1220,6 @@ def load_latest_realtime_snapshots_to_silver(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
 ) -> list[RealtimeSilverLoadResult]:
-    """Verify a frozen newest-archive selection for the requested realtime lanes."""
     endpoints = tuple(dict.fromkeys(endpoint_keys))
     if any(endpoint not in {"trip_updates", "vehicle_positions"} for endpoint in endpoints):
         raise ValueError("Archived realtime selection supports trip_updates and vehicle_positions")
@@ -1274,7 +1268,6 @@ def replay_realtime_silver_window(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
 ) -> RealtimeSilverBatchLoadResult:
-    """Restore a captured window and retain proof for scoped Gold projection."""
 
     settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(

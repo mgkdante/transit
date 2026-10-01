@@ -1,13 +1,3 @@
-<!--
-  SectionTimeOfDay — the receipt's by-shift time-of-day cut (S13, NEW).
-
-  Pure presenter of selectReceiptTimeOfDay: the day's severe-delay share ranked worst-
-  first by canonical shift, each a RankedRow SeverityBar on the FIXED absolute
-  SEVERE_DOMAIN [0,100] (doctrine-coded — never the in-view max). Mounted by the
-  orchestrator only when hasTimeOfDay (RAMP-IN: by_shift is additive-optional). A
-  receipt line-group below the frame — a documented hoist because a ranked severity
-  ladder genuinely breaks the compact terminal-tile metaphor (WEB4).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';

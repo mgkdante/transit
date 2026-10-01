@@ -1,7 +1,3 @@
-<!-- Floating navigation rail with an anchored menu at every width. Compact
-     layouts retain the primary links and search in the menu. CSS sets the pill
-     height per breakpoint; no runtime measurement is needed. Active links use
-     the interactive primary color and a small indicator, without text glow. -->
 <script lang="ts">
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
@@ -24,9 +20,6 @@
 	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
 	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { navPillCopy } from './navPill.copy';
-	// F (motion wiring): the pill nav links carry a subtle magnetic cursor-pull
-	// (≤3px). magnetic is MOTION-GATED — the vendored action no-ops under
-	// prefers-reduced-motion and on touch devices. Never edited.
 	import { magnetic } from '@yesid/motion';
 	import BrandWordmark from './BrandWordmark.svelte';
 	import RefreshButton from './RefreshButton.svelte';
@@ -34,34 +27,16 @@
 	import LangSwitch from './LangSwitch.svelte';
 
 	interface NavPillProps {
-		/** Active request locale; omitted → getLocale() context. */
 		locale?: Locale;
-		/** Full current URL — the language switch preserves path + query + hash. */
 		url?: URL;
-		/** Active provider display name (manifest.display_name). */
 		providerName?: string;
-		/** Snappy provider brand (manifest.short_name, e.g. "STM"). */
 		providerShortName?: string;
-		/** Current value of the multi-value search field (bindable). */
 		search?: string;
-		/** Fired when the search field is submitted (Enter). */
 		onsearch?: (value: string) => void;
-		/** Search matches shown under the chrome field. */
 		searchResults?: readonly ChromeSearchResult[];
-		/** Active surface scope — drives the scoped placeholder hint. */
 		searchScope?: ChromeSearchScope;
-		/**
-		 * Transit modes picked in the focus dropdown. The OWNER of the set is the
-		 * layout, which feeds it back into the blend — the chips here mutate it in
-		 * place (SvelteSet is reactive), so no bind: round-trip is needed. Besides
-		 * the chips, this chrome also CLEARS the set when the scope stops being
-		 * mixed (the REGATE-m6i cure effect below): the chips exist only where the
-		 * blend is mixed, and a narrowing must not outlive its on-screen control.
-		 */
 		searchModes?: SvelteSet<TransitModeKey>;
-		/** Fired when a search result is selected. */
 		onresultselect?: (result: ChromeSearchResult) => void;
-		/** Locales offered in the switcher; defaults to the published set. */
 		availableLocales?: readonly Locale[];
 		class?: string;
 	}
@@ -81,7 +56,6 @@
 		class: className,
 	}: NavPillProps = $props();
 
-	// Prop wins (persistent chrome); fall back to context for isolated renders.
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 	const currentPath = $derived(delocalizePath(url.pathname));
@@ -116,17 +90,10 @@
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
 	const navAria = $derived(locale === 'fr' ? 'Navigation principale' : 'Primary navigation');
-	// The menu remains visually flat. These strings are group aria-labels so
-	// assistive tech can distinguish primary and audit destinations.
 	const auditLabel = $derived(footerCopy[locale].auditLabel);
 	const navCopy = $derived(navPillCopy[locale]);
 	const searchCollectionNotice = $derived(navCopy.searchCollectionNotice);
-	// Route/stop-scoped surfaces never fire the geocode fetch, so a transmission
-	// notice there would claim what does not happen (S5-377 B3).
 	const transmitsSearches = $derived(searchScope === 'map' || searchScope === 'all');
-	// A scoped catalogue's blend is ALREADY one family (chromeSearchResults returns
-	// lines only on /lines, stops only on /stops), so a family filter there could
-	// read nothing but "(0)". Offer it where the blend is genuinely mixed (M6i F26).
 	const blendIsMixed = $derived(searchScope === 'map' || searchScope === 'all');
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	const yesidHouseLabel = $derived(YESID_HOUSE_LINK.label[locale]);
@@ -167,24 +134,12 @@
 	);
 
 	let menuOpen = $state(false);
-	// The hamburger toggle, so closing the menu (Escape / backdrop / nav-link) can
-	// return focus to its trigger — the pill is now the only mobile nav escape.
 	let menuToggle = $state<HTMLButtonElement>();
 	let searchResultsOpen = $state(true);
 	let rootEl = $state<HTMLElement>();
-	// The pill capsule — measured so the anchored dropdown can pin its right edge to the
-	// pill's. While open, the published inset is menuRail.right − pill.right; without the
-	// wrapper it falls back to window.innerWidth − pill.right. At E = 0 they are identical.
 	let pillEl = $state<HTMLElement>();
-	// First menu-item, so opening the menu can move keyboard focus INTO the dropdown
-	// (the backdrop is no longer a focusable dismiss control).
 	let menuEl = $state<HTMLElement>();
 
-	// Which result FAMILY the dropdown shows. Like the search surface, the family
-	// control is a visibility gate over the blend, not a matching filter — so the
-	// per-family counts below stay truthful while one family is on screen. (The
-	// MODE chips are a matching filter and run inside the blend; the layout owns
-	// that set and feeds it back to chromeSearchResults.)
 	let searchFamily = $state<SearchScopeKey>('all');
 	const familyOf = (result: ChromeSearchResult): SearchScopeKey =>
 		result.kind === 'address' ? 'all' : result.kind;
@@ -193,13 +148,6 @@
 			? searchResults
 			: searchResults.filter((result) => familyOf(result) === searchFamily),
 	);
-	// A narrowing must never outlive its on-screen control (REGATE-m6i FIRE). The
-	// family segments and the mode chips exist only where the blend is mixed
-	// (`filters={blendIsMixed}` below), but this chrome is PERSISTENT — navigation
-	// swaps `searchScope` on the same instance. So when the scope stops being
-	// mixed, reset both at the point their control unmounts; otherwise a family or
-	// mode picked on /map keeps filtering the /lines catalogue with no visible
-	// cause and nothing on screen to clear it.
 	$effect(() => {
 		if (blendIsMixed) return;
 		searchFamily = 'all';
@@ -233,14 +181,8 @@
 	const showSearchResults = $derived(
 		searchResultsOpen && search.trim().length > 0 && visibleResults.length > 0,
 	);
-	// The pill widens the moment the menu opens (per yesid's compact tier); no box
-	// shadow while open so the dropdown reads as the elevated layer.
 	const overlayActive = $derived(menuOpen);
 
-	// Pin the dropdown's right edge to the pill's at every width. The open menu rail
-	// supplies menuRail.right − pill.right; when absent, window.innerWidth − pill.right
-	// preserves the legacy measure (and is identical at E = 0). The FR/EN app is LTR,
-	// so the rail's inset-inline-start maps to left. Resync on open, resize and transition.
 	function syncPillAnchor(): void {
 		if (typeof window === 'undefined' || !rootEl || !pillEl) return;
 		const rect = pillEl.getBoundingClientRect();
@@ -265,8 +207,6 @@
 		syncPillAnchor();
 	});
 
-	// Focus goes into the menu container on open; closeMenu() returns it to the
-	// hamburger. Search is a persistent compact top-bar destination, not menu content.
 	$effect(() => {
 		if (!menuOpen || !menuEl) return;
 		menuEl.focus();
@@ -300,7 +240,6 @@
 		menuOpen = !menuOpen;
 	}
 
-	// Close the menu and return focus to its trigger (Escape / backdrop / nav-link).
 	function closeMenu(): void {
 		if (!menuOpen) return;
 		menuOpen = false;
@@ -359,10 +298,6 @@
 			data-slot="nav-pill"
 			ontransitionend={onPillTransitionEnd}
 		>
-			<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
-		     yesid.dev product, but here the pill wordmark is the PRODUCT home (the
-		     parent-brand "Yesid" link lives in the menu), so it reads "Transit" with
-		     the orange terminal dot and routes to the dashboard root. -->
 			<BrandWordmark
 				href={localizeHref('/', locale)}
 				text="Transit"
@@ -372,9 +307,6 @@
 
 			<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-			<!-- PRIMARY LINKS: Map / Lines / Stops / Network. Shown ≥lg; below lg the pill
-		     drops them (they'd push the controls + hamburger off-screen) and the menu
-		     dropdown carries them instead — the hamburger is the compact nav entry. -->
 			<div class="nav-links" data-slot="nav-links">
 				{#each navItems as item (item.key)}
 					<a
@@ -390,7 +322,6 @@
 
 			<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-			<!-- SEARCH: a compact in-pill field ≥lg; compact widths use the icon below. -->
 			<form class="nav-search" role="search" onsubmit={submitSearch} data-slot="nav-search">
 				<SearchIcon class="nav-search-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
 				<input
@@ -407,17 +338,9 @@
 					aria-describedby={transmitsSearches ? 'nav-search-notice' : undefined}
 				/>
 				{#if transmitsSearches}
-					<!-- The sr-only node is the ALWAYS-PRESENT describedby target, so browse-
-				     mode screen-reader users can still discover the disclosure idle; the
-				     visible twin lives in the dropdown below and is decorative + focus-gated. -->
 					<span id="nav-search-notice" class="sr-only">{searchCollectionNotice}</span>
 				{/if}
 
-				<!-- THE FOCUS DROPDOWN (M6i F25/F26). One anchored surface, opened by the
-				     same focus gate the bare notice used to carry, holding the disclosure,
-				     the search page's own filters, and the results — in that order. It is
-				     ALWAYS in the DOM (the gate is CSS, not conditional rendering) and its
-				     box is transparent, so an empty dropdown paints nothing. -->
 				<div class="nav-search-panel" data-slot="nav-search-panel">
 					<SearchControls
 						variant="panel"
@@ -455,7 +378,6 @@
 
 			<span class="nav-divider" aria-hidden="true"></span>
 
-			<!-- CONTROLS: refresh · compact search · theme signal · language · menu. -->
 			<div class="nav-controls" data-slot="nav-controls">
 				<RefreshButton {locale} class="nav-control" />
 				<a
@@ -486,11 +408,6 @@
 	</div>
 
 	{#if menuOpen}
-		<!-- Scrim + click-away dismiss. A real, LABELLED dismiss control (NOT
-		     aria-hidden — an aria-hidden element that owns/contains focus trips the
-		     "Blocked aria-hidden … retained focus" console error). tabindex=-1 keeps it
-		     out of the tab sequence (keyboard dismisses via Escape); focus lives inside
-		     the menu, so nothing focusable hides behind an aria-hidden ancestor. -->
 		<button
 			type="button"
 			class="nav-menu-backdrop"
@@ -510,10 +427,6 @@
 				data-testid="nav-menu"
 				data-slot="nav-menu"
 			>
-				<!-- PRIMARY (compact only, <lg): the in-pill .nav-links row is hidden below lg,
-			     so the dropdown carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
-			     the pill's own link row is the desktop entry. FLAT — no visible heading;
-			     the group aria-label carries the wayfinding grouping for AT. -->
 				<div
 					class="nav-menu-primary-group"
 					role="group"
@@ -532,9 +445,6 @@
 					{/each}
 				</div>
 
-				<!-- AUDIT (accountability/meta) surfaces — a flat continuation of the
-			     destination list, no visible heading; a quiet hairline (CSS) is the only
-			     separator from the primaries. The group aria-label is AT-only. -->
 				<div class="nav-menu-group" role="group" aria-label={auditLabel} data-slot="nav-menu-audit">
 					{#each auditItems as item (item.key)}
 						<a
@@ -549,8 +459,6 @@
 				</div>
 
 				{#if compactLanguageTarget}
-					<!-- At phone widths narrower than 360px, five 44px top controls cannot fit.
-				     The signpost moves here without removing the locale path from navigation. -->
 					<a
 						href={compactLanguageTarget.href}
 						class="nav-menu-language"
@@ -564,9 +472,6 @@
 					</a>
 				{/if}
 
-				<!-- Parent-brand "Yesid" link OUT to yesid.dev — the final menu row, with an
-			     external ↗ affordance + rel="noopener". This replaces the old pill-click
-			     house link (the pill wordmark now reads "Transit"). -->
 				<a
 					href={YESID_HOUSE_LINK.href}
 					target="_blank"
@@ -586,19 +491,11 @@
 </nav>
 
 <style>
-	/* --pill-h is the deterministic per-breakpoint pill height (content 44px +
-	   2·padV + 2·2px border) published on :root by PLAIN CSS, so the single
-	   --chrome-offset knob (AppShell) tracks it with no JS measurement. Desktop
-	   pad 12 → 72px; ≤767 pad 8 → 64px; ≤479 pad 6 → 60px. */
 	:root {
 		--pill-h: 72px;
 		--app-effective-rail-offset: 0px;
 	}
 
-	/* The fixed, full-width rail: pointer-events-none so the map/content underneath
-	   stays interactive edge-to-edge; the pill re-enables events on itself. Top
-	   inset folds in the notch safe-area. z = --z-nav (above the rail + detail
-	   overlays; the map chrome caps under it). */
 	.nav-root {
 		position: fixed;
 		inset-block-start: calc(1rem + env(safe-area-inset-top, 0px));
@@ -610,12 +507,6 @@
 		pointer-events: none;
 	}
 
-	/* The remaining-width query container (M6a): sized by the :root rail channel so
-	   container queries stage the pill against R = viewport − rail. z-index is
-	   MANDATORY — container-type implies layout containment, whose stacking context
-	   would otherwise paint the pill below the --z-menu backdrop. 100vw (never 100%)
-	   keeps R ≡ the @media basis at E=0 (100% excludes the classic scrollbar). The
-	   pill's position comes from its own translateX(−E/2) — this box never anchors. */
 	.nav-rail {
 		position: relative;
 		z-index: var(--z-nav);
@@ -626,9 +517,6 @@
 		container-name: nav-rail;
 	}
 
-	/* The pill — the yesid capsule chassis (SOLID-family glass): --radius-pill,
-	   2px --border-brand, 92% background mix, blur(16px), --shadow-nav. Intrinsic
-	   width (grows/shrinks with content), centred. pointer-events re-enabled. */
 	.nav-pill {
 		pointer-events: auto;
 		position: relative;
@@ -651,14 +539,11 @@
 		transform: translateX(calc(var(--app-effective-rail-offset, 0px) * -0.5));
 	}
 
-	/* Menu-open (compact) tier: tighten to 12/20 and drop the shadow so the
-	   dropdown reads as the elevated layer. */
 	.nav-pill-compact {
 		padding: 12px 20px;
 		box-shadow: none;
 	}
 
-	/* Orange vertical delimiters — 2px × 18px, brand tint, 20px inline margin. */
 	.nav-divider {
 		flex: none;
 		width: 2px;
@@ -667,24 +552,16 @@
 		background: var(--border-brand);
 	}
 
-	/* Dividers that flank the below-lg-hidden primary links + search: collapse with
-	   them so the compact pill keeps one brand→controls delimiter, not empty rules. */
 	.nav-divider-collapsible {
 		display: none;
 	}
 
-	/* The in-pill primary links are a ≥lg affordance: below lg they are removed (the
-	   menu dropdown's Explore group carries them), so the controls + hamburger never get
-	   pushed off the pill's right edge on a compact viewport. */
 	.nav-links {
 		display: none;
 		align-items: center;
 		gap: 28px;
 	}
 
-	/* Nav link — 15px/500, --secondary-foreground at rest, --primary active/hover.
-	   The 44px hit area is guaranteed by min-height + centred flex. Active carries
-	   a 3×3 amber dot at bottom 4px; NO text-shadow (glow-never-text). */
 	.nav-pill-link {
 		position: relative;
 		display: inline-flex;
@@ -716,7 +593,6 @@
 		color: var(--primary);
 	}
 
-	/* The "you are here" dot — 3×3 amber, centred, 4px above the baseline edge. */
 	.nav-pill-link[aria-current='page']::after {
 		content: '';
 		position: absolute;
@@ -729,7 +605,6 @@
 		transform: translateX(-50%);
 	}
 
-	/* SEARCH — full field at ≥lg. Compact widths get a persistent icon in controls. */
 	.nav-search {
 		position: relative;
 		display: none;
@@ -767,27 +642,10 @@
 	.nav-search-input:focus-visible {
 		border-color: var(--primary);
 		background: var(--muted);
-		/* Carry the same amber ring every other control earns (SearchInput, nav
-		   links) — the border-color shift alone was too quiet for a keyboard focus. */
 		outline: none;
 		box-shadow: 0 0 0 2px var(--ring);
 	}
 
-	/* THE FOCUS DROPDOWN (M6i F25) — the disclosure's real home.
-
-	   ANCHOR: 1.75rem below the field, the SAME offset the result list has always
-	   used. At the only widths where the in-pill field renders (viewport ≥1024px
-	   AND rail ≥1024px) the pill's box is deterministic — 2px border + 12px pad +
-	   a 44px control band + 12px pad + 2px border = --pill-h 72px — and the 36px
-	   field is centred in that band, so the field's bottom sits 54px under the
-	   pill's top and the pill's own edge is 18px further down. 1.75rem = 28px
-	   clears that edge by 10px. The disclosure previously anchored at 0.25rem
-	   (4px) with `white-space: nowrap` pinning it to 448px, so it painted 448×14
-	   straight across the pill — the whole of its own area.
-
-	   The box itself is TRANSPARENT: each child (the SearchControls card, the
-	   result list) carries its own chrome, so a dropdown with nothing to say
-	   paints nothing. */
 	.nav-search-panel {
 		position: absolute;
 		z-index: var(--z-nav);
@@ -797,20 +655,7 @@
 		flex-direction: column;
 		gap: 0.375rem;
 		width: min(max(100%, 28rem), calc(100vw - 2rem));
-		/* The dropdown is taller than the one-line notice it replaces, so it earns an
-		   explicit floor: its own top edge measured back out of the viewport (rail
-		   inset + --pill-h + the 10px it clears the pill by), less a 1rem gutter. The
-		   result list is the flexible child, so a short viewport shrinks the SCROLL
-		   area instead of pushing the dropdown off-screen. */
 		max-height: calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - var(--pill-h) - 10px - 1rem);
-		/* Focus-gated (owner directive 2026-07-31): the transmission disclosure
-		   appears only while the search is in use — idle chrome stays quiet. The
-		   visible copy inside is decorative (aria-hidden); its sr-only twin on the
-		   form keeps the disclosure discoverable in browse mode and is the
-		   describedby target. Opacity-only (no movement); asymmetric timing —
-		   prompt in (fast), receding out (normal) — so it never blinks off
-		   mid-read. `visibility` also keeps the dropdown's controls out of the tab
-		   order while it is closed. */
 		opacity: 0;
 		visibility: hidden;
 		transition:
@@ -818,8 +663,6 @@
 			visibility 0s linear var(--duration-normal);
 	}
 
-	/* In use = focus anywhere in the form OR the results list open (a pointerdown
-	   elsewhere in the pill can drop focus while the list stays up). */
 	.nav-search:focus-within .nav-search-panel,
 	.nav-search:has(.nav-search-results) .nav-search-panel {
 		opacity: 1;
@@ -835,7 +678,6 @@
 		gap: 0.375rem;
 	}
 
-	/* Every pill control is a ≥44px hit area by construction. */
 	.nav-controls :global(.nav-control) {
 		min-width: 44px;
 		min-height: 44px;
@@ -865,7 +707,6 @@
 		outline-offset: 1px;
 	}
 
-	/* Hamburger — morphs to an ✕ on open. 44×44 hit area, brand-tint lines. */
 	.nav-menu-toggle {
 		display: inline-flex;
 		flex-direction: column;
@@ -924,9 +765,6 @@
 		transform: translateY(-3.25px) rotate(-45deg);
 	}
 
-	/* MENU — one anchored dropdown at every width. Compact widths retain the
-	   primary group; ≥1024 hides that duplicate because the pill owns
-	   them. The transparent backdrop remains the click-away dismiss surface. */
 	.nav-menu-backdrop {
 		position: fixed;
 		inset: 0;
@@ -937,12 +775,6 @@
 		pointer-events: auto;
 	}
 
-	/* The menu's positioned host (Amendments I/J/K): a same-named query container so
-	   the S4 fold reaches the menu subtree, and a FIXED, full-height, left-anchored,
-	   width-R box so the ABSOLUTE menu inside anchors deterministically against its
-	   right edge (V − E) in every browser — real Chrome does not treat container-type
-	   containment as a fixed containing block, so `fixed` here would silently resolve
-	   against the viewport instead. pointer-events: none — the menu re-enables its own. */
 	.nav-menu-rail {
 		position: fixed;
 		inset-block: 0;
@@ -976,11 +808,8 @@
 		overscroll-behavior: contain;
 		padding: 0.65rem;
 		border-radius: var(--radius-xl);
-		/* .glass-chrome supplies background + hairline + blur + shadow. */
 	}
 
-	/* Preserve the existing tablet/desktop cap; every other dropdown declaration
-	   now lives in the base rule so phones use the same presentation. */
 	@media (min-width: 768px) {
 		.nav-menu {
 			max-height: min(calc(100dvh - var(--pill-h) - 3rem), 34rem);
@@ -1007,17 +836,12 @@
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	/* Audit sits under a hairline; Explore leads the compact dropdown. */
 	.nav-menu-group {
 		margin-top: 0.5rem;
 		padding-top: 0.5rem;
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	/* The in-pill primary links + full search are hidden below lg; the dropdown's
-	   Explore group is hidden at and above lg (the pill is the desktop entry). The
-	   two dividers flanking the hidden links/search collapse with them so a compact
-	   pill reads Brand · | · Controls, not three empty rules. */
 	@media (min-width: 1024px) {
 		.nav-links {
 			display: flex;
@@ -1039,7 +863,6 @@
 		}
 	}
 
-	/* S2: the frozen desktop switch, now driven by remaining width. */
 	@container nav-rail (width < 1024px) {
 		.nav-search {
 			display: none;
@@ -1049,7 +872,6 @@
 		}
 	}
 
-	/* S3: FR-conservative fit is 799px; keep type and 44px targets untouched. */
 	@container nav-rail (width < 799px) {
 		.nav-pill {
 			padding: 12px 20px;
@@ -1062,7 +884,6 @@
 		}
 	}
 
-	/* S4: the tightened FR composition needs 705px; fold links into Explore below it. */
 	@container nav-rail (width < 705px) {
 		.nav-links {
 			display: none;
@@ -1143,7 +964,6 @@
 		outline: none;
 	}
 
-	/* The external ↗ affordance rides muted until the row is hover/focused. */
 	.nav-menu-house :global(svg) {
 		flex: none;
 		color: var(--muted-foreground);
@@ -1165,12 +985,10 @@
 		white-space: nowrap;
 	}
 
-	/* The control card keeps its intrinsic height; only the result list gives way. */
 	.nav-search-panel > :global([data-slot='search-controls']) {
 		flex: none;
 	}
 
-	/* SEARCH RESULTS — the dropdown's second card (the panel owns the anchor). */
 	.nav-search-results {
 		min-width: 0;
 		min-height: 0;
@@ -1241,7 +1059,6 @@
 		color: var(--muted-foreground);
 	}
 
-	/* PADDING + PILL-HEIGHT TIERS — deterministic --pill-h = 44 + 2·padV + 2·2px. */
 	@media (max-width: 1023.98px) {
 		.nav-links {
 			gap: 18px;

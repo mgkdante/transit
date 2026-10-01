@@ -1,5 +1,3 @@
-"""Shared identity, coverage, and serialization helpers for retained history."""
-
 from __future__ import annotations
 
 import hashlib
@@ -241,7 +239,6 @@ def build_history_digest_query(
     entity_field: str | None,
     order_by: Sequence[str],
 ) -> TextClause:
-    """Register a same-statement rows-plus-scope-digest wrapper around an unchanged query."""
 
     _require_query_name(base_query)
     if not columns:
@@ -352,7 +349,6 @@ def build_history_inventory_digest_query(
     source_name: str,
     entity_field: str,
 ) -> TextClause:
-    """Register an ordered-inventory digest wrapper with an empty-result sentinel."""
 
     _require_query_name(base_query)
     if not _SQL_IDENTIFIER.fullmatch(entity_field):
@@ -804,13 +800,11 @@ def classify_historic_scope(
 
 
 def history_collection_generation_id(canonical: dict) -> str:  # type: ignore[type-arg]
-    """Digest canonical collection identity through the shared byte authority."""
 
     return snapshot_sha256(canonical)
 
 
 def history_collection_generation_basis(index: BaseModel | Mapping[str, Any]) -> dict[str, Any]:
-    """Return the stable semantic fields that identify one collection index."""
 
     if isinstance(index, BaseModel):
         payload = index.model_dump(mode="json")
@@ -831,7 +825,6 @@ def history_collection_generation_basis(index: BaseModel | Mapping[str, Any]) ->
 
 
 def history_index_generation_id(index: BaseModel | Mapping[str, Any]) -> str:
-    """Digest an index without volatile envelope or publication timestamps."""
 
     return history_collection_generation_id(history_collection_generation_basis(index))
 
@@ -839,7 +832,6 @@ def history_index_generation_id(index: BaseModel | Mapping[str, Any]) -> str:
 def history_entity_directory_generation_id(
     directory: BaseModel | Mapping[str, Any],
 ) -> str:
-    """Digest one entity directory including every exact child-generation edge."""
 
     if isinstance(directory, BaseModel):
         payload = directory.model_dump(mode="json")
@@ -857,7 +849,6 @@ def history_entity_directory_generation_id(
 
 
 def history_pointer_path(prefix: str, payload: BaseModel | Mapping[str, Any]) -> str:
-    """Return the immutable exact-byte index path for one retained-history pointer."""
 
     return f"{prefix.rstrip('/')}/generations/{snapshot_sha256(payload)}/index.json"
 
@@ -866,7 +857,6 @@ def readdress_history_directory(
     directory: HistoricEntityDirectoryIndex,
     index_paths: Mapping[str, str],
 ) -> HistoricEntityDirectoryIndex:
-    """Copy a directory onto exact child paths and recompute its semantic generation."""
 
     result = directory.model_copy(deep=True)
     for entity in result.entities:
@@ -876,7 +866,6 @@ def readdress_history_directory(
 
 
 def history_date(value: object, *, field: str = "local_date") -> str:
-    """Normalize a database local-date value to canonical ``YYYY-MM-DD``."""
 
     if isinstance(value, datetime):
         value = value.date()
@@ -897,11 +886,6 @@ def iter_history_date_groups(
     *,
     field: str = "local_date",
 ):  # type: ignore[no-untyped-def]
-    """Yield ordered date groups with at most one row of source lookahead.
-
-    Retained-history SQL owns the sort. Failing closed here prevents a later
-    append or query-plan change from silently corrupting bounded rolling state.
-    """
 
     current: str | None = None
     grouped: list[Mapping[str, Any]] = []
@@ -963,7 +947,6 @@ class HistoryNameIndex:
         }
 
     def name_at(self, kind: str, entity_id: str, local_date: str) -> str | None:
-        """Resolve the interval in force immediately before next local midnight."""
 
         parsed = date.fromisoformat(history_date(local_date, field="date"))
         closing_utc = datetime.combine(
@@ -987,7 +970,6 @@ class HistoryNameIndex:
         entity_ids: Iterable[str],
         local_date: str,
     ) -> dict[str, str | None]:
-        """Resolve a deterministic map for one artifact date."""
 
         return {
             entity_id: self.name_at(kind, entity_id, local_date)
@@ -1051,7 +1033,6 @@ class HistoryDateMask:
 
 
 def history_month(local_date: str) -> str:
-    """Return the calendar-month key for a canonical provider-local date."""
 
     return history_date(local_date)[:7]
 
@@ -1072,7 +1053,6 @@ def _history_datetime(value: object, *, field: str) -> datetime:
 
 
 def history_utc_timestamp(value: object, *, field: str = "source_generated_utc") -> str:
-    """Normalize an aware datetime/ISO timestamp to an exact UTC ``Z`` string."""
 
     parsed = _history_datetime(value, field=field)
     rendered = parsed.isoformat(timespec="microseconds" if parsed.microsecond else "seconds")
@@ -1084,7 +1064,6 @@ def latest_history_timestamp(
     *,
     fallback: object | None = None,
 ) -> str:
-    """Return the chronologically latest source timestamp, never lexical max."""
 
     parsed = [_history_datetime(value, field="source_generated_utc") for value in values]
     if not parsed:
@@ -1101,7 +1080,6 @@ def history_row_int(
     optional: bool = False,
     minimum: int | None = 0,
 ) -> int | None:
-    """Read an exact integer SQL aggregate and fail closed on malformed values."""
 
     value = row.get(field)
     if value is None:
@@ -1122,7 +1100,6 @@ def history_row_int(
 
 
 def history_row_timestamp(row: Mapping[str, Any]) -> str:
-    """Read and normalize the mandatory timestamp carried by a source aggregate."""
 
     return history_utc_timestamp(row.get("source_generated_utc"))
 
@@ -1404,7 +1381,6 @@ def prepare_history_sql_batch_loader(
 
 
 def history_gaps(dates: Iterable[str]) -> list[HistoricCoverageGap]:
-    """Return only internal missing calendar ranges, never inferred edge gaps."""
 
     ordered = sorted({history_date(value, field="date") for value in dates})
     gaps: list[HistoricCoverageGap] = []
@@ -1419,7 +1395,6 @@ def history_gaps(dates: Iterable[str]) -> list[HistoricCoverageGap]:
 def history_coverage(
     dates: Iterable[str],
 ) -> tuple[str | None, str | None, list[HistoricCoverageGap]]:
-    """Return independent first/last/internal-gap coverage for real emitted days."""
 
     ordered = sorted({history_date(value, field="date") for value in dates})
     if not ordered:
@@ -1432,7 +1407,6 @@ def history_metric_coverage(
     aggregation: HistoryMetricAggregation | str,
     dates: Iterable[str],
 ) -> HistoricMetricCoverage:
-    """Build one metric's coverage without borrowing another metric's dates."""
 
     first, last, gaps = history_coverage(dates)
     return HistoricMetricCoverage(
@@ -1445,7 +1419,6 @@ def history_metric_coverage(
 
 
 def history_partition_ref(path: str, partition: BaseModel) -> HistoricPartitionRef:
-    """Build a ref from the exact canonical bytes used by immutable storage."""
 
     return _history_partition_ref(partition, lambda _digest: path)
 
@@ -1475,7 +1448,6 @@ _POINT_HISTORY_MODELS = {
 
 
 def history_point_ref(family: str, payload: BaseModel) -> HistoricPartitionRef:
-    """Address one self-identifying point day from its exact final bytes."""
 
     model = _POINT_HISTORY_MODELS.get(family)
     if model is None:
@@ -1552,7 +1524,6 @@ class PointHistorySummary:
 
 
 def encode_history_entity_id(entity_id: str) -> str:
-    """Encode an entity ID as its bijective, path-safe lowercase UTF-8 hex."""
 
     if not entity_id:
         raise ValueError("history entity ID cannot be empty")
@@ -1560,7 +1531,6 @@ def encode_history_entity_id(entity_id: str) -> str:
 
 
 def decode_history_entity_id(encoded_id: str) -> str:
-    """Decode one canonical retained-history entity path segment."""
 
     if _CANONICAL_ENTITY_ID.fullmatch(encoded_id) is None:
         raise ValueError("encoded history entity ID must be non-empty lowercase UTF-8 hex")

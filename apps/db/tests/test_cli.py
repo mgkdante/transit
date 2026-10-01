@@ -467,8 +467,6 @@ def test_vacuum_storage_help() -> None:
 
 
 def test_run_static_pipeline_help(monkeypatch) -> None:
-    # Force a wide terminal so the docstring renders on one line and the
-    # contiguous help phrase below is not split by Rich line-wrapping.
     monkeypatch.setenv("COLUMNS", "200")
     result = runner.invoke(app, ["run-static-pipeline", "--help"])
 
@@ -480,7 +478,6 @@ def test_run_static_pipeline_help(monkeypatch) -> None:
 
 
 def test_run_static_pipeline_warns_on_gis_failure_but_exits_zero(monkeypatch) -> None:
-    """A best-effort GIS failure prints a stderr WARNING but the command still exits 0."""
 
     def fake_run_static_pipeline(provider_id, *, settings, registry):  # noqa: ANN001, ANN202
         return SimpleNamespace(
@@ -666,8 +663,6 @@ def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
 
 
 def test_prune_i3_storage_requires_provider_id() -> None:
-    # the provider_id argument is now required (no 'stm' default) so a
-    # multi-provider setup cannot silently prune only stm.
     result = runner.invoke(app, ["prune-i3-storage"])
 
     assert result.exit_code != 0
@@ -834,7 +829,6 @@ def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) 
         "static": 0,
     }
 
-    # Dry-run never exits nonzero — it deletes nothing.
     dry_result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
     assert dry_result.exit_code == 0
 
@@ -1495,7 +1489,6 @@ def test_verify_backup_freshness_fails_when_empty(monkeypatch) -> None:
 
 def test_verify_backup_freshness_respects_custom_threshold(monkeypatch) -> None:
     monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
-    # 30h old: stale at the 26h default, but fresh under a 48h override.
     older = (datetime.now(UTC) - timedelta(hours=30)).isoformat()
     listed = [
         {"key": "backups/postgres/transit-30h.dump", "size": 2048, "last_modified": older},
@@ -1738,13 +1731,6 @@ def test_replay_retries_gold_after_silver_has_already_committed(monkeypatch):
     assert gold_calls == [verified, verified]
 
 
-# ---------------------------------------------------------------------------
-# Unseeded-provider seed guard — every per-provider Daily Warm Rollups entry
-# point must SKIP an enrolled-but-unseeded provider (no gold.dim_provider row)
-# cleanly (exit 0) instead of crashing the all-providers run.
-# ---------------------------------------------------------------------------
-
-
 class _FakeConnCtx:
     def __enter__(self):
         return SimpleNamespace()
@@ -1759,11 +1745,6 @@ class _FakeEngine:
 
 
 def _stub_unseeded(monkeypatch, *, seeded: bool) -> None:
-    """Force the seed probe without touching a real database.
-
-    make_engine is stubbed so no DATABASE_URL is required; provider_is_seeded
-    is stubbed to the desired verdict.
-    """
     monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
     monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: seeded)
 
@@ -1828,8 +1809,6 @@ def test_retention_proof_report_skips_unseeded_provider(monkeypatch) -> None:
 
 
 def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
-    """publish-all must skip unseeded providers and still publish seeded ones,
-    so the all-providers historic publish never fails on an unseeded provider."""
     seeded_set = {"stm"}
     published: list[str] = []
 
@@ -1854,7 +1833,6 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     result = runner.invoke(app, ["publish-all", "--tier", "historic"])
 
     assert result.exit_code == 0
-    # Unseeded octranspo skipped; seeded stm published.
     assert published == ["stm"]
     assert "publish-all skipped unseeded providers: octranspo" in result.stderr
     payload = json.loads(result.stdout)
@@ -1939,8 +1917,6 @@ def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
 
 
 def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> None:
-    """With --report-dir, publish-all writes publish-gate-{provider}.json on SUCCESS
-    too (not only on GateError), so CI / status can always consume the gate outcome."""
     monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
     monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
     monkeypatch.setattr(

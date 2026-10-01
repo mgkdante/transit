@@ -1,19 +1,8 @@
-<!--
-  Test-only stub for MapStage — stands in for the WebGL GL canvas host in render-based
-  tests so happy-dom never instantiates MapLibre. It mimics the MapStage contract just
-  enough to drive MapHero's lifecycle: it fires `onready` with a fake MapLibre map on
-  mount, exposes a hidden style-load trigger that invokes `onstyleload`, and exposes a
-  hidden "pick" trigger that replays a registered map `click` with a stop feature so a
-  render test can exercise the real selection → detail → URL spine.
--->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
-	// Test-only deep-import exception: this fixture is loaded from inside the
-	// MapHero suite's vi.mock factory. Going through $lib/components/map would
-	// cycle back into that factory while it is replacing the barrel's MapStage.
 	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
 	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
@@ -28,7 +17,6 @@
 		onbeforeremove?: (map: unknown) => void | PromiseLike<unknown>;
 		oncleanupfailure?: (error: unknown) => unknown;
 		locale?: Record<string, string>;
-		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
 	}
 
@@ -64,8 +52,6 @@
 		| { getSource: (id: string) => { setData: (data: unknown) => void } | undefined }
 		| undefined;
 
-	// A minimal fake MapLibre map: enough surface for installMapLayers /
-	// installMapInteractions / pickSelectionAt to run without WebGL.
 	const fakeCanvas = {
 		style: { cursor: '' },
 		addEventListener: (type: string, handler: Handler) => {
@@ -83,7 +69,6 @@
 		},
 	};
 	function removeRawMap(): void {
-		// Real MapLibre remove() tears down its resources but retains Evented
 		// listener registries. Listener zero must come from explicit owner disposal.
 		for (const sourceId of [...sources.keys()]) {
 			sources.delete(sourceId);

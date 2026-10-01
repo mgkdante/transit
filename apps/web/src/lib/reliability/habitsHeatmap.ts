@@ -20,7 +20,6 @@ export function hasHabits(matrix: (number | null)[][] | null | undefined): boole
 	return (matrix ?? []).some((row) => row.some((cell) => cell != null));
 }
 
-// Scores retain the producer's fixed [0,1] scale; missing hours remain absent.
 export function buildHabitsHeatmap(
 	matrix: (number | null)[][],
 	locale: Locale,

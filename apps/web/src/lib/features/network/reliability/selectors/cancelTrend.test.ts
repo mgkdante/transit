@@ -24,7 +24,6 @@ describe('selectCancelTrend', () => {
 		expect(vm.spec.points.map((p) => p.y)).toEqual([1.2, 2.6]);
 		expect(vm.spec.domain).toEqual([CANCEL_RATE_DOMAIN[0], CANCEL_RATE_DOMAIN[1]]);
 		expect(vm.spec.domain).toEqual([0, 100]);
-		// Single-series: no secondary channel (the legacy empty retard array is gone).
 		expect(vm.spec.secondary).toBeUndefined();
 	});
 

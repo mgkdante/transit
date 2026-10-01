@@ -1,12 +1,3 @@
-<!--
-  MetricBullet — a KPI tile: the value as a text-led big number + a LayerChart bullet showing
-  where it sits on its fixed domain (vs an optional target). The number is the value voice
-  (text-led, research pass-2); the bullet is the scale-context graph beneath it — so every KPI
-  tile carries a LayerChart mark (the S7 mandate) without burying the number in SVG.
-
-  Honest absence: a null value shows the styled AbsentValue chip (says WHY) and NO bullet bar
-  (never a fabricated 0-length bar). The optional (i) explainer + caption ride alongside.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
@@ -27,16 +18,13 @@
 		...restProps
 	}: {
 		label: string;
-		/** The formatted big number; null → the honest absence chip. */
 		valueText: string | null;
 		spec: BulletSpec;
 		locale: Locale;
 		size?: 'md' | 'lg';
-		/** Optional metric-explainer (i) affordance, rendered beside the label. */
 		info?: Snippet;
 		caption?: string;
 		class?: string;
-		/** Forwarded attributes (e.g. a per-tile `data-slot` for tests/verification). */
 		[key: `data-${string}`]: string | undefined;
 	} = $props();
 </script>
@@ -94,13 +82,9 @@
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
 		color: var(--foreground);
-		/* md KPI: prominent but a clear step below the lg headline + the verdict BAN. */
 		font-size: var(--text-heading);
-		/* Keep the number + its unit on one line (no "87" / "%" wrap). */
 		white-space: nowrap;
 	}
-	/* lg KPI: a headline number, ONE step under the verdict BAN (--text-display) so the
-	   two never compete — the page hero stays the plain-language verdict. */
 	.metric-bullet[data-size='lg'] .metric-bullet__value {
 		font-size: var(--text-title);
 	}

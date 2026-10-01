@@ -1,19 +1,3 @@
-/**
- * MapHero — ORCHESTRATOR structural-law suite (source-string).
- *
- * After the de-monolith, MapHero is a THIN ORCHESTRATOR: it composes the child
- * components (MapSurfaceCanvasLayer, MapOverlayChrome, MapDetailOverlay,
- * MapMobileDetailSheet) and owns only cross-cutting state. The rendered DOM and the
- * overlay LAW are render-tested on those CHILD components (MapDetailOverlay /
- * MapOverlayChrome / MapHeadTitle / MapMobileDetailSheet / MapSurfaceCanvasLayer
- * *.svelte.test.ts — those mount the leaves and assert the real DOM).
- *
- * The full MapHero mounts in MapHero.svelte.test.ts for lifecycle and interaction
- * behavior. This companion reads source only for COMPOSITION + the ABSENCE of
- * architectural anti-patterns (no paneforge, no ResizeObserver, no panel-driven
- * map resize), which have no stable DOM footprint. It is a small, focused guard —
- * NOT the old 161-assertion grep harness.
- */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -34,16 +18,11 @@ const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
 );
 const selectionLeaseEffect = script?.match(
-	/\/\/ Selection-scoped live families[\s\S]*?\$effect\(\(\) => \{[\s\S]*?\r?\n\t\}\);/u,
+	/\$effect\(\(\) => \{\s*const release =\s*selected\?\.kind === 'vehicle'[\s\S]*?\r?\n\t\}\);/u,
 )?.[0];
 const browserApiAccess =
 	/\b(?:navigator\s*(?:\.\s*geolocation|\[\s*['"]geolocation['"]\s*\])|(?:globalThis|window)\s*(?:\.\s*fetch|\[\s*['"]fetch['"]\s*\])|fetch\s*\()/gu;
 
-// S5-385 B1: the shape-based regex above stays for the exact-count pin on the
-// sanctioned literal, but the OUTSIDE check guards the raw identifiers over
-// the comment/CSS-stripped WHOLE file — optional chaining, destructuring,
-// computed/template access, bare references, and markup attributes all carry
-// the identifier even when they dodge the access shape.
 function codeOnly(text: string): string {
 	return text
 		.replace(/<style[\s\S]*?<\/style>/gu, '')
@@ -177,15 +156,11 @@ describe('MapHero orchestrator — structural law', () => {
 			'geolocation',
 		]);
 
-		// The WHOLE source (script + markup), not just the script block.
 		const outsideDependencies = codeOnly(source.replace(nearMeDependencies![0], ''));
 		expect(outsideDependencies.match(forbiddenIdentifiers)).toEqual(null);
 	});
 
 	it('wires M1 live resilience at the registry and map call sites without widening consumers', () => {
-		// WHY(M1 #3+#11/#45/#50): the frozen plan deliberately changes MapHero from
-		// an aggregate/all-family consumer to vehicles-only motion plus committed
-		// selection leases, grace, and abort-aware focused resource reads.
 		expect(source).toContain("families: ['vehicles', 'alerts']");
 		expect(selectionLeaseEffect).toContain("live.subscribeFamilies(['trips'])");
 		expect(selectionLeaseEffect).toContain("live.subscribeFamilies(['departures'])");

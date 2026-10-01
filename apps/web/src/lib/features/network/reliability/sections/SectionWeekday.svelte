@@ -1,11 +1,3 @@
-<!--
-  SectionWeekday — the weekday-vs-weekend companion to the by-time-of-day list.
-
-  Pure presenter of `selectShiftRank` (the by_daytype rows), same punctuality ranking + honesty
-  rules as SectionByTimeOfDay. The `network-shift` data-slot + the trailing-window caveat are
-  COORDINATED by the orchestrator (the caveat renders once across the two tiles): the surface
-  passes `dataSlot` + `showCaveat`.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { RankedRow } from '$lib/components/dataviz';

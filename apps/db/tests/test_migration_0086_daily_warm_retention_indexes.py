@@ -1,4 +1,3 @@
-"""Contract and real-PostgreSQL proof for retention-path migration 0086."""
 
 from __future__ import annotations
 

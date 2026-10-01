@@ -12,7 +12,6 @@ import pytest
 
 
 def test_storage_import_and_stable_activation_in_native_interpreter(tmp_path):
-    # An unconditional platform-only import breaks all storage backends, including S3.
     result = subprocess.run(
         [
             sys.executable,
@@ -38,8 +37,6 @@ def _hold_directory_lock(directory, acquired, release):
     with _exclusive_directory_lock(Path(directory)):
         acquired.set()
         if release is None:
-            # Do not terminate a process while it owns a multiprocessing.Event's
-            # internal condition lock; that can poison test cleanup on Windows.
             time.sleep(30)
         else:
             assert release.wait(20), "lock holder was not released"
@@ -55,7 +52,6 @@ def _wait_for_directory_lock(directory, started, acquired):
 
 @pytest.mark.parametrize("terminate_holder", [False, True])
 def test_directory_lock_waits_and_recovers_after_owner_release(tmp_path, terminate_holder):
-    # Removing the OS lock, or leaving it stuck on process exit, breaks this test.
     context = multiprocessing.get_context("spawn")
     held, release, started, acquired = [context.Event() for _ in range(4)]
     holder = context.Process(
@@ -173,7 +169,6 @@ def test_containment_accepts_equivalent_extended_paths_during_publication(tmp_pa
 
     def resolve_with_extended_prefix(path, *args, **kwargs):
         resolved = original(path, *args, **kwargs)
-        # CPython 3.12 can retain this prefix if the object appears while resolving.
         return Path("\\\\?\\" + str(resolved))
 
     monkeypatch.setattr(Path, "resolve", resolve_with_extended_prefix)
@@ -203,7 +198,6 @@ def test_windows_lock_does_not_retry_non_contention_errors(tmp_path, monkeypatch
             with storage_module._exclusive_directory_lock(tmp_path):
                 pytest.fail("failed lock must not enter publication")
     assert raised.value is failure
-    # Closing on acquisition failure makes the same lock available afterward.
     with storage_module._exclusive_directory_lock(tmp_path):
         pass
 

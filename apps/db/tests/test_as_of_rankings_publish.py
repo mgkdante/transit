@@ -47,7 +47,6 @@ STAMP = "2026-07-13T00:00:00Z"
 
 @pytest.fixture(autouse=True)
 def _ignore_historic_gc_mark_clearing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep ranking/pointer tests focused on their in-memory publish seam."""
 
     monkeypatch.setattr(
         historic_tier,

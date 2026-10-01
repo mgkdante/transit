@@ -1,5 +1,3 @@
-"""Compose the seven-family historic root and its exact immutable reference inventory."""
-
 from collections.abc import Sequence, Set
 from dataclasses import dataclass
 from typing import cast
@@ -89,7 +87,6 @@ def _entity_family_availability(
             for name, aggregation in metrics
         ],
     )
-
 
 
 @dataclass(frozen=True)

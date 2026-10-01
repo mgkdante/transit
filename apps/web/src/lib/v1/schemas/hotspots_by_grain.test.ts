@@ -1,15 +1,3 @@
-// hotspots_by_grain.test.ts — the S12 re-granulated hotspots ladders, web side.
-//
-// Three guarantees for Hotspots.by_grain (the on-disk canonical mirror is
-// byte-checked by zod-conformance):
-//   1. ADDITIVE-OPTIONAL back-compat — a pre-S12 hotspots.json (scalar-only, no
-//      by_grain key) still parses, so already-published files keep validating.
-//   2. A populated by_grain ladder parses: cross-kind entries ranked on the shared
-//      not-severe Wilson LB, a sub-MIN_N tray with rank=null, and the 'shift' grain
-//      carrying date=null (a time-of-day cut, not a trailing window).
-//   3. The ranked/tray discipline the DB serves survives the round-trip: a ranked
-//      entry keeps its 1-based ladder rank; a tray entry's rank is null.
-
 import { describe, it, expect } from 'vitest';
 import { HistoricHotspotsDaySchema, HotspotsSchema, HotspotGrainSchema } from './hotspots';
 
@@ -69,9 +57,7 @@ describe('Hotspots.by_grain — S12 re-granulated ladders', () => {
 			[1, 'stop', 'S1'],
 			[2, 'route', '51'],
 		]);
-		// tray entry: rank is null (un-ranked, sub-MIN_N)
 		expect(week.tray![0].rank).toBeNull();
-		// the shift grain is a time-of-day cut — no trailing window dates
 		expect(parsed.by_grain![1].date).toBeNull();
 		expect(parsed.by_grain![1].window_end).toBeNull();
 	});

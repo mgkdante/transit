@@ -26,7 +26,6 @@ function failedConditionalStatus(headers, object) {
     : 412;
 }
 
-/** Serve one R2 object; routing, CORS and missing-object policy belong to callers. */
 export async function serveSnapshot(request, bucket, key) {
   const conditionalHead =
     request.method === "HEAD" &&

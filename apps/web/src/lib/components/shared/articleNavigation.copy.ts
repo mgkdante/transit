@@ -1,6 +1,5 @@
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 
-/** Shared article-navigation chrome for every detail surface. */
 export const articleNavigationCopy = defineCopy({
 	fr: {
 		heading: 'Sur cette page',

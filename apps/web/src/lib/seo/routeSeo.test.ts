@@ -29,8 +29,6 @@ const PATHS = [
 	'/trip/example',
 ];
 
-// The full set of static surfaces (no detail routes) used by the title-
-// distinctness checks — every entry here must render a unique <title>.
 const SURFACE_PATHS = [
 	'/',
 	'/map',
@@ -48,8 +46,6 @@ const SURFACE_PATHS = [
 	'/terms',
 ];
 
-// A representative identity (STM / Montréal) for the keyworded-copy path. The
-// module itself holds NO agency/city literals — these tokens are injected here.
 const STM_IDENTITY = { shortName: 'STM', city: 'Montréal' } as const;
 
 describe('resolveRouteSeo', () => {
@@ -94,7 +90,6 @@ describe('resolveRouteSeo', () => {
 	});
 
 	it('injects the provider tokens into the keyworded copy', () => {
-		// Home + network anchor the keyword-preservation contract in both locales.
 		for (const l of ['en', 'fr'] as const) {
 			const home = resolveRouteSeo('/', l, STM_IDENTITY).description;
 			expect(home).toContain('STM');
@@ -103,7 +98,6 @@ describe('resolveRouteSeo', () => {
 			expect(network).toContain('STM');
 			expect(network).toContain('Montréal');
 		}
-		// Home title is the one keyworded title override.
 		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('STM network overview');
 		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
 	});
@@ -120,8 +114,6 @@ describe('resolveRouteSeo', () => {
 });
 
 describe('isEphemeralPath', () => {
-	// Guards the central "trip ids rotate → never index" promise: only /trip is
-	// ephemeral; detail surfaces over STABLE ids (/route, /stop) stay indexable.
 	it('flags trip detail (and its locale-prefixed form) as ephemeral', () => {
 		expect(isEphemeralPath('/trip/x')).toBe(true);
 		expect(isEphemeralPath('/fr/trip/x')).toBe(true);
@@ -150,7 +142,6 @@ describe('resolveRouteSeo — neutral copy fallback', () => {
 				expect(title).not.toContain('STM');
 			}
 		}
-		// The neutral home title stays distinct from the keyworded one.
 		expect(resolveRouteSeo('/', 'en').title).toBe('Transit network overview');
 		expect(resolveRouteSeo('/', 'fr').title).toBe('Vue d’ensemble du réseau');
 	});

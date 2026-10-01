@@ -17,10 +17,6 @@ import AlertHistoryScreen from './AlertHistory.svelte';
 
 const copyEn = alertHistoryCopy.en;
 
-// One mutable AlertHistory fixture, read by reference inside the createResource mock
-// so a test can splice its `alerts` / `breakdown` / window envelope in place before
-// render. Modeled on the published alert_history.json (free-string severity, generic
-// FR/EN headers → the shared "Service alert" fallback, an "unknown" breakdown bucket).
 const { fixture } = vi.hoisted(() => ({
 	fixture: {
 		generated_utc: '2026-06-20T00:00:00Z',
@@ -78,8 +74,6 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	getAlertArchiveRange: ports.getAlertArchiveRange,
 }));
 
-// The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the codec
-// seed AND the round-trip mirror are testable. Hoisted so the mock factories can see it.
 const nav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/alerts'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
@@ -102,9 +96,6 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
-// Synchronous resource seam for the broad rendering suite. The async resource
-// contract (abort, stale-response suppression, retry) is covered with the real
-// createResource in AlertHistory.async.svelte.test.ts.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		const signal = new AbortController().signal;

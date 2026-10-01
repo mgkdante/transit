@@ -60,9 +60,7 @@ class RealtimeMessageMetadata:
     provider_id: str
     endpoint_key: str
     feed_kind: str
-    # None when the feed omits / zeroes its FeedHeader.timestamp (GTFS-RT
-    # spec-required, but real feeds skip it). The capture resolves it to the
-    # capture time before persisting, so it never aborts the download.
+    # Missing feed timestamps fall back to capture time.
     feed_timestamp_utc: datetime | None
     entity_count: int
 
@@ -168,10 +166,7 @@ def extract_realtime_metadata(
     except DecodeError as exc:
         raise ValueError(f"Failed to parse GTFS-RT protobuf payload: {exc}") from exc
 
-    # GTFS-RT requires FeedHeader.timestamp, but real feeds omit / zero it, and
-    # some emit a value outside datetime's range. Treat any unusable header
-    # timestamp as "absent" (None) rather than aborting the capture; the caller
-    # falls back to the capture time so the snapshot still persists.
+    # Invalid or absent feed timestamps must not abort capture.
     header_timestamp = int(message.header.timestamp or 0)
     feed_timestamp_utc: datetime | None = None
     if header_timestamp > 0:
@@ -263,9 +258,7 @@ def _insert_realtime_snapshot_index(
 
 
 def _build_realtime_ssl_context() -> ssl.SSLContext:
-    # Floor only: require TLS 1.2+ but let the handshake negotiate the highest
-    # mutually-supported version. Pinning the maximum to 1.2 rejected TLS-1.3-only
-    # endpoints, which any GTFS-RT provider is free to be.
+    # Require TLS 1.2 or newer without setting a maximum protocol version.
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
@@ -337,8 +330,6 @@ def _capture_realtime_feed(
         persisted = True
 
         completed_at_utc = utc_now()
-        # Feeds that omit their header timestamp fall back to the capture time so
-        # the snapshot index / freshness signal stays non-null and monotonic.
         feed_timestamp_utc = metadata.feed_timestamp_utc or completed_at_utc
         with engine.begin() as connection:
             ingestion_object_id = insert_ingestion_object(

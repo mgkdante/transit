@@ -1,16 +1,3 @@
-// $lib/components/surface — the shared "surface spine" (slice-9.3).
-//
-// Surface-agnostic primitives the four data surfaces (network health, search,
-// line, stop) compose. They carry the cross-surface plumbing once — data-load
-// gating, the canonical head, linkable entity rows/lists, the tabbed detail
-// scaffold, the shared reliability readout and the live freshness chip — so no
-// surface re-implements them.
-//
-// DOCTRINE (inherited from brand + dataviz): data marks ride the dataviz scale;
-// --primary stays interactive-only. Tokens, no hex; bilingual via $lib/i18n.
-//
-// Import from `$lib/components/surface`.
-
 export { default as ResourceBoundary } from './ResourceBoundary.svelte';
 export { default as EntityRow } from './EntityRow.svelte';
 export { default as EntityResultRow } from './EntityResultRow.svelte';
@@ -41,11 +28,6 @@ export {
 	isReliabilitySnapshotPending,
 } from './createReliabilityListingController.svelte';
 
-// Props interfaces, paired with their component (brand/ + dataviz/ convention:
-// every cross-surface primitive re-exports its Props so consumers can type props).
-// NOTE: the generic components (ResourceBoundary<T>, EntityList<T>, EntityDetail<K>)
-// can't export their Props from a `generics=` instance script (Svelte limitation),
-// and the interface references the type param anyway — so they stay unexported.
 export type { EntityRowProps } from './EntityRow.svelte';
 export type { EntityResultRowProps } from './EntityResultRow.svelte';
 export type { BreadcrumbProps } from './Breadcrumb.svelte';
@@ -58,7 +40,6 @@ export type {
 export type { GrainPickerProps } from './GrainPicker.svelte';
 export type { ArticleControlDisclosureProps } from './ArticleControlDisclosure.svelte';
 export type { ArticleControlStackProps } from './ArticleControlStack.svelte';
-// DateRangePicker's Props + labels interfaces live in its MODULE script (one export site).
 export type {
 	DateRangePickerProps,
 	DateRangePickerLabels,
@@ -71,7 +52,6 @@ export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';
 export type { SearchInputProps } from './SearchInput.svelte';
 export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
 
-// Auxiliary view-model / copy types.
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
 export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';

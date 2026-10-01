@@ -33,7 +33,6 @@ function example(locale: 'en' | 'fr'): ServiceSpanSpec {
 }
 
 function mount(spec: ServiceSpanSpec) {
-	// Supply DOM dimensions; the real LayerChart context and scales still render the SVG.
 	vi.stubGlobal('IntersectionObserver', undefined);
 	observeChartFrames(800, 90);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);

@@ -7,13 +7,6 @@ import {
 	type ChartSpec,
 } from './ChartSpec';
 
-// The ChartSpec invariant is the type-system enforcement of Chart Doctrine law #1:
-// every cross-view MAGNITUDE mark carries an explicit absolute domain (never /max,
-// never d3.extent). `checkAbsoluteDomain` is the runtime echo of that compile-time
-// guarantee — it backs the spec gate (P1.3) and dev assertions. These tests lock the
-// exact rule: magnitude kinds need a zero-based (or signed-anchored) [lo,hi]; the
-// part-to-whole / heatmap / metric / absence kinds are exempt.
-
 const base = { title: 't', locale: 'en' } as const;
 
 describe('chart viewport policy', () => {
@@ -104,7 +97,6 @@ describe('checkAbsoluteDomain — magnitude kinds must carry a zero-based domain
 	});
 
 	it('a magnitude kind missing a domain would be caught (defensive runtime echo)', () => {
-		// The compiler already forbids this; the cast proves the runtime guard agrees.
 		const spec = { ...base, kind: 'bullet', unit: '%', value: 80 } as unknown as ChartSpec;
 		expect(checkAbsoluteDomain(spec)).toMatch(/no absolute/);
 	});

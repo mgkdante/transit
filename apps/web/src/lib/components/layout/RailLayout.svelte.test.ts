@@ -1,11 +1,3 @@
-// RailLayout.svelte.test.ts — DOM gate for the sticky-rail body grid primitive.
-//
-// Guards the contract extracted from MetricsExplainer's body-grid: both snippet
-// slots render in their wrapper columns (rail before content in source order),
-// the rail carries an optional accessible name, and the sticky offset lives on
-// the inner rail wrapper (not the column) so the rail tracks the scrolling
-// content at >=lg. Layout-only: no colour / data-mark assertions.
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -88,8 +80,6 @@ describe('RailLayout', () => {
 	});
 
 	it('parks the sticky rail off the single --chrome-offset knob (no literal)', () => {
-		// B1: the sticky offset derives from --chrome-offset (jsdom cannot resolve
-		// Svelte-scoped <style>, so assert the source contract) — never a 5.5rem literal.
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/layout/RailLayout.svelte'),
 			'utf-8',

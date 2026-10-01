@@ -1,4 +1,3 @@
-"""Production-path tests for configured Alembic database target intent."""
 
 from __future__ import annotations
 

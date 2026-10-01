@@ -1,5 +1,3 @@
-"""Collect, validate and publish historic graphs within the caller's database lifetime."""
-
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
@@ -109,7 +107,6 @@ def _clear_referenced_historic_gc_marks(
     provider_id: str,
     object_keys: Sequence[str],
 ) -> None:
-    """Reset continuous-unreachability age for every generation in the next graph."""
 
     keys = sorted(set(object_keys))
     if not keys:
@@ -121,7 +118,6 @@ def _clear_referenced_historic_gc_marks(
 
 
 def publication_stamp() -> str:
-    """UTC day label; immutable hashes distinguish same-day historic corrections."""
     return utc_now().strftime("%Y-%m-%dT00:00:00Z")
 
 
@@ -137,12 +133,6 @@ def publish(
     force: bool = False,
     _historic_run: _HistoricPublishRun | None = None,
 ) -> list[str]:
-    """Build, gate, and stage the complete historic snapshot graph.
-
-    One provider executor serves every bounded upload batch. Each barrier drains
-    before its parent advances, and the exact seven-family root activates last.
-    Builders and gates still recompute the complete retained graph each run.
-    """
     if not isinstance(storage, HistoricWriter):
         raise TypeError("historic publication requires a conditional historic writer")
     if stamp is None:
@@ -425,7 +415,6 @@ def collect(
     stamp: str,
     include: Collection[HistoricInclude],
 ) -> HistoricValidationInputs:
-    """Build requested lazy plans; the caller must consume them before closing conn."""
     compatibility = historic_compatibility.build(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
@@ -474,7 +463,6 @@ def collect(
 def validate(
     provider_id: str, collected: HistoricValidationInputs | _LegacyCollected
 ) -> gate.GateReport:
-    """Consume collected history once and return findings without enforcing publication."""
     all_items: Sequence[tuple[str, object]]
     route_items: Sequence[tuple[str, object]]
     if isinstance(collected, HistoricValidationInputs):

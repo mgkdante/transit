@@ -1,4 +1,3 @@
-"""Provider/tier publication lane orchestration."""
 
 from __future__ import annotations
 

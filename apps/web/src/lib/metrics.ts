@@ -22,7 +22,6 @@ interface BilingualText {
 	readonly fr: string;
 }
 
-/** Shared short definitions for popovers and the full methodology entries. */
 export const METRIC_SUMMARIES: Readonly<
 	Record<
 		MetricKey,
@@ -150,22 +149,10 @@ export const METRIC_SUMMARIES: Readonly<
 	},
 };
 
-/** Localized name for a metric key (FR canonical / EN mirror). */
 export function metricName(key: MetricKey, locale: Locale): string {
 	return METRIC_SUMMARIES[key].name[locale];
 }
 
-// ── Supplemental (i) tips ──────────────────────────────────────────────────────
-//
-// Some surfaces label numbers that are NOT one of the 14 reliability families that
-// drive the /metrics explainer page (live feed coverage,
-// observation counts, and the /alerts GTFS-RT dimensions). They still deserve an
-// honest one-line (i) tip with a deep link into /metrics, but they do NOT get their
-// own explainer section, so they live here rather than in the METRICS array (which
-// the explainer page renders 1:1 and the coverage test pins exactly).
-//
-// Each entry identifies its own population and missing-data rules. Its `anchor`
-// links to the existing /metrics section that explains that source or methodology.
 export type SupplementalMetricKey =
 	| 'liveOtp'
 	| 'liveDelayPercentiles'
@@ -182,9 +169,7 @@ export type SupplementalMetricKey =
 	| 'alertReach';
 
 interface SupplementalMetricEntry {
-	/** Deep-link target — an existing /metrics section anchor (no leading '#'). */
 	readonly anchor: string;
-	/** ONE-LINE plain explanation, the (i) hover tip (FR canonical / EN mirror). */
 	readonly oneLiner: BilingualText;
 }
 
@@ -296,17 +281,6 @@ export const metricInfoCopy = {
 	},
 };
 
-/**
- * The (i)-affordance payload for a metric label on a data surface: the one-line
- * tip + a localized deep link to the explainer at that metric's anchor.
- *
- * Resolves BOTH the 14 reliability families (MetricKey, full explainer entry) and
- * the supplemental metrics (SupplementalMetricKey: coverage,
- * vehicle/silent-trip counts, the /alerts dimensions) that carry only a tip +
- * anchor. `localizeHref` strips/re-adds the locale prefix; the `#anchor` is
- * appended by us (localizeHref treats the hash as caller-owned), so EN →
- * `/metrics#otp` and FR → `/fr/metrics#otp`.
- */
 export function metricInfoFor(
 	key: MetricKey | SupplementalMetricKey,
 	locale: Locale,

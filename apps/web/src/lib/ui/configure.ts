@@ -10,7 +10,6 @@ export function configureTransitUi(): void {
 	standaloneCn = undefined;
 }
 
-// Standalone callers stay isolated until this consumer explicitly configures the package.
 export const cn: typeof uiCn = (...inputs) => {
 	if (configuredForTransit) return uiCn(...inputs);
 	return (standaloneCn ??= createCn(TRANSIT_VOCAB))(...inputs);

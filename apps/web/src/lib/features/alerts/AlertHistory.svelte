@@ -1,36 +1,3 @@
-<!--
-  AlertHistory — the /alerts surface screen ("Avis", slice-9.6 Family D; S15 re-seat).
-
-  The citizen-facing ACCOUNTABILITY log of PAST service alerts: a chronological
-  (newest-first) list of resolved/expired alerts with their active window(s),
-  resolved duration, reach (routes/stops), and public link —
-  plus the Tier-2 cause/effect/severity distribution when the archive carries one.
-
-  S15 THIN ORCHESTRATOR: this file owns the data port + the codec (seed → clamp →
-  ONE batched URL mirror) + ONE mapping pass through the pure ./selectors, then hands
-  each zone to a pure presenter (AlertFilters / AlertLog / AlertBreakdown). All
-  narrowing logic lives in ./selectors/alertLog; the picker options in
-  ./selectors/entityOptions. The alert presentation (headline, cause/effect, severity
-  word) is inherited from the shared $lib/v1 kernel (alertDisplay / gtfsAlertLabels /
-  enumLabels), so a past alert reads like the live ones a rider already knows — and
-  the surface no longer reaches across features (the alerts→map exemption is gone).
-
-  FILTERS (codec-backed, URL-mirrored, batched): entity-type + severity radiogroups
-  (?affects / ?severity), a Line + a Stop typeahead picker (?route / ?stop), and a
-  date range over the served span (?from / ?to). Every served day is selectable — a
-  zero-alert day is a REAL answer. Legacy payloads with no window fields derive the
-  span from the entries; nothing datable → the picker hides with honest absence.
-
-	  ARTICLE: DetailShell owns one combined filters/contents rail and the shared section
-	  registry drives both the numbered TOC and the three disclosure cards. The server
-	  breakdown is only the availability signal; current filters derive every rendered
-	  cause/effect/severity bucket from the matching alert entries.
-
-  HONESTY: a null/absent field is OMITTED; a generic/empty headline falls back to the
-  shared "Service alert"; an empty archive routes to the localized empty state; the
-  breakdown stands down when no distribution was published; a truncated window shows
-  an honest cap note. Tokens only, no hex. All prose is in ./alerts.copy.
--->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
@@ -79,7 +46,6 @@
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	// The shared alert vocabulary, now in the $lib/v1 kernel (no cross-feature import).
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
 	import { foldSearchText } from '$lib/search/normalize';
@@ -112,26 +78,18 @@
 		toc: 'alerts-toc',
 	});
 
-	// The current compatibility payload stays the fast default and supplies the honest
-	// current span. The optional retained index decides whether range reads come from
-	// partitioned archive pages or keep the legacy newest-window behavior.
 	const history = createResource((signal) => getAlertHistory({ signal }));
 	const alertArchiveIndex = createResource((signal) => getAlertArchiveIndex({ signal }));
 
-	/** Max rows rendered before the "+N more" disclosure. */
 	const VISIBLE_CAP = 25;
 	let expanded = $state(false);
 
-	// --- Codec seed (ONCE) ------------------------------------------------------
 	const rawHistoryFrom = page.url.searchParams.get('from');
 	const rawHistoryTo = page.url.searchParams.get('to');
 	const hasExplicitHistoryWindow = rawHistoryFrom !== null || rawHistoryTo !== null;
 	const seed = fromSearchParams(page.url.searchParams);
-	// Entity-type + severity are single-select scalars (absent = "all").
 	let affects = $state<'all' | AlertAffects>(seed.alertAffects ?? 'all');
 	let severity = $state<'all' | SeverityCode>(seed.alertSeverity ?? 'all');
-	// The Line / Stop picks reuse the existing ?route/?stop id-set axes (first id; the
-	// pickers are single-select), the StopsIndex precedent.
 	let route = $state<string | null>([...seed.routes][0] ?? null);
 	let stop = $state<string | null>([...seed.stops][0] ?? null);
 	let pickedWindow = $state<DateWindow | undefined>();
@@ -174,8 +132,6 @@
 		return `${window.from}:${window.to}`;
 	}
 
-	// A paired date edit fires once for each field. Abort the old read immediately,
-	// then wait for the short edit burst to settle so From + To issue one range load.
 	const RANGE_CHANGE_DEBOUNCE_MS = 120;
 	let archiveLoadWindow = $state<DateWindow | null>(null);
 	let archiveLoadPrimed = false;
@@ -247,8 +203,6 @@
 		if (history.data == null || history.error != null) return false;
 		if (alertArchiveIndex.error != null) return false;
 		if (alertArchiveIndex.settled && alertArchiveIndex.data == null) return true;
-		// Until the advertised range confirms it, an empty compatibility array is
-		// not enough evidence for a citizen-facing "0 alerts" result.
 		if ((history.data.alerts?.length ?? 0) === 0) return false;
 		if (hasExplicitHistoryWindow) return false;
 		if (!alertArchiveIndex.settled) return true;
@@ -271,8 +225,6 @@
 			selectedRangeData == null,
 	);
 	const displayError = $derived.by<Error | null>(() => {
-		// Read this unconditionally so a rejection wakes the derived value even when a
-		// just-changed selection briefly sees the preceding attempt key.
 		const rangeError = archiveRange.error;
 		if (history.error != null) return history.error;
 		if (alertArchiveIndex.error != null) return alertArchiveIndex.error;
@@ -336,9 +288,6 @@
 		},
 	};
 
-	// Every calculation reads one display array. The fast compatibility payload may
-	// render while the default retained range finishes, then the archive array swaps
-	// in atomically; a user-selected non-default range never inherits stale rows.
 	const entries = $derived<readonly AlertHistoryEntry[]>(displayData?.entries ?? []);
 	const sorted = $derived(sortNewestFirst(entries));
 	const historyCoverageText = $derived.by<string | null>(() => {
@@ -378,9 +327,6 @@
 		historyCorrection = resolved.correction;
 	}
 
-	// --- Batched URL mirror -----------------------------------------------------
-	// ONE mirrorSearchParams so back-to-back single writes never clobber each other.
-	// 'all'/null/undefined null out the key for a clean canonical URL.
 	$effect(() => {
 		if (!windowSettled) return;
 		const mirroredWindow =
@@ -395,19 +341,15 @@
 		});
 	});
 
-	// --- ONE mapping pass -------------------------------------------------------
-	/** The headline for a history entry, via the SAME resolver the live surfaces use. */
 	function headline(entry: AlertHistoryEntry) {
 		return alertDisplayText(entry, locale);
 	}
-	/** A localized wall-clock for a window bound, or null when absent/invalid. */
 	function windowTime(iso: string | null | undefined): string | null {
 		if (iso == null) return null;
 		const text = formatUtc(iso, locale);
-		return text === '·' ? null : text; // formatUtc's no-data middot → drop the line
+		return text === '·' ? null : text;
 	}
 
-	// The filtered, newest-first log.
 	const filtered = $derived<readonly AlertHistoryEntry[]>(
 		filterAlertLog(sorted, {
 			window: pickedWindow ?? null,
@@ -427,8 +369,6 @@
 		visibleEntries.map((e) => buildAlertRow(e, { headline, windowTime })),
 	);
 
-	// The picker options (distinct lines / stops present in the FULL sorted log — a pick
-	// stays available even after other axes narrow the visible list).
 	const lineOptions = $derived(buildLineOptions(sorted, foldSearchText));
 	const stopOptions = $derived(buildStopOptions(sorted, foldSearchText));
 
@@ -448,8 +388,6 @@
 		historyCorrection = null;
 	}
 
-	// --- In-window headline (ExplainedMetricCard) -------------------------------
-	// The count of alerts matching the current filters + their median resolved duration.
 	const headlineCount = $derived(filtered.length);
 	const headlineMedian = $derived.by<number | null>(() => {
 		const durations = filtered
@@ -461,13 +399,8 @@
 		headlineMedian != null ? t.headline.median(Math.round(headlineMedian)) : undefined,
 	);
 
-	// Freshness off the archive's generated_utc (a daily rebuild, not live).
 	const generatedUtc = $derived(history.data?.generated_utc ?? null);
 
-	// Honest cap disclosure: the payload's truncated flag + the true total-in-window.
-	// The 'shown' count is the SERVED entry count (the population the newest-first
-	// server cap actually clipped) — never the client-filtered subset, which would
-	// misread as 'the N most recent' under an active filter (S15 review F1).
 	const truncated = $derived(
 		useCompatibilityPayload && history.data?.truncated === true && !previewingArchive,
 	);
@@ -475,9 +408,7 @@
 		useCompatibilityPayload ? (history.data?.total_in_window ?? null) : null,
 	);
 
-	// --- Tier-2 breakdown -------------------------------------------------------
 	const SEVERITY_WORD_SET = new Set<string>(['critical', 'high', 'watch']);
-	/** Localized title for a breakdown bucket key, per distribution kind. */
 	function bucketTitle(key: string, kind: BreakdownKind): string {
 		if (kind === 'severity') {
 			return SEVERITY_WORD_SET.has(key) ? t.severity[key as SeverityCode] : key;
@@ -602,14 +533,9 @@
 </script>
 
 {#snippet headlineInfo()}
-	<!-- Wired to the alert-duration explainer: the honest deep link replaces the surface's
-	     only bare `/metrics` href (its lone convention break) with metricInfoFor('alertDuration'). -->
 	<MetricInfo metricKey="alertDuration" {locale} name={t.headline.label} side="bottom" />
 {/snippet}
 
-<!-- The five supplemental alert* explainer tips, each wired onto its heading. cause/effect/
-     severity ride the three breakdown sub-headings; reach rides the log section (its rows
-     carry the affected-lines/stops counts). duration rides the headline card above. -->
 {#snippet causeInfo()}
 	<MetricInfo metricKey="alertCause" {locale} name={t.breakdown.byCause} side="bottom" />
 {/snippet}
@@ -712,8 +638,6 @@
 	{/snippet}
 
 	{#snippet center()}
-		<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
-		     normally with no disruptions. Route it to the green network-healthy verdict. -->
 		<ResourceBoundary
 			resource={displayResource}
 			lang={locale}
@@ -832,7 +756,6 @@
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	/* Section label + the capped-count caption on one row. */
 	.alert-history-head {
 		display: flex;
 		flex-wrap: wrap;
@@ -846,7 +769,6 @@
 		color: var(--muted-foreground);
 		font-variant-numeric: tabular-nums;
 	}
-	/* Honest cap note — quiet mono caption. */
 	.alert-history-truncated {
 		margin: 0;
 		font-family: var(--font-mono);

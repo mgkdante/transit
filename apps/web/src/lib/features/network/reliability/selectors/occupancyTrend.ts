@@ -1,19 +1,9 @@
-// selectOccupancyTrend — the per-day crowding small-multiple (one 100% bar per day).
-//
-// P5.2: each kept day emits a `stacked-share` ChartSpec for the ONE <Chart> renderer
-// (the legacy StackedBar primitive is retired). One strip per day THAT HAS occupancy
-// telemetry; a day whose occupancy_mix is null/absent — or all-zero, which the shared
-// helper treats identically — is SKIPPED entirely (never an even split). Per-day
-// crowding is a DAILY artifact — week/month carry no per-point occupancy mix — so the
-// orchestrator only renders it on the day grain. Consumes the ALREADY-windowed series.
-
 import type { TrendPoint } from '$lib/v1/schemas/network_trend';
 import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
 import type { StackedShareSpec } from '$lib/components/dataviz/chart';
 import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
 import type { Locale } from '$lib/i18n/config';
 
-/** One dated crowding column in the small-multiple. */
 export interface OccupancyDay {
 	readonly date: string;
 	readonly dateLabel: string;
@@ -22,14 +12,9 @@ export interface OccupancyDay {
 
 export interface OccupancyTrendOptions {
 	readonly locale: Locale;
-	/** Localized strip title for a day (e.g. "Crowding · Jun 30"). */
 	readonly titleFor: (dateLabel: string) => string;
 }
 
-/**
- * `dateLabel`: the caller's localized short-date formatter (UTC day-key — i18n stays out).
- * `occupancyLabel`: code → the localized band label (SHARED $lib/v1/enumLabels vocabulary).
- */
 export function selectOccupancyTrend(
 	points: readonly TrendPoint[],
 	dateLabel: (date: string) => string,

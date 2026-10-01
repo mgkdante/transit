@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-// getEntityJson is the single client fetch+validate primitive. PR-6 adds a
-// browser-only side effect: it captures the server's current time from the
-// response `Date` / `Age` headers and feeds the injected clock port so
-// every freshness readout anchors to server time. These tests cover that capture
-// (cache-header reconciliation, missing/NaN header skip, SSR no-op) without touching the
-// existing fail-soft contract.
-
 const mocks = vi.hoisted(() => ({
 	browser: true,
 	noteServerEpochMs: vi.fn<(ms: number) => void>(),
@@ -35,7 +28,6 @@ async function loadHttp() {
 
 const schema = z.object({ ok: z.boolean() });
 
-/** Build a fetch-shaped fn returning a 200 JSON response with the given headers. */
 function fetchWithHeaders(headers: Record<string, string>): typeof fetch {
 	return vi.fn(async () =>
 		Promise.resolve(

@@ -1,12 +1,3 @@
-// CornerMeta.test.ts — the four-corner hero readout (§C2.4), DOM gate.
-//
-// CornerMeta pins REAL-data readouts to the four corners of a relative host.
-// Decorative by contract: aria-hidden + pointer-events:none, hidden < 768px,
-// with an opt-in crosshair ornament. This gate locks:
-//   - each of the four corner slots renders only when its snippet is passed;
-//   - the host is aria-hidden (annotation, never the accessible name);
-//   - the crosshair ornament is opt-in (absent by default, present when set).
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
@@ -52,9 +43,7 @@ describe('CornerMeta — decorative contract', () => {
 	});
 
 	it('is hidden < 768px by construction (display:none base, block at >=768)', () => {
-		// jsdom does not evaluate @media, but the base rule is display:none — the
-		// element only surfaces inside the >=768 query. Assert the styled root
-		// exists and carries the data-slot so the CSS applies.
+		// jsdom cannot evaluate media queries; this test checks only the styled root.
 		const { container } = render(CornerMeta, { props: { topLeft: textSnippet('STM') } });
 		expect(root(container)).toBeInTheDocument();
 		expect(root(container)).toHaveClass('corner-meta');
@@ -63,10 +52,6 @@ describe('CornerMeta — decorative contract', () => {
 
 describe('CornerMeta — corner readouts stay in their quadrant', () => {
 	it('renders both bottom corners independently so a long readout stays in its own corner', () => {
-		// A long dataset-edition string in one corner must not swallow or displace the
-		// opposite corner (the width-cap + ellipsis containment is CSS, verified
-		// geometrically). Lock
-		// that each bottom corner is its own contained element carrying its own text.
 		const { container, getByText } = render(CornerMeta, {
 			props: {
 				bottomLeft: textSnippet('DATASET · a-very-long-edition-filename-that-would-overrun'),

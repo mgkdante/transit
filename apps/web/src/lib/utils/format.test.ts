@@ -73,7 +73,6 @@ describe('fmtCount — rounding + locale variants', () => {
 
 	it('localized thousands separators (receipt/network/+page count)', () => {
 		expect(fmtCount(1234, { locale: 'en' })).toBe('1,234');
-		// FR uses a narrow no-break space as the grouping separator.
 		expect(fmtCount(1234, { locale: 'fr' })).toMatch(/^1\s?234$/u);
 	});
 

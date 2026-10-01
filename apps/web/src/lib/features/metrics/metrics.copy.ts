@@ -1,15 +1,3 @@
-// metrics.copy.ts — co-located bilingual page chrome for the /metrics explainer.
-//
-// The PER-METRIC science lives in metrics.content.ts; this file carries only the
-// page-level prose: the surface head (kicker / heading / lede), the per-metric
-// section labels ("Definition / The math / The SQL / What it's NOT / Caveats"),
-// the provenance preamble (predicted schedule-deviation, NOT certified OTP, no
-// AVL), the confidence-legend strings, the cluster overlines (mirroring the
-// reliability surface), and the (i)-affordance a11y strings.
-//
-// FR is the canonical product voice; EN mirrors it. Shape: Record<Locale, …> so
-// the screen owns no inline strings.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { metricInfoCopy } from '$lib/metrics';
 import { articleCopy } from '$lib/components/layout/articleCopy';

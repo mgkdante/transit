@@ -60,8 +60,6 @@ export function constructRecoverableMap(
 			} catch (constructionError) {
 				const cleanupErrors: unknown[] = [];
 				try {
-					// MapLibre's anonymous creation-error listener is once-only but remove()
-					// does not unregister it. Consume it while the partial canvas is reachable.
 					const EventConstructor = this._canvas.ownerDocument.defaultView?.Event ?? Event;
 					this._canvas.dispatchEvent(new EventConstructor('webglcontextcreationerror'));
 				} catch (error) {
@@ -75,9 +73,6 @@ export function constructRecoverableMap(
 					cleanupErrors.push(error);
 				}
 
-				// remove() needs these two fields before the base constructor initializes
-				// them. Supplying the recovered GL lets it lose the actual context after it
-				// deletes this exact map's private ImageRequest throttle callback.
 				this.painter = {
 					destroy: () => {},
 					context: { gl },

@@ -1,33 +1,3 @@
-<!--
-  Masthead — the ONE surface header family (§C2, P5.4a).
-
-  Merges the two competing head systems (surface/SurfaceHeader + layout/ArticleShell)
-  into a single, promotion-ready masthead. Every non-metrics/status surface composes
-  this so the head reads identically across the app, closed by the mandatory hazard
-  tape that already ends the yesid detail heads.
-
-  Zone order (vertical):
-    [cornerMeta] → kicker/overline → display title (+ orange dot) → lede →
-    [meta row] → [children] → hazard tape
-
-  • KICKER — a mono station-voice overline (SectionLabel `variant="station"`: the
-    yellow wayfinding accent, --tracking-eyebrow). This is the brand overline the
-    surface heads carry.
-  • TITLE — a REAL heading via SectionHeading (level defaults to 1 — a masthead is
-    the page title) with the brand orange dot. Exactly ONE h1 + one dot per page.
-  • LEDE — a muted framing sentence, capped to the shared lede measure.
-  • META — an optional mono-micro row (provider · window · generated_utc slots) — the
-    zone ArticleShell owned; the caller drops a fully-composed snippet (e.g. a
-    FreshnessStamp).
-  • CHILDREN — an optional region between the meta row and the tape (e.g. a control
-    rail, a hero pulse panel). Full-width; the caller owns its measure.
-  • TAPE — the closing edge-to-edge hazard Separator (default on) — the tape rhythm
-    that ends every yesid detail head.
-
-  Promotion-ready: token-driven, app-agnostic, no app conditionals. Brand primitives
-  only (SectionLabel + SectionHeading + Separator). Tokens, no hex. `--primary` is a
-  brand flourish on the dot only; the kicker rides `--accent`.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
@@ -36,40 +6,17 @@
 	import { Separator } from '@yesid/ui/separator';
 
 	export interface MastheadProps {
-		/** Mono station-voice overline (e.g. "NETWORK · LIVE"). */
 		kicker: string;
-		/** The display title text (rendered as a real heading + orange dot). */
 		heading: string;
-		/** Optional mono subheading under the title (e.g. "// MESURE"). */
 		subheading?: string;
-		/** Optional lede paragraph (muted, shared lede measure). */
 		lede?: string;
-		/** Heading level (1–6). Default 1 — a masthead is the page title. */
 		level?: 1 | 2 | 3 | 4 | 5 | 6;
-		/** Id on the heading wrapper (for a section's `aria-labelledby`). */
 		headingId?: string;
-		/** Optional inline explainer (i) affordance rendered after the title (§C2.7). */
 		explainer?: Snippet;
-		/**
-		 * Optional blueprint-margin corner readouts pinned to the (relative) head.
-		 * The caller drops a fully-composed <CornerMeta> here (A4, REAL data only);
-		 * omitted ⇒ no corner annotations.
-		 */
 		cornerMeta?: Snippet;
-		/**
-		 * Optional mono meta row under the lede — provider · window · generated_utc
-		 * chips (the caller drops a fully-composed snippet, e.g. a FreshnessStamp).
-		 * Omitted ⇒ no meta row.
-		 */
 		meta?: Snippet;
-		/**
-		 * Optional region between the meta row and the tape — a control rail, a hero
-		 * pulse panel, etc. Full-width; the caller owns its measure. Omitted ⇒ nothing.
-		 */
 		children?: Snippet;
-		/** Show the closing hazard tape below the head. Default true. */
 		tape?: boolean;
-		/** Optional extra classes on the header root. */
 		class?: string;
 	}
 
@@ -124,9 +71,6 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* A4: when the head carries CornerMeta it becomes the relative host for the four
-	   corner readouts; a top+bottom band (only where the corners surface, ≥768px)
-	   keeps them clear of the content flow. */
 	.masthead-head--cornered {
 		position: relative;
 	}
@@ -135,14 +79,12 @@
 			padding-block: 1.75rem;
 		}
 	}
-	/* The framing sentence — muted, subheading-scale, shared lede measure. */
 	.masthead-lede {
 		color: var(--muted-foreground);
 		font-size: var(--text-subheading);
 		line-height: 1.6;
 		max-width: var(--measure-lede);
 	}
-	/* Mono-micro meta row — provider · window · generated_utc chips below the lede. */
 	.masthead-meta {
 		display: flex;
 		flex-wrap: wrap;
@@ -153,7 +95,6 @@
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
 	}
-	/* Full-width region between the meta row and the tape (control rail / hero pulse). */
 	.masthead-body {
 		display: flex;
 		flex-direction: column;
