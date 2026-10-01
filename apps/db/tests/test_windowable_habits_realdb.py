@@ -6,7 +6,6 @@ from datetime import date
 
 import pytest
 from sqlalchemy import text
-
 from test_spine_cutover_gate import (  # noqa: E402
     PROVIDER,
     ROUTE,

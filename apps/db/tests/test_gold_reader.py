@@ -40,7 +40,6 @@ from transit_ops.gold.rollups import (
 )
 from transit_ops.sql_registry import _REGISTRY
 
-
 _TRIP_HOUR = "EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))"
 _STOP_TS = "timezone(dp.timezone, sd.period_start_utc)"
 

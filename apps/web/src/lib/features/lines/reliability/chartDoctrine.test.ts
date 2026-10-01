@@ -12,7 +12,7 @@ const ALLOWLIST: ReadonlySet<string> = new Set([]);
 function stripComments(src: string): string {
 	return src
 		.replace(/\/\*[\s\S]*?\*\//g, '')
-		.replace(/<!--[\s\S]*?-->/g, '')
+		.replace(/<!--[\s\S]*?-->/g, ' ')
 		.split('\n')
 		.map((l) => l.replace(/\/\/.*$/, ''))
 		.join('\n');
@@ -70,6 +70,12 @@ const RENDERER_FILES = filesIn(
 const SCAN_FILES = [...FEATURE_FILES, ...RENDERER_FILES];
 
 describe('chart-doctrine — STABLE ABSOLUTE domains, never relative-to-max or auto-scaled', () => {
+	it('HTML comment removal keeps delimiter fragments apart and preserves banned idioms', () => {
+		expect(stripComments('<<!-- removed -->!--')).toBe('< !--');
+		const code = stripComments('value /<!-- removed -->worst');
+		expect(BANNED.some(({ re }) => re.test(code))).toBe(true);
+	});
+
 	it('the scan covers every feature surface AND the LayerChart renderer', () => {
 		expect(FEATURE_FILES.length).toBeGreaterThan(20);
 		expect(RENDERER_FILES.length).toBeGreaterThan(1);
