@@ -242,6 +242,14 @@ def test_identical_payloads_keep_distinct_capture_ids(
                 "timezone": PROVIDER_TZ,
             },
             "feeds": {
+                "static_schedule": {
+                    "endpoint_key": "static_schedule",
+                    "feed_kind": "static_schedule",
+                    "source_format": "gtfs_schedule_zip",
+                    "source_url": "https://example.test/static.zip",
+                    "auth": {"auth_type": "none"},
+                    "refresh_interval_seconds": 86400,
+                },
                 "trip_updates": {
                     "endpoint_key": "trip_updates",
                     "feed_kind": "trip_updates",
