@@ -97,6 +97,17 @@ class _Settings:
     SNAPSHOT_PUBLISH_CONCURRENCY = 1
 
 
+def _publish_snapshot(conn: _Conn, storage: _Store, tier: str) -> publish.PublishResult:
+    return publish.publish_snapshot(
+        "stm",
+        tier=tier,
+        settings=_Settings(),
+        engine=_Engine(conn),
+        storage=storage,
+        gate_enabled=False,
+    )
+
+
 def test_historic_lock_precedes_hash_load_public_write_flush_and_db_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -110,14 +121,7 @@ def test_historic_lock_precedes_hash_load_public_write_flush_and_db_state(
 
     monkeypatch.setattr(historic_tier, "publish", _publish_one)
 
-    publish.publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=_Engine(conn),
-        storage=store,
-        gate_enabled=False,
-    )
+    _publish_snapshot(conn, store, "historic")
 
     assert events == [
         "sql:publish.snapshot.repeatable_read",
@@ -148,14 +152,7 @@ def test_denied_historic_lock_has_zero_storage_or_publish_state_side_effects(
         publish.PublishLockUnavailableError,
         match=r"provider='stm'.*tier='historic'",
     ):
-        publish.publish_snapshot(
-            "stm",
-            tier="historic",
-            settings=_Settings(),
-            engine=_Engine(conn),
-            storage=store,
-            gate_enabled=False,
-        )
+        _publish_snapshot(conn, store, "historic")
 
     assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
     assert store.objects == {}
@@ -174,14 +171,7 @@ def test_denied_static_lock_stops_before_dataset_stamp_lookup(
     monkeypatch.setattr(publish, "_static_stamp", _must_not_read_stamp)
 
     with pytest.raises(publish.PublishLockUnavailableError):
-        publish.publish_snapshot(
-            "stm",
-            tier="static",
-            settings=_Settings(),
-            engine=_Engine(conn),
-            storage=_Store(events),
-            gate_enabled=False,
-        )
+        _publish_snapshot(conn, _Store(events), "static")
 
     assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
 
@@ -205,14 +195,7 @@ def test_static_and_historic_publish_acquire_the_exact_lane_lock(
     if tier == "static":
         monkeypatch.setattr(publish, "_static_stamp", lambda *_args: "2026-07-14T00:00:00Z")
 
-    publish.publish_snapshot(
-        "stm",
-        tier=tier,
-        settings=_Settings(),
-        engine=_Engine(conn),
-        storage=store,
-        gate_enabled=False,
-    )
+    _publish_snapshot(conn, store, tier)
 
     assert conn.params[0] == ("publish.snapshot.repeatable_read", {})
     assert conn.params[1] == (
@@ -247,10 +230,7 @@ def test_denied_live_lane_stops_before_storage_or_state() -> None:
     store = _Store(events)
 
     with pytest.raises(publish.PublishLockUnavailableError):
-        publish.publish_snapshot(
-            "stm", tier="live", settings=_Settings(), engine=_Engine(conn),
-            storage=store, gate_enabled=False,
-        )
+        _publish_snapshot(conn, store, "live")
 
     assert events == ["sql:publish.snapshot.repeatable_read", "sql:publish.lock.try_acquire"]
     assert store.objects == {}
@@ -291,14 +271,7 @@ def test_root_activation_conflict_does_not_flush_hash_or_db_state(
     monkeypatch.setattr(historic_tier, "publish", _conflicting_publish)
 
     with pytest.raises(StableActivationConflictError):
-        publish.publish_snapshot(
-            "stm",
-            tier="historic",
-            settings=_Settings(),
-            engine=_Engine(conn),
-            storage=store,
-            gate_enabled=False,
-        )
+        _publish_snapshot(conn, store, "historic")
 
     assert "put:historic/compat.json" in events
     assert "put:_meta/publish_state_historic.json" not in events
@@ -341,14 +314,7 @@ def test_same_root_activation_is_counted_as_an_idempotent_skip(
 
     monkeypatch.setattr(historic_tier, "publish", _same_root_publish)
 
-    result = publish.publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=_Engine(conn),
-        storage=store,
-        gate_enabled=False,
-    )
+    result = _publish_snapshot(conn, store, "historic")
 
     assert result.keys_written == []
     assert result.keys_skipped == ["historic/history/index.json"]

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/v1/schemas/manifest';
-import type { ContentAdapter } from './types';
+import type { r2Adapter } from './r2';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
@@ -65,7 +65,7 @@ const PORT_METHODS = {
 	provenance: ['get'],
 	dataHealth: ['get'],
 	basemap: ['get'],
-} as const satisfies Record<keyof ContentAdapter, readonly string[]>;
+} as const satisfies Record<keyof typeof r2Adapter, readonly string[]>;
 
 interface ObjectSnapshot {
 	keys: readonly PropertyKey[];
