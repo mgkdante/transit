@@ -9,6 +9,7 @@ from realtime_replay_fixtures import (
     PROVIDER,
     PROVIDER_TZ,
     SNAPSHOTS,
+    _build_trip_update_bytes,
     _seed_provider_and_static,
     _seed_raw_realtime_snapshots,
     _storage_path,
@@ -215,3 +216,94 @@ def test_latest_archive_selection_uses_capture_order_and_omits_missing_lanes(
     assert [
         row["source_realtime_snapshot_id"] for row in _silver_state(engine)["rt_feed_snapshots"]
     ] == [expected]
+
+
+def test_identical_payloads_keep_distinct_capture_ids(
+    captured, engine, settings, bronze_root, monkeypatch
+):
+    from datetime import UTC, datetime
+
+    from transit_ops.capture_load import capture_and_load_realtime
+    from transit_ops.core.models import ProviderManifest
+    from transit_ops.ingestion import realtime_gtfs as capture
+    from transit_ops.ingestion.common import DownloadedArtifact
+    from transit_ops.ingestion.storage import BronzeStorageScope
+
+    payload = _build_trip_update_bytes(
+        captured_at=datetime(2026, 6, 20, 12, 10, tzinfo=UTC),
+        delay_seconds=60,
+    )
+    checksum = hashlib.sha256(payload).hexdigest()
+    manifest = ProviderManifest.model_validate(
+        {
+            "provider": {
+                "provider_id": PROVIDER,
+                "display_name": "Capture identity test",
+                "timezone": PROVIDER_TZ,
+            },
+            "feeds": {
+                "trip_updates": {
+                    "endpoint_key": "trip_updates",
+                    "feed_kind": "trip_updates",
+                    "source_format": "gtfs_rt_trip_updates",
+                    "source_url": "https://example.test/trips.pb",
+                    "auth": {"auth_type": "none"},
+                    "refresh_interval_seconds": 30,
+                }
+            },
+        }
+    )
+    registry = SimpleNamespace(get_provider=lambda provider_id: manifest)
+    downloads = []
+
+    def download(config, temp_dir):
+        assert config.provider_id == PROVIDER
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        path = temp_dir / f"capture-{len(downloads)}.pb"
+        path.write_bytes(payload)
+        downloads.append(path)
+        return DownloadedArtifact(path, len(payload), checksum, 200, config.source_url)
+
+    monkeypatch.setattr(capture, "_download_to_tempfile", download)
+    scope = BronzeStorageScope(settings, project_root=bronze_root)
+    try:
+        first = capture_and_load_realtime(
+            PROVIDER,
+            "trip_updates",
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=scope.resolve,
+        )
+        second = capture_and_load_realtime(
+            PROVIDER,
+            "trip_updates",
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=scope.resolve,
+        )
+    finally:
+        scope.close()
+    assert first.failure is None
+    assert second.failure is None
+    assert first.capture.realtime_snapshot_id != second.capture.realtime_snapshot_id
+    assert first.capture.ingestion_object_id != second.capture.ingestion_object_id
+    assert first.capture.checksum_sha256 == second.capture.checksum_sha256 == checksum
+    assert first.silver.realtime_snapshot_id == first.capture.realtime_snapshot_id
+    assert second.silver.realtime_snapshot_id == second.capture.realtime_snapshot_id
+    assert (
+        first.silver.row_counts
+        == second.silver.row_counts
+        == {
+            "rt_feed_snapshots": 1,
+            "rt_entities": 1,
+            "rt_trip_updates": 1,
+            "rt_trip_update_stop_times": 1,
+        }
+    )
+    state = _silver_state(engine)
+    assert {row["source_realtime_snapshot_id"] for row in state["rt_feed_snapshots"]} == {
+        first.capture.realtime_snapshot_id,
+        second.capture.realtime_snapshot_id,
+    }

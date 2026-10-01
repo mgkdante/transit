@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 import transit_ops.silver.static_gtfs as static_silver
+from transit_ops.capture_load import CaptureLoadFailure, CaptureLoadResult
 from transit_ops.gold.marts import GoldRealtimeRefreshResult
 from transit_ops.ingestion.i3 import I3IngestionResult
 from transit_ops.ingestion.realtime_gtfs import RealtimeIngestionResult
@@ -238,25 +239,24 @@ def make_impls(
         record("refresh_live")()
         return _live_result()
 
+    def capture_load(provider_id, endpoint_key, **kwargs):
+        record(f"{endpoint_key}_capture")()
+        captured = _captured(endpoint_key)
+        record(f"{endpoint_key}_silver")()
+        return CaptureLoadResult(captured, _silver_receipt(endpoint_key), 0.1, 0.2, 0.3, None)
+
     return SourceFactoryOperationImpls(
         r2_prune_cycle=r2_prune_cycle,
         reset_tables=record("reset"),
         ingest_static_feed=lambda *args, **kwargs: (record("static_ingest")(), _static_capture())[
             1
         ],
-        capture_realtime_feed=lambda *args, endpoint_key, **kwargs: (
-            record(f"{endpoint_key}_capture")(),
-            _captured(endpoint_key),
-        )[1],
+        capture_and_load_realtime=capture_load,
         ingest_gis_feed=record("gis_ingest"),
         capture_i3_alerts=lambda *args, **kwargs: (record("i3_capture")(), _captured("i3_alerts"))[
             1
         ],
         load_latest_static_to_silver=record("static_silver"),
-        load_realtime_to_silver=lambda *args, endpoint_key, **kwargs: (
-            record(f"{endpoint_key}_silver")(),
-            _silver_receipt(endpoint_key),
-        )[1],
         load_latest_gis_to_silver=record("gis_silver"),
         load_i3_to_silver=lambda *args, **kwargs: (
             record("i3_silver")(),
@@ -824,10 +824,11 @@ def test_execute_passes_exact_capture_receipts_through_silver_and_live(tmp_path,
         initialized.append((provider_id, endpoint_keys))
         calls.append("initialize_serving")
 
-    def load_rt(provider_id, *, endpoint_key, snapshot_id, **kwargs):
-        assert snapshot_id == _captured(endpoint_key).realtime_snapshot_id
+    def capture_load(provider_id, endpoint_key, **kwargs):
+        calls.append(f"{endpoint_key}_capture")
+        captured = _captured(endpoint_key)
         calls.append(f"{endpoint_key}_silver")
-        return receipts[endpoint_key]
+        return CaptureLoadResult(captured, receipts[endpoint_key], 0.1, 0.2, 0.3, None)
 
     def load_alert(provider_id, *, snapshot_id, endpoint_key, **kwargs):
         assert (snapshot_id, endpoint_key) == (73, "i3_alerts")
@@ -847,7 +848,7 @@ def test_execute_passes_exact_capture_receipts_through_silver_and_live(tmp_path,
         replace(
             impls,
             initialize_realtime_serving=initialize,
-            load_realtime_to_silver=load_rt,
+            capture_and_load_realtime=capture_load,
             load_i3_to_silver=load_alert,
             refresh_gold_realtime=refresh,
         ),
@@ -880,6 +881,108 @@ def _execute_fixture(tmp_path, impls):
     )
 
 
+@pytest.mark.parametrize("stage", ["capture", "silver"])
+def test_source_factory_shared_operation_raises_original_failure_before_gold(tmp_path, stage):
+    from transit_ops.capture_load import CaptureLoadFailure, CaptureLoadResult
+
+    calls = []
+    original = RuntimeError("source operation failed")
+    failure = CaptureLoadResult(
+        capture=None if stage == "capture" else _captured("trip_updates"),
+        silver=None,
+        capture_duration_seconds=0.125,
+        silver_load_duration_seconds=None if stage == "capture" else 0.25,
+        total_endpoint_duration_seconds=0.375,
+        failure=CaptureLoadFailure(stage, "operation", original, STARTED_AT),
+    )
+    impls = replace(make_impls(calls), capture_and_load_realtime=lambda *a, **k: failure)
+    with pytest.raises(RuntimeError) as raised:
+        _execute_fixture(tmp_path, impls)
+    assert raised.value is original
+    assert "gold_marts" not in calls
+    assert "refresh_live" not in calls
+    assert "warm_rollups" not in calls
+
+
+@pytest.mark.parametrize("stage", [None, "capture", "silver"])
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_source_factory_backfill_scope_closes_without_masking_primary_outcome(
+    tmp_path, monkeypatch, stage, close_fails
+):
+    from transit_ops.source_factory import runner
+
+    calls = []
+    scopes = []
+    storages = []
+    original = RuntimeError("original operation failure")
+
+    class Scope:
+        def __init__(self, *args, **kwargs):
+            assert "initialize_serving" in calls
+            self.storage = object()
+            self.closes = 0
+            scopes.append(self)
+
+        def resolve(self, backend):
+            return self.storage
+
+        def close(self):
+            self.closes += 1
+            if close_fails:
+                raise RuntimeError("scope close failed")
+
+    def shared(provider_id, endpoint_key, *, bronze_storage_resolver, **kwargs):
+        storages.append(bronze_storage_resolver("local"))
+        if stage is not None:
+            return CaptureLoadResult(
+                None if stage == "capture" else _captured(endpoint_key),
+                None,
+                0.1,
+                None if stage == "capture" else 0.2,
+                0.3,
+                CaptureLoadFailure(stage, "operation", original, STARTED_AT),
+            )
+        return CaptureLoadResult(
+            _captured(endpoint_key), _silver_receipt(endpoint_key), 0.1, 0.2, 0.3, None
+        )
+
+    monkeypatch.setattr(runner, "BronzeStorageScope", Scope)
+    impls = replace(make_impls(calls), capture_and_load_realtime=shared)
+    if stage is None:
+        result = _execute_fixture(tmp_path, impls)
+        assert result.phase_status[FactoryPhase.GOLD_BUILD] == PhaseStatus.OK
+        assert len(storages) == 2
+        assert storages[0] is storages[1]
+    else:
+        with pytest.raises(RuntimeError) as raised:
+            _execute_fixture(tmp_path, impls)
+        assert raised.value is original
+        assert "gold_marts" not in calls
+    assert len(scopes) == 1
+    assert scopes[0].closes == 1
+
+
+def test_source_factory_dry_run_never_constructs_backfill_scope(tmp_path, monkeypatch):
+    from transit_ops.source_factory import runner
+
+    monkeypatch.setattr(
+        runner,
+        "BronzeStorageScope",
+        lambda *a, **k: pytest.fail("dry run must not construct backfill scope"),
+    )
+    result = run_source_factory_rebuild(
+        "stm",
+        artifact_dir=tmp_path,
+        keep_from_date=date(2026, 5, 1),
+        settings=ORACLE_SETTINGS,
+        registry=FakeRegistry(),
+        bronze_storage=object(),
+        clock=ticking_clock(),
+        operation_impls=make_impls([]),
+    )
+    assert result.phase_status[FactoryPhase.SOURCE_BACKFILL] == PhaseStatus.SKIPPED
+
+
 @pytest.mark.parametrize("kind", ["realtime", "alerts"])
 def test_execute_refuses_a_silver_receipt_for_a_different_capture(tmp_path, kind):
     calls = []
@@ -887,8 +990,13 @@ def test_execute_refuses_a_silver_receipt_for_a_different_capture(tmp_path, kind
     if kind == "realtime":
         impls = replace(
             impls,
-            load_realtime_to_silver=lambda *a, endpoint_key, **k: replace(
-                _silver_receipt(endpoint_key), realtime_snapshot_id=999
+            capture_and_load_realtime=lambda *a, **k: CaptureLoadResult(
+                _captured("trip_updates"),
+                None,
+                0.1,
+                0.2,
+                0.3,
+                CaptureLoadFailure("silver", "silver_identity", ValueError("mismatch"), STARTED_AT),
             ),
         )
     else:

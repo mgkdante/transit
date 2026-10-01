@@ -5,13 +5,13 @@ from typing import assert_type
 
 from sqlalchemy.engine import Connection, Engine
 
+from transit_ops.capture_load import RealtimeCaptureLoadResult
 from transit_ops.ingestion.i3 import I3IngestionResult
-from transit_ops.ingestion.realtime_gtfs import RealtimeIngestionResult
 from transit_ops.ingestion.static_gtfs import StaticIngestionResult
+from transit_ops.ingestion.storage import BronzeStorageResolver
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings
 from transit_ops.silver.i3 import I3SilverLoadResult
-from transit_ops.silver.realtime_gtfs import RealtimeSilverLoadResult
 from transit_ops.silver.static_gtfs import StaticSilverLoadResult
 from transit_ops.source_factory.r2 import R2CleanupStorage, R2PruneCycleResult
 from transit_ops.source_factory.runner import SourceFactoryOperationImpls
@@ -25,6 +25,7 @@ def check_operation_contracts(
     storage: R2CleanupStorage,
     artifact_dir: Path,
     clock: Callable[[], datetime],
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> None:
     operations = SourceFactoryOperationImpls()
     assert_type(operations.reset_tables(connection, "stm"), dict[str, object])
@@ -58,21 +59,16 @@ def check_operation_contracts(
         ),
         StaticSilverLoadResult,
     )
-    realtime_capture = operations.capture_realtime_feed(
-        "stm", endpoint_key="trip_updates", settings=settings, registry=registry, engine=engine
-    )
-    assert_type(realtime_capture, RealtimeIngestionResult)
-    assert_type(realtime_capture.realtime_snapshot_id, int)
     assert_type(
-        operations.load_realtime_to_silver(
+        operations.capture_and_load_realtime(
             "stm",
-            endpoint_key="trip_updates",
-            snapshot_id=realtime_capture.realtime_snapshot_id,
+            "trip_updates",
             settings=settings,
             registry=registry,
             engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
         ),
-        RealtimeSilverLoadResult,
+        RealtimeCaptureLoadResult,
     )
     alert_capture = operations.capture_i3_alerts(
         "stm", settings=settings, registry=registry, engine=engine
@@ -92,8 +88,8 @@ def check_operation_contracts(
     operations.load_latest_static_to_silver(  # type: ignore[call-arg]
         "stm", settings=settings, registry=registry, engine=engine
     )
-    operations.load_realtime_to_silver(  # type: ignore[call-arg]
-        "stm", endpoint_key="trip_updates", settings=settings, registry=registry, engine=engine
+    operations.capture_and_load_realtime(  # type: ignore[call-arg]
+        "stm", "trip_updates", settings=settings, registry=registry, engine=engine
     )
     operations.load_i3_to_silver(  # type: ignore[call-arg]
         "stm", endpoint_key="i3_alerts", settings=settings, engine=engine
@@ -101,7 +97,7 @@ def check_operation_contracts(
     SourceFactoryOperationImpls(
         load_latest_static_to_silver=load_without_checksum,  # type: ignore[arg-type]
         ingest_static_feed=capture_with_wrong_receipt,  # type: ignore[arg-type]
-        load_realtime_to_silver=load_without_snapshot,  # type: ignore[arg-type]
+        capture_and_load_realtime=load_without_resolver,  # type: ignore[arg-type]
     )
 
 
@@ -125,12 +121,12 @@ def capture_with_wrong_receipt(
     raise NotImplementedError
 
 
-def load_without_snapshot(
+def load_without_resolver(
     provider_id: str,
-    *,
     endpoint_key: str,
+    *,
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
-) -> RealtimeSilverLoadResult:
+) -> RealtimeCaptureLoadResult:
     raise NotImplementedError

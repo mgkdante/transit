@@ -10,10 +10,18 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 from sqlalchemy.engine import Engine
 
+from transit_ops.capture_load import (
+    CaptureLoadResult,
+    _DisplayResult,
+    _log_step_success,
+    _run_capture_load_steps,
+    _run_timed_realtime_step,
+    capture_and_load_realtime,
+)
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine, require_database_url
 from transit_ops.gold import (
@@ -25,12 +33,10 @@ from transit_ops.gold import (
 )
 from transit_ops.ingestion import (
     I3IngestionResult,
-    RealtimeIngestionResult,
     build_i3_ingestion_config,
     build_realtime_ingestion_config,
     build_service_alerts_ingestion_config,
     capture_i3_alerts,
-    capture_realtime_feed,
     capture_service_alerts,
     ingest_gis_feed,
     ingest_static_feed,
@@ -38,10 +44,10 @@ from transit_ops.ingestion import (
 from transit_ops.ingestion.common import (
     get_feed_endpoint_id,
     insert_failed_ingestion_run,
+    redact_error_message,
     utc_now,
 )
 from transit_ops.ingestion.i3 import _capture_i3_alerts, _capture_service_alerts
-from transit_ops.ingestion.realtime_gtfs import _capture_realtime_feed
 from transit_ops.ingestion.storage import BronzeStorageResolver, BronzeStorageScope
 from transit_ops.maintenance import (
     prune_gold_storage,
@@ -54,9 +60,7 @@ from transit_ops.silver import (
     load_i3_to_silver,
     load_latest_gis_to_silver,
     load_latest_static_to_silver,
-    load_realtime_to_silver,
 )
-from transit_ops.silver.realtime_gtfs import _load_realtime_to_silver
 from transit_ops.silver.static_gtfs import prepare_static_application
 from transit_ops.snapshots.publish import publish_snapshot
 
@@ -67,10 +71,6 @@ REALTIME_ENDPOINTS = (*GTFS_REALTIME_ENDPOINTS, I3_ALERT_ENDPOINT)
 ALL_REALTIME_ENDPOINTS = (*REALTIME_ENDPOINTS, SERVICE_ALERTS_ENDPOINT)
 
 logger = logging.getLogger(__name__)
-
-
-class _DisplayResult(Protocol):
-    def display_dict(self) -> dict[str, object]: ...
 
 
 def realtime_endpoints_for_manifest(manifest: ProviderManifest) -> tuple[str, ...]:
@@ -205,10 +205,6 @@ def _engine(settings: Settings, engine: Engine | None) -> Engine:
     return engine or make_engine(settings)
 
 
-def _log_step_success(step_name: str, payload: dict[str, object]) -> None:
-    logger.info("%s succeeded: %s", step_name, json.dumps(payload, sort_keys=True))
-
-
 def _run_timed_static_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
     step_started_at_utc = utc_now()
     step_started_at = time.perf_counter()
@@ -219,35 +215,6 @@ def _run_timed_static_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
         duration_seconds = round(time.perf_counter() - step_started_at, 3)
         logger.exception(
             "Static pipeline step '%s' failed after %.3f seconds.",
-            step_name,
-            duration_seconds,
-        )
-        raise
-
-    step_completed_at_utc = utc_now()
-    duration_seconds = round(time.perf_counter() - step_started_at, 3)
-    _log_step_success(
-        step_name,
-        {
-            "step_started_at_utc": step_started_at_utc.isoformat(),
-            "step_completed_at_utc": step_completed_at_utc.isoformat(),
-            "duration_seconds": duration_seconds,
-            "result": result.display_dict(),
-        },
-    )
-    return result, duration_seconds
-
-
-def _run_timed_realtime_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
-    step_started_at_utc = utc_now()
-    step_started_at = time.perf_counter()
-    logger.info("Starting realtime cycle step '%s'.", step_name)
-    try:
-        result = step_fn()
-    except Exception:
-        duration_seconds = round(time.perf_counter() - step_started_at, 3)
-        logger.exception(
-            "Realtime cycle step '%s' failed after %.3f seconds.",
             step_name,
             duration_seconds,
         )
@@ -488,192 +455,37 @@ def _persist_silver_load_failure(
         )
 
 
-def _run_capture_load_steps[Captured: _DisplayResult](
+def _endpoint_cycle_result(
     provider_id: str,
     endpoint_key: str,
+    outcome: CaptureLoadResult[_DisplayResult, _DisplayResult],
     *,
-    capture_step: Callable[[], Captured],
-    silver_load_step: Callable[[Captured], _DisplayResult],
     capture_label_prefix: str,
     silver_label_prefix: str,
     engine: Engine,
 ) -> RealtimeEndpointCycleResult:
-    endpoint_started_at = time.perf_counter()
-    capture_duration_seconds: float | None = None
-    silver_load_duration_seconds: float | None = None
-
-    logger.info(
-        "Running capture step for provider '%s', endpoint '%s'.",
-        provider_id,
-        endpoint_key,
-    )
-    capture_started_at = time.perf_counter()
-    try:
-        capture_result, capture_duration_seconds = _run_timed_realtime_step(
-            f"{capture_label_prefix}[{endpoint_key}]",
-            capture_step,
-        )
-    except Exception as exc:
-        if capture_duration_seconds is None:
-            capture_duration_seconds = round(
-                time.perf_counter() - capture_started_at,
-                3,
+    error_message = None
+    if outcome.failure is not None:
+        failure = outcome.failure
+        label = capture_label_prefix if failure.stage == "capture" else silver_label_prefix
+        error_message = f"{label} failed: {redact_error_message(str(failure.error))}"
+        if failure.stage == "silver":
+            _persist_silver_load_failure(
+                engine,
+                provider_id=provider_id,
+                endpoint_key=endpoint_key,
+                error_message=error_message,
+                started_at_utc=failure.started_at_utc,
             )
-        logger.error(
-            "Realtime cycle capture failed for provider '%s', endpoint '%s': %s",
-            provider_id,
-            endpoint_key,
-            exc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=None,
-            silver_load_result=None,
-            error_message=f"{capture_label_prefix} failed: {exc}",
-        )
-
-    logger.info(
-        "Running Silver load step for provider '%s', endpoint '%s'.",
-        provider_id,
-        endpoint_key,
-    )
-    silver_load_started_at = time.perf_counter()
-    silver_load_started_at_utc = utc_now()
-    try:
-        silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
-            f"{silver_label_prefix}[{endpoint_key}]",
-            lambda: silver_load_step(capture_result),
-        )
-    except Exception as exc:
-        if silver_load_duration_seconds is None:
-            silver_load_duration_seconds = round(
-                time.perf_counter() - silver_load_started_at,
-                3,
-            )
-        logger.error(
-            "Realtime cycle Silver load failed for provider '%s', endpoint '%s': %s",
-            provider_id,
-            endpoint_key,
-            exc,
-        )
-        error_message = f"{silver_label_prefix} failed: {exc}"
-        _persist_silver_load_failure(
-            engine,
-            provider_id=provider_id,
-            endpoint_key=endpoint_key,
-            error_message=error_message,
-            started_at_utc=silver_load_started_at_utc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=capture_result.display_dict(),
-            silver_load_result=None,
-            error_message=error_message,
-        )
-
     return RealtimeEndpointCycleResult(
         endpoint_key=endpoint_key,
-        status="succeeded",
-        capture_duration_seconds=capture_duration_seconds,
-        silver_load_duration_seconds=silver_load_duration_seconds,
-        total_endpoint_duration_seconds=round(
-            time.perf_counter() - endpoint_started_at,
-            3,
-        ),
-        capture_result=capture_result.display_dict(),
-        silver_load_result=silver_load_result,
-        error_message=None,
-    )
-
-
-def _capture_and_load_endpoint(
-    provider_id: str,
-    endpoint_key: str,
-    *,
-    settings: Settings,
-    registry: ProviderRegistry,
-    engine: Engine,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
-) -> RealtimeEndpointCycleResult:
-    captured_payload: bytes | None = None
-    if bronze_storage_resolver is None:
-        capture_step = partial(
-            capture_realtime_feed,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        )
-        silver_load_step = partial(
-            load_realtime_to_silver,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        )
-    else:
-        def capture_step() -> RealtimeIngestionResult:
-            nonlocal captured_payload
-            result, captured_payload = _capture_realtime_feed(
-                provider_id,
-                endpoint_key,
-                settings=settings,
-                registry=registry,
-                engine=engine,
-                bronze_storage_resolver=bronze_storage_resolver,
-            )
-            return result
-        silver_load_step = partial(
-            _load_realtime_to_silver,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            bronze_storage_resolver=bronze_storage_resolver,
-        )
-
-    def load_capture(captured: RealtimeIngestionResult) -> RealtimeSilverLoadResult:
-        if captured.provider_id != provider_id or captured.endpoint_key != endpoint_key:
-            raise ValueError("Realtime capture receipt does not match the requested source")
-        if bronze_storage_resolver is None:
-            loaded = silver_load_step(snapshot_id=captured.realtime_snapshot_id)
-        else:
-            loaded = silver_load_step(
-                snapshot_id=captured.realtime_snapshot_id, captured_payload=captured_payload,
-            )
-        if (
-            loaded.provider_id != provider_id
-            or loaded.endpoint_key != endpoint_key
-            or loaded.realtime_snapshot_id != captured.realtime_snapshot_id
-        ):
-            raise ValueError("Realtime Silver receipt does not match the captured snapshot")
-        return loaded
-
-    return _run_capture_load_steps(
-        provider_id,
-        endpoint_key,
-        capture_step=capture_step,
-        silver_load_step=load_capture,
-        capture_label_prefix="capture-realtime",
-        silver_label_prefix="load-realtime-silver",
-        engine=engine,
+        status="failed" if outcome.failure is not None else "succeeded",
+        capture_duration_seconds=outcome.capture_duration_seconds,
+        silver_load_duration_seconds=outcome.silver_load_duration_seconds,
+        total_endpoint_duration_seconds=outcome.total_endpoint_duration_seconds,
+        capture_result=outcome.capture.display_dict() if outcome.capture is not None else None,
+        silver_load_result=outcome.silver,
+        error_message=error_message,
     )
 
 
@@ -725,11 +537,18 @@ def _capture_and_load_alert_endpoint(
             raise ValueError("Alert Silver receipt does not match the captured snapshot")
         return loaded
 
-    return _run_capture_load_steps(
+    outcome = _run_capture_load_steps(
         provider_id,
         endpoint_key,
         capture_step=capture_step,
         silver_load_step=load_capture,
+        capture_label_prefix=capture_label_prefix,
+        silver_label_prefix=silver_label_prefix,
+    )
+    return _endpoint_cycle_result(
+        provider_id,
+        endpoint_key,
+        outcome,
         capture_label_prefix=capture_label_prefix,
         silver_label_prefix=silver_label_prefix,
         engine=engine,
@@ -787,7 +606,7 @@ def _capture_and_load_realtime_source(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeEndpointCycleResult:
     if endpoint_key == I3_ALERT_ENDPOINT:
         return _capture_and_load_i3_alerts(
@@ -805,13 +624,21 @@ def _capture_and_load_realtime_source(
             engine=engine,
             bronze_storage_resolver=bronze_storage_resolver,
         )
-    return _capture_and_load_endpoint(
+    outcome = capture_and_load_realtime(
         provider_id,
         endpoint_key,
         settings=settings,
         registry=registry,
         engine=engine,
         bronze_storage_resolver=bronze_storage_resolver,
+    )
+    return _endpoint_cycle_result(
+        provider_id,
+        endpoint_key,
+        outcome,
+        capture_label_prefix="capture-realtime",
+        silver_label_prefix="load-realtime-silver",
+        engine=engine,
     )
 
 
@@ -848,7 +675,7 @@ def _run_realtime_cycle(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeCycleResult:
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
@@ -1015,14 +842,24 @@ def run_realtime_cycle(
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
 ) -> RealtimeCycleResult:
-    return _run_realtime_cycle(
-        provider_id,
-        settings=settings,
-        registry=registry,
-        engine=engine,
-        last_captures=last_captures,
-        bronze_storage_resolver=None,
-    )
+    settings = settings or get_settings()
+    scope = BronzeStorageScope(settings, project_root=_project_root())
+    try:
+        return _run_realtime_cycle(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            last_captures=last_captures,
+            bronze_storage_resolver=scope.resolve,
+        )
+    finally:
+        try:
+            scope.close()
+        except Exception as exc:
+            logger.error(
+                "Failed to close cycle Bronze storage scope: %s", redact_error_message(str(exc))
+            )
 
 
 def _validate_realtime_worker_startup(

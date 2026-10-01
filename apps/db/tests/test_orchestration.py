@@ -12,6 +12,7 @@ import pytest
 
 import transit_ops.ingestion.storage as bronze_storage_module
 import transit_ops.orchestration as orchestration
+from transit_ops import capture_load
 from transit_ops.core.models import ProviderManifest
 from transit_ops.gold import GoldRealtimeRefreshResult, GoldStaticRefreshResult
 from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
@@ -41,6 +42,20 @@ def _unapplied_static_dataset(monkeypatch):
 def _isolated_realtime_services(monkeypatch):
     monkeypatch.setattr(orchestration, "initialize_realtime_serving", lambda *args, **kwargs: None)
     monkeypatch.setattr(orchestration, "_best_effort_publish_live", lambda *args, **kwargs: 0)
+
+
+def _capture_stub(fn):
+    def capture(*args, bronze_storage_resolver, **kwargs):
+        return fn(*args, **kwargs), b"capture-a"
+
+    return capture
+
+
+def _silver_stub(fn):
+    def load(*args, captured_payload, bronze_storage_resolver, **kwargs):
+        return fn(*args, **kwargs)
+
+    return load
 
 
 def _static_already_applied(monkeypatch):
@@ -419,7 +434,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(
             endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
         )
 
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", _capture_stub(fake_capture))
 
     result = realtime_cycle("stm")
 
@@ -813,13 +828,8 @@ def _install_worker_storage_cycle_stubs(
         record_storage(bronze_storage_resolver)
         return _i3_ingestion_result()
 
-    monkeypatch.setattr(orchestration, "_capture_realtime_feed", capture_gtfs, raising=False)
-    monkeypatch.setattr(
-        orchestration,
-        "_load_realtime_to_silver",
-        load_gtfs,
-        raising=False,
-    )
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", capture_gtfs)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", load_gtfs)
     monkeypatch.setattr(orchestration, "_capture_i3_alerts", capture_i3, raising=False)
     monkeypatch.setattr(
         orchestration,
@@ -1548,12 +1558,12 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
         call_order.append(f"load:{endpoint_key}")
         return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", _capture_stub(fake_capture))
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", _silver_stub(fake_load))
     monkeypatch.setattr(
         orchestration,
-        "capture_i3_alerts",
-        lambda provider_id, settings, registry, engine: (
+        "_capture_i3_alerts",
+        lambda provider_id, settings, registry, engine, bronze_storage_resolver: (
             call_order.append("capture:i3_alerts"),
             _i3_ingestion_result(),
         )[1],
@@ -1670,10 +1680,10 @@ def test_single_shot_cycle_is_manifest_driven_captures_service_alerts(
     _install_realtime_cycle_stubs(monkeypatch, call_order)
     monkeypatch.setattr(
         orchestration,
-        "capture_service_alerts",
-        lambda provider_id, settings, registry, engine: (
+        "_capture_service_alerts",
+        lambda provider_id, settings, registry, engine, bronze_storage_resolver: (
             call_order.append("capture:service_alerts"),
-            _i3_ingestion_result(),
+            replace(_i3_ingestion_result(), provider_id="sto", endpoint_key="service_alerts"),
         )[1],
         raising=False,
     )
@@ -1742,13 +1752,13 @@ def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(
         call_order.append(f"capture:{endpoint_key}")
         raise RuntimeError(f"{endpoint_key} endpoint down")
 
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", failing_capture)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", _capture_stub(failing_capture))
     monkeypatch.setattr(
         orchestration,
-        "capture_i3_alerts",
-        lambda provider_id, settings, registry, engine: (_ for _ in ()).throw(
-            RuntimeError("i3 endpoint down")
-        ),
+        "_capture_i3_alerts",
+        lambda provider_id, settings, registry, engine, bronze_storage_resolver: (
+            _ for _ in ()
+        ).throw(RuntimeError("i3 endpoint down")),
         raising=False,
     )
 
@@ -1794,102 +1804,78 @@ def _install_failure_persistence_spies(monkeypatch, engine: _RecordingFailureEng
     monkeypatch.setattr(orchestration, "insert_failed_ingestion_run", fake_insert_failed)
 
 
-def test_shared_capture_load_executor_preserves_order_payload_and_rounding(
-    monkeypatch,
-) -> None:
-    call_order: list[str] = []
-    capture_payload = {"kind": "capture", "rows": 5}
-    silver_payload = {"kind": "silver", "rows": 4}
-    captured = SimpleNamespace(display_dict=lambda: capture_payload)
-    silver = SimpleNamespace(display_dict=lambda: silver_payload)
-
-    def load_exact(received):
-        assert received is captured
-        call_order.append("load")
-        return silver
-
+def test_shared_capture_load_executor_preserves_order_payload_and_rounding(monkeypatch):
+    calls = []
+    captured = _realtime_ingestion_result("trip_updates", 20)
+    silver = _realtime_silver_result("trip_updates", 20)
     durations = {
         "capture-realtime[trip_updates]": 1.235,
         "load-realtime-silver[trip_updates]": 2.346,
     }
 
-    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
-        call_order.append(label)
+    def timed(label, step):
+        calls.append(label)
         return step(), durations[label]
 
-    perf_values = iter([10.0, 10.1, 11.0, 12.3456])
-    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
-    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
-    monkeypatch.setattr(
-        orchestration,
-        "utc_now",
-        lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
-    )
+    def capture(*args, **kwargs):
+        calls.append("capture")
+        return captured, b"a"
 
-    result = orchestration._run_capture_load_steps(
+    def load(*args, snapshot_id, captured_payload, **kwargs):
+        assert (snapshot_id, captured_payload) == (20, b"a")
+        calls.append("load")
+        return silver
+
+    perf = iter([10.0, 10.1, 11.0, 12.3456])
+    monkeypatch.setattr(capture_load, "_run_timed_realtime_step", timed)
+    monkeypatch.setattr(capture_load.time, "perf_counter", lambda: next(perf))
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", capture)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", load)
+    result = orchestration._capture_and_load_realtime_source(
         "stm",
         "trip_updates",
-        capture_step=lambda: (
-            call_order.append("capture"),
-            captured,
-        )[1],
-        silver_load_step=load_exact,
-        capture_label_prefix="capture-realtime",
-        silver_label_prefix="load-realtime-silver",
+        settings=_pipeline_settings(),
+        registry=object(),
         engine=object(),
+        bronze_storage_resolver=lambda backend: object(),
     )
-
-    assert result.silver_load_result is silver
-    assert call_order == [
+    assert calls == [
         "capture-realtime[trip_updates]",
         "capture",
         "load-realtime-silver[trip_updates]",
         "load",
     ]
-    assert result.display_dict() == {
-        "endpoint_key": "trip_updates",
-        "status": "succeeded",
-        "capture_duration_seconds": 1.235,
-        "silver_load_duration_seconds": 2.346,
-        "total_endpoint_duration_seconds": 2.346,
-        "capture_result": capture_payload,
-        "silver_load_result": silver_payload,
-        "error_message": None,
-    }
+    assert result.silver_load_result is silver
+    assert result.capture_result["realtime_snapshot_id"] == 20
+    assert result.capture_duration_seconds == 1.235
+    assert result.silver_load_duration_seconds == 2.346
+    assert result.total_endpoint_duration_seconds == 2.346
+    assert result.status == "succeeded"
+    assert result.error_message is None
 
 
-def test_shared_capture_load_executor_capture_failure_skips_load_and_receipt(
-    monkeypatch,
-) -> None:
-    load_calls: list[str] = []
-    receipts: list[dict[str, object]] = []
+def test_shared_capture_load_executor_capture_failure_skips_load_and_receipt(monkeypatch):
+    receipts = []
 
-    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
-        return step(), 0.25
-
-    def fail_capture():
+    def fail_capture(*args, **kwargs):
         raise RuntimeError("capture down")
 
-    perf_values = iter([20.0, 20.1, 20.4567, 20.789])
-    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
-    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
+    perf = iter([20.0, 20.1, 20.4567, 20.789])
     monkeypatch.setattr(
-        orchestration,
-        "_persist_silver_load_failure",
-        lambda *args, **kwargs: receipts.append(kwargs),
+        capture_load, "_run_timed_realtime_step", lambda label, step: (step(), 0.25)
     )
-
-    result = orchestration._run_capture_load_steps(
+    monkeypatch.setattr(capture_load.time, "perf_counter", lambda: next(perf))
+    monkeypatch.setattr(orchestration, "capture_service_alerts", fail_capture)
+    monkeypatch.setattr(orchestration, "load_i3_to_silver", lambda *a, **k: pytest.fail("no load"))
+    monkeypatch.setattr(
+        orchestration, "_persist_silver_load_failure", lambda *a, **k: receipts.append(k)
+    )
+    result = orchestration._capture_and_load_service_alerts(
         "sto",
-        "service_alerts",
-        capture_step=fail_capture,
-        silver_load_step=lambda captured: load_calls.append("load"),
-        capture_label_prefix="capture-service-alerts",
-        silver_label_prefix="load-service-alerts-silver",
+        settings=_pipeline_settings(),
+        registry=object(),
         engine=object(),
     )
-
-    assert load_calls == []
     assert receipts == []
     assert result.display_dict() == {
         "endpoint_key": "service_alerts",
@@ -1903,50 +1889,49 @@ def test_shared_capture_load_executor_capture_failure_skips_load_and_receipt(
     }
 
 
-def test_shared_capture_load_executor_load_failure_persists_exact_receipt(
-    monkeypatch,
-) -> None:
-    receipt_calls: list[tuple[object, dict[str, object]]] = []
-    capture_payload = {"snapshot_id": 20}
-    started_at_utc = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)
+def test_shared_capture_load_executor_load_failure_persists_exact_receipt(monkeypatch):
+    receipts = []
+    payload = {"snapshot_id": 20}
+    started_at = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)
+    captured = SimpleNamespace(
+        provider_id="stm",
+        endpoint_key="i3_alerts",
+        i3_alert_snapshot_id=20,
+        display_dict=lambda: payload,
+    )
     engine = object()
 
-    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
-        if label.startswith("capture-"):
-            return step(), 0.111
-        return step(), 0.222
-
-    def fail_load(captured):
+    def fail_load(*args, snapshot_id, endpoint_key, **kwargs):
+        assert (snapshot_id, endpoint_key) == (20, "i3_alerts")
         raise RuntimeError("silver down")
 
-    perf_values = iter([30.0, 30.1, 31.0, 31.5678, 32.3456])
-    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
-    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
-    monkeypatch.setattr(orchestration, "utc_now", lambda: started_at_utc)
+    perf = iter([30.0, 30.1, 31.0, 31.5678, 32.3456])
+    monkeypatch.setattr(
+        capture_load, "_run_timed_realtime_step", lambda label, step: (step(), 0.111)
+    )
+    monkeypatch.setattr(capture_load.time, "perf_counter", lambda: next(perf))
+    monkeypatch.setattr(capture_load, "utc_now", lambda: started_at)
+    monkeypatch.setattr(orchestration, "capture_i3_alerts", lambda *a, **k: captured)
+    monkeypatch.setattr(orchestration, "load_i3_to_silver", fail_load)
     monkeypatch.setattr(
         orchestration,
         "_persist_silver_load_failure",
-        lambda receipt_engine, **kwargs: receipt_calls.append((receipt_engine, kwargs)),
+        lambda receipt_engine, **k: receipts.append((receipt_engine, k)),
     )
-
-    result = orchestration._run_capture_load_steps(
+    result = orchestration._capture_and_load_i3_alerts(
         "stm",
-        "i3_alerts",
-        capture_step=lambda: SimpleNamespace(display_dict=lambda: capture_payload),
-        silver_load_step=fail_load,
-        capture_label_prefix="capture-i3",
-        silver_label_prefix="load-i3-silver",
+        settings=_pipeline_settings(),
+        registry=object(),
         engine=engine,
     )
-
-    assert receipt_calls == [
+    assert receipts == [
         (
             engine,
             {
                 "provider_id": "stm",
                 "endpoint_key": "i3_alerts",
                 "error_message": "load-i3-silver failed: silver down",
-                "started_at_utc": started_at_utc,
+                "started_at_utc": started_at,
             },
         )
     ]
@@ -1956,136 +1941,31 @@ def test_shared_capture_load_executor_load_failure_persists_exact_receipt(
         "capture_duration_seconds": 0.111,
         "silver_load_duration_seconds": 0.568,
         "total_endpoint_duration_seconds": 2.346,
-        "capture_result": capture_payload,
+        "capture_result": payload,
         "silver_load_result": None,
         "error_message": "load-i3-silver failed: silver down",
     }
 
 
-def test_shared_capture_load_executor_swallows_receipt_persistence_failure(
-    monkeypatch,
-) -> None:
-    capture_payload = {"snapshot_id": 20}
+def test_shared_capture_load_executor_swallows_receipt_persistence_failure(monkeypatch):
+    captured = _realtime_ingestion_result("trip_updates", 20)
 
-    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
-        if label.startswith("capture-"):
-            return step(), 0.111
-        return step(), 0.222
-
-    def fail_load(captured):
+    def fail_load(*args, **kwargs):
         raise RuntimeError("silver down")
 
-    perf_values = iter([40.0, 40.1, 41.0, 41.25, 42.0])
-    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
-    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
-    monkeypatch.setattr(
-        orchestration,
-        "utc_now",
-        lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
-    )
-
-    result = orchestration._run_capture_load_steps(
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", lambda *a, **k: (captured, b"a"))
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", fail_load)
+    result = orchestration._capture_and_load_realtime_source(
         "stm",
         "trip_updates",
-        capture_step=lambda: SimpleNamespace(display_dict=lambda: capture_payload),
-        silver_load_step=fail_load,
-        capture_label_prefix="capture-realtime",
-        silver_label_prefix="load-realtime-silver",
+        settings=_pipeline_settings(),
+        registry=object(),
         engine=_RecordingFailureEngine(explode=True),
+        bronze_storage_resolver=lambda b: object(),
     )
-
     assert result.status == "failed"
-    assert result.capture_result == capture_payload
+    assert result.capture_result["realtime_snapshot_id"] == 20
     assert result.error_message == "load-realtime-silver failed: silver down"
-
-
-@pytest.mark.parametrize(
-    ("adapter_name", "endpoint_key", "capture_label", "silver_label"),
-    [
-        (
-            "_capture_and_load_endpoint",
-            "trip_updates",
-            "capture-realtime",
-            "load-realtime-silver",
-        ),
-        ("_capture_and_load_i3_alerts", "i3_alerts", "capture-i3", "load-i3-silver"),
-        (
-            "_capture_and_load_service_alerts",
-            "service_alerts",
-            "capture-service-alerts",
-            "load-service-alerts-silver",
-        ),
-    ],
-)
-def test_capture_load_adapters_delegate_exact_labels(
-    monkeypatch,
-    adapter_name: str,
-    endpoint_key: str,
-    capture_label: str,
-    silver_label: str,
-) -> None:
-    executor_calls: list[dict[str, object]] = []
-    sentinel = orchestration.RealtimeEndpointCycleResult(
-        endpoint_key=endpoint_key,
-        status="succeeded",
-        capture_duration_seconds=0.1,
-        silver_load_duration_seconds=0.2,
-        total_endpoint_duration_seconds=0.3,
-        capture_result={"capture": True},
-        silver_load_result={"silver": True},
-        error_message=None,
-    )
-
-    def fake_executor(provider_id, delegated_endpoint_key, **kwargs):  # noqa: ANN001, ANN202
-        executor_calls.append(
-            {
-                "provider_id": provider_id,
-                "endpoint_key": delegated_endpoint_key,
-                "capture_label_prefix": kwargs["capture_label_prefix"],
-                "silver_label_prefix": kwargs["silver_label_prefix"],
-                "capture_callable": callable(kwargs["capture_step"]),
-                "silver_callable": callable(kwargs["silver_load_step"]),
-            }
-        )
-        return sentinel
-
-    def fail_eager_call(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
-        pytest.fail("thin adapters must not invoke capture/load before delegation")
-
-    monkeypatch.setattr(
-        orchestration,
-        "_run_capture_load_steps",
-        fake_executor,
-        raising=False,
-    )
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", fail_eager_call)
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fail_eager_call)
-    monkeypatch.setattr(orchestration, "capture_i3_alerts", fail_eager_call)
-    monkeypatch.setattr(orchestration, "capture_service_alerts", fail_eager_call)
-    monkeypatch.setattr(orchestration, "load_i3_to_silver", fail_eager_call)
-
-    adapter = getattr(orchestration, adapter_name)
-    kwargs = {
-        "settings": _pipeline_settings(),
-        "registry": object(),
-        "engine": object(),
-    }
-    if adapter_name == "_capture_and_load_endpoint":
-        result = adapter("stm", endpoint_key, **kwargs)
-    else:
-        result = adapter("stm", **kwargs)
-
-    assert result is sentinel
-    assert executor_calls == [
-        {
-            "provider_id": "stm",
-            "endpoint_key": endpoint_key,
-            "capture_label_prefix": capture_label,
-            "silver_label_prefix": silver_label,
-            "capture_callable": True,
-            "silver_callable": True,
-        }
-    ]
 
 
 def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(
@@ -2100,7 +1980,7 @@ def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(
             raise RuntimeError("silver loader exploded")
         return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", _silver_stub(fake_load))
 
     engine = _RecordingFailureEngine()
     _install_failure_persistence_spies(monkeypatch, engine)
@@ -2158,7 +2038,7 @@ def test_silver_load_failure_persistence_is_best_effort(realtime_cycle, monkeypa
             raise RuntimeError("silver loader exploded")
         return _realtime_silver_result(endpoint_key, snapshot_id, provider_id)
 
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", fake_load)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", _silver_stub(fake_load))
 
     engine = _RecordingFailureEngine(explode=True)
     _install_failure_persistence_spies(monkeypatch, engine)
@@ -2184,7 +2064,7 @@ def test_capture_failures_do_not_write_silver_load_rows(realtime_cycle, monkeypa
             endpoint_key, 20 if endpoint_key == "trip_updates" else 21, provider_id
         )
 
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", _capture_stub(fake_capture))
 
     engine = _RecordingFailureEngine()
     _install_failure_persistence_spies(monkeypatch, engine)
@@ -2263,11 +2143,8 @@ def test_run_realtime_cycle_does_not_poll_an_absent_i3_feed(realtime_cycle, monk
     }
 
 
-@pytest.mark.parametrize("private", [False, True])
 @pytest.mark.parametrize("endpoint_key", ["trip_updates", "vehicle_positions"])
-def test_rt_controller_keeps_capture_a_after_capture_b_becomes_latest(
-    monkeypatch, private, endpoint_key
-):
+def test_rt_controller_keeps_capture_a_after_capture_b_becomes_latest(monkeypatch, endpoint_key):
     captured = _realtime_ingestion_result(endpoint_key, 20)
     receipts = {identity: _realtime_silver_result(endpoint_key, identity) for identity in (20, 21)}
     latest = {"id": 20}
@@ -2278,30 +2155,24 @@ def test_rt_controller_keeps_capture_a_after_capture_b_becomes_latest(
 
     def capture(*args, **kwargs):
         latest["id"] = 21
-        if private:
-            assert kwargs["bronze_storage_resolver"] is resolver
-        return (captured, b"capture-a") if private else captured
+        assert kwargs["bronze_storage_resolver"] is resolver
+        return captured, b"capture-a"
 
     def load(*args, snapshot_id=None, **kwargs):
-        if private:
-            assert kwargs["bronze_storage_resolver"] is resolver
-            assert kwargs["captured_payload"] == b"capture-a"
+        assert kwargs["bronze_storage_resolver"] is resolver
+        assert kwargs["captured_payload"] == b"capture-a"
         selected.append(snapshot_id)
         return receipts[latest["id"] if snapshot_id is None else snapshot_id]
 
-    monkeypatch.setattr(
-        orchestration, "_capture_realtime_feed" if private else "capture_realtime_feed", capture
-    )
-    monkeypatch.setattr(
-        orchestration, "_load_realtime_to_silver" if private else "load_realtime_to_silver", load
-    )
-    result = orchestration._capture_and_load_endpoint(
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", capture)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", load)
+    result = orchestration._capture_and_load_realtime_source(
         "stm",
         endpoint_key,
         settings=Settings(_env_file=None),
         registry=object(),
         engine=object(),
-        bronze_storage_resolver=resolver if private else None,
+        bronze_storage_resolver=resolver,
     )
     assert result.status == "succeeded"
     assert latest["id"] == 21
@@ -2370,7 +2241,7 @@ def test_cycle_initializes_before_capture_and_passes_original_rt_receipts_to_gol
         return _gold_refresh_result()
 
     monkeypatch.setattr(orchestration, "initialize_realtime_serving", initialize)
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", load)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", _silver_stub(load))
     monkeypatch.setattr(orchestration, "refresh_gold_realtime", refresh)
     result = realtime_cycle("stm", settings=Settings(_env_file=None))
     assert result.status == "succeeded"
@@ -2408,26 +2279,29 @@ def test_cycle_serving_initialization_failure_prevents_capture(realtime_cycle, m
 def test_rt_controller_refuses_a_mismatched_silver_receipt(monkeypatch, field, value):
     failed = []
     monkeypatch.setattr(
-        orchestration,
-        "capture_realtime_feed",
-        lambda *args, **kwargs: _realtime_ingestion_result("trip_updates", 20),
+        capture_load,
+        "_capture_realtime_feed",
+        _capture_stub(lambda *args, **kwargs: _realtime_ingestion_result("trip_updates", 20)),
     )
     monkeypatch.setattr(
-        orchestration,
-        "load_realtime_to_silver",
-        lambda *args, **kwargs: replace(
-            _realtime_silver_result("trip_updates", 20), **{field: value}
+        capture_load,
+        "_load_realtime_to_silver",
+        _silver_stub(
+            lambda *args, **kwargs: replace(
+                _realtime_silver_result("trip_updates", 20), **{field: value}
+            )
         ),
     )
     monkeypatch.setattr(
         orchestration, "_persist_silver_load_failure", lambda *args, **kwargs: failed.append(kwargs)
     )
-    result = orchestration._capture_and_load_endpoint(
+    result = orchestration._capture_and_load_realtime_source(
         "stm",
         "trip_updates",
         settings=Settings(_env_file=None),
         registry=object(),
         engine=object(),
+        bronze_storage_resolver=lambda backend: object(),
     )
     assert result.status == "failed"
     assert result.silver_load_result is None
@@ -2486,8 +2360,8 @@ def test_cycle_projects_only_successful_rt_receipts(realtime_cycle, monkeypatch,
         selected.extend(snapshots)
         return _gold_refresh_result()
 
-    monkeypatch.setattr(orchestration, "capture_realtime_feed", capture)
-    monkeypatch.setattr(orchestration, "load_realtime_to_silver", load)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", _capture_stub(capture))
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", _silver_stub(load))
     monkeypatch.setattr(orchestration, "refresh_gold_realtime", refresh)
     result = realtime_cycle(
         "stm",
@@ -2511,27 +2385,105 @@ def test_controller_refuses_capture_receipts_for_a_different_source(
     captured = replace(captured, **{field: value})
     failed = []
     monkeypatch.setattr(
-        orchestration,
-        "capture_i3_alerts" if alerts else "capture_realtime_feed",
-        lambda *args, **kwargs: captured,
+        orchestration if alerts else capture_load,
+        "_capture_i3_alerts" if alerts else "_capture_realtime_feed",
+        (lambda *args, **kwargs: captured) if alerts else (lambda *a, **k: (captured, b"a")),
     )
 
     def reject_load(*args, **kwargs):
         pytest.fail("a different source capture must fail before Silver application")
 
     monkeypatch.setattr(
-        orchestration, "load_i3_to_silver" if alerts else "load_realtime_to_silver", reject_load
+        orchestration if alerts else capture_load,
+        "load_i3_to_silver" if alerts else "_load_realtime_to_silver",
+        reject_load,
     )
     monkeypatch.setattr(
         orchestration, "_persist_silver_load_failure", lambda *args, **kwargs: failed.append(kwargs)
     )
-    common = dict(settings=Settings(_env_file=None), registry=object(), engine=object())
+    common = dict(
+        settings=Settings(_env_file=None),
+        registry=object(),
+        engine=object(),
+        bronze_storage_resolver=lambda backend: object(),
+    )
     result = (
         orchestration._capture_and_load_i3_alerts("stm", **common)
         if alerts
-        else orchestration._capture_and_load_endpoint("stm", endpoint, **common)
+        else orchestration._capture_and_load_realtime_source("stm", endpoint, **common)
     )
     assert result.status == "failed"
     assert result.silver_load_result is None
     assert len(failed) == 1
     assert "capture" in result.error_message.lower()
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "capture", "silver", "capture_identity", "silver_identity"]
+)
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_one_shot_scope_reuses_storage_and_closes_without_masking_outcome(
+    monkeypatch, caplog, fault, close_fails
+):
+    clients = []
+    storages = []
+    gold = []
+    failures = []
+
+    class Client(_ClosableS3Client):
+        def close(self):
+            super().close()
+            if close_fails:
+                raise RuntimeError("close https://example.test?api_key=private-close-secret")
+
+    def build_client(settings):
+        client = Client()
+        clients.append(client)
+        return client
+
+    def capture(*args, bronze_storage_resolver, **kwargs):
+        assert clients == []
+        storages.append(bronze_storage_resolver("s3"))
+        if fault == "capture":
+            raise RuntimeError("capture https://example.test?api_key=private-capture-secret")
+        captured = _realtime_ingestion_result("trip_updates", 20)
+        if fault == "capture_identity":
+            captured = replace(captured, provider_id="other")
+        return captured, b"private-payload"
+
+    def load(*args, bronze_storage_resolver, snapshot_id, captured_payload, **kwargs):
+        assert (snapshot_id, captured_payload) == (20, b"private-payload")
+        storages.append(bronze_storage_resolver("s3"))
+        if fault == "silver":
+            raise RuntimeError("silver https://example.test?api_key=private-silver-secret")
+        silver = _realtime_silver_result("trip_updates", 20)
+        return replace(silver, realtime_snapshot_id=21) if fault == "silver_identity" else silver
+
+    monkeypatch.setattr(bronze_storage_module, "build_s3_client", build_client)
+    monkeypatch.setattr(capture_load, "_capture_realtime_feed", capture)
+    monkeypatch.setattr(capture_load, "_load_realtime_to_silver", load)
+    monkeypatch.setattr(
+        orchestration, "_persist_silver_load_failure", lambda *a, **k: failures.append(k)
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_realtime",
+        lambda *a, **k: (gold.append(k), _gold_refresh_result())[1],
+    )
+    registry = SimpleNamespace(
+        get_provider=lambda p: SimpleNamespace(
+            feeds={"trip_updates": SimpleNamespace(refresh_interval_seconds=30)}
+        )
+    )
+    result = run_realtime_cycle(
+        "stm", settings=_worker_s3_settings(), registry=registry, engine=object()
+    )
+    assert len(clients) == 1
+    assert clients[0].close_calls == 1
+    assert all(storage is storages[0] for storage in storages)
+    assert result.status == ("succeeded" if fault is None else "failed")
+    assert len(gold) == (1 if fault is None else 0)
+    assert len(failures) == (1 if fault in {"silver", "capture_identity", "silver_identity"} else 0)
+    assert len(storages) == (1 if fault in {"capture", "capture_identity"} else 2)
+    assert "private-" not in caplog.text
+    assert "private-" not in json.dumps(result.display_dict())

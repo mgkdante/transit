@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -10,11 +11,16 @@ from sqlalchemy import Engine
 # Keep the compatibility export here; core.errors avoids ingestion import cycles.
 from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.db.connection import make_engine
+from transit_ops.ingestion.common import redact_error_message
 from transit_ops.ingestion.gis import GisIngestionResult
 from transit_ops.ingestion.i3 import I3IngestionResult
 from transit_ops.ingestion.realtime_gtfs import RealtimeIngestionResult
 from transit_ops.ingestion.static_gtfs import StaticIngestionResult
-from transit_ops.ingestion.storage import get_bronze_storage
+from transit_ops.ingestion.storage import (
+    BronzeStorageResolver,
+    BronzeStorageScope,
+    get_bronze_storage,
+)
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver.gis import GisSilverLoadResult
@@ -42,6 +48,8 @@ from transit_ops.source_factory.operations import (
     SourceFactoryOperationImpls as SourceFactoryOperationImpls,
 )
 from transit_ops.source_factory.r2 import R2CleanupStorage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -271,21 +279,31 @@ def _execute_source_backfill(
     engine: Engine,
     operation_impls: SourceFactoryOperationImpls,
 ) -> _BackfillResult:
-    results: list[dict[str, object]] = []
-    realtime_receipts: list[RealtimeSilverLoadResult] = []
-    for source in sources:
-        result, receipt = _execute_source_step(
-            provider_id,
-            source,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            operation_impls=operation_impls,
-        )
-        results.append(result)
-        if receipt is not None:
-            realtime_receipts.append(receipt)
-    return _BackfillResult(results, tuple(realtime_receipts))
+    scope = BronzeStorageScope(settings, project_root=Path(__file__).resolve().parents[3])
+    try:
+        results: list[dict[str, object]] = []
+        realtime_receipts: list[RealtimeSilverLoadResult] = []
+        for source in sources:
+            result, receipt = _execute_source_step(
+                provider_id,
+                source,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                operation_impls=operation_impls,
+                bronze_storage_resolver=scope.resolve,
+            )
+            results.append(result)
+            if receipt is not None:
+                realtime_receipts.append(receipt)
+        return _BackfillResult(results, tuple(realtime_receipts))
+    finally:
+        try:
+            scope.close()
+        except Exception as exc:
+            logger.error(
+                "Failed to close backfill Bronze storage scope: %s", redact_error_message(str(exc))
+            )
 
 
 def _execute_source_step(
@@ -296,6 +314,7 @@ def _execute_source_step(
     registry: ProviderRegistry,
     engine: Engine,
     operation_impls: SourceFactoryOperationImpls,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> tuple[dict[str, object], RealtimeSilverLoadResult | None]:
     capture_result: (
         StaticIngestionResult | RealtimeIngestionResult | GisIngestionResult | I3IngestionResult
@@ -319,28 +338,24 @@ def _execute_source_step(
             expected_checksum_sha256=capture_result.checksum_sha256,
         )
     elif source.family in {"trip_updates", "vehicle_positions"}:
-        capture_result = operation_impls.capture_realtime_feed(
+        outcome = operation_impls.capture_and_load_realtime(
             provider_id,
+            source.endpoint_key,
             settings=settings,
             registry=registry,
             engine=engine,
-            endpoint_key=source.endpoint_key,
+            bronze_storage_resolver=bronze_storage_resolver,
         )
-        silver_result = operation_impls.load_realtime_to_silver(
-            provider_id,
-            snapshot_id=capture_result.realtime_snapshot_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            endpoint_key=source.endpoint_key,
-        )
-        if not isinstance(silver_result, RealtimeSilverLoadResult) or (
-            silver_result.provider_id,
-            silver_result.endpoint_key,
-            silver_result.realtime_snapshot_id,
-        ) != (provider_id, source.endpoint_key, capture_result.realtime_snapshot_id):
-            raise ValueError("Realtime Silver receipt does not match the requested capture")
-        realtime_receipt = silver_result
+        if outcome.failure is not None:
+            if outcome.failure.kind == "silver_identity":
+                raise ValueError(
+                    "Realtime Silver receipt does not match the requested capture"
+                ) from outcome.failure.error
+            raise outcome.failure.error
+        assert outcome.capture is not None and outcome.silver is not None
+        capture_result = outcome.capture
+        silver_result = outcome.silver
+        realtime_receipt = outcome.silver
     elif source.family == "gis_static":
         try:
             capture_result = operation_impls.ingest_gis_feed(
