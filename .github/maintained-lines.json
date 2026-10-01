@@ -1,0 +1,381 @@
+{
+  "measurement_version": 3,
+  "baseline_ref": "ee6c12c23747dd4349bccc73a6de61679a59bf2d",
+  "baseline_lines": 407585,
+  "exclusions": [
+    {
+      "category": "generated",
+      "reason": "Snapshot JSON schema exports and byte-identical web mirrors",
+      "files": [
+        "apps/db/src/transit_ops/snapshots/schemas/historic_alert_archive_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_alert_archive_page.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_alert_history.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_availability_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_collection_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_entity_directory_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_hotspots.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_hotspots_day.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_line_history_partition.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_network_history_partition.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_network_trend.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_receipt.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_receipts_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_repeat_offenders.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_repeat_offenders_day.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_route_reliability.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_route_reliability_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_stop_history_partition.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/historic_stop_reliability.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_alerts.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_data_health.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_network.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_stop_departures.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_trips.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/live_vehicles.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/manifest.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/provenance.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_basemap.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_labels.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_route.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_routes_index.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_stop.schema.json",
+        "apps/db/src/transit_ops/snapshots/schemas/static_stops_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_alert_archive_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_alert_archive_page.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_alert_history.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_availability_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_collection_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_entity_directory_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_hotspots.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_hotspots_day.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_line_history_partition.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_network_history_partition.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_network_trend.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_receipt.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_receipts_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_repeat_offenders.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_repeat_offenders_day.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_route_reliability.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_route_reliability_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_stop_history_partition.schema.json",
+        "apps/web/src/lib/v1/schemas/json/historic_stop_reliability.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_alerts.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_data_health.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_network.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_stop_departures.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_trips.schema.json",
+        "apps/web/src/lib/v1/schemas/json/live_vehicles.schema.json",
+        "apps/web/src/lib/v1/schemas/json/manifest.schema.json",
+        "apps/web/src/lib/v1/schemas/json/provenance.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_basemap.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_labels.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_route.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_routes_index.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_stop.schema.json",
+        "apps/web/src/lib/v1/schemas/json/static_stops_index.schema.json"
+      ],
+      "owners": [
+        "apps/db/pyproject.toml",
+        "apps/db/scripts/export_snapshot_schemas.py",
+        "apps/db/src/transit_ops/snapshots/contract.py",
+        "apps/db/uv.lock",
+        "apps/web/package.json"
+      ],
+      "sha256": [
+        "65039103b2dd6f1651c0ca6f9416f26a4f67db64cf0be8859abc7a1e4bc19099",
+        "77f76242b74696d8e21ff6ba82b42ad3532d34e752c3989e0b02d523ce141b4a",
+        "9b63deee9669ec5b8625a9fc85cc527c9abe29b2d9dba4bffb5f7d05fed9e085"
+      ],
+      "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
+    },
+    {
+      "category": "generated",
+      "reason": "Complete generated token CSS output",
+      "files": [
+        "apps/web/src/lib/styles/tokens.css"
+      ],
+      "owners": [
+        "apps/web/tools/tokens/build.ts",
+        "apps/web/tools/tokens/tokens.json",
+        "apps/web/vendor/design/manifest.json",
+        "apps/web/vendor/design/tokens/package.json",
+        "apps/web/vendor/design/tokens/src/build.ts",
+        "apps/web/vendor/design/tokens/src/generators/design-md.ts",
+        "apps/web/vendor/design/tokens/src/generators/motion-ts.ts",
+        "apps/web/vendor/design/tokens/src/generators/theme-block.ts",
+        "apps/web/vendor/design/tokens/src/generators/tokens-css.ts",
+        "apps/web/vendor/design/tokens/src/parse.ts",
+        "apps/web/vendor/design/tokens/src/serialize.ts",
+        "apps/web/vendor/design/tokens/src/types.ts",
+        "apps/web/vendor/design/tokens/tokens.css",
+        "apps/web/vendor/design/tokens/tokens.json",
+        "apps/web/vendor/design/tokens/tsconfig.json"
+      ],
+      "sha256": [
+        "854b924ca4ae6ffadeade7d5e2b6948a715d68d102f7019b73bf798bef28c065"
+      ],
+      "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
+    },
+    {
+      "category": "vendor",
+      "reason": "Immutable yesid.dev-design v0.13.2 release verified against its manifest",
+      "files": [
+        "apps/web/vendor/design/LICENSE",
+        "apps/web/vendor/design/analytics/package.json",
+        "apps/web/vendor/design/analytics/src/client.ts",
+        "apps/web/vendor/design/analytics/src/config.ts",
+        "apps/web/vendor/design/analytics/src/consent.svelte.ts",
+        "apps/web/vendor/design/analytics/src/index.ts",
+        "apps/web/vendor/design/analytics/src/plausible.ts",
+        "apps/web/vendor/design/analytics/src/policy.ts",
+        "apps/web/vendor/design/analytics/tsconfig.json",
+        "apps/web/vendor/design/gates/package.json",
+        "apps/web/vendor/design/gates/src/engines/brandHex.ts",
+        "apps/web/vendor/design/gates/src/engines/colorMixFloors.ts",
+        "apps/web/vendor/design/gates/src/engines/comments.ts",
+        "apps/web/vendor/design/gates/src/engines/contrastPairs.ts",
+        "apps/web/vendor/design/gates/src/engines/datavizDoctrine.ts",
+        "apps/web/vendor/design/gates/src/engines/seoCoverage.ts",
+        "apps/web/vendor/design/gates/src/engines/styleRegressions.ts",
+        "apps/web/vendor/design/gates/src/engines/tvOnlyInUi.ts",
+        "apps/web/vendor/design/gates/src/engines/walk.ts",
+        "apps/web/vendor/design/gates/src/index.ts",
+        "apps/web/vendor/design/gates/tsconfig.json",
+        "apps/web/vendor/design/i18n-core/package.json",
+        "apps/web/vendor/design/i18n-core/src/index.ts",
+        "apps/web/vendor/design/i18n-core/src/routing.ts",
+        "apps/web/vendor/design/i18n-core/tsconfig.json",
+        "apps/web/vendor/design/manifest.json",
+        "apps/web/vendor/design/motion/package.json",
+        "apps/web/vendor/design/motion/ripple.css",
+        "apps/web/vendor/design/motion/src/actions/boop.ts",
+        "apps/web/vendor/design/motion/src/actions/cardParallax.ts",
+        "apps/web/vendor/design/motion/src/actions/cursorGlow.ts",
+        "apps/web/vendor/design/motion/src/actions/index.ts",
+        "apps/web/vendor/design/motion/src/actions/magnetic.ts",
+        "apps/web/vendor/design/motion/src/actions/pressBounce.ts",
+        "apps/web/vendor/design/motion/src/actions/sectionGlow.ts",
+        "apps/web/vendor/design/motion/src/actions/wordmarkHover.ts",
+        "apps/web/vendor/design/motion/src/index.ts",
+        "apps/web/vendor/design/motion/src/policy.ts",
+        "apps/web/vendor/design/motion/src/stores/reducedMotion.ts",
+        "apps/web/vendor/design/motion/src/tokens.ts",
+        "apps/web/vendor/design/motion/src/utils/device.ts",
+        "apps/web/vendor/design/motion/src/utils/globalRipple.ts",
+        "apps/web/vendor/design/motion/src/utils/gsap.ts",
+        "apps/web/vendor/design/motion/src/utils/lenis.ts",
+        "apps/web/vendor/design/motion/src/utils/sectionMagnet.ts",
+        "apps/web/vendor/design/motion/src/utils/ticker.ts",
+        "apps/web/vendor/design/motion/tap-feedback.css",
+        "apps/web/vendor/design/motion/tsconfig.json",
+        "apps/web/vendor/design/seo-kit/package.json",
+        "apps/web/vendor/design/seo-kit/src/index.ts",
+        "apps/web/vendor/design/seo-kit/src/jsonld.ts",
+        "apps/web/vendor/design/seo-kit/src/satori.ts",
+        "apps/web/vendor/design/seo-kit/src/sitemap.ts",
+        "apps/web/vendor/design/seo-kit/tsconfig.json",
+        "apps/web/vendor/design/tokens/package.json",
+        "apps/web/vendor/design/tokens/src/build.ts",
+        "apps/web/vendor/design/tokens/src/generators/design-md.ts",
+        "apps/web/vendor/design/tokens/src/generators/motion-ts.ts",
+        "apps/web/vendor/design/tokens/src/generators/theme-block.ts",
+        "apps/web/vendor/design/tokens/src/generators/tokens-css.ts",
+        "apps/web/vendor/design/tokens/src/parse.ts",
+        "apps/web/vendor/design/tokens/src/serialize.ts",
+        "apps/web/vendor/design/tokens/src/types.ts",
+        "apps/web/vendor/design/tokens/tokens.css",
+        "apps/web/vendor/design/tokens/tokens.json",
+        "apps/web/vendor/design/tokens/tsconfig.json",
+        "apps/web/vendor/design/tools/adopt.ts",
+        "apps/web/vendor/design/tools/adopt/acquisition.ts",
+        "apps/web/vendor/design/tools/adopt/contract.ts",
+        "apps/web/vendor/design/tools/adopt/payload.ts",
+        "apps/web/vendor/design/tools/adopt/transaction.ts",
+        "apps/web/vendor/design/ui/README.md",
+        "apps/web/vendor/design/ui/package.json",
+        "apps/web/vendor/design/ui/src/brand/BlueprintShell.svelte",
+        "apps/web/vendor/design/ui/src/brand/ChevronToggle.svelte",
+        "apps/web/vendor/design/ui/src/brand/MetroStation.svelte",
+        "apps/web/vendor/design/ui/src/brand/QuietModeButton.svelte",
+        "apps/web/vendor/design/ui/src/brand/SectionLabel.svelte",
+        "apps/web/vendor/design/ui/src/brand/StickyPanel.svelte",
+        "apps/web/vendor/design/ui/src/brand/StopLabel.svelte",
+        "apps/web/vendor/design/ui/src/brand/TerminalCursor.svelte",
+        "apps/web/vendor/design/ui/src/brand/TocBadge.svelte",
+        "apps/web/vendor/design/ui/src/brand/index.ts",
+        "apps/web/vendor/design/ui/src/brand/section-icon.internal.svelte",
+        "apps/web/vendor/design/ui/src/cn/create-cn.ts",
+        "apps/web/vendor/design/ui/src/cn/index.ts",
+        "apps/web/vendor/design/ui/src/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/badge/badge.svelte",
+        "apps/web/vendor/design/ui/src/primitives/badge/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/button/button.svelte",
+        "apps/web/vendor/design/ui/src/primitives/button/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/card/card-action.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card-content.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card-description.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card-footer.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card-header.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card-title.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/card.svelte",
+        "apps/web/vendor/design/ui/src/primitives/card/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/collapsible/collapsible-content.svelte",
+        "apps/web/vendor/design/ui/src/primitives/collapsible/collapsible-trigger.svelte",
+        "apps/web/vendor/design/ui/src/primitives/collapsible/collapsible.svelte",
+        "apps/web/vendor/design/ui/src/primitives/collapsible/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/combobox/combobox.svelte",
+        "apps/web/vendor/design/ui/src/primitives/combobox/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/footer/footer-group.svelte",
+        "apps/web/vendor/design/ui/src/primitives/footer/footer-link.svelte",
+        "apps/web/vendor/design/ui/src/primitives/footer/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/resizable/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/resizable/resizable-handle.svelte",
+        "apps/web/vendor/design/ui/src/primitives/resizable/resizable-pane-group.svelte",
+        "apps/web/vendor/design/ui/src/primitives/scroll-area/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/scroll-area/scroll-area-scrollbar.svelte",
+        "apps/web/vendor/design/ui/src/primitives/scroll-area/scroll-area.svelte",
+        "apps/web/vendor/design/ui/src/primitives/separator/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/separator/separator.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-content.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-description.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-footer.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-header.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-overlay.svelte",
+        "apps/web/vendor/design/ui/src/primitives/sheet/sheet-title.svelte",
+        "apps/web/vendor/design/ui/src/primitives/skeleton/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/skeleton/skeleton.svelte",
+        "apps/web/vendor/design/ui/src/primitives/tabs/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/tabs/tabs-content.svelte",
+        "apps/web/vendor/design/ui/src/primitives/tabs/tabs-list.svelte",
+        "apps/web/vendor/design/ui/src/primitives/tabs/tabs-trigger.svelte",
+        "apps/web/vendor/design/ui/src/primitives/tabs/tabs.svelte",
+        "apps/web/vendor/design/ui/src/primitives/toggle-group/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/toggle-group/toggle-group-item.svelte",
+        "apps/web/vendor/design/ui/src/primitives/toggle-group/toggle-group.svelte",
+        "apps/web/vendor/design/ui/src/primitives/toggle/index.ts",
+        "apps/web/vendor/design/ui/src/primitives/toggle/toggle.svelte",
+        "apps/web/vendor/design/ui/svelte.config.js",
+        "apps/web/vendor/design/ui/tsconfig.json"
+      ],
+      "owners": [
+        "apps/web/vendor/design/manifest.json"
+      ],
+      "sha256": [
+        "a624da7b1bba88787a6dc7172b6aaea9b972129e3f666a1042dcab84fbe35065"
+      ],
+      "origin": "github.com/mgkdante/yesid.dev-design v0.13.2; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+    },
+    {
+      "category": "locks",
+      "reason": "Bun resolved dependency lock",
+      "files": [
+        "bun.lock"
+      ],
+      "owners": [
+        "package.json"
+      ],
+      "sha256": [
+        "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0"
+      ],
+      "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
+    },
+    {
+      "category": "locks",
+      "reason": "uv resolved Python dependency lock",
+      "files": [
+        "apps/db/uv.lock"
+      ],
+      "owners": [
+        "apps/db/pyproject.toml"
+      ],
+      "sha256": [
+        "31a24c9613c69375a515026756c58b0cfca2c481f50644ed2a6f7a07e16cdfcf",
+        "ed1448ff235074f0d7eaf80ebc170bb9df90512bec81e46a710d60af9bcf369a"
+      ],
+      "origin": "uv Python dependency resolution; exact lock path and executable project owner."
+    },
+    {
+      "category": "generated",
+      "reason": "Generated basemap poster receipt and AVIF images",
+      "files": [
+        "apps/web/static/map/basemap-montreal-dark-desktop-20260812.avif",
+        "apps/web/static/map/basemap-montreal-dark-mobile-20260812.avif",
+        "apps/web/static/map/basemap-montreal-light-desktop-20260812.avif",
+        "apps/web/static/map/basemap-montreal-light-mobile-20260812.avif",
+        "apps/web/static/map/basemap-montreal-posters.json"
+      ],
+      "owners": [
+        "apps/web/browser-toolchain.json",
+        "apps/web/scripts/build-map-posters.ts",
+        "apps/web/src/lib/components/map/basemap.ts",
+        "apps/web/src/lib/components/map/viewport.ts",
+        "apps/web/src/lib/features/map/mapCameraFraming.ts"
+      ],
+      "sha256": [
+        "596c119f908f11ff867d05cf010fcc98ed26386182093e60a5a69316d857efa6"
+      ],
+      "origin": "apps/web/scripts/build-map-posters.ts; receipt render-input and image hashes independently verified for all accepted snapshots."
+    },
+    {
+      "category": "assets",
+      "reason": "Binary font payloads from the recorded upstream font packages",
+      "files": [
+        "apps/web/static/fonts/inter-latin-ext-wght-normal.woff2",
+        "apps/web/static/fonts/inter-latin-wght-normal.woff2",
+        "apps/web/static/fonts/jetbrains-mono-latin-ext-wght-normal.woff2",
+        "apps/web/static/fonts/jetbrains-mono-latin-wght-normal.woff2"
+      ],
+      "owners": [
+        "apps/web/static/fonts/LICENSES.txt"
+      ],
+      "sha256": [
+        "ff6868d1c7c97fc7362c6c306f533d86d49c717de4a91627a508e79f1b1be94f"
+      ],
+      "origin": "SIL-licensed Inter and JetBrains Mono packages identified by the counted LICENSES.txt owner."
+    },
+    {
+      "category": "assets",
+      "reason": "Binary font inputs for the Open Graph generator",
+      "files": [
+        "apps/web/scripts/og-fonts/Inter-Black.ttf",
+        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
+        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf"
+      ],
+      "owners": [
+        "apps/web/scripts/build-og.ts"
+      ],
+      "sha256": [
+        "2eb6e99fd558766044a7287d0216d9d2bf92502decd83177cb4600e01e9025f9",
+        "46f7578c40b45891c49dcc59fb65208202a49135dd407be285478b484d96e494"
+      ],
+      "origin": "Explicit Inter and JetBrains Mono font payloads consumed by build-og.ts; no extension-wide exclusion."
+    },
+    {
+      "category": "generated",
+      "reason": "Generated PNG social images and touch icon",
+      "files": [
+        "apps/web/static/apple-touch-icon-180.png",
+        "apps/web/static/og/en.png",
+        "apps/web/static/og/fr.png"
+      ],
+      "owners": [
+        "apps/web/package.json",
+        "apps/web/scripts/build-icons.ts",
+        "apps/web/scripts/build-og.ts",
+        "apps/web/scripts/og-fonts/Inter-Black.ttf",
+        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
+        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf",
+        "apps/web/src/lib/site/deployment.ts",
+        "apps/web/vendor/design/manifest.json",
+        "bun.lock"
+      ],
+      "sha256": [
+        "1c715f9b08315cad8a75e6360ee0b1d6befe032980d2925dadc1c68556b9dbf1",
+        "8eb90030304657eeeacd659dad08fd33eaec9bad8389e147987581e604b4740a",
+        "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477"
+      ],
+      "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
+    }
+  ]
+}

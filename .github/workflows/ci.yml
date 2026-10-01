@@ -9,6 +9,7 @@ on:
     paths:
       - ".env.example"
       - ".gitleaks.toml"
+      - ".github/maintained-lines.json"
       - "apps/db/**"
       - ".github/workflows/**"
       - ".github/scripts/**"
@@ -52,7 +53,7 @@ jobs:
             {
               "schema": 1,
               "always": {
-                "paths": [".bun-version", ".python-version", ".env.example", ".gitleaks.toml", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
+                "paths": [".bun-version", ".python-version", ".env.example", ".gitleaks.toml", ".github/maintained-lines.json", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
                 "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
               },
               "jobs": {
@@ -92,6 +93,10 @@ jobs:
 
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
+
+      - name: Report maintained source lines
+        working-directory: .
+        run: uv --directory apps/db run python ../../.github/scripts/maintained-lines.py --ref HEAD --json
 
       - name: Run offline test suite
         run: uv run pytest tests
