@@ -8,54 +8,29 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 }
 
 describe('ReliabilityBadge', () => {
-	it('renders the OTP% + a status dot when a verdict has loaded', () => {
-		const { container } = render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'ready', otpPct: 82, verdict: 'late' }), locale: 'en' },
-		});
-		expect(screen.getByText('82%')).toBeInTheDocument();
-		expect(container.querySelector('[data-slot="reliability-badge"]')).not.toBeNull();
-		expect(container.querySelector('[data-verdict="late"]')).not.toBeNull();
-	});
+	it.each([
+		['en', '83%', '83% on time in the latest daily summary'],
+		['fr', '83 %', '83 % à l’heure dans le dernier bilan quotidien'],
+	] as const)(
+		'reports the daily percentage once without a competing verdict in %s',
+		(locale, pct, label) => {
+			const { container } = render(ReliabilityBadge, {
+				props: { snapshot: snap({ phase: 'ready', otpPct: 83, verdict: 'late' }), locale },
+			});
+			const badges = screen.getAllByRole('img');
+			expect(badges).toHaveLength(1);
+			expect(badges[0]).toHaveAccessibleName(label);
+			expect(badges[0]).toHaveAttribute('title', label);
+			expect(screen.getByText(pct)).toHaveAttribute('aria-hidden', 'true');
+			expect(container.querySelector('[data-verdict]')).toBeNull();
+		},
+	);
 
-	it('announces the reading exactly ONCE — one accessible name on the badge, visible parts hidden', () => {
+	it.each(['loading', 'empty'] as const)('shows no percentage for a %s snapshot', (phase) => {
 		const { container } = render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'ready', otpPct: 82, verdict: 'late' }), locale: 'en' },
+			props: { snapshot: snap({ phase }), locale: 'en' },
 		});
-		const imgs = screen.getAllByRole('img');
-		expect(imgs).toHaveLength(1);
-		expect(imgs[0]).toHaveAttribute('data-slot', 'reliability-badge');
-		expect(imgs[0]).toHaveAccessibleName('Late · 82% on time');
-		expect(container.querySelector('.reliability-badge-pct')).toHaveAttribute(
-			'aria-hidden',
-			'true',
-		);
-		expect(container.querySelector('.reliability-badge-mark')).toHaveAttribute(
-			'aria-hidden',
-			'true',
-		);
-		expect(container.querySelector('.sr-only')).toBeNull();
-	});
-
-	it('renders NOTHING while loading (no spinner, no badge)', () => {
-		const { container } = render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'loading' }), locale: 'en' },
-		});
-		expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
-	});
-
-	it('renders NOTHING for a no-data (empty) snapshot — never a fabricated 0%', () => {
-		const { container } = render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'empty' }), locale: 'en' },
-		});
-		expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
-		expect(screen.queryByText('0%')).toBeNull();
-	});
-
-	it('localizes the percent grouping in FR', () => {
-		render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'ready', otpPct: 82, verdict: 'late' }), locale: 'fr' },
-		});
-		const pct = document.querySelector('.reliability-badge-pct');
-		expect(pct?.textContent).toMatch(/82\s%/u);
+		expect(screen.queryByRole('img')).toBeNull();
+		expect(container.textContent).toBe('');
 	});
 });
