@@ -271,9 +271,10 @@ def test_replay_takes_all_selected_five_minute_locks_before_daily_locks(capture,
     ]
     days = [i for i, sql in enumerate(calls) if "q:rollup.delay_day.lock\n" in sql]
     deletes = [i for i, sql in enumerate(calls) if "q:mart.replay.delete_trip_updates\n" in sql]
-    assert len(hours) == len(days) == 1
+    assert len(hours) == 1
+    assert len(days) == len({_day(first), _day(second)})
     assert len(periods) == len(deletes) == 2
-    assert hours[0] < min(periods) <= max(periods) < days[0] < min(deletes)
+    assert hours[0] < min(periods) <= max(periods) < min(days) <= max(days) < min(deletes)
 
 
 @pytest.mark.parametrize("sqlstate, attempts", [("40001", 3), ("40P01", 3), ("22012", 1)])

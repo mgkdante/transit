@@ -381,6 +381,7 @@ def test_repeat_offender_window_matches_retained_facts_and_public_snapshot(
     connection, seed = conn
     now = connection.execute(text("SELECT now()")).scalar_one()
     monkeypatch.setattr(rollups, "utc_now", lambda: now)
+    monkeypatch.setattr(rollups, "materialization_time", lambda _: now)
     retained_local_days = set()
     for day_offset in range(23):
         captured_at = now - timedelta(days=day_offset, minutes=1)
