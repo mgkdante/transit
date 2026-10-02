@@ -8,8 +8,6 @@
 		toc: 'rail-controller-test-toc',
 	});
 
-	// Mirrors QuietModeButton's mount-time restore after the page controller has
-	// registered its delayed signal watcher.
 	onMount(() => quietModeStore.init());
 </script>
 

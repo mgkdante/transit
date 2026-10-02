@@ -32,7 +32,7 @@ describe('selectNotReportedLines', () => {
 	it('carries the shown/total honesty (pre-cap count vs capped list)', () => {
 		const vm = selectNotReportedLines(
 			{
-				not_reported_route_count: 200, // mass-outage day
+				not_reported_route_count: 200,
 				not_reported_routes: [{ id: '1', name: null, scheduled_trip_days: 5 }],
 			},
 			labels,

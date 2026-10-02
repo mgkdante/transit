@@ -1,17 +1,3 @@
-"""gold.reader kernel gates (S7-close C2).
-
-Byte-identity locks for the extracted spine-reader kernel:
-  * the shift / day_type CASE emitters reproduce every historical literal
-    shape exactly (frozen strings, indentation-sensitive),
-  * the ONE CDF interpolator reproduces both pre-refactor walkers (goldens
-    computed from the old functions before the move),
-  * every SQL statement C2 touched hashes byte-identical to its pre-refactor
-    body (the emitted-SQL lock: published bytes cannot move),
-  * gold.reader imports neither transit_ops.snapshots nor gold.rollups
-    (the no-cycle law that lets both sides import it),
-  * the 2026-07-01 half-away rounding rebaseline semantics (ties away from
-    zero, matching Postgres ROUND) on the moved rate/percentile kernels.
-"""
 
 from __future__ import annotations
 
@@ -19,8 +5,11 @@ import hashlib
 import subprocess
 import sys
 from datetime import date, timedelta
+from decimal import Decimal
 
-import transit_ops.snapshots.builders.historic  # noqa: F401 - registers the C2-touched reads
+import pytest
+
+import transit_ops.snapshots.builders.historic  # noqa: F401 - registers the reviewed queries
 from transit_ops.gold.reader import (
     SPINE_WINDOW_CLAUSE,
     GrainWindows,
@@ -50,10 +39,6 @@ from transit_ops.gold.rollups import (
     HEADWAY_GAP_HISTOGRAM_EDGES as _GAP_EDGES,
 )
 from transit_ops.sql_registry import _REGISTRY
-
-# --------------------------------------------------------------------------
-# buckets — frozen emitted-fragment byte-identity (every historical shape)
-# --------------------------------------------------------------------------
 
 _TRIP_HOUR = "EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))"
 _STOP_TS = "timezone(dp.timezone, sd.period_start_utc)"
@@ -143,7 +128,6 @@ def test_stop_grain_wrapped_shapes() -> None:
 
 
 def test_infer_shift_full_sweep_matches_sql_buckets() -> None:
-    # Hour-by-hour twin of the SQL CASE (closed BETWEEN bounds == old half-open ranges).
     expected = (
         ["night"] * 6
         + ["am_peak"] * 3
@@ -155,12 +139,6 @@ def test_infer_shift_full_sweep_matches_sql_buckets() -> None:
     assert [infer_shift(h) for h in range(24)] == expected
 
 
-# --------------------------------------------------------------------------
-# percentile — golden equality vs BOTH pre-refactor walkers (values captured
-# from _pctile_from_hist / _headway_pctile_from_hist before the extraction)
-# --------------------------------------------------------------------------
-
-
 def _delay_hist(**mass: int) -> list[int]:
     h = [0] * 21
     for key, count in mass.items():
@@ -169,18 +147,13 @@ def _delay_hist(**mass: int) -> list[int]:
 
 
 def test_delay_percentile_goldens() -> None:
-    # terminal bin 20 = [3600, +inf): FLOORS at 3600s -> 60.0 min (Finding B)
     assert pctile_min_from_hist(_delay_hist(b20=7), 0.5, _DELAY_EDGES) == 60.0
     assert pctile_min_from_hist(_delay_hist(b20=7), 0.9, _DELAY_EDGES) == 60.0
-    # all mass in bin 0 [-3600,-300): negative-minute interpolation, no index error
     assert pctile_min_from_hist(_delay_hist(b0=4), 0.5, _DELAY_EDGES) == -32.5
-    # even mass across [0,30)+[30,60)
     assert pctile_min_from_hist(_delay_hist(b7=10, b8=10), 0.5, _DELAY_EDGES) == 0.5
     assert pctile_min_from_hist(_delay_hist(b7=10, b8=10), 0.9, _DELAY_EDGES) == 0.9
-    # mixed mass across [90,120)+[120,150)
     assert pctile_min_from_hist(_delay_hist(b10=6, b11=4), 0.5, _DELAY_EDGES) == 1.9
     assert pctile_min_from_hist(_delay_hist(b10=6, b11=4), 0.9, _DELAY_EDGES) == 2.4
-    # honest-None: empty / all-zero
     assert pctile_min_from_hist([], 0.5, _DELAY_EDGES) is None
     assert pctile_min_from_hist([0] * 21, 0.5, _DELAY_EDGES) is None
 
@@ -191,47 +164,35 @@ def test_gap_percentile_goldens_raw_unrounded() -> None:
         g[idx] = count
         return g
 
-    # bin 19 = [180,240): raw interpolated minutes, NO rounding (caller half-aways)
     assert cdf_percentile(gap_hist(19, 10), 0.5, _GAP_EDGES) == 210.0
     assert cdf_percentile(gap_hist(19, 10), 0.9, _GAP_EDGES) == 234.0
-    # bin 0 = [0,0.5)
     assert cdf_percentile(gap_hist(0, 3), 0.5, _GAP_EDGES) == 0.25
-    # even mass across [6,8)+[8,10)
     even = [0] * 20
     even[7] = even[8] = 2
     assert cdf_percentile(even, 0.5, _GAP_EDGES) == 8.0
     assert cdf_percentile(even, 0.9, _GAP_EDGES) == 9.6
-    # honest-None: empty / all-zero
     assert cdf_percentile([], 0.5, _GAP_EDGES) is None
     assert cdf_percentile([0] * 20, 0.5, _GAP_EDGES) is None
-    # the terminal overflow-floor branch is DEAD for the 20-bin gap histogram:
-    # bin_idx caps at 19 over 21 edges, so the walk always interpolates.
 
 
 def test_cdf_percentile_returns_raw_native_unit() -> None:
-    # The core NEVER converts units or rounds — wrappers own that.
     h = _delay_hist(b20=7)
     assert cdf_percentile(h, 0.5, _DELAY_EDGES) == 3600.0
 
 
-# --------------------------------------------------------------------------
-# rounding — the 2026-07-01 half-away rebaseline (ties away from zero)
-# --------------------------------------------------------------------------
-
-
 def test_round_half_away_tie_semantics() -> None:
-    assert float(round_half_away(2.5, 0)) == 3.0  # banker's would give 2.0
-    assert float(round_half_away(-2.5, 0)) == -3.0  # away from zero on BOTH signs
+    assert float(round_half_away(2.5, 0)) == 3.0
+    assert float(round_half_away(-2.5, 0)) == -3.0
     assert float(round_half_away(0.625, 2)) == 0.63
     assert float(round_half_away(7.45, 1)) == 7.5
 
 
 def test_rate_kernel_half_away_ties() -> None:
-    assert otp_pct(825, 1000) == 83  # 82.5 tie -> 83 (banker's gave 82)
-    assert otp_pct_severe_proxy(1000, 175) == 83  # (1000-175)/1000 = 82.5%
+    assert otp_pct(825, 1000) == 83
+    assert otp_pct_severe_proxy(1000, 175) == 83
     assert severe_pct(1000, 175) == 17.5
-    assert avg_delay_min(15) == 0.3  # 0.25 min tie -> 0.3 (banker's gave 0.2)
-    assert avg_delay_min(-15) == -0.3  # away from zero for early running
+    assert avg_delay_min(15) == 0.3
+    assert avg_delay_min(-15) == -0.3
 
 
 def test_rate_kernel_honest_none_guards() -> None:
@@ -239,12 +200,7 @@ def test_rate_kernel_honest_none_guards() -> None:
     assert otp_pct(5, 0) is None
     assert severe_pct(0, 0) is None
     assert wilson_bounds(None, 100) is None
-    assert wilson_bounds(50, 100) == (40.4, 59.6)  # non-tie golden unchanged
-
-
-# --------------------------------------------------------------------------
-# histogram / CoV / EWT
-# --------------------------------------------------------------------------
+    assert wilson_bounds(50, 100) == (40.4, 59.6)
 
 
 def test_hist_and_avg_ghost_excluded_denominator() -> None:
@@ -256,7 +212,7 @@ def test_hist_and_avg_ghost_excluded_denominator() -> None:
     assert avg_sec == 30.0
     empty = {f"h{k}": 0 for k in range(1, 22)}
     empty["sum_delay_sec"] = 120
-    assert hist_and_avg(empty)[1] is None  # no in-clamp delays -> honest None
+    assert hist_and_avg(empty)[1] is None
 
 
 def test_delay_histogram_bins_shape_and_absence() -> None:
@@ -267,24 +223,22 @@ def test_delay_histogram_bins_shape_and_absence() -> None:
     bins = delay_histogram_bins(h, _DELAY_EDGES)
     assert bins is not None and len(bins) == 21
     assert bins[0] == (-3600, -300, 2)
-    assert bins[20] == (3600, None, 3)  # overflow bin has no upper edge
+    assert bins[20] == (3600, None, 3)
 
 
 def test_bunched_pct_straddle_and_guards() -> None:
     hist = [0] * 20
-    hist[7] = 4  # [6,8): median 7 -> threshold 3.5 -> nothing below
+    hist[7] = 4
     assert bunched_pct(hist, _GAP_EDGES, 7.0) == 0.0
     assert bunched_pct(hist, _GAP_EDGES, None) is None
     assert bunched_pct([0] * 20, _GAP_EDGES, 7.0) is None
 
 
 def test_ewt_min_goldens() -> None:
-    # AWT = 100/(2*10) = 5.0; sched 8 -> SWT 4 -> EWT 1.0
     assert ewt_min(10.0, 100.0, 8.0) == 1.0
-    # frequent-service clamp: AWT < SWT -> honest 0, never negative
     assert ewt_min(10.0, 100.0, 12.0) == 0.0
-    assert ewt_min(0.0, 0.0, 8.0) is None  # no gaps
-    assert ewt_min(10.0, 100.0, None) is None  # no scheduled headway
+    assert ewt_min(0.0, 0.0, 8.0) is None
+    assert ewt_min(10.0, 100.0, None) is None
 
 
 def test_cov_fragment_and_hist_cols_frozen() -> None:
@@ -293,11 +247,6 @@ def test_cov_fragment_and_hist_cols_frozen() -> None:
     assert hist_cols("gap_histogram", "g", 2) == (
         "SUM(gap_histogram[1])::bigint AS g1,\n        SUM(gap_histogram[2])::bigint AS g2"
     )
-
-
-# --------------------------------------------------------------------------
-# window policy
-# --------------------------------------------------------------------------
 
 
 def test_grain_windows_frozen_and_prior() -> None:
@@ -310,8 +259,8 @@ def test_grain_windows_frozen_and_prior() -> None:
     }
     for grain, (start, _end) in w.items():
         p_start, p_end = w.prior(grain)
-        assert p_end == start - timedelta(days=1)  # abuts, never overlaps
-        assert (p_end - p_start) == (w[grain][1] - w[grain][0])  # same length
+        assert p_end == start - timedelta(days=1)
+        assert (p_end - p_start) == (w[grain][1] - w[grain][0])
     assert "week" in w and "quarter" not in w
 
 
@@ -324,24 +273,7 @@ def test_current_date_trailing_clause_bytes() -> None:
     )
 
 
-# --------------------------------------------------------------------------
-# emitted-SQL byte-identity lock (every statement C2 touched)
-# --------------------------------------------------------------------------
-
-# sha256 of each registered SQL body, captured from the PRE-C2 code. The kernel
-# extraction is a pure refactor: if any of these move, published bytes moved.
-# Three entries (route.occupancy.by_dow, route.occupancy.by_grain,
-# route.delay.by_crowding) were captured AFTER stripping the retired
-# substring-dispatch comment tags — re-deriving them from pre-C1 main will
-# differ by exactly those inert comment lines, not by SQL.
-#
-# 14 entries re-frozen 2026-07 for the GC1 / Step G5 spine column rename
-# service_local_date → provider_local_date (migration 0072) — PURE identifier
-# renames: each re-captured body's ONLY delta from its prior hash is the column
-# name (verified by reverse-substitution — reverting the identifier
-# reproduces the pre-rename hash exactly), so no SQL value/shape moved. The
-# rename aligns the four S7-era spine tables with every other daily gold table.
-_C2_TOUCHED_SQL_SHA256 = {
+_REVIEWED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
         "624b551f37e63268c7a443c4da56081de3d144a0655d2a8146d982e56dfefd5c"
     ),
@@ -349,12 +281,8 @@ _C2_TOUCHED_SQL_SHA256 = {
         "6b0047ab0486b0a477e81f9524f16c8dfe119da06c5c22927bc5012f9df9550a"
     ),
     "rollup.route_headway_shift.upsert": (
-        "f78800c5faff45368ed01e827ab80dd12fa150ed17c93319bfe52fa3eaf8d5a3"
+        "68ae0f5b0e149eabe88eff831b0b20545784f2ece19320853812309ba021adcd"
     ),
-    # RE-FROZEN (GC1 / Step G4, migration 0071): stop.reliability.by_grain was re-pointed off
-    # gold.stop_delay_hourly (timezone()-re-bucketed) onto the pre-localized
-    # gold.stop_delay_shift_daily, aligning /stop shift+day_type attribution with /lines. The SQL
-    # body changed by design (documented day-attribution rebaseline), so this lock is re-captured.
     "stop.reliability.by_grain": "e5fcdf48ac5795e3b1ab83cbfcb4bed52e0dc2e5d01026b2fb043b0f3e75741f",
     "route.habit.spine": "ed5437bc9b3d4fc1cb0fb7f48e5ae5eae28333c27b8ef990d7c7d290081a0c60",
     "route.headway.window": "35e5bb26c2a6887c1bce33f4a8889e2c434423ece484a89af716408548a852c8",
@@ -385,46 +313,24 @@ _C2_TOUCHED_SQL_SHA256 = {
     "stop.occupancy.band_window": (
         "d833895c42e44543e95389d8c9c015f0299286b8d0d34becac220f05ecdb0fed"
     ),
-    # RE-FROZEN (Task 3, 2026-07-13): receipt discovery now follows every retained
-    # accountability date. The driver lost its trailing wall-clock cap; worst-route
-    # and worst-stop enrichment use the driver's actual inclusive min/max bounds.
     "receipts.accountability": "b9580ef70c44a3a84f74f1d696495602f0d15c55aa82100dcc0bf4745525e5d7",
-    # RE-FROZEN (Task 3 review): DISTINCT ON now enforces the existing top-one-per-date
-    # ranking in PostgreSQL instead of streaming every retained route/stop row to Python.
-    "receipts.worst_route": "801185a271e42fd0e8e70c8525a486c3f969bab9161ea650e475e94a533808aa",
+    "receipts.worst_route": "8c50bf3663aaf38364209de7ab67f35d76981f91aae2ea336ed5e6bc9d65530a",
     "receipts.worst_stop": "38bd3eeaab7d373296085f49ceba254d0095339e76a328dd8c0a6bf7774324f5",
-    # RE-FROZEN (S15, 2026-07-02): alerts.history was windowed — the now()-anchored
-    # trailing-30 clause became explicit :win_start/:win_end binds serving the full
-    # retention span, LIMIT 200 -> 500, + correlated url / active_periods subqueries
-    # off the 0077 child table. Re-frozen AGAIN in the S15 review fix wave (F3):
-    # the periods subquery became DISTINCT ON (period_index) newest-version-wins so
-    # re-rowed multi-period alerts cannot emit duplicate period_index bounds.
-    # Re-frozen for 0079: two source-description columns are deterministic MAX()
-    # passthroughs; the grouping, ordering, cap, and alert identity are unchanged.
-    "alerts.history": "4ff90b3e64c76a2020094843a11e88b060a07604f9209554d486172dbfd9d5a4",
+    "alerts.history": "87d3a1916d07413a3a59e17b1df6f41d04353cf7bb4c3850d2a612ff4a50b7ac",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 
 
-def test_c2_touched_statements_byte_identical() -> None:
+def test_reviewed_statements_match_sql_baseline() -> None:
     drifted = {
         name
-        for name, expected in _C2_TOUCHED_SQL_SHA256.items()
+        for name, expected in _REVIEWED_SQL_SHA256.items()
         if hashlib.sha256(_REGISTRY[name].encode()).hexdigest() != expected
     }
-    assert not drifted, f"emitted SQL drifted from the pre-C2 bytes: {sorted(drifted)}"
-
-
-# --------------------------------------------------------------------------
-# no-cycle law
-# --------------------------------------------------------------------------
+    assert not drifted, f"emitted SQL changed from its reviewed baseline: {sorted(drifted)}"
 
 
 def test_gold_reader_never_imports_snapshots() -> None:
-    # Fresh interpreter: the kernel must be importable without pulling
-    # transit_ops.snapshots — the law that lets gold/rollups AND the builders
-    # both import it with no cycle. (gold/__init__ pulls marts+rollups as it
-    # always has; neither imports snapshots.)
     code = (
         "import sys\n"
         "import transit_ops.gold.reader\n"
@@ -435,8 +341,6 @@ def test_gold_reader_never_imports_snapshots() -> None:
 
 
 def test_gold_reader_sources_never_import_rollups() -> None:
-    # rollups imports reader.buckets, so reader source must never import
-    # rollups back (a module-level cycle would break at interpreter start).
     import pathlib
 
     import transit_ops.gold.reader as reader_pkg
@@ -448,3 +352,26 @@ def test_gold_reader_sources_never_import_rollups() -> None:
         if "transit_ops.gold.rollups" in p.read_text() or "transit_ops.gold.marts" in p.read_text()
     ]
     assert not offenders, f"gold.reader modules import gold.rollups/marts: {offenders}"
+
+
+@pytest.mark.parametrize("numeric_type", [int, float, Decimal])
+def test_metric_readers_accept_database_numeric_values(numeric_type) -> None:
+    assert otp_pct(numeric_type(5), numeric_type(8)) == 63
+    assert otp_pct_severe_proxy(numeric_type(8), numeric_type(3)) == 63
+    assert severe_pct(numeric_type(8), numeric_type(3)) == 37.5
+    assert avg_delay_min(numeric_type(-15)) == -0.3
+    assert wilson_bounds(numeric_type(50), numeric_type(100)) == (40.4, 59.6)
+    row = {f"h{k}": None for k in range(1, 22)}
+    row.update({"h8": numeric_type(4), "sum_delay_sec": numeric_type(120)})
+    histogram, average = hist_and_avg(row)
+    assert sum(histogram) == 4
+    assert average == 30.0
+
+
+def test_histogram_count_preserves_large_integer_precision() -> None:
+    count = 2**53 + 1
+    row = {f"h{k}": None for k in range(1, 22)}
+    row.update({"h8": Decimal(count), "sum_delay_sec": Decimal(count)})
+    histogram, average = hist_and_avg(row)
+    assert sum(histogram) == count
+    assert average == 1.0

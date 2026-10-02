@@ -109,8 +109,6 @@ describe('selectTrendChart', () => {
 	});
 
 	it('zooms the on-time axis to a data-anchored, min-span-floored, [0,100]-clamped domain (S9B)', () => {
-		// A low-variance week (87/88) — the flat-trend complaint: the axis must floor the span so the
-		// wiggle shows slope, while staying inside [0,100] and carrying the absolute 80% reference.
 		const flat = trendOf(
 			selectTrendChart(
 				[

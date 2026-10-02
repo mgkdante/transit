@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
 import type { RouteFile } from '$lib/v1';
 
-// Pure geometry/camera helpers extracted from MapHero. The GL canvas can't be
-// screenshotted from CI, so the load-bearing bounds/zoom math is proven here.
-
 function route(directions: RouteFile['directions']): RouteFile {
 	return { generated_utc: '2026-06-21T00:00:00Z', id: 'r1', directions } as RouteFile;
 }
@@ -63,13 +60,7 @@ describe('routeBoundsFromFile', () => {
 			{
 				dir: 0,
 				shape: {
-					coordinates: [
-						[-73.6, 45.5],
-						[-73.55], // too short
-						['x', 'y'], // non-numeric → NaN
-						[Infinity, 45.5], // non-finite
-						[-73.5, 45.55],
-					],
+					coordinates: [[-73.6, 45.5], [-73.55], ['x', 'y'], [Infinity, 45.5], [-73.5, 45.55]],
 				},
 			},
 		]);

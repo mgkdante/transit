@@ -5,6 +5,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from http.client import HTTPException
 from io import TextIOWrapper
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
@@ -293,7 +294,7 @@ def _validate_feed(
         temp_dir = Path(temp_dir_name)
         try:
             artifact = downloader(source_url=source_url, temp_dir=temp_dir)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, HTTPException) as exc:
             return _unavailable_detail(
                 label=label,
                 endpoint_key=endpoint_key,

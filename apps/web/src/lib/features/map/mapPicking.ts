@@ -52,7 +52,7 @@ function selectionFromFeature(feature: PickableMapFeature): MapSelection | null 
 }
 
 export function pickMapSelection(features: readonly PickableMapFeature[]): MapSelection | null {
-	for (const layer of PICKABLE_MAP_LAYERS) {
+	for (const layer of [VEHICLE_BODY_LAYER, ...PICKABLE_MAP_LAYERS]) {
 		for (const feature of features) {
 			if (feature.layer?.id !== layer) continue;
 			const selection = selectionFromFeature(feature);

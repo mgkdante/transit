@@ -1,48 +1,10 @@
-// v1 HTTP layer — the single fetch+validate primitive for the R2 adapter.
-//
-// Fail-soft contract (snapshots/contract.py §404-as-empty):
-//   - HTTP 404  -> `undefined`  ("no data for this entity"; the caller renders
-//                                 an empty state, NOT an error). Per-entity
-//                                 static/historic pointers rely on this.
-//   - HTTP 5xx  -> throw         (server/transport fault — a real error).
-//   - other !ok -> throw         (401/403/4xx misconfig are bugs, not empties).
-//   - parse fail -> throw        (contract drift; parsePort names the port).
-//
-// Every response body crosses the R2 -> client trust boundary as unknown-shaped
-// JSON, so we hand it to `parsePort(label, schema, value)` which validates and,
-// on failure, throws an error naming the port that produced the bad data.
-//
-// `fetchFn` is the caller-supplied fetch — SvelteKit threads `event.fetch` here
-// during SSR so requests are deduped/inlined into the server-rendered payload.
-// It defaults to the global `fetch` (browser / client-side refresh).
-
 import { browser } from '$app/environment';
 import type { z } from 'zod';
 import { parsePort } from '$lib/v1/schemas/parse';
 import { getV1Runtime } from '$lib/v1/runtime';
 
-// Live snapshots and the manifest are cached for at most 30 seconds. Older
-// static/historic cache hits do not need to recalibrate the live clock, and
-// their Date/Age convention may be rewritten by an intermediary.
 const MAX_SERVER_TIME_CALIBRATION_AGE_S = 30;
 
-/**
- * Browser-only: estimate the SERVER's current time from a response and feed it
- * to the shared clock so every freshness readout is anchored to server time
- * (skew-immune), not the client's possibly-wrong clock.
- *
- * A standards-compliant cache leaves `Date` at origin response time and reports
- * elapsed cache time in `Age`, so `Date + Age` is the receipt-time estimate.
- * Some development/proxy paths rewrite `Date` to receipt time while preserving
- * the upstream `Age`; adding both then double-counts the cache age and can move
- * freshness hours into the future. Samples older than the live/manifest cache
- * window are therefore ignored. The most recent valid clock offset keeps ticking
- * locally, and the next short-lived live response recalibrates it.
- *
- * Fail-soft: skips silently with no `Date` header / on a NaN parse; never throws
- * (SSR-safe — the whole call is browser-gated, and the server's own clock is
- * already accurate).
- */
 function noteServerTime(res: Response): void {
 	if (!browser) return;
 	const dateHeader = res.headers.get('date');
@@ -55,20 +17,11 @@ function noteServerTime(res: Response): void {
 	getV1Runtime().clock.noteServerEpochMs(dateMs + ageSeconds * 1000);
 }
 
-/** A fetch-shaped function. Matches both the global `fetch` and SvelteKit's `event.fetch`. */
 export type FetchFn = typeof fetch;
 
-/** Per-request fetch options passed through to the adapter ports. */
 export interface FetchCtx {
-	/** SSR-supplied fetch (event.fetch) for request dedupe; defaults to global fetch. */
 	fetch?: FetchFn;
-	/**
-	 * Cache mode forwarded to the underlying request. Stable mutable URLs use
-	 * normal HTTP revalidation (`default`); generation-addressed immutable
-	 * artifacts may use the platform/browser cache (`force-cache`).
-	 */
 	cache?: RequestCache;
-	/** Optional AbortSignal to cancel an in-flight read. */
 	signal?: AbortSignal;
 }
 
@@ -125,18 +78,6 @@ function validateJson<T>(schema: z.ZodType<T>, label: string, body: unknown): T 
 	return parsePort(label, schema, body);
 }
 
-/**
- * Fetch JSON from a snapshot URL and validate it through `parsePort`.
- *
- * @returns the parsed value, or `undefined` when the URL 404s (no data).
- * @throws on 5xx / non-404 !ok responses and on schema-validation failure.
- *
- * @param url      fully-qualified snapshot URL (built by config.ts helpers).
- * @param schema   the Zod schema for this family (from `$lib/v1/schemas`).
- * @param label    port label for parse errors, e.g. `"static.route"`.
- * @param fetchFn  fetch implementation (event.fetch in SSR; global fetch else).
- * @param init     optional cache mode + abort signal.
- */
 export async function getEntityJson<T>(
 	url: string,
 	schema: z.ZodType<T>,

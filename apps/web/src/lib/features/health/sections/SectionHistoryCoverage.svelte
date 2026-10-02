@@ -311,7 +311,8 @@
 				tbody
 				td
 		) {
-			grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+			display: flex;
+			flex-direction: column;
 			gap: 0.75rem;
 			padding: 0.875rem;
 			border-bottom: 1px solid var(--border);

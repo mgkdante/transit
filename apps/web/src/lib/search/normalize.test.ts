@@ -42,7 +42,6 @@ describe('tokenMatchScore', () => {
 		expect(tokenMatchScore(['berri uqam'], 'berri uqam')).toBe(0);
 		expect(tokenMatchScore(['station berri uqam'], 'station berri')).toBe(1);
 		expect(tokenMatchScore(['station berri uqam'], 'berri uqam')).toBe(2);
-		// out-of-order tokens, non-contiguous → token-AND tier
 		expect(tokenMatchScore(['station berri uqam'], 'uqam berri')).toBe(3);
 	});
 

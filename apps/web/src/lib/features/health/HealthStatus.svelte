@@ -1,29 +1,3 @@
-<!--
-  HealthStatus — the /status (data-health) surface screen.
-
-  Thin ORCHESTRATOR over three resources + one mapping pass. Every derivation
-  lives in ./selectors and every block in ./sections; this file only fetches,
-  maps, and lays the sections out.
-
-  P5.4c RE-SEAT — the surface uses the shared DetailShell spine (same detail
-  architecture as /metrics) and the shared ArticleHeader cover: circuit grid,
-  ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
-  The lede opens the body column; DetailShell adds the hazard tape.
-    · BODY → DetailShell (2-col at ≥1024): LEFT = the numbered ToC and one
-      at-a-glance stack (lanes passing / feeds fresh); CENTER = the gated,
-      single-title collapsible cards. Mobile keeps the same single summary and
-      replaces the rail navigation with the floating TocPill.
-
-  The original 8 sections keep their pipeline order and retained-history coverage
-  appends as section 9. Each section still STANDS DOWN when its slice is empty;
-  the ToC + stat rail derive from the SAME presence flags so a stood-down section
-  is simply absent from the nav.
-
-  Three resources, ALL freshness:true — so the shared dataPulse epoch re-runs them
-  on a new publish (auto-refresh, no polling). HONESTY: a null/absent slice stands
-  its section DOWN or shows the styled absence, never a fabricated value. DOCTRINE:
-  status marks ride the dataviz status scale (StatusDot), never --primary.
--->
 <script lang="ts">
 	import './sections/health-sections.css';
 
@@ -106,47 +80,31 @@
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
 
-	// The three honesty documents. `freshness: true` on each wires the shared
-	// newest-data contribution AND the dataPulse-epoch auto-refresh: a new publish
-	// bumps the epoch and all resources re-run, so /status advances with no polling.
 	const provenance = createResource(() => getProvenance(), {
-		freshness: true,
 		key: () => 'provenance',
 		seed: () => provenanceSeed,
 	});
-	// data_health.json lives on the LIVE lane; null when not published yet (legacy
-	// manifest / 404) → the lanes section stands down honestly.
 	const dataHealth = createResource(() => getDataHealth(), {
-		freshness: true,
 		key: () => 'data-health',
 		seed: () => dataHealthSeed,
 	});
-	// The optional retained-history discovery root is independently retryable. A
-	// legacy root with no families stands down; a partial real root stays visible
-	// and the selector names every omitted public family honestly.
 	const historicAvailability = createResource(() => getHistoricAvailability(), {
-		freshness: true,
 		key: () => 'historic-availability',
 		seed: () => historicAvailabilitySeed,
 	});
 
-	// ── Localized pass-through helpers handed to the sections ────────────────────
 	function verdictFor(status: string | null | undefined) {
 		return verdictForRaw(status, t.statusVerdict);
 	}
-	/** Humanize a non-negative age in seconds, or the localized "no age" note. */
 	function humanizeAge(ageS: number | null | undefined): string {
 		return ageS == null ? t.freshness.noAge : formatRelativeSeconds(ageS, locale);
 	}
-	/** Relative last-loaded stamp from an ISO string, or the localized fallback. */
 	function lastLoaded(iso: string | null | undefined): string {
 		return freshnessRelative(iso, locale, sharedClock.serverNow) ?? t.sources.neverLoaded;
 	}
-	/** Humanize a raw gap feed-token into a citizen sentence (localized lookup). */
 	function humanizeGap(token: string): string {
 		return t.gaps.tokens[token] ?? token.replace(/_/g, ' ');
 	}
-	/** detail/aggregate day-count as "14 days", or null → the honest-absence chip. */
 	function fmtDays(v: number | null): string | null {
 		return v == null ? null : `${v}${t.retention.daysUnit}`;
 	}
@@ -176,7 +134,6 @@
 		return (value.families?.length ?? 0) === 0;
 	}
 
-	// The lane-label bundle the selector interpolates (i18n stays here).
 	const laneLabels = $derived<LaneLabels>({
 		laneLabel: (key) => t.lanes.laneLabel[key] ?? key,
 		cadence: (key) => t.lanes.cadence[key] ?? '',
@@ -186,10 +143,6 @@
 		maintenanceCadence: t.lanes.maintenanceCadence,
 	});
 
-	// ── Derived slices (null-safe off .data) ─────────────────────────────────────
-	// The ToC + stat rail derive from these presence flags, so they stay in lock-step
-	// with which sections actually render. The center column still gates each section
-	// with the SAME flags — one source of truth for "is this section present".
 	const prov = $derived(provenance.data ?? null);
 	const dh = $derived(dataHealth.data ?? null);
 	const historyRoot = $derived(historicAvailability.data ?? null);
@@ -217,10 +170,6 @@
 			envelope.methodologyVersion != null,
 	);
 
-	// ── Section presence registry (original numbers frozen 1–8; coverage = 9) ─────
-	// Each section carries its FIXED number (matching the parent card badge) and a
-	// presence flag; the ToC lists only present sections but keeps their own number,
-	// so a stood-down section leaves a gap in the run rather than re-sequencing.
 	const sectionDefs = $derived([
 		{ id: 'health-lanes', number: 1, title: t.lanes.section, present: laneRows.length > 0 },
 		{
@@ -293,17 +242,12 @@
 		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
 		return entries;
 	});
-	// ── Right-rail stat summary (pass/fail, from data on the page) ────────────────
-	// Applicable lanes only (the MAINTENANCE not-applicable row + gate-less lanes are
-	// excluded from the pass count); a lane "passes" when its gate aspect is on_time.
-	// The worst lane is the first non-passing applicable lane (pipeline order).
 	const laneStat = $derived.by(() => {
 		const applicable = laneRows.filter((r: LaneRow) => r.applicable && r.gate != null);
 		const passing = applicable.filter((r) => r.gate?.aspect === 'on_time');
 		const worst = applicable.find((r) => r.gate?.aspect !== 'on_time') ?? null;
 		return { total: applicable.length, passing: passing.length, worst };
 	});
-	// Feeds "fresh" = freshness verdict resolves to the ok bucket.
 	const feedStat = $derived.by(() => {
 		const total = freshness.length;
 		const ok = freshness.filter((f) => verdictFor(f.status).aspect === 'on_time').length;
@@ -318,10 +262,6 @@
 		railOpen[key].value = next;
 	}
 
-	// ── Active-section tracking + ToC navigation ──────────────────────────────────
-	// DetailShell owns the single IntersectionObserver and writes `activeId` back via
-	// `bind:activeId`; this state receives it and feeds the left rail ToC (whose own
-	// footer carries the ONE "SEC n/m" reading readout).
 	let activeId = $state('');
 	let cardOpenSignals = $state<Record<string, number>>({});
 	const cardOpenSignal = (id: string): number => cardOpenSignals[id] ?? 0;
@@ -358,10 +298,6 @@
 		openCard(id);
 		await tick();
 		const target = tocElement(id);
-		// The disclosure expand (and, under a remembered collapse, every sibling's
-		// fold) animates the page height; scroll clamping uses call-time geometry,
-		// so let the layout settle before positioning (design: open the
-		// destination BEFORE final positioning).
 		await settleLayout(target);
 		if (generation !== navigationGeneration) return false;
 		target?.scrollIntoView({
@@ -413,9 +349,6 @@
 	});
 
 	async function navigate(id: string): Promise<void> {
-		// An explicit reader choice supersedes any queued async hash. The reveal's
-		// new generation cancels an in-flight hash scroll; clearing the queue keeps a
-		// later resource/inventory change from reviving that stale destination.
 		pendingHash = null;
 		await reveal(id);
 	}
@@ -536,7 +469,6 @@
 				</div>
 			</CollapsibleSection>
 
-			<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
 			{#if laneRows.length > 0}
 				<CollapsibleSection
 					title={t.lanes.section}
@@ -553,7 +485,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Per-feed freshness ─────────────────────────────────────── -->
 			{#if freshness.length > 0}
 				<CollapsibleSection
 					title={t.freshness.section}
@@ -570,7 +501,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Source-feed lineage ────────────────────────────────────── -->
 			{#if sources.length > 0}
 				<CollapsibleSection
 					title={t.sources.section}
@@ -587,7 +517,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
 			{#if gaps.length > 0}
 				<CollapsibleSection
 					title={t.gaps.section}
@@ -604,7 +533,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Pipeline notes ─────────────────────────────────────────── -->
 			{#if pipelineNotes.length > 0}
 				<CollapsibleSection
 					title={t.pipelineNotes.section}
@@ -621,7 +549,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Retention ──────────────────────────────────────────────── -->
 			{#if hasRetention}
 				<CollapsibleSection
 					title={t.retention.section}
@@ -644,7 +571,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Conformance ────────────────────────────────────────────── -->
 			{#if conformance}
 				<CollapsibleSection
 					title={t.conformance.section}
@@ -668,7 +594,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Build accountability (envelope) ────────────────────────── -->
 			{#if hasEnvelope}
 				<CollapsibleSection
 					title={t.envelope.section}
@@ -685,7 +610,6 @@
 				</CollapsibleSection>
 			{/if}
 
-			<!-- ── Retained-history coverage inventory ─────────────────────── -->
 			{#if historyCoverageRows.length > 0}
 				<CollapsibleSection
 					title={t.historyCoverage.section}
@@ -704,12 +628,7 @@
 		</ArticleSectionStack>
 	{/snippet}
 </DetailShell>
-<!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
-     the pill); no separate render + no 1024–1279 re-show hack is needed — the shell's
-     rails appear at the SAME 1024 boundary the pill hides at. -->
 
-<!-- Left-rail stat cards — a compact pass/fail summary from the lanes gate + feed
-	 freshness, rendered once below the rail navigation at every viewport. -->
 {#snippet statCards()}
 	<div class="health-stat-rail">
 		{#if laneStat.total > 0}
@@ -783,7 +702,6 @@
 		min-width: 0;
 	}
 
-	/* ── Left rail (ToC + at-a-glance summary) ───────────────────────────────── */
 	.health-left-rail {
 		display: flex;
 		flex-direction: column;
@@ -799,9 +717,6 @@
 	.health-at-a-glance {
 		min-width: 0;
 	}
-	/* Aggregate verdict panel — the pass-summary + worst-lane sentence inside the
-	   terminal frame. Not a data mark / no --primary; the summary reads in the
-	   heading voice, the worst clause in the muted mono voice. */
 	.health-aggregate__verdict {
 		display: flex;
 		flex-wrap: wrap;
@@ -823,7 +738,6 @@
 		color: var(--muted-foreground);
 	}
 
-	/* ── Left-rail stat cards ───────────────────────────────────────────────── */
 	.health-stat-rail {
 		display: flex;
 		flex-direction: column;

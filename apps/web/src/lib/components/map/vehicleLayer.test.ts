@@ -90,8 +90,6 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect(JSON.stringify(layout['icon-size'])).not.toContain('selected');
 		expect(JSON.stringify(layout['icon-size'])).not.toContain('hovered');
 		expect(JSON.stringify(layout['icon-size'])).not.toContain('feature-state');
-		// The bus glyph is UPRIGHT (legible at every bearing) — heading is the
-		// separate chevron layer, so the body itself never rotates.
 		expect(layout['icon-rotate']).toBeUndefined();
 		expect(layout['icon-rotation-alignment']).toBe('viewport');
 	});
@@ -116,14 +114,13 @@ describe('toVehicleFeatures entity filtering', () => {
 			filter: unknown;
 		};
 		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
-		// ONE neutral chevron sprite; rotated by bearing, aligned to the map.
 		expect(layout['icon-image']).toBe(HEADING_ICON);
 		expect(JSON.stringify(layout['icon-rotate'])).toContain('bearing');
 		expect(layout['icon-rotation-alignment']).toBe('map');
-		// Shows only matched buses that actually report a heading (no fake arrows).
+		expect(layout['icon-pitch-alignment']).toBe('viewport');
+		expect(layout['icon-offset']).toEqual([0, -9]);
 		expect(JSON.stringify(rendered.filter)).toContain('matched');
 		expect(JSON.stringify(rendered.filter)).toContain('hasHeading');
-		// Drawn ABOVE the upright body so the tick is never occluded.
 		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
 		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
 		expect(headingIndex).toBeGreaterThan(bodyIndex);
@@ -282,7 +279,12 @@ describe('toVehicleFeatures entity filtering', () => {
 		);
 		expect(layout).toMatchObject({
 			'icon-image': ['get', 'mark'],
-			'icon-offset': rawStateOffset,
+			'icon-offset': [
+				'case',
+				['==', ['get', 'stale'], 1],
+				['literal', [-15, 30 / 0.6]],
+				['literal', rawStateOffset],
+			],
 			'icon-allow-overlap': true,
 			'icon-ignore-placement': true,
 		});
@@ -299,32 +301,24 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect((body?.layout as Record<string, unknown>)['icon-image']).toEqual(['get', 'body']);
 	});
 
-	it('normalizes the semantic state offset for MapLibre and clears the heading annulus', () => {
-		expect(VEHICLE_MARKER_GEOMETRY.stateBadge).toEqual({ offset: [0, 20], scale: 0.6 });
-		const rawOffset = mapLibreRawIconOffset(
-			VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
-			VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-		);
-		expect(rawOffset).toEqual([0, 20 / 0.6]);
+	it('keeps every bearing outside the upright bus silhouette', () => {
+		const bodyRadius = Math.hypot(6.5 - 4, 9.5 - 4) + 4 + 1;
+		expect(VEHICLE_MARKER_GEOMETRY.chevronAnnulus.inner).toBeGreaterThan(bodyRadius);
+	});
 
-		for (const [zoom, bodyScale, expectedTop, expectedAnnulus] of [
-			[11, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11, 9.516, 8.424],
-			[15, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15, 15.86, 14.04],
-		] as const) {
-			const effectiveDisplacement = rawOffset[1] * bodyScale * 0.6;
-			expect(effectiveDisplacement, `z${zoom} effective displacement`).toBeCloseTo(
-				20 * bodyScale,
-				12,
-			);
-
-			const spriteTop =
-				(20 - (VEHICLE_MARKER_GEOMETRY.box / 2) * VEHICLE_MARKER_GEOMETRY.stateBadge.scale) *
-				bodyScale;
-			const annulusOuter = VEHICLE_MARKER_GEOMETRY.chevronAnnulus.outer * bodyScale;
-			expect(spriteTop, `z${zoom} sprite top`).toBeCloseTo(expectedTop, 12);
-			expect(annulusOuter, `z${zoom} annulus outer`).toBeCloseTo(expectedAnnulus, 12);
-			expect(spriteTop, `z${zoom} clearance`).toBeGreaterThan(annulusOuter);
+	it('keeps single and paired badges below every heading without covering each other', () => {
+		const { stateBadge, silentBadge, box, plateMargin, chevronAnnulus } = VEHICLE_MARKER_GEOMETRY;
+		const halfPlate = box / 2 - plateMargin + 1;
+		for (const badge of [stateBadge, silentBadge]) {
+			const raw = mapLibreRawIconOffset(badge.offset, badge.scale);
+			expect(raw[0] * badge.scale).toBe(0);
+			expect(raw[1] * badge.scale).toBeCloseTo(30);
+			for (const offset of [badge.offset, badge.pairedOffset]) {
+				expect(offset[1] - halfPlate * badge.scale).toBeGreaterThan(chevronAnnulus.outer);
+			}
 		}
+		const gap = silentBadge.pairedOffset[0] - stateBadge.pairedOffset[0];
+		expect(gap).toBeGreaterThan(halfPlate * (stateBadge.scale + silentBadge.scale));
 	});
 
 	it('does not restore the retired per-vehicle silence opacity expression', () => {
@@ -475,7 +469,6 @@ describe('toVehicleFeatures entity filtering', () => {
 
 describe('toVehicleFeatures retired per-vehicle silence fade', () => {
 	const TTL = 30;
-	// A fresh bus + a long-silent bus (same shape, different report time).
 	function fleet(freshUtc: string, silentUtc: string) {
 		return [
 			{ id: 'fresh', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: freshUtc, bearing: 90 },
@@ -515,9 +508,6 @@ describe('toVehicleFeatures retired per-vehicle silence fade', () => {
 
 describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', () => {
 	const now = Date.parse('2026-06-21T12:00:00Z');
-	// Same snapshot capture time for both buses (uniform updated_utc); they differ
-	// ONLY in their OWN fix time (reported_utc) — exactly the case the old global
-	// silence could not distinguish but per-bus staleness must.
 	const SNAPSHOT_UTC = '2026-06-21T12:00:00Z';
 
 	function fleet(freshReported: string, staleReported: string) {
@@ -544,8 +534,8 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 	}
 
 	it('flags a bus whose OWN reported_utc is past the cutoff as stale:1, a fresh one stale:0', () => {
-		const fresh = new Date(now - 5 * 1000).toISOString(); // 5s old → fresh
-		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString(); // well past cutoff
+		const fresh = new Date(now - 5 * 1000).toISOString();
+		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
 		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER, new Set(), null, {
 			serverNow: now,
 		}).features;
@@ -592,13 +582,16 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		};
 		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
 		expect(layout['icon-image']).toBe(SILENT_ICON);
-		// Shows only matched buses that are per-bus stale.
+		expect(layout['icon-offset']).toEqual([
+			'case',
+			['!=', ['coalesce', ['get', 'mark'], ''], ''],
+			['literal', [12, 30 / 0.75]],
+			['literal', [0, 30 / 0.75]],
+		]);
 		expect(JSON.stringify(rendered.filter)).toContain('matched');
 		expect(JSON.stringify(rendered.filter)).toContain('stale');
-		// The big "!" flag stays put over the bus and on top of every neighbour.
 		expect(layout['icon-allow-overlap']).toBe(true);
 		expect(layout['icon-ignore-placement']).toBe(true);
-		// Drawn ABOVE the body + heading so the flag is never occluded.
 		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
 		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
 		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
@@ -643,17 +636,13 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		} as unknown as MapLibreMap;
 		addVehicleLayers(map);
 
-		// The exported consts ARE the bus DEFAULT legs × 0.75.
 		expect(SILENT_BADGE_SCALE).toBe(0.75);
 		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(ICON_SIZE_Z11_DEFAULT * 0.75, 6);
 		expect(SILENT_ICON_SIZE_Z11 / ICON_SIZE_Z11_DEFAULT).toBeCloseTo(0.75, 6);
-		// z11 ≈ 0.585, z15 ≈ 0.975 (0.75 × the bus 0.78 / 1.3 default legs).
 		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(0.585, 3);
 		expect(SILENT_ICON_SIZE_Z15).toBeCloseTo(0.975, 3);
-		// It grows with zoom (z15 leg larger than z11) — tracks the bus, not fixed.
 		expect(SILENT_ICON_SIZE_Z15).toBeGreaterThan(SILENT_ICON_SIZE_Z11);
 
-		// The layer wires those legs into a top-level zoom-interpolate icon-size.
 		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
 		if (!silent) throw new Error('expected silent layer');
 		const layout = (silent.layout ?? {}) as Record<string, unknown>;

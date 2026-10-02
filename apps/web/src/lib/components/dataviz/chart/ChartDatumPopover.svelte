@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { Portal } from 'bits-ui';
 	import type { ChartDatumPopoverController } from './useChartDatumPopover.svelte';
 
@@ -114,8 +115,26 @@
 	});
 
 	$effect(() => {
-		if (!visible || !placed || !surface) return;
-		surface.focus({ preventScroll: true });
+		if (!visible || !placed || !surface || !model) return;
+		const element = surface;
+		const activeModel = model;
+		let canceled = false;
+		void tick().then(() => {
+			if (
+				canceled ||
+				!visible ||
+				!placed ||
+				surface !== element ||
+				model !== activeModel ||
+				!element.isConnected
+			) {
+				return;
+			}
+			element.focus({ preventScroll: true });
+		});
+		return () => {
+			canceled = true;
+		};
 	});
 </script>
 

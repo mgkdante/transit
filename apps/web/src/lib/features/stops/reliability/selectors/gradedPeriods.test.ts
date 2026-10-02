@@ -12,7 +12,7 @@ describe('selectGradedPeriods', () => {
 		];
 		const day = selectGradedPeriods(periods, 'day', label);
 		expect(day).toHaveLength(1);
-		expect(day[0].grain).toBe('Day'); // localized, never the raw 'day'
+		expect(day[0].grain).toBe('Day');
 		expect(day[0].delayKind).toBe('median');
 		expect(day[0].delayMin).toBe(2.4);
 

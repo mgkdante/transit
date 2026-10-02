@@ -537,8 +537,6 @@ def _parse_gis_zip(payload: bytes) -> _ParsedGisZip:
     )
 
 
-
-
 def _delete_existing_gis_rows(connection: Connection, *, dataset_version_id: int) -> None:
     for statement in (
         "DELETE FROM silver.gis_gtfs_matches WHERE gis_dataset_version_id = :dataset_version_id",

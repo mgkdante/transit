@@ -1,10 +1,3 @@
-"""build_provenance — feed lineage, freshness, retention policy, methodology.
-
-Split out of the former monolithic ``historic.py`` (S7-close C3) verbatim. The
-methodology dict is kept inline in ``build_provenance`` (its only caller); the
-conformance carve-out (``_build_provenance_conformance``) stays alongside it.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -48,10 +41,6 @@ _PROVENANCE_FRESHNESS_SQL = named_query(
     """
 )
 
-# Feed conformance for the provider's current static load: the out-of-norm signal
-# is the unknown/extra GTFS members captured verbatim in silver.gtfs_extra_rows
-# (mirrors /health check_feed_conformance, scoped to this provider). Empty result
-# => no current static dataset => no conformance block.
 _PROVENANCE_CONFORMANCE_SQL = named_query(
     "provenance.conformance",
     """
@@ -80,17 +69,9 @@ _PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
 def build_provenance(
     conn: Connection, provider_id: str = "stm", *, generated_utc: str
 ) -> Provenance:
-    """Build provenance.json — feed lineage, freshness, retention policy, methodology.
-
-    Sources from gold.source_lineage_reporting (is_current=true only).
-    Freshness from gold.feed_freshness_current.
-    Retention and methodology are hardcoded v1 constants.
-    gaps lists known missing feeds (STM metro publishes no realtime feed).
-    """
     params = {"provider_id": provider_id}
 
-    # Provider-specific known gaps. metro_realtime is STM's: it runs a métro whose
-    # realtime is unpublished. Bus/LRT-only networks (STO/OC/STS) have no such gap.
+    # The unpublished metro-realtime gap applies only to STM.
     gaps = list(_PROVIDER_GAPS.get(provider_id, []))
 
     sources: list[ProvenanceSource] = []
@@ -122,9 +103,7 @@ def build_provenance(
 
     conformance = _build_provenance_conformance(conn, params)
 
-    # Retention numbers derive from settings so the citizen-facing policy can
-    # never drift from the actual prune defaults (detail = capped facts, aggregate
-    # = warm rollups). The methodology copy below mirrors aggregate_days verbatim.
+    # Publish retention settings from their executable owners.
     _settings = get_settings()
     return Provenance(
         generated_utc=generated_utc,
@@ -137,12 +116,11 @@ def build_provenance(
         },
         methodology={
             "otp_definition": (
-                "on-time = observed delay between -60s and +300s "
-                "(at most 1 min early, less than 5 min late); route OTP = "
-                "on-time observations / observations with known delay; "
-                "stop-level otp_pct is observations not severe(>300s) over "
-                "per-stop delay observations, a severe-delay proxy rather "
-                "than true on-time-band OTP"
+                "on-time band = -60s <= delay < +300s. Historical route/network OTP counts "
+                "on-time observations over known-delay observations. Live OTP counts "
+                "map-eligible vehicle-position rows in that band over rows with known status. "
+                "Historical stop-level otp_pct is a not-severe proxy over eligible per-stop "
+                "delay observations, not on-time-band OTP."
             ),
             "reliability_floor": (
                 f"reliable-enough = {MIN_N_RATE} known-delay observations "
@@ -152,15 +130,17 @@ def build_provenance(
                 "Wilson score bounds (wilson_lo / wilson_hi) so the UI gates display "
                 "by depth and ranks on the lower bound, not the raw rate."
             ),
-            # Machine-readable so the web reads ONE authoritative value (methodology
-            # is additionalProperties:true / z.unknown() — no schema or Zod change).
             "min_n_rate": MIN_N_RATE,
             "wilson_z": WILSON_Z,
             "rounding": (
-                "as of 2026-07-01 every Python-side published rounding uses "
-                "half-away-from-zero ties (matching Postgres ROUND), replacing "
-                "Python's banker's rounding; values move only at exact-.5 "
-                "boundaries (S7-B rebaseline)"
+                "Snapshot metric rounding uses decimal half-away-from-zero ties at each field "
+                "precision. Methodology live-2, reliability-2 and alerts-2 apply this rule "
+                "consistently, including live whole-minute percentiles and histogram "
+                "assignment, alert duration and compatible historical outputs. Retained "
+                "version-1 artifacts keep their original values; compare methodology versions "
+                'when reproducing a result. Live histogram bins still classify rounded '
+                'whole-minute '
+                "trip means."
             ),
             "network_totals_basis": (
                 "network trend/receipt totals derive from route-attributed "
@@ -169,24 +149,30 @@ def build_provenance(
                 "under an unrouted partition"
             ),
             "delay_unit": (
-                "seconds from schedule; delay statistics exclude observations "
-                "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"
+                "Predicted schedule deviations are measured in seconds. Delay summaries use "
+                "their documented populations and typically exclude |delay| > 1 hour; route OTP "
+                "retains all known-delay observations. Historical severe = >300s and <=3600s; "
+                "current live severity uses its separate >=300s boundary."
             ),
             "percentiles": (
-                "network p90 from fact (live + trailing 14d trend); route and "
-                "stop p50/p90 from a daily fact-derived percentile rollup, "
-                "computed per closed local day and retained 730 days"
+                "Live network p50/p90 give each current trip-average predicted delay equal "
+                "weight. Daily route/stop percentiles use eligible signed delay observations on "
+                "the provider-local capture date, including repeated predictions. Retained "
+                "multi-day histogram percentiles are estimates, not averages of exact daily "
+                "quantiles. Network trend p90 uses its recent detailed-fact window; missing "
+                "historical p90 stays unknown."
             ),
             "headway": (
-                "observed = median gap between consecutive trip starts "
-                "(first realtime observation with a computed delay) in the "
-                "busiest direction, per weekday service day, trailing 14d; "
-                "scheduled = representative-weekday first-stop departures, "
-                "busiest direction; excess_wait (windowed grains) = passenger-"
-                "weighted Excess Wait Time max(0, AWT - scheduled/2), AWT = "
-                "sum(gap^2)/(2*sum(gap)) over the window's gaps (bunching-aware); "
-                "the scalar whole-history rows keep the typical-gap proxy "
-                "max(0, observed - scheduled)"
+                "Observed headway is a gap between first trip appearances in the feed, not a "
+                "measured stop-arrival interval. Retained 1/7/30-day windows pool weekday gap "
+                "histograms for the busiest direction selected separately in each window; "
+                "observed_min is an estimated median, CoV uses pooled gap moments, and bunching "
+                "is estimated from histogram bins. The scalar fallback uses the configured "
+                "raw-fact retention window (14 days by default). Scheduled headway uses the "
+                "current representative weekday timetable. Windowed EWT models uniform rider "
+                "arrivals: max(0, sum(gap^2)/(2*sum(gap)) - scheduled/2). Scalar rows retain "
+                "max(0, observed median - scheduled median). The web EWT headline is an "
+                "unweighted mean of available shift estimates, not a pooled daily wait."
             ),
             "history_freeze": (
                 "closed reporting periods are immutable after they leave the "
@@ -237,7 +223,8 @@ def build_provenance(
                 "realtime feed and counts canceled if ever reported with "
                 "schedule_relationship=CANCELED; the denominator is RT-reported "
                 "trips, NOT the full published schedule; computed per closed local "
-                "day and retained 730 days; null when no trips were observed. "
+                'day and retained under the configured aggregate policy; null when no trips '
+                'were observed. '
                 "SCHEDULED UNIVERSE (2026-07-02, GC2 H1): scheduled_trip_days = "
                 "distinct scheduled trips active that date after resolving the "
                 "static GTFS calendar ∩ calendar_dates (exception_type 1/2, incl. "
@@ -256,7 +243,8 @@ def build_provenance(
                 "historic crowding = GTFS-RT OccupancyStatus band shares over "
                 "band-bearing pings (no numeric load factor); CRUSHED_STANDING "
                 "folds into standing; NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE excluded; "
-                "summed per closed local day and retained 730 days; null when no "
+                'summed per closed local day and retained under the configured aggregate '
+                'policy; null when no '
                 "occupancy telemetry exists, never an all-zero mix"
             ),
             "headway_regularity": (
@@ -272,7 +260,8 @@ def build_provenance(
                 "no fake 00:00 first departure); observed activity, not the scheduled "
                 "departure; span in minutes (may exceed 24h on overnight service); "
                 "first delay = the first trip's first-observation deviation, last delay "
-                "= the last trip's LATEST (terminal) observation deviation; retained 730 days"
+                "= the last trip's LATEST (terminal) observation deviation; retained under the "
+                'configured aggregate policy'
             ),
             "alert_breakdown": (
                 "distinct content-hashed alerts in the 30-day window grouped by "
@@ -295,8 +284,6 @@ def build_provenance(
 def _build_provenance_conformance(
     conn: Connection, params: dict
 ) -> ProvenanceConformance | None:
-    """Feed conformance for the provider's current static load, or None when the
-    provider has no current static dataset (nothing to describe)."""
     rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
     if not rows:
         return None

@@ -1,15 +1,3 @@
-// url.test.ts — the URL ⇄ FilterState codec gate. The URL is the canonical home
-// of filter state (shareable, SSR-read, locale-switch-surviving), so the codec
-// must be a stable fixed point and self-healing against hand-edited junk.
-//
-// Gates:
-//   - ROUND-TRIP FIXED POINT: toSearchParams(fromSearchParams(u)) === a
-//     canonical query string, and re-parsing is value-equal (idempotent).
-//   - MULTI-VALUE SETS: comma-joined AND repeated keys both collect; the output
-//     is sorted + comma-joined + deduped, with stable KEY order.
-//   - SELF-HEALING: invalid enum tokens are DROPPED on the way in; an all-bad
-//     enum leaves the field absent (and thus omitted from the URL).
-
 import { describe, it, expect } from 'vitest';
 import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchParams } from './url';
 import { isEmptyFilterState } from './state';
@@ -153,7 +141,6 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		const s = fromSearchParams(sp('date=2026-06-16&from=2026-06-01&to=2026-06-14'));
 		expect(s.date).toBe('2026-06-16');
 		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
-		// A lone ?date forms NO window (it is not a bound).
 		expect(fromSearchParams(sp('date=2026-06-16')).window).toBeUndefined();
 	});
 
@@ -169,7 +156,6 @@ describe('fromSearchParams — parsing + self-healing', () => {
 
 	it('round-trips the alerts axes alongside ?route/?stop/?from/?to (fixed point)', () => {
 		const q = 'route=24&stop=52458&from=2026-06-01&to=2026-06-14&affects=lines&severity=high';
-		// KEY_ORDER puts route/stop/from/to before affects/severity; assert the fixed point.
 		expect(round(q)).toBe(round(round(q)));
 		const s = fromSearchParams(sp(q));
 		expect([...s.routes]).toEqual(['24']);
@@ -288,32 +274,31 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'',
 		'route=10',
 		'route=80,10,165',
-		'route=10&route=80', // repeated-key form normalizes to comma form
-		'route=10,,80&stop=', // junk normalizes away
-		'status=bogus,late', // invalid enum drops
+		'route=10&route=80',
+		'route=10,,80&stop=',
+		'status=bogus,late',
 		'entity=bus,stop,bogus',
 		'alert=has_alert,bogus',
 		'route=165&stop=ABC&trip=T1&vehicle=40061&status=on_time,late&occupancy=full&entity=stop&alert=has_alert&grain=week&from=2026-06-01&to=2026-06-14',
-		'from=2026-06-01&to=2026-06-14', // window-only (range mode implied by window presence)
-		'from=2026-06-14&to=2026-06-01', // inverted → normalized to from<=to
-		'from=2026-06-01', // half window drops → empty
-		'utm_source=x&route=10', // unknown key drops
-		'grain=decade', // invalid grain drops -> empty
-		'grain=range&from=2026-06-01&to=2026-06-14', // legacy: grain=range drops, window carries intent
-		'window=30', // legacy scalar: unknown key, drops entirely
-		'n=20', // worst-N rung kept
-		'n=all', // worst-N uncapped kept
-		'n=7', // junk worst-N drops → empty
-		'date=2026-06-16', // receipt single-day key kept
-		'date=2026-06-16&from=2026-06-01&to=2026-06-14', // ?date orthogonal to the window pair
-		'date=yesterday', // malformed ?date drops → empty
+		'from=2026-06-01&to=2026-06-14',
+		'from=2026-06-14&to=2026-06-01',
+		'from=2026-06-01',
+		'utm_source=x&route=10',
+		'grain=decade',
+		'grain=range&from=2026-06-01&to=2026-06-14',
+		'window=30',
+		'n=20',
+		'n=all',
+		'n=7',
+		'date=2026-06-16',
+		'date=2026-06-16&from=2026-06-01&to=2026-06-14',
+		'date=yesterday',
 	];
 
 	for (const input of INPUTS) {
 		it(`?${input || '<empty>'} reaches a fixed point in one pass`, () => {
 			const once = round(input);
 			const twice = round(once);
-			// Applying the codec again to its own output changes nothing.
 			expect(twice).toBe(once);
 		});
 
@@ -350,9 +335,6 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 	});
 });
 
-// Per-dialect back-compat: every published URL dialect (the S7.5 decode table) must keep decoding.
-// The single biggest correctness fact — a legacy ?grain=range needs from+to to carry range intent;
-// a BARE ?grain=range must NOT fabricate a window.
 describe('back-compat — every published dialect keeps decoding (S7.5 decode table)', () => {
 	it('/map?status=late — codec A unchanged, grain/window absent', () => {
 		const s = fromSearchParams(sp('status=late'));
@@ -373,11 +355,6 @@ describe('back-compat — every published dialect keeps decoding (S7.5 decode ta
 		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
 	});
 
-	// NOTE: `grain=range` is a lines-UI COMPATIBILITY emission, NOT a codec Grain. The codec
-	// never PRODUCES it (toSearchParams only serializes real Grains + the from/to window) and
-	// DROPS it on decode (below). RouteReliabilityClusters re-emits `grain=range` only for its
-	// own half-picked range state (a shareable in-progress hint it honours on its own seed);
-	// the codec stays range = window-presence and must keep dropping the bare token.
 	it('BARE ?grain=range (no from/to) — grain dropped, NO fabricated window', () => {
 		const s = fromSearchParams(sp('grain=range'));
 		expect(s.grain).toBeUndefined();
@@ -412,7 +389,6 @@ describe('back-compat — every published dialect keeps decoding (S7.5 decode ta
 	});
 
 	it('/lines/24?tab=receipt — ?tab is a separate owner (RouteDetail), never in the codec', () => {
-		// The codec ignores ?tab entirely — it must not leak into any FilterState field.
 		const s = fromSearchParams(sp('tab=receipt&route=24'));
 		expect([...s.routes]).toEqual(['24']);
 		expect(toSearchParams(s).has('tab')).toBe(false);

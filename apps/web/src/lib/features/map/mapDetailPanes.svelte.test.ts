@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// mapDetailPanes — the draggable width of the RIGHT DETAIL panel (an absolute
-// overlay anchored flush-right over the map). The panel is NOT a paneforge pane;
-// its width is a single px scalar written into a CSS var. These helpers clamp
-// and persist that width with SSR-safe localStorage access.
-
 const mocks = vi.hoisted(() => ({ browser: true }));
 vi.mock('$app/environment', () => ({
 	get browser() {
@@ -73,7 +68,6 @@ describe('mapDetailPanes persistence', () => {
 		writeStoredDetailPanelWidth(440);
 		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('440');
 
-		// A fresh module load (a page reload) seeds from the persisted value.
 		const reloaded = await loadModule();
 		expect(reloaded.readStoredDetailPanelWidth()).toBe(440);
 	});

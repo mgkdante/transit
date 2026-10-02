@@ -1,24 +1,15 @@
-// selectPunctualityCrosstab — the §01 shift × day-type OTP crosstab, as TWO LINES.
-//
-// The old stepped-heatmap grid becomes the cohesive line language: weekday vs weekend
-// on-time % across the day's shifts (am_peak→night) on the fixed OTP_DOMAIN. A cell with
-// fewer than MIN_TRUSTED_OBS observations (or a null OTP) is an honest GAP in its line,
-// never a fabricated point. Honest absence when neither line has a trusted reading.
-
 import type { Locale } from '$lib/i18n';
 import type { AbsenceSpec, LineSpec, LineSeries } from '$lib/components/dataviz/chart';
 import { OTP_DOMAIN } from '$lib/features/reliability/domains';
 import { SHIFT_GRAIN_ORDER } from '$lib/features/reliability/shiftGrains';
 import type { CrosstabCell } from '$lib/v1';
 
-/** A cell needs at least this many observations to be a trusted point (else: honest gap). */
 export const MIN_TRUSTED_OBS = 30;
 
 export interface CrosstabLabels {
 	title: string;
 	xLabel: string;
 	yLabel: string;
-	/** Localized label for a shift token (am_peak → "AM peak"). */
 	shiftLabel: (shift: string) => string;
 	weekdayLabel: string;
 	weekendLabel: string;

@@ -1,7 +1,3 @@
-"""Migration-source assertions for 0071_stop_delay_shift_daily.
-
-This clones test_migration_0066 for GC1 / Step G4.
-"""
 
 from __future__ import annotations
 
@@ -47,18 +43,14 @@ def test_0071_creates_stop_delay_shift_daily_with_shift_pk() -> None:
     assert "fk_gold_stop_delay_shift_daily_provider_id" in src
     assert "ix_gold_stop_delay_shift_daily_provider_stop_date" in src
 
-    # 5-column PK (provider, stop, route, date, shift) — route_id KEEP (spine symmetry).
     for col in ("provider_id", "stop_id", "route_id", "service_local_date", "shift"):
         assert f'"{col}"' in src, f"PK column {col} missing"
 
-    # additive count columns + the pooled-avg numerator.
     for col in ("observation_count", "severe_delay_count", "sum_delay_seconds"):
         assert f'"{col}"' in src, f"column {col} missing"
 
 
 def test_0071_is_lean_no_hour_no_histogram_no_direction() -> None:
-    """The lean-grain guard: a regression that re-adds hour_of_day_local, a delay_histogram
-    (the ~9-18x cardinality variant that trips HARD GATE 1), or direction_id must fail here."""
     src = _source()
     assert "hour_of_day_local" not in src, "shift grain must NOT carry hour_of_day_local"
     assert "delay_histogram" not in src, "shift grain must NOT carry a delay_histogram"
@@ -70,4 +62,4 @@ def test_0071_downgrade_drops_index_then_table() -> None:
     drop_index = src.index("drop_index")
     drop_table = src.index("drop_table")
     assert drop_index < drop_table, "downgrade must drop the index before the table"
-    assert 'server_default=sa.text("now()")' in src  # built_at_utc default
+    assert 'server_default=sa.text("now()")' in src

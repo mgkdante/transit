@@ -1,7 +1,3 @@
-// Behavioral suite for the transit-data-proxy Worker (slice-9.1.1p).
-// Zero-dependency: node:test + node:assert/strict + global Request/Response
-// (Node >= 18). R2 binding is faked below — runtime divergence is covered by
-// the live smoke gate (smoke.sh).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -23,8 +19,6 @@ class FakeR2Object {
     this.etag = etag;
     this.contentType = contentType;
     this.cacheControl = cacheControl;
-    // R2 exposes the total object size and, for a range read, the resolved
-    // {offset,length} slice. Default size to the (string) body length.
     this.size = size ?? (typeof body === "string" ? body.length : undefined);
     this.range = range;
     this.uploaded = uploaded ?? new Date("2026-07-15T12:00:00Z");
@@ -77,11 +71,8 @@ class FakeR2Bucket {
       ifNoneMatch !== null &&
       ifNoneMatch.replaceAll('"', "") === object.etag
     ) {
-      // Precondition failed: the runtime returns R2Object (headers, no body).
       return object.withoutBody();
     }
-    // Range read: R2 accepts the request Headers and returns the byte slice
-    // plus a resolved .range. Parse a single `bytes=start-end` range.
     const range = options.range;
     const rangeHeader = range instanceof Headers ? range.get("range") : null;
     if (rangeHeader && typeof object.body === "string") {
@@ -124,7 +115,6 @@ function makeEnv() {
         contentType: "application/json",
         cacheControl: "public, max-age=604800",
       }),
-      // 200-byte basemap archive for the Range/206 cases (slice-9.3).
       "v1/stm/static/basemap/montreal.pmtiles": new FakeR2Object({
         body: "P".repeat(200),
         etag: "basemap-rev-1",
@@ -387,7 +377,6 @@ test("error responses are not cacheable and still carry CORS", async () => {
   assert.equal(rejected.headers.get("cache-control"), "no-store");
   assert.equal(rejected.headers.get("access-control-allow-origin"), "*");
 
-  // Success responses must keep the object's own Cache-Control, never no-store.
   const ok = await fetchWorker("/data/v1/stm/manifest.json");
   assert.notEqual(ok.headers.get("cache-control"), "no-store");
 });

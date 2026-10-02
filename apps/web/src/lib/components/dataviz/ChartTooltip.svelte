@@ -1,22 +1,3 @@
-<!--
-  ChartTooltip — presentational HTML overlay for chart hover/focus tooltips.
-
-  The chart <svg> is passed as `children` and rendered inside a position:relative
-  wrapper that hosts the pointer handlers. The tip itself is PORTALED to <body>
-  as a position:FIXED layer (NOT an in-wrapper absolute box): that frees it from
-  every ancestor's overflow/clip and from the wrapper's width, so it keeps its
-  natural size and is anchored in VIEWPORT coordinates instead. pointer-events:none
-  so it never eats the pointer events that drive it.
-
-  State lives in `createChartTooltip()` (useChartTooltip.svelte.ts); this is the
-  dumb renderer — spread the controller onto it. On open it measures itself
-  against the VIEWPORT (getBoundingClientRect) and FLIPS the side / SHIFTS the
-  horizontal offset so the box stays on screen. It REPOSITIONS, never shrinks.
-
-  Doctrine: surface tokens only (--popover / --border-strong / --shadow-card);
-  NO --primary anywhere in the tooltip (it is not interactive chrome). The fade
-  is ~80ms and is gated on !$prefersReducedMotion (snaps when reduced).
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
@@ -26,21 +7,13 @@
 	import type { ChartTooltipRow, ChartTooltipSide } from './useChartTooltip.svelte';
 
 	export interface ChartTooltipProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
-		/** Whether the tooltip is shown. */
 		open: boolean;
-		/** Horizontal anchor as a percentage [0,100] of the wrapper width. */
 		xPct: number;
-		/** Vertical anchor as a percentage [0,100] of the wrapper height. */
 		yPct: number;
-		/** Optional heading line (x-axis category / timestamp). */
 		heading?: string;
-		/** Body rows (swatch + label + value). */
 		rows: ChartTooltipRow[];
-		/** Preferred side; auto-flips on open to stay in bounds. Default 'top'. */
 		side?: ChartTooltipSide;
-		/** Stable DOM id (from the controller) for aria wiring. */
 		id: string;
-		/** The chart <svg> (or any chart markup) the tooltip overlays. */
 		children: Snippet;
 		class?: string;
 	}
@@ -58,25 +31,17 @@
 		...rest
 	}: ChartTooltipProps = $props();
 
-	// Gap between the box and its anchor point, and the minimum margin we keep
-	// from the viewport edge when shifting the box back on-screen.
 	const GAP = 8;
 	const EDGE = 8;
 
-	// The resolved side after flip, and the box's final viewport coordinates
-	// (left/top in px). Driven by the measuring $effect below.
 	let resolvedSide = $state<ChartTooltipSide>('top');
 	let fixedLeft = $state(0);
 	let fixedTop = $state(0);
-	// Whether we have a measured position yet (suppresses a one-frame flash at 0,0).
 	let placed = $state(false);
 
 	let wrapEl = $state<HTMLDivElement | null>(null);
 	let tipEl = $state<HTMLDivElement | null>(null);
 
-	// Per-side base transform: the box is laid out at (left,top) = the anchor's
-	// VIEWPORT point, then translated so the chosen edge meets the anchor with a
-	// GAP. `top`/`bottom` centre horizontally; `left`/`right` centre vertically.
 	const TRANSFORMS: Record<ChartTooltipSide, string> = {
 		top: `translate(-50%, calc(-100% - ${GAP}px))`,
 		bottom: `translate(-50%, ${GAP}px)`,
@@ -86,17 +51,12 @@
 
 	const transform = $derived(TRANSFORMS[resolvedSide]);
 
-	// On open, measure against the VIEWPORT: map the wrapper-relative anchor (xPct,
-	// yPct) to a viewport point, flip top/bottom if the preferred side would clip,
-	// and SHIFT left/top so the natural-width box stays on screen. It repositions,
-	// never shrinks. Re-runs whenever the anchor / content changes.
 	$effect(() => {
 		if (!open) {
 			resolvedSide = side;
 			placed = false;
 			return;
 		}
-		// Read reactive deps so the effect re-runs when the anchor/content moves.
 		void xPct;
 		void yPct;
 		void rows;
@@ -119,12 +79,9 @@
 		const vw = typeof window !== 'undefined' ? window.innerWidth : wb.right;
 		const vh = typeof window !== 'undefined' ? window.innerHeight : wb.bottom;
 
-		// Anchor point in VIEWPORT coordinates.
 		const anchorX = wb.left + (xPct / 100) * wb.width;
 		const anchorY = wb.top + (yPct / 100) * wb.height;
 
-		// Vertical flip for top/bottom: if the preferred side overflows that edge
-		// of the viewport but the opposite side fits, flip.
 		let next = side;
 		if (
 			side === 'top' &&
@@ -141,22 +98,15 @@
 		}
 		resolvedSide = next;
 
-		// Place the box at the anchor point, then shift it back on-screen. The CSS
-		// transform centres/offsets the box around (anchorX, anchorY); we compute
-		// the box's resulting edges and nudge (anchorX, anchorY) so those edges sit
-		// within [EDGE, viewport - EDGE]. Width/height never change.
 		let left = anchorX;
 		const top = anchorY;
 
 		if (next === 'top' || next === 'bottom') {
-			// Box is horizontally centred on `left`.
 			const half = tb.width / 2;
 			const minLeft = EDGE + half;
 			const maxLeft = vw - EDGE - half;
-			// When the box is wider than the viewport, centre it (min wins ≥ max).
 			left = maxLeft >= minLeft ? Math.min(Math.max(left, minLeft), maxLeft) : vw / 2;
 		} else {
-			// Box sits to the left/right of `left` (its inner edge is GAP from it).
 			const minLeft = next === 'right' ? EDGE - GAP : EDGE + tb.width + GAP;
 			const maxLeft = next === 'right' ? vw - EDGE - tb.width - GAP : vw - EDGE + GAP;
 			left = maxLeft >= minLeft ? Math.min(Math.max(left, minLeft), maxLeft) : left;
@@ -179,8 +129,6 @@
 	{@render children()}
 </div>
 
-<!-- Portaled to <body>: a fixed-position layer immune to ancestor overflow/clip
-     and to the wrapper's width. Anchored in viewport coordinates. -->
 <Portal>
 	<div
 		bind:this={tipEl}
@@ -224,8 +172,6 @@
 		position: fixed;
 		z-index: var(--z-nav);
 		pointer-events: none;
-		/* Cap only so a box never exceeds the viewport on tiny screens; on normal
-		   screens the content's natural width wins. It REPOSITIONS, never shrinks. */
 		max-width: min(16rem, calc(100vw - 16px));
 		padding: 6px 8px;
 		background: var(--popover);

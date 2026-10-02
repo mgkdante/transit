@@ -1,10 +1,3 @@
-"""Best-effort live-publish hook in ``run_realtime_cycle``.
-
-These tests exercise the extracted ``_best_effort_publish_live`` helper in
-isolation — they never run the real realtime cycle (which performs live
-ingestion) and never touch the database. ``publish_snapshot`` is monkeypatched
-on the orchestration module so no R2/network I/O happens.
-"""
 
 from types import SimpleNamespace
 
@@ -25,7 +18,7 @@ def test_publish_failure_is_swallowed_and_counted(monkeypatch):
     n = orch._best_effort_publish_live(
         "stm", settings=_settings(), engine=object(), registry=None
     )
-    assert n == 1  # counted, NOT raised
+    assert n == 1
 
 
 def test_publish_success_counts_zero(monkeypatch):
@@ -45,7 +38,7 @@ def test_publish_skipped_when_unconfigured(monkeypatch):
         engine=object(),
         registry=None,
     )
-    assert n == 0 and calls == []  # skipped: no bucket + not local
+    assert n == 0 and calls == []
 
 
 def test_publish_runs_for_local_backend_without_bucket(monkeypatch):
@@ -57,4 +50,4 @@ def test_publish_runs_for_local_backend_without_bucket(monkeypatch):
         engine=object(),
         registry=None,
     )
-    assert n == 0 and calls == [1]  # local backend is a valid target
+    assert n == 0 and calls == [1]

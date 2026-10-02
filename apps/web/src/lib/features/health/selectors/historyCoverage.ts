@@ -99,11 +99,6 @@ function row(
 	};
 }
 
-/**
- * Turn the optional retained-history root into the exact public family ledger.
- * A legacy/empty root stands down. Once the root publishes at least one family,
- * every expected family is retained in the view so omissions stay visible.
- */
 export function selectHistoryCoverage(
 	root: HistoricAvailabilityIndex | null | undefined,
 ): readonly HistoryCoverageFamilyView[] {

@@ -10,24 +10,33 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Protocol
+from typing import cast
 
 from sqlalchemy.engine import Engine
 
+from transit_ops.capture_load import (
+    CaptureLoadResult,
+    _DisplayResult,
+    _log_step_success,
+    _run_capture_load_steps,
+    _run_timed_realtime_step,
+    capture_and_load_realtime,
+)
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine, require_database_url
 from transit_ops.gold import (
     GoldBuildResult,
     GoldRealtimeRefreshResult,
+    initialize_realtime_serving,
     refresh_gold_realtime,
     refresh_gold_static,
 )
 from transit_ops.ingestion import (
+    I3IngestionResult,
     build_i3_ingestion_config,
     build_realtime_ingestion_config,
     build_service_alerts_ingestion_config,
     capture_i3_alerts,
-    capture_realtime_feed,
     capture_service_alerts,
     ingest_gis_feed,
     ingest_static_feed,
@@ -35,10 +44,10 @@ from transit_ops.ingestion import (
 from transit_ops.ingestion.common import (
     get_feed_endpoint_id,
     insert_failed_ingestion_run,
+    redact_error_message,
     utc_now,
 )
 from transit_ops.ingestion.i3 import _capture_i3_alerts, _capture_service_alerts
-from transit_ops.ingestion.realtime_gtfs import _capture_realtime_feed
 from transit_ops.ingestion.storage import BronzeStorageResolver, BronzeStorageScope
 from transit_ops.maintenance import (
     prune_gold_storage,
@@ -47,34 +56,24 @@ from transit_ops.maintenance import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
+    RealtimeSilverLoadResult,
+    load_i3_to_silver,
     load_latest_gis_to_silver,
-    load_latest_i3_to_silver,
-    load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
-from transit_ops.silver.realtime_gtfs import _load_latest_realtime_to_silver
+from transit_ops.silver.static_gtfs import prepare_static_application
 from transit_ops.snapshots.publish import publish_snapshot
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
 I3_ALERT_ENDPOINT = "i3_alerts"
 SERVICE_ALERTS_ENDPOINT = "service_alerts"
 REALTIME_ENDPOINTS = (*GTFS_REALTIME_ENDPOINTS, I3_ALERT_ENDPOINT)
-# The manifest-driven worker path also polls the generic GTFS-RT service-alerts
-# feed when a provider publishes one (STM uses its proprietary i3 feed instead).
-# REALTIME_ENDPOINTS stays the legacy fixed set for single-shot CLI/test calls.
 ALL_REALTIME_ENDPOINTS = (*REALTIME_ENDPOINTS, SERVICE_ALERTS_ENDPOINT)
 
 logger = logging.getLogger(__name__)
 
 
 def realtime_endpoints_for_manifest(manifest: ProviderManifest) -> tuple[str, ...]:
-    """Realtime endpoint keys this provider actually publishes, in canonical order.
-
-    Drives the realtime cycle from the manifest rather than a fixed tuple, so a
-    provider that omits a feed (no i3 alerts; a static-plus-alerts agency with no
-    live vehicle feed) is simply not polled for it — instead of failing that
-    endpoint every cycle. Considers the full endpoint set (incl. service_alerts).
-    """
     return tuple(
         endpoint_key
         for endpoint_key in ALL_REALTIME_ENDPOINTS
@@ -98,8 +97,6 @@ class StaticPipelineResult:
     gold_build: dict[str, object] | None
     static_changed: bool
     skipped_reason: str | None
-    # GIS best-effort tail (slice-9.1.1v). Defaulted so a GIS failure never blocks
-    # the static publish and pre-existing constructors stay valid.
     gis_ingestion: dict[str, object] | None = None
     gis_silver_load: dict[str, object] | None = None
     gis_ingestion_duration_seconds: float | None = None
@@ -122,11 +119,14 @@ class RealtimeEndpointCycleResult:
     silver_load_duration_seconds: float | None
     total_endpoint_duration_seconds: float
     capture_result: dict[str, object] | None
-    silver_load_result: dict[str, object] | None
+    silver_load_result: _DisplayResult | None
     error_message: str | None
 
     def display_dict(self) -> dict[str, object]:
-        return asdict(self)
+        payload = asdict(self)
+        if self.silver_load_result is not None:
+            payload["silver_load_result"] = self.silver_load_result.display_dict()
+        return payload
 
 
 @dataclass(frozen=True)
@@ -159,8 +159,7 @@ class RealtimeCycleResult:
             "successful_endpoint_count": self.successful_endpoint_count,
             "failed_endpoint_count": self.failed_endpoint_count,
             "endpoint_results": [
-                endpoint_result.display_dict()
-                for endpoint_result in self.endpoint_results
+                endpoint_result.display_dict() for endpoint_result in self.endpoint_results
             ],
             "step_timings_seconds": self.step_timings_seconds,
             "gold_build": self.gold_build,
@@ -206,10 +205,6 @@ def _engine(settings: Settings, engine: Engine | None) -> Engine:
     return engine or make_engine(settings)
 
 
-def _log_step_success(step_name: str, payload: dict[str, object]) -> None:
-    logger.info("%s succeeded: %s", step_name, json.dumps(payload, sort_keys=True))
-
-
 def _run_timed_static_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
     step_started_at_utc = utc_now()
     step_started_at = time.perf_counter()
@@ -220,35 +215,6 @@ def _run_timed_static_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
         duration_seconds = round(time.perf_counter() - step_started_at, 3)
         logger.exception(
             "Static pipeline step '%s' failed after %.3f seconds.",
-            step_name,
-            duration_seconds,
-        )
-        raise
-
-    step_completed_at_utc = utc_now()
-    duration_seconds = round(time.perf_counter() - step_started_at, 3)
-    _log_step_success(
-        step_name,
-        {
-            "step_started_at_utc": step_started_at_utc.isoformat(),
-            "step_completed_at_utc": step_completed_at_utc.isoformat(),
-            "duration_seconds": duration_seconds,
-            "result": result.display_dict(),
-        },
-    )
-    return result, duration_seconds
-
-
-def _run_timed_realtime_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
-    step_started_at_utc = utc_now()
-    step_started_at = time.perf_counter()
-    logger.info("Starting realtime cycle step '%s'.", step_name)
-    try:
-        result = step_fn()
-    except Exception:
-        duration_seconds = round(time.perf_counter() - step_started_at, 3)
-        logger.exception(
-            "Realtime cycle step '%s' failed after %.3f seconds.",
             step_name,
             duration_seconds,
         )
@@ -285,13 +251,6 @@ def _run_gis_steps_best_effort(
     registry: ProviderRegistry,
     engine: Engine,
 ) -> _GisStepsOutcome:
-    """Run the GIS chain (ingest + silver load) as a best-effort tail.
-
-    GIS must NEVER fail the static publish: any exception is logged and recorded,
-    the static pipeline result stays status='succeeded'. The silver loader is
-    evaluated even when GIS content is unchanged; its pair receipt skips exact
-    GIS/static/parser repeats while a GTFS change still re-keys gis_gtfs_matches.
-    """
     try:
         gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
             "ingest-gis",
@@ -359,7 +318,6 @@ def run_static_pipeline(
 
     logger.info("Starting static pipeline for provider '%s'.", provider_id)
 
-    # Step 1: static ingestion owns duplicate detection and Bronze/raw lineage.
     static_ingestion, static_ingestion_duration_seconds = _run_timed_static_step(
         "ingest-static",
         lambda: ingest_static_feed(
@@ -370,11 +328,13 @@ def run_static_pipeline(
         ),
     )
 
-    static_changed = static_ingestion.content_changed
+    application = prepare_static_application(provider_id, engine=engine)
+    needs_silver = application.content_hash != static_ingestion.checksum_sha256
+    needs_gold = needs_silver or not application.gold_applied
 
-    if not static_changed:
+    if not needs_gold:
         logger.info(
-            "Static content unchanged for provider '%s' (hash=%s). "
+            "Static content already applied for provider '%s' (hash=%s). "
             "Skipping Silver load and Gold refresh.",
             provider_id,
             static_ingestion.checksum_sha256,
@@ -398,8 +358,7 @@ def run_static_pipeline(
             gold_build=None,
             static_changed=False,
             skipped_reason=(
-                getattr(static_ingestion, "skipped_reason", None)
-                or "static_content_unchanged"
+                getattr(static_ingestion, "skipped_reason", None) or "static_content_unchanged"
             ),
             gis_ingestion=gis.gis_ingestion,
             gis_silver_load=gis.gis_silver_load,
@@ -409,22 +368,19 @@ def run_static_pipeline(
             gis_error_message=gis.gis_error_message,
         )
 
-    # Content changed (or no existing version): run steps 2 and 3.
-    logger.info(
-        "Static content changed for provider '%s' (hash=%s). "
-        "Running Silver load and Gold refresh.",
-        provider_id,
-        static_ingestion.checksum_sha256,
-    )
-    silver_load, silver_load_duration_seconds = _run_timed_static_step(
-        "load-static-silver",
-        lambda: load_latest_static_to_silver(
-            provider_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        ),
-    )
+    silver_load = None
+    silver_load_duration_seconds = None
+    if needs_silver:
+        silver_load, silver_load_duration_seconds = _run_timed_static_step(
+            "load-static-silver",
+            lambda: load_latest_static_to_silver(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                expected_checksum_sha256=static_ingestion.checksum_sha256,
+            ),
+        )
 
     gold_build, gold_build_duration_seconds = _run_timed_static_step(
         "refresh-gold-static",
@@ -451,7 +407,7 @@ def run_static_pipeline(
         silver_load_duration_seconds=silver_load_duration_seconds,
         gold_build_duration_seconds=gold_build_duration_seconds,
         static_ingestion=static_ingestion.display_dict(),
-        silver_load=silver_load.display_dict(),
+        silver_load=silver_load.display_dict() if silver_load is not None else None,
         gold_build=gold_build.display_dict(),
         static_changed=True,
         skipped_reason=None,
@@ -472,20 +428,6 @@ def _persist_silver_load_failure(
     error_message: str,
     started_at_utc: datetime,
 ) -> None:
-    """Best-effort: record a run_kind='silver_load' failed run for DB telemetry.
-
-    The realtime silver-load failure left zero DB trace before slice-9.1.1o
-    (a multi-hour alerts.json freeze was invisible to every DB query). This
-    writes a completed status='failed' row so the freshness probe can detect
-    the failure-burst incident class.
-
-    A FRESH engine.begin() transaction is used because the load transaction
-    just rolled back. The whole body is swallowed: this MUST never raise or
-    change the cycle's status semantics — failure telemetry is strictly
-    additive. If the run_kind CHECK constraint has not yet been migrated
-    (deploy-ordering mistake), the insert raises here and is logged, leaving
-    behavior identical to before.
-    """
     try:
         with engine.begin() as connection:
             feed_endpoint_id = get_feed_endpoint_id(
@@ -513,176 +455,37 @@ def _persist_silver_load_failure(
         )
 
 
-class _DisplayResult(Protocol):
-    def display_dict(self) -> dict[str, object]: ...
-
-
-def _run_capture_load_steps(
+def _endpoint_cycle_result(
     provider_id: str,
     endpoint_key: str,
+    outcome: CaptureLoadResult[_DisplayResult, _DisplayResult],
     *,
-    capture_step: Callable[[], _DisplayResult],
-    silver_load_step: Callable[[], _DisplayResult],
     capture_label_prefix: str,
     silver_label_prefix: str,
     engine: Engine,
 ) -> RealtimeEndpointCycleResult:
-    endpoint_started_at = time.perf_counter()
-    capture_duration_seconds: float | None = None
-    silver_load_duration_seconds: float | None = None
-
-    logger.info(
-        "Running capture step for provider '%s', endpoint '%s'.",
-        provider_id,
-        endpoint_key,
-    )
-    capture_started_at = time.perf_counter()
-    try:
-        capture_result, capture_duration_seconds = _run_timed_realtime_step(
-            f"{capture_label_prefix}[{endpoint_key}]",
-            capture_step,
-        )
-    except Exception as exc:
-        if capture_duration_seconds is None:
-            capture_duration_seconds = round(
-                time.perf_counter() - capture_started_at,
-                3,
+    error_message = None
+    if outcome.failure is not None:
+        failure = outcome.failure
+        label = capture_label_prefix if failure.stage == "capture" else silver_label_prefix
+        error_message = f"{label} failed: {redact_error_message(str(failure.error))}"
+        if failure.stage == "silver":
+            _persist_silver_load_failure(
+                engine,
+                provider_id=provider_id,
+                endpoint_key=endpoint_key,
+                error_message=error_message,
+                started_at_utc=failure.started_at_utc,
             )
-        logger.error(
-            "Realtime cycle capture failed for provider '%s', endpoint '%s': %s",
-            provider_id,
-            endpoint_key,
-            exc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=None,
-            silver_load_result=None,
-            error_message=f"{capture_label_prefix} failed: {exc}",
-        )
-
-    logger.info(
-        "Running Silver load step for provider '%s', endpoint '%s'.",
-        provider_id,
-        endpoint_key,
-    )
-    silver_load_started_at = time.perf_counter()
-    silver_load_started_at_utc = utc_now()
-    try:
-        silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
-            f"{silver_label_prefix}[{endpoint_key}]",
-            silver_load_step,
-        )
-    except Exception as exc:
-        if silver_load_duration_seconds is None:
-            silver_load_duration_seconds = round(
-                time.perf_counter() - silver_load_started_at,
-                3,
-            )
-        logger.error(
-            "Realtime cycle Silver load failed for provider '%s', endpoint '%s': %s",
-            provider_id,
-            endpoint_key,
-            exc,
-        )
-        error_message = f"{silver_label_prefix} failed: {exc}"
-        _persist_silver_load_failure(
-            engine,
-            provider_id=provider_id,
-            endpoint_key=endpoint_key,
-            error_message=error_message,
-            started_at_utc=silver_load_started_at_utc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=capture_result.display_dict(),
-            silver_load_result=None,
-            error_message=error_message,
-        )
-
     return RealtimeEndpointCycleResult(
         endpoint_key=endpoint_key,
-        status="succeeded",
-        capture_duration_seconds=capture_duration_seconds,
-        silver_load_duration_seconds=silver_load_duration_seconds,
-        total_endpoint_duration_seconds=round(
-            time.perf_counter() - endpoint_started_at,
-            3,
-        ),
-        capture_result=capture_result.display_dict(),
-        silver_load_result=silver_load_result.display_dict(),
-        error_message=None,
-    )
-
-
-def _capture_and_load_endpoint(
-    provider_id: str,
-    endpoint_key: str,
-    *,
-    settings: Settings,
-    registry: ProviderRegistry,
-    engine: Engine,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
-) -> RealtimeEndpointCycleResult:
-    if bronze_storage_resolver is None:
-        capture_step = partial(
-            capture_realtime_feed,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        )
-        silver_load_step = partial(
-            load_latest_realtime_to_silver,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        )
-    else:
-        capture_step = partial(
-            _capture_realtime_feed,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            bronze_storage_resolver=bronze_storage_resolver,
-        )
-        silver_load_step = partial(
-            _load_latest_realtime_to_silver,
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            bronze_storage_resolver=bronze_storage_resolver,
-        )
-
-    return _run_capture_load_steps(
-        provider_id,
-        endpoint_key,
-        capture_step=capture_step,
-        silver_load_step=silver_load_step,
-        capture_label_prefix="capture-realtime",
-        silver_label_prefix="load-realtime-silver",
-        engine=engine,
+        status="failed" if outcome.failure is not None else "succeeded",
+        capture_duration_seconds=outcome.capture_duration_seconds,
+        silver_load_duration_seconds=outcome.silver_load_duration_seconds,
+        total_endpoint_duration_seconds=outcome.total_endpoint_duration_seconds,
+        capture_result=outcome.capture.display_dict() if outcome.capture is not None else None,
+        silver_load_result=outcome.silver,
+        error_message=error_message,
     )
 
 
@@ -690,8 +493,8 @@ def _capture_and_load_alert_endpoint(
     provider_id: str,
     *,
     endpoint_key: str,
-    capture_fn: Callable[..., _DisplayResult],
-    private_capture_fn: Callable[..., _DisplayResult],
+    capture_fn: Callable[..., I3IngestionResult],
+    private_capture_fn: Callable[..., I3IngestionResult],
     capture_label_prefix: str,
     silver_label_prefix: str,
     settings: Settings,
@@ -717,15 +520,35 @@ def _capture_and_load_alert_endpoint(
             bronze_storage_resolver=bronze_storage_resolver,
         )
 
-    return _run_capture_load_steps(
+    def load_capture(captured: I3IngestionResult) -> _DisplayResult:
+        if captured.provider_id != provider_id or captured.endpoint_key != endpoint_key:
+            raise ValueError("Alert capture receipt does not match the requested source")
+        loaded = load_i3_to_silver(
+            provider_id,
+            snapshot_id=captured.i3_alert_snapshot_id,
+            endpoint_key=endpoint_key,
+            settings=settings,
+            engine=engine,
+        )
+        if (
+            loaded.provider_id != provider_id
+            or loaded.i3_alert_snapshot_id != captured.i3_alert_snapshot_id
+        ):
+            raise ValueError("Alert Silver receipt does not match the captured snapshot")
+        return loaded
+
+    outcome = _run_capture_load_steps(
         provider_id,
         endpoint_key,
         capture_step=capture_step,
-        silver_load_step=lambda: load_latest_i3_to_silver(
-            provider_id,
-            settings=settings,
-            engine=engine,
-        ),
+        silver_load_step=load_capture,
+        capture_label_prefix=capture_label_prefix,
+        silver_label_prefix=silver_label_prefix,
+    )
+    return _endpoint_cycle_result(
+        provider_id,
+        endpoint_key,
+        outcome,
         capture_label_prefix=capture_label_prefix,
         silver_label_prefix=silver_label_prefix,
         engine=engine,
@@ -783,7 +606,7 @@ def _capture_and_load_realtime_source(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeEndpointCycleResult:
     if endpoint_key == I3_ALERT_ENDPOINT:
         return _capture_and_load_i3_alerts(
@@ -801,13 +624,21 @@ def _capture_and_load_realtime_source(
             engine=engine,
             bronze_storage_resolver=bronze_storage_resolver,
         )
-    return _capture_and_load_endpoint(
+    outcome = capture_and_load_realtime(
         provider_id,
         endpoint_key,
         settings=settings,
         registry=registry,
         engine=engine,
         bronze_storage_resolver=bronze_storage_resolver,
+    )
+    return _endpoint_cycle_result(
+        provider_id,
+        endpoint_key,
+        outcome,
+        capture_label_prefix="capture-realtime",
+        silver_label_prefix="load-realtime-silver",
+        engine=engine,
     )
 
 
@@ -818,13 +649,6 @@ def _best_effort_publish_live(
     engine: Engine,
     registry: ProviderRegistry | None = None,
 ) -> int:
-    """Publish the live /v1 snapshot as a best-effort side effect of the cycle.
-
-    Returns the number of publish failures (0 or 1). Never raises: an R2/publish
-    error is logged and counted so the realtime cycle stays green even when the
-    public snapshot bucket is unavailable.
-    """
-    # Skip when no snapshot target is configured.
     if not (
         getattr(settings, "SNAPSHOT_R2_BUCKET", None)
         or getattr(settings, "SNAPSHOT_STORAGE_BACKEND", None) == "local"
@@ -851,7 +675,7 @@ def _run_realtime_cycle(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
-    bronze_storage_resolver: BronzeStorageResolver | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeCycleResult:
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
@@ -859,14 +683,15 @@ def _run_realtime_cycle(
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
-    # Drive the endpoint set from the provider's manifest for BOTH single-shot
-    # and worker-loop calls, so a provider's actual feeds are polled: its generic
-    # GTFS-RT service-alerts feed is captured, and an absent feed (no i3 alerts,
-    # no live vehicle feed) is never polled. Refresh-interval gating only applies
-    # when last_captures is supplied (the worker loop); single-shot (last_captures
-    # is None) runs every present endpoint unconditionally.
+    # Capture times gate worker intervals; single calls run every configured feed.
     manifest = registry.get_provider(provider_id)
     cycle_endpoints = realtime_endpoints_for_manifest(manifest)
+    initialize_realtime_serving(
+        provider_id,
+        [key for key in cycle_endpoints if key in GTFS_REALTIME_ENDPOINTS],
+        engine=engine,
+        settings=settings,
+    )
     refresh_intervals: dict[str, int] = {
         endpoint_key: int(manifest.feeds[endpoint_key].refresh_interval_seconds)
         for endpoint_key in cycle_endpoints
@@ -877,13 +702,8 @@ def _run_realtime_cycle(
     endpoint_results: list[RealtimeEndpointCycleResult] = []
     for endpoint_key in cycle_endpoints:
         interval_seconds = refresh_intervals.get(endpoint_key)
-        last_capture_at = (
-            last_captures.get(endpoint_key) if last_captures is not None else None
-        )
-        if (
-            interval_seconds is not None
-            and last_capture_at is not None
-        ):
+        last_capture_at = last_captures.get(endpoint_key) if last_captures is not None else None
+        if interval_seconds is not None and last_capture_at is not None:
             elapsed_seconds = (started_at_utc - last_capture_at).total_seconds()
             if elapsed_seconds < interval_seconds:
                 logger.info(
@@ -923,10 +743,7 @@ def _run_realtime_cycle(
             bronze_storage_resolver=bronze_storage_resolver,
         )
         endpoint_results.append(endpoint_result)
-        if (
-            last_captures is not None
-            and endpoint_result.status == "succeeded"
-        ):
+        if last_captures is not None and endpoint_result.status == "succeeded":
             last_captures[endpoint_key] = started_at_utc
     step_timings_seconds = {
         f"capture_{endpoint_result.endpoint_key}": endpoint_result.capture_duration_seconds
@@ -950,13 +767,21 @@ def _run_realtime_cycle(
     gold_build_result: GoldBuildResult | GoldRealtimeRefreshResult | None = None
     gold_build_duration_seconds: float | None = None
     gold_error_message: str | None = None
-    if successful_endpoint_count:
+    gold_snapshots = [
+        cast(RealtimeSilverLoadResult, result.silver_load_result)
+        for result in endpoint_results
+        if result.status == "succeeded"
+        and result.endpoint_key in GTFS_REALTIME_ENDPOINTS
+        and result.silver_load_result is not None
+    ]
+    if gold_snapshots:
         logger.info("Running refresh-gold-realtime after realtime cycle for '%s'.", provider_id)
         try:
             gold_build_result, gold_build_duration_seconds = _run_timed_realtime_step(
                 "refresh-gold-realtime",
                 lambda: refresh_gold_realtime(
                     provider_id,
+                    snapshots=gold_snapshots,
                     settings=settings,
                     registry=registry,
                     engine=engine,
@@ -970,18 +795,8 @@ def _run_realtime_cycle(
             )
             gold_error_message = str(exc)
 
-    # Retention pruning is DECOUPLED from the realtime cycle (PR-B /
-    # slice-9.8-pruner-service). It now runs in a dedicated always-on pruner
-    # service (run_pruner_loop) so the live publish below is never delayed by a
-    # multi-minute prune sitting between gold-refresh and publish, and so a prune
-    # outage can never mark a healthy capture cycle "failed". The pruner never
-    # skips on a gold/endpoint failure, which satisfies the 0034 "prune must run
-    # regardless" invariant MORE strongly than the old in-cycle prune (which was
-    # skipped whenever a cycle threw before reaching the prune block).
     step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
 
-    # Best-effort: publish the live /v1 snapshot after Gold refresh succeeds.
-    # Never fails the cycle — an R2/publish error is logged and counted only.
     live_publish_failures = 0
     if successful_endpoint_count and gold_error_message is None:
         live_publish_failures = _best_effort_publish_live(
@@ -1027,26 +842,24 @@ def run_realtime_cycle(
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
 ) -> RealtimeCycleResult:
-    """Run one realtime cycle for a provider.
-
-    When ``last_captures`` is provided, each endpoint is gated by the manifest's
-    ``refresh_interval_seconds`` — endpoints whose last successful capture was
-    within ``refresh_interval_seconds`` are skipped (returning a ``"skipped"``
-    status). The dict is mutated in place so the caller (typically
-    :func:`run_realtime_worker_loop`) can preserve state across cycles.
-
-    When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
-    gating happens — every endpoint the provider's manifest publishes runs
-    unconditionally.
-    """
-    return _run_realtime_cycle(
-        provider_id,
-        settings=settings,
-        registry=registry,
-        engine=engine,
-        last_captures=last_captures,
-        bronze_storage_resolver=None,
-    )
+    settings = settings or get_settings()
+    scope = BronzeStorageScope(settings, project_root=_project_root())
+    try:
+        return _run_realtime_cycle(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            last_captures=last_captures,
+            bronze_storage_resolver=scope.resolve,
+        )
+    finally:
+        try:
+            scope.close()
+        except Exception as exc:
+            logger.error(
+                "Failed to close cycle Bronze storage scope: %s", redact_error_message(str(exc))
+            )
 
 
 def _validate_realtime_worker_startup(
@@ -1065,8 +878,6 @@ def _validate_realtime_worker_startup(
     for endpoint_key in GTFS_REALTIME_ENDPOINTS:
         if endpoint_key in manifest.feeds:
             build_realtime_ingestion_config(manifest, settings, endpoint_key)
-    # Alert feeds are optional and provider-specific: STM uses i3, others use
-    # the generic GTFS-RT service-alerts feed. Validate whichever is configured.
     if I3_ALERT_ENDPOINT in manifest.feeds:
         build_i3_ingestion_config(manifest, settings)
     if SERVICE_ALERTS_ENDPOINT in manifest.feeds:
@@ -1075,17 +886,6 @@ def _validate_realtime_worker_startup(
 
 
 def _install_worker_shutdown_handlers() -> Callable[[], bool]:
-    """Install SIGTERM/SIGINT handlers that flip a shutdown flag.
-
-    Returns a predicate the worker loop polls at the top of each iteration so a
-    deploy's SIGTERM (or an operator's Ctrl-C) lets the worker drain the current
-    cycle and return cleanly instead of being SIGKILLed mid-capture.
-
-    Signal registration only works on the main thread; off the main thread (e.g.
-    inside a test runner) ``signal.signal`` raises ``ValueError``. In that case we
-    skip registration and return an always-false predicate so the loop is governed
-    solely by ``max_cycles`` / an injected ``should_shutdown``.
-    """
     shutdown_requested = threading.Event()
 
     def _request_shutdown(signum: int, _frame: object) -> None:
@@ -1103,8 +903,7 @@ def _install_worker_shutdown_handlers() -> Callable[[], bool]:
         try:
             signal.signal(sig, _request_shutdown)
         except (ValueError, OSError):
-            # Not on the main thread, or the platform disallows this signal —
-            # fall back to a flag that only an injected predicate can flip.
+            # Without a signal handler, only the injected predicate can request shutdown.
             logger.debug("Could not register handler for signal %s; skipping.", sig)
 
     return shutdown_requested.is_set
@@ -1128,11 +927,7 @@ def _run_realtime_worker_loop(
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("max_cycles must be greater than 0 when provided.")
 
-    # When the caller does not inject a shutdown predicate (production path),
-    # install SIGTERM/SIGINT handlers that flip a flag so a deploy's SIGTERM
-    # lets the worker drain the current cycle and return cleanly (exit 0)
-    # instead of being SIGKILLed mid-capture. Tests inject ``should_shutdown``
-    # directly and skip signal registration entirely.
+    # Drain the current cycle before exiting.
     if should_shutdown is None:
         should_shutdown = _install_worker_shutdown_handlers()
 
@@ -1211,11 +1006,8 @@ def _run_realtime_worker_loop(
             previous_cycle_start_utc = cycle_start_utc
             if max_cycles is not None and cycle_number >= max_cycles:
                 break
-            # Preserve start-to-start cadence: back off by the remaining poll
-            # budget after the (partial) failed cycle before retrying.
-            computed_sleep_seconds = round(
-                max(0.0, poll_seconds - cycle_duration_seconds), 3
-            )
+            # Failure backoff preserves start-to-start cadence.
+            computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
             logger.info(
                 (
                     "Sleeping %.3f seconds before realtime worker cycle %s for provider "
@@ -1271,9 +1063,7 @@ def _run_realtime_worker_loop(
         )
         if cycle_duration_seconds > poll_seconds:
             logger.warning(
-                (
-                    "Realtime worker cycle %s exceeded the requested poll interval: %s"
-                ),
+                ("Realtime worker cycle %s exceeded the requested poll interval: %s"),
                 cycle_number,
                 json.dumps(
                     {
@@ -1345,22 +1135,6 @@ def run_pruner_loop(
     max_cycles: int | None = None,
     should_shutdown: Callable[[], bool] | None = None,
 ) -> None:
-    """Run the dedicated retention pruner loop for a provider (PR-B / slice-9.8).
-
-    Retention pruning is DECOUPLED from the realtime cycle and runs here, in an
-    always-on service. Each pass runs ``prune_silver_storage`` then
-    ``prune_gold_storage``, each in its OWN try/except so one prune failing never
-    kills the loop and never skips the other — the 0034 "prune must run regardless
-    of gold/endpoint success" invariant, satisfied unconditionally because this
-    loop has no capture/gold step that could throw first and skip it.
-
-    Mirrors ``run_realtime_worker_loop``: SIGTERM/SIGINT -> drain-then-exit-0 via
-    ``_install_worker_shutdown_handlers``; ``PIPELINE_PAUSED`` honored (sleep +
-    continue); ``max_cycles`` / ``sleep_fn`` / ``should_shutdown`` injection for
-    tests. Sleeps ``PRUNER_SLEEP_SECONDS`` between passes — with the index-driven
-    rt_feed_snapshot_id-range deletes a steady-state pass is sub-second, so a short
-    sleep drains a backlog at index speed without spinning.
-    """
     settings = settings or get_settings()
     engine = _engine(settings, engine)
     require_database_url(settings)
@@ -1401,8 +1175,7 @@ def run_pruner_loop(
         cycle_number += 1
         logger.info("Starting pruner pass %s for provider '%s'.", cycle_number, provider_id)
 
-        # Each prune is independent: a silver-prune failure must not skip the gold
-        # prune (and vice versa), and neither must kill the loop.
+        # Prune failures are independent and must not stop the loop.
         try:
             silver_result = prune_silver_storage(provider_id, settings=settings, engine=engine)
             logger.info(

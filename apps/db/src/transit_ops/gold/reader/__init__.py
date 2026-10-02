@@ -1,14 +1,3 @@
-"""gold.reader — gold's official virtual-mart read kernel (S7-close C2).
-
-The read-time metric math the historic builders re-derive from the gold
-spines lives HERE, importable by both gold/rollups and snapshots/builders
-with no cycle (gold never imports snapshots; this package imports ONLY
-stdlib + sqlalchemy + the sql_registry — locked by a no-cycle import test).
-Submodules: buckets (shift/day_type), percentile (the ONE CDF interpolator),
-histogram (hist/CoV/EWT/rounding), window (GrainWindows + trailing clauses),
-projector (spine projector factory + habit read), rates (OTP/severe/Wilson).
-"""
-
 from transit_ops.gold.reader.buckets import (
     SHIFT_BOUNDS,
     SHIFT_DEFAULT,

@@ -9,7 +9,6 @@ export const footerCopy = defineCopy({
 		providerFallback: 'l’agence de transport',
 		tagline: (agencyName: string) => `Analytique citoyenne pour ${agencyName}`,
 		disclaimer: (agencyName: string) => `Site non officiel, sans affiliation avec ${agencyName}.`,
-		// NavPill's inline AUDIT copy converges here in PR-3.
 		auditLabel: 'Vérification',
 		legalLabel: 'Juridique',
 	},

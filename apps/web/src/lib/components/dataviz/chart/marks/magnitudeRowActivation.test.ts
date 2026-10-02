@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createChartDatumPopover, type ChartDatumPopoverModel } from '../index';
+import {
+	chartDatumPopoverBoundary,
+	createChartDatumPopover,
+	type ChartDatumPopoverModel,
+} from '../index';
 import type { MagnitudeDatum } from '../ChartSpec';
 import { activateMagnitudeRow } from './magnitudeRowActivation';
 
@@ -45,6 +49,37 @@ function compatibilityClick(): MouseEvent {
 	});
 }
 
+function mountedRowBoundary() {
+	const popover = createChartDatumPopover();
+	const navigate = vi.fn();
+	const boundary = document.createElement('figure');
+	const row = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+	const other = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+	boundary.append(row, other);
+	document.body.append(boundary);
+	const action = chartDatumPopoverBoundary(boundary, popover);
+	let destroyed = false;
+	let result: ReturnType<typeof activateMagnitudeRow> | undefined;
+	boundary.addEventListener('click', (event) => {
+		result = activateMagnitudeRow(event, linkedDatum, popover, navigate);
+	});
+	return {
+		popover,
+		navigate,
+		row,
+		other,
+		get result() {
+			return result;
+		},
+		destroy() {
+			if (destroyed) return;
+			destroyed = true;
+			action.destroy();
+			boundary.remove();
+		},
+	};
+}
+
 describe('activateMagnitudeRow', () => {
 	it.each(['touch', 'pen'])(
 		'opens normalized details for %s and never navigates',
@@ -84,6 +119,168 @@ describe('activateMagnitudeRow', () => {
 		expect(popover.open).toBe(true);
 		expect(popover.model).toEqual(tapPopover);
 		expect(navigate).not.toHaveBeenCalled();
+	});
+
+	it('keeps a completed touch gesture when its compatibility click reports mouse', () => {
+		const h = mountedRowBoundary();
+
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerover', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+			h.row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			h.row.dispatchEvent(
+				new PointerEvent('click', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+
+			expect(h.result).toBe('popover');
+			expect(h.popover.open).toBe(true);
+			expect(h.navigate).not.toHaveBeenCalled();
+
+			h.popover.close(false);
+			expect(activateMagnitudeRow(compatibilityClick(), linkedDatum, h.popover, h.navigate)).toBe(
+				'navigate',
+			);
+			expect(h.popover.open).toBe(false);
+			expect(h.navigate).toHaveBeenCalledOnce();
+			h.navigate.mockClear();
+
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+			h.row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+			h.row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			h.row.dispatchEvent(
+				new PointerEvent('click', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+
+			expect(h.result).toBe('navigate');
+			expect(h.popover.open).toBe(false);
+			expect(h.navigate).toHaveBeenCalledOnce();
+		} finally {
+			h.destroy();
+		}
+	});
+
+	it('preserves pen activation when compatibility mousedown precedes pointerup', () => {
+		const h = mountedRowBoundary();
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'pen', pointerId: 8 }),
+			);
+			h.row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+			h.row.dispatchEvent(
+				new PointerEvent('pointerup', { bubbles: true, pointerType: 'pen', pointerId: 8 }),
+			);
+			h.row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			h.row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+			expect(h.result).toBe('popover');
+			expect(h.popover.open).toBe(true);
+			expect(h.navigate).not.toHaveBeenCalled();
+		} finally {
+			h.destroy();
+		}
+	});
+
+	it('drops a canceled touch before a later untyped click', () => {
+		const h = mountedRowBoundary();
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointercancel', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			expect(activateMagnitudeRow(compatibilityClick(), linkedDatum, h.popover, h.navigate)).toBe(
+				'navigate',
+			);
+			expect(h.popover.open).toBe(false);
+			expect(h.navigate).toHaveBeenCalledOnce();
+		} finally {
+			h.destroy();
+		}
+	});
+
+	it('clears an unfinished touch when its boundary closes or unmounts', () => {
+		const h = mountedRowBoundary();
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.popover.close(false);
+			expect(activateMagnitudeRow(compatibilityClick(), linkedDatum, h.popover, h.navigate)).toBe(
+				'navigate',
+			);
+
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 3 }),
+			);
+			h.destroy();
+			expect(activateMagnitudeRow(compatibilityClick(), linkedDatum, h.popover, h.navigate)).toBe(
+				'navigate',
+			);
+			expect(h.navigate).toHaveBeenCalledTimes(2);
+		} finally {
+			h.destroy();
+		}
+	});
+
+	it('does not give a different row the previous touch gesture', () => {
+		const h = mountedRowBoundary();
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.other.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+			h.other.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			h.other.dispatchEvent(
+				new PointerEvent('click', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+			expect(h.result).toBe('navigate');
+			expect(h.popover.open).toBe(false);
+			expect(h.navigate).toHaveBeenCalledOnce();
+		} finally {
+			h.destroy();
+		}
+	});
+
+	it('lets genuine mouse pointerover replace a pending touch', () => {
+		const h = mountedRowBoundary();
+		try {
+			h.row.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 2 }),
+			);
+			h.row.dispatchEvent(
+				new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+			expect(h.popover.showNativeTooltip).toBe(true);
+			h.row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+			h.row.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			h.row.dispatchEvent(
+				new PointerEvent('click', { bubbles: true, pointerType: 'mouse', pointerId: 1 }),
+			);
+			expect(h.result).toBe('navigate');
+			expect(h.navigate).toHaveBeenCalledOnce();
+		} finally {
+			h.destroy();
+		}
 	});
 
 	it('preserves captured touch ownership across empty and unknown pointer sources', () => {

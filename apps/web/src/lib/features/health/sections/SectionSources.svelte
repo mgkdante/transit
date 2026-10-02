@@ -1,8 +1,3 @@
-<!--
-  SectionSources — one row per provenance.sources[] entry: feed + storage chain +
-  a relative last_loaded_utc. Mechanical move out of HealthStatus.svelte; the
-  last-loaded relative-age formatter is passed in.
--->
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
 	import type { ProvenanceSource } from '$lib/v1/schemas';
@@ -10,7 +5,6 @@
 
 	interface SectionSourcesProps {
 		items: readonly ProvenanceSource[];
-		/** Relative last-loaded stamp from an ISO string (or the localized fallback). */
 		lastLoaded: (iso: string | null | undefined) => string;
 		copy: HealthCopy;
 	}

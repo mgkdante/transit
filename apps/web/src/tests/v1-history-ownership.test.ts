@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { DateWindow as FilterDateWindow } from '$lib/filters';
 import type { DateWindow as FilterStateDateWindow } from '$lib/filters/state';
@@ -22,7 +22,7 @@ describe('v1 history ownership', () => {
 	it('owns DateWindow once and preserves every public type facade', () => {
 		const owners = sourceFiles(LIB_ROOT)
 			.filter((path) => /export interface DateWindow\s*{/.test(readFileSync(path, 'utf8')))
-			.map((path) => relative(LIB_ROOT, path));
+			.map((path) => relative(LIB_ROOT, path).split(sep).join('/'));
 
 		expect(owners).toEqual(['v1/history/window.ts']);
 		expectTypeOf<FilterDateWindow>().toEqualTypeOf<HistoryDateWindow>();

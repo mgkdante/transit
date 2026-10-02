@@ -1,5 +1,3 @@
-"""Connection-free database target validation."""
-
 from __future__ import annotations
 
 import json

@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf-8');
@@ -11,7 +11,7 @@ function rippleExemptionSources(): string[] {
 			const contents = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8');
 			return Array.from(
 				contents.matchAll(/<[^>]*\sdata-ripple-exempt(?=\s|=|>)/g),
-				() => `src/${path}`,
+				() => `src/${path.split(sep).join('/')}`,
 			);
 		})
 		.sort();

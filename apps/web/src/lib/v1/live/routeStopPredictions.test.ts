@@ -3,13 +3,6 @@ import { buildLiveIndex, type LiveSnapshot } from './index';
 import { deriveRouteStopPredictions } from './routeStopPredictions';
 import type { Trip, Vehicle } from '$lib/v1/schemas';
 
-// deriveRouteStopPredictions folds the live trips of every vehicle on a route
-// into the SOONEST predicted arrival per stop. Contract under test: soonest-wins
-// across buses, honest empty (no entry) for stops no live bus predicts, delay
-// carried through (null when omitted), trip-not-in-index ignored.
-
-// IsoUtc is a branded string; the snapshot files want it. Tests build plain
-// objects and cast the whole snapshot (the brand is opaque, not load-bearing here).
 const ISO = '2026-06-15T12:00:00Z';
 
 function vehicle(partial: Partial<Vehicle> & Pick<Vehicle, 'id'>): Vehicle {
@@ -22,7 +15,6 @@ function vehicle(partial: Partial<Vehicle> & Pick<Vehicle, 'id'>): Vehicle {
 	} as Vehicle;
 }
 
-/** A plain stop-ETA fixture (eta_utc is a string here; cast past the IsoUtc brand). */
 interface StopEtaFixture {
 	stop: string;
 	eta_utc: string;
@@ -36,7 +28,6 @@ function trip(partial: { route?: string; stops: StopEtaFixture[] }): Trip {
 	} as unknown as Trip;
 }
 
-/** Build a LiveSnapshot from plain vehicle/trip fixtures (casts past the IsoUtc brand). */
 function snapshot(vehicles: Vehicle[], trips: Record<string, Trip>): LiveSnapshot {
 	return {
 		vehicles: { generated_utc: ISO, vehicles },
@@ -66,7 +57,6 @@ describe('deriveRouteStopPredictions', () => {
 		const out = deriveRouteStopPredictions('161', index);
 		expect(out.get('sA')).toEqual({ etaUtc: '2026-06-15T12:05:00Z', delayMin: 2 });
 		expect(out.get('sB')).toEqual({ etaUtc: '2026-06-15T12:09:00Z', delayMin: 3 });
-		// A stop no live bus predicts has NO entry (honest empty, not a fake time).
 		expect(out.has('sC')).toBe(false);
 	});
 
@@ -112,7 +102,6 @@ describe('deriveRouteStopPredictions', () => {
 		const index = buildLiveIndex(
 			snapshot([vehicle({ id: 'bus1', route: '161', next_stop: 'sX', delay_min: 4 })], {}),
 		);
-		// No trips feed, but the bus exposes the stop it is heading to + its delay.
 		expect(deriveRouteStopPredictions('161', index).get('sX')).toEqual({
 			etaUtc: null,
 			delayMin: 4,
@@ -135,7 +124,6 @@ describe('deriveRouteStopPredictions', () => {
 				t1: trip({ stops: [{ stop: 'sA', eta_utc: '2026-06-15T12:05:00Z', delay_min: 2 }] }),
 			}),
 		);
-		// The trip's precise ETA (and its delay) wins; the etaless approach never overwrites it.
 		expect(deriveRouteStopPredictions('161', index).get('sA')).toEqual({
 			etaUtc: '2026-06-15T12:05:00Z',
 			delayMin: 2,

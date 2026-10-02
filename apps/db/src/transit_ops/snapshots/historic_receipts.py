@@ -1,5 +1,3 @@
-"""Fail-closed evidence and persistence for historic publish receipts."""
-
 from __future__ import annotations
 
 import ast
@@ -106,11 +104,23 @@ _FAMILY_MANIFEST_SHARED = (
     "snapshots/contract.py",
     "snapshots/serialization.py",
     "snapshots/publish.py",
+    "snapshots/historic_streams.py",
+    "snapshots/historic_graph.py",
+    "snapshots/historic_tier.py",
+    "snapshots/historic_compatibility.py",
+    "snapshots/envelope.py",
+    "snapshots/uploads.py",
     "settings.py",
     "sql_registry.py",
 )
 _GATE_MANIFEST = (
     "snapshots/gate.py",
+    "snapshots/historic_streams.py",
+    "snapshots/historic_graph.py",
+    "snapshots/historic_tier.py",
+    "snapshots/historic_compatibility.py",
+    "snapshots/envelope.py",
+    "snapshots/uploads.py",
     "snapshots/builders/historic/network_history.py",
     "snapshots/builders/historic/line_history.py",
     "snapshots/builders/historic/stop_history.py",
@@ -354,7 +364,6 @@ def digest_file_manifest(
     *,
     required_relative_paths: Sequence[str] | None = None,
 ) -> str:
-    """Hash sorted relative POSIX paths plus length-framed bytes, rejecting escapes."""
 
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -737,7 +746,6 @@ def prepare_historic_receipt_preflight(
     package_root: Path | None = None,
     project_root: Path | None = None,
 ) -> HistoricReceiptPreflight:
-    """Collect provider/file/runtime/schema evidence once; non-DB fakes stay receipt-inert."""
 
     if not historic_receipts_supported(conn):
         return HistoricReceiptPreflight(
@@ -990,7 +998,6 @@ def build_historic_detached_contribution(
     artifact_ref: object,
     partition: object,
 ) -> dict[str, Any]:
-    """Detach the exact compact state needed to rebuild builder and gate summaries."""
 
     if family not in _FAMILIES:
         raise HistoricReceiptEvidenceError(f"unsupported historic family: {family!r}")
@@ -1807,7 +1814,6 @@ def persist_historic_receipts(
     receipts: Iterable[HistoricEntityReceipt],
     complete_families: Sequence[str],
 ) -> HistoricReceiptPersistenceStats:
-    """Replace complete entity maps, suppress identical writes, and remove stale entities."""
 
     families = tuple(sorted(set(complete_families)))
     if not families or any(family not in _FAMILIES for family in families):
@@ -2023,7 +2029,6 @@ class _HistoricPhaseLedger:
         scope_class: str | None = None,
         scope_metric: str | None = None,
     ) -> Iterator[None]:
-        """Switch the one active phase, restoring the caller's phase on exit."""
 
         detail: tuple[str, str, str] | None = None
         detail_values = (family, scope_class, scope_metric)
@@ -2313,7 +2318,6 @@ def _prepare_historic_receipt_run(
     plans: tuple[object, object, object],
     prepare_preflight: Callable[..., HistoricReceiptPreflight],
 ) -> None:
-    """Resolve all common envelopes before the first historic upload."""
 
     if run is None:
         return
@@ -2357,7 +2361,6 @@ def _next_historic_partition[HistoricRefT, HistoricPartitionT](
     iterator: Iterator[tuple[HistoricRefT, HistoricPartitionT]],
     run: _HistoricPublishRun | None,
 ) -> tuple[HistoricRefT, HistoricPartitionT, int]:
-    """Advance a lazy plan while keeping nested source SQL out of build time."""
 
     if run is None:
         ref, partition = next(iterator)
@@ -2597,7 +2600,6 @@ def _assemble_historic_receipt_envelopes(
     gate_enabled: bool,
     force: bool,
 ) -> None:
-    """Pair exact emitted refs with source evidence and stage entity maps."""
 
     if not run.receipt_evidence_available:
         for family, observations in run.observations.items():
@@ -2719,10 +2721,7 @@ def _assemble_historic_receipt_envelopes(
     run.complete_receipt_families = _HISTORIC_FAMILIES
     run.receipt_rows_attempted = len(entity_receipts)
     run.receipt_json_bytes_attempted = sum(
-        len(cast(str, params["common_envelope"]).encode("utf-8"))
-        + len(cast(str, params["month_receipts"]).encode("utf-8"))
-        for receipt in entity_receipts
-        for params in (receipt.as_sql_params(),)
+        _receipt_json_bytes(receipt) for receipt in entity_receipts
     )
 
 
@@ -2747,14 +2746,28 @@ def _finalize_historic_receipt_run(
         )
 
 
-@contextmanager
-def _historic_receipt_persistence(
+def _persist_historic_receipt_run(
+    conn: Connection,
+    provider_id: str,
     run: _HistoricPublishRun,
-) -> Iterator[None]:
+) -> None:
+    if not run.receipt_evidence_available:
+        return
     try:
-        with run.ledger.phase("receipt_persist"):
-            yield
-    except Exception:  # noqa: BLE001 - the caller's SAVEPOINT isolates receipt-only failure
+        with run.ledger.phase("receipt_persist"), conn.begin_nested():
+            stats = persist_historic_receipts(
+                conn,
+                provider_id=provider_id,
+                receipts=run.entity_receipts,
+                complete_families=run.complete_receipt_families,
+            )
+            run.receipt_rows_attempted = stats.rows_attempted
+            run.receipt_rows_changed = stats.rows_changed
+            run.receipt_json_bytes_attempted = stats.json_bytes_attempted
+            run.receipt_json_bytes_changed = stats.json_bytes_changed
+            run.stale_receipt_entities_deleted = stats.stale_entities_deleted
+            run.stale_receipt_months_deleted = stats.stale_months_deleted
+    except Exception:
         run.receipt_persist_failed = True
         run.receipt_rows_changed = 0
         run.receipt_json_bytes_changed = 0
@@ -2762,26 +2775,6 @@ def _historic_receipt_persistence(
             "historic receipt persistence failed after root activation; "
             "SAVEPOINT rolled back and publish state will still advance"
         )
-
-
-def _persist_historic_receipt_run(
-    conn: Connection,
-    provider_id: str,
-    run: _HistoricPublishRun,
-    persist: Callable[..., HistoricReceiptPersistenceStats],
-) -> None:
-    stats = persist(
-        conn,
-        provider_id=provider_id,
-        receipts=run.entity_receipts,
-        complete_families=run.complete_receipt_families,
-    )
-    run.receipt_rows_attempted = stats.rows_attempted
-    run.receipt_rows_changed = stats.rows_changed
-    run.receipt_json_bytes_attempted = stats.json_bytes_attempted
-    run.receipt_json_bytes_changed = stats.json_bytes_changed
-    run.stale_receipt_entities_deleted = stats.stale_entities_deleted
-    run.stale_receipt_months_deleted = stats.stale_months_deleted
 
 
 def _snapshot_historic_telemetry(

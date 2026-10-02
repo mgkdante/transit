@@ -266,8 +266,6 @@ GROUP BY
 """
 
 
-
-
 def upgrade() -> None:
     # Additive url passthrough on the SCD-2 alert row (honest-NULL upstream).
     op.add_column(

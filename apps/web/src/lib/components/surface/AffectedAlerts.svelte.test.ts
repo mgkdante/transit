@@ -33,8 +33,6 @@ const FR_COPY: AffectedAlertsCopy = {
 	linkAria: (host) => `Ouvrir les détails sur ${host} (nouvel onglet)`,
 };
 
-// An alert carrying an EN + FR headline, a known GTFS-RT cause + effect, and an
-// active window. `severity: 'critical'` drives the severity rail + the a11y word.
 const ALERT_FULL = {
 	id: 'al-1',
 	severity: 'critical',
@@ -48,8 +46,6 @@ const ALERT_FULL = {
 	routes: ['24'],
 } as unknown as Alert;
 
-// A bare alert: a high-severity headline, no cause/effect/window → the meta block
-// must be omitted, never fabricated.
 const ALERT_BARE = {
 	id: 'al-2',
 	severity: 'high',
@@ -66,6 +62,29 @@ const ALERT_SOURCE_MESSAGE = {
 } as Alert;
 
 describe('AffectedAlerts — rendering', () => {
+	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
+		const { container } = render(AffectedAlerts, {
+			props: {
+				alerts: [
+					{
+						...ALERT_FULL,
+						header_key: 'Votre ligne',
+						header_text: 'Votre arrêt',
+						header_text_en: 'Your stop',
+						description: 'null',
+						description_en: '{"text": None}',
+					},
+				],
+				locale,
+				copy: locale === 'en' ? EN_COPY : FR_COPY,
+			},
+		});
+		expect(
+			screen.getByText(locale === 'en' ? 'Service alert' : 'Alerte de service'),
+		).toBeInTheDocument();
+		expect(container.textContent).not.toMatch(/Votre ligne|Votre arrêt|Your stop|None|null/);
+	});
+
 	it('renders the heading + a labelled list when alerts are present', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY } });
 
@@ -78,12 +97,9 @@ describe('AffectedAlerts — rendering', () => {
 	it('shows the localized EN headline + cause/effect labels + window', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY } });
 
-		// EN headline preferred (header_text_en) when locale is en.
 		expect(screen.getByText('Detour on line 24')).toBeInTheDocument();
-		// Cause/effect resolve through gtfsAlertLabels (humanized, bilingual).
 		expect(screen.getByText('Construction')).toBeInTheDocument();
 		expect(screen.getByText('Detour')).toBeInTheDocument();
-		// Window captions present (the exact wall-clock string is zone-formatted).
 		expect(screen.getByText('From')).toBeInTheDocument();
 		expect(screen.getByText('Until')).toBeInTheDocument();
 	});
@@ -91,10 +107,9 @@ describe('AffectedAlerts — rendering', () => {
 	it('shows the localized FR headline + FR cause/effect labels', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'fr', copy: FR_COPY } });
 
-		// FR headline preferred (header_text) when locale is fr.
 		expect(screen.getByText('Détour sur la ligne 24')).toBeInTheDocument();
-		expect(screen.getByText('Travaux')).toBeInTheDocument(); // CONSTRUCTION (fr)
-		expect(screen.getByText('Détour')).toBeInTheDocument(); // DETOUR (fr)
+		expect(screen.getByText('Travaux')).toBeInTheDocument();
+		expect(screen.getByText('Détour')).toBeInTheDocument();
 	});
 
 	it('renders scrubbed localized source descriptions instead of generic headers', async () => {
@@ -114,9 +129,7 @@ describe('AffectedAlerts — rendering', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY } });
 
 		const item = screen.getByRole('listitem');
-		// Severity rides the dataviz severity scale via the data-severity attribute.
 		expect(item).toHaveAttribute('data-severity', 'critical');
-		// Colour is never the sole channel: the severity word is present for AT.
 		expect(within(item).getByText('Critical')).toBeInTheDocument();
 	});
 
@@ -124,7 +137,6 @@ describe('AffectedAlerts — rendering', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_BARE], locale: 'en', copy: EN_COPY } });
 
 		expect(screen.getByText('Réduction de service')).toBeInTheDocument();
-		// No fabricated cause/effect/window captions.
 		expect(screen.queryByText('Cause')).not.toBeInTheDocument();
 		expect(screen.queryByText('Effect')).not.toBeInTheDocument();
 		expect(screen.queryByText('From')).not.toBeInTheDocument();
@@ -171,9 +183,6 @@ describe('AffectedAlerts — rendering', () => {
 });
 
 describe('AffectedAlerts — severity sort + cap disclosure', () => {
-	// Six alerts in NON-severity source order: the component renders them in the
-	// order the caller supplies (the selector sorts severity-first upstream); the
-	// cap keeps the first VISIBLE_CAP (4) visible. Headlines double as identifiers.
 	const SORTED_SIX = [
 		{ id: 's1', severity: 'critical', header_key: 'Crit one' },
 		{ id: 's2', severity: 'critical', header_key: 'Crit two' },
@@ -186,14 +195,12 @@ describe('AffectedAlerts — severity sort + cap disclosure', () => {
 	it('caps the visible list at 4 and discloses the rest behind a "+N more" button', () => {
 		render(AffectedAlerts, { props: { alerts: SORTED_SIX, locale: 'en', copy: EN_COPY } });
 
-		// Only the first four (highest-severity) are visible.
 		expect(screen.getByText('Crit one')).toBeInTheDocument();
 		expect(screen.getByText('High two')).toBeInTheDocument();
 		expect(screen.queryByText('Watch one')).not.toBeInTheDocument();
 		expect(screen.queryByText('Watch two')).not.toBeInTheDocument();
 		expect(screen.getAllByRole('listitem')).toHaveLength(4);
 
-		// The overflow is named, not silently dropped — an honest disclosure.
 		const more = screen.getByRole('button', { name: '+2 more' });
 		expect(more).toHaveAttribute('aria-expanded', 'false');
 	});
@@ -203,7 +210,6 @@ describe('AffectedAlerts — severity sort + cap disclosure', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: '+2 more' }));
 
-		// All six now render; the button flips to its collapse label + aria state.
 		expect(screen.getAllByRole('listitem')).toHaveLength(6);
 		expect(screen.getByText('Watch one')).toBeInTheDocument();
 		expect(screen.getByText('Watch two')).toBeInTheDocument();
@@ -227,7 +233,6 @@ describe('AffectedAlerts — empty stand-down', () => {
 			props: { alerts: [], locale: 'en', copy: EN_COPY },
 		});
 
-		// Stands down entirely — no heading, no list, no fabricated "no alerts" row.
 		expect(screen.queryByText('Service alerts')).not.toBeInTheDocument();
 		expect(screen.queryByRole('list')).not.toBeInTheDocument();
 		expect(container.querySelector('[data-testid="affected-alerts"]')).toBeNull();

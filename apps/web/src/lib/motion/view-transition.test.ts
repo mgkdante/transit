@@ -1,13 +1,3 @@
-// SPA View Transitions guard — unit coverage for the `onNavigate` decision.
-//
-// Runs in the "data" (node) project, where `document`/`window` are absent by
-// default, so we stub the exact globals the helper feature-detects:
-//   - `document.startViewTransition` (API support), and
-//   - `window.matchMedia('(prefers-reduced-motion: reduce)')` (via
-//     `isPrefersReducedMotion`, which the helper consults).
-// Asserts the helper returns early (instant SvelteKit swap) when the API is
-// absent OR the user prefers reduced motion, and only then drives a transition.
-
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runViewTransition, shouldRunViewTransition } from './view-transition';
 
@@ -19,9 +9,6 @@ function stubEnvironment(opts: { hasViewTransition: boolean; reducedMotion: bool
 } {
 	const updateCallbackResults: Promise<unknown>[] = [];
 	const startViewTransition = vi.fn((cb: () => unknown) => {
-		// Mirror the real API enough for the helper: run the callback and hand
-		// back a transition-like object. The callback's returned promise settles
-		// independently; the helper only needs `startViewTransition` to be called.
 		updateCallbackResults.push(Promise.resolve(cb()));
 		return {
 			finished: Promise.resolve(),

@@ -1,27 +1,3 @@
-"""Heal gold.dim_*_history from an archived GTFS zip (slice-9.1.1u).
-
-Why this module exists:
-    Migration 0029 seeds the name-history tables from the CURRENT dims and the
-    marts writer maintains them on every dim refresh — but ids retired by a
-    GTFS edition drop that happened BEFORE 0029 landed have no names anywhere
-    in the database (the June-2026 drop orphaned 12 route_ids and 15 stop_ids
-    still present in the 730d rollups). Their names survive only inside the
-    archived GTFS zips in bronze R2 while those raw static archives are retained.
-
-    ``transit-ops backfill-dim-history <provider> --from-gtfs-zip <path>``
-    parses routes.txt/stops.txt out of such a zip and inserts CLOSED history
-    rows for ids missing ENTIRELY from the history tables. Ids the seed or
-    writer already track are never touched, so running it with the current
-    zip is a no-op and reruns are idempotent. When healing from several old
-    editions, run the NEWEST zip first — the first zip providing an id wins.
-
-    valid_from_utc comes from feed_info.txt's feed_start_date when present
-    (else the backfill time); valid_to_utc is the backfill time — the rows
-    are closed because a missing-from-history id is by definition not part
-    of the current edition. last_seen_dataset_version_id stays NULL: the
-    source dataset row was pruned long ago.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -37,10 +13,6 @@ from sqlalchemy.engine import Connection, Engine
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
 
-# Drop-day runbook (test-asserted; specs live in Notion, never repo .md).
-# Written after the June-2026 edition landed under supervision; the same
-# checklist armors the ~Aug-24 edition, where 0029 + the marts writer make
-# name continuity automatic and only the morning-after checks remain.
 GTFS_DROP_RUNBOOK = """
 GTFS drop runbook — STM edition flip (next expected ~Aug 24; zips post ~10d early)
 
@@ -219,12 +191,6 @@ def _read_feed_start_date(zip_file: zipfile.ZipFile) -> date | None:
 
 
 def parse_gtfs_name_rows(gtfs_zip_path: Path) -> GtfsNameRows:
-    """Extract the name-bearing columns of routes.txt/stops.txt.
-
-    Rows missing their natural key (or a stop_name, NOT NULL in the table)
-    are skipped; duplicate ids are deduped last-wins so one backfill run can
-    never collide with itself on the (provider, id, valid_from) PK.
-    """
     with zipfile.ZipFile(gtfs_zip_path) as zip_file:
         routes: dict[str, dict] = {}
         for row in _iter_member_rows(zip_file, "routes.txt"):
@@ -277,8 +243,7 @@ def _backfill_on_connection(
     window = {
         "provider_id": provider_id,
         "valid_from_utc": valid_from_utc,
-        # closed rows: a missing-from-history id is not part of the current
-        # edition; valid_to_utc doubles as this run's marker for the counts
+        # valid_to_utc also marks rows closed by this run for result counts.
         "valid_to_utc": backfilled_at_utc,
     }
 
@@ -319,7 +284,6 @@ def backfill_dim_name_history(
     settings: Settings | None = None,
     engine: Engine | None = None,
 ) -> DimHistoryBackfillResult:
-    """Insert name rows for ids missing entirely from gold.dim_*_history."""
     if not Path(gtfs_zip_path).is_file():
         raise FileNotFoundError(f"GTFS archive not found: {gtfs_zip_path}")
 

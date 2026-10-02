@@ -236,6 +236,4 @@ function extractCanadianPostalCode(query: string): string | null {
 	return `${match[1]?.toUpperCase()} ${match[2]?.toUpperCase()}`;
 }
 
-// The geocoder's text key is the diacritic-only fold (no separator folding), so
-// its locationKey dedup + geo.ca relevance ordering keep their exact semantics.
 const normalizeSearchText = foldDiacritics;

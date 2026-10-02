@@ -1,10 +1,3 @@
-<!--
-  Test-only harness for MapFilterPill — wires the REAL unified Controls snippet
-  (MapFilters in controlsMode + the inline MapMotionControl header) into the pill
-  exactly as MapHero does, so the drawer-renders-the-shared-controls contract can
-  be asserted without standing up the whole MapHero. Not a route component; it
-  exists purely to give MapFilterPill.svelte.test.ts a real `controls` snippet.
--->
 <script lang="ts">
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';

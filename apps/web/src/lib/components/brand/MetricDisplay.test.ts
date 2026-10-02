@@ -1,14 +1,3 @@
-// MetricDisplay.test.ts — the big-number stat primitive, DOM gate.
-//
-// Doctrine: the metric VALUE speaks the amber wayfinding voice (.metric-value /
-// text-accent-text); an ABSENT value routes through the shared AbsentValue chassis
-// with typed bilingual copy — never a local string and never a fabricated 0.
-//
-// Gates:
-//   - a real value renders in the amber .metric-value voice.
-//   - a null / undefined / "" value renders canonical short + why copy.
-//   - an empty value with no typed reason renders nothing (no empty amber span).
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';

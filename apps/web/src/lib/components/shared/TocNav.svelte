@@ -1,26 +1,3 @@
-<!--
-  TocNav - the desktop table-of-contents rail. Shared across detail pages: a
-  badge-led nav + a "section N / total" counter, wrapped in a CollapsibleSection.
-  Badges come from TocBadge (same marks as the section cards). The page owns the
-  active id + scroll handler and passes them in.
-
-  COLLAPSE CONTRACT (slice-9.8-B → REVISED S10 2026-07-02): the ToC keeps its
-  OWN, USER-DRIVEN collapse affordance (its own chevron) — a reader can manually
-  fold the rail and, when a `sectionKey` is supplied, that collapsed choice
-  persists across same-tab visits.
-
-  ARTICLE CONTROL CONTRACT: the ToC's own CollapsibleSection can respond to the
-  page-scoped signals behind `Collapse all` / `Expand all`. A page may pass
-  `closeSignal` to fold the rail and `openSignal` to reopen it. When neither is
-  wired the rail stays independent (both default `null`). The reader's manual
-  chevron still works and still persists; the signals are edge-triggered so they
-  never fight a fresh mount.
-  Pass `collapsible={false}` for a permanently-open, non-hideable rail.
-
-  Ported from yesid.dev shared/TocNav. Deviation: yesid's `.toc-counter-dot`
-  glow uses `--glow` (a token transit lacks). Substituted `--primary` (transit's
-  interactive orange) as the closest existing token; see the new-token report.
--->
 <script lang="ts">
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import SectionIcon from './SectionIcon.svelte';
@@ -45,59 +22,18 @@
 		onNavigate: (id: string) => void;
 		heading: string;
 		counterPrefix?: string;
-		/** Optional caller-owned disclosure state. */
 		open?: boolean;
-		/**
-		 * When true (default), the rail renders its OWN collapse affordance (chevron)
-		 * so a reader can fold the navigation manually. This is the ToC's own toggle —
-		 * page-level `Collapse all` / `Expand all` signals remain optional. Pass false
-		 * to render a permanently-open, non-hideable rail.
-		 */
 		collapsible?: boolean;
-		/**
-		 * Opt the user-driven collapse state into surviving a same-tab navigation.
-		 * When set, CollapsibleSection persists the open/closed choice keyed by this
-		 * stable, locale-free string. Only meaningful when `collapsible` is true.
-		 */
 		sectionKey?: string;
-		/**
-		 * Optional page-scoped `Collapse all` signal (yesid closeSignal idiom). When a
-		 * page bumps it, the rail's CollapsibleSection collapses. `null` (default)
-		 * keeps the rail independent. Forwarded verbatim to the wrapping section.
-		 */
 		closeSignal?: number | null;
-		/**
-		 * Optional page-scoped `Expand all` signal (yesid openSignal idiom). When a page
-		 * bumps it, the rail reopens. `null` (default) keeps the rail independent.
-		 * Forwarded verbatim to the wrapping CollapsibleSection.
-		 */
 		openSignal?: number | null;
-		/**
-		 * The page's current bulk mode for a rail that mounts after the mount-time
-		 * signal fired (the status ToC renders only once async entries exist).
-		 * Forwarded verbatim to the wrapping CollapsibleSection.
-		 */
 		bulkCollapsed?: boolean | null;
 	} = $props();
 
-	// Desktop TOC lists only the center-column sections; right-rail cards
-	// (rail:true) are already visible in the sticky rail, so they are excluded
-	// here. They DO appear in the mobile pill, where they sit in the page flow.
 	const shown = $derived(entries.filter((e) => !e.rail));
-	// A pure numbered top-level run carries canonical section numbers. When a
-	// conditional section stands down, keep the footer aligned with those badges
-	// (for example 02 / 08), rather than silently re-numbering it as position 01 / 07.
-	// Mixed/icon/child ToCs retain their reading-position counter.
 	const counter = $derived(resolveTocCounter(shown, activeId));
 </script>
 
-<!--
-	The ToC rail carries its OWN user-driven collapse (its own chevron). When
-	`collapsible` is true (default) a reader can fold the rail, and a `sectionKey`
-	persists that choice across same-tab visits. Page-scoped `Collapse all` /
-	`Expand all` signals may also be forwarded explicitly. Default-open so the nav
-	is reachable until the reader or page action folds it.
--->
 <CollapsibleSection
 	title={heading}
 	{collapsible}
@@ -137,9 +73,6 @@
 		{/each}
 	</nav>
 
-	<!-- THE one section-position readout for a rail (zero-padded to match the
-	     numbered chips). SectionProgress was retired in P5.4f: every rail that
-	     renders a TocNav gets exactly this counter, never a second one. -->
 	<div class="mt-6 flex items-center gap-2">
 		<div class="toc-counter-dot"></div>
 		<span class="toc-counter-text font-mono text-micro tracking-[1.5px]">
@@ -152,7 +85,6 @@
 <style>
 	.toc-nav {
 		font-family: var(--font-heading);
-		/* P7: no left spine rule — the numbered chips + active state carry the outline. */
 		font-size: var(--text-body);
 		display: flex;
 		flex-direction: column;
@@ -189,8 +121,6 @@
 		border-radius: 2px;
 	}
 
-	/* Fixed-width badge slot keeps every label left-aligned whether the entry
-	   carries a number pill, an icon, or (sub-items) nothing. */
 	.toc-badge {
 		display: inline-flex;
 		align-items: center;
@@ -205,7 +135,6 @@
 	}
 
 	.toc-sub-item {
-		/* padding-left set inline based on heading depth */
 		font-size: var(--text-caption);
 		min-height: 36px;
 		color: color-mix(in srgb, var(--foreground) 20%, transparent);

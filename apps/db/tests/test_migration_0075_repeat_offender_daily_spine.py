@@ -1,7 +1,3 @@
-"""Migration-source assertions for 0075_repeat_offender_daily_spine.
-
-This clones test_migration_0071 for S14.
-"""
 
 from __future__ import annotations
 
@@ -47,28 +43,22 @@ def test_0075_creates_offender_spine_with_entity_pk() -> None:
     assert "fk_gold_repeat_offender_daily_spine_provider_id" in src
     assert "ix_gold_repeat_offender_daily_spine_provider_date" in src
 
-    # 5-column PK (provider, entity_kind, entity_id, route_id, date).
     for col in ("provider_id", "entity_kind", "entity_id", "route_id", "provider_local_date"):
         assert f'"{col}"' in src, f"PK column {col} missing"
 
-    # additive count columns + the pooled-avg numerator.
     for col in ("observation_count", "severe_delay_count", "sum_delay_seconds"):
         assert f'"{col}"' in src, f"column {col} missing"
 
 
 def test_0075_sum_delay_is_bigint() -> None:
-    """sum_delay_seconds must be BigInteger: a windowed SUM of in-clamp magnitude overflows int4."""
     src = _source()
     assert "sum_delay_seconds" in src
     assert "BigInteger" in src, "sum_delay_seconds must be BigInteger"
 
 
 def test_0075_index_leads_provider_date_for_windowed_read() -> None:
-    """The by_grain reads SUM across a trailing (provider, date) window with no entity filter,
-    so the index must lead (provider_id, provider_local_date)."""
     src = _source()
     idx = src.index("ix_gold_repeat_offender_daily_spine_provider_date")
-    # the index columns list follows the name; assert both cols appear after it, entity omitted.
     tail = src[idx:idx + 400]
     assert '"provider_id"' in tail
     assert '"provider_local_date"' in tail
@@ -80,11 +70,10 @@ def test_0075_downgrade_drops_index_then_table() -> None:
     drop_index = src.index("drop_index")
     drop_table = src.index("drop_table")
     assert drop_index < drop_table, "downgrade must drop the index before the table"
-    assert 'server_default=sa.text("now()")' in src  # built_at_utc default
+    assert 'server_default=sa.text("now()")' in src
 
 
 def test_0075_documents_parity_and_boundary() -> None:
-    """The docstring must record the recurrence-parity invariant + the 14d backfill boundary."""
     src = _source()
     assert "PARITY INVARIANT" in src
     assert "recurrence_days" in src

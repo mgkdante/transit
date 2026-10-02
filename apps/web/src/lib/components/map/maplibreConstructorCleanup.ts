@@ -2,7 +2,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 
 type MapConstructor = typeof import('maplibre-gl').Map;
 type MapOptions = ConstructorParameters<MapConstructor>[0];
-type GlCleanup = Pick<WebGLRenderingContext, 'getExtension'>;
+type GlCleanup = Pick<WebGL2RenderingContext, 'getExtension'>;
 
 export function constructRecoverableMap(
 	MapConstructor: MapConstructor,
@@ -55,12 +55,11 @@ export function constructRecoverableMap(
 			}
 			try {
 				super._setupPainter();
+				if (!this.painter) throw new Error('MapLibre could not initialize WebGL2');
 				return;
 			} catch (constructionError) {
 				const cleanupErrors: unknown[] = [];
 				try {
-					// MapLibre's anonymous creation-error listener is once-only but remove()
-					// does not unregister it. Consume it while the partial canvas is reachable.
 					const EventConstructor = this._canvas.ownerDocument.defaultView?.Event ?? Event;
 					this._canvas.dispatchEvent(new EventConstructor('webglcontextcreationerror'));
 				} catch (error) {
@@ -68,23 +67,17 @@ export function constructRecoverableMap(
 				}
 				let gl = { getExtension: () => null } as GlCleanup;
 				try {
-					const configured = this._canvasContextAttributes.contextType;
-					const context = configured
-						? this._canvas.getContext(configured)
-						: (this._canvas.getContext('webgl2') ?? this._canvas.getContext('webgl'));
+					const context = this._canvas.getContext('webgl2');
 					if (context && 'getExtension' in context) gl = context as GlCleanup;
 				} catch (error) {
 					cleanupErrors.push(error);
 				}
 
-				// remove() needs these two fields before the base constructor initializes
-				// them. Supplying the recovered GL lets it lose the actual context after it
-				// deletes this exact map's private ImageRequest throttle callback.
 				this.painter = {
 					destroy: () => {},
 					context: { gl },
 				} as unknown as MapLibreMap['painter'];
-				this.handlers = { destroy: () => {} } as unknown as MapLibreMap['handlers'];
+				this._handlers = { destroy: () => {} } as unknown as MapLibreMap['_handlers'];
 
 				try {
 					super.remove();

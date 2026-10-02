@@ -528,14 +528,15 @@ describe('HotspotsBoard retained date history', () => {
 		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 	});
 
-	it('refetches the selected historical lane globally and reports freshness only from accepted payloads', async () => {
+	it('refetches the selected historical lane globally and shows its accepted timestamp', async () => {
 		reset('http://localhost/hotspots?date=2026-06-22');
-		const noteFreshness = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
 		render(HotspotsBoard);
 		await screen.findAllByText('Retained 22 line');
 
-		expect(noteFreshness).toHaveBeenCalledWith('2026-06-22T23:59:59Z');
-		expect(noteFreshness).not.toHaveBeenCalledWith(historyIndex.generated_utc);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			'2026-06-22T23:59:59Z',
+		);
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getHotspotsHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getHotspots).not.toHaveBeenCalled();

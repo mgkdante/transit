@@ -8,6 +8,60 @@ import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 import type { Alert } from '$lib/v1/schemas';
 
 describe('MapDetailAlerts', () => {
+	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
+		const { container } = render(MapDetailAlerts, {
+			props: {
+				alerts: [
+					{
+						id: 'raw-copy',
+						severity: 'watch',
+						header_key: 'Votre ligne',
+						header_text: 'Votre arrêt',
+						header_text_en: 'Your stop',
+						description: 'null',
+						description_en: '{"text": None}',
+					} as Alert,
+				],
+				locale,
+				t: MAP_SELECTION_DETAIL_COPY[locale],
+			},
+		});
+		expect(
+			screen.getAllByText(locale === 'en' ? 'Service alert' : 'Alerte de service').length,
+		).toBeGreaterThan(0);
+		expect(container.textContent).not.toMatch(/Votre ligne|Votre arrêt|Your stop|None|null/);
+	});
+
+	it.each(['en', 'fr'] as const)('cleans the %s message and excludes unsafe links', (locale) => {
+		const { container } = render(MapDetailAlerts, {
+			props: {
+				alerts: [
+					{
+						id: 'source-message',
+						severity: 'high',
+						header_key: 'Unused key',
+						header_text: 'Unused French header',
+						header_text_en: 'Unused English header',
+						description: '<p>Arrêt <strong>déplacé</strong> &amp; accessible.</p>',
+						description_en: '<p>Stop <strong>moved</strong> &amp; accessible.</p>',
+						url: 'javascript:alert(1)',
+						url_en: 'data:text/html,unsafe',
+					} as Alert,
+				],
+				locale,
+				t: MAP_SELECTION_DETAIL_COPY[locale],
+			},
+		});
+		expect(
+			screen.getAllByText(
+				locale === 'en' ? 'Stop moved & accessible.' : 'Arrêt déplacé & accessible.',
+			).length,
+		).toBeGreaterThan(0);
+		expect(container.textContent).not.toMatch(/Unused|<p>|<strong>/);
+		expect(container.querySelector('strong')).toBeNull();
+		expect(screen.queryByRole('link')).not.toBeInTheDocument();
+	});
+
 	function floorPx(value: string): number {
 		if (value.endsWith('rem')) return Number.parseFloat(value) * 16;
 		if (value.endsWith('px')) return Number.parseFloat(value);

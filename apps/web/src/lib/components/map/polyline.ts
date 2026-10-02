@@ -1,35 +1,9 @@
-// map/polyline.ts — pure geometry for HONEST path-following motion.
-//
-// The kinetic map tweens a bus BETWEEN two real reported fixes. Straight-line
-// lerp cuts a diagonal CHORD across blocks; this module lets the tween instead
-// walk ALONG the route's published shape, so the bus appears to follow the
-// street it is actually on. This is still strictly INTERPOLATION between two
-// known reports — never extrapolation:
-//   · we project the two real fixes onto the polyline (arc-lengths s_from, s_to)
-//   · the tween samples positions only on the arc BETWEEN those two projections
-//   · the heading at any sample is the polyline TANGENT (the direction of travel)
-// If the shape is missing/degenerate, or a fix sits implausibly far from the
-// line (wrong-direction variant, off-route GPS), the caller falls back to the
-// straight chord — correctness for every bus, fancy path only when it is safe.
-//
-// Distances use an equirectangular metres approximation at Montréal's latitude.
-// At city scale the error vs. haversine is negligible (<0.2%) and it is far
-// cheaper — and we only ever use these lengths for RATIOS along one polyline, so
-// any small uniform scale factor cancels out entirely.
-
 export type Coord = readonly [number, number];
 
-/** Metres per degree of latitude (WGS84 mean) — constant enough at city scale. */
 const M_PER_DEG_LAT = 111_320;
-/**
- * Reference latitude for the lon→metres scaling (Montréal ≈ 45.5°N). The cos
- * factor only needs to be roughly right because every length on a given polyline
- * shares it, so it cancels in the arc-length RATIOS the tween consumes.
- */
 const REF_LAT_RAD = (45.5 * Math.PI) / 180;
 const M_PER_DEG_LON = M_PER_DEG_LAT * Math.cos(REF_LAT_RAD);
 
-/** Project a lon/lat delta to local planar metres (equirectangular). */
 function toMetres(dLon: number, dLat: number): { x: number; y: number } {
 	return { x: dLon * M_PER_DEG_LON, y: dLat * M_PER_DEG_LAT };
 }
@@ -37,41 +11,17 @@ function toMetres(dLon: number, dLat: number): { x: number; y: number } {
 function bearingFromDelta(dLon: number, dLat: number): number {
 	const { x, y } = toMetres(dLon, dLat);
 	if (x === 0 && y === 0) return 0;
-	// Compass bearing: 0 = north, 90 = east. atan2(east, north).
 	const deg = (Math.atan2(x, y) * 180) / Math.PI;
 	return ((deg % 360) + 360) % 360;
 }
 
-/**
- * Per-shape-array memo of the cumulative-length prefix sum. Keyed on the shape
- * ARRAY REFERENCE: the kinetic map holds each route shape as a stable cached
- * array (MapHero's routeShapeCache) for the life of the tween, so the same array
- * is passed every frame for every bus on that route. A WeakMap keyed on the array
- * lets the per-frame projection (projectToPolyline + walkAlong, called for ~700
- * buses at ~30fps) reuse one prefix sum instead of recomputing the whole polyline
- * each frame. Entries are freed automatically when a shape array is dropped from
- * the cache (no manual eviction). Keyed on identity, so a fresh array (a new shape
- * object) correctly recomputes.
- */
 const _lengthsCache = new WeakMap<readonly Coord[], number[]>();
 
-/**
- * Prefix-sum of segment lengths (metres). `lengths[i]` is the cumulative arc
- * length from coords[0] to coords[i]; `lengths[0] === 0`. The final entry is the
- * total polyline length. Returns `[0]` for a single point and `[]` for empty.
- *
- * MEMOIZED by the `coords` array reference (see `_lengthsCache`): calling this
- * twice with the SAME array returns the identical cached array; a different array
- * recomputes. The math/result is unchanged — this only avoids recompute. Do NOT
- * mutate the returned array: it is shared with every other caller for that shape.
- */
 export function cumulativeLengths(coords: readonly Coord[]): number[] {
 	const cached = _lengthsCache.get(coords);
 	if (cached !== undefined) return cached;
 	const out: number[] = [];
 	if (coords.length === 0) {
-		// Don't cache the empty case: WeakMap keys must be objects and an empty
-		// `[]` arg is a fresh array each call anyway, so there is nothing to reuse.
 		return out;
 	}
 	out.push(0);
@@ -86,24 +36,11 @@ export function cumulativeLengths(coords: readonly Coord[]): number[] {
 }
 
 export interface PolylineProjection {
-	/** Arc length (metres) from the polyline start to the projected point. */
 	s: number;
-	/** The projected point on the polyline. */
 	point: Coord;
-	/** Perpendicular distance (metres) from the input point to the polyline. */
 	distance: number;
 }
 
-/**
- * Nearest point on the polyline to `point`, returned with its arc-length `s` and
- * the perpendicular `distance` (metres). This is the classic min-over-segments
- * point-to-segment projection. The caller uses `distance` as the honesty guard:
- * a fix far from the line means the wrong shape (or off-route GPS), so it should
- * fall back to the chord rather than snap the bus onto an unrelated street.
- *
- * Returns null when the polyline has fewer than 2 points (nothing to project
- * onto) — again a chord-fallback signal.
- */
 export function projectToPolyline(
 	coords: readonly Coord[],
 	point: Coord,
@@ -123,8 +60,6 @@ export function projectToPolyline(
 		const abx = b.x - a.x;
 		const aby = b.y - a.y;
 		const segLenSq = abx * abx + aby * aby;
-		// Parametric position of the foot of the perpendicular, clamped to [0,1]
-		// so the projection never escapes the segment's endpoints.
 		let t = 0;
 		if (segLenSq > 0) {
 			t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / segLenSq;
@@ -146,19 +81,10 @@ export function projectToPolyline(
 }
 
 export interface PathSample {
-	/** Interpolated lon/lat at the requested arc length. */
 	coord: Coord;
-	/** Tangent (direction of travel) at that point, as a compass bearing. */
 	bearing: number;
 }
 
-/**
- * Position + tangent bearing at arc-length `s` along the polyline. `s` is clamped
- * to `[0, total]` so the walk can NEVER run off the end of the shape (an extra
- * structural no-extrapolation guard on top of the caller's `s_from..s_to`
- * bound). The bearing is the direction of the segment the point sits on — i.e.
- * which way the bus is travelling, not the noisy feed heading.
- */
 export function walkAlong(
 	coords: readonly Coord[],
 	s: number,
@@ -171,8 +97,6 @@ export function walkAlong(
 	if (total <= 0) return { coord: coords[0], bearing: 0 };
 	const clamped = s <= 0 ? 0 : s >= total ? total : s;
 
-	// Lower-bound search: first segment endpoint whose cumulative distance is at
-	// or beyond the sample. Exact vertices stay owned by the preceding segment.
 	let low = 1;
 	let high = cum.length - 1;
 	while (low < high) {
@@ -191,29 +115,8 @@ export function walkAlong(
 	};
 }
 
-/**
- * A per-tween sampler: `progress` in [0,1] → the position + travel bearing along
- * the route shape, strictly between the two real fixes. Returned by
- * `buildPathBetween`; null when path-follow is not safe (caller uses the chord).
- */
 export type PathInterpolator = (progress: number) => PathSample;
 
-/**
- * Build a path-follow sampler for ONE vehicle between two real fixes, or return
- * null to signal "fall back to the straight chord".
- *
- * Honesty + safety gates (any failure → null → chord):
- *   · the shape must have >= 2 coordinates;
- *   · BOTH fixes must project onto the shape within `maxOffRouteM` (else the
- *     shape is the wrong direction-variant or the GPS is off-route — snapping to
- *     it would invent a position on a street the bus is not on);
- *   · the two projections must not be effectively coincident (no arc to walk).
- *
- * When it returns a sampler, the walk is bounded to `s_from + (s_to - s_from)·t`
- * — purely interpolation along the arc BETWEEN the two known reports. It never
- * walks past `s_to`, so a late next fix cannot make the bus glide into invented
- * territory (the tween also clamps progress, and silence-fade handles staleness).
- */
 export function buildPathBetween(
 	coords: readonly Coord[],
 	fromPoint: Coord,
@@ -231,22 +134,15 @@ export function buildPathBetween(
 
 	const sFrom = projFrom.s;
 	const sTo = projTo.s;
-	// No measurable travel along the shape → nothing to path-follow; let the
-	// (also ~zero) chord handle it so a stationary bus stays put + falls back to
-	// the feed bearing for its chevron.
 	if (Math.abs(sTo - sFrom) < 1) return null;
 
 	return (progress: number) => {
 		const t = progress <= 0 ? 0 : progress >= 1 ? 1 : progress;
 		const s = sFrom + (sTo - sFrom) * t;
-		// walkAlong cannot return null here (coords.length >= 2, total > 0).
 		return walkAlong(coords, s, lengths) as PathSample;
 	};
 }
 
-/** Compass bearing of the straight chord from `fromPoint` to `toPoint`, or null
- * when the two points coincide (no travel direction to report). Used for the
- * chord-tangent heading when no shape is available. */
 export function chordBearing(fromPoint: Coord, toPoint: Coord): number | null {
 	const dLon = toPoint[0] - fromPoint[0];
 	const dLat = toPoint[1] - fromPoint[1];

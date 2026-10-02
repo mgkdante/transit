@@ -1,17 +1,8 @@
-<!--
-  SectionWeekday — the weekday-vs-weekend companion to the by-time-of-day list.
-
-  Pure presenter of `selectShiftRank` (the by_daytype rows), same punctuality ranking + honesty
-  rules as SectionByTimeOfDay. The `network-shift` data-slot + the trailing-window caveat are
-  COORDINATED by the orchestrator (the caveat renders once across the two tiles): the surface
-  passes `dataSlot` + `showCaveat`.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { SEVERE_DOMAIN } from '$lib/features/reliability/shiftGrains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { ShiftRow } from '../selectors/shiftRank';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -20,25 +11,14 @@
 		rows: readonly ShiftRow[];
 		dataSlot?: string;
 		showCaveat: boolean;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => {
-			tip: string;
-			href: string;
-			label: string;
-			linkLabel: string;
-		};
 		copy: NetworkReliabilityCopy;
 		locale: Locale;
 	}
-	let { rows, dataSlot, showCaveat, info, copy, locale }: SectionWeekdayProps = $props();
-
-	const i = $derived(info('seasonality', copy.dayTypeSection));
+	let { rows, dataSlot, showCaveat, copy, locale }: SectionWeekdayProps = $props();
 </script>
 
 {#snippet dayTypeInfo()}
-	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	<MetricInfo metricKey="seasonality" {locale} name={copy.dayTypeSection} side="bottom" />
 {/snippet}
 
 <NetworkTile

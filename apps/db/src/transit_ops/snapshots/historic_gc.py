@@ -1,9 +1,3 @@
-"""Fail-closed reachability marking for immutable historic snapshot generations.
-
-This lane intentionally does not delete. Cloudflare R2's atomic conditional-delete
-semantics must be proven by a production canary before an apply mode can exist.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -64,7 +58,7 @@ from transit_ops.snapshots.gate import (
     check_stop_history_partition_ref,
 )
 from transit_ops.snapshots.paths import safe_public_path
-from transit_ops.snapshots.publish import _acquire_publish_lock
+from transit_ops.snapshots.publication_lane import acquire_publication_lane
 from transit_ops.snapshots.storage import (
     StoredObjectVersion,
     StoredObjectVersionMismatchError,
@@ -583,7 +577,6 @@ def _read_manifest(
     storage: HistoricGcStorage,
     version: StoredObjectVersion | None,
 ) -> Manifest | None:
-    """Read a present manifest at one captured version; absence is a valid mode."""
 
     if version is None:
         return None
@@ -870,7 +863,7 @@ def _generation_candidate_request(version: StoredObjectVersion) -> _LoadRequest:
             checker = (
                 check_line_history_partition if family == "lines" else check_stop_history_partition
             )
-    else:  # Inventory shape validation runs before this dispatcher.
+    else:
         raise HistoricGcBlockedError(f"unknown_generation_shape:{path}")
     return _LoadRequest(
         path=path,
@@ -926,7 +919,6 @@ def plan_historic_generation_gc(
     min_unreachable: timedelta = MIN_UNREACHABLE,
     provider_id: str | None = None,
 ) -> HistoricGcReport:
-    """Validate the full graph and plan a non-destructive reachability mark update."""
 
     if mode == "apply":
         raise HistoricGcUnsupportedError(
@@ -1111,7 +1103,6 @@ def run_historic_snapshot_gc(
     storage: HistoricGcStorage | None = None,
     now: datetime | None = None,
 ) -> HistoricGcReport:
-    """Run one advisory-locked dry-run or atomic mark scan for a provider."""
 
     if mode == "apply":
         raise HistoricGcUnsupportedError(
@@ -1122,7 +1113,7 @@ def run_historic_snapshot_gc(
     resolved_storage = storage or build_snapshot_storage(settings, provider_id=provider_id)
     scanned_at = now or datetime.now(UTC)
     with resolved_engine.begin() as conn:
-        _acquire_publish_lock(conn, provider_id=provider_id, tier="historic")
+        acquire_publication_lane(conn, provider_id=provider_id, tier="historic")
         existing = _load_marks(conn, provider_id)
         report = plan_historic_generation_gc(
             resolved_storage,

@@ -1,28 +1,25 @@
-// network-reliability.copy.ts — co-located bilingual copy for the Network-health surface.
-//
-// Moved here from ../network.copy.ts during the S9A re-seat (the surface tree now lives under
-// network/reliability/). Domain-intrinsic component vocabulary (status/occupancy band labels,
-// the LIVE chip, edge-state copy) already lives inside the spine + dataviz primitives; this
-// file only carries the surface-level prose + metric/section captions.
-//
-// Shape: `Record<Locale, {...}>` with EN + FR. The FR voice is the canonical product voice
-// (mirrors the raw-FR /v1 headers); EN is the parallel translation.
-
+import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
 
+const positionShare = {
+	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
+		`Parmi les positions actuelles de véhicules au statut connu, environ ${onTen} sur 10 sont dans la plage de ponctualité ${window}${hedge}; environ ${lateTen} sur 10 sont hors de cette plage, en avance ou en retard.`,
+	en: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
+		`Among current known-status vehicle positions, about ${onTen} in 10 are in the on-time band ${window}${hedge}; about ${lateTen} in 10 are outside that band, early or late.`,
+};
+
 export const networkReliabilityCopy = defineCopy({
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
-		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		lede: 'Live punctuality, crowding and reporting coverage, with daily trends.',
 		article: articleCopy('en', {
 			watermark: 'Network',
 			tags: ['network', 'live service', 'reliability', 'crowding', 'open data'],
-			generated: 'Generated',
 			sections: (count: number) => `${count} sections`,
 		}),
 		liveTerminal: {
@@ -50,20 +47,20 @@ export const networkReliabilityCopy = defineCopy({
 		delayHistogramSection: 'Delay distribution',
 		nonRespondingSection: 'Silent trips by line',
 		completeness: {
-			section: 'Service delivered',
-			metric: 'Scheduled service delivered',
-			explainer:
-				'Completeness is the share of scheduled trips the network actually ran. A silent trip is scheduled but never appears in the live feed, it is counted as not delivered.',
-			standDown: 'No data yet, this reading accrues once scheduled-service coverage is published.',
+			section: serviceComparisonCopy.en.section,
+			metric: serviceComparisonCopy.en.label,
+			explainer: serviceComparisonCopy.en.explanation,
+			standDown: serviceComparisonCopy.en.unavailable,
 		},
 		metrics: {
 			onTime: 'On-time',
-			vehicles: 'Vehicles in service',
-			notReporting: 'Not reporting',
+			vehicles: 'Vehicle positions',
+			notReporting: 'Trips without a signal',
 			coverage: 'Coverage',
 			delayP50: 'Median delay',
-			delayP90: 'Slowest 10%',
+			delayP90: '90th-percentile delay',
 		},
+		snapshotRefreshFailed: 'Snapshot refresh failed',
 		feedAge: { label: 'FEED', a11yPrefix: 'Worker feed updated' },
 		reporting: {
 			heading: 'Reporting & coverage',
@@ -152,33 +149,31 @@ export const networkReliabilityCopy = defineCopy({
 				month: 'right now',
 				range: 'right now',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }) =>
-				`The network is running reliably ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
-			patchy: ({ window, onTen, lateTen, hedge }) =>
-				`The network is running unevenly ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
-			unreliable: ({ window, onTen, lateTen, hedge }) =>
-				`The network is running poorly ${window}, only ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			reliable: positionShare.en,
+			patchy: positionShare.en,
+			unreliable: positionShare.en,
 			tentative: ({ window, otp, n, lo, hi }) =>
-				`About ${otp}% of trips on time ${window} (95% sure between ${lo} and ${hi}%, n=${n}).`,
-			tooFew: (window, n) => `Still measuring ${window}, only ${n} trips tracked so far.`,
-			absent: 'Still measuring the network. No live on-time reading yet.',
+				`${otp}% of ${n} current known-status vehicle positions are in the on-time band ${window}. Nominal 95% Wilson bounds: ${lo}–${hi}%; positions may be dependent.`,
+			tooFew: (window, n) => `Only ${n} current known-status vehicle positions ${window}.`,
+			absent: 'No current vehicle positions with a known delay status.',
 			hedgeSimple: (otp) => ` (${otp}%)`,
-			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
+			hedgeCI: (otp, lo, hi) =>
+				` (${otp}%; nominal 95% Wilson: ${lo}–${hi}%, potentially dependent positions)`,
 		} satisfies VerdictCopy,
 		verdictDelta: {
 			label: 'Network verdict',
-			chip: (signedPts) => `${signedPts} vs prior day`,
-			a11y: 'Change versus the prior day:',
+			chip: (signedPts: string, singular: boolean) =>
+				`Daily on-time change: ${signedPts} percentage ${singular ? 'point' : 'points'}`,
+			versus: 'vs',
 		},
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
-		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		lede: 'La ponctualité, l’achalandage et la couverture des signalements en direct, avec leurs tendances quotidiennes.',
 		article: articleCopy('fr', {
 			watermark: 'Réseau',
 			tags: ['réseau', 'service en direct', 'fiabilité', 'achalandage', 'données ouvertes'],
-			generated: 'Généré',
 			sections: (count: number) => `${count} sections`,
 		}),
 		liveTerminal: {
@@ -206,21 +201,20 @@ export const networkReliabilityCopy = defineCopy({
 		delayHistogramSection: 'Répartition des retards',
 		nonRespondingSection: 'Voyages silencieux par ligne',
 		completeness: {
-			section: 'Service livré',
-			metric: 'Service planifié livré',
-			explainer:
-				'La complétude est la part des voyages planifiés que le réseau a réellement effectués. Un voyage silencieux est planifié mais n’apparaît jamais dans le flux en direct : il compte comme non livré.',
-			standDown:
-				'Aucune donnée pour l’instant. Cette mesure s’accumule une fois la couverture du service planifié publiée.',
+			section: serviceComparisonCopy.fr.section,
+			metric: serviceComparisonCopy.fr.label,
+			explainer: serviceComparisonCopy.fr.explanation,
+			standDown: serviceComparisonCopy.fr.unavailable,
 		},
 		metrics: {
 			onTime: 'À l’heure',
-			vehicles: 'Véhicules en service',
-			notReporting: 'Sans signal',
+			vehicles: 'Positions de véhicules',
+			notReporting: 'Trajets sans signal',
 			coverage: 'Couverture',
 			delayP50: 'Retard médian',
-			delayP90: '10 % les plus lents',
+			delayP90: 'Retard au 90e percentile',
 		},
+		snapshotRefreshFailed: 'Actualisation de l’instantané échouée',
 		feedAge: { label: 'FLUX', a11yPrefix: 'Flux du travailleur mis à jour' },
 		reporting: {
 			heading: 'Signalement et couverture',
@@ -317,25 +311,23 @@ export const networkReliabilityCopy = defineCopy({
 				month: 'en ce moment',
 				range: 'en ce moment',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Le réseau est fiable ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			patchy: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Le réseau est inégal ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Le réseau est peu fiable ${window}, seulement ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			reliable: positionShare.fr,
+			patchy: positionShare.fr,
+			unreliable: positionShare.fr,
 			tentative: ({ window, otp, n, lo, hi }) =>
-				`Environ ${otp} % des trajets à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
+				`${otp} % de ${n} positions actuelles de véhicules au statut connu sont dans la plage de ponctualité ${window}. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les positions peuvent être dépendantes.`,
 			tooFew: (window: string, n: number) =>
-				`Mesure en cours ${window}, seulement ${n} trajets suivis jusqu’ici.`,
-			absent: 'Mesure du réseau en cours. Pas encore de ponctualité en direct.',
+				`Seulement ${n} positions actuelles de véhicules au statut connu ${window}.`,
+			absent: 'Aucune position actuelle de véhicule avec un statut de retard connu.',
 			hedgeSimple: (otp: number) => ` (${otp} %)`,
 			hedgeCI: (otp: number, lo: number, hi: number) =>
-				` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+				` (${otp} %; Wilson nominal à 95 % : ${lo}–${hi} %, positions potentiellement dépendantes)`,
 		} satisfies VerdictCopy,
 		verdictDelta: {
 			label: 'Verdict du réseau',
-			chip: (signedPts: string) => `${signedPts} vs la veille`,
-			a11y: 'Variation par rapport à la veille :',
+			chip: (signedPts: string, singular: boolean) =>
+				`Variation quotidienne de la ponctualité : ${signedPts} ${singular ? 'point' : 'points'} de pourcentage`,
+			versus: 'contre',
 		},
 	},
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy & { readonly verdict: VerdictCopy }>>;

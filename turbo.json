@@ -4,7 +4,13 @@
 		"build": {
 			"dependsOn": ["^build"],
 			"outputs": [".svelte-kit/**", "dist/**", ".wrangler/**"],
-			"inputs": ["$TURBO_DEFAULT$", "!**/.env.local", "!**/.env.*.local"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/data-proxy/src/snapshot-response.js",
+				"$TURBO_ROOT$/apps/data-proxy/src/snapshot-response.d.ts",
+				"!**/.env.local",
+				"!**/.env.*.local"
+			],
 			"env": ["PUBLIC_V1_BASE", "PUBLIC_V1_PROVIDER"]
 		},
 		"test": {

@@ -1,20 +1,3 @@
-// HealthStatus.svelte.test.ts — the /status (data-health) screen, DOM gate (S11).
-//
-// The surface is the read-out of TWO honesty documents: provenance.json (per-feed
-// freshness, source lineage, declared gaps, retention windows, the full conformance
-// verdict) AND data_health.json (the S11 per-publish-lane freshness + last-gate
-// outcome + the build-accountability envelope).
-//
-// Honesty is the whole point of these assertions: a section whose slice is
-// absent/empty STANDS DOWN (renders nothing), never a fabricated or empty card. We
-// render a rich fixture (every section present), then sparse ones (sections absent)
-// and assert each stands down — including the S11 lanes section standing down when
-// data_health is absent (a legacy publish).
-//
-// Renders in EN (getLocale() defaults to DEFAULT_LOCALE without a provider). The
-// data ports are stubbed so this gate stays env-free + off-network; createResource
-// hands back the per-repository fixture directly (keyed by the fetcher).
-
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
@@ -45,13 +28,8 @@ const overviewCopy = {
 	},
 } as const;
 
-/** Brand an ISO string as the contract's IsoUtc (the runtime value is plain). */
 const iso = (s: string) => s as unknown as IsoUtc;
 
-// A rich provenance: two feeds with distinct run-statuses, two sources with
-// lineage, a declared gap, both retention windows, an out-of-norm conformance
-// verdict naming five fields, and the envelope fields (so the accountability
-// section renders off provenance when data_health lacks them).
 const richProvenance: Provenance = {
 	generated_utc: iso('2026-06-19T12:00:00Z'),
 	schema_version: 3,
@@ -74,9 +52,6 @@ const richProvenance: Provenance = {
 		},
 	],
 	gaps: ['metro_realtime'],
-	// A methodology dict mixing threaded keys (otp_definition → /metrics) with the
-	// un-threaded ones (network_no_data / alert_breakdown → pipeline notes) AND two
-	// S10-noted keys with no explicit label (wilson_z labelled, an unknown key not).
 	methodology: {
 		otp_definition: 'on-time = observed delay between -60s and +300s',
 		network_no_data: 'network.json values are null (not 0) when their denominator is empty',
@@ -98,8 +73,6 @@ const richProvenance: Provenance = {
 	},
 };
 
-// A rich data_health: three lanes (live gated pass, static gated warn, rollup with
-// an honest-NULL gate — predates 0078), plus its OWN envelope (live-lane stamp).
 const richDataHealth: DataHealth = {
 	generated_utc: iso('2026-06-19T12:00:00Z'),
 	schema_version: 1,
@@ -137,8 +110,6 @@ const richDataHealth: DataHealth = {
 			},
 		},
 		{
-			// A lane that predates 0078: honest-NULL gate (verdict UNKNOWN, never a
-			// fabricated pass).
 			lane: 'rollup',
 			last_publish_utc: iso('2026-06-19T07:00:00Z'),
 			age_s: 18000,
@@ -220,11 +191,8 @@ const ready = <T>(data: T | null): ResourceState<T> => ({
 	settled: true,
 });
 
-// Independent resource surfaces let the matrix tests exercise daily and live
-// loading/error states without coupling one document to the other.
 let provenanceState: ResourceState<Provenance> = ready(richProvenance);
 
-/** A provenance payload predating the PayloadEnvelope fields (legacy publish). */
 function stripEnvelope(prov: Provenance): Provenance {
 	const { schema_version, methodology_version, publish_generation_id, ...rest } = prov;
 	void schema_version;
@@ -238,8 +206,6 @@ const historyReload = vi.fn();
 
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
-// Distinct hoisted leaf-fetcher spies let the resource mock route each request while
-// keeping the same identities available to the mock factories and test assertions.
 const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(
 	() => ({
 		getProvenance: vi.fn(),
@@ -258,10 +224,6 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	getHistoricAvailability,
 }));
 
-// createResource is mocked to return the fixture for the matching fetcher. The
-// component owns the arrow fetchers, so we can't compare identity — instead we
-// INVOKE the fetcher (harmless: the stubbed getters return undefined) and route by
-// which spy fired. getDataHealth firing → the data-health resource; else provenance.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: (fetcher: () => unknown, options: Record<string, unknown> = {}) => {
 		getProvenance.mockClear();
@@ -270,7 +232,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		try {
 			fetcher();
 		} catch {
-			// fetchers are stubbed to return undefined; ignore.
+			// Fetchers are stubbed to return undefined; call counts still identify the fetcher.
 		}
 		const isDataHealth = getDataHealth.mock.calls.length > 0;
 		const isHistory = getHistoricAvailability.mock.calls.length > 0;
@@ -566,7 +528,7 @@ describe('HealthStatus — full manifest render', () => {
 		expect(within(header).queryByText('LIVE')).toBeNull();
 	});
 
-	it('wires each request-scoped seed to its freshness-bearing auto-refresh resource', () => {
+	it('wires each request-scoped seed to its auto-refresh resource', () => {
 		const seeds = {
 			provenanceSeed: { key: 'provenance', data: richProvenance },
 			dataHealthSeed: { key: 'data-health', data: richDataHealth },
@@ -582,7 +544,6 @@ describe('HealthStatus — full manifest render', () => {
 			'historic-availability': seeds.historicAvailabilitySeed,
 		})) {
 			const call = resourceOptions.find((candidate) => candidate.kind === kind);
-			expect(call?.options.freshness).toBe(true);
 			expect((call?.options.key as (() => unknown) | undefined)?.()).toBe(kind);
 			expect((call?.options.seed as (() => unknown) | undefined)?.()).toBe(seed);
 		}
@@ -625,21 +586,16 @@ describe('HealthStatus — full manifest render', () => {
 	it('renders EVERY un-threaded methodology string, iterating the FULL dict (labelled + key-fallback)', () => {
 		render(HealthStatus);
 		const list = screen.getByRole('list', { name: en.pipelineNotes.listLabel });
-		// Un-threaded keys with an explicit label appear by label + verbatim string.
 		expect(within(list).getByText(en.pipelineNotes.labels.network_no_data)).toBeInTheDocument();
 		expect(within(list).getByText(en.pipelineNotes.labels.alert_breakdown)).toBeInTheDocument();
-		// An S10-noted key that DID get a label (wilson_z) renders by its label.
 		expect(within(list).getByText(en.pipelineNotes.labels.wilson_z)).toBeInTheDocument();
 		expect(
 			within(list).getByText(richProvenance.methodology!.wilson_z as string),
 		).toBeInTheDocument();
-		// An UNKNOWN key with no label still renders — the humanized key is the label
-		// (never dropped): "some_new_key" → "some new key".
 		expect(within(list).getByText('some new key')).toBeInTheDocument();
 		expect(
 			within(list).getByText(richProvenance.methodology!.some_new_key as string),
 		).toBeInTheDocument();
-		// A THREADED key (otp_definition → /metrics card) does NOT appear here.
 		expect(
 			within(list).queryByText(richProvenance.methodology!.otp_definition as string),
 		).toBeNull();
@@ -665,8 +621,6 @@ describe('HealthStatus — full manifest render', () => {
 
 	it('renders the conformance verdict + the COMPLETE unknown-member list + exact extra-row count', () => {
 		const { container } = render(HealthStatus);
-		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
-		// section-heading assertion to the center sections column.
 		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		const list = screen.getByRole('list', { name: en.conformance.membersListLabel });
@@ -797,12 +751,10 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 	it('renders one row per publish lane (live / static / rollup) + the MAINTENANCE not-applicable row', () => {
 		render(HealthStatus);
 		const list = screen.getByRole('list', { name: en.lanes.listLabel });
-		// The three DB-heartbeat lanes + the maintenance row are all present by label.
 		expect(within(list).getByText(en.lanes.laneLabel.live)).toBeInTheDocument();
 		expect(within(list).getByText(en.lanes.laneLabel.static)).toBeInTheDocument();
 		expect(within(list).getByText(en.lanes.laneLabel.rollup)).toBeInTheDocument();
 		expect(within(list).getByText(en.lanes.laneLabel.maintenance)).toBeInTheDocument();
-		// The gate explainer states WHAT the gate checks (honest, not alarmist).
 		expect(screen.getByText(en.lanes.gateExplain)).toBeInTheDocument();
 	});
 
@@ -815,10 +767,8 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 		const rollup = document.querySelector(
 			'[data-slot="lane-row"][data-lane="rollup"]',
 		) as HTMLElement;
-		// live gate PASSED; static gate has WARNINGS.
 		expect(within(live).getByText(en.lanes.gateVerdict.pass)).toBeInTheDocument();
 		expect(within(stat).getByText(en.lanes.gateVerdict.warn)).toBeInTheDocument();
-		// The pre-0078 rollup lane shows the honest-absence chip, NOT a fabricated pass.
 		const rollupGate = rollup.querySelector('[data-slot="lane-gate"]') as HTMLElement;
 		expect(rollupGate.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(within(rollupGate).queryByText(en.lanes.gateVerdict.pass)).toBeNull();
@@ -830,7 +780,6 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 			'[data-slot="lane-row"][data-lane="static"]',
 		) as HTMLElement;
 		expect(within(stat).getByText(en.lanes.filesCount('118', '120'))).toBeInTheDocument();
-		// The rollup lane reports only its total → honest absence, never a fabricated 0 of 120.
 		const rollup = document.querySelector(
 			'[data-slot="lane-row"][data-lane="rollup"]',
 		) as HTMLElement;
@@ -848,8 +797,6 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 	});
 
 	it('stands the lanes section DOWN entirely on a LEGACY publish (data_health absent)', () => {
-		// A legacy publish serves no data_health.json → getDataHealth resolves null →
-		// the section renders nothing (not even the maintenance row).
 		dataHealthState = ready<DataHealth>(null);
 		const { container } = render(HealthStatus);
 		expect(screen.queryByRole('list', { name: en.lanes.listLabel })).toBeNull();
@@ -861,13 +808,7 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 
 describe('HealthStatus — S11 build-accountability envelope', () => {
 	it('renders the PROVENANCE envelope (the run that produced the page body), never the live stamp', () => {
-		// S11 review F1-web: the copy says the stamp produced everything on this
-		// page; the body (freshness/sources/retention/conformance) is provenance,
-		// so the provenance stamp is primary. The live run's stamp belongs to the
-		// lanes section only.
 		const { container } = render(HealthStatus);
-		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
-		// section-heading assertion to the center sections column.
 		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.envelope.section)).toBeInTheDocument();
 		expect(screen.getByText('gen-prov-xyz')).toBeInTheDocument();
@@ -884,8 +825,6 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 	});
 
 	it('falls back to data_health envelope fields when provenance lacks them', () => {
-		// A provenance payload predating the envelope fields → the selector fills
-		// each field from data_health, so the section still renders.
 		provenanceState = ready(stripEnvelope(richProvenance));
 		render(HealthStatus);
 		expect(screen.getByText('gen-live-abc')).toBeInTheDocument();
@@ -896,7 +835,6 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 	});
 
 	it('renders the styled honest-absence for envelope fields absent from BOTH sources', () => {
-		// Neither payload carries envelope fields → the section stands down entirely.
 		dataHealthState = ready({ generated_utc: iso('2026-06-19T12:00:00Z') });
 		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
@@ -958,8 +896,6 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 		});
 		dataHealthState = ready<DataHealth>(null);
 		const { container } = render(HealthStatus);
-		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
-		// section-heading assertion to the center sections column.
 		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		expect(screen.queryByText(en.conformance.detailsTitle)).toBeNull();

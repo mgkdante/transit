@@ -1,31 +1,11 @@
-<!--
-  CodeBlock — yesid.dev code-snippet treatment for a verbatim SQL/code block.
-
-  Gives the explainer's Defining SQL the brand code chrome: a language tag, a
-  surface/border register, and dependency-free syntax highlighting (keywords /
-  strings / numbers / functions / comments). No highlighter dep is in the tree,
-  so the tokenizer is hand-rolled here (a keyword set + a single ordered regex).
-
-  DOCTRINE: the syntax palette is a set of theme-aware CSS custom properties
-  LOCAL to this component (a light + dark pair keyed off [data-theme]), NOT
-  global tokens — so the highlight reads correctly in both themes without
-  touching tokens.json/tokens.css. The chrome (border, --card surface, the mono
-  language tag) reuses existing global tokens. No data marks, no --primary on the
-  code itself; the block is keyboard-scrollable so overflow is pointer-free.
--->
 <script lang="ts">
 	import { tokenizeSql, type CodeToken } from './sql-highlight';
 
 	export interface CodeBlockProps {
-		/** The verbatim source to render. Language-neutral; highlighting is SQL-aware. */
 		code: string;
-		/** Language label shown in the chrome tag (e.g. "SQL"). Default 'SQL'. */
 		lang?: string;
-		/** Accessible label for the scrollable code region. */
 		ariaLabel?: string;
-		/** Render inside an existing terminal chassis without a second frame or titlebar. */
 		embedded?: boolean;
-		/** Extra classes on the figure wrapper. */
 		class?: string;
 	}
 
@@ -46,8 +26,7 @@
 			<span class="codeblock__lang">{lang}</span>
 		</figcaption>
 	{/if}
-	<!-- Scrollable code region: keyboard-focusable so the overflow is reachable
-	     without a pointer (mirrors the dataviz scrollable-region pattern). -->
+	<!-- Keyboard access to overflow. -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<pre
 		class="codeblock__pre"
@@ -60,8 +39,6 @@
 </figure>
 
 <style>
-	/* Theme-aware syntax palette — LOCAL custom properties (not global tokens).
-	   Dark is the default register; the light pair re-pins for AA on warm paper. */
 	.codeblock {
 		--code-keyword: #c98a5e;
 		--code-string: #7fae6f;
@@ -85,7 +62,6 @@
 		background: var(--terminal);
 	}
 
-	/* Light theme re-pin — darker, AA-readable hues on the paper card. */
 	:global([data-theme='light']) .codeblock,
 	:global(.theme-light) .codeblock {
 		--code-keyword: #9a4a14;

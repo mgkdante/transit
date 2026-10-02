@@ -1,4 +1,3 @@
-"""Migration contract for the retained Gold alert archive."""
 
 from __future__ import annotations
 

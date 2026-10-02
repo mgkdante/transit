@@ -15,32 +15,17 @@
 				},
 				{
 					"path": ".github/shared-tooling/turbo.overlay.json",
-					"digest": "sha256:f6d975ad821f6c60ee15515351082d866c78cda57b139ac6524d88f512112907"
+					"digest": "sha256:ac144779289be28e94f416cafce642a60344a8af728264d4cf7797bd36795b99"
 				}
 			],
 			"target": "turbo.json"
 		}
 	],
 	"callers": [
-		{
-			"workflow": ".github/workflows/ci.yml",
-			"action": ".github/actions/classify-paths"
-		},
-		{
-			"workflow": ".github/workflows/ci.yml",
-			"action": ".github/actions/required-context"
-		},
-		{
-			"workflow": ".github/workflows/web.yml",
-			"action": ".github/actions/classify-paths"
-		},
-		{
-			"workflow": ".github/workflows/web.yml",
-			"action": ".github/actions/required-context"
-		},
-		{
-			"workflow": ".github/workflows/web.yml",
-			"action": ".github/actions/shared-tooling-drift"
-		}
+		{ "workflow": ".github/workflows/ci.yml", "action": ".github/actions/classify-paths" },
+		{ "workflow": ".github/workflows/ci.yml", "action": ".github/actions/required-context" },
+		{ "workflow": ".github/workflows/web.yml", "action": ".github/actions/classify-paths" },
+		{ "workflow": ".github/workflows/web.yml", "action": ".github/actions/required-context" },
+		{ "workflow": ".github/workflows/web.yml", "action": ".github/actions/shared-tooling-drift" }
 	]
 }

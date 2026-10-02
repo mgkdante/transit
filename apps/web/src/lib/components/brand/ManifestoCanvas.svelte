@@ -1,12 +1,3 @@
-<!--
-  ManifestoCanvas — Interactive circuit node canvas (ported 1:1 from yesid.dev,
-  P5-R R3a.2; the article headers' ambient layer). Renders grid-aligned nodes
-  that glow on cursor proximity, draws trace connections between nearby active
-  nodes, emits concentric ripple pulses on click/tap. Respects
-  prefers-reduced-motion: static nodes only. The host element must be
-  position:relative and pass itself as containerEl; the ripple classes live in
-  the consumer's :global styles (ArticleHeader).
--->
 <script module lang="ts">
 	let nextSubscriptionId = 0;
 
@@ -54,9 +45,6 @@
 
 	let nodes: CircuitNode[] = [];
 
-	// Canvas can't read CSS vars at draw time, so mirror --primary-rgb here: the
-	// node field paints #A05500 in light / #E07800 in dark, re-read on the
-	// themechange event the theme store dispatches.
 	let primaryRgb = '224,120,0';
 	function readPrimaryRgb() {
 		if (!browser) return;
@@ -152,8 +140,6 @@
 	}
 
 	function animate() {
-		// IO-gated: skip the frame entirely when the Manifesto section is
-		// offscreen. Subscription stays registered (cheap) to avoid churn.
 		if (!isVisible) return;
 		if (!ctx) return;
 		ctx.clearRect(0, 0, width, height);
@@ -215,7 +201,6 @@
 	let initialized = false;
 	let currentContainer: HTMLElement | undefined;
 
-	// Use $effect to react when containerEl becomes available (bind:this timing)
 	$effect(() => {
 		if (!browser || !canvas || !containerEl || initialized) return;
 		initialized = true;
@@ -224,20 +209,15 @@
 		ctx = canvas.getContext('2d');
 		if (!ctx) return;
 
-		readPrimaryRgb();
 		const reducedMotion = isPrefersReducedMotion();
-		// The resource-backed meta row can change the cover height after mount.
-		// Observe the actual host box so the bitmap and pointer coordinates stay in
-		// lock-step with both async content growth and viewport/orientation changes.
 		const resizeObserver = new ResizeObserver(() => {
+			readPrimaryRgb();
 			resize();
 			if (reducedMotion) paintStatic();
 		});
 		resizeObserver.observe(containerEl);
-		resize();
 
 		if (reducedMotion) {
-			paintStatic();
 			const onThemeChange = () => {
 				readPrimaryRgb();
 				paintStatic();
@@ -249,9 +229,6 @@
 			};
 		}
 
-		// IO gate — pause painting when the Manifesto section scrolls out
-		// of view. rootMargin: 50px so painting resumes just before the
-		// section re-enters the viewport to avoid a visible frame-drop.
 		visibilityObserver = new IntersectionObserver(
 			(entries) => {
 				isVisible = entries[0].isIntersecting;
@@ -260,8 +237,6 @@
 		);
 		visibilityObserver.observe(containerEl);
 
-		// Shared ticker — one RAF loop site-wide; animate() early-returns
-		// when !isVisible, so offscreen paints cost a cheap if-check only.
 		subscribe(subscriptionId, animate);
 
 		containerEl.addEventListener('mousemove', onMouseMove);
@@ -326,11 +301,6 @@
 		z-index: var(--z-base);
 	}
 
-	/* Light mode: same cursor-follow warm glow, but on the light surface the 6%/2%
-	   mix tuned for the dark board is invisible. Lift primary -> 16% and accent ->
-	   8% so the cast reads with the same presence as dark (1:1 parity). The shared
-	   .manifesto__warm-glow class also drives the blog + project detail headers, so
-	   this lifts all three at once. */
 	:global([data-theme='light']) .manifesto__warm-glow {
 		background: radial-gradient(
 			ellipse,

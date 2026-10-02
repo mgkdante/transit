@@ -1,10 +1,3 @@
-<!--
-  GrainPicker — semantic adapter for historic roll-up choices.
-
-  Callers keep the existing grain vocabulary and bindable value. The shared
-  SegmentedChoice primitive owns radio semantics, keyboard behavior, targets,
-  motion, and the optional joined layout.
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import SegmentedChoice from './SegmentedChoice.svelte';
@@ -12,16 +5,13 @@
 
 	export type GrainPickerVariant = 'default' | 'time-grid';
 
-	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
 		readonly key: K;
 		readonly label: string;
 		readonly compactLabel?: string;
 		readonly available?: boolean;
 		readonly describedById?: string;
-		/** Pointer explanation for an unavailable segment. */
 		readonly title?: string;
-		/** Pointer explanation for an available segment. */
 		readonly hint?: string;
 	}
 

@@ -1,5 +1,3 @@
-"""Migration target intent guard."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

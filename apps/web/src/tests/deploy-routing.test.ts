@@ -24,7 +24,9 @@ describe('shared production route deployment', () => {
 			"github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production'",
 		);
 
-		const deployIndex = productionJob.indexOf('run: bunx wrangler@4.100.0 deploy --env=""');
+		const deployIndex = productionJob.indexOf(
+			'run: ../../node_modules/.bin/wrangler deploy --env=""',
+		);
 		const smokeIndex = productionJob.indexOf('run: bash smoke.sh');
 		expect(deployIndex).toBeGreaterThanOrEqual(0);
 		expect(smokeIndex).toBeGreaterThan(deployIndex);

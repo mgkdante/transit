@@ -1,55 +1,27 @@
-<!--
-  ReliabilityPane, shared reliability readout for the route + stop surfaces.
-
-  Route reliability and stop reliability differ in raw shape, so this primitive
-  takes a NORMALIZED view-model (ReliabilityPeriodVM[]) the caller maps into. It
-  renders, per period, a small card with the on-time %, the delay (avg|median),
-  an optional p90, and a severe-share bar, plus a Sparkline of OTP across the
-  periods as an at-a-glance trend.
-
-  DOCTRINE: every data mark rides the dataviz scale (Sparkline / SeverityBar);
-  --primary is never a data colour here. Domain vocabulary (OTP / delay / p90 /
-  severe) is intrinsic, so the FR/EN labels live in a local Record<Locale>.
-  Empty-guard: an empty `periods` renders nothing (the caller wraps the load in
-  ResourceBoundary, which owns the empty/loading/error states).
--->
 <script lang="ts">
 	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
+	import type { Snippet } from 'svelte';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { SeverityBar } from '$lib/components/dataviz';
 	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
 
-	/** Normalized per-period reliability the caller maps its raw shape into. */
 	export interface ReliabilityPeriodVM {
-		/** Period label / grain (e.g. "7j", "Last 30 days"). */
 		grain: string;
-		/** On-time share as a percent [0,100], or null when unmeasured. */
 		otpPct: number | null;
-		/** Delay in minutes, a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
-		/**
-		 * Per-period override of the delay caption; falls back to the
-		 * pane-level `delayLabelKind`. Lets a real-p50 grain say "median"
-		 * while observation-mean grains in the same pane say "avg".
-		 */
 		delayKind?: 'avg' | 'median';
-		/** Optional p90 delay in minutes. */
 		p90Min?: number | null;
-		/** Optional severe share as a percent [0,100]. */
 		severePct?: number | null;
 	}
 
 	export interface ReliabilityPaneProps {
-		/** Periods to render (one card each). Empty ⇒ renders nothing. */
 		periods: readonly ReliabilityPeriodVM[];
-		/** UI language for the intrinsic domain labels. */
 		locale: Locale;
-		/** Whether `delayMin` is an average or a median, drives the delay caption. */
 		delayLabelKind?: 'avg' | 'median';
-		/** Optional extra classes on the root. */
+		metricInfo?: Snippet<[key: 'stopNotSevere' | 'avgDelay' | 'p50p90' | 'severe', label: string]>;
 		class?: string;
 	}
 
@@ -57,60 +29,52 @@
 		periods,
 		locale,
 		delayLabelKind = 'avg',
+		metricInfo,
 		class: className,
 	}: ReliabilityPaneProps = $props();
 
-	/* Intrinsic domain vocabulary, FR is the canonical product voice. */
 	type Labels = {
-		readonly otp: string;
+		readonly notSevere: string;
 		readonly delayAvg: string;
 		readonly delayMedian: string;
 		readonly p90: string;
-		/** Plain caption under the p90 tile (what "p90" means to a rider). */
 		readonly p90Caption: string;
 		readonly severe: string;
 		readonly trend: string;
-		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
 		readonly unitPct: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
-			otp: 'Ponctualité',
+			notSevere: 'Prévisions sans retard grave',
 			delayAvg: 'Retard moyen',
 			delayMedian: 'Retard médian',
 			p90: 'p90',
-			p90Caption: '10 % les plus lents',
+			p90Caption: '90e percentile des relevés de retard',
 			severe: 'Retards majeurs',
-			trend: 'Tendance ponctualité',
+			trend: 'Part des prévisions sans retard grave',
 			unitPct: '%',
 		},
 		en: {
-			otp: 'On-time %',
+			notSevere: 'Not-severe predictions',
 			delayAvg: 'Avg delay',
 			delayMedian: 'Median delay',
 			p90: 'p90',
-			p90Caption: 'Slowest 10% of trips',
+			p90Caption: '90th percentile of reported delays',
 			severe: 'Major delays',
-			trend: 'On-time trend',
+			trend: 'Share of predictions without severe delay',
 			unitPct: '%',
 		},
 	};
 	const t = $derived(L[locale]);
 
-	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
-
 	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'round' });
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// OTP series across periods, drives the trend sparkline (dataviz scale).
-	const otpSeries = $derived(periods.map((p) => p.otpPct));
+	const nonSevereSeries = $derived(periods.map((p) => p.otpPct));
 
-	// P5.2: the OTP mini-trend is a `sparkline` ChartSpec (legacy primitive retired).
-	// The spec carries an EXPLICIT domain via the blessed data-anchored zoom
-	// (chart/sparkDomain.ts owns the adjudication), clamped to the honest [0,100].
 	const sparkSpec = $derived.by<SparklineSpec | null>(() => {
-		const domain = sparkZoomDomain(otpSeries, { clampHi: 100 });
+		const domain = sparkZoomDomain(nonSevereSeries, { clampHi: 100 });
 		if (domain == null) return null;
 		return {
 			kind: 'sparkline',
@@ -118,8 +82,8 @@
 			locale,
 			domain,
 			unit: t.unitPct,
-			label: t.otp,
-			values: otpSeries,
+			label: t.notSevere,
+			values: nonSevereSeries,
 			xLabels: periods.map((p) => p.grain),
 			showLast: true,
 			width: 160,
@@ -132,37 +96,45 @@
 	<div class={cn('reliability-pane', className)} data-slot="reliability-pane">
 		<div class="reliability-cards">
 			{#each periods as period (period.grain)}
+				{@const median = (period.delayKind ?? delayLabelKind) === 'median'}
+				{@const delayLabel = median ? t.delayMedian : t.delayAvg}
 				<div class="reliability-card">
 					<SectionLabel text={period.grain} variant="metric" />
 					<div class="reliability-metrics">
-						<!-- A null OTP is genuinely unmeasured (e.g. the day grain emits only
-						     p50/p90) — render nothing rather than a bare "·" placeholder. -->
 						{#if period.otpPct != null}
-							<MetricDisplay value={pct(period.otpPct)} label={t.otp} size="sm" />
+							<MetricDisplay value={pct(period.otpPct)} label={t.notSevere} size="sm">
+								{#snippet info()}{@render metricInfo?.('stopNotSevere', t.notSevere)}{/snippet}
+							</MetricDisplay>
 						{/if}
 						<MetricDisplay
 							value={min(period.delayMin)}
 							absentReason="no-observations"
 							{locale}
-							label={period.delayKind === 'median'
-								? t.delayMedian
-								: period.delayKind === 'avg'
-									? t.delayAvg
-									: delayLabel}
+							label={delayLabel}
 							size="sm"
-						/>
+						>
+							{#snippet info()}{@render metricInfo?.(
+									median ? 'p50p90' : 'avgDelay',
+									delayLabel,
+								)}{/snippet}
+						</MetricDisplay>
 						{#if period.p90Min != null}
 							<MetricDisplay
 								value={min(period.p90Min)}
 								label={t.p90}
 								sublabel={t.p90Caption}
 								size="sm"
-							/>
+							>
+								{#snippet info()}{@render metricInfo?.('p50p90', t.p90)}{/snippet}
+							</MetricDisplay>
 						{/if}
 					</div>
 					{#if period.severePct != null}
 						<div class="reliability-severe">
-							<SectionLabel text={t.severe} variant="metric" />
+							<div class="flex items-center gap-1">
+								<SectionLabel text={t.severe} variant="metric" />
+								{@render metricInfo?.('severe', t.severe)}
+							</div>
 							<SeverityBar
 								severity="watch"
 								value={period.severePct / 100}

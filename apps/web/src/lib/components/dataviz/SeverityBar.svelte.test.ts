@@ -12,11 +12,10 @@ describe('SeverityBar — absolute domain (S7 relative-to-max fix)', () => {
 		const { container } = render(SeverityBar, {
 			props: { severity: 'high', value: 12, domain: [0, 35] },
 		});
-		expect(fillWidth(container)).toBeCloseTo((12 / 35) * 100, 1); // ~34.3%
+		expect(fillWidth(container)).toBeCloseTo((12 / 35) * 100, 1);
 	});
 
 	it('is STABLE — the same value + domain renders the same length, independent of other data', () => {
-		// 4 min on [-2, 8] -> (4 - -2)/10 = 60%, no matter the severity or any in-view max.
 		const a = render(SeverityBar, { props: { severity: 'high', value: 4, domain: [-2, 8] } });
 		const b = render(SeverityBar, { props: { severity: 'critical', value: 4, domain: [-2, 8] } });
 		expect(fillWidth(a.container)).toBeCloseTo(60, 1);

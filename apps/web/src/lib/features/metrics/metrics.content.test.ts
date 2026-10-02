@@ -1,10 +1,3 @@
-// metrics.content.test.ts — guards the explainer's data integrity:
-//   1. EN/FR key parity (every bilingual field carries both locales, non-empty).
-//   2. Every anchor is unique + URL-safe kebab-case (deep links never collide).
-//   3. The metric set covers the reliability surface's labels (no surface metric
-//      lacks an explainer entry) — the parity that lets the (i) tip exist on
-//      every reliability number.
-
 import { describe, it, expect } from 'vitest';
 import {
 	METRICS,
@@ -17,25 +10,21 @@ import {
 } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
 
-// The reliability surface's metric set, expressed as MetricKeys. Every metric
-// the reliability surface labels (snapshot strip + the five cluster bands) must
-// have an explainer entry so the (i) tip can deep-link it. This list is the
-// contract between the surface and the explainer.
 const SURFACE_METRICS: readonly MetricKey[] = [
-	'otp', // strip.otpPct
-	'avgDelay', // strip.avgDelayMin
-	'p50p90', // strip.p50Min / p90Min
-	'severe', // severe bar (cluster 01)
-	'weakStops', // weak-stops ranked list (cluster 01)
-	'regularityCov', // strip.headwayRegularityCov + regularity caption
-	'headway', // observed / scheduled (cluster 02)
-	'excessWait', // excess_wait (cluster 02)
-	'cancellation', // strip.cancellationRatePct
-	'skippedStop', // strip.skippedStopRatePct
-	'serviceSpan', // service spans (cluster 02/03)
-	'occupancy', // occupancy_mix (cluster 04)
-	'habits', // habits heatmap (cluster 05)
-	'seasonality', // weekday severe list (cluster 05)
+	'otp',
+	'avgDelay',
+	'p50p90',
+	'severe',
+	'weakStops',
+	'regularityCov',
+	'headway',
+	'excessWait',
+	'cancellation',
+	'skippedStop',
+	'serviceSpan',
+	'occupancy',
+	'habits',
+	'seasonality',
 ];
 
 const bilingualFields: ReadonlyArray<keyof MetricEntry> = [
@@ -54,7 +43,6 @@ describe('metrics.content — EN/FR parity', () => {
 				expect(value.en, `${entry.key}.${String(field)}.en`).toBeTruthy();
 				expect(value.fr, `${entry.key}.${String(field)}.fr`).toBeTruthy();
 			}
-			// caveats is a parallel bilingual list — both locales present + same length.
 			expect(entry.caveats.en.length, `${entry.key}.caveats.en`).toBeGreaterThan(0);
 			expect(entry.caveats.fr.length, `${entry.key}.caveats.fr`).toBeGreaterThan(0);
 			expect(entry.caveats.en.length, `${entry.key}.caveats length parity`).toBe(
@@ -63,9 +51,7 @@ describe('metrics.content — EN/FR parity', () => {
 			for (const c of [...entry.caveats.en, ...entry.caveats.fr]) {
 				expect(c.trim(), `${entry.key} caveat non-empty`).toBeTruthy();
 			}
-			// sql is language-neutral but must be present.
 			expect(entry.sql.trim(), `${entry.key}.sql`).toBeTruthy();
-			// sciName is a single mono label.
 			expect(entry.sciName.trim(), `${entry.key}.sciName`).toBeTruthy();
 		}
 	});
@@ -94,35 +80,27 @@ describe('metrics.content — EN/FR parity', () => {
 		for (const c of [metricsCopy.en, metricsCopy.fr]) {
 			expect(c.lacunes.title, 'lacunes title').toBeTruthy();
 			expect(c.lacunes.lede, 'lacunes lede').toBeTruthy();
-			// Exactly the three honest gaps, each a non-empty heading + body.
 			expect(c.lacunes.gaps.length, 'three structural gaps').toBe(3);
 			for (const gap of c.lacunes.gaps) {
 				expect(gap.heading.trim(), 'gap heading non-empty').toBeTruthy();
 				expect(gap.body.trim(), 'gap body non-empty').toBeTruthy();
 			}
 		}
-		// EN gap parity with FR (same count, both locales present).
 		expect(metricsCopy.en.lacunes.gaps.length).toBe(metricsCopy.fr.lacunes.gaps.length);
 	});
 
 	it('names the three structural gaps verbatim (passenger-weighting / no-realtime / OD) in EN', () => {
 		const en = metricsCopy.en.lacunes;
 		const headings = en.gaps.map((g) => g.heading);
-		// (a) reliability is not passenger-weighted
 		expect(headings).toContain('Reliability is NOT passenger-weighted');
-		// (b) no realtime for rapid-transit modes that do not broadcast it (provider-agnostic)
 		expect(headings).toContain('No realtime for rapid-transit modes that do not broadcast it');
-		// (c) stop/route-level, not journey (OD) reliability
 		expect(headings).toContain('Stop-level and route-level, NOT journey (origin to destination)');
-		// The OD gap names the journey/origin-destination concept in its body.
 		const odGap = en.gaps.find((g) => g.heading.includes('journey'));
 		expect(odGap?.body).toContain('origin to destination');
 		expect(odGap?.body.toLowerCase()).toContain('origin-destination');
 	});
 
 	it('keeps the structural-gaps copy provider-agnostic (no hardcoded provider/mode name)', () => {
-		// The no-realtime gap must frame the mode provider-agnostically ("rapid-transit
-		// modes that do not broadcast realtime"), never naming STM/métro specifically.
 		const allGapText = [...metricsCopy.en.lacunes.gaps, ...metricsCopy.fr.lacunes.gaps]
 			.flatMap((g) => [g.heading, g.body])
 			.join(' ')
@@ -133,13 +111,10 @@ describe('metrics.content — EN/FR parity', () => {
 	});
 
 	it('keeps the live-positions explainer provider-agnostic (no hardcoded provider name)', () => {
-		// The map is multi-tenant (STM/STO/OC/STS): the "almost real-time" explainer
-		// must NEVER name a specific agency; it describes the live feed generically.
 		const text = [metricsCopy.en.livePositions, metricsCopy.fr.livePositions]
 			.flatMap((s) => [s.title, s.lede, ...s.points.flatMap((p) => [p.heading, p.body])])
 			.join(' ')
 			.toLowerCase();
-		// Word-boundary match so common words (e.g. "stop" -> "sto") do not false-positive.
 		for (const re of [/\bstm\b/, /\bsto\b/, /\bsts\b/, /\boc[\s-]?transpo\b/]) {
 			expect(text).not.toMatch(re);
 		}

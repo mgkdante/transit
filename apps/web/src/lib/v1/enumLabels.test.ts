@@ -1,7 +1,3 @@
-// enumLabels.test.ts — the display vocabulary must cover the closed enums EXACTLY,
-// in BOTH locales, with no missing/extra code. Catches future enum drift (a new
-// StatusCode/OccupancyCode option added to the schema without a label) at test time.
-
 import { describe, expect, it } from 'vitest';
 import { StatusCodeSchema, OccupancyCodeSchema, SeverityCodeSchema } from './schemas';
 import { STATUS_LABELS, OCCUPANCY_LABELS, SEVERITY_LABELS } from './enumLabels';

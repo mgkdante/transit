@@ -39,18 +39,17 @@ describe('selectPunctualityCrosstab', () => {
 		expect(hasData).toBe(true);
 		if (spec.kind !== 'line') throw new Error('expected line');
 		expect(spec.domain).toEqual(OTP_DOMAIN);
-		expect(spec.domain[0]).toBe(0); // zero-based
+		expect(spec.domain[0]).toBe(0);
 		expect(spec.xLabels.length).toBe(SHIFT_GRAIN_ORDER.length);
 		expect(spec.series.map((s) => s.key)).toEqual(['weekday', 'weekend']);
-		// Weekend is dashed (distinguished by pattern, not colour alone).
 		expect(spec.series[1].dashed).toBe(true);
 		expect(spec.series[0].points.every((p) => p === 85)).toBe(true);
 	});
 
 	it('gaps a cell below MIN_TRUSTED_OBS (honest no-data, never a fabricated point)', () => {
 		const cells = [
-			cell('am_peak', 'weekday', 90, MIN_TRUSTED_OBS), // trusted
-			cell('midday', 'weekday', 88, MIN_TRUSTED_OBS - 1), // too few → gap
+			cell('am_peak', 'weekday', 90, MIN_TRUSTED_OBS),
+			cell('midday', 'weekday', 88, MIN_TRUSTED_OBS - 1),
 			cell('pm_peak', 'weekend', 80, 50),
 		];
 		const { spec } = selectPunctualityCrosstab(cells, 'en', labels);
@@ -58,8 +57,8 @@ describe('selectPunctualityCrosstab', () => {
 		const wk = spec.series.find((s) => s.key === 'weekday');
 		const amIdx = SHIFT_GRAIN_ORDER.indexOf('am_peak');
 		const midIdx = SHIFT_GRAIN_ORDER.indexOf('midday');
-		expect(wk?.points[amIdx]).toBe(90); // trusted
-		expect(wk?.points[midIdx]).toBeNull(); // n < MIN_TRUSTED_OBS → gap
+		expect(wk?.points[amIdx]).toBe(90);
+		expect(wk?.points[midIdx]).toBeNull();
 	});
 
 	it('returns an honest-absence spec when no cell is trusted', () => {

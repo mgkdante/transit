@@ -1,19 +1,3 @@
-<!--
-  _kit — the dev component gallery.
-
-  A single surface that mounts EVERY design-system primitive (brand + ui +
-  dataviz), all six EdgeStates, and the StatusBadge legend, with live lang (EN⇄FR)
-  and theme (dark⇄light) toggles. Not linked from the app chrome — it is the
-  visual contract sheet the design system is verified against.
-
-  The lang toggle is LOCAL gallery state (passed explicitly to every lang/locale
-  prop) so the page is self-contained regardless of the URL locale. The theme
-  toggle drives the global themeStore so token swaps are observed app-wide.
-
-  Doctrine: data marks ride the dataviz scale (sample values below use status/
-  occupancy/severity codes + the heatmap ramp); --primary appears only on
-  interactive affordances (buttons, the active tab marker, retry).
--->
 <script lang="ts">
 	import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
@@ -25,7 +9,6 @@
 		type OccupancyCode,
 	} from '$lib/v1/schemas/types';
 
-	// Brand primitives.
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import { StopLabel } from '@yesid/ui/brand';
@@ -35,14 +18,12 @@
 	import { MetroStation } from '@yesid/ui/brand';
 	import CornerMarks from '$lib/components/brand/CornerMarks.svelte';
 
-	// UI primitives.
 	import { Button } from '@yesid/ui/button';
 	import { Badge } from '@yesid/ui/badge';
 	import { Separator } from '@yesid/ui/separator';
 	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@yesid/ui/card';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
 
-	// Dataviz kit (non-chart primitives) + the ONE chart renderer (P5.2).
 	import {
 		StatusBadge,
 		RankedRow,
@@ -54,27 +35,20 @@
 	} from '$lib/components/dataviz';
 	import { Chart, stackedShareSpec, type ChartSpec } from '$lib/components/dataviz/chart';
 
-	// Edge states.
 	import { EdgeState } from '$lib/components/edge';
 	import { absenceShort } from '$lib/site/absence';
 
-	// Chrome & layout (Set-B brand + layout primitives).
 	import { StickyPanel } from '@yesid/ui/brand';
 	import { TerminalPanel } from '$lib/components/brand';
 	import { Footer, Surface } from '$lib/components/layout';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '@yesid/ui/resizable';
 
-	// --- Gallery controls --------------------------------------------------------
 	let lang = $state<Locale>(DEFAULT_LOCALE);
 	const isDark = $derived(themeStore.isDark);
 
 	function toggleLang() {
 		lang = lang === 'en' ? 'fr' : 'en';
 	}
-
-	// --- Sample data (doctrine-clean) -------------------------------------------
-	// STATUS_CODES / OCCUPANCY_CODES / SEVERITY_CODES come from the single source
-	// ($lib/v1/schemas, derived from the zod enums) — imported above.
 
 	const STATUS_LABEL: Record<StatusCode, Record<Locale, string>> = {
 		early: { fr: 'En avance', en: 'Early' },
@@ -95,7 +69,6 @@
 	const trendOnTime: Array<number | null> = [78, 80, 82, 81, 85, 86, 88];
 	const trendRetard: Array<number | null> = [22, 20, 18, 19, 15, 14, 12];
 
-	// P5.2 chart demos — selector-shaped specs through the ONE <Chart> renderer.
 	const sparkSpec = $derived<ChartSpec>({
 		kind: 'sparkline',
 		title: 'On-time % · 10 builds',
@@ -133,8 +106,6 @@
 		minPointsForLine: 2,
 		minN: 0,
 	});
-	// HistogramMark reads the SHARED signed-seconds axis (the house contract —
-	// see delayHistogram.ts: minutes × 60), so the demo bins are in seconds.
 	const histogramSpec = $derived<ChartSpec>({
 		kind: 'histogram',
 		title: lang === 'fr' ? 'Distribution des retards' : 'Delay distribution',
@@ -155,7 +126,6 @@
 		p90Ref: 480,
 	});
 
-	// 7×24 heatmap of normalized delay; sprinkle nulls for the no-data token.
 	const heatmapGrid: Array<Array<number | null>> = Array.from({ length: 7 }, (_, d) =>
 		Array.from({ length: 24 }, (_, h) => {
 			if ((d + h) % 11 === 0) return null;
@@ -214,8 +184,6 @@
 		colTicks: [0, 6, 12, 18].map((h) => ({ index: h, label: `${String(h).padStart(2, '0')}:00` })),
 	});
 
-	// Standalone ChartLegend demo — the 5 status codes as glyph+colour swatches
-	// on the dataviz scale (the same legend the chart marks compose).
 	const legendStatusItems = $derived<ChartLegendItem[]>(
 		STATUS_CODES.map((code) => ({
 			colorVar: statusVar(code),
@@ -256,7 +224,6 @@
 </script>
 
 <div class="kit">
-	<!-- Controls -->
 	<div class="kit-bar">
 		<div>
 			<SectionLabel text="_KIT · DEV" variant="station" />
@@ -269,7 +236,6 @@
 		</div>
 	</div>
 
-	<!-- BRAND -->
 	<section class="kit-section">
 		<SectionLabel text="BRAND" variant="section" />
 		<div class="kit-row">
@@ -303,7 +269,6 @@
 		</div>
 	</section>
 
-	<!-- UI -->
 	<section class="kit-section">
 		<SectionLabel text="UI" variant="section" />
 		<div class="kit-row">
@@ -358,11 +323,9 @@
 		</div>
 	</section>
 
-	<!-- DATAVIZ -->
 	<section class="kit-section">
 		<SectionLabel text="DATAVIZ" variant="section" />
 
-		<!-- StatusBadge legend (all 5 codes, three modes) -->
 		<div class="kit-sub">
 			<SectionLabel text={lang === 'fr' ? 'LÉGENDE STATUT' : 'STATUS LEGEND'} variant="metric" />
 			<div class="kit-row">
@@ -467,7 +430,6 @@
 		</div>
 	</section>
 
-	<!-- EDGE STATES -->
 	<section class="kit-section">
 		<SectionLabel text={lang === 'fr' ? 'ÉTATS LIMITES' : 'EDGE STATES'} variant="section" />
 		<div class="kit-grid2">
@@ -525,15 +487,12 @@ vehicle 40231 · occupancy LOW</pre>
 				</ResizablePaneGroup>
 			</div>
 
-			<!-- Surface (A1 full-bleed law) + hazard separator + standalone ChartLegend. -->
 			<div class="kit-card kit-card-wide">
 				<SectionLabel
 					text={lang === 'fr' ? 'SURFACE · PLEINE LARGEUR' : 'SURFACE · FULL-BLEED'}
 					variant="metric"
 				/>
 				<div class="kit-stack">
-					<!-- A1: Surface always fills its rail-inset <main> edge-to-edge; content
-					     lanes come from the gutter, not a max-width cap. -->
 					<Surface pad="none" gutter={false} class="kit-surface-demo">
 						<span class="kit-surface-label"
 							>{lang === 'fr'

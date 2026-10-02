@@ -1,21 +1,4 @@
-// design-tokens-drift.test.ts — P5.1 value-drift gate between transit's
 // tokens.json and the vendored @yesid/tokens BASE (vendor/design/tokens).
-//
-// The contract: transit runs the yesid brand. Every token path both files
-// define must carry the SAME value — except the DECLARED_OVERRIDES below,
-// transit's deliberate, documented divergences (each a P5.3 reconciliation
-// candidate). This is the cascade mechanism working as designed: a brand bump
-// that changes a shared value fails HERE until transit either takes the new
-// value (regenerate + commit) or promotes the divergence into this register.
-//
-// Transit-ONLY tokens (dataviz vehicle aliases, map-stop-fill, tracking.*,
-// light shadow re-pins) and base-ONLY tokens (component text sizes, cta
-// shadows, color.brand.glow) are legal — only SHARED paths are value-locked,
-// including z.overlay and z.ripple. The dataviz families are shared as of design v0.2.0, so
-// the whole dataviz scale is gate-locked to the brand base. As of design
-// v0.3.0 (P5.3a·E4) the shadow.glow-* basis and space.page-x floor were
-// reconciled to the brand base. The register now also documents Transit's calmer
-// public-dashboard type scale instead of allowing those changes to drift silently.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -27,17 +10,7 @@ const baseTokens = JSON.parse(
 	readFileSync(resolve(process.cwd(), 'vendor/design/tokens/tokens.json'), 'utf-8'),
 ) as Record<string, unknown>;
 
-/**
- * Transit's deliberate divergences from the brand base — the exhaustive list.
- * Each entry pins BOTH sides, so it goes stale loudly if either repo moves.
- */
 const DECLARED_OVERRIDES: Record<string, { base: unknown; transit: unknown; why: string }> = {
-	// P5.3a·E4 (design v0.3.0, 2026-07-03): the register dropped 6→2. transit
-	// RECONCILED the shadow.glow-{sm,md,lg} basis (--primary → --glow) and
-	// space.page-x mobile floor (1rem → 1.5rem) UP to the brand base, so those
-	// four paths are now SHARED-and-matching and need no override.
-	// Transit uses a calmer public-dashboard scale while keeping controls and dense
-	// chart annotations at the readable brand floors.
 	'text.hero': {
 		base: { min: '4rem', preferred: 'min(9vw, 11svh)', max: '8.125rem' },
 		transit: { min: '3.25rem', preferred: 'min(7.5vw, 9svh)', max: '6.5rem' },

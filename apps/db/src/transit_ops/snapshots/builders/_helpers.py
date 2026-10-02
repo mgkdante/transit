@@ -1,16 +1,3 @@
-"""Shared value-domain constants + private helpers for the builders package.
-
-This module is the leaf of the builders dependency graph:
-``{live,static,historic} -> _helpers -> {contract, gold.reader}``.  It holds
-the value-domain mappings, the small pure helpers (rate/Wilson math re-exported
-from the gold.reader kernel), and the deterministic *representative service
-date* resolution shared by the static route/stop builders and the historic
-``_scheduled_headway_by_shift`` headway computation.
-
-Status-band thresholds mirror migration 0020; see the package ``__init__``
-docstring and the per-tier modules for the publishing rationale.
-"""
-
 from __future__ import annotations
 
 import statistics
@@ -18,9 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-# The rate + confidence kernel is owned by gold.reader (S7-close C2); the
-# historical _-prefixed names are re-exported here so builder call sites and
-# tests keep their `_helpers` import paths (one owner, no drift).
+# Keep compatibility exports while gold.reader owns rate and confidence calculations.
 from transit_ops.gold.reader import (
     MIN_N_RATE,  # noqa: F401 - re-exported
     WILSON_Z,  # noqa: F401 - re-exported
@@ -45,16 +30,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
     from transit_ops.snapshots.contract import RouteHabits
 
-# --------------------------------------------------------------------------
-# Value-domain mappings
-# --------------------------------------------------------------------------
 
-# Reusable status-band CASE fragment. This MUST stay CHARACTER-IDENTICAL to the
-# CASE in migration 0020 (gold.current_vehicle_map_with_status.status_band) so a
-# Python builder that computes the band in-query produces the exact same labels
-# the view does — never re-bucket avg_delay_seconds in Python (that was the old
-# drift risk this constant retires). The doubled single-quote in À l''heure is the
-# SQL string-literal escape for the apostrophe; ``{col}`` is the delay column name.
+# Status CASE text must match migration 0020.
 STATUS_BAND_CASE_SQL = """
         CASE
             WHEN {col} IS NULL THEN 'Inconnu / Unknown'
@@ -64,30 +41,26 @@ STATUS_BAND_CASE_SQL = """
             ELSE                   'Critique / Severe'
         END"""
 
-# gold.current_vehicle_map_with_status.status_band emits bilingual labels (0020).
 _STATUS_MAP: dict[str, str] = {
     "EN AVANCE / EARLY": "early",
     "À L'HEURE / ON TIME": "on_time",
-    "A L'HEURE / ON TIME": "on_time",  # accent-stripped fallback
+    "A L'HEURE / ON TIME": "on_time",
     "EN RETARD / LATE": "late",
     "CRITIQUE / SEVERE": "severe",
     "INCONNU / UNKNOWN": "unknown",
 }
 
-# GTFS-RT OccupancyStatus enum (INTEGER in latest_vehicle_snapshot, 0006).
+# GTFS-RT OccupancyStatus numeric codes.
 _OCCUPANCY_MAP: dict[int, str] = {
     0: "empty",
     1: "many_seats",
     2: "few_seats",
     3: "standing",
-    4: "standing",  # CRUSHED_STANDING_ROOM_ONLY
+    4: "standing",# CRUSHED_STANDING_ROOM_ONLY
     5: "full",
-    # 6/7/8 NOT_ACCEPTING / NO_DATA / NOT_BOARDABLE -> None
+    # NOT_ACCEPTING / NO_DATA / NOT_BOARDABLE map to None.
 }
 
-# GTFS-RT TripDescriptor.ScheduleRelationship enum (INTEGER trip_schedule_relationship).
-# Named decode for any /v1 field echoing raw status; the cancellation rollup uses
-# the inline =3 (CANCELED) literal rather than this map.
 _SCHEDULE_RELATIONSHIP_MAP: dict[int, str] = {
     0: "scheduled",
     1: "added",
@@ -97,7 +70,6 @@ _SCHEDULE_RELATIONSHIP_MAP: dict[int, str] = {
     6: "deleted",
 }
 
-# Alert severity tokens -> contract Severity. STM sends NULL (-> 'watch').
 _SEVERITY_MAP: dict[str, str] = {
     "SEVERE": "critical",
     "CRITICAL": "critical",
@@ -127,16 +99,10 @@ _SHIFT_WINDOWS = {
     "night": "23:00–06:00",
 }
 
-# Boardable-stop predicate shared by the index and per-stop builders so they
-# can never diverge (GTFS location_type 0 or NULL == a stop you can board at).
+# A boardable stop has location_type 0 or NULL.
 _BOARDABLE_STOP = "(location_type = 0 OR location_type IS NULL)"
 
-_STOP_TIMES_CAP = 12  # representative all-day sample per (route, headsign)
-
-
-# --------------------------------------------------------------------------
-# Small helpers
-# --------------------------------------------------------------------------
+_STOP_TIMES_CAP = 12
 
 
 def _round5(x: object) -> float | None:
@@ -152,7 +118,6 @@ def _opt_float(x: object) -> float | None:
 
 
 def _sane_en(value: str | None) -> str | None:
-    """Drop legacy Python-repr EN alert garbage from the published contract."""
     if value is None:
         return None
     text = str(value).strip()
@@ -166,17 +131,12 @@ def _sane_en(value: str | None) -> str | None:
 
 
 def _kmh(speed_ms: object) -> int | None:
-    """GTFS-RT Position.speed is meters/second; the contract field is km/h."""
     if speed_ms is None:
         return None
     return int(round_half_away(float(speed_ms) * 3.6, 0))  # type: ignore[arg-type]
 
 
 def _iso(v: object) -> str:
-    """Render a timestamp as ISO-8601 UTC 'Z'. Strings pass through untouched.
-
-    tz-aware datetimes are converted to UTC; naive datetimes are assumed UTC.
-    """
     if isinstance(v, str):
         return v
     dt = v if v.tzinfo is not None else v.replace(tzinfo=UTC)  # type: ignore[union-attr]
@@ -188,10 +148,6 @@ def _opt_iso(v: object) -> str | None:
 
 
 def _coerce_ts(value: object) -> object:
-    """Normalize a json_agg timestamptz value to a datetime so _iso renders the
-    canonical 'Z' form. json_agg serializes timestamptz as an ISO string with a
-    '+00:00' offset; parse it back so the published bytes match the scalar
-    start_utc/end_utc rendering. Non-string / unparseable values pass through."""
     if isinstance(value, str):
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -201,17 +157,6 @@ def _coerce_ts(value: object) -> object:
 
 
 def _alert_active_periods(raw: object, scalar_start: object, scalar_end: object):  # noqa: ANN201
-    """Build an alert's active_periods list (S15), shared by the live + historic
-    builders.
-
-    raw is the SQL json_agg of the child-table windows (a list of
-    {start_utc, end_utc} dicts) — present for post-0077 alerts. When it is
-    None/empty (captured before the child table existed), fall back to the scalar
-    period[0] pair as a 1-element list, but only when that pair has a bound (an
-    all-null scalar means no window at all -> empty list, honest absence).
-
-    Returns list[AlertActivePeriod] (imported lazily to keep the
-    builders -> _helpers -> contract layering explicit)."""
     from transit_ops.snapshots.contract import AlertActivePeriod
 
     periods: list = []
@@ -233,12 +178,6 @@ def _alert_active_periods(raw: object, scalar_start: object, scalar_end: object)
 
 
 def _wallclock(t: object) -> str | None:
-    """Normalize a GTFS time (possibly extended >=24:00) to wall-clock 'HH:MM'.
-
-    Display-only: callers keep the RAW text for ordering (raw extended strings
-    sort lexicographically == chronologically), and only normalize the value
-    shown to riders.  '25:48' -> '01:48', '29:03' -> '05:03'.
-    """
     if not t:
         return None
     parts = str(t).split(":")
@@ -250,7 +189,6 @@ def _wallclock(t: object) -> str | None:
 
 
 def _gtfs_min(t: object) -> int:
-    """GTFS time 'HH:MM[:SS]' -> minutes since the service-day start (may be >=1440)."""
     parts = str(t).split(":")
     try:
         return int(parts[0]) * 60 + int(parts[1])
@@ -259,7 +197,6 @@ def _gtfs_min(t: object) -> int:
 
 
 def _route_sort_key(route_id: object):
-    """Natural sort: numeric routes order 1,2,...,72,...,229; alpha routes stay grouped."""
     s = str(route_id)
     return (0, int(s), "") if s.isdigit() else (1, 0, s)
 
@@ -293,7 +230,6 @@ def _percentile(sorted_values: list[float], pct: float) -> float:
 
 
 def _median_headway(minutes: list[float]) -> float | None:
-    """Median gap (minutes) between successive DISTINCT departure minutes."""
     uniq = sorted(set(minutes))
     if len(uniq) < 2:
         return None
@@ -301,14 +237,10 @@ def _median_headway(minutes: list[float]) -> float | None:
     return float(round_half_away(statistics.median(gaps), 1)) if gaps else None
 
 
-# Python twin of the SQL shift CASE — gold.reader.buckets owns the bounds
-# (closed ints 6-8/9-14/15-18/19-22, else night == the old half-open ranges).
 _infer_shift = infer_shift
 
 
 def _shift_sort_min(t: object, shift: str) -> float:
-    """Order key within a shift bucket. For 'night', fold post-midnight after 23:xx
-    (23:00->1380 ... 05:59->1799) so the sampled gaps describe contiguous service."""
     m = _gtfs_min(t) % 1440
     if shift == "night" and m < 6 * 60:
         return m + 1440
@@ -320,10 +252,8 @@ def _severity_code(severity: object) -> str:
 
 
 def _sample_times(raw_sorted: list[str], cap: int = _STOP_TIMES_CAP) -> list[str]:
-    """Even-sample raw chronologically-sorted GTFS times across the day to <= cap,
-    always keeping the last departure, then render wall-clock for display."""
     distinct: list[str] = []
-    for t in raw_sorted:  # already chronological (raw text sort == chronological)
+    for t in raw_sorted:
         if not distinct or distinct[-1] != t:
             distinct.append(t)
     if len(distinct) <= cap:
@@ -335,20 +265,7 @@ def _sample_times(raw_sorted: list[str], cap: int = _STOP_TIMES_CAP) -> list[str
     return [_wallclock(t) or "" for t in picked]
 
 
-# Rate + confidence kernel (_otp_pct / _otp_pct_severe_proxy / _wilson_* /
-# _avg_delay_min / _severe_pct + MIN_N_RATE / WILSON_Z): owned by
-# gold.reader.rates, re-exported above under the historical names so builder
-# call sites and tests keep their import paths (one owner, no drift).
-
-
 def _public_impact_score(value: object, *, cap: float = 9999.9999) -> float | None:
-    """Guard the rider_impact_score before it reaches public receipts (slice-9.1.1t).
-
-    The mart clamps the raw score with LEAST(raw, 9999.9999) (gold/rollups.py), so an
-    at-cap value means the true magnitude overflowed and is unknown — publish honest
-    NULL, never the sentinel. Negative values (impossible by construction; defensive)
-    are also nulled. Receipt.rider_impact_score is already float | None.
-    """
     if value is None:
         return None
     v = float(value)  # type: ignore[arg-type]
@@ -358,15 +275,10 @@ def _public_impact_score(value: object, *, cap: float = 9999.9999) -> float | No
 
 
 def _iso_date(d: object) -> str:
-    """Render a date (or datetime/date-like) as 'YYYY-MM-DD'. Strings pass through."""
     if isinstance(d, str):
         return d[:10]
     return d.isoformat()[:10]  # type: ignore[union-attr]
 
-
-# ---------------------------------------------------------------------------
-# Representative service date resolution (deterministic per dataset_version)
-# ---------------------------------------------------------------------------
 
 _CURRENT_DATASET_VERSION_SQL = named_query(
     "static.dataset_version",
@@ -381,17 +293,7 @@ _CURRENT_DATASET_VERSION_SQL = named_query(
     """
 )
 
-# Pick the busiest weekday and weekend DATE within the dataset's most recent
-# 6 weeks (deterministic; avoids CURRENT_DATE so the static file is reproducible).
-# GC2 H2 (2026-07-02): resolve the canonical GTFS service-on-date rule (calendar ∩
-# calendar_dates), NOT the weekly boolean alone — otherwise added-service exceptions
-# (type=1) are missed, removed exceptions (type=2) inflate a date, and a
-# calendar_dates-only feed (empty silver.calendar) collapses the whole static
-# schedule surface to empty. The service-on-date WHERE below is IDENTICAL to the
-# UNION in rollups.UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY (the H1 scheduled rollup) —
-# kept in lockstep by cross-reference so the two resolutions can never drift. The
-# bounds CTE COALESCEs calendar date-bounds with calendar_dates service_date bounds
-# so generate_series is non-empty on calendar_dates-only feeds.
+# Select deterministic busiest dates including calendar_dates additions and removals.
 _REP_DATES_SQL = named_query(
     "static.rep_dates",
     """
@@ -455,8 +357,6 @@ _REP_DATES_SQL = named_query(
     """
 )
 
-# Active services on a specific representative date — same service-on-date rule as
-# _REP_DATES_SQL above so the returned service set matches the busiest-date pick.
 _ACTIVE_SERVICES_SQL = named_query(
     "static.active_services",
     """
@@ -485,9 +385,6 @@ _ACTIVE_SERVICES_SQL = named_query(
     """
 )
 
-# First-stop departures for a route on the representative service days, tagged
-# weekday/weekend and de-duplicated to distinct (direction, daytype, time).
-# Shared by build_route (static) and _scheduled_headway_by_shift (historic).
 _ROUTE_SCHEDULE_SQL = named_query(
     "static.route_schedule",
     """
@@ -543,8 +440,6 @@ class StaticScheduleContext:
 def _representative_services(
     conn: Connection, *, provider_id: str, dataset_version_id: int
 ) -> tuple[list[str], list[str]]:
-    """Return (weekday_service_ids, weekend_service_ids) active on the busiest
-    weekday / weekend date of the dataset's current window."""
     params = {"provider_id": provider_id, "dataset_version_id": dataset_version_id}
     rep = conn.execute(_REP_DATES_SQL, params).mappings().fetchone()
     if rep is None:
@@ -573,7 +468,6 @@ def _representative_services(
 def _static_schedule_context(
     conn: Connection, *, provider_id: str
 ) -> StaticScheduleContext:
-    """Resolve the static inputs once; standalone builders call this as their fallback."""
 
     dv_row = (
         conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id})
@@ -596,12 +490,7 @@ def _static_schedule_context(
     )
 
 
-# Display-name lookups resolve current-dim-first (pri 0) and fall back to the
-# newest gold.dim_*_history row, so ids retired/renamed by a GTFS drop keep
-# their last known name on historic surfaces (slice-9.1.1u). These live here
-# (not in :mod:`historic`) because the shared :func:`_entity_name_maps` resolver
-# needs them, and ``_helpers`` is the leaf of the dependency graph; the historic
-# tier re-imports them from here.
+# Resolve current dimension names first, then the newest historical name.
 _STOP_NAMES_SQL = named_query(
     "static.stop_names",
     """
@@ -646,7 +535,6 @@ _ROUTE_NAMES_SQL = named_query(
 def _entity_name_maps(
     conn: Connection, *, provider_id: str
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """(route_id -> name, stop_id -> name) — current dim first, history fallback."""
     params = {"provider_id": provider_id}
     route_names = {
         str(r["route_id"]): r["route_name"]
@@ -662,17 +550,6 @@ def _entity_name_maps(
 def _build_habits_matrix(
     rows: Iterable[Mapping[str, object]], *, scale: str = "repeat_problem_relative"
 ) -> RouteHabits:
-    """7x24 per-route problem heatmap (rows isodow 1..7, cols hour 0..23).
-
-    Each observed (dow, hour) cell is normalized to its fraction of the route's
-    worst cell, so values land in [0, 1] (1.0 = this route's worst hour). This
-    keeps the mart's Numeric(8,4) storage cap (9999.9999) — an overflow guard,
-    not a real magnitude — from leaking onto the public matrix (slice-9.1.1x):
-    an at-cap cell is simply the route max and normalizes to 1.0. Cells the route
-    never ran (no row) are null (no service / no data), kept distinct from an
-    observed-but-calm 0.0. A route whose every observed cell is 0.0 normalizes to
-    0.0 without dividing by zero.
-    """
     from transit_ops.snapshots.contract import RouteHabits
 
     raw: list[list[float | None]] = [[None] * 24 for _ in range(7)]
@@ -683,9 +560,7 @@ def _build_habits_matrix(
             continue
         di, hi = int(dow) - 1, int(hour)  # type: ignore[arg-type]
         if 0 <= di < 7 and 0 <= hi < 24:
-            # A present row with a NULL score is "observed but unknown" — keep it
-            # null (no data), never coerce to a false observed-calm 0.0
-            # (slice-9.1.1x honesty rule). A genuine 0.0 score stays 0.0.
+            # NULL scores remain unknown; genuine zero scores remain zero.
             score = r["repeat_problem_score"]
             raw[di][hi] = None if score is None else float(score)  # type: ignore[arg-type]
 
@@ -706,9 +581,6 @@ def _build_habits_matrix(
 def _scheduled_headway_by_shift(
     conn: Connection, *, provider_id: str, route_id: str
 ) -> dict[str, float]:
-    """Per-shift scheduled headway (minutes) for a route on the representative
-    weekday — mirrors the scheduled-headway computation in :func:`build_route`
-    (busiest-direction first-stop departures, bucketed by ``_infer_shift``)."""
     from collections import defaultdict
 
     dv_row = (
@@ -741,7 +613,6 @@ def _scheduled_headway_by_shift(
     if not wd_by_dir:
         return {}
 
-    # busiest direction is representative of the route's frequency (== build_route)
     best_dir = max(wd_by_dir, key=lambda d: len(set(wd_by_dir[d])))
     shift_times: dict[str, list[str]] = defaultdict(list)
     for t in set(wd_by_dir[best_dir]):

@@ -1,23 +1,11 @@
-<!--
-  MapFreshness — the map's positioning shell around the shared FreshnessStamp.
-
-  The map is a full-bleed live surface, so its freshness readout floats over the
-  canvas (desktop) or tucks into the kicker row (mobile) — positioning the chip
-  can't do itself. This wrapper owns ONLY that placement chrome (the floating pill
-  background, the right-offset that tracks the detail panel, the responsive
-  head/floating swap); the readout itself is the site-wide FreshnessStamp
-  (variant="live"), so the map shares the exact same chip as every other surface.
-
-  Replaces the former MapLiveFreshness (which wrapped the now-removed LiveFreshness).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { FreshnessStamp } from '$lib/components/surface';
+	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
+	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {
 		generatedUtc: string | null;
 		ageSeconds: number | null;
-		/** Replaces the relative age when the feed is not responding (M6f-2 F14). */
 		ageLabel?: string | null;
 		isStale: boolean;
 		degraded?: boolean;
@@ -48,6 +36,7 @@
 	>
 		<FreshnessStamp
 			variant="live"
+			label={ageLabel ? undefined : MAP_COPY[locale].latestReport}
 			{generatedUtc}
 			{ageSeconds}
 			{ageLabel}
@@ -66,7 +55,6 @@
 	.map-freshness[data-placement='floating'] {
 		position: absolute;
 		z-index: var(--z-map-overlay);
-		/* Clears the floating chrome via the single --chrome-offset knob. */
 		top: var(--chrome-offset);
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		display: inline-flex;
@@ -76,7 +64,6 @@
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		transition:
@@ -85,8 +72,6 @@
 			background-color var(--duration-fast) var(--ease-default);
 	}
 
-	/* Stale feed: warm the chrome with the caution hue so the at-rest border
-	   echoes the dot's verdict — the inner dot/text still carry the meaning. */
 	.map-freshness[data-placement='floating'][data-stale='true'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
@@ -135,7 +120,6 @@
 			border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 			border-radius: var(--radius-pill);
 			box-shadow: var(--shadow-card);
-			/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
 			backdrop-filter: blur(12px) saturate(1.1);
 			-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		}

@@ -1,14 +1,3 @@
-<!--
-  ServiceSpanMark — the LayerChart renderer for a `kind: 'service-span'` ChartSpec (P3, S7 P5).
-
-  The day's first→last departure window as a floating bar on a FIXED 24h LayerChart axis
-  [0,1440] min (the same literal axis on every route/refresh, never normalised to the data).
-  ServiceSpanBar scales the endpoints via the chart context; the hour axis is a LayerChart
-  Axis so the timeline wears the same face as every other mark. Below the timeline, each
-  endpoint's clock + a signed punctuality reading (▼ early / ▲ late, colour + glyph, never
-  hue alone) + the span-length / trip-count annotations. Honest absence handled upstream
-  (the selector returns an absence spec when an endpoint can't resolve).
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Axis, Tooltip } from 'layerchart';
 	import { scaleLinear, scaleBand } from 'd3-scale';
@@ -26,7 +15,7 @@
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const tickMins = $derived(spec.hourTicks.map((t) => t.min));
 	const tickLabel = (m: number): string => spec.hourTicks.find((t) => t.min === m)?.label ?? '';
-	const gridMins = [360, 720, 1080];
+	const gridMins = $derived(tickMins.filter((min) => min > 0 && min < spec.domain[1]));
 
 	type Mark = { has: boolean; glyph: string; cls: string; text: string };
 	function delayMark(v: number | null): Mark {
@@ -71,14 +60,12 @@
 					class="dv-span-axis"
 				/>
 				<ServiceSpanBar
-					firstMin={spec.firstMin}
-					lastMin={spec.lastMin}
+					elapsedMin={spec.elapsedMin}
+					domainEnd={spec.domain[1]}
 					{gridMins}
 					title={spec.title}
 				/>
 			</Svg>
-			<!-- The timeline bar is hoverable like every other mark: the first→last window, its
-			     length / trip count, and each endpoint's punctuality. -->
 			<Tooltip.Root>
 				<Tooltip.Header>{spec.title}</Tooltip.Header>
 				<Tooltip.List>
@@ -99,7 +86,6 @@
 		</LcChart>
 	</ChartFrame>
 
-	<!-- Endpoint clocks + their signed punctuality readings, below the track. -->
 	<div class="dv-span-ends">
 		<div class="dv-span-end" data-end="first">
 			<span class="dv-span-end-label">{spec.firstLabel}</span>
@@ -133,7 +119,6 @@
 		</div>
 	</div>
 
-	<!-- Span length + trip-count annotations (honest: omitted when absent). -->
 	{#if spec.spanLabel || spec.tripsLabel}
 		<div class="dv-span-annot">
 			{#if spec.spanLabel}<span class="dv-span-annot-item" data-slot="span-length"
@@ -178,6 +163,7 @@
 		gap: 1rem;
 	}
 	.dv-span-end {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
@@ -195,6 +181,7 @@
 		color: var(--muted-foreground);
 	}
 	.dv-span-end-clock {
+		overflow-wrap: anywhere;
 		font-family: var(--font-mono);
 		font-size: var(--text-body);
 		font-variant-numeric: tabular-nums;

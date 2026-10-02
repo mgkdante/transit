@@ -1,9 +1,3 @@
-"""Contract test for migration 0025: current_map_objects expanded with all stops.
-
-slice-8.7.2 Phase 2 — citizen-analyst UX expansion. The hero map should
-follow transit-app conventions: buses (circles), all stops (small white
-triangles), alert stops (red triangles), route lines (separate layer).
-"""
 from __future__ import annotations
 
 import re
@@ -37,9 +31,6 @@ def test_migration_revision_metadata() -> None:
 
 
 def test_view_unions_vehicles_with_all_stops() -> None:
-    """Two-leg UNION ALL: vehicles + all stops (not just alert ones).
-    Citizen-analyst UX requires all stops visible so citizens can see the
-    full network even when no disruptions affect a given route."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "UNION ALL" in sql
@@ -48,9 +39,6 @@ def test_view_unions_vehicles_with_all_stops() -> None:
 
 
 def test_stops_leg_left_joins_alert_counts() -> None:
-    """Each stop carries alert_count + concatenated alert_descriptions
-    + routes_serving (computed from alerts that touch the stop). LEFT
-    JOIN so quiet stops still appear with alert_count=0."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "LEFT JOIN" in sql
@@ -60,13 +48,9 @@ def test_stops_leg_left_joins_alert_counts() -> None:
 
 
 def test_view_emits_display_category_for_arcgis_symbology() -> None:
-    """display_category is the categorical field ArcGIS Symbology binds
-    Color to so each gets its own shape+color. 5 vehicle bands +
-    stop_normal + stop_alert = 7 categories."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "display_category" in sql
-    # All 7 expected categories
     for cat in (
         "'vehicle_on_time'",
         "'vehicle_late'",
@@ -80,8 +64,6 @@ def test_view_emits_display_category_for_arcgis_symbology() -> None:
 
 
 def test_view_filters_stops_without_coordinates() -> None:
-    """A stop with NULL lat/lon can't render on the map. Skip them at
-    the view level to avoid ArcGIS warnings and reduce row count."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "stop_lat IS NOT NULL" in sql
@@ -89,8 +71,6 @@ def test_view_filters_stops_without_coordinates() -> None:
 
 
 def test_stops_carry_name_and_routes_serving() -> None:
-    """Tooltip on a stop dot should show: stop_name + routes_serving.
-    Without these the citizen can't tell what stop they're hovering."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "s.stop_name AS stop_name" in sql
@@ -104,16 +84,12 @@ def test_vehicles_leg_carries_object_type_vehicle() -> None:
 
 
 def test_stops_leg_carries_object_type_stop() -> None:
-    """object_type='stop' for both alert and non-alert stops.
-    display_category distinguishes alert vs normal."""
     sql = _sql_block("_CREATE_VIEW")
 
     assert "'stop'::text AS object_type" in sql
 
 
 def test_downgrade_restores_post_0023_shape() -> None:
-    """Downgrade restores the migration-0023 view (vehicles + alert-stops
-    only, no all-stops UNION)."""
     text = _read()
     drop_sql = _sql_block("_DROP_VIEW")
 

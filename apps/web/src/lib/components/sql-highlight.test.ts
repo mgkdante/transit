@@ -1,9 +1,3 @@
-// sql-highlight.test.ts — the dependency-free SQL tokenizer.
-//
-// The load-bearing invariant: highlighting is presentational, so concatenating
-// every token's value must reproduce the input byte-for-byte. Plus a few
-// classification spot-checks (keywords, strings, comments, numbers, functions).
-
 import { describe, it, expect } from 'vitest';
 import { tokenizeSql, type CodeTokenType } from './sql-highlight';
 
@@ -57,8 +51,6 @@ describe('tokenizeSql — classification', () => {
 	it('tags numbers and function calls', () => {
 		expect(typesOf('round(100.0)', '100.0')).toEqual(['number']);
 		expect(typesOf('round(x)', 'round')).toEqual(['function']);
-		// an identifier NOT followed by ( stays plain (use a comma so adjacent
-		// plain/whitespace tokens don't merge into one span before filtering)
 		expect(typesOf('a,bar,b', 'bar')).toEqual(['plain']);
 	});
 });

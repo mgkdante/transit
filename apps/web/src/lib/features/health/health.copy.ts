@@ -1,18 +1,3 @@
-// health.copy.ts — co-located bilingual copy for the /status (data-health) surface.
-//
-// The /status surface is the full read-out of provenance.json: the data-honesty
-// manifest for the historic tier. Where the conformance BADGE shows ~5% of that
-// payload, this surface renders the whole thing — per-feed freshness, source
-// lineage, declared gaps, retention windows, and the full conformance verdict.
-//
-// Co-located with HealthStatus.svelte so the screen owns no inline strings.
-// Intrinsic component vocabulary (the conformance verdict labels, the edge-state
-// copy) already lives inside the spine primitives; this file carries the
-// surface-level prose + section captions + the freshness-status verdict labels.
-//
-// Shape: `Record<Locale, {...}>` with EN + FR. FR is the canonical product voice;
-// EN is the parallel translation. PROVIDER-AGNOSTIC: no agency/city literals.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
@@ -62,9 +47,6 @@ export const copy = defineCopy({
 			section: 'Pipeline notes',
 			note: 'How the pipeline builds the things that have no single metric card of their own, published verbatim from the latest run.',
 			listLabel: 'Pipeline methodology notes',
-			// One label per un-threaded methodology key. The list iterates the FULL
-			// published dict, so a key absent here still renders (its humanized key as
-			// the label); these are just the friendlier names for the keys we know.
 			labels: {
 				history_freeze: 'Closed-period freeze',
 				service_time_conversion: 'Service-time conversion',
@@ -265,9 +247,6 @@ export const copy = defineCopy({
 			section: 'Notes du pipeline',
 			note: 'Comment le pipeline construit ce qui n’a pas de fiche-métrique propre, publié tel quel depuis la dernière exécution.',
 			listLabel: 'Notes de méthode du pipeline',
-			// Une étiquette par clé de méthode non rattachée. La liste parcourt le dict
-			// publié au COMPLET : une clé absente ici s’affiche quand même (sa clé
-			// humanisée sert d’étiquette) ; voici seulement les noms plus lisibles.
 			labels: {
 				history_freeze: 'Gel des périodes closes',
 				service_time_conversion: 'Conversion des heures de service',

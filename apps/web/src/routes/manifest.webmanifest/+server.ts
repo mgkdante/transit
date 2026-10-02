@@ -2,13 +2,6 @@ import type { RequestHandler } from './$types';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { DEPLOYMENT_IDENTITY } from '$lib/site/deployment';
 
-// manifest.webmanifest — prerendered to a static file at build. Replaces the old
-// checked-in static/manifest.webmanifest, whose name/description HARDCODED the
-// provider (operator law 2026-07-09: provider identity comes from the deployment
-// seam, never string literals). PUBLIC_PROVIDER_SHORT_NAME (per-deploy env) wins;
-// the committed deployment seam is the fallback so a bare local build still
-// renders the real instance identity.
-
 export const prerender = true;
 
 export const GET: RequestHandler = () => {

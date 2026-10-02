@@ -1,12 +1,3 @@
-<!--
-  SparklineMark — the LayerChart renderer for a `kind: 'sparkline'` ChartSpec (A5, P5.2).
-  The inline mini-trend: ONE series, NO axes/grid, drawn small inside a KPI card, pane or
-  context row. Still a magnitude mark: y rides the spec's explicit zero-based absolute
-  domain (never /max), so the same value reads the same height on every card/refresh.
-  Nulls are honest GAPS (the spline breaks, never bridged). Hover/focus lists the hovered
-  point in the SHARED LayerChart tooltip; an sr-only table is the AT mirror. Colour is a
-  dataviz token var from the spec — never an affordance token.
--->
 <script lang="ts">
 	import { Chart as LcChart, Svg, Spline, Points, Highlight, Tooltip } from 'layerchart';
 	import { scaleLinear, scalePoint } from 'd3-scale';
@@ -39,7 +30,6 @@
 		return null;
 	});
 
-	// Null → the brand no-data glyph (never an em-dash, never a fabricated 0).
 	const num = (v: number | null): string => (v == null ? '·' : String(v));
 	const summary = $derived(
 		lastReal ? `${spec.label}: ${num(lastReal.y)}${spec.unit}` : `${spec.label}: ·`,

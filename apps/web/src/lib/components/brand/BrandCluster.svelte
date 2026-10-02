@@ -1,37 +1,12 @@
-<!--
-  BrandCluster — the shared parent-mark + product-mark cluster.
-
-  transit.yesid.dev is a yesid.dev product, so the chrome carries the house
-  "yesid." wordmark · a bold brand-border divider · the "transit" product mark.
-  Both the TopBar (app chrome) and the Footer rendered this exact three-part
-  cluster by hand; this primitive is now the single source of that structure so
-  a brand tweak happens in one place.
-
-  Two `variant`s keep each call site's CSS hooks + behaviour intact:
-    topbar — links the product mark to `/`, shows the live LED dot, and emits the
-             `topbar-brand-mark` / `topbar-divider` / `topbar-home` hooks plus the
-             ≤768px collapse (drop the parent mark + divider, tighten the link).
-    footer — links the product mark to the localized home, no live dot, animation
-             off (static footer chrome), and emits the `footer-divider` /
-             `footer-home` hooks.
-
-  DOCTRINE: orange --primary is INTERACTIVE-only. The live dot (topbar variant)
-  is the lone "system is live" affordance — a StatusDot data/affordance mark, not
-  --primary. The product mark only colours --primary on hover/focus.
--->
 <script lang="ts">
 	import BrandWordmark from '$lib/components/shell/BrandWordmark.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import { YESID_HOUSE_LINK } from '$lib/content/nav';
 
 	interface BrandClusterProps {
-		/** Which chrome surface this renders in — drives hooks + behaviour. */
 		variant: 'topbar' | 'footer';
-		/** Product-mark target (`/` for topbar; the localized home for footer). */
 		productHref: string;
-		/** aria-label on the topbar product-mark link (the home label). */
 		productAria?: string;
-		/** Live-tier label for the topbar LED dot ("Live" / "En direct"). */
 		liveLabel?: string;
 	}
 
@@ -67,8 +42,6 @@
 {/if}
 
 <style>
-	/* TopBar variant — the divider is the same bold brand-border rule as the
-	   yesid.dev nav pill; the home link colours --primary on hover/focus. */
 	.topbar-divider {
 		display: inline-block;
 		width: 2px;
@@ -102,8 +75,6 @@
 		transition: color var(--duration-fast) var(--ease-default);
 	}
 
-	/* Footer variant — brand divider between the parent wordmark and the product
-	   mark; the product mark colours --primary on hover/focus. */
 	.footer-divider {
 		display: inline-block;
 		width: 2px;
@@ -125,8 +96,6 @@
 		outline-offset: 2px;
 	}
 
-	/* TopBar: below the brand breakpoint, drop the parent mark + divider and
-	   tighten the home link — the same responsive collapse TopBar carried inline. */
 	@media (max-width: 768px) {
 		.topbar-brand-mark {
 			display: none;

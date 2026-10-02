@@ -53,14 +53,11 @@ describe('bestShapeForPoint', () => {
 	const shapes: RouteShapes = [EAST_LEG, NORTH_LEG];
 
 	it('picks the variant the vehicle is closest to', () => {
-		// On the east leg.
 		expect(bestShapeForPoint(shapes, [-73.59, 45.5005])).toBe(EAST_LEG);
-		// On the north leg.
 		expect(bestShapeForPoint(shapes, [-73.5, 45.51])).toBe(NORTH_LEG);
 	});
 
 	it('returns null when the point is too far from every variant', () => {
-		// ~5 km north of both legs.
 		expect(bestShapeForPoint(shapes, [-73.55, 45.6])).toBeNull();
 	});
 

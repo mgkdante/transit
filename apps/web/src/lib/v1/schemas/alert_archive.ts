@@ -1,5 +1,3 @@
-// alert_archive.ts — Zod mirrors of the retained alert page/index schemas.
-
 import { z } from 'zod';
 import { AlertHistoryEntrySchema } from './alert_history';
 import { isoUtc, payloadEnvelopeFields } from './types';
@@ -40,7 +38,6 @@ export type AlertArchiveMonth = z.infer<typeof AlertArchiveMonthSchema>;
 export const AlertArchiveIndexSchema = z.object({
 	generated_utc: isoUtc(),
 	collection_generation_id: z.string(),
-	// Required keys with honest-null values on an empty archive.
 	first_available_date: z.string().nullable(),
 	last_available_date: z.string().nullable(),
 	total_alerts: z.number().int().min(0),

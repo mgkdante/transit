@@ -1,17 +1,7 @@
-// MetricsExplainer.methodology.svelte.test.ts — the live "Pipeline note (current
-// run)" threading on /metrics, DOM gate.
-//
-// When the supplementary provenance resource carries a methodology dict, the
-// matched metric's card renders a live note block carrying the VERBATIM published
-// methodology string, set apart from the static science. Absent methodology → no
-// note (the card is unchanged). The pure metric→key resolver is unit-tested in
-// metrics.methodology.test.ts; here we assert the rendered wiring.
-//
-// The data ports are stubbed (the real repository chain reads $env/dynamic/public)
-// with a mutable `provState` the createResource mock reads by reference.
-
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricsExplainer from './MetricsExplainer.svelte';
@@ -53,7 +43,19 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	}),
 }));
 
+const viewport = window as typeof window & { happyDOM: { setInnerWidth(width: number): void } };
+
+beforeEach(() => {
+	viewport.happyDOM.setInnerWidth(1280);
+	quietModeStore.resetForTest();
+});
+
 afterEach(() => {
+	viewport.happyDOM.setInnerWidth(1280);
+	quietModeStore.resetForTest();
+	for (const key of ['provenance', 'coverage', 'freshness']) {
+		sessionStorage.removeItem(`transit.persisted:metrics-rail-${key}`);
+	}
 	provState.data = null;
 	provState.error = null;
 	provState.settled = true;
@@ -90,8 +92,6 @@ describe('MetricsExplainer — live pipeline note', () => {
 		provState.data = { conformance: null, methodology: liveMethodology };
 		render(MetricsExplainer);
 
-		// The pipeline-note overline appears (once per matched metric), and the
-		// verbatim live strings are rendered as-is.
 		expect(screen.getAllByText(metricsCopy.en.sections.pipelineNote).length).toBeGreaterThanOrEqual(
 			2,
 		);
@@ -113,6 +113,82 @@ describe('MetricsExplainer — live pipeline note', () => {
 });
 
 describe('MetricsExplainer — responsive stat rail icons', () => {
+	it('keeps mobile provenance facts visible without mounting the duplicate live rail cards', () => {
+		viewport.happyDOM.setInnerWidth(390);
+		provState.data = richProvenance;
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.metrics-stat-rail') as HTMLElement;
+		expect(rail.querySelector('[data-slot="stat-provenance"]')).toBeNull();
+		expect(rail.querySelector('[data-slot="stat-freshness"]')).toBeNull();
+		expect(rail.querySelector('[data-slot="stat-coverage"]')).toHaveTextContent('14');
+		expect(container.querySelector('.toc-nav')).toBeInTheDocument();
+		expect(
+			container.querySelector('.metrics-conformance [data-slot="conformance-badge"]'),
+		).toHaveAttribute('data-verdict', 'conformant');
+		expect(container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
+			'datetime',
+			richProvenance.generated_utc,
+		);
+		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
+	});
+
+	it('adopts current FOCUS on first desktop visit and keeps independent card state across later resizes', async () => {
+		viewport.happyDOM.setInnerWidth(390);
+		provState.data = richProvenance;
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.metrics-stat-rail') as HTMLElement;
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+		viewport.happyDOM.setInnerWidth(1280);
+		await waitFor(() =>
+			expect(rail.querySelector('[data-slot="stat-provenance"]')).toBeInTheDocument(),
+		);
+		const provenance = within(rail).getByRole('button', { name: 'Provenance' });
+		const freshness = within(rail).getByRole('button', { name: 'Freshness' });
+		expect(provenance).toHaveAttribute('aria-expanded', 'false');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(provenance);
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		const originalBody = rail.querySelector('[data-slot="stat-provenance"]');
+
+		viewport.happyDOM.setInnerWidth(390);
+		await tick();
+		expect(rail.querySelector('[data-slot="stat-provenance"]')).toBe(originalBody);
+		viewport.happyDOM.setInnerWidth(1280);
+		await tick();
+		expect(within(rail).getByRole('button', { name: 'Provenance' })).toBe(provenance);
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('retains the ToC, Coverage and complete definitions in actual unseeded SSR', async () => {
+		const { createServer } = await import('vite');
+		const server = await createServer({
+			configFile: 'vite.config.ts',
+			appType: 'custom',
+			logLevel: 'silent',
+			optimizeDeps: { noDiscovery: true },
+			server: { middlewareMode: true },
+		});
+		try {
+			const { render: renderSsr } = await server.ssrLoadModule('svelte/server');
+			const { default: ServerExplainer } = await server.ssrLoadModule(
+				'/src/lib/features/metrics/MetricsExplainer.svelte',
+			);
+			const html = renderSsr(ServerExplainer).body;
+			const document = window.document.createElement('div');
+			document.innerHTML = html;
+			expect(document.querySelector('.toc-nav')).not.toBeNull();
+			expect(document.querySelector('[data-slot="stat-coverage"]')?.textContent).toContain('14');
+			expect(document.querySelector('[data-slot="stat-provenance"]')).toBeNull();
+			expect(document.querySelector('[data-slot="stat-freshness"]')).toBeNull();
+			expect(document.querySelectorAll('[data-kind="definition"]')).toHaveLength(14);
+			expect(document.querySelector('#structural-gaps')).not.toBeNull();
+		} finally {
+			await server.close();
+		}
+	}, 20_000);
+
 	it('renders the Provenance, Coverage, and Freshness SectionIcons in the shared rail', () => {
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);
@@ -148,10 +224,8 @@ describe('MetricsExplainer — "how we measure" doctrine constants (D6, dynamic)
 		render(MetricsExplainer);
 
 		const line = screen.getByTestId('metrics-doctrine-constants');
-		// The served numbers appear (locale-formatted: 30 and 1.96 in en).
 		expect(line.textContent).toContain('30');
 		expect(line.textContent).toContain('1.96');
-		// The honest-absence stand-down is NOT shown when the values are present.
 		expect(screen.queryByTestId('metrics-doctrine-absent')).toBeNull();
 	});
 
@@ -167,7 +241,7 @@ describe('MetricsExplainer — "how we measure" doctrine constants (D6, dynamic)
 	it('falls back to honest-absence when only ONE constant is present (never a mixed prose)', () => {
 		provState.data = {
 			conformance: null,
-			methodology: { min_n_rate: 30 }, // wilson_z missing
+			methodology: { min_n_rate: 30 },
 		} as never;
 		render(MetricsExplainer);
 
@@ -184,8 +258,6 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 		provState.error = null;
 		const { container } = render(MetricsExplainer);
 
-		// The static article is intact: head, provenance preamble, every metric card,
-		// and the structural-gaps card. No stand-down line (null is not an error).
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.provenance.body)).toBeInTheDocument();
 		expect(container.querySelector('#structural-gaps')).not.toBeNull();
@@ -199,7 +271,6 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 		provState.settled = true;
 		const { container } = render(MetricsExplainer);
 
-		// Honest stand-down line takes the conformance badge's slot.
 		const unavailable = screen.getByText(en.provenance.unavailable);
 		expect(unavailable).toBeInTheDocument();
 		expect(unavailable.closest('[data-component="state-notice"]')).toHaveAttribute(
@@ -207,8 +278,6 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 			'silo',
 		);
 
-		// The article never blanks or throws: the full methodology + structural-gaps
-		// card render exactly as on the happy path.
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.provenance.body)).toBeInTheDocument();
 		const lacunes = container.querySelector('#structural-gaps');
@@ -225,7 +294,6 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 		provState.settled = false;
 		render(MetricsExplainer);
 
-		// Mid-load: no premature "unavailable" flash.
 		expect(screen.queryByText(en.provenance.unavailable)).toBeNull();
 	});
 });

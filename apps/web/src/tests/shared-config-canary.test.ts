@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,7 @@ const CONFIG_LOCK_INTEGRITY =
 const CONFIG_BASE_DIGEST = '588a4acf72f44593561112fc945d410548b56cf556bbbc9bc745c1f7b218424f';
 const MATERIALIZED_BASE = 'node_modules/.yesid-shared-tooling/turbo/base.json';
 const TRANSIT_TURBO_SEMANTIC_DIGEST =
-	'63ce5a66e904347e49bdfa8050d868e2c7672dc80b4893e91869b92e516cdfed';
+	'2e10c4f56a522b4c3b2fe6a3c39b1de91ffb79fe3e185e28c3b4013c38626792';
 
 type JsonObject = Record<string, unknown>;
 
@@ -72,6 +72,32 @@ function mergeJson(base: unknown, overlay: unknown): unknown {
 }
 
 describe('Transit shared-config canary', () => {
+	it('includes the shared R2 responder in the actual web build cache inputs', () => {
+		const dryRun = JSON.parse(
+			execFileSync(
+				process.execPath,
+				[
+					join(REPOSITORY_ROOT, 'node_modules/turbo/bin/turbo'),
+					'run',
+					'build',
+					'--filter=@transit/web',
+					'--dry=json',
+				],
+				{ cwd: REPOSITORY_ROOT, encoding: 'utf8', windowsHide: true },
+			),
+		) as {
+			tasks: { taskId: string; inputs: Record<string, string> }[];
+		};
+		const task = dryRun.tasks.find((entry) => entry.taskId === '@transit/web#build');
+		expect(task).toBeDefined();
+		const inputs = Object.keys(task?.inputs ?? {}).map((path) => path.replaceAll('\\', '/'));
+		for (const name of ['snapshot-response.js', 'snapshot-response.d.ts']) {
+			expect(
+				inputs.some((path) => path.endsWith(`data-proxy/src/${name}`)),
+				name,
+			).toBe(true);
+		}
+	});
 	it('pins the immutable config Release once at the workspace root', () => {
 		const manifest = json('package.json') as {
 			dependencies?: Record<string, string>;
@@ -122,7 +148,7 @@ describe('Transit shared-config canary', () => {
 		try {
 			packageManifestPath = createRequire(import.meta.url).resolve('@yesid/config/package.json');
 		} catch {
-			// The assertion below reports the missing Release dependency as contract drift.
+			// The assertion below reports the missing release dependency as contract drift.
 		}
 		expect(packageManifestPath).toBeDefined();
 		if (!packageManifestPath) return;

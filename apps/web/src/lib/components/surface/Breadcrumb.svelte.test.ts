@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import Breadcrumb from './Breadcrumb.svelte';
 import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
 
-// A representative /lines/161 trail (delocalized paths — the contract of
-// resolveBreadcrumbTrail; the component localizes each href).
 const trail: BreadcrumbTrailItem[] = [
 	{ name: 'Home', path: '/' },
 	{ name: 'Lines', path: '/lines' },
@@ -25,7 +23,6 @@ describe('Breadcrumb', () => {
 		render(Breadcrumb, { props: { trail, locale: 'en' } });
 		const leaf = screen.getByText('161');
 		expect(leaf).toHaveAttribute('aria-current', 'page');
-		// The leaf is NOT a link.
 		expect(screen.queryByRole('link', { name: '161' })).toBeNull();
 	});
 

@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { expect, it } from 'vitest';
 
 function bareRealMap(
@@ -18,7 +18,7 @@ function bareRealMap(
 			destroy: () => trace.push('painter.destroy'),
 			context: { gl: { getExtension: () => null } },
 		},
-		handlers: { destroy: () => trace.push('handlers.destroy') },
+		_handlers: { destroy: () => trace.push('handlers.destroy') },
 		setStyle: (style: unknown) => trace.push(`setStyle:${String(style)}`),
 		_imageQueueHandle: undefined,
 		_resizeObserver: null,

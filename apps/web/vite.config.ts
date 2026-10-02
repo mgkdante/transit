@@ -10,6 +10,18 @@ export const DEV_MANIFEST_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/manife
 export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
+const ssrDataTests = [
+	'src/lib/v1/history/rangeResource.ssr.test.ts',
+	'src/lib/v1/history/dateResource.ssr.test.ts',
+];
+const ssrContractTests = [
+	'src/routes/**/page.svelte.test.ts',
+	'src/lib/features/metrics/MetricBody.svelte.test.ts',
+	'src/lib/features/metrics/MetricsExplainer.methodology.svelte.test.ts',
+	'src/lib/components/map/MapStage.ssr.test.ts',
+	'src/lib/components/shared/Detail.test.ts',
+	'src/lib/components/shared/CollapsibleSection.test.ts',
+];
 
 function canonicalDataUrl(value: unknown): URL | null {
 	if (typeof value !== 'string') return null;
@@ -206,7 +218,12 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 				test: {
 					name: 'data',
 					include: ['src/lib/**/*.test.ts', 'src/params/**/*.test.ts', 'src/tests/**/*.test.ts'],
-					exclude: ['src/lib/components/**', 'src/lib/stores/**', 'src/lib/**/*.svelte.test.ts'],
+					exclude: [
+						'src/lib/components/**',
+						'src/lib/stores/**',
+						'src/lib/**/*.svelte.test.ts',
+						...ssrDataTests,
+					],
 					environment: 'node',
 					globals: true,
 					// forks (process-per-file), NOT threads: under threads this project intermittently
@@ -228,7 +245,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 						'src/lib/**/*.svelte.test.ts',
 						'src/routes/**/*.test.ts',
 					],
-					exclude: ['src/routes/**/page.svelte.test.ts'],
+					exclude: ssrContractTests,
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
@@ -240,13 +257,26 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 				extends: true,
 				test: {
 					name: 'ssr-contract',
-					include: ['src/routes/**/page.svelte.test.ts'],
+					include: ssrContractTests,
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
 					maxWorkers: 1,
 					sequence: { groupOrder: 1 },
 					setupFiles: ['./src/tests/setup.dom.ts'],
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: 'ssr-data',
+					include: ssrDataTests,
+					environment: 'node',
+					globals: true,
+					pool: 'forks',
+					maxWorkers: 1,
+					sequence: { groupOrder: 1 },
+					setupFiles: ['./src/tests/setup.data.ts'],
 				},
 			},
 		],

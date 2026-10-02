@@ -41,7 +41,6 @@ def _stubbed_env(tmp_path: Path) -> dict[str, str]:
 
 
 def _env_without_docker(tmp_path: Path) -> dict[str, str]:
-    """Minimal PATH carrying required tools but no docker, regardless of host."""
 
     bin_dir = tmp_path / "nodocker-bin"
     bin_dir.mkdir(exist_ok=True)

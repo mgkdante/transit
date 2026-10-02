@@ -70,9 +70,8 @@ const resources: Array<HistoryDateResource<TestIndex, TestValue>> = [];
 function create(
 	loader: HistoryDateLoader<TestIndex, TestValue>,
 	initialRequest: RawHistoryDateRequest,
-	options: { freshness?: boolean } = {},
 ) {
-	const resource = createHistoryDateResource(loader, { initialRequest, ...options });
+	const resource = createHistoryDateResource(loader, { initialRequest });
 	resources.push(resource);
 	flushSync();
 	return resource;
@@ -793,22 +792,32 @@ describe('createHistoryDateResource failure, retry, cancellation, and refresh', 
 });
 
 describe('createHistoryDateResource freshness ownership', () => {
-	it('is directly compatible with ResourceBoundary and reports accepted current freshness', async () => {
-		const note = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
+	it('is directly compatible with ResourceBoundary and exposes the accepted current timestamp', async () => {
 		const loader = makeLoader();
-		const resource = create(loader, request(), { freshness: true });
+		const resource = create(loader, request());
 		expect(resource.settled).toBe(false);
 		expect(typeof resource.reload).toBe('function');
 		await settle(resource);
 
 		expect(resource.settled).toBe(true);
 		expect(resource.data).toEqual(current);
-		expect(note).toHaveBeenCalledTimes(1);
-		expect(note).toHaveBeenCalledWith(current.generated_utc);
+		expect(resource.data?.generated_utc).toBe(current.generated_utc);
 	});
 
-	it('reports only the final accepted payload when freshness is enabled', async () => {
-		const note = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
+	it('switches from current data to an older retained timestamp after navigation', async () => {
+		const older = { ...historic, generated_utc: '2026-03-01T23:59:59Z' };
+		const resource = create(makeLoader({ loadDate: vi.fn(async () => older) }), request());
+		await settle(resource);
+		expect(resource.data?.generated_utc).toBe(current.generated_utc);
+
+		resource.setRequest(request('2026-03-01'));
+		flushSync();
+		await settle(resource);
+		expect(resource.state).toBe('history');
+		expect(resource.data?.generated_utc).toBe(older.generated_utc);
+	});
+
+	it('exposes only the final accepted payload timestamp', async () => {
 		const stale = deferred<TestValue>();
 		const fresh = deferred<TestValue>();
 		const loader = makeLoader({
@@ -817,7 +826,7 @@ describe('createHistoryDateResource freshness ownership', () => {
 				.mockImplementationOnce(() => stale.promise)
 				.mockImplementationOnce(() => fresh.promise),
 		});
-		const resource = create(loader, request('2026-03-01'), { freshness: true });
+		const resource = create(loader, request('2026-03-01'));
 		await vi.waitFor(() => expect(loader.loadDate).toHaveBeenCalledTimes(1));
 
 		resource.setRequest(request('2026-03-03'));
@@ -825,38 +834,35 @@ describe('createHistoryDateResource freshness ownership', () => {
 		stale.resolve({ ...historic, generated_utc: '2026-03-01T23:59:59Z' });
 		await Promise.resolve();
 		flushSync();
-		expect(note).not.toHaveBeenCalled();
+		expect(resource.data).toBeNull();
 
 		fresh.resolve(historic);
 		await settle(resource);
-		expect(note).toHaveBeenCalledTimes(1);
-		expect(note).toHaveBeenLastCalledWith(historic.generated_utc);
+		expect(resource.data?.generated_utc).toBe(historic.generated_utc);
 	});
 
-	it('never reports index, failed, or aborted attempts and stays opt-in', async () => {
-		const note = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
+	it('does not expose index, failed, or aborted attempts as payloads', async () => {
 		const failure = new Error('day failed');
 		const loader = makeLoader({ loadDate: vi.fn(async () => Promise.reject(failure)) });
-		const resource = create(loader, request('2026-03-01'), { freshness: true });
+		const resource = create(loader, request('2026-03-01'));
 		await settle(resource);
 		expect(resource.state).toBe('error');
-		expect(note).not.toHaveBeenCalled();
+		expect(resource.data).toBeNull();
 
 		const abort = new DOMException('cancelled', 'AbortError');
 		const aborted = create(
 			makeLoader({ loadDate: vi.fn(async () => Promise.reject(abort)) }),
 			request('2026-03-01'),
-			{ freshness: true },
 		);
 		await settle(aborted);
 		expect(aborted.state).toBe('error');
 		expect(aborted.error).toBeNull();
-		expect(note).not.toHaveBeenCalled();
+		expect(aborted.data).toBeNull();
 
 		const plainLoader = makeLoader();
 		const plain = create(plainLoader, request());
 		await settle(plain);
 		expect(plain.state).toBe('current');
-		expect(note).not.toHaveBeenCalled();
+		expect(plain.data).toEqual(current);
 	});
 });

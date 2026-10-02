@@ -1,51 +1,22 @@
-<!--
-  EntityRow — a link or choice row for one transit entity (line / stop / vehicle).
-
-  Resolves a semantic `SurfaceTarget` to a real localized `<a href>` via the nav
-  layer (routeFor + localizeHref), so deep-links, hover-preload, right-click-open
-  and client-side navigation all work for free — SvelteKit intercepts the anchor
-  click. (Desktop master/detail panels are deferred to the 9.3 brainstorm; see
-  $lib/nav/intent — until that shell is wired, every form factor navigates.)
-
-  Layout: an optional mono glyph, a title (+ optional subtitle) body, and an
-  optional right-aligned meta cell. Hover/focus states ride the tokens
-  (--muted surface, --ring outline). Tokens, no hex.
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceTarget } from '$lib/nav';
 
 	interface EntityRowBaseProps {
-		/** Optional leading mono glyph (decorative). */
 		glyph?: string;
-		/**
-		 * Optional GUARDED brand-colour swatch (e.g. a GTFS route colour). This is
-		 * the ONE allowed dynamic colour in the row: the caller MUST pass a sanitized
-		 * `#rrggbb` (via $lib/search/routeColor) — null/absent renders no swatch.
-		 * Applied via an inline `background` bound to the contract value.
-		 */
 		swatch?: string | null;
-		/** Optional mono mode tag chip shown beside the title (e.g. "Métro", "Bus"). */
 		tag?: string;
-		/** Primary row label. */
 		title: string;
-		/** Optional secondary line under the title. */
 		subtitle?: string;
-		/** Optional right-aligned meta cell (e.g. an OTP %, a distance). */
 		meta?: string;
-		/** Optional inline content for the meta cell (e.g. a ReliabilityBadge). */
 		metaSlot?: import('svelte').Snippet;
-		/** Optional short list of route ids shown as mono chips under the title. */
 		routes?: string[];
-		/** Optional extra classes on the interactive row. */
 		class?: string;
 	}
 
 	export interface EntityRowLinkProps extends EntityRowBaseProps {
-		/** The navigation intent this row resolves to. */
 		target: SurfaceTarget;
-		/** Active locale — localizes the href. */
 		locale: Locale;
 		onSelect?: never;
 		ariaLabel?: never;
@@ -54,9 +25,7 @@
 	export interface EntityRowChoiceProps extends EntityRowBaseProps {
 		target?: never;
 		locale?: never;
-		/** Runs when the user selects this non-navigating row. */
 		onSelect: () => void;
-		/** Accessible name for the choice button. */
 		ariaLabel: string;
 	}
 
@@ -84,8 +53,6 @@
 
 {#snippet rowContent()}
 	{#if swatch}
-		<!-- The one allowed dynamic colour: a GUARDED GTFS brand swatch (sanitized
-		     #rrggbb by the caller), applied via an inline background. -->
 		<span class="entity-row-swatch" style="background:{swatch};" aria-hidden="true"></span>
 	{/if}
 	{#if glyph}
@@ -165,8 +132,6 @@
 		color: var(--accent-text);
 		flex-shrink: 0;
 	}
-	/* GUARDED brand-colour swatch — a small round chip carrying the GTFS route
-	   hue (the lone dynamic colour; everything else is a token). */
 	.entity-row-swatch {
 		flex-shrink: 0;
 		width: 0.875rem;
@@ -195,7 +160,6 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	/* Mode tag chip — a quiet mono caption (Métro / Bus …) beside the title. */
 	.entity-row-tag {
 		flex-shrink: 0;
 		font-family: var(--font-mono);

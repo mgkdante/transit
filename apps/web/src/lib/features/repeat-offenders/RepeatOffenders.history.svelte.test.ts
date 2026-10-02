@@ -1,3 +1,4 @@
+import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataRefresh } from '$lib/stores';
@@ -522,13 +523,14 @@ describe('RepeatOffenders retained date history', () => {
 		expect(container.querySelectorAll('[data-toc^="repeat-"]')).toHaveLength(0);
 	});
 
-	it('refreshes the current lane without fetching a date and reports only current payload freshness', async () => {
-		const noteFreshness = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
+	it('refreshes the current lane without fetching a date and shows the current payload timestamp', async () => {
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Current trip');
 
-		expect(noteFreshness).toHaveBeenCalledWith('2026-06-25T12:00:00Z');
-		expect(noteFreshness).not.toHaveBeenCalledWith(historyIndex.generated_utc);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			'2026-06-25T12:00:00Z',
+		);
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffenders).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffendersHistoryIndex).toHaveBeenCalledTimes(2);
@@ -536,14 +538,15 @@ describe('RepeatOffenders retained date history', () => {
 		expect(harness.state.url.searchParams.get('date')).toBeNull();
 	});
 
-	it('refreshes only the selected retained lane and reports freshness from its accepted payload', async () => {
+	it('refreshes only the selected retained lane and shows its accepted timestamp', async () => {
 		reset('http://localhost/repeat-offenders?date=2026-06-22');
-		const noteFreshness = vi.spyOn(dataRefresh, 'noteDataGeneratedUtc');
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Retained 22 trip');
 
-		expect(noteFreshness).toHaveBeenCalledWith('2026-06-22T23:59:59Z');
-		expect(noteFreshness).not.toHaveBeenCalledWith(historyIndex.generated_utc);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			'2026-06-22T23:59:59Z',
+		);
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffendersHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffenders).not.toHaveBeenCalled();
@@ -685,6 +688,7 @@ describe('RepeatOffenders retained date history', () => {
 			vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
 			reset('http://localhost/repeat-offenders?date=2026-06-22&campaign=walk');
 			harness.getRepeatOffendersHistoryDay.mockResolvedValue(parityPayload());
+			observeChartFrames(768, 400);
 			const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 			const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 			const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
@@ -786,12 +790,8 @@ describe('RepeatOffenders retained date history', () => {
 	);
 
 	it('defines complete English and French retained-history copy without changing current copy', () => {
-		expect(repeatCopy.en.cards.worst.subtitle).toBe(
-			'The current worst repeat offender, its severe rate, and its streak',
-		);
-		expect(repeatCopy.fr.cards.worst.subtitle).toBe(
-			'Le pire récidiviste actuel, son taux de retards graves et sa série',
-		);
+		expect(repeatCopy.en.cards.worst.subtitle).toBe('Severe-delay rate and recurrence');
+		expect(repeatCopy.fr.cards.worst.subtitle).toBe('Taux de retards graves et récurrence');
 		expect(repeatCopy.en.history).toMatchObject({
 			retainedWorstSubtitle: expect.not.stringMatching(/current/i),
 			retainedHeroNone: expect.not.stringMatching(/right now/i),

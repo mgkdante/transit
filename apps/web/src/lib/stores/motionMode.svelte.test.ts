@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// motionMode — the honest raw/smooth bus-drawing switch. RAW is the default
-// (never estimate a position the feed did not report); SMOOTH opts into
-// forward-projection. The choice persists to localStorage so it sticks across
-// reloads, and reads back SSR-safe to 'raw' when storage is absent/disabled.
-
 const mocks = vi.hoisted(() => ({ browser: true }));
 vi.mock('$app/environment', () => ({
 	get browser() {
@@ -66,7 +61,6 @@ describe('motionMode', () => {
 		const { MOTION_MODE_STORAGE_KEY } = await loadMotionMode();
 		localStorage.setItem(MOTION_MODE_STORAGE_KEY, 'smooth');
 
-		// A fresh module load (a page reload) seeds from the persisted value.
 		const { motionMode } = await loadMotionMode();
 		expect(motionMode.current).toBe('smooth');
 	});
@@ -87,7 +81,6 @@ describe('motionMode', () => {
 		expect(motionMode.current).toBe('raw');
 
 		motionMode.set('smooth');
-		// State still updates (reactive), but persistence is browser-guarded.
 		expect(motionMode.current).toBe('smooth');
 		expect(setItem).not.toHaveBeenCalled();
 		setItem.mockRestore();

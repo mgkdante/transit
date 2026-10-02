@@ -33,13 +33,6 @@ export const GEOCODE_RATE_LIMIT = {
 	maxMissingIpEntries: 1,
 } as const;
 
-/**
- * Best-effort defense-in-depth only. This map is local to one Worker isolate:
- * parallel isolates/colos do not share counters, isolate turnover resets them,
- * and IP churn can spread traffic across buckets. The native binding seam in
- * the route is the ready upgrade when the Cloudflare account positively exposes
- * Workers Rate Limiting; account-side WAF and provider quotas remain separate.
- */
 export class TokenBucketLimiter {
 	readonly #buckets = new Map<string, BucketState>();
 
@@ -81,8 +74,6 @@ export class TokenBucketLimiter {
 			);
 			bucket.lastRefillMs = Math.max(bucket.lastRefillMs, nowMs);
 			bucket.lastSeenMs = Math.max(bucket.lastSeenMs, nowMs);
-			// Map insertion order is the LRU queue. Refresh this key at the tail so
-			// new-IP churn evicts in O(1) instead of scanning the 10k-entry cap.
 			this.#buckets.delete(key);
 			this.#buckets.set(key, bucket);
 		}
@@ -109,7 +100,6 @@ export class TokenBucketLimiter {
 	}
 
 	#pruneAndMakeRoom(nowMs: number): void {
-		// LRU order means expired entries, if any, are contiguous at the front.
 		for (const [key, bucket] of this.#buckets) {
 			if (nowMs - bucket.lastSeenMs <= this.options.ttlMs) break;
 			this.#buckets.delete(key);

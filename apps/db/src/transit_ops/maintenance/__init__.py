@@ -1,30 +1,3 @@
-"""Pipeline storage-retention maintenance: per-tier prune + vacuum entry points.
-
-Each ``prune_*_storage`` function applies a retention policy to one medallion
-tier (bronze/silver/gold) or the i3-alerts subsystem, deleting aged rows and the
-R2 objects they index. ``vacuum_storage`` reclaims dead-tuple bloat afterward.
-
-This package was split from a single ``maintenance.py`` module (slice-9.1.1-zeta)
-into per-tier submodules with a shared helper leaf — a pure mechanical refactor,
-zero behavior change.  The dependency graph is acyclic:
-``__init__ -> {vacuum} -> {silver, gold, bronze, i3} -> static -> _helpers`` (with
-i3 also depending on bronze for the shared ingestion-objects DELETE, and silver on
-static for the static-dataset prune).
-
-  * :mod:`._helpers` — ``_safe_rowcount`` / ``_safe_scalar_count`` count coercion
-    and the package ``logger``, shared across every tier.
-  * :mod:`.static`   — superseded static-schedule dataset prune (gold-FK deferral).
-  * :mod:`.silver`   — realtime silver-history prune + the silver entry point.
-  * :mod:`.gold`     — gold fact-history + warm-rollup/aggregate retention.
-  * :mod:`.bronze`   — raw object + metadata retention (realtime + static).
-  * :mod:`.i3`       — i3 raw snapshots + closed silver SCD-2 history retention.
-  * :mod:`.vacuum`   — VACUUM (ANALYZE) over the maintained table set.
-
-Names are re-exported here so importers can keep using
-``transit_ops.maintenance`` (both ``from ... import name`` and the
-``maintenance_module.<name>`` attribute access used by the tests) unchanged.
-"""
-
 from __future__ import annotations
 
 from transit_ops.ingestion.storage import get_bronze_storage
@@ -113,12 +86,9 @@ from .static import (
 from .vacuum import VACUUM_TABLES, VacuumResult, vacuum_storage
 
 __all__ = [
-    # storage factory (re-exported so tests can monkeypatch it on the package)
     "get_bronze_storage",
-    # helpers (private, re-exported for tests)
     "_safe_rowcount",
     "_safe_scalar_count",
-    # static tier
     "STATIC_SILVER_TABLES",
     "STATIC_DATASET_REFERENCE_TABLES",
     "GOLD_DATASET_REFERENCE_TABLES",
@@ -131,7 +101,6 @@ __all__ = [
     "_static_dataset_reference_statement",
     "_zero_static_prune_counts",
     "prune_static_silver_datasets",
-    # silver tier
     "REALTIME_SILVER_TABLES",
     "DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES",
     "COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES",
@@ -146,7 +115,6 @@ __all__ = [
     "SilverStoragePruneResult",
     "prune_realtime_silver_history",
     "prune_silver_storage",
-    # gold tier
     "ALERT_ARCHIVE_RETENTION_TABLE",
     "GOLD_FACT_TABLES",
     "GOLD_WARM_ROLLUP_TABLES",
@@ -165,7 +133,6 @@ __all__ = [
     "prune_alert_archive_history",
     "prune_gold_storage",
     "prune_warm_rollup_storage",
-    # bronze tier
     "RAW_BRONZE_METADATA_TABLES",
     "SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS",
     "COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS",
@@ -178,7 +145,6 @@ __all__ = [
     "prune_bronze_realtime_objects",
     "prune_bronze_static_objects",
     "prune_bronze_storage",
-    # i3 tier
     "I3_RETENTION_TABLES",
     "MIN_SILVER_I3_CLOSED_RETENTION_DAYS",
     "SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS",
@@ -193,7 +159,6 @@ __all__ = [
     "prune_i3_silver_closed_rows",
     "prune_i3_raw_snapshots",
     "prune_i3_storage",
-    # vacuum tier
     "VACUUM_TABLES",
     "VacuumResult",
     "vacuum_storage",

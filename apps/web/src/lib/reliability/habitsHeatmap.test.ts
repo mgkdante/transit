@@ -1,0 +1,79 @@
+import { describe, it, expect } from 'vitest';
+import { buildHabitsHeatmap, hasHabits, type HabitsHeatmapOptions } from './habitsHeatmap';
+
+const OPTS: HabitsHeatmapOptions = {
+	title: 'Repeat-problem heatmap by day and hour',
+	valueLabel: 'Repeat problems',
+	rowAxisLabel: 'Day of week',
+	colAxisLabel: 'Hour of day',
+	rowLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+	fullRowLabels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+	tierLabels: [
+		'Low relative score',
+		'Moderate relative score',
+		'High relative score',
+		'Very high relative score',
+	],
+	noDataLabel: 'No data',
+	worstGlyph: '◆',
+	hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
+	hourTicks: [0, 6, 12, 18],
+};
+
+function makeMatrix(): (number | null)[][] {
+	const m: (number | null)[][] = Array.from({ length: 7 }, () => Array<number | null>(24).fill(0));
+	m[0][8] = 1;
+	m[0][3] = null;
+	return m;
+}
+
+describe('buildHabitsHeatmap', () => {
+	it('builds an absolute heatmap spec on the fixed [0,1] domain', () => {
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
+		expect(s.kind).toBe('heatmap');
+		expect(s.mode).toBe('absolute');
+		expect(s.domain).toEqual([0, 1]);
+		expect(s.rowLabels).toHaveLength(7);
+		expect(s.colLabels).toHaveLength(24);
+		expect(s.cells).toHaveLength(7);
+		expect(s.cells[0]).toHaveLength(24);
+	});
+
+	it('keeps a null cell honestly absent (never coerced to 0)', () => {
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
+		expect(s.cells[0][3].value).toBeNull();
+		expect(s.cells[0][3].absentReason).toBe('no-observations');
+		expect(s.cells[0][8].value).toBe(1);
+		expect(s.cells[0][8].absentReason).toBeUndefined();
+	});
+
+	it('formats hour labels + a sparse clock-tick subset for the column axis', () => {
+		const s = buildHabitsHeatmap(makeMatrix(), 'en', OPTS);
+		expect(s.colLabels[8]).toBe('08:00');
+		expect(s.colTicks).toEqual([
+			{ index: 0, label: '00:00' },
+			{ index: 6, label: '06:00' },
+			{ index: 12, label: '12:00' },
+			{ index: 18, label: '18:00' },
+		]);
+	});
+
+	it('pads short rows to 24 columns of honest no-data', () => {
+		const short: (number | null)[][] = [[0.5]];
+		const s = buildHabitsHeatmap(short, 'en', OPTS);
+		expect(s.cells[0]).toHaveLength(24);
+		expect(s.cells[0][5].value).toBeNull();
+	});
+});
+
+describe('hasHabits', () => {
+	it.each([
+		[[[null, 0.5]], true],
+		[[[0]], true],
+		[[[null, null]], false],
+		[null, false],
+		[[], false],
+	] as const)('preserves matrix availability for %j', (matrix, present) => {
+		expect(hasHabits(matrix == null ? matrix : matrix.map((row) => [...row]))).toBe(present);
+	});
+});

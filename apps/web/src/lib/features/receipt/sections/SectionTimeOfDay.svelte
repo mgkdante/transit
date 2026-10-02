@@ -1,20 +1,9 @@
-<!--
-  SectionTimeOfDay — the receipt's by-shift time-of-day cut (S13, NEW).
-
-  Pure presenter of selectReceiptTimeOfDay: the day's severe-delay share ranked worst-
-  first by canonical shift, each a RankedRow SeverityBar on the FIXED absolute
-  SEVERE_DOMAIN [0,100] (doctrine-coded — never the in-view max). Mounted by the
-  orchestrator only when hasTimeOfDay (RAMP-IN: by_shift is additive-optional). A
-  receipt line-group below the frame — a documented hoist because a ranked severity
-  ladder genuinely breaks the compact terminal-tile metaphor (WEB4).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import TypedInformationCard from '$lib/components/shared/TypedInformationCard.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { ReceiptShiftRow } from '../selectors/timeOfDay';
 
 	interface SectionTimeOfDayProps {
@@ -23,10 +12,6 @@
 		subtitle: string;
 		caveat: string;
 		caveatLabel: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
@@ -36,24 +21,15 @@
 		subtitle,
 		caveat,
 		caveatLabel,
-		info,
 		locale,
 		headingLevel = 2,
 	}: SectionTimeOfDayProps = $props();
-
-	const headingInfo = $derived(info('severe', heading));
 </script>
 
 <section class="receipt-tod" data-slot="receipt-time-of-day" aria-label={heading}>
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo
-				tip={headingInfo.tip}
-				href={headingInfo.href}
-				label={headingInfo.label}
-				linkLabel={headingInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey="severe" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-tod-list" role="list" aria-label={heading}>

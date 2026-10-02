@@ -1,28 +1,3 @@
-<!--
-  AbsentValue — the reusable VISUAL primitive for HONEST ABSENCE (slice-S5.1).
-
-  The one calm, muted "this value is unknown, and here is why" surface, reused
-  app-wide for a missing FIELD. It is a PURE renderer: it contains ZERO business
-  logic — it never infers a reason, never holds a data rule. It takes a typed
-  reason (from $lib/site/absence, the logic layer), calls describeAbsence to get
-  { label, why, tone }, and renders the calm muted state. All the "what does this
-  reason mean / which copy / which language" decisions live in the logic layer.
-
-  Variants — ONE presentation axis, never a cross-product.
-    inline  a muted chip, "Delay unknown · not reported", for a single absent
-            cell. The middle dot separates the terse label from the why (never
-            an em dash).
-    row     the same copy as unboxed cell text, for a table/list row that must
-            not grow a box around its missing value.
-    block   a calm centered block (EdgeState language) for a whole panel that has
-            no value: the muted label as a heading + the why beneath.
-
-  DOCTRINE: tone is "unknown", so the accent rides the dataviz unknown scale
-  (--dataviz-status-unknown), never --primary/--destructive — an honest absence is
-  NOT an error. Tokens, no hex. data-slot for styling/testing hooks. The subtle
-  glyph is aria-hidden (meaning carried by the text); an aria-label states the full
-  "label, why" so AT announces the honest absence. Reduced-motion safe (static).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence, type AbsenceReasonKey } from '$lib/site/absence';
@@ -31,25 +6,17 @@
 	type Variant = 'inline' | 'row' | 'block';
 
 	export interface AbsentValueProps {
-		/** The typed absence reason (from the logic layer). */
 		reason: AbsenceReasonKey;
-		/** UI language. */
 		locale: Locale;
-		/** Copy params (e.g. { first: '06:00' } / { age: '3 min ago' }) interpolated by the resolver. */
 		params?: Readonly<Record<string, string | number>>;
-		/** inline chip (default), row (unboxed cell text), or block (calm panel). */
 		variant?: Variant;
-		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
 	let { reason, locale, params, variant = 'inline', class: className }: AbsentValueProps = $props();
 
-	// The ONLY call into the logic layer: resolve the render-ready copy + tone.
-	// No branching on `reason` here — the resolver owns that.
 	const d = $derived(describeAbsence(reason, locale, params));
 
-	// The full honest readout for AT: "label, why" (the visible glyph is decorative).
 	const ariaLabel = $derived(`${d.label}, ${d.why}`);
 </script>
 

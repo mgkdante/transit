@@ -1,25 +1,3 @@
-"""GC2 H3 — daily == Σ hourly parity gate for the crowding spine (real DB).
-
-The hour-grain gold.route_occupancy_band_hourly (migration 0074) must reduce the SAME
-fact_vehicle_snapshot rows with the SAME band predicates as gold.route_occupancy_band_daily
-(migration 0048), differing ONLY by the added hour_of_day_local GROUP-BY key. This test
-seeds occupancy pings across MULTIPLE local hours + routes for one closed day, runs BOTH
-UPSERT_ROUTE_OCCUPANCY_BAND_DAILY and UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY, and asserts that
-summing the 6 band counts over the hourly rows reproduces the daily row's counts EXACTLY,
-per (provider, route, date), for all 6 count columns. This is the H3 hard bar.
-
-Runs ONLY against a disposable Postgres migrated to head (incl. 0074); self-skips when
-TRANSIT_TEST_DATABASE_URL is unset:
-
-    PGB=/usr/lib/postgresql/16/bin
-    "$PGB/initdb" -D <shortdir> ...  # listen 127.0.0.1, -p 55437, createdb,
-                                    # CREATE EXTENSION postgis
-    DATABASE_URL=... TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55437/transit_test" \
-        uv run pytest tests/test_occupancy_hourly_parity_real_db.py -v
-"""
 
 from __future__ import annotations
 
@@ -37,12 +15,9 @@ PROVIDER = "stm_occ_hourly_test"
 VP_ENDPOINT_ID = 994001
 TORONTO = ZoneInfo("America/Toronto")
 _ROUTES = ("77A", "77B")
-# (local_hour, [occupancy_status codes]). Spread across hours so the hourly grain
-# has >1 populated hour; codes exercise every band incl. the standing fold (3,4) and
-# a NULL (should be excluded from observation_count in BOTH tables).
 _PER_HOUR_OCCUPANCY = {
     7: [1, 1, 2, 5],
-    10: [0, 3, 4, 3, None],  # 4 folds into standing with 3; None excluded
+    10: [0, 3, 4, 3, None],
     17: [2, 2, 5, 0, 1],
     23: [3],
 }
@@ -180,17 +155,14 @@ def test_daily_equals_sum_of_hourly_band_counts(real_db_engine, seed_provider) -
             ).mappings()
         }
 
-        # Both tables emitted a row per seeded route, and no phantom routes.
         assert set(daily) == set(_ROUTES)
         assert set(hourly_sum) == set(_ROUTES)
-        # daily == Σ hourly for EVERY band count on EVERY route (the H3 hard bar).
         for route in _ROUTES:
             for band in _BANDS:
                 assert daily[route][band] == hourly_sum[route][band], (
                     f"parity break: route={route} band={band} "
                     f"daily={daily[route][band]} sum_hourly={hourly_sum[route][band]}"
                 )
-        # The hourly table has >1 populated hour per route (a real hour-grain).
         hours = connection.execute(
             text(
                 "SELECT route_id, COUNT(*) AS n FROM gold.route_occupancy_band_hourly "
@@ -202,7 +174,6 @@ def test_daily_equals_sum_of_hourly_band_counts(real_db_engine, seed_provider) -
             assert r["n"] == len(_PER_HOUR_OCCUPANCY), (
                 f"route {r['route_id']} expected {len(_PER_HOUR_OCCUPANCY)} hour rows, got {r['n']}"
             )
-        # No hour_of_day_local out of the 0..23 range.
         bad = connection.execute(
             text(
                 "SELECT COUNT(*) FROM gold.route_occupancy_band_hourly "

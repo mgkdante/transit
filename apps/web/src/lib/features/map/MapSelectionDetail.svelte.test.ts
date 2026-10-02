@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
+import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
@@ -75,8 +76,6 @@ function splitContainerRules(css: string): {
 const RIGHT_PANEL_INLINE_BORDER_PX = 1;
 
 function containerConditionMatches(condition: string, outerWidthPx: number): boolean {
-	// RightPanel owns one leading border. Translate both the named outer ladder
-	// threshold and the sampled outer box into the content-box values queried by CSS.
 	const contentWidthPx = outerWidthPx - RIGHT_PANEL_INLINE_BORDER_PX;
 	const range = condition.match(/\(width\s*([<>])\s*([\d.]+)rem\)/);
 	if (range) {
@@ -100,8 +99,6 @@ function installContainerSizeSeam(outerWidthPx: number): HTMLStyleElement {
 		.map(({ body }) => body)
 		.join('\n');
 	const style = document.createElement('style');
-	// Put activated query rules first on purpose: hides must beat later-emitted leaf defaults by
-	// specificity, not by a lucky bundle order. Happy DOM then computes the real flattened cascade.
 	style.textContent = [
 		activeQueries,
 		compiledCss(PRESENCE_CSS_FILES[1]),
@@ -286,6 +283,35 @@ const index = buildLiveIndex({
 });
 
 describe('MapSelectionDetail', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps available trip stops when the vehicle next stop is unreported (%s)',
+		(locale) => {
+			const changedIndex = {
+				...index,
+				byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], next_stop: null }),
+			};
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{
+					index: changedIndex,
+					stops,
+					alerts,
+					routes,
+				},
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			expect(container).toHaveTextContent(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+			expect(container).not.toHaveTextContent(
+				locale === 'en' ? 'the trip has ended' : 'le trajet est terminé',
+			);
+			expect(container).toHaveTextContent('Mont-Royal / Saint-Laurent');
+			expect(container).toHaveTextContent('Van Horne / Rockland');
+			expect(detail?.kind === 'vehicle' && detail.nextStops[0].etaUtc).toBe('2026-06-15T00:06:00Z');
+		},
+	);
+
 	it('keeps body, identity, and action as mutually exclusive presentations', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
@@ -358,7 +384,7 @@ describe('MapSelectionDetail', () => {
 			routeDirection: null,
 			routeDirectionVariant: null,
 			nextStop: null,
-			nextStopAbsence: 'end-of-route',
+			nextStopAbsence: 'not-reported',
 			pastStops: [],
 			nextStops: [],
 			alerts: [],
@@ -395,7 +421,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Status',
 			crowdingLabel: 'Crowding',
 			status: '▲ Late',
-			statusName: 'Late 4 min late',
+			statusName: 'Late +4 min',
 			occupancyName: 'Standing',
 		},
 		{
@@ -403,7 +429,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Statut',
 			crowdingLabel: 'Achalandage',
 			status: '▲ En retard',
-			statusName: 'En retard 4 min en retard',
+			statusName: 'En retard +4 min',
 			occupancyName: 'Debout',
 		},
 	] as const)(
@@ -447,7 +473,7 @@ describe('MapSelectionDetail', () => {
 
 	it.each([
 		{ delayMin: 0, status: 'on_time', want: '● On-time', absence: false },
-		{ delayMin: 4, status: 'late', want: '▲ Late · 4 min late', absence: false },
+		{ delayMin: 4, status: 'late', want: '▲ Late · +4 min', absence: false },
 		{
 			delayMin: null,
 			status: 'unknown',
@@ -570,7 +596,7 @@ describe('MapSelectionDetail', () => {
 			expect(occupancyValue).not.toHaveTextContent(empty);
 			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
 			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', noDataGlyph);
-			expectAccessibleContentName(statusValue, unknown);
+			expectAccessibleContentName(statusValue, `${unknown} 0 min`);
 			expectAccessibleContentName(occupancyValue, occupancyName);
 		},
 	);
@@ -806,11 +832,11 @@ describe('MapSelectionDetail', () => {
 			},
 		});
 		expect(getByRole('button')).toHaveAccessibleName(
-			'Select bus veh-1, Route 24, 20:06, Late, Delay: 4 min late',
+			'Select bus veh-1, Route 24, 20:06, Late, Delay: +4 min',
 		);
 	});
 
-	it('previews stop and vehicle rows from pointer or keyboard without changing selection', async () => {
+	it('keeps row preview until both pointer and keyboard focus leave without changing selection', async () => {
 		const vehicleDetail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
@@ -821,6 +847,25 @@ describe('MapSelectionDetail', () => {
 		);
 		const onpreview = vi.fn();
 		const selected = vi.fn();
+		async function checkPreview(
+			row: HTMLElement,
+			selection: { kind: 'stop' | 'vehicle'; id: string },
+		) {
+			for (const [event, active] of [
+				['pointerEnter', true],
+				['focus', true],
+				['pointerLeave', true],
+				['blur', false],
+				['focus', true],
+				['pointerEnter', true],
+				['blur', true],
+				['pointerLeave', false],
+			] as const) {
+				await fireEvent[event](row);
+				expect(row).toHaveAttribute('data-previewing', String(active));
+				expect(onpreview).toHaveBeenLastCalledWith(active ? selection : null);
+			}
+		}
 		const vehicleRender = render(MapSelectionDetail, {
 			props: { detail: vehicleDetail, locale: 'en', onselect: selected, onpreview },
 		});
@@ -828,11 +873,7 @@ describe('MapSelectionDetail', () => {
 			name: /Select stop Mont-Royal \/ Saint-Laurent,/,
 		});
 
-		await fireEvent.pointerEnter(stopRow);
-		expect(stopRow).toHaveAttribute('data-previewing', 'true');
-		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
-		await fireEvent.pointerLeave(stopRow);
-		expect(onpreview).toHaveBeenLastCalledWith(null);
+		await checkPreview(stopRow, { kind: 'stop', id: 'stop-2' });
 
 		vehicleRender.unmount();
 		onpreview.mockClear();
@@ -840,11 +881,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail: stopDetail, locale: 'en', onselect: selected, onpreview },
 		});
 		const busRow = stopRender.getByRole('button', { name: /^Select bus veh-1,/ });
-		await fireEvent.focus(busRow);
-		expect(busRow).toHaveAttribute('data-previewing', 'true');
-		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'vehicle', id: 'veh-1' });
-		await fireEvent.blur(busRow);
-		expect(onpreview).toHaveBeenLastCalledWith(null);
+		await checkPreview(busRow, { kind: 'vehicle', id: 'veh-1' });
 		expect(selected).not.toHaveBeenCalled();
 	});
 
@@ -1346,14 +1383,12 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 180 } },
 		});
 
-		// The honest caution note uses the shared vocabulary and is not a hover-driven live region.
 		const note = container.querySelector('.map-not-reporting')!;
 		expect(note).toBeInTheDocument();
 		expect(note).not.toHaveAttribute('role');
 		expect(note).toHaveAttribute('data-density', 'chip');
 		expect(note).toHaveTextContent('No recent position');
 		expect(note).toHaveTextContent('3 min');
-		// No em-dash in the copy (brand rule) — a middot separates the two halves.
 		expect(note.textContent).not.toContain('—');
 		expect(getByText(/last seen 3 min ago/)).toBeInTheDocument();
 	});
@@ -1396,6 +1431,49 @@ describe('MapSelectionDetail', () => {
 
 		expect(queryByText(/No recent position/)).not.toBeInTheDocument();
 		expect(queryByRole('status')).not.toBeInTheDocument();
+	});
+
+	it.each(['en', 'fr'] as const)('reports actual departure counts in %s', async (locale) => {
+		const detail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-1' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+		const view = render(MapSelectionDetail, { props: { detail, locale } });
+		for (const [count, en, fr] of [
+			[null, 'Live departures unavailable', 'Départs en direct indisponibles'],
+			[0, '0 departures', '0 départs'],
+			[1, '1 departure', '1 départ'],
+			[2, '2 departures', '2 départs'],
+			[5, '5 departures', '5 départs'],
+		] as const) {
+			const departures =
+				count == null
+					? null
+					: Array.from({ length: count }, (_, i) => ({
+							route: '24',
+							trip: `trip-${i}`,
+							eta_utc: utc('2026-06-15T16:40:00Z'),
+							delay_min: 0,
+						}));
+			await view.rerender({ detail: { ...detail, departures }, locale });
+			const grid = view.container.querySelector('.detail-attribute-grid');
+			expect
+				.soft(grid?.querySelector('dt'))
+				.toHaveTextContent(locale === 'en' ? 'Departures' : 'Départs');
+			expect.soft(grid?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
+			if (count === 5) {
+				expect(view.container.querySelectorAll('[data-slot="detail-departures"] li')).toHaveLength(
+					3,
+				);
+				expect(
+					view.container.querySelectorAll('[data-slot="detail-more-departures"] li'),
+				).toHaveLength(2);
+				expect(
+					view.container.querySelector('[data-slot="detail-more-departures-action"]'),
+				).toHaveTextContent(locale === 'en' ? '+2 more' : '+2 de plus');
+			}
+		}
 	});
 
 	it('renders a stop detail with code, departures, inbound vehicles, and alerts', async () => {
@@ -1487,7 +1565,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('renders a null delay as the honest absence (unknown + why), never "No delay" or "On time"', () => {
-		// A vehicle the feed reports with a null delay — must NOT read as on-time.
 		const nullDelayIndex = buildLiveIndex({
 			vehicles: {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -1518,12 +1595,10 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The status cell owns the honest delay absence (calm "unknown" tone), not a second row.
 		const status = detailValue(container, 'Status');
 		const absent = status.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
 		expect(absent).toHaveAttribute('data-density', 'chip');
-		// The reason: the feed simply omitted it (not-reported), not on-time, not "No delay".
 		expect(absent!.textContent).toContain('not reported in the live feed');
 		expect(queryByText('On time')).not.toBeInTheDocument();
 		expect(queryByText('No delay')).not.toBeInTheDocument();
@@ -1560,7 +1635,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 200 } },
 		});
 
-		// The delay-grid cell (first absent-value in the detail grid) reads stale.
 		const absent = [
 			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
 		].find((node) => node.textContent?.includes('this vehicle is not reporting'));
@@ -1569,8 +1643,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('explains a metro vehicle null delay as metro-no-realtime ("No live data"), never not-reported or on-time', () => {
-		// A metro route (route_type 1) carries NO realtime in the feed by design, so a
-		// null delay is honestly "no live data" (metro-no-realtime), not "not reported".
 		const metroIndex = buildLiveIndex({
 			vehicles: {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -1610,7 +1682,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The delay-grid cell (first absent-value in the detail grid) reads metro-no-realtime.
 		const absent = [
 			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
 		].find((node) => node.textContent?.includes('live positions are not published here'));
@@ -1633,7 +1704,6 @@ describe('MapSelectionDetail', () => {
 						updated_utc: utc('2026-06-15T00:00:00Z'),
 						route: '24',
 						trip: null,
-						// A next-stop id that is NOT in the static stop index.
 						next_stop: 'ghost-stop-999',
 						bearing: null,
 						delay_min: 2,
@@ -1652,7 +1722,6 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The raw id never leaks; the layer says the next stop is unknown.
 		expect(queryByText('ghost-stop-999')).not.toBeInTheDocument();
 		const absent = container.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
@@ -1660,8 +1729,6 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it('renders a null stop name as the labelled fallback, never the bare id', () => {
-		// stop-2 (the next stop) is present but UNNAMED in this index — its name must
-		// render the honest "Stop {id} (name unavailable)" fallback, never the id alone.
 		const unnamedStops: StopIndexEntry[] = [
 			{ id: 'stop-1', name: 'Sherbrooke / Saint-Denis', code: '52618', lat: 45.51, lon: -73.57 },
 			{ id: 'stop-3', name: 'Van Horne / Rockland', code: '57191', lat: 45.53, lon: -73.59 },
@@ -1693,7 +1760,160 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The honest labelled fallback shows; the bare id alone is never rendered.
 		expect(getByText('Stop stop-2 (name unavailable)')).toBeInTheDocument();
 	});
+});
+
+describe.each(['en', 'fr'] as const)('MapSelectionDetail published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'vehicle') throw new Error('missing vehicle fixture');
+		const { container } = render(MapSelectionDetail, {
+			props: {
+				detail: { ...detail, vehicle: { ...detail.vehicle, status, delay_min: delay } },
+				locale,
+			},
+		});
+		const fact = detailValue(container, locale === 'fr' ? 'Statut' : 'Status');
+		expect(fact).toHaveTextContent(STATUS_LABELS[locale][status]);
+		const glyph = fact.querySelector('[data-m6d-glyph-kind="status"]');
+		expect(glyph).toHaveAttribute('data-m6d-glyph-code', status);
+		expect(glyph).toHaveAttribute('aria-hidden', 'true');
+		const reading = fact.querySelector('.detail-delay-measurement')!;
+		if (measurement) {
+			expect(reading).toHaveTextContent(measurement);
+			expectAccessibleContentName(fact, `${STATUS_LABELS[locale][status]} ${measurement}`);
+		} else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+	});
+});
+
+describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const t = MAP_SELECTION_DETAIL_COPY[locale];
+		const { container, getByRole } = render(DetailBusRow, {
+			props: {
+				vehicle: { ...vehicles[0], status, delay_min: delay },
+				locale,
+				t,
+				onselect: vi.fn(),
+			},
+		});
+		const badge = container.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		const button = getByRole('button');
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+			expect(
+				button.textContent?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(
+				button.getAttribute('aria-label')?.match(new RegExp(STATUS_LABELS[locale].unknown, 'g')),
+			).toHaveLength(1);
+			expect(button.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
+		expect(button.getAttribute('aria-label')).toContain(STATUS_LABELS[locale][status]);
+		if (measurement) {
+			expect(button.getAttribute('aria-label')).toContain(`${t.delay}: ${measurement}`);
+			expect(button).toHaveTextContent(measurement);
+		} else expect(button.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(button.getAttribute('aria-label')).not.toMatch(
+			/min late|min early|min en retard|min en avance/,
+		);
+	});
+});
+
+describe('vehicle attribute definition groups', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps every %s fact action inside its description group',
+		async (locale) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			if (detail?.kind !== 'vehicle' || !detail.nextStop)
+				throw new Error('expected vehicle next stop');
+			const onselect = vi.fn();
+			const onfilter = vi.fn();
+			const view = render(MapSelectionDetail, { props: { detail, locale, onselect, onfilter } });
+			const grid = view.container.querySelector('dl.detail-attribute-grid')!;
+			for (const group of grid.children) {
+				expect(group.tagName).toBe('DIV');
+				const tags = [...group.children].map((element) => element.tagName);
+				expect(tags[0]).toBe('DT');
+				expect(tags.slice(1).every((tag) => tag === 'DD')).toBe(true);
+			}
+			const actions = [
+				...grid.querySelectorAll<HTMLButtonElement>('.detail-attribute-action > button'),
+			];
+			const t = MAP_SELECTION_DETAIL_COPY[locale];
+			expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+				t.filterStatus(STATUS_LABELS[locale].late),
+				t.selectStop(detail.nextStop.name),
+				t.filterCrowding(OCCUPANCY_LABELS[locale].standing),
+			]);
+			await fireEvent.click(actions[0]);
+			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'status', value: 'late' });
+			await fireEvent.click(actions[1]);
+			expect(onselect).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
+			await fireEvent.click(actions[2]);
+			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'occupancy', value: 'standing' });
+		},
+	);
+
+	it.each([320, 540])(
+		'retains action-cell layout and 44px targets at %ipx panel width',
+		(width) => {
+			const style = installLeafContainerSizeSeam(
+				'src/lib/features/map/detail/DetailAttributeGrid.svelte',
+				width,
+			);
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const view = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+			try {
+				const cells = [
+					...view.container.querySelectorAll<HTMLElement>('dd.detail-attribute-action'),
+				];
+				expect(cells).toHaveLength(3);
+				for (const cell of cells) {
+					expect(getComputedStyle(cell).display).toBe('grid');
+					expectHard44(cell.querySelector('button')!);
+					const columns = getComputedStyle(cell.parentElement!).gridTemplateColumns.replace(
+						/\s/g,
+						'',
+					);
+					expect(columns).toBe(width === 320 ? 'minmax(0,1fr)' : '5.75remminmax(0,1fr)auto');
+				}
+			} finally {
+				style.remove();
+				view.unmount();
+			}
+		},
+	);
 });

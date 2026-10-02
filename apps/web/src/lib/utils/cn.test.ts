@@ -1,5 +1,5 @@
 import type { ClassValue } from 'clsx';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { cn as uiCn, createCn } from '@yesid/ui/cn';
 import { configureTransitUi } from '$lib/ui/configure';
 import { cn } from './cn';
@@ -123,5 +123,66 @@ describe('configureTransitUi', () => {
 		expect(uiCn('text-dataviz-status-late text-dataviz-status-on-time')).toBe(
 			'text-dataviz-status-on-time',
 		);
+	});
+});
+
+describe('app cn configuration ownership', () => {
+	async function freshMergers() {
+		vi.resetModules();
+		const app = await import('./cn');
+		const ui = await import('@yesid/ui/cn');
+		const { configureTransitUi: configure } = await import('$lib/ui/configure');
+		return { app, ui, configure };
+	}
+
+	const classes = ['text-body', 'text-dataviz-status-late', 'text-dataviz-status-on-time'];
+	const merged = 'text-body text-dataviz-status-on-time';
+
+	it('does not configure the package when the app helper is only imported', async () => {
+		const { ui } = await freshMergers();
+		expect(ui.configureUi({ vocab: { colors: ['independent-consumer'] } })).toBe('initialized');
+	});
+
+	it('keeps standalone app calls isolated from package configuration', async () => {
+		const { app, ui } = await freshMergers();
+		expect(app.cn(...classes)).toBe(merged);
+		expect(ui.configureUi({ vocab: { colors: ['independent-consumer'] } })).toBe('initialized');
+		expect(app.cn(...classes)).toBe(merged);
+	});
+
+	it.each(['default', 'foreign'] as const)(
+		'preserves standalone output and C1 rejection with an existing %s package configuration',
+		async (kind) => {
+			const { app, ui, configure } = await freshMergers();
+			if (kind === 'default') ui.cn('text-body');
+			else ui.configureUi({ vocab: { colors: ['independent-consumer'] } });
+			expect(app.cn(...classes)).toBe(merged);
+			expect(configure).toThrow('different configuration');
+			expect(app.cn(...classes)).toBe(merged);
+			expect(configure).toThrow('different configuration');
+		},
+	);
+
+	it('switches from isolated calls to the public merger only after explicit successful boot', async () => {
+		const { app, ui, configure } = await freshMergers();
+		const shared = vi.spyOn(ui, 'cn');
+		expect(app.cn(...classes)).toBe(merged);
+		expect(shared).not.toHaveBeenCalled();
+		configure();
+		expect(app.cn(...classes)).toBe(merged);
+		expect(shared).toHaveBeenCalledExactlyOnceWith(...classes);
+		configure();
+		expect(app.cn('px-2', 'px-4')).toBe('px-4');
+		expect(shared).toHaveBeenCalledTimes(2);
+		expect(ui.configureUi({ vocab: TRANSIT_VOCAB })).toBe('unchanged');
+		expect(app.twMergeConfig).toEqual(ui.createTwMergeConfig(TRANSIT_VOCAB));
+	});
+
+	it('reuses the public merger when bootstrap happens before the first app call', async () => {
+		const { app, ui, configure } = await freshMergers();
+		configure();
+		const shared = vi.spyOn(ui, 'cn');
+		expect(app.cn(...classes)).toBe(merged);
+		expect(shared).toHaveBeenCalledExactlyOnceWith(...classes);
 	});
 });

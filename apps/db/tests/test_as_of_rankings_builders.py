@@ -1,4 +1,3 @@
-"""Focused reducer and production-query tests for retained as-of rankings."""
 
 from __future__ import annotations
 
@@ -177,8 +176,6 @@ def test_hotspots_as_of_streams_first_day_before_exhausting_future_rows() -> Non
     first = next(plan.iter_days())
 
     assert first.date == "2026-07-01"
-    # One next-date lookahead may close the ordered first group, but the reducer
-    # must not materialize the remaining retained days before yielding it.
     assert routes.consumed <= 2
     assert stops.consumed <= 2
 
@@ -293,7 +290,6 @@ def test_hotspots_as_of_scalar_is_iso_week_to_date_cross_kind_issue_order() -> N
         _route_row(monday + timedelta(days=2), "R2", severe=1),
         _route_row(monday + timedelta(days=3), "R2", severe=1),
         _route_row(monday + timedelta(days=4), "R2", severe=1),
-        # A later-in-week row must not leak backward into Friday's scalar.
         _route_row(monday + timedelta(days=6), "R2", severe=20),
     ]
     stops = [
@@ -313,8 +309,6 @@ def test_hotspots_as_of_scalar_is_iso_week_to_date_cross_kind_issue_order() -> N
 def test_hotspots_as_of_scalar_uses_postgres_numeric_rounding_and_stable_ties() -> None:
     day = "2026-07-06"
     routes = [
-        # 60001 / 200 = 300.005 -> PostgreSQL numeric ROUND(..., 2) = 300.01,
-        # so this zero-issue route clears avg_delay_seconds > 300.
         _route_row(
             day,
             "ROUND",
@@ -391,7 +385,7 @@ def test_hotspots_as_of_scalar_cross_kind_and_source_route_ties_are_stable() -> 
     assert snapshot_json_bytes(forward) == snapshot_json_bytes(reverse)
 
 
-def test_hotspots_as_of_route_scalar_and_ladder_keep_distinct_denominators() -> None:
+def test_hotspots_as_of_route_scalar_and_ladder_use_usable_delay_counts() -> None:
     payload = _days(
         routes=[
             _route_row(
@@ -406,14 +400,11 @@ def test_hotspots_as_of_route_scalar_and_ladder_keep_distinct_denominators() -> 
         ]
     )[0]
 
-    # Scalar pooled avg is 601/2 = 300.5s and therefore clears the >300
-    # mart doctrine even with zero severe issues.
     assert [(item.id, item.severity) for item in payload.hotspots] == [("GHOSTS", "high")]
-    # The executable ladder deliberately keeps the ghost-inclusive n=100, so
-    # its displayed pooled mean is 601/100/60 -> 0.1 min.
     entry = _entry(payload, "day", "route", "GHOSTS")
-    assert entry.observation_count == 100
-    assert entry.avg_delay_min == 0.1
+    assert entry.observation_count == 2
+    assert entry.avg_delay_min == 5.0
+    assert entry.rank is None
 
 
 def test_hotspots_as_of_stop_scalar_identity_keeps_route_but_ladder_pools_stop() -> None:
@@ -448,11 +439,7 @@ def test_hotspots_as_of_scalar_otp_baselines_preserve_kind_specific_population()
     route = next(item for item in payload.hotspots if item.type == "route" and item.id == "R1")
     stops = [item for item in payload.hotspots if item.type == "stop" and item.id == "S1"]
 
-    # RNULL has no on-time numerator, so its n is excluded from the route net:
-    # R1 cell 50% vs route network 50%, not vs a fabricated 25%.
     assert route.otp_delta_pts == 0.0
-    # Both scalar candidates use the whole-stop pooled proxy (20% severe) and
-    # the stop network proxy, never the unrelated route baseline.
     assert [item.otp_delta_pts for item in stops] == [0.0, 0.0]
 
 
@@ -470,11 +457,8 @@ def test_hotspots_as_of_equal_ladder_scores_sort_by_id_not_input_order() -> None
 def test_hotspots_as_of_ladder_uses_wilson_before_raw_rate_then_avg_and_id() -> None:
     payload = _days(
         routes=[
-            # Lower raw severe rate (50%) but low n makes its not-severe Wilson
-            # lower bound worse than BIG's 60%-severe, high-n interval.
             _route_row("2026-07-06", "SMALL", obs=30, severe=15, sum_delay_sec=30_000),
             _route_row("2026-07-06", "BIG", obs=1_000, severe=600, sum_delay_sec=1_000_000),
-            # Same Wilson interval: higher avg first, then id for exact ties.
             _route_row("2026-07-06", "LOWAVG", obs=100, severe=50, sum_delay_sec=10_000),
             _route_row("2026-07-06", "ZAVG", obs=100, severe=50, sum_delay_sec=20_000),
             _route_row("2026-07-06", "AAVG", obs=100, severe=50, sum_delay_sec=20_000),
@@ -590,7 +574,6 @@ def test_hotspots_as_of_names_resolve_at_provider_local_close_with_dst_overlap_a
         _name("route", "MID", "Midday", "2026-03-07T17:00:00Z"),
         _name("route", "NEXT", "Before midnight", "2026-01-01T00:00:00Z", "2026-03-08T05:00:00Z"),
         _name("route", "NEXT", "Next day", "2026-03-08T05:00:00Z"),
-        # March 8 closes at 04:00Z after Toronto's DST jump.
         _name("route", "DST", "DST day", "2026-01-01T00:00:00Z", "2026-03-09T04:00:00Z"),
         _name("route", "DST", "After DST day", "2026-03-09T04:00:00Z"),
         _name("route", "OVER", "Older overlap", "2026-01-01T00:00:00Z"),
@@ -621,7 +604,7 @@ def test_hotspots_as_of_stop_name_and_envelope_are_historical_and_stable() -> No
     )[0]
 
     assert payload.hotspots[0].name == "Closing stop"
-    assert payload.methodology_version == "reliability-1"
+    assert payload.methodology_version == "reliability-2"
     assert payload.publish_generation_id is None
 
 
@@ -803,11 +786,6 @@ def test_hotspots_as_of_source_generated_time_accepts_aware_datetime() -> None:
     row["source_generated_utc"] = datetime(2026, 7, 7, 1, 2, tzinfo=UTC)
 
     assert _days(routes=[row])[0].generated_utc == "2026-07-07T01:02:00Z"
-
-
-# --------------------------------------------------------------------------
-# Repeat Offenders retained as-of history
-# --------------------------------------------------------------------------
 
 
 def _offender_row(
@@ -1041,9 +1019,9 @@ def test_repeat_offenders_as_of_scalar_uses_rounded_seconds_for_severity_and_ord
 
     assert [value.id for value in latest.offenders] == ["ROUND_HIGH", "ROUND_BOUNDARY"]
     assert by_id["ROUND_HIGH"].avg_delay_min == 10.0
-    assert by_id["ROUND_HIGH"].severity == "critical"  # 600.05s -> numeric 600.1s
+    assert by_id["ROUND_HIGH"].severity == "critical"
     assert by_id["ROUND_BOUNDARY"].avg_delay_min == 10.0
-    assert by_id["ROUND_BOUNDARY"].severity == "watch"  # 600.0s is not >600
+    assert by_id["ROUND_BOUNDARY"].severity == "watch"
 
 
 def test_repeat_offenders_as_of_scalar_orders_recurrence_then_average_and_caps_50() -> None:
@@ -1136,7 +1114,7 @@ def test_repeat_offenders_as_of_by_grain_preserves_wilson_floor_and_kind_ranks()
     assert [value.rank for value in trips] == [1, 2]
     assert [value.rank for value in vehicles] == [1]
     assert "N29" not in {value.id for value in week.entries}
-    assert "N29" not in {value.id for value in week.tray}  # recurrence 1 is not repeat evidence
+    assert "N29" not in {value.id for value in week.tray}
 
 
 def test_repeat_offenders_as_of_by_grain_ties_use_avg_then_id_then_route() -> None:
@@ -1188,7 +1166,7 @@ def test_repeat_offenders_as_of_by_grain_uses_unrounded_severity_boundary() -> N
     entry = _repeat_entry(payload, "week", "trip", "UNROUNDED")
 
     assert entry.avg_delay_min == 10.0
-    assert entry.severity == "critical"  # 600.4s, before display rounding
+    assert entry.severity == "critical"
 
 
 def test_repeat_offenders_as_of_by_grain_caps_each_kind_and_tray_union() -> None:
@@ -1330,7 +1308,7 @@ def test_repeat_offenders_as_of_fall_dst_close_and_envelope_are_stable() -> None
     )[0]
 
     assert _repeat_grain(payload, "week").entries[0].route_name == "Fall DST day"
-    assert payload.methodology_version == "reliability-1"
+    assert payload.methodology_version == "reliability-2"
     assert payload.publish_generation_id is None
 
 
@@ -1444,12 +1422,6 @@ def test_current_repeat_offenders_fixed_builder_bytes_and_dispatch_are_unchanged
 
 
 def test_repeat_offenders_as_of_closed_scalar_matches_equivalent_closed_spine_window() -> None:
-    """History parity is against the equivalent 14 CLOSED local-date spine window.
-
-    The fixed mutable mart uses an instant `now()-14d` fact window and may include the open
-    local day plus a partial oldest day. Exact newest parity applies only when that mutable
-    window is aligned to these same closed dates; history never weakens its closed-day rule.
-    """
     first = date(2026, 7, 1)
     rows = [
         _offender_row(first + timedelta(days=offset), "T1", obs=10, severe=1, sum_delay_sec=4_000)
@@ -1469,3 +1441,19 @@ def test_repeat_offenders_as_of_closed_scalar_matches_equivalent_closed_spine_wi
         "avg_delay_min": 6.7,
         "severity": "watch",
     }
+
+
+def test_scalar_offender_midpoint_matches_retained_history() -> None:
+    rows = [_offender_row(f"2026-09-{day:02d}", "T1", obs=2, severe=1,
+                          sum_delay_sec=270) for day in range(8, 11)]
+    retained = _offender_days(rows=rows)[-1].offenders[0]
+    current = build_repeat_offenders(NamedQueryConn({
+        "repeat.offenders": [{
+            "entity_kind": "trip", "entity_id": "T1", "route_id": "R1",
+            "recurrence_days": 3, "window_days": 14, "avg_delay_seconds": 135,
+            "severity_label": "watch",
+        }],
+    }), generated_utc="t").offenders[0]
+    assert current == retained
+    assert current.avg_delay_min == 2.3
+    assert current.severity == "watch"

@@ -4,6 +4,8 @@ import hashlib
 import io
 import json
 import multiprocessing
+import os
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,10 +18,10 @@ from botocore.exceptions import ClientError
 import transit_ops.snapshots.storage as storage_module
 from transit_ops.settings import Settings
 from transit_ops.snapshots.contract import VehiclesFile
-from transit_ops.snapshots.publish import _parallel_put
 from transit_ops.snapshots.storage import (
     CACHE_CONTROL,
     HashGatedStorage,
+    HistoricHashGatedStorage,
     ImmutableKeyCollisionError,
     LocalSnapshotStorage,
     SnapshotStorage,
@@ -27,6 +29,7 @@ from transit_ops.snapshots.storage import (
     StoredObjectVersionMismatchError,
     state_fingerprint,
 )
+from transit_ops.snapshots.uploads import put_batch as _parallel_put
 
 
 class FakeS3Client:
@@ -102,7 +105,6 @@ class _VersionInventoryClient(FakeS3Client):
 
 
 class _ConditionalCreateRaceClient(FakeS3Client):
-    """Synchronize two missing HEADs and enforce S3 conditional-create semantics."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -153,7 +155,6 @@ class _ConditionalCreateRaceClient(FakeS3Client):
 
 
 class _PreconditionRaceWinnerClient(FakeS3Client):
-    """Install a competing winner immediately before rejecting a conditional PUT."""
 
     def __init__(self, *, winner_body: bytes, winner_metadata: dict[str, str]) -> None:
         super().__init__()
@@ -179,7 +180,6 @@ class _PreconditionRaceWinnerClient(FakeS3Client):
 
 
 class _StableCasClient(FakeS3Client):
-    """In-memory S3 fake that enforces If-Match and If-None-Match atomically."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -316,7 +316,6 @@ def _attempt_local_stable_activation_in_process(
     read_barrier,
     result_queue,
 ) -> None:
-    """Force two processes to capture the same active bytes before replacing them."""
 
     original_read_bytes = storage_module.pathlib.Path.read_bytes
     synchronized = False
@@ -582,11 +581,6 @@ def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
     assert probe.clients[0].close_calls == 1
 
 
-# ---------------------------------------------------------------------------
-# T1 — storage primitives: full_key / get_json / put_bytes / put_json delegation
-# ---------------------------------------------------------------------------
-
-
 def test_full_key_joins_prefix():
     store = SnapshotStorage(FakeS3Client(), bucket="b", base_prefix="/v1/stm/")
     assert store.full_key("static/routes_index.json") == "v1/stm/static/routes_index.json"
@@ -602,7 +596,6 @@ def test_get_json_roundtrips_stored_object():
     store = SnapshotStorage(c, bucket="b", base_prefix="v1/stm")
     store.put_bytes("_meta/state.json", json.dumps({"a": 1}).encode(), tier="internal")
     assert store.get_json("_meta/state.json") == {"a": 1}
-    # internal tier carries the no-store header
     assert c.objects["v1/stm/_meta/state.json"]["CacheControl"] == CACHE_CONTROL["internal"]
 
 
@@ -709,7 +702,14 @@ def test_local_snapshot_storage_rejects_existing_symlink_escape(tmp_path) -> Non
     outside = tmp_path / "outside"
     provider_root.mkdir(parents=True)
     outside.mkdir()
-    (provider_root / "escape").symlink_to(outside, target_is_directory=True)
+    if os.name == "nt":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(provider_root / "escape"), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        (provider_root / "escape").symlink_to(outside, target_is_directory=True)
     store = LocalSnapshotStorage(str(root), "v1/stm")
 
     with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
@@ -750,13 +750,7 @@ def test_put_json_delegates_to_put_bytes():
     assert b'"x":1' in body
 
 
-# ---------------------------------------------------------------------------
-# T2 — HashGatedStorage skip/write/fingerprint/merge semantics
-# ---------------------------------------------------------------------------
-
-
 class StatefulFakeStore:
-    """In-memory stand-in for an inner snapshot storage with hash-state support."""
 
     def __init__(self):
         self.store: dict[str, bytes] = {}
@@ -778,14 +772,12 @@ class StatefulFakeStore:
 def test_hash_gated_skips_unchanged_put():
     inner = StatefulFakeStore()
     fp = state_fingerprint("static")
-    # First run writes and flushes state.
     g1 = HashGatedStorage(inner, state_rel_key="_meta/publish_state_static.json", fingerprint=fp)
     g1.load()
     g1.put_json("static/routes_index.json", {"routes": []}, tier="static")
     g1.flush_state()
     inner.put_bytes_calls.clear()
 
-    # Second run with identical payload skips the put entirely.
     g2 = HashGatedStorage(inner, state_rel_key="_meta/publish_state_static.json", fingerprint=fp)
     g2.load()
     key = g2.put_json("static/routes_index.json", {"routes": []}, tier="static")
@@ -813,7 +805,7 @@ def test_hash_gated_writes_changed_put():
 
 
 def test_hash_gated_missing_state_writes_everything():
-    inner = StatefulFakeStore()  # no state object
+    inner = StatefulFakeStore()
     g = HashGatedStorage(
         inner, state_rel_key="_meta/s.json", fingerprint=state_fingerprint("static")
     )
@@ -826,14 +818,12 @@ def test_hash_gated_missing_state_writes_everything():
 
 def test_hash_gated_fingerprint_mismatch_forces_full_rewrite():
     inner = StatefulFakeStore()
-    # Pre-seed state with a stale fingerprint string but a matching content hash.
     g1 = HashGatedStorage(inner, state_rel_key="_meta/s.json", fingerprint="v1|cc:OLD-HEADER")
     g1.load()
     g1.put_json("static/routes_index.json", {"routes": []}, tier="static")
     g1.flush_state()
     inner.put_bytes_calls.clear()
 
-    # New fingerprint -> prior hashes ignored -> full rewrite even though bytes match.
     g2 = HashGatedStorage(
         inner, state_rel_key="_meta/s.json", fingerprint=state_fingerprint("static")
     )
@@ -851,14 +841,12 @@ def test_hash_gated_flush_state_merges_prior_unproduced_keys():
     g1.put_json("historic/receipts/2026-06-01.json", {"date": "2026-06-01"}, tier="historic")
     g1.flush_state()
 
-    # Run 2 produces a DIFFERENT key (the old receipt fell out of the window).
     g2 = HashGatedStorage(inner, state_rel_key="_meta/h.json", fingerprint=fp)
     g2.load()
     g2.put_json("historic/receipts/2026-06-02.json", {"date": "2026-06-02"}, tier="historic")
     g2.flush_state()
 
     state = inner.get_json("_meta/h.json")
-    # Both the unproduced old key and the new key survive in the merged map.
     assert "historic/receipts/2026-06-01.json" in state["hashes"]
     assert "historic/receipts/2026-06-02.json" in state["hashes"]
 
@@ -1080,7 +1068,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
     mutable_key = "historic/alerts/index.json"
     immutable_key = "historic/alerts/generations/abc/2026-07/page-0001.json"
 
-    first = HashGatedStorage(
+    first = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1095,7 +1083,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
     assert first.immutable_written == [immutable_key]
     assert first.immutable_skipped == []
 
-    second = HashGatedStorage(
+    second = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1115,7 +1103,7 @@ def test_hash_gated_immutable_writes_and_skips_are_separate_from_mutable_state()
 def test_concurrent_duplicate_immutable_attempts_put_once_and_account_atomically():
     client = FakeS3Client()
     inner = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
-    gated = HashGatedStorage(
+    gated = HistoricHashGatedStorage(
         inner,
         state_rel_key="_meta/publish_state_historic.json",
         fingerprint=state_fingerprint("historic"),
@@ -1476,12 +1464,13 @@ def test_local_stable_activation_enforces_cross_instance_cas(tmp_path):
     assert idempotent.written is False
 
 
-def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
+@pytest.mark.parametrize("same_payload", [False, True])
+def test_local_stable_activation_enforces_cross_process_cas(tmp_path, same_payload):
     store = storage_module.LocalSnapshotStorage(str(tmp_path), "v1/stm")
     rel_key = "historic/history/index.json"
     store.put_json(rel_key, {"generation": "old"}, tier="historic")
     expected_version = store.capture_stable_version(rel_key)
-    context = multiprocessing.get_context("fork")
+    context = multiprocessing.get_context("spawn")
     read_barrier = context.Barrier(2)
     result_queue = context.Queue()
     processes = [
@@ -1491,7 +1480,7 @@ def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
                 str(tmp_path),
                 rel_key,
                 expected_version,
-                candidate,
+                0 if same_payload else candidate,
                 read_barrier,
                 result_queue,
             ),
@@ -1517,12 +1506,13 @@ def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
     assert not [result for result in results if result[0] == "error"]
     winners = [result for result in results if result[0] == "outcome"]
     conflicts = [result for result in results if result[0] == "conflict"]
-    assert len(winners) == 1 and winners[0][2] is True
-    assert len(conflicts) == 1
+    assert len(winners) == (2 if same_payload else 1)
+    assert sum(result[2] for result in winners) == 1
+    assert len(conflicts) == (0 if same_payload else 1)
     active = store.get_json(rel_key)
     assert active == {"generation": f"candidate-{winners[0][1]}"}
     history_dir = tmp_path / "v1/stm/historic/history"
-    assert not list(history_dir.glob("*.lock"))
+    assert {item.rel_key for item in store.iter_object_versions("historic/")} == {rel_key}
     assert not list(history_dir.glob(".*.tmp"))
 
 
@@ -1544,7 +1534,7 @@ def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
         },
         tier="internal",
     )
-    gated = HashGatedStorage(
+    gated = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),
@@ -1558,7 +1548,7 @@ def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
         expected_version=version,
         tier="historic",
     )
-    second = HashGatedStorage(
+    second = HistoricHashGatedStorage(
         inner,
         state_rel_key=state_key,
         fingerprint=state_fingerprint("historic"),

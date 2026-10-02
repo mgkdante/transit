@@ -1,5 +1,3 @@
-"""Full-retention Network daily metrics partitioned into provider-local months."""
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -17,6 +15,7 @@ from transit_ops.snapshots.builders.historic.history_common import (
     build_history_digest_query,
     history_coverage,
     history_date,
+    history_delay_metric,
     history_index_generation_id,
     history_metric_coverage,
     history_month_partition_ref,
@@ -264,7 +263,6 @@ class NetworkHistoryPlan:
     def iter_partition_items(
         self,
     ) -> Iterator[tuple[HistoricPartitionRef, NetworkHistoryPartition]]:
-        """Yield one content-addressed month, releasing it before building the next."""
 
         for month, dates in iter_history_month_groups(self.available_dates):
             yield history_month_partition_ref(
@@ -291,7 +289,6 @@ class NetworkHistoryPlan:
             )
 
     def build_index(self, refs: Iterable[HistoricPartitionRef]) -> HistoricCollectionIndex:
-        """Build the stable pointer from compact refs after every month has succeeded."""
 
         first, last, gaps = history_coverage(self.available_dates)
         metrics = [
@@ -333,7 +330,6 @@ class NetworkHistoryPlan:
         return index
 
     def materialize(self) -> NetworkHistoryBundle:
-        """Compatibility helper for pure tests and direct analytical callers."""
 
         items = list(self.iter_partition_items())
         refs = [ref for ref, _partition in items]
@@ -366,26 +362,10 @@ def _delay_metrics(
     metrics: dict[str, HistoricDelayMetric] = {}
     timestamps: dict[str, list[str]] = {}
     for local_date, grouped in _group_rows(rows).items():
-        observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
-        if observation_count <= 0:
+        metric = history_delay_metric(grouped)
+        if metric is None:
             continue
-        in_clamp = sum(history_row_int(row, "in_clamp_observation_count") or 0 for row in grouped)
-        on_time = history_optional_sum(
-            history_row_int(row, "on_time_count", optional=True) for row in grouped
-        )
-        severe = history_optional_sum(
-            history_row_int(row, "severe_count", optional=True) for row in grouped
-        )
-        delay_sum = sum(
-            history_row_int(row, "sum_delay_seconds", minimum=None) or 0 for row in grouped
-        )
-        metrics[local_date] = HistoricDelayMetric(
-            observation_count=observation_count,
-            in_clamp_observation_count=in_clamp if in_clamp > 0 else None,
-            on_time_count=on_time,
-            severe_count=severe,
-            sum_delay_seconds=delay_sum if in_clamp > 0 else None,
-        )
+        metrics[local_date] = metric
         timestamps[local_date] = [
             history_row_timestamp(row)
             for row in grouped
@@ -498,7 +478,6 @@ def build_network_history_plan_from_rows(
     occupancy_rows: Iterable[Mapping[str, Any]],
     generated_utc: str,
 ) -> NetworkHistoryPlan:
-    """Merge retained daily sources into a plan that yields one month at a time."""
 
     delay, delay_timestamps = _delay_metrics(delay_rows)
     percentiles, vehicles, fact_timestamps = _fact_metrics(fact_rows)
@@ -541,7 +520,6 @@ def build_network_history_from_rows(
     occupancy_rows: Iterable[Mapping[str, Any]],
     generated_utc: str,
 ) -> NetworkHistoryBundle:
-    """Materialize retained Network history for pure analytical callers."""
 
     return build_network_history_plan_from_rows(
         delay_rows=delay_rows,
@@ -559,7 +537,6 @@ def build_network_history_plan(
     generated_utc: str,
     phase_context: HistoryPhaseContext | None = None,
 ) -> NetworkHistoryPlan:
-    """Read each retained source once and return a bounded month publication plan."""
 
     settings = get_settings()
     warm_params = {
@@ -613,7 +590,6 @@ def build_network_history(
     provider_id: str = "stm",
     generated_utc: str,
 ) -> NetworkHistoryBundle:
-    """Materialize retained Network history for direct analytical callers."""
 
     return build_network_history_plan(
         conn,

@@ -1,17 +1,3 @@
-// repeatOffenders.copy.ts: co-located bilingual copy for the Repeat-offenders
-// ("récidivistes") accountability surface (S14 re-seat).
-//
-// All user-facing strings the screen renders live here, keyed by Locale, so the
-// .svelte files carry zero inline copy. The FR voice is the canonical product voice
-// (mirrors the raw-FR /v1 headers); EN is the parallel translation. Provider-agnostic:
-// no operator/city names. Honest-not-alarmist tone — the copy EXPLAINS why an entity
-// is flagged (natural-frequency recurrence), never dramatizes it. Absence strings
-// carry NO em-dash.
-//
-// S14 grows the primary by_grain path (combined rail, stacked trip/vehicle cards,
-// worst-N ladders, natural-frequency evidence, and trays) while KEEPING the legacy
-// ledger fields (the fallback path reads the same recurrence / type / caveat copy).
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
@@ -22,7 +8,7 @@ export const copy = defineCopy({
 		kicker: 'ACCOUNTABILITY · REPEAT OFFENDERS',
 		heading: 'Repeat offenders',
 		subheading: '// RÉCIDIVISTES',
-		lede: 'The trips and vehicles that run severely late on day after day, ranked worst first by how reliably they slip. We never invent data: an absent reading shows as “no data”, never a fabricated zero.',
+		lede: 'Trips and vehicles with recurring delays over five minutes.',
 		article: articleCopy('en', {
 			watermark: 'Repeat',
 			tags: ['offenders', 'trips', 'vehicles', 'recurrence'],
@@ -51,8 +37,7 @@ export const copy = defineCopy({
 				unpublished: 'That day was not published. Showing the latest repeat offenders.',
 			},
 			retainedWindow: (date) => `Available retained observations ending ${date}.`,
-			retainedWorstSubtitle:
-				'The worst repeat offender in the selected retained observations, its severe rate, and its streak',
+			retainedWorstSubtitle: 'Severe-delay rate and recurrence in the selected observations',
 			retainedHeroNone: 'No repeat offender ranks in the selected retained observations.',
 		},
 		rail: {
@@ -66,7 +51,7 @@ export const copy = defineCopy({
 		cards: {
 			worst: {
 				title: 'Worst repeat offender',
-				subtitle: 'The current worst repeat offender, its severe rate, and its streak',
+				subtitle: 'Severe-delay rate and recurrence',
 			},
 			trips: {
 				title: 'Trips',
@@ -95,14 +80,14 @@ export const copy = defineCopy({
 		headline: {
 			label: 'Severe-delay rate',
 			explanation:
-				'Each row is a single trip or vehicle that keeps running severely late. The bar is its severe-delay rate, the share of its readings more than five minutes behind schedule, ranked worst first by the cautious (Wilson) lower bound, so a chronic offender with plenty of readings outranks a noisy one with few. The line beneath each bar says how many of its observed service days were late-prone, so you can see the recurrence, not just the average.',
+				'Bars show the share of readings more than five minutes late. Ranking uses the Wilson lower bound to account for sample size. Recurrence counts late-prone days among the days observed; those days need not be consecutive.',
 		},
 		hero: {
 			label: 'Worst repeat offender',
 			overline: '#1 offender',
-			streakLabel: 'Streak',
+			recurrenceLabel: 'Recurrence',
 			rateWithCi: (ratePct, lo, hi) =>
-				`${ratePct} of readings severely late (95% sure between ${lo} and ${hi}%).`,
+				`${ratePct} of readings severely late (95% Wilson interval: ${lo}–${hi}%).`,
 			rateNoCi: (ratePct) => `${ratePct} of readings severely late.`,
 			none: 'No repeat offender ranks right now.',
 		},
@@ -156,7 +141,7 @@ export const copy = defineCopy({
 		viewDetail: (title) => `View detail for ${title}`,
 		shownOfTotal: (shown, total) => `· ${shown}/${total}`,
 		caveat:
-			'A trailing-window recurrence proxy, not a certified scorecard. “Observed days” counts only the service days we actually recorded this entity, so the denominator reflects our coverage, not the full timetable, and small samples vary. Open a row to see the offending line in full.',
+			'Observed days reflect recorded coverage, not the full timetable. Missing readings stay missing, and small samples vary. Open a row for its line’s details.',
 		units: { min: ' min', pct: '%' },
 
 		listSection: 'Worst first',
@@ -169,7 +154,7 @@ export const copy = defineCopy({
 		kicker: 'REDDITION DE COMPTES · RÉCIDIVISTES',
 		heading: 'Récidivistes',
 		subheading: '// REPEAT OFFENDERS',
-		lede: 'Les voyages et les véhicules qui accumulent les retards graves jour après jour, classés du pire au moins pire selon la régularité de leurs ratés. On n’invente jamais de données : une lecture absente s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		lede: 'Les voyages et véhicules qui accumulent les retards de plus de cinq minutes.',
 		article: articleCopy('fr', {
 			watermark: 'Récidive',
 			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
@@ -201,7 +186,7 @@ export const copy = defineCopy({
 			retainedWindow: (date: string) =>
 				`Observations conservées disponibles se terminant le ${date}.`,
 			retainedWorstSubtitle:
-				'Le pire récidiviste des observations conservées sélectionnées, son taux de retards graves et sa série',
+				'Taux de retards graves et récurrence dans les observations sélectionnées',
 			retainedHeroNone: 'Aucun récidiviste classé dans les observations conservées sélectionnées.',
 		},
 		rail: {
@@ -215,7 +200,7 @@ export const copy = defineCopy({
 		cards: {
 			worst: {
 				title: 'Pire récidiviste',
-				subtitle: 'Le pire récidiviste actuel, son taux de retards graves et sa série',
+				subtitle: 'Taux de retards graves et récurrence',
 			},
 			trips: {
 				title: 'Voyages',
@@ -244,14 +229,14 @@ export const copy = defineCopy({
 		headline: {
 			label: 'Taux de retards graves',
 			explanation:
-				'Chaque rangée est un seul voyage ou véhicule qui accumule les retards graves. La barre indique son taux de retards graves, soit la part de ses relevés à plus de cinq minutes de retard, classé du pire au moins pire selon la borne inférieure prudente (Wilson), afin qu’un récidiviste chronique avec beaucoup de relevés devance un cas bruyant avec peu de relevés. La ligne sous chaque barre indique combien de ses jours de service observés étaient sujets aux retards, pour voir la récurrence et pas seulement la moyenne.',
+				'Les barres montrent la part des relevés à plus de cinq minutes de retard. Le classement utilise la borne inférieure de Wilson pour tenir compte de la taille de l’échantillon. La récurrence compte les jours sujets aux retards parmi les jours observés, sans exiger qu’ils soient consécutifs.',
 		},
 		hero: {
 			label: 'Pire récidiviste',
 			overline: 'Récidiviste n°1',
-			streakLabel: 'Série',
+			recurrenceLabel: 'Récurrence',
 			rateWithCi: (ratePct: string, lo: string, hi: string) =>
-				`${ratePct} des relevés en retard grave (sûr à 95 % entre ${lo} et ${hi} %).`,
+				`${ratePct} des relevés en retard grave (intervalle de Wilson à 95 % : ${lo}–${hi} %).`,
 			rateNoCi: (ratePct: string) => `${ratePct} des relevés en retard grave.`,
 			none: 'Aucun récidiviste classé pour l’instant.',
 		},
@@ -305,7 +290,7 @@ export const copy = defineCopy({
 		viewDetail: (title: string) => `Voir le détail de ${title}`,
 		shownOfTotal: (shown: number, total: number) => `· ${shown}/${total}`,
 		caveat:
-			'Une estimation de récurrence sur fenêtre glissante, pas un bulletin certifié. Les « jours observés » ne comptent que les jours de service réellement relevés pour cette entité, donc le dénominateur reflète notre couverture, pas l’horaire complet, et les petits échantillons varient. Ouvrez une rangée pour voir la ligne fautive au complet.',
+			'Les jours observés reflètent la couverture des relevés, pas l’horaire complet. Les lectures absentes restent absentes et les petits échantillons varient. Ouvrez une rangée pour voir les détails de sa ligne.',
 		units: { min: ' min', pct: '%' },
 
 		listSection: 'Les pires d’abord',

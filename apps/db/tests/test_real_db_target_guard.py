@@ -1,4 +1,3 @@
-"""Safety policy tests for the real-database session fixture."""
 
 from __future__ import annotations
 

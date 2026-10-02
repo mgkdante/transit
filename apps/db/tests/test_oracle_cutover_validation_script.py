@@ -200,7 +200,6 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     assert "PASS GitHub workflow Daily Static Pipeline: active" in result.stdout
     assert "PASS GitHub workflow Daily Warm Rollups: active" in result.stdout
     assert "created_at=2026-05-23T21:44:41Z" in result.stdout
-    # slice-9.1.1w: the retired Power BI report check is gone entirely.
     assert "Power BI" not in result.stdout
     assert "PASS Rollback prereqs:" in result.stdout
     assert (
@@ -269,8 +268,6 @@ def test_validate_oracle_cutover_fails_when_required_inputs_are_missing(
     assert "FAIL Health endpoints: HEALTH_BASE_URL is required" in result.stdout
     assert "FAIL Realtime freshness: DATABASE_URL is required" in result.stdout
     assert "FAIL GitHub workflows: gh command is required" in result.stdout
-    # slice-9.1.1w: the retired Power BI check no longer exists, so its required
-    # input is never demanded.
     assert "POWERBI_REPORT_URL" not in result.stdout
 
     log_lines = _read_log(tmp_path / "commands.log")

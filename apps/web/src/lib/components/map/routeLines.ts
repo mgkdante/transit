@@ -1,9 +1,3 @@
-// map/routeLines.ts — selected route geometry, fetched on demand.
-//
-// Routes are contextual linework, not live entities. They draw only for selected
-// route filters (`route=...`) and use the yellow wayfinding token; buses keep
-// orange, while stops share the yellow family as point context.
-
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { RouteDirection, RouteFile } from '$lib/v1/schemas';
 import { routeDirectionVariants, type RouteDirectionVariant } from './routeDirection';

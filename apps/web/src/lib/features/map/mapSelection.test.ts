@@ -165,6 +165,35 @@ const index = buildLiveIndex({
 });
 
 describe('resolveMapSelection', () => {
+	it.each([null, undefined, ''])(
+		'treats missing next_stop %s as unknown while retaining trip ETAs',
+		(next_stop) => {
+			const changedIndex = {
+				...index,
+				byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], next_stop }),
+			};
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{
+					index: changedIndex,
+					stops,
+					alerts,
+					routes,
+				},
+			);
+			expect(detail).toMatchObject({
+				kind: 'vehicle',
+				nextStop: null,
+				nextStopAbsence: 'not-reported',
+			});
+			if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
+			expect(detail.nextStops.map((stop) => [stop.id, stop.etaUtc])).toEqual([
+				['stop-2', '2026-06-15T00:06:00Z'],
+				['stop-3', '2026-06-15T00:16:00Z'],
+			]);
+		},
+	);
+
 	it('returns full vehicle state with trip and route/next-stop alerts', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
@@ -368,7 +397,10 @@ describe('resolveMapSelection', () => {
 		expect(selected.directions[0].stops.map((stop) => stop.id)).toEqual(['52819', '52508']);
 	});
 
-	it('normalizes bare French cardinal headsigns to English for right-panel direction labels', () => {
+	it.each([
+		['en', ['West', 'East', 'North', 'South']],
+		['fr', ['Ouest', 'Est', 'Nord', 'Sud']],
+	] as const)('localizes bare cardinal direction labels in %s', (locale, expected) => {
 		const routeWithBareCardinals: RouteFile = {
 			generated_utc: utc('2026-06-15T00:00:00Z'),
 			id: '999',
@@ -383,17 +415,29 @@ describe('resolveMapSelection', () => {
 
 		const detail = resolveMapSelection(
 			{ kind: 'route', id: '999' },
-			{ index, stops, alerts, routes: [routeWithBareCardinals] },
+			{ index, stops, alerts, routes: [routeWithBareCardinals], locale },
 		);
 
 		expect(detail?.kind).toBe('route');
 		if (detail?.kind !== 'route') throw new Error('expected route detail');
-		expect(detail.directions.map((direction) => [direction.label, direction.headsign])).toEqual([
-			['West', 'West'],
-			['East', 'East'],
-			['North', 'North'],
-			['South', 'South'],
+		expect(detail.directions.map((direction) => [direction.label, direction.headsign])).toEqual(
+			expected.map((label) => [label, label]),
+		);
+	});
+
+	it('localizes synthesized terminal labels without changing direction identity or stop names', () => {
+		const selection = { kind: 'route', id: '24' } as const;
+		const english = resolveMapSelection(selection, { index, stops, routes, locale: 'en' });
+		const french = resolveMapSelection(selection, { index, stops, routes, locale: 'fr' });
+		if (english?.kind !== 'route' || french?.kind !== 'route')
+			throw new Error('expected route details');
+		expect(french.directions.map((d) => d.label)).toEqual([
+			'vers Van Horne / Rockland',
+			'vers Sherbrooke / Saint-Denis',
 		]);
+		expect(french.directions.map((d) => [d.variantKey, d.stops, d.labelInferred])).toEqual(
+			english.directions.map((d) => [d.variantKey, d.stops, d.labelInferred]),
+		);
 	});
 });
 

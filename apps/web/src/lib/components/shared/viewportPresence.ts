@@ -1,4 +1,3 @@
-/** Nearest ancestor that scrolls vertically, or null for the viewport. */
 export function findScrollParent(el: HTMLElement): HTMLElement | null {
 	let node = el.parentElement;
 	while (node) {
@@ -9,11 +8,6 @@ export function findScrollParent(el: HTMLElement): HTMLElement | null {
 	return null;
 }
 
-/**
- * Reports whether a region intersects its nearest scrolling viewport. Transit
- * document pages scroll inside `#main`, so using that ancestor as the observer
- * root keeps visibility state aligned with what the reader actually sees.
- */
 export function observeViewportPresence(
 	node: HTMLElement,
 	initialOnChange: (visible: boolean) => void,

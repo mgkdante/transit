@@ -1,5 +1,3 @@
-"""Bounded sync from retained Silver alerts into the long-lived Gold archive."""
-
 from __future__ import annotations
 
 import hashlib
@@ -345,7 +343,6 @@ def alert_archive_default_bounds(
     retention_days: int,
     now_utc: datetime | None = None,
 ) -> tuple[date, date]:
-    """Return the retained provider-local sync window, month-floored."""
 
     now = _utc(now_utc) or datetime.now(UTC)
     provider_today = now.astimezone(ZoneInfo(provider_timezone)).date()

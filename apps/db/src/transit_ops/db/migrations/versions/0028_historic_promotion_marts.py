@@ -20,7 +20,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # --- gold.route_headway_daily -------------------------------------------
     op.create_table(
         "route_headway_daily",
         sa.Column("provider_id", sa.Text(), nullable=False),
@@ -50,7 +49,6 @@ def upgrade() -> None:
         schema="gold",
     )
 
-    # --- gold.repeat_offender_daily ------------------------------------------
     op.create_table(
         "repeat_offender_daily",
         sa.Column("provider_id", sa.Text(), nullable=False),

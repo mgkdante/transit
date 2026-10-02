@@ -1,7 +1,3 @@
-// state.test.ts — the DateWindow shape helpers: the ISO shape gate + the {from,to}
-// normalization the codec relies on. A window is present ONLY as a complete, valid,
-// from<=to span; anything less is honest-absence (undefined).
-
 import { describe, it, expect } from 'vitest';
 import {
 	isIsoDate,
@@ -21,7 +17,7 @@ import {
 describe('isIsoDate — the YYYY-MM-DD shape gate', () => {
 	it('accepts a well-formed YYYY-MM-DD string only', () => {
 		expect(isIsoDate('2026-06-18')).toBe(true);
-		expect(isIsoDate('2026-6-1')).toBe(false); // not zero-padded
+		expect(isIsoDate('2026-6-1')).toBe(false);
 		expect(isIsoDate('2026/06/18')).toBe(false);
 		expect(isIsoDate('not-a-date')).toBe(false);
 		expect(isIsoDate('')).toBe(false);
@@ -74,8 +70,6 @@ describe('worst-N (S12 ladder cap) — a fixed truthful rung or "all"', () => {
 		expect(isWorstN('7')).toBe(false);
 		expect(isWorstN('0')).toBe(false);
 		expect(isWorstN('1000')).toBe(false);
-		// FIX-3: '100' was trimmed (a dead rung above the per-kind DB cap of 50) — it now
-		// self-heals like any off-ladder value, so a stale ?n=100 deep link drops to default.
 		expect(isWorstN('100')).toBe(false);
 		expect(isWorstN('none')).toBe(false);
 	});

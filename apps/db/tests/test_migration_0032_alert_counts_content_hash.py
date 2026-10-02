@@ -1,4 +1,3 @@
-"""Static contract tests for migration 0032: alert counts by content hash."""
 
 from __future__ import annotations
 

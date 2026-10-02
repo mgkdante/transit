@@ -72,12 +72,10 @@ describe('selectOffenderLadder', () => {
 		expect(res.spec.mark).toBe('lollipop');
 		expect(res.spec.scale).toBe('severity');
 		expect(res.spec.rowLabel).toBe('Trip');
-		// DB order is PRESERVED — T1 (40) stays first even though T2 (90) is "worse".
 		expect(res.spec.rows.map((r) => r.value)).toEqual([40, 90]);
 	});
 
 	it('encodes severe_pct as the bar value and flips the Wilson CI onto the severe scale', () => {
-		// wilson_lo/hi bracket the NOT-severe rate; the flip is [100 - hi, 100 - lo].
 		const res = selectOffenderLadder(
 			[entry({ severe_pct: 40, wilson_lo: 55, wilson_hi: 65 })],
 			10,
@@ -87,8 +85,8 @@ describe('selectOffenderLadder', () => {
 		if (res.spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
 		const row = res.spec.rows[0];
 		expect(row.value).toBe(40);
-		expect(row.wilsonLo).toBe(100 - 65); // 35
-		expect(row.wilsonHi).toBe(100 - 55); // 45
+		expect(row.wilsonLo).toBe(100 - 65);
+		expect(row.wilsonHi).toBe(100 - 55);
 	});
 
 	it('null severe_pct → a no-data value (null), never a fabricated 0', () => {

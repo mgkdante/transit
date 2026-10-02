@@ -196,8 +196,6 @@ def test_manifest_driven_realtime_config_supports_s3_backend() -> None:
 def test_build_realtime_ssl_context_floors_tls_1_2_without_capping() -> None:
     context = _build_realtime_ssl_context()
 
-    # Floor at TLS 1.2 but allow 1.3 to negotiate (no maximum pin) so TLS-1.3-only
-    # GTFS-RT endpoints still connect.
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2
     assert context.maximum_version in (
         ssl.TLSVersion.MAXIMUM_SUPPORTED,
@@ -238,8 +236,6 @@ def test_extract_realtime_metadata_tolerates_missing_header_timestamp() -> None:
     message.header.gtfs_realtime_version = "2.0"
     message.entity.add().id = "missing-ts"
 
-    # A feed that omits its header timestamp no longer aborts the capture; the
-    # metadata carries None and the capture resolves it to the capture time.
     metadata = extract_realtime_metadata(
         message.SerializeToString(),
         provider_id="stm",
@@ -360,7 +356,7 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
         resolved_backends.append(storage_backend)
         return fake_storage
 
-    result = realtime_gtfs._capture_realtime_feed(
+    result, captured_payload = realtime_gtfs._capture_realtime_feed(
         "stm",
         "vehicle_positions",
         settings=settings,
@@ -369,6 +365,7 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
         bronze_storage_resolver=resolve_storage,
     )
 
+    assert captured_payload == payload
     assert resolved_backends == ["s3"]
     assert result.storage_backend == "s3"
     assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"
@@ -429,8 +426,6 @@ def test_capture_realtime_feed_falls_back_to_capture_time_when_header_timestamp_
         engine=FakeEngine(connection),
     )
 
-    # The feed omitted its header timestamp, so the persisted feed_timestamp_utc
-    # falls back to the capture time rather than aborting the capture.
     assert result.feed_timestamp_utc == result.completed_at_utc
     snapshot_index_params = next(
         params
@@ -441,7 +436,6 @@ def test_capture_realtime_feed_falls_back_to_capture_time_when_header_timestamp_
 
 
 class _MetadataFailingConnection(RecordingConnection):
-    """Raises when the post-upload metadata write is attempted."""
 
     def __init__(self, fail_marker: str, error: Exception) -> None:
         super().__init__()
@@ -476,7 +470,6 @@ def test_capture_realtime_feed_deletes_orphan_object_when_metadata_write_fails(
     )
     fake_storage = FakeBronzeStorage("s3://bronze-bucket")
     boom = RuntimeError("metadata transaction blew up")
-    # The first post-upload write is the ingestion_objects insert.
     connection = _MetadataFailingConnection("INSERT INTO raw.ingestion_objects", boom)
     settings = Settings(
         _env_file=None,
@@ -505,10 +498,7 @@ def test_capture_realtime_feed_deletes_orphan_object_when_metadata_write_fails(
             bronze_storage_resolver=lambda storage_backend: fake_storage,
         )
 
-    # The original metadata exception must still propagate.
     assert exc_info.value is boom
-    # The artifact was uploaded, then the metadata write failed -> the R2 object
-    # must be best-effort deleted so it does not orphan-leak.
     assert len(fake_storage.persisted) == 1
     persisted_storage_path = fake_storage.persisted[0][1]
     assert fake_storage.deleted == [persisted_storage_path]
@@ -583,6 +573,5 @@ def test_capture_realtime_feed_swallows_delete_failure_and_propagates_original(
             engine=FakeEngine(connection),
         )
 
-    # A failing best-effort delete must NOT mask the original metadata exception.
     assert exc_info.value is boom
     assert fake_storage.deleted == [fake_storage.persisted[0][1]]

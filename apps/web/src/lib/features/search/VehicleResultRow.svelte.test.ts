@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import type { Vehicle } from '$lib/v1/schemas';
 import { copy } from './search.copy';
@@ -47,15 +48,13 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: 'Few seats',
 			},
 		});
-		expect(screen.getByRole('link', { name: 'Live bus 40061' })).toHaveAttribute(
-			'href',
-			'/map?vehicle=40061',
-		);
+		expect(
+			screen.getByRole('link', { name: 'Live bus 40061, Late, Delay: +4 min' }),
+		).toHaveAttribute('href', '/map?vehicle=40061');
 		expect(screen.getByText('Late')).toBeInTheDocument();
 		expect(screen.getByText('+4 min')).toBeInTheDocument();
 		expect(screen.getByText('Route 161')).toBeInTheDocument();
 		expect(screen.getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
-		// A bearing → a rotated heading arrow.
 		const arrow = container.querySelector('.vehicle-row-arrow') as HTMLElement | null;
 		expect(arrow?.getAttribute('style')).toContain('rotate(90deg)');
 	});
@@ -71,15 +70,10 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: null,
 			},
 		});
-		// No crowding telemetry + no delay reading + no next stop → three styled
-		// honest-absence chips ("Unknown · not reported"), never a fabricated band /
-		// "No delay" / 0, and never a plain easy-to-miss "no data".
 		const chips = container.querySelectorAll('[data-slot="absent-value"]');
 		expect(chips.length).toBe(3);
-		// Each chip says it is unknown AND why (the live feed omitted it).
 		expect(screen.getAllByText('Unknown').length).toBe(3);
 		expect(screen.getAllByText('not reported in the live feed').length).toBe(3);
-		// The fabricated plain strings are gone.
 		expect(screen.queryByText('No crowding data')).toBeNull();
 		expect(screen.queryByText('No delay')).toBeNull();
 	});
@@ -96,8 +90,6 @@ describe('VehicleResultRow', () => {
 			},
 		});
 		expect(container.querySelector('.vehicle-row-arrow')).toBeNull();
-		// Falls back to the static bus glyph + the styled honest-absence chip for the
-		// next stop (the next-stop subtitle carries an "absent-value" chip).
 		expect(container.querySelector('.vehicle-row-glyph')).not.toBeNull();
 		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
 		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
@@ -115,11 +107,55 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: null,
 			},
 		});
-		// The meaningless raw GTFS id is never surfaced to a rider…
 		expect(screen.queryByText('Next: 99999')).toBeNull();
-		// …the next-stop subtitle falls to the styled honest-absence chip instead.
 		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
 		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(screen.queryByText('No next stop')).toBeNull();
+	});
+});
+
+describe.each(['en', 'fr'] as const)('VehicleResultRow published status in %s', (locale) => {
+	it.each([
+		['on_time', 1, '+1 min'],
+		['late', 0, '0 min'],
+		['early', -2, '−2 min'],
+		['severe', 4, '+4 min'],
+		['unknown', 0, '0 min'],
+		['on_time', null, null],
+		['unknown', null, null],
+	] as const)('%s with delay %s', (status, delay, measurement) => {
+		const statusLabel = STATUS_LABELS[locale][status];
+		const { container } = render(VehicleResultRow, {
+			props: {
+				vehicle: vehicle({ status, delay_min: delay }),
+				locale,
+				nextStopName: 'Stop',
+				copy: copy[locale].vehicle,
+				statusLabel,
+				occupancyLabel: 'Full',
+			},
+		});
+		const badge = container.querySelector('[data-slot="status-badge"]');
+		expect(badge).toHaveAttribute('data-status', status);
+		if (status === 'unknown' && delay == null) {
+			expect(badge).toHaveAttribute('aria-hidden', 'true');
+			expect(badge).toHaveTextContent('○');
+			expect(badge?.getAttribute('style')).toContain('--dataviz-status-unknown');
+		} else expect(badge).toHaveTextContent(statusLabel);
+		const reading = container.querySelector('.vehicle-row-meta')!;
+		if (measurement) expect(reading).toHaveTextContent(measurement);
+		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
+		const link = container.querySelector('a')!;
+		if (status === 'unknown' && delay == null) {
+			expect(link.textContent?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
+			expect(link.getAttribute('aria-label')?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
+			expect(link.getAttribute('aria-label')).toContain(
+				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
+			);
+		}
+
+		expect(link).toHaveAccessibleName(new RegExp(statusLabel));
+		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});
 });

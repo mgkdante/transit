@@ -1,12 +1,3 @@
-// NumberedChip.test.ts — the zero-padded section-index mark (D4/H4 infra).
-//
-// Gates:
-//   - zero-pads 1-digit values to two digits ("01"), keeps 3-digit values whole.
-//   - tabular-nums (so a column of chips aligns) + --tracking-eyebrow.
-//   - decorative by default (aria-hidden); opts into announcement.
-//   - tone drives the data-tone hook (rest vs active).
-//   - pass-through of arbitrary attributes + class merge.
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import NumberedChip from './NumberedChip.svelte';
@@ -39,8 +30,6 @@ describe('NumberedChip — geometry (tabular-nums so a ToC column aligns)', () =
 	it('rides tabular-nums via the numbered-chip class', () => {
 		const { container } = render(NumberedChip, { props: { value: 1 } });
 		expect(chip(container)).toHaveClass('numbered-chip');
-		// The class carries font-variant-numeric: tabular-nums (JSDOM cannot resolve
-		// the stylesheet rule, so we assert the class contract the CSS keys off).
 		expect(chip(container).getAttribute('class')).toContain('numbered-chip');
 	});
 });

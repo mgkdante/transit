@@ -1,19 +1,8 @@
-// weekdaySeasonality — the per-stop weekday ranked list (day_of_week[]).
-//
-// Ports the StopDetail inline `rankedWeekdays` transform VERBATIM: rank the
-// weekday series worst-first by mean delay on the FIXED DELAY_DOW_DOMAIN. A
-// weekday earns a row ONLY when it carries a real mean delay (a null-avg or
-// zero-observation weekday is DROPPED — never a fabricated 0-delay bar). The
-// severe share rides as a second reading ONLY when enough observations back it
-// (MIN_WEEKDAY_SEVERE_OBSERVATIONS) — a thin bucket keeps the plain avg caption.
-
 import { DELAY_DOW_DOMAIN } from '$lib/features/reliability/shiftGrains';
 import type { SeverityCode, RouteDayOfWeek } from '$lib/v1/schemas';
 
-/** A weekday severe share resting on fewer than this many observations is withheld. */
 export const MIN_WEEKDAY_SEVERE_OBSERVATIONS = 5;
 
-/** One ranked weekday row (RankedRow-ready, carrying its absolute domain). */
 export interface WeekdayRow {
 	readonly key: number;
 	readonly rank: number;
@@ -27,11 +16,8 @@ export interface WeekdayRow {
 }
 
 export interface WeekdaySeasonalityLabels {
-	/** Per-row subtitle prefix when a well-sampled severe share is the reading. */
 	severeShare: string;
-	/** Per-row subtitle when the mean delay is the only reading. */
 	avgDelay: string;
-	/** Localized weekday name from an ISO index (1=Mon..7=Sun). */
 	weekdayLabel: (iso: number) => string;
 }
 
@@ -51,8 +37,6 @@ export function selectWeekdaySeasonality(
 		.slice()
 		.sort((a, b) => b.delay - a.delay)
 		.map((r, i) => {
-			// ABSOLUTE severity off the real mean delay (never the in-view max) so a calm
-			// 2-min weekday never reads 'critical' just for being this stop's worst.
 			const severity: SeverityCode = r.delay >= 10 ? 'critical' : r.delay >= 5 ? 'high' : 'watch';
 			const severeTrusted =
 				r.severePct != null &&

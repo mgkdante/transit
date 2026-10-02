@@ -1,5 +1,3 @@
-"""Gold fact + warm-rollup/aggregate retention tier (slice-9.1.1-zeta split)."""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -26,25 +24,19 @@ GOLD_WARM_ROLLUP_TABLES = (
 )
 
 GOLD_REPORTING_AGGREGATE_TABLES = (
-    # GC1 / Step G1 re-pointed every metric reader off gold.route_delay_hourly, but the
-    # table stays built (gold.public_route_reliability_daily VIEW still depends on it).
+    # Keep route_delay_hourly while the public daily reliability view depends on it.
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    # gold.route_habit_score DROPPED (migration 0076, S14) — the scalar habits matrix now
-    # recomposes at read time from gold.route_delay_spine; no stored mart to retain/prune.
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
 )
 
-# Append-only daily rollups — NOT in the DELETE+UPSERT reporting registry; they
-# accrue forward and are pruned only at GOLD_WARM_ROLLUP_RETENTION_DAYS.
+# Daily rollups accrue independently of reporting rebuilds and use warm retention.
 GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_delay_percentile_daily",
     "gold.stop_delay_percentile_daily",
     "gold.route_cancellation_daily",
     "gold.route_occupancy_band_daily",
-    # migration 0074 — hour-grain crowding spine (daily == Σ hourly). Same append-only
-    # lifecycle + retention as its daily sibling; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS.
     "gold.route_occupancy_band_hourly",
     "gold.stop_occupancy_band_daily",
     "gold.route_service_span_daily",
@@ -54,18 +46,9 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_headway_shift_daily",
     "gold.stop_delay_spine",
     "gold.stop_delay_shift_daily",
-    # migration 0075 (S14) — daily per-entity (trip|vehicle) offender spine feeding the
-    # windowed repeat-offender by_grain recurrence ladders. Append-only; pruned at
-    # GOLD_WARM_ROLLUP_RETENTION_DAYS like the sibling spines.
     "gold.repeat_offender_daily_spine",
-    # migration 0073 — per-date scheduled universe (cancellation's honest denominator).
-    # Append-only daily rollup; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS like its join
-    # partner route_cancellation_daily (see GOLD_AGGREGATE_RETENTION_COLUMNS below).
     "gold.route_scheduled_trips_daily",
-    # migration 0069 — permanent per-GTFS-edition scheduled-service history.
-    # Append-only (idempotent DELETE-by-dataset_version + INSERT), but deliberately
-    # ABSENT from GOLD_AGGREGATE_RETENTION_COLUMNS: it is NEVER pruned so edition
-    # history is preserved indefinitely.
+    # Edition service history is permanent and excluded from aggregate retention.
     "gold.schedule_version_service_summary",
 )
 
@@ -80,7 +63,6 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.warm_rollup_periods", "period_start_utc", False),
     ("gold.route_delay_hourly", "period_start_utc", False),
     ("gold.stop_delay_hourly", "period_start_utc", False),
-    # gold.route_habit_score DROPPED (migration 0076, S14) — no retention row.
     ("gold.repeated_problem_route_stop", "period_start_local", True),
     ("gold.citizen_accountability_daily", "provider_local_date", True),
     ("gold.route_delay_percentile_daily", "provider_local_date", True),
@@ -102,9 +84,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)
 
-# Alert history is a retained event archive, not a daily analytical aggregate.
-# Its month-partition lifecycle is intentionally separate from every aggregate
-# registry above.
+# Alert event archives have a separate month-partition lifecycle.
 ALERT_ARCHIVE_RETENTION_TABLE = "gold.alert_archive_entry"
 
 _DELETE_EXPIRED_ALERT_ARCHIVE = named_query(
@@ -125,14 +105,7 @@ _COUNT_EXPIRED_ALERT_ARCHIVE = named_query(
     """,
 )
 
-# Each live gold-fact DELETE is bounded to :batch rows via ctid IN (... LIMIT)
-# — same shape as the silver realtime prunes above. The first cycle after a
-# worker outage must otherwise drain the entire 18.7M-scale backlog in ONE
-# unbounded transaction (long lock hold + WAL/bloat spike — the wave-2 stall
-# class); batching drains it over many ~57s cycles while steady-state clears in
-# one quick pass. These fact tables are FK leaves (no non-cascading children),
-# so no NOT EXISTS child guard is needed. The dry-run COUNT stays unbounded so
-# it reports the TRUE backlog, never the per-cycle cap.
+# Bound fact deletes; dry-run counts report the full backlog.
 DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
     """
     DELETE FROM gold.fact_trip_delay_snapshot AS fact
@@ -218,7 +191,6 @@ def prune_alert_archive_history(
     dry_run: bool = False,
     now_utc: datetime | None = None,
 ) -> tuple[date | None, int]:
-    """Prune only complete archive-month partitions older than retention."""
 
     if retention_days <= 0:
         return None, 0
@@ -280,10 +252,7 @@ def prune_gold_fact_history(
         }
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
-    # Each live DELETE is bounded to :batch rows so a one-time backlog (the first
-    # cycle after a worker outage) drains over many ~57s cycles instead of one
-    # unbounded transaction (hang class). batch_size is floored at 1 to avoid a
-    # no-op LIMIT 0 that would never drain.
+    # Floor batch_size at one so pruning can always make progress.
     batch = max(int(batch_size), 1)
     params = {
         "provider_id": provider_id,
@@ -350,7 +319,6 @@ def prune_warm_rollup_storage(
     engine: Engine | None = None,
     dry_run: bool = False,
 ) -> WarmRollupStoragePruneResult:
-    """Delete warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS."""
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
 

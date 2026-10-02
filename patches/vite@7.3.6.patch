@@ -1,0 +1,42 @@
+diff --git a/dist/node/chunks/config.js b/dist/node/chunks/config.js
+index 9a45043275249a25101fd7991ffcfc316478840e..91be38f831d2564a0c10775aae9791f487640c41 100644
+--- a/dist/node/chunks/config.js
++++ b/dist/node/chunks/config.js
+@@ -23383,6 +23383,7 @@ function preload(baseModule, deps, importerUrl) {
+ 	let promise = Promise.resolve();
+ 	if (__VITE_IS_MODERN__ && deps && deps.length > 0) {
+ 		const links = document.getElementsByTagName("link");
++		let linkHrefs, stylesheetHrefs;
+ 		const cspNonceMeta = document.querySelector("meta[property=csp-nonce]");
+ 		const cspNonce = cspNonceMeta?.nonce || cspNonceMeta?.getAttribute("nonce");
+ 		function allSettled(promises$2) {
+@@ -23400,9 +23401,17 @@ function preload(baseModule, deps, importerUrl) {
+ 			seen[dep] = true;
+ 			const isCss = dep.endsWith(".css");
+ 			const cssSelector = isCss ? "[rel=\"stylesheet\"]" : "";
+-			if (!!importerUrl) for (let i$1 = links.length - 1; i$1 >= 0; i$1--) {
+-				const link$1 = links[i$1];
+-				if (link$1.href === dep && (!isCss || link$1.rel === "stylesheet")) return;
++			if (!!importerUrl) {
++				if (!linkHrefs) {
++					linkHrefs = new Set();
++					stylesheetHrefs = new Set();
++					for (const link$1 of links) {
++						const href = link$1.href;
++						linkHrefs.add(href);
++						if (link$1.rel === "stylesheet") stylesheetHrefs.add(href);
++					}
++				}
++				if ((isCss ? stylesheetHrefs : linkHrefs).has(dep)) return;
+ 			}
+ 			else if (document.querySelector(`link[href="${dep}"]${cssSelector}`)) return;
+ 			const link = document.createElement("link");
+@@ -23412,6 +23421,8 @@ function preload(baseModule, deps, importerUrl) {
+ 			link.href = dep;
+ 			if (cspNonce) link.setAttribute("nonce", cspNonce);
+ 			document.head.appendChild(link);
++			linkHrefs?.add(dep);
++			if (isCss) stylesheetHrefs?.add(dep);
+ 			if (isCss) return new Promise((res, rej) => {
+ 				link.addEventListener("load", res);
+ 				link.addEventListener("error", () => rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`)));

@@ -13,7 +13,6 @@ const idx = (partial: Partial<ReceiptsIndex>): ReceiptsIndex =>
 
 describe('selectAvailability — the smart calendar', () => {
 	it('enumerates the FULL span with published days enabled and gap-days disabled', () => {
-		// Jun 15 and Jun 17 published; Jun 16 is a GAP the index never published.
 		const vm = selectAvailability(idx({ dates: ['2026-06-15', '2026-06-17'] }), labels);
 		expect(vm.options.map((o) => o.date)).toEqual(['2026-06-15', '2026-06-16', '2026-06-17']);
 		const gap = vm.options.find((o) => o.date === '2026-06-16')!;
@@ -37,7 +36,6 @@ describe('selectAvailability — the smart calendar', () => {
 	});
 
 	it('is timezone-safe across a DST edge (no dropped/duplicated service day)', () => {
-		// 2026-03-08 is the US/CA spring-forward day — string math must not skip it.
 		const vm = selectAvailability(idx({ dates: ['2026-03-07', '2026-03-09'] }), labels);
 		expect(vm.options.map((o) => o.date)).toEqual(['2026-03-07', '2026-03-08', '2026-03-09']);
 	});
@@ -47,8 +45,8 @@ describe('selectAvailability — the smart calendar', () => {
 			idx({
 				dates: ['2026-06-15', '2026-06-16'],
 				available: [
-					{ date: '2026-06-15', has_data: false, has_schedule: true }, // schedule-only → enabled
-					{ date: '2026-06-16', has_data: false, has_schedule: false }, // empty shell → disabled
+					{ date: '2026-06-15', has_data: false, has_schedule: true },
+					{ date: '2026-06-16', has_data: false, has_schedule: false },
 				],
 			}),
 			labels,

@@ -2,7 +2,8 @@
 #
 # This file is copied verbatim from static/ to the deploy root by
 # adapter-cloudflare; Cloudflare Pages reads it to attach headers. First matching
-# rule per header wins. Keep this in lockstep with CLOUDFLARE.md.
+# rule per header wins. Keep this in lockstep with the deployment guide:
+# https://www.notion.so/3ea3e86306908143886fdfc58ff24cd9
 #
 # CACHE DOCTRINE
 #   /_app/immutable/*  content-hashed by SvelteKit  -> immutable, 1 year

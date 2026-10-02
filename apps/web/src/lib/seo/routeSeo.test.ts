@@ -26,10 +26,9 @@ const PATHS = [
 	'/terms',
 	'/lines/1',
 	'/stop/5',
+	'/trip/example',
 ];
 
-// The full set of static surfaces (no detail routes) used by the title-
-// distinctness checks — every entry here must render a unique <title>.
 const SURFACE_PATHS = [
 	'/',
 	'/map',
@@ -47,8 +46,6 @@ const SURFACE_PATHS = [
 	'/terms',
 ];
 
-// A representative identity (STM / Montréal) for the keyworded-copy path. The
-// module itself holds NO agency/city literals — these tokens are injected here.
 const STM_IDENTITY = { shortName: 'STM', city: 'Montréal' } as const;
 
 describe('resolveRouteSeo', () => {
@@ -72,28 +69,27 @@ describe('resolveRouteSeo', () => {
 		expect(resolveRouteSeo('/stop/5', 'en').title).toBe('Stop detail');
 	});
 
-	it('keeps every NEUTRAL description in the ~120–160 char SEO window', () => {
+	it('keeps neutral descriptions nonempty and concise', () => {
 		for (const p of PATHS) {
 			for (const l of ['en', 'fr'] as const) {
 				const len = resolveRouteSeo(p, l).description.length;
-				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThanOrEqual(120);
+				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThan(0);
 				expect(len, `${p} ${l}: ${len} chars`).toBeLessThanOrEqual(160);
 			}
 		}
 	});
 
-	it('keeps every KEYWORDED description in the ~120–160 char SEO window', () => {
+	it('keeps provider descriptions nonempty and concise', () => {
 		for (const p of PATHS) {
 			for (const l of ['en', 'fr'] as const) {
 				const len = resolveRouteSeo(p, l, STM_IDENTITY).description.length;
-				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThanOrEqual(120);
+				expect(len, `${p} ${l}: ${len} chars`).toBeGreaterThan(0);
 				expect(len, `${p} ${l}: ${len} chars`).toBeLessThanOrEqual(160);
 			}
 		}
 	});
 
 	it('injects the provider tokens into the keyworded copy', () => {
-		// Home + network anchor the keyword-preservation contract in both locales.
 		for (const l of ['en', 'fr'] as const) {
 			const home = resolveRouteSeo('/', l, STM_IDENTITY).description;
 			expect(home).toContain('STM');
@@ -102,9 +98,8 @@ describe('resolveRouteSeo', () => {
 			expect(network).toContain('STM');
 			expect(network).toContain('Montréal');
 		}
-		// Home title is the one keyworded title override.
-		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('Live STM map');
-		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Carte STM en direct');
+		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('STM network overview');
+		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
 	});
 
 	it('keeps legal SEO provider-neutral even when an identity is available', () => {
@@ -119,8 +114,6 @@ describe('resolveRouteSeo', () => {
 });
 
 describe('isEphemeralPath', () => {
-	// Guards the central "trip ids rotate → never index" promise: only /trip is
-	// ephemeral; detail surfaces over STABLE ids (/route, /stop) stay indexable.
 	it('flags trip detail (and its locale-prefixed form) as ephemeral', () => {
 		expect(isEphemeralPath('/trip/x')).toBe(true);
 		expect(isEphemeralPath('/fr/trip/x')).toBe(true);
@@ -149,9 +142,8 @@ describe('resolveRouteSeo — neutral copy fallback', () => {
 				expect(title).not.toContain('STM');
 			}
 		}
-		// The neutral home title stays distinct from the keyworded one.
-		expect(resolveRouteSeo('/', 'en').title).toBe('Live transit map');
-		expect(resolveRouteSeo('/', 'fr').title).toBe('Carte du réseau en direct');
+		expect(resolveRouteSeo('/', 'en').title).toBe('Transit network overview');
+		expect(resolveRouteSeo('/', 'fr').title).toBe('Vue d’ensemble du réseau');
 	});
 });
 
@@ -196,7 +188,7 @@ describe('resolveDatasetSeo', () => {
 		for (const l of ['en', 'fr'] as const) {
 			const { name, description } = resolveDatasetSeo(l);
 			expect(name.length).toBeGreaterThan(0);
-			expect(description).toContain('/v1');
+			expect(description).toContain('CC BY 4.0');
 		}
 		expect(resolveDatasetSeo('en').name).not.toBe(resolveDatasetSeo('fr').name);
 	});

@@ -39,14 +39,6 @@ class ComponentHealthResult:
         }
 
     def public_dict(self) -> dict[str, object]:
-        """Minimal, anonymous-safe view of a single component.
-
-        Exposes only the coarse name + status. Deliberately drops ``message``
-        (raw DB/storage/feed error strings), ``details`` (configured feed URLs,
-        DB DSNs, storage locations), and ``latency_ms`` (an internal timing
-        signal) so the internet-facing /health cannot leak operational internals
-        (audit x-security#4).
-        """
         return {"name": self.name, "status": self.status}
 
 
@@ -95,15 +87,6 @@ class OverallHealthResult:
         }
 
     def public_dict(self) -> dict[str, object]:
-        """Minimal, anonymous-safe view for the internet-facing /health.
-
-        Returns the overall status, the attention flag, coarse per-component
-        up/down, and a single non-sensitive freshness scalar (max realtime
-        endpoint age in seconds). Drops every component message, detail block,
-        feed URL, DB DSN, storage location, and latency that the full
-        display_dict() carries (audit x-security#4). The detailed view stays in
-        server logs / operator tooling, not on the public endpoint.
-        """
         return {
             "status": self.status,
             "checked_at_utc": self.checked_at_utc.isoformat(),
@@ -114,16 +97,6 @@ class OverallHealthResult:
         }
 
     def _pipeline_freshness_age_seconds(self) -> int | None:
-        """Max capture age (seconds) across every per-provider feed component.
-
-        A non-sensitive operability scalar: it reveals how stale the freshest-
-        lagging feed is across all providers without exposing provider ids,
-        endpoint URLs, capture timestamps, or any configured internals. Each
-        per-feed freshness component carries an ``age_seconds`` in its (redacted)
-        details; this rolls them up to a single max. Returns None when no feed
-        component reports an age (e.g. the freshness check failed, or no feed has
-        ever been captured).
-        """
         ages = [
             details["age_seconds"]
             for component in self.components

@@ -1,22 +1,7 @@
-// provenanceViews — pure view-model selectors for the provenance sections of
-// /status (freshness, sources, gaps, pipeline-notes, retention, conformance).
-//
-// Lifted VERBATIM out of HealthStatus.svelte's inline logic so the orchestrator
-// stays thin and each derivation is unit-testable off the DOM. i18n stays OUT of
-// this module: callers pass already-localized label functions / maps. Every
-// selector is honest — an absent/empty slice yields an empty array / null so the
-// section stands DOWN, never a fabricated value.
-
 import type { Provenance } from '$lib/v1/schemas';
 
-// ── Per-feed freshness verdict ──────────────────────────────────────────────
-// freshness[].status is the LAST INGESTION-RUN status (succeeded/failed/running/
-// pending), NOT a freshness band. Map it to a dataviz status aspect + a caller-
-// supplied verdict label. An unknown/absent status → the neutral "unknown" aspect
-// (honest about a verdict we do not recognize).
 export type FreshnessAspect = 'on_time' | 'late' | 'unknown';
 
-/** Localized verdict words the selector fills in (i18n stays at the call site). */
 export interface StatusVerdictLabels {
 	readonly ok: string;
 	readonly running: string;
@@ -46,9 +31,6 @@ export function verdictFor(
 	}
 }
 
-// ── Section presence guards ─────────────────────────────────────────────────
-// Each returns the (possibly empty) slice; an empty result stands the section
-// DOWN at the call site.
 export function freshnessOf(p: Provenance) {
 	return p.freshness ?? [];
 }
@@ -59,12 +41,6 @@ export function gapsOf(p: Provenance) {
 	return p.gaps ?? [];
 }
 
-// ── Pipeline notes: EVERY published methodology string with no /metrics card ──
-// A note is any methodology entry whose key is NOT threaded to a /metrics metric
-// AND whose value is a non-empty string. We iterate the FULL published dict (never
-// a hardcoded subset) so a new pipeline key the DB starts publishing renders
-// automatically — a known key gets its localized label, an unknown one falls back
-// to its humanized key (underscores → spaces), so no note is ever dropped.
 export type PipelineNoteKind = 'definition' | 'math' | 'caveat' | 'pipeline-note';
 
 export interface PipelineNote {
@@ -76,11 +52,8 @@ export interface PipelineNote {
 
 export function pipelineNotesOf(
 	p: Provenance,
-	/** Provenance keys already threaded to a /metrics card (excluded here). */
 	threadedKeys: Readonly<Record<string, unknown>>,
-	/** key → localized label; a key absent here falls back to its humanized form. */
 	labels: Readonly<Record<string, string>>,
-	/** key → semantic card kind; a key absent here uses the pipeline-note fallback. */
 	kinds: Readonly<Record<string, PipelineNoteKind>> = {},
 ): PipelineNote[] {
 	const methodology = p.methodology;
@@ -96,8 +69,6 @@ export function pipelineNotesOf(
 		.filter((n) => n.text.length > 0);
 }
 
-// ── Retention ───────────────────────────────────────────────────────────────
-/** detail/aggregate retention days, each present only when the key exists. */
 export function retentionOf(p: Provenance): { detail: number | null; aggregate: number | null } {
 	const r = p.retention ?? {};
 	const detail = typeof r.detail_days === 'number' ? r.detail_days : null;

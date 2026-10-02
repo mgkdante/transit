@@ -1,15 +1,6 @@
-// easterWords.test.ts — the pure easter-word matcher (D4).
-//
-// Guards the DECORATION contract: the split is lossless (segments rebuild the
-// input verbatim), matches are whole-word/phrase only (no partial hits like "stm"
-// inside "system" or "bus" inside "busiest"), two-word phrases match greedily, and
-// both en + fr surface forms are recognized. If any of these break, the flourish
-// would either mangle the prose or decorate the wrong substrings.
-
 import { describe, it, expect } from 'vitest';
 import { splitEasterSegments, hasEasterMatch, EASTER_PHRASES } from './easterWords';
 
-/** The matched segment texts, in order. */
 function matches(text: string): string[] {
 	return splitEasterSegments(text)
 		.filter((s) => s.match)
@@ -110,9 +101,6 @@ describe('EASTER_PHRASES ordering invariant', () => {
 	it('lists each two-word phrase before its trailing sub-word (greedy-longest)', () => {
 		const idx = (p: string) => EASTER_PHRASES.indexOf(p);
 		expect(idx('alto train')).toBeLessThan(idx('train'));
-		// "octranspo" must precede any shorter agency prefix that could shadow it;
-		// none of stm/sto/sts is a prefix of octranspo, but the phrase-first rule
-		// is what keeps the scan correct, so assert the two-word phrases lead.
 		expect(idx('alto train')).toBeLessThan(idx('trains'));
 		expect(idx('cdpq infra')).toBeLessThan(idx('bus'));
 	});

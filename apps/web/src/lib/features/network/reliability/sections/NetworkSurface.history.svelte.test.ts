@@ -325,7 +325,7 @@ describe('NetworkSurface retained-history integration', () => {
 		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
 		expect(harness.loadNetworkHistoryRange).not.toHaveBeenCalled();
 		expect(trendRows(view.container)).toHaveLength(2);
-		expect(trendRows(view.container).map(rowOtp)).toEqual(['78', '81']);
+		expect(trendRows(view.container).map(rowOtp)).toEqual(['78%', '81%']);
 		const navigator = view.container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
 		) as HTMLElement;
@@ -360,7 +360,7 @@ describe('NetworkSurface retained-history integration', () => {
 
 		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
 		expect(harness.loadNetworkHistoryRange).not.toHaveBeenCalled();
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['78', '81']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['78%', '81%']));
 		expect(harness.mirrorSearchParams).toHaveBeenCalledWith({
 			grain: null,
 			from: null,
@@ -407,13 +407,21 @@ describe('NetworkSurface retained-history integration', () => {
 		harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-02-01');
 		const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20', '90']));
-		expect(view.container.querySelector('[data-slot="verdict-delta"]')).toHaveTextContent('+70');
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%', '90%']));
+		const change = view.container.querySelector('[data-slot="verdict-delta"]')!;
+		expect(view.container.querySelector('[data-toc="net-historic"]')).toContainElement(
+			change as HTMLElement,
+		);
+		expect(change).toHaveTextContent('+70 percentage points');
+		expect([...change.querySelectorAll('time')].map((date) => date.dateTime)).toEqual([
+			'2026-02-01',
+			'2026-01-31',
+		]);
 		expect(view.queryByRole('radiogroup', { name: 'Trend window' })).toBeNull();
 
 		await fireEvent.click(view.getByRole('radio', { name: 'Week' }));
 		await waitFor(() => expect(trendRows(view.container)).toHaveLength(1));
-		expect(rowOtp(trendRows(view.container)[0])).toBe('83');
+		expect(rowOtp(trendRows(view.container)[0])).toBe('83%');
 	});
 
 	it('renders one real retained day without fabricating a connecting line', async () => {
@@ -421,7 +429,8 @@ describe('NetworkSurface retained-history integration', () => {
 		harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
 		const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
+		expect(view.container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
 	});
 
 	it('preserves the default singleton absence treatment for one coarse point', async () => {
@@ -446,7 +455,7 @@ describe('NetworkSurface retained-history integration', () => {
 		);
 		const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20', '90']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%', '90%']));
 		expect(view.container.querySelectorAll('[data-slot="history-partial"]')).toHaveLength(1);
 		expect(view.container.querySelectorAll('[data-slot="history-daily-only"]')).toHaveLength(1);
 		expect(view.container.querySelectorAll('[data-slot="history-current-only"]')).toHaveLength(1);
@@ -546,7 +555,7 @@ describe('NetworkSurface retained-history integration', () => {
 		harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
 		const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
 		const navigator = view.container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
 		) as HTMLElement;
@@ -572,7 +581,7 @@ describe('NetworkSurface retained-history integration', () => {
 		const inputs = navigator.querySelectorAll<HTMLInputElement>('input[type="date"]');
 		await fireEvent.change(inputs[0], { target: { value: '2026-01-31' } });
 		await fireEvent.change(inputs[1], { target: { value: '2026-01-31' } });
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
 
 		await fireEvent.click(
 			within(navigator).getByRole('button', { name: 'Return to current snapshot' }),
@@ -756,11 +765,11 @@ describe('NetworkSurface retained-history integration', () => {
 			days: partition.days.map((day) => retainedDay(day.date, 10, 0)),
 		}));
 		second.resolve(replacement);
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['0', '0', '0']));
+		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['0%', '0%', '0%']));
 
 		first.resolve(retainedPartitions);
 		await Promise.resolve();
-		expect(trendRows(view.container).map(rowOtp)).toEqual(['0', '0', '0']);
+		expect(trendRows(view.container).map(rowOtp)).toEqual(['0%', '0%', '0%']);
 	});
 });
 

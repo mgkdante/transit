@@ -1,4 +1,3 @@
-"""GTFS-RT service alerts → i3-shaped payload → existing silver normalizer."""
 
 from __future__ import annotations
 
@@ -62,7 +61,6 @@ def test_convert_gtfs_rt_alerts_to_i3_payload() -> None:
 
 
 def _build_multi_period_protobuf_with_url() -> bytes:
-    """A GTFS-RT alert with THREE active windows + a bilingual url (S15)."""
     message = gtfs_realtime_pb2.FeedMessage()
     message.header.gtfs_realtime_version = "2.0"
     entity = message.entity.add()
@@ -89,8 +87,6 @@ def _build_multi_period_protobuf_with_url() -> bytes:
 
 
 def test_convert_emits_every_active_period_not_just_the_first() -> None:
-    # S15 truncation fix #1: the converter must emit ALL active_period windows,
-    # not just active_period[0]. Order is preserved so period_index is stable.
     payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
     alert = payload["alerts"][0]
     assert alert["activePeriod"] == [
@@ -101,8 +97,6 @@ def test_convert_emits_every_active_period_not_just_the_first() -> None:
 
 
 def test_convert_extracts_alert_url_translatedstring() -> None:
-    # S15: alert.url (a TranslatedString) surfaces as [{language, text}], mirroring
-    # header/description, so the silver normalizer can pick fr as url + en as url_en.
     payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
     url = payload["alerts"][0]["url"]
     assert {"language": "fr", "text": "https://stm.info/avis/multi-1"} in url
@@ -110,8 +104,6 @@ def test_convert_extracts_alert_url_translatedstring() -> None:
 
 
 def test_multi_period_url_flows_into_silver_rows_and_periods() -> None:
-    # S15 truncation fix #2 + url: the converted payload normalizes into ONE alert
-    # row (scalar = period[0]), a full period_rows list, and fr/en url columns.
     payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=7,
@@ -124,39 +116,30 @@ def test_multi_period_url_flows_into_silver_rows_and_periods() -> None:
 
     assert len(alert_rows) == 1
     row = alert_rows[0]
-    # scalar pair = period[0] (backward-compat)
     assert row["active_period_start_utc"] == datetime.fromtimestamp(1_774_000_000, tz=UTC)
     assert row["url"] == "https://stm.info/avis/multi-1"
     assert row["url_en"] == "https://stm.info/en/alert/multi-1"
-    # all THREE windows persisted as child period rows, period_index stable.
     assert [p["period_index"] for p in period_rows] == [0, 1, 2]
     assert all(p["alert_index"] == 0 for p in period_rows)
     assert period_rows[2]["start_utc"] == datetime.fromtimestamp(1_775_200_000, tz=UTC)
 
 
 def test_enum_name_decodes_known_value_and_degrades_unknown_to_string() -> None:
-    # Known enum values decode to their published name...
     assert (
         _enum_name(gtfs_realtime_pb2.Alert.Cause, gtfs_realtime_pb2.Alert.CONSTRUCTION)
         == "CONSTRUCTION"
     )
-    # ...while a vendor-extension value outside the published set degrades to the
-    # raw int as a string instead of raising and failing the whole capture.
     assert _enum_name(gtfs_realtime_pb2.Alert.Cause, 9999) == "9999"
     assert _enum_name(gtfs_realtime_pb2.Alert.Effect, 8888) == "8888"
     assert _enum_name(gtfs_realtime_pb2.Alert.SeverityLevel, 7777) == "7777"
 
 
 def test_unknown_enum_value_on_wire_does_not_crash_converter() -> None:
-    # Hand-crafted FeedMessage bytes carrying Alert.cause = 9999 (a value outside
-    # the published Cause enum). Depending on the active protobuf runtime the
-    # value is either dropped to the unknown-field set or retained and degraded;
-    # either way the converter must not raise.
     raw = bytes(
         [
-            0x0A, 0x05, 0x0A, 0x03, 0x32, 0x2E, 0x30,  # header { version="2.0" }
-            0x12, 0x08, 0x0A, 0x01, 0x78,              # entity { id="x" ...
-            0x2A, 0x03, 0x30, 0x8F, 0x4E,              # ... alert { cause=9999 } }
+            0x0A, 0x05, 0x0A, 0x03, 0x32, 0x2E, 0x30,
+            0x12, 0x08, 0x0A, 0x01, 0x78,
+            0x2A, 0x03, 0x30, 0x8F, 0x4E,
         ]
     )
 
@@ -189,7 +172,7 @@ def test_converted_payload_normalizes_into_silver_alert_rows() -> None:
     assert len(alert_rows) == 1
     row = alert_rows[0]
     assert row["alert_id"] == "alert-1"
-    assert row["alert_header_text"] == "Détour ligne 33"  # fr preferred for identity
+    assert row["alert_header_text"] == "Détour ligne 33"
     assert row["alert_header_text_en"] == "Route 33 detour"
     assert row["cause"] == "CONSTRUCTION"
     assert row["effect"] == "DETOUR"
@@ -200,7 +183,6 @@ def test_converted_payload_normalizes_into_silver_alert_rows() -> None:
 
 
 def test_converted_gtfs_rt_payload_uses_the_same_language_observation_seam() -> None:
-    """D2 parity: STO-style service alerts retain raw translation tags."""
 
     payload = convert_gtfs_rt_alerts_to_i3_payload(_build_alerts_protobuf())
     snapshot = RawI3AlertSnapshot(

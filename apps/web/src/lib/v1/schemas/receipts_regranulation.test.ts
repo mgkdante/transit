@@ -1,13 +1,3 @@
-// receipts_regranulation.test.ts — the S13 re-granulated receipt, web side.
-//
-// Guarantees for Receipt.by_shift / Receipt.service_states and ReceiptsIndex.available
-// (the on-disk canonical JSON mirror is byte-checked by zod-conformance):
-//   1. ADDITIVE-OPTIONAL back-compat — a pre-S13 receipt (scalar-only, no by_shift /
-//      service_states) and a pre-S13 index (dates-only, no available) still parse.
-//   2. A populated payload parses: ordered shift cuts, the service-state split with the
-//      ONE completeness number + the not-reported route list, and per-date availability.
-//   3. Honest-NULL survives the round-trip (null completeness, null counts).
-
 import { describe, it, expect } from 'vitest';
 import { ReceiptSchema } from './receipts';
 import { ReceiptsIndexSchema } from './receipts_index';

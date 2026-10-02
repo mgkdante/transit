@@ -1,8 +1,3 @@
-"""Transactional PostgreSQL proof for migration 0080.
-
-Set TRANSIT_TEST_DATABASE_URL to a disposable database already migrated through
-0079 or later. Every DDL change runs in one transaction and is rolled back.
-"""
 
 from __future__ import annotations
 

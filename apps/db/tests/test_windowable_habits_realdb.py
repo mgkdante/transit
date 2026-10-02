@@ -1,15 +1,3 @@
-"""Real-DB parity + honest-absence gate for the S7-B windowable §1 build (DB-PR-1).
-
-Self-skips when TRANSIT_TEST_DATABASE_URL is unset (the `real-db-tests` job sets it):
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
-        uv run pytest tests/test_windowable_habits_realdb.py -v
-
-Reuses the rich, calendar-stable seed + build helpers from the spine cutover gate via a
-module-local conn fixture (7 identical closed days; ~3 delay obs per dow×hour cell — well
-under MIN_N=30, so the windowed heatmap must honestly suppress, never paint a sea of grey).
-"""
 
 from __future__ import annotations
 
@@ -18,8 +6,6 @@ from datetime import date
 
 import pytest
 from sqlalchemy import text
-
-# The cutover gate owns the seed; reuse it (each module hosts its own conn fixture).
 from test_spine_cutover_gate import (  # noqa: E402
     PROVIDER,
     ROUTE,
@@ -28,7 +14,7 @@ from test_spine_cutover_gate import (  # noqa: E402
     _seed,
 )
 
-from transit_ops.snapshots.builders.historic import (
+from transit_ops.snapshots.builders.historic._spine import (
     _ROUTE_HABIT_SPINE_SQL,
     _grain_windows,
     _spine_habits_by_grain,
@@ -52,17 +38,7 @@ def _params() -> dict:
     return {"provider_id": PROVIDER, "route_id": ROUTE}
 
 
-# NOTE (S14 2026-07-02): the former test_habits_severe_term_byte_identical_to_mart, which read
-# the whole-history gold.route_habit_score mart, is REMOVED — that mart is dropped (migration
-# 0076) and its formula reconciled to ONE reader-owned score (gold/reader/score.py). Its parity
-# guarantee is now covered more strongly by tests/test_habit_score_reconciliation_realdb.py,
-# which embeds a FROZEN copy of the OLD mart SQL and asserts the new all-time reader scores match
-# it cell-for-cell (with a /60-divisor mutation-killer).
-
-
 def test_windowed_habits_matrix_bounded_and_no_sentinel_leak(conn) -> None:
-    """Every emitted matrix cell is in [0,1] (or None) — the 9999.9999 storage cap never leaks
-    (the slice-9.1.1x sentinel guard, via _build_habits_matrix normalization)."""
     out = _spine_habits_by_grain(conn, _params())
     assert {h.grain for h in out} == {"day", "week", "month"}
     for h in out:
@@ -75,8 +51,6 @@ def test_windowed_habits_matrix_bounded_and_no_sentinel_leak(conn) -> None:
 
 
 def test_windowed_habits_honest_absence_under_min_n(conn) -> None:
-    """The seed's ~3 obs/cell is far below MIN_N=30, so every cell is suppressed: habits=None
-    + cells_suppressed>0 + cells_observed==0 (one honest chip, never a grey 7x24 grid)."""
     out = {h.grain: h for h in _spine_habits_by_grain(conn, _params())}
     m = out["month"]
     assert m.habits is None, "too-sparse window must suppress the heatmap entirely (no grey grid)"
@@ -85,10 +59,6 @@ def test_windowed_habits_honest_absence_under_min_n(conn) -> None:
 
 
 def test_periods_by_grain_no_histogram_and_prior_matches_identical_prior_day(conn) -> None:
-    """periods_by_grain emits the 3 grains; windowed by_shift/by_daytype periods carry NO 21-bin
-    histogram (F1). S1: the seed is 7 IDENTICAL days, so the day-grain PRIOR window (anchor-1) is
-    an identical day -> prior_observation_count == this period's observation_count (proving the
-    prior denominator is known_obs, EDGE-9) and prior_otp_pct == otp_pct."""
     out = {g.grain: g for g in _spine_periods_by_grain(conn, _params())}
     assert set(out) == {"day", "week", "month"}
     for g in out.values():
@@ -110,8 +80,6 @@ def test_periods_by_grain_no_histogram_and_prior_matches_identical_prior_day(con
 
 
 def test_recomposition_sql_runs_and_clamps_in_range(conn) -> None:
-    """The raw recomposition SQL executes and every score is within [0, 9999.9999] (the SQL
-    LEAST clamp), proving the numeric composite + sentinel clamp fire server-side."""
     anchor = _anchor_today(conn)
     ws, we = _grain_windows(anchor)["month"]
     rows = list(
@@ -126,16 +94,11 @@ def test_recomposition_sql_runs_and_clamps_in_range(conn) -> None:
         assert 0.0 <= score <= 9999.9999
 
 
-# --- DENSE seed: rows that CLEAR MIN_N=30, so the matrix / sentinel / rebaseline paths
-#     actually execute assertions (the sparse cutover seed suppresses every cell). We seed
-#     gold.route_delay_spine DIRECTLY — the habits recomposition reads only the spine. ---
 _DENSE_PROVIDER = "stm_dense_habits"
 _DENSE_ROUTE = "D1"
-_HIST = "{" + ",".join(["60"] + ["0"] * 20) + "}"  # 21-bin smallint[], in-clamp count = 60
-_HIST_CAP = "{" + ",".join(["1001"] + ["0"] * 20) + "}"  # in-clamp count = 1001
-# Normal cell: severe=2, in_clamp=60, sum=3600 -> avg=60s -> score = 2*10 + 60/60 = 21.0 (clean).
+_HIST = "{" + ",".join(["60"] + ["0"] * 20) + "}"
+_HIST_CAP = "{" + ",".join(["1001"] + ["0"] * 20) + "}"
 _D_NORMAL = date(2026, 6, 1)
-# At-cap cell: severe=1001 -> 1001*10 = 10010 > 9999.9999 -> LEAST clamps -> normalizes to 1.0.
 _D_ATCAP = date(2026, 6, 2)
 
 
@@ -194,11 +157,8 @@ def _dense_params() -> dict:
 def test_dense_recomposition_matches_handcomputed_pooled_formula(
     real_db_engine, seed_provider
 ) -> None:
-    """M2: the recomposed score IS the in-clamp pooled mean
-    (severe*10 + ROUND(Σsum/Σin_clamp,2)/60), NOT severe-only and NOT the mart's
-    obs-weighted avg-of-averages. Normal cell -> exactly 21.0."""
     with _dense_conn(real_db_engine, seed_provider) as conn:
-        ws, we = _grain_windows(_D_ATCAP)["month"]  # anchor = max(date) = _D_ATCAP; covers both
+        ws, we = _grain_windows(_D_ATCAP)["month"]
         scores = {
             (int(r["day_of_week_iso"]), int(r["hour_of_day_local"])): float(
                 r["repeat_problem_score"]
@@ -217,8 +177,6 @@ def test_dense_recomposition_matches_handcomputed_pooled_formula(
 def test_dense_matrix_bounded_atcap_normalizes_to_one_no_sentinel(
     real_db_engine, seed_provider
 ) -> None:
-    """M1: with cells clearing MIN_N, habits is NON-null and every cell is in [0,1]; the at-cap
-    cell normalizes to exactly 1.0 (route max) and the raw 9999.9999 NEVER leaks."""
     with _dense_conn(real_db_engine, seed_provider) as conn:
         out = {h.grain: h for h in _spine_habits_by_grain(conn, _dense_params())}
     month = out["month"]
@@ -231,6 +189,5 @@ def test_dense_matrix_bounded_atcap_normalizes_to_one_no_sentinel(
             assert cell != 9999.9999, "raw sentinel leaked onto the published matrix"
             if cell == 1.0:
                 saw_one = True
-    # the at-cap cell is the route max -> normalizes to exactly 1.0
     assert month.habits.matrix[_D_ATCAP.isoweekday() - 1][9] == 1.0
     assert saw_one

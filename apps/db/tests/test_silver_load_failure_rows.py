@@ -1,12 +1,3 @@
-"""Unit tests for insert_failed_ingestion_run (slice-9.1.1o).
-
-The realtime worker's silver-load failures left zero DB trace before this
-slice (the 14h alerts.json freeze was invisible to every DB query). This
-helper persists a completed status='failed' row with run_kind='silver_load'
-so failure history is queryable. These tests use a recording fake to pin the
-SQL shape, the literal 'failed' status, the bound run_kind/error params, the
-2000-char truncation, and the returned id type — without touching a database.
-"""
 
 from __future__ import annotations
 
@@ -24,7 +15,6 @@ class _ScalarResult:
 
 
 class _RecordingConnection:
-    """Captures executed statements + params and returns a canned id."""
 
     def __init__(self, returned_id: int = 4242) -> None:
         self.executed: list[tuple[str, dict]] = []
@@ -57,17 +47,13 @@ def test_insert_failed_ingestion_run_writes_single_completed_failed_row() -> Non
 
     assert "INSERT INTO raw.ingestion_runs" in sql
     assert "RETURNING ingestion_run_id" in sql
-    # status is a literal 'failed' (not a bound param) — mirrors the
-    # 'running'/'succeeded' literals in the sibling helpers.
     assert "'failed'" in sql
-    # completed row: started == requested, completed set, status failed.
     assert params["provider_id"] == "stm"
     assert params["feed_endpoint_id"] == 7
     assert params["run_kind"] == "silver_load"
     assert params["started_at_utc"] == started
     assert params["completed_at_utc"] == completed
     assert params["error_message"] == "load-realtime-silver failed: boom"
-    # http_status_code defaults to None for a load failure (no HTTP call).
     assert params["http_status_code"] is None
 
 

@@ -1,10 +1,3 @@
-// SectionHeading.test.ts — the canonical section/page title renderer (§C2.7).
-//
-// The LAW: SectionHeading ALWAYS renders a real <hN> (kills the flat-outline
-// defect), supports a numbered chip (D4) + an (i) explainer slot, and stays a
-// drop-in for BOTH the existing DISPLAY-title callers AND the old SectionLabel
-// section-title span (OVERLINE mode).
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
@@ -12,7 +5,6 @@ import SectionHeading from './SectionHeading.svelte';
 
 const wrap = (c: HTMLElement) => c.querySelector('[data-slot="section-heading"]') as HTMLElement;
 
-// A trivial explainer snippet standing in for a MetricInfo (i) affordance.
 const explainer = createRawSnippet(() => ({
 	render: () => `<button data-testid="info">i</button>`,
 }));
@@ -69,14 +61,11 @@ describe('SectionHeading — OVERLINE mode (SectionLabel drop-in)', () => {
 	});
 
 	it('is a drop-in for `<SectionLabel id=… text=… />`: the id lands on the wrapper an aria-labelledby points to', () => {
-		// Precedent: <section aria-labelledby="health-sources"> +
-		//            <SectionLabel id="health-sources" text="SOURCES" />.
 		const { container } = render(SectionHeading, {
 			props: { overline: 'SOURCES', id: 'health-sources' },
 		});
 		const target = container.querySelector('#health-sources');
 		expect(target).not.toBeNull();
-		// The referenced element's text content is the section's accessible name.
 		expect(target?.textContent).toContain('SOURCES');
 	});
 });
@@ -88,7 +77,6 @@ describe('SectionHeading — numbered chip (D4)', () => {
 		});
 		const chip = container.querySelector('[data-slot="numbered-chip"]');
 		expect(chip?.textContent).toBe('03');
-		// The chip is INSIDE the heading element (part of the outline label).
 		expect(container.querySelector('h2')?.contains(chip as Node)).toBe(true);
 	});
 
@@ -125,16 +113,11 @@ describe('SectionHeading — explainer slot (the optional (i))', () => {
 });
 
 describe('SectionHeading — DOT LAW (the dot sits beside the last letter, always)', () => {
-	// The global `body { overflow-wrap: anywhere }` allows a break between a word
-	// and a following inline span, which could orphan the dot onto its own line.
-	// SectionHeading glues [last word + dot] inside one nowrap tail span so that
-	// break opportunity does not exist. These tests pin the glue on both paths.
 	it('glues the last word of a plain display heading to the dot in a nowrap tail', () => {
 		const { container } = render(SectionHeading, { props: { heading: 'What this is' } });
 		const tail = container.querySelector('.section-heading-tail');
 		expect(tail).not.toBeNull();
 		expect(tail?.textContent).toBe('is.');
-		// The full visible text is unchanged by the split.
 		expect(container.querySelector('h2')?.textContent).toBe('What this is.');
 	});
 
@@ -146,7 +129,6 @@ describe('SectionHeading — DOT LAW (the dot sits beside the last letter, alway
 		const tail = accent?.querySelector('.section-heading-tail');
 		expect(tail?.textContent).toBe('HONNÊTEMENT.');
 		expect(accent?.textContent).toBe('MESURÉ HONNÊTEMENT.');
-		// The dot lives INSIDE the tail, beside the last letter.
 		expect(tail?.querySelector('[data-slot="section-heading-dot"]')).not.toBeNull();
 	});
 

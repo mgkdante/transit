@@ -1,11 +1,3 @@
-// ExplainedMetricCard.svelte.test.ts — DOM gate for the slice-S6 wide 2-col card.
-//
-// Pins the operator's "top metric card" contract:
-//   1. POPULATED — label + value in col1, the long explanation in col2, with the
-//      caller's (i) affordance + an optional caveat note rendered in col1.
-//   2. HONEST ABSENCE — a null value routes through the shared honest-absence
-//      layer (AbsentValue), never a bare dot or a fabricated 0.
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -89,7 +81,6 @@ describe('ExplainedMetricCard', () => {
 				locale: 'en',
 			},
 		});
-		// The styled honest-absence chip — never a fabricated 0 / bare dot.
 		expect(container.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(screen.queryByText('0')).not.toBeInTheDocument();
 	});

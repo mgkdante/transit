@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GET, HEAD } from './+server';
 
-// The legacy /route/[id] -> /lines/[id] redirect (S6 consolidation). SvelteKit 2
-// `redirect()` throws an internal Redirect ({ status, location }); we catch it and
-// assert the status + Location, mirroring the locale-prefix + query-preserving
-// + id-encoding contract the handler promises.
-
 type Handler = typeof GET;
 
 function event(opts: { lang?: string; id: string; search?: string }) {

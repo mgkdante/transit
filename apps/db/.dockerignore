@@ -9,7 +9,6 @@ artifacts/
 data/
 docs/
 *.log
-README.md
 tests/
 **/*.cer
 **/*.crt

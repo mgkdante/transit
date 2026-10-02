@@ -96,7 +96,11 @@
 		--information-accent: var(--signal-lunar);
 	}
 	.typed-information-card[data-kind='math'] {
-		--information-accent: var(--dataviz-status-early);
+		--information-accent: color-mix(
+			in srgb,
+			var(--dataviz-status-early) 90%,
+			var(--foreground) 10%
+		);
 	}
 	.typed-information-card[data-kind='not-really'] {
 		--information-accent: var(--dataviz-status-severe);

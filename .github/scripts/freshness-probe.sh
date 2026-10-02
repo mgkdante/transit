@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # freshness-probe.sh — external freshness probe for the transit pipeline.
-# Dependency-light bash (curl + jq + date + psql, all
-# preinstalled on ubuntu-latest; NO uv sync). Six checks:
+# Dependency-light bash (curl + jq + date + psql, all preinstalled on the
+# GitHub-serviced Ubuntu 24.04 image; NO uv sync). Six checks:
 #
 #   A. Live manifest age — the public /v1 manifest's files.live.generated_utc
 #      must be younger than LIVE_MAX_AGE_SECONDS.

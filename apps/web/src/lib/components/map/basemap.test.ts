@@ -1,10 +1,3 @@
-// Unit suite for basemap.ts — the null-safe MapLibre style resolver.
-//
-// Pure JSON in / pure JSON out: no maplibre-gl runtime, no window. We assert the
-// honesty branch (null → minimal dark, no external glyph/sprite/tile refs) and
-// the vector branch's Protomaps source-layer reconciliation (slice-9.3 task 1.3)
-// — a wrong source-layer renders silently empty, so it must be locked by a test.
-
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
@@ -21,7 +14,6 @@ import { PUBLISHED_BASEMAP_ATTRIBUTION } from './basemap.published.fixture';
 const PUBLISHED_BASEMAP_ATTRIBUTION_SHA256 =
 	'397c592de19b26c9d970389dcb144bfe6dc97b9b084d4e22f3e48b2e9f555514';
 
-// Parse through the schema so the branded `generated_utc` (IsoUtc) is satisfied.
 const FILE = BasemapFileSchema.parse({
 	url: 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles',
 	attribution: PUBLISHED_BASEMAP_ATTRIBUTION,
@@ -117,7 +109,6 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			'roads',
 			'roads',
 		]);
-		// Guard against a silent regression to the old OpenMapTiles names.
 		expect(sourceLayers).not.toContain('landcover');
 		expect(sourceLayers).not.toContain('transportation');
 	});

@@ -52,7 +52,6 @@ export interface HistoryDateResource<TIndex, TValue> extends Resource<TValue> {
 
 export interface HistoryDateResourceOptions {
 	readonly initialRequest: RawHistoryDateRequest;
-	readonly freshness?: boolean;
 }
 
 interface IndexAttempt<TIndex> {
@@ -66,7 +65,6 @@ interface PayloadAttempt<TValue> {
 	readonly laneKey: string;
 	readonly mode: HistoryDateResourceMode;
 	readonly value: TValue;
-	readonly generated_utc?: string | null;
 }
 
 interface PayloadLane {
@@ -101,12 +99,6 @@ function waitUntilAborted(signal: AbortSignal): Promise<never> {
 		}
 		signal.addEventListener('abort', () => reject(abortError()), { once: true });
 	});
-}
-
-function generatedUtc(value: unknown): string | null | undefined {
-	if (typeof value !== 'object' || value === null || !('generated_utc' in value)) return undefined;
-	const stamp = value.generated_utc;
-	return typeof stamp === 'string' || stamp === null ? stamp : undefined;
 }
 
 function inertResource<T>(): Resource<T> {
@@ -219,48 +211,44 @@ export function createHistoryDateResource<TIndex, TValue>(
 			};
 		});
 
-		payloadResource = createResource(
-			async (signal) => {
-				const activeRevision = payloadRevision;
-				const activeRequest = payloadRequest;
-				void activeRevision;
-				const attempt = ++latestPayloadAttempt;
-				let lane: PayloadLane = { key: 'current', mode: 'current', date: null };
-				let value: TValue;
+		payloadResource = createResource(async (signal) => {
+			const activeRevision = payloadRevision;
+			const activeRequest = payloadRequest;
+			void activeRevision;
+			const attempt = ++latestPayloadAttempt;
+			let lane: PayloadLane = { key: 'current', mode: 'current', date: null };
+			let value: TValue;
 
-				if (!activeRequest.hasDate) {
-					value = await loader.loadCurrent(signal);
-				} else {
-					if (indexResource.loading || !indexResource.settled) {
-						return waitUntilAborted(signal);
-					}
-
-					const acceptedIndex = exactIndexAttempt();
-					if (acceptedIndex === null) {
-						if (indexResource.error !== null) throw indexResource.error;
-						throw abortError();
-					}
-
-					const resolved = resolveAgainst(acceptedIndex, activeRequest) ?? EMPTY_RESOLUTION;
-					lane = laneFor(acceptedIndex, activeRequest) ?? lane;
-					normalizeResolvedCurrent(activeRequest, resolved);
-					if (lane.mode === 'history' && lane.date !== null && acceptedIndex.index !== null) {
-						value = await loader.loadDate(lane.date, acceptedIndex.index, signal);
-					} else {
-						value = await loader.loadCurrent(signal);
-					}
+			if (!activeRequest.hasDate) {
+				value = await loader.loadCurrent(signal);
+			} else {
+				if (indexResource.loading || !indexResource.settled) {
+					return waitUntilAborted(signal);
 				}
 
-				return {
-					attempt,
-					laneKey: lane.key,
-					mode: lane.mode,
-					value,
-					generated_utc: generatedUtc(value),
-				};
-			},
-			{ freshness: options.freshness === true },
-		);
+				const acceptedIndex = exactIndexAttempt();
+				if (acceptedIndex === null) {
+					if (indexResource.error !== null) throw indexResource.error;
+					throw abortError();
+				}
+
+				const resolved = resolveAgainst(acceptedIndex, activeRequest) ?? EMPTY_RESOLUTION;
+				lane = laneFor(acceptedIndex, activeRequest) ?? lane;
+				normalizeResolvedCurrent(activeRequest, resolved);
+				if (lane.mode === 'history' && lane.date !== null && acceptedIndex.index !== null) {
+					value = await loader.loadDate(lane.date, acceptedIndex.index, signal);
+				} else {
+					value = await loader.loadCurrent(signal);
+				}
+			}
+
+			return {
+				attempt,
+				laneKey: lane.key,
+				mode: lane.mode,
+				value,
+			};
+		});
 	});
 
 	const currentResolved = (): ResolvedHistoryDate | null =>

@@ -12,7 +12,6 @@ import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_i
 import { ReceiptSchema } from '$lib/v1/schemas/receipts';
 import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
 import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
-import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
 import { NetworkTrendSchema } from '$lib/v1/schemas/network_trend';
 import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
 import {
@@ -34,7 +33,7 @@ import {
 	isHistoryFamilyIndexPath,
 	isHistoryPointArtifactPath,
 } from '$lib/v1/history/pointers';
-import type { AdapterCtx, HistoricPort, ProvenancePort } from './types';
+import type { AdapterCtx } from './types';
 import {
 	R2_DEFAULTS as DEFAULTS,
 	IMMUTABLE_CACHE,
@@ -151,99 +150,99 @@ async function readRawHistoryPartition<T>(
 	return value ?? null;
 }
 
-export const historicPort: HistoricPort = {
-	historyIndex: (ctx) =>
+export const historicPort = {
+	historyIndex: (ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			DEFAULTS.historic.history_index,
 			HistoricAvailabilityIndexSchema,
 			'historic.historyIndex',
 			ctx,
 		),
-	networkHistoryIndex: async (path, ctx) =>
+	networkHistoryIndex: async (path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertHistoryFamilyIndexPath('network', path),
 			HistoricCollectionIndexSchema,
 			'historic.networkHistoryIndex',
 			ctx,
 		),
-	hotspotsHistoryIndex: async (path, ctx) =>
+	hotspotsHistoryIndex: async (path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertPointHistoryIndexPath('hotspots', path),
 			HistoricCollectionIndexSchema,
 			'historic.hotspotsHistoryIndex',
 			ctx,
 		),
-	repeatOffendersHistoryIndex: async (path, ctx) =>
+	repeatOffendersHistoryIndex: async (path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertPointHistoryIndexPath('repeat_offenders', path),
 			HistoricCollectionIndexSchema,
 			'historic.repeatOffendersHistoryIndex',
 			ctx,
 		),
-	lineHistoryDirectory: async (path, ctx) =>
+	lineHistoryDirectory: async (path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertHistoryFamilyIndexPath('lines', path),
 			HistoricEntityDirectoryIndexSchema,
 			'historic.lineHistoryDirectory',
 			ctx,
 		),
-	stopHistoryDirectory: async (path, ctx) =>
+	stopHistoryDirectory: async (path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertHistoryFamilyIndexPath('stops', path),
 			HistoricEntityDirectoryIndexSchema,
 			'historic.stopHistoryDirectory',
 			ctx,
 		),
-	lineHistoryIndex: async (entityId, path, ctx) =>
+	lineHistoryIndex: async (entityId: string, path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertHistoryEntityIndexPath('lines', entityId, path),
 			HistoricCollectionIndexSchema,
 			'historic.lineHistoryIndex',
 			ctx,
 		),
-	stopHistoryIndex: async (entityId, path, ctx) =>
+	stopHistoryIndex: async (entityId: string, path: string, ctx?: AdapterCtx) =>
 		readOptionalHistory(
 			assertHistoryEntityIndexPath('stops', entityId, path),
 			HistoricCollectionIndexSchema,
 			'historic.stopHistoryIndex',
 			ctx,
 		),
-	networkHistoryPartition: async (path, ctx) =>
+	networkHistoryPartition: async (path: string, ctx?: AdapterCtx) =>
 		readRawHistoryPartition(
 			assertFamilyPartitionPath('network', null, path),
 			NetworkHistoryPartitionSchema,
 			'historic.networkHistoryPartition',
 			ctx,
 		),
-	lineHistoryPartition: async (entityId, path, ctx) =>
+	lineHistoryPartition: async (entityId: string, path: string, ctx?: AdapterCtx) =>
 		readRawHistoryPartition(
 			assertFamilyPartitionPath('lines', entityId, path),
 			LineHistoryPartitionSchema,
 			'historic.lineHistoryPartition',
 			ctx,
 		),
-	stopHistoryPartition: async (entityId, path, ctx) =>
+	stopHistoryPartition: async (entityId: string, path: string, ctx?: AdapterCtx) =>
 		readRawHistoryPartition(
 			assertFamilyPartitionPath('stops', entityId, path),
 			StopHistoryPartitionSchema,
 			'historic.stopHistoryPartition',
 			ctx,
 		),
-	hotspotsHistoryDay: async (date, path, ctx) =>
+	hotspotsHistoryDay: async (date: string, path: string, ctx?: AdapterCtx) =>
 		readRawHistoryPartition(
 			assertPointHistoryDayPath('hotspots', date, path),
 			HistoricHotspotsDaySchema,
 			'historic.hotspotsHistoryDay',
 			ctx,
 		),
-	repeatOffendersHistoryDay: async (date, path, ctx) =>
+	repeatOffendersHistoryDay: async (date: string, path: string, ctx?: AdapterCtx) =>
 		readRawHistoryPartition(
 			assertPointHistoryDayPath('repeat_offenders', date, path),
 			HistoricRepeatOffendersDaySchema,
 			'historic.repeatOffendersHistoryDay',
 			ctx,
 		),
-	alertArchiveIndex: async (ctx) => {
+	alertArchiveIndex: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readOptionalWhole(
 			manifest.files.historic?.alerts_index ?? DEFAULTS.historic.alerts_index,
@@ -252,7 +251,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	alertArchivePage: async (path, ctx) => {
+	alertArchivePage: async (path: string, ctx?: AdapterCtx) => {
 		const safePath = assertSafeHistoryArtifactPath(path);
 		const url = resolveUrl(safePath);
 		const value = await getEntityJson(
@@ -264,7 +263,7 @@ export const historicPort: HistoricPort = {
 		);
 		return value ?? null;
 	},
-	networkTrend: async (ctx) => {
+	networkTrend: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.historic?.network_trend ?? DEFAULTS.historic.network_trend,
@@ -274,7 +273,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	hotspots: async (ctx) => {
+	hotspots: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.historic?.hotspots ?? DEFAULTS.historic.hotspots,
@@ -284,7 +283,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	repeatOffenders: async (ctx) => {
+	repeatOffenders: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.historic?.repeat_offenders ?? DEFAULTS.historic.repeat_offenders,
@@ -294,7 +293,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	alertHistory: async (ctx) => {
+	alertHistory: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.historic?.alert_history ?? DEFAULTS.historic.alert_history,
@@ -304,7 +303,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	receiptsIndex: async (ctx) => {
+	receiptsIndex: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readWhole(
 			manifest.files.historic?.receipts_index ?? DEFAULTS.historic.receipts_index,
@@ -314,7 +313,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	routeReliabilityIndex: async (ctx) => {
+	routeReliabilityIndex: async (ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		const url = resolveUrl(
 			manifest.files.historic?.route_reliability_index ?? DEFAULTS.historic.route_reliability_index,
@@ -328,7 +327,7 @@ export const historicPort: HistoricPort = {
 		);
 		return value ?? null;
 	},
-	receipt: async (date, ctx) => {
+	receipt: async (date: string, ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readEntity(
 			'historic',
@@ -340,7 +339,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	routeReliability: async (routeId, ctx) => {
+	routeReliability: async (routeId: string, ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readEntity(
 			'historic',
@@ -353,7 +352,7 @@ export const historicPort: HistoricPort = {
 			ctx,
 		);
 	},
-	stopReliability: async (stopId, ctx) => {
+	stopReliability: async (stopId: string, ctx?: AdapterCtx) => {
 		const manifest = await loadManifest(ctx);
 		return readEntity(
 			'historic',
@@ -361,19 +360,6 @@ export const historicPort: HistoricPort = {
 			stopId,
 			StopReliabilitySchema,
 			'historic.stopReliability',
-			MUTABLE_CACHE,
-			ctx,
-		);
-	},
-};
-
-export const provenancePort: ProvenancePort = {
-	async get(ctx?: AdapterCtx) {
-		const manifest = await loadManifest(ctx);
-		return readWhole(
-			manifest.files.historic?.provenance ?? DEFAULTS.provenance,
-			ProvenanceSchema,
-			'provenance',
 			MUTABLE_CACHE,
 			ctx,
 		);

@@ -1,12 +1,3 @@
-<!--
-  ListingPageShell — the shared yesid.dev Blog/Projects listing architecture.
-
-  Desktop: giant sticky edge title | 2px accent rail | full-width blueprint
-  header, then a sticky 220–320px filter rail beside the results. Mobile follows
-  yesid.dev Blog/Projects in normal document flow: search, a full-width filter
-  disclosure, then results. One controls DOM changes its presentation at the
-  breakpoint, so state and labels cannot drift.
--->
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';

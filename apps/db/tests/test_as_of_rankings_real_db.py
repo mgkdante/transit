@@ -4,9 +4,10 @@ import hashlib
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
+import pytest
 from sqlalchemy import text
 
-from transit_ops.snapshots import gate, publish
+from transit_ops.snapshots import envelope, gate, historic_tier
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
     history_pointer_path,
@@ -14,6 +15,10 @@ from transit_ops.snapshots.builders.historic.history_common import (
 from transit_ops.snapshots.builders.historic.small_surfaces import (
     build_hotspots,
     build_repeat_offenders,
+)
+from transit_ops.snapshots.publication_lane import (
+    PublishLockUnavailableError,
+    acquire_publication_lane,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.sql_registry import query_name
@@ -254,19 +259,13 @@ def test_publish_advisory_transaction_lock_serializes_provider_history_lane(real
     with real_db_engine.connect() as first, real_db_engine.connect() as second:
         first_tx = first.begin()
         second_tx = second.begin()
-        params = {"provider_id": PROVIDER, "tier": "historic"}
         try:
-            assert first.execute(publish._PUBLISH_LOCK_SQL, params).scalar_one() is True  # noqa: SLF001
-            assert second.execute(publish._PUBLISH_LOCK_SQL, params).scalar_one() is False  # noqa: SLF001
-            assert (  # a different tier remains an independent lane
-                second.execute(
-                    publish._PUBLISH_LOCK_SQL,  # noqa: SLF001
-                    {"provider_id": PROVIDER, "tier": "static"},
-                ).scalar_one()
-                is True
-            )
+            acquire_publication_lane(first, provider_id=PROVIDER, tier="historic")
+            with pytest.raises(PublishLockUnavailableError):
+                acquire_publication_lane(second, provider_id=PROVIDER, tier="historic")
+            acquire_publication_lane(second, provider_id=PROVIDER, tier="static")
             first_tx.rollback()
-            assert second.execute(publish._PUBLISH_LOCK_SQL, params).scalar_one() is True  # noqa: SLF001
+            acquire_publication_lane(second, provider_id=PROVIDER, tier="historic")
         finally:
             if first_tx.is_active:
                 first_tx.rollback()
@@ -278,7 +277,7 @@ def test_production_point_plans_are_bounded_closed_parity_exactly_addressed(
 ) -> None:
     with _seeded_connection(real_db_engine, seed_provider) as connection:
         recorded = _NamedQueryConnection(connection)
-        point_plans = publish._build_historic_point_plans(  # noqa: SLF001
+        point_plans = historic_tier._build_historic_point_plans(  # noqa: SLF001
             recorded,
             provider_id=PROVIDER,
         )
@@ -358,7 +357,7 @@ def test_production_point_plans_are_bounded_closed_parity_exactly_addressed(
             assert ref.path.endswith(f"/{digest}/{payload.date}.json")
             assert gate.check_point_history_day_ref(ref, payload, family=family) == []
         index = summary.build_index(fallback_generated_utc=STAMP)
-        publish._stamp_envelope(  # noqa: SLF001
+        envelope.stamp_envelope(  # noqa: SLF001
             [("unused", index, "historic")],
             provider_id=PROVIDER,
             stamp=STAMP,

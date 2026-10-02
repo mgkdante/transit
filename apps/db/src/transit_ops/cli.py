@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import time
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Annotated
 
 import typer
 from alembic import command
@@ -33,6 +35,10 @@ from transit_ops.gold import (
     refresh_gold_static,
     sync_alert_archive,
 )
+from transit_ops.gold.delay_hours import refresh_changed_delay_hours
+from transit_ops.gold.delay_periods import PeriodBuildProgress, build_delay_periods
+from transit_ops.gold.delay_sums import recover_delay_sums
+from transit_ops.gold.realtime import initialize_realtime_serving, refresh_gold_snapshots
 from transit_ops.ingestion import (
     capture_i3_alerts,
     capture_realtime_feed,
@@ -49,6 +55,7 @@ from transit_ops.maintenance import (
     vacuum_storage,
 )
 from transit_ops.orchestration import (
+    realtime_endpoints_for_manifest,
     run_pruner_loop,
     run_realtime_cycle,
     run_realtime_worker_loop,
@@ -64,6 +71,7 @@ from transit_ops.silver import (
     load_latest_static_to_silver,
     replay_realtime_silver_window,
 )
+from transit_ops.silver.realtime_gtfs import load_latest_realtime_snapshots_to_silver
 from transit_ops.snapshots.gate import GateError
 from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
@@ -111,18 +119,6 @@ def _provider_registry(settings: Settings) -> ProviderRegistry:
 
 
 def _skip_if_unseeded(settings: Settings, provider_id: str, *, step: str) -> bool:
-    """Return True (and emit a skip marker) when the provider has no gold data.
-
-    An enrolled-but-unseeded provider (no gold.dim_provider row — its static
-    pipeline has never run) has nothing for the per-provider warm-rollup /
-    prune / retention steps to act on. The Daily Warm Rollups workflow loops
-    these over EVERY registered provider under ``set -e``, so each must skip
-    cleanly (logged no-op, exit 0) rather than crash the all-providers run.
-
-    The prune/retention bodies already filter on ``provider_id`` and no-op on
-    empty result sets, so this guard is a cheap, explicit short-circuit that
-    also avoids spending an R2 / DB round-trip on a provider with zero data.
-    """
     with make_engine(settings).connect() as conn:
         if provider_is_seeded(conn, provider_id):
             return False
@@ -466,9 +462,7 @@ def ingest_static(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -484,9 +478,7 @@ def ingest_gis(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -553,6 +545,8 @@ def retention_proof_report_command(
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
     typer.echo(report)
+    if not result.is_complete:
+        raise typer.Exit(code=1)
 
 
 @app.command("gc-historic-snapshots")
@@ -690,9 +684,7 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -708,9 +700,7 @@ def capture_i3(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -726,9 +716,7 @@ def load_static_silver(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -744,9 +732,7 @@ def load_gis_silver(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -769,9 +755,7 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -786,9 +770,7 @@ def load_i3_silver(provider_id: str) -> None:
             provider_id,
             settings=settings,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -832,19 +814,12 @@ def build_gold(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
 def _parse_replay_instant(value: str, *, flag: str) -> datetime:
-    """Parse an ISO-8601 datetime for a replay window flag and normalize to UTC.
-
-    Accepts both naive (assumed UTC) and timezone-aware ISO strings. A bare date
-    (YYYY-MM-DD) is accepted and treated as midnight UTC.
-    """
 
     try:
         parsed = datetime.fromisoformat(value)
@@ -876,16 +851,11 @@ def replay_realtime_silver_command(
             "Snapshots with captured_at_utc < this instant are replayed."
         ),
     ),
+    silver_only: bool = typer.Option(
+        False, "--silver-only", help="Restore Silver while preserving existing Gold derivations."
+    ),
 ) -> None:
-    """Rebuild realtime Silver + Gold from raw Bronze .pb over a captured window.
-
-    The rebuild-from-raw replay (disaster-recovery / thin-silver gate): reads the
-    archived realtime .pb objects in ``[--since, --until)`` and re-derives the
-    realtime Silver tables (idempotent; already-loaded snapshots are skipped),
-    then runs the full-history Gold rebuild so Gold facts re-derive from the
-    reconstructed Silver. Additive and provider-agnostic: nothing auto-invokes
-    it and no retention setting is read or changed.
-    """
+    """Restore a captured window and refresh only its verified Gold snapshots."""
 
     start_utc = _parse_replay_instant(since, flag="--since")
     end_utc = (
@@ -907,9 +877,7 @@ def replay_realtime_silver_command(
             settings=settings,
             registry=registry,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     payload: dict[str, object] = {
@@ -923,22 +891,29 @@ def replay_realtime_silver_command(
     }
 
     if silver_result.loaded_count == 0 and not silver_result.skipped_existing_snapshot_ids:
-        # Honest no-op: no archived snapshots in the window. Clean exit, not an error.
         payload["gold"] = None
         payload["status"] = "no-snapshots-in-window"
         payload["elapsed_seconds"] = round(time.perf_counter() - started, 3)
         typer.echo(json.dumps(payload, indent=2))
         return
 
+    if silver_only:
+        payload.update(
+            gold=None,
+            status="silver-restored",
+            elapsed_seconds=round(time.perf_counter() - started, 3),
+        )
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
     try:
-        gold_result = build_gold_marts(
+        gold_result = refresh_gold_snapshots(
             provider_id,
+            expected_rows=silver_result.verified_row_counts,
             settings=settings,
             registry=registry,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     payload["gold"] = gold_result.display_dict()
@@ -948,21 +923,51 @@ def replay_realtime_silver_command(
 
 
 @app.command("refresh-gold-realtime")
-def refresh_gold_realtime_command(provider_id: str) -> None:
-    """Upsert the latest realtime snapshots into Gold history and latest tables."""
+def refresh_gold_realtime_command(
+    provider_id: str,
+    bootstrap_from_archive: Annotated[
+        bool,
+        typer.Option(
+            "--bootstrap-from-archive",
+            help=(
+                "Explicitly accept the newest successful capture for an unknown serving lane "
+                "only when its archive verifies. An unavailable newest archive does not permit "
+                "an older bootstrap. Known lanes retain normal capture ordering."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Verify newest archived realtime captures and project their exact Silver receipts.
 
+    Repair incomplete Silver with a bounded replay-realtime-silver --silver-only window first.
+    """
     settings = get_settings()
     try:
+        registry = _provider_registry(settings)
+        endpoints = tuple(
+            endpoint
+            for endpoint in realtime_endpoints_for_manifest(registry.get_provider(provider_id))
+            if endpoint in {FeedKind.TRIP_UPDATES.value, FeedKind.VEHICLE_POSITIONS.value}
+        )
+        initialize_realtime_serving(provider_id, endpoints, settings=settings)
+        snapshots = load_latest_realtime_snapshots_to_silver(
+            provider_id,
+            endpoints,
+            settings=settings,
+            registry=registry,
+        )
         result = refresh_gold_realtime(
             provider_id,
+            snapshots=snapshots,
             settings=settings,
-            registry=_provider_registry(settings),
+            registry=registry,
+            bootstrap_from_archive=bootstrap_from_archive,
         )
-    except KeyError as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
+    payload = result.display_dict()
+    payload["status"] = "refreshed" if snapshots else "no-archived-snapshots"
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("backfill-dim-history")
@@ -994,9 +999,7 @@ def backfill_dim_history_command(
             gtfs_zip_path=from_gtfs_zip,
             settings=settings,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -1012,9 +1015,7 @@ def refresh_gold_static_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
@@ -1217,13 +1218,9 @@ def run_static_pipeline_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
-    # GIS is best-effort: surface a failure on stderr without failing the command,
-    # so the downstream publish-snapshot --tier static step still runs (slice-9.1.1v).
     if getattr(result, "gis_error_message", None):
         typer.echo(
             f"WARNING: GIS step failed (static pipeline succeeded): {result.gis_error_message}",
@@ -1242,9 +1239,7 @@ def run_realtime_cycle_command(provider_id: str) -> None:
             settings=settings,
             registry=_provider_registry(settings),
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -1347,9 +1342,7 @@ def publish_all_command(
     failures: list[str] = []
     skipped: list[str] = []
     for provider_id in registry.list_active_provider_ids():
-        # Enrolled-but-unseeded providers have no gold.dim_provider row and thus
-        # no gold data to build/publish; skip cleanly so the all-providers run
-        # never fails on a provider whose static pipeline has not run yet.
+        # An enrolled provider may have no data before its first static pipeline run.
         if not provider_is_seeded(engine, provider_id):
             logger.info(
                 "provider %r not seeded (no gold.dim_provider row) — skipping publish-all",
@@ -1368,8 +1361,6 @@ def publish_all_command(
                 full_historic_rebuild=full_historic_rebuild,
             )
             results.append(result.display_dict())
-            # Write the gate report on SUCCESS too (not only on GateError) so CI /
-            # status can always consume {report_dir}/publish-gate-{provider}.json.
             if report_dir is not None and result.gate_report is not None:
                 (report_dir / f"publish-gate-{provider_id}.json").write_text(
                     json.dumps(result.gate_report, indent=2, sort_keys=True) + "\n",
@@ -1454,9 +1445,7 @@ def run_realtime_worker_command(
             registry=_provider_registry(settings),
             max_cycles=max_cycles,
         )
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (ValueError, FileNotFoundError) as exc:
+    except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
@@ -1515,8 +1504,92 @@ def build_warm_rollups_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("recover-delay-sums")
+def recover_delay_sums_command(
+    provider_id: str,
+    from_date: str = typer.Option(..., "--from", help="First UTC date, inclusive (YYYY-MM-DD)."),
+    until_date: str = typer.Option(
+        ..., "--until", help="Last UTC boundary, exclusive (YYYY-MM-DD)."
+    ),
+    execute: bool = typer.Option(
+        False, "--execute", help="Write recoverable sums; default previews."
+    ),
+) -> None:
+    """Recover exact daily delay means without rebuilding retained metrics or watermarks."""
+    settings = get_settings()
+    try:
+        start = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        end = datetime.strptime(until_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        _provider_registry(settings).get_provider(provider_id)
+        if execute:
+            assert_explicit_remote_url(settings.sqlalchemy_database_url, os.environ)
+        result = recover_delay_sums(
+            provider_id,
+            from_utc=start,
+            until_utc=end,
+            dry_run=not execute,
+            settings=settings,
+        )
+    except (ValueError, KeyError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(asdict(result), indent=2, default=str))
+
+
+@app.command("repair-delay-periods")
+def repair_delay_periods_command(
+    provider_id: str,
+    from_utc: Annotated[datetime, typer.Option("--from", formats=["%Y-%m-%dT%H:%M:%S%z"])],
+    until_utc: Annotated[datetime, typer.Option("--until", formats=["%Y-%m-%dT%H:%M:%S%z"])],
+    execute: bool = typer.Option(
+        False, "--execute", help="Apply the verified repair; default previews."
+    ),
+) -> None:
+    """Repair prematurely finalized intervals using complete retained capture evidence."""
+    settings = get_settings()
+    progress = PeriodBuildProgress()
+    try:
+        _provider_registry(settings).get_provider(provider_id)
+        if execute:
+            assert_explicit_remote_url(settings.sqlalchemy_database_url, os.environ)
+        engine = make_engine(settings)
+        try:
+            periods = build_delay_periods(
+                engine,
+                provider_id=provider_id,
+                since_utc=from_utc,
+                until_utc=until_utc,
+                now=datetime.now(UTC),
+                progress=progress,
+                retention_days=settings.GOLD_FACT_RETENTION_DAYS,
+                repair_premature=True,
+                dry_run=not execute,
+            )
+            hours = (
+                refresh_changed_delay_hours(engine, provider_id, from_utc, until_utc)
+                if execute
+                else 0
+            )
+        finally:
+            engine.dispose()
+    except (ValueError, KeyError) as exc:
+        raise typer.BadParameter(f"{exc} Committed intervals: {progress.committed_rows}.") from exc
+    typer.echo(
+        json.dumps(
+            {
+                "provider_id": provider_id,
+                "from_utc": from_utc.isoformat(),
+                "until_utc": until_utc.isoformat(),
+                "dry_run": not execute,
+                "repairable_periods": periods,
+                "repaired_periods": progress.committed_rows,
+                "refreshed_hours": hours,
+            },
+            indent=2,
+        )
+    )
+
+
 def _rebuild_prompt(plan) -> str:  # noqa: ANN001
-    """Destructive-rebuild confirmation showing total rows + watermarks per kind."""
     kinds = sorted(set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts))
     lines = [
         f"Rebuild {plan.provider_id} append-only daily rollups for rows "
@@ -1598,17 +1671,14 @@ def rebuild_warm_rollups_command(
             to_date=d_to,
             kinds=kind_list,
             dry_run=dry_run,
-            # --yes = fast path: confirm=None skips both the preview COUNT pass and
-            # the prompt. Otherwise the prompt renders the plan's per-kind counts.
+            # confirm=None skips both the preview count and prompt.
             confirm=None if yes else (lambda plan: typer.confirm(_rebuild_prompt(plan))),
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
     if not dry_run and not result.aborted:
-        # Advisory: the DELETE+UPSERT reporting marts (route_delay_hourly,
-        # habit/repeat/headway, ...) derive from these spines but are refreshed
-        # only by a full build-warm-rollups run.
+        # Reporting marts require a full build-warm-rollups after these spines change.
         typer.echo(
             f"Advisory: run `run-static-pipeline`/`build-warm-rollups {provider_id}` "
             "to refresh the derived DELETE+UPSERT reporting marts.",
@@ -1782,9 +1852,6 @@ def verify_backup_freshness_command(
         typer.echo("Backup freshness check FAILED: no backup objects found in R2", err=True)
         raise typer.Exit(code=1)
 
-    # Entries are sorted newest-first by timestamped key; last_modified is an ISO
-    # string. Parse it and compare to a UTC now, normalizing naive -> aware so the
-    # subtraction never raises on a missing tzinfo.
     newest = backups[0]
     last_modified_raw = newest.get("last_modified")
     if not isinstance(last_modified_raw, str):

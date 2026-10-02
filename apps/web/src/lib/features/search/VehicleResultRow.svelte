@@ -1,42 +1,19 @@
-<!--
-  VehicleResultRow — a live bus result row for the /search surface.
-
-  A matched vehicle (exact unit-id) is no longer a bare link: this row renders the
-  same live vocabulary the map already speaks —
-    · a STATUS chip (on-time / late / severe) — StatusBadge (dataviz scale + glyph)
-    · a CROWDING indicator (occupancy band) — OCCUPANCY glyph + label, honest
-      no-telemetry mark when absent
-    · the signed DELAY (+4 min / −2 min / on time) in the meta cell
-    · a 'next: <stop name>' subtitle (resolved against the in-memory stops index;
-      an unresolved id falls to the honest "no next stop" — never the raw id)
-    · a directional ARROW rotated by bearing (the map's heading channel)
-
-  The row links to the live map filtered to this bus (routeFor {kind:'vehicle'}),
-  matching every other "open on map" affordance.
-
-  DOCTRINE: status + crowding marks ride the dataviz scale (never --primary).
-  HONESTY: a null occupancy → the no-telemetry mark, never a fabricated band; a
-  null delay → "no delay" text, never a fabricated 0; a missing bearing → no
-  arrow. Bilingual labels are passed in (co-located search copy), provider-agnostic.
--->
 <script lang="ts">
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import type { Vehicle } from '$lib/v1/schemas';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
+	import { absenceSentence } from '$lib/site/absence';
 	import { MaybeValue } from '$lib/components/edge';
 	import type { VehicleResultCopy } from './search.copy';
 
 	interface Props {
 		vehicle: Vehicle;
 		locale: Locale;
-		/** Resolved next-stop name (from the stops index), or null when unresolved. */
 		nextStopName: string | null;
-		/** Localized status/occupancy labels + the row's intrinsic phrasing. */
 		copy: VehicleResultCopy;
-		/** Localized StatusCode label (e.g. "Late"). */
 		statusLabel: string;
-		/** Localized OccupancyCode label, or null when no telemetry. */
 		occupancyLabel: string | null;
 	}
 
@@ -44,29 +21,13 @@
 
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
-	// Signed delay reading, reusing the map's early / on-time / late vocabulary.
-	// A null delay is HONEST ABSENCE (the live feed omitted it), not a fabricated
-	// "no delay" — the template renders the styled chip on the absent branch.
-	const delayKnown = $derived(vehicle.delay_min != null);
-	const delayText = $derived.by(() => {
-		const d = vehicle.delay_min;
-		if (d == null) return '';
-		if (d < 0) return copy.early(d);
-		if (d > 0) return copy.late(d);
-		return copy.onTime;
-	});
+	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
+	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
-	// Live-tier absence reason for every omitted bus field on this row: the feed
-	// carried the vehicle but left this value out → "Unknown · not reported".
 	const NOT_REPORTED = 'not-reported' as const;
 
-	// Next-stop subtitle: the RESOLVED stop name only. An unresolved/omitted id
-	// falls to the styled honest-absence chip ("Unknown · not reported") — we never
-	// surface the raw GTFS id ("Next: 99999"), which is meaningless to a rider.
 	const nextStop = $derived(nextStopName);
 
-	// Heading arrow: a north-up glyph rotated by the GTFS bearing (0°=N). Absent
-	// bearing → no arrow (no fabricated heading).
 	const hasBearing = $derived(vehicle.bearing != null);
 
 	const occGlyph = $derived(occupancyGlyph(vehicle.occupancy));
@@ -80,7 +41,7 @@
 	data-sveltekit-preload-data="hover"
 	class="vehicle-row"
 	data-slot="vehicle-result"
-	aria-label={copy.busAria(vehicle.id)}
+	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(NOT_REPORTED, locale)}`}
 >
 	<span class="vehicle-row-lead">
 		{#if hasBearing}
@@ -110,7 +71,13 @@
 			</MaybeValue>
 		</span>
 		<span class="vehicle-row-marks">
-			<StatusBadge status={vehicle.status} mode="pill" size="sm" label={statusLabel} />
+			<StatusBadge
+				status={vehicle.status}
+				mode={unknownStatusAndDelay ? 'dot' : 'pill'}
+				aria-hidden={unknownStatusAndDelay || undefined}
+				size="sm"
+				label={statusLabel}
+			/>
 			<MaybeValue present={occupancyLabel != null} reason={NOT_REPORTED} {locale}>
 				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
 					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
@@ -121,7 +88,12 @@
 	</span>
 
 	<span class="vehicle-row-meta">
-		<MaybeValue present={delayKnown} value={delayText} reason={NOT_REPORTED} {locale} />
+		<MaybeValue
+			value={delayText}
+			reason={NOT_REPORTED}
+			variant={unknownStatusAndDelay ? 'row' : 'inline'}
+			{locale}
+		/>
 	</span>
 </a>
 
@@ -150,8 +122,6 @@
 		width: 1.5rem;
 		height: 1.5rem;
 	}
-	/* The heading arrow is an interactive entity's affordance glyph — it rides the
-	   --primary accent (the bus's identity colour on the map), not a data mark. */
 	.vehicle-row-arrow {
 		font-size: var(--text-subheading);
 		line-height: 1;
@@ -213,8 +183,6 @@
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
-	/* The crowding glyph carries the occupancy band on the dataviz occupancy scale
-	   (luminance + a fill glyph — a double channel; never --primary). */
 	.vehicle-row-crowd-glyph {
 		color: var(--occ);
 		line-height: 1;

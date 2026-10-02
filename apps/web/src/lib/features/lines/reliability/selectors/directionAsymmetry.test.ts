@@ -7,8 +7,8 @@ describe('selectDirectionAsymmetry', () => {
 	it('returns the shift with the largest gap and names slower/faster correctly', () => {
 		const res = selectDirectionAsymmetry(
 			[
-				{ label: 'Midday', dir0: 10, dir1: 11 }, // diff 1 → below threshold
-				{ label: 'PM peak', dir0: 14, dir1: 8 }, // diff 6 → East slower
+				{ label: 'Midday', dir0: 10, dir1: 11 },
+				{ label: 'PM peak', dir0: 14, dir1: 8 },
 			],
 			opts,
 		);
@@ -43,7 +43,7 @@ describe('selectDirectionAsymmetry', () => {
 	});
 
 	it('honours a custom minDiffMin', () => {
-		const rows = [{ label: 'Midday', dir0: 10, dir1: 13 }]; // diff 3
+		const rows = [{ label: 'Midday', dir0: 10, dir1: 13 }];
 		expect(selectDirectionAsymmetry(rows, { ...opts, minDiffMin: 5 })).toBeNull();
 		expect(selectDirectionAsymmetry(rows, { ...opts, minDiffMin: 2 })?.diffMin).toBe(3);
 	});

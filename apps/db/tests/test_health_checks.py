@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -43,9 +44,6 @@ class FakeConnection:
         self.queries.append(query)
         if self.exc:
             raise self.exc
-        # The feed-conformance check runs a distinct query against
-        # silver.gtfs_extra_rows; route it to its own fixture so freshness rows
-        # never leak into it (they lack provider_id).
         if "gtfs_extra_rows" in str(query):
             return self.conformance_rows
         return self.rows
@@ -209,8 +207,6 @@ def test_feed_conformance_degraded_when_out_of_norm_members_present() -> None:
     assert "sto" in result.message
     assert "silver.gtfs_extra_rows" in result.message
     assert result.details["label"] == "out_of_norm"
-    # The detail block carries the per-provider breakdown but is dropped from the
-    # anonymous-safe public_dict (name + status only).
     assert set(result.public_dict()) == {"name", "status"}
 
 
@@ -231,8 +227,6 @@ def _feed_row(
 
 
 def test_provider_feed_freshness_emits_ok_component_per_fresh_feed() -> None:
-    # Holistic per provider: one component per (provider, feed), and a second
-    # provider's feeds appear automatically — no hardcoded provider.
     rows = [
         _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=60)),
         _feed_row("sto", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=120)),
@@ -265,13 +259,10 @@ def test_provider_feed_freshness_degraded_when_feed_is_stale() -> None:
     assert results[0].name == "stm_trip_updates"
     assert results[0].status == "degraded"
     assert "exceeds" in results[0].message
-    # 30s refresh * 3 grace = 90, floored at the 900s pipeline budget.
     assert results[0].details["threshold_seconds"] == 900
 
 
 def test_provider_feed_freshness_uses_per_feed_cadence_for_daily_static() -> None:
-    # A daily static feed 2h old is fresh: its threshold derives from its own
-    # 86400s refresh, not the 900s realtime floor.
     rows = [
         _feed_row(
             "stm", "static_schedule", "static_schedule", 86400, NOW - timedelta(hours=2)
@@ -510,6 +501,53 @@ def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
     assert "resource pressure" in result.message
 
 
+@pytest.mark.parametrize("missing_api", [True, False], ids=["missing-api", "os-error"])
+def test_runtime_vm_health_survives_unavailable_load_average(
+    monkeypatch: pytest.MonkeyPatch, missing_api: bool
+) -> None:
+    if missing_api:
+        monkeypatch.delattr(os, "getloadavg", raising=False)
+    else:
+        def unavailable_load_average() -> tuple[float, float, float]:
+            raise OSError("load average unavailable")
+
+        monkeypatch.setattr(os, "getloadavg", unavailable_load_average, raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status in {"ok", "degraded"}
+    assert result.details is not None
+    assert [result.details[key] for key in ("load_1m", "load_5m", "load_15m")] == [0.0, 0.0, 0.0]
+    assert result.details["disk_total_gb"] > 0
+
+
+def test_runtime_vm_health_preserves_available_load_average(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(os, "getloadavg", lambda: (1.234, 2.345, 3.456), raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status in {"ok", "degraded"}
+    assert result.details is not None
+    assert [result.details[key] for key in ("load_1m", "load_5m", "load_15m")] == [1.23, 2.35, 3.46]
+
+
+def test_runtime_vm_health_reports_unexpected_load_average_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_load_average() -> tuple[float, float, float]:
+        raise RuntimeError("metric collector failed")
+
+    monkeypatch.setattr(os, "getloadavg", broken_load_average, raising=False)
+
+    result = check_runtime_vm_health(settings(), now=NOW, use_cache=False)
+
+    assert result.status == "down"
+    assert result.details is None
+    assert "metric collector failed" in result.message
+
+
 def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path) -> None:
     rows = [
         _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=60)),
@@ -540,8 +578,6 @@ def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path
         requester=forbidden_requester,
     )
 
-    # database, then one component per (provider, feed) from the freshness query,
-    # then feed_conformance, bronze_storage, runtime_vm.
     assert [result.name for result in results] == [
         "database",
         "stm_trip_updates",

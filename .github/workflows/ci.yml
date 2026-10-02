@@ -1,11 +1,6 @@
 name: CI
 
-# PR-triggered safety net for the db/ pipeline (codebase-audit infra-ci#0).
-# Runs the offline suite, guards the alembic migration chain to a single head,
-# and replays the full migration chain on a disposable Postgres so the real-DB
-# regression suite actually executes in CI. ADDITIVE only — changes no runtime
-# code. The scheduled production jobs (daily-static-pipeline, daily-warm-rollups)
-# are unaffected; this workflow gates pull requests instead of running prod work.
+# Replays migrations and real-DB tests on disposable PostgreSQL.
 on:
   pull_request:
     branches: [main, develop]
@@ -19,6 +14,7 @@ on:
       - ".github/scripts/**"
       - ".github/actions/**"
       - ".bun-version"
+      - ".python-version"
 
 permissions:
   contents: read
@@ -33,13 +29,11 @@ defaults:
     working-directory: apps/db
 
 env:
-  # CI runs an 80-col TTY; Rich/Typer wrap-truncates CLI help text and breaks
-  # help-output assertions. Render wide so the help is fully present.
   COLUMNS: "200"
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
       run:
@@ -58,7 +52,7 @@ jobs:
             {
               "schema": 1,
               "always": {
-                "paths": [".bun-version", ".env.example", ".gitleaks.toml", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
+                "paths": [".bun-version", ".python-version", ".env.example", ".gitleaks.toml", ".github/maintained-lines.json", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
                 "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
               },
               "jobs": {
@@ -87,12 +81,10 @@ jobs:
               }
             }
 
-  # 1. Offline suite — the same `uv run pytest tests` developers run locally with
-  #    TRANSIT_TEST_DATABASE_URL unset. Real-DB regression files self-skip here.
   offline-tests-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['offline-tests-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -101,22 +93,24 @@ jobs:
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
 
+      - name: Report maintained source lines
+        working-directory: .
+        run: uv --directory apps/db run python ../../.github/scripts/maintained-lines.py --ref HEAD --json
+
       - name: Run offline test suite
         run: uv run pytest tests
 
       - name: Ruff
         run: uv run ruff check src tests
 
-      - name: Mypy (snapshot publisher)
-        run: uv run mypy src/transit_ops/snapshots/publish.py
+      - name: Strict Python typing
+        run: uv run mypy
 
-  # 2. Single-head guard — `alembic heads` must report exactly one head, or a
-  #    branched/forked migration chain will fail the empty-DB replay below and
-  #    break the production `init-db` (which is `alembic upgrade head`).
+  # Require one Alembic head so empty-DB replay and production init-db can succeed.
   alembic-single-head-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['alembic-single-head-work'] }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -135,13 +129,11 @@ jobs:
             exit 1
           fi
 
-  # 3. Real-DB suite — use the contributor command to create a unique PostGIS
-  #    target, replay migrations, run the full suite, and prove complete cleanup.
   real-db-tests-work:
     needs: [classify]
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['real-db-tests-work'] }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -149,12 +141,22 @@ jobs:
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
 
+      - name: Verify runtime container toolchain
+        run: bash scripts/verify-runtime-images.sh
+        working-directory: apps/db
+
       - name: Run disposable real-DB verification
         run: bash scripts/run-real-db-tests.sh
         working-directory: apps/db
 
   required-contexts:
-    needs: [classify, offline-tests-work, alembic-single-head-work, real-db-tests-work]
+    needs:
+      [
+        classify,
+        offline-tests-work,
+        alembic-single-head-work,
+        real-db-tests-work,
+      ]
     if: ${{ always() }}
     strategy:
       fail-fast: false
@@ -164,7 +166,7 @@ jobs:
           - context: alembic-single-head
           - context: real-db-tests
     name: ${{ matrix.context }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
       run:

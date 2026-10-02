@@ -7,7 +7,6 @@ import { vehicleAbsence } from './vehicleAbsence';
 
 const NOW = Date.parse('2026-06-21T12:00:00Z');
 
-/** A focused VEHICLE detail whose bus reported `ageS` seconds ago. */
 function vehicleDetail(reportedAgeS: number): MapSelectionDetail {
 	const reported = new Date(NOW - reportedAgeS * 1000).toISOString();
 	return {
@@ -52,9 +51,8 @@ describe('vehicleAbsence', () => {
 	});
 
 	it('refreshes as the clock advances past the cutoff between polls', () => {
-		const detail = vehicleDetail(STALE_CUTOFF_S - 10); // fresh now
+		const detail = vehicleDetail(STALE_CUTOFF_S - 10);
 		expect(vehicleAbsence(detail, NOW)).toBeNull();
-		// 20s later the same fix is now past the cutoff → the note appears.
 		expect(vehicleAbsence(detail, NOW + 20_000)).not.toBeNull();
 	});
 });

@@ -1,3 +1,4 @@
+import type { Locale } from '$lib/i18n';
 import type { LiveIndex } from '$lib/v1/live';
 import type { Alert, OccupancyCode, RouteFile, RouteIndexEntry, StatusCode } from '$lib/v1/schemas';
 import type { SlimStopEntry } from '$lib/v1';
@@ -14,6 +15,7 @@ import {
 type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>;
 
 export interface MapHoverPeekContext {
+	readonly locale?: Locale;
 	readonly index: PeekLiveIndex;
 	readonly stops: readonly SlimStopEntry[];
 	readonly routesIndex: readonly RouteIndexEntry[];
@@ -126,7 +128,7 @@ export function resolveMapHoverPeek(
 			delayMin: vehicle.delay_min ?? null,
 			occupancy: vehicle.occupancy ?? null,
 			nextStop: stopRef(vehicle.next_stop, context.stops),
-			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'end-of-route',
+			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'not-reported',
 			notReportingAgeS: isVehicleStale(ageS) ? ageS : null,
 			tripId: vehicle.trip ?? null,
 			alerts:
@@ -145,7 +147,7 @@ export function resolveMapHoverPeek(
 			if (vehicle.route === route.id) visibleVehicleCount += 1;
 		}
 		const hoverRoute = context.hoverRoute?.id === route.id ? context.hoverRoute : null;
-		const variants = hoverRoute ? routeDirectionVariants(hoverRoute) : [];
+		const variants = hoverRoute ? routeDirectionVariants(hoverRoute, context.locale) : [];
 		const variant =
 			selection.variantKey != null
 				? (variants.find((candidate) => candidate.key === selection.variantKey) ?? null)

@@ -1,10 +1,3 @@
-// Masthead.svelte.test.ts — DOM + source gate for the ONE surface head family (§C2, P5.4a).
-//
-// Guards the merged head (kicker → title+dot → lede → meta → children → tape): that
-// the title is a REAL h1 with exactly ONE brand dot, that the optional zones render
-// only when supplied, the vertical zone order, and that the closing hazard tape is
-// reused (not reinvented). This is the SurfaceHeader + ArticleShell merge — one head.
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -32,7 +25,6 @@ describe('Masthead — structure', () => {
 		});
 		const h1 = container.querySelector('h1');
 		expect(h1?.textContent).toContain('Network health');
-		// Exactly ONE orange dot — the one-h1-one-dot law.
 		expect(container.querySelectorAll('[data-slot="section-heading-dot"]')).toHaveLength(1);
 	});
 
@@ -68,7 +60,6 @@ describe('Masthead — structure', () => {
 		expect(getByTestId('body')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="masthead-meta"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="masthead-body"]')).not.toBeNull();
-		// cornerMeta makes the head the relative host for the corner readouts.
 		expect(container.querySelector('.masthead-head--cornered')).not.toBeNull();
 	});
 
@@ -111,8 +102,8 @@ describe('Masthead — vertical zone order', () => {
 		const marks = Array.from(head.children).map(
 			(el) => el.getAttribute('data-slot') ?? el.className,
 		);
-		expect(marks[0]).toContain('section-label'); // the SectionLabel kicker
-		expect(marks[1]).toContain('section-heading'); // the SectionHeading wrapper
+		expect(marks[0]).toContain('section-label');
+		expect(marks[1]).toContain('section-heading');
 		expect(marks[2]).toContain('masthead-lede');
 		expect(marks[3]).toContain('masthead-meta');
 	});

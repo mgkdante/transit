@@ -1,21 +1,3 @@
-"""Real-database regressions for route-headway direction and service-day math.
-
-These tests run only against a disposable Postgres database migrated to head:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_route_headway_real_db_regression.py -v
-
-Optional local cluster setup used by the gatekeeper:
-    initdb -D /tmp/hwrepro-data -U repro --auth=trust
-    pg_ctl -D /tmp/hwrepro-data -o "-k /tmp/hwrepro -p 55433 -c listen_addresses=''" start
-    createdb -h /tmp/hwrepro -p 55433 -U repro transit_repro
-    psql -h /tmp/hwrepro -p 55433 -U repro transit_repro -c 'CREATE EXTENSION postgis'
-    pg_dump --schema-only -n core -n raw -n silver -n gold "$PROD_RO_URL" \
-        | psql -h /tmp/hwrepro -p 55433 -U repro transit_repro
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -191,7 +173,6 @@ def _run_headway_rollup(connection) -> None:
         "provider_id": PROVIDER,
         "built_at_utc": BUILT_AT,
         "open_window_days": 10,
-        # The upsert now binds the fact window (was a hardcoded 14-day literal).
         "fact_retention_days": 14,
     }
     connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_by_shift"], params)
@@ -242,15 +223,11 @@ def test_interleaved_directions_do_not_halve_headway(conn) -> None:
     midday = _headway_rows(conn, "51")["midday"]
     assert _as_float(midday["observed_headway_min"]) == 8.0
     assert midday["sample_count"] == 3
-    # Tier-2: perfectly regular 8-min gaps → CoV 0.0, no bunching.
     assert _as_float(midday["headway_cov"]) == 0.0
     assert midday["bunched_count"] == 0
 
 
 def test_headway_cov_and_bunching_on_irregular_gaps(conn) -> None:
-    # Busiest direction with irregular gaps: starts at +0,+2,+12,+22 min → gaps
-    # [2, 10, 10] min. median=10, mean≈7.33, stddev_samp≈4.62 → CoV≈0.63; the 2-min
-    # gap is < 0.5*median(=5) → 1 bunched.
     service_date = _recent_weekday(0)
     _seed_pattern(
         conn,
@@ -266,7 +243,6 @@ def test_headway_cov_and_bunching_on_irregular_gaps(conn) -> None:
     midday = _headway_rows(conn, "77")["midday"]
     assert midday["sample_count"] == 3
     assert _as_float(midday["observed_headway_min"]) == 10.0
-    # CoV = stddev_samp([2,10,10]) / mean ≈ 4.619 / 7.333 ≈ 0.63 (4dp rounded).
     assert 0.6 <= _as_float(midday["headway_cov"]) <= 0.66
     assert midday["bunched_count"] == 1
 
@@ -373,7 +349,6 @@ def _run_direction_headway_rollup(connection) -> None:
         "provider_id": PROVIDER,
         "built_at_utc": BUILT_AT,
         "open_window_days": 10,
-        # The upsert now binds the fact window (was a hardcoded 14-day literal).
         "fact_retention_days": 14,
     }
     connection.execute(
@@ -402,7 +377,6 @@ def _direction_headway_rows(connection, route_id: str) -> list[dict]:
 def test_direction_headway_keeps_both_directions_and_weekends(conn) -> None:
     weekday = _recent_weekday(0)
     saturday = _recent_saturday()
-    # Two directions on a weekday (interleaved) + direction 0 on a weekend day.
     seq = _seed_pattern(
         conn,
         seq_start=600,
@@ -431,11 +405,8 @@ def test_direction_headway_keeps_both_directions_and_weekends(conn) -> None:
     _run_direction_headway_rollup(conn)
     rows = _direction_headway_rows(conn, "61")
 
-    # Both directions survive on the weekday — NOT collapsed to one busiest direction
-    # (the legacy route_headway_by_shift keeps only the busiest direction).
     weekday_dirs = {r["direction_id"] for r in rows if r["service_day_kind"] == "weekday"}
     assert weekday_dirs == {0, 1}
-    # Weekend service days are KEPT and tagged (route_headway_by_shift excludes them).
     weekend_rows = [r for r in rows if r["service_day_kind"] == "weekend"]
     assert weekend_rows
     assert all(r["direction_id"] == 0 for r in weekend_rows)

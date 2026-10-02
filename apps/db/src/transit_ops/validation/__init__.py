@@ -1,5 +1,3 @@
-"""Validation helpers for non-destructive operational proof checks."""
-
 from transit_ops.validation.historic_publish import (
     AlertExpectations,
     HistoricPublishProofReport,

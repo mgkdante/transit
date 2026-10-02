@@ -1,43 +1,23 @@
-// roundtrip.test.ts — the contract front-door gate. Two guarantees:
-//
-//   1. EVERY exported *File / top-level schema parses a MINIMAL valid fixture
-//      via parsePort(). "Minimal" = only the required fields the schema demands;
-//      this proves the schema does not over-require beyond the on-disk JSON
-//      Schema, and that the happy path round-trips through the adapter boundary.
-//
-//   2. A BAD value THROWS via parsePort, and the thrown error names the port
-//      (`[adapter.<label>] …`) so a contract drift in CI points at the family.
-//      Closed enums are the sharpest probe (StatusCode/OccupancyCode/Severity),
-//      so the negative cases feed an out-of-vocabulary value to each.
-//
-// This is a GATE, not exhaustive: it covers each schema family's required core,
-// not every optional/nullable permutation.
-
 import { describe, it, expect } from 'vitest';
 import type { z } from 'zod';
 import {
 	parsePort,
-	// shared primitives
 	StatusCodeSchema,
 	OccupancyCodeSchema,
 	SeverityCodeSchema,
 	GrainSchema,
-	// roots / dictionaries
 	ManifestSchema,
 	LabelsFileSchema,
-	// live tier
 	NetworkFileSchema,
 	VehiclesFileSchema,
 	TripsFileSchema,
 	StopDeparturesFileSchema,
 	AlertsFileSchema,
-	// static tier
 	RoutesIndexSchema,
 	RouteFileSchema,
 	StopsIndexSchema,
 	StopFileSchema,
 	BasemapFileSchema,
-	// historic tier
 	RouteReliabilitySchema,
 	StopReliabilitySchema,
 	ReceiptSchema,
@@ -56,25 +36,20 @@ import {
 	LineHistoryPartitionSchema,
 	StopHistoryPartitionSchema,
 	HistoricAvailabilityIndexSchema,
-	// provenance
 	ProvenanceSchema,
-	// data health (live-lane)
 	DataHealthSchema,
 } from './index';
 
 const ISO = '2026-06-15T03:14:00Z';
 
-// [port label, schema, minimal valid fixture]
 type Case = [string, z.ZodTypeAny, unknown];
 
 const CASES: Case[] = [
-	// --- shared enums (the contract's closed vocabularies) -------------------
 	['status', StatusCodeSchema, 'on_time'],
 	['occupancy', OccupancyCodeSchema, 'few_seats'],
 	['severity', SeverityCodeSchema, 'high'],
 	['grain', GrainSchema, 'day'],
 
-	// --- roots / dictionaries ------------------------------------------------
 	[
 		'manifest',
 		ManifestSchema,
@@ -93,7 +68,6 @@ const CASES: Case[] = [
 	],
 	['labels', LabelsFileSchema, { generated_utc: ISO, labels: { on_time: 'On time' } }],
 
-	// --- live tier -----------------------------------------------------------
 	[
 		'network',
 		NetworkFileSchema,
@@ -101,7 +75,7 @@ const CASES: Case[] = [
 			generated_utc: ISO,
 			vehicles_in_service: 812,
 			on_time_pct: 82,
-			status_dist: {}, // every band defaults to 0
+			status_dist: {},
 			delay_p50_min: 2,
 			delay_p90_min: 9,
 			non_responding: 14,
@@ -128,7 +102,6 @@ const CASES: Case[] = [
 		},
 	],
 
-	// --- static tier ---------------------------------------------------------
 	[
 		'routes_index',
 		RoutesIndexSchema,
@@ -151,7 +124,6 @@ const CASES: Case[] = [
 		{ url: 'https://x/basemap.pmtiles', attribution: 'STM', generated_utc: ISO },
 	],
 
-	// --- historic tier -------------------------------------------------------
 	['route_reliability', RouteReliabilitySchema, { generated_utc: ISO, id: '165' }],
 	['stop_reliability', StopReliabilitySchema, { generated_utc: ISO, id: 's1' }],
 	['receipts', ReceiptSchema, { generated_utc: ISO, date: '2026-06-14' }],
@@ -239,10 +211,8 @@ const CASES: Case[] = [
 	],
 	['historic_availability_index', HistoricAvailabilityIndexSchema, { generated_utc: ISO }],
 
-	// --- provenance ----------------------------------------------------------
 	['provenance', ProvenanceSchema, { generated_utc: ISO }],
 
-	// --- data health (live-lane): minimal = generated_utc only; lanes/feeds default []. --
 	['data_health', DataHealthSchema, { generated_utc: ISO }],
 ];
 
@@ -261,7 +231,6 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			id: '165',
 			periods: [
 				{ grain: 'day', date: '2026-06-14', p50_min: 1.2, p90_min: 6.5 },
-				// granularity grains are free-string (locks against enum-tightening)
 				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
 				{ grain: 'weekday', otp_pct: 85, avg_delay_min: 1.8, severe_pct: 4.2 },
 			],
@@ -269,7 +238,6 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 				{ day_of_week_iso: 1, avg_delay_min: 2.1, severe_pct: 4.0, observation_count: 1200 },
 			],
 			habits: { scale: 'repeat_problem_relative', matrix: [[0.0, null]] },
-			// S7-B Pattern A: bare shift + typed direction_id / day_type
 			headway: [{ shift: 'am_peak', direction_id: 0, day_type: 'weekend', observed_min: 7.5 }],
 		};
 		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
@@ -281,13 +249,9 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			id: 's1',
 			periods: [{ grain: 'day', p50_min: 0.8, p90_min: 5.0 }],
 			habits: { scale: 'severe_relative', matrix: [[null, 1.0]] },
-			// per-stop weekday seasonality (ISO 1=Mon..7=Sun); the additive optional
-			// field mirrors the route shape (day_of_week_iso required, rest nullable).
 			day_of_week: [
 				{ day_of_week_iso: 5, avg_delay_min: 3.4, severe_pct: 7.1, observation_count: 320 },
 			],
-			// trailing-window crowding of buses observed AT this stop — additive
-			// optional, reuses the canonical OccupancyMix shape (route surface mirror).
 			occupancy_mix: { empty: 0.05, many_seats: 0.2, few_seats: 0.3, standing: 0.4, full: 0.05 },
 		};
 		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
@@ -317,23 +281,20 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 		const fixture = {
 			generated_utc: ISO,
 			id: '51',
-			// grain-aware crowding mix (day/week/month) + per-ISO-weekday split.
 			occupancy_by_grain: [
 				{ grain: 'day', mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 } },
 				{
 					grain: 'week',
 					mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
 				},
-				// honest-absence: a window with no band telemetry carries mix: null.
 				{ grain: 'month', mix: null },
 			],
 			occupancy_by_dow: [
 				{
 					day_of_week_iso: 1,
 					mix: { empty: 0, many_seats: 0.5, few_seats: 0.3, standing: 0.2, full: 0 },
-					n: 4000, // FIX-5: per-DOW band-observation total (trip-weight denominator)
+					n: 4000,
 				},
-				// weekday with data-days but no band telemetry -> mix null; still parses.
 				{ day_of_week_iso: 7, mix: null, n: 0 },
 			],
 		};
@@ -363,7 +324,6 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 						full: 0.05,
 					},
 				},
-				// honest-null day: both new fields absent — still parses (optional).
 				{ date: '2026-06-15' },
 			],
 		};
@@ -376,12 +336,10 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 			by_shift: [
 				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
 				{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
-				// honest-null grain: too little data → metrics null, still parses.
 				{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
 			],
 			by_daytype: [
 				{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
-				// metrics absent entirely (optional) — still parses.
 				{ grain: 'weekend' },
 			],
 		};
@@ -391,8 +349,6 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 	it('parses network_trend carrying additive weekly + monthly trend series', () => {
 		const fixture = {
 			generated_utc: ISO,
-			// week-start / month-start dated TrendPoints. p90_min + vehicles are null
-			// on these coarse grains (14d-daily-only) — honest gaps, never fabricated.
 			weekly: [
 				{
 					date: '2026-06-08',
@@ -401,7 +357,6 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 					p90_min: null,
 					vehicles: null,
 				},
-				// honest-null week: otp absent (optional) — still parses.
 				{ date: '2026-06-15' },
 			],
 			monthly: [
@@ -516,7 +471,7 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 							observation_count: 2000,
 							prior_observation_count: 1900,
 							prior_otp_pct: 78,
-							prior_on_time: 1482, // FIX-4: exact prior numerator (1482/1900 = 78.0%)
+							prior_on_time: 1482,
 						},
 					],
 					by_daytype: [{ grain: 'weekday', otp_pct: 81, observation_count: 9000 }],
@@ -536,7 +491,6 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 					cells_observed: 1,
 					cells_suppressed: 167,
 				},
-				// honest absence: a too-sparse window carries habits=null + a suppressed count
 				{ grain: 'day', date: '2026-06-20', habits: null, cells_observed: 0, cells_suppressed: 12 },
 			],
 		};
@@ -549,7 +503,7 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
 		expect(parsed.periods_by_grain ?? []).toEqual([]);
 		expect(parsed.habits_by_grain ?? []).toEqual([]);
-		expect(parsed.periods?.[0]?.prior_on_time).toBeUndefined(); // additive: absent → undefined
+		expect(parsed.periods?.[0]?.prior_on_time).toBeUndefined();
 	});
 
 	it('rejects a wrong-typed grain inside periods_by_grain (names the port)', () => {
@@ -611,7 +565,6 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 			generated_utc: ISO,
 			id: '165',
 			periods: [
-				// real-OTP Wilson on a route period...
 				{
 					grain: 'day',
 					date: '2026-06-14',
@@ -620,14 +573,12 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 					wilson_lo: 76.8,
 					wilson_hi: 86.4,
 				},
-				// ...and honest absence (fields omitted = pre-republish back-compat).
 				{ grain: 'week' },
 			],
 		};
 		const stop = {
 			generated_utc: ISO,
 			id: 's1',
-			// severe-proxy Wilson bounds the NOT-SEVERE rate, not a real OTP.
 			periods: [
 				{ grain: 'week', otp_pct: 90, observation_count: 120, wilson_lo: 83.6, wilson_hi: 94.2 },
 			],
@@ -671,8 +622,6 @@ describe('network — delay_histogram + non_responding_by_route round-trip (addi
 			non_responding: 14,
 			feed_freshness_s: 31,
 			coverage_pct: 96,
-			// All 8 fixed signed-minute buckets (null edge = unbounded). `count`
-			// defaults to 0, so a bucket may omit it.
 			delay_histogram: [
 				{ lo_min: null, hi_min: -5, count: 3 },
 				{ lo_min: -5, hi_min: -2, count: 12 },
@@ -683,7 +632,6 @@ describe('network — delay_histogram + non_responding_by_route round-trip (addi
 				{ lo_min: 10, hi_min: 15, count: 8 },
 				{ lo_min: 15, hi_min: null, count: 2 },
 			],
-			// Per-route silent-trip counts; SUM(count)=14 equals `non_responding`.
 			non_responding_by_route: [
 				{ route_id: '51', count: 9 },
 				{ route_id: '105', count: 5 },
@@ -776,7 +724,6 @@ describe('alerts — additive cause/effect/severity_level round-trip (raw GTFS-R
 					effect: 'DETOUR',
 					severity_level: 'WARNING',
 				},
-				// minimal alert: the three new fields absent — still parses (optional).
 				{ id: 'a2', severity: 'watch', header_key: 'Travaux' },
 			],
 		};
@@ -798,7 +745,6 @@ describe('alerts — additive cause/effect/severity_level round-trip (raw GTFS-R
 						{ start_utc: '2026-06-10T00:00:00Z', end_utc: null },
 					],
 				},
-				// legacy: no url / no active_periods — still parses (all optional).
 				{ id: 'a2', severity: 'watch', header_key: 'Travaux' },
 			],
 		};
@@ -826,7 +772,6 @@ describe('alert_history — S15 additive (window envelope + entry cause/effect/u
 					url: 'https://stm.info/h1',
 					active_periods: [{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-02T00:00:00Z' }],
 				},
-				// legacy entry: none of the S15 fields — still parses.
 				{ id: 'h2' },
 			],
 		};
@@ -844,7 +789,6 @@ describe('alert_history — S15 additive (window envelope + entry cause/effect/u
 });
 
 describe('schema round-trip — a bad value throws via parsePort, naming the port', () => {
-	// Closed-enum families: an out-of-vocabulary value must be rejected.
 	const ENUM_REJECTS: Array<[string, z.ZodTypeAny, unknown]> = [
 		['status', StatusCodeSchema, 'kinda_late'],
 		['occupancy', OccupancyCodeSchema, 'crammed'],
@@ -871,8 +815,6 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 	});
 
 	it('[stops_index] rejects a stop with a wrong-typed mode (nested object path)', () => {
-		// `mode` is a FREE STRING in the canonical contract (not a closed enum), so an
-		// unknown string value is VALID — only a wrong TYPE (here a number) must throw.
 		const bad = {
 			generated_utc: ISO,
 			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 42 }],
@@ -883,7 +825,6 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 	});
 
 	it('[network] rejects a missing required headline number', () => {
-		// vehicles_in_service is required (non-nullable); dropping it must throw.
 		const bad = {
 			generated_utc: ISO,
 			on_time_pct: 82,

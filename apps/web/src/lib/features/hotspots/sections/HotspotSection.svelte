@@ -1,10 +1,3 @@
-<!--
-  HotspotSection — one category body inside an article-summary card.
-
-  The board owns category presence and the shared top-N state. This presenter
-  renders exactly one supplied ladder and its below-floor tray, preserving the
-  absolute severe-rate chart, links, metric explainer, and honest absence.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -15,12 +8,6 @@
 	import type { HotspotLadderResult } from '../selectors/hotspotLadder';
 	import type { HotspotsCopy } from '../hotspots.copy';
 
-	interface MetricInfoVM {
-		readonly tip: string;
-		readonly href: string;
-		readonly label: string;
-		readonly linkLabel: string;
-	}
 	interface TrayRow {
 		readonly key: string;
 		readonly title: string;
@@ -37,7 +24,6 @@
 		tray: readonly TrayRow[];
 		windowCaption: string;
 		chartScrollLabel: string;
-		info: MetricInfoVM;
 		locale: Locale;
 		copy: HotspotsCopy;
 	}
@@ -47,7 +33,6 @@
 		tray,
 		windowCaption,
 		chartScrollLabel,
-		info,
 		locale,
 		copy,
 	}: HotspotSectionProps = $props();
@@ -87,10 +72,9 @@
 				{#snippet explainer()}
 					<MetricInfo
 						class="hotspot-info"
-						tip={info.tip}
-						href={info.href}
-						label={info.label}
-						linkLabel={info.linkLabel}
+						metricKey="severe"
+						{locale}
+						name={copy.ladder.severeRateLabel}
 						side="bottom"
 					/>
 				{/snippet}

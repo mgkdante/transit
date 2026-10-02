@@ -25,7 +25,7 @@ from transit_ops.snapshots.contract import (
     OccupancyMix,
     TrendPoint,
 )
-from transit_ops.snapshots.publish import _entity_family_availability
+from transit_ops.snapshots.historic_graph import _entity_family_availability
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 PROVIDER = "stm_network_history_test"

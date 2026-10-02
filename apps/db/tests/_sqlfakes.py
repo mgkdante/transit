@@ -1,11 +1,3 @@
-"""Shared fake DB connections that dispatch on the `-- q:<name>` registry marker.
-
-Every executed builder/rollup/mart SQL constant carries a stable `-- q:<name>`
-marker (transit_ops.sql_registry.named_query). These fakes dispatch canned result
-sets by EXACT query name via a dict — no ordering, no substring matching, no
-column-alias sniffing. Unmapped names fall through to `[]`, matching the empty
-fall-through semantics the substring fakes relied on.
-"""
 
 from __future__ import annotations
 
@@ -29,7 +21,6 @@ class _FakeResult:
         return M()
 
     def __iter__(self):
-        # bare row[0]-style iteration (active-services query)
         return iter(self._rows)
 
     def fetchone(self):  # noqa: ANN201
@@ -40,13 +31,6 @@ class _FakeResult:
 
 
 class NamedQueryConn:
-    """Dispatch canned result sets by exact `-- q:<name>` registry marker.
-
-    ``mapping`` is a dict {query_name: rows}. Unmapped (or unnamed) statements
-    return an empty result — the same fall-through the substring fakes gave.
-    ``strict=True`` raises on an unmapped name instead, for tests that must
-    fail loudly on a renamed or mistyped dispatch key.
-    """
 
     def __init__(self, mapping=None, *, strict: bool = False):  # noqa: ANN001
         self._mapping = dict(mapping or {})

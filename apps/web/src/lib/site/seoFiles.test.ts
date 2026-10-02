@@ -57,7 +57,6 @@ describe('SEO static files', () => {
 
 		expect(buildRobotsTxt(config)).toBe('User-agent: *\nDisallow: /\n');
 		expect(buildSitemapXml(config)).not.toContain('<url>');
-		// Even with entity ids supplied, indexing=false yields an empty urlset.
 		expect(buildSitemapXml(config, { routeIds: ['11'], stopIds: ['10001'] })).not.toContain(
 			'<url>',
 		);
@@ -89,7 +88,6 @@ describe('SEO static files', () => {
 			expect(sitemap).toContain(`<loc>${fr}</loc>`);
 		}
 
-		// Two locale URLs per surface, no more, no less (no entities supplied).
 		const locCount = (sitemap.match(/<loc>/g) ?? []).length;
 		expect(locCount).toBe(SURFACES.length * 2);
 	});
@@ -146,7 +144,6 @@ describe('sitemap entity enumeration', () => {
 		);
 
 		const locCount = (sitemap.match(/<loc>/g) ?? []).length;
-		// 12 surfaces + 2 routes + 3 stops = 17 entities x 2 locales = 34.
 		expect(locCount).toBe((SURFACES.length + 2 + 3) * 2);
 	});
 
@@ -165,54 +162,36 @@ describe('sitemap entity enumeration', () => {
 	});
 
 	it('percent-encodes ids (space + slash) then XML-escapes, matching the app link', () => {
-		// An id containing a space AND a slash — both must be percent-encoded so the
-		// sitemap <loc> equals how the app actually links to the entity.
 		const id = 'A B/C';
 		const entries = _entitySitemapEntries(origin, '/lines/', [id]);
 		const [en, fr] = entries;
 
-		// Percent-encoded segment: ' ' -> %20, '/' -> %2F (encodeURIComponent).
-		const encoded = encodeURIComponent(id); // 'A%20B%2FC'
+		const encoded = encodeURIComponent(id);
 		expect(encoded).toBe('A%20B%2FC');
 		expect(en).toContain(`<loc>${origin}/lines/${encoded}</loc>`);
 		expect(en).toContain(`hreflang="en" href="${origin}/lines/${encoded}"`);
 		expect(en).toContain(`hreflang="x-default" href="${origin}/lines/${encoded}"`);
 		expect(fr).toContain(`<loc>${origin}/fr/lines/${encoded}</loc>`);
 
-		// The raw space and slash must NOT survive in the path segment.
 		expect(en).not.toContain('/lines/A B/C');
 
-		// And the sitemap path segment matches entityUrl()'s id encoding exactly:
-		// both build the segment via encodeURIComponent(id), so sitemap URL == app
-		// URL (entityUrl appends .json for the snapshot file; the id segment is 1:1).
 		expect(entityUrl('static', 'static/routes/', id)).toContain(`static/routes/${encoded}.json`);
 	});
 
 	it('percent-encodes then XML-escapes ids with reserved chars in <loc> and hrefs', () => {
-		// An id with all five XML-reserved chars: &, <, >, ', ". The id is FIRST
-		// percent-encoded (encodeURIComponent: & -> %26, < -> %3C, > -> %3E,
-		// " -> %22; ' is left as-is by encodeURIComponent) so the URL is valid, THEN
-		// the assembled URL is XML-escaped so the document is valid (the surviving
-		// raw ' becomes &apos;). This mirrors the app link exactly.
 		const nasty = `a&b<c>d'e"f`;
-		const encoded = encodeURIComponent(nasty); // a%26b%3Cc%3Ed'e%22f
-		const escaped = encoded.replace(/'/g, '&apos;'); // XML-escape the lone surviving '
+		const encoded = encodeURIComponent(nasty);
+		const escaped = encoded.replace(/'/g, '&apos;');
 		const entries = _entitySitemapEntries(origin, '/lines/', [nasty]);
 		const en = entries[0];
 
-		// Raw reserved chars must NOT appear inside the path segment.
 		expect(en).toContain(`<loc>https://transit.yesid.dev/lines/${escaped}</loc>`);
-		// And the alternate hrefs are encoded+escaped too.
 		expect(en).toContain(`hreflang="en" href="https://transit.yesid.dev/lines/${escaped}"`);
 		expect(en).toContain(`hreflang="x-default" href="https://transit.yesid.dev/lines/${escaped}"`);
-		// The FR alternate must also be encoded+escaped.
 		const fr = entries[1];
 		expect(fr).toContain(`<loc>https://transit.yesid.dev/fr/lines/${escaped}</loc>`);
 
-		// No bare ampersand survives anywhere: encodeURIComponent turned the literal
-		// '&' into '%26', and every remaining '&' is the start of an XML entity.
 		expect(en.replace(/&(amp|lt|gt|apos|quot);/g, '')).not.toContain('&');
-		// The sitemap path matches entityUrl()'s id encoding exactly.
 		expect(entityUrl('static', 'static/routes/', nasty)).toContain(`static/routes/${encoded}.json`);
 	});
 
@@ -222,7 +201,6 @@ describe('sitemap entity enumeration', () => {
 		expect(locCount).toBe(SURFACES.length * 2);
 		expect(sitemap).not.toContain('/lines/');
 		expect(sitemap).not.toContain('/stop/');
-		// Static URLs survive — never an empty 200.
 		expect(sitemap).toContain('<loc>https://transit.yesid.dev/</loc>');
 	});
 });
@@ -271,7 +249,6 @@ describe('sitemap 50k guard', () => {
 	const origin = 'https://transit.yesid.dev';
 
 	it('keeps a single file under the 50k url cap', () => {
-		// Build a list that, ×2 locales, exceeds the cap: cap/2 + 100 stops.
 		const overByStops = SITEMAP_URL_CAP / 2 + 100;
 		const stopIds = Array.from({ length: overByStops }, (_, i) => `s${i}`);
 		const routeIds = ['11', '747'];
@@ -289,11 +266,9 @@ describe('sitemap 50k guard', () => {
 
 		const sitemap = buildSitemapXml({ siteOrigin: origin, indexing: true }, { routeIds, stopIds });
 
-		// Static + both routes survive.
 		expect(sitemap).toContain('<loc>https://transit.yesid.dev/</loc>');
 		expect(sitemap).toContain('<loc>https://transit.yesid.dev/lines/11</loc>');
 		expect(sitemap).toContain('<loc>https://transit.yesid.dev/lines/747</loc>');
-		// The first stop survives; the very last stop (deep tail) is dropped.
 		expect(sitemap).toContain('<loc>https://transit.yesid.dev/stop/s0</loc>');
 		expect(sitemap).not.toContain(`<loc>https://transit.yesid.dev/stop/s${overByStops - 1}</loc>`);
 	});

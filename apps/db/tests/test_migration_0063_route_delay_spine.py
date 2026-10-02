@@ -44,7 +44,6 @@ def test_0063_creates_route_delay_spine_with_finest_grain_pk() -> None:
     assert "fk_gold_route_delay_spine_provider_id" in src
     assert "ix_gold_route_delay_spine_provider_route_date" in src
 
-    # finest-grain hour-grain PK (D1): shift/day_type/dow/week/month derive at read time.
     for col in (
         "provider_id",
         "route_id",
@@ -54,7 +53,6 @@ def test_0063_creates_route_delay_spine_with_finest_grain_pk() -> None:
     ):
         assert f'"{col}"' in src, f"PK column {col} missing"
 
-    # additive count columns + the separate histogram.
     for col in (
         "observation_count",
         "delay_observation_count",
@@ -65,6 +63,4 @@ def test_0063_creates_route_delay_spine_with_finest_grain_pk() -> None:
     ):
         assert f'"{col}"' in src, f"column {col} missing"
 
-    # delayed_trip_count is COUNT(DISTINCT trip_id) -> NON-additive at hour grain;
-    # it must NOT be a spine column (it is read from route_delay_hourly). Correction #2.
     assert '"delayed_trip_count"' not in src

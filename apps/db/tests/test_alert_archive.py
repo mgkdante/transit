@@ -1,4 +1,3 @@
-"""Bounded, idempotent Gold alert-archive sync tests."""
 
 from __future__ import annotations
 

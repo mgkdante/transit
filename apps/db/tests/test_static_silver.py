@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -41,6 +43,9 @@ class FakeResult:
             raise AssertionError("Expected a scalar value.")
         return self.scalar_value
 
+    def scalar_one_or_none(self):
+        return self.scalar_value
+
     def __iter__(self):
         return iter(self.rows)
 
@@ -77,6 +82,8 @@ class RecordingCursor:
 
 
 class RecordingDriverConnection:
+    autocommit = False
+
     def __init__(self, copy_calls: list[dict[str, object]]) -> None:
         self.copy_calls = copy_calls
 
@@ -87,6 +94,7 @@ class RecordingDriverConnection:
 class RecordingConnectionFacade:
     def __init__(self, copy_calls: list[dict[str, object]]) -> None:
         self.driver_connection = RecordingDriverConnection(copy_calls)
+        self.dbapi_connection = self.driver_connection
 
 
 class RecordingConnection:
@@ -95,9 +103,14 @@ class RecordingConnection:
         self.copy_calls: list[dict[str, object]] = []
         self.connection = RecordingConnectionFacade(self.copy_calls)
 
+    def in_transaction(self) -> bool:
+        return True
+
     def execute(self, statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
         self.calls.append((sql_text, params))
+        if "FOR KEY SHARE OF io" in sql_text:
+            return FakeResult(params["object_id"])
         if "RETURNING dataset_version_id" in sql_text:
             return FakeResult(700)
         if "SELECT dataset_version_id" in sql_text:
@@ -186,12 +199,10 @@ def _write_gtfs_zip(
 ) -> None:
     members: dict[str, str] = {
         "feed/trips.txt": (
-            "route_id,service_id,trip_id,trip_headsign\n"
-            "route-1,weekday,trip-1,Downtown\n"
+            "route_id,service_id,trip_id,trip_headsign\nroute-1,weekday,trip-1,Downtown\n"
         ),
         "feed/stops.txt": (
-            "stop_id,stop_name,stop_lat,stop_lon\n"
-            "stop-1,Main Stop,45.5000,-73.5000\n"
+            "stop_id,stop_name,stop_lat,stop_lon\nstop-1,Main Stop,45.5000,-73.5000\n"
         ),
         "feed/stop_times.txt": (
             "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
@@ -201,8 +212,7 @@ def _write_gtfs_zip(
     }
     if include_routes:
         members["feed/routes.txt"] = (
-            "route_id,route_type,route_short_name,route_long_name\n"
-            "route-1,3,10,Green Line\n"
+            "route_id,route_type,route_short_name,route_long_name\nroute-1,3,10,Green Line\n"
         )
     if include_calendar:
         members["feed/calendar.txt"] = (
@@ -210,10 +220,7 @@ def _write_gtfs_zip(
             "weekday,1,1,1,1,1,0,0,20260324,20260630\n"
         )
     if include_calendar_dates:
-        members["feed/calendar_dates.txt"] = (
-            "service_id,date,exception_type\n"
-            "weekday,20260325,1\n"
-        )
+        members["feed/calendar_dates.txt"] = "service_id,date,exception_type\nweekday,20260325,1\n"
 
     with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
         for member_name, content in members.items():
@@ -258,8 +265,7 @@ def _write_beta_gtfs_zip(
             "1_0,1,0,Est,EAST\n"
         ),
         "route_patterns.txt": (
-            "route_pattern_id,route_id,direction_id,route_pattern_typicality\n"
-            "1_1071,1,0,0\n"
+            "route_pattern_id,route_id,direction_id,route_pattern_typicality\n1_1071,1,0,0\n"
         ),
         "trips.txt": f"{trip_header}\n{trip_row}\n",
         "shapes.txt": (
@@ -296,27 +302,18 @@ def _write_beta_gtfs_zip(
 
 
 def _minimal_compliant_members() -> dict[str, str]:
-    """The members of a fully GTFS-compliant single-agency feed that exercises the
-    loader relaxations: agency.txt with no agency_id column, feed_info.txt with no
-    date range / version, and a generic-node stop (location_type 3) with no
-    stop_name. Mirrors the minimal shape a small third-party provider may ship."""
     return {
         "agency.txt": (
             "agency_name,agency_url,agency_timezone\n"
             "Societe de transport de Sherbrooke,https://www.sts.qc.ca,America/Toronto\n"
         ),
         "feed_info.txt": (
-            "feed_publisher_name,feed_publisher_url,feed_lang\n"
-            "STS,https://www.sts.qc.ca,fr\n"
+            "feed_publisher_name,feed_publisher_url,feed_lang\nSTS,https://www.sts.qc.ca,fr\n"
         ),
         "routes.txt": (
-            "route_id,route_type,route_short_name,route_long_name\n"
-            "1,3,1,Centre-ville\n"
+            "route_id,route_type,route_short_name,route_long_name\n1,3,1,Centre-ville\n"
         ),
-        "trips.txt": (
-            "route_id,service_id,trip_id,trip_headsign\n"
-            "1,weekday,trip-1,Centre-ville\n"
-        ),
+        "trips.txt": ("route_id,service_id,trip_id,trip_headsign\n1,weekday,trip-1,Centre-ville\n"),
         "stops.txt": (
             "stop_id,stop_name,stop_lat,stop_lon,location_type\n"
             "stop-1,Terminus,45.4000,-71.9000,0\n"
@@ -355,7 +352,7 @@ def _build_archive(zip_path: Path) -> BronzeStaticArchive:
         storage_path="stm/static_schedule/sample.zip",
         archive_full_path=str(zip_path),
         source_url="https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
-        checksum_sha256="abc123" * 10 + "abcd",
+        checksum_sha256=hashlib.sha256(zip_path.read_bytes()).hexdigest(),
         byte_size=zip_path.stat().st_size,
         source_completed_at_utc=datetime(2026, 3, 24, 12, 0, 0, tzinfo=UTC),
     )
@@ -370,6 +367,45 @@ def test_discover_gtfs_members_normalizes_nested_paths(tmp_path: Path) -> None:
     assert member_map["routes.txt"] == "feed/routes.txt"
     assert member_map["stop_times.txt"] == "feed/stop_times.txt"
     assert member_map["calendar_dates.txt"] == "feed/calendar_dates.txt"
+
+
+@pytest.mark.parametrize("mismatch", ["checksum", "size"])
+def test_static_archive_bytes_are_verified_before_database_changes(
+    tmp_path: Path, mismatch
+) -> None:
+    path = tmp_path / "gtfs.zip"
+    _write_gtfs_zip(path)
+    archive = _build_archive(path)
+    archive = (
+        replace(archive, checksum_sha256="0" * 64)
+        if mismatch == "checksum"
+        else replace(archive, byte_size=archive.byte_size + 1)
+    )
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage(path.read_bytes())
+    with pytest.raises(ValueError, match=mismatch):
+        load_static_zip_to_silver(connection, archive=archive, bronze_storage=storage)
+    assert len(connection.calls) == 1
+    assert "FOR KEY SHARE OF io" in connection.calls[0][0]
+    assert connection.copy_calls == []
+    assert storage.read_calls == [archive.storage_path]
+
+
+def test_verified_static_load_uses_one_read_without_an_existence_request(tmp_path: Path) -> None:
+    path = tmp_path / "gtfs.zip"
+    _write_gtfs_zip(path)
+    archive = replace(_build_archive(path), byte_size=None)
+
+    class ReadOnlyStorage(FakeBronzeStorage):
+        def exists(self, storage_path: str) -> bool:
+            pytest.fail("A successful GET supplies the bytes and existence proof")
+
+    storage = ReadOnlyStorage(path.read_bytes())
+    result = load_static_zip_to_silver(
+        RecordingConnection(), archive=archive, bronze_storage=storage
+    )
+    assert result.content_hash == archive.checksum_sha256
+    assert storage.read_calls == [archive.storage_path]
 
 
 def test_validate_required_static_members_requires_core_and_service_files() -> None:
@@ -545,7 +581,7 @@ def test_static_bulk_copy_uses_one_stream_for_more_than_one_insert_chunk(
 
 def test_static_bulk_copy_skips_empty_and_missing_members(tmp_path: Path) -> None:
     members = {
-        "routes.txt": "route_id,route_type\n",
+        "routes.txt": "route_id,route_type\nR,3\n",
         "trips.txt": "route_id,service_id,trip_id\n",
         "stops.txt": "stop_id\n",
         "stop_times.txt": "trip_id,stop_id,stop_sequence\n",
@@ -568,7 +604,7 @@ def test_static_bulk_copy_skips_empty_and_missing_members(tmp_path: Path) -> Non
     )
 
     assert result.row_counts == {
-        "routes": 0,
+        "routes": 1,
         "stops": 0,
         "trips": 0,
         "stop_times": 0,
@@ -589,8 +625,6 @@ def test_build_agency_record_synthesizes_agency_id_when_absent() -> None:
         dataset_version_id=700,
     )
 
-    # GTFS allows omitting agency_id on a single-agency feed; the loader
-    # synthesizes a stable surrogate so silver.agency (agency_id NOT NULL) loads.
     assert record["agency_id"] == "sto"
     assert record["agency_name"] == "Societe de transport de l'Outaouais"
 
@@ -662,8 +696,6 @@ def test_load_static_zip_to_silver_welcomes_minimal_compliant_feed(
         bronze_storage=bronze_storage,
     )
 
-    # A single-agency feed with no agency_id, no feed_info dates/version, and a
-    # nameless generic-node stop loads end-to-end without raising.
     assert result.row_counts["agency"] == 1
     assert result.row_counts["feed_info"] == 1
     assert result.row_counts["routes"] == 1
@@ -675,7 +707,6 @@ def test_strict_gtfs_hard_fails_on_non_spine_member_missing_required_column(
     tmp_path: Path,
 ) -> None:
     members = _minimal_compliant_members()
-    # agency.txt missing the required agency_timezone column.
     members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
     zip_path = tmp_path / "broken-agency.zip"
     _write_members_zip(zip_path, members)
@@ -708,9 +739,8 @@ def test_tolerant_gtfs_downgrades_non_spine_member_to_conformance_warning(
         strict_gtfs=False,
     )
 
-    # The rest of the feed loads; the broken member is skipped and surfaced.
     assert result.row_counts["routes"] == 1
-    assert "agency" not in result.row_counts  # skipped, recorded zero
+    assert "agency" not in result.row_counts
     assert {
         "member": "agency.txt",
         "kind": "missing_required_column",
@@ -722,7 +752,6 @@ def test_tolerant_gtfs_still_hard_fails_on_spine_member_missing_column(
     tmp_path: Path,
 ) -> None:
     members = _minimal_compliant_members()
-    # routes.txt missing the spine route_type column -- always fatal.
     members["routes.txt"] = "route_id,route_short_name,route_long_name\n1,1,Centre-ville\n"
     zip_path = tmp_path / "broken-routes.zip"
     _write_members_zip(zip_path, members)
@@ -741,8 +770,7 @@ def test_tolerant_gtfs_still_hard_fails_on_spine_member_missing_column(
 def test_unknown_member_recorded_as_conformance_warning(tmp_path: Path) -> None:
     members = _minimal_compliant_members()
     members["pathways.txt"] = (
-        "pathway_id,from_stop_id,to_stop_id,pathway_mode,is_bidirectional\n"
-        "p1,stop-1,node-1,1,0\n"
+        "pathway_id,from_stop_id,to_stop_id,pathway_mode,is_bidirectional\np1,stop-1,node-1,1,0\n"
     )
     zip_path = tmp_path / "extra-member.zip"
     _write_members_zip(zip_path, members)
@@ -799,9 +827,7 @@ def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Pat
     ]
 
     route_params = next(
-        params
-        for sql, params in connection.calls
-        if "INSERT INTO silver.routes" in sql
+        params for sql, params in connection.calls if "INSERT INTO silver.routes" in sql
     )
     assert route_params[0]["route_desc_detail"] == "Lignes de jour seulement"
 
@@ -903,10 +929,7 @@ def test_load_static_zip_to_silver_records_all_txt_members_and_extra_rows(
         if "INSERT INTO silver.gtfs_source_members" in sql
     )
     assert len(inventory_params) == 12
-    inventory_by_file = {
-        params["source_file_name"]: params
-        for params in inventory_params
-    }
+    inventory_by_file = {params["source_file_name"]: params for params in inventory_params}
     assert set(inventory_by_file) == {
         "agency.txt",
         "calendar_dates.txt",
@@ -934,9 +957,7 @@ def test_load_static_zip_to_silver_records_all_txt_members_and_extra_rows(
     assert inventory_by_file["notes.txt"]["last_seen_at_utc"] == result.loaded_at_utc
 
     extra_params = next(
-        params
-        for sql, params in connection.calls
-        if "INSERT INTO silver.gtfs_extra_rows" in sql
+        params for sql, params in connection.calls if "INSERT INTO silver.gtfs_extra_rows" in sql
     )
     assert extra_params == [
         {
@@ -1056,7 +1077,7 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "source_ingestion_object_id": 20,
         "storage_path": "stm/static_schedule/ingested_at_utc=2026-03-25/sample.zip",
         "source_url": "https://example.com/static.zip",
-        "checksum_sha256": "f" * 64,
+        "checksum_sha256": hashlib.sha256(zip_path.read_bytes()).hexdigest(),
         "byte_size": zip_path.stat().st_size,
         "source_completed_at_utc": datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
     }
@@ -1107,13 +1128,11 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "translations": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
-    # The post-load ANALYZE batch runs in the same begin() connection after the
-    # seed: one statement per bulk-seeded silver table, seed statements first.
     analyze_calls = [sql for sql, _ in engine.begin_connection.calls if sql.startswith("ANALYZE ")]
     assert analyze_calls == [
         f"ANALYZE {table}" for table in static_silver_module._POST_LOAD_ANALYZE_TABLES
     ]
-    tail = [sql for sql, _ in engine.begin_connection.calls][-len(analyze_calls):]
+    tail = [sql for sql, _ in engine.begin_connection.calls][-len(analyze_calls) :]
     assert tail == analyze_calls, "the ANALYZE batch must be the final statements after the seed"
 
 
@@ -1132,7 +1151,7 @@ def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_m
         "source_ingestion_object_id": 20,
         "storage_path": "stm/static_schedule/ingested_at_utc=2026-05-25/current.zip",
         "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
-        "checksum_sha256": "f" * 64,
+        "checksum_sha256": hashlib.sha256(zip_path.read_bytes()).hexdigest(),
         "byte_size": zip_path.stat().st_size,
         "source_completed_at_utc": datetime(2026, 5, 25, 0, 0, 0, tzinfo=UTC),
     }
@@ -1173,13 +1192,6 @@ def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_m
 
 
 def test_load_latest_static_to_silver_does_not_prune_inside_the_load_transaction() -> None:
-    """Pruning must not run inside the silver-load transaction.
-
-    With STATIC_DATASET_RETENTION_COUNT=1 an in-load prune FK-fails against gold
-    dims (which still reference the previous version) and rolls back the entire
-    load on every content change — the prod wedge. Worker-cycle pruning
-    (prune_silver_storage) owns all static cleanup now (slice-9.1.1j).
-    """
     import inspect
 
     source = inspect.getsource(load_latest_static_to_silver)

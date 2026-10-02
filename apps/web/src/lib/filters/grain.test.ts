@@ -12,7 +12,6 @@ import type { DateWindow } from './state';
 
 describe('usableGrains — data-depth gating (the flat-trend fix)', () => {
 	it('enables only grains with >= minPoints trustworthy buckets', () => {
-		// a thin route: plenty of days, but week/month collapse to too few points.
 		const counts = { day: 30, week: 4, month: 1 };
 		expect(usableGrains('historic', counts)).toEqual(['day']);
 	});
@@ -41,7 +40,7 @@ describe('usableGrains — data-depth gating (the flat-trend fix)', () => {
 	it('isGrainUsable gates on both availability and depth', () => {
 		const counts = { day: 30, week: 2 };
 		expect(isGrainUsable('historic', 'day', counts)).toBe(true);
-		expect(isGrainUsable('historic', 'week', counts)).toBe(false); // too few buckets
+		expect(isGrainUsable('historic', 'week', counts)).toBe(false);
 		expect(isGrainUsable('historic', 'nonsense', counts)).toBe(false);
 	});
 });
@@ -80,7 +79,6 @@ describe('usableFromOffered — data-depth gating against an explicit offered li
 	});
 
 	it('only ever returns grains the caller offered', () => {
-		// A count for a non-offered grain is ignored (never leaks into the result).
 		expect(usableFromOffered(['day', 'week'], { day: 30, week: 30, month: 30 })).toEqual([
 			'day',
 			'week',

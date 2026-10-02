@@ -1,37 +1,3 @@
-"""Real-database regression tests for the dim name-history writer (slice-9.1.1u).
-
-These tests exercise the actual Postgres behavior that fake-connection tests
-structurally cannot see: the partial unique index on open history rows, the
-close-then-open statement pair against real silver rows across generations,
-and the deliberate ABSENCE of an FK from history to core.dataset_versions
-(the per-cycle silver prune deletes old dataset_versions rows and must never
-be blocked by the append-only history tables).
-
-They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
-with the transit schema applied. Throwaway cluster recipe:
-
-    /usr/lib/postgresql/16/bin/initdb -U repro -D /tmp/dimhist_pg
-    pg_ctl -D /tmp/dimhist_pg -o '-k /tmp/dimhist_pg -p 55433 -c listen_addresses=' start
-    createdb -h /tmp/dimhist_pg -p 55433 -U repro transit_repro
-    # restore schema from prod (either AFTER prod ran migration 0029, or
-    # restore the pre-0029 dump and then apply 0029 by hand:
-    #   cd apps/db && \
-    #   DATABASE_URL="postgresql+psycopg://repro@/transit_repro?host=/tmp/dimhist_pg&port=55433" \
-    #       uv run python -m transit_ops.cli init-db
-    psql -h /tmp/dimhist_pg -p 55433 -U repro transit_repro < schema_only_dump.sql
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://repro@:55433/transit_repro?host=/tmp/dimhist_pg \
-        uv run pytest tests/test_dim_history_real_db_regression.py -v
-
-Each test runs inside one transaction and rolls back — nothing persists.
-NOTE: Postgres now() is the TRANSACTION timestamp, so a v1 pair run and a v2
-pair run cannot share one test transaction (a renamed id's closed row and its
-replacement open row would collide on the (provider, id, valid_from) PK);
-prior generations are therefore seeded with explicit timestamps instead.
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -59,7 +25,6 @@ V1_ROUTES = [
     {"route_id": "R1", "short": "51", "long": "Ligne Verte", "color": "00A650", "rtype": 3},
 ]
 V2_ROUTES = [
-    # renamed at the new GTFS edition
     {"route_id": "R1", "short": "51", "long": "Ligne Verte Express", "color": "00A650", "rtype": 3},
 ]
 V1_STOPS = [
@@ -67,7 +32,6 @@ V1_STOPS = [
     {"stop_id": "S2", "name": "Station Deux", "lat": 45.51, "lon": -73.61},
 ]
 V2_STOPS = [
-    # S1 retired, S2 unchanged, S3 new
     {"stop_id": "S2", "name": "Station Deux", "lat": 45.51, "lon": -73.61},
     {"stop_id": "S3", "name": "Station Trois", "lat": 45.52, "lon": -73.62},
 ]
@@ -164,8 +128,6 @@ def _run_history_pairs(connection, dataset_version_id: int) -> None:
 
 
 def _seed_v1_history(connection) -> None:
-    """History state as the v1-generation run would have left it, with explicit
-    timestamps (now() is txn-constant, so the v1 pair cannot run in-test)."""
     connection.execute(
         text(
             """
@@ -228,7 +190,6 @@ def _stop_rows(connection) -> list[dict]:
 
 
 def test_first_generation_opens_one_row_per_entity(conn) -> None:
-    """Empty history + v1 silver -> exactly one open row per route/stop."""
     _run_history_pairs(conn, DSV1)
 
     routes = _route_rows(conn)
@@ -242,14 +203,10 @@ def test_first_generation_opens_one_row_per_entity(conn) -> None:
 
 
 def test_rename_retire_unchanged_new_generations(conn) -> None:
-    """THE drop-day scenario: renamed route -> closed+open rows; retired stop ->
-    single closed row; unchanged stop -> single untouched open row; new stop ->
-    one open row. Old silver rows are irrelevant (diff runs against v2 only)."""
     _seed_v1_history(conn)
 
     _run_history_pairs(conn, DSV2)
 
-    # R1 renamed: old name closed, new name open
     routes = _route_rows(conn)
     assert len(routes) == 2
     closed = next(r for r in routes if r["valid_to_utc"] is not None)
@@ -262,19 +219,15 @@ def test_rename_retire_unchanged_new_generations(conn) -> None:
 
     stops = {s["stop_id"]: s for s in _stop_rows(conn)}
     assert len(stops) == 3
-    # S1 retired: its only row is now closed — the name survives for fallback
     assert stops["S1"]["valid_to_utc"] is not None
     assert stops["S1"]["stop_name"] == "Station Un"
-    # S2 unchanged: single open row, valid_from untouched
     assert stops["S2"]["valid_to_utc"] is None
     assert stops["S2"]["valid_from_utc"] == T_OLD
-    # S3 new: one open row from the v2 generation
     assert stops["S3"]["valid_to_utc"] is None
     assert stops["S3"]["last_seen_dataset_version_id"] == DSV2
 
 
 def test_rerun_same_generation_is_idempotent(conn) -> None:
-    """Re-running the pairs for the same dataset version must change nothing."""
     _run_history_pairs(conn, DSV2)
     before_routes = _route_rows(conn)
     before_stops = _stop_rows(conn)
@@ -286,10 +239,6 @@ def test_rerun_same_generation_is_idempotent(conn) -> None:
 
 
 def test_duplicate_open_row_rejected_then_dataset_version_still_prunable(conn) -> None:
-    """The partial unique index allows at most one OPEN row per natural key —
-    and the IntegrityError, taken inside a SAVEPOINT, must not poison the
-    transaction: the old core.dataset_versions row stays deletable afterwards
-    (history has NO FK to it, by design)."""
     _seed_v1_history(conn)
 
     with pytest.raises(IntegrityError):
@@ -306,8 +255,6 @@ def test_duplicate_open_row_rejected_then_dataset_version_still_prunable(conn) -
                 {"p": PROVIDER, "t": T_OLD + timedelta(hours=1), "d": DSV1},
             )
 
-    # Same still-healthy transaction: mimic the prune order (silver first,
-    # then the dataset_versions row) — history must not block the delete.
     for table in ("silver.stops", "silver.routes"):
         conn.execute(
             text(f"DELETE FROM {table} WHERE provider_id = :p AND dataset_version_id = :d"),  # noqa: S608
@@ -319,14 +266,10 @@ def test_duplicate_open_row_rejected_then_dataset_version_still_prunable(conn) -
     )
     assert deleted.rowcount == 1
 
-    # The breadcrumb dangles on purpose — names must outlive the dataset row.
     assert any(r["last_seen_dataset_version_id"] == DSV1 for r in _stop_rows(conn))
 
 
 def test_backfill_from_gtfs_zip_heals_missing_ids_only(conn, tmp_path) -> None:
-    """The June-2026 heal path: an archived zip containing both tracked ids
-    (R1/S1, already in history) and orphaned ids (R_GONE/S_GONE, names lost
-    before 0029 existed) inserts CLOSED rows only for the orphans."""
     import zipfile
 
     _seed_v1_history(conn)
@@ -358,7 +301,6 @@ def test_backfill_from_gtfs_zip_heals_missing_ids_only(conn, tmp_path) -> None:
     assert counts["dim_stop_history_inserted"] == 1
 
     routes = {(r["route_id"], r["route_long_name"]): r for r in _route_rows(conn)}
-    # tracked id untouched (zip's stale name NOT applied), orphan healed closed
     assert ("R1", "Ligne Verte") in routes
     assert ("R1", "Nom Perime") not in routes
     healed = routes[("R_GONE", "Ancienne ligne")]
@@ -370,7 +312,6 @@ def test_backfill_from_gtfs_zip_heals_missing_ids_only(conn, tmp_path) -> None:
     assert ("S1", "Nom Perime") not in stops
     assert stops[("S_GONE", "Ancien arret")]["valid_to_utc"] is not None
 
-    # rerun with the same zip: idempotent, nothing new
     rerun = _backfill_on_connection(
         conn, provider_id=PROVIDER, parsed=parse_gtfs_name_rows(zip_path)
     )

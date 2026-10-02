@@ -1,35 +1,16 @@
-<!--
-  §0 Verdict — "Can you count on this line?"
-
-  The first rider-question section + the page's at-a-glance answer. Leads with the
-  punctuality KPI tiles (on-time, avg delay, typical/worst-case), then the ONE
-  always-visible primary chart — the on-time / avg-delay trend — and tucks the
-  analyst detail (the delay distribution + severe-delay share) behind the
-  progressive-disclosure `<Detail>` expander.
-
-  Reads ONLY the PunctualityVM: the old snapshot strip's cancellation/skip rates
-  move to §3 and its headway CoV to §2, so this section is punctuality-pure. The
-  grain rail (mounted by the orchestrator) only re-shapes the trend; the headline
-  tiles already carry the grain-aware aggregate.
-
-  Honest absence throughout: a null value renders the styled AbsentValue chip
-  (says WHY), never a fabricated 0; each chart degrades to its own absence mark.
-
--->
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import { localizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { MaybeValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import MetricBullet from './MetricBullet.svelte';
+	import { metricInfoCopy } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -42,42 +23,30 @@
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectBullet, otpTone } from '../selectors/bullet';
+	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
 	interface Section0VerdictProps {
-		/** The punctuality view-model from `toReliabilityClusters`. */
 		vm: PunctualityVM;
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
-		/** Active window (day|week|month|range) — names the verdict window + drives the trend. */
 		mode?: 'day' | 'week' | 'month' | 'range';
+		dailyPercentiles?: ReturnType<typeof selectDailyPercentiles>;
 	}
-	let { vm, locale, copy, mode = 'day' }: Section0VerdictProps = $props();
+	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
-	// A date range uses the retained dated series. Only the literal day mode uses
-	// the current time-of-day shift comparison.
 	const grain = $derived(mode);
+	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// Metric-explainer (i) affordance — the same wiring every band uses.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
 	const shiftShort = (g: string): string => shiftGrainLabelShort(g, locale);
 
-	// KPI bullets — each headline number gets a scale-context bullet beneath it (the
-	// "every KPI is a LayerChart mark" mandate). On-time carries the 80% SLA target tick +
-	// the band tone; the delay metrics ride a fixed delay domain with a neutral tone.
 	const otpBullet = $derived(
 		selectBullet(headline.otpPct, locale, {
 			title: copy.strip.otpPct,
@@ -115,7 +84,6 @@
 		}),
 	);
 
-	// PRIMARY — OTP/avg-delay trend (grain-aware: day → 5 shifts, else dated series).
 	const isDayGrain = $derived(grain === 'day');
 	const trendSpec = $derived(
 		selectPunctualityTrend(vm, grain, locale, {
@@ -133,21 +101,18 @@
 	const hasTrend = $derived(trendSpec.kind === 'trend');
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
-	// DETAIL — the typical→worst-case delay distribution (signed-delay histogram).
 	const distSpec = $derived(
 		selectPunctualityDistribution(vm, locale, {
 			title: copy.strip.delayDistHeading,
 			unit: ' s',
 			xLabel: copy.strip.delayDistLabel,
+			yLabel: copy.strip.delayDistCount,
 		}),
 	);
 	const p50 = $derived<number | null>(headline.p50Min);
 	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
 
-	// DETAIL — severe-delay share (its own metric, not the p90), now a LayerChart bullet
-	// on the fixed SEVERE_DOMAIN [0,100]. Tone tracks the severe-share bands (>=10% bad,
-	// >=5% warn) so the bar colour matches the severity read; null → no bar (honest absence).
 	const severePct = $derived<number | null>(headline.severePct);
 	const severeTone = (v: number | null): 'bad' | 'warn' | 'neutral' =>
 		v == null ? 'neutral' : v >= 10 ? 'bad' : v >= 5 ? 'warn' : 'neutral';
@@ -161,7 +126,6 @@
 		}),
 	);
 
-	// Whole-section honest empty: nothing punctuality-shaped to show at all.
 	const sectionEmpty = $derived(
 		headline.otpPct == null &&
 			headline.avgDelayMin == null &&
@@ -173,21 +137,34 @@
 	);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
+{#snippet otpInfo()}<MetricInfo
 		class="cluster-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
+		metricKey="otp"
+		{locale}
+		name={copy.strip.otpPct}
 		side="bottom"
-	/>
-{/snippet}
-{#snippet otpInfo()}{@render metricInfo('otp', copy.strip.otpPct)}{/snippet}
-{#snippet avgInfo()}{@render metricInfo('avgDelay', copy.strip.avgDelayMin)}{/snippet}
-{#snippet p50Info()}{@render metricInfo('p50p90', copy.strip.p50Min)}{/snippet}
-{#snippet p90Info()}{@render metricInfo('p50p90', copy.strip.p90Min)}{/snippet}
+	/>{/snippet}
+{#snippet avgInfo()}<MetricInfo
+		class="cluster-info"
+		metricKey="avgDelay"
+		{locale}
+		name={copy.strip.avgDelayMin}
+		side="bottom"
+	/>{/snippet}
+{#snippet p50Info()}<MetricInfo
+		class="cluster-info"
+		metricKey="p50p90"
+		{locale}
+		name={copy.strip.p50Min}
+		side="bottom"
+	/>{/snippet}
+{#snippet p90Info()}<MetricInfo
+		class="cluster-info"
+		metricKey="p50p90"
+		{locale}
+		name={copy.strip.p90Min}
+		side="bottom"
+	/>{/snippet}
 
 <CollapsibleSection
 	dataSection="verdict"
@@ -195,21 +172,14 @@
 	eyebrow={copy.sections.verdict.label}
 	question={copy.sections.verdict.question}
 >
-	<!-- D3: the §0 verdict block framed in the ONE TerminalPanel idiom. The existing
-	     at-a-glance answer (VerdictBanner + the KPI tiles) is wrapped untouched — no
-	     new verdict copy is authored. -->
 	<TerminalPanel
 		title={copy.sections.verdict.terminal.title}
 		tag={copy.sections.verdict.terminal.tag}
 		class="verdict-terminal"
 	>
-		<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
-		     §0's honest absence ("still measuring") when there's no percentage to read. -->
 		<VerdictBanner result={verdict} />
 
 		{#if !sectionEmpty}
-			<!-- KPI tiles — each a text-led number + a LayerChart bullet (scale context). The
-			     bullet handles honest absence (no bar) + on-time carries the 80% target tick. -->
 			<div class="verdict-kpis" data-slot="verdict-kpis">
 				<MetricBullet
 					label={copy.strip.otpPct}
@@ -232,7 +202,7 @@
 					spec={p50Bullet}
 					{locale}
 					info={p50Info}
-					caption={copy.strip.p50Caption}
+					caption={estimatedPercentiles ? copy.strip.p50EstimatedCaption : copy.strip.p50Caption}
 				/>
 				<MetricBullet
 					label={copy.strip.p90Min}
@@ -240,14 +210,13 @@
 					spec={p90Bullet}
 					{locale}
 					info={p90Info}
-					caption={copy.strip.p90Caption}
+					caption={estimatedPercentiles ? copy.strip.p90EstimatedCaption : copy.strip.p90Caption}
 				/>
 			</div>
 		{/if}
 	</TerminalPanel>
 
 	{#if !sectionEmpty}
-		<!-- PRIMARY — the on-time / avg-delay trend. -->
 		{#if hasTrend}
 			<div class="section-primary" data-slot="otp-trend" data-card="primary">
 				<div class="block-head">
@@ -258,18 +227,31 @@
 				</div>
 				<Chart spec={trendSpec} />
 				{#if hasWilsonBand}
-					<p class="band-caption" data-slot="wilson-band-caption">{copy.strip.wilsonBandCaption}</p>
+					<p class="band-caption" data-slot="wilson-band-caption">
+						{copy.strip.wilsonBandCaption}
+						<a
+							href={localizeHref('/metrics#confidence-intervals', locale)}
+							data-card-interactive
+							class="underline underline-offset-2"
+							>{metricInfoCopy.confidenceIntervalLink[locale]}</a
+						>
+					</p>
 				{/if}
 			</div>
 		{/if}
 
-		<!-- DETAIL — distribution + severe-delay share, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
 			<div class="block" data-slot="delay-distribution" data-card>
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
-						{@render metricInfo('p50p90', copy.strip.delayDistHeading)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey="p50p90"
+							{locale}
+							name={copy.strip.delayDistHeading}
+							side="bottom"
+						/>
 					</span>
 					<span class="block-value" class:block-value--empty={!hasDist}>
 						{#if hasDist}
@@ -285,10 +267,19 @@
 						{/if}
 					</span>
 				</div>
-				<Chart spec={distSpec} />
+				{#if distSpec.kind === 'histogram'}
+					<Chart spec={distSpec} />
+				{:else}
+					<p class="caption">
+						<AbsentValue reason={distSpec.reason} variant="row" {locale} />
+					</p>
+				{/if}
+				{#if dailyPercentiles != null}
+					<p class="caption" data-slot="daily-percentile-spread">
+						{dailyPercentileCaption(dailyPercentiles, locale)}
+					</p>
+				{/if}
 				{#if isDayGrain && !hasDist}
-					<!-- Day-grain periods carry no percentile distribution (only week/month do) —
-					     nudge to a wider window rather than leaving a bare "no data". -->
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}
 				{#if distSpec.kind === 'histogram'}
@@ -300,7 +291,13 @@
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.severePct} variant="metric" />
-						{@render metricInfo('severe', copy.strip.severePct)}
+						<MetricInfo
+							class="cluster-info"
+							metricKey="severe"
+							{locale}
+							name={copy.strip.severePct}
+							side="bottom"
+						/>
 					</span>
 					<span class="block-value" class:block-value--empty={severePct == null}>
 						<MaybeValue value={pct(severePct)} reason="no-observations" {locale} />
@@ -314,7 +311,6 @@
 </CollapsibleSection>
 
 <style>
-	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
 		display: grid;
 		gap: var(--space-card-gap);

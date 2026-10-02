@@ -1,8 +1,6 @@
-// Unit suite for map/nearbyStops.ts — the near-me geo helpers.
 import { describe, it, expect } from 'vitest';
 import { haversineMeters, nearestStops } from './nearbyStops';
 
-// Montréal reference points (downtown core).
 const PLACE_DES_ARTS = { lat: 45.5089, lon: -73.5667 };
 const BERRI_UQAM = { lat: 45.5152, lon: -73.5616 };
 
@@ -44,7 +42,6 @@ describe('nearestStops', () => {
 	});
 
 	it('returns an empty list when nothing is in range', () => {
-		// 5 m radius: even the closest stop (~40 m away) is excluded.
 		expect(nearestStops(PLACE_DES_ARTS, stops, 10, 5)).toEqual([]);
 	});
 

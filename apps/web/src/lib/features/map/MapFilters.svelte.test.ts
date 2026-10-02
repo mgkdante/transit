@@ -111,7 +111,7 @@ describe('MapFilters', () => {
 		expect(rail?.querySelectorAll('.mf-chip')).toHaveLength(0);
 		expect(
 			Array.from(rail?.querySelectorAll('.mf-rail-abbr') ?? [], (item) => item.textContent),
-		).toEqual(['Motion', 'Mark.', 'Alerts', 'Active', 'Status', 'Crowd']);
+		).toEqual(['Pos.', 'Mark.', 'Alerts', 'Active', 'Status', 'Crowd']);
 		expect(within(rail as HTMLElement).getByRole('button', { name: 'Active 1' })).toHaveTextContent(
 			'1',
 		);
@@ -230,7 +230,7 @@ describe('MapFilters', () => {
 
 		await fireEvent.click(getByRole('button', { name: 'Collapse controls' }));
 		const rail = container.querySelector<HTMLElement>('[data-testid="map-filter-rail"]')!;
-		await fireEvent.click(within(rail).getByRole('button', { name: 'Motion' }));
+		await fireEvent.click(within(rail).getByRole('button', { name: 'Positions' }));
 
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
 		await waitFor(() => expect(getByTestId('map-motion-switch')).toHaveFocus());
@@ -326,7 +326,6 @@ describe('MapFilters', () => {
 		expect(getByRole('button', { name: 'Collapse controls' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
 		expect(container.querySelector('.mf-title')).toHaveTextContent('Controls');
-		// The panel group's accessible name follows the same swap.
 		expect(container.querySelector('.map-filters')).toHaveAttribute('aria-label', 'Controls');
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'true');
 	});
@@ -346,7 +345,6 @@ describe('MapFilters', () => {
 
 		const head = container.querySelector('.mf-head')!;
 		const headerWrap = container.querySelector('[data-testid="map-filter-header"]')!;
-		// The collapse icon + title (.mf-head) sit at the TOP, ABOVE the motion header.
 		expect(
 			head.compareDocumentPosition(headerWrap) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
@@ -365,7 +363,7 @@ describe('MapFilters', () => {
 		expect(container.querySelector('[data-testid="map-filter-header"]')).not.toBeInTheDocument();
 	});
 
-	it('uses an in-flow fixed-width content wrapper clipped by a 5.75rem shell', () => {
+	it('keeps expanded content width stable while the collapsed rail owns its height', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
 			'utf-8',
@@ -373,9 +371,7 @@ describe('MapFilters', () => {
 
 		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{[^}]*width:\s*5\.75rem/);
 		expect(source).toMatch(/\.mf-expanded\s*\{[^}]*width:\s*16rem[^}]*flex:\s*none/s);
-		expect(source).not.toMatch(/\.mf-expanded\s*\{[^}]*position:\s*absolute/s);
 		expect(source).not.toMatch(/\.mf-expanded\s*\{[^}]*max-width:\s*100%/s);
-		expect(source).toMatch(/\.mf-rail-layer\s*\{[^}]*position:\s*absolute/s);
 		expect(source).toMatch(
 			/\.map-filters\s*\{[^}]*transition-property:\s*width[^}]*transition-duration:\s*var\(--duration-slow\)/s,
 		);

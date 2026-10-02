@@ -11,9 +11,10 @@ describe('production snapshot request budget', () => {
 		const workflow = readRepo('.github/workflows/web.yml');
 
 		expect(wrangler.match(/PUBLIC_V1_BASE = "https:\/\/data\.yesid\.dev\/v1"/g)).toHaveLength(2);
-		expect(workflow).not.toMatch(/PUBLIC_V1_BASE:\s*\/data\/v1/);
-		expect(workflow).not.toContain('PUBLIC_V1_BASE: https://transit.yesid.dev/data/v1');
-		expect(workflow.match(/PUBLIC_V1_BASE: https:\/\/data\.yesid\.dev\/v1/g)).toHaveLength(2);
+		const workflowBases = [...workflow.matchAll(/PUBLIC_V1_BASE:\s*(\S+)/g)].map(
+			(match) => match[1],
+		);
+		expect(new Set(workflowBases)).toEqual(new Set(['https://data.yesid.dev/v1']));
 	});
 
 	it('binds the snapshot bucket directly for SSR in production and development', () => {

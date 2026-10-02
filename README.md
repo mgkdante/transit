@@ -1,106 +1,132 @@
 # Transit
 
-An end-to-end Montréal transit data platform: ingest STM schedule and realtime
-feeds, build accountable analytics, publish a versioned public snapshot, and
-serve it through a fast citizen dashboard.
+Transit is an independent civic dashboard for exploring transit service with
+inspectable data, charts and maps. It captures GTFS and GTFS-Realtime feeds,
+normalizes them in Postgres, and publishes versioned snapshots for the citizen
+web app. STM is the current starting point; provider manifests describe the
+available data and attribution. Missing data remains unknown.
 
-- Dashboard: [transit.yesid.dev](https://transit.yesid.dev)
-- Public data contract:
-  [data.yesid.dev/v1/stm/manifest.json](https://data.yesid.dev/v1/stm/manifest.json)
+[Public dashboard](https://transit.yesid.dev) · [Source](https://github.com/mgkdante/transit)
 
-Transit is an independent portfolio project. It is not affiliated with or
-endorsed by the Société de transport de Montréal (STM). Its data is
-informational and must not be used for emergencies or trip-critical decisions.
+| Domain | Responsibility | Command owner |
+| --- | --- | --- |
+| `apps/db` | Python ingestion, normalization and snapshot publication | [pyproject.toml](apps/db/pyproject.toml) |
+| `apps/data-proxy` | Cloudflare Worker serving versioned snapshots | [package.json](apps/data-proxy/package.json) |
+| `apps/web` | SvelteKit dashboard consuming snapshots, without direct DB access | [package.json](apps/web/package.json) |
 
-## What it does
+The pipeline keeps archived source responses in Bronze, normalized records in
+Silver, and derived data in Gold. Capture/load receipts identify completed work;
+daily rollups retain separate completion dates for each metric family. Static,
+live and historic snapshots form the public contract. Repeated source bytes can
+still represent a new observation, so content identity and capture time remain
+distinct. Corrections and explicit recovery can revisit affected history.
 
-- Captures GTFS schedules, GTFS-Realtime trip and vehicle updates, and STM
-  service alerts.
-- Preserves source artifacts in Bronze storage, normalizes them into Silver,
-  and builds Gold reporting marts in PostgreSQL/PostGIS.
-- Publishes a versioned, cacheable `/v1` snapshot instead of exposing the
-  database to the public app.
-- Presents live network activity, service reliability, route coverage, delays,
-  occupancy, alerts, and freshness in English and French.
+## Start the web app
 
-## Architecture
+Install the supported Node and Bun pins from [.nvmrc](.nvmrc) and
+[.bun-version](.bun-version). [package.json](package.json) owns workspace commands;
+[bun.lock](bun.lock) owns the resolved JavaScript dependencies.
 
-```text
-STM feeds
-   │
-   ▼
-apps/db ──► Bronze (R2) ──► Silver + Gold (PostgreSQL/PostGIS)
-                                      │
-                                      ▼
-                      versioned /v1 snapshot (public R2 contract)
-                                      │
-                         ┌────────────┴────────────┐
-                         ▼                         ▼
-              apps/data-proxy             apps/web
-              compatibility + KPI API     SvelteKit dashboard
-```
-
-The three application domains have one-way responsibilities:
-
-| Domain | Responsibility |
-|---|---|
-| [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks |
-| `apps/data-proxy` | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis` |
-| `apps/web` | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
-
-The web app consumes an immutable `yesid.dev-design` Release under
-`apps/web/vendor/design`. The snapshot retains its accompanying MIT license and
-must never be edited by hand.
-
-## Local development
-
-Prerequisites: Bun 1.3.11, Node 22+, Python 3.12, [uv](https://docs.astral.sh/uv/),
-PostgreSQL/PostGIS, and credentials for the feed or storage paths you run.
-
-Install the JavaScript workspace and start the dashboard:
-
-```bash
+```sh
+git clone https://github.com/mgkdante/transit.git
+cd transit
 bun install --frozen-lockfile
+node .github/scripts/materialize-shared-config.mjs
 bun run dev
 ```
 
-Run the core workspace commands:
+Open the local URL printed by Vite. These commands work with native Windows or
+Linux tooling. The default development preview reads public snapshots through
+the [Vite proxy](apps/web/vite.config.ts). It needs internet access but no
+database, agency API key, storage credentials or Cloudflare account. Previewing
+does not publish data. Upstream freshness, feed coverage and basemap availability
+remain properties of the public data service.
 
-```bash
-bun run check
-bun run lint
-bun run build
-bun run test
+## Check a change
+
+Run these commands from the repository root after installing dependencies:
+
+```sh
+bun run test:setup
+bun run test:commands
+bun run --cwd apps/data-proxy check
+bun run --cwd apps/data-proxy test
+bun run --cwd apps/web check
+bun run --cwd apps/web lint
+bun run --cwd apps/web format:check
+bun run --cwd apps/web test
+bun run --cwd apps/web build
 ```
 
-Set up the data pipeline from its lockfile:
+The [web workflow](.github/workflows/web.yml) also checks vendored design,
+generated tokens, social cards, icons, map posters, browser behavior and deployment
+dry runs. Run the affected gate before changing those assets. The
+[design manifest](apps/web/vendor/design/manifest.json) identifies the immutable
+release: shared design changes belong in its source repository, followed by
+release adoption. Browser checks use the pinned platform manifests and
+[installer](apps/web/scripts/install-browser-toolchain.mjs); its required argument
+is an absolute installation directory.
 
-```bash
-cp .env.example apps/db/.env
-cd apps/db
+## Work on the Python pipeline
+
+Use Python from [.python-version](.python-version) and the uv pin in
+[setup-py](.github/actions/setup-py/action.yml). From `apps/db`, run:
+
+```sh
 uv sync --locked
+uv run transit-ops --help
+uv run ruff check src tests
+uv run mypy
+uv run pytest tests
+uv run alembic heads
 ```
 
-For the ordered clean-clone command that mirrors required web, data-proxy, and
-database CI, including the disposable PostGIS gates, see
-[CONTRIBUTING.md](CONTRIBUTING.md#verification).
+With `TRANSIT_TEST_DATABASE_URL` unset, real-database tests skip. The suite also
+contains operational cases requiring Bash, POSIX processes or other runtime
+access; a native Windows run does not prove those Linux cases. Mypy checks the
+configured paths. `alembic heads` inspects migration history without applying it.
 
-For local work, the DB/runtime template copied to `apps/db/.env` selects local
-Bronze and snapshot directories and leaves every remote target blank. Provide
-only the variables for the path you are exercising. CI and deployment workflows
-select remote storage explicitly and receive their targets and credentials from
-deployment configuration. Never commit credentials or production exports.
+For pipeline configuration, copy [.env.example](.env.example) to `apps/db/.env`.
+Local Bronze and snapshot storage are the defaults. Live feed capture requires
+the relevant provider credentials; publication to remote storage needs explicit
+configuration. Never point test or migration commands at production by accident.
 
-## Repository guides
+Real-database tests need a dedicated disposable local PostgreSQL/PostGIS database.
+The [target guard](apps/db/src/transit_ops/db/target_safety.py) requires an approved
+local role/database pair and exact `TRANSIT_TEST_DATABASE_DISPOSABLE` confirmation;
+tests can change its contents. See the
+[real-DB command](apps/db/scripts/run-real-db-tests.sh) and
+[backend workflow](.github/workflows/ci.yml) for the hosted Linux lifecycle.
+Operational Bash scripts and container verification belong on the supported Linux
+host; local Docker is not part of the Windows/WSL contributor workflow.
 
-- [Data pipeline and database](apps/db/README.md)
-- [Web dashboard](apps/web/README.md) and [Cloudflare serving](apps/web/CLOUDFLARE.md)
-- [Contributing and verification](CONTRIBUTING.md)
+## Contribute and operate
 
-## Project policies
+Keep changes within their domain, preserve snapshot contracts and unknown values,
+and run the relevant checks. Do not commit dotenv files, credentials or raw
+operational artifacts. The [public-tree guard](.github/scripts/check_public_tree.py)
+checks staged source for private residue; the
+[security workflow](.github/workflows/secret-scan.yml) adds secret scanning.
+Deployment requires the configured accounts, explicit targets and protected
+workflow checks. A local build or dry run does not establish production adoption.
 
-- [Contributing](CONTRIBUTING.md)
-- [Support](SUPPORT.md)
-- [Security](SECURITY.md)
-- [MIT License](LICENSE)
-- [Notices and attribution](NOTICE)
+Operators use the supported Linux host with its configured database, object
+storage and account access. These are the executable owners of the operating
+procedures; inspect their inputs and target before running them:
+
+| Operation | Entry point and result |
+| --- | --- |
+| Runtime and resource settings | [Compose services](apps/db/docker-compose.yml), [settings](apps/db/src/transit_ops/settings.py) and [environment template](.env.example) own worker cadence, retention, pruning batches and storage targets. Worker, pruner and health services receive separate environment settings. |
+| Publish and verify | [Daily static pipeline](.github/workflows/daily-static-pipeline.yml) and [daily warm rollups](.github/workflows/daily-warm-rollups.yml) own ordered ingestion/build/publication. The historic publication gate and public proof receipts accompany the workflow artifacts. |
+| Recover publication | [Historic recovery](.github/workflows/historic-publish-recovery.yml) owns the explicit migration, archive sync, publish and public-proof sequence. It is a deliberate recovery operation, not an ordinary dashboard request. |
+| Back up and prove restoration | From `apps/db` on the host, [backup-postgres.sh](apps/db/scripts/backup-postgres.sh) streams a logical backup to configured Bronze S3/R2 storage. [restore-backup-proof.sh](apps/db/scripts/restore-backup-proof.sh) restores into a separate temporary local cluster and checks the expected migration revision; it does not restore over production. |
+| Pause, resume and cut over | [Pause](apps/db/scripts/pause-pipeline.sh) and [resume](apps/db/scripts/resume-pipeline.sh) change GitHub schedules and the local Compose worker while leaving Postgres running. [Cutover validation](apps/db/scripts/validate-oracle-cutover.sh) checks the selected deployment target. |
+
+Retain the actual deployed source, image, migration revision, configuration and
+publication/restore receipts when operating a release. Repository checks prove
+the candidate; live freshness, recovery and resource use require host evidence.
+
+Transit source uses the [MIT License](LICENSE). [NOTICE](NOTICE) records separate
+terms and attribution for design, GSAP, fonts, maps and provider data. Transit is
+not affiliated with the transit agencies. Maintainer workflow instructions live
+in [AGENTS.md](AGENTS.md); private workflow access is unnecessary for this setup.

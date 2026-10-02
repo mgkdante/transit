@@ -1,16 +1,3 @@
-"""Stage-2 (slice-9.1.1r) — parallel per-entity snapshot uploads.
-
-On a new-GTFS-edition day the hash-gate skips nothing, so the publish must
-re-upload every per-route / per-stop / receipts file. These tests assert the
-upload loops fan out through a bounded thread pool while preserving the
-stage-1 guarantees:
-
-  * concurrency is BOUNDED by SNAPSHOT_PUBLISH_CONCURRENCY;
-  * the manifest / receipts index are uploaded LAST (after the tier files);
-  * a single failed upload PROPAGATES (no silent swallow);
-  * the hash-gate skip still does no PUT;
-  * the storage layer safely shares one pooled low-level boto3 client.
-"""
 
 from __future__ import annotations
 
@@ -24,19 +11,16 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+from snapshot_storage_fixtures import MemorySnapshotStore
 
 from transit_ops.snapshots import publish as snapshot_publish
-from transit_ops.snapshots.publish import _parallel_put, _publish_live, publish_snapshot
+from transit_ops.snapshots.publish import _publish_live, publish_snapshot
 from transit_ops.snapshots.storage import HashGatedStorage, SnapshotStorage
+from transit_ops.snapshots.uploads import put_batch as _parallel_put
 from transit_ops.sql_registry import query_name
-
-# ---------------------------------------------------------------------------
-# _parallel_put — the bounded uploader primitive
-# ---------------------------------------------------------------------------
 
 
 class _ConcurrencyProbe:
-    """Storage whose put_json sleeps briefly and records peak in-flight count."""
 
     def __init__(self, delay: float = 0.02) -> None:
         self._delay = delay
@@ -59,18 +43,15 @@ class _ConcurrencyProbe:
 
 
 def test_parallel_put_bounds_concurrency() -> None:
-    """No more than `concurrency` uploads run at once."""
     probe = _ConcurrencyProbe()
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(50)]
     keys = _parallel_put(probe, items, concurrency=4)
     assert len(keys) == 50
     assert probe.peak <= 4
-    # genuinely concurrent (would be 1 if it ran serially)
     assert probe.peak >= 2
 
 
 def test_parallel_put_preserves_submission_order() -> None:
-    """Returned keys follow item order even when threads finish out of order."""
     probe = _ConcurrencyProbe(delay=0.0)
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(20)]
     keys = _parallel_put(probe, items, concurrency=8)
@@ -78,7 +59,6 @@ def test_parallel_put_preserves_submission_order() -> None:
 
 
 def test_parallel_put_sequential_when_concurrency_one() -> None:
-    """concurrency<=1 runs inline (no pool) and stays peak==1."""
     probe = _ConcurrencyProbe(delay=0.0)
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(10)]
     keys = _parallel_put(probe, items, concurrency=1)
@@ -93,7 +73,6 @@ def test_parallel_put_empty_is_noop() -> None:
 
 
 def test_parallel_put_propagates_first_failure() -> None:
-    """A failing upload surfaces; failures are never swallowed."""
 
     class _Boom:
         def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
@@ -138,11 +117,6 @@ def test_parallel_put_reuses_provider_executor_and_drains_a_failed_barrier() -> 
             executor=executor,
         )
     assert follow_up == ["historic/follow-up.json"]
-
-
-# ---------------------------------------------------------------------------
-# Live publish — parallel children, serial manifest activation
-# ---------------------------------------------------------------------------
 
 
 _LIVE_CHILD_KEYS = (
@@ -266,13 +240,7 @@ def test_publish_live_concurrency_one_preserves_sequential_manifest_last(
     assert keys == list(_LIVE_KEYS)
 
 
-# ---------------------------------------------------------------------------
-# HashGatedStorage thread-safety + skip-does-no-PUT under concurrency
-# ---------------------------------------------------------------------------
-
-
 class _CountingInner:
-    """Inner storage recording every put_bytes (i.e. real network write)."""
 
     def __init__(self, prior: dict[str, bytes] | None = None) -> None:
         self.store: dict[str, bytes] = dict(prior or {})
@@ -296,13 +264,11 @@ class _CountingInner:
 
 
 def test_hash_gated_storage_is_thread_safe_and_consistent() -> None:
-    """Concurrent puts produce a consistent written list with no lost updates."""
     inner = _CountingInner()
     gated = HashGatedStorage(inner, state_rel_key="_meta/s.json", fingerprint="v1")
     gated.load()
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(200)]
     _parallel_put(gated, items, concurrency=16)
-    # every distinct key written exactly once; no races dropped entries
     assert sorted(gated.written) == sorted(k for k, _, _ in items)
     assert len(gated.written) == 200
     assert len(gated.skipped) == 0
@@ -310,14 +276,12 @@ def test_hash_gated_storage_is_thread_safe_and_consistent() -> None:
 
 
 def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
-    """A file whose hash matches prior state is skipped — no put_bytes."""
 
     from transit_ops.snapshots.serialization import snapshot_json_bytes
 
-    # Seed prior state so half the keys are unchanged.
     prior_hashes = {}
     inner = _CountingInner()
-    for i in range(0, 100, 2):  # even keys pre-seeded as unchanged
+    for i in range(0, 100, 2):
         key = f"static/stops/{i}.json"
         body = snapshot_json_bytes({"i": i})
         import hashlib
@@ -332,16 +296,10 @@ def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(100)]
     _parallel_put(gated, items, concurrency=16)
 
-    assert len(gated.skipped) == 50  # even keys matched prior -> skipped
-    assert len(gated.written) == 50  # odd keys changed -> written
-    # skipped files did NO network write
+    assert len(gated.skipped) == 50
+    assert len(gated.written) == 50
     assert all("static/stops/" in k for k in inner.put_bytes_calls)
     assert len(inner.put_bytes_calls) == 50
-
-
-# ---------------------------------------------------------------------------
-# SnapshotStorage — one low-level boto3 client shared across publisher workers
-# ---------------------------------------------------------------------------
 
 
 def test_snapshot_storage_shares_one_client_across_threads() -> None:
@@ -365,7 +323,6 @@ def test_snapshot_storage_shares_one_client_across_threads() -> None:
 
 
 def test_snapshot_storage_shares_client_without_factory() -> None:
-    """Without a factory the single injected client is used (single-thread path)."""
 
     class _FakeClient:
         def __init__(self) -> None:
@@ -381,17 +338,12 @@ def test_snapshot_storage_shares_client_without_factory() -> None:
     assert c.puts == 2
 
 
-# ---------------------------------------------------------------------------
-# End-to-end: static publish parallelises but keeps deterministic ordering
-# ---------------------------------------------------------------------------
-
-
-class _OrderTrackingStore:
-    """Records put_json keys in completion order under a lock (hash-gate compat)."""
+class _OrderTrackingStore(MemorySnapshotStore):
 
     def __init__(self) -> None:
+        super().__init__()
         self.keys: list[str] = []
-        self.store: dict[str, bytes] = {}
+        self.store = self.objects
         self._lock = threading.Lock()
 
     def full_key(self, rel_key: str) -> str:
@@ -447,7 +399,6 @@ def _historic_dispatch_conn(
     line_delay_rows=None,  # noqa: ANN001
     stop_delay_rows=None,  # noqa: ANN001
 ):
-    """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
 
     class _R:
@@ -460,6 +411,9 @@ def _historic_dispatch_conn(
             class M:
                 def fetchone(self):
                     return outer._rows[0] if outer._rows else None
+
+                def all(self):
+                    return list(outer._rows)
 
                 def __iter__(self):
                     return iter(outer._rows)
@@ -486,10 +440,6 @@ def _historic_dispatch_conn(
         def scalar_one(self):
             return self._rows[0] if self._rows else 0
 
-    # Name-keyed dispatch on each query's `-- q:<name>` registry marker. Distinct
-    # names replace the old substring hazards; spine-projector reads (weekly/monthly/
-    # crosstab/by_shift/by_daytype) are left unmapped ([]) to preserve the exact
-    # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
         "publish.lock.try_acquire": [True],
         "history.hotspots.timezone": [{"timezone": "UTC"}],
@@ -499,9 +449,6 @@ def _historic_dispatch_conn(
         "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
         "history.repeat_offenders.names": [],
         "history.repeat_offenders.daily": list(repeat_offender_daily_rows or []),
-        # Retained Network history stays empty in legacy publisher-order tests unless a
-        # test explicitly supplies source rows. Keep the new query surface visible so
-        # an accidental name change cannot silently fall through.
         "history.network.delay": list(network_delay_rows or []),
         "history.network.fact": list(network_fact_rows or []),
         "history.network.cancellation": [],
@@ -641,7 +588,6 @@ def _historic_dispatch_conn(
                 "weighted_delay_sec": None,
             },
         ],
-        # per-route reliability enumeration.
         "route.spine.route_ids": [("R1",), ("R2",), ("R3",)],
         "route.cancellation.daily": [],
         "route.delay.by_crowding": [],
@@ -665,11 +611,7 @@ def _historic_dispatch_conn(
         ],
         "static.active_services": [("svc_wd",)],
         "static.route_schedule": [],
-        # S14: scalar habits reads route.habit.spine over an all-time window (route_habit_score
-        # mart dropped). Empty here → all-null matrix; route.spine.anchor left unmapped so the
-        # windowed §1 by-grain reads stay empty (matching the old fall-through).
         "route.habit.spine": [],
-        # DB-0067: stop spine anchor + the distinct-named spine reads.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "stop.reliability.by_route": [],
         "stop.reliability.weekly": [
@@ -756,8 +698,7 @@ def _archive_publish_row() -> dict[str, object]:
 
 
 def test_historic_publish_uploads_index_after_receipts() -> None:
-    """receipts/index.json is the LAST historic key, after all receipt files."""
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -769,7 +710,6 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
 
     index_key = "historic/receipts/index.json"
     assert index_key in keys
-    # every receipt file appears in the upload log strictly before the index PUT
     receipt_positions = [
         i
         for i, k in enumerate(store.keys)
@@ -822,7 +762,7 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
 
 
 def test_historic_receipt_file_failure_keeps_previous_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -851,9 +791,7 @@ def test_historic_receipt_file_failure_keeps_previous_index() -> None:
 
 
 def test_historic_publish_uploads_route_index_after_route_files() -> None:
-    """route_reliability/index.json is PUT strictly after every per-route file (staged
-    upload: the per-route batch completes before the index stage begins)."""
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -876,7 +814,7 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
 
 
 def test_historic_publish_completes_all_archive_pages_before_stable_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -899,7 +837,7 @@ def test_historic_publish_completes_all_archive_pages_before_stable_index() -> N
 def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
     import datetime
 
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -948,7 +886,7 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
 
 
 def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
-    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -1305,7 +1243,6 @@ def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: 
 
 
 def test_static_publish_manifest_index_keys_present_and_complete() -> None:
-    """publish_snapshot(static) returns all keys; per-route files parallelised."""
     conn = _RecordingStaticConn()
 
     class _Settings:
@@ -1323,18 +1260,11 @@ def test_static_publish_manifest_index_keys_present_and_complete() -> None:
     written = set(res.keys_written)
     assert "static/routes_index.json" in written
     assert "static/stops_index.json" in written
-    # several per-route files were produced and all uploaded
     route_keys = {k for k in written if k.startswith("static/routes/")}
     assert len(route_keys) >= 3
 
 
 class _RecordingStaticConn:
-    """Static fake conn yielding a few routes (no stops) for parallel coverage.
-
-    Dispatches on the `-- q:<name>` registry marker; unmapped names fall through
-    to []. Only R1 has spine history, so its routes_index entry gets
-    reliability=True.
-    """
 
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         import datetime as _dt
@@ -1376,8 +1306,6 @@ class _RecordingStaticConn:
             "static.all_route_schedules": [],
             "static.routes_index": route_row,
             "static.stops_index": stop_row,
-            # static.all_stops stays unmapped -> [] (the pre-migration needle
-            # never matched it; its consumer requires wheelchair_boarding).
             "static.labels": [{"label_key": "k", "label_fr": "f", "label_en": "e"}],
             "static.dataset_version": [{"dataset_version_id": 1}],
             "manifest.version": [{"dataset_version_id": 1}],
@@ -1398,6 +1326,9 @@ class _StaticResult:
         class M:
             def fetchone(self):
                 return outer._rows[0] if outer._rows else None
+
+            def all(self):
+                return list(outer._rows)
 
             def __iter__(self):
                 return iter(outer._rows)
@@ -1438,7 +1369,6 @@ class _FakeEngine:
 
 
 def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write() -> None:
-    """One provider/tier transaction owns root, mutable files, hash state, and DB state."""
     from transit_ops.snapshots import publish as snapshot_publish
 
     class _TryLockResult:

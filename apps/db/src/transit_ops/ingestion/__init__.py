@@ -1,5 +1,3 @@
-"""Bronze ingestion services."""
-
 from transit_ops.ingestion.gis import (
     GisIngestionConfig,
     GisIngestionResult,

@@ -1,3 +1,4 @@
+import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import {
 	act,
 	fireEvent,
@@ -17,10 +18,6 @@ import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
-// Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
-// / ?n seed AND the round-trip mirror are testable (the HotspotsBoard urlseed pattern).
-// getLocale stays REAL → 'en'; $lib/i18n + $lib/nav stay REAL so the deep links resolve
-// to genuine /lines/<id> hrefs.
 const nav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/repeat-offenders'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
@@ -123,9 +120,6 @@ class ReconciliationIntersectionObserver {
 	}
 }
 
-// A populated week ladder (one trip + one vehicle ranked entry + one tray) + a
-// populated month ladder, so the grain rail renders and a seed to a different grain
-// is observable.
 function seed(): RepeatOffendersData {
 	return {
 		generated_utc: GENERATED,
@@ -616,7 +610,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(repeatCopy.en.cards).toEqual({
 			worst: {
 				title: 'Worst repeat offender',
-				subtitle: 'The current worst repeat offender, its severe rate, and its streak',
+				subtitle: 'Severe-delay rate and recurrence',
 			},
 			trips: {
 				title: 'Trips',
@@ -630,7 +624,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(repeatCopy.fr.cards).toEqual({
 			worst: {
 				title: 'Pire récidiviste',
-				subtitle: 'Le pire récidiviste actuel, son taux de retards graves et sa série',
+				subtitle: 'Taux de retards graves et récurrence',
 			},
 			trips: {
 				title: 'Voyages',
@@ -654,6 +648,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 
 	it('keeps a touch datum activation inside the card and exposes only the popover action', async () => {
 		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
+		observeChartFrames(768, 400);
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');

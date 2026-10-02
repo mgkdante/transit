@@ -227,8 +227,6 @@ export function measureBlueprintDocument({
 		};
 	});
 
-	// BlueprintShell's own `.ref-label` spans are warnings only. They are vendor sheet chrome,
-	// pre-existing on both pages and both themes; the register carries them to the design repo.
 	const refLabelWarnings = [...header.querySelectorAll('.ref-label')].flatMap((label) => {
 		const labelBox = label.getBoundingClientRect();
 		return copyZones
@@ -290,8 +288,6 @@ export function validateBlueprintDensity(result, { theme, viewport }) {
 	const heroes = result.parts.filter((part) => part.hero);
 	const details = result.parts.filter((part) => !part.hero);
 	const allowedOpacity = Object.values(tokenValues);
-	// The restored hero is the background wash and remains partCount-only; copy-zone budgets
-	// continue to govern the ten detail sheets and their engraved labels.
 	for (const part of details) {
 		if (
 			!Number.isFinite(part.renderedOpacity) ||
@@ -322,12 +318,6 @@ export function validateBlueprintDensity(result, { theme, viewport }) {
 	const desktopBudget = viewport.width === 1280;
 	const labelWarnings = [];
 
-	// Engraved-label placement gates on desktop, where parts render at their
-	// assigned roles and a label inside the copy rect competes with real copy.
-	// Below the desktop breakpoint the app flattens every part to quiet and the
-	// copy stacks across the full drawing, so label overlap is the background
-	// wash by construction: reported, not gating. The narrow cell's real gate is
-	// the all-quiet assertion below.
 	for (const part of details) {
 		for (const collision of part.collisions) {
 			const line = `${result.name}/${part.part}: label "${collision.text}" intersects ${collision.zone}`;
@@ -336,9 +326,7 @@ export function validateBlueprintDensity(result, { theme, viewport }) {
 		}
 	}
 
-	// The narrow cell asserts the mobile flattening actually holds: every detail
-	// part must RENDER at quiet. Falsifiable — removing the app's mobile media
-	// rule re-exposes mid/accent ink here and this fails.
+	// Below desktop width, every detail part must render at quiet.
 	if (!desktopBudget) {
 		for (const part of details) {
 			if (Math.abs(part.renderedOpacity - tokenValues['--blueprint-ink-quiet']) > 0.001) {
@@ -408,9 +396,7 @@ export function validateBlueprintDensity(result, { theme, viewport }) {
 		}
 	}
 
-	// Hero engraved labels are non-gating by adjudication (the hero is the
-	// background wash; the D1 defect was detail labels competing at readable
-	// opacity) — but they must SURFACE, not vanish from the receipt.
+	// Hero-label collisions remain visible in receipts but do not gate acceptance.
 	const heroLabelWarnings = heroes.flatMap((part) =>
 		part.collisions.map(
 			(collision) =>

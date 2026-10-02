@@ -46,7 +46,7 @@ class DatasetVersionConnection:
         sql_text = str(statement)
         self.calls.append((sql_text, params))
         if "SELECT" in sql_text and "dataset_version_id" in sql_text:
-            if self.current_checksum is None or self.current_id is None:
+            if self.current_checksum is None:
                 return FakeResult(mapping_value=None)
             return FakeResult(
                 mapping_value={
@@ -135,11 +135,11 @@ def test_new_checksum_closes_previous_version_and_inserts_new_current() -> None:
         connection,
         provider_id="stm",
         feed_endpoint_id=1,
-        dataset_kind="static_schedule",
+        dataset_kind="gis_static",
         checksum_sha256="new",
         source_url="https://example.test/b.zip",
         storage_backend="s3",
-        storage_path="stm/static_schedule/new.zip",
+        storage_path="stm/gis_static/new.zip",
         byte_size=3,
         observed_at_utc=observed_at_utc,
         parser_version="slice-8.4",
@@ -155,7 +155,7 @@ def test_new_checksum_closes_previous_version_and_inserts_new_current() -> None:
     )
     assert update_params["provider_id"] == "stm"
     assert update_params["feed_endpoint_id"] == 1
-    assert update_params["dataset_kind"] == "static_schedule"
+    assert update_params["dataset_kind"] == "gis_static"
     assert update_params["observed_until_utc"] == observed_at_utc
     insert_params = next(
         params for sql, params in connection.calls
@@ -163,7 +163,7 @@ def test_new_checksum_closes_previous_version_and_inserts_new_current() -> None:
     )
     assert insert_params["checksum_sha256"] == "new"
     assert insert_params["content_hash"] == "new"
-    assert insert_params["dataset_kind"] == "static_schedule"
+    assert insert_params["dataset_kind"] == "gis_static"
 
 
 def test_insert_requires_source_ingestion_run_id_before_sql() -> None:
@@ -200,11 +200,11 @@ def test_new_checksum_closes_all_current_versions_for_provider_feed_and_kind() -
         connection,
         provider_id="stm",
         feed_endpoint_id=1,
-        dataset_kind="static_schedule",
+        dataset_kind="gis_static",
         checksum_sha256="new",
         source_url="https://example.test/b.zip",
         storage_backend="s3",
-        storage_path="stm/static_schedule/new.zip",
+        storage_path="stm/gis_static/new.zip",
         byte_size=3,
         observed_at_utc=observed_at_utc,
         parser_version="slice-8.4",
@@ -221,4 +221,29 @@ def test_new_checksum_closes_all_current_versions_for_provider_feed_and_kind() -
     assert "dataset_kind = :dataset_kind" in close_sql
     assert close_params["provider_id"] == "stm"
     assert close_params["feed_endpoint_id"] == 1
-    assert close_params["dataset_kind"] == "static_schedule"
+    assert close_params["dataset_kind"] == "gis_static"
+
+
+@pytest.mark.parametrize("previous_checksum", [None, "old", "new"])
+def test_static_capture_does_not_promote_an_unapplied_dataset(
+    previous_checksum: str | None,
+) -> None:
+    connection = DatasetVersionConnection(current_checksum=previous_checksum)
+    result = register_or_touch_dataset_version(
+        connection,
+        provider_id="stm",
+        feed_endpoint_id=1,
+        dataset_kind="static_schedule",
+        checksum_sha256="new",
+        source_url="https://example.test/static.zip",
+        storage_backend="local",
+        storage_path="stm/static_schedule/new.zip",
+        byte_size=3,
+        observed_at_utc=datetime(2026, 9, 4, tzinfo=UTC),
+        parser_version="test",
+        source_ingestion_run_id=101,
+    )
+    assert result.dataset_version_id is None
+    assert result.content_changed is (previous_checksum != "new")
+    assert len(connection.calls) == 1
+    assert "SELECT" in connection.calls[0][0]

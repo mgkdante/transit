@@ -1,5 +1,3 @@
-"""Fail-closed proof that a historic publication is current and publicly readable."""
-
 from __future__ import annotations
 
 import hashlib
@@ -545,7 +543,6 @@ def _fetch_models_bounded(
     gate_digests: Mapping[str, object] | None,
     bind_gate_digest: bool = True,
 ) -> list[ModelFetchResult]:
-    """Fetch fixed-size windows and validate each window in stable input order."""
 
     if not requests:
         return []
@@ -1229,7 +1226,6 @@ def _bind_range_candidates_to_parent_indexes(
     *,
     failures: list[str],
 ) -> dict[str, object]:
-    """Bind refs through the exact gate-digest-bound index that advertises them."""
 
     bound_count = 0
     failure_count = 0
@@ -2407,7 +2403,6 @@ def build_historic_publish_proof(
     isolate_process: bool = True,
     isolation_start_method: Literal["spawn", "fork"] = "spawn",
 ) -> HistoricPublishProofReport:
-    """Build one proof inside a verifier-owned monotonic deadline."""
 
     verified_at_utc = (now_utc or datetime.now(UTC)).astimezone(UTC)
     deadline = _HistoricProofDeadline(

@@ -34,7 +34,6 @@ describe('stopModeHint — name-prefix fallback when mode is absent/null', () =>
 	it('tags métro platform stops from the "Station" prefix (accent/case insensitive)', () => {
 		expect(stopModeHint({ name: 'Station Berri-UQAM' })).toEqual({ glyph: '◉', label: 'Métro' });
 		expect(stopModeHint({ name: 'station crémazie' })).toEqual({ glyph: '◉', label: 'Métro' });
-		// mode explicitly null (published but unlinked) also falls back to the name.
 		expect(stopModeHint({ name: 'Station Jarry', mode: null })).toEqual({
 			glyph: '◉',
 			label: 'Métro',

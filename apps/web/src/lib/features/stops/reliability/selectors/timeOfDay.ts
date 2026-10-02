@@ -1,13 +1,3 @@
-// timeOfDay — the per-stop by-shift + weekday/weekend ranked lists.
-//
-// Ports the StopDetail inline `partitionedToD` + `rankBySevere` transforms
-// VERBATIM: partition the stop's periods[] into SHIFT grains (am_peak…night) and
-// DAY-TYPE grains (weekday/weekend) — the calendar grains (day/week/month) stay
-// OUT — then rank each group worst-first by severe share, banding each bar on the
-// FIXED SEVERE_DOMAIN and secondary-sorting by canonical token order. A period
-// with a null severe share is DROPPED (no fake-0 ranking); an avg-only period has
-// no place in a severe-share ranking, so the partition + ranker stay in lock-step.
-
 import {
 	SHIFT_GRAIN_ORDER,
 	DAY_TYPE_GRAIN_ORDER,
@@ -18,7 +8,6 @@ import {
 } from '$lib/features/reliability/shiftGrains';
 import type { SeverityCode, StopReliabilityPeriod } from '$lib/v1/schemas';
 
-/** A ranked shift / day-type row (RankedRow-ready, carrying its absolute domain). */
 export interface TimeOfDayRow {
 	readonly key: string;
 	readonly rank: number;
@@ -32,7 +21,6 @@ export interface TimeOfDayRow {
 
 type ShiftRow = { grain: string; severePct: number | null; avgDelayMin: number | null };
 
-/** Split periods into clean shift / day-type groups (calendar grains stay out). */
 function partition(periods: readonly StopReliabilityPeriod[]): {
 	byShift: ShiftRow[];
 	byDayType: ShiftRow[];
@@ -40,9 +28,6 @@ function partition(periods: readonly StopReliabilityPeriod[]): {
 	const byShift: ShiftRow[] = [];
 	const byDayType: ShiftRow[] = [];
 	for (const p of periods) {
-		// A period earns a row only when it carries a real severe share (these lists
-		// RANK by severe share — an avg-only period would survive the partition yet
-		// vanish from the list). Never fabricate a share (or a 0) to keep it.
 		if (p.severe_pct == null) continue;
 		const row: ShiftRow = {
 			grain: p.grain,
@@ -55,7 +40,6 @@ function partition(periods: readonly StopReliabilityPeriod[]): {
 	return { byShift, byDayType };
 }
 
-/** Rank a group worst-first by severe share on the FIXED SEVERE_DOMAIN. */
 function rankBySevere(
 	rows: readonly ShiftRow[],
 	order: readonly string[],
@@ -92,7 +76,6 @@ export interface TimeOfDayLabels {
 export interface TimeOfDayVM {
 	readonly shiftRows: TimeOfDayRow[];
 	readonly dayTypeRows: TimeOfDayRow[];
-	/** The whole section stands down unless a shift OR day-type row survived. */
 	readonly hasTimeOfDay: boolean;
 }
 

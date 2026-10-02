@@ -111,14 +111,14 @@ describe('shared copy fragment characterization', () => {
 			lineFr: '1153a331b2072a16d4b590bd96e0f9e04d917d84355be61befef28bd89cc85c2',
 			metricsEn: '97e555e99efeb513c62d3d97472f4071c0cf82ebebf72da736d8072bfc500856',
 			metricsFr: '5476360b46b17e8d5a0386f8a723d7cedf21df4be891e69ae1e0defa9886318f',
-			networkEn: 'cb6a88307ac2375f1bf58832918b3d7d5b63c3a482a417302dbd386c5ea9a367',
-			networkFr: '07f983dd13f29cca9f0740c42531cd83a16b3f2e23586dafa10d7c74fdfda996',
+			networkEn: 'be1d24bd158a75d267c3beea3614c5d8723a4c6cbaf8321c819b046b232fb56b',
+			networkFr: 'e0a4c198f69732e4dcf62cf986c3cfb5ffce73f0756449a23725cd09b4e8602a',
 			receiptEn: 'dce77fedefeeadff7d7a3b6fb9f1216529b803dc980df55e15f6240b15cf909b',
 			receiptFr: '75cd8552b76c622c5ed1a71577c4ef4f4ea26db021cf297ed21f274de4493458',
 			repeatOffendersEn: '872bc838f04875e327dea624f9215c54d0d79cca4a06ca7c3fc05857673ac775',
 			repeatOffendersFr: 'b3d9bb8383a6b574e41b5e7791bcc23505facd14fd94ad792e69a2088b78e6dc',
-			stopEn: 'caf2c64dbc3f5b24e8af7b8f7a43ddeb4440408519524724337f38e99d5c05e6',
-			stopFr: '5bb69f0a8ce288c2a211591bd5af3271b3cd0134f635099779f047a6241e345a',
+			stopEn: '60c7e8901697ffd45e499e0e06f9b9f42414a010da5084e3a6f1957e8962fe0d',
+			stopFr: 'e83a06e29b69e0c4fbc09ce5cad5acca8bbed364fc94064f8c7600f0bc653170',
 		});
 	});
 

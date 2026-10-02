@@ -3,11 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs",
+    "check": "node --check src/cors.js && node --check src/kpis.js && node --check src/snapshot-response.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs",
     "test": "node --test \"test/*.test.mjs\"",
-    "deploy": "wrangler deploy"
-  },
-  "devDependencies": {
-    "wrangler": "4.115.0"
+    "deploy": "node ../../node_modules/wrangler/bin/wrangler.js deploy"
   }
 }

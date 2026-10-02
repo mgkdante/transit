@@ -1,15 +1,3 @@
-<!--
-  EntityDetail — the tabbed detail scaffold for an entity surface.
-
-  Extracts the shared shell the route/[id] + stop/[id] pages hand-rolled today
-  (a station-voice kicker + caller header, then a line-variant TabsList over
-  TabsContent panes). Callers pass the tab definitions, the active key (bindable)
-  and a `pane` snippet keyed by tab; the header snippet renders the SectionHeading
-  (line) or StopLabel (stop) — surface-specific, so the caller owns it.
-
-  Tokens, no hex. Matches the `.surface` / `.surface-head` / `.surface-pane`
-  styles the two shells share.
--->
 <script lang="ts" generics="K extends string">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
@@ -31,41 +19,14 @@
 	import Breadcrumb from './Breadcrumb.svelte';
 
 	interface EntityDetailSharedProps {
-		/**
-		 * Optional lede paragraph under the heading (muted, ~52ch) — the framing
-		 * sentence in the detail-head rhythm (kicker → display title → lede → meta).
-		 * Omitted ⇒ no lede row (P5.3b detail-head rhythm, §C2/§C5.4/§C5.6).
-		 */
 		lede?: string;
-		/**
-		 * Optional mono meta row under the lede — the detail-head meta chips
-		 * (e.g. the stop's ARRÊT plate, the line's map action). Omitted ⇒ no meta row.
-		 */
 		meta?: Snippet;
-		/**
-		 * Optional CornerMeta block (A4) — blueprint-margin corner readouts pinned to
-		 * the (relative) detail head. The caller drops a fully-composed <CornerMeta>
-		 * here (REAL data only); omitted ⇒ no corner annotations. Hero-zone only.
-		 */
 		cornerMeta?: Snippet;
-		/**
-		 * Optional ALWAYS-VISIBLE banner rendered between the head and the tabs (§C5.4 /
-		 * §C5.6) — the at-a-glance verdict that must never be buried behind a tab. The
-		 * caller drops a fully-composed block (e.g. a VerdictBanner); omitted ⇒ no banner.
-		 */
 		banner?: Snippet;
-		/** Tab definitions — stable key + already-localized label. */
 		tabs: readonly { key: K; label: string }[];
-		/** The active tab key (two-way bindable). */
 		active: K;
-		/** Renders the pane body for a given tab key. */
 		pane: Snippet<[K]>;
-		/** Pane keys whose content already owns a complete desktop/mobile rail. The
-		 *  outer article tab rail becomes a toolbar so the page never nests rails. */
 		paneOwnedRailKeys?: readonly K[];
-		/** Article-pane section navigation. Tabs stay in the stable top toolbar;
-		 * this config restores the Yesid article ToC in the wide left rail and
-		 * floating mobile pill for panes that expose section anchors. */
 		articleToc?: {
 			entries: Partial<Record<K, TocEntry[]>>;
 			heading: string;
@@ -74,24 +35,16 @@
 			openAria: string;
 			closeAria: string;
 		};
-		/**
-		 * Optional back affordance ("← Lines") that keeps navigation inside the app
-		 * chrome: a localized index href + label. Omitted ⇒ no back link.
-		 */
 		back?: { href: string; label: string };
-		/** Optional extra classes on the surface root. */
 		class?: string;
 	}
 	type EntityDetailModeProps =
 		| {
-				/** Mono station-voice overline (e.g. "LIGNE", "ARRÊT"). */
 				kicker: string;
-				/** Surface-specific classic heading. */
 				header: Snippet;
 				articleHeader?: never;
 		  }
 		| {
-				/** Complete article cover rendered outside the padded Surface. */
 				articleHeader: Snippet;
 				kicker?: never;
 				header?: never;
@@ -115,13 +68,6 @@
 		class: className,
 	}: EntityDetailProps = $props();
 
-	// Visible breadcrumb on the stable detail surfaces (/lines/[id], /stop/[id]).
-	// Locale via context (siblings read getLocale()); the path from $app/state so
-	// the trail follows client navigations. resolveBreadcrumbTrail returns [] for
-	// every other surface, so the Breadcrumb (which itself guards on >1 crumb) is
-	// inert elsewhere. The leaf label is the URL id segment (route #/stop code) —
-	// entity names require an SSR /v1 seed that this shared shell does not own, so
-	// the stable id matches the JSON-LD trail without inventing unavailable data.
 	const locale = getLocale();
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));
@@ -132,6 +78,7 @@
 	let activeTocId = $state('');
 	let tabViewport = $state<HTMLElement>();
 	let tabsMoreEnd = $state(false);
+	let observedTabViewport: HTMLElement | undefined;
 	let previousTocIds: string[] = [];
 	$effect.pre(() => {
 		const pathname = page.url.pathname;
@@ -163,12 +110,29 @@
 		});
 	}
 
-	function measureTabOverflow(): void {
-		if (!tabViewport) return;
-		tabsMoreEnd = tabViewport.scrollLeft + tabViewport.clientWidth < tabViewport.scrollWidth - 1;
+	function measureTabOverflow(viewport = tabViewport): void {
+		if (!viewport) return;
+		tabsMoreEnd = viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1;
 	}
 
-	function guardScrolledTouchActivation(node: HTMLElement) {
+	function centerActiveTab(viewport: HTMLElement): void {
+		const activeTab = viewport.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+		const reduced =
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (activeTab) {
+			const desiredLeft = activeTab.offsetLeft - (viewport.clientWidth - activeTab.offsetWidth) / 2;
+			const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+			const left = Math.min(Math.max(0, desiredLeft), maxLeft);
+			if (typeof viewport.scrollTo === 'function') {
+				viewport.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left });
+			} else {
+				viewport.scrollLeft = left;
+			}
+		}
+		measureTabOverflow(viewport);
+	}
+
+	function tabInteractions(node: HTMLElement) {
 		let touchStart: { x: number; y: number; scrollLeft: number } | null = null;
 		let suppressActivation = false;
 
@@ -201,10 +165,26 @@
 			touchStart = null;
 		};
 
+		const onFocusIn = (event: FocusEvent) => {
+			const tab = event.target;
+			if (
+				!(tab instanceof HTMLElement) ||
+				tab.getAttribute('role') !== 'tab' ||
+				!tab.matches(':focus-visible')
+			)
+				return;
+			touchStart = null;
+			suppressActivation = false;
+			if (typeof tab.scrollIntoView !== 'function') return;
+			tab.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+			measureTabOverflow();
+		};
+
 		node.addEventListener('pointerdown', onPointerDown, { passive: true });
 		node.addEventListener('pointermove', onPointerMove, { passive: true });
 		node.addEventListener('scroll', onScroll, { passive: true });
 		node.addEventListener('click', onClick, true);
+		node.addEventListener('focusin', onFocusIn);
 
 		return {
 			destroy() {
@@ -212,6 +192,7 @@
 				node.removeEventListener('pointermove', onPointerMove);
 				node.removeEventListener('scroll', onScroll);
 				node.removeEventListener('click', onClick, true);
+				node.removeEventListener('focusin', onFocusIn);
 			},
 		};
 	}
@@ -219,14 +200,30 @@
 	$effect(() => {
 		const viewport = tabViewport;
 		if (!viewport) return;
-		measureTabOverflow();
-		if (typeof ResizeObserver !== 'function') return;
+		observedTabViewport = undefined;
+		if (typeof ResizeObserver !== 'function') {
+			observedTabViewport = viewport;
+			measureTabOverflow(viewport);
+			return;
+		}
 
-		const observer = new ResizeObserver(measureTabOverflow);
+		let disposed = false;
+		const observer = new ResizeObserver(() => {
+			if (disposed) return;
+			if (observedTabViewport !== viewport) {
+				observedTabViewport = viewport;
+				centerActiveTab(viewport);
+			} else {
+				measureTabOverflow(viewport);
+			}
+		});
 		observer.observe(viewport);
 		const tabList = viewport.querySelector('[role="tablist"]');
 		if (tabList) observer.observe(tabList);
-		return () => observer.disconnect();
+		return () => {
+			disposed = true;
+			observer.disconnect();
+		};
 	});
 
 	$effect(() => {
@@ -234,22 +231,8 @@
 		const viewport = tabViewport;
 		let cancelled = false;
 		void tick().then(() => {
-			if (cancelled || !viewport || selected !== active) return;
-			const activeTab = viewport.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-			const reduced =
-				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-			if (activeTab) {
-				const desiredLeft =
-					activeTab.offsetLeft - (viewport.clientWidth - activeTab.offsetWidth) / 2;
-				const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-				const left = Math.min(Math.max(0, desiredLeft), maxLeft);
-				if (typeof viewport.scrollTo === 'function') {
-					viewport.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left });
-				} else {
-					viewport.scrollLeft = left;
-				}
-			}
-			measureTabOverflow();
+			if (cancelled || !viewport || selected !== active || observedTabViewport !== viewport) return;
+			centerActiveTab(viewport);
 		});
 
 		return () => {
@@ -262,12 +245,11 @@
 	<div class="entity-tabs" class:entity-tabs--article={article} data-slot="entity-detail-tabs">
 		<div
 			bind:this={tabViewport}
-			use:guardScrolledTouchActivation
+			use:tabInteractions
 			class="entity-tabs__scroll"
 			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"
 		>
-			<!-- One tab list DOM serves mobile and desktop. It never moves when panes change. -->
 			<TabsList variant="line" class="w-full flex-nowrap justify-start">
 				{#each tabs as t (t.key)}
 					<TabsTrigger value={t.key}>
@@ -385,7 +367,6 @@
 </Tabs>
 
 <style>
-	/* Anchor for the optional D2 rotated edge word's zero-width absolute rail. */
 	:global(.surface-shell.entity-detail-surface) {
 		position: relative;
 	}
@@ -394,34 +375,22 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* A4: when the head carries CornerMeta it becomes the relative host for the
-	   four corner readouts; a top AND bottom margin band (only where the corners
-	   surface, >=768px) keeps them clear of the content flow — the top band clears
-	   the breadcrumb/kicker/heading, the bottom band clears the meta row (the map
-	   drilldown / ARRÊT plate) that the bottom corners would otherwise overlap. */
 	.surface-head--cornered {
 		position: relative;
 	}
 	@media (min-width: 768px) {
 		.surface-head--cornered {
 			padding-top: 1.5rem;
-			/* The bottom band must exceed the corner's own footprint (its 0.75rem
-			   inset + its ~0.9rem line-box) so the bottom corner clears the meta row
-			   entirely rather than grazing its baseline. */
 			padding-bottom: 2rem;
 		}
 	}
 
-	/* Always-visible verdict banner (§C5.4/§C5.6) between the head and the tabs —
-	   quiet spacing so the VerdictBanner reads as its own register above the tab strip. */
 	.surface-banner {
 		margin-block: 0.25rem 1rem;
 	}
 	.surface-banner--article {
 		margin: 0;
 	}
-	/* Meta row — the mono-micro chips (the stop's ARRÊT plate, the map drilldown)
-	   below the lede; a flex row that wraps on narrow viewports. */
 	.surface-detail-meta {
 		display: flex;
 		flex-wrap: wrap;
@@ -429,7 +398,6 @@
 		gap: 0.5rem 1rem;
 	}
 
-	/* One normal-flow primary strip directly under the article hazard separator. */
 	.entity-tabs {
 		position: relative;
 		--entity-tabs-max-width: 46rem;
@@ -471,15 +439,9 @@
 		opacity: 1;
 	}
 
-	/* Signage-active tab (yesid StationTabs parity). The child <button> replaces the
-	   bare line-variant trigger: a quiet mono tab that, when active, becomes a
-	   theme-invariant metro-signage chip (--signage-bg/--signage-text — the same
-	   amber-on-dark sign in both themes; real signs don't reskin when the lights
-	   change). The active VISUAL only — behavior/ARIA stay on the bits-ui trigger. */
 	.station-tab {
 		flex: 1 0 max-content;
 		min-width: max-content;
-		/* Tap-target floor (P5.3d §C4 P10): the tab was 41px tall → 44px. */
 		min-height: var(--size-tap-min);
 		display: inline-flex;
 		align-items: center;
@@ -516,8 +478,6 @@
 		}
 	}
 
-	/* Back affordance — a mono, muted link above the kicker; the chevron nudges
-	   left on hover. INTERACTIVE, so --primary is doctrine-clean on hover. */
 	.surface-back {
 		display: inline-flex;
 		align-items: center;

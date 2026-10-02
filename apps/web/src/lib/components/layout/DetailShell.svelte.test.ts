@@ -1,12 +1,3 @@
-// DetailShell.svelte.test.ts — DOM + source gate for the ONE detail-page shell (P5.4c).
-//
-// Guards: the header rides the full-bleed `.detail-header-grid` band; the hazard tape
-// closes it; all slots render in their wrapper zones; the grid is 2-col without a right
-// rail, while real left/center/right callers retain three tracks at the yesid 1024 breakpoint;
-// the rails are sticky off the single --chrome-offset knob (never a literal); the mobile
-// summary strip is opt-in; and the floating TocPill renders only when there are entries.
-// Layout + wiring only — no data-mark assertions.
-
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -244,7 +235,6 @@ describe('DetailShell — slots render in their zones', () => {
 describe('DetailShell — hazard tape + floating pill', () => {
 	it('closes the header with an edge-to-edge hazard Separator', () => {
 		const { container } = render(DetailShell, { props: baseProps });
-		// The Separator lands after the header band; it carries the shell tape class.
 		expect(container.querySelector('.detail-shell-tape')).not.toBeNull();
 	});
 

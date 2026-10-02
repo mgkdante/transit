@@ -148,9 +148,6 @@ def test_silver_realtime_prune_batch_default_and_display(
 ) -> None:
     settings = Settings(_env_file=None)
 
-    # Caps rows/table/cycle for the realtime-history prune so the one-time
-    # backlog drains faster than the steady-state stop-time inflow without one
-    # unbounded transaction (the unbounded-heavy-op hang class).
     assert settings.SILVER_REALTIME_PRUNE_BATCH == 100000
 
     display = settings.display_dict()

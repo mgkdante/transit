@@ -1,8 +1,3 @@
-"""Migration-source assertions for 0078_publish_state_gate_telemetry (S11).
-
-Clones test_migration_0077. Asserts the additive nullable gate-telemetry columns
-on core.snapshot_publish_state + a clean chain + a symmetric downgrade.
-"""
 
 from __future__ import annotations
 
@@ -43,20 +38,14 @@ def test_0078_chain() -> None:
 
 def test_0078_adds_five_additive_nullable_gate_columns() -> None:
     src = _source()
-    # int counts.
     for col in ("gate_checks_run", "gate_errors", "gate_warnings"):
         assert f'sa.Column("{col}", sa.Integer(), nullable=True)' in src, f"{col} missing"
-    # text verdict.
     assert 'sa.Column("gate_verdict", sa.Text(), nullable=True)' in src
-    # timestamptz gate stamp.
     assert (
         'sa.Column("gate_generated_utc", sa.DateTime(timezone=True), nullable=True)' in src
     )
-    # additive columns on the EXISTING table, in the core schema.
     assert 'op.add_column(\n        "snapshot_publish_state"' in src
     assert 'schema="core"' in src
-    # honest-NULL: NO server_default kwarg on any gate column (absence must be honest,
-    # never a fabricated 0/pass default).
     assert "server_default=" not in src
 
 

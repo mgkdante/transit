@@ -1,12 +1,3 @@
-// hotspots.copy.ts: co-located bilingual copy for the Hotspots surface (S12 re-seat).
-//
-// All user-facing strings the Hotspots screen renders live here, keyed by Locale, so
-// the .svelte files carry zero inline copy. Provider-agnostic: no carrier name, no
-// city hardcoded — a city/provider name comes from the SERVED label (or the provider
-// id) at the call site, never fabricated here. Domain-intrinsic labels already owned
-// by the spine primitives (the Chart's own a11y text, GrainPicker roles) are NOT
-// duplicated here.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
@@ -128,12 +119,11 @@ export const copy = defineCopy({
 			avg: 'moy',
 			samples: 'n',
 		},
-		deltaLost: (pts: string) => `${pts} pts de ponctualité perdus`,
 		verdict: {
 			label: 'Point chaud n°1',
-			topWithDelta: (name: string, deltaPts: string) =>
-				`Pire point chaud : ${name}, ${deltaPts} pts de ponctualité perdus.`,
-			topNoDelta: (name: string) => `Pire point chaud : ${name}.`,
+			topWithRate: (name: string, severePct: string) =>
+				`Point chaud en tête : ${name}, ${severePct} de prévisions de retard grave.`,
+			topNoRate: (name: string) => `Point chaud en tête : ${name}.`,
 			none: 'Aucun point chaud pour l’instant.',
 		},
 		type: {
@@ -254,11 +244,11 @@ export const copy = defineCopy({
 			avg: 'avg',
 			samples: 'n',
 		},
-		deltaLost: (pts) => `${pts} on-time points lost`,
 		verdict: {
 			label: '#1 hotspot',
-			topWithDelta: (name, deltaPts) => `Worst hotspot: ${name}, ${deltaPts} on-time points lost.`,
-			topNoDelta: (name) => `Worst hotspot: ${name}.`,
+			topWithRate: (name, severePct) =>
+				`Top-ranked hotspot: ${name}, ${severePct} severe-delay predictions.`,
+			topNoRate: (name) => `Top-ranked hotspot: ${name}.`,
 			none: 'Nothing is a hotspot right now.',
 		},
 		type: {

@@ -1,4 +1,3 @@
-"""Static contract tests for migration 0031 capped historic max delay."""
 from __future__ import annotations
 
 import re

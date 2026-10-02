@@ -1,17 +1,9 @@
-<!--
-  CornerMarks — blueprint corner tick marks.
-  Brand primitive (Set B): decorative L-shaped marks in --primary.
-  Place inside a relative-positioned parent. Purely ornamental (aria-hidden).
-  Ported from yesid.dev CornerMarks; tokens already transit-native.
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	export interface CornerMarksProps extends HTMLAttributes<HTMLDivElement> {
-		/** Arm length — sm: 12px, md: 32px */
 		size?: 'sm' | 'md';
-		/** Mark opacity (0-1) */
 		opacity?: number;
 		class?: string;
 	}
@@ -57,12 +49,10 @@
 		opacity: var(--mark-opacity);
 	}
 
-	/* Horizontal arm */
 	.mark::before {
 		width: var(--arm);
 		height: 1px;
 	}
-	/* Vertical arm */
 	.mark::after {
 		width: 1px;
 		height: var(--arm);

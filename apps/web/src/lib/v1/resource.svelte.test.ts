@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 
-// Capture the default newest-data writer so freshness-bearing tests can assert
-// exactly what createResource feeds through its runtime port.
 const mocks = vi.hoisted(() => ({
-	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
 	bumpRefreshEpoch: () => {},
 	resetRefreshEpoch: () => {},
 }));
@@ -27,7 +24,6 @@ vi.mock('$lib/stores/refresh.svelte', async () => {
 				subscribe();
 				return refreshEpoch;
 			},
-			noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
 		},
 	};
 });
@@ -38,7 +34,6 @@ import { createResource } from './resource.svelte';
 
 configureV1Runtime({ refresh: dataRefresh });
 
-// A deferred so a test can hold a fetch open and assert in-flight ordering if needed.
 function deferred<T>() {
 	let resolve!: (v: T) => void;
 	let reject!: (reason: unknown) => void;
@@ -50,25 +45,14 @@ function deferred<T>() {
 }
 
 describe('createResource — reactivity to inputs read inside the fetcher', () => {
-	// The contract (resource.svelte.ts:60-79): the fetcher's reactive reads are
-	// tracked only when invoked SYNCHRONOUSLY inside the $effect, i.e. everything
-	// before the first await. A reactive input read AFTER an await is in a microtask
-	// outside the tracking window → NOT a dependency → the resource never refetches
-	// when that input changes. This is the exact trap the RouteDetail reliability
-	// gate fell into (slice-9.7 C4): it read `id` only after `await getRoutesIndex()`,
-	// so /lines/A → /lines/B kept showing A's reliability. These tests pin BOTH the
-	// correct (sync-read) and the broken (post-await-read) shapes so the regression
-	// can never silently come back.
-
 	it('refetches when an id read SYNCHRONOUSLY before the await changes', async () => {
 		let id = $state('A');
 		const seen: string[] = [];
 		const getIdx = vi.fn(async () => ({ ok: true }));
 
 		const cleanup = $effect.root(() => {
-			// Mirrors the FIXED RouteDetail thunk: capture the reactive key first.
 			createResource(async () => {
-				const captured = id; // sync read → tracked dependency
+				const captured = id;
 				await getIdx();
 				seen.push(captured);
 				return captured;
@@ -87,7 +71,6 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 
 			await vi.waitFor(() => {
 				flushSync();
-				// The resource MUST re-run for 'B' — the staleness gate.
 				expect(seen).toContain('B');
 			});
 			expect(getIdx).toHaveBeenCalledTimes(2);
@@ -97,18 +80,14 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 	});
 
 	it('does NOT refetch when the id is read only AFTER the await (the bug shape)', async () => {
-		// This is the empirical probe from the C4 finding, frozen as a guard: a thunk
-		// that reads `id` post-await never registers it as a dependency, so the second
-		// id is never seen. We assert the BROKEN behaviour so the test doubles as a
-		// living explanation of WHY the fix must capture the key synchronously.
 		let id = $state('A');
 		const seen: string[] = [];
 		const getIdx = vi.fn(async () => ({ ok: true }));
 
 		const cleanup = $effect.root(() => {
 			createResource(async () => {
-				await getIdx(); // ONLY synchronous statement reads nothing reactive
-				const captured = id; // read AFTER await → NOT tracked
+				await getIdx();
+				const captured = id;
 				seen.push(captured);
 				return captured;
 			});
@@ -123,11 +102,9 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 
 			id = 'B';
 			flushSync();
-			// Give any (erroneously) scheduled refetch a chance to run.
 			await Promise.resolve();
 			flushSync();
 
-			// The post-await read is invisible to the tracker: no refetch, never 'B'.
 			expect(seen).toEqual(['A']);
 			expect(getIdx).toHaveBeenCalledTimes(1);
 		} finally {
@@ -161,24 +138,6 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 		}
 	});
 
-	it('feeds noteDataGeneratedUtc when the payload has generated_utc AND the freshness flag', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z', x: 1 }), {
-				freshness: true,
-			});
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-20T00:00:00Z');
-			});
-		} finally {
-			cleanup();
-		}
-	});
-
 	it('refetches when the installed refresh epoch changes', async () => {
 		mocks.resetRefreshEpoch();
 		const fetcher = vi.fn(async () => 'value');
@@ -191,42 +150,6 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 			mocks.bumpRefreshEpoch();
 			flushSync();
 			await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
-		} finally {
-			cleanup();
-		}
-	});
-
-	it('does NOT feed the shared timestamp without the freshness flag', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z' }));
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(true).toBe(true);
-			});
-			// One microtask settle, then assert it was never called.
-			await Promise.resolve();
-			flushSync();
-			expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
-		} finally {
-			cleanup();
-		}
-	});
-
-	it('feeds nothing (no crash) when a freshness-bearing payload is null', async () => {
-		mocks.noteDataGeneratedUtc.mockClear();
-		const cleanup = $effect.root(() => {
-			createResource(async () => null, { freshness: true });
-			flushSync();
-		});
-		try {
-			await vi.waitFor(() => {
-				flushSync();
-				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith(undefined);
-			});
 		} finally {
 			cleanup();
 		}
@@ -311,11 +234,9 @@ describe('createResource — cancellation ownership', () => {
 		});
 
 		try {
-			// SSR and the first client render happen before effects run.
 			expect(initial).toEqual({ data: 'server-A', loading: false, settled: true });
 			expect(fetcher).not.toHaveBeenCalled();
 
-			// Hydration consumes the same seed rather than duplicating the request.
 			flushSync();
 			expect(resource.data).toBe('server-A');
 			expect(fetcher).not.toHaveBeenCalled();
@@ -330,16 +251,51 @@ describe('createResource — cancellation ownership', () => {
 		}
 	});
 
-	it('publishes freshness from an accepted seed without a duplicate fetch', () => {
-		mocks.noteDataGeneratedUtc.mockClear();
+	it('preserves the initial object identity when hydration consumes its server seed', () => {
+		const seed = { key: 'A', data: { rows: [{ value: 42 }] } };
+		const fetcher = vi.fn(async () => seed.data);
+		let resource!: ReturnType<typeof createResource<typeof seed.data>>;
+		let initial!: typeof resource.data;
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { key: () => 'A', seed: () => seed });
+			initial = resource.data;
+		});
+		try {
+			flushSync();
+			expect(resource.data).toBe(initial);
+			expect(resource.data?.rows).toBe(initial?.rows);
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('accepts a server seed replaced before the first hydration effect', () => {
+		const seed = $state({ key: 'A', data: { value: 42 } });
+		const fetcher = vi.fn(async () => seed.data);
+		let resource!: ReturnType<typeof createResource<typeof seed.data>>;
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { key: () => 'A', seed: () => seed });
+		});
+		try {
+			seed.data = { value: 99 };
+			flushSync();
+			expect(resource.data?.value).toBe(99);
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('retains the timestamp on an accepted seed without a duplicate fetch', () => {
 		const seeded = {
 			generated_utc: '2026-07-14T12:00:00Z',
 		};
 		const fetcher = vi.fn(async () => seeded);
 
+		let resource!: ReturnType<typeof createResource<typeof seeded>>;
 		const cleanup = $effect.root(() => {
-			createResource(fetcher, {
-				freshness: true,
+			resource = createResource(fetcher, {
 				key: () => 'provenance',
 				seed: () => ({ key: 'provenance', data: seeded }),
 			});
@@ -347,8 +303,7 @@ describe('createResource — cancellation ownership', () => {
 		});
 
 		try {
-			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledOnce();
-			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-07-14T12:00:00Z');
+			expect(resource.data?.generated_utc).toBe(seeded.generated_utc);
 			expect(fetcher).not.toHaveBeenCalled();
 		} finally {
 			cleanup();
@@ -411,8 +366,6 @@ describe('createResource — cancellation ownership', () => {
 			key = 'B';
 			flushSync();
 
-			// The heading has already changed to B. A must disappear in that same
-			// render rather than surviving under B until the network settles.
 			expect(resource.data).toBeNull();
 			expect(resource.loading).toBe(true);
 			expect(resource.settled).toBe(false);
@@ -435,7 +388,6 @@ describe('createResource — cancellation ownership', () => {
 		});
 		const pending = deferred<string>();
 		const fetcher = vi.fn(() => {
-			// Keep the reactive key read synchronous, matching entity repositories.
 			void key;
 			return pending.promise;
 		});
@@ -463,7 +415,6 @@ describe('createResource — cancellation ownership', () => {
 			resource.reload();
 			flushSync();
 			expect(fetcher).toHaveBeenCalledTimes(1);
-			// A same-entity refresh keeps the accepted seed visible.
 			expect(resource.data).toBe('server-B');
 			expect(resource.loading).toBe(true);
 

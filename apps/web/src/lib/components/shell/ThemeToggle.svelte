@@ -1,11 +1,3 @@
-<!--
-  ThemeToggle — the signal-lamp dark/light switch (line-art signal head; the lit
-  lens fills --primary). Drives the global themeStore. Extracted from TopBar so
-  it is reusable (footer / mobile menu) and testable in isolation.
-
-  DOCTRINE: --primary lights the active lens as an interactive-state affordance
-  (a control's on/off), never as a data mark.
--->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { themeStore } from '$lib/stores';

@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "transit-ops"
 version = "0.1.0"
 description = "STM-first, provider-ready GTFS and GTFS-RT analytics foundation."
-readme = "README.md"
-requires-python = ">=3.12"
+readme = {text = "Transit captures GTFS and GTFS-Realtime feeds, normalizes them in Postgres, and publishes versioned analytics snapshots.", content-type = "text/markdown"}
+requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic>=1.18.5,<2.0",
   "boto3>=1.43.59,<2.0",
@@ -27,8 +27,14 @@ dependencies = [
 [project.scripts]
 transit-ops = "transit_ops.cli:app"
 
+[project.urls]
+Documentation = "https://github.com/mgkdante/transit#readme"
+
 [dependency-groups]
 dev = [
+  "boto3-stubs[s3]==1.43.59",
+  "botocore-stubs==1.43.14",
+  "mypy-boto3-s3==1.43.50",
   "mypy>=2.3.0,<3.0",
   "pytest>=9.1.1,<10.0",
   "ruff>=0.16.0,<0.17",
@@ -55,7 +61,34 @@ select = ["B", "E", "F", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/transit_ops/snapshots/publish.py"]
+files = [
+    "src/transit_ops/s3.py",
+    "src/transit_ops/source_factory/runner.py",
+    "src/transit_ops/source_factory/operations.py",
+    "tests/typing/source_factory.py",
+    "src/transit_ops/snapshots/publish.py",
+    "src/transit_ops/snapshots/publication_lane.py",
+    "src/transit_ops/snapshots/historic_streams.py",
+    "src/transit_ops/snapshots/historic_graph.py",
+    "src/transit_ops/snapshots/historic_tier.py",
+    "src/transit_ops/snapshots/historic_compatibility.py",
+    "src/transit_ops/snapshots/envelope.py",
+    "src/transit_ops/snapshots/uploads.py",
+    "src/transit_ops/snapshots/protocols.py",
+    "src/transit_ops/snapshots/storage.py",
+    "src/transit_ops/gold/reader",
+    "src/transit_ops/gold/delay_sums.py",
+    "src/transit_ops/gold/delay_periods.py",
+    "src/transit_ops/gold/delay_hours.py",
+    "src/transit_ops/gold/delay_cohorts.py",
+    "src/transit_ops/gold/delay_days.py",
+    "src/transit_ops/gold/transactions.py",
+    "src/transit_ops/gold/realtime.py",
+    "src/transit_ops/maintenance/_helpers.py",
+    "src/transit_ops/maintenance/silver.py",
+    "src/transit_ops/maintenance/bronze.py",
+    "src/transit_ops/maintenance/i3.py",
+]
 follow_imports = "silent"
 strict = true
 warn_unused_ignores = true

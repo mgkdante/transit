@@ -1,4 +1,3 @@
-"""Offline checks for the calendar-stability layer in the real-DB spine gate."""
 
 from __future__ import annotations
 

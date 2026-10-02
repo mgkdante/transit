@@ -1,13 +1,8 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
-import { STOP_EXCEPTION_SOURCE, STOPS_SOURCE, VEHICLE_SOURCE } from '$lib/components/map';
+import { STOPS_SOURCE, VEHICLE_SOURCE } from '$lib/components/map';
 import { createMapEmphasisController } from './mapEmphasisController.svelte';
 import { createMapSelectionController } from './mapSelectionController.svelte';
-
-const stops = [
-	{ id: 'stop-a', name: 'Stop A', code: '1001', lat: 45.5, lon: -73.6 },
-	{ id: 'stop-b', name: 'Stop B', code: '1002', lat: 45.51, lon: -73.61 },
-];
 
 type FeatureState = Record<string, boolean>;
 
@@ -32,46 +27,34 @@ function mapHarness() {
 			else states.set(key, next);
 		},
 	);
-	const setExceptionData = vi.fn();
 	const map = {
 		setFeatureState,
 		removeFeatureState,
-		getSource: (id: string) =>
-			id === STOP_EXCEPTION_SOURCE ? { setData: setExceptionData } : undefined,
 	} as unknown as MapLibreMap;
-	return { map, states, setFeatureState, removeFeatureState, setExceptionData };
+	return { map, states, setFeatureState, removeFeatureState };
 }
 
 describe('map emphasis controller', () => {
-	it('retires hover A before applying B and clears B on mouseleave', () => {
+	it('tracks vehicle hover without writing a nonexistent GL vehicle source', () => {
 		const selection = createMapSelectionController();
 		const emphasis = createMapEmphasisController(selection);
 		const harness = mapHarness();
 
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(harness.map, stops);
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({ hovered: true });
+		emphasis.apply(harness.map);
+		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
+		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		harness.setFeatureState.mockClear();
 		harness.removeFeatureState.mockClear();
 
 		selection.setHovered({ kind: 'vehicle', id: 'bus-b' });
-		emphasis.apply(harness.map, stops);
-		expect(harness.removeFeatureState).toHaveBeenCalledExactlyOnceWith(
-			{ source: VEHICLE_SOURCE, id: 'bus-a' },
-			'hovered',
-		);
-		expect(harness.setFeatureState).toHaveBeenCalledExactlyOnceWith(
-			{ source: VEHICLE_SOURCE, id: 'bus-b' },
-			{ hovered: true },
-		);
-		expect(harness.removeFeatureState.mock.invocationCallOrder[0]).toBeLessThan(
-			harness.setFeatureState.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY,
-		);
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-b`)).toEqual({ hovered: true });
+		emphasis.apply(harness.map);
+		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-b' });
+		expect(harness.setFeatureState).not.toHaveBeenCalled();
+		expect(harness.removeFeatureState).not.toHaveBeenCalled();
 
 		selection.setHovered(null);
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 		expect(harness.states.size).toBe(0);
 		expect(emphasis.hoveredTarget).toBeNull();
 	});
@@ -84,15 +67,14 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked(target);
 		selection.setHovered(target);
-		emphasis.apply(harness.map, stops);
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({
-			hovered: true,
-			selected: true,
-		});
+		emphasis.apply(harness.map);
+		expect(emphasis.hoveredTarget).toEqual(target);
+		expect(emphasis.selectedTargets).toEqual([target]);
 
 		selection.setHovered(null);
-		emphasis.apply(harness.map, stops);
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({ selected: true });
+		emphasis.apply(harness.map);
+		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
+		expect(emphasis.hoveredTarget).toBeNull();
 		expect(emphasis.selectedTargets).toEqual([target]);
 	});
 
@@ -103,16 +85,17 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.selectFromDetail({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(harness.map, stops);
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({ selected: true });
+		emphasis.apply(harness.map);
+		expect(emphasis.selectedTargets).toEqual([{ kind: 'vehicle', id: 'bus-a' }]);
+		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 
 		selection.goBack();
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
 
 		selection.close();
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 		expect(harness.states.size).toBe(0);
 	});
 
@@ -124,19 +107,13 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(first.map, stops);
-		emphasis.apply(second.map, stops);
+		emphasis.apply(first.map);
+		emphasis.apply(second.map);
 
 		expect(first.states.size).toBe(0);
-		expect(
-			(
-				first.setExceptionData.mock.lastCall?.[0] as {
-					features: unknown[];
-				}
-			).features,
-		).toEqual([]);
 		expect(second.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
-		expect(second.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({ hovered: true });
+		expect(second.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
+		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});
 
 	it('replays feature state after a style reinstall without changing owned targets', () => {
@@ -146,15 +123,15 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 		harness.states.clear();
 		harness.setFeatureState.mockClear();
 
 		emphasis.replay(harness.map);
 
-		expect(harness.setFeatureState).toHaveBeenCalledTimes(2);
+		expect(harness.setFeatureState).toHaveBeenCalledTimes(1);
 		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
-		expect(harness.states.get(`${VEHICLE_SOURCE}:bus-a`)).toEqual({ hovered: true });
+		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(emphasis.selectedTargets).toEqual([{ kind: 'stop', id: 'stop-a' }]);
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});
@@ -166,7 +143,7 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 		const clearError = new Error('feature-state clear failed before mutation');
 		harness.removeFeatureState.mockImplementationOnce(() => {
 			throw clearError;
@@ -174,31 +151,28 @@ describe('map emphasis controller', () => {
 
 		expect(() => emphasis.clear()).toThrow(clearError);
 		expect(harness.states.size).toBe(1);
-		expect(emphasis.selectedTargets).toEqual([]);
-		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
+		expect(emphasis.selectedTargets).toEqual([{ kind: 'stop', id: 'stop-a' }]);
+		expect(emphasis.hoveredTarget).toBeNull();
 
 		expect(() => emphasis.clear()).not.toThrow();
 		expect(harness.states.size).toBe(0);
 		expect(emphasis.hoveredTarget).toBeNull();
 	});
 
-	it('keeps the low-zoom exception bounded for selected and hovered stops', () => {
+	it('keeps normal selected and hovered stop feature states independent', () => {
 		const selection = createMapSelectionController();
 		const emphasis = createMapEmphasisController(selection);
 		const harness = mapHarness();
 
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.setHovered({ kind: 'stop', id: 'stop-b' });
-		emphasis.apply(harness.map, stops);
-
-		const collection = harness.setExceptionData.mock.calls.at(-1)?.[0] as {
-			features: Array<{ properties: { id: string } }>;
-		};
-		expect(collection.features.map((feature) => feature.properties.id)).toEqual([
-			'stop-a',
-			'stop-b',
-		]);
-		expect(collection.features).toHaveLength(2);
+		emphasis.apply(harness.map);
+		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
+		expect(harness.states.get(`${STOPS_SOURCE}:stop-b`)).toEqual({ hovered: true });
+		selection.setHovered(null);
+		emphasis.apply(harness.map);
+		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
+		expect(harness.states.has(`${STOPS_SOURCE}:stop-b`)).toBe(false);
 	});
 
 	it('ignores route hover and selection because routes remain data-driven', () => {
@@ -208,35 +182,10 @@ describe('map emphasis controller', () => {
 
 		selection.selectPicked({ kind: 'route', id: '24' });
 		selection.setHovered({ kind: 'route', id: '24', direction: 1 });
-		emphasis.apply(harness.map, stops);
+		emphasis.apply(harness.map);
 
 		expect(harness.setFeatureState).not.toHaveBeenCalled();
 		expect(emphasis.selectedTargets).toEqual([]);
 		expect(emphasis.hoveredTarget).toBeNull();
-	});
-
-	it('indexes the stop catalogue once and skips exception writes for vehicle-only retargets', () => {
-		let idReads = 0;
-		const indexedStops = stops.map((stop) => ({
-			...stop,
-			get id() {
-				idReads += 1;
-				return stop.id;
-			},
-		}));
-		const selection = createMapSelectionController();
-		const emphasis = createMapEmphasisController(selection);
-		const harness = mapHarness();
-
-		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
-		emphasis.apply(harness.map, indexedStops);
-		const readsAfterFirstApply = idReads;
-		const writesAfterFirstApply = harness.setExceptionData.mock.calls.length;
-
-		selection.setHovered({ kind: 'vehicle', id: 'bus-b' });
-		emphasis.apply(harness.map, indexedStops);
-
-		expect(idReads).toBe(readsAfterFirstApply);
-		expect(harness.setExceptionData).toHaveBeenCalledTimes(writesAfterFirstApply);
 	});
 });

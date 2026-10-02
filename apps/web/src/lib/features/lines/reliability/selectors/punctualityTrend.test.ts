@@ -3,12 +3,6 @@ import { selectPunctualityTrend, type PunctualityTrendLabels } from './punctuali
 import { DELAY_POS_DOMAIN, OTP_DOMAIN } from '$lib/features/reliability/domains';
 import type { PunctualityVM } from '../clusters';
 
-// Deterministic verification of the §01 trend selector — the spec semantics the one
-// <Chart> then renders. (The LayerChart PIXEL geometry is the library's job, enforced to
-// the absolute domain by the spec + the chart-doctrine gate; it can't be exercised in a
-// no-layout test env, so this locks the SHAPE: the matrix, the band rule, the domains,
-// and honest absence.)
-
 const labels: PunctualityTrendLabels = {
 	title: 'On-time % · trend',
 	otpLabel: 'On-time %',
@@ -80,8 +74,6 @@ describe('selectPunctualityTrend — the granularity matrix', () => {
 		if (spec.kind !== 'trend') return;
 		expect(spec.xScale).toBe('band');
 		expect(spec.hasBand).toBe(false);
-		// Sorted into SHIFT_GRAIN_ORDER (am_peak < midday < pm_peak). x = the SHORT band tick label
-		// (shiftShort), xLabel = the FULL label (tooltip). Short keeps the 5 shifts from overlapping.
 		expect(spec.points.map((p) => p.x)).toEqual(['AM', 'MI', 'PM']);
 		expect(spec.points.map((p) => p.xLabel)).toEqual(['AM_PEAK', 'MIDDAY', 'PM_PEAK']);
 		expect(spec.points.map((p) => p.y)).toEqual([90, 88, 84]);
@@ -95,12 +87,10 @@ describe('selectPunctualityTrend — the granularity matrix', () => {
 		if (spec.kind !== 'trend') return;
 		expect(spec.xScale).toBe('time');
 		expect(spec.hasBand).toBe(true);
-		// x is epoch-ms (a number), xLabel is the date string.
 		expect(typeof spec.points[0].x).toBe('number');
 		expect(spec.points[0].xLabel).toBe('2026-06-18');
 		expect(spec.points[0].bandLo).toBe(80);
 		expect(spec.points[0].bandHi).toBe(91);
-		// the null daily point keeps its null (the line BREAKS there, never bridged).
 		expect(spec.points[2].y).toBeNull();
 	});
 
@@ -116,7 +106,7 @@ describe('selectPunctualityTrend — the granularity matrix', () => {
 	});
 
 	it('fewer than two real points → honest absence, never a one-dot line', () => {
-		const vm = vmWith({ trend: [dailyRows[0], dailyRows[2]] as never }); // 1 real + 1 null
+		const vm = vmWith({ trend: [dailyRows[0], dailyRows[2]] as never });
 		const spec = selectPunctualityTrend(vm, 'week', 'en', labels);
 		expect(spec.kind).toBe('absence');
 		if (spec.kind !== 'absence') return;

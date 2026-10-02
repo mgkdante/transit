@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 
-// Pure near-me query parsing + identity helpers extracted from MapHero.
-
 describe('parseCoordinateQuery', () => {
 	it('parses a comma-separated "lat, lon" inside Montréal', () => {
 		expect(parseCoordinateQuery('45.5, -73.6')).toEqual({ lat: 45.5, lon: -73.6 });
@@ -17,7 +15,6 @@ describe('parseCoordinateQuery', () => {
 	});
 
 	it('parses integer coordinates', () => {
-		// 45,-74 is inside the bias rectangle? minLon -74.05 .. maxLon -73.35, lat 45.35..45.75
 		expect(parseCoordinateQuery('45.4, -73.5')).toEqual({ lat: 45.4, lon: -73.5 });
 	});
 
@@ -29,9 +26,7 @@ describe('parseCoordinateQuery', () => {
 	});
 
 	it('returns null for a well-formed coordinate OUTSIDE Montréal', () => {
-		// Toronto-ish — well-formed but outside the bias rectangle.
 		expect(parseCoordinateQuery('43.65, -79.38')).toBeNull();
-		// Just past the southern edge (minLat 45.35).
 		expect(parseCoordinateQuery('45.2, -73.6')).toBeNull();
 	});
 });

@@ -6,6 +6,8 @@ import { dataRefresh } from '$lib/stores';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
@@ -18,6 +20,12 @@ const nav = vi.hoisted(() => ({
 	}),
 }));
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
+
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
+	}),
+}));
 
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
@@ -167,6 +175,38 @@ afterEach(() => {
 });
 
 describe('AccountabilityReceipt — asynchronous date transitions', () => {
+	it('copies only the settled selected receipt without requesting more data', async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal('navigator', { clipboard: { writeText } });
+		const { container } = render(AccountabilityReceipt);
+		await waitFor(() => expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(1));
+		expect(within(container).queryByRole('button', { name: 'Copy this observation' })).toBeNull();
+		receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
+		await fireEvent.click(
+			await within(container).findByRole('button', { name: 'Copy this observation' }),
+		);
+		expect(writeText).toHaveBeenCalledWith(
+			expect.stringContaining('Local observation date: 2026-06-17'),
+		);
+		expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(1);
+		expect(ports.getReceiptsIndex).toHaveBeenCalledTimes(1);
+
+		await fireEvent.change(within(container).getByLabelText('Receipt day'), {
+			target: { value: '2026-06-16' },
+		});
+		await waitFor(() => expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(2));
+		expect(within(container).queryByRole('button', { name: 'Copy this observation' })).toBeNull();
+		receiptGates.get('2026-06-16')!.resolve(receipt('2026-06-16'));
+		await fireEvent.click(
+			await within(container).findByRole('button', { name: 'Copy this observation' }),
+		);
+		expect(writeText).toHaveBeenLastCalledWith(
+			expect.stringContaining('Local observation date: 2026-06-16'),
+		);
+		expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(2);
+		expect(ports.getReceiptsIndex).toHaveBeenCalledTimes(1);
+	});
+
 	it('localizes a French not-reported line link through the canonical line route', async () => {
 		currentLocale.value = 'fr';
 		nav.url = new URL('http://localhost/fr/receipt');
@@ -247,7 +287,7 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 			target: { value: '2026-06-16' },
 		});
 		await waitFor(() =>
-			expect(within(container).getByRole('status')).toHaveTextContent(
+			expect(container.querySelector('[data-slot="history-page-announcement"]')).toHaveTextContent(
 				'That day was not published. Showing the latest receipt.',
 			),
 		);
@@ -352,7 +392,7 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 		receiptGates.get('2026-06-15')!.resolve(receipt('2026-06-15', false));
 		await waitFor(() => {
 			expect(container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-			expect(within(rail).getByRole('button', { name: 'Service delivered' })).toHaveAttribute(
+			expect(within(rail).getByRole('button', { name: 'Service counts' })).toHaveAttribute(
 				'aria-current',
 				'location',
 			);
@@ -459,7 +499,9 @@ describe('AccountabilityReceipt — retained-span URLs', () => {
 		await waitFor(() => expect(within(container).getByText('93%')).toBeInTheDocument());
 		expect(within(container).getByLabelText('Receipt day')).toHaveValue(LATEST_RETAINED_DATE);
 		expect(nav.url.searchParams.has('date')).toBe(false);
-		expect(within(container).getByRole('status')).toHaveTextContent('');
+		expect(container.querySelector('[data-slot="history-page-announcement"]')).toHaveTextContent(
+			'',
+		);
 		expect(nav.replaceState).not.toHaveBeenCalled();
 	});
 
@@ -530,7 +572,11 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 		expect(ports.getAdvertisedReceipt.mock.calls[0]?.[1]).toBe('2026-06-17');
 		expect(ports.getAdvertisedReceipt.mock.calls.some((call) => call[1] === raw)).toBe(false);
 		receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
-		await waitFor(() => expect(within(container).getByRole('status')).toHaveTextContent(message));
+		await waitFor(() =>
+			expect(container.querySelector('[data-slot="history-page-announcement"]')).toHaveTextContent(
+				message,
+			),
+		);
 		expect(nav.url.searchParams.has('date')).toBe(false);
 		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
@@ -568,7 +614,9 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 			);
 			expect(within(container).queryByRole('dialog')).toBeNull();
 
-			let liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+			let liveRegions = container.querySelectorAll(
+				'[data-slot="history-page-announcement"][role="status"][aria-live="polite"]',
+			);
 			expect(liveRegions).toHaveLength(1);
 			expect(liveRegions[0]).toHaveTextContent(expected);
 			expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
@@ -584,7 +632,9 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 			expect(
 				within(container).getByRole('dialog', { name: bundle.rail.label }),
 			).toBeInTheDocument();
-			liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+			liveRegions = container.querySelectorAll(
+				'[data-slot="history-page-announcement"][role="status"][aria-live="polite"]',
+			);
 			expect(liveRegions).toHaveLength(1);
 			navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
 			expect(navigatorCopies).toHaveLength(1);

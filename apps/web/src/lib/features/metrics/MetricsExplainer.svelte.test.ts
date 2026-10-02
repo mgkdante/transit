@@ -1,20 +1,3 @@
-// MetricsExplainer.svelte.test.ts: the /metrics screen, DOM gate.
-//
-// The explainer is now built on the yesid.dev blog/project detail-page shell:
-// the shared CollapsibleSection cards + the shared TocNav rail + the shared
-// TocPill mobile pill (all from $lib/components/shared, on transit tokens/i18n).
-//
-// It renders, in EN (getLocale() defaults to DEFAULT_LOCALE without a provider,
-// same as the other feature-screen tests): the surface head, the provenance
-// preamble + confidence legend, a sticky TOC rail (a TocNav with one jump button
-// per metric, badge-numbered) and one anchored CollapsibleSection card per metric
-// carrying the definition / math / SQL / "what it's NOT" / caveats cards. The SQL
-// rides the shared typed-card terminal chrome. A mobile floating pill opens the
-// same jump-nav as a drawer.
-//
-// These are the affordances the (i) tip deep-links into (/metrics#<anchor>), so
-// every anchor must exist as an in-page element id and stay reachable.
-
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,11 +8,6 @@ import { METRICS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
-// The explainer now reads the provider's feed-conformance verdict off
-// provenance.json for the honesty-layer badge. Stub the data ports so this DOM
-// gate stays env-free (the real repository chain reads $env/dynamic/public) and
-// off-network. data:null → no conformance → the badge renders nothing, leaving
-// every assertion below about the static article untouched.
 const { provState } = vi.hoisted(() => ({
 	provState: {
 		data: null as {
@@ -57,14 +35,6 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 const en = metricsCopy.en;
 
-// P5-R R3 — the page is DEFAULT-OPEN with per-card persisted open-state
-// (sessionStorage key `transit.persisted:metrics-card-<anchor>`), plus the ToC's
-// own `metrics-toc` key and the ONE site-wide collapsed-default preference
-// ('transit:quiet-mode', owned by the shared quietModeStore — a module
-// singleton whose state would leak between tests). `persisted()` seeds
-// synchronously from sessionStorage, so wipe every relevant key AND reset the
-// store before + after each test so every render starts from the true default
-// (all cards open, ToC open, bulk collapse off) and no stale hash lingers.
 const CARD_ANCHORS = [
 	'metrics-provenance',
 	...METRICS.map((m) => m.anchor),
@@ -87,6 +57,26 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
+	it('reveals interval assumptions through a saved collapse without live provenance', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		window.location.hash = '#confidence-intervals';
+		const { container } = render(MetricsExplainer);
+		await tick();
+		await tick();
+		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true');
+		const section = container.querySelector('#confidence-intervals') as HTMLElement;
+		expect(
+			within(section).getByRole('heading', { name: 'Reading a confidence interval' }),
+		).toBeVisible();
+		expect(section).toHaveTextContent('independent observations');
+		expect(section).toHaveTextContent('can be correlated');
+		expect(
+			within(section).getByRole('link', { name: 'Wilson interval: NIST reference' }),
+		).toHaveAttribute('href', 'https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm');
+		for (const entry of METRICS)
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	it('stacks the single-rail Metrics freshness date below its label', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
@@ -119,10 +109,9 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('keeps every information kind in one foreground stack at every width', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
+		const source = ['MetricsExplainer.svelte', 'MetricBody.svelte']
+			.map((file) => readFileSync(resolve(process.cwd(), 'src/lib/features/metrics', file), 'utf8'))
+			.join('\n');
 		expect(source).toMatch(
 			/\.metric__paired-information\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/,
 		);
@@ -185,7 +174,6 @@ describe('MetricsExplainer', () => {
 
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.provenance.body)).toBeInTheDocument();
-		// Both confidence-level chips appear in the legend.
 		expect(container.textContent).toContain(en.confidence.levels.proxy.meaning);
 		expect(container.textContent).toContain(en.confidence.levels.medium.meaning);
 	});
@@ -301,9 +289,6 @@ describe('MetricsExplainer', () => {
 	it('renders the desktop TOC rail with one numbered jump button per metric', () => {
 		const { container } = render(MetricsExplainer);
 
-		// The TocNav lives in the desktop left rail; its jump items are buttons (not
-		// links, the shared TocNav drives scroll via onNavigate, not href). One
-		// per metric, each labelled with the metric name.
 		const rail = container.querySelector('.metrics-toc-rail');
 		expect(rail).not.toBeNull();
 		for (const entry of METRICS) {
@@ -317,13 +302,9 @@ describe('MetricsExplainer', () => {
 		const { container } = render(MetricsExplainer);
 
 		for (const entry of METRICS) {
-			// The deep-link target: a section block carrying the metric anchor as its
-			// element id (so /metrics#<anchor> scrolls here natively).
 			const block = container.querySelector(`#${CSS.escape(entry.anchor)}`);
 			expect(block, `section block #${entry.anchor}`).not.toBeNull();
 
-			// Inside it, the shared CollapsibleSection card carries the same anchor as
-			// its data-toc scroll/active-tracking hook + a disclosure trigger button.
 			const card = block?.querySelector(`[data-toc="${CSS.escape(entry.anchor)}"]`);
 			expect(card, `${entry.anchor} card [data-toc]`).not.toBeNull();
 			expect(
@@ -331,8 +312,6 @@ describe('MetricsExplainer', () => {
 				`${entry.anchor} has a disclosure trigger`,
 			).not.toBeNull();
 
-			// Heading + verbatim science survive into the DOM (content is force-mounted
-			// by the shared collapsible, so it is present even while collapsed).
 			expect(block?.textContent).toContain(entry.name.en);
 			expect(block?.textContent).toContain(entry.definition.en);
 
@@ -367,33 +346,28 @@ describe('MetricsExplainer', () => {
 	it('exposes a mobile floating pill that opens the same jump-nav as a drawer', async () => {
 		const { container } = render(MetricsExplainer);
 
-		// The TocPill renders a floating pill (aria-expanded reflects the drawer).
 		const pillContainer = container.querySelector('[data-testid="toc-pill"]');
 		expect(pillContainer).not.toBeNull();
 		const pill = within(pillContainer as HTMLElement).getByRole('button', { expanded: false });
 
-		// No drawer items until the pill is pressed.
 		expect(
 			within(pillContainer as HTMLElement).queryByRole('button', { name: METRICS[0].name.en }),
 		).not.toBeInTheDocument();
 
 		await fireEvent.click(pill);
 		expect(pill).toHaveAttribute('aria-expanded', 'true');
-		// The drawer hosts the same per-metric jump buttons (one per metric).
 		for (const entry of METRICS) {
 			expect(
 				within(pillContainer as HTMLElement).getByRole('button', { name: entry.name.en }),
 			).toBeInTheDocument();
 		}
 
-		// Escape dismisses the drawer.
 		await fireEvent.keyDown(window, { key: 'Escape' });
 		expect(pill).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('mobile pill navigation OPENS the target card through a folded page (review F1)', async () => {
 		const { container } = render(MetricsExplainer);
-		// Fold the default-open page first so the reveal is observable.
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
 		const target = METRICS[0];
 		const card = container
@@ -404,17 +378,13 @@ describe('MetricsExplainer', () => {
 		const pillContainer = container.querySelector('[data-testid="toc-pill"]') as HTMLElement;
 		await fireEvent.click(within(pillContainer).getByRole('button', { expanded: false }));
 		await fireEvent.click(within(pillContainer).getByRole('button', { name: target.name.en }));
-		// The drawer routes through the page's open-then-scroll path, so the jump
-		// must reveal the card, never land on a shut one.
 		expect(card).toHaveAttribute('data-state', 'open');
 	});
 
 	it('a malformed hash fragment never throws during mount (review F2)', async () => {
-		// Save collapsed mode so the page mounts folded — "nothing opened" is observable.
 		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#%';
 		expect(() => render(MetricsExplainer)).not.toThrow();
-		// And nothing opened: the undecodable fragment simply cannot match a card.
 		await tick();
 		await tick();
 		expect(document.querySelectorAll('.section-block [data-state="open"]')).toHaveLength(0);
@@ -423,8 +393,6 @@ describe('MetricsExplainer', () => {
 	it('keeps the TOC entries and the section cards in lock-step (same anchors)', () => {
 		const { container } = render(MetricsExplainer);
 
-		// Every metric anchor resolves to exactly one in-page section block, and the
-		// rail offers a jump for it (the (i)-tip deep-link contract).
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		for (const entry of METRICS) {
 			expect(container.querySelectorAll(`#${CSS.escape(entry.anchor)}`)).toHaveLength(1);
@@ -435,7 +403,6 @@ describe('MetricsExplainer', () => {
 	it('renders the structural-gaps ("Lacunes") card with all three named gaps', () => {
 		const { container } = render(MetricsExplainer);
 
-		// The card is an anchored section block (deep-linkable like a metric card).
 		const block = container.querySelector('#structural-gaps');
 		expect(block, 'structural-gaps section block').not.toBeNull();
 		expect(
@@ -443,8 +410,6 @@ describe('MetricsExplainer', () => {
 			'structural-gaps card [data-toc]',
 		).not.toBeNull();
 
-		// Title + lede + the three honest gap headings + bodies survive into the DOM
-		// (content is force-mounted by the shared collapsible).
 		const text = block?.textContent ?? '';
 		expect(text).toContain(en.lacunes.title);
 		expect(text).toContain(en.lacunes.lede);
@@ -452,7 +417,6 @@ describe('MetricsExplainer', () => {
 			expect(text).toContain(gap.heading);
 			expect(text).toContain(gap.body);
 		}
-		// The three gaps render as a list, each gap an <li> + an <h3> heading (a11y).
 		expect(block?.querySelectorAll('.metrics-lacunes__list li')).toHaveLength(3);
 		expect(block?.querySelectorAll('.metrics-lacunes__heading')).toHaveLength(3);
 	});
@@ -461,15 +425,12 @@ describe('MetricsExplainer', () => {
 		const { container } = render(MetricsExplainer);
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 
-		// The rail offers a jump to the Lacunes card by its title (one ToC entry).
 		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
 	});
 
 	it('renders the live-positions ("almost real-time, not real-time") explainer card with every named point', () => {
 		const { container } = render(MetricsExplainer);
 
-		// The on-map "How this works" link deep-links to /metrics#live-positions, so
-		// this anchored section block MUST exist as an in-page element id.
 		const block = container.querySelector('#live-positions');
 		expect(block, 'live-positions section block').not.toBeNull();
 		expect(
@@ -477,8 +438,6 @@ describe('MetricsExplainer', () => {
 			'live-positions card [data-toc]',
 		).not.toBeNull();
 
-		// Title + lede + every honest sub-point heading + body survive into the DOM
-		// (content is force-mounted by the shared collapsible, present while collapsed).
 		const text = block?.textContent ?? '';
 		expect(text).toContain(en.livePositions.title);
 		expect(text).toContain(en.livePositions.lede);
@@ -486,7 +445,6 @@ describe('MetricsExplainer', () => {
 			expect(text).toContain(point.heading);
 			expect(text).toContain(point.body);
 		}
-		// Each point renders as a list <li> + an <h3> heading (a11y structure).
 		const count = en.livePositions.points.length;
 		expect(block?.querySelectorAll('.metrics-live__list li')).toHaveLength(count);
 		expect(block?.querySelectorAll('.metrics-live__heading')).toHaveLength(count);
@@ -499,9 +457,6 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('keeps the live-positions explainer honest (names estimate vs measured, no fabricated certainty)', () => {
-		// The whole point is honest framing: the EN copy must say it is an estimate /
-		// approximation between reports, that a stale bus freezes with a "!", and that
-		// raw shows measured-only. Guard the load-bearing honesty words.
 		const joined = [en.livePositions.lede, ...en.livePositions.points.map((p) => p.body)]
 			.join(' ')
 			.toLowerCase();
@@ -512,8 +467,6 @@ describe('MetricsExplainer', () => {
 		expect(joined).toContain('~20-60 seconds');
 	});
 
-	// Helpers: the metric section cards are the shared CollapsibleSection, whose
-	// open/closed state is reflected on the disclosure trigger's aria-expanded.
 	function metricTriggers(container: HTMLElement): HTMLElement[] {
 		const column = container.querySelector('[data-testid="metrics-sections"]') as HTMLElement;
 		return Array.from(
@@ -521,23 +474,16 @@ describe('MetricsExplainer', () => {
 		) as HTMLElement[];
 	}
 
-	// The desktop ToC rail's OWN collapse trigger. It is the header disclosure
-	// trigger inside .metrics-toc-rail — DISTINCT from the metric-card triggers (which
-	// live in metrics-sections).
 	function tocTrigger(container: HTMLElement): HTMLElement | null {
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		return rail?.querySelector('[data-slot="collapsible-trigger"]') ?? null;
 	}
 
-	// The disclosure trigger for a single metric card, keyed by its anchor (the
-	// section block carries the anchor as its element id). aria-expanded on this
-	// button reflects that ONE card's open/closed state.
 	function cardTrigger(container: HTMLElement, anchor: string): HTMLElement | null {
 		const block = container.querySelector(`#${CSS.escape(anchor)}`) as HTMLElement | null;
 		return block?.querySelector('[data-slot="collapsible-trigger"]') ?? null;
 	}
 
-	// ── R3: default-OPEN render (the yesid article contract) ───────────────────
 	it('renders every metric card OPEN on a fresh visit (default-open article)', () => {
 		const { container } = render(MetricsExplainer);
 
@@ -551,22 +497,16 @@ describe('MetricsExplainer', () => {
 		);
 		expect(firstBody).toHaveAttribute('data-state', 'open');
 
-		// The ToC rail is OPEN by default too.
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	// ── R3: the hash opener reveals its target through a folded page ───────────
 	it('opens the hash-named card on mount even when a saved collapse default folded the page', async () => {
 		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
-		// One await for the opener's own deferral (review F3), one for the
-		// open-signal effect flush.
 		await tick();
 		await tick();
 
-		// Saved collapsed mode restored → the page folded; the deep-linked card still opens
-		// (quiet folds cards but never locks them against explicit intent).
 		const quietToggle = screen.getByTestId('quiet-mode-toggle');
 		expect(quietToggle).toHaveAttribute('data-collapsed', 'true');
 		expect(quietToggle).toHaveTextContent('Expand all');
@@ -577,9 +517,6 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('scrolls the hash-named card into position after opening it on mount', async () => {
-		// The design contract: a direct load opens the destination BEFORE final
-		// positioning. Relying on the native anchor jump alone lands wrong when the
-		// remembered collapse reshapes the page after the browser has scrolled.
 		const scrollCalls: Array<{ expanded: string | null; args: unknown }> = [];
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const { container } = await (async () => {
@@ -622,7 +559,6 @@ describe('MetricsExplainer', () => {
 			window.location.hash = '#headway';
 			await fireEvent(window, new HashChangeEvent('hashchange'));
 			await vi.waitFor(() => expect(scrollCalls.length).toBeGreaterThanOrEqual(1));
-			// The card is already open by the time the positioning scroll fires.
 			expect(scrollCalls[0]).toBe('true');
 		} finally {
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
@@ -659,7 +595,6 @@ describe('MetricsExplainer', () => {
 
 	it('opens another card on a later hashchange without closing the first (folded page)', async () => {
 		const { container } = render(MetricsExplainer);
-		// Fold everything first so the additive opening is observable.
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -669,11 +604,9 @@ describe('MetricsExplainer', () => {
 		await fireEvent(window, new HashChangeEvent('hashchange'));
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 
-		// A same-page (i) deep-link swaps the hash and fires hashchange (no remount).
 		window.location.hash = '#headway';
 		await fireEvent(window, new HashChangeEvent('hashchange'));
 		expect(cardTrigger(container, 'headway')).toHaveAttribute('aria-expanded', 'true');
-		// The first card stays open (opening is additive, not exclusive).
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
@@ -703,11 +636,9 @@ describe('MetricsExplainer', () => {
 		await fireEvent.click(within(rail).getByRole('button', { name: target.name.en }));
 
 		expect(cardTrigger(container, target.anchor)).toHaveAttribute('aria-expanded', 'true');
-		// A different, un-jumped card stays folded.
 		expect(cardTrigger(container, METRICS[0].anchor)).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	// ── R3: the full yesid contract (collapse all / expand all) ────────────────
 	it('Collapse all folds every card + the ToC; Expand all reopens everything', async () => {
 		const { container } = render(MetricsExplainer);
 
@@ -717,7 +648,6 @@ describe('MetricsExplainer', () => {
 		expect(toggle).toHaveTextContent('Collapse all');
 		expect(toggle).toHaveAttribute('title', 'Collapse all sections on this page');
 
-		// Collapse all → every card collapses AND the ToC rail folds.
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('data-collapsed', 'true');
 		expect(toggle).toHaveTextContent('Expand all');
@@ -726,11 +656,8 @@ describe('MetricsExplainer', () => {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		// An unsaved collapse action writes no storage.
 		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
 
-		// The ToC rail is never HIDDEN (still in the DOM, still offers its jumps);
-		// the detail grid never gains a quiet variant class (grid + gutter unchanged).
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		expect(rail).not.toBeNull();
 		expect(rail.style.display).not.toBe('none');
@@ -738,7 +665,6 @@ describe('MetricsExplainer', () => {
 			(container.querySelector('.detail-shell-grid') as HTMLElement).classList.contains('is-quiet'),
 		).toBe(false);
 
-		// Expand all → everything reopens (cards + ToC).
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('data-collapsed', 'false');
 		expect(toggle).toHaveTextContent('Collapse all');
@@ -798,33 +724,27 @@ describe('MetricsExplainer', () => {
 		expect(railToggle, 'ToC rail has its own disclosure trigger').not.toBeNull();
 		expect(railToggle).toHaveAttribute('aria-expanded', 'true');
 
-		// The reader folds the ToC via ITS OWN toggle — the metric cards stay OPEN.
 		await fireEvent.click(railToggle as HTMLElement);
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		}
-		// The collapsed choice persists (sectionKey="metrics-toc" → sessionStorage).
 		expect(sessionStorage.getItem('transit.persisted:metrics-toc')).toBe('false');
 	});
 
 	it('writes a per-card CLOSE choice, then resets it on an unremembered article mount', async () => {
 		const { container } = render(MetricsExplainer);
 
-		// The card starts open; close it and confirm its own persisted key is written.
 		expect(cardTrigger(container, 'severe')).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(cardTrigger(container, 'severe') as HTMLElement);
 		expect(cardTrigger(container, 'severe')).toHaveAttribute('aria-expanded', 'false');
 		expect(sessionStorage.getItem('transit.persisted:metrics-card-severe')).toBe('false');
 
-		// A fresh unremembered article resets all participating cards open. Its
-		// mount-time openSignal intentionally overrides the prior per-card choice.
 		const { container: c2 } = render(MetricsExplainer);
 		expect(cardTrigger(c2, 'severe')).toHaveAttribute('aria-expanded', 'true');
 		expect(cardTrigger(c2, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	// ── R3: the remembered collapsed default (ONE site-wide preference) ───────
 	it('Always start collapsed persists; forgetting clears the default without unfolding', async () => {
 		const { container } = render(MetricsExplainer);
 
@@ -833,7 +753,6 @@ describe('MetricsExplainer', () => {
 		expect(remember).toHaveAttribute('data-remembered', 'false');
 		expect(remember).toHaveTextContent('Always start collapsed');
 
-		// Remembering engages collapsed mode and persists the site-wide preference.
 		await fireEvent.click(remember);
 		expect(remember).toHaveAttribute('data-remembered', 'true');
 		expect(remember).toHaveTextContent("Don't start collapsed");
@@ -844,7 +763,6 @@ describe('MetricsExplainer', () => {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 
-		// Forgetting clears the preference; the on-screen folded state is untouched.
 		await fireEvent.click(remember);
 		expect(remember).toHaveAttribute('data-remembered', 'false');
 		expect(remember).toHaveTextContent('Always start collapsed');
@@ -854,9 +772,6 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('restores a saved collapsed preference on mount → cards + ToC folded, rail still present', () => {
-		// A prior visit saved collapsed mode under the ONE site-wide key. On mount the shared
-		// store re-applies it: the close signal folds cards + ToC; the rail is NEVER
-		// removed from the DOM.
 		localStorage.setItem('transit:quiet-mode', 'true');
 		const { container } = render(MetricsExplainer);
 

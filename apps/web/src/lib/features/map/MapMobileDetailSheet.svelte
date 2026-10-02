@@ -1,11 +1,3 @@
-<!--
-  MapMobileDetailSheet — the mobile detail BottomSheet, sibling of the desktop overlay.
-
-  SINGLE RESPONSIBILITY: render the selected detail in a bottom sheet on mobile (the
-  desktop detail lives in the right overlay). Deliberately a SEPARATE sibling so the
-  desktop overlay vs mobile sheet split stays explicit. Owns no state: the `{#if
-  detailOpen && !layout.isDesktop}` gate stays in MapHero; this is the BODY. No CSS.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import type { Snippet } from 'svelte';
@@ -103,34 +95,3 @@
 		</div>
 	{/if}
 </BottomSheet>
-
-<style>
-	.mobile-detail-body :global(.detail-attribute-grid > div) {
-		grid-template-columns: 5.75rem minmax(0, 1fr) minmax(5.5rem, auto);
-		align-items: center;
-		column-gap: 0.75rem;
-		padding-block: 0.75rem;
-		border-bottom-width: 1px;
-		border-bottom-style: solid;
-		border-bottom-color: var(--border);
-	}
-	.mobile-detail-body :global(.detail-attribute-grid > div > dt) {
-		grid-column: 1;
-	}
-	.mobile-detail-body :global(.detail-attribute-grid > div > dd) {
-		grid-column: 2;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-	.mobile-detail-body :global(.detail-attribute-grid > div > .detail-fact-action) {
-		grid-column: 3;
-		min-width: 5.5rem;
-		min-block-size: 2.75rem;
-		justify-content: center;
-	}
-	.mobile-detail-body :global(.detail-attribute-grid > div > dd .detail-fact-action) {
-		max-width: 100%;
-		white-space: normal;
-		overflow-wrap: anywhere;
-	}
-</style>

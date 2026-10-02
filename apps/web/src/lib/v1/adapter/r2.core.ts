@@ -5,7 +5,7 @@ import { getEntityJson, type FetchFn } from '$lib/v1/http';
 import { LabelsFileSchema } from '$lib/v1/schemas/labels';
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
 import { browserAdapterManifest } from './browserManifest';
-import type { AdapterCtx, LabelsPort, ManifestPort } from './types';
+import type { AdapterCtx } from './types';
 
 export const R2_DEFAULTS = {
 	manifest: 'manifest.json',
@@ -134,12 +134,12 @@ export async function readEntity<T>(
 	return value ?? null;
 }
 
-export const manifestPort: ManifestPort = {
+export const manifestPort = {
 	get: loadManifest,
 	getFresh: loadManifestFresh,
 };
 
-export const labelsPort: LabelsPort = {
+export const labelsPort = {
 	async get(lang: Locale, ctx?: AdapterCtx): Promise<Record<string, string>> {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.labels?.[lang] ?? `labels/${lang}.json`;

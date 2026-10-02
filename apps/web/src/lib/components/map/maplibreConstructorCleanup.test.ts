@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import maplibrePackage from 'maplibre-gl/package.json';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -10,7 +10,10 @@ afterEach(() => {
 	document.body.replaceChildren();
 });
 
-function runThreeFailures(MapConstructor: typeof maplibregl.Map): HTMLElement[] {
+function runThreeFailures(
+	MapConstructor: typeof maplibregl.Map,
+	expectedMessage?: string,
+): HTMLElement[] {
 	const containers: HTMLElement[] = [];
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const container = document.createElement('div');
@@ -26,7 +29,7 @@ function runThreeFailures(MapConstructor: typeof maplibregl.Map): HTMLElement[] 
 				},
 				vi.fn(),
 			),
-		).toThrow();
+		).toThrow(expectedMessage);
 	}
 	return containers;
 }
@@ -40,7 +43,7 @@ function flushImageThrottleCallbacks(): void {
 		_renderTaskQueue: { clear: noop },
 		_diffStyleRequest: null,
 		painter: { destroy: noop, context: { gl: { getExtension: () => null } } },
-		handlers: { destroy: noop },
+		_handlers: { destroy: noop },
 		setStyle: () => map,
 		_imageQueueHandle: Number.MAX_SAFE_INTEGER,
 		_resizeObserver: null,
@@ -80,9 +83,10 @@ function trackCreationErrorListeners(): () => number {
 	return () => active;
 }
 
-it('deletes every real MapLibre callback and DOM receipt when WebGL acquisition fails', () => {
-	expect(maplibrePackage.version).toBe('5.24.0');
+it('cleans real MapLibre callbacks and DOM when WebGL2 returns no painter', () => {
+	expect(maplibrePackage.version).toBe('6.4.1');
 	const activeCreationErrorListeners = trackCreationErrorListeners();
+	const emittedError = vi.spyOn(console, 'error').mockImplementation(() => {});
 	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
 	let staleCallbackCalls = 0;
 	class ProbeMap extends maplibregl.Map {
@@ -92,9 +96,10 @@ it('deletes every real MapLibre callback and DOM receipt when WebGL acquisition 
 		}
 	}
 
-	const containers = runThreeFailures(ProbeMap);
+	const containers = runThreeFailures(ProbeMap, 'MapLibre could not initialize WebGL2');
 	flushImageThrottleCallbacks();
 
+	expect(emittedError).toHaveBeenCalledTimes(3);
 	expect(staleCallbackCalls).toBe(0);
 	expect(activeCreationErrorListeners()).toBe(0);
 	for (const container of containers) {
@@ -110,7 +115,7 @@ it('loses every acquired GL context when Painter construction fails', () => {
 	const gl = {
 		getExtension: (name: string) =>
 			name === 'WEBGL_lose_context' ? { loseContext: () => (loseContextCalls += 1) } : null,
-	} as unknown as WebGLRenderingContext;
+	} as unknown as WebGL2RenderingContext;
 	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(gl);
 	class ProbeMap extends maplibregl.Map {
 		override isMoving(): boolean {
@@ -132,7 +137,7 @@ it('loses every acquired GL context when Painter construction fails', () => {
 });
 
 it('keeps real Map removal global receipts flat at zero across repeated painter faults', () => {
-	expect(maplibrePackage.version).toBe('5.24.0');
+	expect(maplibrePackage.version).toBe('6.4.1');
 	const painterError = new Error('painter destroy failed before mutation');
 	const handlers: Array<{ destroy: () => void }> = [];
 	const onlineOwners: Array<{ destroy: () => void }> = [];
@@ -180,7 +185,7 @@ it('keeps real Map removal global receipts flat at zero across repeated painter 
 				},
 			},
 		};
-		handlers: HandlerManagerProbe;
+		_handlers: HandlerManagerProbe;
 		_imageQueueHandle = Number.MAX_SAFE_INTEGER;
 		_resizeObserver: { disconnect: () => void };
 		_canvas = document.createElement('canvas');
@@ -200,8 +205,8 @@ it('keeps real Map removal global receipts flat at zero across repeated painter 
 			this._canvasContainer.append(this._canvas);
 			this._container.append(this._canvasContainer, this._controlContainer);
 			this._container.addEventListener('scroll', this._onMapScroll);
-			this.handlers = new HandlerManagerProbe();
-			handlers.push(this.handlers);
+			this._handlers = new HandlerManagerProbe();
+			handlers.push(this._handlers);
 
 			let online = true;
 			this._onWindowOnline = () => {
@@ -357,10 +362,9 @@ it('does not run constructor rollback for a later context-restoration failure', 
 	const restorationError = new Error('restored painter failed');
 	const originalHandlers = { destroy: vi.fn() };
 	class RestorableMap {
-		readonly _canvasContextAttributes = { contextType: 'webgl2' as const };
 		readonly _canvas = document.createElement('canvas');
 		readonly painter = { destroy: vi.fn(), context: { gl: { getExtension: () => null } } };
-		readonly handlers = originalHandlers;
+		readonly _handlers = originalHandlers;
 		setupCalls = 0;
 		removeCalls = 0;
 
@@ -391,6 +395,6 @@ it('does not run constructor rollback for a later context-restoration failure', 
 
 	expect(() => map.restoreContext()).toThrow(restorationError);
 	expect(map.removeCalls).toBe(0);
-	expect(map.handlers).toBe(originalHandlers);
+	expect(map._handlers).toBe(originalHandlers);
 	expect(reportCleanupFailure).not.toHaveBeenCalled();
 });

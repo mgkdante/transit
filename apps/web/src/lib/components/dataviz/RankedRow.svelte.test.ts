@@ -1,10 +1,3 @@
-// RankedRow.svelte.test.ts — locks the canonical dataviz-row contract that the
-// S3 KPI-card kit (KpiCard/BulletKpi/DeltaStat) clones its shape from. The
-// load-bearing invariants: data-slot, the role ladder
-// (listitem / button / bare), and the delta chip's glyph + dataviz-scale colour +
-// aria — direction is NEVER colour-only, and a missing delta is honest no-data
-// (neutral glyph, "no change data"), never a fabricated 0 or a coloured arrow.
-
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import RankedRow from './RankedRow.svelte';
@@ -54,7 +47,6 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		expect(el.getAttribute('aria-label')).toBe('no change data');
 		expect(el.textContent).toContain('·');
 		expect(el.getAttribute('style')).toContain('var(--dataviz-status-unknown)');
-		// never fabricates a value next to the neutral glyph
 		expect(el.textContent).not.toMatch(/\d/);
 	});
 
@@ -111,7 +103,6 @@ describe('RankedRow — the dataviz-row template contract', () => {
 	});
 
 	it('forwards a fixed absolute domain to the bar (stable, not relative-to-max, S7)', () => {
-		// 4 min on [-2,8] -> 60% fill, independent of any in-view max.
 		const { container } = render(RankedRow, {
 			props: { ...base, value: 4, domain: [-2, 8] as const, display: '4.0 min' },
 		});

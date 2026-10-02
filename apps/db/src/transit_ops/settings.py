@@ -84,14 +84,6 @@ class Settings(BaseSettings):
         )
 
     def env_value(self, name: str | None) -> str | None:
-        """Resolve a feed's env-var override (URL or credential) by name.
-
-        Declared settings fields (e.g. ``STM_API_KEY``) resolve through the model
-        exactly as before — their value already reflects env/.env via
-        pydantic-settings. Names that are NOT declared fields fall back to the
-        process environment, so a new provider's ``{PROVIDER}_*`` secrets and URLs
-        resolve by convention without adding a Settings field per provider.
-        """
         if not name:
             return None
         if name in type(self).model_fields:
@@ -120,92 +112,48 @@ class Settings(BaseSettings):
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
 
-    # --- /v1 snapshot publisher (reuses BRONZE_S3_* credentials) ---
     SNAPSHOT_STORAGE_BACKEND: Literal["local", "s3"] = "local"
-    SNAPSHOT_LOCAL_ROOT: str | None = "./data/snapshots"  # used when backend == "local"
-    SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
-    SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
-    # Basemap pointer (slice-9.1.1r). Until the Quebec PMTiles archive is hosted
-    # these stay unset -> manifest.basemap is null and no basemap.json is written.
-    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None   # absolute URL of the Quebec PMTiles archive
-    SNAPSHOT_BASEMAP_STYLE_URL: str | None = None      # optional MapLibre style JSON URL
+    SNAPSHOT_LOCAL_ROOT: str | None = "./data/snapshots"
+    SNAPSHOT_R2_BUCKET: str | None = None
+    SNAPSHOT_PUBLIC_BASE_URL: str | None = None
+    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None
+    SNAPSHOT_BASEMAP_STYLE_URL: str | None = None
     SNAPSHOT_BASEMAP_ATTRIBUTION: str = "© OpenStreetMap contributors, © Protomaps"
-    # Bounded thread-pool fan-out for per-entity snapshot uploads (slice-9.1.1r
-    # stage 2). On a new-GTFS-edition day the hash-gate skips nothing, so the
-    # publish must re-upload all ~9.3k static + ~8.5k historic files; serial PUTs
-    # over WAN take ~50min and time the daily jobs out. Uploading the per-route /
-    # per-stop / receipts files through a bounded ThreadPoolExecutor parallelises
-    # the network round-trips while keeping the manifest LAST and the flat files
-    # untouched. <=1 disables the pool (sequential, for tests / debugging).
+    # Values <=1 disable upload concurrency; publish the manifest after its files.
     SNAPSHOT_PUBLISH_CONCURRENCY: int = 16
 
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
-    # Sleep between passes of the dedicated pruner service (run-pruner-loop /
-    # docker-compose `pruner`). Retention pruning is DECOUPLED from the realtime
-    # cycle (PR-B / slice-9.8): with the index-driven rt_feed_snapshot_id-range
-    # deletes a pass is sub-second in steady state, so a short sleep drains a
-    # backlog at index speed without spinning. Kept independent of
-    # REALTIME_POLL_SECONDS so the pruner cadence can be tuned without touching
-    # the capture cadence.
+    # Pruning cadence is independent of realtime capture cadence.
     PRUNER_SLEEP_SECONDS: int = 15
     HEALTH_DATABASE_TIMEOUT_SECONDS: float = 5.0
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
-    # Global fallback for a provider manifest that omits provider.strict_gtfs.
-    # True = a feed missing a required non-spine column fails the load loud.
+    # Fallback strictness for manifests that omit strict_gtfs.
     STRICT_GTFS: bool = True
     STATIC_DATASET_RETENTION_COUNT: int = 1
-    # Silver is ephemeral staging, not a retention tier: raw .pb in Bronze R2 is
-    # the authoritative rebuild source and the replay-realtime-silver CLI (#106)
-    # can reconstruct silver from raw on demand. Hold 1 day so a worker cycle
-    # always has its immediate predecessor on hand; everything older is
-    # reconstructable from raw, so keeping it on the VM is dead storage.
+    # Silver can be rebuilt from Bronze; retain the immediate predecessor for worker cycles.
     SILVER_REALTIME_RETENTION_DAYS: int = 1
-    # Max rows deleted per realtime-history table per prune cycle. The prune runs
-    # on every ~30s worker cycle; an unbounded DELETE of the accumulated backlog
-    # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a
-    # single transaction is the unbounded-heavy-op hang class. Bounding each
-    # DELETE to this many rows/table/cycle drains the one-time backlog gradually
-    # over many cycles while staying above the steady-state stop-time inflow.
+    # Bound each deletion transaction so a backlog drains over successive passes.
     SILVER_REALTIME_PRUNE_BATCH: int = 100000
-    # Granular facts stay capped at 14 days — this is the storage win. Longer
-    # historical horizons are served by the cheap warm rollups, NOT by widening
-    # fact retention. Four fact-coupled queries bind this value as
-    # :fact_retention_days so the 14d horizon can never silently drift.
+    # Longer history comes from warm rollups; fact queries bind this retention setting.
     GOLD_FACT_RETENTION_DAYS: int = 14
-    # Max rows deleted per gold-fact table per prune cycle. Like the silver
-    # realtime prune, prune_gold_fact_history runs on every ~30s worker cycle; an
-    # unbounded DELETE of the whole backlog (the first cycle after a worker
-    # outage must drain the entire 18.7M-scale fact_trip_delay_snapshot in ONE
-    # transaction — long lock hold, WAL/bloat spike) is the unbounded-heavy-op
-    # hang class the silver prunes were already batched to avoid. Bounding each
-    # DELETE drains a one-time backlog gradually while steady-state clears fast.
+    # Bound Gold fact deletions to limit locks and WAL while draining backlog.
     GOLD_FACT_PRUNE_BATCH: int = 100000
-    # The per-cycle ANALYZE of the realtime silver tables (incl. the ~500M-row
-    # rt_trip_update_stop_times) takes SHARE UPDATE EXCLUSIVE + heavy sampling
-    # I/O inside the advisory-locked gold-refresh TX. Per-snapshot upserts filter
-    # on a constant rt_feed_snapshot_id, so stale stats barely move the plan —
-    # throttle ANALYZE to at most once per this many seconds (rely on tuned
-    # autovacuum/autoanalyze between runs). 0 disables the throttle (always run).
+    # Throttle expensive ANALYZE; zero analyzes every cycle.
     GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
-    # Bronze raw is the replay-from-raw safety net for ephemeral silver (#106):
-    # 90 days extends the window over which silver can be rebuilt from raw .pb.
-    # Raw NEVER moves onto the VM — it lives only in Bronze R2.
+    # Bronze raw objects are the replay source and remain in object storage.
     BRONZE_REALTIME_RETENTION_DAYS: int = 90
     BRONZE_STATIC_RETENTION_DAYS: int = 30
-    # Warm rollups are cheap pre-aggregated rows: hold 2 years to serve long
-    # historical horizons that the 14d facts no longer cover.
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 730
     BRONZE_I3_RETENTION_DAYS: int = 30
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
     BRONZE_PRUNE_MAX_BATCHES: int = 2
 
-    # --- Nightly logical Postgres backups (stream pg_dump to Bronze R2) ---
     BACKUP_S3_PREFIX: str = "backups/postgres"
     BACKUP_RETENTION_COUNT: int = 14
     BACKUP_EXCLUDE_TABLE_DATA: str = "silver.rt_trip_update_stop_times"
@@ -213,7 +161,6 @@ class Settings(BaseSettings):
 
     @property
     def backup_exclude_tables(self) -> list[str]:
-        """Tables whose data is excluded from pg_dump, blanks filtered out."""
 
         return [
             table.strip()
@@ -223,7 +170,6 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str | None:
-        """Return a SQLAlchemy-compatible URL for psycopg."""
 
         if not self.DATABASE_URL:
             return None
@@ -237,7 +183,6 @@ class Settings(BaseSettings):
 
     @property
     def redacted_database_url(self) -> str | None:
-        """Mask the credential portion of the configured database URL."""
 
         if not self.DATABASE_URL:
             return None
@@ -249,7 +194,6 @@ class Settings(BaseSettings):
         return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
 
     def display_dict(self) -> dict[str, object]:
-        """Return a safe summary of the active settings."""
 
         return {
             "APP_ENV": self.APP_ENV,

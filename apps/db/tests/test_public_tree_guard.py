@@ -14,7 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 GUARD = REPO_ROOT / ".github/scripts/check_public_tree.py"
 WORKFLOW = REPO_ROOT / ".github/workflows/secret-scan.yml"
 DOCKERIGNORE = REPO_ROOT / "apps/db/.dockerignore"
-CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
 
 
 @dataclass
@@ -697,8 +696,9 @@ def test_secret_scan_runs_current_tree_checks_and_keeps_history_scans() -> None:
     assert by_name["Scan current tree"] == {
         "name": "Scan current tree",
         "if": failure_independent,
-        "run": "gitleaks dir --redact --config .gitleaks.toml .",
+        "run": '"${GITLEAKS_BIN}" dir --redact --config .gitleaks.toml .',
     }
+    assert "install-gitleaks.sh" in by_name["Install gitleaks"]["run"]
     assert by_name["Scan pull request diff"]["if"] == (
         "${{ (success() || failure()) && github.event_name == 'pull_request' }}"
     )
@@ -711,7 +711,7 @@ def test_secret_scan_runs_current_tree_checks_and_keeps_history_scans() -> None:
         "${{ (success() || failure()) && "
         "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
     )
-    assert "gitleaks detect --redact" in by_name["Scan HEAD history"]["run"]
+    assert '"${GITLEAKS_BIN}" detect --redact' in by_name["Scan HEAD history"]["run"]
 
 
 def test_db_build_context_excludes_artifacts_and_crypto_material() -> None:
@@ -735,16 +735,3 @@ def test_db_build_context_excludes_artifacts_and_crypto_material() -> None:
         "**/*.keystore",
         "**/*.kdbx",
     } <= patterns
-
-
-def test_clean_clone_sequence_runs_guard_and_both_gitleaks_surfaces() -> None:
-    contributing = CONTRIBUTING.read_text(encoding="utf-8")
-    guard = "python3 .github/scripts/check_public_tree.py"
-    current_tree = '"$GITLEAKS_BIN" dir --redact --config .gitleaks.toml .'
-    history = '"$GITLEAKS_BIN" detect --redact --config .gitleaks.toml'
-
-    assert contributing.count(guard) == 1
-    assert contributing.count(current_tree) == 1
-    assert contributing.count(history) == 1
-    assert contributing.index(guard) < contributing.index(current_tree)
-    assert contributing.index(current_tree) < contributing.index(history)

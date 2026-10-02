@@ -2,16 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import FilterSummary from './FilterSummary.svelte';
 
-// getLocale() is read at init. A FR test flips the mocked locale before rendering so
-// the French plural rule (0 → singular) is exercised. Default (unmocked) = 'en'.
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
-// FR forms are deliberately DISTINCT here so the plural-branch selection is observable
-// (the real alerts copy has an invariant "avis"; the rule is what matters).
 const COUNT_LABEL = {
 	en: { singular: '{count} alert', plural: '{count} alerts' },
 	fr: { singular: '{count} résultat', plural: '{count} résultats' },

@@ -1,18 +1,3 @@
-<!--
-  MapDetailOverlay — the desktop right-panel absolute OVERLAY box + the left-edge
-  drag/resize handle + collapse-to-the-right logic.
-
-  The ONLY child that owns logic: the self-contained drag/keyboard handlers live here
-  WITH their markup because they touch nothing but the panel width, a CSS-var, and
-  localStorage — never the map. THE LAW: the map canvas is full-bleed and the only
-  size driver is MapStage's own ResizeObserver, so NONE of these handlers may call
-  map.resize()/fitBounds/easeTo — they don't (this component has no map reference at
-  all). The overlay anchors flush to the map's right edge, its width the live
-  --app-right-detail-offset var; collapsing slides it OFF the right edge (collapses
-  to the RIGHT, never to the left). The {#if layout.isDesktop && detailOpen} gate +
-  the --app-right-detail-offset/--map-detail-offset seeding effect stay in MapHero;
-  this is the BODY. Two-way binds widthPx/collapsed/dragging back to the orchestrator.
--->
 <script module lang="ts">
 	export function focusDetail(): void {
 		document
@@ -35,15 +20,10 @@
 	} from './mapDetailPanes';
 
 	interface Props {
-		/** The overlay's live width in px (= MapHero's detailWidthPx). Two-way. */
 		widthPx: number;
-		/** Collapsed-to-the-right flag (= MapHero's detailCollapsed). Two-way. */
 		collapsed: boolean;
-		/** Drag-in-progress flag (= MapHero's detailDragging). Two-way. */
 		dragging: boolean;
-		/** a11y label for the resize separator (= t.detailResizeLabel). */
 		resizeAria: string;
-		/** The orchestrator's detailPanel render contract (RightPanel + MapSelectionDetail). */
 		detailPanel: Snippet;
 	}
 
@@ -188,8 +168,6 @@
 		};
 	});
 
-	// Pointer drag owns only the live width. The committed width persists exactly once
-	// on a valid release; the map canvas never reads either value.
 	function onDetailHandlePointerDown(event: PointerEvent): void {
 		if (event.button !== 0) return;
 		if (snapTimer) clearTimeout(snapTimer);
@@ -204,7 +182,6 @@
 
 	function onDetailHandlePointerMove(event: PointerEvent): void {
 		if (!dragging) return;
-		// Left-edge handle: moving the pointer left (negative delta) widens the panel.
 		const nextDragWidth = clampDragWidth(detailDragStartWidth - (event.clientX - detailDragStartX));
 		if (nextDragWidth !== detailDragStartWidth) detailDragMoved = true;
 		dragWidthPx = nextDragWidth;
@@ -256,9 +233,6 @@
 		);
 	}
 
-	// Keyboard resize for the separator (a11y parity with the left-rail handle): arrows
-	// nudge the width, Home/End jump to the floor/ceiling. Left-edge handle, so Left
-	// grows and Right shrinks. Persists on each commit.
 	function onDetailHandleKeyDown(event: KeyboardEvent): void {
 		const STEP = 16;
 		let next: number;
@@ -333,12 +307,6 @@
 </div>
 
 <style>
-	/* RIGHT DETAIL overlay — absolutely positioned, anchored FLUSH to the map's right
-	   edge, its width the live --app-right-detail-offset CSS var. It floats OVER the
-	   map; only the overlay itself takes pointer events, so the map underneath stays
-	   interactive. Its box-shadow lives here so the lift vanishes WITH the overlay when
-	   the detail closes (the overlay only exists while detailOpen). COLLAPSED slides it
-	   OFF the right edge by translating the leftover strip beyond 100% width. */
 	.map-detail-overlay {
 		position: absolute;
 		inset-block: 0;
@@ -368,8 +336,6 @@
 		transition-duration: var(--duration-slow);
 		transition-timing-function: var(--ease-out);
 	}
-	/* Suppress the width transition WHILE dragging so the panel tracks the pointer 1:1;
-	   it re-applies for the collapse/expand snap. */
 	.map-detail-overlay[data-detail-dragging='true'] {
 		transition: none;
 	}
@@ -381,10 +347,6 @@
 	.map-detail-overlay[data-detail-collapsed='false'][data-detail-snapping='true'] {
 		transition-duration: var(--duration-normal);
 	}
-	/* COLLAPSED to the RIGHT: the RightPanel inside shrinks to its 3.7rem icon strip
-	   (data-open='false'), so the overlay box narrows to that strip flush at the right
-	   edge — collapsed to the right edge, never to the left / mid-air. The strip stays
-	   on-screen so the expand toggle is reachable. */
 	.map-detail-overlay[data-detail-collapsed='false'] .map-detail-content-frame {
 		position: relative;
 		flex: none;
@@ -417,9 +379,6 @@
 		}
 	}
 
-	/* The detail panel's left-edge resize handle — a thin col-resize strip flush to the
-	   overlay's leading edge, matching the left-rail handle tone (idle --border,
-	   hover/active --primary). Mirrors .app-shell-rail-handle. */
 	.map-detail-overlay[data-detail-collapsed='false'] .map-detail-handle {
 		position: absolute;
 		inset-block: 0;

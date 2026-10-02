@@ -5,6 +5,7 @@ export const MIN_VISIBLE_SPAN_PX = 240;
 
 export interface MapFocusMeasurementAdapter {
 	containerRect(container: HTMLElement): DOMRect;
+	headingRect(hero: Element): DOMRect | null;
 	detailOffset(hero: Element): string;
 	rootFontSize(): number;
 	bottomSheetHeight(): number | null;
@@ -14,6 +15,7 @@ export interface MapFocusMeasurementAdapter {
 export interface MapFocusInset {
 	containerWidth: number;
 	containerHeight: number;
+	topOcclusion: number;
 	rightOcclusion: number;
 	bottomOcclusion: number;
 	pointOffset: [number, number];
@@ -24,6 +26,7 @@ type FocusMap = Pick<MapLibreMap, 'getContainer'>;
 
 const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
 	containerRect: (container) => container.getBoundingClientRect(),
+	headingRect: (hero) => hero.querySelector('.map-head')?.getBoundingClientRect() ?? null,
 	detailOffset: (hero) => getComputedStyle(hero).getPropertyValue('--map-detail-offset'),
 	rootFontSize: () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
 	bottomSheetHeight: () => {
@@ -57,6 +60,11 @@ export function measureMapFocusInset(
 	const containerWidth = Math.max(0, containerRect.width);
 	const containerHeight = Math.max(0, containerRect.height);
 	const hero = container.closest('.map-hero');
+	const heading = hero ? adapter.headingRect(hero) : null;
+	const topOcclusion = clampOcclusion(
+		heading ? heading.bottom - containerRect.top : 0,
+		containerHeight,
+	);
 	const rawRight = hero ? parseDetailOffset(adapter.detailOffset(hero), adapter.rootFontSize()) : 0;
 	const measuredSheetHeight = adapter.bottomSheetHeight();
 	const rawBottom =
@@ -66,19 +74,20 @@ export function measureMapFocusInset(
 				? containerHeight * 0.5
 				: measuredSheetHeight;
 	const rightOcclusion = clampOcclusion(rawRight, containerWidth);
-	const bottomOcclusion = clampOcclusion(rawBottom, containerHeight);
+	const bottomOcclusion = clampOcclusion(rawBottom, containerHeight - topOcclusion);
 
 	return {
 		containerWidth,
 		containerHeight,
+		topOcclusion,
 		rightOcclusion,
 		bottomOcclusion,
 		pointOffset: [
 			rightOcclusion === 0 ? 0 : -rightOcclusion / 2,
-			bottomOcclusion === 0 ? 0 : -bottomOcclusion / 2,
+			(topOcclusion - bottomOcclusion) / 2,
 		],
 		routePadding: {
-			top: 64,
+			top: 64 + topOcclusion,
 			right: 64 + rightOcclusion,
 			bottom: 64 + bottomOcclusion,
 			left: 64,

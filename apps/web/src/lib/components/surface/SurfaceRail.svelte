@@ -1,22 +1,3 @@
-<!--
-  SurfaceRail — the shared article/control rail for granular-filter + section-ToC surfaces.
-
-  ONE component, ONE live rail body, two presentations:
-    • DESKTOP (≥1024): a bare sticky rail, matching the yesid article/listing grammar,
-      pinned under the chrome (`top: var(--chrome-offset)`) and holding the surface's grain /
-      filter controls + the section ToC. Sits as the LEFT column of the surface's grid.
-    • MOBILE (<1024): ONE floating pill → ONE sheet that stacks the SAME content (grain /
-      filters AND the ToC together — one easy menu), replacing the old pair of separate
-      filter-pill + toc-pill.
-
-  The caller passes ONE `rail` snippet (its grain controls + filters + ToC list). SurfaceRail
-  mounts it once in the desktop grid and moves that same DOM subtree into the mobile sheet.
-  Controls therefore keep one identity, one focus tree, and one set of element ids.
-
-  a11y: the mobile pill is a labelled disclosure (`aria-expanded`), Escape closes + restores
-  focus, a backdrop dismisses, the sheet is a `role="dialog"` that grabs first-focusable on
-  open. Brand chrome only (glass-chrome + ChevronToggle); tokens, no hex.
--->
 <script lang="ts">
 	import { onMount, tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
@@ -31,28 +12,12 @@
 	}
 
 	interface Props {
-		/**
-		 * The rail content — grain / filter controls + the section ToC. Mounted once and
-		 * moved between the bare desktop rail and the mobile sheet.
-		 * The snippet receives `{ closeSheet, presentation }`: `closeSheet` is the
-		 * EXPLICIT dismissal seam to wire into TocNav's `onNavigate` (or any jump
-		 * control), while `presentation` follows the shared 1024px viewport state. On
-		 * desktop, `closeSheet` is a harmless no-op. This replaces the old
-		 * `.toc-item` class sniffing, which silently coupled SurfaceRail to TocNav's
-		 * private markup (a rename there would have killed sheet dismissal).
-		 */
 		rail: Snippet<[SurfaceRailContext]>;
-		/** Rail aria-label + the mobile pill/sheet heading (e.g. "View" / "Vue"). */
 		label: string;
-		/** Optional collapsed-pill summary (e.g. the active grain · section). */
 		summary?: string;
-		/** aria-label for the mobile pill's open control. */
 		openAria: string;
-		/** aria-label for the mobile sheet's dismiss control. */
 		closeAria: string;
-		/** Extra classes on the desktop rail panel. */
 		class?: string;
-		/** Whether the mobile pill/sheet is relevant in the current page region. */
 		mobileVisible?: boolean;
 	}
 	let {
@@ -88,14 +53,6 @@
 		sheetOpen = false;
 		if (restoreFocus) void tick().then(() => pillBtn?.focus());
 	}
-	// Move the one live rail body into the sheet and focus its first control. Focus returns
-	// to the pill button on close (closeSheet). ALSO: a tap on a
-	// native ToC jump link (an in-page `#anchor`) closes the sheet so the reader lands on
-	// the section — a filter/grain pick (a button) does NOT close, so filters can be
-	// changed freely. Component ToCs (TocNav) dismiss through the EXPLICIT seam instead:
-	// the rail snippet's `closeSheet` param wired into `onNavigate`. Delegated via
-	// addEventListener (not an inline onclick) so the sheet stays a plain container with
-	// no static-element-interaction a11y violation.
 	$effect(() => {
 		if (!sheetOpen || !sheetEl || !desktopRailEl) return;
 
@@ -111,9 +68,6 @@
 		};
 	});
 
-	// A mobile sheet can own focus when the viewport crosses the shared 1024px
-	// breakpoint. Close the hidden presentation and hand focus to the same controls
-	// in the desktop rail.
 	$effect(() => {
 		const desktop = layout.isDesktop;
 		const crossedToDesktop = desktop && !wasDesktop;
@@ -138,7 +92,6 @@
 	});
 </script>
 
-<!-- DESKTOP: the bare sticky rail (≥1024; hidden below, where the pill takes over). -->
 <aside
 	bind:this={desktopRailEl}
 	class={cn('surface-rail', className)}
@@ -150,9 +103,8 @@
 	{@render rail({ closeSheet: () => closeSheet(presentation === 'mobile'), presentation })}
 </aside>
 
-<!-- MOBILE: ONE pill → ONE sheet merging grain/filters + ToC (<1024; hidden ≥1024). -->
 {#if mobileVisible}
-	<div class="surface-rail-mobile lg:hidden" data-slot="surface-rail-mobile">
+	<div class="surface-rail-mobile" data-slot="surface-rail-mobile" data-open={sheetOpen}>
 		<button
 			bind:this={pillBtn}
 			class="tap-press surface-rail-pill glass-chrome"
@@ -192,7 +144,6 @@
 {/if}
 
 <style>
-	/* ── Desktop article rail (≥1024) ───────────────────────────────────────────── */
 	.surface-rail {
 		display: none;
 	}
@@ -206,6 +157,9 @@
 		flex: none;
 	}
 	@media (min-width: 1024px) {
+		.surface-rail-mobile[data-open='false'] {
+			display: none;
+		}
 		.surface-rail {
 			display: flex;
 			flex-direction: column;
@@ -223,10 +177,11 @@
 		}
 	}
 
-	/* ── Mobile pill + sheet (<1024) ────────────────────────────────────────────── */
 	.surface-rail-mobile {
+		--surface-rail-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+		--surface-rail-sheet-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 		position: fixed;
-		bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+		bottom: var(--surface-rail-bottom);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-sheet);
@@ -267,9 +222,16 @@
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
-		bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+		bottom: var(--surface-rail-sheet-bottom);
 		width: min(28rem, calc(100vw - 1.5rem));
-		max-height: min(70dvh, 32rem);
+		max-height: min(
+			70dvh,
+			32rem,
+			calc(
+				100dvh - var(--chrome-offset) - var(--surface-rail-bottom) -
+					var(--surface-rail-sheet-bottom)
+			)
+		);
 		overflow-y: auto;
 		overscroll-behavior: contain;
 		display: flex;

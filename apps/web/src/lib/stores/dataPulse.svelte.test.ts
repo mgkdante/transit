@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/v1/schemas';
 
-// Mock browser=true so the engine actually wires its timer.
 vi.mock('$app/environment', () => ({ browser: true }));
 
-// The fresh-manifest poll + the epoch bump are the two collaborators. We control
-// the manifest each poll returns and spy on the bump.
 const mocks = vi.hoisted(() => ({
 	getManifestFresh: vi.fn<() => Promise<Manifest>>(),
 	bumpEpoch: vi.fn<() => void>(),
@@ -21,7 +18,6 @@ import { dataPulse } from './dataPulse.svelte';
 
 type ManifestTier = 'live' | 'static' | 'historic';
 
-/** Build a manifest carrying a generated_utc on one tier. */
 function manifestAt(
 	generatedUtc: string | null,
 	ttlS = 30,
@@ -32,7 +28,6 @@ function manifestAt(
 	} as unknown as Manifest;
 }
 
-/** Build a manifest with several tier timestamps for one-bump aggregation tests. */
 function manifestTiers(tiers: Partial<Record<ManifestTier, string | null>>): Manifest {
 	return {
 		files: Object.fromEntries(
@@ -63,12 +58,6 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-/**
- * Drain pending microtasks so an async pollOnce settles. pollOnce awaits a
- * DYNAMIC import (the manifest repo is lazy-loaded) THEN the fetch THEN the
- * cadence re-pick, so a few extra turns are needed; advancing fake timers by 0
- * also flushes any timer-scheduled continuations.
- */
 async function settle() {
 	for (let i = 0; i < 8; i++) {
 		await Promise.resolve();
@@ -82,7 +71,6 @@ describe('dataPulse — auto-refresh on a monotonic manifest advance', () => {
 		mocks.getManifestFresh.mockReset();
 		mocks.bumpEpoch.mockReset();
 		dataPulse._resetForTests();
-		// Document is visible by default in jsdom.
 		Object.defineProperty(document, 'visibilityState', {
 			configurable: true,
 			get: () => 'visible',
@@ -96,7 +84,7 @@ describe('dataPulse — auto-refresh on a monotonic manifest advance', () => {
 
 	it('seeds the baseline on the first poll WITHOUT bumping', async () => {
 		mocks.getManifestFresh.mockResolvedValue(manifestAt('2026-06-20T00:00:00Z'));
-		const dispose = dataPulse.subscribe(); // triggers an immediate poll
+		const dispose = dataPulse.subscribe();
 		await settle();
 
 		expect(mocks.getManifestFresh).toHaveBeenCalledTimes(1);
@@ -186,12 +174,12 @@ describe('dataPulse — auto-refresh on a monotonic manifest advance', () => {
 
 	it('bumps the epoch on a strictly NEWER publish', async () => {
 		mocks.getManifestFresh
-			.mockResolvedValueOnce(manifestAt('2026-06-20T00:00:00Z')) // seed
-			.mockResolvedValueOnce(manifestAt('2026-06-20T00:05:00Z')); // newer
+			.mockResolvedValueOnce(manifestAt('2026-06-20T00:00:00Z'))
+			.mockResolvedValueOnce(manifestAt('2026-06-20T00:05:00Z'));
 		const dispose = dataPulse.subscribe();
-		await settle(); // seed poll
+		await settle();
 
-		await vi.advanceTimersByTimeAsync(300_000); // next discovery poll
+		await vi.advanceTimersByTimeAsync(300_000);
 		await settle();
 
 		expect(mocks.bumpEpoch).toHaveBeenCalledTimes(1);
@@ -228,15 +216,15 @@ describe('dataPulse — auto-refresh on a monotonic manifest advance', () => {
 
 	it('swallows a poll failure without tearing the timer down (next tick retries)', async () => {
 		mocks.getManifestFresh
-			.mockResolvedValueOnce(manifestAt('2026-06-20T00:00:00Z')) // seed
-			.mockRejectedValueOnce(new Error('edge blip')) // transient
-			.mockResolvedValueOnce(manifestAt('2026-06-20T00:05:00Z')); // recovers + newer
+			.mockResolvedValueOnce(manifestAt('2026-06-20T00:00:00Z'))
+			.mockRejectedValueOnce(new Error('edge blip'))
+			.mockResolvedValueOnce(manifestAt('2026-06-20T00:05:00Z'));
 		const dispose = dataPulse.subscribe();
 		await settle();
-		await vi.advanceTimersByTimeAsync(300_000); // the rejecting poll
+		await vi.advanceTimersByTimeAsync(300_000);
 		await settle();
 		expect(mocks.bumpEpoch).not.toHaveBeenCalled();
-		await vi.advanceTimersByTimeAsync(300_000); // the recovering poll
+		await vi.advanceTimersByTimeAsync(300_000);
 		await settle();
 		expect(mocks.bumpEpoch).toHaveBeenCalledTimes(1);
 		dispose();
@@ -327,12 +315,12 @@ describe('dataPulse — lifecycle', () => {
 		await settle();
 		const callsAfterStart = mocks.getManifestFresh.mock.calls.length;
 
-		a(); // one reader left → timer keeps running
+		a();
 		await vi.advanceTimersByTimeAsync(300_000);
 		await settle();
 		expect(mocks.getManifestFresh.mock.calls.length).toBeGreaterThan(callsAfterStart);
 
-		b(); // last reader gone → timer stops, no further polls
+		b();
 		const callsAfterStop = mocks.getManifestFresh.mock.calls.length;
 		await vi.advanceTimersByTimeAsync(120_000);
 		await settle();
@@ -344,7 +332,6 @@ describe('dataPulse — lifecycle', () => {
 		await settle();
 		const callsWhileVisible = mocks.getManifestFresh.mock.calls.length;
 
-		// Tab hidden → the visibilitychange handler stops the timer.
 		Object.defineProperty(document, 'visibilityState', {
 			configurable: true,
 			get: () => 'hidden',
@@ -354,7 +341,6 @@ describe('dataPulse — lifecycle', () => {
 		await settle();
 		expect(mocks.getManifestFresh.mock.calls.length).toBe(callsWhileVisible);
 
-		// Tab visible again before the cadence is due → no immediate re-check.
 		Object.defineProperty(document, 'visibilityState', {
 			configurable: true,
 			get: () => 'visible',

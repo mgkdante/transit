@@ -378,7 +378,6 @@ describe('live resilience probe cycle contract', () => {
 				requests: 3,
 				finished: 2,
 				failed: 1,
-				// The route handler may have prepared a 200 before the transport failed.
 				settlements: [{ status: 200 }, { status: 200 }, { status: 200 }],
 			}),
 		).toBe(false);

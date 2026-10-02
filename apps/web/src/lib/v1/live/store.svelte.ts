@@ -1,37 +1,3 @@
-// Live store — runes poller for the selected live snapshot files.
-//
-// By default it polls vehicles / trips / stop_departures / alerts / network on
-// the live tier's ttl cadence (from the manifest, default 30s). A surface can
-// select only the families it actually reads, without changing the public store
-// shape. The actual HTTP is the adapter's job. There is NO app-level ETag/304
-// handling: conditional revalidation is the browser/edge HTTP cache's job (the
-// fetch uses cache: 'default' against the snapshot's cache-control), so JS always
-// sees a 200 — served from cache or origin — carrying Date/Age headers that keep
-// the shared server-time offset fresh. The runes only churn when the bytes a poll
-// returns actually change.
-//
-// Aggregate freshness (generatedUtc / ageSeconds / isStale) uses the oldest
-// retained generation across active families, including a failed family whose
-// last good payload remains visible. Vehicle motion has a separate vehicles-only
-// derivation. Both compare against the manifest's live ttl (stale once age >= 3x
-// ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so they track the
-// publisher's cadence.
-//
-// The age advances off the app-supplied shared clock port, not a
-// private interval, so the freshness here ticks in lockstep with every other
-// relative-time label in the chrome (the TopBar refresh chip, etc.). This store
-// is also the SINGLE authoritative writer of the chrome's `dataGeneratedUtc`:
-// each successful poll pushes the snapshot's own DATA timestamp through the
-// refresh port, so the freshness readout never drifts from the
-// data it describes.
-//
-// Lifecycle: createLiveStore(manifest) builds an instance; call .start() from
-// onMount and .stop() from onDestroy (or use the $effect convenience in a
-// component). Polling pauses while the page is hidden or the browser is offline,
-// then performs one immediate single-flight refresh when it becomes active again.
-// SSR-safe: start() no-ops without a browser, the initial render shows whatever
-// one-shot fetch the loader seeded (or empty state).
-
 import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
@@ -48,31 +14,16 @@ import type {
 } from '$lib/v1/schemas';
 import { buildLiveIndex, type LiveIndex } from './index';
 
-/** Default live ttl (seconds) when the manifest omits it — mirrors the schema. */
 const DEFAULT_LIVE_TTL_S = 30;
 
-/** A tier is stale once it has missed THREE publish windows (90s at the 30s live
- * ttl). Three, not two: the client polls at the live ttl and the publisher emits
- * at the live ttl, so a healthy snapshot's age legitimately oscillates up to
- * ~2 windows between fetches — staling at 2× flips "· stale" on normal jitter.
- * 3× clears that band so only a genuine feed stall trips it. */
 const STALE_TTL_MULTIPLIER = 3;
 
-/** Every live family, in the stable order used by the default five-file poll. */
 export const LIVE_FAMILIES = ['vehicles', 'trips', 'departures', 'alerts', 'network'] as const;
 
 export type LiveFamily = (typeof LIVE_FAMILIES)[number];
 
 export type LiveFamilyPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
-/**
- * Settlement state for one live family.
- *
- * `lastGoodAt` is the server-clock epoch ms when the last accepted success
- * settled. `retainedGeneration` is that family's retained payload
- * `generated_utc`. An unchanged successful payload advances `lastGoodAt` and
- * clears failures, but preserves payload identity and `successRevision`.
- */
 export interface LiveFamilyState {
 	readonly phase: LiveFamilyPhase;
 	readonly active: boolean;
@@ -84,68 +35,39 @@ export interface LiveFamilyState {
 }
 
 export interface LiveStoreOptions {
-	/** Families this surface reads. Omit to preserve the five-file default. */
 	readonly families?: readonly LiveFamily[];
-	/** Validated request-scoped payloads available for the first render. */
 	readonly seed?: {
 		readonly network?: NetworkFile;
 	};
 }
 
-/** The public reactive surface of a live store instance. */
 export interface LiveStore {
-	/** Live vehicle positions, or null before the first successful fetch. */
 	readonly vehicles: VehiclesFile | null;
-	/** Trip-keyed live trips, or null before the first successful fetch. */
 	readonly trips: TripsFile | null;
-	/** Stop-keyed departures, or null before the first successful fetch. */
 	readonly departures: StopDeparturesFile | null;
-	/** Active service alerts, or null before the first successful fetch. */
 	readonly alerts: AlertsFile | null;
-	/** Network-health rollup, or null before the first successful fetch. */
 	readonly network: NetworkFile | null;
-	/** O(1) lookup index rebuilt every tick from the current files. */
 	readonly index: LiveIndex;
-	/** Settlement state keyed by live family. */
 	readonly familyStates: Readonly<Record<LiveFamily, LiveFamilyState>>;
-	/** Oldest retained DATA time among active families. */
 	readonly generatedUtc: string | null;
-	/** Seconds since `generatedUtc`, or null when no build is loaded. */
 	readonly ageSeconds: number | null;
-	/** True once the live feed is >= 3x its ttl behind (90s at the 30s live ttl) —
-	 * 3x, not 2x, so normal poll/publish jitter never falsely flips it stale. */
 	readonly isStale: boolean;
-	/** Retained vehicles DATA time, independent of other live families. */
 	readonly vehiclesGeneratedUtc: string | null;
-	/** Seconds since `vehiclesGeneratedUtc`, or null before vehicles load. */
 	readonly vehiclesAgeSeconds: number | null;
-	/** Vehicles-only 3x-ttl staleness used by map motion. */
 	readonly vehiclesIsStale: boolean;
-	/** True while a poll is in flight. */
 	readonly loading: boolean;
-	/** First active-family error; cleared when that family recovers or deactivates. */
 	readonly error: Error | null;
-	/** Begin polling on the live ttl cadence. Idempotent; browser-only. */
 	start(): void;
-	/** Stop polling and clear the timer. Idempotent. */
 	stop(): void;
-	/** Force one immediate refresh of the selected files (returns when settled). */
 	refresh(): Promise<void>;
-	/** Lease additional families; the idempotent disposer releases the lease. */
 	subscribeFamilies(families: readonly LiveFamily[]): () => void;
 }
 
-/** Resolve the live ttl (ms) from the manifest, falling back to the default. */
 function liveTtlMs(manifest: Manifest): number {
 	const ttlS = manifest.files?.live?.ttl_s ?? DEFAULT_LIVE_TTL_S;
 	return Math.max(1, ttlS) * 1000;
 }
 
-/**
- * Create a request-scoped live store bound to a manifest (for ttl cadence +
- * staleness threshold). One instance per surface tree; share it via context if
- * several panels need the same tick.
- */
 export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = {}): LiveStore {
 	const runtime = getV1Runtime();
 	const ttlMs = liveTtlMs(manifest);
@@ -182,10 +104,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		network: initialFamilyState(familyRefCounts.network > 0, initialNetwork?.generated_utc ?? null),
 	});
 
-	// One handle: the poll timer (live ttl cadence). The age/staleness derivation
-	// advances off the SHARED clock (started via `clockDispose` below) so the data
-	// still ages visibly between polls (and when a poll is served unchanged from the
-	// browser/edge cache) AND every chrome relative-time label ticks in lockstep.
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let refreshInFlight: Promise<void> | null = null;
@@ -194,13 +112,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	let lifecycleWired = false;
 	let started = false;
 
-	const index = $derived(
-		buildLiveIndex({ vehicles, trips, stopDepartures: departures, alerts, network }),
-	);
+	const index = $derived(buildLiveIndex({ vehicles, trips, stopDepartures: departures }));
 
-	// Aggregate freshness is the oldest retained generation among ACTIVE families.
-	// Failed families keep participating while they retain data, so one fresher
-	// survivor cannot make the whole surface appear fresh.
 	const generatedUtc = $derived.by<string | null>(() => {
 		let oldest: string | null = null;
 		let oldestMs = Number.POSITIVE_INFINITY;
@@ -217,11 +130,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	});
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
-		// Read the SHARED SERVER clock: this re-derives every shared tick, so the
-		// age (and the staleness verdict below) advances between polls in lockstep
-		// with the rest of the chrome instead of off a private interval. `serverNow`
-		// (not `now`) anchors the age to server time so a skewed client clock can't
-		// mis-report it or falsely trip the 3x-ttl (90s) stale threshold.
 		const age = ageSeconds(generatedUtc, runtime.clock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
@@ -248,9 +156,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return null;
 	});
 
-	// Honor the global "refresh data" press: re-poll immediately on an epoch bump
-	// instead of waiting for the next ttl tick. `epoch` starts at 0; we only react
-	// to CHANGES, so mount does not double-fetch (start() owns the initial poll).
 	let lastRefreshEpoch = runtime.refresh.epoch;
 	$effect(() => {
 		const e = runtime.refresh.epoch;
@@ -384,8 +289,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 
 		try {
-			// The adapter owns schema validation. Only its validated file reaches this
-			// settlement commit, then the guards are checked again.
 			const payload = await readFamily(family, context);
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 
@@ -408,9 +311,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 				error: null,
 				successRevision: changed ? state.successRevision + 1 : state.successRevision,
 			};
-			if (payloadGeneration != null) {
-				runtime.refresh.noteDataGeneratedUtc(payloadGeneration);
-			}
 		} catch (value) {
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 			if (isAbortError(value)) {
@@ -427,10 +327,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 	}
 
-	/**
-	 * Fetch one active-family snapshot with a shared deadline controller. Each
-	 * family owns its settlement and request token; allSettled only ends the cycle.
-	 */
 	async function runBatch(requestedFamilies: readonly LiveFamily[]): Promise<void> {
 		const selectedFamilies = [
 			...new SvelteSet(requestedFamilies.filter((family) => familyStatesValue[family].active)),
@@ -454,8 +350,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 		activeControllers.add(controller);
 
-		// Publish refreshInFlight before adapters run. Besides synchronous-throw
-		// safety, this keeps overlapping lifecycle/epoch triggers in the same cycle.
 		await Promise.resolve();
 		try {
 			const reads = selectedFamilies.map((family) => {
@@ -480,8 +374,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 						) {
 							continue;
 						}
-						// Invalidate before aborting: a transport that ignores the signal
-						// cannot commit after the deadline.
 						familyRequestTokens[family] += 1;
 						failFamily(family, timeout);
 					}
@@ -498,8 +390,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	}
 
 	function refresh(): Promise<void> {
-		// All refresh entry points (timer, visibility/online resume, shared epoch,
-		// and explicit/manual calls) share one active-family cycle.
 		if (refreshInFlight) return refreshInFlight;
 		const pending = runBatch(activeFamilies());
 		refreshInFlight = pending;
@@ -515,9 +405,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	}
 
 	function subscribeFamilies(families: readonly LiveFamily[]): () => void {
-		// WHY(M1 cure 4): callers acquire leases inside selection effects. Keep this
-		// acquisition's family-state reads out of the caller's dependency graph, or
-		// each settlement tears down/recreates its own lease until Svelte kills the root.
 		return untrack(() => {
 			const leasedFamilies = [...new SvelteSet(families)];
 			const activatedFamilies: LiveFamily[] = [];
@@ -556,14 +443,12 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		});
 	}
 
-	/** True when background polling is useful and can reach the network. */
 	function canPoll(): boolean {
 		const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
 		const online = typeof navigator === 'undefined' || navigator.onLine !== false;
 		return visible && online;
 	}
 
-	/** Pause only the background cadence; an in-flight batch is allowed to settle. */
 	function pausePolling(): void {
 		if (pollTimer) {
 			clearInterval(pollTimer);
@@ -571,7 +456,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 	}
 
-	/** Resume with one immediate refresh and one interval, if currently active. */
 	function resumePolling(): void {
 		if (!started || pollTimer || !canPoll()) return;
 		pollTimer = setInterval(() => {
@@ -613,9 +497,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	function start(): void {
 		if (started || !browser) return;
 		started = true;
-		// Subscribe to the SHARED clock so age/staleness keep moving between fetches
-		// (the data still ages visibly even when a poll is served unchanged from the
-		// browser/edge cache) on the SAME tick as every other chrome label.
 		clockDispose = runtime.clock.subscribe();
 		wireLifecycle();
 		resumePolling();

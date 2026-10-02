@@ -3,6 +3,8 @@ import { selectStatusMix } from './statusMix';
 import { selectOccupancyMix } from './occupancyMix';
 import { selectOccupancyTrend } from './occupancyTrend';
 import { selectHeadlineKpis } from './headlineKpis';
+import { networkReliabilityCopy } from '../network-reliability.copy';
+import { metricInfoFor } from '$lib/features/metrics/metrics.content';
 import type { StatusDist, OccupancyMix } from '$lib/v1/schemas';
 import type { NetworkFile, OccupancyCode, TrendPoint } from '$lib/v1';
 
@@ -19,9 +21,7 @@ describe('selectStatusMix', () => {
 		});
 		expect(spec.kind).toBe('stacked-share');
 		if (spec.kind !== 'stacked-share') throw new Error('unreachable');
-		// zero-count bands are DROPPED (legacy StackedBar semantics)…
 		expect(spec.segments.map((s) => s.key)).toEqual(['on_time', 'late']);
-		// …and shares normalise to 100.
 		expect(spec.segments.find((s) => s.key === 'on_time')?.share).toBe(80);
 		expect(spec.segments.find((s) => s.key === 'late')?.href).toBe('/map?status=late');
 		expect(spec.legend).toBe(true);
@@ -54,7 +54,6 @@ describe('selectOccupancyMix', () => {
 		if (vm.spec?.kind !== 'stacked-share') throw new Error('unreachable');
 		expect(vm.spec.segments).toHaveLength(5);
 		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.occupancy).toBe('many_seats');
-		// fractions normalise to shares of 100
 		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.share).toBeCloseTo(40, 6);
 	});
 });
@@ -92,9 +91,9 @@ describe('selectHeadlineKpis', () => {
 		onTime: 'On-time',
 		coverage: 'Coverage',
 		delayP50: 'Median delay',
-		delayP90: 'Slowest 10%',
-		vehicles: 'Vehicles in service',
-		notReporting: 'Not reporting',
+		delayP90: '90th-percentile delay',
+		vehicles: 'Vehicle positions',
+		notReporting: 'Trips without a signal',
 		pctOrNull: (v: number | null) => (v == null ? null : `${v}%`),
 		minOrNull: (v: number | null) => (v == null ? null : `${v} min`),
 		fmtCount: (v: number) => String(v),
@@ -111,9 +110,13 @@ describe('selectHeadlineKpis', () => {
 	it('produces FOUR glance cards (otp/coverage/p50/p90) with the not-reported absence reason', () => {
 		const vm = selectHeadlineKpis(net, labels);
 		expect(vm.headline).toHaveLength(4);
-		expect(vm.headline.map((c) => c.key)).toEqual(['otp', 'coverage', 'p50p90', 'p50p90']);
+		expect(vm.headline.map((c) => c.key)).toEqual([
+			'liveOtp',
+			'coverage',
+			'liveDelayPercentiles',
+			'liveDelayPercentiles',
+		]);
 		expect(vm.headline.every((c) => c.absentReason === 'not-reported')).toBe(true);
-		// p90 is null this cycle → the card value is null (renders the styled chip).
 		expect(vm.headline[3].value).toBeNull();
 	});
 
@@ -123,5 +126,52 @@ describe('selectHeadlineKpis', () => {
 		expect(vm.reporting[0]).toMatchObject({ value: '10', key: 'vehicleCount' });
 		expect(vm.reporting[1]).toMatchObject({ value: '3', key: 'silentTrip' });
 		expect(vm.reporting.every((c) => c.absentReason === undefined)).toBe(true);
+	});
+});
+
+describe('live headline explanations', () => {
+	it.each(['en', 'fr'] as const)('identifies all six current populations in %s', (locale) => {
+		const net = {
+			vehicles_in_service: 4,
+			on_time_pct: 67,
+			coverage_pct: 75,
+			delay_p50_min: 2,
+			delay_p90_min: 5,
+			non_responding: 1,
+		} as NetworkFile;
+		const vm = selectHeadlineKpis(net, {
+			...networkReliabilityCopy[locale].metrics,
+			pctOrNull: (v) => (v == null ? null : `${v}%`),
+			minOrNull: (v) => (v == null ? null : `${v} min`),
+			fmtCount: String,
+		});
+		const cards = [...vm.headline, ...vm.reporting];
+		const populations =
+			locale === 'en'
+				? [
+						/current vehicle/,
+						/current vehicle/,
+						/trip.*average/,
+						/trip.*average/,
+						/vehicle-position rows/,
+						/scheduled.*running now/i,
+					]
+				: [
+						/véhicules actuels/,
+						/véhicules actuels/,
+						/moyens.*trajet/,
+						/moyens.*trajet/,
+						/positions de véhicules/,
+						/prévus.*circulation maintenant/,
+					];
+		for (const [index, card] of cards.entries()) {
+			const info = metricInfoFor(card.key, locale);
+			expect.soft(info.tip, `${locale} ${card.label}`).toMatch(populations[index]);
+			expect(info.href).toMatch(locale === 'fr' ? /^\/fr\/metrics#/ : /^\/metrics#/);
+		}
+		expect
+			.soft(vm.headline[3].label)
+			.toMatch(locale === 'fr' ? /90e percentile/ : /90th.percentile/);
+		expect.soft(metricInfoFor(vm.reporting[1].key, locale).tip).not.toMatch(/never|jamais apparu/);
 	});
 });

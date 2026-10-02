@@ -1,33 +1,17 @@
-// mapTarget.ts — build the /map filter query for a drilldown target.
-//
-// Every "view on the map" affordance (route detail, stop detail, the lines/stops
-// indexes, the network status bar) builds the SAME chain: empty filter state →
-// add one entity → toSearchString. This centralizes it so any surface (including
-// slice-9.4's) gets a map drilldown in one call instead of a hand-rolled copy.
-// Pure: no DOM, no nav, no i18n — see `mapHrefFor` in $lib/nav for the localized
-// href wrapper.
-
 import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
 import { setMapFocusSearchParams } from '$lib/search/mapFocus';
 import { emptyFilterState } from './state';
 import { toSearchString } from './url';
 
 export interface MapFilterTarget {
-	/** Focus a single route (métro/bus line id). */
 	readonly route?: string;
-	/** Focus a single stop id. */
 	readonly stop?: string;
-	/** Filter to a single trip id (the map has no 'trip' focus kind, so no zoom). */
 	readonly trip?: string;
-	/** Focus a single vehicle id. */
 	readonly vehicle?: string;
-	/** Pre-apply on-time status chips. */
 	readonly status?: readonly StatusCode[];
-	/** Pre-apply crowding / occupancy chips (the map filters + repaints by band). */
 	readonly occupancy?: readonly OccupancyCode[];
 }
 
-/** Serialize a map drilldown target to the /map query string (no leading '?'). */
 export function mapSearchFor(target: MapFilterTarget): string {
 	const state = emptyFilterState();
 	if (target.route) state.routes.add(target.route);
@@ -38,7 +22,6 @@ export function mapSearchFor(target: MapFilterTarget): string {
 	if (target.occupancy?.length) state.occupancy = [...target.occupancy];
 
 	const search = new URLSearchParams(toSearchString(state));
-	// A single-entity drilldown also asks the map to zoom to it (one-shot focus).
 	if (target.stop) setMapFocusSearchParams(search, 'stop', target.stop);
 	else if (target.vehicle) setMapFocusSearchParams(search, 'vehicle', target.vehicle);
 	else if (target.route) setMapFocusSearchParams(search, 'route', target.route);

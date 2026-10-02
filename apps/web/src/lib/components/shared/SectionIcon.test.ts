@@ -1,10 +1,3 @@
-// SectionIcon.test.ts - the shared section/TOC icon registry, DOM gate.
-//
-// SectionIcon is a name -> single inline SVG lookup. Gates:
-//   - each name renders its matching testid'd SVG (shape registry stays stable);
-//   - the icon is decorative (aria-hidden) so the card/TOC carries the label;
-//   - the class prop reaches the <svg> (consumers size + colour it).
-
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import SectionIcon, { type SectionIconName } from './SectionIcon.svelte';

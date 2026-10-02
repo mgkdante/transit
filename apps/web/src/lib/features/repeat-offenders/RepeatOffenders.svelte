@@ -1,36 +1,3 @@
-<!--
-  RepeatOffenders — the /repeat-offenders ("récidivistes") accountability surface
-  ORCHESTRATOR (S14 re-seat).
-
-  Re-seats the former flat /worst-normalized RankedRow ledger onto the S14
-  re-granulated by_grain recurrence ladders. This thin orchestrator owns EVERYTHING
-  the sections must not: the getRepeatOffenders resource, the codec-seeded grain +
-  worst-N state (seeded from ?grain/?n via $lib/filters, clamped to the populated
-  grains, mirrored back to the URL), the ONE mapping pass through the pure
-  offenderLadder selector, the ArticleHeader + combined controls/contents rail,
-  the article-card registry, and the honest absence.
-  RepeatOffendersSection is a pure presenter fed one built ladder + tray per kind.
-
-  RANKING (DECISIONS D3): the bar encodes each entity's SEVERE-DELAY RATE on the
-  ABSOLUTE SEVERE_DOMAIN [0,100] — the rank variable, always >= 0, DB-ranked
-  worst-first by the not-severe Wilson lower bound. recurrence_days ("N of M observed
-  days") is EVIDENCE on the per-row note, never the rank. NO /worst, NO in-view
-  normalization — the old banned idiom is gone, so the file is OFF the chartDoctrine
-  allowlist (which is now EMPTY: the S14 punch-list completion, 2026-07-02).
-
-  GRAINS (DECISIONS D3): week|month ONLY — "repeat" is undefined on a single day, so
-  there is deliberately no day grain (an honest reason, not an omission). A grain is
-  always visible in the control and is disabled when the payload does not serve it.
-
-  FALLBACK (DECISIONS D5): when by_grain is absent/empty (an OLD payload) the surface
-  renders the legacy scalar offenders[] as a RankedRow ledger on the ABSOLUTE
-  DELAY_DIST_DOMAIN [0,15] via RankedRow's `domain` prop — still doctrine-clean.
-
-  HONESTY: a grain with no ranked entry shows the styled AbsentValue chip (says WHY),
-  never a fake 0; a null severe_pct row draws the no-data swatch. The whole-file empty
-  keeps the published-empty honest note. Severity is READ from the contract, never
-  re-derived client-side (DECISIONS D4). All prose comes from ./repeatOffenders.copy.
--->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
@@ -90,26 +57,22 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
 		SurfaceRailContext,
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
-		presentGrains,
-		defaultOffenderGrain,
-		ladderByGrain,
+		ladderGrains,
 		OFFENDER_GRAINS,
 		type OffenderGrainKey,
-	} from './data/presentGrains';
+	} from '$lib/reliability/ladderGrains';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from './data/ladderCap';
+	} from '$lib/reliability/ladderCap';
 	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
 	import { buildOffenderEvidenceRows } from './selectors/offenderEvidence';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
@@ -123,18 +86,6 @@
 		toc: 'repeat-offenders-toc',
 	});
 
-	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>. The ladder ranks by the SEVERE-delay rate, so the (i) explains
-	// severe_pct (same wiring as the hotspots / lines surfaces).
-	const explainerCopy = $derived(metricsCopy[locale]);
-	function buildInfo(key: MetricKey, name: string) {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	}
-	const severeInfo = $derived(buildInfo('severe', t.ladder.severeRateLabel));
-
-	// The shared coordinator owns current/history discovery, cancellation, retry,
-	// refresh, and freshness. The page only derives presentation from accepted data.
 	const offenders = createHistoryDateResource<HistoricCollectionIndex, RepeatOffendersData>(
 		{
 			loadIndex: (signal) => getRepeatOffendersHistoryIndex({ signal }),
@@ -144,7 +95,6 @@
 		},
 		{
 			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
-			freshness: true,
 		},
 	);
 	onDestroy(() => offenders.destroy());
@@ -177,14 +127,10 @@
 		});
 	}
 
-	/* ── grain vocabulary + availability ──────────────────────────────────────────── */
-	const ladders = $derived(ladderByGrain(offenders.data?.by_grain));
-	const present = $derived(presentGrains(offenders.data?.by_grain));
+	const grains = $derived(ladderGrains(offenders.data?.by_grain, OFFENDER_GRAINS));
+	const ladders = $derived(grains.ladders);
+	const present = $derived(grains.present);
 
-	// CONTRACT: the codec ($lib/filters) owns the ?grain seam — fromSearchParams
-	// enum-parses the seed; invalid values drop. The SELECTION + the populated-grain
-	// clamp stay SURFACE-LOCAL. week is the finest offered grain (no day here), so an
-	// absent/unknown ?grain seeds to 'week'.
 	let grainKey = $state<OffenderGrainKey>(
 		(() => {
 			const seeded = fromSearchParams(page.url.searchParams).grain;
@@ -219,19 +165,14 @@
 		);
 	}
 
-	// Keep the selection on a POPULATED grain (the clamp): a chosen grain whose ladder
-	// is absent falls back to the richest present grain. Never a dead/empty grain.
 	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultOffenderGrain(present);
+		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
 	});
 
-	/* ── worst-N cap (codec ?n) ───────────────────────────────────────────────────── */
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 
-	// Mirror date + grain + worst-N in one replaceState. Preserve the raw date only
-	// while discovery is unresolved; accepted current/latest state omits it.
 	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
 		const state = emptyFilterState();
 		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
@@ -250,9 +191,6 @@
 	});
 	$effect(() => mirrorSearchParams(wire));
 
-	/* ── the ONE mapping pass ─────────────────────────────────────────────────────── */
-	// A row's nav target: an entity (trip/vehicle) is accountable on its offending
-	// ROUTE, so the drill link goes to that line. Unknown route → no link.
 	function hrefFor(e: RepeatOffenderEntry): string | null {
 		const route = e.route?.trim();
 		if (!route) return null;
@@ -263,8 +201,6 @@
 		const route = e.route?.trim();
 		return route ? `${t.type.other} ${route}` : t.unnamed(e.id);
 	}
-	// Per-row evidence note: the natural-frequency recurrence line + severe% + n, each
-	// fragment null-guarded. recurrence_days / observed_days drive the recurrence line.
 	function ladderNote(e: RepeatOffenderEntry): string {
 		const parts: string[] = [];
 		if (e.recurrence_days != null && e.observed_days != null)
@@ -338,9 +274,6 @@
 		return (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 	}
 
-	// entries[] is a MIXED trip+vehicle array ranked PER KIND. Build a ladder for EACH
-	// kind by filtering entries[] by type losslessly. shown/total per kind uses the DB's
-	// per-kind ranked totals — a display-N truncation never rescales.
 	function ladderFor(kind: 'trip' | 'vehicle', total: number | null | undefined) {
 		const kindEntries = kindEntriesFor(kind);
 		const res = selectOffenderLadder(kindEntries, cap, locale, {
@@ -383,16 +316,10 @@
 	const tripEvidence = $derived(evidenceFor('trip'));
 	const vehicleEvidence = $derived(evidenceFor('vehicle'));
 
-	// §C5.12 #1-OFFENDER HERO: entries[] is DB-ranked worst-first by the Wilson lower
-	// bound, so entries[0] IS the #1 offender. The hero names it + shows its streak
-	// (recurrence natural frequency) + its Wilson-bounded severe rate. Honest: a null rate
-	// / absent bounds degrade the clause (never a fabricated confidence); no entries →
-	// the stand-down line. The bar's Wilson bracket the COMPLEMENTARY not-severe rate, so
-	// flip onto the severe scale ([100−hi, 100−lo]) exactly as the ladder selector does.
 	const topOffender = $derived<RepeatOffenderEntry | null>(activeLadder?.entries?.[0] ?? null);
 	const round1 = (x: number): number => Math.round(x * 10) / 10;
 	const heroName = $derived(topOffender ? (topOffender.route_name ?? unnamed(topOffender)) : null);
-	const heroStreak = $derived.by<string | null>(() => {
+	const heroRecurrence = $derived.by<string | null>(() => {
 		if (!topOffender) return null;
 		return topOffender.recurrence_days != null && topOffender.observed_days != null
 			? t.recurrence.naturalFrequency(topOffender.recurrence_days, topOffender.observed_days)
@@ -403,7 +330,6 @@
 		const sev = topOffender.severe_pct;
 		if (sev == null) return null;
 		const ratePct = `${Math.round(sev)}${t.units.pct}`;
-		// Flip the Wilson bounds onto the severe scale (100 − complementary bound).
 		if (topOffender.wilson_lo != null && topOffender.wilson_hi != null) {
 			const lo = round1(100 - topOffender.wilson_hi);
 			const hi = round1(100 - topOffender.wilson_lo);
@@ -413,8 +339,6 @@
 	});
 	const heroHref = $derived(topOffender ? hrefFor(topOffender) : null);
 
-	// The un-ranked tray rows (sub-MIN_N entities) mapped to the section's display shape,
-	// split by kind so each article card shows only its own kind's tray.
 	function trayFor(kind: 'trip' | 'vehicle') {
 		return (activeLadder?.tray ?? [])
 			.filter((e) => e.type === kind)
@@ -434,16 +358,12 @@
 	const tripTray = $derived(trayFor('trip'));
 	const vehicleTray = $derived(trayFor('vehicle'));
 
-	// Retained days may be left-censored; do not promise a complete trailing window.
 	const windowCaption = $derived(
 		offenders.mode === 'history' && offenders.selectedDate != null
 			? t.history.retainedWindow(formatDateKey(offenders.selectedDate, locale))
 			: t.window[grainKey],
 	);
 
-	/* ── the legacy fallback ledger (by_grain absent) ─────────────────────────────── */
-	// When the payload publishes NO populated grain, fall back to the scalar offenders[]
-	// as a RankedRow ledger on the ABSOLUTE DELAY_DIST_DOMAIN [0,15] (doctrine-clean).
 	function typeLabel(type: string): string {
 		return type === 'route'
 			? t.type.route
@@ -458,9 +378,6 @@
 	function fmtMin(v: number | null): string | null {
 		return sharedFmtDelayMin(v, { rounding: 'fixed1', suffix: t.units.min });
 	}
-	// Resolve a legacy offender to its detail route (the orchestrator owns $lib/nav). A
-	// 'stop' → /stop/{id}; a route id → /lines/{route}; a 'route' type → /lines/{id};
-	// failing all, a non-navigating self target so the link is never broken.
 	function legacyHref(o: Offender): string {
 		const target: SurfaceTarget =
 			o.type === 'stop'
@@ -483,9 +400,6 @@
 		}),
 	);
 
-	// Which path renders: the primary by_grain ladders when ANY grain is populated, else
-	// the legacy scalar ledger. The whole surface stands down (boundary empty) only when
-	// BOTH are empty.
 	const hasGrains = $derived(present.size > 0);
 	const hasLegacy = $derived((offenders.data?.offenders?.length ?? 0) > 0);
 	const isEmpty = $derived(!hasGrains && !hasLegacy);
@@ -737,10 +651,12 @@
 												{#if heroRate}
 													<p class="offenders-hero-rate">{heroRate}</p>
 												{/if}
-												{#if heroStreak}
-													<p class="offenders-hero-streak">
-														<span class="offenders-hero-streak-label">{t.hero.streakLabel}</span>
-														{heroStreak}
+												{#if heroRecurrence}
+													<p class="offenders-hero-recurrence">
+														<span class="offenders-hero-recurrence-label"
+															>{t.hero.recurrenceLabel}</span
+														>
+														{heroRecurrence}
 													</p>
 												{/if}
 											{:else}
@@ -752,10 +668,9 @@
 										<p class="offenders-def" data-slot="offenders-def">
 											{t.headline.explanation}
 											<MetricInfo
-												tip={severeInfo.tip}
-												href={severeInfo.href}
-												label={severeInfo.label}
-												linkLabel={severeInfo.linkLabel}
+												metricKey="severe"
+												{locale}
+												name={t.ladder.severeRateLabel}
 												side="bottom"
 											/>
 										</p>
@@ -768,10 +683,9 @@
 										<SectionHeading level={3} overline={t.listSection}>
 											{#snippet explainer()}
 												<MetricInfo
-													tip={severeInfo.tip}
-													href={severeInfo.href}
-													label={severeInfo.label}
-													linkLabel={severeInfo.linkLabel}
+													metricKey="severe"
+													{locale}
+													name={t.ladder.severeRateLabel}
 													side="bottom"
 												/>
 											{/snippet}
@@ -821,7 +735,6 @@
 										tray={tripTray}
 										evidence={tripEvidence}
 										{windowCaption}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>
@@ -832,7 +745,6 @@
 										tray={vehicleTray}
 										evidence={vehicleEvidence}
 										{windowCaption}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>
@@ -893,8 +805,6 @@
 		font-size: var(--text-detail-lede-mobile);
 		line-height: 1.65;
 	}
-	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
-	   entity's name, its Wilson-bounded severe rate + its streak. */
 	.offenders-hero {
 		display: flex;
 		flex-direction: column;
@@ -940,7 +850,7 @@
 		line-height: 1.4;
 		color: var(--foreground);
 	}
-	.offenders-hero-streak,
+	.offenders-hero-recurrence,
 	.offenders-hero-none {
 		margin: 0;
 		font-family: var(--font-mono);
@@ -948,13 +858,12 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	.offenders-hero-streak-label {
+	.offenders-hero-recurrence-label {
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--accent-text);
 		margin-inline-end: 0.375rem;
 	}
-	/* The demoted definition — a quiet lede beneath the hero, with its (i) inline. */
 	.offenders-def {
 		display: flex;
 		flex-wrap: wrap;
@@ -993,7 +902,6 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* The honest empty state wraps the styled AbsentValue block; the container centers it. */
 	.repeat-offenders-note {
 		display: flex;
 		justify-content: center;

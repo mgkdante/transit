@@ -39,6 +39,57 @@ function deferred<T>() {
 afterEach(cleanup);
 
 describe('LazyRouteReliabilityPane', () => {
+	it('preserves a universal import failure until an explicit Retry, without an automatic second import', async () => {
+		const importClusters = vi.fn(
+			async () => await import('./reliability/__fixtures__/RouteReliabilityClustersStub.svelte'),
+		);
+		const view = render(LazyRouteReliabilityPane, {
+			props: {
+				entityId: '24',
+				resource: resource(reliability('24')),
+				locale: 'en',
+				directionHeadsigns: {},
+				history,
+				initialImportFailed: true,
+				importClusters,
+			},
+		});
+		expect(view.getByRole('alert')).toHaveTextContent('Reliability view could not load');
+		await tick();
+		expect(importClusters).not.toHaveBeenCalled();
+		await fireEvent.click(view.getByRole('button', { name: 'Retry' }));
+		expect(await view.findByTestId('route-reliability-clusters-stub')).toHaveAttribute(
+			'data-entity-id',
+			'24',
+		);
+		expect(importClusters).toHaveBeenCalledTimes(1);
+	});
+
+	it('uses the universal constructor on its first render without a second import', async () => {
+		const initialClusters = (
+			await import('./reliability/__fixtures__/RouteReliabilityClustersStub.svelte')
+		).default;
+		const importClusters = vi.fn();
+		const view = render(LazyRouteReliabilityPane, {
+			props: {
+				entityId: '24',
+				resource: resource(reliability('24')),
+				locale: 'en',
+				directionHeadsigns: {},
+				history,
+				initialClusters,
+				importClusters,
+			},
+		});
+		expect(view.getByTestId('route-reliability-clusters-stub')).toHaveAttribute(
+			'data-entity-id',
+			'24',
+		);
+		expect(view.container.querySelector('[data-variant="skeleton"]')).toBeNull();
+		await tick();
+		expect(importClusters).not.toHaveBeenCalled();
+	});
+
 	it('starts the reliability import on mount and keeps one pending request', async () => {
 		const pending = deferred<RouteReliabilityClustersModule>();
 		const importClusters = vi.fn(() => pending.promise);

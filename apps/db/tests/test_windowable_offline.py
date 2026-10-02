@@ -1,21 +1,11 @@
-"""Offline (no-DB) gates for the S7-B windowable §1 build (DB-PR-1).
-
-Every-PR gates that need no Postgres:
-  * the published route_reliability/{id}.json stays under ROUTE_RELIABILITY_BYTE_CEILING
-    even at a worst-case payload (3 grains x breakdowns + 3 full heatmaps + 100 weak stops),
-  * a pre-S7b fixture (no windowable keys) still validates (additive-optional back-compat),
-  * the trailing-N-day grain windows are correct + their prior windows are non-overlapping,
-  * the whole-history spine projector constants are byte-identical to before the
-    {window_clause} change (the default "" path), while the windowed twins carry the bound.
-"""
 
 from __future__ import annotations
 
 from datetime import date
 
 from transit_ops.snapshots import builders
-from transit_ops.snapshots.builders import historic as H
-from transit_ops.snapshots.builders.historic import _grain_windows
+from transit_ops.snapshots.builders.historic import _spine as spine
+from transit_ops.snapshots.builders.historic._spine import _grain_windows
 from transit_ops.snapshots.contract import (
     HOTSPOTS_BYTE_CEILING,
     ROUTE_RELIABILITY_BYTE_CEILING,
@@ -48,7 +38,6 @@ _SHIFTS = ["am_peak", "midday", "pm_peak", "evening", "night"]
 
 
 def _hist() -> list[RouteDelayHistogramBin]:
-    # A full 21-bin signed-delay distribution (the prod shape on histogram-bearing periods).
     return [
         RouteDelayHistogramBin(lo_sec=i * 60, hi_sec=(i + 1) * 60, count=100 + i)
         for i in range(21)
@@ -82,14 +71,6 @@ def _full_habits() -> RouteHabits:
 
 
 def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
-    """A REALISTIC worst case modelling ALL 18 RouteReliability families at their prod caps.
-
-    windowed_histograms toggles the F1 regression: when True the windowed periods_by_grain
-    by_shift/by_daytype carry the 21-bin array (which the builder suppresses) — the test
-    asserts that variant BREACHES the ceiling, so a real F1 regression trips offline.
-    """
-    # Scalar `periods`: 30 daily (histogram None per the daily carve-out) + week + month + the
-    # 5 by_shift + 2 by_daytype spine reads (all histogram-ON in prod, no prior on the scalars).
     scalar_periods = [
         _period(f"2026-06-{day:02d}", with_hist=False, with_prior=False)
         for day in range(1, 31)
@@ -219,8 +200,6 @@ def test_realistic_full_payload_under_byte_ceiling() -> None:
 
 
 def test_windowed_histogram_regression_breaches_ceiling() -> None:
-    # The F1 guard's reason for existing: if the windowed periods ever carry the 21-bin
-    # histogram, the payload must trip the ceiling so the regression is caught offline.
     size = len(_body(_full_payload(windowed_histograms=True)))
     assert size > ROUTE_RELIABILITY_BYTE_CEILING, (
         "a windowed-histogram regression did NOT breach the ceiling — the ceiling is too loose "
@@ -229,7 +208,6 @@ def test_windowed_histogram_regression_breaches_ceiling() -> None:
 
 
 def test_old_fixture_without_windowable_keys_validates() -> None:
-    # Additive-optional back-compat: a pre-S7b snapshot omits every new key.
     legacy = {
         "generated_utc": "2026-06-19T02:00:00Z",
         "id": "51",
@@ -246,16 +224,12 @@ def test_old_fixture_without_windowable_keys_validates() -> None:
 
 
 def test_attach_prior_emits_exact_prior_on_time() -> None:
-    # FIX-4: _attach_prior carries the EXACT prior on-time numerator (not just the rounded
-    # prior_otp_pct), so the web two-proportion z-test pools real counts. The rounded pct
-    # is lossy here on purpose — 7953/8837 = 89.997% rounds to 90, but prior_on_time stays 7953.
     periods = [ReliabilityPeriod(grain="am_peak"), ReliabilityPeriod(grain="midday")]
-    H._attach_prior(periods, {"am_peak": (7953, 8837)})  # midday has no prior
+    spine._attach_prior(periods, {"am_peak": (7953, 8837)})
     am, midday = periods
-    assert am.prior_on_time == 7953  # exact numerator preserved
+    assert am.prior_on_time == 7953
     assert am.prior_observation_count == 8837
-    assert am.prior_otp_pct == 90  # rounded, lossy — the reason FIX-4 exists
-    # No prior in the index → all prior_* left None (honest absence, never fabricated).
+    assert am.prior_otp_pct == 90
     assert midday.prior_on_time is None
     assert midday.prior_observation_count is None
     assert midday.prior_otp_pct is None
@@ -268,9 +242,6 @@ def _hw_summed_row(
     direction_id: int = 0,
     trips: int = 10,
 ) -> dict:
-    """A gold.route_headway_shift_daily-shaped row for _headway_period_from_summed. Carries the
-    additive moment sums the EWT reads; the gap histogram is empty (EWT uses the moments, not the
-    median), so observed_min comes back None — fine, this test pins excess_wait only."""
     row: dict = {
         "direction_id": direction_id,
         "shift": shift,
@@ -280,42 +251,31 @@ def _hw_summed_row(
         "sum_gap_sq_min": float(sum(g * g for g in gaps)),
         "cov": None,
     }
-    for k in range(1, H._GAP_NBINS + 1):
+    for k in range(1, spine._GAP_NBINS + 1):
         row[f"g{k}"] = 0
     return row
 
 
 def test_headway_excess_wait_is_passenger_weighted_ewt() -> None:
-    # FIX-1: windowed excess_wait is the bunching-aware EWT, NOT a gap difference. Two shifts with
-    # the SAME mean gap (5 min = the scheduled headway) but different variance:
-    #   regular [5,5,5,5,5] → AWT = 125/(2·25) = 2.5 = scheduled/2 → EWT = max(0, 0) = 0.0
-    #   bunched [1,1,5,9,9] → AWT = 189/(2·25) = 3.78 → EWT = max(0, 3.78 − 2.5) = 1.28 → 1.3
-    # Same average frequency, yet bunching makes riders wait longer — the old proxy
-    # max(0, median − scheduled) reported 0 for BOTH because the medians match.
     rows = [
         _hw_summed_row("am_peak", [5, 5, 5, 5, 5], trips=20),
         _hw_summed_row("pm_peak", [1, 1, 5, 9, 9], trips=20),
     ]
-    out = H._headway_period_from_summed(rows, {"am_peak": 5.0, "pm_peak": 5.0})
-    assert out["am_peak"].excess_wait_min == 0.0  # perfectly regular at scheduled
-    assert out["pm_peak"].excess_wait_min == 1.3  # the bunching penalty surfaces
+    out = spine._headway_period_from_summed(rows, {"am_peak": 5.0, "pm_peak": 5.0})
+    assert out["am_peak"].excess_wait_min == 0.0
+    assert out["pm_peak"].excess_wait_min == 1.3
     assert out["pm_peak"].excess_wait_min > out["am_peak"].excess_wait_min
 
 
 def test_headway_excess_wait_clamped_and_honest_none() -> None:
-    # Actual far more frequent than scheduled makes AWT < scheduled/2.
-    # EWT therefore floors at 0 and never goes negative.
-    rows = [_hw_summed_row("am_peak", [3, 3, 3, 3, 3])]  # AWT = 45/(2·15) = 1.5
-    clamped = H._headway_period_from_summed(rows, {"am_peak": 12.0})  # 1.5 − 6.0 < 0
+    rows = [_hw_summed_row("am_peak", [3, 3, 3, 3, 3])]
+    clamped = spine._headway_period_from_summed(rows, {"am_peak": 12.0})
     assert clamped["am_peak"].excess_wait_min == 0.0
-    # Honest absence: no scheduled headway for the shift → excess None (never a fabricated 0).
-    none_sched = H._headway_period_from_summed(rows, {})
+    none_sched = spine._headway_period_from_summed(rows, {})
     assert none_sched["am_peak"].excess_wait_min is None
 
 
 def test_weak_stops_by_grain_roundtrips() -> None:
-    # A weak_stops_by_grain payload survives model_validate(dump) with its windowed §4 fields,
-    # and the scalar weak_stops[] leaves the new fields None (additive-optional).
     rr = _full_payload(windowed_histograms=False)
     again = RouteReliability.model_validate(rr.model_dump(mode="json"))
     wsg = {g.grain: g for g in again.weak_stops_by_grain}
@@ -323,7 +283,6 @@ def test_weak_stops_by_grain_roundtrips() -> None:
     stop = wsg["week"].stops[0]
     assert stop.wilson_lo == 33.1 and stop.observation_count == 987 and stop.severe_pct == 55.0
     assert len(wsg["month"].stops) == 15
-    # the scalar weak_stops carry the (here non-null) fields too — the shape is shared
     assert again.weak_stops[0].wilson_lo == 39.1
 
 
@@ -331,85 +290,77 @@ def test_grain_windows_are_trailing_and_priors_dont_overlap() -> None:
     anchor = date(2026, 6, 20)
     w = _grain_windows(anchor)
     assert w["day"] == (anchor, anchor)
-    assert w["week"] == (date(2026, 6, 14), anchor)  # anchor - 6 .. anchor
-    assert w["month"] == (date(2026, 5, 22), anchor)  # anchor - 29 .. anchor
+    assert w["week"] == (date(2026, 6, 14), anchor)
+    assert w["month"] == (date(2026, 5, 22), anchor)
     for _grain, (start, end) in w.items():
         win_len = (end - start).days + 1
         prior_end = start - __import__("datetime").timedelta(days=1)
         prior_start = start - __import__("datetime").timedelta(days=win_len)
-        assert prior_end < start  # prior window ends strictly before the current window
-        assert (prior_end - prior_start).days + 1 == win_len  # same length
+        assert prior_end < start
+        assert (prior_end - prior_start).days + 1 == win_len
 
 
 def test_whole_history_projectors_byte_identical_windowed_twins_bound() -> None:
-    # The default window_clause="" path must be byte-identical to before this change.
     for sql in (
-        H._ROUTE_SPINE_BY_SHIFT_SQL,
-        H._ROUTE_SPINE_BY_DAYTYPE_SQL,
-        H._ROUTE_SPINE_WEEKLY_SQL,
-        H._ROUTE_SPINE_MONTHLY_SQL,
-        H._ROUTE_SPINE_DOW_SQL,
-        H._ROUTE_SPINE_CROSSTAB_SQL,
-        H._NETWORK_SPINE_BY_SHIFT_SQL,
-        H._NETWORK_SPINE_BY_DAYTYPE_SQL,
+        spine._ROUTE_SPINE_BY_SHIFT_SQL,
+        spine._ROUTE_SPINE_BY_DAYTYPE_SQL,
+        spine._ROUTE_SPINE_WEEKLY_SQL,
+        spine._ROUTE_SPINE_MONTHLY_SQL,
+        spine._ROUTE_SPINE_DOW_SQL,
+        spine._ROUTE_SPINE_CROSSTAB_SQL,
+        spine._NETWORK_SPINE_BY_SHIFT_SQL,
+        spine._NETWORK_SPINE_BY_DAYTYPE_SQL,
     ):
         assert ":win_start" not in str(sql), "whole-history projector must NOT carry a window bound"
-    # The windowed twins + the habits recomposition carry the bound.
-    for sql in (H._W_BY_SHIFT, H._W_BY_DAYTYPE, H._W_DOW, H._W_CROSSTAB, H._ROUTE_HABIT_SPINE_SQL):
+    for sql in (
+        spine._W_BY_SHIFT,
+        spine._W_BY_DAYTYPE,
+        spine._W_DOW,
+        spine._W_CROSSTAB,
+        spine._ROUTE_HABIT_SPINE_SQL,
+    ):
         assert ":win_start" in str(sql) and ":win_end" in str(sql)
-    # No accidental double-space where {entity_clause}{window_clause} concatenate.
-    assert "  AND provider_local_date" not in str(H._W_BY_SHIFT)
+    assert "  AND provider_local_date" not in str(spine._W_BY_SHIFT)
 
 
 def test_builders_reexport_is_importable() -> None:
-    # guard the package surface (the windowed builders live under historic)
     assert hasattr(builders, "build_route_reliability")
 
 
-# --- §2 headway recompose helpers (pure, offline) ---------------------------
-
-
 def test_round_half_away_matches_sql_round_semantics() -> None:
-    # Postgres ROUND(::numeric, n) is half-away-from-zero; Python's builtin round() is banker's.
-    assert float(H._round_half_away(2.5, 0)) == 3.0  # banker's would give 2.0
-    assert float(H._round_half_away(0.625, 2)) == 0.63
-    assert float(H._round_half_away(7.45, 1)) == 7.5
+    assert float(spine._round_half_away(2.5, 0)) == 3.0
+    assert float(spine._round_half_away(0.625, 2)) == 0.63
+    assert float(spine._round_half_away(7.45, 1)) == 7.5
 
 
 def test_headway_median_cdf_interp_and_honest_absence() -> None:
-    nbins = len(H._GAP_EDGES) - 1
+    nbins = len(spine._GAP_EDGES) - 1
     hist = [0] * nbins
-    hist[7] = 4  # all gaps in [6,8) -> CDF-interp median = 7.0
-    assert H._headway_pctile_from_hist(hist, 0.5, H._GAP_EDGES) == 7.0
-    assert H._headway_pctile_from_hist([], 0.5, H._GAP_EDGES) is None
-    assert H._headway_pctile_from_hist([0] * nbins, 0.5, H._GAP_EDGES) is None
+    hist[7] = 4
+    assert spine._headway_pctile_from_hist(hist, 0.5, spine._GAP_EDGES) == 7.0
+    assert spine._headway_pctile_from_hist([], 0.5, spine._GAP_EDGES) is None
+    assert spine._headway_pctile_from_hist([0] * nbins, 0.5, spine._GAP_EDGES) is None
 
 
 def test_bunched_pct_from_pooled_hist() -> None:
-    nbins = len(H._GAP_EDGES) - 1
+    nbins = len(spine._GAP_EDGES) - 1
     hist = [0] * nbins
-    hist[0] = 2  # [0,0.5) — well below 0.5*median
-    hist[7] = 2  # [6,8) — above
-    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, 7.0) == 50.0  # 2 of 4 below 3.5
-    assert H._bunched_pct_from_hist([0] * nbins, H._GAP_EDGES, 7.0) is None
-    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, None) is None  # no median -> None
-    # straddling bin: median 7.0 -> thresh 3.5 falls INSIDE bin [3,4); linear-interp half of it.
+    hist[0] = 2
+    hist[7] = 2
+    assert spine._bunched_pct_from_hist(hist, spine._GAP_EDGES, 7.0) == 50.0
+    assert spine._bunched_pct_from_hist([0] * nbins, spine._GAP_EDGES, 7.0) is None
+    assert spine._bunched_pct_from_hist(hist, spine._GAP_EDGES, None) is None
     straddle = [0] * nbins
-    straddle[4] = 2  # [3,4) straddles 3.5
-    straddle[7] = 2  # [6,8) above
-    assert H._bunched_pct_from_hist(straddle, H._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4
+    straddle[4] = 2
+    straddle[7] = 2
+    assert spine._bunched_pct_from_hist(straddle, spine._GAP_EDGES, 7.0) == 25.0
 
 
-# --------------------------------------------------------------------------
-# S12 — hotspots by_grain byte-guard (offline, synthetic worst case)
-# --------------------------------------------------------------------------
-_HOTSPOTS_CAP = 50   # _HOTSPOTS_BY_GRAIN_CAP — ranked entries per (grain, KIND) (WEB2)
-_HOTSPOTS_TRAY = 60  # _HOTSPOTS_TRAY_CAP — un-ranked tray entries per grain TOTAL (union)
+_HOTSPOTS_CAP = 50
+_HOTSPOTS_TRAY = 60
 
 
 def _hotspot_entry(i: int, kind: str, *, ranked: bool) -> HotspotEntry:
-    # A fully-populated evidence entry (prod worst case: every optional field set + a
-    # long-ish accented name, the widest STM stop labels).
     return HotspotEntry(
         rank=(i + 1) if ranked else None,
         type=kind,
@@ -428,8 +379,6 @@ def _hotspot_entry(i: int, kind: str, *, ranked: bool) -> HotspotEntry:
 
 
 def _hotspot_grain(grain: str, *, with_date: bool) -> HotspotGrain:
-    # WEB2 worst case for a single grain: route AND stop each ranked to the per-kind cap
-    # (50 + 50 = 100 entries in the mixed array), plus the union tray at its total cap (60).
     entries = [_hotspot_entry(i, "route", ranked=True) for i in range(_HOTSPOTS_CAP)]
     entries += [_hotspot_entry(i, "stop", ranked=True) for i in range(_HOTSPOTS_CAP)]
     tray = [
@@ -449,9 +398,6 @@ def _hotspot_grain(grain: str, *, with_date: bool) -> HotspotGrain:
 
 
 def _full_hotspots(*, tray_multiplier: int = 1) -> Hotspots:
-    # The scalar top-20 (byte-identical shape) PLUS 4 grains (day/week/month at date +
-    # shift at date=None) each at the caps. tray_multiplier>1 simulates an un-capped
-    # all-per-city dump to prove the ceiling would catch a runaway.
     scalar = [
         __import__(
             "transit_ops.snapshots.contract", fromlist=["Hotspot"]
@@ -478,8 +424,6 @@ def test_hotspots_full_payload_under_byte_ceiling() -> None:
 
 
 def test_hotspots_uncapped_tray_breaches_ceiling() -> None:
-    # The guard's reason for existing: an un-capped all-per-city tray (thousands of STM
-    # stops x 4 grains) must trip the ceiling so the regression is caught offline.
     size = len(_body(_full_hotspots(tray_multiplier=40)))
     assert size > HOTSPOTS_BYTE_CEILING, (
         "an un-capped hotspots tray did NOT breach the ceiling — the ceiling is too loose "
@@ -488,7 +432,6 @@ def test_hotspots_uncapped_tray_breaches_ceiling() -> None:
 
 
 def test_hotspots_old_fixture_without_by_grain_validates() -> None:
-    # Additive-optional back-compat: a pre-S12 hotspots.json omits by_grain entirely.
     legacy = {
         "generated_utc": "2026-06-19T02:00:00Z",
         "hotspots": [{"rank": 1, "type": "route", "id": "51", "severity": "high"}],

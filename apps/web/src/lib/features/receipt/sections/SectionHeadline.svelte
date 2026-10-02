@@ -1,49 +1,27 @@
-<!--
-  SectionHeadline — the receipt's headline reliability band (S13).
-
-  Pure presenter of the headlineKpis VMs: the day's on-time %, average delay, severe
-  share, rider-impact score, each a MetricDisplay + its (i) metric-explainer. A null
-  value reads the styled honest-absence chip ('no-observations'), never a fabricated 0.
-  A receipt line-group inside the TerminalPanel (WEB4 metaphor preserved).
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { HeadlineKpiVM } from '../selectors/headlineKpis';
 
 	interface SectionHeadlineProps {
 		kpis: readonly HeadlineKpiVM[];
 		heading: string;
-		info: (
-			key: MetricKey | SupplementalMetricKey,
-			name: string,
-		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
-	let { kpis, heading, info, locale, headingLevel = 2 }: SectionHeadlineProps = $props();
-
-	const headingInfo = $derived(info('otp', heading));
+	let { kpis, heading, locale, headingLevel = 2 }: SectionHeadlineProps = $props();
 </script>
 
 <section class="receipt-panel receipt-primary" data-slot="receipt-headline">
 	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
-			<MetricInfo
-				tip={headingInfo.tip}
-				href={headingInfo.href}
-				label={headingInfo.label}
-				linkLabel={headingInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo metricKey="otp" {locale} name={heading} side="bottom" />
 		{/snippet}
 	</SectionHeading>
 	<div class="receipt-metrics">
 		{#each kpis as kpi (kpi.key)}
-			{@const i = info(kpi.key, kpi.label)}
 			<div class="receipt-kpi">
 				<MetricDisplay
 					value={kpi.value}
@@ -52,13 +30,7 @@
 					absentReason="no-observations"
 					{locale}
 				/>
-				<MetricInfo
-					tip={i.tip}
-					href={i.href}
-					label={i.label}
-					linkLabel={i.linkLabel}
-					side="bottom"
-				/>
+				<MetricInfo metricKey={kpi.key} {locale} name={kpi.label} side="bottom" />
 			</div>
 		{/each}
 	</div>
@@ -91,7 +63,7 @@
 	}
 	@container receipt (min-width: 46rem) {
 		.receipt-metrics {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
+			grid-template-columns: repeat(3, minmax(0, 1fr));
 		}
 	}
 	.receipt-kpi {

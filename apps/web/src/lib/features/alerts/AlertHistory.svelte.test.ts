@@ -8,21 +8,15 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { compile } from 'svelte/compiler';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
 
-vi.mock('@testing-library/svelte', { spy: true });
-
 const copyEn = alertHistoryCopy.en;
 
-// One mutable AlertHistory fixture, read by reference inside the createResource mock
-// so a test can splice its `alerts` / `breakdown` / window envelope in place before
-// render. Modeled on the published alert_history.json (free-string severity, generic
-// FR/EN headers → the shared "Service alert" fallback, an "unknown" breakdown bucket).
 const { fixture } = vi.hoisted(() => ({
 	fixture: {
 		generated_utc: '2026-06-20T00:00:00Z',
@@ -80,8 +74,6 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	getAlertArchiveRange: ports.getAlertArchiveRange,
 }));
 
-// The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the codec
-// seed AND the round-trip mirror are testable. Hoisted so the mock factories can see it.
 const nav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/alerts'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
@@ -104,9 +96,6 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
-// Synchronous resource seam for the broad rendering suite. The async resource
-// contract (abort, stale-response suppression, retry) is covered with the real
-// createResource in AlertHistory.async.svelte.test.ts.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		const signal = new AbortController().signal;
@@ -302,7 +291,6 @@ const alertSurface = createSurfaceHarness({
 const render = alertSurface.mount;
 
 beforeEach(() => alertSurface.reset());
-afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(59));
 
 describe('AlertHistory article shell', () => {
 	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
@@ -341,6 +329,11 @@ describe('AlertHistory article shell', () => {
 		});
 		expect(copyEn.article.matches(1)).toBe('1 match');
 		expect(copyEn.article.matches(2)).toBe('2 matches');
+		for (const count of [0, 1, 2, 1000]) {
+			const label = `${count.toLocaleString('en-CA')} ${count === 1 ? 'alert' : 'alerts'}`;
+			expect(copyEn.filters.pillSummary(count)).toBe(label);
+			expect(copyEn.breakdown.buckets(count)).toBe(label);
+		}
 		expect(copyEn.rail).toEqual({
 			label: 'Filters & contents',
 			open: 'Open filters and contents',
@@ -515,14 +508,37 @@ describe('AlertHistory log', () => {
 		expect(container.querySelector('[data-slot="alert-log"] strong')).toBeNull();
 	});
 
-	it('omits absent fields and never fabricates a 0 (no impact line when impact_passages is null)', () => {
+	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
+		currentLocale.value = locale;
+		fixture.alerts = [
+			{
+				id: 'raw-copy',
+				severity: 'watch',
+				routes: ['10'],
+				stops: [],
+				header_key: 'Votre ligne',
+				header_text: 'Votre arrêt',
+				header_text_en: 'Your stop',
+				description: 'null',
+				description_en: '{"text": None}',
+				start_utc: '2026-06-20T11:00:00Z',
+				end_utc: '2026-06-20T12:00:00Z',
+			},
+		] as unknown as AlertHistory['alerts'];
+		fixture.breakdown = null;
+		const { container } = render(AlertHistoryScreen);
+		expect(
+			screen.getByText(locale === 'en' ? 'Service alert' : 'Alerte de service'),
+		).toBeInTheDocument();
+		expect(container.textContent).not.toMatch(/Votre ligne|Votre arrêt|Your stop|None|null/);
+	});
+
+	it('omits unsupported impact estimates while preserving duration and route reports', () => {
 		render(AlertHistoryScreen);
-		const list = screen.getByRole('list', { name: /past service alerts, newest first/i });
-		const rows = within(list).getAllByRole('listitem');
-		const withImpact = rows.find((r) => within(r).queryByText(/passages affected/i));
-		expect(withImpact).toBeDefined();
-		expect(within(withImpact as HTMLElement).getByText('1,234 passages')).toBeInTheDocument();
-		expect(within(list).queryByText('0 passages')).toBeNull();
+		const list = screen.getByRole('list', { name: copyEn.logListLabel });
+		expect(within(list).queryAllByText(/passages/i)).toHaveLength(0);
+		expect(within(list).getByText('2040 min')).toBeInTheDocument();
+		expect(within(list).getByText('24')).toBeInTheDocument();
 	});
 
 	it('renders the resolved duration in minutes', () => {

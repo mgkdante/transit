@@ -39,6 +39,7 @@ test('deployable changes and manual dispatch remain eligible', () => {
 		'apps/data-proxy/src/index.ts',
 		'package.json',
 		'bun.lock',
+		'.nvmrc',
 		'.bun-version',
 		'turbo.json',
 		'.github/actions/setup/action.yml',

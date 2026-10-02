@@ -1,12 +1,3 @@
-"""Contract tests for the alerting workflows (slice-9.1.1o).
-
-The probe workflow (.github/workflows/freshness-probe.yml) and the three cron
-workflows must wire the alert plane correctly: issues:write permission, the
-15-min schedule, both secrets, no uv setup on the probe, and failure/recovery
-steps on the crons. These parse the YAML and assert the contract — they are
-the only offline gate on the workflow wiring (CI has no way to run a scheduled
-workflow against itself).
-"""
 
 from __future__ import annotations
 
@@ -39,7 +30,6 @@ def _raw(path: Path) -> str:
 
 
 def _on_block(doc: dict) -> dict:
-    # PyYAML parses the bare key `on:` as the boolean True.
     return doc.get("on", doc.get(True, {}))
 
 
@@ -49,23 +39,15 @@ def _steps(doc: dict) -> list[dict]:
     return job["steps"]
 
 
-# --- freshness-probe.yml -----------------------------------------------------
-
-
 def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     doc = _load(PROBE)
 
     on = _on_block(doc)
     crons = [entry["cron"] for entry in on["schedule"]]
     assert "*/15 * * * *" in crons
-    # Hourly lane for backup-freshness (the pg_dump artifact changes nightly;
-    # 96x/day paid a python-toolchain setup per run for no signal).
     assert "7 * * * *" in crons
     assert "workflow_dispatch" in on
 
-    # Cadence split: probe skips the hourly cron; backup-freshness runs ONLY on
-    # the hourly cron (or manual dispatch). Without these gates both jobs run on
-    # every tick and the recadence silently regresses.
     assert doc["jobs"]["probe"]["if"] == "github.event.schedule != '7 * * * *'"
     assert (
         doc["jobs"]["backup-freshness"]["if"]
@@ -76,25 +58,17 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     assert doc["permissions"]["issues"] == "write"
 
     raw = _raw(PROBE)
-    # The probe-scoped negative is retained deliberately so a future inline
-    # reintroduction in `backup-freshness` remains permitted while the bare-bash
-    # `probe` job stays dependency-light (curl/jq/psql, no python).
     probe_steps = yaml.safe_dump(doc["jobs"]["probe"]["steps"])
     assert "uv sync" not in probe_steps
     assert "astral-sh/setup-uv" not in probe_steps
     assert "setup-python" not in probe_steps
 
-    # Both secrets wired + the script invoked.
     assert "secrets.DATABASE_URL" in raw
     assert "secrets.SNAPSHOT_PUBLIC_BASE_URL" in raw
     assert ".github/scripts/freshness-probe.sh" in raw
-    # github.token + repository passed for the gh CLI inside the script.
     assert "github.token" in raw
     assert "github.repository" in raw
 
-    # The backup-freshness job fires/resolves the 'backup' alert and runs the CLI.
-    # Concatenate the parsed `run` blocks (not a YAML re-dump, which re-wraps long
-    # shell lines and would split substrings like "fire backup").
     backup_runs = "\n".join(
         str(step.get("run", "")) for step in doc["jobs"]["backup-freshness"]["steps"]
     )
@@ -127,9 +101,6 @@ def test_freshness_probe_pins_daily_heartbeat_age_contract() -> None:
     assert 'check_manifest_age historic "$DAILY_TIER_MAX_AGE_SECONDS"' not in script
     assert ".files.static.generated_utc" not in script
     assert ".files.historic.generated_utc" not in script
-
-
-# --- cron workflows ----------------------------------------------------------
 
 
 def test_cron_workflows_carry_issues_write_permission() -> None:
@@ -207,16 +178,12 @@ def test_weekly_workflow_carries_failure_and_recovery_alert_steps() -> None:
         assert len(failure_steps) == 1, f"{filename}: expected one failure() alert step"
         assert len(success_steps) == 1, f"{filename}: expected one success() alert step"
 
-        # The failure step fires this workflow's slug; the success step resolves it.
         assert f"fire {slug}" in failure_steps[0]["run"], filename
         assert f"resolve {slug}" in success_steps[0]["run"], filename
 
         raw_step = failure_steps[0]["run"] + success_steps[0]["run"]
-        # Path is relative to working-directory: db -> ../.github/scripts on the
-        # first two; pg-repack also uses working-directory: db.
         assert "alert-issue.sh" in raw_step
 
-        # Both alert steps must carry GH_TOKEN + GH_REPO env.
         for step in (failure_steps[0], success_steps[0]):
             env = step.get("env", {})
             assert "GH_TOKEN" in env, f"{filename}: alert step missing GH_TOKEN"

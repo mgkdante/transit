@@ -1,7 +1,3 @@
-"""Migration-source assertions for 0077_alert_active_periods_and_url.
-
-This clones test_migration_0075 for S15.
-"""
 
 from __future__ import annotations
 
@@ -46,35 +42,25 @@ def test_0077_creates_child_table_with_period_pk_and_cascade_fk() -> None:
     assert "pk_silver_i3_alert_active_periods" in src
     assert "fk_silver_i3_alert_active_periods_alert" in src
     assert "ix_silver_i3_alert_active_periods_alert" in src
-    # 3-column PK (snapshot, alert, period_index).
     for col in ("i3_alert_snapshot_id", "alert_index", "period_index"):
         assert f'"{col}"' in src, f"PK column {col} missing"
-    # nullable timestamptz window bounds.
     for col in ("start_utc", "end_utc"):
         assert f'"{col}"' in src, f"column {col} missing"
-    # FK cascades so periods ride the parent SCD-2 lifecycle.
     assert 'ondelete="CASCADE"' in src
 
 
 def test_0077_adds_additive_nullable_url_columns() -> None:
     src = _source()
-    # url + url_en added to silver.i3_alerts, nullable (honest-NULL upstream).
     assert 'sa.Column("url", sa.Text(), nullable=True)' in src
     assert 'sa.Column("url_en", sa.Text(), nullable=True)' in src
 
 
 def test_0077_view_exposes_url_and_active_periods() -> None:
     src = _source()
-    # The live view rebuild exposes url / url_en / active_periods (jsonb_agg of the
-    # child table), appended at END of the select list (CREATE OR REPLACE legal).
     assert "CREATE OR REPLACE VIEW gold.current_i3_alerts" in src
     assert "d.url" in src and "d.url_en" in src
-    # jsonb, not json: the outer GROUP BY needs an equality operator on the column.
     assert "jsonb_agg" in src and "active_periods" in src
     assert "json_agg(" not in src.replace("jsonb_agg(", "")
-    # downgrade plain-drops the view (no dependents at head: 0059 dropped
-    # current_map_objects) and recreates the 0037 shape; it must NOT resurrect
-    # the dead map view.
     assert "DROP VIEW IF EXISTS gold.current_i3_alerts" in src
     assert "gold.current_i3_alerts CASCADE" not in src
     assert "CREATE OR REPLACE VIEW gold.current_map_objects" not in src

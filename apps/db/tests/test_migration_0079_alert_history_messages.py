@@ -1,4 +1,3 @@
-"""Migration-source assertions for 0079_alert_history_messages."""
 
 from __future__ import annotations
 
@@ -53,7 +52,6 @@ def test_0079_upgrade_appends_both_source_descriptions() -> None:
     assert "CREATE OR REPLACE VIEW gold.i3_alert_history_reporting" in sql
     assert "a.alert_header_text_en, a.description_text, a.description_text_en" in sql
 
-    # Display text is non-identity payload. Preserve the existing hash verbatim.
     hash_expr = re.search(
         r"md5\((?P<body>.*?)\) AS effective_content_hash",
         sql,

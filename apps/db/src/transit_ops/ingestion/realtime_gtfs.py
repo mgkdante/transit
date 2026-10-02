@@ -5,7 +5,6 @@ import ssl
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError
 
 from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
@@ -19,10 +18,10 @@ from transit_ops.ingestion.common import (
     build_bronze_object_storage_path,
     build_request_details,
     download_to_tempfile,
+    finish_failed_capture,
     get_feed_endpoint_id,
     insert_ingestion_object,
     insert_ingestion_run,
-    mark_ingestion_run_failed,
     mark_ingestion_run_succeeded,
     project_root,
     utc_now,
@@ -36,21 +35,6 @@ from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
-
-def _best_effort_delete_orphan(bronze_storage: object, storage_path: str) -> None:
-    """Best-effort delete of an uploaded Bronze object after a downstream failure.
-
-    Swallows and logs any delete error so it never masks the original exception.
-    """
-
-    try:
-        bronze_storage.delete_object(storage_path)
-    except Exception:
-        logger.exception(
-            "Failed to delete orphaned Bronze object after metadata failure: %s",
-            storage_path,
-        )
 
 
 def _project_root() -> Path:
@@ -76,9 +60,7 @@ class RealtimeMessageMetadata:
     provider_id: str
     endpoint_key: str
     feed_kind: str
-    # None when the feed omits / zeroes its FeedHeader.timestamp (GTFS-RT
-    # spec-required, but real feeds skip it). The capture resolves it to the
-    # capture time before persisting, so it never aborts the download.
+    # Missing feed timestamps fall back to capture time.
     feed_timestamp_utc: datetime | None
     entity_count: int
 
@@ -184,10 +166,7 @@ def extract_realtime_metadata(
     except DecodeError as exc:
         raise ValueError(f"Failed to parse GTFS-RT protobuf payload: {exc}") from exc
 
-    # GTFS-RT requires FeedHeader.timestamp, but real feeds omit / zero it, and
-    # some emit a value outside datetime's range. Treat any unusable header
-    # timestamp as "absent" (None) rather than aborting the capture; the caller
-    # falls back to the capture time so the snapshot still persists.
+    # Invalid or absent feed timestamps must not abort capture.
     header_timestamp = int(message.header.timestamp or 0)
     feed_timestamp_utc: datetime | None = None
     if header_timestamp > 0:
@@ -279,9 +258,7 @@ def _insert_realtime_snapshot_index(
 
 
 def _build_realtime_ssl_context() -> ssl.SSLContext:
-    # Floor only: require TLS 1.2+ but let the handshake negotiate the highest
-    # mutually-supported version. Pinning the maximum to 1.2 rejected TLS-1.3-only
-    # endpoints, which any GTFS-RT provider is free to be.
+    # Require TLS 1.2 or newer without setting a maximum protocol version.
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
@@ -305,7 +282,7 @@ def _capture_realtime_feed(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     bronze_storage_resolver: BronzeStorageResolver,
-) -> RealtimeIngestionResult:
+) -> tuple[RealtimeIngestionResult, bytes]:
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -337,8 +314,9 @@ def _capture_realtime_feed(
     persisted = False
     try:
         artifact = _download_to_tempfile(config, bronze_root / ".tmp")
+        payload = artifact.temp_path.read_bytes()
         metadata = extract_realtime_metadata(
-            artifact.temp_path.read_bytes(),
+            payload,
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
         )
@@ -352,8 +330,6 @@ def _capture_realtime_feed(
         persisted = True
 
         completed_at_utc = utc_now()
-        # Feeds that omit their header timestamp fall back to the capture time so
-        # the snapshot index / freshness signal stays non-null and monotonic.
         feed_timestamp_utc = metadata.feed_timestamp_utc or completed_at_utc
         with engine.begin() as connection:
             ingestion_object_id = insert_ingestion_object(
@@ -386,7 +362,7 @@ def _capture_realtime_feed(
                 feed_timestamp_utc=feed_timestamp_utc,
             )
 
-        return RealtimeIngestionResult(
+        result = RealtimeIngestionResult(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             feed_kind=config.feed_kind,
@@ -406,36 +382,16 @@ def _capture_realtime_feed(
             started_at_utc=started_at_utc,
             completed_at_utc=completed_at_utc,
         )
-    except HTTPError as exc:
-        completed_at_utc = utc_now()
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=exc.code,
-                error_message=f"HTTP {exc.code}: {exc.reason}",
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
-        raise
+        return result, payload
     except Exception as exc:
-        completed_at_utc = utc_now()
-        http_status_code = artifact.http_status_code if artifact else None
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=http_status_code,
-                error_message=str(exc),
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
+        finish_failed_capture(
+            engine=engine,
+            ingestion_run_id=ingestion_run_id,
+            error=exc,
+            artifact=artifact,
+            bronze_storage=bronze_storage,
+            orphan_storage_path=storage_path if persisted else None,
+        )
         raise
 
 
@@ -448,7 +404,7 @@ def capture_realtime_feed(
     engine: Engine | None = None,
 ) -> RealtimeIngestionResult:
     settings = settings or get_settings()
-    return _capture_realtime_feed(
+    result, _payload = _capture_realtime_feed(
         provider_id,
         endpoint_key,
         settings=settings,
@@ -460,3 +416,4 @@ def capture_realtime_feed(
             storage_backend=storage_backend,
         ),
     )
+    return result

@@ -33,9 +33,6 @@ type ParseResult =
 	| { readonly ok: false; readonly error: string };
 
 export const GET: RequestHandler = async ({ url, request, fetch, platform }) => {
-	// Frozen order: provenance → exact-one-mode parsing/validation → rate → provider.
-	// Rejecting before the rate/provider stages keeps hostile or malformed traffic
-	// from spending either bucket tokens or provider calls.
 	if (!hasSameOriginProvenance(request.headers, url.origin)) {
 		return json({ error: 'forbidden' }, { status: 403, headers: { 'cache-control': 'no-store' } });
 	}
@@ -144,10 +141,6 @@ async function decideRate(
 		? platformEnv?.GEOCODE_RATE_LIMITER
 		: platformEnv?.GEOCODE_SHARED_RATE_LIMITER;
 
-	// READY-TO-ENABLE SEAM: when both commented Wrangler bindings are positively
-	// verified and enabled, their Cloudflare-managed, location-local fixed-window
-	// decision replaces the isolate map. Binding faults fall back to the repo
-	// bucket so the endpoint stays available.
 	if (nativeBinding) {
 		try {
 			const decision = await nativeBinding.limit({ key });

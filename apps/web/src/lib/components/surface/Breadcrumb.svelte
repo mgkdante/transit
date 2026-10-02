@@ -1,27 +1,10 @@
-<!--
-  Breadcrumb — the visible wayfinding trail on the stable detail surfaces.
-
-  Renders the trail `resolveBreadcrumbTrail` already computes for JSON-LD (today
-  it only fed the head; this surfaces it). A compact single row of crumbs: each
-  intermediate crumb is a localized link; the LAST crumb is the current page, so
-  it is plain text with `aria-current="page"` (never a link to itself). The
-  separators are decorative (`aria-hidden`).
-
-  The trail's paths are DELOCALIZED (the contract of resolveBreadcrumbTrail), so
-  every href is run through `localizeHref` here (EN no prefix, FR `/fr`).
-
-  Heading/label voice + tokens, no data colours — --primary is interactive-only
-  (the crumb link hover), matching the surface-back affordance in EntityDetail.
--->
 <script lang="ts">
 	import { type Locale, localizeHref } from '$lib/i18n';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
 
 	export interface BreadcrumbProps {
-		/** The trail (already-localized labels, delocalized paths). */
 		trail: readonly BreadcrumbTrailItem[];
-		/** Active locale — localizes each crumb href. */
 		locale: Locale;
 		class?: string;
 	}
@@ -29,8 +12,6 @@
 	let { trail, locale, class: className }: BreadcrumbProps = $props();
 
 	const navAria = $derived(locale === 'fr' ? "Fil d'Ariane" : 'Breadcrumb');
-	// Decorate each crumb with its localized href + whether it is the leaf (the
-	// current page → rendered as text, not a link).
 	const crumbs = $derived(
 		trail.map((crumb, i) => ({
 			name: crumb.name,
@@ -93,7 +74,6 @@
 		color: var(--muted-foreground);
 		opacity: 0.6;
 	}
-	/* INTERACTIVE crumb → --primary on hover is doctrine-clean. */
 	.breadcrumb-link {
 		min-width: 0;
 		overflow: hidden;

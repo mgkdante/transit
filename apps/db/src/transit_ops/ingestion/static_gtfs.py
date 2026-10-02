@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion._versioned_capture import (
+    VersionedCaptureResult,
     VersionedCaptureSpec,
     _run_versioned_capture,
 )
@@ -74,43 +75,8 @@ class StaticIngestionConfig:
 
 
 @dataclass(frozen=True)
-class StaticIngestionResult:
-    provider_id: str
-    endpoint_key: str
-    source_url: str
-    storage_backend: str
-    storage_path: str | None
-    archive_full_path: str | None
-    byte_size: int
-    checksum_sha256: str
-    http_status_code: int
-    ingestion_run_id: int
-    ingestion_object_id: int | None
-    status: str
-    started_at_utc: datetime
-    completed_at_utc: datetime
-    content_changed: bool = True
-    dataset_version_id: int | None = None
-    first_seen_at_utc: datetime | None = None
-    last_seen_at_utc: datetime | None = None
-    observed_from_utc: datetime | None = None
-    observed_until_utc: datetime | None = None
-    skipped_reason: str | None = None
-
-    def display_dict(self) -> dict[str, object]:
-        payload = asdict(self)
-        payload["started_at_utc"] = self.started_at_utc.isoformat()
-        payload["completed_at_utc"] = self.completed_at_utc.isoformat()
-        for key in (
-            "first_seen_at_utc",
-            "last_seen_at_utc",
-            "observed_from_utc",
-            "observed_until_utc",
-        ):
-            value = payload[key]
-            if isinstance(value, datetime):
-                payload[key] = value.isoformat()
-        return payload
+class StaticIngestionResult(VersionedCaptureResult):
+    pass
 
 
 def build_static_ingestion_config(
@@ -189,37 +155,14 @@ def ingest_static_feed(
         download=lambda source_url, temp_dir: _download_to_tempfile(source_url, temp_dir),
         missing_endpoint_message=_MISSING_ENDPOINT_MESSAGE,
     )
-    outcome = _run_versioned_capture(
+    return _run_versioned_capture(
         provider_id,
         spec=spec,
+        result_type=StaticIngestionResult,
         manifest=manifest,
         settings=settings,
         registry=registry,
         engine=engine or make_engine(settings),
         bronze_root=bronze_root,
         bronze_storage=bronze_storage,
-    )
-
-    return StaticIngestionResult(
-        provider_id=outcome.provider_id,
-        endpoint_key=outcome.endpoint_key,
-        source_url=outcome.source_url,
-        storage_backend=outcome.storage_backend,
-        storage_path=outcome.storage_path,
-        archive_full_path=outcome.archive_full_path,
-        byte_size=outcome.byte_size,
-        checksum_sha256=outcome.checksum_sha256,
-        http_status_code=outcome.http_status_code,
-        ingestion_run_id=outcome.ingestion_run_id,
-        ingestion_object_id=outcome.ingestion_object_id,
-        status=outcome.status,
-        started_at_utc=outcome.started_at_utc,
-        completed_at_utc=outcome.completed_at_utc,
-        content_changed=outcome.content_changed,
-        dataset_version_id=outcome.dataset_version_id,
-        first_seen_at_utc=outcome.first_seen_at_utc,
-        last_seen_at_utc=outcome.last_seen_at_utc,
-        observed_from_utc=outcome.observed_from_utc,
-        observed_until_utc=outcome.observed_until_utc,
-        skipped_reason=outcome.skipped_reason,
     )

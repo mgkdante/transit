@@ -1,10 +1,3 @@
-// TocPill.test.ts - the mobile floating table-of-contents pill + drawer.
-//
-// Gates: the pill shows the active entry name + counter; its aria-label starts
-// with the visible text then appends the purpose (Lighthouse 2.5.3); the drawer
-// is closed until the pill is tapped, then lists every entry (rail entries
-// included on mobile); tapping an entry resolves + scrolls its target.
-
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import TocPill from './TocPill.svelte';
@@ -34,7 +27,6 @@ describe('TocPill', () => {
 		expect(getByText('Overview')).toBeTruthy();
 		expect(getByText('1/2')).toBeTruthy();
 		const pill = getByTestId('toc-pill').querySelector('.toc-pill') as HTMLElement;
-		// Visible text must be a prefix of the accessible name.
 		expect(pill.getAttribute('aria-label')).toBe('Overview 1/2 · Table of contents');
 	});
 

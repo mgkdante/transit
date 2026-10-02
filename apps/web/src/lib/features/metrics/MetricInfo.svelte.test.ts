@@ -1,17 +1,10 @@
-// MetricInfo.svelte.test.ts — the (i) affordance, DOM gate.
-//
-// MetricInfo is a click/focus popover: the trigger toggles a tip + a
-// keyboard-reachable deep-link into the explainer. Gates:
-//   - the trigger is a real <button> with an accessible name + aria-expanded,
-//   - clicking reveals the tip text and the action link (with the right href),
-//   - the link is a same-tab in-app nav by default; newTab opts into _blank,
-//   - Escape closes the popover.
-
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricInfo from './MetricInfo.svelte';
+import { metricInfoFor } from '$lib/metrics';
 
 const base = {
 	tip: 'The share of readings that landed on time.',
@@ -26,6 +19,42 @@ const source = readFileSync(
 );
 
 describe('MetricInfo trigger', () => {
+	it('resolves definitions and follows metric, locale and name changes while open', async () => {
+		const { rerender } = render(MetricInfo, {
+			props: { metricKey: 'otp', locale: 'en', name: 'On time', side: 'bottom' },
+		});
+		const trigger = screen.getByRole('button', { name: 'About On time' });
+		trigger.focus();
+		await tick();
+		expect(screen.getByRole('dialog', { name: 'About On time' })).toBeInTheDocument();
+		expect(screen.getByText(metricInfoFor('otp', 'en').tip)).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /How this is measured/ })).toHaveAttribute(
+			'href',
+			'/metrics#otp',
+		);
+
+		await rerender({
+			metricKey: 'coverage',
+			locale: 'fr',
+			name: 'Véhicules connus',
+			side: 'bottom',
+		});
+		expect(screen.getByRole('button', { name: 'À propos de Véhicules connus' })).toBe(trigger);
+		expect(
+			screen.getByRole('dialog', { name: 'À propos de Véhicules connus' }),
+		).toBeInTheDocument();
+		expect(screen.queryByText(metricInfoFor('otp', 'en').tip)).not.toBeInTheDocument();
+		expect(screen.getByText(metricInfoFor('coverage', 'fr').tip)).toBeInTheDocument();
+		const link = screen.getByRole('link', { name: /Comment c’est mesuré/ });
+		expect(link).toHaveAttribute('href', '/fr/metrics#metrics-provenance');
+		expect(link).not.toHaveAttribute('target');
+		link.focus();
+		await fireEvent.keyDown(link, { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(trigger);
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	});
+
 	it('keeps the shared dashboard and network information popover free of colored glow', () => {
 		const popoverRule = source.match(/\.metric-info__pop\s*\{([\s\S]*?)\n\t\}/)?.[1] ?? '';
 
@@ -56,7 +85,6 @@ describe('MetricInfo trigger', () => {
 		expect(screen.getByText('The share of readings that landed on time.')).toBeInTheDocument();
 		const link = screen.getByRole('link', { name: /How this is measured/ });
 		expect(link).toHaveAttribute('href', '/metrics#otp');
-		// In-app, same-tab nav by default (no target).
 		expect(link).not.toHaveAttribute('target');
 	});
 
@@ -79,6 +107,85 @@ describe('MetricInfo trigger', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
+
+	it.each(['mouse', 'touch'])(
+		'keeps the first %s activation open after focus',
+		async (pointerType) => {
+			const { container } = render(MetricInfo, { props: base });
+			const root = container.querySelector('.metric-info') as HTMLElement;
+			const trigger = screen.getByRole('button', { name: base.label });
+
+			if (pointerType === 'mouse') await fireEvent.mouseEnter(root);
+			await fireEvent.pointerDown(trigger, { pointerType });
+			trigger.focus();
+			await tick();
+			await fireEvent.pointerUp(trigger, { pointerType });
+			await fireEvent.click(trigger);
+
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+			expect(screen.getByRole('link', { name: /How this is measured/ })).toBeInTheDocument();
+
+			await fireEvent.click(trigger);
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+			expect(trigger).toHaveFocus();
+		},
+	);
+
+	it.each(['Enter', ' '])(
+		'keeps native %s activation and repeated toggling usable',
+		async (key) => {
+			render(MetricInfo, { props: base });
+			const trigger = screen.getByRole('button', { name: base.label });
+			trigger.focus();
+			await tick();
+			expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+			await fireEvent.keyDown(trigger, { key });
+			await fireEvent.keyUp(trigger, { key });
+			await fireEvent.click(trigger, { detail: 0 });
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+			await fireEvent.keyDown(trigger, { key });
+			await fireEvent.keyUp(trigger, { key });
+			await fireEvent.click(trigger, { detail: 0 });
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		},
+	);
+
+	it('keeps the link reachable by focus and returns focus after Escape', async () => {
+		render(MetricInfo, { props: base });
+		const trigger = screen.getByRole('button', { name: base.label });
+		trigger.focus();
+		await tick();
+		const link = screen.getByRole('link', { name: /How this is measured/ });
+		link.focus();
+		await tick();
+		expect(link).toHaveFocus();
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		await fireEvent.keyDown(link, { key: 'Escape' });
+		expect(trigger).toHaveFocus();
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+		trigger.blur();
+		trigger.focus();
+		await tick();
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+	});
+
+	it.each(['outside pointer', 'focus out', 'scroll', 'resize'])(
+		'dismisses an activated explanation on %s and allows the next activation',
+		async (reason) => {
+			render(MetricInfo, { props: base });
+			const trigger = screen.getByRole('button', { name: base.label });
+			await fireEvent.click(trigger);
+			if (reason === 'outside pointer') await fireEvent.pointerDown(document.body);
+			else if (reason === 'focus out') await fireEvent.focusOut(trigger, { relatedTarget: null });
+			else if (reason === 'scroll') await fireEvent.scroll(window);
+			else await fireEvent.resize(window);
+			expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+			await fireEvent.click(trigger);
+			expect(screen.getByRole('dialog')).toBeInTheDocument();
+		},
+	);
 });
 
 describe('MetricInfo hover group', () => {
@@ -91,13 +198,9 @@ describe('MetricInfo hover group', () => {
 		const { container } = render(MetricInfo, { props: base });
 		const root = container.querySelector('.metric-info') as HTMLElement;
 
-		// Hover the group → opens.
 		await fireEvent.mouseEnter(root);
 		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-		// Pointer crosses the gap toward the tip: leaving the trigger schedules a
-		// short grace close, but re-entering the group (onto the tip) inside the
-		// grace window cancels it, so the in-popover link stays reachable.
 		await fireEvent.mouseLeave(root);
 		await fireEvent.mouseEnter(root);
 
@@ -114,10 +217,28 @@ describe('MetricInfo hover group', () => {
 		await fireEvent.mouseEnter(root);
 		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-		// Leave and never come back: the grace timer elapses and it closes.
 		await fireEvent.mouseLeave(root);
-		expect(screen.queryByRole('dialog')).toBeInTheDocument(); // still open during grace
+		expect(screen.queryByRole('dialog')).toBeInTheDocument();
 		await vi.advanceTimersByTimeAsync(200);
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
+
+	it.each(['activation', 'keyboard focus'])(
+		'keeps an explanation open after pointer leave when held by %s',
+		async (owner) => {
+			vi.useFakeTimers();
+			const { container } = render(MetricInfo, { props: base });
+			const root = container.querySelector('.metric-info') as HTMLElement;
+			const trigger = screen.getByRole('button', { name: base.label });
+			await fireEvent.mouseEnter(root);
+			if (owner === 'activation') await fireEvent.click(trigger);
+			else {
+				trigger.focus();
+				await tick();
+			}
+			await fireEvent.mouseLeave(root);
+			await vi.advanceTimersByTimeAsync(200);
+			expect(screen.getByRole('dialog')).toBeInTheDocument();
+		},
+	);
 });

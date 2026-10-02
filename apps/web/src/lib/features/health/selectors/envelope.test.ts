@@ -1,5 +1,3 @@
-// envelope.test.ts — the build-accountability envelope selector.
-
 import { describe, it, expect } from 'vitest';
 import { selectEnvelope } from './envelope';
 
@@ -18,7 +16,7 @@ describe('selectEnvelope', () => {
 
 	it('falls back per-field to the secondary source when the primary omits a field', () => {
 		const view = selectEnvelope(
-			{ schema_version: 5 }, // primary carries only schema
+			{ schema_version: 5 },
 			{ publish_generation_id: 'gen-fallback', methodology_version: 'historic-2' },
 		);
 		expect(view).toEqual({
@@ -46,7 +44,6 @@ describe('selectEnvelope', () => {
 			{ publish_generation_id: '', methodology_version: null },
 			{ publish_generation_id: 'gen-real' },
 		);
-		// Empty string on the primary falls through to the secondary's real value.
 		expect(view.generationId).toBe('gen-real');
 		expect(view.methodologyVersion).toBeNull();
 	});

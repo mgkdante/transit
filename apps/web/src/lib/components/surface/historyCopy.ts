@@ -28,7 +28,6 @@ export interface HistoryCopyInput {
 	readonly next?: string;
 }
 
-/** Builds the exact label object consumed by HistoryNavigator. */
 export function historyCopy(locale: Locale, input: HistoryCopyInput): HistoryNavigatorLabels {
 	const shared = chrome[locale];
 	const step = shared[input.mode];

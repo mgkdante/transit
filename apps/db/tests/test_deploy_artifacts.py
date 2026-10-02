@@ -14,12 +14,8 @@ DB_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 EXPECTED_PINNED_ACTION_LINES = {
-    "actions/cache": (
-        "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0"
-    ),
-    "actions/checkout": (
-        "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7"
-    ),
+    "actions/cache": ("uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0"),
+    "actions/checkout": ("uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7"),
     "actions/download-artifact": (
         "uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"
     ),
@@ -50,15 +46,10 @@ EXPECTED_PINNED_ACTION_LINES = {
         "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@"
         "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
-    "oven-sh/setup-bun": (
-        "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"
-    ),
+    "oven-sh/setup-bun": ("uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"),
 }
 DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS: list[tuple[str, str]] = []
 
-# Third-party / local-tooling secrets the operator keeps in the root .env for AI
-# tooling and 1Password inject. NONE of them are app config, so NO container
-# should ever receive them — the whole point of scoping compose env per service.
 THIRD_PARTY_SECRETS = {
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
@@ -70,9 +61,18 @@ THIRD_PARTY_SECRETS = {
     "ARCGIS_CLIENT_SECRET",
 }
 
-# HEALTH_* knobs are read ONLY by transit_ops.health (verified: no usage outside
-# src/transit_ops/health/). They are the one slice of the Settings surface the
-# worker does NOT need, so the worker env = full Settings surface minus these.
+PYTHON_IMAGE = (
+    "python:3.12.14-slim-bookworm@"
+    "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
+)
+POSTGRES_IMAGE = (
+    "postgres:16.15-bookworm@"
+    "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825"
+)
+CADDY_IMAGE = (
+    "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+)
+
 HEALTH_ONLY_SETTINGS = {
     "HEALTH_DATABASE_TIMEOUT_SECONDS",
     "HEALTH_FEED_TIMEOUT_SECONDS",
@@ -80,12 +80,11 @@ HEALTH_ONLY_SETTINGS = {
     "HEALTH_RUNTIME_CACHE_SECONDS",
 }
 
-# Explicit pin for the health service: DB + bronze-storage + HEALTH_* + provider
-# id + the five retention values run_health_checks reports. NO STM_API_KEY
-# (run_health_checks does not reach any STM feed).
+LIBPQ_ENVIRONMENT_KEYS = {"PGPASSWORD", "PGAPPNAME"}
+
 HEALTH_ENVIRONMENT_KEYS = {
     "DATABASE_URL",
-    "PGPASSWORD",
+    *LIBPQ_ENVIRONMENT_KEYS,
     "APP_ENV",
     "LOG_LEVEL",
     "STM_PROVIDER_ID",
@@ -114,39 +113,33 @@ def _compose() -> dict:
 
 def _active_lines(text: str) -> list[str]:
     return [
-        line.split("#", 1)[0].strip()
-        for line in text.splitlines()
-        if line.split("#", 1)[0].strip()
+        line.split("#", 1)[0].strip() for line in text.splitlines() if line.split("#", 1)[0].strip()
     ]
 
 
 def test_compose_defines_oracle_ready_runtime_services() -> None:
     services = _compose()["services"]
-    # PR-B / slice-9.8: the dedicated `pruner` service joins the runtime set.
     assert set(services) == {"postgres", "worker", "pruner", "health", "caddy"}
     assert services["postgres"]["build"]["dockerfile"] == "Dockerfile.postgis"
     assert services["postgres"]["image"] == "transit-postgres-postgis:16"
     assert services["worker"]["build"]["dockerfile"] == "Dockerfile"
     assert services["pruner"]["build"]["dockerfile"] == "Dockerfile"
     assert services["health"]["build"]["dockerfile"] == "Dockerfile.health"
-    assert services["caddy"]["image"].startswith("caddy:2")
+    assert services["caddy"]["image"] == CADDY_IMAGE
 
 
 def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
     services = _compose()["services"]
     pruner = services["pruner"]
-    # Same image as the worker, with a command override to the pruner loop.
     assert pruner["build"]["dockerfile"] == "Dockerfile"
     assert pruner["command"] == ["run-pruner-loop", "stm"]
     assert pruner["restart"] == "unless-stopped"
     assert pruner["depends_on"] == {"postgres": {"condition": "service_healthy"}}
-    # DB-only worker: NO bronze volume, NO STM_API_KEY / R2 / snapshot secrets.
     assert "volumes" not in pruner
     pruner_keys = _environment_keys(pruner)
     assert "STM_API_KEY" not in pruner_keys
     assert not any(key.startswith("BRONZE_S3") for key in pruner_keys)
     assert not any(key.startswith("SNAPSHOT_") for key in pruner_keys)
-    # It DOES get the DB url, the retention knobs, the pruner cadence, and pause.
     assert pruner["environment"]["DATABASE_URL"] == (
         "postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}"
     )
@@ -162,7 +155,6 @@ def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
         "STATIC_DATASET_RETENTION_COUNT",
         "PIPELINE_PAUSED",
     } <= pruner_keys
-    # The pruner env is a strict subset of the worker's (no new knobs introduced).
     assert pruner_keys <= _environment_keys(services["worker"])
 
 
@@ -180,10 +172,7 @@ def test_compose_waits_for_postgres_health_before_app_services() -> None:
 
 def test_compose_requires_database_secret_and_binds_postgres_to_loopback() -> None:
     services = _compose()["services"]
-    expected = (
-        "postgresql://${POSTGRES_USER:-transit}@postgres:5432/"
-        "${POSTGRES_DB:-transit}"
-    )
+    expected = "postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}"
     required_password = "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
     assert services["postgres"]["environment"]["POSTGRES_PASSWORD"] == required_password
     for service_name in ("worker", "pruner", "health"):
@@ -298,9 +287,7 @@ def test_caddyfile_proxies_only_health_service() -> None:
     caddyfile = (DB_ROOT / "Caddyfile").read_text(encoding="utf-8")
     active_directives = _active_lines(caddyfile)
     reverse_proxy_targets = [
-        line.split()[1]
-        for line in active_directives
-        if line.startswith("reverse_proxy ")
+        line.split()[1] for line in active_directives if line.startswith("reverse_proxy ")
     ]
     assert reverse_proxy_targets == ["health:8080"]
     assert "health_uri /health/live" in active_directives
@@ -328,89 +315,48 @@ def test_env_example_documents_compose_runtime_contract() -> None:
         "CADDY_HTTPS_PORT=8443",
     }.issubset(assignments)
     assert not any(line.startswith("DATABASE_COMPUTE_") for line in assignments)
-    assert not any(line.startswith("NE" "ON_") for line in assignments)
-    assert not any(line.startswith("RAIL" "WAY_") for line in assignments)
+    assert not any(line.startswith("NEON_") for line in assignments)
+    assert not any(line.startswith("RAILWAY_") for line in assignments)
     assert "Oracle VM Postgres" in env_example
     assert "local default does not require R2 credentials" in env_example
     assert "S3/R2 deployment" in env_example
 
 
-def test_root_readme_copies_the_db_runtime_template_to_the_db_app() -> None:
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "cp .env.example apps/db/.env" in readme
-    assert "cp .env.example .env" not in readme
-    assert "to `.env` from the repository root" not in readme
-
-
-def test_db_readme_documents_loopback_caddy_health_access() -> None:
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "http://127.0.0.1:8080" in readme
-    assert "8443" in readme
-    assert "CADDY_SITE_ADDRESS" in readme
-    assert "TLS" in readme
-    assert "CADDY_BIND_ADDRESS" in readme
-    assert "non-loopback" in readme
-    assert "reviewed" in readme
-    assert "HEALTH_SSH_TARGET" in readme
-    assert "validate-oracle-cutover.sh" in readme
-
-
-def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Existing Postgres volumes" in readme
-    assert "does not rotate" in readme
-    assert "read -rsp 'New Postgres password: ' POSTGRES_PASSWORD" in readme
-    assert "No service is recreated before the database role changes" in readme
-    assert "docker compose stop worker pruner health" in readme
-    assert '${POSTGRES_USER:-transit}' in readme
-    assert '${POSTGRES_DB:-transit}' in readme
-    assert r"\password" in readme
-    assert "docker compose up -d --force-recreate postgres worker pruner health" in readme
-    assert "destructive" in readme
-    assert "old password must fail" in readme
-    assert "owner approval" in readme
-
-
 def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
     dockerfile = (DB_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    # The compose postgres service is transit-postgres-postgis:16 (postgres:16
-    # base), and slim bookworm's stock client is 15, so the worker needs the
-    # pgdg postgresql-client-16 to run pg_dump against it.
     assert "apt.postgresql.org.sh" in dockerfile
     assert "postgresql-client-16" in dockerfile
 
 
+def test_runtime_dockerfiles_pin_base_images_and_uv() -> None:
+    worker = (DB_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    health = (DB_ROOT / "Dockerfile.health").read_text(encoding="utf-8")
+    postgres = (DB_ROOT / "Dockerfile.postgis").read_text(encoding="utf-8")
+
+    assert worker.splitlines()[0] == f"FROM {PYTHON_IMAGE}"
+    assert health.splitlines()[0] == f"FROM {PYTHON_IMAGE}"
+    assert postgres.splitlines()[0] == f"FROM {POSTGRES_IMAGE}"
+    for dockerfile in (worker, health):
+        assert 'pip install --no-cache-dir "uv==0.11.15"' in dockerfile
+
+    assert "intentionally float" in worker
+    assert "intentionally float" in postgres
+
+
 def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(encoding="utf-8")
 
     assert 'cron: "0 8 * * 0"' in workflow
-    # 2026-06-22: the workflow is now a dry-run bloat MONITOR. pg_repack's execute
-    # path runs over the WAN (GitHub runner to the OCI Postgres); the long ACCESS
-    # EXCLUSIVE swap dropped the SSL connection and orphaned repack objects, so
-    # the scheduled run must NEVER execute. The flag is hardcoded true, and the
-    # schedule-executes expression + the dry_run dispatch input are both gone.
-    # Actual repack is done on-box via the on-VM runbook.
     assert 'PG_REPACK_DRY_RUN: "true"' in workflow
     assert "github.event_name == 'schedule'" not in workflow
     assert "&& 'false'" not in workflow
     assert "inputs.dry_run" not in workflow
-    # No dead GITHUB_ENV mode step (job-level env wins over GITHUB_ENV).
     assert "GITHUB_ENV" not in workflow
-    # psql is needed for the size report + the (execute-only) leftover-object check.
     assert "postgresql-16-repack" in workflow
     assert "postgresql-client-16" in workflow
-    # The size-report artifact is the bloat signal a dry-run leaves behind.
-    assert (
-        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
-        in workflow
-    )
+    assert "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" in workflow
     assert "pg-repack-size-report" in workflow
-    # Dry-run is fast; no multi-hour WAN-rewrite headroom needed.
     assert "timeout-minutes: 30" in workflow
     assert "bash scripts/run-pg-repack.sh" in workflow
 
@@ -419,24 +365,12 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
     document = yaml.safe_load(workflow)
 
-    # Each provider gets a bounded, serial retention job after publication.
-    # Exhaustion is required so a capped backlog cannot silently keep growing.
-    bronze_command = (
-        'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
-    )
+    bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
     assert bronze_command in workflow
-    assert workflow.index(
-        bronze_command
-    ) > workflow.index('prune-warm-rollup-storage "$provider"')
-    # Proof report + artifact give the prune a daily visible receipt.
+    assert workflow.index(bronze_command) > workflow.index('prune-warm-rollup-storage "$provider"')
     assert 'retention-proof-report "$provider" --report-path' in workflow
-    assert (
-        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
-        in workflow
-    )
+    assert "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" in workflow
     assert "if: always()" in workflow
-    # upload-artifact paths are workspace-relative (working-directory does
-    # not apply to `uses:` steps).
     assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
 
     assert document["jobs"]["retention"]["timeout-minutes"] == 150
@@ -444,14 +378,10 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
 
 def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
     document = yaml.safe_load(
-        (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
     )
     rollups = document["jobs"]["rollups"]
-    build = next(
-        step for step in rollups["steps"] if step["name"] == "Build warm rollups serially"
-    )
+    build = next(step for step in rollups["steps"] if step["name"] == "Build warm rollups serially")
     publish = document["jobs"]["publish"]
 
     provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
@@ -461,17 +391,15 @@ def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
     assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
     assert publish["timeout-minutes"] == 90
     assert publish["if"] == (
-        "${{ always() && needs.prepare.result == 'success' "
-        "&& needs.rollups.result == 'success' }}"
+        "${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}"
     )
 
 
 def test_ci_runs_for_db_and_ci_contract_changes() -> None:
-    document = yaml.safe_load(
-        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    )
+    document = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     on = document.get("on", document.get(True, {}))
     expected_paths = {
+        ".python-version",
         ".env.example",
         ".gitleaks.toml",
         "apps/db/**",
@@ -487,14 +415,12 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
 
 
 def test_real_db_ci_uses_the_disposable_script_interface() -> None:
-    document = yaml.safe_load(
-        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    )
+    document = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     job = document["jobs"]["real-db-tests-work"]
 
     assert document["defaults"]["run"]["working-directory"] == "apps/db"
-    assert job["runs-on"] == "ubuntu-latest"
-    assert job["timeout-minutes"] == 20
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == 40
     assert "services" not in job
     assert "env" not in job
     assert job["steps"] == [
@@ -505,6 +431,11 @@ def test_real_db_ci_uses_the_disposable_script_interface() -> None:
         {
             "name": "Set up Python workspace",
             "uses": "./.github/actions/setup-py",
+        },
+        {
+            "name": "Verify runtime container toolchain",
+            "run": "bash scripts/verify-runtime-images.sh",
+            "working-directory": "apps/db",
         },
         {
             "name": "Run disposable real-DB verification",
@@ -546,9 +477,7 @@ def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None
             if source_ref.startswith("./"):
                 continue
             if source_ref in declared_unmapped_refs:
-                observed_unmapped.append(
-                    (path.relative_to(REPO_ROOT).as_posix(), source_ref)
-                )
+                observed_unmapped.append((path.relative_to(REPO_ROOT).as_posix(), source_ref))
                 continue
             action = source_ref.rsplit("@", 1)[0]
             assert action in EXPECTED_PINNED_ACTION_LINES, (
@@ -559,7 +488,7 @@ def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None
     assert observed_unmapped == DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS
 
 
-def test_secret_scan_verifies_gitleaks_archive_before_extraction() -> None:
+def test_secret_scan_uses_the_shared_verified_gitleaks_installer() -> None:
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/secret-scan.yml").read_text(encoding="utf-8")
     )
@@ -567,20 +496,13 @@ def test_secret_scan_verifies_gitleaks_archive_before_extraction() -> None:
         step for step in workflow["jobs"]["gitleaks"]["steps"] if step["name"] == "Install gitleaks"
     )
 
-    assert install["env"] == {"GITLEAKS_VERSION": "8.30.1"}
+    assert "env" not in install
     expected_run = "\n".join(
         [
-            (
-                'curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/'
-                'v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" '
-                "-o /tmp/gitleaks.tar.gz"
-            ),
-            (
-                'echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
-                '  /tmp/gitleaks.tar.gz" | sha256sum -c -'
-            ),
-            "tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks",
-            "sudo install /tmp/gitleaks /usr/local/bin/gitleaks",
+            'installed="$(bash .github/scripts/install-gitleaks.sh '
+            '"${RUNNER_TEMP}/transit-gitleaks")"',
+            'printf \'GITLEAKS_BIN=%s\\n\' "${installed}" >> "${GITHUB_ENV}"',
+            '"${installed}" version',
         ]
     )
     assert install["run"].strip() == expected_run
@@ -622,14 +544,9 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     )
     document = yaml.safe_load(workflow)
 
-    # slice-9.1.1v: GIS runs in-process as a best-effort tail of run-static-pipeline,
-    # NOT as a separate YAML step (failure isolation lives in run_static_pipeline so a
-    # GIS outage never blocks the static publish).
     assert 'cron: "0 6 * * *"' in workflow
     assert "Run static + GIS Bronze -> Silver -> Gold pipeline" in workflow
     assert "ingest-gis" not in workflow
-    # One looped job over every provider (no per-provider workflow edit), and the
-    # static pipeline still runs before the static publish.
     assert "list-providers" in workflow
     assert 'run-static-pipeline "$provider"' in workflow
     assert workflow.index('run-static-pipeline "$provider"') < workflow.index(
@@ -648,7 +565,6 @@ def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_isl
     min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
 
     assert bbox_raw == "-74.17628,45.23742,-73.27628,45.86764"
-    # Centered on the OSM Île de Montréal relation bounds-center.
     assert math.isclose((min_lon + max_lon) / 2, -73.72628)
     assert math.isclose((min_lat + max_lat) / 2, 45.55253)
 
@@ -662,12 +578,8 @@ def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_isl
 
 
 def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
-    # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
-    # /v1 publish so alert_history.json builds from unpruned silver history.
     assert 'prune-i3-storage "$provider"' in workflow
     assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
         "publish-all --tier historic"
@@ -687,17 +599,12 @@ def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish()
 
 def _environment_keys(service: dict) -> set[str]:
     env = service.get("environment", {})
-    # compose accepts both a mapping and a list of "KEY=VALUE" strings.
     if isinstance(env, dict):
         return set(env)
     return {entry.split("=", 1)[0] for entry in env}
 
 
 def test_compose_services_define_scoped_environment_without_env_file() -> None:
-    # slice-9.1.1w: dropping the bulk `env_file: - .env` blocks stops every
-    # container (including the third-party caddy:2 image) from receiving the
-    # operator's local AI-tooling secrets. Each service now enumerates only the
-    # vars it needs via compose interpolation.
     services = _compose()["services"]
     for name, service in services.items():
         assert "env_file" not in service, f"{name} still bulk-injects env_file"
@@ -737,26 +644,17 @@ def test_compose_requires_explicit_storage_selectors_and_blanks_remote_targets()
     assert worker_env["SNAPSHOT_STORAGE_BACKEND"] == (
         "${SNAPSHOT_STORAGE_BACKEND:?SNAPSHOT_STORAGE_BACKEND is required}"
     )
-    assert worker_env["SNAPSHOT_LOCAL_ROOT"] == (
-        "${SNAPSHOT_LOCAL_ROOT:-./data/snapshots}"
-    )
+    assert worker_env["SNAPSHOT_LOCAL_ROOT"] == ("${SNAPSHOT_LOCAL_ROOT:-./data/snapshots}")
     assert worker_env["SNAPSHOT_R2_BUCKET"] == "${SNAPSHOT_R2_BUCKET:-}"
     assert worker_env["SNAPSHOT_PUBLIC_BASE_URL"] == "${SNAPSHOT_PUBLIC_BASE_URL:-}"
 
 
 def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
-    # The worker runs the full pipeline (run-realtime-worker), so it must receive
-    # every Settings knob EXCEPT the health-only HEALTH_* ones — otherwise a VM
-    # override silently disappears (Settings has extra="ignore") and the default
-    # is used at runtime. Computing the expectation from Settings.model_fields
-    # keeps this contract honest as new fields land (plan-freshness trigger (b)).
     services = _compose()["services"]
     worker_keys = _environment_keys(services["worker"])
-    expected = (set(Settings.model_fields) - HEALTH_ONLY_SETTINGS) | {"PGPASSWORD"}
+    expected = (set(Settings.model_fields) - HEALTH_ONLY_SETTINGS) | LIBPQ_ENVIRONMENT_KEYS
     assert worker_keys == expected
-    # Typo guard: every literal env var (minus the interpolated DATABASE_URL) must
-    # be a real Settings field, or extra="ignore" would silently drop it.
-    assert (worker_keys - {"DATABASE_URL", "PGPASSWORD"}) <= set(Settings.model_fields)
+    assert (worker_keys - {"DATABASE_URL"} - LIBPQ_ENVIRONMENT_KEYS) <= set(Settings.model_fields)
     assert "STM_API_KEY" in worker_keys
 
 
@@ -799,7 +697,7 @@ def test_compose_health_environment_excludes_stm_credentials() -> None:
     health_keys = _environment_keys(services["health"])
     assert health_keys == HEALTH_ENVIRONMENT_KEYS
     assert "STM_API_KEY" not in health_keys
-    assert (health_keys - {"DATABASE_URL", "PGPASSWORD"}) <= set(Settings.model_fields)
+    assert (health_keys - {"DATABASE_URL"} - LIBPQ_ENVIRONMENT_KEYS) <= set(Settings.model_fields)
 
 
 def test_compose_postgres_environment_is_bootstrap_only() -> None:
@@ -812,9 +710,6 @@ def test_compose_postgres_environment_is_bootstrap_only() -> None:
 
 
 def test_env_example_documents_all_runtime_knobs() -> None:
-    # slice-9.1.1w: these four knobs were live in settings.py / consumed by the
-    # worker but undocumented in .env.example, so an operator had no way to know
-    # they could be tuned.
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assignments = {line for line in _active_lines(env_example) if "=" in line}
     assert {
@@ -831,23 +726,26 @@ def test_env_example_documents_all_runtime_knobs() -> None:
     }.issubset(assignments)
 
 
-def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
-    # GOLD_FACT_RETENTION_DAYS default is 14 (settings.py); the prose must not
-    # contradict it with a stale "7 days" claim.
+def test_gold_fact_retention_default_matches_compose_and_env_template() -> None:
+    assert Settings.model_fields["GOLD_FACT_RETENTION_DAYS"].default == 14
+    services = _compose()["services"]
+    for service_name in ("worker", "pruner", "health"):
+        assert services[service_name]["environment"]["GOLD_FACT_RETENTION_DAYS"] == (
+            "${GOLD_FACT_RETENTION_DAYS:-14}"
+        )
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "GOLD_FACT_RETENTION_DAYS=14" in _active_lines(env_example)
     assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_example)
     assert "Gold facts keep 14 days" in env_example
     assert "keep 7 days" not in env_example
-    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Gold detail facts 14 days" in readme
-    assert "Gold detail facts 7 days" not in readme
 
 
 def test_compose_bronze_realtime_default_matches_the_ninety_day_runtime_contract() -> None:
     compose_text = (DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    assert compose_text.count(
-        "BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-90}"
-    ) == 2
+    assert (
+        compose_text.count("BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-90}")
+        == 2
+    )
     assert "BRONZE_REALTIME_RETENTION_DAYS:-30" not in compose_text
 
 
@@ -861,8 +759,5 @@ def test_local_1password_env_files_stay_ignored() -> None:
 
 
 def test_dead_module_dirs_stay_deleted() -> None:
-    # slice-9.1.1w: these dirs held only untracked __pycache__ — the source moved
-    # to source_factory/ and infra/postgres-serving-access/. Guard against an
-    # accidental resurrection (a stray import re-creating the package dir).
     assert not (DB_ROOT / "src" / "transit_ops" / "rebuild").exists()
     assert not (DB_ROOT / "infra" / "postgres-public-access").exists()

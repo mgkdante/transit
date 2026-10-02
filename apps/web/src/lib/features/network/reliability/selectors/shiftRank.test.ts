@@ -17,7 +17,6 @@ describe('selectShiftRank', () => {
 		const out = selectShiftRank(rows, labels);
 		expect(out.map((r) => r.key)).toEqual(['pm_peak', 'am_peak']);
 		expect(out[0].display).toBe('79%');
-		// The severe share is the ABSOLUTE magnitude value (never the in-view worst).
 		expect(out[0].value).toBe(7.4);
 	});
 
@@ -37,7 +36,6 @@ describe('selectShiftRank', () => {
 		];
 		const out = selectShiftRank(rows, labels);
 		expect(out.map((r) => r.key)).toEqual(['am_peak', 'midday']);
-		// The OTP-unknown grain's headline is NULL (renders the styled chip), never a fake 0%.
 		expect(out[1].display).toBeNull();
 		expect(out[1].value).toBe(9.0);
 	});

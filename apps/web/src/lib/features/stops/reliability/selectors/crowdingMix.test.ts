@@ -17,9 +17,8 @@ describe('selectCrowdingMix', () => {
 		const vm = selectCrowdingMix(mix, label, opts);
 		expect(vm.hasCrowding).toBe(true);
 		expect(vm.dominant?.code).toBe('many_seats');
-		expect(vm.dominantPct).toBe('50%'); // 0.5 / 1.0
+		expect(vm.dominantPct).toBe('50%');
 		expect(vm.segments).toHaveLength(5);
-		// P5.2: the VM carries the selector-emitted stacked-share spec (legend + sm strip).
 		expect(vm.spec?.kind).toBe('stacked-share');
 		expect(vm.spec?.legend).toBe(true);
 		expect(vm.spec?.size).toBe('sm');
@@ -44,7 +43,6 @@ describe('selectCrowdingMix', () => {
 	it('is honest absence on a null mix', () => {
 		const vm = selectCrowdingMix(null, label, opts);
 		expect(vm.hasCrowding).toBe(false);
-		// segments still render (null values) so a caller can lay out an empty bar shell.
 		expect(vm.segments.every((s) => s.value == null)).toBe(true);
 	});
 });

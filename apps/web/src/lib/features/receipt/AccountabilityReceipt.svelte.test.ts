@@ -5,6 +5,11 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/receipt'), state: {} },
+}));
+
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
 
 class ReconciliationIntersectionObserver {
@@ -24,16 +29,11 @@ class ReconciliationIntersectionObserver {
 	}
 }
 
-// The index of published receipt dates (ascending, as the contract publishes).
-// The latest enabled entry (Jun 17) is the seeded default.
 let indexData: ReceiptsIndex = {
 	generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 	dates: ['2026-06-15', '2026-06-16', '2026-06-17'],
 };
 
-// One day's receipt for the seeded default date. Carries a full headline + counts
-// + a worst route AND a worst stop. A null severe-share exercises the honesty
-// no-data branch; a null vehicles exercises the always-null cell OMISSION.
 let receiptData: Receipt | null = {
 	generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 	date: '2026-06-17',
@@ -104,22 +104,18 @@ const ports = vi.hoisted(() => ({
 	getAdvertisedReceipt: vi.fn(),
 }));
 
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
+	}),
+}));
+
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getReceipt: ports.getReceipt,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
 
-// createResource is reactive in production (re-runs the fetcher when its inputs
-// change). The receipt fetcher reads `selectedDate`, which an $effect seeds AFTER
-// the first render. We model that by re-invoking the fetcher every time `.data`
-// is read: the component re-renders when its OWN $state (`selectedDate`) changes,
-// and on that re-render the getter re-pumps and returns the freshly-fetched value.
-// To keep the read SYNCHRONOUS (so first paint already carries data), the mocked
-// getters below resolve synchronously — the fetcher returns the value directly,
-// not a promise, and a non-thenable return is captured immediately. The lone
-// thenable (the empty-`selectedDate` seed → `Promise.resolve(null)`) stays null,
-// which is exactly the pre-seed state.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		let data: T | null = null;
@@ -170,9 +166,6 @@ beforeEach(async () => {
 		worst_stop: { id: '57191', name: 'Rockland', avg_delay_min: 6.1 },
 	};
 	const v1 = await import('$lib/v1/repositories/historic');
-	// Resolve synchronously: the createResource mock above captures a non-thenable
-	// return immediately, so first paint carries data (the real getters are async;
-	// the synchronous stub only matters for the test's render timing).
 	vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 	vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 	vi.mocked(v1.getAdvertisedReceipt).mockImplementation(
@@ -210,7 +203,7 @@ describe('AccountabilityReceipt article shell', () => {
 		for (const name of [
 			'The receipt',
 			'By time of day',
-			'Service delivered',
+			'Service counts',
 			'Scheduled but never appeared',
 		]) {
 			expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
@@ -243,7 +236,7 @@ describe('AccountabilityReceipt article shell', () => {
 		).toHaveTextContent('04');
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(within(rail).queryByRole('button', { name: 'By time of day' })).toBeNull();
-		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Service counts' })).toBeInTheDocument();
 		expect(
 			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
 		).toBeInTheDocument();
@@ -270,7 +263,7 @@ describe('AccountabilityReceipt article shell', () => {
 		let rail = deliveredOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(card(deliveredOnly.container, 'receipt-delivered')).not.toBeNull();
 		expect(deliveredOnly.container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Service counts' })).toBeInTheDocument();
 		expect(within(rail).queryByRole('button', { name: 'Scheduled but never appeared' })).toBeNull();
 		deliveredOnly.unmount();
 		resetReceiptState();
@@ -293,7 +286,7 @@ describe('AccountabilityReceipt article shell', () => {
 		rail = silentOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(silentOnly.container.querySelector('[data-toc="receipt-delivered"]')).toBeNull();
 		expect(card(silentOnly.container, 'receipt-silent')).not.toBeNull();
-		expect(within(rail).queryByRole('button', { name: 'Service delivered' })).toBeNull();
+		expect(within(rail).queryByRole('button', { name: 'Service counts' })).toBeNull();
 		expect(
 			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
 		).toBeInTheDocument();
@@ -467,7 +460,7 @@ describe('AccountabilityReceipt article shell', () => {
 			});
 			await waitFor(() => {
 				expect(container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
-				expect(within(rail).getByRole('button', { name: 'Service delivered' })).toHaveAttribute(
+				expect(within(rail).getByRole('button', { name: 'Service counts' })).toHaveAttribute(
 					'aria-current',
 					'location',
 				);
@@ -498,14 +491,36 @@ describe('AccountabilityReceipt headline + counts', () => {
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 		expect(screen.getByText('3.4 min')).toBeInTheDocument();
-		expect(screen.getByText('7.2')).toBeInTheDocument();
+		expect(screen.queryByText('7.2')).not.toBeInTheDocument();
+		expect(screen.queryByText('Rider impact')).not.toBeInTheDocument();
+		expect(screen.getByLabelText('Day verdict')).toHaveTextContent(
+			'82% of known-delay predictions were in the on-time band',
+		);
 	});
+
+	it.each([-8.4, 0, 8.4])(
+		'preserves a %s-point route comparison with the same-day network',
+		async (delta) => {
+			receiptData = {
+				...(receiptData as Receipt),
+				worst_route: { id: '161', name: 'Van Horne', otp_delta_pts: delta },
+			};
+			render(AccountabilityReceipt);
+			await screen.findByText('82%');
+			const verdict = screen.getByLabelText('Day verdict');
+			expect(verdict).toHaveTextContent(
+				`highest mean delay: Van Horne (on-time ${delta > 0 ? '+' : ''}${delta} pts vs network)`,
+			);
+			expect(verdict).not.toHaveTextContent('lost');
+		},
+	);
 
 	it('renders the affected counts on the day', async () => {
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('340')).toBeInTheDocument();
 		expect(screen.getByText('12')).toBeInTheDocument();
 		expect(screen.getByText('5')).toBeInTheDocument();
+		expect(screen.getByText('Alert message versions')).toBeInTheDocument();
 	});
 
 	it('links the worst route to its detail page and the worst stop to its detail page', async () => {
@@ -522,7 +537,6 @@ describe('AccountabilityReceipt honesty', () => {
 	it('shows the styled honest-absence chip for a null severe-share, never a fabricated 0', async () => {
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
-		// severe % is null → the styled honest-absence chip (AbsentValue), never "0".
 		const absent = document.querySelectorAll('[data-slot="absent-value"]');
 		expect(absent.length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
@@ -530,8 +544,6 @@ describe('AccountabilityReceipt honesty', () => {
 
 	it('OMITS the always-null vehicles cell entirely rather than a permanent no-data row', async () => {
 		render(AccountabilityReceipt);
-		// `vehicles` is structurally always-null on /v1, so its cell (label + value)
-		// is dropped rather than rendering a permanent "no data" row.
 		await screen.findByText('340');
 		expect(screen.queryByText('Vehicles')).not.toBeInTheDocument();
 	});
@@ -541,8 +553,6 @@ describe('AccountabilityReceipt honesty', () => {
 		indexData = { generated_utc: '2026-06-17T07:00:00Z' as IsoUtc, dates: [] };
 		vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 		render(AccountabilityReceipt);
-		// An empty index renders the more-informative localized emptyIndex message,
-		// NOT the generic boundary empty — and the headline figures must NOT render.
 		const message = await screen.findByText(/No receipts have been published yet/i);
 		expect(message).toBeInTheDocument();
 		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
@@ -570,15 +580,12 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 		await screen.findByText('82%');
 		const layout = document.querySelector('[data-slot="receipt-layout"]');
 		expect(layout).not.toBeNull();
-		// The three designed slots, each present and in document order.
 		const headline = document.querySelector('[data-slot="receipt-headline"]');
 		const affected = document.querySelector('[data-slot="receipt-affected"]');
 		const worst = document.querySelector('[data-slot="receipt-worst"]');
 		expect(headline).not.toBeNull();
 		expect(affected).not.toBeNull();
 		expect(worst).not.toBeNull();
-		// DOM order is headline -> affected -> worst (the stack order on mobile and
-		// the source order the desktop grid-areas re-compose; reading order is sacred).
 		const order = Array.from(layout!.children);
 		expect(order.indexOf(headline as Element)).toBeLessThan(order.indexOf(affected as Element));
 		expect(order.indexOf(affected as Element)).toBeLessThan(order.indexOf(worst as Element));
@@ -597,18 +604,14 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 			alerts: 5,
 			vehicles: null,
 			rider_impact_score: 7.2,
-			// No worst route/stop on the day.
 			worst_route: null,
 			worst_stop: null,
 		};
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
-		// The worst panel is gone; the layout flags no-worst (the secondary row
-		// collapses to the affected column — never a fabricated empty card).
 		expect(document.querySelector('[data-slot="receipt-worst"]')).toBeNull();
 		expect(document.querySelector('[data-slot="receipt-layout"]')).toHaveClass('no-worst');
-		// Headline + affected sections still compose.
 		expect(document.querySelector('[data-slot="receipt-headline"]')).not.toBeNull();
 		expect(document.querySelector('[data-slot="receipt-affected"]')).not.toBeNull();
 	});
@@ -626,12 +629,6 @@ describe('AccountabilityReceipt date switching', () => {
 	it('re-fetches the chosen day and renders its figures when a non-default chip is picked', async () => {
 		const v1 = await import('$lib/v1/repositories/historic');
 
-		// Model a reactive, date-KEYED re-fetch: getReceipt returns the day matching
-		// the date it is invoked with, so picking another chip (which flips the
-		// component's selectedDate $state → a re-render → the createResource mock
-		// re-pumps getReceipt(selectedDate)) yields THAT day's figures, not a single
-		// frozen resolve. The seeded default is the most recent day (Jun 17, 82%);
-		// Jun 16 is a distinct day (74%).
 		const byDate: Record<string, Receipt> = {
 			'2026-06-17': { ...(receiptData as Receipt), date: '2026-06-17', otp_pct: 82 },
 			'2026-06-16': {
@@ -655,22 +652,15 @@ describe('AccountabilityReceipt date switching', () => {
 
 		render(AccountabilityReceipt);
 
-		// First paint carries the seeded default (the LATEST published day, Jun 17, 82%).
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 
-		// Pick the NON-default Jun 16 day via the smart single-date picker (S13 —
-		// the GrainPicker-as-date-picker misuse is gone; the picker is now an
-		// availability-bound native date picker (<input type="date">) whose min/max
-		// bound the real published span).
 		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
 		await fireEvent.change(input, { target: { value: '2026-06-16' } });
 
-		// getReceipt was invoked with the freshly-picked date …
 		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith(
 			'2026-06-16',
 			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
-		// … and the newly-fetched day's figures render (74%, not the old 82%).
 		expect(await screen.findByText('74%')).toBeInTheDocument();
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
 	});
@@ -698,17 +688,14 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
 		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
-		// A native date picker bounded (min/max) to the published earliest→latest span.
 		expect(input.type).toBe('date');
 		expect(input.min).toBe('2026-06-15');
 		expect(input.max).toBe('2026-06-17');
-		// The default selection is the latest published day (Jun 17).
 		expect(input.value).toBe('2026-06-17');
 	});
 
 	it('bounds the calendar across a GAP day (native pickers cannot disable an interior day)', async () => {
 		const v1 = await import('$lib/v1/repositories/historic');
-		// Jun 15 + Jun 17 published; Jun 16 is a gap the index never published.
 		indexData = {
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 			dates: ['2026-06-15', '2026-06-17'],
@@ -717,10 +704,6 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
 		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
-		// The native calendar can only BOUND (min/max) — the gap day (Jun 16) is INSIDE the
-		// span and pickable; its honesty is preserved at runtime via the receipt's absent-day
-		// path, not by disabling the option (which the old <select> could do). This is the
-		// documented S13 degradation from the selects→native-date-picker migration.
 		expect(input.type).toBe('date');
 		expect(input.min).toBe('2026-06-15');
 		expect(input.max).toBe('2026-06-17');
@@ -757,7 +740,6 @@ describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 		expect(document.querySelector('[data-slot="receipt-time-of-day"]')).not.toBeNull();
 		expect(document.querySelector('[data-slot="receipt-state-cuts"]')).not.toBeNull();
 		expect(document.querySelector('[data-slot="receipt-not-reported"]')).not.toBeNull();
-		// The not-reported line links to /lines/[id].
 		expect(screen.getByRole('link', { name: /View line 51/i })).toHaveAttribute(
 			'href',
 			'/lines/51',
@@ -765,7 +747,6 @@ describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 	});
 
 	it('stands the S13 cuts DOWN on ramp-in absence (pre-S13 receipt, no fabricated cards)', async () => {
-		// The default receiptData carries NO by_shift / service_states → the cuts stand down.
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
 		expect(document.querySelector('[data-slot="receipt-time-of-day"]')).toBeNull();

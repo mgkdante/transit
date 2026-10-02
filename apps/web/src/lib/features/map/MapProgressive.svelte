@@ -9,6 +9,7 @@
 	export interface ProgressiveMapHeroProps {
 		onready?: () => void;
 		onidle?: () => void;
+		onrecovering?: () => void;
 		onfailure?: (failure: ProgressiveMapFailure | null) => void;
 	}
 
@@ -117,6 +118,11 @@
 		publish('transit:maplibre-idle', idleTime);
 	}
 
+	function handleRecovering(): void {
+		if (!LiveMap || phase === 'failed') return;
+		beginAttempt();
+	}
+
 	function handleFailure(failure: ProgressiveMapFailure | null): void {
 		liveFailure = failure;
 		if (failure) phase = 'failed';
@@ -171,7 +177,12 @@
 		style:transition={$prefersReducedMotion ? 'none' : undefined}
 	>
 		{#if LiveMap}
-			<LiveMap onready={handleReady} onidle={handleIdle} onfailure={handleFailure} />
+			<LiveMap
+				onready={handleReady}
+				onidle={handleIdle}
+				onrecovering={handleRecovering}
+				onfailure={handleFailure}
+			/>
 		{/if}
 	</div>
 

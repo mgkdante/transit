@@ -1,18 +1,17 @@
-"""Shared ranking doctrine for current and immutable point-in-time surfaces."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Any, Literal, NamedTuple
 
+from transit_ops.gold.reader import round_half_away
 from transit_ops.snapshots.builders._helpers import (
     MIN_N_RATE,
     _avg_delay_min,
     _iso_date,
     _opt_int,
-    _otp_pct_severe_proxy,
     _severe_pct,
     _wilson_hi,
     _wilson_lo,
@@ -41,12 +40,23 @@ OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS = 600
 OFFENDER_SEVERITY_HIGH_RECURRENCE = 5
 
 
-def otp_delta_points(cell_otp: int | None, network_otp: int | None) -> float | None:
-    """Return entity OTP minus network OTP in percentage points, or honest ``None``."""
-
-    if cell_otp is None or network_otp is None:
+def otp_delta_points(
+    cell_successes: int | None,
+    cell_observations: int | None,
+    network_successes: int | None,
+    network_observations: int | None,
+) -> float | None:
+    if cell_successes is None or network_successes is None:
         return None
-    return round(float(cell_otp) - float(network_otp), 1)
+    if not cell_observations or not network_observations:
+        return None
+    if cell_observations < 0 or network_observations < 0:
+        return None
+    numerator = 100 * (
+        cell_successes * network_observations - network_successes * cell_observations
+    )
+    denominator = cell_observations * network_observations
+    return float(round_half_away(Decimal(numerator) / Decimal(denominator), 1))
 
 
 def _hotspot_ranked_entry(
@@ -54,7 +64,8 @@ def _hotspot_ranked_entry(
     kind: HotspotKind,
     names: EntityNameMap,
     *,
-    network_severe_pct: float | None,
+    network_observations: int,
+    network_severe: int,
 ) -> tuple[float, float, str, HotspotEntry] | None:
     observation_count = int(row["obs"] or 0)
     severe_count = int(row["severe"] or 0)
@@ -71,14 +82,17 @@ def _hotspot_ranked_entry(
     average_minutes = (
         _avg_delay_min(float(sum_seconds) / observation_count) if sum_seconds is not None else None
     )
-    cell_otp = _otp_pct_severe_proxy(observation_count, severe_count)
-    network_otp = None if network_severe_pct is None else 100.0 - network_severe_pct
     entry = HotspotEntry(
         rank=None,
         type=kind,
         id=entity_id,
         name=names.get(entity_id),
-        otp_delta_pts=otp_delta_points(cell_otp, network_otp),
+        otp_delta_pts=otp_delta_points(
+            not_severe_count,
+            observation_count,
+            network_observations - network_severe,
+            network_observations,
+        ),
         observation_count=_opt_int(observation_count),
         severe_count=_opt_int(severe_count),
         severe_pct=_severe_pct(observation_count, severe_count),
@@ -116,11 +130,11 @@ def _hotspot_tray_entry(
     )
 
 
-def _network_severe_pct(rows: list[RankingRow], kind: HotspotKind) -> float | None:
+def _network_counts(rows: list[RankingRow], kind: HotspotKind) -> tuple[int, int]:
     id_column = "route_id" if kind == "route" else "stop_id"
     total_observations = sum(int(row["obs"] or 0) for row in rows if str(row[id_column]))
     total_severe = sum(int(row["severe"] or 0) for row in rows if str(row[id_column]))
-    return _severe_pct(total_observations, total_severe) if total_observations else None
+    return total_observations, total_severe
 
 
 @dataclass(slots=True)
@@ -139,12 +153,11 @@ def build_hotspot_kind_ladder(
     kind: HotspotKind,
     names: EntityNameMap,
 ) -> HotspotKindLadder | None:
-    """Rank one route or stop ladder while preserving the established doctrine."""
 
     materialized_rows: list[RankingRow] = list(rows)
     if not materialized_rows:
         return None
-    network_severe_pct = _network_severe_pct(materialized_rows, kind)
+    network_observations, network_severe = _network_counts(materialized_rows, kind)
     ranked: list[tuple[float, float, str, HotspotEntry]] = []
     tray_rows: list[RankingRow] = []
     for row in materialized_rows:
@@ -152,7 +165,8 @@ def build_hotspot_kind_ladder(
             row,
             kind,
             names,
-            network_severe_pct=network_severe_pct,
+            network_observations=network_observations,
+            network_severe=network_severe,
         )
         if entry is None:
             tray_rows.append(row)
@@ -180,7 +194,6 @@ def merge_hotspot_grain(
     window_start: date | None,
     window_end: date | None,
 ) -> HotspotGrain | None:
-    """Assemble the two per-kind hotspot ladders and their shared below-floor tray."""
 
     route_entries = route_ladder.entries if route_ladder else []
     stop_entries = stop_ladder.entries if stop_ladder else []
@@ -217,7 +230,6 @@ def merge_hotspot_grain(
 
 
 def offender_severity(recurrence_days: int | None, average_seconds: float | None) -> str | None:
-    """Apply the established repeat-offender severity vocabulary."""
 
     if recurrence_days is None and average_seconds is None:
         return None
@@ -330,7 +342,6 @@ def build_offender_kind_ladder(
     kind: OffenderKind,
     route_names: EntityNameMap,
 ) -> OffenderKindLadder:
-    """Rank one trip or vehicle ladder with stable input-order tie behavior."""
 
     ranked: list[tuple[float, float, str, RepeatOffenderEntry]] = []
     tray: list[RepeatOffenderEntry] = []

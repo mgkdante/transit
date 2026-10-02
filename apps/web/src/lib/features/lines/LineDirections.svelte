@@ -1,34 +1,12 @@
-<!--
-  LineDirections — the per-line DIRECTIONS list (slice-S6 de-monolith, extracted
-  from RouteDetail's Detail pane). The operator's loved layout: each direction is
-  a column of its ordered stops, and the two directions lay SIDE-BY-SIDE once the
-  pane is wide enough — a self-contained @container so the bidirectional split
-  drives off THIS component's width, never the viewport (a single-direction route
-  collapses to one column via auto-fit, never a lonely half).
-
-  Each stop is a link into its detail page carrying the live readout: the soonest
-  predicted arrival on this route (from the live trips) + the approaching bus's
-  on-time status, or an honest "no live bus" when nothing is currently predicting
-  it — never a fabricated time. The delay reading + tone come from the shared
-  delayPresentation helpers (identical to the current-buses roster).
-
-  Caller (RouteDetail) owns the section head (label + freshness) + the honest-
-  absence note above this; this component renders ONLY the directions list (and
-  nothing when the route carries no directions). Copy + locale are passed in.
--->
 <script lang="ts" module>
 	import type { RouteFile, StopPrediction } from '$lib/v1';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteDetailCopy } from './lines.copy';
 
 	export interface LineDirectionsProps {
-		/** The static route file's directions (each with its ordered stops). */
 		directions: RouteFile['directions'];
-		/** Per-stop soonest predicted arrival, derived from the live trips on the route. */
 		predictions: ReadonlyMap<string, StopPrediction>;
-		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** Co-located route-detail copy for the active locale. */
 		copy: RouteDetailCopy;
 	}
 </script>
@@ -39,7 +17,7 @@
 	import { stopNameFallback } from '$lib/site/absence';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
-	import { AbsentValue, StateNotice } from '$lib/components/edge';
+	import { AbsentValue } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();
@@ -52,10 +30,6 @@
 </script>
 
 {#if (directions ?? []).length > 0}
-	<!-- container-type rides this PARENT wrapper; the side-by-side grid targets its
-	     DESCENDANT .line-directions list (never this same element — the self-target
-	     trap). At ≥44rem of CONTAINER width the two directions lay side-by-side
-	     (auto-fit collapses to one column for a single-direction route). -->
 	<div class="line-directions-pane" data-slot="line-directions">
 		<ul class="line-directions">
 			{#each directions ?? [] as dir, di (di)}
@@ -99,7 +73,7 @@
 													<AbsentValue reason="not-reported" variant="row" {locale} />
 												{/if}
 											{:else}
-												<StateNotice title={copy.noLiveBus} presentation="pill" />
+												<AbsentValue reason="no-prediction" variant="row" {locale} />
 											{/if}
 										</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
@@ -115,12 +89,6 @@
 {/if}
 
 <style>
-	/* ── Both directions side-by-side when the pane is wide (@container) ──────────
-	   container-type rides .line-directions-pane (the PARENT); the grid targets its
-	   DESCENDANT .line-directions list. At ≥44rem of CONTAINER width the two
-	   directions lay side-by-side (auto-fit collapses to a single column when only
-	   one direction exists, so a single-direction route never gets a lonely half
-	   column). Drives off this pane's width, not the viewport. */
 	.line-directions-pane {
 		container-type: inline-size;
 		container-name: line-directions;
@@ -177,7 +145,6 @@
 	.line-stop:last-child {
 		border-bottom: none;
 	}
-	/* Each stop is a link into its detail page: seq · name + live readout · chevron. */
 	.line-stop-link {
 		display: grid;
 		grid-template-columns: 2ch minmax(0, 1fr) auto;
@@ -206,8 +173,6 @@
 		white-space: nowrap;
 		transition: color var(--duration-fast) var(--ease-out);
 	}
-	/* Live readout: soonest predicted arrival + the approaching bus's status, or an
-	   honest "no live bus" placeholder when nothing is currently predicting. */
 	.line-stop-live {
 		grid-column: 2;
 		display: inline-flex;

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { verifyInstalledBrowserArtifact } from './browser-toolchain.mjs';
 import {
 	MOBILE_GEOMETRY_ROUTES,
 	MOBILE_GEOMETRY_VIEWPORT,
@@ -88,7 +89,6 @@ interface ChromeHandle {
 
 interface HarnessOptions {
 	baseUrl?: string;
-	chromePath?: string;
 	log?: (line: string) => void;
 }
 
@@ -670,7 +670,8 @@ export async function runMobileGeometryHarness(
 	options: HarnessOptions = {},
 ): Promise<MobileGeometryRun> {
 	const baseUrl = resolveMobileGeometryBaseUrl(options.baseUrl ?? process.env.BASE_URL);
-	const chromePath = options.chromePath ?? process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
+	const browserArtifact = await verifyInstalledBrowserArtifact();
+	const chromePath = browserArtifact.paths.executablePath;
 	const log = options.log ?? console.log;
 	const preflight = await fetch(`${baseUrl}/`);
 	if (!preflight.ok) throw new Error(`BASE_URL returned HTTP ${preflight.status}: ${baseUrl}`);
@@ -688,8 +689,6 @@ export async function runMobileGeometryHarness(
 		const routes: MobileRouteGeometry[] = [];
 		for (const route of MOBILE_GEOMETRY_ROUTES) {
 			await navigate(client, baseUrl, route);
-			// The credit rests COLLAPSED, so measure it there first; only then open
-			// it and measure the expanded overlay. Both states are swept (M6f-2 F19).
 			let collapsedAttribution: GeometryRect | null = null;
 			if (route.id === 'map') {
 				collapsedAttribution = await evaluate<GeometryRect | null>(

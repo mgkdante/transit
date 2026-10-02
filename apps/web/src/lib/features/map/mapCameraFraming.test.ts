@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { mapViewportOptions, type MapFitPadding } from '$lib/components/map/viewport';
@@ -8,16 +10,16 @@ import {
 	mapInitialCenter,
 } from './mapCameraFraming';
 
-// The camera maths this receipt settles against is MapLibre's own, but the
-// transform and the fit helper are not on its public export surface — they live in
-// the TypeScript sources it ships beside the bundle. Load them through NON-LITERAL
-// specifiers: the runtime resolves them identically, while `svelte-check` stays out
-// of maplibre's sources, which do not compile under this project's tsconfig. The
-// shapes below describe the API surface only; every number stays MapLibre's.
-const MERCATOR_TRANSFORM_MODULE = 'maplibre-gl/src/geo/projection/mercator_transform';
-const CAMERA_HELPER_MODULE = 'maplibre-gl/src/geo/projection/camera_helper';
-const LNG_LAT_MODULE = 'maplibre-gl/src/geo/lng_lat';
-const LNG_LAT_BOUNDS_MODULE = 'maplibre-gl/src/geo/lng_lat_bounds';
+const maplibrePackage = pathToFileURL(
+	createRequire(import.meta.url).resolve('maplibre-gl/package.json'),
+);
+const MERCATOR_TRANSFORM_MODULE = new URL(
+	'src/geo/projection/mercator_transform.ts',
+	maplibrePackage,
+).href;
+const CAMERA_HELPER_MODULE = new URL('src/geo/projection/camera_helper.ts', maplibrePackage).href;
+const LNG_LAT_MODULE = new URL('src/geo/lng_lat.ts', maplibrePackage).href;
+const LNG_LAT_BOUNDS_MODULE = new URL('src/geo/lng_lat_bounds.ts', maplibrePackage).href;
 
 type PaddingBox = { top: number; bottom: number; left: number; right: number };
 
@@ -53,23 +55,12 @@ const { cameraForBoxAndBearing } = (await import(CAMERA_HELPER_MODULE)) as {
 	) => { center: unknown; zoom: number } | undefined;
 };
 
-// The pan limit as it shipped before M6f-2: 0.3443° of slack west of the island
-// against 0.2764° east, so its midpoint sat west of the island's.
 const PRE_M6F2_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
-// MapStage's own initial zoom prop default (MapStage.svelte:185), passed to the
-// MapLibre constructor alongside the bounds.
 const MAP_STAGE_INITIAL_ZOOM = 11;
-// Sub-pixel: the settled offsets below land at ~1e-11 px, i.e. float noise.
 const CENTRED_PX = 1e-6;
 
 type Viewport = { label: string; width: number; height: number };
 
-// TWO DESKTOP REGIMES, and the fix needs both halves because each regime is centred
-// by a different mechanism.
-//
-// CONSTRAINED (wide/short): the fit lands wider than the pan window, so MapLibre's
-// constrain clamps the camera onto the pan-limit midpoint. Re-centring MAP_MAX_BOUNDS
-// is what centres these; the fit padding cannot reach the camera at all.
 const CONSTRAINED_DESKTOP_VIEWPORTS: Viewport[] = [
 	{ label: '1280x720', width: 1280, height: 720 },
 	{ label: '1366x768', width: 1366, height: 768 },
@@ -77,10 +68,6 @@ const CONSTRAINED_DESKTOP_VIEWPORTS: Viewport[] = [
 	{ label: '1920x1080', width: 1920, height: 1080 },
 ];
 
-// UNCONSTRAINED (tall): the VERTICAL fit binds first, so the settled zoom rises above
-// the constrain floor and the camera is free horizontally. The pan limit never touches
-// these — the SYMMETRY of the side inset is the only thing centring them. Omitting
-// this regime is what let the pre-M6f-2 0.37/0.43 split read as "inert".
 const UNCONSTRAINED_DESKTOP_VIEWPORTS: Viewport[] = [
 	{ label: '1280x1440', width: 1280, height: 1440 },
 	{ label: '1440x1080', width: 1440, height: 1080 },
@@ -91,15 +78,11 @@ const DESKTOP_VIEWPORTS: Viewport[] = [
 	...UNCONSTRAINED_DESKTOP_VIEWPORTS,
 ];
 
-// Under 1024 the padding is the uniform scalar and no constraint fires. These are
-// the must-not-regress controls: they were already exactly centred.
 const HANDHELD_VIEWPORTS: Viewport[] = [
 	{ label: '390x844', width: 390, height: 844 },
 	{ label: '768x1024', width: 768, height: 1024 },
 ];
 
-// Same normalisation MapLibre applies before it fits (`ui/camera.ts:828-839`):
-// a scalar becomes all four edges, and a partial box defaults the rest to zero.
 function paddingObject(padding: MapFitPadding): PaddingBox {
 	if (typeof padding === 'number') {
 		return { top: padding, bottom: padding, left: padding, right: padding };
@@ -112,14 +95,6 @@ function paddingObject(padding: MapFitPadding): PaddingBox {
 	};
 }
 
-/**
- * Settle the REAL MapLibre camera exactly the way `Map`'s constructor does
- * (maplibre-gl 5.24.0, `ui/map.ts:713-819`): build the transform from
- * `mapViewportOptions`, apply maxBounds, jumpTo(center/zoom), resize, fitBounds at
- * duration 0, then the final constraining resize. Every number this returns is
- * COMPUTED from that transform — nothing is sampled from rendered pixels, which is
- * why it cannot accidentally measure chrome that shares the island's colours.
- */
 function settleCamera(
 	viewport: Viewport,
 	overrides: { maxBounds?: readonly number[]; padding?: MapFitPadding } = {},
@@ -240,13 +215,6 @@ describe('settled map camera (computed from the real MapLibre transform)', () =>
 		]);
 	});
 
-	// INERTNESS GUARD for the pan-limit half of the fix. Put the pre-M6f-2 pan limit
-	// back and the island must go RED across the CONSTRAINED regime — a constant
-	// +3.03125% of viewport width right of centre. Scoped to that regime on purpose:
-	// the tall viewports escape the constrain, so the pan limit does not reach them
-	// and this particular bias is not the defect there (see the symmetry guard below).
-	// Without this the fix could silently become a no-op, which is exactly how the
-	// previous attempt at F8 failed.
 	it('goes RED again with the pre-M6f-2 asymmetric pan limit', () => {
 		const red = CONSTRAINED_DESKTOP_VIEWPORTS.map((viewport) => {
 			const settled = settleCamera(viewport, { maxBounds: PRE_M6F2_MAX_BOUNDS });
@@ -276,10 +244,6 @@ describe('settled map camera (computed from the real MapLibre transform)', () =>
 		}
 	});
 
-	// Why re-centring the pan limit — not shrinking the padding — is the fix for the
-	// CONSTRAINED regime: while the constrain owns the camera, every split of the same
-	// total settles to the identical camera, so no padding edit could have moved it.
-	// This is a regime-scoped claim, NOT a general one — see the next test.
 	it('ignores any left/right split while the constrain owns the camera', () => {
 		const viewport = CONSTRAINED_DESKTOP_VIEWPORTS[2];
 		const splits: Array<[number, number]> = [
@@ -303,12 +267,6 @@ describe('settled map camera (computed from the real MapLibre transform)', () =>
 		expect(cameras[0].offsetPx).toBeCloseTo(43.65, 2);
 	});
 
-	// SYMMETRY GUARD — the second half of the fix, and the arm the first receipt for
-	// this slice was missing. Once the camera escapes the constrain the split reaches
-	// it in full, so restoring the pre-M6f-2 0.37/0.43 must throw the island sharply
-	// LEFT here. Deleting DESKTOP_LEFT/RIGHT_PAD_FRAC was therefore not a cleanup of
-	// inert config — it is what centres this regime, and this test must fail if any
-	// future edit reintroduces an asymmetric inset.
 	it('is centred only by the SYMMETRY of the side inset once the camera escapes the constrain', () => {
 		const biased = UNCONSTRAINED_DESKTOP_VIEWPORTS.map((viewport) => {
 			const settled = settleCamera(viewport, {
@@ -326,7 +284,6 @@ describe('settled map camera (computed from the real MapLibre transform)', () =>
 			['1440x1080', -94.3336],
 		]);
 
-		// ...while the shipped symmetric inset centres them exactly.
 		for (const viewport of UNCONSTRAINED_DESKTOP_VIEWPORTS) {
 			const settled = settleCamera(viewport);
 			expect(Math.abs(settled.offsetPx)).toBeLessThan(CENTRED_PX);

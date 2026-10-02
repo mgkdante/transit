@@ -5,7 +5,6 @@ import { reliabilityCopy } from '../reliability.copy';
 import type { PunctualityVM } from '../clusters';
 import type { WeakStop } from '$lib/v1';
 
-// Minimal PunctualityVM — only `weakStops` + `weakStopsWindowed` are read by §4.
 const vm = (weakStops: WeakStop[], weakStopsWindowed: boolean): PunctualityVM => ({
 	headline: {
 		otpPct: null,
@@ -27,7 +26,6 @@ const vm = (weakStops: WeakStop[], weakStopsWindowed: boolean): PunctualityVM =>
 	isEmpty: false,
 });
 
-// 6 windowed stops (DB-ranked worst-first), the worst carrying a <= 0 pooled avg.
 const windowedStops: WeakStop[] = [
 	{
 		id: 'w1',
@@ -98,8 +96,6 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 		const { container } = render(Section4WorstStops, {
 			props: { punctuality: vm(windowedStops, true), locale: 'en', copy: reliabilityCopy.en },
 		});
-		// the picker shows once total > 5 (6 stops here). Scope to the radiogroup so the assertion
-		// can't be polluted by SEVERE_DOMAIN axis ticks (0/20/.../100) or severe_pct data values.
 		const picker = container.querySelector('[role="radiogroup"]');
 		expect(picker).not.toBeNull();
 		const segments = Array.from(picker?.querySelectorAll('[role="radio"]') ?? []).map((el) =>
@@ -109,9 +105,6 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 	});
 
 	it('threads preRanked: windowed bar = severe_pct (%), NOT avg, for a <=0-avg worst stop', () => {
-		// The sr-only table is the AT mirror of the chart: its value heading names the metric and
-		// each value carries its own unit. Windowed → severe-rate heading + '%' values; a
-		// preRanked:false regression would show average-delay copy + the avg (-1).
 		const { container } = render(Section4WorstStops, {
 			props: {
 				punctuality: vm(
@@ -122,8 +115,6 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 							avg_delay_min: -1,
 							severe_pct: 40,
 							observation_count: 99,
-							// the contract's NOT-severe CI (not_severe = 60 ∈ [50, 70]); the selector flips it
-							// onto the severe scale → [100 − 70, 100 − 50] = [30, 50], which brackets severe 40.
 							wilson_lo: 50,
 							wilson_hi: 70,
 						},
@@ -139,11 +130,10 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 			?.textContent?.trim();
 		expect(metricHeader).toBe(reliabilityCopy.en.strip.severeRateLabel);
 		const firstRow = container.querySelector('table.sr-only tbody tr');
-		expect(firstRow?.getAttribute('data-key')).toBe('w'); // DB worst-first order preserved
+		expect(firstRow?.getAttribute('data-key')).toBe('w');
 		const valueCell = firstRow?.querySelector('td')?.textContent ?? '';
-		expect(valueCell).toContain('40%'); // the severe rate, NOT the -1 avg
+		expect(valueCell).toContain('40%');
 		expect(valueCell).not.toContain('-1');
-		// the Wilson 95% interval is surfaced honestly in the AT mirror (Feature B)
 		expect(valueCell).toContain('95% CI');
 		expect(valueCell).toContain('30%');
 		expect(valueCell).toContain('50%');

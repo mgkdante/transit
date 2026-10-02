@@ -1,4 +1,3 @@
-"""Static contract test for migration 0043: rt_feed_snapshots hot-path index."""
 from __future__ import annotations
 
 import re

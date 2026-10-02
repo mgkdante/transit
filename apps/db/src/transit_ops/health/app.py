@@ -42,10 +42,7 @@ def create_app(
             checked_at_utc=checked_at,
             components=components,
         )
-        # Public, internet-facing endpoint: emit only the coarse status view.
-        # The detailed display_dict() (component messages with raw DB/storage/
-        # feed error strings + configured feed URLs) must stay off this surface
-        # (audit x-security#4); it remains available for operator tooling/logs.
+        # Public health exposes coarse status only; raw errors and configured URLs stay private.
         return JSONResponse(
             status_code=200 if overall.status == "ok" else 503,
             content=overall.public_dict(),

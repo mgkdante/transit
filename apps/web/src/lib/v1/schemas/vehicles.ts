@@ -1,9 +1,3 @@
-// vehicles.ts — Zod mirror of live_vehicles.schema.json (title: "VehiclesFile").
-// One entry per in-service vehicle: position, bearing, delay band, occupancy,
-// and the route/trip/next-stop it's working. Feeds the live map vehicle layer.
-// status uses the closed StatusCode enum; occupancy uses the closed OccupancyCode
-// enum. Everything else the GTFS-rt feed may omit is .nullable().
-
 import { z } from 'zod';
 import { isoUtc, StatusCodeSchema, OccupancyCodeSchema, payloadEnvelopeFields } from './types';
 
@@ -13,8 +7,6 @@ export const VehicleSchema = z.object({
 	lon: z.number(),
 	status: StatusCodeSchema,
 	updated_utc: isoUtc(),
-	// Each vehicle's OWN report time (gold position_timestamp_utc) — distinct from
-	// updated_utc (uniform snapshot capture time). Optional; fall back to updated_utc.
 	reported_utc: isoUtc().nullable().optional(),
 	route: z.string().nullable().optional(),
 	trip: z.string().nullable().optional(),

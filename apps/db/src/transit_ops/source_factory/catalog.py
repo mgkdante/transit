@@ -6,6 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import TextClause
 
+from transit_ops.gold.delay_days import DAILY_DELAY_STATE_KINDS
+
 
 @dataclass(frozen=True)
 class SourceFactorySource:
@@ -57,9 +59,9 @@ IMMUTABLE_RECEIPT_HISTORY_TABLES: tuple[str, ...] = (
 SOURCE_FACTORY_RESET_TABLES: tuple[str, ...] = (
     "gold.report_labels",
     "gold.repeated_problem_route_stop",
-    # gold.route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "gold.trip_delay_summary_5m",
     "gold.warm_rollup_periods",
+    "gold.realtime_serving_state",
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
     "gold.fact_trip_delay_snapshot",
@@ -102,8 +104,13 @@ SOURCE_FACTORY_RESET_TABLES: tuple[str, ...] = (
 
 _SOURCE_FACTORY_RESET_STATEMENT = text(
     "TRUNCATE TABLE\n  "
-    + ",\n  ".join(SOURCE_FACTORY_RESET_TABLES)
+    + ",\n  ".join(
+        table for table in SOURCE_FACTORY_RESET_TABLES if table != "gold.warm_rollup_periods"
+    )
     + "\nRESTART IDENTITY CASCADE"
+)
+_NON_DAILY_STATE = (
+    "rollup_kind NOT IN (" + ", ".join(f"'{kind}'" for kind in DAILY_DELAY_STATE_KINDS) + ")"
 )
 
 
@@ -112,11 +119,7 @@ def build_source_factory_catalog(
     *,
     present_feed_kinds: set[str] | None = None,
 ) -> SourceFactoryCatalog:
-    # The realtime feeds are required for the rebuild only when the provider
-    # actually publishes them. A static-only / static+alerts agency (e.g. STS)
-    # has no trip/vehicle bronze, so marking those sources required=True would
-    # fail its rebuild on a legitimately-absent feed. When present_feed_kinds is
-    # None (legacy callers / tests) the historical "required" behavior is kept.
+    # Require realtime Bronze only when the manifest declares its feeds.
     def _rt_required(feed_kind: str) -> bool:
         if present_feed_kinds is None:
             return True
@@ -161,7 +164,6 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.public_route_reliability_daily",
                     "gold.public_stop_delay_daily",
-                    # gold.route_habit_score DROPPED (0076, S14) — recomposed at read time.
                     "gold.repeated_problem_route_stop",
                     "gold.citizen_accountability_daily",
                     "gold.report_labels",
@@ -188,8 +190,6 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.fact_stop_time_delay_observation",
                     "gold.route_delay_hourly",
-                    # GC1 / Step G1 added delayed_trip_count to the spine so the delay-metric
-                    # readers re-point onto it (route_delay_hourly stays for the public view).
                     "gold.route_delay_spine",
                     "gold.stop_delay_hourly",
                     "gold.repeated_problem_route_stop",
@@ -260,7 +260,6 @@ def build_source_factory_catalog(
 
 
 def build_source_factory_reset_statement() -> TextClause:
-    """Whole-database TRUNCATE; used only for an explicit all-providers reset."""
     return _SOURCE_FACTORY_RESET_STATEMENT
 
 
@@ -285,30 +284,25 @@ def reset_source_factory_tables(
     *,
     all_providers: bool = False,
 ) -> dict[str, object]:
-    """Clear the source-factory tables ahead of a rebuild.
-
-    Per-provider (the default): DELETE only ``provider_id``'s rows from every
-    reset table that carries a ``provider_id`` column, walking the list
-    child-to-parent so foreign keys hold. Tables with no ``provider_id`` column
-    (shared seeds such as ``gold.report_labels``) are left untouched — rebuilding
-    one provider must NEVER wipe another provider's rows or shared seed data.
-
-    ``all_providers=True``: the legacy whole-database
-    ``TRUNCATE ... RESTART IDENTITY CASCADE`` (every provider's rows plus a
-    sequence reset). Kept as an explicit, opt-in escape hatch for a full
-    teardown; never the default now that the database is multi-tenant.
-    """
     if all_providers:
         connection.execute(build_source_factory_reset_statement())
+        result = connection.execute(
+            text("DELETE FROM gold.warm_rollup_periods WHERE " + _NON_DAILY_STATE)
+        )
         return {
             "mode": "all_providers",
-            "truncated_tables": list(SOURCE_FACTORY_RESET_TABLES),
+            "truncated_tables": [
+                table
+                for table in SOURCE_FACTORY_RESET_TABLES
+                if table != "gold.warm_rollup_periods"
+            ],
+            "deleted_non_daily_watermarks": result.rowcount,
+            "preserved_daily_state_kinds": list(DAILY_DELAY_STATE_KINDS),
         }
 
     if not provider_id:
         raise ValueError(
-            "reset_source_factory_tables requires a provider_id unless "
-            "all_providers=True is set."
+            "reset_source_factory_tables requires a provider_id unless all_providers=True is set."
         )
 
     deleted_row_counts: dict[str, int] = {}
@@ -317,18 +311,23 @@ def reset_source_factory_tables(
         if not _table_has_provider_id(connection, qualified_table):
             skipped_tables.append(qualified_table)
             continue
-        # qualified_table is a fixed identifier from SOURCE_FACTORY_RESET_TABLES
-        # (never user input); the provider_id value is bound as a parameter.
+        # Identifiers come from the fixed reset registry; bind provider_id as a value.
         result = connection.execute(
-            text(f"DELETE FROM {qualified_table} WHERE provider_id = :provider_id"),
+            text(
+                f"DELETE FROM {qualified_table} WHERE provider_id = :provider_id"
+                + (
+                    f" AND {_NON_DAILY_STATE}"
+                    if qualified_table == "gold.warm_rollup_periods"
+                    else ""
+                )
+            ),
             {"provider_id": provider_id},
         )
-        deleted_row_counts[qualified_table] = (
-            result.rowcount if result.rowcount is not None else -1
-        )
+        deleted_row_counts[qualified_table] = result.rowcount if result.rowcount is not None else -1
     return {
         "mode": "per_provider",
         "provider_id": provider_id,
         "deleted_row_counts": deleted_row_counts,
         "skipped_tables": skipped_tables,
+        "preserved_daily_state_kinds": list(DAILY_DELAY_STATE_KINDS),
     }

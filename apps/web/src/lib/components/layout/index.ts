@@ -1,19 +1,3 @@
-// $lib/components/layout — responsive grids and page-shell recipes.
-//
-// Single import surface for the layout shells:
-//   import { DashboardGrid, RailLayout } from '$lib/components/layout';
-//
-// The responsive recipes are snippet-prop based (Svelte 5 runes) and CSS-only,
-// so they stay SSR-correct without media-query JS. They own layout only — no
-// data marks or overlay chrome — and compose with brand/ui primitives.
-//
-//   DashboardGrid      — auto-fit KPI tile field (repeat(auto-fit, minmax(...))).
-//   RailLayout         — sticky-rail body grid (minmax(13rem,17rem) | 1fr at lg,
-//                        single column below; rail sticky at top:5.5rem).
-//   ControlsRail       — bordered mono-labelled control panel that collects a
-//                        surface's pickers + filter chips into one zone.
-//   ArticleSectionStack — shared independent-card rhythm for article disclosures.
-
 export { default as DashboardGrid } from './DashboardGrid.svelte';
 export { default as RailLayout } from './RailLayout.svelte';
 export { default as ControlsRail } from './ControlsRail.svelte';

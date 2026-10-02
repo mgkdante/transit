@@ -1,18 +1,9 @@
-<!--
-  Shared shell for Stop reliability presenters.
-
-  Standalone presenters own their heading and surface. Inside the article, the
-  surrounding CollapsibleSection already owns both, so `article-body` emits only
-  the presenter's data body. This keeps composition explicit without parent CSS
-  reaching into a child's frame or hiding a duplicate heading.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import type { MetricKey } from '$lib/metrics';
 	import { cn } from '$lib/utils';
 
 	type Presentation = 'standalone' | 'article-body';
@@ -43,15 +34,6 @@
 		class: className,
 		children,
 	}: StopReliabilityPresenterProps = $props();
-
-	const explainerInfo = $derived.by(() => {
-		const info = metricInfoFor(metricKey, locale);
-		return {
-			...info,
-			label: metricsCopy[locale].info.trigger(heading),
-			linkLabel: metricsCopy[locale].info.link,
-		};
-	});
 </script>
 
 <svelte:element
@@ -68,14 +50,7 @@
 >
 	{#if presentation === 'standalone'}
 		{#snippet headingExplainer()}
-			<MetricInfo
-				class="stop-metric-info"
-				tip={explainerInfo.tip}
-				href={explainerInfo.href}
-				label={explainerInfo.label}
-				linkLabel={explainerInfo.linkLabel}
-				side="bottom"
-			/>
+			<MetricInfo class="stop-metric-info" {metricKey} {locale} name={heading} side="bottom" />
 		{/snippet}
 		<SectionHeading level={2} overline={heading} explainer={headingExplainer} />
 	{/if}

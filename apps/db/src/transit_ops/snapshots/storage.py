@@ -1,43 +1,42 @@
-"""Snapshot storage layer — PUT /v1 JSON to Cloudflare R2 (or local disk).
-
-The R2 backend owns a snapshot-specific client built by `_build_snapshot_s3_client`,
-which reads BRONZE_S3_* credentials.  The snapshot-specific settings control
-which *bucket* the published snapshots land in and whether to use local disk
-instead (useful for development and CI).
-"""
-
 from __future__ import annotations
 
-import fcntl
+import errno
 import hashlib
 import json
 import os
 import pathlib
-import tempfile
+import re
+import stat
+import sys
 import threading
+import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import uuid4
 
-import boto3
-from botocore.config import Config as BotoConfig
-from botocore.exceptions import BotoCoreError, ClientError
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
+from botocore.exceptions import ClientError
 from pydantic import BaseModel
 
-from transit_ops.ingestion.storage import BronzeStorageError, _validated_s3_target
+from transit_ops.s3 import build_s3_client, validate_s3_bucket_name
 from transit_ops.settings import Settings
+from transit_ops.snapshots.protocols import (
+    HistoricObjectStore,
+    SnapshotObjectStore,
+    SnapshotPayload,
+)
+from transit_ops.snapshots.protocols import ImmutablePutOutcome as ImmutablePutOutcome
+from transit_ops.snapshots.protocols import StableActivationOutcome as StableActivationOutcome
+from transit_ops.snapshots.protocols import StableObjectVersion as StableObjectVersion
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
-# Cache-Control header per data tier.
-# live    — 30 s TTL; realtime vehicle positions / alerts
-# static  — 1-day TTL + stale-while-revalidate; GTFS-derived shapes, stops, routes
-# historic — 1-hour TTL + stale-while-revalidate; the tier is REWRITTEN daily and
-#            its indexes/aggregates are mutable, so a 24 h client cache could pin a
-#            returning visitor a full publish behind (observed 2026-07-09: a cached
-#            receipts index kept the picker a week stale). Per-day files are
-#            immutable and only pay a cheap ETag 304 on revalidation.
-# internal — private, no-store; per-tier hash-state objects (never client-cached)
+# Mutable historic indexes use shorter TTLs than static files; hash state is private, no-store.
 CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
@@ -46,13 +45,10 @@ CACHE_CONTROL: dict[str, str] = {
     "internal": "private, no-store",
 }
 
-# S3/R2 error codes that mean "object does not exist" (mirror ingestion/storage).
 _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 _PRECONDITION_FAILED_CODES = {"412", "PreconditionFailed"}
 
 
-# Backward-compatible import surface for older tests and callers. Serialization
-# itself lives only in snapshots.serialization.
 _body = snapshot_json_bytes
 
 
@@ -79,22 +75,6 @@ class StoredObjectVersionMismatchError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class ImmutablePutOutcome:
-    """Atomic immutable write result used by the hash-gate accounting seam."""
-
-    key: str
-    written: bool
-
-
-@dataclass(frozen=True)
-class StableObjectVersion:
-    """Backend-specific version token captured before stable-object activation."""
-
-    rel_key: str
-    token: str | None
-
-
-@dataclass(frozen=True)
 class StoredObjectVersion:
     """Stable object metadata used by fail-closed historic generation scans."""
 
@@ -102,14 +82,6 @@ class StoredObjectVersion:
     etag: str
     last_modified_utc: datetime
     size: int
-
-
-@dataclass(frozen=True)
-class StableActivationOutcome:
-    """Conditional stable-object activation result."""
-
-    key: str
-    written: bool
 
 
 def _lock_for_key(
@@ -124,18 +96,41 @@ def _lock_for_key(
 
 @contextmanager
 def _exclusive_directory_lock(directory: pathlib.Path) -> Iterator[None]:
-    """Hold a process-safe advisory lock on an existing snapshot directory."""
+    """Serialize cooperating activators through publication, including process exit."""
 
     directory.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    if sys.platform == "win32":
+        # Never delete or truncate this permanent lock file: waiters must share the same lock
+        # object.
+        descriptor = os.open(directory / _LOCAL_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            yield
+            while True:
+                try:
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    # Only EACCES means CRT lock contention; other errors fail closed.
+                    if exc.errno != errno.EACCES:
+                        raise
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-    finally:
-        os.close(descriptor)
+            os.close(descriptor)
+        return
+
+    else:
+        descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 class SnapshotStorage:
@@ -163,11 +158,6 @@ class SnapshotStorage:
         self._immutable_registry_lock = threading.Lock()
         self._immutable_locks: dict[str, threading.Lock] = {}
 
-    def _thread_client(self) -> object:
-        """Return the provider-scoped low-level client."""
-
-        return self._client
-
     def close(self) -> None:
         """Close the owned low-level client once all publisher workers have drained."""
 
@@ -186,7 +176,7 @@ class SnapshotStorage:
     def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
         """PUT raw *body* bytes at ``{base_prefix}/{rel_key}`` and return the full key."""
         key = self.full_key(rel_key)
-        self._thread_client().put_object(  # type: ignore[attr-defined]
+        self._client.put_object(  # type: ignore[attr-defined]
             Bucket=self._bucket,
             Key=key,
             Body=body,
@@ -215,7 +205,7 @@ class SnapshotStorage:
 
         key = self.full_key(rel_key)
         try:
-            response = self._thread_client().get_object(  # type: ignore[attr-defined]
+            response = self._client.get_object(  # type: ignore[attr-defined]
                 Bucket=self._bucket,
                 Key=key,
             )
@@ -226,7 +216,8 @@ class SnapshotStorage:
             raise
         body = response["Body"]
         try:
-            return body.read()
+            payload: bytes = body.read()
+            return payload
         finally:
             if hasattr(body, "close"):
                 body.close()
@@ -242,7 +233,7 @@ class SnapshotStorage:
             raise ValueError("stored object version belongs to a different key")
         key = self.full_key(rel_key)
         try:
-            response = self._thread_client().get_object(  # type: ignore[attr-defined]
+            response = self._client.get_object(  # type: ignore[attr-defined]
                 Bucket=self._bucket,
                 Key=key,
                 IfMatch=expected_version.etag,
@@ -316,7 +307,7 @@ class SnapshotStorage:
             modified = modified.replace(tzinfo=UTC)
         else:
             modified = modified.astimezone(UTC)
-        # LIST may preserve milliseconds that GET/HEAD HTTP-date headers cannot represent.
+        # LIST may preserve milliseconds absent from GET/HEAD HTTP-date timestamps.
         modified = modified.replace(microsecond=0)
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             raise RuntimeError(f"snapshot object has invalid size: {rel_key}")
@@ -344,7 +335,7 @@ class SnapshotStorage:
             request: dict[str, object] = {"Bucket": self._bucket, "Prefix": full_prefix}
             if token is not None:
                 request["ContinuationToken"] = token
-            response = self._thread_client().list_objects_v2(**request)  # type: ignore[attr-defined]
+            response = self._client.list_objects_v2(**request)  # type: ignore[attr-defined]
             contents = response.get("Contents", [])
             if not isinstance(contents, list):
                 raise RuntimeError("snapshot inventory returned malformed Contents")
@@ -368,7 +359,7 @@ class SnapshotStorage:
     def _immutable_head(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         key = self.full_key(rel_key)
         try:
-            return self._thread_client().head_object(  # type: ignore[attr-defined,no-any-return]
+            return self._client.head_object(  # type: ignore[attr-defined,no-any-return]
                 Bucket=self._bucket,
                 Key=key,
             )
@@ -421,7 +412,7 @@ class SnapshotStorage:
             else {"IfMatch": expected_version.token}
         )
         try:
-            self._thread_client().put_object(  # type: ignore[attr-defined]
+            self._client.put_object(  # type: ignore[attr-defined]
                 Bucket=self._bucket,
                 Key=key,
                 Body=body,
@@ -435,7 +426,7 @@ class SnapshotStorage:
             if code not in _PRECONDITION_FAILED_CODES and status != 412:
                 raise
             try:
-                response = self._thread_client().get_object(  # type: ignore[attr-defined]
+                response = self._client.get_object(  # type: ignore[attr-defined]
                     Bucket=self._bucket,
                     Key=key,
                 )
@@ -489,7 +480,7 @@ class SnapshotStorage:
             raise ImmutableKeyCollisionError(rel_key)
 
         key = self.full_key(rel_key)
-        response = self._thread_client().get_object(  # type: ignore[attr-defined]
+        response = self._client.get_object(  # type: ignore[attr-defined]
             Bucket=self._bucket,
             Key=key,
         )
@@ -522,7 +513,7 @@ class SnapshotStorage:
             if existing is None:
                 key = self.full_key(rel_key)
                 try:
-                    self._thread_client().put_object(  # type: ignore[attr-defined]
+                    self._client.put_object(  # type: ignore[attr-defined]
                         Bucket=self._bucket,
                         Key=key,
                         Body=body,
@@ -555,7 +546,7 @@ class SnapshotStorage:
 
         return self.put_immutable_json_outcome(rel_key, payload).key
 
-    def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
+    def get_json(self, rel_key: str) -> object:
         """GET and JSON-decode the object at *rel_key*; ``None`` if it is absent.
 
         Missing objects (404 / NoSuchKey / NotFound) return ``None`` so callers
@@ -563,7 +554,7 @@ class SnapshotStorage:
         """
         key = self.full_key(rel_key)
         try:
-            resp = self._thread_client().get_object(Bucket=self._bucket, Key=key)  # type: ignore[attr-defined]
+            resp = self._client.get_object(Bucket=self._bucket, Key=key)  # type: ignore[attr-defined]
         except ClientError as exc:
             code = str(exc.response.get("Error", {}).get("Code", ""))
             if code in _NOT_FOUND_CODES:
@@ -571,14 +562,43 @@ class SnapshotStorage:
             raise
         body = resp["Body"]
         try:
-            return json.loads(body.read())
+            payload: object = json.loads(body.read())
+            return payload
         finally:
             if hasattr(body, "close"):
                 body.close()
 
 
+_LOCAL_TEMPORARY_NAME = re.compile(r"\.transit-snapshot-[0-9a-f]{32}\.tmp")
+_LOCAL_LOCK_NAME = ".transit-snapshot.lock"
+
+
+def _reserved_local_name(name: str) -> bool:
+    if sys.platform == "win32":
+        # Reject Win32 case/dot/space aliases and NTFS alternate data streams.
+        name = name.split(":", 1)[0].rstrip(" .").casefold()
+    return name == _LOCAL_LOCK_NAME or _LOCAL_TEMPORARY_NAME.fullmatch(name) is not None
+
+
+def _resolved_local_path(path: pathlib.Path) -> pathlib.Path:
+    resolved = path.resolve()
+    if sys.platform == "win32":
+        # Normalize extended DOS/UNC prefixes before comparing resolved roots.
+        text = str(resolved)
+        if text.startswith("\\\\?\\UNC\\"):
+            return pathlib.Path("\\\\" + text[8:])
+        if text.startswith("\\\\?\\"):
+            return pathlib.Path(text[4:])
+    return resolved
+
+
 class LocalSnapshotStorage:
-    """Write JSON snapshots to the local filesystem (development / CI)."""
+    """Publish complete local objects without adding fsync durability.
+
+    Names `.transit-snapshot-<32 lowercase hex>.tmp` and `.transit-snapshot.lock`
+    are reserved internal files, excluded from object inventories. Windows locks
+    persist so all cooperating processes continue to share one lock object.
+    """
 
     def __init__(self, root: str, base_prefix: str) -> None:
         self._root = pathlib.Path(root)
@@ -588,8 +608,8 @@ class LocalSnapshotStorage:
             raise ValueError("unsafe_local_snapshot_path")
         self._provider_root = self._root.joinpath(*prefix_path.parts)
         try:
-            self._resolved_root = self._root.resolve()
-            self._resolved_provider_root = self._provider_root.resolve()
+            self._resolved_root = _resolved_local_path(self._root)
+            self._resolved_provider_root = _resolved_local_path(self._provider_root)
             self._resolved_provider_root.relative_to(self._resolved_root)
         except (OSError, RuntimeError, ValueError):
             raise ValueError("unsafe_local_snapshot_path") from None
@@ -609,7 +629,14 @@ class LocalSnapshotStorage:
             ):
                 raise ValueError
             path = self._provider_root.joinpath(*rel_path.parts)
-            path.resolve().relative_to(self._resolved_provider_root)
+            resolved_relative = _resolved_local_path(path).relative_to(self._resolved_provider_root)
+            # Check native and resolved components to reject Windows separators and directory
+            # aliases.
+            if any(
+                _reserved_local_name(part)
+                for part in (*path.relative_to(self._provider_root).parts, *resolved_relative.parts)
+            ):
+                raise ValueError
         except (OSError, RuntimeError, TypeError, ValueError):
             raise ValueError("unsafe_local_snapshot_path") from None
         return path
@@ -618,11 +645,53 @@ class LocalSnapshotStorage:
         """Return the on-disk path for *rel_key* as a string."""
         return str(self._path(rel_key))
 
-    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:  # noqa: ARG002
-        """Write raw *body* bytes to ``{root}/{base_prefix}/{rel_key}``; return path."""
-        dest = self._path(rel_key)
+    @staticmethod
+    def _publish_bytes(dest: pathlib.Path, body: bytes, *, create_only: bool = False) -> bool:
+        """Return false only when exclusive publication finds an existing destination."""
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(body)
+        temporary = dest.with_name(f".transit-snapshot-{uuid4().hex}.tmp")
+        created = False
+        published = True
+        try:
+            handle = temporary.open("xb")
+            created = True
+            try:
+                if handle.write(body) != len(body):
+                    raise OSError("Incomplete temporary snapshot write")
+            except BaseException:
+                with suppress(Exception):
+                    handle.close()
+                raise
+            else:
+                handle.close()
+            if create_only:
+                try:
+                    os.link(temporary, dest)
+                except FileExistsError:
+                    published = False
+            else:
+                try:
+                    existing_mode = stat.S_IMODE(dest.stat().st_mode)
+                except FileNotFoundError:
+                    existing_mode = None
+                if existing_mode is not None:
+                    temporary.chmod(existing_mode)
+                temporary.replace(dest)
+        except BaseException as failure:
+            if created:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    failure.add_note(f"Temporary snapshot cleanup failed: {cleanup_error}")
+            raise
+        else:
+            temporary.unlink(missing_ok=True)
+        return published
+
+    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:  # noqa: ARG002
+        """Publish complete bytes atomically; no fsync or crash-durability guarantee."""
+        dest = self._path(rel_key)
+        self._publish_bytes(dest, body)
         return str(dest)
 
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
@@ -688,9 +757,13 @@ class LocalSnapshotStorage:
             return
         paths = [prefix_path] if prefix_path.is_file() else sorted(prefix_path.rglob("*"))
         for path in paths:
-            if not path.is_file():
+            relative = path.relative_to(provider_root)
+            if any(_reserved_local_name(part) for part in relative.parts) or not path.is_file():
                 continue
-            rel_key = path.relative_to(provider_root).as_posix()
+            rel_key = relative.as_posix()
+            resolved_relative = _resolved_local_path(path).relative_to(self._resolved_provider_root)
+            if any(_reserved_local_name(part) for part in resolved_relative.parts):
+                continue
             version = self.capture_object_version(rel_key)
             if version is None:
                 raise RuntimeError(f"snapshot object disappeared during inventory: {rel_key}")
@@ -748,29 +821,10 @@ class LocalSnapshotStorage:
             if active_body == body:
                 return StableActivationOutcome(key=str(dest), written=False)
 
-            if active_body is None:
-                try:
-                    with dest.open("xb") as destination:
-                        destination.write(body)
-                except FileExistsError:
-                    if dest.read_bytes() == body:
-                        return StableActivationOutcome(key=str(dest), written=False)
-                    raise StableActivationConflictError(rel_key) from None
-            else:
-                temporary_path: pathlib.Path | None = None
-                try:
-                    with tempfile.NamedTemporaryFile(
-                        dir=dest.parent,
-                        prefix=f".{dest.name}.",
-                        suffix=".tmp",
-                        delete=False,
-                    ) as temporary:
-                        temporary.write(body)
-                        temporary_path = pathlib.Path(temporary.name)
-                    temporary_path.replace(dest)
-                finally:
-                    if temporary_path is not None:
-                        temporary_path.unlink(missing_ok=True)
+            if not self._publish_bytes(dest, body, create_only=active_body is None):
+                if dest.read_bytes() == body:
+                    return StableActivationOutcome(key=str(dest), written=False)
+                raise StableActivationConflictError(rel_key) from None
             return StableActivationOutcome(key=str(dest), written=True)
 
     def activate_stable_json(
@@ -810,11 +864,7 @@ class LocalSnapshotStorage:
                     raise ImmutableKeyCollisionError(rel_key)
                 return ImmutablePutOutcome(key=str(dest), written=False)
 
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with dest.open("xb") as destination:
-                    destination.write(body)
-            except FileExistsError:
+            if not self._publish_bytes(dest, body, create_only=True):
                 if dest.read_bytes() != body:
                     raise ImmutableKeyCollisionError(rel_key) from None
                 return ImmutablePutOutcome(key=str(dest), written=False)
@@ -825,12 +875,13 @@ class LocalSnapshotStorage:
 
         return self.put_immutable_json_outcome(rel_key, payload).key
 
-    def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
+    def get_json(self, rel_key: str) -> object:
         """Read and JSON-decode the object at *rel_key*; ``None`` if the file is missing."""
         path = self._path(rel_key)
         if not path.exists():
             return None
-        return json.loads(path.read_bytes())
+        payload: object = json.loads(path.read_bytes())
+        return payload
 
 
 def state_fingerprint(tier: str) -> str:
@@ -840,7 +891,8 @@ def state_fingerprint(tier: str) -> str:
     (e.g. the static 7-day -> 1-day+SWR move) invalidates every prior hash and
     forces a one-time full rewrite that re-stamps the new header on every object.
     """
-    return f"v1|cc:{CACHE_CONTROL[tier]}"
+    revision = 2 if tier == "static" else 1
+    return f"v{revision}|cc:{CACHE_CONTROL[tier]}"
 
 
 class HashGatedStorage:
@@ -857,7 +909,7 @@ class HashGatedStorage:
     PUT impossible.
     """
 
-    def __init__(self, inner: object, *, state_rel_key: str, fingerprint: str) -> None:
+    def __init__(self, inner: SnapshotObjectStore, *, state_rel_key: str, fingerprint: str) -> None:
         self._inner = inner
         self._state_rel_key = state_rel_key
         self._fingerprint = fingerprint
@@ -867,67 +919,81 @@ class HashGatedStorage:
         self.skipped: list[str] = []
         self.immutable_written: list[str] = []
         self.immutable_skipped: list[str] = []
-        # True after load() iff a prior state object existed AND carried the current
-        # fingerprint (cache-policy / format version unchanged). Lets a caller make a
-        # dataset-level skip decision (skip the whole rebuild) without trusting stale
-        # hashes across a format change. False on absence or fingerprint mismatch.
+        # Trust loaded hashes only when the state object carries the current fingerprint.
         self.fingerprint_matched: bool = False
-        # Guards the shared _new / written / skipped state so put_json can be
-        # called concurrently from a ThreadPoolExecutor (slice-9.1.1r stage 2).
-        # The actual PUT (slow, network) runs OUTSIDE the lock so threads still
-        # upload in parallel — only the bookkeeping is serialised.
+        # Serialize hash bookkeeping while keeping network PUTs outside the lock.
         self._lock = threading.Lock()
 
     def load(self) -> None:
-        """Load prior hashes from the state object; empty on fingerprint mismatch/absence."""
-        doc = self._inner.get_json(self._state_rel_key)  # type: ignore[attr-defined]
-        if doc and doc.get("fingerprint") == self._fingerprint:
-            self._prior = dict(doc.get("hashes", {}))
-            self.fingerprint_matched = True
-        else:
-            self._prior = {}
-            self.fingerprint_matched = False
+        """Reuse only a matching, usable hash map; missing or malformed cache rebuilds."""
+        self._prior = {}
+        self.fingerprint_matched = False
+        try:
+            doc = self._inner.get_json(self._state_rel_key)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+        if not isinstance(doc, dict) or doc.get("fingerprint") != self._fingerprint:
+            return
+        hashes = doc.get("hashes")
+        if (
+            not isinstance(hashes, dict)
+            or not hashes
+            or any(
+                not isinstance(key, str)
+                or not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{32}", value) is None
+                for key, value in hashes.items()
+            )
+        ):
+            return
+        self._prior = dict(hashes)
+        self.fingerprint_matched = True
 
     def full_key(self, rel_key: str) -> str:
-        return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
+        return self._inner.full_key(rel_key)
 
-    @property
-    def stable_activation_supported(self) -> bool:
-        """Whether the injected backend implements conditional stable activation."""
-
-        return callable(getattr(self._inner, "capture_stable_version", None)) and callable(
-            getattr(self._inner, "activate_stable_json_outcome", None)
-        )
-
-    def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
-        """Delegate stable-object version capture to the storage backend."""
-
-        return self._inner.capture_stable_version(rel_key)  # type: ignore[attr-defined,no-any-return]
-
-    def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
+    def put_json(self, rel_key: str, payload: SnapshotPayload, *, tier: str) -> str:
         body = snapshot_json_bytes(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
-        # Decide skip-vs-write under the lock so the shared hash map and the
-        # written/skipped lists stay consistent across worker threads. A skipped
-        # file does NO put_bytes (network) — the stage-1 hash-gate is preserved.
         with self._lock:
             self._new[rel_key] = digest
             skip = self._prior.get(rel_key) == digest
             if skip:
                 self.skipped.append(rel_key)
         if skip:
-            return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
-        # PUT happens outside the lock: the slow network round-trips run in
-        # parallel; only the bookkeeping below is serialised again.
-        key = self._inner.put_bytes(rel_key, body, tier=tier)  # type: ignore[attr-defined]
+            return self._inner.full_key(rel_key)
+        key = self._inner.put_bytes(rel_key, body, tier=tier)
         with self._lock:
             self.written.append(rel_key)
         return key
 
-    def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
+    def flush_state(self) -> str:
+        """Persist the merged (prior + new) hash map as the tier's state object.
+
+        Merging keeps hashes for stable keys not produced in the current run
+        (dated artifacts or entities no longer in current discovery) so they stay
+        skippable if they ever reappear unchanged — state entries are not deleted.
+        """
+        merged = {**self._prior, **self._new}
+        doc = {"fingerprint": self._fingerprint, "hashes": merged}
+        body = snapshot_json_bytes(doc)
+        return self._inner.put_bytes(self._state_rel_key, body, tier="internal")
+
+
+class HistoricHashGatedStorage(HashGatedStorage):
+    def __init__(self, inner: HistoricObjectStore, *, state_rel_key: str, fingerprint: str) -> None:
+        if not isinstance(inner, HistoricObjectStore):
+            raise TypeError("historic storage requires immutable writes and conditional activation")
+        super().__init__(inner, state_rel_key=state_rel_key, fingerprint=fingerprint)
+        self._historic_store = inner
+
+    def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
+        return self._historic_store.capture_stable_version(rel_key)
+
+    def put_immutable_json(self, rel_key: str, payload: SnapshotPayload) -> str:
         """Create-or-verify immutable bytes without growing mutable hash state."""
 
-        outcome = self._inner.put_immutable_json_outcome(  # type: ignore[attr-defined]
+        outcome = self._historic_store.put_immutable_json_outcome(
             rel_key,
             payload,
         )
@@ -941,7 +1007,7 @@ class HashGatedStorage:
     def activate_stable_json(
         self,
         rel_key: str,
-        payload: BaseModel | dict,  # type: ignore[type-arg]
+        payload: SnapshotPayload,
         *,
         expected_version: StableObjectVersion,
         tier: str,
@@ -950,7 +1016,7 @@ class HashGatedStorage:
 
         body = snapshot_json_bytes(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
-        outcome = self._inner.activate_stable_json_outcome(  # type: ignore[attr-defined]
+        outcome = self._historic_store.activate_stable_json_outcome(
             rel_key,
             payload,
             expected_version=expected_version,
@@ -964,18 +1030,6 @@ class HashGatedStorage:
                 self.skipped.append(rel_key)
         return outcome.key
 
-    def flush_state(self) -> str:
-        """Persist the merged (prior + new) hash map as the tier's state object.
-
-        Merging keeps hashes for stable keys not produced in the current run
-        (dated artifacts or entities no longer in current discovery) so they stay
-        skippable if they ever reappear unchanged — state entries are not deleted.
-        """
-        merged = {**self._prior, **self._new}
-        doc = {"fingerprint": self._fingerprint, "hashes": merged}
-        body = snapshot_json_bytes(doc)
-        return self._inner.put_bytes(self._state_rel_key, body, tier="internal")  # type: ignore[attr-defined]
-
 
 def _snapshot_publish_pool_size(settings: Settings) -> int:
     try:
@@ -985,57 +1039,13 @@ def _snapshot_publish_pool_size(settings: Settings) -> int:
     return max(16, concurrency)
 
 
-def _build_snapshot_s3_client(settings: Settings) -> object:
-    endpoint_url, _bucket_name = _validated_s3_target(settings)
-    try:
-        return boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=settings.BRONZE_S3_ACCESS_KEY,
-            aws_secret_access_key=settings.BRONZE_S3_SECRET_KEY,
-            region_name=settings.BRONZE_S3_REGION,
-            config=BotoConfig(
-                signature_version="s3v4",
-                s3={"addressing_style": "path"},
-                retries={"max_attempts": 3, "mode": "standard"},
-                connect_timeout=10,
-                read_timeout=60,
-                max_pool_connections=_snapshot_publish_pool_size(settings),
-            ),
-        )
-    except (BotoCoreError, ValueError) as exc:
-        raise BronzeStorageError(
-            "Failed to initialize S3-compatible Bronze storage client for endpoint "
-            f"{endpoint_url} and bucket {settings.BRONZE_S3_BUCKET}: {exc}"
-        ) from exc
-
-
 def build_snapshot_storage(
     settings: Settings,
     *,
     provider_id: str,
     client: object | None = None,
 ) -> SnapshotStorage | LocalSnapshotStorage:
-    """Construct the appropriate snapshot storage backend from *settings*.
-
-    Parameters
-    ----------
-    settings:
-        Loaded application settings.
-    provider_id:
-        Transit provider identifier (e.g. ``"stm"``).  Used as the second
-        path segment so that all objects land under ``v1/{provider_id}/``.
-    client:
-        Optional pre-built boto3-compatible S3 client.  When omitted the
-        real ``_build_snapshot_s3_client(settings)`` is called (reads BRONZE_S3_*
-        credentials, which are shared between Bronze ingest and snapshot
-        publishing).
-
-    Raises
-    ------
-    ValueError
-        If required settings are absent for the requested backend.
-    """
+    """Construct storage for the provider with snapshot-owned bucket validation."""
     base_prefix = f"v1/{provider_id}"
 
     if settings.SNAPSHOT_STORAGE_BACKEND == "local":
@@ -1043,18 +1053,15 @@ def build_snapshot_storage(
             raise ValueError("SNAPSHOT_LOCAL_ROOT required for local backend")
         return LocalSnapshotStorage(settings.SNAPSHOT_LOCAL_ROOT, base_prefix)
 
-    # s3 / R2 backend
-    if not settings.SNAPSHOT_R2_BUCKET:
-        raise ValueError("SNAPSHOT_R2_BUCKET required for s3 backend")
-
-    if client is not None:
-        return SnapshotStorage(
-            client,
-            bucket=settings.SNAPSHOT_R2_BUCKET,
-            base_prefix=base_prefix,
-        )
+    bucket = validate_s3_bucket_name(settings.SNAPSHOT_R2_BUCKET, setting="SNAPSHOT_R2_BUCKET")
     return SnapshotStorage(
-        _build_snapshot_s3_client(settings),
-        bucket=settings.SNAPSHOT_R2_BUCKET,
+        client
+        if client is not None
+        else build_s3_client(
+            settings,
+            bucket_setting="SNAPSHOT_R2_BUCKET",
+            max_pool_connections=_snapshot_publish_pool_size(settings),
+        ),
+        bucket=bucket,
         base_prefix=base_prefix,
     )

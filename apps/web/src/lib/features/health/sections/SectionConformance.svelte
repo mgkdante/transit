@@ -1,9 +1,3 @@
-<!--
-  SectionConformance — the feed-conformance verdict (ConformanceBadge) + a
-  disclosure listing the COMPLETE unknown_members[] + the exact extra_row_count.
-  Mechanical move out of HealthStatus.svelte. Stands DOWN (parent guards) when the
-  provenance carries no conformance object.
--->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ConformanceBadge } from '$lib/components/surface';
@@ -37,8 +31,6 @@
 	<div class="health-conformance-badge">
 		<ConformanceBadge {conformance} {locale} />
 	</div>
-	<!-- The badge only previews a few members; the full list + the exact extra-row
-	     count live in this disclosure (rendered only when the feed named fields). -->
 	{#if conformance.unknown_members && conformance.unknown_members.length > 0}
 		<div class="section-block">
 			<CollapsibleSection
@@ -50,9 +42,6 @@
 				{bulkCollapsed}
 			>
 				<div class="health-conformance-detail">
-					<!-- Honest extra-row count: a real number renders localized; a null/absent
-					     count stands the value null so MetricDisplay renders the styled
-					     honest-absence chip, never a fabricated 0. -->
 					<MetricDisplay
 						value={typeof conformance.extra_row_count === 'number'
 							? conformance.extra_row_count.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA')
@@ -80,8 +69,6 @@
 	.health-conformance-badge {
 		display: flex;
 	}
-	/* .section-block scroll landing is offset globally (app.css `[data-toc]` rule
-	   off --chrome-offset) — the CollapsibleSection inside is the tracked target. */
 	.health-conformance-detail {
 		display: flex;
 		flex-direction: column;

@@ -28,7 +28,7 @@ function sha256(bytes) {
 }
 
 async function makeFakeWrangler(root) {
-  const executable = join(root, "fake-wrangler.mjs");
+  const executable = join(root, "wrangler");
   await writeFile(
     executable,
     `#!/usr/bin/env node
@@ -106,6 +106,12 @@ if (operation === 'get') {
 `,
   );
   await chmod(executable, 0o755);
+  const forbiddenBunx = join(root, "bunx");
+  await writeFile(
+    forbiddenBunx,
+    "#!/bin/sh\necho 'bunx must not download Wrangler' >&2\nexit 91\n",
+  );
+  await chmod(forbiddenBunx, 0o755);
   return executable;
 }
 
@@ -131,7 +137,7 @@ async function fakeOperationCount(fixture, operation, objectPath) {
 async function runHelper(
   fixture,
   extraEnv = {},
-  { signalAfterCommit = null } = {},
+  { signalAfterCommit = null, useInstalledWrangler = false } = {},
 ) {
   const child = spawn(
     process.execPath,
@@ -147,7 +153,10 @@ async function runHelper(
       env: {
         ...process.env,
         FAKE_R2_ROOT: fixture.root,
-        WRANGLER_BIN: fixture.wrangler,
+        PATH: `${fixture.root}:${process.env.PATH}`,
+        ...(useInstalledWrangler
+          ? { WRANGLER_BIN: "" }
+          : { WRANGLER_BIN: fixture.wrangler }),
         ...extraEnv,
       },
       detached: true,
@@ -209,6 +218,15 @@ afterEach(async () => {
 });
 
 describe("basemap R2 replacement", () => {
+  it("uses the installed Wrangler binary without an ad-hoc download", async () => {
+    const fixture = await makeFixture();
+    const result = await runHelper(fixture, {}, { useInstalledWrangler: true });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.guardKilled, false);
+    assert.deepEqual(await readFile(fixture.stable), fixture.newBytes);
+  });
+
   it("backs up and verifies the previous object before replacing the stable key", async () => {
     const fixture = await makeFixture();
     const result = await runHelper(fixture);

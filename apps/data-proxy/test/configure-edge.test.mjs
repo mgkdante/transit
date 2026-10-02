@@ -42,6 +42,38 @@ function requestBody(call) {
   return JSON.parse(call.init.body);
 }
 
+test("unchanged managed policy and enabled topology preserve the warm cache", async () => {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init: { method: "GET", ...init } });
+    if (String(url).includes("/rulesets/phases/")) {
+      return successful({
+        id: "ruleset-1",
+        rules: [{ ...CACHE_RULE, id: "owned-rule", version: "7" }],
+      });
+    }
+    return successful({ value: "on", editable: true });
+  };
+  const result = await configureDataEdge({
+    apiToken: API_TOKEN,
+    zoneId: ZONE_ID,
+    fetch,
+  });
+  assert.equal(result.ruleAction, "unchanged");
+  assert.equal(result.purgedPrefix, null);
+  assert.deepEqual(
+    calls.map(({ url, init }) => [url, init.method]),
+    [
+      [
+        `${API_ROOT}/rulesets/phases/http_request_cache_settings/entrypoint`,
+        "GET",
+      ],
+      [`${API_ROOT}/argo/tiered_caching`, "GET"],
+      [`${API_ROOT}/cache/tiered_cache_smart_topology_enable`, "GET"],
+    ],
+  );
+});
+
 test("creates the scoped JSON cache rule and enables both tiered-cache settings", async () => {
   const calls = [];
   const fetch = async (url, init = {}) => {
@@ -60,6 +92,7 @@ test("creates the scoped JSON cache rule and enables both tiered-cache settings"
     if (call.url.endsWith("/rulesets/ruleset-1/rules")) {
       return successful({ id: "created-rule" });
     }
+    if (call.init.method === "GET") return successful({ value: "off" });
     return successful();
   };
 
@@ -77,16 +110,18 @@ test("creates the scoped JSON cache rule and enables both tiered-cache settings"
         `${API_ROOT}/rulesets/phases/http_request_cache_settings/entrypoint`,
         "GET",
       ],
+      [`${API_ROOT}/argo/tiered_caching`, "GET"],
+      [`${API_ROOT}/cache/tiered_cache_smart_topology_enable`, "GET"],
       [`${API_ROOT}/rulesets/ruleset-1/rules`, "POST"],
       [`${API_ROOT}/argo/tiered_caching`, "PATCH"],
       [`${API_ROOT}/cache/tiered_cache_smart_topology_enable`, "PATCH"],
       [`${API_ROOT}/purge_cache`, "POST"],
     ],
   );
-  assert.deepEqual(requestBody(calls[1]), CACHE_RULE);
-  assert.deepEqual(requestBody(calls[2]), { value: "on" });
-  assert.deepEqual(requestBody(calls[3]), { value: "on" });
-  assert.deepEqual(requestBody(calls[4]), { prefixes: ["data.yesid.dev"] });
+  assert.deepEqual(requestBody(calls[3]), CACHE_RULE);
+  assert.deepEqual(requestBody(calls[4]), { value: "on" });
+  assert.deepEqual(requestBody(calls[5]), { value: "on" });
+  assert.deepEqual(requestBody(calls[6]), { prefixes: ["data.yesid.dev"] });
   assert.deepEqual(CACHE_RULE.action_parameters, {
     cache: true,
     edge_ttl: { mode: "bypass_by_default" },
@@ -113,6 +148,7 @@ test("updates the owned rule in place without disturbing sibling cache rules", a
         ],
       });
     }
+    if (call.init.method === "GET") return successful({ value: "on" });
     return successful();
   };
 
@@ -133,6 +169,8 @@ test("updates the owned rule in place without disturbing sibling cache rules", a
     `${API_ROOT}/rulesets/ruleset-1/rules/owned-rule`,
   );
   assert.deepEqual(requestBody(ruleWrites[0]), CACHE_RULE);
+  assert.equal(calls.filter(({ init }) => init.method !== "GET").length, 2);
+  assert.deepEqual(requestBody(calls.at(-1)), { prefixes: ["data.yesid.dev"] });
 });
 
 test("creates the phase ruleset when the zone has no cache-settings entrypoint", async () => {
@@ -156,6 +194,7 @@ test("creates the phase ruleset when the zone has no cache-settings entrypoint",
         rules: [{ id: "new-rule", ref: CACHE_RULE_REF }],
       });
     }
+    if (call.init.method === "GET") return successful({ value: "on" });
     return successful();
   };
 
@@ -181,7 +220,7 @@ test("creates the phase ruleset when the zone has no cache-settings entrypoint",
 });
 
 test("fails closed when Cloudflare rejects a mutation", async () => {
-  const fetch = async (url) => {
+  const fetch = async (url, init = {}) => {
     if (
       String(url).endsWith(
         "/rulesets/phases/http_request_cache_settings/entrypoint",
@@ -189,6 +228,7 @@ test("fails closed when Cloudflare rejects a mutation", async () => {
     ) {
       return successful({ id: "ruleset-1", rules: [] });
     }
+    if (init.method === "GET") return successful({ value: "on" });
     return jsonResponse(
       {
         success: false,
@@ -202,6 +242,156 @@ test("fails closed when Cloudflare rejects a mutation", async () => {
     configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch }),
     /Cloudflare API POST .*permission denied/,
   );
+});
+
+for (const disabled of [
+  "argo/tiered_caching",
+  "cache/tiered_cache_smart_topology_enable",
+]) {
+  test(`enables only disabled ${disabled} without evicting unchanged snapshots`, async () => {
+    const calls = [];
+    const fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init: { method: "GET", ...init } });
+      if (String(url).includes("/rulesets/phases/")) {
+        return successful({
+          id: "ruleset-1",
+          rules: [{ ...CACHE_RULE, id: "owned-rule" }],
+        });
+      }
+      return successful({
+        value: String(url).endsWith(disabled) ? "off" : "on",
+      });
+    };
+    const result = await configureDataEdge({
+      apiToken: API_TOKEN,
+      zoneId: ZONE_ID,
+      fetch,
+    });
+    const writes = calls.filter(({ init }) => init.method !== "GET");
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].url, `${API_ROOT}/${disabled}`);
+    assert.equal(writes[0].init.method, "PATCH");
+    assert.deepEqual(requestBody(writes[0]), { value: "on" });
+    assert.equal(result.purgedPrefix, null);
+  });
+}
+
+test("managed policy comparison ignores object key order and API metadata", async () => {
+  const writes = [];
+  const fetch = async (url, init = {}) => {
+    if (init.method !== "GET") writes.push(String(url));
+    if (String(url).includes("/rulesets/phases/")) {
+      return successful({
+        id: "ruleset-1",
+        rules: [
+          {
+            ...CACHE_RULE,
+            id: "owned-rule",
+            version: "4",
+            description: "Operator annotation",
+            action_parameters: {
+              browser_ttl: { mode: "respect_origin" },
+              edge_ttl: { mode: "bypass_by_default" },
+              cache: true,
+            },
+          },
+        ],
+      });
+    }
+    return successful({ value: "on" });
+  };
+  await configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch });
+  assert.deepEqual(writes, []);
+});
+
+for (const change of [
+  { enabled: false },
+  { expression: '(http.host eq "data.yesid.dev")' },
+  {
+    action_parameters: {
+      ...CACHE_RULE.action_parameters,
+      edge_ttl: { mode: "override", default: 3600 },
+    },
+  },
+]) {
+  test(`repairs changed cache policy ${JSON.stringify(change)} and purges once`, async () => {
+    const writes = [];
+    const fetch = async (url, init = {}) => {
+      if (init.method !== "GET") writes.push({ url: String(url), init });
+      return String(url).includes("/rulesets/phases/")
+        ? successful({
+            id: "ruleset-1",
+            rules: [{ ...CACHE_RULE, ...change, id: "owned-rule" }],
+          })
+        : successful({ value: "on" });
+    };
+    await configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch });
+    assert.deepEqual(
+      writes.map(({ url, init }) => [url, init.method]),
+      [
+        [`${API_ROOT}/rulesets/ruleset-1/rules/owned-rule`, "PATCH"],
+        [`${API_ROOT}/purge_cache`, "POST"],
+      ],
+    );
+    assert.deepEqual(requestBody(writes[0]), CACHE_RULE);
+    assert.deepEqual(requestBody(writes[1]), { prefixes: ["data.yesid.dev"] });
+  });
+}
+
+test("ambiguous owned rules fail without overwriting either rule", async () => {
+  const writes = [];
+  const fetch = async (url, init = {}) => {
+    if (init.method !== "GET") writes.push(String(url));
+    return String(url).includes("/rulesets/phases/")
+      ? successful({
+          id: "ruleset-1",
+          rules: [
+            { ...CACHE_RULE, id: "owned-one" },
+            { ...CACHE_RULE, id: "owned-two" },
+          ],
+        })
+      : successful({ value: "on" });
+  };
+  await assert.rejects(
+    configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch }),
+    /ownership is ambiguous/,
+  );
+  assert.deepEqual(writes, []);
+});
+
+for (const result of [null, {}, { value: "unknown" }]) {
+  test(`malformed setting ${JSON.stringify(result)} fails before any mutation`, async () => {
+    const writes = [];
+    const fetch = async (url, init = {}) => {
+      if (init.method !== "GET") writes.push(String(url));
+      return String(url).includes("/rulesets/phases/")
+        ? successful({ id: "ruleset-1", rules: [] })
+        : successful(result);
+    };
+    await assert.rejects(
+      configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch }),
+      /invalid cache setting/,
+    );
+    assert.deepEqual(writes, []);
+  });
+}
+
+test("failed settings read prevents bootstrap mutations", async () => {
+  const writes = [];
+  const fetch = async (url, init = {}) => {
+    if (init.method !== "GET") writes.push(String(url));
+    return String(url).includes("/rulesets/phases/")
+      ? successful({ id: "ruleset-1", rules: [] })
+      : jsonResponse(
+          { success: false, errors: [{ message: "permission denied" }] },
+          403,
+        );
+  };
+  await assert.rejects(
+    configureDataEdge({ apiToken: API_TOKEN, zoneId: ZONE_ID, fetch }),
+    /Cloudflare API GET .*permission denied/,
+  );
+  assert.deepEqual(writes, []);
 });
 
 test("production deploys and the manual edge lane use the same owned configuration", () => {

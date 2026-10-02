@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ChartDatumPopoverHarness from './__fixtures__/ChartDatumPopoverHarness.svelte';
+import { chartDatumPopoverBoundary, createChartDatumPopover } from './useChartDatumPopover.svelte';
 
 const LINKED_HEADING = 'Route 24 · Sherbrooke';
 const INFORMATION_HEADING = 'Route 55 · Saint-Laurent';
@@ -136,6 +137,37 @@ describe('ChartDatumPopover activation and content', () => {
 		},
 	);
 
+	it('moves focus into each opened dialog only after its visible placement reaches the DOM', async () => {
+		const focus = HTMLElement.prototype.focus;
+		const attemptedPlacement: boolean[] = [];
+		vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (
+			this: HTMLElement,
+			options?: FocusOptions,
+		) {
+			if (this.getAttribute('role') === 'dialog') {
+				const placed =
+					this.getAttribute('data-placed') === 'true' &&
+					this.classList.contains('chart-datum-popover--placed');
+				attemptedPlacement.push(placed);
+				if (!placed) return;
+			}
+			focus.call(this, options);
+		});
+
+		render(ChartDatumPopoverHarness);
+		const trigger = screen.getByTestId('linked-trigger');
+		for (let opening = 0; opening < 2; opening++) {
+			trigger.focus();
+			await activate('linked-trigger', 'touch');
+			const dialog = await screen.findByRole('dialog', { name: LINKED_HEADING });
+			await waitFor(() => expect(dialog).toHaveFocus());
+			await fireEvent.keyDown(document, { key: 'Escape' });
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			expect(trigger).toHaveFocus();
+		}
+		expect(attemptedPlacement).toEqual([true, true]);
+	});
+
 	it('portals the named dialog outside the harness and renders semantic evidence', async () => {
 		render(ChartDatumPopoverHarness);
 		await activate('linked-trigger', 'touch');
@@ -255,6 +287,22 @@ describe('ChartDatumPopover viewport placement', () => {
 });
 
 describe('ChartDatumPopover dismissal and cleanup', () => {
+	it('keeps native links in their original Tab order and restores a plain boundary on destroy', () => {
+		const controller = createChartDatumPopover();
+		const link = document.createElement('a');
+		link.href = '/lines/24';
+		const nativeBoundary = chartDatumPopoverBoundary(link, controller);
+		expect(link).not.toHaveAttribute('tabindex');
+		nativeBoundary.destroy();
+		expect(link).not.toHaveAttribute('tabindex');
+
+		const plain = document.createElement('div');
+		const plainBoundary = chartDatumPopoverBoundary(plain, controller);
+		expect(plain).toHaveAttribute('tabindex', '-1');
+		plainBoundary.destroy();
+		expect(plain).not.toHaveAttribute('tabindex');
+	});
+
 	it('dismisses on an outside document pointerdown without restoring focus over the new target', async () => {
 		render(ChartDatumPopoverHarness);
 		const trigger = screen.getByTestId('linked-trigger');

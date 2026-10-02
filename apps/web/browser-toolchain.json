@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"playwrightCoreVersion": "1.62.0",
+	"browser": {
+		"name": "chromium-headless-shell",
+		"version": "151.0.7922.34",
+		"revision": "1234",
+		"platform": "linux-x64",
+		"url": "https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip",
+		"archiveBytes": 120231126,
+		"archiveSha256": "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14",
+		"archiveRoot": "chrome-headless-shell-linux64",
+		"installDirectory": "chromium_headless_shell-1234",
+		"executable": "chrome-headless-shell",
+		"executableSha256": "e11fc9ce65c96313476f7ee9844b6fb6a9220fb048693cfe9eee00acf4170a9f"
+	}
+}

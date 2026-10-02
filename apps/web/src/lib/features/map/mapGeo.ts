@@ -1,23 +1,8 @@
-// mapGeo — pure geometry/camera helpers for the /map hero.
-//
-// Side-effect-free math extracted from MapHero so the load-bearing logic (route
-// bounding boxes, near-me zoom levels) is unit-testable without a GL context.
-// Nothing here touches the map instance, stores, or reactive state; the stateful
-// callers in MapHero pass plain data in and act on the returned values.
-
 import type { RouteFile } from '$lib/v1';
 import type { GeocodePrecision } from '$lib/geocode/types';
 
-/** A MapLibre LngLatBounds tuple: [[minLon, minLat], [maxLon, maxLat]]. */
 export type MapBounds = [[number, number], [number, number]];
 
-/**
- * Compute the bounding box that contains every direction shape of a route, or
- * null when the route has no usable geometry. Walks all direction shapes and
- * their coordinate pairs, ignoring non-finite / malformed entries, so a partial
- * or empty shape never yields a fabricated box. Mirrors the camera-fit input
- * MapLibre's fitBounds expects (lon/lat order).
- */
 export function routeBoundsFromFile(route: RouteFile): MapBounds | null {
 	let minLon = Infinity;
 	let minLat = Infinity;
@@ -44,11 +29,6 @@ export function routeBoundsFromFile(route: RouteFile): MapBounds | null {
 	];
 }
 
-/**
- * The target zoom for a near-me fly-to, scaled to the geocode precision: a full
- * address zooms in tight; a neighbourhood frames a wider area. Unknown / absent
- * precision falls back to a sensible mid zoom.
- */
 export function zoomForNearMePrecision(precision?: GeocodePrecision): number {
 	switch (precision) {
 		case 'address':

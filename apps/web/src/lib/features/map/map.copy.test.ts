@@ -77,15 +77,18 @@ describe('map copy', () => {
 			expect(c.liveNoVehicles.trim()).toBeTruthy();
 		}
 		expect(copy.en.liveUnavailable).toBe(
-			'Live data unavailable right now. The map and stops still work.',
+			'Live vehicle positions unavailable right now. The map and stops still work.',
+		);
+		expect(copy.fr.liveUnavailable).toBe(
+			'Positions des véhicules en direct indisponibles pour l’instant. La carte et les arrêts fonctionnent toujours.',
 		);
 		expect(copy.en.liveNoVehicles).toBe('No vehicles to show right now.');
 	});
 
 	it('keeps the edge-state notices em-dash-free (repo doctrine)', () => {
 		const all = [copy.en, copy.fr].flatMap((c) => [c.liveUnavailable, c.liveNoVehicles]).join(' ');
-		expect(all).not.toContain('—'); // em dash
-		expect(all).not.toContain('–'); // en dash
+		expect(all).not.toContain('—');
+		expect(all).not.toContain('–');
 	});
 
 	it('carries a bilingual feed-stall banner that interpolates the last-update age', () => {
@@ -102,8 +105,8 @@ describe('map copy', () => {
 
 	it('keeps the feed-stall banner em-dash-free (repo doctrine)', () => {
 		const all = [copy.en, copy.fr].map((c) => c.feedNotResponding('2 minutes ago')).join(' ');
-		expect(all).not.toContain('—'); // em dash
-		expect(all).not.toContain('–'); // en dash
+		expect(all).not.toContain('—');
+		expect(all).not.toContain('–');
 	});
 
 	it('carries the bilingual motion-mode switch copy (raw default + almost real-time)', () => {
@@ -121,15 +124,15 @@ describe('map copy', () => {
 				expect(c.motion[key].trim()).toBeTruthy();
 			}
 		}
-		expect(copy.en.motion.smooth).toBe('Almost real-time');
-		expect(copy.en.motion.raw).toBe('Raw');
-		expect(copy.fr.motion.smooth).toBe('Presque en temps réel');
-		expect(copy.fr.motion.raw).toBe('Brut');
+		expect(copy.en.motion.smooth).toBe('Estimated');
+		expect(copy.en.motion.raw).toBe('Reported');
+		expect(copy.fr.motion.smooth).toBe('Estimées');
+		expect(copy.fr.motion.raw).toBe('Signalées');
 	});
 
 	it('uses frozen prefix-matching rail abbreviations and drawer actions', () => {
 		expect(copy.en.rail).toEqual({
-			motion: 'Motion',
+			motion: 'Pos.',
 			markers: 'Mark.',
 			alerts: 'Alerts',
 			active: 'Active',
@@ -137,7 +140,7 @@ describe('map copy', () => {
 			crowding: 'Crowd',
 		});
 		expect(copy.fr.rail).toEqual({
-			motion: 'Mouv.',
+			motion: 'Pos.',
 			markers: 'Marq.',
 			alerts: 'Alertes',
 			active: 'Actifs',

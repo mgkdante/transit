@@ -11,6 +11,7 @@ from transit_ops.backups import BackupError
 from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
 from transit_ops.validation.historic_publish import HistoricPublishProofReport
+from transit_ops.validation.proof import ProofDryRunSection, RetentionProofReport
 
 runner = CliRunner()
 LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
@@ -236,31 +237,46 @@ def test_retention_proof_report_help() -> None:
     assert "--report-path" in result.stdout
 
 
-def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
-    from dataclasses import dataclass
-
+@pytest.mark.parametrize(
+    ("prune_status", "static_validation", "expected_exit"),
+    [
+        ("ok", {"active_static": {"status": "ok"}}, 0),
+        ("unavailable", {"active_static": {"status": "ok"}}, 1),
+        ("ok", {"active_static": {"status": "unavailable"}}, 1),
+        ("ok", {"active_static": {"status": "invalid"}}, 1),
+        ("ok", {"status": "unavailable", "error_type": "OSError"}, 1),
+    ],
+    ids=[
+        "complete", "prune-unavailable", "download-unavailable", "invalid-feed", "validator-error"
+    ],
+)
+def test_retention_proof_report_writes_complete_report_before_exit(
+    monkeypatch, tmp_path, prune_status, static_validation, expected_exit
+) -> None:
     recorded: dict[str, object] = {}
     report_path = tmp_path / "retention-proof.json"
-
-    @dataclass(frozen=True)
-    class FakeRetentionProofResult:
-        provider_id: str
-
-        def display_dict(self) -> dict[str, object]:
-            return {
-                "provider_id": self.provider_id,
-                "generated_at_utc": "2026-05-24T12:00:00+00:00",
-                "retention_contract": {},
-                "storage": {},
-                "dry_runs": {},
-                "static_feed_validation": {"status": "ok"},
-            }
 
     def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["settings_type"] = type(settings).__name__
         recorded["registry_type"] = type(registry).__name__
-        return FakeRetentionProofResult(provider_id=provider_id)
+        return RetentionProofReport(
+            provider_id=provider_id,
+            generated_at_utc=datetime(2026, 5, 24, 12, tzinfo=UTC),
+            retention_contract={},
+            storage={},
+            dry_runs={
+                name: ProofDryRunSection(
+                    status=prune_status if name == "bronze" else "ok",
+                    dry_run=True,
+                    result={},
+                    message="",
+                    error_type=None,
+                )
+                for name in ("silver", "gold", "bronze", "warm_rollup", "i3")
+            },
+            static_feed_validation=static_validation,
+        )
 
     monkeypatch.setattr(
         cli_module,
@@ -274,12 +290,14 @@ def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, t
         ["retention-proof-report", "stm", "--report-path", str(report_path)],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == expected_exit
     assert recorded["provider_id"] == "stm"
     stdout_payload = json.loads(result.stdout)
     report_payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert stdout_payload == report_payload
     assert report_payload["provider_id"] == "stm"
+    assert report_payload["dry_runs"]["bronze"]["status"] == prune_status
+    assert report_payload["static_feed_validation"] == static_validation
 
 
 def test_retention_proof_report_bad_report_path_exits_before_build(monkeypatch, tmp_path) -> None:
@@ -395,7 +413,8 @@ def test_refresh_gold_realtime_help() -> None:
     result = runner.invoke(app, ["refresh-gold-realtime", "--help"])
 
     assert result.exit_code == 0
-    assert "Upsert the latest realtime snapshots into Gold history" in result.stdout
+    assert "Verify newest archived realtime captures" in result.stdout
+    assert "--bootstrap-from-archive" in result.stdout
 
 
 def test_refresh_gold_static_help() -> None:
@@ -448,8 +467,6 @@ def test_vacuum_storage_help() -> None:
 
 
 def test_run_static_pipeline_help(monkeypatch) -> None:
-    # Force a wide terminal so the docstring renders on one line and the
-    # contiguous help phrase below is not split by Rich line-wrapping.
     monkeypatch.setenv("COLUMNS", "200")
     result = runner.invoke(app, ["run-static-pipeline", "--help"])
 
@@ -461,7 +478,6 @@ def test_run_static_pipeline_help(monkeypatch) -> None:
 
 
 def test_run_static_pipeline_warns_on_gis_failure_but_exits_zero(monkeypatch) -> None:
-    """A best-effort GIS failure prints a stderr WARNING but the command still exits 0."""
 
     def fake_run_static_pipeline(provider_id, *, settings, registry):  # noqa: ANN001, ANN202
         return SimpleNamespace(
@@ -647,8 +663,6 @@ def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
 
 
 def test_prune_i3_storage_requires_provider_id() -> None:
-    # the provider_id argument is now required (no 'stm' default) so a
-    # multi-provider setup cannot silently prune only stm.
     result = runner.invoke(app, ["prune-i3-storage"])
 
     assert result.exit_code != 0
@@ -815,7 +829,6 @@ def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) 
         "static": 0,
     }
 
-    # Dry-run never exits nonzero — it deletes nothing.
     dry_result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
     assert dry_result.exit_code == 0
 
@@ -1476,7 +1489,6 @@ def test_verify_backup_freshness_fails_when_empty(monkeypatch) -> None:
 
 def test_verify_backup_freshness_respects_custom_threshold(monkeypatch) -> None:
     monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
-    # 30h old: stale at the 26h default, but fresh under a 48h override.
     older = (datetime.now(UTC) - timedelta(hours=30)).isoformat()
     listed = [
         {"key": "backups/postgres/transit-30h.dump", "size": 2048, "last_modified": older},
@@ -1497,11 +1509,14 @@ def test_db_storage_report_help() -> None:
 
 
 class _FakeBatchLoadResult:
-    def __init__(self, *, loaded_count, skipped_existing_snapshot_ids, row_counts):  # noqa: ANN001
+    def __init__(
+        self, *, loaded_count, skipped_existing_snapshot_ids, row_counts, verified_row_counts=None
+    ):  # noqa: ANN001
         self.provider_id = "stm"
         self.loaded_count = loaded_count
         self.skipped_existing_snapshot_ids = skipped_existing_snapshot_ids
         self.row_counts = row_counts
+        self.verified_row_counts = verified_row_counts or {}
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -1527,7 +1542,8 @@ def test_replay_realtime_silver_help() -> None:
     result = runner.invoke(app, ["replay-realtime-silver", "--help"])
 
     assert result.exit_code == 0
-    assert "Rebuild realtime Silver + Gold from raw Bronze" in result.stdout
+    assert "Restore a captured window" in result.stdout
+    assert "--silver-only" in result.stdout
     assert "--since" in result.stdout
     assert "--until" in result.stdout
 
@@ -1566,28 +1582,53 @@ def test_replay_realtime_silver_rejects_until_not_after_since(monkeypatch) -> No
     assert "must be after --since" in result.output
 
 
-def test_replay_realtime_silver_rebuilds_and_reports_elapsed(monkeypatch) -> None:
+@pytest.mark.parametrize("already_loaded", [False, True])
+@pytest.mark.parametrize("silver_only", [False, True])
+def test_replay_realtime_silver_rebuilds_and_reports_elapsed(
+    monkeypatch, already_loaded, silver_only
+) -> None:
     _stub_replay_settings_and_registry(monkeypatch)
     recorded: dict[str, object] = {}
+    verified = {
+        snapshot_id: {
+            "rt_feed_snapshots": 1,
+            "rt_entities": 1,
+            "rt_trip_updates": 1,
+            "rt_trip_update_stop_times": 1,
+        }
+        for snapshot_id in (101, 102)
+    }
 
     def fake_replay(provider_id, *, start_utc, end_utc, settings, registry):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["start_utc"] = start_utc
         recorded["end_utc"] = end_utc
         return _FakeBatchLoadResult(
-            loaded_count=2,
-            skipped_existing_snapshot_ids=[],
-            row_counts={"rt_feed_snapshots": 2, "rt_trip_updates": 2},
+            loaded_count=0 if already_loaded else 2,
+            skipped_existing_snapshot_ids=[101, 102] if already_loaded else [],
+            row_counts={}
+            if already_loaded
+            else {
+                "rt_feed_snapshots": 2,
+                "rt_entities": 2,
+                "rt_trip_updates": 2,
+                "rt_trip_update_stop_times": 2,
+            },
+            verified_row_counts=verified,
         )
 
     gold_called: dict[str, object] = {}
 
-    def fake_build_gold(provider_id, *, settings, registry):  # noqa: ANN001
+    def fake_build_gold(provider_id, *, expected_rows, settings, registry):  # noqa: ANN001
         gold_called["provider_id"] = provider_id
+        gold_called["expected_rows"] = expected_rows
         return _FakeGoldResult()
 
     monkeypatch.setattr(cli_module, "replay_realtime_silver_window", fake_replay)
-    monkeypatch.setattr(cli_module, "build_gold_marts", fake_build_gold)
+    monkeypatch.setattr(cli_module, "refresh_gold_snapshots", fake_build_gold)
+    monkeypatch.setattr(
+        cli_module, "build_gold_marts", lambda *a, **k: pytest.fail("unscoped rebuild")
+    )
 
     result = runner.invoke(
         app,
@@ -1598,20 +1639,26 @@ def test_replay_realtime_silver_rebuilds_and_reports_elapsed(monkeypatch) -> Non
             "2026-06-20T12:00:00Z",
             "--until",
             "2026-06-20T13:00:00Z",
+            *(["--silver-only"] if silver_only else []),
         ],
     )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["status"] == "rebuilt"
+    assert payload["status"] == ("silver-restored" if silver_only else "rebuilt")
     assert payload["snapshots_found"] == 2
-    assert payload["gold"]["row_counts"]["fact_trip_delay_snapshot"] == 2
-    assert payload["silver"]["loaded_count"] == 2
+    if silver_only:
+        assert payload["gold"] is None
+        assert gold_called == {}
+    else:
+        assert payload["gold"]["row_counts"]["fact_trip_delay_snapshot"] == 2
+        assert gold_called["provider_id"] == "stm"
+        assert gold_called["expected_rows"] == verified
+    assert payload["silver"]["loaded_count"] == (0 if already_loaded else 2)
     assert "elapsed_seconds" in payload
     assert recorded["provider_id"] == "stm"
     assert recorded["start_utc"] == datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
     assert recorded["end_utc"] == datetime(2026, 6, 20, 13, 0, tzinfo=UTC)
-    assert gold_called["provider_id"] == "stm"
 
 
 def test_replay_realtime_silver_empty_window_is_clean_noop(monkeypatch) -> None:
@@ -1629,6 +1676,7 @@ def test_replay_realtime_silver_empty_window_is_clean_noop(monkeypatch) -> None:
         raise AssertionError("gold rebuild must not run when no snapshots are found")
 
     monkeypatch.setattr(cli_module, "build_gold_marts", fail_build_gold)
+    monkeypatch.setattr(cli_module, "refresh_gold_snapshots", fail_build_gold)
 
     result = runner.invoke(
         app, ["replay-realtime-silver", "stm", "--since", "2026-06-20T12:00:00Z"]
@@ -1642,11 +1690,45 @@ def test_replay_realtime_silver_empty_window_is_clean_noop(monkeypatch) -> None:
     assert "elapsed_seconds" in payload
 
 
-# ---------------------------------------------------------------------------
-# Unseeded-provider seed guard — every per-provider Daily Warm Rollups entry
-# point must SKIP an enrolled-but-unseeded provider (no gold.dim_provider row)
-# cleanly (exit 0) instead of crashing the all-providers run.
-# ---------------------------------------------------------------------------
+def test_replay_retries_gold_after_silver_has_already_committed(monkeypatch):
+    _stub_replay_settings_and_registry(monkeypatch)
+    verified = {
+        101: {
+            "rt_feed_snapshots": 1,
+            "rt_entities": 1,
+            "rt_trip_updates": 1,
+            "rt_trip_update_stop_times": 1,
+        }
+    }
+    silver_calls = 0
+    gold_calls = []
+
+    def replay(*args, **kwargs):
+        nonlocal silver_calls
+        silver_calls += 1
+        return _FakeBatchLoadResult(
+            loaded_count=1 if silver_calls == 1 else 0,
+            skipped_existing_snapshot_ids=[] if silver_calls == 1 else [101],
+            row_counts=verified[101] if silver_calls == 1 else {},
+            verified_row_counts=verified,
+        )
+
+    def project(provider_id, *, expected_rows, **kwargs):
+        gold_calls.append(expected_rows)
+        if len(gold_calls) == 1:
+            raise ValueError("projection interrupted")
+        return _FakeGoldResult()
+
+    monkeypatch.setattr(cli_module, "replay_realtime_silver_window", replay)
+    monkeypatch.setattr(cli_module, "refresh_gold_snapshots", project)
+    args = ["replay-realtime-silver", "stm", "--since", "2026-06-20T12:00:00Z"]
+    interrupted = runner.invoke(app, args)
+    assert interrupted.exit_code == 2
+    assert "projection interrupted" in interrupted.output
+    resumed = runner.invoke(app, args)
+    assert resumed.exit_code == 0, resumed.output
+    assert json.loads(resumed.stdout)["silver"]["loaded_count"] == 0
+    assert gold_calls == [verified, verified]
 
 
 class _FakeConnCtx:
@@ -1663,11 +1745,6 @@ class _FakeEngine:
 
 
 def _stub_unseeded(monkeypatch, *, seeded: bool) -> None:
-    """Force the seed probe without touching a real database.
-
-    make_engine is stubbed so no DATABASE_URL is required; provider_is_seeded
-    is stubbed to the desired verdict.
-    """
     monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
     monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: seeded)
 
@@ -1732,8 +1809,6 @@ def test_retention_proof_report_skips_unseeded_provider(monkeypatch) -> None:
 
 
 def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
-    """publish-all must skip unseeded providers and still publish seeded ones,
-    so the all-providers historic publish never fails on an unseeded provider."""
     seeded_set = {"stm"}
     published: list[str] = []
 
@@ -1758,7 +1833,6 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     result = runner.invoke(app, ["publish-all", "--tier", "historic"])
 
     assert result.exit_code == 0
-    # Unseeded octranspo skipped; seeded stm published.
     assert published == ["stm"]
     assert "publish-all skipped unseeded providers: octranspo" in result.stderr
     payload = json.loads(result.stdout)
@@ -1843,8 +1917,6 @@ def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
 
 
 def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> None:
-    """With --report-dir, publish-all writes publish-gate-{provider}.json on SUCCESS
-    too (not only on GateError), so CI / status can always consume the gate outcome."""
     monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
     monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
     monkeypatch.setattr(

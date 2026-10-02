@@ -1,10 +1,3 @@
-"""Pure-Python tests for the publish value gate (transit_ops.snapshots.gate).
-
-No DB, no FakeConn — every case is a hand-built contract model or dict fed straight
-to a checker / the report API. Covers: each range/invariant check, the universal
-sentinel + NaN/Inf scan, honest-NULL passing clean, the batch-level coverage-delta +
-empty-route aggregates, and enforce()/GateError semantics.
-"""
 
 from __future__ import annotations
 
@@ -129,9 +122,6 @@ def test_network_history_gate_rejects_noncanonical_empty_index_timestamp():
     assert "generated_utc" in _checks(results)
 
 
-# --- range checks ------------------------------------------------------------
-
-
 def test_rate_over_100_is_error():
     net = NetworkFile(
         generated_utc="t",
@@ -198,9 +188,6 @@ def test_cancellation_rate_over_100_is_error():
     assert _has_err(res, "rate_range", "cancellation_rate_pct")
 
 
-# --- universal sentinel / NaN scan -------------------------------------------
-
-
 def test_sentinel_in_habits_matrix_is_error():
     rr = RouteReliability(
         generated_utc="t",
@@ -218,21 +205,18 @@ def test_sentinel_in_rider_impact_score_is_error():
 
 
 def test_nan_inf_leaf_is_error():
-    # NaN cannot round-trip a contract model cleanly; feed a raw dict.
     payload = {"generated_utc": "t", "avg_delay_min": float("nan"), "otp_pct": float("inf")}
     res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
     assert len([r for r in _errors(res) if r.check == "nan_inf"]) == 2
 
 
 def test_large_legit_counts_are_not_sentinels():
-    # Production leaves: a ~1.7M observation count and a ~108k-minute alert duration are
-    # real values, not the 9999.9999 Numeric(8,4) overflow — the scan must NOT flag them.
     payload = {
         "generated_utc": "t",
         "observation_count": 1_776_905,
         "duration_min": 107_940.0,
-        "also_int": 9999,  # exact-int 9999 is a legit count, never flagged
-        "seven_day_alert": 9999.0,  # ~7-day alert duration in minutes — legit, not sentinel
+        "also_int": 9999,
+        "seven_day_alert": 9999.0,
     }
     res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
     assert not any(r.check == "sentinel" for r in _errors(res))
@@ -242,9 +226,6 @@ def test_exact_9999_9999_float_is_sentinel():
     payload = {"generated_utc": "t", "rider_impact_score": 9999.9999}
     res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
     assert _has_err(res, "sentinel", "rider_impact_score")
-
-
-# --- S13 receipt re-granulation invariants -----------------------------------
 
 
 def test_receipt_by_shift_out_of_range_rate_is_error():
@@ -369,9 +350,6 @@ def test_receipts_index_rejects_impossible_iso_calendar_date():
     assert _has_err(res, "date_format", "dates[0]")
 
 
-# --- honest-NULL passes clean ------------------------------------------------
-
-
 def test_all_none_payload_passes_clean():
     net = NetworkFile(
         generated_utc="t",
@@ -395,9 +373,6 @@ def test_fully_empty_route_file_passes_clean():
     rr = RouteReliability(generated_utc="t", id="51")
     res = gate.check_payload("historic/route_reliability/51.json", rr)
     assert _errors(res) == []
-
-
-# --- network-specific invariants ---------------------------------------------
 
 
 def test_non_responding_by_route_sum_mismatch_is_error():
@@ -437,15 +412,12 @@ def test_delay_histogram_lo_gt_hi_is_error():
     assert any(r.check == "edge_order" for r in _errors(res))
 
 
-# --- hotspots ----------------------------------------------------------------
-
-
 def test_hotspots_rank_gap_and_sentinel_id_are_errors():
     hs = Hotspots(
         generated_utc="t",
         hotspots=[
             Hotspot(rank=1, type="route", id="165"),
-            Hotspot(rank=3, type="stop", id="__unknown_stop__"),  # rank gap + sentinel id
+            Hotspot(rank=3, type="stop", id="__unknown_stop__"),
         ],
     )
     res = gate.check_hotspots(hs, rel_key="historic/hotspots.json")
@@ -455,8 +427,6 @@ def test_hotspots_rank_gap_and_sentinel_id_are_errors():
 
 
 def test_hotspots_by_grain_walks_entries_no_rank_sequence():
-    """S12: the by_grain ladder is checked for range/sentinel/wilson, but NOT for
-    sequential rank (ranked-then-truncated) — a non-1-based / gapped rank is fine."""
     hs = Hotspots(
         generated_utc="t",
         hotspots=[],
@@ -466,7 +436,6 @@ def test_hotspots_by_grain_walks_entries_no_rank_sequence():
                 date="2026-06-14",
                 window_end="2026-06-20",
                 entries=[
-                    # rank starts at 5 with a gap — must NOT trip rank_sequence inside a ladder.
                     HotspotEntry(
                         rank=5,
                         type="route",
@@ -499,8 +468,6 @@ def test_hotspots_by_grain_walks_entries_no_rank_sequence():
 
 
 def test_hotspots_by_grain_flags_bad_range_and_sentinel():
-    """S12: an out-of-range severe_pct / a sentinel id / a bad otp_delta in a by_grain
-    entry (or tray) still trips the shared checks."""
     hs = Hotspots(
         generated_utc="t",
         hotspots=[],
@@ -530,12 +497,7 @@ def test_hotspots_by_grain_flags_bad_range_and_sentinel():
     assert "rate_range" in checks
 
 
-# --- repeat offenders --------------------------------------------------------
-
-
 def test_repeat_offenders_by_grain_walks_entries_no_rank_sequence():
-    """S14: the by_grain recurrence ladder is checked for range/sentinel/wilson/count, but NOT
-    for sequential rank (ranked-then-truncated PER KIND) — a non-1-based / gapped rank is fine."""
     ro = RepeatOffenders(
         generated_utc="t",
         offenders=[],
@@ -589,8 +551,6 @@ def test_repeat_offenders_by_grain_walks_entries_no_rank_sequence():
 
 
 def test_repeat_offenders_by_grain_flags_bad_range_type_and_sentinel():
-    """S14: an out-of-range severe_pct / a non-{trip,vehicle} type / a sentinel id/route / a
-    negative count in a by_grain entry (or tray) still trips the shared checks."""
     ro = RepeatOffenders(
         generated_utc="t",
         offenders=[],
@@ -616,15 +576,13 @@ def test_repeat_offenders_by_grain_flags_bad_range_type_and_sentinel():
     )
     res = gate.check_repeat_offenders(ro, rel_key="historic/repeat_offenders.json")
     checks = _checks(_errors(res))
-    assert "unknown_type" in checks  # 'route' is not a by_grain offender kind
-    assert "sentinel_entity" in checks  # id + route are sentinels
-    assert "rate_range" in checks  # 140.0 and -3.0 severe_pct
-    assert "count_negative" in checks  # recurrence_days = -1
+    assert "unknown_type" in checks
+    assert "sentinel_entity" in checks
+    assert "rate_range" in checks
+    assert "count_negative" in checks
 
 
 def test_repeat_offenders_scalar_still_accepts_route_stop_and_flags_sentinels():
-    """S14: the SCALAR offenders[] retains its broader trip|vehicle|route|stop type set and its
-    sentinel + additive recurrence_days count check (additive twin, not a regression)."""
     ro = RepeatOffenders(
         generated_utc="t",
         offenders=[
@@ -640,15 +598,12 @@ def test_repeat_offenders_scalar_still_accepts_route_stop_and_flags_sentinels():
             ),
             Offender(
                 type="vehicle", id="__unknown_stop__", route="__unrouted__"
-            ),  # sentinel id+route
+            ),
         ],
     )
     res = gate.check_repeat_offenders(ro, rel_key="historic/repeat_offenders.json")
     checks = _checks(_errors(res))
     assert "sentinel_entity" in checks
-
-
-# --- crowding + headway + alert history --------------------------------------
 
 
 def test_crowding_unknown_band_is_error():
@@ -682,9 +637,6 @@ def test_negative_alert_duration_is_error():
     assert _has_err(res, "count_negative", "duration_min")
 
 
-# --- S15: alert-history window + active_periods + byte ceiling gates ----------
-
-
 def test_alert_history_window_out_of_order_is_error():
     ah = AlertHistory(generated_utc="t", window_start="2026-07-01", window_end="2026-06-01")
     res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
@@ -695,7 +647,7 @@ def test_alert_history_truncated_total_below_emitted_is_error():
     ah = AlertHistory(
         generated_utc="t",
         alerts=[AlertHistoryEntry(id="a1"), AlertHistoryEntry(id="a2")],
-        total_in_window=1,  # < 2 emitted while truncated -> impossible
+        total_in_window=1,
         truncated=True,
     )
     res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
@@ -735,7 +687,7 @@ def test_alert_history_well_ordered_window_and_periods_pass():
                     ),
                     AlertActivePeriod(
                         start_utc="2026-06-08T08:00:00Z", end_utc=None
-                    ),  # open-ended OK
+                    ),
                 ],
             )
         ],
@@ -747,7 +699,6 @@ def test_alert_history_well_ordered_window_and_periods_pass():
 
 
 def test_alert_history_over_byte_ceiling_is_error():
-    # A synthetic runaway: enough wide entries to blow past 512 KiB.
     from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
 
     wide = "x" * 400
@@ -793,11 +744,7 @@ def test_habits_cell_above_one_is_error():
     assert any(r.check == "habits_range" for r in _errors(res))
 
 
-# --- occupancy-mix sum drift = WARN ------------------------------------------
-
-
 def test_mix_sum_drift_is_warn_not_error():
-    # buckets all in [0,1] but sum = 0.5 -> WARN, not ERROR.
     trend = NetworkTrend(
         generated_utc="t",
         series=[
@@ -832,12 +779,7 @@ def test_mix_bucket_out_of_range_is_error():
     assert any(r.check == "mix_bucket" for r in _errors(res))
 
 
-# --- empty network_trend series: WARN (no prior) / ERROR (prior exists) ------
-
-
 def test_empty_network_trend_series_no_longer_errors_per_file():
-    # The per-file checker no longer decides emptiness (prior state is unknown there);
-    # it emits neither an ERROR nor a WARN — the decision is routed through finalize_batch.
     trend = NetworkTrend(generated_utc="t", series=[])
     res = gate.check_network_trend(trend, rel_key="historic/network_trend.json")
     assert not any(r.check == "empty_coverage" for r in res)
@@ -868,9 +810,6 @@ def test_empty_network_trend_is_error_when_prior_and_realtime_exist():
 
 
 def test_empty_network_trend_is_warn_for_static_only_provider():
-    # The 2026-07-02 sto/octranspo incident shape: prior publish state exists but
-    # the batch carries ZERO route reliability files (no realtime worker yet) —
-    # expected emptiness must not redden the daily workflow.
     trend = NetworkTrend(generated_utc="t", series=[])
     finding = gate.check_network_trend_coverage(
         trend,
@@ -897,9 +836,6 @@ def test_nonempty_network_trend_yields_no_coverage_finding():
 
 
 def test_finalize_batch_routes_empty_trend_by_prior_and_batch_shape():
-    # WARN when prior_files_total is None (first publish); ERROR only when a prior
-    # exists AND the batch carries realtime-derived route files; WARN again for the
-    # static-only shape (prior exists, zero route files — the sto/octranspo case).
     route_files = [
         (
             "historic/route_reliability/1.json",
@@ -939,11 +875,8 @@ def test_finalize_batch_routes_empty_trend_by_prior_and_batch_shape():
     assert static_only.errors == []
 
 
-# --- coverage-delta ----------------------------------------------------------
-
-
 def test_coverage_delta_shrink_is_error():
-    r = gate.check_route_coverage_delta(60, 100)  # 60 < 100*0.7 -> ERROR
+    r = gate.check_route_coverage_delta(60, 100)
     assert r is not None and r.severity is Severity.ERROR and r.check == "coverage_delta"
 
 
@@ -953,10 +886,7 @@ def test_coverage_delta_first_publish_is_skipped():
 
 
 def test_coverage_delta_small_drop_passes():
-    assert gate.check_route_coverage_delta(80, 100) is None  # 20% < 30% threshold
-
-
-# --- over-half-empty route set = WARN ----------------------------------------
+    assert gate.check_route_coverage_delta(80, 100) is None
 
 
 def test_over_half_empty_route_set_is_warn():
@@ -969,7 +899,7 @@ def test_over_half_empty_route_set_is_warn():
         ("historic/route_reliability/a.json", empty),
         ("historic/route_reliability/c.json", RouteReliability(generated_utc="t", id="c")),
         ("historic/route_reliability/b.json", full),
-    ]  # 2 of 3 empty -> > 50%
+    ]
     gate.finalize_batch(
         report, route_payloads=route_payloads, current_total=3, prior_files_total=None
     )
@@ -977,11 +907,7 @@ def test_over_half_empty_route_set_is_warn():
     assert report.errors == []
 
 
-# --- trip-id drift detector (GC2 DECISIONS #12) ------------------------------
-
-
 def _route_with_cancellations(rid, rows):
-    """A RouteReliability carrying (scheduled, total) cancellation rows."""
     return RouteReliability(
         generated_utc="t",
         id=rid,
@@ -998,7 +924,6 @@ def _route_with_cancellations(rid, rows):
 
 
 def test_id_drift_none_when_no_scheduled_days():
-    # All-NULL scheduled -> nothing to measure -> None (honest-unknown, never a WARN).
     payloads = [
         (
             "historic/route_reliability/a.json",
@@ -1009,14 +934,12 @@ def test_id_drift_none_when_no_scheduled_days():
 
 
 def test_id_drift_below_threshold_is_clean():
-    # 20 scheduled route-days, 1 overshoot -> 5% == threshold (not > it) -> no WARN.
     rows = [(10, 12)] + [(10, 5)] * 19
     payloads = [("historic/route_reliability/a.json", _route_with_cancellations("a", rows))]
     assert gate.check_id_drift(payloads) is None
 
 
 def test_id_drift_above_threshold_is_warn():
-    # 10 scheduled route-days, 2 overshoots -> 20% > 5% -> WARN.
     rows = [(10, 12), (10, 15)] + [(10, 5)] * 8
     payloads = [("historic/route_reliability/a.json", _route_with_cancellations("a", rows))]
     finding = gate.check_id_drift(payloads)
@@ -1027,16 +950,13 @@ def test_id_drift_above_threshold_is_warn():
 
 def test_finalize_batch_emits_id_drift_warn():
     report = gate.new_report("stm", "historic", "t")
-    rows = [(10, 12), (10, 15)] + [(10, 5)] * 8  # 20% overshoot
+    rows = [(10, 12), (10, 15)] + [(10, 5)] * 8
     route_payloads = [("historic/route_reliability/a.json", _route_with_cancellations("a", rows))]
     gate.finalize_batch(
         report, route_payloads=route_payloads, current_total=1, prior_files_total=None
     )
     assert any(r.check == "id_drift" for r in report.warnings)
     assert report.errors == []
-
-
-# --- enforce / GateError -----------------------------------------------------
 
 
 def test_enforce_force_true_with_errors_does_not_raise():
@@ -1050,7 +970,7 @@ def test_enforce_force_true_with_errors_does_not_raise():
             message="bad",
         )
     )
-    gate.enforce(report, force=True)  # must NOT raise
+    gate.enforce(report, force=True)
 
 
 def test_enforce_force_false_with_errors_raises():
@@ -1070,11 +990,8 @@ def test_enforce_force_false_with_errors_raises():
 
 def test_enforce_clean_report_does_not_raise():
     report = gate.new_report("stm", "historic", "t")
-    gate.enforce(report, force=False)  # no findings -> no raise
+    gate.enforce(report, force=False)
     assert report.passed
-
-
-# --- S11 data-health -----------------------------------------------------------
 
 
 def _data_health(lanes=None, feeds=None):
@@ -1097,7 +1014,7 @@ def test_data_health_clean_payload_passes():
                 files_total=6,
                 gate=DataHealthGate(checks_run=6, errors=0, warnings=1, verdict="warn"),
             ),
-            LaneHealth(lane="rollup"),  # honest-null lane, no findings
+            LaneHealth(lane="rollup"),
         ],
         feeds=[DataHealthFeed(feed="trip_updates", status="fresh", age_s=30)],
     )
@@ -1143,7 +1060,6 @@ def test_data_health_byte_ceiling_is_error():
         DataHealthFeed,
     )
 
-    # Overflow the ceiling with a runaway feed list (each feed name long).
     big = _data_health(
         feeds=[DataHealthFeed(feed="f" * 200, status="fresh", age_s=1) for _ in range(200)]
     )
@@ -1152,12 +1068,8 @@ def test_data_health_byte_ceiling_is_error():
     assert _has_err(res, "byte_ceiling")
 
 
-# --- report round-trip -------------------------------------------------------
-
-
 def test_gate_report_to_dict_round_trips_json():
     report = gate.new_report("stm", "historic", "2026-06-01T00:00:00Z")
-    # An out-of-range rate is a per-file ERROR the round-trip can assert on.
     gate.record(
         report,
         "historic/network_trend.json",
@@ -1168,7 +1080,7 @@ def test_gate_report_to_dict_round_trips_json():
     assert parsed["provider_id"] == "stm"
     assert parsed["tier"] == "historic"
     assert parsed["payloads_checked"] == 1
-    assert parsed["errors"] >= 1  # otp_pct=150 -> rate_range ERROR
+    assert parsed["errors"] >= 1
     assert isinstance(parsed["results"], list)
 
 

@@ -69,20 +69,13 @@ const evidence = [
 	},
 ] satisfies readonly OffenderEvidenceRow[];
 
-const info = {
-	tip: 'Severe-delay rate definition',
-	href: '/metrics#severe',
-	label: 'About the severe-delay rate',
-	linkLabel: 'View methodology',
-};
-
 const defaultProps = {
 	heading: 'Worst trips',
 	ladder: rankedLadder,
 	tray,
 	evidence,
 	windowCaption: 'Recurrence read over the latest trailing week of service.',
-	info,
+
 	locale: 'en',
 	copy: COPY.en,
 } satisfies ComponentProps<typeof RepeatOffendersSection>;
@@ -109,10 +102,9 @@ describe('RepeatOffendersSection article-card body', () => {
 		expect(tableFrame).toHaveAttribute('data-slot', 'data-table-frame');
 		expect(tableFrame?.querySelector('[data-slot="offender-evidence-table"]')).toBe(table);
 		expect(screen.getByText(evidence[0].recurrence)).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: info.label })).toHaveAttribute(
-			'aria-expanded',
-			'false',
-		);
+		expect(
+			screen.getByRole('button', { name: `About ${COPY.en.ladder.severeRateLabel}` }),
+		).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('uses an h3 for its internal heading beneath the parent article-card h2', () => {

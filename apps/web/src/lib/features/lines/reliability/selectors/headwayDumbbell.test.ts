@@ -24,7 +24,7 @@ describe('selectHeadwayDumbbell', () => {
 		expect(hasData).toBe(true);
 		if (spec.kind !== 'dumbbell') throw new Error('expected dumbbell');
 		expect(spec.domain).toEqual(HEADWAY_DOMAIN);
-		expect(spec.domain[0]).toBe(0); // zero-based, never /max
+		expect(spec.domain[0]).toBe(0);
 		expect(spec.scale).toBe('severity');
 		const am = spec.rows.find((r) => r.key === 'am');
 		expect(am?.scheduled).toBe(8);

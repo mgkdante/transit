@@ -1,34 +1,3 @@
-"""Permanent cutover gate for the route delay spine (S7-B PR1 Task 4).
-
-Proves build_route_reliability(source="spine") reproduces the source="fact" output
-BYTE-IDENTICALLY on the count + share fields, allowing only {avg_delay_min, p50_min,
-p90_min} to move (pooled avg + CDF-interp percentiles — the deliberate rebaseline).
-This is the oracle that LICENSES the Task 5 fold-table drop, and it survives the drop:
-the frozen golden `fixtures/spine_golden/route_reliability_CUT-1.fact.json` is the
-committed source="fact" render, so the gate keeps working once the fact path is gone.
-
-Runs ONLY against a disposable Postgres migrated to head (incl. 0063); self-skips when
-TRANSIT_TEST_DATABASE_URL is unset:
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
-        uv run pytest tests/test_spine_cutover_gate.py -v
-
-Regenerate the frozen golden (after an INTENTIONAL, reviewed change to the fact output):
-
-    SPINE_GOLDEN_REGEN=1 \
-        TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-        TRANSIT_TEST_DATABASE_URL=... uv run pytest \
-        tests/test_spine_cutover_gate.py::test_regenerate_golden -v
-
-Calendar stability (the seed is "now"-relative — Postgres now() can't be mocked):
-the seed is 7 IDENTICAL consecutive closed days, which always partition into exactly
-5 weekday + 2 weekend days and cover all 7 ISO weekdays once each, so every ratio field
-is calendar-invariant. The canonicalizer relativizes dates to anchor offsets and dedups
-the weekly/monthly grains (identical days -> one representative) so the golden is stable
-regardless of which weekday "today" is. feed_timestamp_utc == captured_at_utc (the common
-case; the feed-vs-captured date-basis caveat is documented on the Task 3 commit).
-"""
 
 from __future__ import annotations
 
@@ -54,11 +23,11 @@ from transit_ops.snapshots.builders.historic import (
 PROVIDER = "stm_gate_test"
 TU_ENDPOINT_ID = 995001
 VP_ENDPOINT_ID = 995002
-ROUTE = "99G"        # the per-route golden subject
-ROUTE2 = "99H"       # a second route so the network aggregation spans >1 route
+ROUTE = "99G"
+ROUTE2 = "99H"
 _SEED_ROUTES = (ROUTE, ROUTE2)
 TORONTO = ZoneInfo("America/Toronto")
-GENERATED_UTC = "2026-06-25T00:00:00Z"  # fixed -> stable across runs
+GENERATED_UTC = "2026-06-25T00:00:00Z"
 
 GOLDEN_PATH = (
     Path(__file__).parent
@@ -67,16 +36,7 @@ GOLDEN_PATH = (
     / "route_reliability_CUT-1.fact.json"
 )
 
-# The only leaves allowed to differ between fact and spine (the rebaseline).
 ALLOW_MOVE = {"avg_delay_min", "p50_min", "p90_min"}
-# Grains whose per-entry date is calendar-unstable (which ISO week / month a day
-# lands in drifts with "today"). The identical-per-day seed makes the RATIO fields
-# (otp_pct, severe_pct) equal across every entry, so the canonicalizer dedups them to
-# one representative. The COUNT/CI fields (observation_count, on_time, wilson, the
-# delay histogram) instead scale with how many of the 7 seeded days fall in each
-# partial week/month — that split also drifts with "today" — so they are nulled for
-# these grains before dedup. Counts stay frozen at the calendar-stable day / shift /
-# day-type grains, whose whole-window sums are run-day-independent.
 _COLLAPSE_GRAINS = {"week", "month"}
 _COLLAPSE_NULL_FIELDS = (
     "date",
@@ -90,12 +50,6 @@ _COLLAPSE_NULL_FIELDS = (
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
 
-# The DAY-grain windowed breakdowns carry calendar labels of the anchor-adjacent day
-# (its weekday/weekend kind and ISO dow) — deterministic functions of the RUN date,
-# not of the pipeline. Like dates, they must be relativized to the anchor or the
-# golden flips at every weekday/weekend boundary (frozen Mon 'weekend' vs run
-# Wed 'weekday'). Longer grains are calendar-stable: the seeded window is a
-# multiple of 7 days, so their daykind composition never varies.
 _DAYKIND_LABELS = {"weekday", "weekend"}
 _ANCHOR_DAYKIND = "anchor-daykind"
 _DAY_DAYTYPE_PRIOR_NULL_FIELDS = (
@@ -123,21 +77,14 @@ class _Counter:
         return self.value
 
 
-# --- the rich, calendar-stable seed ----------------------------------------
-# Per-day fact set (direction, hour, delay_seconds, schedule_relationship). Identical
-# on each of the 7 seeded days. Covers: am_peak/midday/pm_peak/night shifts; an
-# adversarial midday DIRECTION SPLIT (dir 1 delayed, dir 0 silent); a NIGHT GHOST-ONLY
-# hour (|delay|>3600 -> delay_obs counts them, on_time/severe exclude -> otp 0%, Finding F);
-# a NULL-delay row; and one CANCELED trip (schedule_relationship=3) for cancellation_rate.
 _PER_DAY_DELAYS = [
     (0, 7, -30, None), (0, 7, 200, None), (0, 7, 400, None), (0, 7, None, None),
     (1, 10, 60, None), (1, 10, 350, None),
-    (0, 10, None, None), (0, 10, None, None),   # midday dir 0 silent (adversarial)
+    (0, 10, None, None), (0, 10, None, None),
     (0, 17, 120, None),
-    (0, 23, 7200, None), (0, 23, 5000, None),   # night ghost-only hour (Finding F)
-    (0, 7, None, 3),                            # CANCELED trip (cancellation_rate)
+    (0, 23, 7200, None), (0, 23, 5000, None),
+    (0, 7, None, 3),
 ]
-# Per-day vehicle occupancy pings (occupancy_status code) -> occupancy_mix non-null.
 _PER_DAY_OCCUPANCY = [1, 1, 2, 3, 5]
 _SEED_DAYS = 7
 
@@ -197,10 +144,6 @@ def _insert_trip_snapshot(connection, ids, route, local_date, hour, rows) -> Non
             ),
             {"p": PROVIDER, "s": sid, "ei": idx, "dk": date_key, "sld": local_date,
              "ts": captured_at, "entity": f"e{sid}-{idx}", "trip": f"t{sid}-{idx}",
-             # delay_stop_id from a small FIXED pool (deterministic per row position -> identical
-             # every seeded day -> calendar-stable): feeds the legacy stop_delay_hourly/weekly path
-             # Feeds scalar weak_stops[] and gold.stop_delay_spine
-             # (weak_stops_by_grain). Three stops.
              "route": route, "dir": direction, "sched": sched, "delay": delay,
              "stop": f"stop{idx % 3}"},
         )
@@ -274,11 +217,7 @@ def _render(connection):  # noqa: ANN001
     ).model_dump(mode="json")
 
 
-# --- canonicalization (calendar-stable) ------------------------------------
-
-
 def _relativize(value: str, anchor: date) -> str:
-    """ISO date/datetime -> anchor-relative offset token (date part only)."""
     if _DATETIME_RE.match(value):
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return f"D{(anchor - dt.date()).days}T{dt.strftime('%H:%M:%S')}"
@@ -301,7 +240,6 @@ def _norm(obj, anchor: date):  # noqa: ANN001, ANN202
 
 
 def _sort_key(elem) -> str:  # noqa: ANN001
-    """Canonical order key from an element's frozen (non-allow-move) content."""
     if isinstance(elem, dict):
         frozen = {k: v for k, v in elem.items() if k not in ALLOW_MOVE}
         return json.dumps(frozen, sort_keys=True)
@@ -309,17 +247,12 @@ def _sort_key(elem) -> str:  # noqa: ANN001
 
 
 def _relativize_day_grain_calendar(norm: dict, anchor: date) -> None:
-    """Anchor-relativize the day-grain calendar labels (see _ANCHOR_DAYKIND note)."""
     for entry in norm.get("periods_by_grain", []):
         if entry.get("grain") != "day":
             continue
         for row in entry.get("by_daytype") or []:
             if row.get("grain") in _DAYKIND_LABELS:
                 row["grain"] = _ANCHOR_DAYKIND
-            # A one-day prior can cross the Friday/Saturday or Sunday/Monday
-            # boundary. The current anchor's day type then has no matching row
-            # in the prior window, so these values legitimately flip between
-            # counts and NULL with the run date. They are not cutover evidence.
             for field in _DAY_DAYTYPE_PRIOR_NULL_FIELDS:
                 if field in row:
                     row[field] = None
@@ -333,11 +266,8 @@ def _relativize_day_grain_calendar(norm: dict, anchor: date) -> None:
 
 
 def _canonicalize(rel: dict, anchor: date) -> dict:
-    """Date-relativized, list-sorted, week/month-deduped canonical form."""
     norm = _norm(rel, anchor)
     _relativize_day_grain_calendar(norm, anchor)
-    # Dedup the calendar-unstable week/month period grains to one representative each
-    # (identical-per-day -> all entries share frozen fields); drop their date.
     periods = []
     seen_collapsed: dict[str, str] = {}
     for p in norm.get("periods", []):
@@ -352,19 +282,13 @@ def _canonicalize(rel: dict, anchor: date) -> dict:
             seen_collapsed[p["grain"]] = key
         periods.append(p)
     norm["periods"] = periods
-    # Sort every top-level list by canonical key (habits.matrix is nested in an object,
-    # not a top-level list, so its row order is preserved).
     for k, v in norm.items():
         if isinstance(v, list):
             norm[k] = sorted(v, key=_sort_key)
     return norm
 
 
-# --- comparison -------------------------------------------------------------
-
-
 def _assert_frozen_match(golden, candidate, path: str = "") -> None:  # noqa: ANN001
-    """Every leaf equal EXCEPT allow-move names (which must be numeric-or-None)."""
     if isinstance(golden, dict):
         assert isinstance(candidate, dict), f"{path}: type mismatch"
         assert set(golden) == set(candidate), (
@@ -398,20 +322,12 @@ def _zero_allow_move(obj):  # noqa: ANN001, ANN202
 
 
 def _has_delay_subtree(canon: dict) -> bool:
-    """Finding E: the gate is vacuous unless the delay cube actually rendered."""
     grains = {p["grain"] for p in canon.get("periods", [])}
     cube = grains & {"week", "month", "weekday", "weekend", "am_peak", "midday", "pm_peak", "night"}
     return bool(cube) and bool(canon.get("day_of_week")) and bool(canon.get("by_shift_daytype"))
 
 
 def _has_weak_stops(canon: dict) -> bool:
-    """Refuse to freeze an empty scalar weak_stops[] subtree.
-
-    The cutover gate licenses the future stop_delay_weekly/monthly drop (id+name
-    frozen, avg allow-move), which is vacuous if no stop rendered.
-    weak_stops_by_grain is net-new and MIN_N=30 gated, so it may legitimately
-    be empty on this light seed; the scalar is the drop-license subject.
-    """
     ws = canon.get("weak_stops") or []
     return bool(ws) and all(s.get("id") for s in ws)
 
@@ -433,9 +349,6 @@ def conn(real_db_engine):  # noqa: ANN001
     reason="set SPINE_GOLDEN_REGEN=1 to regenerate the frozen golden",
 )
 def test_regenerate_golden(conn) -> None:
-    # Post-drop the source="fact" path is gone, so the golden re-baselines from the
-    # spine. (Byte-identity to the fact output was proven at cutover, when both
-    # existed; the committed golden remains that frozen fact oracle.)
     anchor = _anchor_today(conn)
     canon = _canonicalize(_render(conn), anchor)
     assert _has_delay_subtree(canon), "refusing to freeze an empty delay subtree (Finding E)"
@@ -453,17 +366,11 @@ def test_spine_matches_frozen_golden_on_count_and_share_fields(conn) -> None:
     assert _has_weak_stops(golden), "frozen golden has an empty weak_stops subtree (DB-PR-3)"
     anchor = _anchor_today(conn)
     canon_spine = _canonicalize(_render(conn), anchor)
-    # The committed golden is the source="fact" render frozen at cutover; the spine
-    # reproduces every frozen field, only {avg/p50/p90} rebaselined (allow-move).
     _assert_frozen_match(golden, canon_spine)
-    # Byte backstop: with the allow-move leaves zeroed, the bodies are identical.
     assert _zero_allow_move(golden) == _zero_allow_move(canon_spine)
 
 
 def test_network_by_shift_daytype_renders_from_spine(conn) -> None:
-    """The network_trend by_shift/by_daytype grains derive from the spine across BOTH
-    seeded routes (byte-identity to the dropped folds was proven at cutover); here we
-    assert they render with in-range shares + full grain coverage."""
     spine = build_network_trend(
         conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC
     ).model_dump(mode="json")
@@ -478,10 +385,6 @@ def test_network_by_shift_daytype_renders_from_spine(conn) -> None:
 
 
 def test_repeated_problem_route_issue_count_matches_spine_weekly_severe(conn) -> None:
-    """Task 5 full-drop: the repeated_problem_route_stop builder now derives its
-    route-grain recurrence from gold.route_delay_spine. issue_count must equal the
-    spine's per-(route, ISO-week) SUM(severe) — byte-identical to the (about-to-be-
-    dropped) route_reliability_weekly.severe_delay_count it used to read."""
     rp = {
         (r["entity_id"], r["period_start_local"]): r["issue_count"]
         for r in conn.execute(
@@ -506,22 +409,17 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe(conn) ->
             {"p": PROVIDER},
         ).mappings()
     }
-    # build_hotspots must execute its spine-derived weekly join without error.
     hot = build_hotspots(conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
     assert rp, "expected route-grain repeated-problem rows from the seeded severe delays"
     assert spine, "expected severe delays in the spine"
     for key, severe in spine.items():
         assert rp.get(key) == severe, (key, rp.get(key), severe)
-    assert hot is not None  # renders off the spine-weekly OTP join
+    assert hot is not None
 
 
 def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
-    """S12 real-DB parity: the by_grain WEEK ladder ranks route entities by the
-    not-severe Wilson LOWER bound over the per-route spine SUM(obs)/SUM(severe) for the
-    same trailing-week window, EXACTLY reproducing a hand-rolled spine SUM + _wilson_lo.
-    Also proves the ladder renders + carries evidence fields + the tray, off real gold."""
     from transit_ops.gold.reader import wilson_lo as _wlo
-    from transit_ops.snapshots.builders.historic import _hotspots_by_grain
+    from transit_ops.snapshots.builders.historic.small_surfaces import _hotspots_by_grain
 
     anchor = conn.execute(
         text(
@@ -531,21 +429,13 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
         {"p": PROVIDER},
     ).scalar_one()
     win_start = anchor - timedelta(days=6)
-    # hand-rolled per-route SUM over the WEEK window off the spine (route universe)
-    hand = {
-        r["route_id"]: (int(r["obs"]), int(r["severe"]))
-        for r in conn.execute(
-            text(
-                "SELECT route_id, SUM(delay_observation_count) AS obs, "
-                "       SUM(severe_delay_count) AS severe "
-                "FROM gold.route_delay_spine "
-                "WHERE provider_id = :p AND route_id <> '__unrouted__' "
-                "  AND provider_local_date >= :s AND provider_local_date <= :e "
-                "GROUP BY route_id"
-            ),
-            {"p": PROVIDER, "s": win_start, "e": anchor},
-        ).mappings()
-    }
+    usable_delays = [
+        delay for _, _, delay, _ in _PER_DAY_DELAYS
+        if delay is not None and abs(delay) <= 3600
+    ]
+    observations = len(usable_delays) * _SEED_DAYS
+    severe = sum(delay > 300 for delay in usable_delays) * _SEED_DAYS
+    hand = {route: (observations, severe) for route in _SEED_ROUTES}
     names = _entity_name_maps_or_empty(conn)
     grains = _hotspots_by_grain(conn, PROVIDER, names[0], names[1])
 
@@ -554,7 +444,6 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
     week = by_grain["week"]
     assert week.date == win_start.isoformat()
     assert week.window_end == anchor.isoformat()
-    # expected ranked routes: those clearing MIN_N=30, ordered by not-severe Wilson LB ASC
     expected = sorted(
         (
             (_wlo(obs - severe, obs), rid)
@@ -565,7 +454,6 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
     )
     got_routes = [(e.wilson_lo, e.id) for e in week.entries if e.type == "route"]
     assert got_routes == expected, (got_routes, expected)
-    # evidence fields populated on a ranked entry
     if week.entries:
         e0 = week.entries[0]
         assert e0.observation_count is not None
@@ -574,9 +462,6 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
 
 
 def test_hotspots_by_grain_payload_size_under_ceiling(conn) -> None:
-    """S12 real-DB size probe: the full published hotspots.json (scalar + by_grain) off
-    the seeded gold stays comfortably under HOTSPOTS_BYTE_CEILING. Reports the measured
-    size in the assert message so the operator can read the real-DB gauge."""
     from transit_ops.snapshots.contract import HOTSPOTS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body
 
@@ -585,18 +470,11 @@ def test_hotspots_by_grain_payload_size_under_ceiling(conn) -> None:
     assert size <= HOTSPOTS_BYTE_CEILING, (
         f"seeded hotspots.json {size}B exceeds ceiling {HOTSPOTS_BYTE_CEILING}B"
     )
-    # gauge (never fails, just prints the measured real-DB size)
     print(f"\n[S12 size probe] seeded hotspots.json = {size} bytes "
           f"(ceiling {HOTSPOTS_BYTE_CEILING})")
 
 
 def test_repeat_offenders_payload_size_under_ceiling(conn) -> None:
-    """Keep the full published repeat_offenders.json under its byte ceiling.
-
-    The seeded fixture may leave the 0075 offender spine empty (by_grain
-    honest-empty); this still guards the scalar path and envelope size. The
-    dense by_grain worst case is covered by its dedicated real-DB test.
-    """
     from transit_ops.snapshots.builders.historic import build_repeat_offenders
     from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body
@@ -617,8 +495,6 @@ def _entity_name_maps_or_empty(connection):  # noqa: ANN001, ANN202
 
 
 def test_ghost_only_hour_otp_is_zero(conn) -> None:
-    """Finding F: the night ghost-only hour (|delay|>3600) -> delay_obs counts the
-    ghosts but on_time/severe exclude them, so otp_pct is 0 (a real 0%, not None)."""
     spine = {(p["grain"], p["date"]): p for p in _render(conn)["periods"]}
     night_keys = [k for k in spine if k[0] == "night"]
     assert night_keys, "expected a night grain from the ghost-only hour"

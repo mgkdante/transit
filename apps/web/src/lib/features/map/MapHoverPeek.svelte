@@ -1,12 +1,13 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { routeModeHint } from '$lib/search/stopMode';
 	import { stopNameFallback } from '$lib/site/absence';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapHoverPeek } from './mapHoverPeek';
-	import MapDelayTag from './MapDelayTag.svelte';
+	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
+	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import { formatAge, vehicleFieldAbsence } from './mapSelectionDetail.logic';
@@ -72,22 +73,17 @@
 				<dt>{t.status}</dt>
 				<dd class="map-peek-status">
 					{#if peek.delayMin != null || peek.status !== 'unknown'}
-						{STATUS_LABELS[locale][peek.status]}
-					{/if}
-					{#if peek.delayMin !== 0}
-						{#if peek.delayMin != null || peek.status !== 'unknown'}
-							<span aria-hidden="true">·</span>
-						{/if}
-						<MapDelayTag
-							delay={peek.delayMin}
-							{locale}
-							{t}
-							ctx={{
-								stale: peek.notReportingAgeS != null,
-								metro: peek.route?.type === ROUTE_TYPE_METRO,
-							}}
+						<StatusBadge
+							status={peek.status}
+							label={STATUS_LABELS[locale][peek.status]}
+							mode="legend"
+							size="sm"
 						/>
+						<span aria-hidden="true">·</span>
 					{/if}
+					<span class="map-peek-delay">
+						<MaybeValue value={delayMeasurement(peek.delayMin)} reason={vehicleAbsence} {locale} />
+					</span>
 				</dd>
 			</div>
 			<div>
@@ -248,6 +244,10 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.25rem;
+	}
+	.map-peek-delay {
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
 	}
 	.map-peek-count {
 		margin: 0;

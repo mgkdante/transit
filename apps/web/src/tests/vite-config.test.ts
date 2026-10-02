@@ -86,7 +86,7 @@ describe('vite production chunk contract', () => {
 		expect(firstClientOutput?.experimentalMinChunkSize).toBe(1_500);
 		if (typeof manualChunks !== 'function') return;
 
-		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.js')).toBe(
+		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.mjs')).toBe(
 			'vendor-maplibre',
 		);
 		expect(manualChunks('/repo/node_modules/pmtiles/dist/index.js')).toBe('vendor-maplibre');

@@ -2,17 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { createSubscriber } from 'svelte/reactivity';
 
-// PR-6 skew-immunity proof at the live-store level: the store's `ageSeconds`
-// must reflect SERVER age (generated_utc vs the server-anchored clock), NOT a
-// skewed client clock. We drive sharedClock with a fixed offset and assert the
-// store reports the true server age — i.e. it reads `serverNow`, not `now`.
-
 const mocks = vi.hoisted(() => {
 	const clockDispose = vi.fn();
 	return {
 		browser: true,
-		// A controllable shared clock: `now` is the (skewed) client tick; `serverNow`
-		// is the corrected server clock. The store under test must use serverNow.
 		nowMs: 0,
 		offsetMs: 0,
 		generatedUtc: '2026-06-21T12:00:00Z' as string | null,
@@ -25,7 +18,6 @@ const mocks = vi.hoisted(() => {
 		network: vi.fn(),
 		clockDispose,
 		clockSubscribe: vi.fn(() => clockDispose),
-		noteDataGeneratedUtc: vi.fn(),
 		bumpRefreshEpoch: () => {},
 		resetRefreshEpoch: () => {},
 	};
@@ -64,7 +56,6 @@ vi.mock('$lib/stores', async () => {
 				subscribe();
 				return refreshEpoch;
 			},
-			noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
 		},
 	};
 });
@@ -80,9 +71,6 @@ vi.mock('$lib/v1/adapter', () => ({
 	},
 }));
 
-// Static import so the store shares THIS file's compiled Svelte runtime (a
-// dynamic import after vi.resetModules would load a second runtime → effect
-// orphan). The hoisted mocks above are applied at this import.
 import { createLiveStore, type LiveFamily } from './store.svelte';
 import { dataRefresh, sharedClock } from '$lib/stores';
 import { configureV1Runtime } from '$lib/v1/runtime';
@@ -107,7 +95,6 @@ function resetLiveFetches(): void {
 	mocks.network.mockReset().mockImplementation(async () => ({ generated_utc: mocks.generatedUtc }));
 	mocks.clockDispose.mockReset();
 	mocks.clockSubscribe.mockClear();
-	mocks.noteDataGeneratedUtc.mockReset();
 }
 
 async function settleLivePoll(): Promise<void> {
@@ -156,16 +143,10 @@ describe('createLiveStore — server-anchored ageSeconds (skew-immune)', () => {
 	it('reports SERVER age, ignoring a fast client clock', async () => {
 		const generated = Date.parse('2026-06-21T12:00:00Z');
 
-		// Client clock is 9 MINUTES FAST: raw `now` is generated + 540s, but the
-		// captured server time is only generated + 30s. The corrected serverNow =
-		// now + offset must equal generated + 30s, so the age reads 30s, not 570s.
 		const trueServerNow = generated + 30_000;
-		mocks.nowMs = generated + 9 * 60_000; // skewed client
-		mocks.offsetMs = trueServerNow - mocks.nowMs; // = -510s
+		mocks.nowMs = generated + 9 * 60_000;
+		mocks.offsetMs = trueServerNow - mocks.nowMs;
 
-		// createLiveStore registers an internal `$effect`, so it must be built (and
-		// its first refresh kicked off) inside an effect root with a synchronous
-		// flushSync; we then wait for the async poll to settle and dispose.
 		let store!: ReturnType<typeof createLiveStore>;
 		const cleanup = $effect.root(() => {
 			store = createLiveStore({
@@ -177,7 +158,6 @@ describe('createLiveStore — server-anchored ageSeconds (skew-immune)', () => {
 		try {
 			await vi.waitFor(() => {
 				flushSync();
-				// 30s server age (NOT 570s) and NOT stale (30 < 3*30).
 				expect(store.ageSeconds).toBe(30);
 			});
 			expect(store.isStale).toBe(false);
@@ -384,7 +364,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.network).toBeNull();
 	});
 
-	it('derives freshness and the shared data timestamp from a departures-only store', async () => {
+	it('derives source freshness from a departures-only store', async () => {
 		const generated = Date.parse('2026-06-21T12:00:00Z');
 		mocks.nowMs = generated + 30_000;
 		mocks.offsetMs = 0;
@@ -395,7 +375,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
 		expect(store.ageSeconds).toBe(30);
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-21T12:00:00Z');
 	});
 
 	it('deduplicates repeated family names within one poll', async () => {
@@ -408,6 +387,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 	});
 
 	it('commits successful families and keeps the oldest retained active generation', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:02:00Z');
+		mocks.offsetMs = 0;
 		mocks.vehicles
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z', vehicles: [] })
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z', vehicles: [] });
@@ -425,11 +406,11 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		flushSync();
 
 		expect(store.error?.message).toBe('network unavailable');
-		// WHY(M1): commit-on-settlement lets the healthy vehicles family advance,
-		// while aggregate freshness remains the oldest active retained generation.
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect(store.network?.on_time_pct).toBe(91);
 		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(store.ageSeconds).toBe(120);
+		expect(store.isStale).toBe(true);
 	});
 
 	it.each([
@@ -557,7 +538,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			successRevision: 1,
 		});
 		expect(store.error).toBeNull();
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(2);
 	});
 
 	it('times out only pending families, preserves prior commits, and rejects late settlement', async () => {
@@ -597,7 +577,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.network).toBeNull();
 		expect(store.familyStates.network.phase).toBe('failed');
 		expect(store.familyStates.network.error?.name).toBe('TimeoutError');
-		expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 	});
 
 	it('ref-counts deduplicated leases and makes disposal idempotent', async () => {
@@ -728,7 +707,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.trips).toBeNull();
 		expect(store.familyStates.trips.active).toBe(false);
 		expect(store.familyStates.trips.successRevision).toBe(0);
-		expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
 	});
 
 	it('derives vehicle motion freshness independently from an old retained alerts family', async () => {
@@ -789,6 +767,45 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect.soft(store.index).toBe(firstIndex);
 	});
 
+	it.each(['alerts', 'network'] as const)(
+		'updates %s data and freshness without rebuilding unrelated lookup indexes',
+		async (family) => {
+			mocks[family]
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z' })
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z' });
+			const { store } = setup(30, [family]);
+			await store.refresh();
+			flushSync();
+			const firstPayload = store[family];
+			const firstIndex = store.index;
+
+			await store.refresh();
+			flushSync();
+			expect(store[family]).not.toBe(firstPayload);
+			expect(store.generatedUtc).toBe('2026-06-21T12:00:30Z');
+			expect(store.familyStates[family].retainedGeneration).toBe(store.generatedUtc);
+			expect(store.familyStates[family].successRevision).toBe(2);
+			expect(store.index).toBe(firstIndex);
+		},
+	);
+
+	it.each(['vehicles', 'trips', 'departures'] as const)(
+		'rebuilds lookup indexes when the %s generation advances',
+		async (family) => {
+			const port = family === 'departures' ? mocks.stopDepartures : mocks[family];
+			port
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z' })
+				.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:30Z' });
+			const { store } = setup(30, [family]);
+			await store.refresh();
+			flushSync();
+			const firstIndex = store.index;
+			await store.refresh();
+			flushSync();
+			expect(store.index).not.toBe(firstIndex);
+		},
+	);
+
 	it('updates only the family whose generation advances', async () => {
 		mocks.vehicles
 			.mockResolvedValueOnce({ generated_utc: '2026-06-21T12:00:00Z', vehicles: [] })
@@ -844,7 +861,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await settleLivePoll();
 		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
 
-		// A duplicate visible event must neither refresh again nor add a second timer.
 		document.dispatchEvent(new Event('visibilitychange'));
 		await settleLivePoll();
 		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
@@ -870,7 +886,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await settleLivePoll();
 		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
 
-		// A duplicate online event must neither refresh again nor add a second timer.
 		window.dispatchEvent(new Event('online'));
 		await settleLivePoll();
 		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
@@ -927,7 +942,6 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.generatedUtc).toBeNull();
 		expect(store.error).toBeNull();
 		expect(store.loading).toBe(false);
-		expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
 	});
 
 	it('times out a hung family batch and releases single-flight for recovery', async () => {
@@ -981,13 +995,11 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect.soft(retrySettled).toBe(true);
 		expect.soft(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect.soft(store.error).toBeNull();
-		expect.soft(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 
 		releaseLate();
 		await settleLivePoll();
 
 		expect.soft(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
-		expect.soft(mocks.noteDataGeneratedUtc).toHaveBeenCalledTimes(1);
 	});
 
 	it('keeps timeout silent after stop when a transport ignores abort', async () => {

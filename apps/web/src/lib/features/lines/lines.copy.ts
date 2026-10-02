@@ -1,10 +1,3 @@
-// lines.copy.ts — co-located bilingual copy for the Lines surface (slice-9.3).
-//
-// The Lines index + the route detail screen own their non-intrinsic, user-facing
-// strings here so the .svelte stays markup-only (domain-intrinsic component
-// labels — OTP / delay / p90 / severe — already live in the spine's
-// ReliabilityPane). FR is the canonical product voice; EN mirrors it.
-
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import { articleCopy } from '$lib/components/layout/articleCopy';
@@ -123,7 +116,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
 		scheduleIntro:
-			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
+			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ». Les heures suivent la journée de service : 25:30 signifie 01:30 le lendemain.',
 		scheduleTable: {
 			caption: 'Périodes de service planifiées',
 			period: 'Période',
@@ -170,7 +163,6 @@ export const detailCopy = defineCopy({
 			mapAction: 'Carte',
 			count: (n: number) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
 		},
-		noLiveBus: 'Aucun bus en direct',
 		approaching: 'À l’approche',
 		viewStop: (stop: string) => `Voir l’arrêt ${stop}`,
 		early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
@@ -221,7 +213,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
 		scheduleIntro:
-			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab.',
+			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab. Times follow the service day: 25:30 means 01:30 the next day.',
 		scheduleTable: {
 			caption: 'Planned service periods',
 			period: 'Period',
@@ -268,7 +260,6 @@ export const detailCopy = defineCopy({
 			mapAction: 'Map',
 			count: (n) => (n === 1 ? '1 bus in service' : `${n} buses in service`),
 		},
-		noLiveBus: 'No live bus',
 		approaching: 'Approaching',
 		viewStop: (stop) => `View stop ${stop}`,
 		early: (minutes) => `${Math.abs(minutes)} min early`,

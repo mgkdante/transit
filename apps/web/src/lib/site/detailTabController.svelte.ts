@@ -7,7 +7,6 @@ export interface DetailTabController {
 	syncFromUrl(url: URL): void;
 }
 
-/** Owns detail-tab UI state and the replaceState URL side channel. */
 export function createDetailTabController(initialUrl: URL): DetailTabController {
 	let active = $state<DetailTab>(detailTabFromSearchParams(initialUrl.searchParams));
 

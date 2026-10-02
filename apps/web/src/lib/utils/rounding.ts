@@ -1,6 +1,5 @@
 const MAX_FRACTION_DIGITS = 100;
 
-/** Round the decimal spelling of a number, with exact ties moving away from zero. */
 export function roundHalfAwayFromZero(value: number, digits: number): number {
 	if (!Number.isFinite(value)) return value;
 	if (!Number.isInteger(digits) || digits < 0 || digits > MAX_FRACTION_DIGITS) {

@@ -25,7 +25,6 @@ describe('FreshnessStamp degraded live truth', () => {
 		expect(stamp.querySelector('[data-slot="status-dot"]')).not.toHaveClass(
 			'bg-dataviz-status-on-time',
 		);
-		// Degraded is family health, not fabricated global staleness.
 		expect(within(stamp).queryByText(/stale/)).not.toBeInTheDocument();
 	});
 });

@@ -1,9 +1,3 @@
-// provenance.ts — Zod mirror of provenance.schema.json (title: "Provenance").
-// The data-honesty manifest for the historic tier: which source feeds were
-// loaded and when (sources), how fresh each feed is (freshness), known data
-// gaps, retention windows, and a free-form methodology object. Powers the
-// "how we measure this" / honesty footer.
-
 import { z } from 'zod';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
@@ -21,12 +15,6 @@ export const ProvenanceFreshnessSchema = z.object({
 });
 export type ProvenanceFreshness = z.infer<typeof ProvenanceFreshnessSchema>;
 
-// Feed-conformance verdict for the active provider — how well the upstream GTFS
-// payload matched the schema the pipeline expects. `status` is the only required
-// field (canonical leaves the vocabulary open: "compliant", "out-of-norm", …);
-// `extra_row_count` counts rows the loader saw but did not recognize, and
-// `unknown_members` names the unexpected columns/enum members. Powers the
-// data-quality badge — present per-provider, null when the feed wasn't checked.
 export const ProvenanceConformanceSchema = z.object({
 	status: z.string(),
 	extra_row_count: z.number().int().optional(),
@@ -39,11 +27,8 @@ export const ProvenanceSchema = z.object({
 	sources: z.array(ProvenanceSourceSchema).optional(),
 	freshness: z.array(ProvenanceFreshnessSchema).optional(),
 	gaps: z.array(z.string()).optional(),
-	// Retention window per tier/feed, in days (additionalProperties: integer).
 	retention: z.record(z.string(), z.number().int()).optional(),
-	// Free-form methodology notes (additionalProperties: true). Kept loose.
 	methodology: z.record(z.string(), z.unknown()).optional(),
-	// Feed-conformance verdict — nullable (default null) when not checked.
 	conformance: ProvenanceConformanceSchema.nullable().optional(),
 	...payloadEnvelopeFields(),
 });

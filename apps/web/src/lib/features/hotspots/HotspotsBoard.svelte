@@ -1,11 +1,3 @@
-<!--
-  HotspotsBoard — the /hotspots accountability article.
-
-  The page owns the published resource, URL-backed grain and worst-N state, the
-  conditional article-card model, and one combined controls/contents rail. The
-  category presenter below receives one already-built ladder at a time; no tabs
-  or category-local filter state remain.
--->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
@@ -56,26 +48,22 @@
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
 		SurfaceRailContext,
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
-		presentGrains,
-		defaultHotspotGrain,
-		ladderByGrain,
+		ladderGrains,
 		HOTSPOT_GRAINS,
 		type HotspotGrainKey,
-	} from './data/presentGrains';
+	} from '$lib/reliability/ladderGrains';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from './data/ladderCap';
+	} from '$lib/reliability/ladderCap';
 	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
@@ -87,17 +75,6 @@
 		toc: 'hotspots-toc',
 	});
 
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const metric = metricInfoFor(key, locale);
-		return {
-			...metric,
-			label: explainerCopy.info.trigger(name),
-			linkLabel: explainerCopy.info.link,
-		};
-	});
-	const severeInfo = $derived(info('severe', t.ladder.severeRateLabel));
-
 	const hotspots = createHistoryDateResource<HistoricCollectionIndex, Hotspots>(
 		{
 			loadIndex: (signal) => getHotspotsHistoryIndex({ signal }),
@@ -107,13 +84,13 @@
 		},
 		{
 			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
-			freshness: true,
 		},
 	);
 	onDestroy(() => hotspots.destroy());
 	const generatedUtc = $derived(hotspots.data?.generated_utc ?? null);
-	const ladders = $derived(ladderByGrain(hotspots.data?.by_grain));
-	const present = $derived(presentGrains(hotspots.data?.by_grain));
+	const grains = $derived(ladderGrains(hotspots.data?.by_grain, HOTSPOT_GRAINS));
+	const ladders = $derived(grains.ladders);
+	const present = $derived(grains.present);
 	const availableDates = $derived(hotspots.availableDates);
 	const dateOptions = $derived(availableDates.map((date) => ({ date })));
 	const hasHistoryNavigator = $derived(availableDates.length > 0);
@@ -183,7 +160,7 @@
 	}
 
 	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultHotspotGrain(present);
+		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
 	});
 
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
@@ -291,9 +268,10 @@
 		if (!topHotspot || topHotspotName == null) {
 			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
 		}
-		if (topHotspot.otp_delta_pts == null) return t.verdict.topNoDelta(topHotspotName);
-		const points = String(Math.abs(Math.round(topHotspot.otp_delta_pts)));
-		return t.verdict.topWithDelta(topHotspotName, points);
+		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
+		return severe == null
+			? t.verdict.topNoRate(topHotspotName)
+			: t.verdict.topWithRate(topHotspotName, severe);
 	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 
@@ -601,7 +579,6 @@
 										tray={routeTray}
 										{windowCaption}
 										chartScrollLabel={t.chart.scroll(t.cards.lines.title)}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>
@@ -612,7 +589,6 @@
 										tray={stopTray}
 										{windowCaption}
 										chartScrollLabel={t.chart.scroll(t.cards.stops.title)}
-										info={severeInfo}
 										{locale}
 										copy={t}
 									/>

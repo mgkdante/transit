@@ -1,9 +1,3 @@
-"""Serving-artifact contracts for the public snapshot surface.
-
-Bulk browser reads use the R2 custom domain directly. The data-proxy Worker remains
-the compatibility `/data/*` route and owns `/api/v1/*`. These tests keep that split,
-the deploy workflow, and the publisher's absolute public URLs from drifting.
-"""
 
 from __future__ import annotations
 
@@ -35,7 +29,6 @@ def _deploy_workflow() -> dict:
 
 
 def _workflow_triggers(workflow: dict) -> dict:
-    # pyyaml parses the bare `on:` key as boolean True.
     return workflow.get("on", workflow.get(True))
 
 
@@ -55,7 +48,6 @@ def test_wrangler_config_disables_workers_dev_and_pins_account() -> None:
     config = _wrangler_config()
 
     assert config["workers_dev"] is False
-    # Both production Workers target the same Cloudflare account.
     assert config["account_id"] == "eccfb9bedd87d413eaf4cac6ae2285d3"
     assert tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))["account_id"] == (
         config["account_id"]
@@ -67,15 +59,11 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
     triggers = _workflow_triggers(workflow)
     assert "workflow_dispatch" not in triggers
-    # CI runs the worker tests on both lanes (develop = dev gate); the deploy STEP
-    # stays main-only (gated by the job `if` on refs/heads/main).
     assert triggers["push"]["branches"] == ["main", "develop"]
     assert "apps/data-proxy/**" in triggers["push"]["paths"]
-    # The workflow must also redeploy when only the deploy pipeline changes.
     assert ".github/workflows/deploy-data-proxy.yml" in triggers["push"]["paths"]
     assert workflow["permissions"] == {"contents": "read"}
 
-    # Two jobs: the worker behavioral suite gates the (main-only) deploy.
     jobs = workflow["jobs"]
     test_job = jobs["test-data-proxy"]
     deploy_job = jobs["deploy-data-proxy"]
@@ -86,16 +74,9 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     )
     assert deploy_job["needs"] == "test-data-proxy", "tests must gate the deploy"
 
-    # Production is push-only from main. workflow_dispatch lets an operator
-    # select another ref, which could publish that branch's stale route config.
     assert deploy_job["if"] == ("github.event_name == 'push' && github.ref == 'refs/heads/main'")
     assert deploy_job["environment"] == "production"
 
-    # CI must deploy with the EXACT wrangler the worker declares, or the
-    # dry-run-validated toolchain and the deployed one silently drift. Under the
-    # bun workspace the data-proxy carries no per-app lockfile (deps resolve via
-    # the root bun.lock), so wrangler is pinned EXACTLY in package.json and the
-    # deploy command must use that same pin.
     deploy_steps = deploy_job["steps"]
     wrangler_steps = [
         step
@@ -111,9 +92,12 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     smoke_index = next(index for index, run in enumerate(deploy_runs) if run == "bash smoke.sh")
     assert smoke_index > wrangler_index, "live smoke must verify the deployed Worker"
 
+    root_pkg = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
     proxy_pkg = json.loads((PROXY_DIR / "package.json").read_text(encoding="utf-8"))
-    declared_wrangler = proxy_pkg["devDependencies"]["wrangler"]
-    assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
+    assert root_pkg["devDependencies"]["wrangler"] == "4.115.0"
+    assert "wrangler" not in proxy_pkg.get("devDependencies", {})
+    assert any(step.get("uses") == "./.github/actions/setup" for step in deploy_steps)
+    assert wrangler_step["run"] == "../../node_modules/.bin/wrangler deploy"
 
 
 def test_production_workflow_uses_opaque_public_base_and_web_config_exposes_origin() -> None:
@@ -147,35 +131,25 @@ def test_smoke_script_asserts_direct_r2_and_compatibility_objects() -> None:
     assert syntax_check.returncode == 0, syntax_check.stderr
 
     text = smoke.read_text(encoding="utf-8")
-    # Direct R2 custom domain and compatibility Worker route are both probed.
     assert "transit.yesid.dev/data" in text
     assert "data.yesid.dev" in text
-    # All three cache tiers hard-asserted (storage.py CACHE_CONTROL values;
-    # old|new alternations tolerate the hash-guarded header rollout).
     assert "max-age=30" in text
     assert "max-age=604800" in text
     assert "max-age=86400" in text
     assert "max-age=3600, stale-while-revalidate=86400" in text
-    # All three tiers + provenance covered (historic went live 2026-06-10).
     assert "live/vehicles.json" in text
     assert "static/routes_index.json" in text
     assert "historic/network_trend.json" in text
     assert "provenance.json" in text
-    # Negatives: method guard, error responses never cacheable, CORS proof.
     assert "405" in text
     assert "no-store" in text
     assert "access-control-allow-origin" in text
     assert 'BROWSER_ORIGIN="${BROWSER_ORIGIN:-https://transit.yesid.dev}"' in text
     assert "Origin: $BROWSER_ORIGIN" in text
-    # Direct R2 is not cost-optimized until Cloudflare's edge actually reuses the
-    # object. The deployment smoke must warm one canonical URL, repeat the same
-    # GET, and require a HIT with a positive Age rather than accepting DYNAMIC.
     assert "assert_edge_hit" in text
     assert "cf-cache-status: hit" in text.lower()
     assert "^age: [1-9][0-9]*$" in text
     assert "edge gate" in text.lower()
-    # The deployment gate must fail if a future Worker publish drops the KPI
-    # route or sends it back to the web app's HTML catch-all.
     assert "/api/v1/kpis" in text
     for field in (
         "snapshotAt",
@@ -335,9 +309,6 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 def test_smoke_script_committed_with_executable_bit() -> None:
-    # os.access(X_OK) only sees the working tree; under core.fileMode=false a
-    # local chmod never reaches the commit, so fresh clones materialize the
-    # tracked mode. Pin the index mode itself (100755, like pipeline-control.sh).
     result = subprocess.run(
         ["git", "ls-files", "--stage", "--", "apps/data-proxy/smoke.sh"],
         cwd=REPO_ROOT,
@@ -357,9 +328,6 @@ def test_smoke_script_committed_with_executable_bit() -> None:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_worker_behavioral_suite_passes_under_node() -> None:
-    # Expand the glob here: node only expands --test glob args itself on
-    # >= 21, and a literal "test/*.test.mjs" hard-fails (MODULE_NOT_FOUND)
-    # on 18/20 LTS. Explicit file paths run on every node with the runner.
     test_files = sorted(
         path.relative_to(PROXY_DIR).as_posix() for path in (PROXY_DIR / "test").glob("*.test.mjs")
     )

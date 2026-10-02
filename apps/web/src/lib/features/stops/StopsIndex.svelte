@@ -1,38 +1,3 @@
-<!--
-  StopsIndex — the Stops search surface (slice-9.3 · S8C redesign).
-
-  Three combinable ways to reach a stop, plus an at-a-glance reliability read:
-
-    (a) FIND BY TYPING — a diacritics-insensitive, word-order-free token match
-        over name/code/id (foldSearchText + tokenMatchScore), deduped by logical
-        stop, capped at 100 rendered rows (the catalogue is ~9k stops / ~847KB, so
-        we NEVER list it whole; the cap bounds the DOM, not the match set). The
-        typed query stays EPHEMERAL local state — it is a keystroke stream, not
-        shareable view state, so it is never mirrored to the URL.
-
-    (b) FIND BY LINE — a bits-ui typeahead combobox and browsable route catalogue.
-        Picking a line
-        loads that route's LOSSLESS static stop list (getRoute → directions[].stops)
-        rather than the stops_index `routes[]` reverse index, which is CAPPED AT 5
-        route-ids per stop and would silently drop stops for busy lines. The result
-        is stop-sequence ordered + direction-grouped (DECISION C1), with every
-        published direction represented in each 50-stop batch. The pick is
-        codec-owned: it seeds from / mirrors to the existing `route` filter axis
-        (?route=<id>), so a by-line view is shareable + round-trips. When a line has
-        no published stop list, we say so honestly.
-
-    (c) RELIABILITY BADGES — the shared lazy loader (createReliabilityLoader('stop'))
-        gives each rendered row a headline OTP% + status verdict. Stops carry NO
-        published availability flag (unlike routes), so this is the HONEST PROBE
-        pattern: a bare, viewport-gated id that fail-softs on 404 — a stop with no
-        history simply shows no badge (never a spinner storm, never a fabricated 0%).
-        An optional worst-first sort keys off the LOADED verdict; unloaded rows sink.
-
-  Composes the listing spine (BlueprintListingHeader + ListingPageShell +
-  ResourceBoundary + EntityList/EntityResultRow). Locale via getLocale(); all copy
-  in stops.copy.ts. Tokens
-  only, no hex; --primary stays interactive-only.
--->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getLocale, type Locale } from '$lib/i18n';
@@ -75,24 +40,15 @@
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
 
-	// The SHARED lazy reliability loader, scoped to this surface (one cache +
-	// concurrency budget, torn down with the page). Stops have NO discovery index,
-	// so this is the honest per-row probe: viewport-gated, fail-soft on 404.
 	const reliability = createReliabilityLoader('stop');
 	const observeReliability = reliability.reliability;
 
-	/** Shared incremental batch — bounds both the stop DOM and the line chooser. */
 	const PAGE_SIZE = 50;
 	const SEARCH_CAP = 100;
 
-	// ── (a) find-by-typing — ephemeral, never mirrored ──────────────────────────
 	let query = $state('');
 	const folded = $derived(foldSearchText(query));
 
-	// ── (b) find-by-line — codec-owned via the `route` axis ─────────────────────
-	// Seed the selected line from ?route= (the codec's existing route id set — we
-	// take the FIRST id; the picker is single-select). SSR-safe: page.url exists on
-	// both sides, the codec is pure. The typed line query lives inside the combobox.
 	function seedLineFromUrl(): string | null {
 		const state = fromSearchParams(page.url.searchParams);
 		const first = [...state.routes][0];
@@ -100,16 +56,10 @@
 	}
 	let selectedLineId = $state<string | null>(seedLineFromUrl());
 
-	// Mirror the pick back to the URL on change (reuse the `route` wire key, NOT a
-	// bespoke ?line — stop/route ids are already FilterState axes). Free text is
-	// NOT mirrored. `null` drops the key for a clean canonical URL.
 	$effect(() => {
 		mirrorSearchParams({ route: selectedLineId });
 	});
 
-	// The combobox options: every route, tagged with its mode glyph + long name,
-	// with a precomputed folded search haystack (id + short + long) so typing is
-	// diacritics-insensitive without re-folding per keystroke.
 	const routeCollator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
 	const sortedRoutes = $derived.by<RouteIndexEntry[]>(() =>
 		[...(routesIndex.data?.routes ?? [])].sort((a, b) => routeCollator.compare(a.short, b.short)),
@@ -127,9 +77,6 @@
 		(routesIndex.data?.routes ?? []).find((r) => r.id === selectedLineId),
 	);
 
-	// The picked line's LOSSLESS static stop list. createResource re-runs when the
-	// id it reads changes; null id ⇒ no fetch (returns null). getRoute 404 ⇒ null
-	// ⇒ honest "no published stop list" state (never an error).
 	const lineRoute = createResource(
 		() => {
 			const id = selectedLineId;
@@ -138,10 +85,6 @@
 		{ key: () => selectedLineId },
 	);
 
-	// Join a route's directions[].stops back to the stops_index (for code/mode/route
-	// chips), preserving stop-sequence order and grouping BY DIRECTION (DECISION C1).
-	// A stop present in the route file but absent from the index still renders (id +
-	// seq name) so the list is never silently short.
 	interface LineStopGroup {
 		readonly key: string;
 		readonly dir: number;
@@ -151,16 +94,12 @@
 	const lineStopGroups = $derived.by<LineStopGroup[]>(() => {
 		const route = lineRoute.data;
 		if (!route?.directions) return [];
-		// Plain object maps for a transient id→entry lookup (not reactive state — this
-		// whole value is a pure $derived recomputation, so SvelteMap/SvelteSet buy
-		// nothing; the lint rule just forbids the built-ins here).
 		const byId: Record<string, StopIndexEntry> = {};
 		for (const s of index.data?.stops ?? []) byId[s.id] = s;
 		return route.directions
 			.map((d, directionIndex) => {
 				const seen: Record<string, true> = {};
 				const stops: StopIndexEntry[] = [];
-				// stops are published in sequence order; dedupe within a direction only.
 				for (const rs of [...(d.stops ?? [])].sort((a, b) => a.seq - b.seq)) {
 					if (seen[rs.id]) continue;
 					seen[rs.id] = true;
@@ -183,7 +122,6 @@
 			.filter((g) => g.stops.length > 0);
 	});
 
-	// ── (a) text-match set (used only when NO line is selected) ─────────────────
 	const matches = $derived.by<readonly StopIndexEntry[]>(() => {
 		const stops = index.data?.stops ?? [];
 		if (!folded) return [];
@@ -192,31 +130,21 @@
 			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
 			.sort((a, b) => a.score - b.score)
 			.map((m) => m.s);
-		// One row per logical stop — métro/station names collapse to a single station.
 		return dedupeBy(ranked, stopGroupKey);
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - SEARCH_CAP));
 
-	// When a line is picked, its (direction-grouped, sequence-ordered) stops drive
-	// the result — optionally further narrowed by the free-text box (compose both).
-	// Otherwise the text-match set drives it.
 	const lineActive = $derived(selectedLineId != null);
 	function narrowByText(stops: readonly StopIndexEntry[]): readonly StopIndexEntry[] {
 		if (!folded) return stops;
 		return stops.filter((s) => tokenMatchScore([s.name, s.code, s.id], folded) != null);
 	}
 
-	// ── (c) reliability sort (worst-first) ─────────────────────────────────────
 	type SortKey = 'default' | 'worst';
 	let sort = $state<SortKey>('default');
 	const sortAllLabel = { en: indexCopy.en.sortDefault, fr: indexCopy.fr.sortDefault };
 	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
-	// The complete active result set is eligible: every stop on a picked line, or
-	// every text match that the catalogue may rank before its existing render cap.
-	// Requesting enters the loader's existing four-wide queue, so this fills coverage
-	// without bypassing cache/concurrency. Source order remains frozen until every
-	// eligible snapshot is terminal, then one ranking is committed.
 	const reliabilityCandidates = $derived.by<readonly StopIndexEntry[]>(() =>
 		lineActive ? lineStopGroups.flatMap((group) => narrowByText(group.stops)) : matches,
 	);

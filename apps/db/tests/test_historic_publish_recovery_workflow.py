@@ -62,7 +62,6 @@ def _load(path: Path) -> dict:
 
 
 def _on_block(document: dict) -> dict:
-    # PyYAML 1.1 resolves the bare key `on:` to the boolean True.
     return document.get("on", document.get(True, {}))
 
 
@@ -151,7 +150,7 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
     }
     assert document["concurrency"] == daily_document["concurrency"]
 
-    assert job["runs-on"] == "ubuntu-latest"
+    assert job["runs-on"] == "ubuntu-24.04"
     assert job["timeout-minutes"] == 90
     assert job["defaults"] == {"run": {"working-directory": "apps/db", "shell": "bash"}}
     assert _github_shell_template(job) == [

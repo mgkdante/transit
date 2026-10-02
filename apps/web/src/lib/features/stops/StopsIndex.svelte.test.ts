@@ -2,10 +2,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import StopsIndex from './StopsIndex.svelte';
 
-// ── /v1 ports ────────────────────────────────────────────────────────────────
-// getStop* index shapes are injected via the createResource mock below; getRoute
-// and getStopReliability are spied here so the by-line + badge paths can assert
-// the LOSSLESS route fetch and the honest 404 probe.
 const getStopsIndex = vi.fn();
 const getRoutesIndex = vi.fn();
 const getRoute = vi.fn();
@@ -17,9 +13,6 @@ const historyCalls = vi.hoisted(() => ({
 	loadStopHistoryRange: vi.fn(),
 }));
 
-// The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?route
-// seed AND the round-trip mirror are testable. vi.hoisted runs above the mock
-// factories so `mockUrl`/`replaceState` are live before they are referenced.
 const state = vi.hoisted(() => ({ url: new URL('http://localhost/stops') }));
 const replaceState = vi.hoisted(() =>
 	vi.fn((u: string | URL) => {
@@ -51,8 +44,6 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
 		return pct >= 80 ? 'on_time' : pct >= 60 ? 'late' : 'severe';
 	}
 	function createReliabilityLoader() {
-		// A reactive cache so a row's `reliability.get(id)` read re-runs when the
-		// async probe resolves (mirrors the real loader's SvelteMap).
 		const cache = new SvelteMap<
 			string,
 			{ phase: string; otpPct: number | null; verdict: string | null; series: number[] }
@@ -89,9 +80,6 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
 });
 vi.mock('$lib/v1/repositories/historic', () => historyCalls);
 
-// A minimal reactive createResource stub: it invokes the fetcher once and exposes
-// its resolved value. Keyed by which /v1 fn the fetcher calls, so the stops index,
-// routes index and per-route fetch each resolve to their own fixture.
 const STOPS = {
 	generated_utc: '2026-06-16T02:00:00Z',
 	stops: [
@@ -184,7 +172,6 @@ beforeEach(() => {
 	viewportRequestsEnabled = true;
 	getStopsIndex.mockResolvedValue(STOPS);
 	getRoutesIndex.mockResolvedValue(ROUTES);
-	// Default: no stop has published reliability (404 → null → no badge, honest).
 	getStopReliability.mockResolvedValue(null);
 	getRoute.mockResolvedValue(null);
 	setUrl('/stops');
@@ -502,7 +489,6 @@ describe('StopsIndex — reliability badges (honest probe)', () => {
 			target: { value: 'rockland' },
 		});
 		await screen.findByRole('link', { name: /Van Horne \/ Rockland/i });
-		// The loader probed the stop id, the fetch fail-softed, and no badge rendered.
 		await waitFor(() => expect(getStopReliability).toHaveBeenCalledWith('57191'));
 		expect(document.querySelector('[data-slot="reliability-badge"]')).toBeNull();
 	});
@@ -601,7 +587,6 @@ describe('StopsIndex — reliability badges (honest probe)', () => {
 			});
 		resolve('11000', 50);
 		await waitFor(() => expect(screen.getByText('50%')).toBeInTheDocument());
-		// One severe answer cannot reorder a partially measured list.
 		expect(stopOrder()).toEqual(['/stop/57191', '/stop/11000', '/stop/22000']);
 
 		resolve('57191', 90);
@@ -613,8 +598,6 @@ describe('StopsIndex — reliability badges (honest probe)', () => {
 
 describe('StopsIndex — find by line', () => {
 	it('seeds the line from ?route= and lists that line’s LOSSLESS stop list, direction-grouped', async () => {
-		// A stop served by >5 routes (dropped from the 5-capped stops_index reverse
-		// index) is still listed because we fetch the route file directly.
 		getRoute.mockResolvedValue({
 			generated_utc: '2026-06-16T02:00:00Z',
 			id: '80',
@@ -632,9 +615,7 @@ describe('StopsIndex — find by line', () => {
 		setUrl('/stops?route=80');
 		render(StopsIndex);
 
-		// The route file was fetched (lossless source, not the reverse index).
 		await waitFor(() => expect(getRoute).toHaveBeenCalledWith('80'));
-		// Both directions render their stops in sequence order.
 		expect(await screen.findByText(/Stops on line 80/i)).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /Papineau \/ Rachel/i })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /Van Horne \/ Rockland/i })).toBeInTheDocument();
@@ -658,8 +639,6 @@ describe('StopsIndex — find by line', () => {
 
 	it('exposes an accessible combobox (a11y AA) with the line-filter label', async () => {
 		const { container } = render(StopsIndex);
-		// bits-ui Combobox.Input carries role=combobox + our aria-label — the
-		// screen-reader entry point for find-by-line.
 		expect(await screen.findByRole('combobox', { name: 'Filter by line' })).toBeInTheDocument();
 		expect(container.querySelector('.stops-line-filter [data-slot="combobox"]')).not.toBeNull();
 	});
@@ -672,10 +651,8 @@ describe('StopsIndex — find by line', () => {
 			directions: [{ dir: 0, stops: [{ id: '22000', seq: 1 }] }],
 		});
 		render(StopsIndex);
-		// Seeded from ?route=80 — the clear affordance is present.
 		const clear = await screen.findByRole('button', { name: 'Clear line filter' });
 		await fireEvent.click(clear);
-		// Clearing mirrors `route: null`, dropping the key for a clean canonical URL.
 		await waitFor(() => {
 			const last = replaceState.mock.calls.at(-1)?.[0] as URL | undefined;
 			expect(last?.searchParams.has('route')).toBe(false);

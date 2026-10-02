@@ -62,6 +62,13 @@ const harness = vi.hoisted(() => {
 		readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
 		readonly registrations: Array<[string, (...args: unknown[]) => void]> = [];
 		readonly container: HTMLElement;
+		readonly canvas = document.createElement('canvas');
+		readonly getCanvas = vi.fn(() => this.canvas);
+		readonly getCenter = vi.fn(() => ({ lng: -73.61, lat: 45.53 }));
+		readonly getBearing = vi.fn(() => 31);
+		readonly getPitch = vi.fn(() => 22);
+		readonly getRoll = vi.fn(() => 7);
+		readonly getPadding = vi.fn(() => ({ top: 10, right: 20, bottom: 30, left: 40 }));
 		readonly controls: AttributionControlStub[] = [];
 		rawRemoved = false;
 		readonly addControl = vi.fn((control: AttributionControlStub): this => {
@@ -105,12 +112,13 @@ const harness = vi.hoisted(() => {
 		constructor(readonly options: Record<string, unknown>) {
 			state.constructorCalls += 1;
 			this.container = options.container as HTMLElement;
+			this.canvas.tabIndex = 0;
 			if (state.constructFailures > 0) {
 				state.constructFailures -= 1;
-				this.container.append(document.createElement('canvas'));
+				this.container.append(this.canvas);
 				throw new Error('constructor failed');
 			}
-			this.container.append(document.createElement('canvas'));
+			this.container.append(this.canvas);
 			state.maps.push(this);
 		}
 
@@ -173,7 +181,12 @@ const harness = vi.hoisted(() => {
 			details.className =
 				'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show maplibregl-attrib-empty';
 			details.setAttribute('open', '');
-			details.append(document.createElement('summary'), document.createElement('a'));
+			const summary = document.createElement('summary');
+			summary.className = 'maplibregl-ctrl-attrib-button';
+			summary.tabIndex = 0;
+			const link = document.createElement('a');
+			link.href = 'https://maplibre.org/';
+			details.append(summary, link);
 			this.container = details;
 			state.controlListenerCount += 5;
 			return details;
@@ -331,6 +344,7 @@ beforeEach(() => {
 		() =>
 			({
 				getExtension: () => ({ loseContext: harness.state.loseContext }),
+				isContextLost: () => false,
 			}) as unknown as RenderingContext,
 	);
 });
@@ -381,6 +395,55 @@ describe('MapStage boot lifecycle', () => {
 		expect(signals[3]?.aborted).toBe(false);
 		expect(harness.state.constructorCalls).toBe(1);
 		expect(harness.state.successfulRegistrations).toBe(1);
+	});
+
+	it('routes a synchronous consumer-ready failure through setup cleanup and guarded retry', async () => {
+		const failures: Failure[] = [];
+		const onerror = vi.fn((failure: Failure | null) => {
+			if (failure) failures.push(failure);
+		});
+		const onbeforeremove = vi.fn();
+		let failReady = true;
+		const onready = vi.fn(() => {
+			if (failReady) throw new Error('foreground unavailable');
+		});
+		const { map } = await bootStage({ onready, onbeforeremove, onerror });
+		map.emit('load');
+		await waitFor(() => expect(failures).toHaveLength(1));
+		expect(failures[0]?.kind).toBe('setup');
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.remove).toHaveBeenCalledOnce();
+		failReady = false;
+		await failures[0]!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		harness.state.maps[1]!.emit('load');
+		expect(onready).toHaveBeenCalledTimes(2);
+		expect(onerror).toHaveBeenLastCalledWith(null);
+	});
+
+	it('gives the consumer a generation-bound later setup failure reporter', async () => {
+		const failures: Failure[] = [];
+		let reportSetupFailure: (() => void) | null = null;
+		const { map } = await bootStage({
+			onready: (_map: unknown, report: () => void) => {
+				reportSetupFailure = report;
+			},
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		map.emit('load');
+		const staleReporter = reportSetupFailure!;
+		staleReporter();
+		expect(failures[0]?.kind).toBe('setup');
+		expect(map.remove).toHaveBeenCalledOnce();
+		await failures[0]!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		harness.state.maps[1]!.emit('load');
+		staleReporter();
+		expect(failures).toHaveLength(1);
+		reportSetupFailure!();
+		expect(failures).toHaveLength(2);
 	});
 
 	it('reports the first idle event once and releases its listener immediately', async () => {
@@ -729,13 +792,8 @@ describe('MapStage boot lifecycle', () => {
 		expect(order).toEqual(['consumer', 'map']);
 	});
 
-	// M6f-2 F19 RECEIPT (behavioural DOM contract, not geometry). The provider's
 	// licence line is a RUNTIME manifest value, so the only thing that can be
-	// asserted in-repo is that the string reaches the attribution control
-	// UNTOUCHED — no rewording, no abbreviation, no truncation. RED before the
-	// fix: MapStage had no way to carry it at all, so the credit never shipped.
 	it('carries the provider licence into the attribution control byte-for-byte', async () => {
-		// The value the STM manifest actually publishes (apps/db provider config).
 		const licence = 'Contains STM data made available under CC BY 4.0.';
 		const { map } = await bootStage({ customAttribution: licence });
 
@@ -743,7 +801,6 @@ describe('MapStage boot lifecycle', () => {
 		const options = map.controls[0]!.options;
 		expect(options.compact).toBe(true);
 		expect(options.customAttribution).toBe(licence);
-		// Byte-for-byte, including the trailing period and the exact casing.
 		expect(String(options.customAttribution)).toHaveLength(licence.length);
 	});
 
@@ -1140,6 +1197,34 @@ describe('MapStage boot lifecycle', () => {
 		expect(map.handlers.get('style.load')).toHaveLength(0);
 	});
 
+	it('routes a failed consumer style reinstall through setup teardown', async () => {
+		const failures: Failure[] = [];
+		const onbeforeremove = vi.fn();
+		const { view, props, map } = await bootStage({
+			onstyleload: () => {
+				throw new Error('foreground retint failed');
+			},
+			onbeforeremove,
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		await view.rerender({
+			...props,
+			basemap: {
+				url: 'https://example.com/montreal.pmtiles',
+				sha256: 'a'.repeat(64),
+				generated_utc: '2026-07-31T00:00:00Z',
+			},
+		});
+		await settle();
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		expect(() => map.emit('style.load')).not.toThrow();
+		expect(failures[0]?.kind).toBe('setup');
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
 	it('makes a copied ResizeObserver callback inert after teardown', async () => {
 		const { view, map } = await bootStage();
 		await settle();
@@ -1176,7 +1261,34 @@ describe('MapStage boot lifecycle', () => {
 		expect(map.setMaxBounds).not.toHaveBeenCalled();
 	});
 
-	it('requests a desynchronized canvas without overriding native DPR or WebGL fallback', async () => {
+	it('keeps WebGL1-only browsers out of the renderer and retries when WebGL2 is available', async () => {
+		const contexts: string[] = [];
+		vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation((contextId: string) => {
+			contexts.push(contextId);
+			return contextId === 'webgl'
+				? ({ getExtension: () => null } as unknown as RenderingContext)
+				: null;
+		});
+		const onerror = vi.fn();
+		const view = render(Stage, { props: { importers: harness.importers, onerror } });
+		releaseImports();
+		await waitFor(() => expect(onerror).toHaveBeenCalledOnce());
+
+		const failure = onerror.mock.calls[0][0] as Failure;
+		expect(failure.kind).toBe('construct');
+		expect(contexts).toEqual(['webgl2']);
+		expect(harness.state.constructorCalls).toBe(0);
+		expect(view.container.querySelector('[data-map-runtime]')).toBeNull();
+
+		vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+			getExtension: () => ({ loseContext: harness.state.loseContext }),
+		} as unknown as RenderingContext);
+		await failure.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
+		view.unmount();
+	});
+
+	it('requests a desynchronized canvas without overriding native DPR', async () => {
 		const { map } = await bootStage();
 
 		expect(map.options.canvasContextAttributes).toEqual({ desynchronized: true });
@@ -1501,4 +1613,290 @@ describe('MapStage attribution one-shot', () => {
 			expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(cleanupError);
 		},
 	);
+});
+
+describe('MapStage trusted native recovery', () => {
+	function restored(map: InstanceType<typeof harness.MapStub>, trusted = true): void {
+		map.emit('webglcontextrestored', {
+			originalEvent: { isTrusted: trusted, target: map.canvas },
+		});
+	}
+
+	it.each(['summary', 'a'] as const)(
+		'restores the focused attribution %s in the replacement map',
+		async (selector) => {
+			const { map } = await bootStage();
+			map.emit('load');
+			const target = map.container.querySelector<HTMLElement>(selector)!;
+			target.focus();
+			expect(document.activeElement).toBe(target);
+			restored(map);
+			await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+			const next = harness.state.maps[1]!;
+			next.emit('load');
+			next.emit('idle');
+			await settle();
+			expect(document.activeElement).toBe(next.container.querySelector(selector));
+		},
+	);
+
+	it('ignores old-map first idle while its consumer release is pending', async () => {
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const onidle = vi.fn();
+		const onbeforeremove = vi.fn(() => pending);
+		const { map } = await bootStage({ onidle, onbeforeremove });
+		map.emit('load');
+		restored(map);
+		await waitFor(() => expect(onbeforeremove).toHaveBeenCalledOnce());
+		map.emit('idle');
+		expect(onidle).not.toHaveBeenCalled();
+		release();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const next = harness.state.maps[1]!;
+		next.emit('load');
+		next.emit('idle');
+		expect(onidle).toHaveBeenCalledExactlyOnceWith(next);
+	});
+
+	it('does not deliver consumer readiness when recovery-listener registration fails', async () => {
+		harness.state.setupFailure = 'on:webglcontextrestored';
+		const onready = vi.fn();
+		const failures: Failure[] = [];
+		const { map } = await bootStage({
+			onready,
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		map.emit('load');
+		await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
+		expect(onready).not.toHaveBeenCalled();
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(map.handlers.get('webglcontextrestored')?.size ?? 0).toBe(0);
+	});
+
+	it('rebuilds one owned map after trusted restoration and preserves full focused view', async () => {
+		const onrecovering = vi.fn();
+		const onready = vi.fn();
+		const onbeforeremove = vi.fn();
+		const { view, props, map } = await bootStage({ onrecovering, onready, onbeforeremove });
+		map.emit('load');
+		map.emit('movestart', { cameraIntent: 'focus' });
+		map.canvas.focus();
+		expect(document.activeElement).toBe(map.canvas);
+
+		const staleHandler = [...(map.handlers.get('webglcontextrestored') ?? [])][0]!;
+		map.getCanvas.mockClear();
+		map.emit('webglcontextrestored', {});
+		map.emit('webglcontextrestored', null as unknown as Record<string, unknown>);
+		restored(map, false);
+		await settle();
+		expect(map.getCanvas).not.toHaveBeenCalled();
+		expect(harness.state.maps).toHaveLength(1);
+		restored(map);
+		restored(map);
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const next = harness.state.maps[1]!;
+		expect(onrecovering).toHaveBeenCalledOnce();
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(map.handlers.get('webglcontextrestored')?.size ?? 0).toBe(0);
+		map.getCanvas.mockClear();
+		staleHandler({ originalEvent: { isTrusted: true, target: map.canvas } });
+		expect(map.getCanvas).not.toHaveBeenCalled();
+		expect(next.options.canvasContextAttributes).toEqual({ desynchronized: true });
+		expect(next.jumpTo).toHaveBeenCalledExactlyOnceWith({
+			center: [-73.61, 45.53],
+			zoom: 11,
+			bearing: 31,
+			pitch: 22,
+			roll: 7,
+			padding: { top: 10, right: 20, bottom: 30, left: 40 },
+		});
+		next.emit('load');
+		next.emit('idle');
+		await settle();
+		expect(onready).toHaveBeenCalledTimes(2);
+		expect(document.activeElement).toBe(next.canvas);
+		await view.rerender({ ...props, fitPadding: 72 });
+		await settle();
+		expect(next.fitBounds).not.toHaveBeenCalled();
+	});
+
+	it('awaits one consumer release and applies newer fit-owned props before replacement', async () => {
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const onbeforeremove = vi.fn(() => pending);
+		const { view, props, map } = await bootStage({ onbeforeremove });
+		map.emit('load');
+		restored(map);
+		await waitFor(() => expect(onbeforeremove).toHaveBeenCalledOnce());
+		const current = {
+			...props,
+			bounds: [-74.2, 45.2, -73.1, 45.8],
+			fitPadding: { top: 15, right: 25, bottom: 35, left: 45 },
+			center: [-73.7, 45.6],
+			zoom: 12,
+		};
+		await view.rerender(current);
+		await settle();
+		expect(harness.state.maps).toHaveLength(1);
+		expect(map.remove).not.toHaveBeenCalled();
+		release();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const next = harness.state.maps[1]!;
+		expect(next.options.bounds).toEqual([
+			[-74.2, 45.2],
+			[-73.1, 45.8],
+		]);
+		expect(next.jumpTo).toHaveBeenCalledExactlyOnceWith({
+			center: [-73.7, 45.6],
+			zoom: 12,
+			bearing: 31,
+			pitch: 22,
+			roll: 7,
+		});
+		expect(onbeforeremove).toHaveBeenCalledOnce();
+	});
+
+	it('keeps a user-owned camera through changed fit inputs during recovery', async () => {
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const { view, props, map } = await bootStage({ onbeforeremove: () => pending });
+		map.emit('load');
+		map.emit('movestart', { originalEvent: { type: 'pointerdown' } });
+		restored(map);
+		await view.rerender({ ...props, fitPadding: 88, center: [-73.7, 45.6], zoom: 12 });
+		release();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const next = harness.state.maps[1]!;
+		expect(next.jumpTo).toHaveBeenCalledWith({
+			center: [-73.61, 45.53],
+			zoom: 11,
+			bearing: 31,
+			pitch: 22,
+			roll: 7,
+			padding: { top: 10, right: 20, bottom: 30, left: 40 },
+		});
+		await view.rerender({ ...props, fitPadding: 96 });
+		await settle();
+		expect(next.fitBounds).not.toHaveBeenCalled();
+	});
+
+	it('does not steal canvas focus from a newer control after reconstruction', async () => {
+		const outside = document.createElement('button');
+		outside.textContent = 'New focus owner';
+		document.body.append(outside);
+		try {
+			const { map } = await bootStage();
+			map.emit('load');
+			map.canvas.focus();
+			restored(map);
+			await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+			outside.focus();
+			const next = harness.state.maps[1]!;
+			next.emit('load');
+			next.emit('idle');
+			await settle();
+			expect(document.activeElement).toBe(outside);
+		} finally {
+			outside.remove();
+		}
+	});
+
+	it('does not create a late map when unmounted during asynchronous owner release', async () => {
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const onbeforeremove = vi.fn(() => pending);
+		const { view, map } = await bootStage({ onbeforeremove });
+		map.emit('load');
+		restored(map);
+		await waitFor(() => expect(onbeforeremove).toHaveBeenCalledOnce());
+		view.unmount();
+		expect(map.remove).toHaveBeenCalledOnce();
+		release();
+		await settle();
+		expect(harness.state.maps).toHaveLength(1);
+		expect(onbeforeremove).toHaveBeenCalledOnce();
+	});
+
+	it('retains the recovery view for a consumer setup failure before the new idle', async () => {
+		let reportSetupFailure: (() => void) | null = null;
+		const failures: Failure[] = [];
+		const { map } = await bootStage({
+			onready: (_map: unknown, report: () => void) => {
+				reportSetupFailure = report;
+			},
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		map.emit('load');
+		restored(map);
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const replacement = harness.state.maps[1]!;
+		replacement.emit('load');
+		reportSetupFailure!();
+		await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
+		await failures.at(-1)!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(3));
+		expect(harness.state.maps[2]!.jumpTo).toHaveBeenCalledWith({
+			center: [-73.61, 45.53],
+			zoom: 11,
+			bearing: 31,
+			pitch: 22,
+			roll: 7,
+			padding: { top: 10, right: 20, bottom: 30, left: 40 },
+		});
+	});
+
+	it('leaves the old owner closed and exposes setup retry when awaited release rejects', async () => {
+		let reject!: (reason?: unknown) => void;
+		const pending = new Promise<void>((_resolve, fail) => {
+			reject = fail;
+		});
+		let firstRelease = true;
+		const onbeforeremove = vi.fn(() => {
+			if (!firstRelease) return;
+			firstRelease = false;
+			return pending;
+		});
+		const oncleanupfailure = vi.fn();
+		const failures: Failure[] = [];
+		const { map } = await bootStage({
+			onbeforeremove,
+			oncleanupfailure,
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		});
+		map.emit('load');
+		restored(map);
+		await waitFor(() => expect(onbeforeremove).toHaveBeenCalledOnce());
+		const error = new Error('consumer release rejected');
+		reject(error);
+		await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(error);
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(harness.state.maps).toHaveLength(1);
+		await failures.at(-1)!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		expect(harness.state.maps[1]!.jumpTo).toHaveBeenCalledWith({
+			center: [-73.61, 45.53],
+			zoom: 11,
+			bearing: 31,
+			pitch: 22,
+			roll: 7,
+			padding: { top: 10, right: 20, bottom: 30, left: 40 },
+		});
+	});
 });

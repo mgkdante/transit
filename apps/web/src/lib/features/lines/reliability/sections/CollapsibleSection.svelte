@@ -6,17 +6,11 @@
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
 	interface CollapsibleSectionProps {
-		/** Mono eyebrow (e.g. "WHEN TO RIDE"). */
 		eyebrow: string;
-		/** The plain-language DISPLAY-scale section title (the toggle's accessible name). */
 		question: string;
-		/** `data-section` token for wayfinding / tests (e.g. "when-to-ride"). */
 		dataSection: string;
-		/** Optional D4 numbered chip (the ordered §0–§4 sequence) — decorative wayfinding. */
 		number?: number;
-		/** Open by default; bindable so a caller could persist/seed it later. */
 		open?: boolean;
-		/** The section body. */
 		children: Snippet;
 	}
 	let {

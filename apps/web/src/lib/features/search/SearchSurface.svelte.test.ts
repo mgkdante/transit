@@ -5,10 +5,9 @@ import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
 import type { Vehicle } from '$lib/v1/schemas';
 import SearchSurface from './SearchSurface.svelte';
 
-// ── Fixtures ────────────────────────────────────────────────────────────────
 const ROUTES = [
-	{ id: '1', short: '1', long: 'Ligne 1 Verte', type: 1, color: '009EE0' }, // métro
-	{ id: '161', short: '161', long: 'Van Horne', type: 3, color: null }, // bus, no colour
+	{ id: '1', short: '1', long: 'Ligne 1 Verte', type: 1, color: '009EE0' },
+	{ id: '161', short: '161', long: 'Van Horne', type: 3, color: null },
 ];
 const STOPS = [
 	{
@@ -44,15 +43,12 @@ const VEHICLES: Vehicle[] = [
 	},
 ];
 
-// Controllable reliability snapshots, keyed by id.
 const routeSnaps = new Map<string, ReliabilitySnapshot>();
 const stopSnaps = new Map<string, ReliabilitySnapshot>();
 function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 	return { phase: 'idle', otpPct: null, verdict: null, series: [], ...partial };
 }
 
-// Query the URL seeds from — held in a hoisted box so the (hoisted) mock factory
-// can read the value a test sets just before render.
 const urlBox = vi.hoisted(() => ({ query: 'q=ber' }));
 const liveHarness = vi.hoisted(() => ({ createLiveStore: vi.fn() }));
 function setUrlQuery(q: string) {
@@ -60,7 +56,6 @@ function setUrlQuery(q: string) {
 }
 
 vi.mock('$app/stores', () => ({
-	// A getter so each `get(page)` re-reads the current url box (lazy, not snapshot).
 	page: {
 		subscribe: (run: (value: { url: URL }) => void) => {
 			run({ url: new URL(`http://localhost/search?${urlBox.query}`) });
@@ -95,15 +90,12 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: (fetcher: () => unknown) => {
-		// Distinguish the routes vs stops resource by what the (mocked) fetcher
-		// returns is not possible; instead key off call order via a counter.
 		const data = nextResource();
 		void fetcher;
 		return { data, error: null, loading: false, settled: true, reload: vi.fn() };
 	},
 }));
 
-// createResource is called twice in order: routes first, then stops.
 let resourceCall = 0;
 function nextResource() {
 	resourceCall += 1;
@@ -127,7 +119,6 @@ beforeEach(() => {
 	});
 });
 
-// ── Idle / empty ──────────────────────────────────────────────────────────────
 describe('SearchSurface idle state', () => {
 	it('shows the instructional idle note before the rider types', () => {
 		setUrlQuery('');
@@ -139,12 +130,10 @@ describe('SearchSurface idle state', () => {
 	});
 });
 
-// ── Drilldown (existing behaviour must stay green) ──────────────────────────────
 describe('SearchSurface result drilldown', () => {
 	it('links a line result to its detail page and a stop result to its detail page', () => {
-		setUrlQuery('q=ber'); // matches métro line "Verte"? no — use a query that hits both
+		setUrlQuery('q=ber');
 		render(SearchSurface);
-		// "berri" matches the station; render and check the link target.
 		expect(screen.getByRole('link', { name: /Station Berri-UQAM/i })).toHaveAttribute(
 			'href',
 			'/stop/10146',
@@ -152,7 +141,6 @@ describe('SearchSurface result drilldown', () => {
 	});
 });
 
-// ── Inline reliability badge ────────────────────────────────────────────────────
 describe('SearchSurface inline reliability', () => {
 	it('renders the OTP% badge on a stop result whose reliability loaded', () => {
 		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'late' }));
@@ -164,26 +152,22 @@ describe('SearchSurface inline reliability', () => {
 		stopSnaps.set('10146', snap({ phase: 'empty' }));
 		const { container } = render(SearchSurface);
 		expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
-		// The stop link still renders.
 		expect(screen.getByRole('link', { name: /Station Berri-UQAM/i })).toBeInTheDocument();
 	});
 });
 
-// ── Mode + colour + scope ───────────────────────────────────────────────────────
 describe('SearchSurface line mode + colour', () => {
 	it('renders a guarded colour swatch only when the GTFS colour is present', () => {
-		setUrlQuery('q=ligne'); // matches the métro line by long name
+		setUrlQuery('q=ligne');
 		const { container } = render(SearchSurface);
 		const swatch = container.querySelector('.entity-row-swatch') as HTMLElement | null;
 		expect(swatch).not.toBeNull();
-		// The swatch carries the normalized GTFS hue inline (the one allowed dynamic colour).
 		expect(swatch?.getAttribute('style')).toContain('#009ee0');
 	});
 
 	it('tags a métro line with its mode', () => {
 		setUrlQuery('q=ligne');
 		render(SearchSurface);
-		// Scope to the Lines result section (the mode chip button also reads "Métro").
 		const lines = screen.getByRole('region', { name: 'Lines' });
 		expect(within(lines).getByText('Métro')).toBeInTheDocument();
 	});
@@ -193,8 +177,6 @@ describe('SearchSurface stop mode tag for all modes', () => {
 	it('tags a plain BUS stop with a visible mode tag (today untagged)', () => {
 		setUrlQuery('q=van horne');
 		render(SearchSurface);
-		// Scope to the Stops result section — the bus stop now carries a "Bus" tag
-		// (today such stops are untagged). The mode chip + line tag also read "Bus".
 		const stops = screen.getByRole('region', { name: 'Stops' });
 		expect(within(stops).getByText('Bus')).toBeInTheDocument();
 	});
@@ -202,9 +184,8 @@ describe('SearchSurface stop mode tag for all modes', () => {
 
 describe('SearchSurface scope filter', () => {
 	it('restricts to lines, hiding stop results', async () => {
-		setUrlQuery('q=van horne'); // matches route 161 (long) + stop 57191 (name)
+		setUrlQuery('q=van horne');
 		render(SearchSurface);
-		// Without scope, both the line and the stop show.
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /Van Horne \/ Rockland/i })).toBeInTheDocument();
 
@@ -220,41 +201,31 @@ describe('SearchSurface scope filter', () => {
 
 describe('SearchSurface mode chip filter', () => {
 	it('narrows to métro lines/stops when the Métro chip is on', async () => {
-		setUrlQuery('q=van horne'); // bus line 161 + bus stop, no métro match
+		setUrlQuery('q=van horne');
 		render(SearchSurface);
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 
 		const metroChip = screen.getByRole('button', { name: 'Métro' });
 		await metroChip.click();
 
-		// 161 is a bus line → the métro filter hides it; nothing métro matches "van horne".
 		expect(screen.queryByRole('link', { name: /161.*Van Horne/i })).toBeNull();
 	});
 });
 
-// ── Vehicle results ─────────────────────────────────────────────────────────────
 describe('SearchSurface vehicle results', () => {
 	it('shows a matched live bus with status, signed delay, and resolved next stop', () => {
 		setUrlQuery('q=40061');
 		render(SearchSurface);
 
-		const busRow = screen.getByRole('link', { name: 'Live bus 40061' });
+		const busRow = screen.getByRole('link', { name: 'Live bus 40061, Late, Delay: +4 min' });
 		expect(busRow).toBeInTheDocument();
-		// Links to the live map filtered to this bus.
 		expect(busRow).toHaveAttribute('href', '/map?vehicle=40061');
-		// Status chip (Late), signed delay (+4 min), resolved next-stop name.
 		expect(within(busRow).getByText('Late')).toBeInTheDocument();
 		expect(within(busRow).getByText('+4 min')).toBeInTheDocument();
 		expect(within(busRow).getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
 	});
 });
 
-// ── M6i · F25 (mobile) — the disclosure reaches the search page ─────────────────
-// The chrome field is desktop-only, so on a phone the search PAGE is the only
-// search a rider ever sees. The disclosure it carries must describe what THIS
-// page does: line/stop/bus matching runs client-side against the already-loaded
-// indexes (no geocode call lives on this surface), while address search — the
-// top-bar field and the map's near-me — is what transmits.
 describe('SearchSurface collection disclosure (M6i F25)', () => {
 	const NOTICE_EN =
 		'Lines, stops and buses are matched in your browser; address search is sent to our server and the Government of Canada Geo.ca service.';

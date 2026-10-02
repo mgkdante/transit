@@ -1,10 +1,3 @@
-"""Nightly logical Postgres backups streamed from pg_dump straight to Bronze R2.
-
-One process owns guard + dump + upload + abort so a failed pg_dump can never
-persist a truncated dump as a successful backup, and the dump never touches
-VM disk.
-"""
-
 from __future__ import annotations
 
 import io
@@ -26,9 +19,7 @@ from transit_ops.settings import Settings
 
 BACKUP_KEY_PATTERN = re.compile(r"transit-\d{8}T\d{6}Z\.dump$")
 MULTIPART_CHUNKSIZE_BYTES = 64 * 1024 * 1024
-# boto3's default max_concurrency=10 on a non-seekable stream can buffer
-# ~640MB inside the worker container on the shared A1 host; 2 caps it at
-# roughly 128-192MB while keeping the multipart ceiling at ~640GB.
+# Limit multipart concurrency to bound buffering of the non-seekable dump stream.
 MAX_UPLOAD_CONCURRENCY = 2
 STDERR_TAIL_CHARS = 2000
 
@@ -76,12 +67,6 @@ def backup_object_key(prefix: str, now: datetime) -> str:
 
 
 def verify_excluded_tables_exist(settings: Settings, *, engine_factory=make_engine) -> None:  # noqa: ANN001
-    """Abort before dumping when any excluded table no longer exists.
-
-    pg_dump treats a non-matching --exclude-table-data as a SILENT no-op
-    (exit 0, full data dumped), so a renamed or dropped exclusion target must
-    fail the backup loudly instead of quietly re-inflating the dump.
-    """
 
     tables = settings.backup_exclude_tables
     if not tables:
@@ -120,7 +105,7 @@ def build_pg_dump_command(settings: Settings) -> list[str]:
         "--no-password",
         "--lock-wait-timeout=5min",
         *(f"--exclude-table-data={table}" for table in settings.backup_exclude_tables),
-        # pg_dump needs the raw postgresql:// URI, not the +psycopg SQLAlchemy form.
+        # pg_dump needs the raw URI without the SQLAlchemy driver suffix.
         settings.DATABASE_URL,
     ]
 
@@ -143,8 +128,7 @@ def run_database_backup(
 
     started = time.monotonic()
     with tempfile.TemporaryFile() as stderr_sink:
-        # stderr goes to a real file, never a pipe: a full stderr pipe would
-        # deadlock pg_dump while we drain stdout.
+        # A file avoids deadlock when stderr fills while stdout is drained.
         proc = popen(command, stdout=subprocess.PIPE, stderr=stderr_sink)
         stream = _CountingStream(proc.stdout)
         try:
@@ -264,7 +248,6 @@ def _iter_object_summaries(client, *, bucket: str, prefix: str) -> Iterator[dict
 
 
 def _eligible_backup_keys(client, *, bucket: str, prefix: str) -> list[str]:  # noqa: ANN001
-    # Timestamped names sort lexicographically, so sorted == chronological.
     return sorted(
         str(obj["Key"])
         for obj in _iter_object_summaries(client, bucket=bucket, prefix=prefix)

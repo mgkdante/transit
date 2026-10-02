@@ -1,6 +1,3 @@
-// nav.test.ts — guards the navigation manifest against the failure that prompted
-// it: a stale inventory shipping dead links (/history, /data-trust never existed).
-
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -20,8 +17,6 @@ type SurfaceKey = (typeof SURFACE_NAV)[number]['key'];
 
 describe('SURFACE_NAV manifest', () => {
 	it('every surface href resolves to a real +page.svelte (no dead links)', () => {
-		// Both the primary rail surfaces AND the secondary footer links (/metrics,
-		// /status live here) — a typo in either ships a dead link.
 		for (const item of [...SURFACE_NAV, ...SECONDARY_NAV]) {
 			const page = resolve(ROUTES, item.href.replace(/^\//, ''), '+page.svelte');
 			expect(existsSync(page), `${item.href} -> ${page}`).toBe(true);
@@ -43,8 +38,6 @@ describe('SURFACE_NAV manifest', () => {
 	});
 
 	it('registers the four accountability surfaces in SECONDARY_NAV with EN + FR labels', () => {
-		// slice-9.6: the audit/meta surfaces ride SECONDARY_NAV beside /metrics +
-		// /status. Each must be present (so it is reachable) and carry both labels.
 		const hrefs = SECONDARY_NAV.map((i) => i.href);
 		for (const href of ['/hotspots', '/receipt', '/repeat-offenders', '/alerts']) {
 			expect(hrefs, `${href} missing from SECONDARY_NAV`).toContain(href);
@@ -81,9 +74,6 @@ describe('SURFACE_NAV manifest', () => {
 
 describe('AUDIT_NAV (side-nav Audit group)', () => {
 	it('exposes the accountability/meta surfaces as a side-nav-consumable group', () => {
-		// PR-5: the Audit group rides AUDIT_NAV for the NavPill hamburger menu. The
-		// four accountability surfaces (plus the methodology + data-health anchors)
-		// must be present with a stable icon key + EN/FR label.
 		const hrefs = AUDIT_NAV.map((i) => i.href);
 		for (const href of [
 			'/metrics',
@@ -119,9 +109,6 @@ describe('AUDIT_NAV (side-nav Audit group)', () => {
 	});
 
 	it('keeps SECONDARY_NAV as the derived compatibility view for main-landmark resolution', () => {
-		// Footer consumes AUDIT_NAV directly. SECONDARY_NAV remains the compatibility
-		// view for mainLandmarkLabel, derived from the same audit manifest so that
-		// resolver cannot drift from the routes in the Audit group.
 		const secondaryHrefs = SECONDARY_NAV.map((i) => i.href);
 		for (const item of AUDIT_NAV) {
 			expect(secondaryHrefs, `${item.href} dropped from the derived view`).toContain(item.href);

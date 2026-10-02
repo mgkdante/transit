@@ -1,4 +1,3 @@
-"""Offline unit coverage for D2 alert-language measurement semantics."""
 
 from __future__ import annotations
 
@@ -65,7 +64,6 @@ def _counts(
 
 
 def test_available_measurement_uses_explicit_and_all_alert_denominators() -> None:
-    """Break caught: undetermined rows diluting explicit-language coverage."""
 
     measurement = build_alert_language_coverage_measurement(
         provider_id="stm",
@@ -89,13 +87,10 @@ def test_available_measurement_uses_explicit_and_all_alert_denominators() -> Non
     assert measurement.alert_observation_count == 4
     assert measurement.explicit_en_pct == Decimal("66.67")
     assert measurement.explicit_fr_pct == Decimal("100.00")
-    # This percentage intentionally uses all alert observations; the explicit
-    # FR/EN denominator above excludes the undetermined third bucket.
     assert measurement.undetermined_pct == Decimal("25.00")
 
 
 def test_all_undetermined_is_available_with_null_language_coverage() -> None:
-    """Break caught: a zero explicit denominator being reported as 0%."""
 
     measurement = build_alert_language_coverage_measurement(
         provider_id="stm",
@@ -120,7 +115,6 @@ def test_all_undetermined_is_available_with_null_language_coverage() -> None:
 
 
 def test_four_states_have_distinct_null_semantics() -> None:
-    """Break caught: unsupported, unavailable, and no-alerts collapsing together."""
 
     common = {
         "provider_id": "p",
@@ -202,7 +196,6 @@ class _Connection:
 
 
 def test_runner_uses_inclusive_provider_local_7_and_30_day_windows() -> None:
-    """Break caught: UTC anchoring or an off-by-one trailing window."""
 
     supported = _manifest("supported", alert_feed=True)
     unsupported = _manifest("unsupported", alert_feed=False)
@@ -227,7 +220,6 @@ def test_runner_uses_inclusive_provider_local_7_and_30_day_windows() -> None:
         }
     )
 
-    # 03:30Z is still July 29 in America/Toronto during EDT.
     receipt = run_alert_language_coverage_measurement(
         connection,
         manifests=[unsupported, supported],
@@ -252,7 +244,6 @@ def test_runner_uses_inclusive_provider_local_7_and_30_day_windows() -> None:
         ("unsupported", 7, "2026-07-23", "2026-07-29", "unsupported"),
         ("unsupported", 30, "2026-06-30", "2026-07-29", "unsupported"),
     ]
-    # Unsupported providers never query observation tables.
     assert len(connection.queries) == 2
     assert all(query["provider_id"] == "supported" for query in connection.queries)
     assert len(connection.retained) == 1

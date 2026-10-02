@@ -1,4 +1,3 @@
-"""Offline proof for the pre-coalescing alert-language observation seam."""
 
 from __future__ import annotations
 
@@ -91,7 +90,6 @@ def test_observation_buckets_require_nonempty_explicit_tags(
     alert: dict[str, object],
     expected: tuple[bool, bool, bool],
 ) -> None:
-    """Break caught: untagged, missing, or empty text being claimed as FR/EN."""
 
     observations = build_alert_language_observations(
         _snapshot({"alerts": [alert]})
@@ -107,7 +105,6 @@ def test_observation_buckets_require_nonempty_explicit_tags(
 
 
 def test_observation_date_uses_the_exact_provider_local_midnight() -> None:
-    """Break caught: UTC date bucketing moving Toronto observations a day early."""
 
     before_midnight = build_alert_language_observations(
         _snapshot(
@@ -127,9 +124,6 @@ def test_observation_date_uses_the_exact_provider_local_midnight() -> None:
 
 
 def test_observation_date_survives_the_fall_back_dst_boundary() -> None:
-    """S5-378 NB5: on 2026-11-01 Toronto falls back (EDT→EST, midnight moves
-    05:00Z→05:30Z is wrong — the offset flips 04:00→05:00 mid-day); a UTC
-    instant late that local day must still bucket to 2026-11-01."""
 
     late_fall_back_day = build_alert_language_observations(
         _snapshot(
@@ -149,7 +143,6 @@ def test_observation_date_survives_the_fall_back_dst_boundary() -> None:
 
 
 def test_scd_enrichment_fields_cannot_leak_into_an_observation() -> None:
-    """Falsification: a naive SCD reader reports EN; the raw seam must not."""
 
     enriched_style_alert = {
         "id": "scd-leak",
@@ -174,7 +167,6 @@ def test_scd_enrichment_fields_cannot_leak_into_an_observation() -> None:
 
 
 def test_same_snapshot_duplicate_logical_id_uses_the_last_source_observation() -> None:
-    """Break caught: one INSERT batch carrying duplicate conflict keys."""
 
     observations = build_alert_language_observations(
         _snapshot(
@@ -200,7 +192,6 @@ def test_same_snapshot_duplicate_logical_id_uses_the_last_source_observation() -
 
 
 def test_no_provider_id_falls_back_to_enrichment_neutral_content_identity() -> None:
-    """Break caught: adding EN alone minting a second logical observation."""
 
     base = {
         "header": [{"language": "fr", "text": "Interruption"}],
@@ -229,9 +220,6 @@ def test_no_provider_id_falls_back_to_enrichment_neutral_content_identity() -> N
 
 
 def test_no_provider_id_identity_survives_english_arriving_as_a_new_key() -> None:
-    """Break caught (S5-378 B2 shape B): an EN-only field left behind as
-    present-and-empty minting a second logical id — the day would then carry
-    two rows for one real alert and halve the EN percentage."""
 
     base = {"header": [{"language": "fr", "text": "Interruption"}]}
     enriched = {
@@ -249,9 +237,6 @@ def test_no_provider_id_identity_survives_english_arriving_as_a_new_key() -> Non
 
 
 def test_no_provider_id_identity_survives_single_object_english_translation() -> None:
-    """Break caught (S5-378 B2 shape F): the single-object translation form
-    ({"language": "en", "text": ...}) — accepted by _has_explicit_language —
-    never being stripped from the identity."""
 
     base = {"header": [{"language": "fr", "text": "Interruption"}]}
     enriched = {
@@ -269,7 +254,6 @@ def test_no_provider_id_identity_survives_single_object_english_translation() ->
 
 
 def test_no_provider_id_keeps_distinct_english_only_alerts_separate() -> None:
-    """Break caught: stripping the only identity text collapsing two alerts."""
 
     observations = build_alert_language_observations(
         _snapshot(
@@ -325,7 +309,6 @@ def _sqlite_raw_tables(connection) -> None:  # noqa: ANN001
 
 
 def test_upsert_is_latest_wins_for_alert_and_empty_feed_observations() -> None:
-    """Break caught: a delayed Bronze replay overwriting newer daily evidence."""
 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     older = _snapshot(
@@ -382,7 +365,6 @@ def test_upsert_is_latest_wins_for_alert_and_empty_feed_observations() -> None:
 
 
 def test_latest_upsert_clears_english_when_the_new_raw_observation_has_none() -> None:
-    """Falsification: latest raw evidence must not retain earlier English."""
 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with_english = _snapshot(

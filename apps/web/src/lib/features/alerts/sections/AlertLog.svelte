@@ -1,16 +1,3 @@
-<!--
-  AlertLog — the chronological alert-log PRESENTER (S15 de-monolith).
-
-  A pure view over the already-filtered, already-built {@link AlertRowVM} rows: the
-  severity-coded card list + the "+N more" disclosure. All logic (banding, window
-  clipping, VM build) lives in the orchestrator + selectors; this file only renders.
-
-  HONESTY: a null field is OMITTED (never a fabricated 0). A row with >1 active
-  window lists them all under a "Service windows" header (the D1 citizen win); a
-  single-window row renders the familiar From/Until pair. A present url is a SAFE
-  external link (rel noopener, hostname shown). Colour + glyph are never the sole
-  channel — the visually-hidden severity word rides every row.
--->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
@@ -18,24 +5,17 @@
 	import type { Locale } from '$lib/i18n';
 
 	interface Props {
-		/** The rows to render (already filtered + capped by the orchestrator). */
 		rows: readonly AlertRowVM[];
-		/** Total matched rows (for the overflow disclosure + count caption). */
 		total: number;
-		/** True when the log is expanded past the visible cap. */
 		expanded: boolean;
-		/** How many rows overflow the cap (0 = no disclosure). */
 		overflow: number;
-		/** DOM id for the list (the disclosure's aria-controls). */
 		logId: string;
 		copy: AlertHistoryCopy;
 		locale: Locale;
-		/** Toggle the +N-more disclosure. */
 		onToggle: () => void;
 	}
 	let { rows, total, expanded, overflow, logId, copy, locale, onToggle }: Props = $props();
 
-	/** Glyph per severity — colour is never the sole channel (mirrors AffectedAlerts). */
 	const SEVERITY_GLYPH: Record<SeverityCode, string> = {
 		critical: '◆',
 		high: '▲',
@@ -62,7 +42,6 @@
 			</p>
 			<dl class="alert-history-meta">
 				{#if row.periods.length > 1}
-					<!-- MULTI-WINDOW (D1): list every active window under one honest header. -->
 					<div class="alert-history-windows" data-slot="alert-windows">
 						<dt>{copy.meta.windows}</dt>
 						<dd>
@@ -115,15 +94,8 @@
 						<dd>{row.stops.length}</dd>
 					</div>
 				{/if}
-				{#if row.impactPassages != null}
-					<div>
-						<dt>{copy.meta.impact}</dt>
-						<dd>{copy.meta.impactValue(row.impactPassages)}</dd>
-					</div>
-				{/if}
 			</dl>
 			{#if row.url}
-				<!-- A present url as a SAFE external link (http/https only, hostname shown). -->
 				<p class="alert-history-link">
 					<a
 						href={row.url.href}
@@ -141,8 +113,6 @@
 </ul>
 
 {#if overflow > 0}
-	<!-- Honest disclosure: the overflow is one click away, never silently dropped.
-	     --primary belongs here (an interaction control). -->
 	<button
 		type="button"
 		class="alert-history-more"
@@ -154,8 +124,6 @@
 	</button>
 {/if}
 
-<!-- The count caption is owned by the orchestrator head; total threaded for the a11y
-     live region below stays minimal. -->
 <span class="sr-only" aria-live="polite">{copy.count(rows.length, total)}</span>
 
 <style>
@@ -168,8 +136,6 @@
 		list-style: none;
 		max-width: 52rem;
 	}
-	/* Each past alert is a card whose severity reads from its tinted border +
-	   surface on the dataviz severity scale (P7: no leading stripe rail). */
 	.alert-history-row {
 		--alert-tone: var(--dataviz-severity-watch);
 		position: relative;
@@ -209,8 +175,6 @@
 		line-height: 1.35;
 		color: var(--foreground);
 	}
-	/* Window / duration / reach / impact — a labeled mono caption block, tinted by
-	   the alert's own severity tone so it reads as one signage unit. */
 	.alert-history-meta {
 		display: flex;
 		flex-wrap: wrap;
@@ -239,7 +203,6 @@
 		color: var(--foreground);
 		font-variant-numeric: tabular-nums;
 	}
-	/* Multi-window list: the header row + a bulleted list of each active range. */
 	.alert-history-windows {
 		display: flex;
 		flex-direction: column;
@@ -261,7 +224,6 @@
 	.alert-history-window-list li {
 		line-height: 1.35;
 	}
-	/* External details link — an INTERACTION affordance (--primary). */
 	.alert-history-link {
 		margin: 0.375rem 0 0;
 	}
@@ -281,7 +243,6 @@
 		outline-offset: 2px;
 		border-radius: var(--radius-sm);
 	}
-	/* "+N more" disclosure — an INTERACTION control, so --primary belongs here. */
 	.alert-history-more {
 		align-self: flex-start;
 		appearance: none;
@@ -305,8 +266,6 @@
 		border-radius: var(--radius-sm);
 	}
 
-	/* The language marker is a quiet annotation beside the provider text,
-	   never part of the headline itself. */
 	.alert-language-marker {
 		margin-inline-start: 0.375rem;
 		color: var(--muted-foreground);

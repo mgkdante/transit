@@ -53,6 +53,7 @@ function measurementAdapter(
 	const frames: FrameRequestCallback[] = [];
 	const adapter: MapFocusMeasurementAdapter = {
 		containerRect: vi.fn(() => rect(values.width, values.height)),
+		headingRect: vi.fn(() => null),
 		detailOffset: vi.fn(() => values.detailOffset),
 		rootFontSize: vi.fn(() => values.rootFontSize),
 		bottomSheetHeight: vi.fn(() => values.sheetHeight),
@@ -81,6 +82,33 @@ afterEach(() => {
 });
 
 describe('map focus inset arithmetic', () => {
+	it.each([0, 200])('keeps a mobile focus below its heading with container top %s', (top) => {
+		const { hero, container, map } = mountedMap();
+		hero.style.setProperty('--map-detail-offset', '0px');
+		vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
+			...rect(390, 844),
+			top,
+			bottom: top + 844,
+		});
+		const head = document.createElement('div');
+		head.className = 'map-head';
+		vi.spyOn(head, 'getBoundingClientRect').mockReturnValue({
+			...rect(390, 129),
+			top,
+			bottom: top + 129,
+		});
+		hero.append(head);
+		const sheet = document.createElement('div');
+		sheet.dataset.slot = 'bottom-sheet';
+		vi.spyOn(sheet, 'getBoundingClientRect').mockReturnValue(rect(390, 717));
+		document.body.append(sheet);
+
+		const inset = measureMapFocusInset(map);
+		expect(inset.containerHeight / 2 + inset.pointOffset[1]).toBeGreaterThanOrEqual(249);
+		expect(inset.routePadding.top).toBe(193);
+		expect(inset.containerHeight - (inset.routePadding.top + inset.routePadding.bottom)).toBe(112);
+	});
+
 	it('keeps the pinned 1040/560 target geometry visible for point and route focus', () => {
 		const { map } = mountedMap();
 		const { adapter } = measurementAdapter();
@@ -91,6 +119,7 @@ describe('map focus inset arithmetic', () => {
 		expect(inset).toEqual({
 			containerWidth: 1040,
 			containerHeight: 800,
+			topOcclusion: 0,
 			rightOcclusion: 560,
 			bottomOcclusion: 0,
 			pointOffset: [-280, 0],

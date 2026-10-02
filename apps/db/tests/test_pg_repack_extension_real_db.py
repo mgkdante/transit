@@ -1,20 +1,3 @@
-"""Real-database regression for migration 0040 (slice-9.1.1m).
-
-Exercises the actual CREATE/DROP EXTENSION pg_repack behaviour that fake-connection
-tests cannot see: whether the extension and its `repack` schema land when the
-package is locally available, and that the guard path is a clean no-op when it is
-not. CREATE/DROP EXTENSION are transactional in Postgres, so everything runs
-inside one transaction and rolls back — nothing persists.
-
-Run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres with the
-transit schema applied. Whether pg_repack is installable depends on whether the
-local cluster shipped postgresql-16-repack; both branches are asserted. Never
-point this at production.
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
-        uv run pytest tests/test_pg_repack_extension_real_db.py -v
-"""
 
 from __future__ import annotations
 
@@ -72,22 +55,17 @@ def test_0040_upgrade_creates_extension_when_available(conn) -> None:
 
     assert not _extension_present(conn), "extension should not pre-exist in a clean tx"
 
-    # Drive the migration body's create. The migration upgrade() probes
-    # pg_available_extensions then issues the CREATE; here the package is present
-    # so the extension must land.
     conn.execute(text(m._CREATE_EXTENSION))
 
     extversion = conn.execute(
         text("SELECT extversion FROM pg_extension WHERE extname = 'pg_repack'")
     ).scalar()
     assert extversion is not None
-    # pg_repack creates its helper objects in a dedicated 'repack' schema.
     schema_count = conn.execute(
         text("SELECT count(*) FROM pg_namespace WHERE nspname = 'repack'")
     ).scalar()
     assert schema_count == 1
 
-    # downgrade body removes it.
     conn.execute(text(m._DROP_EXTENSION))
     assert not _extension_present(conn)
 
@@ -97,8 +75,6 @@ def test_0040_upgrade_skips_cleanly_when_package_missing(conn) -> None:
     if _package_available(conn):
         pytest.skip("pg_repack package IS available — guard-skip path not exercised")
 
-    # Guard path: the probe returns 0, so upgrade() must NOT issue CREATE EXTENSION
-    # and must not raise. Mirror that here: probing then refraining leaves no row.
     available = conn.execute(text(m._AVAILABLE_PROBE)).scalar()
     assert not available
     assert not _extension_present(conn)

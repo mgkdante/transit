@@ -1,16 +1,3 @@
-<!--
-  MapOverlayChrome — the desktop floating chrome layer that lives inside .map-surface.
-
-  SINGLE RESPONSIBILITY: compose every floating overlay that rides over the canvas —
-  the title (MapHeadTitle), the near-me control, the desktop Controls panel (the
-  shared `controls` snippet), the floating freshness chip, the feed-stall banner,
-  the live-edge notice, and the desktop hover peek. ZERO state mutation: every
-  handler + snippet is passed in by the orchestrator (MapHero), which owns all the
-  state. The right-edge chrome reads --map-detail-offset so it clears the open
-  detail overlay. Owns the scoped CSS for the overlays it places (filter panel,
-  peek, live-edge, the reduced-motion .mf-chip rule, and the mobile panel/peek
-  hides). The .map-surface container itself stays in MapHero; this renders INSIDE it.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
@@ -32,13 +19,11 @@
 	interface Props {
 		locale: Locale;
 		t: MapCopy;
-		// Live-store reads for the head + floating freshness + feed-stall chips.
 		generatedUtc: string | null;
 		ageSeconds: number | null;
 		isStale: boolean;
 		degraded?: boolean;
 		selectedFamilyFailureMessage?: string | null;
-		// Near-me surface — state (bindable open/query) + handlers, owned by MapHero.
 		nearMeOpen: boolean;
 		nearMeQuery: string;
 		nearMeLoading: boolean;
@@ -50,16 +35,12 @@
 		onsuggestion: (result: GeocodeSuggestion) => void | Promise<void>;
 		onstopselect: (stop: WithDistance<StopIndexEntry>) => void;
 		onclear: () => void;
-		// Layout snapshot — gates the desktop-only hover peek.
 		isDesktop: boolean;
-		// Filter spine — drives the mobile MapFilterPill count + the detailOpen hide.
 		filtersStore: FilterStore;
 		detailOpen: boolean;
-		// Live-edge notice.
 		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage: string | null;
 		hoverPeek: MapHoverPeekModel | null;
-		// The unified Controls render contract (desktop panel + mobile drawer).
 		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
 
@@ -91,6 +72,11 @@
 		controls,
 	}: Props = $props();
 
+	let desktopControlsMounted = $state(false);
+	$effect(() => {
+		if (isDesktop) desktopControlsMounted = true;
+	});
+
 	const feedBannerState = $derived(
 		deriveMapFeedBannerState({
 			selectedFamilyFailureMessage,
@@ -99,10 +85,6 @@
 			liveEdgeMessage,
 		}),
 	);
-	// M6f-2 F14: a stalled feed no longer DESTROYS the freshness readout (it used to
-	// null the timestamps at every viewport, which dropped .map-freshness from the
-	// DOM entirely). The readout survives and swaps its age for the banner's own
-	// "not responding" verdict, so the chrome still states what it knows.
 	const ageLabel = $derived(feedBannerState === 'global-stall' ? t.feedNotRespondingShort : null);
 </script>
 
@@ -148,24 +130,14 @@
 	{onclear}
 />
 
-<!-- Left: the unified Controls panel (URL-driven filters + the motion toggle).
-     The motion-mode switch (raw vs almost-real-time, bound to the motionMode
-     store) is pinned to the TOP of the panel via the shared `mapControls`
-     snippet; the combinable state filters sit below. Desktop renders it here;
-     mobile renders the SAME snippet inside MapFilterPill's drawer (one source
-     of truth, no divergent call sites). There is no separate floating chip,
-     so nothing reflows when the toggle swaps raw⇄smooth. -->
-<div class="map-overlay map-filter-panel">
-	{@render controls(undefined)}
-</div>
+{#if isDesktop || desktopControlsMounted}
+	<div class="map-overlay map-filter-panel">
+		{@render controls(undefined)}
+	</div>
+{/if}
 
-<!-- M6f-2 F14: no `stalled` gate. People must still be able to SEE what the
-     controls are when the data is not responding, so the peel stays present,
-     hit-testable and openable through a stall; only the detail overlay hides it. -->
 <MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
 
-<!-- One stable announcement owner. It prioritizes a selected-family failure over
-     aggregate stall, then live edge; it stays empty at rest. -->
 <MapFeedStallBanner
 	{generatedUtc}
 	{ageSeconds}
@@ -189,8 +161,6 @@
 		z-index: var(--z-map-overlay);
 	}
 	.map-filter-panel {
-		/* Below the chrome (--chrome-offset knob) + the title band, matching the
-		   original ~66px offset from the title top. */
 		top: calc(var(--chrome-offset) + 4rem);
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 	}
@@ -208,9 +178,6 @@
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px) — the card is ~92% opaque so the
-		   blur barely shows; kept modest since this peek floats over the constantly-
-		   repainting live canvas where a heavier blur is pure compositing cost. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
@@ -224,13 +191,6 @@
 		}
 	}
 
-	/* Below the single map breakpoint (1024px = layout.isDesktop) the unified
-	   Controls panel hides and the floating Controls pill takes over (it gates
-	   itself to < 1024px). Keeping the panel-hide on the SAME 1024 line as the
-	   pill-hide and the JS `layout.isDesktop` snapshot means all three agree — no
-	   dead 760px band where the panel and pill could both show or both vanish.
-	   .map-peek is already `layout.isDesktop`-gated in markup; the hide here is
-	   belt-and-braces. */
 	@media (max-width: 1023.98px) {
 		.map-filter-panel {
 			display: none;

@@ -1460,9 +1460,6 @@ def test_historic_publish_proof_fails_when_final_fetch_crosses_deadline() -> Non
     assert report.public["deadline"]["exceeded"] is True
 
 
-# The parent must not begin supervising before the child reaches its stall. This
-# 5.0 s readiness wait is approximately 13x the measured 0.37 s maximum entry
-# latency and is deliberately decoupled from the proof budget.
 class _ReadinessWaitingForkContext:
     def __init__(self, entered) -> None:  # noqa: ANN001
         self._real_context = get_context("fork")

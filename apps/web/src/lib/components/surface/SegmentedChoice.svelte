@@ -1,18 +1,9 @@
-<!--
-  SegmentedChoice — controlled, copy-free single-select radio engine.
-
-  Callers own semantic keys and state. This component owns the shared radio
-  affordance, roving focus, arrow navigation, pointer labels, motion, and the
-  adaptive joined frame used by time and filter controls.
--->
 <script module lang="ts">
 	export type SegmentedChoiceVariant = 'default' | 'joined-grid';
 
 	export interface SegmentedChoiceOption<K extends string = string> {
 		readonly key: K;
-		/** Full visible and accessible label. */
 		readonly label: string;
-		/** Optional shorter visible label; the full label remains the accessible name. */
 		readonly compactLabel?: string;
 		readonly disabled?: boolean;
 		readonly describedById?: string;
@@ -26,7 +17,6 @@
 		readonly label: string;
 		readonly onSelect: (key: K) => void;
 		readonly variant?: SegmentedChoiceVariant;
-		/** Consumer-facing variant marker when its public vocabulary differs. */
 		readonly dataVariant?: string;
 		readonly dataSlot?: string;
 		readonly class?: string;

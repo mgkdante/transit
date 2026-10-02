@@ -1199,11 +1199,11 @@ def _run_wrapper_signal_case(
     ],
 )
 @pytest.mark.parametrize(
-    ("signal_number", "expected_status"),
+    ("signal_name", "expected_status"),
     [
-        (signal.SIGHUP, 129),
-        (signal.SIGINT, 130),
-        (signal.SIGTERM, 143),
+        ("SIGHUP", 129),
+        ("SIGINT", 130),
+        ("SIGTERM", 143),
     ],
 )
 def test_script_forwards_wrapper_signal_to_each_tracked_stage_and_cleans_up(
@@ -1212,9 +1212,10 @@ def test_script_forwards_wrapper_signal_to_each_tracked_stage_and_cleans_up(
     scenario: str,
     ready_tool: str,
     expected_operation_tail: list[str],
-    signal_number: signal.Signals,
+    signal_name: str,
     expected_status: int,
 ) -> None:
+    signal_number = getattr(signal, signal_name)
     events, child_pid, _ = _run_wrapper_signal_case(
         tmp_path,
         scenario=scenario,

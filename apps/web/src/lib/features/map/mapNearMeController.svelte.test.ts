@@ -169,8 +169,6 @@ describe('map near-me controller', () => {
 		harness.succeedPosition();
 		expect(harness.controller.origin).not.toBeNull();
 
-		// A filter toggle rewrites the query string with no near params; the
-		// device fix is not URL-backed, so the sync-from must not destroy it.
 		harness.readTarget.mockReturnValue(null);
 		harness.controller.syncFromUrl(new URLSearchParams('routes=55'));
 		expect(harness.controller.origin).not.toBeNull();
@@ -182,7 +180,6 @@ describe('map near-me controller', () => {
 		harness.controller.syncFromUrl(new URLSearchParams('near=45.501,-73.601'));
 		expect(harness.controller.origin).toEqual(target);
 
-		// The URL created it, the URL retires it.
 		harness.readTarget.mockReturnValue(null);
 		harness.controller.syncFromUrl(new URLSearchParams(''));
 		expect(harness.controller.origin).toBeNull();

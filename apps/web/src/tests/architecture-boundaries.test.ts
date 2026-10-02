@@ -12,7 +12,6 @@ const FEATURES_ROOT = join(SRC_ROOT, 'lib/features');
 const REPOSITORIES_ROOT = join(V1_ROOT, 'repositories');
 const V1_CONFIG_ROOT = join(V1_ROOT, 'config');
 const MARKS_ROOT = join(COMPONENTS_ROOT, 'dataviz/chart/marks');
-// The snapshot-URL capability, denied to repositories by name rather than by module path.
 const URL_BUILDER_CAPABILITY = ['resolveUrl', 'entityUrl', 'v1BaseUrl', 'v1Provider'] as const;
 
 interface SourceBlock {
@@ -109,9 +108,6 @@ function forbiddenImports(scanRoot: string, forbiddenRoot: string): string[] {
 	});
 }
 
-// Path denial is not capability denial: `$lib/v1/config`'s URL builders are re-exported from the
-// `$lib/v1` barrel, so a specifier-only rule is evaded by importing the same function from there.
-// This arm denies the CAPABILITY by binding name, whatever module it arrives through.
 function forbiddenCapabilityImports(root: string, symbols: readonly string[]): string[] {
 	const banned = new Set(symbols);
 	return productionSources(root).flatMap((path) => {
@@ -130,7 +126,6 @@ function forbiddenCapabilityImports(root: string, symbols: readonly string[]): s
 					const bindings = node.importClause.namedBindings;
 					if (ts.isNamedImports(bindings)) {
 						for (const element of bindings.elements) {
-							// `propertyName` is the imported name when aliased (`import { a as b }`).
 							const imported = (element.propertyName ?? element.name).text;
 							if (!banned.has(imported)) continue;
 							hits.push(
@@ -138,7 +133,6 @@ function forbiddenCapabilityImports(root: string, symbols: readonly string[]): s
 							);
 						}
 					} else if (ts.isNamespaceImport(bindings)) {
-						// `import * as ns` hands over every export, including the banned ones.
 						const specifier = ts.isStringLiteralLike(node.moduleSpecifier)
 							? node.moduleSpecifier.text
 							: '';
@@ -217,20 +211,19 @@ function v1Fetches(): string[] {
 const paths = (value: string): string[] => value.trim().split(/\s+/u).sort();
 
 function b9DisplayFiles(): Record<string, string[]> {
-	const sources = productionSources(SRC_ROOT);
+	const sourceLabel = (path: string): string => relative(SRC_ROOT, path).split(sep).join('/');
+	const sources = productionSources(SRC_ROOT).map(sourceLabel);
 	const relativePaths = (root: string, pattern: RegExp): string[] =>
 		productionSources(root)
-			.filter((path) => pattern.test(relative(SRC_ROOT, path)))
-			.map((path) => relative(SRC_ROOT, path))
+			.map(sourceLabel)
+			.filter((path) => pattern.test(path))
 			.sort();
 	return {
 		marks: relativePaths(MARKS_ROOT, /Mark\.svelte$/u),
 		presenters: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) => /reliability\/.+(?:Clusters|Presenter|Surface)\.svelte$/u.test(path))
 			.sort(),
 		surfaces: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) =>
 				/(?:features\/(?:lines|network|stops)\/reliability\/sections\/Section[^/]+|features\/lines\/(?:RouteDetail|LazyRouteReliabilityPane)|features\/stops\/StopDetail)\.svelte$/u.test(
 					path,
@@ -238,9 +231,10 @@ function b9DisplayFiles(): Record<string, string[]> {
 			)
 			.sort(),
 		selectors: sources
-			.map((path) => relative(SRC_ROOT, path))
 			.filter((path) =>
-				/features\/(?:lines|network|stops)\/reliability\/selectors\/[^/]+\.ts$/u.test(path),
+				/(?:features\/(?:lines|network|stops)\/reliability\/selectors\/[^/]+|lib\/reliability\/habitsHeatmap)\.ts$/u.test(
+					path,
+				),
 			)
 			.sort(),
 	};
@@ -257,7 +251,7 @@ const B9_DISPLAY_FILES = {
 		`lib/features/lines/LazyRouteReliabilityPane.svelte lib/features/lines/RouteDetail.svelte lib/features/lines/reliability/sections/Section0Verdict.svelte lib/features/lines/reliability/sections/Section1WhenToRide.svelte lib/features/lines/reliability/sections/Section2TheWait.svelte lib/features/lines/reliability/sections/Section3RunAndFit.svelte lib/features/lines/reliability/sections/Section4WorstStops.svelte lib/features/stops/StopDetail.svelte lib/features/stops/reliability/sections/SectionByRoute.svelte lib/features/stops/reliability/sections/SectionCrowding.svelte lib/features/stops/reliability/sections/SectionDailyTrend.svelte lib/features/stops/reliability/sections/SectionHabits.svelte lib/features/stops/reliability/sections/SectionPercentiles.svelte lib/features/stops/reliability/sections/SectionTimeOfDay.svelte lib/features/stops/reliability/sections/SectionWeekday.svelte lib/features/network/reliability/sections/SectionByTimeOfDay.svelte lib/features/network/reliability/sections/SectionCancellations.svelte lib/features/network/reliability/sections/SectionCompleteness.svelte lib/features/network/reliability/sections/SectionCrowdingByDay.svelte lib/features/network/reliability/sections/SectionDelayHistogram.svelte lib/features/network/reliability/sections/SectionLiveHeadline.svelte lib/features/network/reliability/sections/SectionReporting.svelte lib/features/network/reliability/sections/SectionStatusMix.svelte lib/features/network/reliability/sections/SectionTrend.svelte lib/features/network/reliability/sections/SectionWeekday.svelte`,
 	),
 	selectors: paths(
-		`lib/features/lines/reliability/selectors/bestTimeInsight.ts lib/features/lines/reliability/selectors/bullet.ts lib/features/lines/reliability/selectors/crowdingDelay.ts lib/features/lines/reliability/selectors/dayVerdictHeadline.ts lib/features/lines/reliability/selectors/directionAsymmetry.ts lib/features/lines/reliability/selectors/habitsHeatmap.ts lib/features/lines/reliability/selectors/headwayDumbbell.ts lib/features/lines/reliability/selectors/occupancyShare.ts lib/features/lines/reliability/selectors/priorDelta.ts lib/features/lines/reliability/selectors/punctualityCrosstab.ts lib/features/lines/reliability/selectors/punctualityDistribution.ts lib/features/lines/reliability/selectors/punctualityTimeOfDay.ts lib/features/lines/reliability/selectors/punctualityTrend.ts lib/features/lines/reliability/selectors/serviceSpan.ts lib/features/lines/reliability/selectors/shiftBars.ts lib/features/lines/reliability/selectors/weakStops.ts lib/features/lines/reliability/selectors/weekdayCycle.ts lib/features/network/reliability/selectors/cancelTrend.ts lib/features/network/reliability/selectors/completeness.ts lib/features/network/reliability/selectors/delayHistogram.ts lib/features/network/reliability/selectors/headlineKpis.ts lib/features/network/reliability/selectors/occupancyMix.ts lib/features/network/reliability/selectors/occupancyTrend.ts lib/features/network/reliability/selectors/shiftRank.ts lib/features/network/reliability/selectors/silentByRoute.ts lib/features/network/reliability/selectors/statusMix.ts lib/features/network/reliability/selectors/trendChart.ts lib/features/stops/reliability/selectors/crowdingMix.ts lib/features/stops/reliability/selectors/dailyRange.ts lib/features/stops/reliability/selectors/dailyTrend.ts lib/features/stops/reliability/selectors/gradedPeriods.ts lib/features/stops/reliability/selectors/habitsHeatmap.ts lib/features/stops/reliability/selectors/rankedRoutes.ts lib/features/stops/reliability/selectors/timeOfDay.ts lib/features/stops/reliability/selectors/weekdaySeasonality.ts`,
+		`lib/features/lines/reliability/selectors/relativeScorePeak.ts lib/features/lines/reliability/selectors/bullet.ts lib/features/lines/reliability/selectors/crowdingDelay.ts lib/features/lines/reliability/selectors/dayVerdictHeadline.ts lib/features/lines/reliability/selectors/directionAsymmetry.ts lib/reliability/habitsHeatmap.ts lib/features/lines/reliability/selectors/headwayDumbbell.ts lib/features/lines/reliability/selectors/occupancyShare.ts lib/features/lines/reliability/selectors/priorDelta.ts lib/features/lines/reliability/selectors/punctualityCrosstab.ts lib/features/lines/reliability/selectors/punctualityDistribution.ts lib/features/lines/reliability/selectors/punctualityTimeOfDay.ts lib/features/lines/reliability/selectors/punctualityTrend.ts lib/features/lines/reliability/selectors/serviceSpan.ts lib/features/lines/reliability/selectors/shiftBars.ts lib/features/lines/reliability/selectors/weakStops.ts lib/features/lines/reliability/selectors/weekdayCycle.ts lib/features/network/reliability/selectors/cancelTrend.ts lib/features/network/reliability/selectors/completeness.ts lib/features/network/reliability/selectors/delayHistogram.ts lib/features/network/reliability/selectors/headlineKpis.ts lib/features/network/reliability/selectors/occupancyMix.ts lib/features/network/reliability/selectors/occupancyTrend.ts lib/features/network/reliability/selectors/shiftRank.ts lib/features/network/reliability/selectors/silentByRoute.ts lib/features/network/reliability/selectors/statusMix.ts lib/features/network/reliability/selectors/trendChart.ts lib/features/stops/reliability/selectors/crowdingMix.ts lib/features/stops/reliability/selectors/dailyRange.ts lib/features/stops/reliability/selectors/dailyTrend.ts lib/features/stops/reliability/selectors/gradedPeriods.ts lib/features/stops/reliability/selectors/rankedRoutes.ts lib/features/stops/reliability/selectors/timeOfDay.ts lib/features/stops/reliability/selectors/weekdaySeasonality.ts`,
 	),
 };
 

@@ -1,62 +1,26 @@
-"""Shared versioned-capture template for the static + GIS ingestion paths.
-
-The static-GTFS and GIS feeds are both "download one archive, version it by
-content checksum, persist the changed ones to Bronze, and write the ingestion
-run/object/dataset-version metadata". The orchestration was ~98% duplicated
-between :mod:`transit_ops.ingestion.static_gtfs` and
-:mod:`transit_ops.ingestion.gis`; this module is the single private template
-that captures it. The two public ``ingest_*_feed`` functions are thin adapters
-that build a :class:`VersionedCaptureSpec`, call
-:func:`_run_versioned_capture`, and copy the flat :class:`_VersionedCaptureOutcome`
-into their own (deliberately distinct) result dataclasses.
-
-Behaviour-preserving extraction (slice-9.1.1-iota): every invariant of the
-original two bodies is reproduced verbatim here -- the two-transaction
-boundary, the ``persisted`` orphan-delete guard, the content-unchanged early
-return, and the per-arm error redaction.
-"""
-
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.error import HTTPError
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from transit_ops.ingestion.common import (
     DownloadedArtifact,
+    finish_failed_capture,
     get_feed_endpoint_id,
     insert_ingestion_object,
     insert_ingestion_run,
-    mark_ingestion_run_failed,
     mark_ingestion_run_succeeded,
     utc_now,
 )
 from transit_ops.ingestion.dataset_versions import register_or_touch_dataset_version
+from transit_ops.ingestion.storage import BronzeStorage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings
-
-logger = logging.getLogger(__name__)
-
-
-def _best_effort_delete_orphan(bronze_storage: object, storage_path: str) -> None:
-    """Best-effort delete of an uploaded Bronze object after a downstream failure.
-
-    Swallows and logs any delete error so it never masks the original exception.
-    """
-
-    try:
-        bronze_storage.delete_object(storage_path)
-    except Exception:
-        logger.exception(
-            "Failed to delete orphaned Bronze object after metadata failure: %s",
-            storage_path,
-        )
 
 
 @dataclass(frozen=True)
@@ -70,10 +34,10 @@ class _DatasetVersionObservation:
 def _dataset_version_observation(
     connection,  # noqa: ANN001
     *,
-    dataset_version_id: int,
+    dataset_version_id: int | None,
     fallback_observed_at_utc: datetime,
 ) -> _DatasetVersionObservation:
-    row = (
+    row = None if dataset_version_id is None else (
         connection.execute(
             text(
                 """
@@ -144,13 +108,7 @@ class VersionedCaptureSpec:
 
 
 @dataclass(frozen=True)
-class _VersionedCaptureOutcome:
-    """Flat carrier with every field both result dataclasses need.
-
-    The adapters copy this into their own ``StaticIngestionResult`` /
-    ``GisIngestionResult`` so the two public types stay distinct.
-    """
-
+class VersionedCaptureResult:
     provider_id: str
     endpoint_key: str
     source_url: str
@@ -165,44 +123,42 @@ class _VersionedCaptureOutcome:
     status: str
     started_at_utc: datetime
     completed_at_utc: datetime
-    content_changed: bool
-    dataset_version_id: int | None
-    first_seen_at_utc: datetime | None
-    last_seen_at_utc: datetime | None
-    observed_from_utc: datetime | None
-    observed_until_utc: datetime | None
-    skipped_reason: str | None
+    content_changed: bool = True
+    dataset_version_id: int | None = None
+    first_seen_at_utc: datetime | None = None
+    last_seen_at_utc: datetime | None = None
+    observed_from_utc: datetime | None = None
+    observed_until_utc: datetime | None = None
+    skipped_reason: str | None = None
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["started_at_utc"] = self.started_at_utc.isoformat()
+        payload["completed_at_utc"] = self.completed_at_utc.isoformat()
+        for key in (
+            "first_seen_at_utc",
+            "last_seen_at_utc",
+            "observed_from_utc",
+            "observed_until_utc",
+        ):
+            value = payload[key]
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+        return payload
 
 
-def _run_versioned_capture(
+def _run_versioned_capture[ResultT: VersionedCaptureResult](
     provider_id: str,
     *,
     spec: VersionedCaptureSpec,
+    result_type: type[ResultT],
     manifest: object,
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
     bronze_root: Path,
-    bronze_storage: object,
-) -> _VersionedCaptureOutcome:
-    """Run the shared download -> version -> persist -> register flow.
-
-    Preserves the original two-transaction boundary exactly:
-
-    * TXN1 (its own ``engine.begin``): resolve the feed endpoint id and open
-      the ``running`` ingestion run.
-    * The download happens OUTSIDE any transaction.
-    * TXN2 (a second, separate ``engine.begin``): register-or-touch the dataset
-      version, then -- only when the content changed -- persist to Bronze,
-      insert the ingestion object, point the dataset version at it, and mark the
-      run succeeded.
-
-    The ``persisted`` flag flips to ``True`` immediately after
-    ``persist_temp_file`` returns so the orphan-delete guard fires only when a
-    Bronze object actually exists. Both except arms redact via
-    ``mark_ingestion_run_failed`` (own begin), capture ``completed_at_utc``
-    per-arm, and re-raise the original exception untouched.
-    """
+    bronze_storage: BronzeStorage,
+) -> ResultT:
 
     config = spec.build_config(manifest, settings)
     started_at_utc = utc_now()
@@ -267,7 +223,7 @@ def _run_versioned_capture(
                     http_status_code=artifact.http_status_code,
                 )
                 artifact.temp_path.unlink(missing_ok=True)
-                return _VersionedCaptureOutcome(
+                return result_type(
                     provider_id=config.provider_id,
                     endpoint_key=config.endpoint_key,
                     source_url=config.source_url,
@@ -304,11 +260,12 @@ def _run_versioned_capture(
                 checksum_sha256=artifact.checksum_sha256,
                 byte_size=artifact.byte_size,
             )
-            _set_dataset_version_source_object(
-                connection,
-                dataset_version_id=dataset_version.dataset_version_id,
-                ingestion_object_id=ingestion_object_id,
-            )
+            if dataset_version.dataset_version_id is not None:
+                _set_dataset_version_source_object(
+                    connection,
+                    dataset_version_id=dataset_version.dataset_version_id,
+                    ingestion_object_id=ingestion_object_id,
+                )
             completed_at_utc = utc_now()
             mark_ingestion_run_succeeded(
                 connection,
@@ -317,7 +274,7 @@ def _run_versioned_capture(
                 http_status_code=artifact.http_status_code,
             )
 
-        return _VersionedCaptureOutcome(
+        return result_type(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             source_url=config.source_url,
@@ -340,34 +297,13 @@ def _run_versioned_capture(
             observed_until_utc=observation.observed_until_utc,
             skipped_reason=None,
         )
-    except HTTPError as exc:
-        completed_at_utc = utc_now()
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=exc.code,
-                error_message=f"HTTP {exc.code}: {exc.reason}",
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
-        raise
     except Exception as exc:
-        completed_at_utc = utc_now()
-        http_status_code = artifact.http_status_code if artifact else None
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=http_status_code,
-                error_message=str(exc),
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
+        finish_failed_capture(
+            engine=engine,
+            ingestion_run_id=ingestion_run_id,
+            error=exc,
+            artifact=artifact,
+            bronze_storage=bronze_storage,
+            orphan_storage_path=storage_path if persisted else None,
+        )
         raise

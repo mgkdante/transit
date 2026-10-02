@@ -26,7 +26,7 @@ describe('selectCrowdingDelay', () => {
 		expect(spec.rows.map((r) => r.key)).toEqual([...OCCUPANCY_CODES]);
 		expect(spec.domain).toEqual(DELAY_POS_DOMAIN);
 		expect(spec.domain[0]).toBe(0);
-		expect(spec.sort).toBe('given'); // fixed occupancy axis, never re-sorted by value
+		expect(spec.sort).toBe('given');
 		expect(spec.rowLabel).toBe('Crowding band');
 	});
 

@@ -1,4 +1,3 @@
-/** Dependency-free runtime ports supplied by the app at client startup. */
 export interface ClockPort {
 	readonly serverNow: number;
 	noteServerEpochMs(serverEpochMs: number): void;
@@ -7,7 +6,6 @@ export interface ClockPort {
 
 export interface RefreshPort {
 	readonly epoch: number;
-	noteDataGeneratedUtc(generatedUtc: string | null | undefined): void;
 }
 
 export interface V1RuntimePorts {
@@ -27,7 +25,6 @@ const fallbackRuntime: V1RuntimePorts = {
 		get epoch() {
 			return 0;
 		},
-		noteDataGeneratedUtc: () => {},
 	},
 };
 

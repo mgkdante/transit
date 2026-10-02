@@ -31,9 +31,6 @@ class FakeResult:
 
 
 class RecordingConnection:
-    """Replays the loader's call sequence. The surviving-key SELECT is answered
-    from the most recent INSERT_I3_ALERTS batch as if every row inserted fresh
-    (real conflict/redirect behavior is covered by test_i3_real_db_regression)."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
@@ -104,11 +101,6 @@ def test_normalize_i3_alert_payload_accepts_common_alert_shapes() -> None:
 
 
 def test_normalize_i3_alert_payload_dedups_identical_content_hash() -> None:
-    # STM emits multiple identical-content alerts ("Service normal du métro"
-    # per metro line) that collapse to one content_hash. A single batch
-    # INSERT ... ON CONFLICT (provider_id, content_hash) cannot carry two rows
-    # with the same hash (Postgres: "cannot affect row a second time"), so
-    # normalize must dedup (keeping the first) and drop orphaned entities.
     one = {
         "header": {"text": "Votre ligne"},
         "description": {"text": "Service normal du métro"},
@@ -118,10 +110,10 @@ def test_normalize_i3_alert_payload_dedups_identical_content_hash() -> None:
 
     alerts, entities, _periods = normalize_i3_alert_payload(snapshot)
 
-    assert len(alerts) == 1  # two identical-content alerts deduped to one
+    assert len(alerts) == 1
     kept = alerts[0]["alert_index"]
     assert len(entities) == 1
-    assert {e["alert_index"] for e in entities} == {kept}  # no orphaned entities
+    assert {e["alert_index"] for e in entities} == {kept}
 
 
 def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
@@ -134,7 +126,6 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
                     "title": "Route 10 delayed",
                     "routes": ["10"],
                     "stops": ["10001", "10002"],
-                    # An active window so the S15 period child INSERT is exercised.
                     "activePeriod": {
                         "start": "2026-05-25T04:00:00Z",
                         "end": "2026-05-25T05:00:00Z",
@@ -149,20 +140,19 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert result.i3_alert_snapshot_id == 505
     assert result.alert_rows_inserted == 1
     assert result.informed_entity_rows_inserted == 2
-    # D2: feed + per-alert language observations are written from the raw
-    # payload before any Silver DELETE/INSERT can reach the monotonic SCD merge.
-    assert "INSERT INTO raw.alert_feed_observations" in connection.calls[0][0]
-    assert "INSERT INTO raw.alert_language_observations" in connection.calls[1][0]
-    # S15: the active-periods child DELETE stays first inside the Silver portion
-    # (FK order), and its INSERT runs after the entity insert.
-    assert "DELETE FROM silver.i3_alert_active_periods" in connection.calls[2][0]
-    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[3][0]
-    assert "DELETE FROM silver.i3_alerts" in connection.calls[4][0]
-    assert "INSERT INTO silver.i3_alerts" in connection.calls[5][0]
-    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[6][0]
-    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[7][0]
-    assert "INSERT INTO silver.i3_alert_active_periods" in connection.calls[8][0]
-    assert "SET valid_to" in connection.calls[9][0]
+    data_calls = [
+        sql for sql, _ in connection.calls if "silver.i3_" in sql or "INSERT INTO raw.alert_" in sql
+    ]
+    assert "INSERT INTO raw.alert_feed_observations" in data_calls[0]
+    assert "INSERT INTO raw.alert_language_observations" in data_calls[1]
+    assert "DELETE FROM silver.i3_alert_active_periods" in data_calls[2]
+    assert "DELETE FROM silver.i3_alert_informed_entities" in data_calls[3]
+    assert "DELETE FROM silver.i3_alerts" in data_calls[4]
+    assert "INSERT INTO silver.i3_alerts" in data_calls[5]
+    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in data_calls[6]
+    assert "INSERT INTO silver.i3_alert_informed_entities" in data_calls[7]
+    assert "INSERT INTO silver.i3_alert_active_periods" in data_calls[8]
+    assert "SET valid_to" in data_calls[9]
     assert result.alerts_redirected_to_existing == 0
     assert result.entities_dropped_missing_parent == 0
 
@@ -204,9 +194,6 @@ def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:
 
 
 def test_normalize_i3_alert_payload_matches_bcp47_region_language_tags() -> None:
-    # STO / STS publish fr-CA / en-CA region tags. The primary subtag must still
-    # bucket French as canonical and surface the English bilingual field — the
-    # exact-match matcher dropped both (English went NULL, French lost primacy).
     snapshot = _snapshot(
         {
             "messages": [
@@ -227,19 +214,13 @@ def test_normalize_i3_alert_payload_matches_bcp47_region_language_tags() -> None
 
     alerts, _, _ = normalize_i3_alert_payload(snapshot)
 
-    # French is canonical despite the fr-CA tag and despite English appearing
-    # first in the list...
     assert alerts[0]["alert_header_text"] == "Detour ligne 1"
     assert alerts[0]["description_text"] == "Travaux majeurs"
-    # ...and the en-CA English text is no longer dropped to NULL.
     assert alerts[0]["alert_header_text_en"] == "Detour on route 1"
     assert alerts[0]["description_text_en"] == "Major works"
 
 
 def test_normalize_en_is_none_when_feed_has_no_english() -> None:
-    # Honesty: EN text is only claimed when an explicit en/eng language variant
-    # exists. fr-only lists, bare strings, and {'text': ...} dicts without a
-    # language marker must NOT be surfaced as English.
     snapshot = _snapshot(
         {
             "messages": [
@@ -268,7 +249,6 @@ def test_normalize_en_is_none_when_feed_has_no_english() -> None:
     for alert in alerts:
         assert alert["alert_header_text_en"] is None
         assert alert["description_text_en"] is None
-    # fr text still extracted for the marker-less / bare-string shapes.
     assert alerts[1]["alert_header_text"] == "Service interruption"
     assert alerts[2]["alert_header_text"] == "Avis"
 
@@ -301,9 +281,6 @@ def test_normalize_en_text_none_never_stringifies_language_dict() -> None:
 
 
 def test_normalize_i3_multi_period_shape_emits_all_periods_and_url() -> None:
-    # S15: an i3 payload carrying a LIST of active windows (activePeriods) must
-    # persist ALL of them as child period rows (scalar = period[0]), and extract
-    # fr/en url from the url list.
     snapshot = _snapshot(
         {
             "messages": [
@@ -335,55 +312,72 @@ def test_normalize_i3_multi_period_shape_emits_all_periods_and_url() -> None:
 
 
 def test_single_period_hash_is_byte_identical_to_pre_s15_formula() -> None:
-    # The S15 hash cutover must NOT re-row any existing single-period alert. This
-    # embeds the FROZEN pre-S15 md5 (10 fields, no extra-periods digest) for a
-    # known alert and asserts the new function reproduces it exactly.
     s = datetime(2026, 5, 1, 8, tzinfo=UTC)
     e = datetime(2026, 5, 1, 10, tzinfo=UTC)
-    # Frozen: md5 over "a1\x1fH\x1fD\x1fWARN\x1fC\x1fEFF\x1f<start>\x1f<end>\x1f\x1f".
     frozen = "fe7cfb8f8f2e46274639499aded61a7e"
     new_single = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
     )
     assert new_single == frozen
-    # Passing an EMPTY extra-periods list is also byte-identical (single-period).
     with_empty = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None, extra_active_periods=[],
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
+        extra_active_periods=[],
     )
     assert with_empty == frozen
 
 
 def test_multi_period_alert_hashes_differently_from_single_period() -> None:
-    # A genuinely multi-period alert mints a DIFFERENT hash (its identity honestly
-    # changed) — it re-rows ONCE when its extra windows start being captured.
     s = datetime(2026, 5, 1, 8, tzinfo=UTC)
     e = datetime(2026, 5, 1, 10, tzinfo=UTC)
     single = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
     )
     multi = compute_alert_content_hash(
-        alert_id="a1", alert_header_text="H", description_text="D",
-        severity="WARN", cause="C", effect="EFF",
-        active_period_start_utc=s, active_period_end_utc=e,
-        published_at_utc=None, updated_at_utc=None,
-        extra_active_periods=[(datetime(2026, 5, 8, 8, tzinfo=UTC),
-                               datetime(2026, 5, 8, 10, tzinfo=UTC))],
+        alert_id="a1",
+        alert_header_text="H",
+        description_text="D",
+        severity="WARN",
+        cause="C",
+        effect="EFF",
+        active_period_start_utc=s,
+        active_period_end_utc=e,
+        published_at_utc=None,
+        updated_at_utc=None,
+        extra_active_periods=[
+            (datetime(2026, 5, 8, 8, tzinfo=UTC), datetime(2026, 5, 8, 10, tzinfo=UTC))
+        ],
     )
     assert single != multi
 
 
 def test_content_hash_unchanged_by_en_variants() -> None:
-    # EN text is deliberately excluded from content identity (slice-9.1.1h
-    # invariant): two alerts identical except their EN text must hash the same.
     base = {
         "id": "hash-stable",
         "header_texts": [{"language": "fr", "text": "Votre ligne"}],
@@ -404,6 +398,5 @@ def test_content_hash_unchanged_by_en_variants() -> None:
     with_en_alerts, _, _ = normalize_i3_alert_payload(_snapshot({"messages": [with_en]}))
 
     assert no_en_alerts[0]["content_hash"] == with_en_alerts[0]["content_hash"]
-    # but the EN payload differs (one has English, the other doesn't)
     assert no_en_alerts[0]["alert_header_text_en"] is None
     assert with_en_alerts[0]["alert_header_text_en"] == "Your line"

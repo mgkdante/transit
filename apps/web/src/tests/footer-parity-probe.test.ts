@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	assertFullBleed,
@@ -8,20 +10,23 @@ import {
 
 describe('footer parity probe script contract', () => {
 	it('parses a parameterized HTTP base URL without discarding its path', () => {
+		const outDir = join(tmpdir(), 'transit-footer-probe');
 		expect(
+			parseCliArgs(['--base-url', 'https://preview.example/transit/', '--out', outDir]),
+		).toEqual({
+			baseUrl: 'https://preview.example/transit/',
+			outDir,
+		});
+		expect(() =>
 			parseCliArgs([
 				'--base-url',
-				'https://preview.example/transit/',
+				'https://preview.example/',
 				'--out',
 				'/tmp/transit-footer-probe',
 				'--executable-path',
 				'/opt/chromium',
 			]),
-		).toEqual({
-			baseUrl: 'https://preview.example/transit/',
-			outDir: '/tmp/transit-footer-probe',
-			executablePath: '/opt/chromium',
-		});
+		).toThrow(/unknown argument/u);
 	});
 
 	it('rejects incomplete or unsafe base URLs and output paths', () => {

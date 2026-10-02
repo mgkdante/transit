@@ -1,3 +1,4 @@
+import { observeChartFrames } from '../__fixtures__/observeChartFrames';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { ChartDatumPopoverModel } from '../useChartDatumPopover.svelte';
@@ -10,8 +11,6 @@ import type { MagnitudeBarsSpec } from '../ChartSpec';
 
 const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
 
-// A row carrying Wilson bounds, used to prove the CI surfaces ONLY when spec.ciLabel is set (the
-// defensive guard). The sr-only table is the structure-independent AT mirror.
 const rowWithCi = {
 	key: 's1',
 	label: 'Stop One',
@@ -57,6 +56,7 @@ const cell = (c: HTMLElement): string =>
 
 function renderReadyMark(spec: MagnitudeBarsSpec) {
 	vi.stubGlobal('IntersectionObserver', undefined);
+	observeChartFrames(768, 400);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 	Object.defineProperty(Element.prototype, 'animate', {
@@ -120,14 +120,27 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 	it('shows NO CI when ciLabel is unset, even though the row carries Wilson bounds (the guard)', () => {
 		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec(undefined) } });
 		const txt = cell(container);
-		expect(txt).toBe('44%'); // the value still renders with its unit
-		expect(txt).not.toContain('('); // no fabricated CI parenthetical
+		expect(txt).toBe('44%');
+		expect(txt).not.toContain('(');
 		expect(txt).not.toContain('31');
 		expect(txt).not.toContain('57');
 	});
 });
 
 describe('MagnitudeBarsMark — localized semantic AT table', () => {
+	it('keeps a visible chart entry available while its plot waits to mount', () => {
+		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec('95% CI') } });
+		const figure = container.querySelector('figure') as HTMLElement;
+		const tableLink = within(figure.querySelector('table')!).getByRole('link', {
+			name: 'Stop One',
+		});
+		expect(figure.querySelector('.lc-root-container')).not.toBeInTheDocument();
+		expect(figure).toHaveAttribute('tabindex', '0');
+		expect(tableLink).toHaveAttribute('tabindex', '-1');
+		figure.focus();
+		expect(figure).toHaveFocus();
+	});
+
 	it.each([
 		['en', 'Line', 'Severe-delay rate'],
 		['en', 'Stop', 'Severe-delay rate'],
@@ -157,7 +170,9 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		const initial = baseSpec('95% CI');
 		const view = renderReadyMark(initial);
 		await rowOverlay(view.container);
-		const link = within(view.container).getByRole('link', { name: 'Stop One' });
+		const link = within(view.container.querySelector('table')!).getByRole('link', {
+			name: 'Stop One',
+		});
 		link.focus();
 		expect(link).toHaveFocus();
 
@@ -200,9 +215,236 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		expect(link).toHaveFocus();
 		expect(link).toHaveTextContent('Stop One renamed');
 	});
+
+	it('moves focus to the stable chart entry when a focused plotted row is replaced', async () => {
+		const initial = baseSpec('95% CI', true);
+		const view = renderReadyMark(initial);
+		await rowOverlay(view.container);
+		const figure = view.container.querySelector('figure') as HTMLElement;
+		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		target.focus();
+		expect(target).toHaveFocus();
+
+		await view.rerender({ spec: { ...initial, domain: [0, 200] } });
+		expect(figure).toHaveFocus();
+		expect(target).not.toBeInTheDocument();
+	});
+
+	it('closes an open row dialog and retains focus when its plotted row is remounted', async () => {
+		const initial = baseSpec('95% CI', true);
+		const view = renderReadyMark(initial);
+		await rowOverlay(view.container);
+		const figure = view.container.querySelector('figure') as HTMLElement;
+		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		target.focus();
+		await fireEvent.keyDown(target, { key: 'Enter' });
+		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
+		await waitFor(() => expect(dialog).toHaveFocus());
+
+		await view.rerender({ spec: { ...initial, domain: [0, 200] } });
+
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(target).not.toBeInTheDocument();
+		expect(figure).toHaveFocus();
+		await fireEvent.keyDown(document, { key: 'Escape' });
+		expect(figure).toHaveFocus();
+	});
+
+	it('keeps the chart entry focusable when an open row loses its final action', async () => {
+		const initial = baseSpec('95% CI', true);
+		const view = renderReadyMark(initial);
+		await rowOverlay(view.container);
+		const figure = view.container.querySelector('figure') as HTMLElement;
+		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		target.focus();
+		await fireEvent.keyDown(target, { key: 'Enter' });
+		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
+		await waitFor(() => expect(dialog).toHaveFocus());
+
+		await view.rerender({
+			spec: {
+				...initial,
+				rows: [{ key: 'empty', label: 'No linked row', value: null, severity: 'watch' }],
+			},
+		});
+
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(figure).toHaveAttribute('tabindex', '-1');
+		expect(figure).toHaveFocus();
+	});
+
+	it('leaves unrelated focus in place when row actions change', async () => {
+		const initial = baseSpec('95% CI', true);
+		const view = renderReadyMark(initial);
+		await rowOverlay(view.container);
+		const figure = view.container.querySelector('figure') as HTMLElement;
+		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		target.focus();
+		await fireEvent.keyDown(target, { key: 'Enter' });
+		expect(await screen.findByRole('dialog', { name: 'Stop One' })).toBeInTheDocument();
+
+		const outside = document.createElement('button');
+		view.container.append(outside);
+		outside.focus();
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		await view.rerender({
+			spec: {
+				...initial,
+				rows: [{ key: 'empty', label: 'No linked row', value: null, severity: 'watch' }],
+			},
+		});
+
+		expect(outside).toHaveFocus();
+		expect(figure).not.toHaveFocus();
+	});
+});
+
+describe('MagnitudeBarsMark — categorical row identity', () => {
+	it('places distinct keyed rows with the same display name on separate bands', async () => {
+		const spec: MagnitudeBarsSpec = {
+			...baseSpec('95% CI'),
+			rows: [
+				rowWithCi,
+				{
+					...rowWithCi,
+					key: 's2',
+					value: 55,
+					severity: 'critical',
+					wilsonLo: 42,
+					wilsonHi: 65,
+					href: '/stop/s2',
+				},
+			],
+		};
+		const { container } = renderReadyMark(spec);
+		await rowOverlay(container);
+		const bars = [
+			...container.querySelectorAll<SVGRectElement>(
+				'rect.dv-barmark-high, rect.dv-barmark-critical',
+			),
+		];
+		expect(bars).toHaveLength(2);
+		expect(new Set(bars.map((bar) => bar.getAttribute('y'))).size).toBe(2);
+
+		const chartLinks = [
+			...container.querySelectorAll<SVGAElement>('svg a[href="/stop/s1"], svg a[href="/stop/s2"]'),
+		];
+		expect(chartLinks).toHaveLength(2);
+		expect(
+			new Set(chartLinks.map((link) => link.querySelector('rect')?.getAttribute('y'))).size,
+		).toBe(2);
+		const whiskers = [...container.querySelectorAll<SVGGElement>('g[data-slot="ci-whisker"]')];
+		expect(whiskers).toHaveLength(2);
+		expect(new Set(whiskers.map((g) => g.querySelector('line')?.getAttribute('y1'))).size).toBe(2);
+
+		const overlays = [...container.querySelectorAll<SVGRectElement>('rect.lc-tooltip-rect')];
+		expect(new Set(overlays.map((rect) => rect.getAttribute('y'))).size).toBe(2);
+		for (const overlay of new Map(
+			overlays.map((rect) => [rect.getAttribute('y'), rect]),
+		).values()) {
+			await pointerClick(overlay, 'mouse');
+		}
+		expect(navigate).toHaveBeenCalledTimes(2);
+		expect(new Set(navigate.mock.calls.map(([href]) => href))).toEqual(
+			new Set(['/stop/s1', '/stop/s2']),
+		);
+		const ticks = [...container.querySelectorAll<SVGTextElement>('svg text')].map((tick) =>
+			tick.textContent?.trim(),
+		);
+		expect(ticks.filter((label) => label === 'Stop One')).toHaveLength(2);
+	});
 });
 
 describe('MagnitudeBarsMark — touch datum popover integration', () => {
+	it.each(['Enter', ' '])(
+		'opens complete row evidence with %s and restores focus on Escape',
+		async (key) => {
+			const { container } = renderReadyMark(baseSpec('95% CI', true));
+			await rowOverlay(container);
+			const figure = container.querySelector('figure') as HTMLElement;
+			const target = within(figure).getByRole('button', { name: 'Stop One' });
+			const row = target.querySelector('rect') as SVGRectElement;
+			expect(target.closest('svg')).toBeInTheDocument();
+			expect(Number(row.getAttribute('width'))).toBeGreaterThan(0);
+			expect(Number(row.getAttribute('height'))).toBeGreaterThan(0);
+			expect(
+				within(figure.querySelector('table')!).getByRole('link', { name: 'Stop One' }),
+			).toHaveAttribute('tabindex', '-1');
+
+			target.focus();
+			expect(target).toHaveFocus();
+			await fireEvent.keyDown(target, { key });
+
+			const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
+			await waitFor(() => expect(dialog).toHaveFocus());
+			expect(within(dialog).getByText('44%')).toBeInTheDocument();
+			expect(within(dialog).getByText('31%–57%')).toBeInTheDocument();
+			expect(
+				within(dialog).getByRole('link', { name: 'View detail for Stop One' }),
+			).toHaveAttribute('href', '/stop/s1');
+			expect(navigate).not.toHaveBeenCalled();
+
+			await fireEvent.keyDown(document, { key: 'Escape' });
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			expect(target).toHaveFocus();
+			expect(figure).not.toHaveAttribute('aria-controls');
+		},
+	);
+
+	it('replaces an active mouse tooltip with the keyboard datum dialog', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI', true));
+		const overlay = await rowOverlay(container);
+		await fireEvent.pointerEnter(overlay, {
+			pointerType: 'mouse',
+			clientX: 120,
+			clientY: 240,
+		});
+		await waitFor(() => expect(document.querySelector('.lc-tooltip-root')).toBeInTheDocument());
+
+		const target = within(container.querySelector('figure')!).getByRole('button', {
+			name: 'Stop One',
+		});
+		expect(target).toHaveAttribute('aria-haspopup', 'dialog');
+		expect(target).toHaveAttribute('aria-expanded', 'false');
+		target.focus();
+		await fireEvent.keyDown(target, { key: 'Enter' });
+
+		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
+		expect(document.querySelector('.lc-tooltip-root')).not.toBeInTheDocument();
+		expect(target).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.keyDown(document, { key: 'Escape' });
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(target).toHaveAttribute('aria-expanded', 'false');
+		expect(dialog).not.toBeInTheDocument();
+	});
+
+	it('opens row evidence when the plotted button itself receives a direct click', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI', true));
+		await rowOverlay(container);
+		const target = within(container.querySelector('figure')!).getByRole('button', {
+			name: 'Stop One',
+		});
+
+		await fireEvent.click(target);
+
+		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
+		expect(within(dialog).getByText('31%–57%')).toBeInTheDocument();
+		expect(navigate).not.toHaveBeenCalled();
+	});
+
+	it('offers a visible native link for a row without a popover', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI'));
+		await rowOverlay(container);
+		const figure = container.querySelector('figure') as HTMLElement;
+		const plotLink = figure.querySelector('svg a[href="/stop/s1"]') as SVGAElement;
+		expect(plotLink).toBeInTheDocument();
+		expect(plotLink).toHaveAccessibleName('Stop One');
+		expect(plotLink.querySelector('rect')).toBeInTheDocument();
+		expect(
+			within(figure.querySelector('table')!).getByRole('link', { name: 'Stop One' }),
+		).toHaveAttribute('tabindex', '-1');
+	});
+
 	it('keeps an opted-in touch sequence exclusive before opening one custom dialog', async () => {
 		const { container } = renderReadyMark(baseSpec('95% CI', true));
 		const overlay = await rowOverlay(container);

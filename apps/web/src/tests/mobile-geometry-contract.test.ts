@@ -329,14 +329,7 @@ describe('mobile geometry browser contract', () => {
 		);
 	});
 
-	// M6f-2 F19. The sweep runs in BOTH attribution states, because the owner's
-	// 2026-08-04 ruling gives them DIFFERENT obligations: the credit collapses by
-	// default and overlays UPWARD on tap, so an expanded overlap is sanctioned
-	// while a collapsed one is not. A sweep of only one state proves nothing about
-	// the other.
 	it('sweeps the map credit in both states with the obligations the owner set', () => {
-		// Collapsed clears both peels; expanded overlays them but stays in-stage
-		// and leaves them on screen.
 		const valid = cleanRoute({
 			routeId: 'map',
 			path: '/map',
@@ -350,23 +343,18 @@ describe('mobile geometry browser contract', () => {
 		});
 		expect(validateMobileRouteGeometry(valid)).toEqual([]);
 
-		// A COLLAPSED credit sitting on a control is a defect — the resting state
-		// shares the bottom row and must clear it.
 		const collapsedOverlap = structuredClone(valid);
 		collapsedOverlap.map!.collapsedAttribution = rect(280, 90, 585, 40);
 		expect(validateMobileRouteGeometry(collapsedOverlap)).toEqual([
 			'Map: collapsed attribution overlaps a mobile map control',
 		]);
 
-		// A collapsed credit outside the stage is a defect in either state.
 		const collapsedEscape = structuredClone(valid);
 		collapsedEscape.map!.collapsedAttribution = rect(340, 38, 800, 28);
 		expect(validateMobileRouteGeometry(collapsedEscape)).toEqual([
 			'Map: collapsed attribution escapes the map stage',
 		]);
 
-		// Expanded: escaping the stage still fails, and so does an overlay that
-		// leaves no reachable control behind it.
 		const broken = structuredClone(valid);
 		broken.map = {
 			stage: rect(0, 390, 80, 680),
@@ -388,16 +376,10 @@ describe('mobile geometry browser contract', () => {
 			'Map: expanded attribution collapsed a mobile map control',
 		]);
 
-		// And the sanctioned case stays green: the expanded overlay DOES cover a
-		// control — PARTIALLY, which is what "overlays upward" means. The control
-		// keeps an uncovered edge, so it is still reachable.
 		const overlaying = structuredClone(valid);
 		overlaying.map!.attribution = rect(12, 366, 600, 80);
 		expect(validateMobileRouteGeometry(overlaying)).toEqual([]);
 
-		// What the owner did NOT sanction: an overlay that SWALLOWS a control whole.
-		// A partially covered control is still reachable; a fully contained one is
-		// gone, and "left it on screen at non-zero size" does not catch that.
 		const swallowed = structuredClone(valid);
 		swallowed.map!.attribution = rect(12, 366, 560, 120);
 		expect(validateMobileRouteGeometry(swallowed)).toEqual([

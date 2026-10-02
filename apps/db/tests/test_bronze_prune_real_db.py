@@ -1,26 +1,3 @@
-"""Real-database regression tests for the batched Bronze prune (slice-9.1.1k).
-
-These exercise actual Postgres semantics the fake-connection tests cannot see:
-oldest-first LIMIT batching, excluded-id re-selection, the silver /
-dataset_versions reference guards, latest-per-endpoint survival, and the
-capture race the age-gated orphan-run DELETE fixes (a worker commits its
-ingestion_run in one transaction and registers the object in a second — an
-unfiltered orphan sweep could delete the run in between).
-
-They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
-with the transit schema applied (e.g. a throwaway local cluster restored from
-`pg_dump --schema-only -n core -n raw -n silver`). Each test runs inside one
-transaction and rolls back — nothing persists, reruns are idempotent. Only the
-CONNECTION-level prune functions are exercised here: the engine-level batch
-loop commits per batch and would escape the rollback fixture (it is covered
-offline in tests/test_maintenance.py).
-
-    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@/transit_repro?host=/tmp/bronzerepro" \
-        uv run pytest tests/test_bronze_prune_real_db.py -v
-
-Never point this at production.
-"""
 
 from __future__ import annotations
 
@@ -44,7 +21,6 @@ STATIC_ENDPOINT_ID = 990023
 
 NOW = datetime.now(tz=UTC)
 
-# (run_id, object_id, snapshot_id, endpoint_id, captured_at, storage_path)
 TU_OLD_A = (
     990101,
     990201,
@@ -70,8 +46,6 @@ TU_OLD_C = (
     "bronze-prune-test/trip_updates/old-c.pb",
 )
 TU_FRESH = (990104, 990204, 990304, TU_ENDPOINT_ID, NOW, "bronze-prune-test/trip_updates/fresh.pb")
-# vehicle_positions has a single 37d-old row that is also its LATEST snapshot:
-# old enough to be in the cutoff window, yet it must always survive.
 VP_OLD_LATEST = (
     990105,
     990205,
@@ -161,7 +135,6 @@ OLD_COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
 
 
 class FakeBronzeStorage:
-    """Bronze storage stub that records calls without doing I/O."""
 
     def __init__(self) -> None:
         self.deleted: list[str] = []
@@ -181,8 +154,7 @@ class FakeBronzeStorage:
                 failed_paths.add(storage_path)
         return failed_paths
 
-    def storage_backend(self) -> str:
-        return "local"
+    storage_backend = "s3"
 
 
 @pytest.fixture()
@@ -445,7 +417,6 @@ def test_realtime_eligibility_rewrite_matches_independent_reference(conn, seed_p
         )
 
     parity_rows = (
-        # Strict boundary: exact cutoff is retained, one microsecond before is eligible.
         (PROVIDER, PARITY_CUTOFF_ENDPOINT_ID, 991001, 991201, 991301, cutoff),
         (
             PROVIDER,
@@ -456,7 +427,6 @@ def test_realtime_eligibility_rewrite_matches_independent_reference(conn, seed_p
             cutoff - timedelta(microseconds=1),
         ),
         (PROVIDER, PARITY_CUTOFF_ENDPOINT_ID, 991003, 991203, 991303, NOW),
-        # Each arm of the former OR guard gets an independently referenced old row.
         (
             PROVIDER,
             PARITY_SILVER_SOURCE_ENDPOINT_ID,
@@ -475,7 +445,6 @@ def test_realtime_eligibility_rewrite_matches_independent_reference(conn, seed_p
             cutoff - timedelta(days=3),
         ),
         (PROVIDER, PARITY_SILVER_OBJECT_ENDPOINT_ID, 991022, 991222, 991322, NOW),
-        # A provider with the same endpoint key must not affect STM latest protection.
         (
             PARITY_OTHER_PROVIDER,
             PARITY_OTHER_ENDPOINT_ID,
@@ -552,16 +521,13 @@ def test_realtime_prune_honors_oldest_first_limit(conn) -> None:
     assert cutoff_utc == NOW - timedelta(days=30)
     assert object_counts == {"realtime": 2}
     assert failed_ids == set()
-    # Oldest two first, in capture order.
     assert storage.deleted == [TU_OLD_A[5], TU_OLD_B[5]]
     assert meta_counts["raw.realtime_snapshot_index"] == 2
     assert meta_counts["raw.ingestion_objects"] == 2
-    # Their just-emptied runs are 40/39d old — swept by the age-gated orphan delete.
     assert meta_counts["raw.ingestion_runs"] == 2
     for _run, object_id, snapshot_id, *_ in (TU_OLD_A, TU_OLD_B):
         assert not _object_exists(conn, object_id)
         assert not _snapshot_exists(conn, snapshot_id)
-    # Third-oldest stays for the next batch; fresh latest survives.
     assert _object_exists(conn, TU_OLD_C[1])
     assert _object_exists(conn, TU_FRESH[1])
 
@@ -630,7 +596,6 @@ def test_realtime_prune_skips_excluded_object_ids(conn) -> None:
 
     assert object_counts == {"realtime": 2}
     assert failed_ids == set()
-    # The excluded oldest row is skipped; the next two are selected instead.
     assert storage.deleted == [TU_OLD_B[5], TU_OLD_C[5]]
     assert _object_exists(conn, TU_OLD_A[1])
 
@@ -664,7 +629,6 @@ def test_realtime_prune_excludes_silver_referenced_snapshots(conn) -> None:
         max_objects=10,
     )
 
-    # OLD_A is pinned by the silver source reference; only B and C delete.
     assert object_counts == {"realtime": 2}
     assert storage.deleted == [TU_OLD_B[5], TU_OLD_C[5]]
     assert _object_exists(conn, TU_OLD_A[1])
@@ -683,8 +647,6 @@ def test_realtime_prune_never_deletes_latest_snapshot_per_endpoint(conn) -> None
         max_objects=10,
     )
 
-    # All three old trip_updates rows delete, but the 37d-old vehicle_positions
-    # row survives: it is that endpoint's latest snapshot.
     assert object_counts == {"realtime": 3}
     assert VP_OLD_LATEST[5] not in storage.deleted
     assert _object_exists(conn, VP_OLD_LATEST[1])
@@ -711,17 +673,12 @@ def test_static_prune_excludes_dataset_version_referenced_runs(conn) -> None:
     assert storage.deleted == ["bronze-prune-test/static/unreferenced.zip"]
     assert not _object_exists(conn, STATIC_OBJECT_UNREFERENCED)
     assert not _run_exists(conn, STATIC_RUN_UNREFERENCED)
-    # The dataset_versions-referenced run and its object are untouchable.
     assert _object_exists(conn, STATIC_OBJECT_REFERENCED)
     assert _run_exists(conn, STATIC_RUN_REFERENCED)
     assert meta_counts["raw.ingestion_objects"] == 1
 
 
 def test_realtime_prune_spares_in_flight_capture_run(conn) -> None:
-    """RACE REGRESSION: an object-less run committed seconds ago (the worker's
-    first transaction; realtime_gtfs.py commits the run, then registers the
-    object in a second transaction) must survive a live prune, while an aged
-    object-less orphan is still swept."""
     _seed_objectless_run(conn, IN_FLIGHT_RUN_ID, NOW, "running")
     _seed_objectless_run(conn, AGED_ORPHAN_RUN_ID, NOW - timedelta(days=40), "failed")
     storage = FakeBronzeStorage()
@@ -736,7 +693,6 @@ def test_realtime_prune_spares_in_flight_capture_run(conn) -> None:
     )
 
     assert object_counts == {"realtime": 3}
-    # 3 just-emptied old runs + the aged orphan; NOT the in-flight run.
     assert meta_counts["raw.ingestion_runs"] == 4
     assert _run_exists(conn, IN_FLIGHT_RUN_ID)
     assert not _run_exists(conn, AGED_ORPHAN_RUN_ID)
