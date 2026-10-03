@@ -14,6 +14,8 @@ from transit_ops.snapshots.storage import LocalSnapshotStorage, SnapshotStorage
 
 
 def provider_object_key(pointer: str, provider_id: str, public_base_url: str | None) -> str:
+    if pointer.startswith("//") or "\\" in pointer or any(ord(char) <= 32 for char in pointer):
+        raise ValueError("Invalid raw snapshot pointer")
     url = urlsplit(pointer)
     path = unquote(url.path)
     if url.scheme not in ("", "https", "http") or "\\" in path:
