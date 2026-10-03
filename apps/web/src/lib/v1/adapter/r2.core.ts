@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { Locale } from '$lib/i18n';
-import { entityUrl, resolveUrl } from '$lib/v1/config';
+import { entityUrl, resolveUrl, v1Provider } from '$lib/v1/config';
 import { getEntityJson, type FetchFn } from '$lib/v1/http';
 import { LabelsFileSchema } from '$lib/v1/schemas/labels';
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
@@ -40,8 +40,6 @@ export const R2_DEFAULTS = {
 	},
 } as const;
 
-const MANIFEST_MEMO_KEY = 'v1:manifest';
-
 export const MUTABLE_CACHE: RequestCache = 'default';
 export const IMMUTABLE_CACHE: RequestCache = 'force-cache';
 
@@ -49,17 +47,30 @@ export function fetchOf(ctx?: AdapterCtx): FetchFn {
 	return ctx?.fetch ?? fetch;
 }
 
+export function providerOf(ctx?: AdapterCtx): string {
+	return (
+		ctx?.providerId ?? ctx?.manifest?.provider ?? browserAdapterManifest()?.provider ?? v1Provider()
+	);
+}
+
+function checkedManifest(manifest: Manifest, provider: string): Manifest {
+	if (manifest.provider !== provider) throw new Error('[v1.manifest] unexpected provider');
+	return manifest;
+}
+
 export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
-	if (ctx?.manifest !== undefined) return ctx.manifest;
+	const provider = providerOf(ctx);
+	if (ctx?.manifest !== undefined) return checkedManifest(ctx.manifest, provider);
 	const bootManifest = browserAdapterManifest();
-	if (bootManifest !== null) return bootManifest;
+	if (bootManifest?.provider === provider) return bootManifest;
 
 	const memo = ctx?.cache;
-	if (memo?.has(MANIFEST_MEMO_KEY)) {
-		return await (memo.get(MANIFEST_MEMO_KEY) as Manifest | Promise<Manifest>);
+	const memoKey = `v1:${provider}:manifest`;
+	if (memo?.has(memoKey)) {
+		return await (memo.get(memoKey) as Manifest | Promise<Manifest>);
 	}
 
-	const url = resolveUrl(R2_DEFAULTS.manifest);
+	const url = resolveUrl(R2_DEFAULTS.manifest, provider);
 	const pending = getEntityJson(url, ManifestSchema, 'manifest', fetchOf(ctx), {
 		cache: MUTABLE_CACHE,
 		signal: ctx?.signal,
@@ -67,16 +78,16 @@ export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
 		if (manifest === undefined) {
 			throw new Error(`[v1.manifest] manifest not found at ${url}`);
 		}
-		return manifest;
+		return checkedManifest(manifest, provider);
 	});
-	memo?.set(MANIFEST_MEMO_KEY, pending);
+	memo?.set(memoKey, pending);
 
 	try {
 		const manifest = await pending;
-		memo?.set(MANIFEST_MEMO_KEY, manifest);
+		memo?.set(memoKey, manifest);
 		return manifest;
 	} catch (error) {
-		if (memo?.get(MANIFEST_MEMO_KEY) === pending) memo.delete(MANIFEST_MEMO_KEY);
+		if (memo?.get(memoKey) === pending) memo.delete(memoKey);
 		throw error;
 	}
 }
@@ -88,7 +99,7 @@ export async function readWhole<T>(
 	cache: RequestCache,
 	ctx?: AdapterCtx,
 ): Promise<T> {
-	const url = resolveUrl(relativePath);
+	const url = resolveUrl(relativePath, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache,
 		signal: ctx?.signal,
@@ -99,8 +110,12 @@ export async function readWhole<T>(
 	return value;
 }
 
-export function loadManifestFresh(ctx?: AdapterCtx): Promise<Manifest> {
-	return readWhole(R2_DEFAULTS.manifest, ManifestSchema, 'manifest', MUTABLE_CACHE, ctx);
+export async function loadManifestFresh(ctx?: AdapterCtx): Promise<Manifest> {
+	const provider = providerOf(ctx);
+	return checkedManifest(
+		await readWhole(R2_DEFAULTS.manifest, ManifestSchema, 'manifest', MUTABLE_CACHE, ctx),
+		provider,
+	);
 }
 
 export async function readOptionalWhole<T>(
@@ -109,7 +124,7 @@ export async function readOptionalWhole<T>(
 	label: string,
 	ctx?: AdapterCtx,
 ): Promise<T | null> {
-	const url = resolveUrl(relativePath);
+	const url = resolveUrl(relativePath, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache: MUTABLE_CACHE,
 		signal: ctx?.signal,
@@ -126,7 +141,7 @@ export async function readEntity<T>(
 	cache: RequestCache,
 	ctx?: AdapterCtx,
 ): Promise<T | null> {
-	const url = entityUrl(tier, prefix, id);
+	const url = entityUrl(tier, prefix, id, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache,
 		signal: ctx?.signal,
@@ -144,7 +159,7 @@ export const labelsPort = {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.labels?.[lang] ?? `labels/${lang}.json`;
 		const file = await getEntityJson(
-			resolveUrl(relativePath),
+			resolveUrl(relativePath, providerOf(ctx)),
 			LabelsFileSchema,
 			'labels',
 			fetchOf(ctx),

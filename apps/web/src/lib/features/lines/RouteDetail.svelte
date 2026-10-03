@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
@@ -64,6 +64,8 @@
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import { dayTypeLabel, shiftLabel } from '$lib/features/reliability/shiftGrains';
+
+	const localizeHref = getLocalizeHref();
 
 	interface RouteDetailProps {
 		id: string;
@@ -344,7 +346,7 @@
 			{/snippet}
 			{#snippet actions()}
 				<MapDrilldownLink
-					href={mapHrefFor({ route: id }, locale)}
+					href={localizeHref(mapHrefFor({ route: id }, locale), locale)}
 					label={t.viewOnMap}
 					ariaLabel={t.viewRouteOnMap(id)}
 				/>
@@ -511,7 +513,7 @@
 															{/if}
 															<a
 																class="route-roster-map"
-																href={mapHrefFor({ vehicle: bus.id }, locale)}
+																href={localizeHref(mapHrefFor({ vehicle: bus.id }, locale), locale)}
 																aria-label={t.roster.viewBusOnMap(bus.id)}
 															>
 																<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />

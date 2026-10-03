@@ -1,5 +1,4 @@
-import { goto } from '$app/navigation';
-import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+import { localizeHref, type Locale } from '$lib/i18n';
 import { mapSearchFor, type MapFilterTarget } from '$lib/filters';
 
 export type SurfaceKind =
@@ -57,8 +56,4 @@ export function routeFor(target: SurfaceTarget): string {
 
 export function mapHrefFor(target: MapFilterTarget, locale: Locale): string {
 	return localizeHref(routeFor({ kind: 'map', search: mapSearchFor(target) }), locale);
-}
-
-export function openSurface(target: SurfaceTarget): void {
-	void goto(localizeHref(routeFor(target), getLocale()));
 }

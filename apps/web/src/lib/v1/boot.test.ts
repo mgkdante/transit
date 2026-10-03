@@ -9,12 +9,40 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/v1/repositories/manifest', () => ({ getManifest: mocks.getManifest }));
 vi.mock('$lib/v1/repositories/labels', () => ({ getLabels: mocks.getLabels }));
 
-import { bootV1, resolveLabel } from './boot';
+import { bootV1, bootProvider, resolveLabel } from './boot';
 
 describe('bootV1 request reuse', () => {
 	beforeEach(() => {
 		mocks.getManifest.mockReset();
 		mocks.getLabels.mockReset();
+	});
+
+	it.each([503, 200])(
+		'preserves an explicit nondefault selection when discovery is unavailable or corrupt (%s)',
+		async (status) => {
+			const fetch = vi.fn(async () => new Response('{}', { status }));
+			const url = new URL('https://transit.test/fr/map?provider=octranspo');
+			const result = await bootProvider(url, 'fr', { fetch });
+			expect(result).toMatchObject({
+				providerId: 'octranspo',
+				v1: null,
+				discoveryError: true,
+				redirectHref: null,
+			});
+			expect(url.search).toBe('?provider=octranspo');
+			expect(mocks.getManifest).not.toHaveBeenCalled();
+			expect(fetch).toHaveBeenCalledExactlyOnceWith('/data/v1/providers.json');
+		},
+	);
+
+	it('limits discovery-outage compatibility to the default provider manifest', async () => {
+		mocks.getManifest.mockResolvedValue({ provider: 'stm', city: 'Montréal', display_name: 'STM' });
+		mocks.getLabels.mockResolvedValue({});
+		const fetch = vi.fn(async () => new Response(null, { status: 503 }));
+		const result = await bootProvider(new URL('https://transit.test/network'), 'en', { fetch });
+		expect(result.v1?.manifest.provider).toBe('stm');
+		expect(result.provider?.labels.en.city).toBe('Montréal');
+		expect(mocks.getManifest).toHaveBeenCalledWith({ fetch, providerId: 'stm' });
 	});
 
 	it('keeps manifest label pointers out of the resolved label table', async () => {

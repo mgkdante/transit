@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import {
 		getAlertArchiveIndex,
 		getAlertArchiveRange,
@@ -70,6 +70,8 @@
 		resolveAlertHistoryRange,
 		sameHistoryWindow,
 	} from './data/historySelection';
+
+	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);

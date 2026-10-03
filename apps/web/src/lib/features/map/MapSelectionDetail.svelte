@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
@@ -32,6 +32,8 @@
 	import DetailSection from './detail/DetailSection.svelte';
 	import DetailStatPills from './detail/DetailStatPills.svelte';
 	import DetailStopRow from './detail/DetailStopRow.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		detail: MapSelectionDetail | null;
@@ -97,7 +99,7 @@
 		>{detail ? detailIdentity(detail, locale) : locale === 'fr' ? 'Détails' : 'Details'}</span
 	>
 {:else if presentation === 'action' && action}
-	<DetailInlineAction href={action.href} label={action.label} />
+	<DetailInlineAction href={localizeHref(action.href, locale)} label={action.label} />
 {:else if presentation === 'body' && detail}
 	<article
 		bind:this={detailElement}

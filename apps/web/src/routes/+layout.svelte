@@ -14,7 +14,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { updated } from '$app/state';
-	import { goto, onNavigate, beforeNavigate, afterNavigate } from '$app/navigation';
+	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
 
 	import { transitAnalytics } from '$lib/analytics/runtime';
@@ -35,7 +35,8 @@
 	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import { errorDocumentHead } from '$lib/site/errorPage';
-	import { setV1Context, bootV1, type V1Context } from '$lib/v1/boot';
+	import { setV1Context } from '$lib/v1/boot';
+	import { v1Provider } from '$lib/v1/config';
 	import { getVehicles } from '$lib/v1/repositories/live';
 	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -66,7 +67,10 @@
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
-	setLocaleContext(() => data.lang ?? DEFAULT_LOCALE);
+	setLocaleContext(
+		() => data.lang ?? DEFAULT_LOCALE,
+		() => data.providerId,
+	);
 
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
@@ -80,16 +84,15 @@
 
 	const mainLabel = $derived(mainLandmarkLabel(seoPath));
 
-	let clientV1 = $state<V1Context | null>(null);
-	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
+	const v1 = $derived(data.v1);
 	setV1Context(() => v1 ?? undefined);
 	const footerAttribution = $derived(
 		dataIndependentRoute ? legalCopy[locale].footerAttribution : v1?.manifest.attribution,
 	);
 	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
 
-	const providerShortName = $derived(v1?.manifest.short_name ?? siteConfig.providerShortName);
-	const providerCity = $derived(v1?.manifest.city ?? siteConfig.providerCity);
+	const providerShortName = $derived(data.provider?.labels[locale].operator ?? data.providerId);
+	const providerCity = $derived(data.provider?.labels[locale].city);
 
 	const seo = $derived(
 		resolveRouteSeo($page.url.pathname, locale, {
@@ -121,32 +124,18 @@
 			}),
 		];
 		const breadcrumb = breadcrumbJsonLd(
-			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin),
+			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin, data.providerId),
 		);
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
 	});
 	$effect(() => dataPulse.subscribe(v1?.manifest ?? null));
 
-	let rebooting = $state(false);
-
-	async function clientBoot(): Promise<void> {
-		if (!browser || rebooting) return;
-		rebooting = true;
-		try {
-			clientV1 = await bootV1(data.lang ?? DEFAULT_LOCALE);
-		} catch {
-			// Keep the edge state up; the user can retry the unreachable service.
-		} finally {
-			rebooting = false;
-		}
-	}
-
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
 	const searchModes = new SvelteSet<TransitModeKey>();
-	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
+	const chromeSearchEnabled = $derived(v1 !== null && topSearch.trim().length > 0);
 	const searchRoutes = createResource(() => getRoutesIndex(), {
 		enabled: () => chromeSearchEnabled,
 	});
@@ -172,7 +161,7 @@
 	$effect(() => {
 		const query = topSearch.trim();
 		const wantsAddress = searchScope === 'map' || searchScope === 'all';
-		if (!browser || !wantsAddress || searchModes.size > 0 || !shouldSuggestAddress(query)) {
+		if (!browser || !v1 || !wantsAddress || searchModes.size > 0 || !shouldSuggestAddress(query)) {
 			addressSuggestions = [];
 			return;
 		}
@@ -198,7 +187,7 @@
 
 	onMount(() => {
 		themeStore.init();
-		if (data.v1Error && !data.v1) void clientBoot();
+		if (data.v1Error && !data.v1) void invalidateAll();
 
 		if (browser && navigator.serviceWorker) {
 			navigator.serviceWorker.addEventListener('message', (event) => {
@@ -225,6 +214,15 @@
 	});
 
 	beforeNavigate((navigation) => {
+		if (
+			!navigation.willUnload &&
+			navigation.to &&
+			v1Provider(navigation.to.url) !== data.providerId
+		) {
+			navigation.cancel();
+			location.assign(navigation.to.url.href);
+			return;
+		}
 		const decision = decideFreshnessReload({
 			hasNewVersion: updated.current,
 			willUnload: navigation.willUnload,
@@ -236,13 +234,17 @@
 	});
 
 	function retryBoot() {
-		void clientBoot();
+		void invalidateAll();
 	}
 
 	async function selectSearchResult(result: ChromeSearchResult): Promise<void> {
 		topSearch = '';
 		void goto(
-			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
+			localizeHref(
+				chromeSearchResultHref(result, searchScope, $page.url.searchParams),
+				locale,
+				data.providerId,
+			),
 			{ noScroll: true },
 		);
 	}
@@ -315,6 +317,8 @@
 	url={$page.url}
 	providerName={v1?.manifest.display_name}
 	providerShortName={v1?.manifest.short_name ?? undefined}
+	providerId={data.providerId}
+	providers={data.providers}
 	bind:search={topSearch}
 	searchResults={topSearchResults}
 	{searchScope}
@@ -333,7 +337,8 @@
 				class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
 			>
 				{#if !v1 && !isDataIndependentRoute(seoPath)}
-					<div class="mx-auto flex h-full max-w-2xl items-center justify-center p-6">
+					<div class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6">
+						<p>{data.provider?.labels[locale].city ?? data.providerId}</p>
 						<EdgeState
 							variant="error-v1"
 							lang={locale}

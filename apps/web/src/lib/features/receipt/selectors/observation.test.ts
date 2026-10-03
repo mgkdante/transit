@@ -41,8 +41,12 @@ describe('receipt observation text', () => {
 			expect(text).toContain(
 				'https://transit.example/data/v1/stm/historic/receipts/2026-06-17.json',
 			);
-			expect(text).toContain(`${locale === 'fr' ? '/fr' : ''}/receipt?date=2026-06-17`);
-			expect(text.match(/https:\/\/transit.example\/(?:fr\/)?metrics#/g)).toHaveLength(3);
+			expect(text).toContain(
+				`${locale === 'fr' ? '/fr' : ''}/receipt?provider=stm&date=2026-06-17`,
+			);
+			expect(
+				text.match(/https:\/\/transit.example\/(?:fr\/)?metrics\?provider=stm#/g),
+			).toHaveLength(3);
 			expect(text).toContain(
 				locale === 'fr' ? 'Une valeur absente est inconnue' : 'A missing figure is unknown',
 			);

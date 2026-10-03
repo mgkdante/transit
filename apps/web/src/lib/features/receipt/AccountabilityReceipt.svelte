@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { absenceShort, routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
@@ -64,6 +64,8 @@
 	import SectionTimeOfDay from './sections/SectionTimeOfDay.svelte';
 	import SectionStateCuts from './sections/SectionStateCuts.svelte';
 	import SectionNotReported from './sections/SectionNotReported.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
 	const manifest = getV1Context().manifest;

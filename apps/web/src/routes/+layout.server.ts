@@ -1,6 +1,7 @@
 import type { LayoutServerLoad } from './$types';
+import { redirect } from '@sveltejs/kit';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-import { bootV1, type V1Context } from '$lib/v1/boot';
+import { bootProvider, type V1Context } from '$lib/v1/boot';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 export const load: LayoutServerLoad = async (event) => {
@@ -12,10 +13,11 @@ export const load: LayoutServerLoad = async (event) => {
 		return { lang, v1: null as V1Context | null, serverBoot: 'skipped' as const };
 	}
 
-	try {
-		const v1 = await bootV1(lang, serverV1Context(event));
-		return { lang, v1, serverBoot: 'succeeded' as const };
-	} catch {
-		return { lang, v1: null as V1Context | null, serverBoot: 'failed' as const };
-	}
+	const selection = await bootProvider(event.url, lang, serverV1Context(event));
+	if (selection.redirectHref) redirect(307, selection.redirectHref);
+	return {
+		lang,
+		...selection,
+		serverBoot: selection.v1 ? ('succeeded' as const) : ('failed' as const),
+	};
 };

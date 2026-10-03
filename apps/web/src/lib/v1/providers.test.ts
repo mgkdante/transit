@@ -1,5 +1,10 @@
 import { expect, it, vi } from 'vitest';
-import { loadProviderCatalog, PublicProviderCatalogSchema } from './providers';
+import {
+	loadProviderCatalog,
+	PublicProviderCatalogSchema,
+	resolveProvider,
+	providerHref,
+} from './providers';
 
 vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_V1_BASE: '/data/v1' } }));
 
@@ -18,6 +23,27 @@ const catalog = {
 	default_provider: 'test',
 	providers: [provider],
 };
+
+it('selects any ready provider and normalizes unknown or duplicate choices to the catalog default', () => {
+	const ready = PublicProviderCatalogSchema.parse({
+		...catalog,
+		providers: [provider, { ...provider, id: 'stm' }, { ...provider, id: 'octranspo' }],
+	});
+	expect(
+		resolveProvider(new URL('https://transit.test/fr/map?provider=octranspo'), ready).provider.id,
+	).toBe('octranspo');
+	for (const query of ['provider=unknown', 'provider=stm&provider=octranspo']) {
+		const selected = resolveProvider(new URL(`https://transit.test/fr/lines/42?${query}`), ready);
+		expect(selected.provider.id).toBe('test');
+		expect(selected.url.pathname + selected.url.search).toBe('/fr/lines?provider=test');
+	}
+	expect(
+		providerHref(
+			new URL('https://transit.test/fr/map?route=42&lat=45&provider=stm#stop'),
+			'octranspo',
+		),
+	).toBe('/fr/map?provider=octranspo');
+});
 
 it('loads configured identities and unavailable inputs without a known-city list', async () => {
 	const fetcher = vi.fn(async () => new Response(JSON.stringify(catalog)));

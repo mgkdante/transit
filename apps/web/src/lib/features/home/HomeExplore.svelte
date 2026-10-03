@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { layout } from '$lib/nav/layout.svelte';
@@ -12,6 +12,8 @@
 		type HomeGroup,
 		type HomeTempo,
 	} from './home.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		readonly locale: Locale;

@@ -35,6 +35,39 @@ describe('r2 manifest memo', () => {
 		vi.unstubAllGlobals();
 	});
 
+	it('isolates concurrent providers with colliding entity ids and a shared cache', async () => {
+		const cache = new Map<string, unknown>();
+		const request = vi.fn(async (input: RequestInfo | URL) => {
+			const provider = String(input).split('/')[3];
+			return json(
+				String(input).endsWith('/manifest.json')
+					? { ...manifest(), provider }
+					: { generated_utc: ISO, routes: [{ id: '42', short: '42', long: provider, type: 3 }] },
+			);
+		});
+		const read = (providerId: string) =>
+			r2Adapter.static.routesIndex({ providerId, cache, fetch: request });
+		const [stm, ottawa] = await Promise.all([read('stm'), read('octranspo')]);
+		expect(stm.routes[0].long).toBe('stm');
+		expect(ottawa.routes[0].long).toBe('octranspo');
+		await read('octranspo');
+		expect(
+			request.mock.calls.filter(([url]) => String(url).endsWith('/manifest.json')),
+		).toHaveLength(2);
+	});
+
+	it('rejects a foreign manifest and does not borrow the booted provider for an explicit request', async () => {
+		installBrowserAdapterManifest(() => manifest() as never);
+		const request = vi.fn(async (_input: RequestInfo | URL) => json(manifest()));
+		await expect(
+			r2Adapter.manifest.get({ providerId: 'octranspo', fetch: request }),
+		).rejects.toThrow('provider');
+		expect(request.mock.calls[0][0]).toBe('/data/v1/octranspo/manifest.json');
+		await expect(
+			r2Adapter.manifest.getFresh({ providerId: 'octranspo', fetch: request }),
+		).rejects.toThrow('provider');
+	});
+
 	it('uses the booted browser manifest for context-free repository reads', async () => {
 		const booted = {
 			...manifest(),

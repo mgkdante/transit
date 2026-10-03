@@ -1,5 +1,6 @@
 import type { AdapterCtx } from './adapter';
 import { bindingFetch, r2BucketFetch } from './binding';
+import { v1Provider } from './config';
 
 const SERVER_V1_DEADLINE_MS = 10_000;
 
@@ -87,6 +88,7 @@ export function serverV1Context(event: ServerV1Event): AdapterCtx {
 			return (compatibilityFetch ?? event.fetch)(input, deadlineInit);
 		});
 	return {
+		providerId: v1Provider(event.url),
 		fetch: snapshotFetch,
 		cache: event.locals.v1Cache,
 	};

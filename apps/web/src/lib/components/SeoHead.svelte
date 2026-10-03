@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { dev as runtimeDev } from '$app/environment';
-	import { DEFAULT_LOCALE, SUPPORTED_LOCALES, localizeHref, type Locale } from '$lib/i18n';
+	import { DEFAULT_LOCALE, SUPPORTED_LOCALES, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { websiteJsonLd } from '$lib/seo/jsonld';
+
+	const localizeHref = getLocalizeHref();
 
 	interface SeoHeadProps {
 		title: string;

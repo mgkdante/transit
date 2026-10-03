@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
@@ -67,6 +67,8 @@
 	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);

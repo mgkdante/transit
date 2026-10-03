@@ -2,7 +2,7 @@
 	import './sections/health-sections.css';
 
 	import { onMount, tick } from 'svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { freshnessRelative } from '$lib/v1/freshness';
 	import { getDataHealth } from '$lib/v1/repositories/dataHealth';
 	import { getHistoricAvailability } from '$lib/v1/repositories/historic';
@@ -55,6 +55,8 @@
 	import SectionConformance from './sections/SectionConformance.svelte';
 	import SectionEnvelope from './sections/SectionEnvelope.svelte';
 	import SectionHistoryCoverage from './sections/SectionHistoryCoverage.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		provenanceSeed?: ResourceSeed<Provenance>;

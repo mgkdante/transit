@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
-	ctx: { fetch: vi.fn() },
+	ctx: { fetch: vi.fn(), providerId: 'octranspo', manifest: { provider: 'octranspo' } },
 	getRoute: vi.fn(),
 	getRouteReliability: vi.fn(),
 	serverV1Context: vi.fn(),
@@ -40,6 +40,7 @@ function event(id = '24'): Parameters<typeof load>[0] {
 		fetch: vi.fn(),
 		locals: { v1Cache: new Map() },
 		platform: undefined,
+		parent: async () => ({ v1: { manifest: harness.ctx.manifest } }),
 		request: new Request(`https://transit.yesid.dev/lines/${id}`),
 	} as unknown as Parameters<typeof load>[0];
 }

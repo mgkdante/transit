@@ -13,7 +13,13 @@ export const load: PageServerLoad = async (event) => {
 
 	const id = event.params.id.trim() || event.params.id;
 	const fallback: IdentitySeed = { id, name: id };
-	const context = serverV1Context(event);
+	const { v1 } = await event.parent();
+	if (!v1) return { seed: fallback, routeSeed: null, reliabilitySeed: null, lineHistorySeed: null };
+	const context = {
+		...serverV1Context(event),
+		providerId: v1.manifest.provider,
+		manifest: v1.manifest,
+	};
 	const request = historyRangeRequestFromSearchParams(event.url.searchParams);
 	const selectedHistory =
 		detailTabFromSearchParams(event.url.searchParams) === 'reliability' &&
