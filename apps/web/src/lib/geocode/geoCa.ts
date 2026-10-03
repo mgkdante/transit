@@ -1,5 +1,5 @@
-import type { GeocodedLocation, GeocodePrecision } from './types';
-import { isInsideMontrealBounds } from './types';
+import type { GeocodedLocation, GeocodePrecision, GeocodeArea } from './types';
+import { isInsideBounds } from './types';
 import { foldDiacritics } from '$lib/search/normalize';
 
 export type { GeocodedLocation, GeocodePrecision } from './types';
@@ -25,41 +25,44 @@ interface RankedLocation {
 	score: number;
 }
 
-export function geoCaSearchUrl(query: string): URL {
+export function geoCaSearchUrl(query: string, area: GeocodeArea): URL {
 	const url = new URL('https://geolocator.api.geo.ca/');
-	url.searchParams.set('q', withEnglishMontrealContext(normalizeAddressIntentInQuery(query)));
-	url.searchParams.set('lang', 'en');
+	url.searchParams.set('q', withAreaContext(normalizeAddressIntentInQuery(query), area.context));
+	url.searchParams.set('lang', area.lang);
 	url.searchParams.set('keys', GEO_CA_KEYS);
 	return url;
 }
 
-export async function geocodeMontreal(
+export async function geocode(
 	query: string,
+	area: GeocodeArea,
 	fetcher: GeocodeFetcher = fetch,
 ): Promise<GeocodedLocation | null> {
-	const [first] = await geocodeMontrealSuggestions(query, fetcher, 1);
+	const [first] = await geocodeSuggestions(query, area, fetcher, 1);
 	return first ?? null;
 }
 
-export async function geocodeMontrealSuggestions(
+export async function geocodeSuggestions(
 	query: string,
+	area: GeocodeArea,
 	fetcher: GeocodeFetcher = fetch,
 	limit = 5,
 ): Promise<GeocodedLocation[]> {
 	if (!query.trim() || limit <= 0) return [];
 
-	const geoCaResults = await geocodeGeoCaMontreal(query, fetcher).catch(() => []);
+	const geoCaResults = await geocodeGeoCa(query, area, fetcher).catch(() => []);
 	return geoCaResults.slice(0, limit);
 }
 
-async function geocodeGeoCaMontreal(
+async function geocodeGeoCa(
 	query: string,
+	area: GeocodeArea,
 	fetcher: GeocodeFetcher,
 ): Promise<GeocodedLocation[]> {
-	const response = await fetcher(geoCaSearchUrl(query), {
+	const response = await fetcher(geoCaSearchUrl(query, area), {
 		headers: {
 			accept: 'application/json',
-			'accept-language': 'en-CA,en;q=0.8',
+			'accept-language': `${area.lang}-CA,${area.lang};q=0.8`,
 			'user-agent': 'transit.yesid.dev citizen map (https://transit.yesid.dev)',
 		},
 	});
@@ -68,17 +71,21 @@ async function geocodeGeoCaMontreal(
 	const payload: unknown = await response.json();
 	if (!Array.isArray(payload)) return [];
 
-	return rankedGeoCaLocations(query, payload);
+	return rankedGeoCaLocations(query, payload, area.bbox);
 }
 
-function rankedGeoCaLocations(query: string, payload: unknown[]): GeocodedLocation[] {
+function rankedGeoCaLocations(
+	query: string,
+	payload: unknown[],
+	bbox: readonly number[],
+): GeocodedLocation[] {
 	const ranked: RankedLocation[] = [];
 	for (const item of payload) {
 		const result = item as GeoCaResult;
 		const lat = Number(result.lat);
 		const lon = Number(result.lng);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-		if (!isInsideMontrealBounds(lat, lon)) continue;
+		if (!isInsideBounds(lat, lon, bbox)) continue;
 
 		const label = typeof result.name === 'string' ? result.name : query.trim();
 		const category = typeof result.category === 'string' ? result.category : '';
@@ -200,15 +207,15 @@ function geoCaRelevanceScore(query: string, label: string): number {
 	return score;
 }
 
-function withEnglishMontrealContext(query: string): string {
+function withAreaContext(query: string, context: string): string {
 	const trimmed = normalizePostalCodeInQuery(query.trim());
 	if (!trimmed) return '';
 
-	const lower = trimmed.toLowerCase();
+	const lower = foldDiacritics(trimmed);
 	const parts = [trimmed];
-	if (!lower.includes('montreal') && !lower.includes('montréal')) parts.push('Montreal');
-	if (!lower.includes('quebec') && !lower.includes('québec')) parts.push('Quebec');
-	if (!lower.includes('canada')) parts.push('Canada');
+	for (const part of [...context.split(',').map((part) => part.trim()), 'Canada']) {
+		if (part && !lower.includes(foldDiacritics(part))) parts.push(part);
+	}
 	return parts.join(' ');
 }
 
@@ -219,6 +226,7 @@ function normalizeAddressIntentInQuery(query: string): string {
 		.replace(/\b(?:av|ave)\b/gi, 'avenue')
 		.replace(/\bch\b/gi, 'chemin')
 		.replace(/\bste\b/gi, 'sainte')
+		.replace(/\bst$/gi, 'street')
 		.replace(/\bst\b/gi, 'saint')
 		.replace(/\s+/g, ' ')
 		.trim();

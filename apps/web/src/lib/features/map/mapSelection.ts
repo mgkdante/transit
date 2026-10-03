@@ -51,6 +51,7 @@ export function sameNullableSelection(a: MapSelection | null, b: MapSelection | 
 
 export interface ResolveContext {
 	readonly locale?: Locale;
+	readonly timeZone?: string;
 	readonly index: LiveIndex;
 	readonly stops: readonly StopIndexEntry[];
 	readonly routes?: readonly RouteFile[] | null;
@@ -299,11 +300,6 @@ function minutesOfDay(value: string): number | null {
 	return hours * 60 + minutes;
 }
 
-function currentMontrealMinutes(now: Date): number {
-	const clock = formatClock(now, 'en');
-	return minutesOfDay(clock) ?? 0;
-}
-
 function splitTimes(
 	times: readonly string[] | undefined,
 	nowMinutes: number,
@@ -331,6 +327,7 @@ function buildStopRouteTimes(
 	stopFile: StopFile | null,
 	departures: readonly StopDeparture[] | null,
 	now: Date,
+	timeZone?: string,
 ): StopRouteTimes[] {
 	const liveByRoute = new Map<string, StopDeparture[]>();
 	for (const departure of departures ?? []) {
@@ -340,7 +337,7 @@ function buildStopRouteTimes(
 		liveByRoute.set(departure.route, current);
 	}
 
-	const nowMinutes = currentMontrealMinutes(now);
+	const nowMinutes = minutesOfDay(formatClock(now, 'en', timeZone)) ?? 0;
 	const byRoute = new Map<string, StopRouteTimes>();
 	for (const scheduled of stopFile?.scheduled ?? []) {
 		const split = splitTimes(scheduled.times, nowMinutes);
@@ -481,6 +478,7 @@ export function resolveMapSelection(
 			findStopFile(context.stopFiles, stop.id),
 			departures,
 			context.now ?? new Date(),
+			context.timeZone,
 		),
 		alerts:
 			context.alerts == null

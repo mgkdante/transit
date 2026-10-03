@@ -34,7 +34,7 @@ provider:
     min_latitude: 45.10
     max_latitude: 45.55
     min_longitude: -76.05
-    max_longitude: -75.35
+    max_longitude: -75.33
   attribution_text: Contains information licensed under the Open Government Licence – City of Ottawa.
   website_url: https://www.octranspo.com/
   is_active: true

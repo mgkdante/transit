@@ -64,6 +64,9 @@ function createHarness() {
 	let geolocationAvailable = true;
 
 	const dependencies: MapNearMeControllerDependencies = {
+		providerId: 'stm',
+		bbox: [-74.1, 45.25, -73.2, 45.75],
+		locale: 'en',
 		goto,
 		currentUrl: () => currentUrl,
 		readTarget,
@@ -334,9 +337,12 @@ describe('map near-me controller', () => {
 		await harness.controller.search(event);
 
 		expect(event.preventDefault).toHaveBeenCalledOnce();
-		expect(harness.fetch).toHaveBeenCalledWith('/api/geocode/montreal?q=Place%20des%20Arts', {
-			signal: expect.any(AbortSignal),
-		});
+		expect(harness.fetch).toHaveBeenCalledWith(
+			'/api/geocode?provider=stm&lang=en&q=Place%20des%20Arts',
+			{
+				signal: expect.any(AbortSignal),
+			},
+		);
 		expect(harness.controller.query).toBe('Place des Arts');
 		expect(harness.controller.origin).toEqual(result);
 		expect(harness.controller.loading).toBe(false);

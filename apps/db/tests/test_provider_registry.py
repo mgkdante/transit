@@ -15,6 +15,14 @@ from transit_ops.settings import Settings
 runner = CliRunner()
 
 
+def test_oc_bounds_include_published_eastern_stops_and_route_geometry() -> None:
+    config = load_provider_manifest(Path(__file__).parents[1] / "config/providers/octranspo.yaml")
+    west, south, east, north = config.provider.bounds.bbox()
+    for lon, lat in [(-75.34342, 45.44076), (-75.342938, 45.331639), (-75.34429, 45.518043)]:
+        assert west <= lon <= east and south <= lat <= north
+    assert not config.public.enabled
+
+
 def _provider_manifest_payload(*, gis: bool = True, realtime: bool = True) -> dict[str, object]:
     formats = {"static_schedule": "gtfs_schedule_zip"}
     if gis:
@@ -492,7 +500,10 @@ def test_catalog_publication_uses_configured_provider_without_credentials(public
         ("descriptor", {"url": "\x00///data/v1/test/static/basemap/test.pmtiles"}),
         ("descriptor", {"url": "/\t//data/v1/test/static/basemap/test.pmtiles"}),
         ("descriptor", {"url": r"/\data/v1/test/static/basemap/test.pmtiles"}),
-        ("descriptor", {"url": "https://transit.example:0/data/v1/test/static/basemap/test.pmtiles"}),
+        (
+            "descriptor",
+            {"url": "https://transit.example:0/data/v1/test/static/basemap/test.pmtiles"},
+        ),
         ("descriptor", {"publish_generation_id": "stm@other"}),
         ("descriptor", {"publish_generation_id": ""}),
         (

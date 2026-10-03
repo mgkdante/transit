@@ -92,13 +92,17 @@ export function formatDateKey(key: string, lang: TimeLang, includeYear = false):
 	}).format(date);
 }
 
-export function formatClock(date: Date, lang: TimeLang): string {
+export function formatClock(
+	date: Date,
+	lang: TimeLang,
+	timeZone: string = DISPLAY_TIME_ZONE,
+): string {
 	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '·';
 	const parts = dateTimeFormat(localeTag(lang), {
 		hour: '2-digit',
 		minute: '2-digit',
 		hour12: false,
-		timeZone: DISPLAY_TIME_ZONE,
+		timeZone,
 	}).formatToParts(date);
 	const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
 	const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';

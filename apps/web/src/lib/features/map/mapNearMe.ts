@@ -1,13 +1,13 @@
 import type { LatLon } from '$lib/components/map';
-import { isInsideMontrealBounds } from '$lib/geocode/types';
+import { isInsideBounds } from '$lib/geocode/types';
 
-export function parseCoordinateQuery(query: string): LatLon | null {
+export function parseCoordinateQuery(query: string, bbox: readonly number[]): LatLon | null {
 	const match = query.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
 	if (!match) return null;
 	const lat = Number(match[1]);
 	const lon = Number(match[2]);
 	if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-	if (!isInsideMontrealBounds(lat, lon)) return null;
+	if (!isInsideBounds(lat, lon, bbox)) return null;
 	return { lat, lon };
 }
 

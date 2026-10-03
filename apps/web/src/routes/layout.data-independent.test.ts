@@ -208,6 +208,18 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
+	it('does not geocode a submitted header search while provider boot is unavailable', async () => {
+		const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"results":[]}'));
+		try {
+			const { getByRole } = renderWithoutV1('/network?provider=octranspo', 'en');
+			await fireEvent.input(getByRole('combobox'), { target: { value: 'Bank Street' } });
+			await fireEvent.submit(getByRole('search'));
+			await settled();
+			expect(request).not.toHaveBeenCalled();
+		} finally {
+			request.mockRestore();
+		}
+	});
 	it('uses a fresh document when a navigation changes provider', () => {
 		renderWithoutV1('/network?provider=stm', 'en');
 		const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});

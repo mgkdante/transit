@@ -5,10 +5,29 @@ import { describe, expect, it } from 'vitest';
 import { mapViewportOptions, type MapFitPadding } from '$lib/components/map/viewport';
 import {
 	deriveMapFitPadding,
+	mapCameraFraming,
 	ISLAND_FIT_BOUNDS,
 	MAP_MAX_BOUNDS,
 	mapInitialCenter,
 } from './mapCameraFraming';
+
+it('uses selected provider framing, falling back only to its own service bounds', () => {
+	const bbox = [-76.05, 45.1, -75.33, 45.55];
+	expect(mapCameraFraming({ manifest: { bbox } } as never)).toEqual({
+		bounds: bbox,
+		maxBounds: bbox,
+		center: [-75.69, 45.325],
+	});
+	const stm = mapCameraFraming({
+		manifest: { bbox: [-74.1, 45.25, -73.2, 45.75] },
+		provider: { fit_bounds: ISLAND_FIT_BOUNDS, max_bounds: MAP_MAX_BOUNDS },
+	} as never);
+	expect(stm).toEqual({
+		bounds: ISLAND_FIT_BOUNDS,
+		maxBounds: MAP_MAX_BOUNDS,
+		center: mapInitialCenter,
+	});
+});
 
 const maplibrePackage = pathToFileURL(
 	createRequire(import.meta.url).resolve('maplibre-gl/package.json'),

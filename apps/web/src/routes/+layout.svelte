@@ -250,6 +250,7 @@
 	}
 
 	async function submitSearch(value: string): Promise<void> {
+		if (!data.v1) return;
 		const query = value.trim();
 		const [first] = chromeSearchResults(
 			query,
@@ -285,8 +286,9 @@
 		limit: number,
 		signal?: AbortSignal,
 	): Promise<GeocodeSuggestion[]> {
+		if (!data.v1) return [];
 		const response = await fetch(
-			`/api/geocode/montreal?q=${encodeURIComponent(query)}&suggest=1&limit=${limit}`,
+			`/api/geocode?provider=${encodeURIComponent(data.providerId)}&lang=${locale}&q=${encodeURIComponent(query)}&suggest=1&limit=${limit}`,
 			{ signal },
 		);
 		if (!response.ok) return [];

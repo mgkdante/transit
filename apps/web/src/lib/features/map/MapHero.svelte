@@ -58,12 +58,7 @@
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
-	import {
-		deriveMapFitPadding,
-		ISLAND_FIT_BOUNDS,
-		MAP_MAX_BOUNDS,
-		mapInitialCenter,
-	} from './mapCameraFraming';
+	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
 	import { copy as MAP_COPY } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
@@ -90,6 +85,7 @@
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const framing = mapCameraFraming(v1);
 
 	let mapWidthPx = $state(1280);
 
@@ -118,9 +114,12 @@
 		urlCoordinator.writeFilters,
 	);
 	const nearMeController = createMapNearMeController({
+		providerId: manifest.provider,
+		bbox: manifest.bbox,
+		locale,
 		goto: urlCoordinator.goto,
 		currentUrl: urlCoordinator.currentUrl,
-		readTarget: nearTargetFromSearchParams,
+		readTarget: (params) => nearTargetFromSearchParams(params, manifest.bbox),
 		targetKey: nearTargetKey,
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
@@ -356,6 +355,7 @@
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			locale,
+			timeZone: manifest.tz,
 			index: live.index,
 			stops: stopList,
 			routes: contextRoutes,
@@ -731,9 +731,9 @@
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
 		{theme}
-		center={mapInitialCenter}
-		bounds={ISLAND_FIT_BOUNDS}
-		maxBounds={MAP_MAX_BOUNDS}
+		center={framing.center}
+		bounds={framing.bounds}
+		maxBounds={framing.maxBounds}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onrecovering={onMapRecovering}

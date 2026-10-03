@@ -561,6 +561,8 @@ vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
 		manifest: {
 			provider: 'stm',
+			bbox: [-74.1, 45.25, -73.2, 45.75],
+			tz: 'America/Toronto',
 			files: { live: { ttl_s: 30 } },
 		},
 		labels: {},
