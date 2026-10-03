@@ -14,6 +14,9 @@ const harness = vi.hoisted(() => {
 	const subscribers = new Set<(value: boolean) => void>();
 	return {
 		locale: 'en' as 'en' | 'fr',
+		provider: 'stm',
+		city: 'Montréal',
+		posters: '/map/basemap-montreal-posters.json',
 		prefersReducedMotion: {
 			subscribe(subscriber: (value: boolean) => void) {
 				subscriber(reduced);
@@ -27,6 +30,16 @@ const harness = vi.hoisted(() => {
 		},
 	};
 });
+
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: { provider: harness.provider, city: harness.city },
+		provider: {
+			posters_url: harness.posters,
+			labels: { en: { city: harness.city }, fr: { city: harness.city } },
+		},
+	}),
+}));
 
 vi.mock('$lib/i18n', () => ({ getLocale: () => harness.locale }));
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
@@ -52,6 +65,9 @@ function neverImport(): Promise<never> {
 afterEach(() => {
 	cleanup();
 	harness.locale = 'en';
+	harness.provider = 'stm';
+	harness.city = 'Montréal';
+	harness.posters = '/map/basemap-montreal-posters.json';
 	harness.setReduced(false);
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
@@ -76,15 +92,54 @@ describe('MapProgressive automatic live boot', () => {
 		expect(Number(bottomRem)).toBeGreaterThanOrEqual(attributionTopRem + 0.2);
 	});
 
-	it('shows the pinned basemap generation date while the live map boots in both locales', async () => {
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const english = render(MapProgressive, { props: { importHero: neverImport } });
-		expect(english.getByText('Basemap snapshot · Aug 12, 2026')).toBeVisible();
-		cleanup();
+	it.each(['en', 'fr'] as const)(
+		'uses only the selected poster and source date in %s',
+		async (locale) => {
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			harness.locale = locale;
+			for (const [id, city, stem, sourceDate] of [
+				['stm', 'Montréal', 'montreal', '2026-08-30'],
+				['octranspo', 'Ottawa', 'ottawa', '2026-10-02'],
+			]) {
+				harness.provider = id;
+				harness.city = city;
+				harness.posters = `/map/basemap-${stem}-posters.json`;
+				const view = render(MapProgressive, { props: { importHero: neverImport } });
+				expect(view.getByRole('img')).toHaveAttribute(
+					'src',
+					expect.stringContaining(`/map/basemap-${stem}-`),
+				);
+				expect(view.getByRole('img')).toHaveAttribute('alt', expect.stringContaining(city));
+				const date = new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+					dateStyle: 'medium',
+					timeZone: 'UTC',
+				}).format(new Date(sourceDate));
+				expect(view.getByText(new RegExp(date))).toBeVisible();
+				cleanup();
+			}
+		},
+	);
 
-		harness.locale = 'fr';
-		const french = render(MapProgressive, { props: { importHero: neverImport } });
-		expect(french.getByText('Fond de carte · 12 août 2026')).toBeVisible();
+	it.each(['', '/map/basemap-montreal-posters.json'])(
+		'never shows a missing or foreign poster for Ottawa',
+		async (posters) => {
+			harness.provider = 'octranspo';
+			harness.city = 'Ottawa';
+			harness.posters = posters;
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			const view = render(MapProgressive, { props: { importHero: neverImport } });
+			expect(view.queryByRole('img')).toBeNull();
+			expect(view.getByText(/Basemap preview unavailable for Ottawa/)).toBeVisible();
+		},
+	);
+
+	it('removes a failed image and its source-date claim', async () => {
+		const { default: MapProgressive } = await import('./MapProgressive.svelte');
+		const view = render(MapProgressive, { props: { importHero: neverImport } });
+		await fireEvent.error(view.getByRole('img'));
+		expect(view.queryByRole('img')).toBeNull();
+		expect(view.queryByText(/Basemap data/)).toBeNull();
+		expect(view.getByText(/Basemap preview unavailable for Montréal/)).toBeVisible();
 	});
 
 	it('imports immediately on mount without a CTA, intent seam, timer, idle, or frame gate', async () => {

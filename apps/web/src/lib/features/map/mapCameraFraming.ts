@@ -1,7 +1,14 @@
 import { centerFromProviderBbox, type MapFitPadding } from '../../components/map/viewport';
-import type { V1Context } from '$lib/v1/boot';
+import type { Manifest } from '$lib/v1/schemas';
+import type { PublicProvider } from '$lib/v1/providers';
 
-export function mapCameraFraming({ manifest, provider }: V1Context) {
+export function mapCameraFraming({
+	manifest,
+	provider,
+}: {
+	manifest: Pick<Manifest, 'bbox'>;
+	provider?: Pick<PublicProvider, 'fit_bounds' | 'max_bounds'> | null;
+}) {
 	const bounds = provider?.fit_bounds ?? manifest.bbox;
 	return {
 		bounds,
@@ -9,13 +16,6 @@ export function mapCameraFraming({ manifest, provider }: V1Context) {
 		center: centerFromProviderBbox(bounds),
 	};
 }
-
-// The existing poster renderer still uses these accepted STM camera values.
-export const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
-export const mapInitialCenter = centerFromProviderBbox(ISLAND_FIT_BOUNDS);
-
-// A shared longitude midpoint preserves framing when maxBounds constrains zoom.
-export const MAP_MAX_BOUNDS = [-74.28605, 45.3, -73.16605, 45.82] as const;
 
 const MAP_FIT_PADDING_PX = 40;
 // Symmetric side padding preserves the accepted desktop framing at all heights.

@@ -2,23 +2,23 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const copy = defineCopy({
 	en: {
-		staticKicker: 'MONTRÉAL · STATIC',
-		staticHeading: 'Montréal transit map',
+		staticKicker: '{city} · STATIC',
+		staticHeading: '{city} transit map',
 		staticBody:
 			'Static, non-live basemap. No vehicles, stops, service alerts, or freshness data are shown.',
-		bootHeading: 'Live map',
+		bootHeading: 'Live map · {city}',
 		bootBody:
 			'The live interactive map loads automatically. This static basemap stays visible until it is ready.',
-		staticSnapshot: 'Basemap snapshot · Aug 12, 2026',
-		staticImageAlt: 'Static basemap of Montréal',
-		mapBooting: 'Loading live map…',
-		mapImportError: 'Live map could not start.',
+		staticUnavailable: 'Basemap preview unavailable for {city}. The live map loads automatically.',
+		staticSnapshot: 'Basemap data · {date}',
+		staticImageAlt: 'Static basemap · {city}',
+		mapBooting: 'Loading live map · {city}…',
+		mapImportError: 'Live map could not start · {city}.',
 		mapImportRetry: 'Try live map again',
-		staticNoScript:
-			'JavaScript is required to load the live interactive map. This static, non-live basemap remains available.',
+		staticNoScript: 'JavaScript is required to load the live interactive map.',
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network map',
-		mapLabel: 'Montréal network map with vehicle status and service alerts',
+		mapLabel: '{city} network map with vehicle status',
 		mapCanvasLabel: 'Interactive map',
 		attributionToggle: 'Toggle attribution',
 		mapErrorTitle: 'Map unavailable',
@@ -102,23 +102,24 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
-		staticKicker: 'MONTRÉAL · STATIQUE',
-		staticHeading: 'Carte du réseau de Montréal',
+		staticKicker: '{city} · STATIQUE',
+		staticHeading: 'Carte du réseau · {city}',
 		staticBody:
 			'Fond de carte statique, pas en direct. Aucun véhicule, arrêt, avis de service ou renseignement de fraîcheur n’est affiché.',
-		bootHeading: 'Carte en direct',
+		bootHeading: 'Carte en direct · {city}',
 		bootBody:
 			'La carte interactive en direct se charge automatiquement. Ce fond de carte statique reste visible jusqu’à ce qu’elle soit prête.',
-		staticSnapshot: 'Fond de carte · 12 août 2026',
-		staticImageAlt: 'Fond de carte statique de Montréal',
-		mapBooting: 'Chargement de la carte en direct…',
-		mapImportError: 'La carte en direct n’a pas pu démarrer.',
+		staticUnavailable:
+			'Aperçu cartographique indisponible · {city}. La carte en direct se charge automatiquement.',
+		staticSnapshot: 'Données cartographiques · {date}',
+		staticImageAlt: 'Fond de carte statique · {city}',
+		mapBooting: 'Chargement de la carte en direct · {city}…',
+		mapImportError: 'La carte en direct n’a pas pu démarrer · {city}.',
 		mapImportRetry: 'Réessayer la carte en direct',
-		staticNoScript:
-			'JavaScript est requis pour charger la carte interactive en direct. Ce fond de carte statique reste accessible.',
+		staticNoScript: 'JavaScript est requis pour charger la carte interactive en direct.',
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Carte du réseau',
-		mapLabel: 'Carte du réseau de Montréal, avec l’état des véhicules et les avis de service',
+		mapLabel: 'Carte du réseau · {city}, avec l’état des véhicules',
 		mapCanvasLabel: 'Carte interactive',
 		attributionToggle: 'Afficher ou masquer les attributions',
 		mapErrorTitle: 'Carte indisponible',
@@ -206,3 +207,12 @@ export const copy = defineCopy({
 });
 
 export type MapCopy = (typeof copy)[Locale];
+
+export function mapCopy(locale: Locale, city: string): MapCopy {
+	return Object.fromEntries(
+		Object.entries(copy[locale]).map(([key, value]) => [
+			key,
+			typeof value === 'string' ? value.replaceAll('{city}', city) : value,
+		]),
+	) as MapCopy;
+}

@@ -233,7 +233,7 @@ class ManifestStaticFiles(BaseModel):
     stops_index: str = Field(default="static/stops_index.json")
     basemap: str | None = Field(
         default=None,
-        description="static/basemap.json pointer; null until SNAPSHOT_BASEMAP_PMTILES_URL is set",
+        description="static/basemap.json pointer; null when the provider has no basemap configured",
     )
     routes_prefix: str = Field(
         default="static/routes/",
@@ -1467,9 +1467,9 @@ class DataHealth(PayloadEnvelope):
 
 
 class BasemapFile(PayloadEnvelope):
-    """static/basemap.json — a settings-driven pointer to the hosted PMTiles archive.
+    """static/basemap.json — a provider-configured pointer to the hosted PMTiles archive.
 
-    Published only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then
+    Published only when the provider's public.basemap_url is configured; until then
     Manifest.basemap is null and no basemap.json object exists.
     """
 

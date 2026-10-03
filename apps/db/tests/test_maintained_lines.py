@@ -170,6 +170,29 @@ def test_baseline_check_validates_configured_ref_independently_of_target(tmp_pat
     assert report["policy_sha256"] != json.loads(run(repo, tmp_path).stdout)["policy_sha256"]
 
 
+def test_future_asset_group_preserves_baseline_but_missing_target_assets_fail(tmp_path: Path):
+    repo = fixture_repo(tmp_path, {"owner.py": b"renderer\n"})
+    baseline = git(repo, "rev-parse", "HEAD")
+    write(repo, "a.bin", b"\xff\0")
+    write(repo, "b.bin", b"\xfe\0")
+    group = {
+        "category": "assets", "reason": "new binary assets", "origin": "owner.py renderer",
+        "files": ["a.bin", "b.bin"], "owners": ["owner.py"],
+        "sha256": [digest(repo, ["a.bin", "b.bin", "owner.py"])],
+    }
+    config(repo, 1, [group])
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "add verified assets")
+    result = run(repo, tmp_path, "--baseline-check")
+    assert result.returncode == 0, result.stdout
+    assert json.loads(result.stdout)["baseline"]["commit"] == baseline
+    for asset in ("a.bin", "b.bin"):
+        (repo / asset).unlink()
+        missing = run(repo, tmp_path, "--worktree", "--baseline-check")
+        assert missing.returncode == 2
+        assert "missing provenance paths" in missing.stdout
+
+
 @pytest.mark.parametrize("args", [
     ("--max", "-1"), ("--max", "not-an-integer"), ("--ref", "missing"),
     ("--ref", "HEAD", "--worktree"),

@@ -108,6 +108,7 @@ class ProviderPublicConfig(BaseModel):
     labels: dict[Literal["en", "fr"], ProviderLabel] = Field(default_factory=dict)
     fit_bounds: ProviderBoundsConfig | None = None
     max_bounds: ProviderBoundsConfig | None = None
+    basemap_bounds: ProviderBoundsConfig | None = None
     geocode_context: str | None = None
     basemap_url: str | None = None
     posters_url: str | None = None
@@ -115,7 +116,7 @@ class ProviderPublicConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_camera_bounds(self) -> ProviderPublicConfig:
-        for bounds in (self.fit_bounds, self.max_bounds):
+        for bounds in (self.fit_bounds, self.max_bounds, self.basemap_bounds):
             if bounds and (
                 bounds.min_longitude >= bounds.max_longitude
                 or bounds.min_latitude >= bounds.max_latitude

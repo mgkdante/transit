@@ -32,6 +32,11 @@ public:
     max_latitude: 45.82
   geocode_context: Montréal, Québec
   basemap_url: /data/v1/stm/static/basemap/montreal.pmtiles
+  basemap_bounds:
+    min_longitude: -74.17628
+    min_latitude: 45.23742
+    max_longitude: -73.27628
+    max_latitude: 45.86764
   posters_url: /map/basemap-montreal-posters.json
 
 feeds:

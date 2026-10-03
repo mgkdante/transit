@@ -23,7 +23,8 @@
 	import { getLocale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { copy as MAP_COPY } from './map.copy';
+	import { mapCopy } from './map.copy';
+	import { getV1Context } from '$lib/v1/boot';
 
 	interface Props {
 		importHero?: () => Promise<ProgressiveMapHeroModule>;
@@ -33,10 +34,31 @@
 
 	type ProgressiveState = 'static' | 'booting' | 'ready' | 'failed';
 	const locale = getLocale();
-	const t = $derived(MAP_COPY[locale]);
+	const v1 = getV1Context();
+	const city = v1.provider?.labels[locale].city ?? v1.manifest.city ?? v1.manifest.provider;
+	const t = $derived(mapCopy(locale, city));
+	const receipts = import.meta.glob<{
+		provider_id: string;
+		source: { osm_updated_utc: string };
+		posters: Array<{ filename: string; theme: string; width: number }>;
+	}>('/static/map/*-posters.json', { eager: true, import: 'default' });
+	const selected = receipts[`/static${v1.provider?.posters_url}`];
+	const receipt = selected?.provider_id === v1.manifest.provider ? selected : undefined;
 	const posterTheme = $derived(themeStore.current);
-	const posterMobile = $derived(`/map/basemap-montreal-${posterTheme}-mobile-20260812.avif`);
-	const posterDesktop = $derived(`/map/basemap-montreal-${posterTheme}-desktop-20260812.avif`);
+	const posterMobile = $derived(
+		receipt?.posters.find((p) => p.theme === posterTheme && p.width === 390),
+	);
+	const posterDesktop = $derived(
+		receipt?.posters.find((p) => p.theme === posterTheme && p.width === 1280),
+	);
+	let posterFailed = $state(false);
+	const hasPoster = $derived(Boolean(posterMobile && posterDesktop && !posterFailed));
+	const sourceDate = receipt
+		? new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+				dateStyle: 'medium',
+				timeZone: 'UTC',
+			}).format(new Date(receipt.source.osm_updated_utc))
+		: '';
 
 	let root = $state<HTMLDivElement | null>(null);
 	let phase = $state<ProgressiveState>('static');
@@ -196,23 +218,26 @@
 		aria-labelledby="map-progressive-heading"
 		style:transition={$prefersReducedMotion ? 'none' : undefined}
 	>
-		<picture class="map-progressive-picture">
-			<source
-				media="(min-width: 1024px)"
-				type="image/avif"
-				srcset={posterDesktop}
-				width="1280"
-				height="720"
-			/>
-			<img
-				src={posterMobile}
-				width="390"
-				height="844"
-				alt={t.staticImageAlt}
-				fetchpriority="high"
-				decoding="async"
-			/>
-		</picture>
+		{#if hasPoster}
+			<picture class="map-progressive-picture">
+				<source
+					media="(min-width: 1024px)"
+					type="image/avif"
+					srcset={`/map/${posterDesktop!.filename}`}
+					width="1280"
+					height="720"
+				/>
+				<img
+					src={`/map/${posterMobile!.filename}`}
+					onerror={() => (posterFailed = true)}
+					width="390"
+					height="844"
+					alt={t.staticImageAlt}
+					fetchpriority="high"
+					decoding="async"
+				/>
+			</picture>
+		{/if}
 		<div class="map-progressive-shade" aria-hidden="true"></div>
 
 		<div class="map-progressive-copy">
@@ -221,9 +246,11 @@
 				{phase === 'booting' ? t.bootHeading : t.staticHeading}
 			</h1>
 			<p class="map-progressive-body">
-				{phase === 'booting' ? t.bootBody : t.staticBody}
+				{!hasPoster ? t.staticUnavailable : phase === 'booting' ? t.bootBody : t.staticBody}
 			</p>
-			<p class="map-progressive-snapshot">{t.staticSnapshot}</p>
+			{#if hasPoster}<p class="map-progressive-snapshot">
+					{t.staticSnapshot.replace('{date}', sourceDate)}
+				</p>{/if}
 			<p class="map-progressive-status" role="status" aria-live="polite">
 				{phase === 'booting' ? t.mapBooting : ''}
 			</p>

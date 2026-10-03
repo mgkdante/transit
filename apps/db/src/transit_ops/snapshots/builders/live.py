@@ -4,6 +4,7 @@ import hashlib
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import round_half_away
+from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
@@ -53,6 +54,8 @@ from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
+
+    from transit_ops.settings import Settings
 
 
 _VEHICLES_SQL = named_query(
@@ -487,7 +490,7 @@ def build_manifest(
     *,
     provider_id: str = "stm",
     generated_utc: str,
-    settings: object,
+    settings: Settings,
 ) -> Manifest:
     prov = conn.execute(_MANIFEST_PROVIDER_SQL, {"provider_id": provider_id}).mappings()
     prow = next(iter(prov), None) or {}
@@ -523,7 +526,8 @@ def build_manifest(
         tier_stamps[str(r["tier"])] = _opt_iso(r["generated_utc"])
 
     base_url = (getattr(settings, "SNAPSHOT_PUBLIC_BASE_URL", None) or "").rstrip("/")
-    if getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None):
+    public = ProviderRegistry.from_project_root(settings=settings).get_provider(provider_id).public
+    if public.basemap_url:
         basemap: str | None = f"{base_url}/v1/{provider_id}/static/basemap.json"
         static_basemap: str | None = "static/basemap.json"
     else:

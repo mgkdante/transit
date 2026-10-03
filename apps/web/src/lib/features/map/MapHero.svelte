@@ -59,7 +59,7 @@
 	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
 	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
-	import { copy as MAP_COPY } from './map.copy';
+	import { mapCopy } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
@@ -81,10 +81,10 @@
 	let { onready, onidle, onrecovering, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const t = $derived(MAP_COPY[locale]);
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
 	const framing = mapCameraFraming(v1);
 
 	let mapWidthPx = $state(1280);
@@ -127,7 +127,7 @@
 		fetch: (input, init) => globalThis.fetch(input, init),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
-		translations: MAP_COPY[locale],
+		translations: t,
 	});
 	const focusController = createMapFocusController({
 		readFocus: parseMapFocus,

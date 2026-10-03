@@ -1,18 +1,18 @@
 {
   "schema_version": 2,
-  "provider_id": "stm",
-  "rendered_utc": "2026-10-03T19:15:32.169Z",
+  "provider_id": "octranspo",
+  "rendered_utc": "2026-10-03T19:30:03.442Z",
   "source": {
-    "pmtiles_url": "/data/v1/stm/static/basemap/montreal.pmtiles",
-    "sha256": "0c3163dd215712ba6363f67d5cb799d672d5e7ec54b58c0e961937c6148e6bb7",
-    "bytes": 82724670,
+    "pmtiles_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
+    "sha256": "1f44bac08e067e03fbdf06bfa80b41ad0551ba14fc9a8f9b399b43f15f45f2f5",
+    "bytes": 57346797,
     "bounds": [
-      -74.17628,
-      45.23742,
-      -73.27628,
-      45.86764
+      -76.15,
+      45,
+      -75.24,
+      45.65
     ],
-    "osm_updated_utc": "2026-08-30T04:00:00Z",
+    "osm_updated_utc": "2026-10-02T04:00:00Z",
     "attribution": "c OpenStreetMap contributors, c Protomaps",
     "min_zoom": 0,
     "max_zoom": 15
@@ -43,46 +43,46 @@
       "sha256": "5f9b5cddc75fa5b4de8382e1f91f1041d5373d1e5a483d59343551b71feed211"
     },
     {
-      "path": "../db/config/providers/stm.yaml",
-      "sha256": "f7bc857f21df9fbe9f44964f7a5c7cf59eae4ca3945d9785ce8df25d2466481c"
+      "path": "../db/config/providers/octranspo.yaml",
+      "sha256": "d9c7d1da8ece927b799e4763b442e91296609c584c9a78c5a9973890361974db"
     }
   ],
   "posters": [
     {
-      "filename": "basemap-montreal-dark-mobile-20261003.avif",
+      "filename": "basemap-ottawa-dark-mobile-20261003.avif",
       "theme": "dark",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 39847,
-      "sha256": "57d20ae58cf135512b2548f524568b39ad40f2e5d0bfb7fce782acff6bafee66"
+      "bytes": 34978,
+      "sha256": "bb13882f15e3beaf2d57d400283c0e0a34d9342c8f6fe926067e0de377043ebc"
     },
     {
-      "filename": "basemap-montreal-dark-desktop-20261003.avif",
+      "filename": "basemap-ottawa-dark-desktop-20261003.avif",
       "theme": "dark",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 97464,
-      "sha256": "513720bc0adaa16891751b8bbd4365cf97ebf00cfbc546f3a64e1d7baf29f750"
+      "bytes": 75661,
+      "sha256": "b47914a11f8d4a50dcc35db2e4c3b618ad89edff573bf55ab8243ce928430395"
     },
     {
-      "filename": "basemap-montreal-light-mobile-20261003.avif",
+      "filename": "basemap-ottawa-light-mobile-20261003.avif",
       "theme": "light",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 50357,
-      "sha256": "e467dea43c0b3948e0834aee273f93cfbc111cd7b082de39ae7a9b5c418e1d67"
+      "bytes": 43646,
+      "sha256": "f821451dd497ef3a838816ab05856373aaebc84df03ebb2e503ea4318e981f22"
     },
     {
-      "filename": "basemap-montreal-light-desktop-20261003.avif",
+      "filename": "basemap-ottawa-light-desktop-20261003.avif",
       "theme": "light",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 117586,
-      "sha256": "ab5f666407c0a6f50ecf50b90b96e2ca0a4922ab0000fc076349e5c8531c8176"
+      "bytes": 93488,
+      "sha256": "87886b2213040088ffd9f1157dfd12e2c02f9f7f71ded433a23be70a04896204"
     }
   ]
 }

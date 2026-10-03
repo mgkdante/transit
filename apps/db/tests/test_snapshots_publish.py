@@ -690,7 +690,7 @@ def test_publish_static_writes_expected_keys() -> None:
     assert "labels/en.json" in written
     assert "static/routes/165.json" in written
     assert not any(k.startswith("static/stops/") for k in written)
-    assert "static/basemap.json" not in written
+    assert "static/basemap.json" in written
     assert "_meta/publish_state_static.json" in store.store
     import json as _json
 
@@ -844,6 +844,7 @@ def test_publish_static_route_hash_gate_keeps_identical_bytes_and_rewrites_only_
     )
     assert changed.written == ["static/routes/101.json"]
     assert set(changed.skipped) == {
+        "static/basemap.json",
         "static/routes_index.json",
         "static/stops_index.json",
         "labels/fr.json",
@@ -1686,7 +1687,7 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     import json
 
     bm = json.loads(store.store["static/basemap.json"])
-    assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
+    assert bm["url"] == "/data/v1/stm/static/basemap/montreal.pmtiles"
     assert bm["format"] == "pmtiles"
 
 
