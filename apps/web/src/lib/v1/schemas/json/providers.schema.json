@@ -1,0 +1,207 @@
+{
+  "$defs": {
+    "ProviderLabel": {
+      "properties": {
+        "city": {
+          "title": "City",
+          "type": "string"
+        },
+        "operator": {
+          "title": "Operator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "city",
+        "operator"
+      ],
+      "title": "ProviderLabel",
+      "type": "object"
+    },
+    "PublicProvider": {
+      "properties": {
+        "alert_links": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Alert Links",
+          "type": "object"
+        },
+        "attribution": {
+          "title": "Attribution",
+          "type": "string"
+        },
+        "basemap_url": {
+          "title": "Basemap Url",
+          "type": "string"
+        },
+        "bbox": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Bbox",
+          "type": "array"
+        },
+        "default_lang": {
+          "title": "Default Lang",
+          "type": "string"
+        },
+        "fit_bounds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fit Bounds"
+        },
+        "geocode_context": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geocode Context"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "labels": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderLabel"
+          },
+          "title": "Labels",
+          "type": "object"
+        },
+        "max_bounds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Bounds"
+        },
+        "posters_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Posters Url"
+        },
+        "tz": {
+          "title": "Tz",
+          "type": "string"
+        },
+        "website_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Website Url"
+        }
+      },
+      "required": [
+        "id",
+        "labels",
+        "bbox",
+        "tz",
+        "default_lang",
+        "attribution",
+        "basemap_url",
+        "alert_links",
+        "inputs"
+      ],
+      "title": "PublicProvider",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "default_provider": {
+      "title": "Default Provider",
+      "type": "string"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "providers": {
+      "items": {
+        "$ref": "#/$defs/PublicProvider"
+      },
+      "title": "Providers",
+      "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "default_provider",
+    "providers"
+  ],
+  "title": "PublicProviderCatalog",
+  "type": "object"
+}

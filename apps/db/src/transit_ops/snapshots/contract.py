@@ -8,10 +8,13 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from transit_ops.core.models import ProviderLabel
+
 PAYLOAD_SCHEMA_VERSION = 1
 
 # Methodology tokens describe metric meaning; every top-level family requires one.
 PAYLOAD_METHODOLOGY: dict[str, str] = {
+    "providers": "providers-1",
     "manifest": "manifest-1",
     "live_vehicles": "live-2",
     "live_trips": "live-2",
@@ -324,6 +327,30 @@ class Manifest(PayloadEnvelope):
     files: ManifestFiles
     surfaces: list[str]
     capabilities: ProviderCapabilities | None = None
+
+
+class PublicProvider(BaseModel):
+    id: str
+    labels: dict[str, ProviderLabel]
+    bbox: list[float]
+    tz: str
+    default_lang: str
+    attribution: str
+    website_url: str | None = None
+    fit_bounds: list[float] | None = None
+    max_bounds: list[float] | None = None
+    geocode_context: str | None = None
+    basemap_url: str
+    posters_url: str | None = None
+    alert_links: dict[str, str]
+    inputs: dict[str, bool]
+
+
+class PublicProviderCatalog(PayloadEnvelope):
+    schema_version: Literal[1] = 1
+    generated_utc: str
+    default_provider: str
+    providers: list[PublicProvider]
 
 
 class RouteIndexEntry(BaseModel):
@@ -1497,6 +1524,7 @@ class RouteReliabilityIndex(PayloadEnvelope):
 
 
 TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
+    "providers": PublicProviderCatalog,
     "manifest": Manifest,
     "live_vehicles": VehiclesFile,
     "live_trips": TripsFile,

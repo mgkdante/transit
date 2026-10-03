@@ -39,6 +39,15 @@ provider:
   website_url: https://www.octranspo.com/
   is_active: true
 
+public:
+  enabled: false
+  labels:
+    en: {city: Ottawa, operator: OC Transpo}
+    fr: {city: Ottawa, operator: OC Transpo}
+  geocode_context: Ottawa, Ontario
+  basemap_url: /data/v1/octranspo/static/basemap/ottawa.pmtiles
+  posters_url: /map/basemap-ottawa-posters.json
+
 feeds:
   static_schedule:
     endpoint_key: static_schedule

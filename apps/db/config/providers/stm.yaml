@@ -15,6 +15,25 @@ provider:
   website_url: https://www.stm.info/
   is_active: true
 
+public:
+  enabled: true
+  labels:
+    en: {city: Montréal, operator: STM}
+    fr: {city: Montréal, operator: STM}
+  fit_bounds:
+    min_longitude: -73.9757
+    min_latitude: 45.4022
+    max_longitude: -73.4764
+    max_latitude: 45.7028
+  max_bounds:
+    min_longitude: -74.28605
+    min_latitude: 45.3
+    max_longitude: -73.16605
+    max_latitude: 45.82
+  geocode_context: Montréal, Québec
+  basemap_url: /data/v1/stm/static/basemap/montreal.pmtiles
+  posters_url: /map/basemap-montreal-posters.json
+
 feeds:
   static_schedule:
     endpoint_key: static_schedule

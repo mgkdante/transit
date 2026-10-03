@@ -74,7 +74,9 @@ from transit_ops.silver import (
 from transit_ops.silver.realtime_gtfs import load_latest_realtime_snapshots_to_silver
 from transit_ops.snapshots.gate import GateError
 from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
+from transit_ops.snapshots.providers import build_public_provider_catalog
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
+from transit_ops.snapshots.storage import SnapshotStorage, build_snapshot_storage
 from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.alert_language_coverage import (
     run_alert_language_coverage_measurement,
@@ -397,6 +399,25 @@ def show_provider(provider_id: str) -> None:
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(provider.to_display_dict(settings), indent=2))
+
+
+@app.command("publish-providers")
+def publish_providers(
+    default_provider: str = typer.Option("stm", "--default-provider"),  # noqa: B008
+) -> None:
+    """Publish explicitly ready providers after validating their existing snapshots/assets."""
+    settings = get_settings()
+    storage = build_snapshot_storage(settings, provider_id=None)
+    try:
+        catalog = build_public_provider_catalog(
+            _provider_registry(settings), storage, default_provider=default_provider
+        )
+        typer.echo(storage.put_json("providers.json", catalog, tier="live"))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    finally:
+        if isinstance(storage, SnapshotStorage):
+            storage.close()
 
 
 @app.command("db-test")

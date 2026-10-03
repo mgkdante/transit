@@ -1042,11 +1042,11 @@ def _snapshot_publish_pool_size(settings: Settings) -> int:
 def build_snapshot_storage(
     settings: Settings,
     *,
-    provider_id: str,
+    provider_id: str | None,
     client: object | None = None,
 ) -> SnapshotStorage | LocalSnapshotStorage:
-    """Construct storage for the provider with snapshot-owned bucket validation."""
-    base_prefix = f"v1/{provider_id}"
+    """Construct provider storage, or the v1 root for explicit catalog publication."""
+    base_prefix = f"v1/{provider_id}" if provider_id is not None else "v1"
 
     if settings.SNAPSHOT_STORAGE_BACKEND == "local":
         if not settings.SNAPSHOT_LOCAL_ROOT:

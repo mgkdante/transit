@@ -15,7 +15,14 @@ from transit_ops.settings import Settings
 runner = CliRunner()
 
 
-def _provider_manifest_payload() -> dict[str, object]:
+def _provider_manifest_payload(*, gis: bool = True, realtime: bool = True) -> dict[str, object]:
+    formats = {"static_schedule": "gtfs_schedule_zip"}
+    if gis:
+        formats["gis_static"] = "stm_gis_zip"
+    if realtime:
+        formats.update(
+            trip_updates="gtfs_rt_trip_updates", vehicle_positions="gtfs_rt_vehicle_positions"
+        )
     return {
         "provider": {
             "provider_id": "test",
@@ -23,60 +30,30 @@ def _provider_manifest_payload() -> dict[str, object]:
             "timezone": "America/Toronto",
         },
         "feeds": {
-            "static_schedule": {
-                "endpoint_key": "static_schedule",
-                "feed_kind": "static_schedule",
-                "source_format": "gtfs_schedule_zip",
-                "source_url": "https://example.test/static.zip",
-                "auth": {"auth_type": "none"},
-                "refresh_interval_seconds": 86400,
+            kind: {
+                "endpoint_key": kind,
+                "feed_kind": kind,
+                "source_format": source_format,
+                "source_url": f"https://example.test/{kind}",
+                "auth": (
+                    {
+                        "auth_type": "api_key",
+                        "credential_env_var": "STM_API_KEY",
+                        "auth_header_name": "apiKey",
+                    }
+                    if source_format.startswith("gtfs_rt")
+                    else {"auth_type": "none"}
+                ),
+                "refresh_interval_seconds": 30 if source_format.startswith("gtfs_rt") else 86400,
                 "is_enabled": True,
-            },
-            "gis_static": {
-                "endpoint_key": "gis_static",
-                "feed_kind": "gis_static",
-                "source_format": "stm_gis_zip",
-                "source_url": "https://example.test/gis.zip",
-                "auth": {"auth_type": "none"},
-                "refresh_interval_seconds": 86400,
-                "is_enabled": True,
-            },
-            "trip_updates": {
-                "endpoint_key": "trip_updates",
-                "feed_kind": "trip_updates",
-                "source_format": "gtfs_rt_trip_updates",
-                "source_url": "https://example.test/trip-updates.pb",
-                "auth": {
-                    "auth_type": "api_key",
-                    "credential_env_var": "STM_API_KEY",
-                    "auth_header_name": "apiKey",
-                },
-                "refresh_interval_seconds": 30,
-                "is_enabled": True,
-            },
-            "vehicle_positions": {
-                "endpoint_key": "vehicle_positions",
-                "feed_kind": "vehicle_positions",
-                "source_format": "gtfs_rt_vehicle_positions",
-                "source_url": "https://example.test/vehicle-positions.pb",
-                "auth": {
-                    "auth_type": "api_key",
-                    "credential_env_var": "STM_API_KEY",
-                    "auth_header_name": "apiKey",
-                },
-                "refresh_interval_seconds": 30,
-                "is_enabled": True,
-            },
+            }
+            for kind, source_format in formats.items()
         },
     }
 
 
 def _gtfs_only_manifest_payload() -> dict[str, object]:
-    payload = _provider_manifest_payload()
-    feeds = payload["feeds"]
-    assert isinstance(feeds, dict)
-    del feeds["gis_static"]
-    return payload
+    return _provider_manifest_payload(gis=False)
 
 
 def test_gtfs_only_manifest_validates_without_gis() -> None:
@@ -91,23 +68,21 @@ def test_gtfs_only_manifest_validates_without_gis() -> None:
 
 
 def _static_only_manifest_payload() -> dict[str, object]:
-    payload = _provider_manifest_payload()
-    feeds = payload["feeds"]
-    assert isinstance(feeds, dict)
-    del feeds["gis_static"]
-    del feeds["trip_updates"]
-    del feeds["vehicle_positions"]
-    return payload
+    return _provider_manifest_payload(gis=False, realtime=False)
 
 
 def test_static_only_manifest_validates() -> None:
     manifest = ProviderManifest.model_validate(_static_only_manifest_payload())
 
     assert set(manifest.feeds) == {"static_schedule"}
+    assert [
+        seed.endpoint_key for seed in manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+    ] == ["static_schedule"]
 
 
-def test_static_plus_alerts_manifest_validates() -> None:
-    payload = _static_only_manifest_payload()
+@pytest.mark.parametrize("realtime", [False, True])
+def test_manifest_accepts_generic_service_alerts_feed(realtime) -> None:
+    payload = _provider_manifest_payload(gis=False, realtime=realtime)
     feeds = payload["feeds"]
     assert isinstance(feeds, dict)
     feeds["service_alerts"] = {
@@ -122,8 +97,16 @@ def test_static_plus_alerts_manifest_validates() -> None:
 
     manifest = ProviderManifest.model_validate(payload)
 
-    assert set(manifest.feeds) == {"static_schedule", "service_alerts"}
-    assert manifest.service_alerts_feed() is not None
+    alerts = manifest.service_alerts_feed()
+    assert alerts is not None
+    assert alerts.source_format.value == "gtfs_rt_service_alerts"
+    assert [
+        seed.endpoint_key for seed in manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+    ] == [
+        "static_schedule",
+        *(["trip_updates", "vehicle_positions"] if realtime else []),
+        "service_alerts",
+    ]
 
 
 def test_manifest_missing_static_schedule_still_rejected() -> None:
@@ -149,13 +132,6 @@ def test_gtfs_only_feed_endpoint_seeds_omit_gis() -> None:
 
 
 def test_only_static_schedule_is_universally_required() -> None:
-    payload = _gtfs_only_manifest_payload()
-    feeds = payload["feeds"]
-    assert isinstance(feeds, dict)
-    del feeds["static_schedule"]
-    with pytest.raises(ValidationError, match="Missing required feed definitions"):
-        ProviderManifest.model_validate(payload)
-
     for optional_feed in ("trip_updates", "vehicle_positions"):
         payload = _gtfs_only_manifest_payload()
         feeds = payload["feeds"]
@@ -185,68 +161,9 @@ def test_stm_manifest_still_exposes_gis_feed() -> None:
     assert gis_feed.source_format.value == "stm_gis_zip"
 
 
-def test_manifest_accepts_generic_service_alerts_feed() -> None:
-    payload = _gtfs_only_manifest_payload()
-    feeds = payload["feeds"]
-    assert isinstance(feeds, dict)
-    feeds["service_alerts"] = {
-        "endpoint_key": "service_alerts",
-        "feed_kind": "service_alerts",
-        "source_format": "gtfs_rt_service_alerts",
-        "source_url": "https://example.test/alerts.pb",
-        "auth": {"auth_type": "none"},
-        "refresh_interval_seconds": 300,
-        "is_enabled": True,
-    }
-
-    manifest = ProviderManifest.model_validate(payload)
-
-    alerts = manifest.service_alerts_feed()
-    assert alerts is not None
-    assert alerts.source_format.value == "gtfs_rt_service_alerts"
-    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
-    assert [seed.endpoint_key for seed in seeds] == [
-        "static_schedule",
-        "trip_updates",
-        "vehicle_positions",
-        "service_alerts",
-    ]
-
-
 def test_manifest_without_service_alerts_returns_none() -> None:
     manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
     assert manifest.service_alerts_feed() is None
-
-
-def test_static_only_feed_endpoint_seeds_no_keyerror() -> None:
-    manifest = ProviderManifest.model_validate(_static_only_manifest_payload())
-
-    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
-
-    assert [seed.endpoint_key for seed in seeds] == ["static_schedule"]
-
-
-def test_static_plus_alerts_feed_endpoint_seeds_no_keyerror() -> None:
-    payload = _static_only_manifest_payload()
-    feeds = payload["feeds"]
-    assert isinstance(feeds, dict)
-    feeds["service_alerts"] = {
-        "endpoint_key": "service_alerts",
-        "feed_kind": "service_alerts",
-        "source_format": "gtfs_rt_service_alerts",
-        "source_url": "https://example.test/alerts.pb",
-        "auth": {"auth_type": "none"},
-        "refresh_interval_seconds": 300,
-        "is_enabled": True,
-    }
-    manifest = ProviderManifest.model_validate(payload)
-
-    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
-
-    assert [seed.endpoint_key for seed in seeds] == [
-        "static_schedule",
-        "service_alerts",
-    ]
 
 
 def test_manifest_loading() -> None:
@@ -441,3 +358,128 @@ def test_show_provider_command() -> None:
     assert '"static_schedule_current_fallback"' not in result.stdout
     assert '"trip_updates"' in result.stdout
     assert '"vehicle_positions"' in result.stdout
+
+
+def test_public_readiness_is_separate_from_ingestion() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+    assert manifest.provider.is_active
+    assert manifest.public.enabled is False
+
+
+@pytest.mark.parametrize("provider_id", ["../stm", "a/b", "a?b", ""])
+def test_provider_id_cannot_escape_its_namespace(provider_id: str) -> None:
+    payload = _gtfs_only_manifest_payload()
+    payload["provider"]["provider_id"] = provider_id
+    with pytest.raises(ValidationError):
+        ProviderManifest.model_validate(payload)
+
+
+@pytest.fixture
+def public_provider(tmp_path, monkeypatch):
+    from transit_ops.ingestion.realtime_gtfs import build_realtime_ingestion_config
+    from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
+    from transit_ops.snapshots.storage import LocalSnapshotStorage
+
+    monkeypatch.setenv("TEST_PROVIDER_API_KEY", "synthetic-credential")
+    settings = Settings(_env_file=None, SNAPSHOT_LOCAL_ROOT=str(tmp_path / "snapshots"))
+    payload = _gtfs_only_manifest_payload()
+    for endpoint in ("trip_updates", "vehicle_positions"):
+        payload["feeds"][endpoint]["auth"]["credential_env_var"] = "TEST_PROVIDER_API_KEY"
+    payload["provider"].update(
+        city="Test City",
+        short_name="Test Transit",
+        bounds=dict(min_latitude=10, max_latitude=11, min_longitude=20, max_longitude=21),
+    )
+    payload["public"] = {
+        "enabled": True,
+        "labels": {
+            "en": {"city": "Test City", "operator": "Test Transit"},
+            "fr": {"city": "Ville Test", "operator": "Transport Test"},
+        },
+        "basemap_url": "/data/v1/test/static/basemap/test.pmtiles",
+    }
+    config = tmp_path / "config"
+    config.mkdir()
+    manifest_path = config / "test.yaml"
+    manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    monkeypatch.setattr("transit_ops.cli.get_settings", lambda: settings)
+    monkeypatch.setattr("transit_ops.cli._provider_registry", lambda _: ProviderRegistry(config))
+    manifest = ProviderRegistry(config).get_provider("test")
+    assert build_static_ingestion_config(manifest, settings).provider_id == "test"
+    realtime = build_realtime_ingestion_config(manifest, settings, "trip_updates")
+    assert realtime.provider_id == "test"
+    assert realtime.request_headers["apiKey"] == "synthetic-credential"
+    store = LocalSnapshotStorage(settings.SNAPSHOT_LOCAL_ROOT, "v1")
+    store.put_json(
+        "test/manifest.json",
+        {
+            "provider": "test",
+            "display_name": "Test Provider",
+            "city": "Test City",
+            "tz": "America/Toronto",
+            "bbox": [20, 10, 21, 11],
+            "attribution": "Test data",
+            "dataset_version": "test-static",
+            "labels": {},
+            "surfaces": ["map"],
+            "files": {
+                "live": {"generated_utc": "2026-10-03T00:00:00Z"},
+                "static": {"basemap": "static/basemap.json"},
+            },
+        },
+        tier="live",
+    )
+    store.put_json(
+        "test/static/basemap.json",
+        {
+            "url": payload["public"]["basemap_url"],
+            "attribution": "Test map",
+            "generated_utc": "2026-10-03T00:00:00Z",
+        },
+        tier="static",
+    )
+    store.put_bytes("test/static/basemap/test.pmtiles", bytes(100001), tier="static")
+    return store, manifest_path, payload
+
+
+def test_catalog_publication_uses_configured_provider_without_credentials(public_provider) -> None:
+    store, manifest_path, payload = public_provider
+    result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
+    assert result.exit_code == 0, result.output
+    catalog = store.get_json("providers.json")
+    assert catalog["default_provider"] == "test"
+    assert [entry["id"] for entry in catalog["providers"]] == ["test"]
+    entry = catalog["providers"][0]
+    assert entry["labels"]["fr"]["city"] == "Ville Test"
+    assert entry["bbox"] == [20, 10, 21, 11]
+    assert entry["inputs"]["trip_updates"] is True
+    assert entry["inputs"]["service_alerts"] is False
+    assert "synthetic-credential" not in str(catalog)
+    assert "credential_env_var" not in str(catalog)
+    payload["public"]["enabled"] = False
+    manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
+    assert result.exit_code != 0
+    assert store.get_json("providers.json") == catalog
+
+
+@pytest.mark.parametrize("failure", ["foreign_manifest", "foreign_asset", "missing_asset"])
+def test_catalog_rejects_unready_provider_without_replacing_discovery(
+    public_provider, failure
+) -> None:
+    store, _, _ = public_provider
+    store.put_json("providers.json", {"existing": True}, tier="live")
+    if failure == "foreign_manifest":
+        manifest = store.get_json("test/manifest.json")
+        manifest["provider"] = "stm"
+        store.put_json("test/manifest.json", manifest, tier="live")
+    elif failure == "foreign_asset":
+        descriptor = store.get_json("test/static/basemap.json")
+        descriptor["url"] = "/data/v1/stm/static/basemap/montreal.pmtiles"
+        store.put_json("test/static/basemap.json", descriptor, tier="static")
+    else:
+        Path(store.full_key("test/static/basemap/test.pmtiles")).unlink()
+    result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
+    assert result.exit_code != 0
+    assert "not ready" in result.output.lower()
+    assert store.get_json("providers.json") == {"existing": True}
