@@ -75,9 +75,10 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 		dateStyle: 'medium',
 		timeStyle: 'short',
 	};
-	const resolved: Intl.DateTimeFormatOptions = opts
-		? { ...opts, timeZone: DISPLAY_TIME_ZONE }
-		: { ...base, timeZone: DISPLAY_TIME_ZONE };
+	const resolved: Intl.DateTimeFormatOptions = {
+		...(opts ?? base),
+		timeZone: opts?.timeZone ?? DISPLAY_TIME_ZONE,
+	};
 	return dateTimeFormat(localeTag(lang), resolved).format(date);
 }
 

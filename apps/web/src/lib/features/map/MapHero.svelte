@@ -757,6 +757,7 @@
 			<MapSelectionDetail
 				detail={selectedDetail}
 				{locale}
+				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
 				{selectionPresence}
 				{selectionSourceHealth}
@@ -878,6 +879,7 @@
 			}
 			{locale}
 			identity={detailIdentity}
+			timeZone={v1.manifest.tz}
 			footer={detailFooter}
 			surfaceKey={detailSurfaceKey}
 			canGoBack={selectionStack.length > 0}

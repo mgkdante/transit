@@ -88,8 +88,14 @@ export function delayKnownLabel(delay: number, t: MapSelectionDetailCopy): strin
 	return delayLabel(delay, t);
 }
 
-export function timeLabel(iso: string | null | undefined, locale: Locale): string {
-	return iso ? formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+export function timeLabel(
+	iso: string | null | undefined,
+	locale: Locale,
+	timeZone?: string,
+): string {
+	return iso
+		? formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
+		: '';
 }
 
 export function formatAge(seconds: number): string {

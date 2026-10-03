@@ -8,6 +8,8 @@ import type { Alert, IsoUtc, StopIndexEntry } from '$lib/v1/schemas';
 import type { StopMapDetail, VehicleMapDetail } from './mapSelection';
 import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 const stop: StopIndexEntry = {
 	id: 'stop-1',
 	name: 'Sherbrooke / Saint-Denis',
@@ -295,7 +297,11 @@ describe('MapMobileDetailSheet', () => {
 			const style = installMobileLadderSeam(390);
 			try {
 				render(MapMobileDetailSheet, {
-					props: baseProps({ locale, selectedDetail: stopDetailWithLadder }),
+					props: baseProps({
+						locale,
+						selectedDetail: stopDetailWithLadder,
+						timeZone: 'America/Vancouver',
+					}),
 				});
 				const body = await waitFor(() => {
 					const element = document.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]');
@@ -303,6 +309,9 @@ describe('MapMobileDetailSheet', () => {
 					return element!;
 				});
 				const sheetCss = compiledCss('src/lib/components/shell/BottomSheet.svelte');
+				expect(body.querySelector('[data-slot="detail-departures"] time')).toHaveTextContent(
+					locale === 'en' ? '05:01' : '05 h 01',
+				);
 				expect(sheetCss).toMatch(
 					/\.bottom-sheet-body[^}]*\{[^}]*container:\s*right-panel\s*\/\s*inline-size/,
 				);

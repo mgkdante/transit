@@ -38,6 +38,7 @@
 	interface Props {
 		detail: MapSelectionDetail | null;
 		locale: Locale;
+		timeZone?: string;
 		onselect?: (selection: MapSelection) => void;
 		onpreview?: (selection: MapSelection | null) => void;
 		onfilter?: (chip: Chip) => void;
@@ -52,6 +53,7 @@
 	let {
 		detail,
 		locale,
+		timeZone,
 		onselect,
 		onpreview,
 		onfilter,
@@ -185,7 +187,7 @@
 						<dd>
 							<MaybeValue
 								value={detail.nextStops[0]?.etaUtc
-									? timeLabel(detail.nextStops[0].etaUtc, locale)
+									? timeLabel(detail.nextStops[0].etaUtc, locale, timeZone)
 									: null}
 								reason="no-prediction"
 								{locale}
@@ -282,6 +284,7 @@
 						{#each detail.nextStops as stop (stop.id)}<li>
 								<DetailStopRow
 									{stop}
+									{timeZone}
 									{locale}
 									{t}
 									{seqUnknownAria}
@@ -298,6 +301,7 @@
 						{#each detail.pastStops as stop (stop.id)}<li>
 								<DetailStopRow
 									{stop}
+									{timeZone}
 									{locale}
 									{t}
 									{seqUnknownAria}
@@ -330,7 +334,7 @@
 										data-detail-focus-key={`departure:${departureKey}:trip`}
 										aria-label={t.filterTrip(departure.trip)}
 										onclick={() => filterTrip(departure.trip)}>{t.trip} {departure.trip}</button
-									>{/if}<time>{timeLabel(departure.eta_utc, locale)}</time><MapDelayTag
+									>{/if}<time>{timeLabel(departure.eta_utc, locale, timeZone)}</time><MapDelayTag
 									delay={departure.delay_min}
 									{locale}
 									{t}
@@ -368,7 +372,7 @@
 						{#each detail.departures.slice(3) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}<li
 							>
 								{departure.route}
-								{timeLabel(departure.eta_utc, locale)}
+								{timeLabel(departure.eta_utc, locale, timeZone)}
 							</li>{/each}
 					</ol></DetailSection
 				>{/if}
@@ -377,6 +381,7 @@
 						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}<li>
 								<DetailBusRow
 									{vehicle}
+									{timeZone}
 									etaUtc={detail.departures?.find((departure) => departure.trip === vehicle.trip)
 										?.eta_utc ?? null}
 									{locale}
@@ -398,7 +403,14 @@
 			{#if detail.vehicles.length > 0}<DetailSection title={t.liveBuses} slot="detail-live-buses"
 					><ol>
 						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}<li>
-								<DetailBusRow {vehicle} {locale} {t} onselect={selectVehicle} {onpreview} />
+								<DetailBusRow
+									{vehicle}
+									{locale}
+									{timeZone}
+									{t}
+									onselect={selectVehicle}
+									{onpreview}
+								/>
 							</li>{/each}
 					</ol></DetailSection
 				>{/if}
@@ -409,6 +421,7 @@
 								{#each direction.stops as stop (stop.id)}<li>
 										<DetailStopRow
 											{stop}
+											{timeZone}
 											{locale}
 											{t}
 											{seqUnknownAria}

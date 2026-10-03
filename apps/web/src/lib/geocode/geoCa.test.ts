@@ -9,7 +9,7 @@ const AREA = {
 
 it('queries Ottawa context and rejects Montreal candidates for Ottawa', async () => {
 	const fetcher = vi.fn(async (url: URL) => {
-		expect(url.searchParams.get('q')).toContain('Ottawa Ontario Canada');
+		expect(url.searchParams.get('q')).toBe('100 Bank street Ottawa Ontario Canada');
 		expect(url.searchParams.get('lang')).toBe('fr');
 		return new Response(
 			JSON.stringify([
@@ -42,10 +42,18 @@ describe('geoCaSearchUrl', () => {
 		expect(url.searchParams.get('keys')).toBe('locate,nominatim,fsa,geonames');
 	});
 
-	it('expands informal Montréal street intent before sending to Geo.ca', () => {
-		const url = geoCaSearchUrl('1234 boul st laurent', AREA);
-
-		expect(url.searchParams.get('q')).toBe('1234 boulevard saint laurent Montreal Quebec Canada');
+	it.each([
+		['1234 boul st laurent', '1234 boulevard saint laurent'],
+		['rue St', 'rue saint'],
+		['rue St.', 'rue saint'],
+		['av St', 'avenue saint'],
+		['St Laurent', 'saint Laurent'],
+		['100 Bank St', '100 Bank street'],
+		['100 Bank St.', '100 Bank street'],
+	])('expands street intent in %s before sending to Geo.ca', (query, expected) => {
+		expect(geoCaSearchUrl(query, AREA).searchParams.get('q')).toBe(
+			`${expected} Montreal Quebec Canada`,
+		);
 	});
 });
 

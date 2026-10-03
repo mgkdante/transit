@@ -226,7 +226,8 @@ function normalizeAddressIntentInQuery(query: string): string {
 		.replace(/\b(?:av|ave)\b/gi, 'avenue')
 		.replace(/\bch\b/gi, 'chemin')
 		.replace(/\bste\b/gi, 'sainte')
-		.replace(/\bst$/gi, 'street')
+		.replace(/\b(rue|boulevard|avenue|chemin)\s+st\b/gi, '$1 saint')
+		.replace(/\bst\s*$/gi, 'street')
 		.replace(/\bst\b/gi, 'saint')
 		.replace(/\s+/g, ' ')
 		.trim();

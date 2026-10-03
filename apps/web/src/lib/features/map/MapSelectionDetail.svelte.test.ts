@@ -283,9 +283,14 @@ const index = buildLiveIndex({
 });
 
 describe('MapSelectionDetail', () => {
-	it.each(['en', 'fr'] as const)(
-		'keeps available trip stops when the vehicle next stop is unreported (%s)',
-		(locale) => {
+	it.each([
+		['en', 'America/Toronto', '20:06', '20:16'],
+		['fr', 'America/Toronto', '20 h 06', '20 h 16'],
+		['en', 'America/Vancouver', '17:06', '17:16'],
+		['fr', 'America/Vancouver', '17 h 06', '17 h 16'],
+	] as const)(
+		'keeps trip stops and selected-zone ETAs when the vehicle next stop is unreported (%s, %s)',
+		(locale, timeZone, firstTime, secondTime) => {
 			const changedIndex = {
 				...index,
 				byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], next_stop: null }),
@@ -299,7 +304,15 @@ describe('MapSelectionDetail', () => {
 					routes,
 				},
 			);
-			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const { container } = render(MapSelectionDetail, { props: { detail, locale, timeZone } });
+			expect(detailValue(container, 'ETA')).toHaveTextContent(firstTime);
+			expect([...container.querySelectorAll('time')].map((node) => node.textContent)).toEqual([
+				firstTime,
+				secondTime,
+			]);
+			expect(container.querySelector('[data-detail-stop-id="stop-2"]')).toHaveAccessibleName(
+				expect.stringContaining(firstTime),
+			);
 			expect(container).toHaveTextContent(
 				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
 			);
@@ -601,7 +614,10 @@ describe('MapSelectionDetail', () => {
 		},
 	);
 
-	it('marks stop routes as the 420px rung and full departures as the 560px rung', () => {
+	it.each([
+		['America/Toronto', '20:06', '20:36'],
+		['America/Vancouver', '17:06', '17:36'],
+	])('renders both departure rungs in %s', (timeZone, firstTime, lastTime) => {
 		const detail = resolveMapSelection(
 			{ kind: 'stop', id: 'stop-1' },
 			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
@@ -616,8 +632,14 @@ describe('MapSelectionDetail', () => {
 			],
 		};
 		const { container } = render(MapSelectionDetail, {
-			props: { detail: expandedDetail, locale: 'en' },
+			props: { detail: expandedDetail, locale: 'en', timeZone },
 		});
+		expect(container.querySelector('[data-slot="detail-departures"] time')).toHaveTextContent(
+			firstTime,
+		);
+		expect(container.querySelector('[data-slot="detail-more-departures"] li')).toHaveTextContent(
+			lastTime,
+		);
 		const routeTimes = container.querySelector<HTMLElement>('[data-slot="detail-route-times"]')!;
 		const moreDepartures = container.querySelector<HTMLElement>(
 			'[data-slot="detail-more-departures"]',
@@ -821,18 +843,22 @@ describe('MapSelectionDetail', () => {
 		},
 	);
 
-	it('composes each bus row name as entity, route, status, and delay', () => {
+	it.each([
+		['America/Toronto', '20:06'],
+		['America/Vancouver', '17:06'],
+	])('composes each bus row name with its %s ETA', (timeZone, expectedTime) => {
 		const { getByRole } = render(DetailBusRow, {
 			props: {
 				vehicle: vehicles[0],
 				etaUtc: utc('2026-06-15T00:06:00Z'),
+				timeZone,
 				locale: 'en',
 				t: MAP_SELECTION_DETAIL_COPY.en,
 				onselect: () => {},
 			},
 		});
 		expect(getByRole('button')).toHaveAccessibleName(
-			'Select bus veh-1, Route 24, 20:06, Late, Delay: +4 min',
+			`Select bus veh-1, Route 24, ${expectedTime}, Late, Delay: +4 min`,
 		);
 	});
 
