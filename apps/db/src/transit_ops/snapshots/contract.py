@@ -332,15 +332,9 @@ class Manifest(PayloadEnvelope):
 class PublicProvider(BaseModel):
     id: str
     labels: dict[str, ProviderLabel]
-    bbox: list[float]
-    tz: str
-    default_lang: str
-    attribution: str
-    website_url: str | None = None
     fit_bounds: list[float] | None = None
     max_bounds: list[float] | None = None
     geocode_context: str | None = None
-    basemap_url: str
     posters_url: str | None = None
     alert_links: dict[str, str]
     inputs: dict[str, bool]

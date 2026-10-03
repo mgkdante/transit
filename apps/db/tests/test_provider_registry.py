@@ -381,7 +381,11 @@ def public_provider(tmp_path, monkeypatch):
     from transit_ops.snapshots.storage import LocalSnapshotStorage
 
     monkeypatch.setenv("TEST_PROVIDER_API_KEY", "synthetic-credential")
-    settings = Settings(_env_file=None, SNAPSHOT_LOCAL_ROOT=str(tmp_path / "snapshots"))
+    settings = Settings(
+        _env_file=None,
+        SNAPSHOT_LOCAL_ROOT=str(tmp_path / "snapshots"),
+        SNAPSHOT_PUBLIC_BASE_URL="https://transit.example/data",
+    )
     payload = _gtfs_only_manifest_payload()
     for endpoint in ("trip_updates", "vehicle_positions"):
         payload["feeds"][endpoint]["auth"]["credential_env_var"] = "TEST_PROVIDER_API_KEY"
@@ -403,7 +407,9 @@ def public_provider(tmp_path, monkeypatch):
     manifest_path = config / "test.yaml"
     manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     monkeypatch.setattr("transit_ops.cli.get_settings", lambda: settings)
-    monkeypatch.setattr("transit_ops.cli._provider_registry", lambda _: ProviderRegistry(config))
+    monkeypatch.setattr(
+        "transit_ops.cli._provider_registry", lambda _: ProviderRegistry(config, settings=settings)
+    )
     manifest = ProviderRegistry(config).get_provider("test")
     assert build_static_ingestion_config(manifest, settings).provider_id == "test"
     realtime = build_realtime_ingestion_config(manifest, settings, "trip_updates")
@@ -414,6 +420,7 @@ def public_provider(tmp_path, monkeypatch):
         "test/manifest.json",
         {
             "provider": "test",
+            "publish_generation_id": "test@2026-10-03T00:00:00Z",
             "display_name": "Test Provider",
             "city": "Test City",
             "tz": "America/Toronto",
@@ -434,6 +441,7 @@ def public_provider(tmp_path, monkeypatch):
         {
             "url": payload["public"]["basemap_url"],
             "attribution": "Test map",
+            "publish_generation_id": "test@2026-10-02T00:00:00Z",
             "generated_utc": "2026-10-03T00:00:00Z",
         },
         tier="static",
@@ -451,7 +459,6 @@ def test_catalog_publication_uses_configured_provider_without_credentials(public
     assert [entry["id"] for entry in catalog["providers"]] == ["test"]
     entry = catalog["providers"][0]
     assert entry["labels"]["fr"]["city"] == "Ville Test"
-    assert entry["bbox"] == [20, 10, 21, 11]
     assert entry["inputs"]["trip_updates"] is True
     assert entry["inputs"]["service_alerts"] is False
     assert "synthetic-credential" not in str(catalog)
@@ -463,23 +470,92 @@ def test_catalog_publication_uses_configured_provider_without_credentials(public
     assert store.get_json("providers.json") == catalog
 
 
-@pytest.mark.parametrize("failure", ["foreign_manifest", "foreign_asset", "missing_asset"])
+@pytest.mark.parametrize(
+    "target, changes",
+    [
+        ("manifest", {"provider": "stm"}),
+        (
+            "manifest",
+            {
+                "files": {
+                    "live": {"generated_utc": "2026-10-03T00:00:00Z"},
+                    "static": {
+                        "basemap": "https://foreign.example/data/v1/test/static/basemap.json"
+                    },
+                }
+            },
+        ),
+        ("descriptor", {"url": "/data/v1/stm/static/basemap/montreal.pmtiles"}),
+        ("descriptor", {"url": "https://foreign.example/data/v1/test/static/basemap/test.pmtiles"}),
+        ("descriptor", {"url": "//foreign.example/data/v1/test/static/basemap/test.pmtiles"}),
+        ("descriptor", {"url": "https://transit.example:0/data/v1/test/static/basemap/test.pmtiles"}),
+        ("descriptor", {"publish_generation_id": "stm@other"}),
+        ("descriptor", {"publish_generation_id": ""}),
+        (
+            "public",
+            {"basemap_url": "https://foreign.example/data/v1/test/static/basemap/test.pmtiles"},
+        ),
+        ("public", {"labels": {"fr": {"city": "", "operator": "Transport Test"}}}),
+        ("public", {"labels": {"en": {"city": "Test City", "operator": ""}}}),
+        (
+            "public",
+            {
+                "fit_bounds": dict(
+                    min_latitude=10, max_latitude=11, min_longitude=20, max_longitude=20
+                )
+            },
+        ),
+        (
+            "public",
+            {
+                "max_bounds": dict(
+                    min_latitude=10, max_latitude=10, min_longitude=20, max_longitude=21
+                )
+            },
+        ),
+        ("missing_asset", {}),
+    ],
+)
 def test_catalog_rejects_unready_provider_without_replacing_discovery(
-    public_provider, failure
+    public_provider, target, changes
 ) -> None:
-    store, _, _ = public_provider
-    store.put_json("providers.json", {"existing": True}, tier="live")
-    if failure == "foreign_manifest":
-        manifest = store.get_json("test/manifest.json")
-        manifest["provider"] = "stm"
-        store.put_json("test/manifest.json", manifest, tier="live")
-    elif failure == "foreign_asset":
-        descriptor = store.get_json("test/static/basemap.json")
-        descriptor["url"] = "/data/v1/stm/static/basemap/montreal.pmtiles"
-        store.put_json("test/static/basemap.json", descriptor, tier="static")
-    else:
+    store, manifest_path, payload = public_provider
+    assert runner.invoke(app, ["publish-providers", "--default-provider", "test"]).exit_code == 0
+    catalog = store.get_json("providers.json")
+    if target == "missing_asset":
         Path(store.full_key("test/static/basemap/test.pmtiles")).unlink()
+    elif target == "public":
+        payload["public"].update(changes)
+        manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    else:
+        key = "test/manifest.json" if target == "manifest" else "test/static/basemap.json"
+        document = store.get_json(key)
+        document.update(changes)
+        store.put_json(key, document, tier="static")
     result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
     assert result.exit_code != 0
-    assert "not ready" in result.output.lower()
-    assert store.get_json("providers.json") == {"existing": True}
+    assert store.get_json("providers.json") == catalog
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "static/",
+        "/v1/test/static/",
+        "/data/v1/test/static/",
+        "https://transit.example/data/v1/test/static/",
+    ],
+)
+def test_catalog_accepts_owned_basemap_pointers(public_provider, prefix) -> None:
+    store, manifest_path, payload = public_provider
+    manifest = store.get_json("test/manifest.json")
+    manifest["files"]["static"]["basemap"] = f"{prefix}basemap.json"
+    store.put_json("test/manifest.json", manifest, tier="live")
+    descriptor = store.get_json("test/static/basemap.json")
+    descriptor["url"] = f"{prefix}basemap/test.pmtiles"
+    descriptor.pop("publish_generation_id")
+    store.put_json("test/static/basemap.json", descriptor, tier="static")
+    payload["public"]["basemap_url"] = descriptor["url"]
+    manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
+    assert result.exit_code == 0, result.output

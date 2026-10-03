@@ -13,11 +13,23 @@ from transit_ops.snapshots.contract import (
 from transit_ops.snapshots.storage import LocalSnapshotStorage, SnapshotStorage
 
 
-def provider_object_key(pointer: str, provider_id: str) -> str:
+def provider_object_key(pointer: str, provider_id: str, public_base_url: str | None) -> str:
     url = urlsplit(pointer)
     path = unquote(url.path)
     if url.scheme not in ("", "https", "http") or "\\" in path:
         raise ValueError("Invalid snapshot pointer")
+    if url.scheme or url.netloc:
+        base = urlsplit(public_base_url or "")
+        default_port = 443 if url.scheme == "https" else 80
+        if (
+            not url.scheme
+            or not url.hostname
+            or url.username is not None
+            or (url.scheme, url.hostname) != (base.scheme, base.hostname)
+            or (url.port if url.port is not None else default_port)
+            != (base.port if base.port is not None else default_port)
+        ):
+            raise ValueError("Snapshot pointer is outside the configured public origin")
     for prefix in (f"/data/v1/{provider_id}/", f"/v1/{provider_id}/"):
         if path.startswith(prefix):
             path = path[len(prefix) :]
@@ -34,6 +46,7 @@ def build_public_provider_catalog(
     default_provider: str,
 ) -> PublicProviderCatalog:
     providers = []
+    public_base_url = registry.settings.SNAPSHOT_PUBLIC_BASE_URL
     for provider_id in registry.list_provider_ids():
         config = registry.get_provider(provider_id)
         public, identity = config.public, config.provider
@@ -56,10 +69,17 @@ def build_public_provider_catalog(
             if not public.basemap_url or not manifest.files.static.basemap:
                 raise ValueError("Provider basemap is required")
             descriptor = BasemapFile.model_validate(
-                storage.get_json(provider_object_key(manifest.files.static.basemap, provider_id))
+                storage.get_json(
+                    provider_object_key(manifest.files.static.basemap, provider_id, public_base_url)
+                )
             )
-            asset_key = provider_object_key(public.basemap_url, provider_id)
-            if provider_object_key(descriptor.url, provider_id) != asset_key:
+            if (
+                descriptor.publish_generation_id is not None
+                and not descriptor.publish_generation_id.startswith(f"{provider_id}@")
+            ):
+                raise ValueError("Basemap generation belongs to another provider")
+            asset_key = provider_object_key(public.basemap_url, provider_id, public_base_url)
+            if provider_object_key(descriptor.url, provider_id, public_base_url) != asset_key:
                 raise ValueError("Published basemap differs from configuration")
             asset = storage.capture_object_version(asset_key)
             if asset is None or asset.size <= 100000:
@@ -75,15 +95,9 @@ def build_public_provider_catalog(
                         )
                         for language in ("en", "fr")
                     },
-                    bbox=identity.bounds.bbox(),
-                    tz=identity.timezone,
-                    default_lang=identity.default_language or "en",
-                    attribution=identity.attribution_text or "",
-                    website_url=str(identity.website_url) if identity.website_url else None,
                     fit_bounds=public.fit_bounds.bbox() if public.fit_bounds else None,
                     max_bounds=public.max_bounds.bbox() if public.max_bounds else None,
                     geocode_context=public.geocode_context,
-                    basemap_url=public.basemap_url,
                     posters_url=public.posters_url,
                     alert_links={
                         language: str(url) for language, url in public.alert_links.items()

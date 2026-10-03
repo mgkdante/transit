@@ -9,11 +9,6 @@ const provider = {
 		en: { city: 'Test City', operator: 'Test Transit' },
 		fr: { city: 'Ville Test', operator: 'Transport Test' },
 	},
-	bbox: [20, 10, 21, 11],
-	tz: 'America/Toronto',
-	default_lang: 'en',
-	attribution: 'Test data',
-	basemap_url: '/data/v1/test/static/basemap/test.pmtiles',
 	inputs: { static_schedule: true, trip_updates: true, service_alerts: false },
 	alert_links: {},
 };
@@ -24,12 +19,11 @@ const catalog = {
 	providers: [provider],
 };
 
-it('loads configured identities, geography and unavailable inputs without a known-city list', async () => {
+it('loads configured identities and unavailable inputs without a known-city list', async () => {
 	const fetcher = vi.fn(async () => new Response(JSON.stringify(catalog)));
 	const loaded = await loadProviderCatalog(fetcher);
 	expect(fetcher).toHaveBeenCalledWith('/data/v1/providers.json');
 	expect(loaded.providers[0].labels.fr.city).toBe('Ville Test');
-	expect(loaded.providers[0].bbox).toEqual([20, 10, 21, 11]);
 	expect(loaded.providers[0].inputs.service_alerts).toBe(false);
 });
 
@@ -38,7 +32,7 @@ it.each([
 	{ ...catalog, default_provider: 'absent' },
 	{ ...catalog, providers: [provider, provider] },
 	{ ...catalog, providers: [{ ...provider, id: '../stm' }] },
-	{ ...catalog, providers: [{ ...provider, bbox: [21, 11, 20, 10] }] },
+	{ ...catalog, providers: [{ ...provider, fit_bounds: [21, 11, 20, 10] }] },
 ])('rejects corrupt discovery instead of declaring a different selected provider', (value) => {
 	expect(PublicProviderCatalogSchema.safeParse(value).success).toBe(false);
 });

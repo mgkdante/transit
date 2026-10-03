@@ -99,8 +99,8 @@ class ProviderBoundsConfig(BaseModel):
 
 
 class ProviderLabel(BaseModel):
-    city: str
-    operator: str
+    city: str = Field(min_length=1)
+    operator: str = Field(min_length=1)
 
 
 class ProviderPublicConfig(BaseModel):
@@ -112,6 +112,16 @@ class ProviderPublicConfig(BaseModel):
     basemap_url: str | None = None
     posters_url: str | None = None
     alert_links: dict[Literal["en", "fr"], AnyHttpUrl] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_camera_bounds(self) -> ProviderPublicConfig:
+        for bounds in (self.fit_bounds, self.max_bounds):
+            if bounds and (
+                bounds.min_longitude >= bounds.max_longitude
+                or bounds.min_latitude >= bounds.max_latitude
+            ):
+                raise ValueError("Public camera bounds must have positive width and height")
+        return self
 
 
 class ProviderConfig(BaseModel):

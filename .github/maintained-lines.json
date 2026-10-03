@@ -85,7 +85,8 @@
         "65039103b2dd6f1651c0ca6f9416f26a4f67db64cf0be8859abc7a1e4bc19099",
         "77f76242b74696d8e21ff6ba82b42ad3532d34e752c3989e0b02d523ce141b4a",
         "9b63deee9669ec5b8625a9fc85cc527c9abe29b2d9dba4bffb5f7d05fed9e085",
-        "64e8aad75e79e2dcf043a0b17108ae0c97703a55e1a505a2398f96bf8f503fa8"
+        "64e8aad75e79e2dcf043a0b17108ae0c97703a55e1a505a2398f96bf8f503fa8",
+        "3aec1e18b824bed71afa307a2226b43abdc70168a00c2a983c2ca5883fc2e4e5"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },

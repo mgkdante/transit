@@ -3,10 +3,12 @@
     "ProviderLabel": {
       "properties": {
         "city": {
+          "minLength": 1,
           "title": "City",
           "type": "string"
         },
         "operator": {
+          "minLength": 1,
           "title": "Operator",
           "type": "string"
         }
@@ -26,25 +28,6 @@
           },
           "title": "Alert Links",
           "type": "object"
-        },
-        "attribution": {
-          "title": "Attribution",
-          "type": "string"
-        },
-        "basemap_url": {
-          "title": "Basemap Url",
-          "type": "string"
-        },
-        "bbox": {
-          "items": {
-            "type": "number"
-          },
-          "title": "Bbox",
-          "type": "array"
-        },
-        "default_lang": {
-          "title": "Default Lang",
-          "type": "string"
         },
         "fit_bounds": {
           "anyOf": [
@@ -117,32 +100,11 @@
           ],
           "default": null,
           "title": "Posters Url"
-        },
-        "tz": {
-          "title": "Tz",
-          "type": "string"
-        },
-        "website_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Website Url"
         }
       },
       "required": [
         "id",
         "labels",
-        "bbox",
-        "tz",
-        "default_lang",
-        "attribution",
-        "basemap_url",
         "alert_links",
         "inputs"
       ],
