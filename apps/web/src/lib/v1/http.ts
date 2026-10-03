@@ -31,6 +31,7 @@ export interface RawJsonEntity<T> {
 }
 
 type JsonRequestInit = {
+	providerId?: string;
 	cache?: RequestCache;
 	signal?: AbortSignal;
 	serverErrorRetries?: number;
@@ -74,10 +75,6 @@ function invalidJson(label: string, url: string, cause: unknown): never {
 	throw new Error(`[v1.${label}] invalid JSON from ${url}`, { cause });
 }
 
-function validateJson<T>(schema: z.ZodType<T>, label: string, body: unknown): T {
-	return parsePort(label, schema, body);
-}
-
 export async function getEntityJson<T>(
 	url: string,
 	schema: z.ZodType<T>,
@@ -95,7 +92,7 @@ export async function getEntityJson<T>(
 		invalidJson(label, url, cause);
 	}
 
-	return validateJson(schema, label, body);
+	return parsePort(label, schema, body, init?.providerId);
 }
 
 export async function getEntityJsonWithBytes<T>(
@@ -117,7 +114,7 @@ export async function getEntityJsonWithBytes<T>(
 		invalidJson(label, url, cause);
 	}
 
-	return { value: validateJson(schema, label, body), bytes };
+	return { value: parsePort(label, schema, body, init?.providerId), bytes };
 }
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {

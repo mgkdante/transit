@@ -68,6 +68,62 @@ describe('r2 manifest memo', () => {
 		).rejects.toThrow('provider');
 	});
 
+	it('rejects a foreign publication generation in fetched, supplied, cached and booted manifests', async () => {
+		const foreign = { ...manifest(), provider: 'octranspo', publish_generation_id: `stm@${ISO}` };
+		const ctx = { providerId: 'octranspo', fetch: vi.fn(async () => json(foreign)) };
+		await expect(r2Adapter.manifest.get(ctx)).rejects.toThrow('generation');
+		await expect(r2Adapter.manifest.getFresh(ctx)).rejects.toThrow('generation');
+		await expect(r2Adapter.manifest.get({ ...ctx, manifest: foreign as never })).rejects.toThrow(
+			'generation',
+		);
+		await expect(
+			r2Adapter.manifest.get({ ...ctx, cache: new Map([['v1:octranspo:manifest', foreign]]) }),
+		).rejects.toThrow('generation');
+		installBrowserAdapterManifest(() => foreign as never);
+		await expect(r2Adapter.manifest.get(ctx)).rejects.toThrow('generation');
+	});
+
+	it('checks publication ownership across snapshot read boundaries', async () => {
+		const ctx = {
+			providerId: 'octranspo',
+			manifest: {
+				...manifest(),
+				provider: 'octranspo',
+				publish_generation_id: `octranspo@${ISO}`,
+			} as never,
+			fetch: vi.fn(async () => json({ publish_generation_id: `stm@${ISO}` })),
+		};
+		const reads = [
+			() => r2Adapter.static.routesIndex(ctx),
+			() => r2Adapter.static.route('42', ctx),
+			() => r2Adapter.live.vehicles(ctx),
+			() => r2Adapter.labels.get('fr', ctx),
+			() => r2Adapter.basemap.get(ctx),
+			() => r2Adapter.dataHealth.get(ctx),
+			() => r2Adapter.historic.historyIndex(ctx),
+			() =>
+				r2Adapter.historic.alertArchivePage(
+					`historic/alerts/generations/${'a'.repeat(64)}/2026-07/page-0001.json`,
+					ctx,
+				),
+			() => r2Adapter.historic.routeReliabilityIndex(ctx),
+			() =>
+				r2Adapter.historic.networkHistoryPartition(
+					`historic/history/network/generations/${'a'.repeat(64)}/2026-07.json`,
+					ctx,
+				),
+		];
+		for (const read of reads) await expect(read()).rejects.toThrow('generation');
+		ctx.fetch.mockImplementation(async () =>
+			json({
+				generated_utc: ISO,
+				publish_generation_id: 'octranspo@2026-07-14T00:00:00Z',
+				routes: [],
+			}),
+		);
+		await expect(r2Adapter.static.routesIndex(ctx)).resolves.toMatchObject({ routes: [] });
+	});
+
 	it('uses the booted browser manifest for context-free repository reads', async () => {
 		const booted = {
 			...manifest(),

@@ -78,7 +78,7 @@ export const dataHealthPort = {
 			DataHealthSchema,
 			'dataHealth',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		return value ?? null;
 	},

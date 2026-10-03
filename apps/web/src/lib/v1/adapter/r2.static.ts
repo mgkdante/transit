@@ -72,7 +72,7 @@ export const basemapPort = {
 			BasemapFileSchema,
 			'basemap',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		if (value === undefined) return null;
 		return { ...value, url: normalizeSnapshotPointer(value.url, providerOf(ctx)) };

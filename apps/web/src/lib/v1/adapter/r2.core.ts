@@ -4,6 +4,7 @@ import { entityUrl, resolveUrl, v1Provider } from '$lib/v1/config';
 import { getEntityJson, type FetchFn } from '$lib/v1/http';
 import { LabelsFileSchema } from '$lib/v1/schemas/labels';
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
+import { assertProviderGeneration } from '$lib/v1/schemas/parse';
 import { browserAdapterManifest } from './browserManifest';
 import type { AdapterCtx } from './types';
 
@@ -55,6 +56,7 @@ export function providerOf(ctx?: AdapterCtx): string {
 
 function checkedManifest(manifest: Manifest, provider: string): Manifest {
 	if (manifest.provider !== provider) throw new Error('[v1.manifest] unexpected provider');
+	assertProviderGeneration('manifest', manifest, provider);
 	return manifest;
 }
 
@@ -62,17 +64,18 @@ export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
 	const provider = providerOf(ctx);
 	if (ctx?.manifest !== undefined) return checkedManifest(ctx.manifest, provider);
 	const bootManifest = browserAdapterManifest();
-	if (bootManifest?.provider === provider) return bootManifest;
+	if (bootManifest?.provider === provider) return checkedManifest(bootManifest, provider);
 
 	const memo = ctx?.cache;
 	const memoKey = `v1:${provider}:manifest`;
 	if (memo?.has(memoKey)) {
-		return await (memo.get(memoKey) as Manifest | Promise<Manifest>);
+		return checkedManifest(await (memo.get(memoKey) as Manifest | Promise<Manifest>), provider);
 	}
 
 	const url = resolveUrl(R2_DEFAULTS.manifest, provider);
 	const pending = getEntityJson(url, ManifestSchema, 'manifest', fetchOf(ctx), {
 		cache: MUTABLE_CACHE,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	}).then((manifest) => {
 		if (manifest === undefined) {
@@ -102,6 +105,7 @@ export async function readWhole<T>(
 	const url = resolveUrl(relativePath, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	});
 	if (value === undefined) {
@@ -127,6 +131,7 @@ export async function readOptionalWhole<T>(
 	const url = resolveUrl(relativePath, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache: MUTABLE_CACHE,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	});
 	return value ?? null;
@@ -144,6 +149,7 @@ export async function readEntity<T>(
 	const url = entityUrl(tier, prefix, id, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
 		cache,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	});
 	return value ?? null;
@@ -163,7 +169,7 @@ export const labelsPort = {
 			LabelsFileSchema,
 			'labels',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		return file?.labels ?? {};
 	},

@@ -70,6 +70,7 @@ async function readOptionalHistory<T>(
 			: expectedSha === null
 				? MUTABLE_CACHE
 				: IMMUTABLE_CACHE,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	};
 	if (expectedSha !== null) {
@@ -151,6 +152,7 @@ async function readRawHistoryPartition<T>(
 		fetchOf(ctx),
 		{
 			cache: IMMUTABLE_CACHE,
+			providerId: providerOf(ctx),
 			signal: ctx?.signal,
 		},
 	);
@@ -266,7 +268,12 @@ export const historicPort = {
 			AlertArchivePageSchema,
 			'historic.alertArchivePage',
 			fetchOf(ctx),
-			{ cache: IMMUTABLE_CACHE, signal: ctx?.signal, serverErrorRetries: 1 },
+			{
+				cache: IMMUTABLE_CACHE,
+				providerId: providerOf(ctx),
+				signal: ctx?.signal,
+				serverErrorRetries: 1,
+			},
 		);
 		return value ?? null;
 	},
@@ -331,7 +338,7 @@ export const historicPort = {
 			RouteReliabilityIndexSchema,
 			'historic.routeReliabilityIndex',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		return value ?? null;
 	},

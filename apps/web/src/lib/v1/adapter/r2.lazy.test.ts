@@ -196,7 +196,10 @@ describe('r2 lazy adapter boundaries', () => {
 		await expect(
 			r2Adapter.provenance.get({
 				fetch: request,
-				manifest: { files: { historic: { provenance: 'historic/provenance.json' } } } as Manifest,
+				manifest: {
+					provider: 'stm',
+					files: { historic: { provenance: 'historic/provenance.json' } },
+				} as Manifest,
 			}),
 		).resolves.toEqual(provenance);
 		expect(request).toHaveBeenCalledTimes(1);
