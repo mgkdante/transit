@@ -448,7 +448,7 @@ describe('NavPill — the flat menu', () => {
 			/@container nav-rail \(width < 799px\)\s*\{[\s\S]*?\.nav-pill\s*\{\s*padding:\s*12px 20px;\s*\}[\s\S]*?\.nav-divider\s*\{\s*margin-inline:\s*12px;\s*\}[\s\S]*?\.nav-links\s*\{\s*gap:\s*18px;\s*\}/,
 		);
 		expect(source).toMatch(
-			/@container nav-rail \(width < 705px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+			/@container nav-rail \(width < 1000px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
 		);
 		expect(source.indexOf('@container nav-rail (width < 1024px)')).toBeGreaterThan(
 			source.indexOf('@media (min-width: 1024px)'),

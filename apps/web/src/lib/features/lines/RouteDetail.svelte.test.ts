@@ -986,14 +986,14 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
 		expect(roster).not.toBeNull();
 
-		expect(within(roster).getByText('Bus busLate')).toBeInTheDocument();
-		expect(within(roster).getByText('Bus busEarly')).toBeInTheDocument();
-		expect(within(roster).getByText('Bus busNoDelay')).toBeInTheDocument();
-		expect(within(roster).queryByText('Bus busOther')).not.toBeInTheDocument();
+		expect(within(roster).getByText('Vehicle busLate')).toBeInTheDocument();
+		expect(within(roster).getByText('Vehicle busEarly')).toBeInTheDocument();
+		expect(within(roster).getByText('Vehicle busNoDelay')).toBeInTheDocument();
+		expect(within(roster).queryByText('Vehicle busOther')).not.toBeInTheDocument();
 
 		expect(
 			within(roster).getByRole('link', {
-				name: 'View the trip for bus busLate, Severe, Delay: +8 min',
+				name: 'View the trip for vehicle busLate, Severe, Delay: +8 min',
 			}),
 		).toHaveAttribute('href', '/trip/tLate');
 	});
@@ -1016,19 +1016,18 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		renderRoute();
 
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
-		expect(within(roster).getByRole('link', { name: 'View bus busLate on map' })).toHaveAttribute(
-			'href',
-			'/map?vehicle=busLate&focus=vehicle%3AbusLate',
-		);
+		expect(
+			within(roster).getByRole('link', { name: 'View vehicle busLate on map' }),
+		).toHaveAttribute('href', '/map?vehicle=busLate&focus=vehicle%3AbusLate');
 	});
 
 	it('retains lateness ordering with the published glyph and no second severity verdict', () => {
 		renderRoute();
 		const roster = screen.getByTestId('route-roster');
 		expect([...roster.querySelectorAll('strong')].map((el) => el.textContent)).toEqual([
-			'Bus busLate',
-			'Bus busEarly',
-			'Bus busNoDelay',
+			'Vehicle busLate',
+			'Vehicle busEarly',
+			'Vehicle busNoDelay',
 		]);
 		expect(
 			[...roster.querySelectorAll('[data-slot="status-badge"]')].map((el) =>

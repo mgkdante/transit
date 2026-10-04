@@ -29,8 +29,8 @@ describe('map copy', () => {
 	it('uses vernacular marker labels', () => {
 		expect(copy.en.legendTitle).toBe('Markers');
 		expect(copy.fr.legendTitle).toBe('Marqueurs');
-		expect(copy.en.entityBus).toBe('Bus');
-		expect(copy.fr.entityBus).toBe('Bus');
+		expect(copy.en.entityBus).toBe('Vehicle');
+		expect(copy.fr.entityBus).toBe('Véhicule');
 	});
 
 	it('carries a bilingual accessible label for the detail-panel resize handle', () => {

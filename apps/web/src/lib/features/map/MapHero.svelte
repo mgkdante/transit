@@ -325,7 +325,12 @@
 				: null,
 	);
 
-	const alertList = $derived(live.alerts?.alerts ?? []);
+	const availableAlerts = $derived(
+		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
+			? null
+			: (live.alerts?.alerts ?? null),
+	);
+	const alertList = $derived(availableAlerts ?? []);
 	const alertEntitySets = $derived(buildAlertEntitySets(alertList));
 	const alertVehicleIds = $derived.by(() => {
 		const ids = new SvelteSet<string>();
@@ -360,7 +365,7 @@
 			stops: stopList,
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
-			alerts: live.alerts?.alerts ?? null,
+			alerts: availableAlerts,
 			departuresAvailable,
 		}),
 	);
@@ -371,7 +376,7 @@
 			stops: stopList,
 			routesIndex: routesIndex.data?.routes ?? [],
 			clock: sharedClock,
-			alerts: live.alerts?.alerts ?? null,
+			alerts: availableAlerts,
 			departuresAvailable,
 			hoverRoute:
 				hovered?.kind === 'route' && focusedRoute.data?.id === hovered.id

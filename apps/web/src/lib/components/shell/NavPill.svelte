@@ -148,6 +148,26 @@
 	let rootEl = $state<HTMLElement>();
 	let pillEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
+	$effect(() => {
+		if (!rootEl || !pillEl || typeof ResizeObserver === 'undefined') return;
+		const root = rootEl.ownerDocument.documentElement;
+		const rail = rootEl.querySelector<HTMLElement>('.nav-rail')!;
+		const measure = () => {
+			const pill = pillEl!.getBoundingClientRect();
+			const provider = rootEl!.querySelector('.nav-provider')!.getBoundingClientRect();
+			root.style.setProperty(
+				'--pill-h',
+				`${Math.ceil(Math.max(pill.bottom, provider.bottom) - pill.top)}px`,
+			);
+		};
+		const observer = new ResizeObserver(measure);
+		observer.observe(rail);
+		measure();
+		return () => {
+			observer.disconnect();
+			root.style.removeProperty('--pill-h');
+		};
+	});
 
 	let searchFamily = $state<SearchScopeKey>('all');
 	const familyOf = (result: ChromeSearchResult): SearchScopeKey =>
@@ -280,7 +300,7 @@
 		if (result.kind === 'route') return locale === 'fr' ? 'Ligne' : 'Route';
 		if (result.kind === 'stop') return locale === 'fr' ? 'Arrêt' : 'Stop';
 		if (result.kind === 'address') return locale === 'fr' ? 'Adresse' : 'Address';
-		return 'Bus';
+		return locale === 'fr' ? 'Véhicule' : 'Vehicle';
 	}
 </script>
 
@@ -522,7 +542,7 @@
 
 <style>
 	.nav-provider {
-		--size-provider-select: 8.5rem;
+		--size-provider-select: 12.5rem;
 		max-width: var(--size-provider-select);
 		min-height: 44px;
 		padding-inline: 0.5rem;
@@ -535,11 +555,6 @@
 	.nav-provider:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-	}
-	@container nav-rail (max-width: 480px) {
-		.nav-provider {
-			--size-provider-select: 5.5rem;
-		}
 	}
 	:root {
 		--pill-h: 72px;
@@ -934,7 +949,7 @@
 		}
 	}
 
-	@container nav-rail (width < 705px) {
+	@container nav-rail (width < 1000px) {
 		.nav-links {
 			display: none;
 		}
@@ -1160,6 +1175,25 @@
 		}
 		.nav-menu-language {
 			display: flex;
+		}
+	}
+
+	@media (max-width: 599px) {
+		:root {
+			--pill-h: 116px;
+		}
+	}
+	@container nav-rail (width < 600px) {
+		.nav-provider {
+			position: absolute;
+			inset-block-start: calc(100% + 8px);
+			inset-inline-start: 50%;
+			transform: translateX(-50%);
+			--size-provider-select: calc(100cqi - 2rem);
+			padding-inline: 1rem;
+			border: 2px solid var(--border-brand);
+			border-radius: var(--radius-pill);
+			box-shadow: var(--shadow-nav);
 		}
 	}
 

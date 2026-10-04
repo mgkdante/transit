@@ -204,7 +204,9 @@ describe('MapFilters', () => {
 		expect(getByRole('button', { name: 'Remove stop 53355' })).toHaveTextContent(
 			'Van Horne / Rockland',
 		);
-		expect(getByRole('button', { name: 'Remove bus 40061' })).toHaveTextContent('Bus 40061');
+		expect(getByRole('button', { name: 'Remove vehicle 40061' })).toHaveTextContent(
+			'Vehicle 40061',
+		);
 
 		await fireEvent.click(getByRole('button', { name: 'Remove route 161' }));
 

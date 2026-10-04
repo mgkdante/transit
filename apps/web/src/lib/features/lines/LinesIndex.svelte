@@ -75,14 +75,10 @@
 			label: t.inventory.lines,
 			value: routes.data ? numberFmt.format(routes.data.routes.length) : null,
 		},
-		{
-			label: t.inventory.bus,
-			value: routes.data ? numberFmt.format(modeCounts.bus?.count ?? 0) : null,
-		},
-		{
-			label: t.inventory.metro,
-			value: routes.data ? numberFmt.format(modeCounts.metro?.count ?? 0) : null,
-		},
+		...Object.entries(modeCounts).map(([key, { label, count }]) => ({
+			label: key === 'metro' ? t.inventory.metro : label,
+			value: numberFmt.format(count),
+		})),
 		{
 			label: t.inventory.modes,
 			value: routeModesComplete ? numberFmt.format(Object.keys(modeCounts).length) : null,

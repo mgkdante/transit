@@ -62,6 +62,9 @@ public:
     max_longitude: -75.24
     max_latitude: 45.65
   posters_url: /map/basemap-ottawa-posters.json
+  alert_links:
+    en: https://www.octranspo.com/en/alerts/
+    fr: https://www.octranspo.com/fr/alertes/
 
 feeds:
   static_schedule:

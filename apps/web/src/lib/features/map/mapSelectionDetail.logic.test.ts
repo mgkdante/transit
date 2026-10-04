@@ -131,7 +131,7 @@ describe('detailActions', () => {
 		const action = actionFor({
 			kind: 'vehicle',
 			id: 'veh-none',
-			title: 'Bus veh-none',
+			title: 'Vehicle veh-none',
 			vehicle: {
 				id: 'veh-none',
 				lat: 45.5,
@@ -219,8 +219,8 @@ describe('detailIdentity', () => {
 			routeType: null,
 		} as MapSelectionDetail;
 
-		expect(detailIdentity?.(vehicle, 'en')).toBe('Bus veh-24');
-		expect(detailIdentity?.(vehicle, 'fr')).toBe('Bus veh-24');
+		expect(detailIdentity?.(vehicle, 'en')).toBe('Vehicle veh-24');
+		expect(detailIdentity?.(vehicle, 'fr')).toBe('Véhicule veh-24');
 		expect(detailIdentity?.(stopDetail, 'en')).toBe('Stop stop-missing-name (name unavailable)');
 		expect(detailIdentity?.(stopDetail, 'fr')).toBe('Arrêt stop-missing-name (nom indisponible)');
 	});

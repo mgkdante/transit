@@ -135,10 +135,10 @@ export const stopReliabilityCopy = defineCopy({
 				'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
 		},
 		crowding: {
-			heading: 'Encombrement des bus vus ici',
+			heading: 'Encombrement des véhicules vus ici',
 			window:
-				'Répartition de l’occupation des bus observés à cet arrêt sur les 30 derniers jours, tous transporteurs confondus. Ce n’est pas une caractéristique de l’arrêt.',
-			barLabel: 'Répartition de l’occupation des bus observés à cet arrêt',
+				'Répartition de l’occupation des véhicules observés à cet arrêt sur les 30 derniers jours, dans le réseau sélectionné. Ce n’est pas une caractéristique de l’arrêt.',
+			barLabel: 'Répartition de l’occupation des véhicules observés à cet arrêt',
 			dominantLabel: 'Occupation la plus fréquente',
 		},
 		trend: {
@@ -277,10 +277,10 @@ export const stopReliabilityCopy = defineCopy({
 				'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 		},
 		crowding: {
-			heading: 'Crowding on buses seen here',
+			heading: 'Crowding on vehicles seen here',
 			window:
-				'How full the buses observed at this stop ran over the last 30 days, across all carriers. This is not a property of the stop itself.',
-			barLabel: 'Occupancy mix of buses observed at this stop',
+				'How full the vehicles observed at this stop ran over the last 30 days, in the selected network. This is not a property of the stop itself.',
+			barLabel: 'Occupancy mix of vehicles observed at this stop',
 			dominantLabel: 'Most common loading',
 		},
 		trend: {
