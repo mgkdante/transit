@@ -848,6 +848,16 @@ def test_build_manifest_tier_inventories_null_when_never_published() -> None:
     assert out.files.historic.generated_utc is None
 
 
+def test_build_manifest_unconfigured_provider_has_no_borrowed_assets() -> None:
+    out = build_manifest(
+        FakeConn(_MANIFEST_PROVIDER_ROW), provider_id="test_provider", generated_utc="t",
+        settings=_FakeSettingsWithBasemap(),
+    )
+    assert out.provider == "test_provider"
+    assert out.basemap is None
+    assert out.files.static.basemap is None
+
+
 def test_build_manifest_basemap_null_without_provider_asset(monkeypatch) -> None:
     registry = ProviderRegistry.from_project_root()
     registry.get_provider("stm").public.basemap_url = None

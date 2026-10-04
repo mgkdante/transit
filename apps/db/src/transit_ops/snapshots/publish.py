@@ -319,7 +319,7 @@ def _publish_static(
         ("static/routes_index.json", routes_idx, "static"),
         ("static/stops_index.json", stops_index, "static"),
     ]
-    public = ProviderRegistry.from_project_root(settings=settings).get_provider(provider_id).public
+    public = ProviderRegistry.from_project_root(settings=settings).get_public_config(provider_id)
     bm = builders.build_basemap(settings, public=public, generated_utc=stamp)
     if bm is not None:
         head_items.append(("static/basemap.json", bm, "static"))
@@ -487,10 +487,14 @@ def publish_snapshot(
             )
             gated = historic_gated
         else:
+            public = ProviderRegistry.from_project_root(settings=settings).get_public_config(
+                provider_id
+            )
+            basemap = builders.build_basemap(settings, public=public, generated_utc="")
             gated = HashGatedStorage(
                 storage,
                 state_rel_key=f"_meta/publish_state_{tier}.json",
-                fingerprint=state_fingerprint(tier),
+                fingerprint=state_fingerprint(tier, config=basemap),
             )
         gated.load()
         # Output changes require a new state_fingerprint even without a new dataset.

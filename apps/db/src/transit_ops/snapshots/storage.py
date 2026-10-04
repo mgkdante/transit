@@ -884,15 +884,12 @@ class LocalSnapshotStorage:
         return payload
 
 
-def state_fingerprint(tier: str) -> str:
-    """Stable fingerprint for a tier's hash-state object.
-
-    Embeds the tier's ``Cache-Control`` string so that a header-policy change
-    (e.g. the static 7-day -> 1-day+SWR move) invalidates every prior hash and
-    forces a one-time full rewrite that re-stamps the new header on every object.
-    """
-    revision = 2 if tier == "static" else 1
-    return f"v{revision}|cc:{CACHE_CONTROL[tier]}"
+def state_fingerprint(tier: str, *, config: BaseModel | None = None) -> str:
+    """Invalidate prior hashes when cache policy or static output configuration changes."""
+    if tier == "static":
+        digest = hashlib.sha256(_body(config) if config else b"").hexdigest()
+        return f"v3|cc:{CACHE_CONTROL[tier]}|config:{digest}"
+    return f"v1|cc:{CACHE_CONTROL[tier]}"
 
 
 class HashGatedStorage:

@@ -526,7 +526,7 @@ def build_manifest(
         tier_stamps[str(r["tier"])] = _opt_iso(r["generated_utc"])
 
     base_url = (getattr(settings, "SNAPSHOT_PUBLIC_BASE_URL", None) or "").rstrip("/")
-    public = ProviderRegistry.from_project_root(settings=settings).get_provider(provider_id).public
+    public = ProviderRegistry.from_project_root(settings=settings).get_public_config(provider_id)
     if public.basemap_url:
         basemap: str | None = f"{base_url}/v1/{provider_id}/static/basemap.json"
         static_basemap: str | None = "static/basemap.json"

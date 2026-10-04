@@ -54,7 +54,7 @@ function universalEvent(
 	lang: 'en' | 'fr',
 	pathname: string,
 	serverV1: ReturnType<typeof v1> | null,
-	serverBoot: 'skipped' | 'succeeded' | 'failed' = serverV1 ? 'succeeded' : 'skipped',
+	serverBoot: 'succeeded' | 'failed' = serverV1 ? 'succeeded' : 'failed',
 ) {
 	return {
 		url: new URL(`https://transit.yesid.dev${pathname}`),
@@ -65,26 +65,30 @@ function universalEvent(
 
 beforeEach(() => {
 	harness.bootProvider.mockReset();
+	harness.bootProvider.mockResolvedValue(selection(null));
 	harness.serverV1Context.mockReset();
 });
 
 describe('root server layout boot', () => {
-	it('derives locale from the validated route param and boots through the per-request server context', async () => {
-		const request = serverEvent('fr', '/network');
-		const context = { fetch: vi.fn(), cache: request.locals.v1Cache };
-		const booted = v1('fr', 'one');
-		harness.serverV1Context.mockReturnValue(context);
-		harness.bootProvider.mockResolvedValue(selection(booted));
+	it.each([true, false])(
+		'boots provider data for child server loaders (binding: %s)',
+		async (binding) => {
+			const request = serverEvent('fr', '/network', binding);
+			const context = { fetch: vi.fn(), cache: request.locals.v1Cache };
+			const booted = v1('fr', 'one');
+			harness.serverV1Context.mockReturnValue(context);
+			harness.bootProvider.mockResolvedValue(selection(booted));
 
-		await expect(loadServerLayout(request)).resolves.toMatchObject({
-			lang: 'fr',
-			v1: booted,
-			serverBoot: 'succeeded',
-		});
-		expect(harness.serverV1Context).toHaveBeenCalledWith(request);
-		expect(harness.bootProvider).toHaveBeenCalledWith(request.url, 'fr', context);
-		expect(context.cache).toBe(request.locals.v1Cache);
-	});
+			await expect(loadServerLayout(request)).resolves.toMatchObject({
+				lang: 'fr',
+				v1: booted,
+				serverBoot: 'succeeded',
+			});
+			expect(harness.serverV1Context).toHaveBeenCalledWith(request);
+			expect(harness.bootProvider).toHaveBeenCalledWith(request.url, 'fr', context);
+			expect(context.cache).toBe(request.locals.v1Cache);
+		},
+	);
 
 	it('keeps the unprefixed locale fallback when no validated locale param is present', async () => {
 		const request = serverEvent(undefined, '/fr/network', false);
@@ -92,10 +96,8 @@ describe('root server layout boot', () => {
 		await expect(loadServerLayout(request)).resolves.toMatchObject({
 			lang: 'en',
 			v1: null,
-			serverBoot: 'skipped',
+			serverBoot: 'failed',
 		});
-		expect(harness.bootProvider).not.toHaveBeenCalled();
-		expect(harness.serverV1Context).not.toHaveBeenCalled();
 	});
 
 	it('uses the request locale when an error render has no validated route param', async () => {
@@ -105,7 +107,7 @@ describe('root server layout boot', () => {
 		await expect(loadServerLayout(request)).resolves.toMatchObject({
 			lang: 'fr',
 			v1: null,
-			serverBoot: 'skipped',
+			serverBoot: 'failed',
 		});
 	});
 
@@ -127,7 +129,7 @@ describe('root universal layout boot', () => {
 		const booted = v1('fr', 'one');
 		const request = universalEvent('fr', '/network', booted);
 
-		await expect(loadUniversalLayout(request)).resolves.toMatchObject({
+		expect(loadUniversalLayout(request)).toMatchObject({
 			lang: 'fr',
 			v1: booted,
 			v1Error: false,
@@ -135,36 +137,21 @@ describe('root universal layout boot', () => {
 		expect(harness.bootProvider).not.toHaveBeenCalled();
 	});
 
-	it('reboots a missing server context on every load invocation so invalidateAll stays effective', async () => {
-		const request = universalEvent('fr', '/network', null);
+	it('reloads server provider data on every invocation so invalidateAll stays effective', async () => {
+		const request = serverEvent('fr', '/network', false);
 		const first = v1('fr', 'one');
 		const second = v1('fr', 'two');
 		harness.bootProvider
 			.mockResolvedValueOnce(selection(first))
 			.mockResolvedValueOnce(selection(second));
-
-		await expect(loadUniversalLayout(request)).resolves.toMatchObject({
-			lang: 'fr',
-			v1: first,
-			v1Error: false,
-		});
-		await expect(loadUniversalLayout(request)).resolves.toMatchObject({
-			lang: 'fr',
-			v1: second,
-			v1Error: false,
-		});
-		expect(harness.bootProvider).toHaveBeenNthCalledWith(1, request.url, 'fr', {
-			fetch: request.fetch,
-		});
-		expect(harness.bootProvider).toHaveBeenNthCalledWith(2, request.url, 'fr', {
-			fetch: request.fetch,
-		});
+		expect(await loadServerLayout(request)).toMatchObject({ v1: first });
+		expect(await loadServerLayout(request)).toMatchObject({ v1: second });
 	});
 
 	it('does not repeat a failed bound boot through the universal server path', async () => {
 		const request = universalEvent('en', '/network', null, 'failed');
 
-		await expect(loadUniversalLayout(request)).resolves.toMatchObject({
+		expect(loadUniversalLayout(request)).toMatchObject({
 			lang: 'en',
 			v1: null,
 			v1Error: true,

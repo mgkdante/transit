@@ -838,7 +838,8 @@ function verifyLedger(cell, fixture, ledger) {
 	const lineHistoryLane = selectedLine && historyStatus === 200 ? 'ssr' : 'browser';
 	const expected = {
 		line: [
-			['ssr', 'manifest.json', 200, 2],
+			['ssr', 'providers.json', 200, 1],
+			['ssr', 'manifest.json', 200, 1],
 			['ssr', 'static/routes/24.json', 200, 1],
 			['ssr', 'historic/route_reliability/24.json', 200, 1],
 			['ssr', labelPath, 200, 1],
@@ -850,7 +851,8 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/network.json', 200, 1],
 		],
 		stop: [
-			['ssr', 'manifest.json', 200, 2],
+			['ssr', 'providers.json', 200, 1],
+			['ssr', 'manifest.json', 200, 1],
 			['ssr', 'static/stops/52095.json', 200, 1],
 			['ssr', labelPath, 200, 1],
 			['browser', 'historic/history/index.json', historyStatus, 1],
@@ -859,7 +861,8 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/alerts.json', 200, 1],
 		],
 		network: [
-			['ssr', 'manifest.json', 200, 2],
+			['ssr', 'providers.json', 200, 1],
+			['ssr', 'manifest.json', 200, 1],
 			['ssr', 'live/network.json', 200, 1],
 			['ssr', 'historic/network_trend.json', 200, 1],
 			['ssr', 'provenance.json', 200, 1],
@@ -1505,13 +1508,18 @@ function jsonHeaders(fixture) {
 	};
 }
 
+function replayPath(pathname) {
+	if (pathname === '/v1/providers.json') return 'providers.json';
+	return pathname.startsWith(REPLAY_PREFIX)
+		? decodeURIComponent(pathname.slice(REPLAY_PREFIX.length))
+		: null;
+}
+
 async function startReplay(fixtures = FIXTURES, initialKey = Object.keys(fixtures)[0]) {
 	const state = { active: initialKey, ledger: [], outbound: [] };
 	const server = createServer((request, response) => {
 		const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-		const relative = url.pathname.startsWith(REPLAY_PREFIX)
-			? decodeURIComponent(url.pathname.slice(REPLAY_PREFIX.length))
-			: null;
+		const relative = replayPath(url.pathname);
 		const fixture = fixtures[state.active];
 		const found = relative == null ? null : fixture.files[relative];
 		const declaredMissing = relative != null && fixture.not_found.includes(relative);
@@ -1726,9 +1734,9 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 			await route.abort('blockedbyclient');
 			return;
 		}
-		if (url.origin === replay.origin && url.pathname.startsWith(REPLAY_PREFIX)) {
+		if (url.origin === replay.origin && replayPath(url.pathname) !== null) {
 			const fixture = replay.fixtures[replay.state.active];
-			const relative = decodeURIComponent(url.pathname.slice(REPLAY_PREFIX.length));
+			const relative = replayPath(url.pathname);
 			const found = fixture.files[relative];
 			const declaredMissing = fixture.not_found.includes(relative);
 			const status = found ? 200 : declaredMissing ? 404 : 599;
@@ -2088,6 +2096,7 @@ async function captureLive(tempDir) {
 	const publicBase = (process.env.B9_LIVE_BASE ?? 'https://data.yesid.dev/v1').replace(/\/$/u, '');
 	const base = `${publicBase}/stm`;
 	for (let attempt = 0; attempt < 2; attempt += 1) {
+		const catalog = await fetchLiveJson(publicBase, 'providers.json');
 		const firstRow = await fetchLiveJson(base, 'manifest.json');
 		const first = firstRow.value;
 		const captured = await Promise.all(
@@ -2166,10 +2175,12 @@ async function captureLive(tempDir) {
 			name: 'live',
 			frozen_utc: first.files.live.generated_utc,
 			files: Object.fromEntries([
+				['providers.json', catalog.value],
 				['manifest.json', first],
 				...captured.filter((row) => row.status === 200).map((row) => [row.path, row.value]),
 			]),
 			raw_files: Object.fromEntries([
+				['providers.json', catalog.raw],
 				['manifest.json', firstRow.raw],
 				...captured.filter((row) => row.status === 200).map((row) => [row.path, row.raw]),
 			]),
