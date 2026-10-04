@@ -412,8 +412,11 @@
 					class="nav-provider"
 					aria-label={locale === 'fr' ? 'Réseau de transport' : 'Transit network'}
 					value={providerId}
-					onchange={(event) =>
-						location.assign(providerHref(url, event.currentTarget.value, locale))}
+					onchange={(event) => {
+						const href = providerHref(url, event.currentTarget.value, locale);
+						event.currentTarget.value = providerId;
+						location.assign(href);
+					}}
 				>
 					{#each providers as provider (provider.id)}
 						<option value={provider.id}

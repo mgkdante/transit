@@ -68,6 +68,7 @@ describe('NavPill — structure', () => {
 			expect(select).toHaveFocus();
 			await fireEvent.change(select, { target: { value: 'test' } });
 			expect(assign).toHaveBeenCalledWith(`${locale === 'fr' ? '/fr' : ''}/lines?provider=test`);
+			expect(select).toHaveValue('octranspo');
 		},
 	);
 	it('renders the floating pill with the four primary links in wayfinding order', () => {
