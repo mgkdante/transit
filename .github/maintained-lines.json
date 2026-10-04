@@ -402,7 +402,8 @@
         "apps/web/static/map/basemap-ottawa-posters.json"
       ],
       "sha256": [
-        "04c72517f0a1f1cc7495c3bdbfe4e5b579ccaea04117fe88ead242c88d9fd72c"
+        "04c72517f0a1f1cc7495c3bdbfe4e5b579ccaea04117fe88ead242c88d9fd72c",
+        "f09f6f7ad5a67891407a14afb3b622d897298ce22b5fc3429781d7cd714f1384"
       ],
       "origin": "Pinned build-map-posters.ts renders; both receipts verify archive/config/render-input identities and each image hash, dimensions and 125 KiB limit. The new Ottawa JSON receipt remains counted."
     }

@@ -54,11 +54,11 @@ jobs:
               "jobs": {
                 "ci-work": {
                   "paths": [],
-                  "prefixes": ["apps/data-proxy/", "apps/web/"]
+                  "prefixes": ["apps/data-proxy/", "apps/web/", "apps/db/config/providers/"]
                 },
                 "map-poster-check": {
                   "paths": ["apps/web/browser-toolchain.json", "apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
-                  "prefixes": ["apps/web/static/map/"]
+                  "prefixes": ["apps/web/static/map/", "apps/db/config/providers/"]
                 }
               },
               "ignore": {
