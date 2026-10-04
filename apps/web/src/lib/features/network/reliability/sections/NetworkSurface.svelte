@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import {
 		absenceSentence,
 		absenceShort,
@@ -85,6 +85,8 @@
 	import SectionCrowdingByDay from './SectionCrowdingByDay.svelte';
 	import SectionByTimeOfDay from './SectionByTimeOfDay.svelte';
 	import SectionWeekday from './SectionWeekday.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		networkSeed?: NetworkFile;

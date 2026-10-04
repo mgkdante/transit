@@ -58,13 +58,8 @@
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
-	import {
-		deriveMapFitPadding,
-		ISLAND_FIT_BOUNDS,
-		MAP_MAX_BOUNDS,
-		mapInitialCenter,
-	} from './mapCameraFraming';
-	import { copy as MAP_COPY } from './map.copy';
+	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
+	import { mapCopy } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
@@ -86,10 +81,11 @@
 	let { onready, onidle, onrecovering, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const t = $derived(MAP_COPY[locale]);
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
+	const framing = mapCameraFraming(v1);
 
 	let mapWidthPx = $state(1280);
 
@@ -118,9 +114,12 @@
 		urlCoordinator.writeFilters,
 	);
 	const nearMeController = createMapNearMeController({
+		providerId: manifest.provider,
+		bbox: manifest.bbox,
+		locale,
 		goto: urlCoordinator.goto,
 		currentUrl: urlCoordinator.currentUrl,
-		readTarget: nearTargetFromSearchParams,
+		readTarget: (params) => nearTargetFromSearchParams(params, manifest.bbox),
 		targetKey: nearTargetKey,
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
@@ -128,7 +127,7 @@
 		fetch: (input, init) => globalThis.fetch(input, init),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
-		translations: MAP_COPY[locale],
+		translations: t,
 	});
 	const focusController = createMapFocusController({
 		readFocus: parseMapFocus,
@@ -356,6 +355,7 @@
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			locale,
+			timeZone: manifest.tz,
 			index: live.index,
 			stops: stopList,
 			routes: contextRoutes,
@@ -731,9 +731,9 @@
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
 		{theme}
-		center={mapInitialCenter}
-		bounds={ISLAND_FIT_BOUNDS}
-		maxBounds={MAP_MAX_BOUNDS}
+		center={framing.center}
+		bounds={framing.bounds}
+		maxBounds={framing.maxBounds}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onrecovering={onMapRecovering}
@@ -757,6 +757,7 @@
 			<MapSelectionDetail
 				detail={selectedDetail}
 				{locale}
+				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
 				{selectionPresence}
 				{selectionSourceHealth}
@@ -878,6 +879,7 @@
 			}
 			{locale}
 			identity={detailIdentity}
+			timeZone={v1.manifest.tz}
 			footer={detailFooter}
 			surfaceKey={detailSurfaceKey}
 			canGoBack={selectionStack.length > 0}

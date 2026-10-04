@@ -1,4 +1,5 @@
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
+import { providerOf } from '$lib/v1/adapter/r2.core';
 import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '$lib/v1/schemas';
 import { isSlimStopsIndex, toSlimStopsIndex, type SlimStopsIndex } from './stopsSlim';
 
@@ -17,7 +18,9 @@ export async function getStopsIndex(ctx?: AdapterCtx): Promise<StopsIndex> {
 export async function getStopsIndexSlim(ctx?: AdapterCtx): Promise<SlimStopsIndex> {
 	const fetchFn = ctx?.fetch ?? fetch;
 	try {
-		const res = await fetchFn('/api/stops/slim', { signal: ctx?.signal });
+		const res = await fetchFn(`/api/stops/slim?provider=${providerOf(ctx)}`, {
+			signal: ctx?.signal,
+		});
 		if (res.ok) {
 			const body: unknown = await res.json();
 			if (isSlimStopsIndex(body)) return body;

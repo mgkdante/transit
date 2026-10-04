@@ -5,7 +5,13 @@ import { getProvenance } from '$lib/v1/repositories/provenance';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 export const load: PageServerLoad = async (event) => {
-	const context = serverV1Context(event);
+	const { v1 } = await event.parent();
+	if (!v1) return { networkSeed: null, trendSeed: null, provenanceSeed: null };
+	const context = {
+		...serverV1Context(event),
+		providerId: v1.manifest.provider,
+		manifest: v1.manifest,
+	};
 	const [networkResult, trendResult, provenanceResult] = await Promise.allSettled([
 		getNetwork(context),
 		getNetworkTrend(context),

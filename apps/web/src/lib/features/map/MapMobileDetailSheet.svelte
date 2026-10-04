@@ -12,6 +12,7 @@
 	interface Props {
 		open: boolean;
 		locale: Locale;
+		timeZone?: string;
 		title?: string;
 		surfaceKey: string;
 		canGoBack: boolean;
@@ -32,6 +33,7 @@
 	let {
 		open = $bindable(),
 		locale,
+		timeZone,
 		title,
 		surfaceKey,
 		canGoBack,
@@ -82,6 +84,7 @@
 			<MapSelectionDetail
 				detail={selectedDetail}
 				{locale}
+				{timeZone}
 				{notReporting}
 				{selectionPresence}
 				{selectionSourceHealth}

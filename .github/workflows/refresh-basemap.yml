@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "0 6 1 * *" # 06:00 UTC, 1st of each month
   workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider id; blank refreshes publicly ready providers"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -15,15 +20,67 @@ concurrency:
 
 env:
   PMTILES_VERSION: "1.30.3"
-  BBOX: "-74.17628,45.23742,-73.27628,45.86764"
   MAXZOOM: "15"
   R2_BUCKET: "transit-snapshots"
-  R2_KEY: "v1/stm/static/basemap/montreal.pmtiles"
 
 jobs:
+  providers:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.config.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-py
+      - id: config
+        working-directory: apps/db
+        env:
+          REQUESTED_PROVIDER: ${{ inputs.provider }}
+        run: |
+          uv run python - <<'PY'
+          import json, os
+          from pathlib import PurePosixPath
+          from transit_ops.providers.registry import ProviderRegistry
+          registry = ProviderRegistry.from_project_root()
+          requested = os.environ.get("REQUESTED_PROVIDER")
+          ids = [requested] if requested else registry.list_provider_ids()
+          jobs = []
+          for provider_id in ids:
+              public = registry.get_provider(provider_id).public
+              if not requested and not public.enabled:
+                  continue
+              bounds = public.basemap_bounds
+              if not bounds or not public.basemap_url:
+                  raise ValueError(f"Missing basemap configuration: {provider_id}")
+              prefix = f"/data/v1/{provider_id}/static/basemap/"
+              if not public.basemap_url.startswith(prefix):
+                  raise ValueError(f"Foreign basemap path: {provider_id}")
+              coordinates = [
+                  bounds.min_longitude, bounds.min_latitude,
+                  bounds.max_longitude, bounds.max_latitude,
+              ]
+              jobs.append({
+                  "provider": provider_id,
+                  "bbox": ",".join(map(str, coordinates)),
+                  "key": public.basemap_url.removeprefix("/data/"),
+                  "file": PurePosixPath(public.basemap_url).name,
+              })
+          if not jobs:
+              raise ValueError("No providers selected")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("matrix=" + json.dumps({"include": jobs}) + "\n")
+          PY
+
   refresh-basemap:
+    needs: providers
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.providers.outputs.matrix) }}
+    env:
+      BBOX: ${{ matrix.bbox }}
+      R2_KEY: ${{ matrix.key }}
+      EXTRACT_FILE: ${{ matrix.file }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -36,18 +93,18 @@ jobs:
           sudo mv pmtiles /usr/local/bin/
           pmtiles version
 
-      - name: Extract Montréal area from the latest Protomaps daily build
+      - name: Extract provider area from the latest Protomaps daily build
         run: |
           DATE="$(date -u -d 'yesterday' +%Y%m%d)"
           SRC="https://build.protomaps.com/${DATE}.pmtiles"
           echo "Extracting bbox=${BBOX} maxzoom=${MAXZOOM} from ${SRC}"
-          timeout 5m pmtiles extract "${SRC}" montreal.pmtiles --bbox="${BBOX}" --maxzoom="${MAXZOOM}"
+          timeout 5m pmtiles extract "${SRC}" "${EXTRACT_FILE}" --bbox="${BBOX}" --maxzoom="${MAXZOOM}"
 
       - name: Verify the extract (fail loudly on regress)
         run: |
-          timeout 2m pmtiles verify montreal.pmtiles
-          timeout 2m pmtiles show montreal.pmtiles
-          SIZE="$(stat -c%s montreal.pmtiles)"
+          timeout 2m pmtiles verify "${EXTRACT_FILE}"
+          timeout 2m pmtiles show "${EXTRACT_FILE}"
+          SIZE="$(stat -c%s "${EXTRACT_FILE}")"
           echo "extract size: ${SIZE} bytes"
           test "${SIZE}" -gt 100000
 
@@ -60,11 +117,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: eccfb9bedd87d413eaf4cac6ae2285d3
           WRANGLER_BIN: ${{ github.workspace }}/node_modules/.bin/wrangler
         run: |
-          BACKUP_KEY="v1/stm/static/basemap/backups/montreal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-before.pmtiles"
+          BACKUP_KEY="${R2_KEY%/*}/backups/${EXTRACT_FILE%.pmtiles}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-before.pmtiles"
           bun .github/scripts/refresh-basemap-r2.mjs \
             --bucket="${R2_BUCKET}" \
             --key="${R2_KEY}" \
             --backup-key="${BACKUP_KEY}" \
-            --new-file=montreal.pmtiles \
+            --new-file="${EXTRACT_FILE}" \
             --receipt="${RUNNER_TEMP}/basemap-refresh-receipt.json"
           cat "${RUNNER_TEMP}/basemap-refresh-receipt.json"

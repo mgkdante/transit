@@ -284,6 +284,7 @@ export const metricInfoCopy = {
 export function metricInfoFor(
 	key: MetricKey | SupplementalMetricKey,
 	locale: Locale,
+	provider?: string,
 ): { tip: string; href: string; anchor: string } {
 	const entry: { oneLiner: BilingualText; anchor: string } =
 		key in METRIC_SUMMARIES
@@ -291,7 +292,7 @@ export function metricInfoFor(
 			: SUPPLEMENTAL_METRIC_TIPS[key as SupplementalMetricKey];
 	return {
 		tip: entry.oneLiner[locale],
-		href: `${localizeHref('/metrics', locale)}#${entry.anchor}`,
+		href: `${localizeHref('/metrics', locale, provider)}#${entry.anchor}`,
 		anchor: entry.anchor,
 	};
 }

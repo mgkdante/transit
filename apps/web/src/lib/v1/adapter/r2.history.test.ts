@@ -85,7 +85,7 @@ function pointIndex(family: 'hotspots' | 'repeat_offenders', refs: unknown[] = [
 		partitions: refs,
 		metrics: [],
 		methodology_version: 'history-1',
-		publish_generation_id: 'published-run',
+		publish_generation_id: `stm@${ISO}`,
 	};
 }
 

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceTarget } from '$lib/nav';
+
+	const localizeHref = getLocalizeHref();
 
 	interface EntityRowBaseProps {
 		glyph?: string;

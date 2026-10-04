@@ -13,6 +13,7 @@ from transit_ops.db.connection import make_engine
 from transit_ops.gold.delay_days import assert_daily_delay_history_clean
 from transit_ops.gold.delay_hours import assert_historic_delay_means_current
 from transit_ops.ingestion.common import utc_now
+from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.snapshots import builders, envelope, gate, historic_tier, uploads
 from transit_ops.snapshots import historic_receipts as _historic
@@ -318,7 +319,8 @@ def _publish_static(
         ("static/routes_index.json", routes_idx, "static"),
         ("static/stops_index.json", stops_index, "static"),
     ]
-    bm = builders.build_basemap(settings, generated_utc=stamp)
+    public = ProviderRegistry.from_project_root(settings=settings).get_public_config(provider_id)
+    bm = builders.build_basemap(settings, public=public, generated_utc=stamp)
     if bm is not None:
         head_items.append(("static/basemap.json", bm, "static"))
     for lang in ("fr", "en"):
@@ -485,10 +487,14 @@ def publish_snapshot(
             )
             gated = historic_gated
         else:
+            public = ProviderRegistry.from_project_root(settings=settings).get_public_config(
+                provider_id
+            )
+            basemap = builders.build_basemap(settings, public=public, generated_utc="")
             gated = HashGatedStorage(
                 storage,
                 state_rel_key=f"_meta/publish_state_{tier}.json",
-                fingerprint=state_fingerprint(tier),
+                fingerprint=state_fingerprint(tier, config=basemap),
             )
         gated.load()
         # Output changes require a new state_fingerprint even without a new dataset.

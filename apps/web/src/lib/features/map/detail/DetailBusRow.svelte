@@ -13,13 +13,14 @@
 	interface Props {
 		vehicle: Vehicle;
 		locale: Locale;
+		timeZone?: string;
 		etaUtc?: string | null;
 		t: MapSelectionDetailCopy;
 		onselect: (id: string) => void;
 		onpreview?: (selection: { kind: 'vehicle'; id: string } | null) => void;
 	}
 
-	let { vehicle, locale, etaUtc = null, t, onselect, onpreview }: Props = $props();
+	let { vehicle, locale, timeZone, etaUtc = null, t, onselect, onpreview }: Props = $props();
 	let pointerPreview = $state(false);
 	let focusPreview = $state(false);
 	const previewing = $derived(pointerPreview || focusPreview);
@@ -31,7 +32,7 @@
 	}
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
 	);
 </script>
 

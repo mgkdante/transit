@@ -1,4 +1,6 @@
 import type { GeocodedLocation, GeocodeSuggestion } from '$lib/geocode/types';
+import { isInsideBounds } from '$lib/geocode/types';
+import type { Locale } from '$lib/i18n';
 import type { MapNearTarget } from '$lib/search/mapNear';
 import { parseCoordinateQuery } from './mapNearMe';
 
@@ -14,6 +16,9 @@ export interface NearMeTranslations {
 }
 
 export interface MapNearMeControllerDependencies {
+	readonly providerId: string;
+	readonly bbox: readonly number[];
+	readonly locale: Locale;
 	readonly goto: (
 		target: string,
 		options: { replaceState: true; keepFocus: true; noScroll: true },
@@ -87,6 +92,10 @@ export function createMapNearMeController(
 		{ syncUrl = true, urlBacked: nextUrlBacked = true } = {},
 	): void {
 		if (disposed) return;
+		if (!isInsideBounds(nextOrigin.lat, nextOrigin.lon, dependencies.bbox)) {
+			error = dependencies.translations.nearMeError;
+			return;
+		}
 		origin = nextOrigin;
 		error = null;
 		urlBacked = nextUrlBacked;
@@ -197,7 +206,9 @@ export function createMapNearMeController(
 	}
 
 	async function resolveQuery(nextQuery: string): Promise<void> {
-		const result = await fetchLocation(`/api/geocode/montreal?q=${encodeURIComponent(nextQuery)}`);
+		const result = await fetchLocation(
+			`/api/geocode?provider=${encodeURIComponent(dependencies.providerId)}&lang=${dependencies.locale}&q=${encodeURIComponent(nextQuery)}`,
+		);
 		if (!result || disposed) return;
 		query = result.label;
 		setOrigin(result);
@@ -209,7 +220,7 @@ export function createMapNearMeController(
 		const nextQuery = query.trim();
 		if (!nextQuery) return;
 
-		const manual = parseCoordinateQuery(nextQuery);
+		const manual = parseCoordinateQuery(nextQuery, dependencies.bbox);
 		if (manual) {
 			setOrigin({ ...manual, label: nextQuery, precision: 'address' });
 			return;

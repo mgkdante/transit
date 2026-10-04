@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
-	ctx: { fetch: vi.fn() },
+	ctx: { fetch: vi.fn(), providerId: 'octranspo', manifest: { provider: 'octranspo' } },
 	getNetwork: vi.fn(),
 	getNetworkTrend: vi.fn(),
 	getProvenance: vi.fn(),
@@ -41,6 +41,7 @@ function event(): Parameters<typeof load>[0] {
 		fetch: vi.fn(),
 		locals: { v1Cache: new Map() },
 		platform: undefined,
+		parent: async () => ({ v1: { manifest: harness.ctx.manifest } }),
 	} as unknown as Parameters<typeof load>[0];
 }
 
@@ -52,6 +53,18 @@ beforeEach(() => {
 });
 
 describe('/network server seeds', () => {
+	it('does not fetch any provider data before root discovery succeeds', async () => {
+		const request = event();
+		request.parent = vi.fn().mockResolvedValue({ v1: null, providerId: 'octranspo' });
+		await expect(load(request)).resolves.toEqual({
+			networkSeed: null,
+			trendSeed: null,
+			provenanceSeed: null,
+		});
+		expect(harness.getNetwork).not.toHaveBeenCalled();
+		expect(harness.getNetworkTrend).not.toHaveBeenCalled();
+		expect(harness.getProvenance).not.toHaveBeenCalled();
+	});
 	it('starts all three reads concurrently through one request-scoped context', async () => {
 		const network = { generated_utc: '2026-07-14T12:00:00Z', on_time_pct: 91 };
 		const trend = { generated_utc: '2026-07-14T12:00:00Z', series: [] };
@@ -64,6 +77,7 @@ describe('/network server seeds', () => {
 		harness.getProvenance.mockReturnValue(provenanceRead.promise);
 
 		const pending = load(event());
+		await Promise.resolve();
 
 		expect(harness.serverV1Context).toHaveBeenCalledTimes(1);
 		expect(harness.getNetwork).toHaveBeenCalledWith(harness.ctx);

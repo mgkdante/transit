@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocale } from '$lib/i18n';
+	import { getLocalizeHref, getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1/repositories/static';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
@@ -28,6 +28,7 @@
 	import { indexCopy } from './lines.copy';
 	import LinesBlueprint from './LinesBlueprint.svelte';
 
+	const localizeHref = getLocalizeHref();
 	const locale = getLocale();
 	const t = $derived(indexCopy[locale]);
 
@@ -234,7 +235,7 @@
 					{/snippet}
 					{#snippet lineAction()}
 						<MapDrilldownLink
-							href={mapHrefFor({ route: r.id }, locale)}
+							href={localizeHref(mapHrefFor({ route: r.id }, locale), locale)}
 							label={t.mapAction}
 							ariaLabel={t.viewRouteOnMap(r.short)}
 						/>

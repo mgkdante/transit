@@ -7,6 +7,8 @@
 	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
+	import { getV1Context } from '$lib/v1/boot';
+	const { manifest } = getV1Context();
 
 	interface Props {
 		open?: boolean;
@@ -134,7 +136,7 @@
 			return;
 		}
 
-		const cacheKey = trimmed.toLocaleLowerCase('en-CA');
+		const cacheKey = `${manifest.provider}:${locale}:${trimmed.toLocaleLowerCase('en-CA')}`;
 		const cached = suggestionCache.get(cacheKey);
 		if (cached) {
 			suggestions = cached;
@@ -145,7 +147,7 @@
 		const controller = new AbortController();
 		const timeout = setTimeout(() => {
 			suggestionsLoading = true;
-			const url = `/api/geocode/montreal?q=${encodeURIComponent(trimmed)}&suggest=1&limit=4`;
+			const url = `/api/geocode?provider=${encodeURIComponent(manifest.provider)}&lang=${locale}&q=${encodeURIComponent(trimmed)}&suggest=1&limit=4`;
 			void fetch(url, { signal: controller.signal })
 				.then(async (response) => {
 					if (!response.ok) return [];

@@ -3,12 +3,29 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { mapViewportOptions, type MapFitPadding } from '$lib/components/map/viewport';
-import {
-	deriveMapFitPadding,
-	ISLAND_FIT_BOUNDS,
-	MAP_MAX_BOUNDS,
-	mapInitialCenter,
-} from './mapCameraFraming';
+import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
+
+const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
+const MAP_MAX_BOUNDS = [-74.28605, 45.3, -73.16605, 45.82] as const;
+const mapInitialCenter: [number, number] = [-73.72605, 45.5525];
+
+it('uses selected provider framing, falling back only to its own service bounds', () => {
+	const bbox = [-76.05, 45.1, -75.33, 45.55];
+	expect(mapCameraFraming({ manifest: { bbox } } as never)).toEqual({
+		bounds: bbox,
+		maxBounds: bbox,
+		center: [-75.69, 45.325],
+	});
+	const stm = mapCameraFraming({
+		manifest: { bbox: [-74.1, 45.25, -73.2, 45.75] },
+		provider: { fit_bounds: ISLAND_FIT_BOUNDS, max_bounds: MAP_MAX_BOUNDS },
+	} as never);
+	expect(stm).toEqual({
+		bounds: ISLAND_FIT_BOUNDS,
+		maxBounds: MAP_MAX_BOUNDS,
+		center: mapInitialCenter,
+	});
+});
 
 const maplibrePackage = pathToFileURL(
 	createRequire(import.meta.url).resolve('maplibre-gl/package.json'),

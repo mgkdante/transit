@@ -11,6 +11,6 @@ export {
 	isPrefixLocale,
 } from './routing';
 
-export { setLocaleContext, getLocale } from './context';
+export { setLocaleContext, getLocale, getLocalizeHref } from './context';
 
 export { defineCopy } from './copy';

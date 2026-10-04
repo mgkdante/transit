@@ -7,12 +7,15 @@
 	import type { SvelteSet } from 'svelte/reactivity';
 	import type { BilingualLabel } from '$lib/content/nav';
 	import NavPill from './NavPill.svelte';
+	import type { PublicProvider } from '$lib/v1/providers';
 
 	interface AppShellProps {
 		locale?: Locale;
 		url?: URL;
 		providerName?: string;
 		providerShortName?: string;
+		providerId?: string;
+		providers?: PublicProvider[];
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
@@ -32,6 +35,8 @@
 		url,
 		providerName,
 		providerShortName,
+		providerId,
+		providers,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
@@ -67,6 +72,8 @@
 			{url}
 			{providerName}
 			{providerShortName}
+			{providerId}
+			{providers}
 			bind:search
 			{onsearch}
 			{searchResults}

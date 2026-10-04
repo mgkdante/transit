@@ -5,7 +5,13 @@ import { getProvenance } from '$lib/v1/repositories/provenance';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 export const load: PageServerLoad = async (event) => {
-	const context = serverV1Context(event);
+	const { v1 } = await event.parent();
+	if (!v1) return { provenanceSeed: null, dataHealthSeed: null, historicAvailabilitySeed: null };
+	const context = {
+		...serverV1Context(event),
+		providerId: v1.manifest.provider,
+		manifest: v1.manifest,
+	};
 	const [provenanceResult, dataHealthResult, historicAvailabilityResult] = await Promise.allSettled(
 		[getProvenance(context), getDataHealth(context), getHistoricAvailability(context)],
 	);

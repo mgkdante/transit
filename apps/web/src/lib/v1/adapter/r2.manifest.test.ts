@@ -35,6 +35,95 @@ describe('r2 manifest memo', () => {
 		vi.unstubAllGlobals();
 	});
 
+	it('isolates concurrent providers with colliding entity ids and a shared cache', async () => {
+		const cache = new Map<string, unknown>();
+		const request = vi.fn(async (input: RequestInfo | URL) => {
+			const provider = String(input).split('/')[3];
+			return json(
+				String(input).endsWith('/manifest.json')
+					? { ...manifest(), provider }
+					: { generated_utc: ISO, routes: [{ id: '42', short: '42', long: provider, type: 3 }] },
+			);
+		});
+		const read = (providerId: string) =>
+			r2Adapter.static.routesIndex({ providerId, cache, fetch: request });
+		const [stm, ottawa] = await Promise.all([read('stm'), read('octranspo')]);
+		expect(stm.routes[0].long).toBe('stm');
+		expect(ottawa.routes[0].long).toBe('octranspo');
+		await read('octranspo');
+		expect(
+			request.mock.calls.filter(([url]) => String(url).endsWith('/manifest.json')),
+		).toHaveLength(2);
+	});
+
+	it('rejects a foreign manifest and does not borrow the booted provider for an explicit request', async () => {
+		installBrowserAdapterManifest(() => manifest() as never);
+		const request = vi.fn(async (_input: RequestInfo | URL) => json(manifest()));
+		await expect(
+			r2Adapter.manifest.get({ providerId: 'octranspo', fetch: request }),
+		).rejects.toThrow('provider');
+		expect(request.mock.calls[0][0]).toBe('/data/v1/octranspo/manifest.json');
+		await expect(
+			r2Adapter.manifest.getFresh({ providerId: 'octranspo', fetch: request }),
+		).rejects.toThrow('provider');
+	});
+
+	it('rejects a foreign publication generation in fetched, supplied, cached and booted manifests', async () => {
+		const foreign = { ...manifest(), provider: 'octranspo', publish_generation_id: `stm@${ISO}` };
+		const ctx = { providerId: 'octranspo', fetch: vi.fn(async () => json(foreign)) };
+		await expect(r2Adapter.manifest.get(ctx)).rejects.toThrow('generation');
+		await expect(r2Adapter.manifest.getFresh(ctx)).rejects.toThrow('generation');
+		await expect(r2Adapter.manifest.get({ ...ctx, manifest: foreign as never })).rejects.toThrow(
+			'generation',
+		);
+		await expect(
+			r2Adapter.manifest.get({ ...ctx, cache: new Map([['v1:octranspo:manifest', foreign]]) }),
+		).rejects.toThrow('generation');
+		installBrowserAdapterManifest(() => foreign as never);
+		await expect(r2Adapter.manifest.get(ctx)).rejects.toThrow('generation');
+	});
+
+	it('checks publication ownership across snapshot read boundaries', async () => {
+		const ctx = {
+			providerId: 'octranspo',
+			manifest: {
+				...manifest(),
+				provider: 'octranspo',
+				publish_generation_id: `octranspo@${ISO}`,
+			} as never,
+			fetch: vi.fn(async () => json({ publish_generation_id: `stm@${ISO}` })),
+		};
+		const reads = [
+			() => r2Adapter.static.routesIndex(ctx),
+			() => r2Adapter.static.route('42', ctx),
+			() => r2Adapter.live.vehicles(ctx),
+			() => r2Adapter.labels.get('fr', ctx),
+			() => r2Adapter.basemap.get(ctx),
+			() => r2Adapter.dataHealth.get(ctx),
+			() => r2Adapter.historic.historyIndex(ctx),
+			() =>
+				r2Adapter.historic.alertArchivePage(
+					`historic/alerts/generations/${'a'.repeat(64)}/2026-07/page-0001.json`,
+					ctx,
+				),
+			() => r2Adapter.historic.routeReliabilityIndex(ctx),
+			() =>
+				r2Adapter.historic.networkHistoryPartition(
+					`historic/history/network/generations/${'a'.repeat(64)}/2026-07.json`,
+					ctx,
+				),
+		];
+		for (const read of reads) await expect(read()).rejects.toThrow('generation');
+		ctx.fetch.mockImplementation(async () =>
+			json({
+				generated_utc: ISO,
+				publish_generation_id: 'octranspo@2026-07-14T00:00:00Z',
+				routes: [],
+			}),
+		);
+		await expect(r2Adapter.static.routesIndex(ctx)).resolves.toMatchObject({ routes: [] });
+	});
+
 	it('uses the booted browser manifest for context-free repository reads', async () => {
 		const booted = {
 			...manifest(),

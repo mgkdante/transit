@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import type { Vehicle } from '$lib/v1/schemas';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
@@ -7,6 +7,8 @@
 	import { absenceSentence } from '$lib/site/absence';
 	import { MaybeValue } from '$lib/components/edge';
 	import type { VehicleResultCopy } from './search.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		vehicle: Vehicle;

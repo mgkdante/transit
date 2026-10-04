@@ -29,19 +29,27 @@ describe('normalizeV1BaseUrl', () => {
 		).toBe('https://r2.example.test/v1/stm/static/basemap.json?generation=42#descriptor');
 	});
 
-	it('preserves unrelated and provider-mismatched absolute pointers', () => {
-		expect(resolveUrl('https://cdn.example.test/data/v1/stm/static/basemap.json?x=1#y')).toBe(
-			'https://cdn.example.test/data/v1/stm/static/basemap.json?x=1#y',
-		);
-		expect(resolveUrl('https://transit.yesid.dev/data/v1/exo/static/basemap.json?x=1#y')).toBe(
-			'https://transit.yesid.dev/data/v1/exo/static/basemap.json?x=1#y',
-		);
+	it.each([
+		'https://cdn.example.test/data/v1/stm/static/basemap.json',
+		'https://transit.yesid.dev/data/v1/exo/static/basemap.json',
+		'///data/v1/stm/static/basemap.json',
+		'../octranspo/manifest.json',
+	])('rejects pointers outside the selected provider: %s', (pointer) => {
+		expect(() => resolveUrl(pointer, 'stm')).toThrow();
 	});
 
-	it.each([
-		'https://r2.example.test/v1/stm/static/basemap.json?generation=42#descriptor',
-		'pmtiles://archive.example.test/montreal.pmtiles?generation=42#archive',
-	])('preserves an already-direct or non-HTTP pointer byte-for-byte: %s', (pointer) => {
-		expect(normalizeSnapshotPointer(pointer)).toBe(pointer);
+	it('resolves ordinary and canonical pointers for the explicit provider', () => {
+		for (const path of ['live/vehicles.json', '/data/v1/octranspo/live/vehicles.json']) {
+			expect(resolveUrl(path, 'octranspo')).toBe(
+				'https://r2.example.test/v1/octranspo/live/vehicles.json',
+			);
+		}
 	});
+
+	it.each(['https://r2.example.test/v1/stm/static/basemap.json?generation=42#descriptor'])(
+		'preserves an already-direct or non-HTTP pointer byte-for-byte: %s',
+		(pointer) => {
+			expect(normalizeSnapshotPointer(pointer)).toBe(pointer);
+		},
+	);
 });

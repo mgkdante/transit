@@ -177,7 +177,7 @@
             }
           ],
           "default": null,
-          "description": "static/basemap.json pointer; null until SNAPSHOT_BASEMAP_PMTILES_URL is set",
+          "description": "static/basemap.json pointer; null when the provider has no basemap configured",
           "title": "Basemap"
         },
         "generated_utc": {

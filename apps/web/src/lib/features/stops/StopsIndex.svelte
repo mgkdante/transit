@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
 	import { getRoute, getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
@@ -32,6 +32,7 @@
 	import { indexCopy } from './stops.copy';
 	import StopsBlueprint from './StopsBlueprint.svelte';
 
+	const localizeHref = getLocalizeHref();
 	const locale: Locale = getLocale();
 	const t = $derived(indexCopy[locale]);
 	const listingSubtitle = $derived([t.kicker, t.subheading].filter(Boolean).join(' '));
@@ -430,7 +431,7 @@
 		{/snippet}
 		{#snippet stopAction()}
 			<MapDrilldownLink
-				href={mapHrefFor({ stop: stop.id }, locale)}
+				href={localizeHref(mapHrefFor({ stop: stop.id }, locale), locale)}
 				label={t.mapAction}
 				ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
 			/>

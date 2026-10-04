@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
@@ -26,6 +26,8 @@
 	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Section0VerdictProps {
 		vm: PunctualityVM;

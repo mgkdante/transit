@@ -38,7 +38,6 @@ SETTINGS_DEFAULT_ENV_KEYS = (
     "SNAPSHOT_LOCAL_ROOT",
     "SNAPSHOT_R2_BUCKET",
     "SNAPSHOT_PUBLIC_BASE_URL",
-    "SNAPSHOT_BASEMAP_PMTILES_URL",
     "SNAPSHOT_BASEMAP_STYLE_URL",
 )
 
@@ -106,7 +105,6 @@ def test_repository_env_example_loads_local_storage_without_remote_targets(
         "BRONZE_S3_SECRET_KEY",
         "SNAPSHOT_R2_BUCKET",
         "SNAPSHOT_PUBLIC_BASE_URL",
-        "SNAPSHOT_BASEMAP_PMTILES_URL",
         "SNAPSHOT_BASEMAP_STYLE_URL",
     ):
         assert not getattr(settings, field_name)

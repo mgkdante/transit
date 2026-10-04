@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from transit_ops.core.models import ProviderManifest
+from transit_ops.core.models import ProviderManifest, ProviderPublicConfig
 from transit_ops.settings import Settings, get_settings
 
 
@@ -61,3 +61,7 @@ class ProviderRegistry:
             return self._providers[provider_id]
         except KeyError as exc:
             raise KeyError(f"No provider manifest found for provider_id='{provider_id}'.") from exc
+
+    def get_public_config(self, provider_id: str) -> ProviderPublicConfig:
+        manifest = self._providers.get(provider_id)
+        return manifest.public if manifest else ProviderPublicConfig()

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+from transit_ops.core.models import ProviderPublicConfig
+from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.snapshots.builders import (
     build_alerts,
     build_manifest,
@@ -730,8 +732,8 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
     assert out.bbox == [-74.1, 45.25, -73.2, 45.75]
     assert out.dataset_version == "2026-05-29-stm"
-    assert out.basemap is None
-    assert out.files.static.basemap is None
+    assert out.basemap == "https://data.example.com/v1/stm/static/basemap.json"
+    assert out.files.static.basemap == "static/basemap.json"
     assert out.files.live.generated_utc == "2026-05-31T12:00:05Z"
     assert out.files.static.routes_index == "static/routes_index.json"
     assert out.files.static.generated_utc is None
@@ -846,19 +848,35 @@ def test_build_manifest_tier_inventories_null_when_never_published() -> None:
     assert out.files.historic.generated_utc is None
 
 
-def test_build_manifest_basemap_null_without_setting() -> None:
-    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
-    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+def test_build_manifest_unconfigured_provider_has_no_borrowed_assets() -> None:
+    out = build_manifest(
+        FakeConn(_MANIFEST_PROVIDER_ROW), provider_id="test_provider", generated_utc="t",
+        settings=_FakeSettingsWithBasemap(),
+    )
+    assert out.provider == "test_provider"
     assert out.basemap is None
     assert out.files.static.basemap is None
 
 
-def test_build_manifest_basemap_set_with_setting() -> None:
+def test_build_manifest_basemap_null_without_provider_asset(monkeypatch) -> None:
+    registry = ProviderRegistry.from_project_root()
+    registry.get_provider("stm").public.basemap_url = None
+    monkeypatch.setattr(ProviderRegistry, "from_project_root", lambda **kwargs: registry)
     conn = FakeConn(_MANIFEST_PROVIDER_ROW)
     out = build_manifest(
         conn, provider_id="stm", generated_utc="t", settings=_FakeSettingsWithBasemap()
     )
-    assert out.basemap == "https://data.example.com/v1/stm/static/basemap.json"
+    assert out.basemap is None
+    assert out.files.static.basemap is None
+
+
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+def test_build_manifest_basemap_is_provider_owned(provider_id) -> None:
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
+    out = build_manifest(
+        conn, provider_id=provider_id, generated_utc="t", settings=_FakeSettingsWithBasemap()
+    )
+    assert out.basemap == f"https://data.example.com/v1/{provider_id}/static/basemap.json"
     assert out.files.static.basemap == "static/basemap.json"
 
 
@@ -1924,14 +1942,13 @@ def test_build_alert_history_passes_bilingual_source_messages_without_rekeying()
 def test_build_basemap_none_without_url() -> None:
     from transit_ops.snapshots.builders import build_basemap
 
-    class _S:
-        SNAPSHOT_BASEMAP_PMTILES_URL = None
-
-    assert build_basemap(_S(), generated_utc="t") is None
-    assert build_basemap(object(), generated_utc="t") is None
+    assert build_basemap(
+        _FakeSettingsWithBasemap(), public=ProviderPublicConfig(), generated_utc="t"
+    ) is None
 
 
-def test_build_basemap_pointer_carries_url_style_attribution() -> None:
+@pytest.mark.parametrize("provider_id,city", [("stm", "montreal"), ("octranspo", "ottawa")])
+def test_build_basemap_pointer_carries_provider_url_style_attribution(provider_id, city) -> None:
     from transit_ops.snapshots.builders import build_basemap
 
     class _S:
@@ -1939,10 +1956,11 @@ def test_build_basemap_pointer_carries_url_style_attribution() -> None:
         SNAPSHOT_BASEMAP_STYLE_URL = "https://x/style.json"
         SNAPSHOT_BASEMAP_ATTRIBUTION = "© OSM, © Protomaps"
 
-    bm = build_basemap(_S(), generated_utc="2026-06-13T00:00:00Z")
+    public = ProviderRegistry.from_project_root().get_provider(provider_id).public
+    bm = build_basemap(_S(), public=public, generated_utc="2026-06-13T00:00:00Z")
     assert bm is not None
     assert bm.format == "pmtiles"
-    assert bm.url == "https://x/quebec.pmtiles"
+    assert bm.url == f"/data/v1/{provider_id}/static/basemap/{city}.pmtiles"
     assert bm.style_url == "https://x/style.json"
     assert bm.attribution == "© OSM, © Protomaps"
     assert bm.generated_utc == "2026-06-13T00:00:00Z"

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import ConformanceBadge from '$lib/components/surface/ConformanceBadge.svelte';
@@ -32,6 +32,8 @@
 	} from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
 	import MetricBody, { type MetricBodies } from './MetricBody.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	let { metricBodies }: { metricBodies?: MetricBodies } = $props();
 

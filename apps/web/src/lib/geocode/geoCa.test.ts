@@ -1,10 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-	geoCaSearchUrl,
-	geocodeMontreal,
-	geocodeMontrealSuggestions,
-	type GeocodeFetcher,
-} from './geoCa';
+import { geoCaSearchUrl, geocode, geocodeSuggestions, type GeocodeFetcher } from './geoCa';
+
+const AREA = {
+	bbox: [-74.05, 45.35, -73.35, 45.75],
+	context: 'Montreal, Quebec',
+	lang: 'en' as const,
+};
+
+it('queries Ottawa context and rejects Montreal candidates for Ottawa', async () => {
+	const fetcher = vi.fn(async (url: URL) => {
+		expect(url.searchParams.get('q')).toBe('100 Bank street Ottawa Ontario Canada');
+		expect(url.searchParams.get('lang')).toBe('fr');
+		return new Response(
+			JSON.stringify([
+				{ lat: 45.42, lng: -75.69, name: 'Bank Street', category: 'street' },
+				{ lat: 45.5, lng: -73.6, name: 'Montréal', category: 'street' },
+			]),
+		);
+	});
+	const results = await geocodeSuggestions(
+		'100 Bank St',
+		{ bbox: [-76.05, 45.1, -75.33, 45.55], context: 'Ottawa, Ontario', lang: 'fr' },
+		fetcher,
+	);
+	expect(results.map(({ label }) => label)).toEqual(['Bank Street']);
+});
 
 function jsonResponse(payload: unknown): Response {
 	return new Response(JSON.stringify(payload), {
@@ -14,7 +34,7 @@ function jsonResponse(payload: unknown): Response {
 
 describe('geoCaSearchUrl', () => {
 	it('uses the Canadian geolocator service with bounded source keys', () => {
-		const url = geoCaSearchUrl('H2X 1Y4');
+		const url = geoCaSearchUrl('H2X 1Y4', AREA);
 
 		expect(url.origin).toBe('https://geolocator.api.geo.ca');
 		expect(url.searchParams.get('q')).toBe('H2X 1Y4 Montreal Quebec Canada');
@@ -22,14 +42,22 @@ describe('geoCaSearchUrl', () => {
 		expect(url.searchParams.get('keys')).toBe('locate,nominatim,fsa,geonames');
 	});
 
-	it('expands informal Montréal street intent before sending to Geo.ca', () => {
-		const url = geoCaSearchUrl('1234 boul st laurent');
-
-		expect(url.searchParams.get('q')).toBe('1234 boulevard saint laurent Montreal Quebec Canada');
+	it.each([
+		['1234 boul st laurent', '1234 boulevard saint laurent'],
+		['rue St', 'rue saint'],
+		['rue St.', 'rue saint'],
+		['av St', 'avenue saint'],
+		['St Laurent', 'saint Laurent'],
+		['100 Bank St', '100 Bank street'],
+		['100 Bank St.', '100 Bank street'],
+	])('expands street intent in %s before sending to Geo.ca', (query, expected) => {
+		expect(geoCaSearchUrl(query, AREA).searchParams.get('q')).toBe(
+			`${expected} Montreal Quebec Canada`,
+		);
 	});
 });
 
-describe('geocodeMontreal', () => {
+describe('geocode', () => {
 	it('prefers a block-level Geo.ca candidate over a broad FSA/postal centroid', async () => {
 		const fetcher = vi.fn<GeocodeFetcher>(async () =>
 			jsonResponse([
@@ -62,7 +90,7 @@ describe('geocodeMontreal', () => {
 			]),
 		);
 
-		await expect(geocodeMontreal('H2X 1Y4', fetcher)).resolves.toEqual({
+		await expect(geocode('H2X 1Y4', AREA, fetcher)).resolves.toEqual({
 			lat: 45.5112983,
 			lon: -73.5657786,
 			label:
@@ -110,7 +138,7 @@ describe('geocodeMontreal', () => {
 			]),
 		);
 
-		await expect(geocodeMontrealSuggestions('H2X 1Y4', fetcher, 2)).resolves.toEqual([
+		await expect(geocodeSuggestions('H2X 1Y4', AREA, fetcher, 2)).resolves.toEqual([
 			{
 				lat: 45.5112983,
 				lon: -73.5657786,
@@ -143,7 +171,7 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontrealSuggestions('1234 boul st laurent', fetcher, 2)).resolves.toEqual([
+		await expect(geocodeSuggestions('1234 boul st laurent', AREA, fetcher, 2)).resolves.toEqual([
 			{
 				lat: 45.5031824,
 				lon: -73.5698065,
@@ -179,7 +207,7 @@ describe('geocodeMontreal', () => {
 			]),
 		);
 
-		await expect(geocodeMontreal('5333 avenue Casgrain H2T 1X3', fetcher)).resolves.toEqual({
+		await expect(geocode('5333 avenue Casgrain H2T 1X3', AREA, fetcher)).resolves.toEqual({
 			lat: 45.5256864,
 			lon: -73.5947644,
 			label: '5333 Avenue Casgrain, Montréal, Quebec',
@@ -202,7 +230,7 @@ describe('geocodeMontreal', () => {
 			]),
 		);
 
-		await expect(geocodeMontrealSuggestions('boul st laurent', fetcher, 1)).resolves.toEqual([
+		await expect(geocodeSuggestions('boul st laurent', AREA, fetcher, 1)).resolves.toEqual([
 			{
 				lat: 45.539433,
 				lon: -73.6329017,
@@ -238,7 +266,7 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toBeNull();
+		await expect(geocode('Berri-UQAM', AREA, fetcher)).resolves.toBeNull();
 		expect(fetcher).toHaveBeenCalledOnce();
 		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
@@ -259,7 +287,7 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toBeNull();
+		await expect(geocode('Berri-UQAM', AREA, fetcher)).resolves.toBeNull();
 		expect(fetcher).toHaveBeenCalledOnce();
 		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
@@ -289,19 +317,19 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontrealSuggestions('Berri-UQAM', fetcher)).resolves.toEqual([]);
+		await expect(geocodeSuggestions('Berri-UQAM', AREA, fetcher)).resolves.toEqual([]);
 		expect(fetcher).toHaveBeenCalledOnce();
 		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
 
 	it('returns null on empty or out-of-bounds geocoder responses', async () => {
 		const emptyFetcher = vi.fn<GeocodeFetcher>(async () => jsonResponse([]));
-		await expect(geocodeMontreal('H2X', emptyFetcher)).resolves.toBeNull();
+		await expect(geocode('H2X', AREA, emptyFetcher)).resolves.toBeNull();
 
 		const farFetcher = vi.fn<GeocodeFetcher>(async () =>
 			jsonResponse([{ key: 'locate', name: 'Québec', lat: 46.8, lng: -71.2 }]),
 		);
-		await expect(geocodeMontreal('G1R 5M1', farFetcher)).resolves.toBeNull();
+		await expect(geocode('G1R 5M1', AREA, farFetcher)).resolves.toBeNull();
 		expect(farFetcher).toHaveBeenCalledOnce();
 	});
 });

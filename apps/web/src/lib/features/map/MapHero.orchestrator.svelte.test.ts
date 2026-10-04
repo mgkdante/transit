@@ -93,9 +93,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toBeDefined();
 		expect(mapStage).toContain('basemapLoader={({ signal }) => getBasemap({ signal })}');
 		expect(mapStage).not.toContain('basemap={');
-		expect(mapStage).toContain('center={mapInitialCenter}');
-		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
-		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
+		expect(mapStage).toContain('center={framing.center}');
+		expect(mapStage).toContain('bounds={framing.bounds}');
+		expect(mapStage).toContain('maxBounds={framing.maxBounds}');
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
 		expect(mapStage).toContain('onidle={onMapIdle}');
 		expect(mapStage).toContain('onerror={onMapFailure}');

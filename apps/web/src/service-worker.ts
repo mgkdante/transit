@@ -20,7 +20,7 @@ const CACHE = cacheNameFor(version);
 
 const OFFLINE_PATH = '/offline.html';
 
-const MAP_POSTER_PATH_PREFIX = '/map/basemap-montreal-';
+const MAP_POSTER_PATH_PREFIX = '/map/basemap-';
 const NON_MAP_STATIC_FILES = files.filter(
 	(file) => !new URL(file, ORIGIN).pathname.startsWith(MAP_POSTER_PATH_PREFIX),
 );

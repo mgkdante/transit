@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
+from transit_ops.core.models import ProviderPublicConfig
 from transit_ops.snapshots.builders._helpers import (
     _ALL_ROUTE_SCHEDULES_SQL,
     _BOARDABLE_STOP,
@@ -816,9 +817,9 @@ def build_all_stops_data(
 
 
 def build_basemap(
-    settings: object, *, generated_utc: str
+    settings: object, *, public: ProviderPublicConfig, generated_utc: str
 ) -> "BasemapFile | None":  # noqa: UP037
-    url = getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None)
+    url = public.basemap_url
     if not url:
         return None
     return BasemapFile(

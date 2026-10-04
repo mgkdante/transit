@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { Locale } from '$lib/i18n';
+	import { pathLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import {
 		metricInfoFor,
 		metricInfoCopy,
@@ -14,6 +14,8 @@
 		type SupplementalMetricKey,
 	} from '$lib/metrics';
 	import { cn } from '$lib/utils';
+
+	const localizeHref = getLocalizeHref();
 
 	type MetricInfoProps = {
 		newTab?: boolean;
@@ -239,7 +241,7 @@
 			<span class="metric-info__tip">{tip}</span>
 			<a
 				class="metric-info__link"
-				{href}
+				href={localizeHref(href, 'metricKey' in props ? props.locale : pathLocale(href))}
 				target={newTab ? '_blank' : undefined}
 				rel={newTab ? 'noopener noreferrer' : undefined}
 			>

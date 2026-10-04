@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { fmtDelayMin } from '$lib/utils';
 	import { formatDateKey } from '$lib/utils/time';
@@ -64,6 +64,8 @@
 	import SectionHabits from './SectionHabits.svelte';
 	import SectionCrowding from './SectionCrowding.svelte';
 	import SectionDailyTrend from './SectionDailyTrend.svelte';
+
+	const localizeHref = getLocalizeHref();
 
 	interface StopReliabilitySurfaceProps {
 		data: StopReliability;

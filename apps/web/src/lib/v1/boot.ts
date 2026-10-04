@@ -7,11 +7,14 @@ import type { Manifest } from '$lib/v1/schemas/manifest';
 import { getLabels } from '$lib/v1/repositories/labels';
 import { getManifest } from '$lib/v1/repositories/manifest';
 import { installBrowserAdapterManifest } from '$lib/v1/adapter/browserManifest';
+import { loadProviderCatalog, resolveProvider, type PublicProvider } from './providers';
+import { v1Provider } from './config';
 
 export interface V1Context {
 	readonly manifest: Manifest;
 	readonly labels: Record<string, string>;
 	readonly lang: Locale;
+	readonly provider?: PublicProvider;
 }
 
 const RESOLVABLE_NAMESPACES = [
@@ -35,6 +38,41 @@ export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): P
 	);
 	const labels: Record<string, string> = langLabels;
 	return { manifest, labels, lang };
+}
+
+export async function bootProvider(url: URL, lang: Locale, ctx?: AdapterCtx) {
+	const requested = url.searchParams.getAll('provider');
+	let providerId = requested[0] ?? v1Provider();
+	let provider: PublicProvider | null = null;
+	let providers: PublicProvider[] = [];
+	let redirectHref: string | null = null;
+	let discoveryError = false;
+	try {
+		const catalog = await loadProviderCatalog(ctx?.fetch ?? fetch);
+		const selected = resolveProvider(url, catalog);
+		provider = selected.provider;
+		providerId = provider.id;
+		providers = catalog.providers;
+		if (selected.url.href !== url.href) redirectHref = selected.url.pathname + selected.url.search;
+	} catch {
+		discoveryError = true;
+	}
+	let v1: V1Context | null = null;
+	const unavailableSelection =
+		discoveryError && (requested.length > 1 || requested.some((id) => id !== v1Provider()));
+	if (!redirectHref && !unavailableSelection) {
+		v1 = await bootV1(lang, { ...ctx, providerId }).catch(() => null);
+		if (v1 && !provider) {
+			const label = {
+				city: v1.manifest.city ?? providerId,
+				operator: v1.manifest.short_name ?? v1.manifest.display_name,
+			};
+			provider = { id: providerId, labels: { en: label, fr: label }, inputs: {}, alert_links: {} };
+			providers = [provider];
+		}
+		if (v1 && provider) v1 = { ...v1, provider };
+	}
+	return { providerId, provider, providers, v1, discoveryError, redirectHref };
 }
 
 export function resolveLabel(code: string, labels: Record<string, string>): string {

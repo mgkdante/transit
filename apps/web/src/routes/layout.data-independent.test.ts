@@ -47,6 +47,7 @@ vi.mock('$app/stores', async () => {
 vi.mock('$app/state', () => ({ updated: { current: false } }));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
+	invalidateAll: vi.fn(),
 	onNavigate: vi.fn((callback: (navigation: unknown) => unknown) => {
 		harness.onNavigateCallbacks.push(callback);
 	}),
@@ -162,12 +163,23 @@ function renderRoot(pathname: string, lang: 'en' | 'fr', v1: V1Context | null) {
 	harness.onNavigateCallbacks.length = 0;
 	harness.runViewTransition.mockClear();
 	harness.setPath(pathname);
+	const data = {
+		lang,
+		v1,
+		v1Error: v1 === null,
+		serverBoot: v1 ? ('succeeded' as const) : ('failed' as const),
+		providerId: v1?.manifest.provider ?? 'stm',
+		provider: null,
+		providers: [],
+		discoveryError: false,
+		redirectHref: null,
+	};
 	if (v1 && /^\/(?:fr\/)?map$/u.test(pathname)) {
-		return render(RootLayoutMapRouteHarness, { props: { data: { lang, v1, v1Error: false } } });
+		return render(RootLayoutMapRouteHarness, { props: { data } });
 	}
 	return render(RootLayout, {
 		props: {
-			data: { lang, v1, v1Error: v1 === null },
+			data,
 			children,
 		},
 	});
@@ -197,6 +209,32 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
+	it('does not geocode a submitted header search while provider boot is unavailable', async () => {
+		const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"results":[]}'));
+		try {
+			const { getByRole } = renderWithoutV1('/network?provider=octranspo', 'en');
+			await fireEvent.input(getByRole('combobox'), { target: { value: 'Bank Street' } });
+			await fireEvent.submit(getByRole('search'));
+			await settled();
+			expect(request).not.toHaveBeenCalled();
+		} finally {
+			request.mockRestore();
+		}
+	});
+	it('uses a fresh document when a navigation changes provider', () => {
+		renderWithoutV1('/network?provider=stm', 'en');
+		const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+		const cancel = vi.fn();
+		const href = 'https://transit.yesid.dev/network?provider=octranspo';
+		harness.beforeNavigateCallbacks.at(-1)?.({
+			willUnload: false,
+			to: { url: new URL(href) },
+			cancel,
+		});
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(assign).toHaveBeenCalledWith(href);
+		assign.mockRestore();
+	});
 	it.each([
 		['/privacy', 'en', 'Skip to content', 'Aller au contenu'],
 		['/fr/privacy', 'fr', 'Aller au contenu', 'Skip to content'],
@@ -328,7 +366,7 @@ describe('root layout data-independent legal routes', () => {
 				for (const [label, href] of links) {
 					expect(within(legalFooter).getByRole('link', { name: label })).toHaveAttribute(
 						'href',
-						href,
+						`${href}?provider=${loaded ? 'fixture' : 'stm'}`,
 					);
 				}
 			} else {
