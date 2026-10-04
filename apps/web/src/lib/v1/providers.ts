@@ -27,7 +27,7 @@ export type PublicProvider = z.infer<typeof PublicProviderSchema>;
 export const PublicProviderCatalogSchema = z
 	.object({
 		...payloadEnvelopeFields(),
-		schema_version: z.literal(1),
+		schema_version: z.literal(1).default(1),
 		generated_utc: z.iso.datetime(),
 		default_provider: providerId,
 		providers: z.array(PublicProviderSchema).min(1),

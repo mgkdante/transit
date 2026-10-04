@@ -522,7 +522,8 @@
 
 <style>
 	.nav-provider {
-		max-width: 8.5rem;
+		--size-provider-select: 8.5rem;
+		max-width: var(--size-provider-select);
 		min-height: 44px;
 		padding-inline: 0.5rem;
 		border: 0;
@@ -537,7 +538,7 @@
 	}
 	@container nav-rail (max-width: 480px) {
 		.nav-provider {
-			max-width: 5.5rem;
+			--size-provider-select: 5.5rem;
 		}
 	}
 	:root {

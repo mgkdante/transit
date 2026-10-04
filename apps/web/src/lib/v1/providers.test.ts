@@ -54,6 +54,7 @@ it('loads configured identities and unavailable inputs without a known-city list
 });
 
 it.each([
+	{ ...catalog, schema_version: 2 },
 	{ ...catalog, providers: [] },
 	{ ...catalog, default_provider: 'absent' },
 	{ ...catalog, providers: [provider, provider] },
@@ -61,6 +62,11 @@ it.each([
 	{ ...catalog, providers: [{ ...provider, fit_bounds: [21, 11, 20, 10] }] },
 ])('rejects corrupt discovery instead of declaring a different selected provider', (value) => {
 	expect(PublicProviderCatalogSchema.safeParse(value).success).toBe(false);
+});
+
+it('uses the canonical version default when the catalog omits it', () => {
+	const { schema_version: _version, ...unversioned } = catalog;
+	expect(PublicProviderCatalogSchema.parse(unversioned).schema_version).toBe(1);
 });
 
 it('reports unavailable discovery without fetching default-provider data', async () => {

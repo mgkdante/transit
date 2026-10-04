@@ -12,6 +12,8 @@ import type { MapHoverPeek } from './mapHoverPeek';
 import { copy as MAP_COPY } from './map.copy';
 import MapOverlayChromeHarness from './__fixtures__/MapOverlayChromeHarness.svelte';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 const stop: StopIndexEntry = {
 	id: 'stop-1',
 	name: 'Sherbrooke / Saint-Denis',
