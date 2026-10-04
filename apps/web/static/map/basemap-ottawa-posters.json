@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "octranspo",
-  "rendered_utc": "2026-10-04T05:27:35.912Z",
+  "rendered_utc": "2026-10-04T19:58:51.209Z",
   "source": {
     "pmtiles_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
     "sha256": "1f44bac08e067e03fbdf06bfa80b41ad0551ba14fc9a8f9b399b43f15f45f2f5",
@@ -44,7 +44,7 @@
     },
     {
       "path": "../db/config/providers/octranspo.yaml",
-      "sha256": "97c0f238f36e98a50109f6c32b9f2ec4371be1bc1e0426e5caae5789dc302c0d"
+      "sha256": "2e157d541803394f269db62aa8eed7e3a652c33da9702656b2adbaed924afc3d"
     }
   ],
   "posters": [
