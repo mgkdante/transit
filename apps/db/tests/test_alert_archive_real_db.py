@@ -171,10 +171,11 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
             connection.execute(
                 text(
                     "INSERT INTO silver.i3_alerts (i3_alert_snapshot_id, alert_index, provider_id, "
+                    "alert_id, "
                     "alert_header_text, description_text_en, captured_at_utc, raw_alert_json, "
                     "content_hash, first_seen_at, last_seen_at, valid_to, "
                     "active_period_start_utc, active_period_end_utc) "
-                    "SELECT i3_alert_snapshot_id, 1, provider_id, alert_header_text, "
+                    "SELECT i3_alert_snapshot_id, 1, provider_id, alert_id, alert_header_text, "
                     "'Obsolete translation', captured_at_utc, '{}', 'archive-older', "
                     "first_seen_at, captured_at_utc, captured_at_utc, "
                     "active_period_start_utc, active_period_end_utc "
