@@ -40,7 +40,7 @@ provider:
   is_active: true
 
 public:
-  enabled: false
+  enabled: true
   labels:
     en: {city: Ottawa, operator: OC Transpo}
     fr: {city: Ottawa, operator: OC Transpo}
