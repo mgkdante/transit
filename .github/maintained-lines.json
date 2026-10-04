@@ -280,7 +280,8 @@
         "package.json"
       ],
       "sha256": [
-        "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0"
+        "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0",
+        "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },

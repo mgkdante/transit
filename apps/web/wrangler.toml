@@ -98,10 +98,7 @@ bucket_name = "transit-snapshots"
 PUBLIC_SITE_ORIGIN = "https://transit.yesid.dev"
 PUBLIC_V1_BASE = "https://data.yesid.dev/v1"
 PUBLIC_INDEXING = "true"
-# Provider copy identity for SSR-visible SEO when the manifest is absent (the
-# manifest is the primary source via the SNAPSHOTS binding; this is the fallback +
-# keeps titles keyworded until the manifest republishes with short_name/city).
-# Per-deploy: each provider sets its own.
+# Default-provider SEO identity when the selected manifest is unavailable.
 PUBLIC_PROVIDER_SHORT_NAME = "STM"
 PUBLIC_PROVIDER_CITY = "Montréal"
 # Social / authorship identity for the document head (Twitter card + author meta).
