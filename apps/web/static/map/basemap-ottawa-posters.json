@@ -49,7 +49,7 @@
   ],
   "posters": [
     {
-      "filename": "basemap-ottawa-dark-mobile-20261004.avif",
+      "filename": "basemap-ottawa-dark-mobile-20261003.avif",
       "theme": "dark",
       "width": 390,
       "height": 844,
@@ -58,7 +58,7 @@
       "sha256": "bb13882f15e3beaf2d57d400283c0e0a34d9342c8f6fe926067e0de377043ebc"
     },
     {
-      "filename": "basemap-ottawa-dark-desktop-20261004.avif",
+      "filename": "basemap-ottawa-dark-desktop-20261003.avif",
       "theme": "dark",
       "width": 1280,
       "height": 720,
@@ -67,7 +67,7 @@
       "sha256": "b47914a11f8d4a50dcc35db2e4c3b618ad89edff573bf55ab8243ce928430395"
     },
     {
-      "filename": "basemap-ottawa-light-mobile-20261004.avif",
+      "filename": "basemap-ottawa-light-mobile-20261003.avif",
       "theme": "light",
       "width": 390,
       "height": 844,
@@ -76,7 +76,7 @@
       "sha256": "f821451dd497ef3a838816ab05856373aaebc84df03ebb2e503ea4318e981f22"
     },
     {
-      "filename": "basemap-ottawa-light-desktop-20261004.avif",
+      "filename": "basemap-ottawa-light-desktop-20261003.avif",
       "theme": "light",
       "width": 1280,
       "height": 720,

@@ -209,7 +209,7 @@ describe('MapHoverPeek', () => {
 		expect(definitionValue(container, 'Status')).toHaveTextContent(/not reported/i);
 	});
 
-	it('renders route long name, type, direction, and visible-bus count', () => {
+	it('renders route long name, type, direction, and visible-vehicle count', () => {
 		const { container } = render(MapHoverPeek, {
 			props: { peek: { ...route, directionLabel: 'East · toward Frontenac' }, locale: 'en' },
 		});
@@ -217,7 +217,7 @@ describe('MapHoverPeek', () => {
 		expect(container).toHaveTextContent('Route 24');
 		expect(container).toHaveTextContent('Sherbrooke');
 		expect(container).toHaveTextContent('Bus');
-		expect(container).toHaveTextContent('2 buses visible');
+		expect(container).toHaveTextContent('2 vehicles visible');
 		expect(definitionValue(container, 'Direction')).toHaveTextContent('East · toward Frontenac');
 		expectInert(container);
 	});
@@ -268,7 +268,7 @@ describe('MapHoverPeek', () => {
 
 		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
 		expect(container).toHaveTextContent('202');
-		expect(container).toHaveTextContent('2 buses heading here');
+		expect(container).toHaveTextContent('2 vehicles heading here');
 		expect(container).toHaveTextContent('3 departures');
 		expectInert(container);
 	});
