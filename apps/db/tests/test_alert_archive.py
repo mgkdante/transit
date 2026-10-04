@@ -272,6 +272,8 @@ def test_older_or_equal_source_cannot_overwrite_newer_archive_scalars(
 ) -> None:
     newest = source_row(
         description_text="Newest retained message",
+        description_text_en=None,
+        url=None,
         last_seen_utc=datetime(2026, 7, 20, tzinfo=UTC),
     )
     initial = FakeConnection(source=[newest])
@@ -293,19 +295,21 @@ def test_older_or_equal_source_cannot_overwrite_newer_archive_scalars(
     assert replay.writes == []
 
 
-def test_null_later_text_cannot_erase_a_real_message() -> None:
+@pytest.mark.parametrize("removed", ["header_text_en", "description_text_en", "url"])
+def test_new_observation_removes_missing_message_fields(removed: str) -> None:
     initial = FakeConnection(source=[source_row()])
     run_sync(initial)
     stored = initial.writes[0]
 
     connection = FakeConnection(
-        source=[source_row(description_text=None, description_text_en=None)],
+        source=[source_row(**{removed: None}, last_seen_utc=datetime(2026, 7, 11, tzinfo=UTC))],
         existing=[stored],
     )
     result = run_sync(connection)
 
-    assert result.unchanged_count == 1
-    assert connection.writes == []
+    assert (result.inserted_count, result.updated_count) == (0, 1)
+    assert connection.writes[0][removed] is None
+    assert connection.writes[0]["alert_id"] == stored["alert_id"]
 
 
 def test_identical_rerun_is_unchanged_and_performs_no_write() -> None:

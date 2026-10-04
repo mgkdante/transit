@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -49,6 +50,10 @@ ALERT_BILINGUAL = {
     ],
     "routes": ["44"],
     "stops": ["S200"],
+    "url": [
+        {"language": "fr", "text": "https://example.org/fr/alert"},
+        {"language": "en", "text": "https://example.org/en/alert"},
+    ],
 }
 ALERT_BILINGUAL_EN_EDIT = {
     **ALERT_BILINGUAL,
@@ -65,6 +70,7 @@ ALERT_BILINGUAL_NO_EN = {
     **ALERT_BILINGUAL,
     "header_texts": [{"language": "fr", "text": "Votre ligne est interrompue"}],
     "description_texts": [{"language": "fr", "text": "Arrets annules entre A et B"}],
+    "url": [],
 }
 
 
@@ -122,6 +128,11 @@ def _seed(connection, seed_provider) -> None:
 
 
 def _load(connection, snap_id: int, alerts: list) -> object:
+    connection.execute(
+        text("UPDATE raw.i3_alert_snapshots SET raw_payload_json=CAST(:payload AS jsonb) "
+             "WHERE i3_alert_snapshot_id=:id"),
+        {"id": snap_id, "payload": json.dumps(alerts)},
+    )
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=snap_id,
         provider_id=PROVIDER,
@@ -235,7 +246,8 @@ def _active_en(connection) -> dict:
                 """
                 SELECT alert_header_text, alert_header_text_en,
                        description_text, description_text_en,
-                       i3_alert_snapshot_id, last_seen_at
+                       i3_alert_snapshot_id, last_seen_at, raw_alert_json, url, url_en,
+                       message_snapshot_id, message_alert_index
                 FROM silver.i3_alerts
                 WHERE provider_id = :p AND valid_to IS NULL
                 """
@@ -254,12 +266,17 @@ def test_bilingual_payload_lands_both_languages(conn) -> None:
     assert row["alert_header_text_en"] == "Your line is interrupted"
     assert row["description_text"] == "Arrets annules entre A et B"
     assert row["description_text_en"] == "Cancelled stops between A and B"
+    assert (row["message_snapshot_id"], row["message_alert_index"]) == (SNAP_IDS[0], 0)
+    assert row["raw_alert_json"] == ALERT_BILINGUAL
+    assert (row["url"], row["url_en"]) == (
+        "https://example.org/fr/alert", "https://example.org/en/alert"
+    )
 
 
 def test_en_only_edit_updates_surviving_row_without_new_scd2_row(conn) -> None:
     _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
     first = _active_en(conn)
-    _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_EN_EDIT])
+    _load(conn, SNAP_IDS[1], [None, ALERT_BILINGUAL_EN_EDIT])
 
     rows = _active_rows(conn)
     assert len(rows) == 1, "EN-only edit must not create a second SCD-2 row"
@@ -268,18 +285,56 @@ def test_en_only_edit_updates_surviving_row_without_new_scd2_row(conn) -> None:
     assert refreshed["last_seen_at"] == T2
     assert refreshed["alert_header_text_en"] == "Your line is interrupted (updated)"
     assert refreshed["description_text_en"] == "Cancelled stops between A and B (updated)"
+    assert (refreshed["message_snapshot_id"], refreshed["message_alert_index"]) == (SNAP_IDS[1], 1)
+    assert refreshed["raw_alert_json"] == ALERT_BILINGUAL_EN_EDIT
+    captured = conn.execute(
+        text("SELECT raw_payload_json FROM raw.i3_alert_snapshots WHERE i3_alert_snapshot_id=:id"),
+        {"id": refreshed["message_snapshot_id"]},
+    ).scalar_one()
+    assert captured[refreshed["message_alert_index"]] == refreshed["raw_alert_json"]
     assert all(r["valid_to"] is None for r in rows)
 
 
-def test_en_less_reload_preserves_stored_en(conn) -> None:
+def test_en_less_reload_removes_stale_translation_and_keeps_incident(conn) -> None:
     _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
     _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_NO_EN])
 
     rows = _active_rows(conn)
     assert len(rows) == 1
     row = _active_en(conn)
-    assert row["alert_header_text_en"] == "Your line is interrupted"
-    assert row["description_text_en"] == "Cancelled stops between A and B"
+    assert row["i3_alert_snapshot_id"] == SNAP_IDS[0]
+    assert row["alert_header_text_en"] is None
+    assert row["description_text_en"] is None
+    assert row["url"] is None and row["url_en"] is None
+    assert row["last_seen_at"] == T2
+    assert row["raw_alert_json"] == ALERT_BILINGUAL_NO_EN
+    assert (row["message_snapshot_id"], row["message_alert_index"]) == (SNAP_IDS[1], 0)
+    from transit_ops.snapshots.builders import build_alerts
+
+    published = build_alerts(conn, provider_id=PROVIDER, generated_utc=T2.isoformat()).alerts
+    assert len(published) == 1
+    assert published[0].description == "Arrets annules entre A et B"
+    assert published[0].description_en is None
+    assert published[0].url is None and published[0].url_en is None
+
+
+def test_message_provenance_migration_preserves_legacy_unknown_then_refreshes(conn):
+    from importlib import import_module
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
+    migration = import_module("transit_ops.db.migrations.versions.0092_alert_message_observation")
+    with Operations.context(MigrationContext.configure(conn)):
+        migration.downgrade()
+        migration.upgrade()
+    legacy = _active_en(conn)
+    assert legacy["message_snapshot_id"] is None and legacy["message_alert_index"] is None
+    assert legacy["raw_alert_json"] == ALERT_BILINGUAL
+    assert legacy["description_text_en"] == "Cancelled stops between A and B"
+    _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_EN_EDIT])
+    assert _active_en(conn)["message_snapshot_id"] == SNAP_IDS[1]
 
 
 def test_gold_current_view_exposes_en_columns(conn) -> None:

@@ -82,18 +82,6 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
     ), latest_values AS (
         SELECT
             stable_alert_id,
-            (ARRAY_AGG(alert_header_text ORDER BY last_seen_utc DESC, captured_at_utc DESC,
-                i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE alert_header_text IS NOT NULL))[1] AS header_text,
-            (ARRAY_AGG(alert_header_text_en ORDER BY last_seen_utc DESC, captured_at_utc DESC,
-                i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE alert_header_text_en IS NOT NULL))[1] AS header_text_en,
-            (ARRAY_AGG(description_text ORDER BY last_seen_utc DESC, captured_at_utc DESC,
-                i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE description_text IS NOT NULL))[1] AS description_text,
-            (ARRAY_AGG(description_text_en ORDER BY last_seen_utc DESC, captured_at_utc DESC,
-                i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE description_text_en IS NOT NULL))[1] AS description_text_en,
             (ARRAY_AGG(severity ORDER BY last_seen_utc DESC, captured_at_utc DESC,
                 i3_alert_snapshot_id DESC, alert_index DESC)
                 FILTER (WHERE severity IS NOT NULL))[1] AS severity,
@@ -108,10 +96,7 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
                 FILTER (WHERE active_period_start_utc IS NOT NULL))[1] AS start_utc,
             (ARRAY_AGG(active_period_end_utc ORDER BY last_seen_utc DESC, captured_at_utc DESC,
                 i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE active_period_end_utc IS NOT NULL))[1] AS end_utc,
-            (ARRAY_AGG(COALESCE(url, url_en) ORDER BY last_seen_utc DESC, captured_at_utc DESC,
-                i3_alert_snapshot_id DESC, alert_index DESC)
-                FILTER (WHERE COALESCE(url, url_en) IS NOT NULL))[1] AS url
+                FILTER (WHERE active_period_end_utc IS NOT NULL))[1] AS end_utc
         FROM base
         GROUP BY stable_alert_id
     ), seen AS (
@@ -177,10 +162,10 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
             COALESCE(v.start_utc, s.first_seen_utc)
                 AT TIME ZONE l.timezone
         )::date AS archive_month,
-        v.header_text,
-        v.header_text_en,
-        v.description_text,
-        v.description_text_en,
+        l.alert_header_text AS header_text,
+        l.alert_header_text_en AS header_text_en,
+        l.description_text,
+        l.description_text_en,
         v.severity,
         v.cause,
         v.effect,
@@ -189,7 +174,7 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
         v.start_utc,
         v.end_utc,
         COALESCE(p.active_periods, '[]'::jsonb) AS active_periods,
-        v.url,
+        COALESCE(l.url, l.url_en) AS url,
         s.first_seen_utc,
         s.last_seen_utc,
         bounds.source_from,
@@ -300,17 +285,20 @@ _ALERT_ARCHIVE_UPSERT_SQL = named_query(
     """,
 )
 
-_SCALAR_FIELDS = (
+_MESSAGE_FIELDS = (
     "header_text",
     "header_text_en",
     "description_text",
     "description_text_en",
+    "url",
+)
+_SCALAR_FIELDS = (
+    *_MESSAGE_FIELDS,
     "severity",
     "cause",
     "effect",
     "start_utc",
     "end_utc",
-    "url",
 )
 
 
@@ -479,7 +467,9 @@ def _merge_record(
         value for value in (existing_last_seen, source["last_seen_utc"]) if value is not None
     )
     for field in _SCALAR_FIELDS:
-        if source_is_newer:
+        if field in _MESSAGE_FIELDS:
+            merged[field] = (source if source_is_newer else existing).get(field)
+        elif source_is_newer:
             if source.get(field) is None:
                 merged[field] = existing.get(field)
         elif existing.get(field) is not None:

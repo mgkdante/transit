@@ -100,6 +100,8 @@ INSERT_I3_ALERTS = text(
         updated_at_utc,
         captured_at_utc,
         raw_alert_json,
+        message_snapshot_id,
+        message_alert_index,
         content_hash,
         first_seen_at,
         last_seen_at
@@ -124,18 +126,21 @@ INSERT_I3_ALERTS = text(
         :updated_at_utc,
         :captured_at_utc,
         :raw_alert_json,
+        :i3_alert_snapshot_id,
+        :alert_index,
         :content_hash,
         :captured_at_utc,
         :captured_at_utc
     )
     ON CONFLICT (provider_id, content_hash) WHERE content_hash IS NOT NULL AND valid_to IS NULL
     DO UPDATE SET last_seen_at = excluded.last_seen_at,
-        alert_header_text_en = COALESCE(
-            excluded.alert_header_text_en, silver.i3_alerts.alert_header_text_en),
-        description_text_en = COALESCE(
-            excluded.description_text_en, silver.i3_alerts.description_text_en),
-        url = COALESCE(excluded.url, silver.i3_alerts.url),
-        url_en = COALESCE(excluded.url_en, silver.i3_alerts.url_en)
+        alert_header_text_en = excluded.alert_header_text_en,
+        description_text_en = excluded.description_text_en,
+        url = excluded.url,
+        url_en = excluded.url_en,
+        raw_alert_json = excluded.raw_alert_json,
+        message_snapshot_id = excluded.message_snapshot_id,
+        message_alert_index = excluded.message_alert_index
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
 
