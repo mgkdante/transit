@@ -20,7 +20,7 @@ def test_oc_bounds_include_published_eastern_stops_and_route_geometry() -> None:
     west, south, east, north = config.provider.bounds.bbox()
     for lon, lat in [(-75.34342, 45.44076), (-75.342938, 45.331639), (-75.34429, 45.518043)]:
         assert west <= lon <= east and south <= lat <= north
-    assert not config.public.enabled
+    assert config.public.enabled
 
 
 def _provider_manifest_payload(*, gis: bool = True, realtime: bool = True) -> dict[str, object]:
