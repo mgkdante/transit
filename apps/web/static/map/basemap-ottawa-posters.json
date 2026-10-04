@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "octranspo",
-  "rendered_utc": "2026-10-03T19:30:03.442Z",
+  "rendered_utc": "2026-10-04T05:27:35.912Z",
   "source": {
     "pmtiles_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
     "sha256": "1f44bac08e067e03fbdf06bfa80b41ad0551ba14fc9a8f9b399b43f15f45f2f5",
@@ -44,12 +44,12 @@
     },
     {
       "path": "../db/config/providers/octranspo.yaml",
-      "sha256": "d9c7d1da8ece927b799e4763b442e91296609c584c9a78c5a9973890361974db"
+      "sha256": "97c0f238f36e98a50109f6c32b9f2ec4371be1bc1e0426e5caae5789dc302c0d"
     }
   ],
   "posters": [
     {
-      "filename": "basemap-ottawa-dark-mobile-20261003.avif",
+      "filename": "basemap-ottawa-dark-mobile-20261004.avif",
       "theme": "dark",
       "width": 390,
       "height": 844,
@@ -58,7 +58,7 @@
       "sha256": "bb13882f15e3beaf2d57d400283c0e0a34d9342c8f6fe926067e0de377043ebc"
     },
     {
-      "filename": "basemap-ottawa-dark-desktop-20261003.avif",
+      "filename": "basemap-ottawa-dark-desktop-20261004.avif",
       "theme": "dark",
       "width": 1280,
       "height": 720,
@@ -67,7 +67,7 @@
       "sha256": "b47914a11f8d4a50dcc35db2e4c3b618ad89edff573bf55ab8243ce928430395"
     },
     {
-      "filename": "basemap-ottawa-light-mobile-20261003.avif",
+      "filename": "basemap-ottawa-light-mobile-20261004.avif",
       "theme": "light",
       "width": 390,
       "height": 844,
@@ -76,7 +76,7 @@
       "sha256": "f821451dd497ef3a838816ab05856373aaebc84df03ebb2e503ea4318e981f22"
     },
     {
-      "filename": "basemap-ottawa-light-desktop-20261003.avif",
+      "filename": "basemap-ottawa-light-desktop-20261004.avif",
       "theme": "light",
       "width": 1280,
       "height": 720,
