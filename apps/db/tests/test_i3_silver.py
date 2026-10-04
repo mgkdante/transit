@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from transit_ops.silver.i3 import (
     RawI3AlertSnapshot,
     compute_alert_content_hash,
@@ -63,6 +65,36 @@ def _snapshot(payload: object) -> RawI3AlertSnapshot:
         captured_at_utc=datetime(2026, 5, 25, 4, 5, 6, tzinfo=UTC),
         raw_payload_json=payload,
     )
+
+
+@pytest.mark.parametrize(
+    "payload,base,english,language",
+    [
+        ({"language": "en-CA", "text": "English"}, "English", "English", "en"),
+        ({"fr-CA": "Francais", "en-CA": "English"}, "Francais", "English", "fr"),
+        ([{"language": "fr-CA", "text": "Francais"}], "Francais", None, "fr"),
+        ("Untagged", "Untagged", None, None),
+        ({"language": "es", "text": "Aviso"}, "Aviso", None, "es"),
+        ({"language": "en", "text": None}, None, None, None),
+    ],
+)
+def test_message_language_matches_normalized_fields(payload, base, english, language):
+    from transit_ops.silver.i3 import alert_message_provenance
+
+    snapshot = _snapshot([{"header": payload, "description": payload, "url": payload}])
+    rows, _, _ = normalize_i3_alert_payload(snapshot)
+    row = rows[0]
+    assert (row["description_text"], row["description_text_en"]) == (base, english)
+    message = alert_message_provenance(row["raw_alert_json"], 505, 0, snapshot.captured_at_utc)
+    assert message == {
+        "snapshot_id": "505",
+        "alert_index": 0,
+        "captured_utc": "2026-05-25T04:05:06Z",
+        "header_language": language,
+        "description_language": language,
+        "url_language": language,
+    }
+    assert alert_message_provenance(row["raw_alert_json"], None, None, None) is None
 
 
 def test_normalize_i3_alert_payload_accepts_common_alert_shapes() -> None:

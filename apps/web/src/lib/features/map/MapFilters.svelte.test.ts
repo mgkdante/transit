@@ -59,6 +59,33 @@ describe('MapFilters', () => {
 		}
 	}
 
+	it.each(['en', 'fr'] as const)(
+		'hides unavailable alert filtering in the panel and rail (%s)',
+		async (locale) => {
+			const store = createFilterStore(emptyFilterState(), () => {});
+			const view = render(MapFilters, { props: { store, locale, alertsAvailable: false } });
+			expect(view.container.querySelector('[data-filter-group="alerts"]')).toBeNull();
+			expect(
+				view.getByText(
+					locale === 'en'
+						? 'Filter unavailable: no alert feed connected.'
+						: 'Filtre indisponible : aucune source d’alertes connectée.',
+				),
+			).toBeVisible();
+			await fireEvent.click(
+				view.getByRole('button', {
+					name: locale === 'en' ? 'Collapse controls' : 'Réduire les contrôles',
+				}),
+			);
+			expect(
+				within(view.getByTestId('map-filter-rail')).queryByRole('button', {
+					name: locale === 'en' ? 'Alerts' : 'Alertes',
+				}),
+			).toBeNull();
+			expect(store.alerts).toEqual([]);
+		},
+	);
+
 	it('renders ordered disclosures and reopens both state mappings from the six-group glyph rail', async () => {
 		let pushed = '';
 		const store = createFilterStore(emptyFilterState(), (search) => {
@@ -204,7 +231,9 @@ describe('MapFilters', () => {
 		expect(getByRole('button', { name: 'Remove stop 53355' })).toHaveTextContent(
 			'Van Horne / Rockland',
 		);
-		expect(getByRole('button', { name: 'Remove bus 40061' })).toHaveTextContent('Bus 40061');
+		expect(getByRole('button', { name: 'Remove vehicle 40061' })).toHaveTextContent(
+			'Vehicle 40061',
+		);
 
 		await fireEvent.click(getByRole('button', { name: 'Remove route 161' }));
 

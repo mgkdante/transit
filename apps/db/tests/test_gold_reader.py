@@ -316,7 +316,7 @@ _REVIEWED_SQL_SHA256 = {
     "receipts.accountability": "b9580ef70c44a3a84f74f1d696495602f0d15c55aa82100dcc0bf4745525e5d7",
     "receipts.worst_route": "8c50bf3663aaf38364209de7ab67f35d76981f91aae2ea336ed5e6bc9d65530a",
     "receipts.worst_stop": "38bd3eeaab7d373296085f49ceba254d0095339e76a328dd8c0a6bf7774324f5",
-    "alerts.history": "87d3a1916d07413a3a59e17b1df6f41d04353cf7bb4c3850d2a612ff4a50b7ac",
+    "alerts.history": "66a62a70bb2988a8ecb3ab855927a3b52da473ef5de2dfc06e5761df7302e7d7",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 

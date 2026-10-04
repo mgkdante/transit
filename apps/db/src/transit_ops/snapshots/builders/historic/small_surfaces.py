@@ -11,6 +11,7 @@ from transit_ops.gold.reader import (
     round_half_away,
     shift_case_sql,
 )
+from transit_ops.silver.i3 import alert_message_provenance
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     _alert_active_periods,
@@ -810,97 +811,74 @@ def build_receipts(
     return out
 
 
-# Period enrichment includes retained versions beyond the displayed alert window.
 _ALERT_HISTORY_SQL = named_query(
     "alerts.history",
     """
-    WITH metadata AS MATERIALIZED (
-        SELECT alert_header_text, start_utc, end_utc,
-               MAX(url) AS url,
-               json_agg(json_build_object('start_utc', period_start,
-                                          'end_utc', period_end)
-                        ORDER BY period_index)
-                   FILTER (WHERE period_index IS NOT NULL AND newest = 1) AS active_periods
-        FROM (
-            SELECT a.alert_header_text,
-                   a.active_period_start_utc AS start_utc,
-                   a.active_period_end_utc AS end_utc,
-                   a.url, p.period_index,
-                   p.start_utc AS period_start, p.end_utc AS period_end,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY a.alert_header_text, a.active_period_start_utc,
-                                    a.active_period_end_utc, p.period_index
-                       ORDER BY a.i3_alert_snapshot_id DESC, a.alert_index DESC
-                   ) AS newest
-            FROM silver.i3_alerts a
-            LEFT JOIN silver.i3_alert_active_periods p
-              ON p.i3_alert_snapshot_id = a.i3_alert_snapshot_id
-             AND p.alert_index = a.alert_index
-            WHERE a.provider_id = :provider_id
-        ) AS versions
-        GROUP BY alert_header_text, start_utc, end_utc
-    ), grouped AS (
-    SELECT grp.alert_header_text,
-           MAX(grp.header_text_en)                                  AS header_text_en,
-           MAX(grp.description)                                     AS description,
-           MAX(grp.description_en)                                  AS description_en,
-           MAX(grp.severity)                                        AS severity,
-           MAX(grp.cause)                                           AS cause,
-           MAX(grp.effect)                                          AS effect,
-           ARRAY_AGG(DISTINCT grp.route_id)
-               FILTER (WHERE grp.route_id IS NOT NULL)              AS routes,
-           ARRAY_AGG(DISTINCT grp.stop_id)
-               FILTER (WHERE grp.stop_id IS NOT NULL)               AS stops,
-           grp.start_utc,
-           grp.end_utc
-    FROM (
-        SELECT iah.alert_header_text,
-               iah.alert_header_text_en                             AS header_text_en,
-               iah.description_text                                 AS description,
-               iah.description_text_en                              AS description_en,
-               iah.severity,
-               iah.cause,
-               iah.effect,
-               iah.route_id,
-               iah.stop_id,
-               iah.active_period_start_utc                          AS start_utc,
-               iah.active_period_end_utc                            AS end_utc
-        FROM gold.i3_alert_history_reporting AS iah
-        JOIN gold.dim_provider AS dp ON dp.provider_id = iah.provider_id
-        WHERE iah.provider_id = :provider_id
-          AND iah.provider_local_date >= :win_start
-          AND iah.provider_local_date <= :win_end
-    ) AS grp
-    GROUP BY grp.alert_header_text, grp.start_utc, grp.end_utc
-    ORDER BY grp.start_utc DESC NULLS LAST
-    LIMIT 500
+    WITH base AS MATERIALIZED (
+        SELECT a.*, dp.timezone,
+               COALESCE(a.last_seen_at, a.captured_at_utc) AS message_captured_utc,
+               COALESCE('upstream:' || NULLIF(BTRIM(a.alert_id), ''),
+                   'synthetic:' || MD5(JSONB_BUILD_ARRAY(
+                       COALESCE(a.alert_header_text, ''), COALESCE(a.description_text, ''),
+                       EXTRACT(EPOCH FROM a.active_period_start_utc),
+                       EXTRACT(EPOCH FROM a.active_period_end_utc)
+                   )::text)) AS message_key
+        FROM silver.i3_alerts a
+        JOIN gold.dim_provider dp ON dp.provider_id = a.provider_id
+        WHERE a.provider_id = :provider_id
+    ), in_window AS (
+        SELECT DISTINCT message_key FROM base
+        WHERE (captured_at_utc AT TIME ZONE timezone)::date BETWEEN :win_start AND :win_end
+    ), latest AS (
+        SELECT DISTINCT ON (b.message_key) b.*
+        FROM base b JOIN in_window w USING (message_key)
+        ORDER BY b.message_key, message_captured_utc DESC,
+                 COALESCE(message_snapshot_id, i3_alert_snapshot_id) DESC,
+                 COALESCE(message_alert_index, alert_index) DESC,
+                 i3_alert_snapshot_id DESC, alert_index DESC
+    ), entities AS (
+        SELECT b.message_key,
+               ARRAY_AGG(DISTINCT e.route_id) FILTER (WHERE e.route_id IS NOT NULL) AS routes,
+               ARRAY_AGG(DISTINCT e.stop_id) FILTER (WHERE e.stop_id IS NOT NULL) AS stops
+        FROM base b JOIN in_window w USING (message_key)
+        LEFT JOIN silver.i3_alert_informed_entities e
+          ON e.i3_alert_snapshot_id = b.i3_alert_snapshot_id AND e.alert_index = b.alert_index
+        GROUP BY b.message_key
     )
-    SELECT grouped.*, metadata.url, metadata.active_periods
-    FROM grouped
-    LEFT JOIN metadata
-      ON metadata.alert_header_text IS NOT DISTINCT FROM grouped.alert_header_text
-     AND metadata.start_utc IS NOT DISTINCT FROM grouped.start_utc
-     AND metadata.end_utc IS NOT DISTINCT FROM grouped.end_utc
-    ORDER BY grouped.start_utc DESC NULLS LAST
+    SELECT COALESCE(NULLIF(BTRIM(l.alert_id), ''),
+               :provider_id || '-alert-' || SUBSTRING(l.message_key FROM 11 FOR 12)) AS alert_id,
+           l.alert_header_text, l.alert_header_text_en AS header_text_en,
+           l.description_text AS description, l.description_text_en AS description_en,
+           l.severity, l.cause, l.effect, e.routes, e.stops,
+           l.active_period_start_utc AS start_utc, l.active_period_end_utc AS end_utc,
+           l.url, l.url_en, l.raw_alert_json, l.message_snapshot_id,
+           l.message_alert_index, l.message_captured_utc, p.active_periods
+    FROM latest l JOIN entities e USING (message_key)
+    LEFT JOIN LATERAL (
+        SELECT JSONB_AGG(JSONB_BUILD_OBJECT('start_utc', start_utc, 'end_utc', end_utc)
+                         ORDER BY period_index) AS active_periods
+        FROM silver.i3_alert_active_periods
+        WHERE i3_alert_snapshot_id = l.i3_alert_snapshot_id AND alert_index = l.alert_index
+    ) p ON true
+    ORDER BY l.active_period_start_utc DESC NULLS LAST, l.message_key
+    LIMIT 500
     """,
 )
 
 
-# Count distinct alerts before capping so truncation reports the full total.
 _ALERT_HISTORY_COUNT_SQL = named_query(
     "alerts.history.count",
     """
-    SELECT COUNT(*) AS total
-    FROM (
-        SELECT 1
-        FROM gold.i3_alert_history_reporting AS iah
-        WHERE iah.provider_id = :provider_id
-          AND iah.provider_local_date >= :win_start
-          AND iah.provider_local_date <= :win_end
-        GROUP BY iah.alert_header_text,
-                 iah.active_period_start_utc,
-                 iah.active_period_end_utc
-    ) AS grouped
+    SELECT COUNT(DISTINCT COALESCE('upstream:' || NULLIF(BTRIM(a.alert_id), ''),
+        'synthetic:' || MD5(JSONB_BUILD_ARRAY(
+            COALESCE(a.alert_header_text, ''), COALESCE(a.description_text, ''),
+            EXTRACT(EPOCH FROM a.active_period_start_utc),
+            EXTRACT(EPOCH FROM a.active_period_end_utc)
+        )::text))) AS total
+    FROM silver.i3_alerts a
+    JOIN gold.dim_provider dp ON dp.provider_id = a.provider_id
+    WHERE a.provider_id = :provider_id
+      AND (a.captured_at_utc AT TIME ZONE dp.timezone)::date BETWEEN :win_start AND :win_end
     """,
 )
 
@@ -1009,7 +987,10 @@ def build_alert_history(
         basis = "|".join(
             str(r[c] or "") for c in ("alert_header_text", "severity", "start_utc", "end_utc")
         )
-        alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
+        alert_id = (
+            r.get("alert_id")
+            or f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
+        )
         severity_code = _severity_code(r["severity"])
         cause = r.get("cause")
         effect = r.get("effect")
@@ -1019,6 +1000,12 @@ def build_alert_history(
         entries.append(
             AlertHistoryEntry(
                 id=alert_id,
+                message=alert_message_provenance(
+                    r.get("raw_alert_json"),
+                    r.get("message_snapshot_id"),
+                    r.get("message_alert_index"),
+                    r.get("message_captured_utc"),
+                ),
                 severity=severity_code,
                 header_text=r["alert_header_text"],
                 header_text_en=_sane_en(r["header_text_en"]),
@@ -1034,6 +1021,7 @@ def build_alert_history(
                 effect=effect,
                 severity_level=severity_level,
                 url=r.get("url"),
+                url_en=_sane_en(r.get("url_en")),
                 active_periods=active_periods,
             )
         )

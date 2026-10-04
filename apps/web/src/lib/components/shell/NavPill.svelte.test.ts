@@ -9,6 +9,8 @@ import type { TransitModeKey } from '$lib/search/stopMode';
 import type { RouteIndexEntry } from '$lib/v1/schemas';
 import NavPill from './NavPill.svelte';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 function readSource(): string {
 	return readFileSync(resolve(process.cwd(), 'src/lib/components/shell/NavPill.svelte'), 'utf-8');
 }
@@ -26,6 +28,48 @@ function fireTransitionEnd(element: Element, propertyName: string): Promise<bool
 afterEach(() => vi.restoreAllMocks());
 
 describe('NavPill — structure', () => {
+	it.each(['en', 'fr'] as const)(
+		'exposes configured providers and preserves Ottawa on %s navigation',
+		async (locale) => {
+			const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+			const providers = [
+				['stm', 'Montréal', 'STM'],
+				['octranspo', 'Ottawa', 'OC Transpo'],
+				['test', 'Test City', 'Test Transit'],
+			].map(([id, city, operator]) => ({
+				id,
+				labels: { en: { city, operator }, fr: { city, operator } },
+				inputs: {},
+				alert_links: {},
+			}));
+			const { getByRole } = render(NavPill, {
+				props: {
+					locale,
+					providers,
+					url: new URL(
+						`https://transit.local/${locale === 'fr' ? 'fr/' : ''}lines/42?provider=octranspo&route=42`,
+					),
+				},
+			});
+			const select = getByRole('combobox', {
+				name: locale === 'fr' ? 'Réseau de transport' : 'Transit network',
+			});
+			expect(select).toHaveValue('octranspo');
+			expect(within(select).getAllByRole('option')).toHaveLength(3);
+			expect(getByRole('link', { name: locale === 'fr' ? 'Carte' : 'Map' })).toHaveAttribute(
+				'href',
+				`${locale === 'fr' ? '/fr' : ''}/map?provider=octranspo`,
+			);
+			expect(getByRole('link', { name: /Switch language|Changer de langue/ })).toHaveAttribute(
+				'href',
+				`${locale === 'en' ? '/fr' : ''}/lines/42?provider=octranspo&route=42`,
+			);
+			select.focus();
+			expect(select).toHaveFocus();
+			await fireEvent.change(select, { target: { value: 'test' } });
+			expect(assign).toHaveBeenCalledWith(`${locale === 'fr' ? '/fr' : ''}/lines?provider=test`);
+		},
+	);
 	it('renders the floating pill with the four primary links in wayfinding order', () => {
 		const { getByTestId, getByRole } = render(NavPill, {
 			props: { locale: 'en', url: new URL('https://transit.local/lines') },
@@ -35,13 +79,25 @@ describe('NavPill — structure', () => {
 		expect(pill).toBeInTheDocument();
 
 		const brand = within(pill).getByRole('link', { name: /Transit/ });
-		expect(brand).toHaveAttribute('href', '/');
+		expect(brand).toHaveAttribute('href', '/?provider=stm');
 		expect(brand).toHaveTextContent('Transit');
 
-		expect(within(pill).getByRole('link', { name: 'Map' })).toHaveAttribute('href', '/map');
-		expect(within(pill).getByRole('link', { name: 'Lines' })).toHaveAttribute('href', '/lines');
-		expect(within(pill).getByRole('link', { name: 'Stops' })).toHaveAttribute('href', '/stops');
-		expect(within(pill).getByRole('link', { name: 'Network' })).toHaveAttribute('href', '/network');
+		expect(within(pill).getByRole('link', { name: 'Map' })).toHaveAttribute(
+			'href',
+			'/map?provider=stm',
+		);
+		expect(within(pill).getByRole('link', { name: 'Lines' })).toHaveAttribute(
+			'href',
+			'/lines?provider=stm',
+		);
+		expect(within(pill).getByRole('link', { name: 'Stops' })).toHaveAttribute(
+			'href',
+			'/stops?provider=stm',
+		);
+		expect(within(pill).getByRole('link', { name: 'Network' })).toHaveAttribute(
+			'href',
+			'/network?provider=stm',
+		);
 
 		expect(getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
 	});
@@ -50,11 +106,14 @@ describe('NavPill — structure', () => {
 		const { getByRole } = render(NavPill, {
 			props: { locale: 'fr', url: new URL('https://transit.local/fr/network') },
 		});
-		expect(getByRole('link', { name: 'Carte' })).toHaveAttribute('href', '/fr/map');
-		expect(getByRole('link', { name: 'Réseau' })).toHaveAttribute('href', '/fr/network');
+		expect(getByRole('link', { name: 'Carte' })).toHaveAttribute('href', '/fr/map?provider=stm');
+		expect(getByRole('link', { name: 'Réseau' })).toHaveAttribute(
+			'href',
+			'/fr/network?provider=stm',
+		);
 		expect(getByRole('link', { name: 'Rechercher dans le réseau' })).toHaveAttribute(
 			'href',
-			'/fr/search',
+			'/fr/search?provider=stm',
 		);
 	});
 
@@ -63,12 +122,12 @@ describe('NavPill — structure', () => {
 			props: { locale: 'en', url: new URL('https://transit.local/map') },
 		});
 		const search = getByRole('link', { name: 'Search the network' });
-		expect(search).toHaveAttribute('href', '/search');
+		expect(search).toHaveAttribute('href', '/search?provider=stm');
 		expect(search).toHaveClass('nav-control', 'nav-compact-search');
 
 		const controls = search.closest('[data-slot="nav-controls"]');
 		expect(controls).not.toBeNull();
-		expect(Array.from(controls!.children).indexOf(search)).toBe(1);
+		expect(Array.from(controls!.children).indexOf(search)).toBe(2);
 	});
 
 	it('keeps a localized language route in the menu for ultra-narrow phones', async () => {
@@ -79,7 +138,7 @@ describe('NavPill — structure', () => {
 			},
 		});
 		const wideSwitch = getByRole('link', { name: 'Switch language: Français' });
-		expect(wideSwitch).toHaveAttribute('href', '/fr/alerts?from=2026-07-01#service');
+		expect(wideSwitch).toHaveAttribute('href', '/fr/alerts?from=2026-07-01&provider=stm#service');
 		expect(wideSwitch).toHaveAttribute('data-sveltekit-reload');
 
 		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
@@ -87,7 +146,10 @@ describe('NavPill — structure', () => {
 		const compactSwitch = within(menu).getByRole('link', {
 			name: 'Switch language: Français',
 		});
-		expect(compactSwitch).toHaveAttribute('href', '/fr/alerts?from=2026-07-01#service');
+		expect(compactSwitch).toHaveAttribute(
+			'href',
+			'/fr/alerts?from=2026-07-01&provider=stm#service',
+		);
 		expect(compactSwitch).toHaveAttribute('data-sveltekit-reload');
 		expect(readSource()).toMatch(
 			/@media \(max-width: 359px\)[\s\S]*\[data-slot='lang-switch'\][\s\S]*display:\s*none;[\s\S]*\.nav-menu-language[\s\S]*display:\s*flex;/,
@@ -132,25 +194,28 @@ describe('NavPill — the flat menu', () => {
 		const audit = within(menu).getByRole('group', { name: 'Audit' });
 		expect(within(audit).getByRole('link', { name: 'How we measure' })).toHaveAttribute(
 			'href',
-			'/metrics',
+			'/metrics?provider=stm',
 		);
 		expect(within(audit).getByRole('link', { name: 'Data health' })).toHaveAttribute(
 			'href',
-			'/status',
+			'/status?provider=stm',
 		);
 		expect(within(audit).getByRole('link', { name: 'Hotspots' })).toHaveAttribute(
 			'href',
-			'/hotspots',
+			'/hotspots?provider=stm',
 		);
 		expect(within(audit).getByRole('link', { name: 'Daily receipt' })).toHaveAttribute(
 			'href',
-			'/receipt',
+			'/receipt?provider=stm',
 		);
 		expect(within(audit).getByRole('link', { name: 'Repeat offenders' })).toHaveAttribute(
 			'href',
-			'/repeat-offenders',
+			'/repeat-offenders?provider=stm',
 		);
-		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
+		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute(
+			'href',
+			'/alerts?provider=stm',
+		);
 
 		expect(within(menu).queryByRole('group', { name: 'Legal' })).not.toBeInTheDocument();
 		expect(within(menu).queryByRole('link', { name: 'Privacy' })).not.toBeInTheDocument();
@@ -272,7 +337,7 @@ describe('NavPill — the flat menu', () => {
 		const audit = within(menu).getByRole('group', { name: 'Vérification' });
 		expect(within(audit).getByRole('link', { name: 'Récidivistes' })).toHaveAttribute(
 			'href',
-			'/fr/repeat-offenders',
+			'/fr/repeat-offenders?provider=stm',
 		);
 		expect(within(menu).queryByRole('group', { name: 'Juridique' })).not.toBeInTheDocument();
 		expect(within(menu).queryByRole('link', { name: 'Confidentialité' })).not.toBeInTheDocument();
@@ -320,12 +385,21 @@ describe('NavPill — the flat menu', () => {
 		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
 		const menu = queryByTestId('nav-menu') as HTMLElement;
 		const explore = within(menu).getByRole('group', { name: 'Explore' });
-		expect(within(explore).getByRole('link', { name: 'Map' })).toHaveAttribute('href', '/map');
-		expect(within(explore).getByRole('link', { name: 'Lines' })).toHaveAttribute('href', '/lines');
-		expect(within(explore).getByRole('link', { name: 'Stops' })).toHaveAttribute('href', '/stops');
+		expect(within(explore).getByRole('link', { name: 'Map' })).toHaveAttribute(
+			'href',
+			'/map?provider=stm',
+		);
+		expect(within(explore).getByRole('link', { name: 'Lines' })).toHaveAttribute(
+			'href',
+			'/lines?provider=stm',
+		);
+		expect(within(explore).getByRole('link', { name: 'Stops' })).toHaveAttribute(
+			'href',
+			'/stops?provider=stm',
+		);
 		expect(within(explore).getByRole('link', { name: 'Network' })).toHaveAttribute(
 			'href',
-			'/network',
+			'/network?provider=stm',
 		);
 	});
 
@@ -338,7 +412,7 @@ describe('NavPill — the flat menu', () => {
 		const explore = within(menu).getByRole('group', { name: 'Explorer' });
 		expect(within(explore).getByRole('link', { name: 'Réseau' })).toHaveAttribute(
 			'href',
-			'/fr/network',
+			'/fr/network?provider=stm',
 		);
 	});
 
@@ -374,7 +448,7 @@ describe('NavPill — the flat menu', () => {
 			/@container nav-rail \(width < 799px\)\s*\{[\s\S]*?\.nav-pill\s*\{\s*padding:\s*12px 20px;\s*\}[\s\S]*?\.nav-divider\s*\{\s*margin-inline:\s*12px;\s*\}[\s\S]*?\.nav-links\s*\{\s*gap:\s*18px;\s*\}/,
 		);
 		expect(source).toMatch(
-			/@container nav-rail \(width < 705px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+			/@container nav-rail \(width < 1000px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
 		);
 		expect(source.indexOf('@container nav-rail (width < 1024px)')).toBeGreaterThan(
 			source.indexOf('@media (min-width: 1024px)'),

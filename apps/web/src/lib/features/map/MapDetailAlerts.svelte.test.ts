@@ -6,6 +6,16 @@ import { describe, expect, it } from 'vitest';
 import MapDetailAlerts from './MapDetailAlerts.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 import type { Alert } from '$lib/v1/schemas';
+import { AlertMessageProvenanceSchema } from '$lib/v1/schemas/alert_history';
+
+const frenchMessage = AlertMessageProvenanceSchema.parse({
+	snapshot_id: '1',
+	alert_index: 0,
+	captured_utc: '2026-10-04T00:00:00Z',
+	header_language: 'fr',
+	description_language: 'fr',
+	url_language: 'fr',
+});
 
 describe('MapDetailAlerts', () => {
 	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
@@ -113,6 +123,7 @@ describe('MapDetailAlerts', () => {
 	it('labels the action in UI language while language-tagging foreign provider text and its link', () => {
 		const alert = {
 			id: 'foreign',
+			message: frenchMessage,
 			severity: 'high',
 			header_key: 'Votre ligne',
 			description: 'Détour français',
@@ -136,7 +147,7 @@ describe('MapDetailAlerts', () => {
 		expect(link).toHaveAttribute('href', 'https://example.test/fr/avis');
 	});
 
-	it('does not add a language marker to a header_key fallback', () => {
+	it('marks a header_key fallback as unknown without inheriting the page language', () => {
 		render(MapDetailAlerts, {
 			props: {
 				alerts: [{ id: 'key', severity: 'watch', header_key: 'Réduction de service' } as Alert],
@@ -144,13 +155,17 @@ describe('MapDetailAlerts', () => {
 				t: MAP_SELECTION_DETAIL_COPY.en,
 			},
 		});
-		expect(screen.getAllByText('Réduction de service')[0]).not.toHaveAttribute('lang');
+		expect(screen.getAllByText('Réduction de service')[0]).toHaveAttribute('lang', '');
+		expect(screen.getByRole('button')).toHaveAccessibleName(
+			'Select alert Réduction de service (Source language unspecified)',
+		);
 		expect(screen.queryByText('(French only)')).not.toBeInTheDocument();
 	});
 
 	it('keeps repeated-instance labels unique and scoped to each localized component', () => {
 		const alert = {
 			id: 'shared-alert',
+			message: frenchMessage,
 			severity: 'high',
 			header_key: 'Votre ligne',
 			description: 'Détour français',

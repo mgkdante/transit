@@ -163,7 +163,6 @@ describe('LinesIndex blueprint listing header', () => {
 		).toEqual([
 			['Lines', '3'],
 			['Bus', '3'],
-			['Metro', '0'],
 			['Modes', '1'],
 		]);
 		expect(data).not.toBeNull();
@@ -180,6 +179,19 @@ describe('LinesIndex blueprint listing header', () => {
 });
 
 describe('LinesIndex listing system', () => {
+	it('counts the published Ottawa tram routes without inventing a metro inventory', () => {
+		reset();
+		ROUTES[0].type = 0;
+		try {
+			const { container } = render(LinesIndex);
+			const stats = container.querySelector('[data-slot="listing-header-stats"]')!;
+			expect(stats).toHaveTextContent('Tram 1');
+			expect(stats).toHaveTextContent('Bus 2');
+			expect(stats).not.toHaveTextContent('Metro');
+		} finally {
+			ROUTES[0].type = 3;
+		}
+	});
 	it('keeps inventory in the header and makes the catalogue the entire body', () => {
 		reset();
 		const { container } = render(LinesIndex);

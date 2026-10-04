@@ -116,7 +116,6 @@ class Settings(BaseSettings):
     SNAPSHOT_LOCAL_ROOT: str | None = "./data/snapshots"
     SNAPSHOT_R2_BUCKET: str | None = None
     SNAPSHOT_PUBLIC_BASE_URL: str | None = None
-    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None
     SNAPSHOT_BASEMAP_STYLE_URL: str | None = None
     SNAPSHOT_BASEMAP_ATTRIBUTION: str = "© OpenStreetMap contributors, © Protomaps"
     # Values <=1 disable upload concurrency; publish the manifest after its files.
@@ -218,7 +217,6 @@ class Settings(BaseSettings):
             "SNAPSHOT_LOCAL_ROOT": self.SNAPSHOT_LOCAL_ROOT,
             "SNAPSHOT_R2_BUCKET": self.SNAPSHOT_R2_BUCKET,
             "SNAPSHOT_PUBLIC_BASE_URL": self.SNAPSHOT_PUBLIC_BASE_URL,
-            "SNAPSHOT_BASEMAP_PMTILES_URL": self.SNAPSHOT_BASEMAP_PMTILES_URL,
             "SNAPSHOT_BASEMAP_STYLE_URL": self.SNAPSHOT_BASEMAP_STYLE_URL,
             "SNAPSHOT_BASEMAP_ATTRIBUTION": self.SNAPSHOT_BASEMAP_ATTRIBUTION,
             "SNAPSHOT_PUBLISH_CONCURRENCY": self.SNAPSHOT_PUBLISH_CONCURRENCY,

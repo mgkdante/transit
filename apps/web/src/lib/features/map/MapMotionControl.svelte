@@ -1,8 +1,10 @@
 <script lang="ts">
 	import WavesIcon from '@lucide/svelte/icons/waves';
 	import { motionMode } from '$lib/stores';
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import type { MapCopy } from './map.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Props {
 		locale: Locale;

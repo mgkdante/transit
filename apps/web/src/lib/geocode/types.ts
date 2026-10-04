@@ -1,18 +1,19 @@
 export type GeocodePrecision = 'address' | 'street' | 'neighbourhood' | 'postal' | 'place';
 
-export const MONTREAL_BOUNDS = {
-	minLat: 45.35,
-	maxLat: 45.75,
-	minLon: -74.05,
-	maxLon: -73.35,
-} as const;
+export interface GeocodeArea {
+	readonly bbox: readonly number[];
+	readonly context: string;
+	readonly lang: 'en' | 'fr';
+}
 
-export function isInsideMontrealBounds(lat: number, lon: number): boolean {
+export function isInsideBounds(lat: number, lon: number, bbox: readonly number[]): boolean {
 	return (
-		lat >= MONTREAL_BOUNDS.minLat &&
-		lat <= MONTREAL_BOUNDS.maxLat &&
-		lon >= MONTREAL_BOUNDS.minLon &&
-		lon <= MONTREAL_BOUNDS.maxLon
+		Number.isFinite(lat) &&
+		Number.isFinite(lon) &&
+		lat >= bbox[1] &&
+		lat <= bbox[3] &&
+		lon >= bbox[0] &&
+		lon <= bbox[2]
 	);
 }
 

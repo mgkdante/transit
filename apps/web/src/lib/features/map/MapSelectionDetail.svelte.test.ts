@@ -283,9 +283,14 @@ const index = buildLiveIndex({
 });
 
 describe('MapSelectionDetail', () => {
-	it.each(['en', 'fr'] as const)(
-		'keeps available trip stops when the vehicle next stop is unreported (%s)',
-		(locale) => {
+	it.each([
+		['en', 'America/Toronto', '20:06', '20:16'],
+		['fr', 'America/Toronto', '20 h 06', '20 h 16'],
+		['en', 'America/Vancouver', '17:06', '17:16'],
+		['fr', 'America/Vancouver', '17 h 06', '17 h 16'],
+	] as const)(
+		'keeps trip stops and selected-zone ETAs when the vehicle next stop is unreported (%s, %s)',
+		(locale, timeZone, firstTime, secondTime) => {
 			const changedIndex = {
 				...index,
 				byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], next_stop: null }),
@@ -299,7 +304,15 @@ describe('MapSelectionDetail', () => {
 					routes,
 				},
 			);
-			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const { container } = render(MapSelectionDetail, { props: { detail, locale, timeZone } });
+			expect(detailValue(container, 'ETA')).toHaveTextContent(firstTime);
+			expect([...container.querySelectorAll('time')].map((node) => node.textContent)).toEqual([
+				firstTime,
+				secondTime,
+			]);
+			expect(container.querySelector('[data-detail-stop-id="stop-2"]')).toHaveAccessibleName(
+				expect.stringContaining(firstTime),
+			);
 			expect(container).toHaveTextContent(
 				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',
 			);
@@ -321,7 +334,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', presentation: 'identity' },
 		});
 		expect(identity.container.querySelector('[data-slot="detail-identity"]')).toHaveTextContent(
-			'Bus veh-1',
+			'Vehicle veh-1',
 		);
 		expect(identity.container.querySelector('[data-slot="detail-body"]')).not.toBeInTheDocument();
 		expect(
@@ -405,7 +418,7 @@ describe('MapSelectionDetail', () => {
 		);
 		const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
 		const chips = container.querySelector('[data-slot="detail-meta"]')!;
-		expect(chips).toHaveTextContent('Bus veh-1');
+		expect(chips).toHaveTextContent('Vehicle veh-1');
 		expect(chips).toHaveTextContent('Route 24');
 		expect(chips).not.toHaveTextContent('Late');
 		expect(chips).not.toHaveTextContent('Standing');
@@ -601,7 +614,10 @@ describe('MapSelectionDetail', () => {
 		},
 	);
 
-	it('marks stop routes as the 420px rung and full departures as the 560px rung', () => {
+	it.each([
+		['America/Toronto', '20:06', '20:36'],
+		['America/Vancouver', '17:06', '17:36'],
+	])('renders both departure rungs in %s', (timeZone, firstTime, lastTime) => {
 		const detail = resolveMapSelection(
 			{ kind: 'stop', id: 'stop-1' },
 			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
@@ -616,8 +632,14 @@ describe('MapSelectionDetail', () => {
 			],
 		};
 		const { container } = render(MapSelectionDetail, {
-			props: { detail: expandedDetail, locale: 'en' },
+			props: { detail: expandedDetail, locale: 'en', timeZone },
 		});
+		expect(container.querySelector('[data-slot="detail-departures"] time')).toHaveTextContent(
+			firstTime,
+		);
+		expect(container.querySelector('[data-slot="detail-more-departures"] li')).toHaveTextContent(
+			lastTime,
+		);
 		const routeTimes = container.querySelector<HTMLElement>('[data-slot="detail-route-times"]')!;
 		const moreDepartures = container.querySelector<HTMLElement>(
 			'[data-slot="detail-more-departures"]',
@@ -821,18 +843,22 @@ describe('MapSelectionDetail', () => {
 		},
 	);
 
-	it('composes each bus row name as entity, route, status, and delay', () => {
+	it.each([
+		['America/Toronto', '20:06'],
+		['America/Vancouver', '17:06'],
+	])('composes each bus row name with its %s ETA', (timeZone, expectedTime) => {
 		const { getByRole } = render(DetailBusRow, {
 			props: {
 				vehicle: vehicles[0],
 				etaUtc: utc('2026-06-15T00:06:00Z'),
+				timeZone,
 				locale: 'en',
 				t: MAP_SELECTION_DETAIL_COPY.en,
 				onselect: () => {},
 			},
 		});
 		expect(getByRole('button')).toHaveAccessibleName(
-			'Select bus veh-1, Route 24, 20:06, Late, Delay: +4 min',
+			`Select vehicle veh-1, Route 24, ${expectedTime}, Late, Delay: +4 min`,
 		);
 	});
 
@@ -880,7 +906,7 @@ describe('MapSelectionDetail', () => {
 		const stopRender = render(MapSelectionDetail, {
 			props: { detail: stopDetail, locale: 'en', onselect: selected, onpreview },
 		});
-		const busRow = stopRender.getByRole('button', { name: /^Select bus veh-1,/ });
+		const busRow = stopRender.getByRole('button', { name: /^Select vehicle veh-1,/ });
 		await checkPreview(busRow, { kind: 'vehicle', id: 'veh-1' });
 		expect(selected).not.toHaveBeenCalled();
 	});
@@ -1302,7 +1328,7 @@ describe('MapSelectionDetail', () => {
 			},
 		);
 
-		expect(getByText('Bus veh-1')).toBeInTheDocument();
+		expect(getByText('Vehicle veh-1')).toBeInTheDocument();
 		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
 		expect(detailValue(container, 'Crowding')).toHaveTextContent(
 			`${occupancyGlyph('standing')} Standing`,
@@ -1348,7 +1374,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect, onfilter },
 		});
 
-		expect(queryByRole('button', { name: 'Select bus veh-1' })).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Select vehicle veh-1' })).not.toBeInTheDocument();
 		await fireEvent.click(getByRole('button', { name: 'Filter status Late' }));
 		expect(onfilter).toHaveBeenLastCalledWith({ kind: 'status', value: 'late' });
 		await fireEvent.click(getByRole('button', { name: 'Filter crowding Standing' }));
@@ -1495,7 +1521,7 @@ describe('MapSelectionDetail', () => {
 
 		expect(getByText('Stop code 52618')).toBeInTheDocument();
 		expect(getAllByText('2 departures').length).toBeGreaterThan(0);
-		expect(getByText('0 buses heading here')).toBeInTheDocument();
+		expect(getByText('0 vehicles heading here')).toBeInTheDocument();
 		expect(getAllByText(/Route 24/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Past times:/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Next times:/).length).toBeGreaterThan(0);
@@ -1528,10 +1554,10 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect },
 		});
 
-		await fireEvent.click(getByRole('button', { name: /^Select bus veh-1,/ }));
+		await fireEvent.click(getByRole('button', { name: /^Select vehicle veh-1,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 
-		await fireEvent.click(getByRole('button', { name: /^Select bus veh-2,/ }));
+		await fireEvent.click(getByRole('button', { name: /^Select vehicle veh-2,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-2' });
 	});
 
@@ -1548,7 +1574,7 @@ describe('MapSelectionDetail', () => {
 		expect(getAllByText('Route 24').length).toBeGreaterThan(0);
 		expect(getByText('Sherbrooke')).toBeInTheDocument();
 		expect(getAllByText('toward Van Horne / Rockland').length).toBeGreaterThan(0);
-		expect(getByText('2 buses visible')).toBeInTheDocument();
+		expect(getByText('2 vehicles visible')).toBeInTheDocument();
 		expect(getByText('Stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
 		expect(getByText('Mont-Royal / Saint-Laurent')).toBeInTheDocument();
@@ -1560,7 +1586,7 @@ describe('MapSelectionDetail', () => {
 		await fireEvent.click(getByRole('button', { name: /Select stop Van Horne \/ Rockland,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-3' });
 
-		await fireEvent.click(getByRole('button', { name: /^Select bus veh-1,/ }));
+		await fireEvent.click(getByRole('button', { name: /^Select vehicle veh-1,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 	});
 

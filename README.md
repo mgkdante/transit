@@ -3,8 +3,9 @@
 Transit is an independent civic dashboard for exploring transit service with
 inspectable data, charts and maps. It captures GTFS and GTFS-Realtime feeds,
 normalizes them in Postgres, and publishes versioned snapshots for the citizen
-web app. STM is the current starting point; provider manifests describe the
-available data and attribution. Missing data remains unknown.
+web app. The UI supports Montréal (STM) and Ottawa (OC Transpo); the published
+provider catalog controls which are available. Coverage varies by agency, and
+missing data remains unknown.
 
 [Public dashboard](https://transit.yesid.dev) · [Source](https://github.com/mgkdante/transit)
 

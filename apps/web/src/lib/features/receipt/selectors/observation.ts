@@ -18,7 +18,7 @@ export function receiptObservation(
 	const reported = (value: boolean | undefined) =>
 		value == null ? labels.unknown : value ? labels.yes : labels.no;
 	const absolute = (href: string) => new URL(href, origin).href;
-	const receiptPage = new URL(localizeHref('/receipt', locale), origin);
+	const receiptPage = new URL(localizeHref('/receipt', locale, manifest.provider), origin);
 	receiptPage.searchParams.set('date', receipt.date);
 	const dates = [...(index.dates ?? [])].sort();
 	const values: readonly [MetricKey, string, string | null][] = [
@@ -43,10 +43,10 @@ export function receiptObservation(
 		`${labels.telemetry}: ${reported(availability?.has_data)}`,
 		`${labels.schedule}: ${reported(availability?.has_schedule)}`,
 		`${labels.page}: ${receiptPage.href}`,
-		`${labels.source}: ${absolute(entityUrl('historic', manifest.files.historic?.receipts_prefix ?? 'historic/receipts/', receipt.date))}`,
+		`${labels.source}: ${absolute(entityUrl('historic', manifest.files.historic?.receipts_prefix ?? 'historic/receipts/', receipt.date, manifest.provider))}`,
 		...values.map(
 			([key, label]) =>
-				`${labels.definitions} (${label}): ${absolute(metricInfoFor(key, locale).href)}`,
+				`${labels.definitions} (${label}): ${absolute(metricInfoFor(key, locale, manifest.provider).href)}`,
 		),
 	].join('\n');
 }

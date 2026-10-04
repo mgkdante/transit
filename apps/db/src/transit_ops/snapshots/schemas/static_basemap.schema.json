@@ -1,5 +1,5 @@
 {
-  "description": "static/basemap.json \u2014 a settings-driven pointer to the hosted PMTiles archive.\n\nPublished only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then\nManifest.basemap is null and no basemap.json object exists.",
+  "description": "static/basemap.json \u2014 a provider-configured pointer to the hosted PMTiles archive.\n\nPublished only when the provider's public.basemap_url is configured; until then\nManifest.basemap is null and no basemap.json object exists.",
   "properties": {
     "attribution": {
       "title": "Attribution",

@@ -84,7 +84,11 @@
       "sha256": [
         "65039103b2dd6f1651c0ca6f9416f26a4f67db64cf0be8859abc7a1e4bc19099",
         "77f76242b74696d8e21ff6ba82b42ad3532d34e752c3989e0b02d523ce141b4a",
-        "9b63deee9669ec5b8625a9fc85cc527c9abe29b2d9dba4bffb5f7d05fed9e085"
+        "9b63deee9669ec5b8625a9fc85cc527c9abe29b2d9dba4bffb5f7d05fed9e085",
+        "64e8aad75e79e2dcf043a0b17108ae0c97703a55e1a505a2398f96bf8f503fa8",
+        "3aec1e18b824bed71afa307a2226b43abdc70168a00c2a983c2ca5883fc2e4e5",
+        "d4c8586d94dcc78958fee5cfc37ad35c01ba31acafbbc5e204a9e971e501cff2",
+        "c57aceea91fceb35fc30399d298f99d8318acd81550278419c6c444258e7bf94"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },
@@ -276,7 +280,8 @@
         "package.json"
       ],
       "sha256": [
-        "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0"
+        "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0",
+        "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -313,7 +318,8 @@
         "apps/web/src/lib/features/map/mapCameraFraming.ts"
       ],
       "sha256": [
-        "596c119f908f11ff867d05cf010fcc98ed26386182093e60a5a69316d857efa6"
+        "596c119f908f11ff867d05cf010fcc98ed26386182093e60a5a69316d857efa6",
+        "d99cd67522584284318c9581aa82e48f9bdee4e92f6a4dd3e1db407199030103"
       ],
       "origin": "apps/web/scripts/build-map-posters.ts; receipt render-input and image hashes independently verified for all accepted snapshots."
     },
@@ -376,6 +382,29 @@
         "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
+    },
+    {
+      "category": "assets",
+      "reason": "Provider-selected basemap AVIF images rendered October 3, 2026",
+      "files": [
+        "apps/web/static/map/basemap-montreal-dark-desktop-20261003.avif",
+        "apps/web/static/map/basemap-montreal-dark-mobile-20261003.avif",
+        "apps/web/static/map/basemap-montreal-light-desktop-20261003.avif",
+        "apps/web/static/map/basemap-montreal-light-mobile-20261003.avif",
+        "apps/web/static/map/basemap-ottawa-dark-desktop-20261003.avif",
+        "apps/web/static/map/basemap-ottawa-dark-mobile-20261003.avif",
+        "apps/web/static/map/basemap-ottawa-light-desktop-20261003.avif",
+        "apps/web/static/map/basemap-ottawa-light-mobile-20261003.avif"
+      ],
+      "owners": [
+        "apps/web/scripts/build-map-posters.ts",
+        "apps/web/static/map/basemap-montreal-posters.json",
+        "apps/web/static/map/basemap-ottawa-posters.json"
+      ],
+      "sha256": [
+        "04c72517f0a1f1cc7495c3bdbfe4e5b579ccaea04117fe88ead242c88d9fd72c"
+      ],
+      "origin": "Pinned build-map-posters.ts renders; both receipts verify archive/config/render-input identities and each image hash, dimensions and 125 KiB limit. The new Ottawa JSON receipt remains counted."
     }
   ]
 }

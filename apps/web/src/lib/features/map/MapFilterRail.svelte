@@ -14,6 +14,7 @@
 
 	interface Props {
 		copy: MapCopy;
+		alertsAvailable?: boolean;
 		activeCount: number;
 		hasFilters: boolean;
 		controlsId: string;
@@ -22,8 +23,16 @@
 		onclear: () => void;
 	}
 
-	let { copy, activeCount, hasFilters, controlsId, onexpand, onactivate, onclear }: Props =
-		$props();
+	let {
+		alertsAvailable = true,
+		copy,
+		activeCount,
+		hasFilters,
+		controlsId,
+		onexpand,
+		onactivate,
+		onclear,
+	}: Props = $props();
 </script>
 
 <div class="mf-rail-layer" data-testid="map-filter-rail">
@@ -56,15 +65,17 @@
 		<MapPinnedIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.markers}</span>
 	</button>
-	<button
-		type="button"
-		class="mf-rail-glyph"
-		aria-label={copy.modeAlerts}
-		onclick={() => onactivate('alerts')}
-	>
-		<TriangleAlertIcon size={16} strokeWidth={2.25} aria-hidden="true" />
-		<span class="mf-rail-abbr">{copy.rail.alerts}</span>
-	</button>
+	{#if alertsAvailable}
+		<button
+			type="button"
+			class="mf-rail-glyph"
+			aria-label={copy.modeAlerts}
+			onclick={() => onactivate('alerts')}
+		>
+			<TriangleAlertIcon size={16} strokeWidth={2.25} aria-hidden="true" />
+			<span class="mf-rail-abbr">{copy.rail.alerts}</span>
+		</button>
+	{/if}
 	<button
 		type="button"
 		class="mf-rail-glyph"

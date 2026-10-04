@@ -153,10 +153,12 @@ def classification(name: str) -> tuple[str, str]:
     return domain, "source"
 
 
-def measure(contents: dict[str, bytes], policy: dict) -> dict:
+def measure(contents: dict[str, bytes], policy: dict, *, historical: bool = False) -> dict:
     exclusions = {}
     provenance = []
     for group in policy["exclusions"]:
+        if historical and not any(name in contents for name in group["files"]):
+            continue
         names = set(group["files"] + group["owners"])
         missing = sorted(names - contents.keys())
         if missing:
@@ -226,7 +228,7 @@ def main() -> int:
             baseline_commit, baseline_tree = revision(repo, policy["baseline_ref"])
             if baseline_commit != policy["baseline_ref"]:
                 raise ValueError("baseline_ref must identify a commit directly")
-            baseline = measure(sources(repo, baseline_tree), policy)
+            baseline = measure(sources(repo, baseline_tree), policy, historical=True)
             if baseline["maintained_lines"] != policy["baseline_lines"]:
                 raise ValueError(
                     f"baseline mismatch: configured {policy['baseline_lines']}, "

@@ -66,10 +66,12 @@ const labelFreeConsumers = [
 const immutableListings = [
 	{
 		file: 'src/lib/features/lines/LinesIndex.svelte',
+		mapHref: 'mapHrefFor({ route: r.id }, locale)',
 		markupSha256: 'ddb5948aabfce2a48d2a73f080799d29a704d26cedde57ce5639866be3556830',
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
+		mapHref: 'mapHrefFor({ stop: stop.id }, locale)',
 		markupSha256: '2a3f371e08911eb8c6234d3381823df1c44482648c90485bc4209dc70bb478d7',
 	},
 ] as const;
@@ -121,10 +123,17 @@ describe('article control disclosure consumer contract', () => {
 		);
 	});
 
-	it.each(immutableListings)('leaves $file markup byte-for-byte untouched', (listing) => {
-		const component = source(listing.file);
-		const markup = component.slice(component.indexOf('</script>') + '</script>'.length);
-		const digest = createHash('sha256').update(markup).digest('hex');
-		expect(digest).toBe(listing.markupSha256);
-	});
+	it.each(immutableListings)(
+		'preserves $file structure with a provider-aware map link',
+		(listing) => {
+			const component = source(listing.file);
+			const providerHref = `href={localizeHref(${listing.mapHref}, locale)}`;
+			expect(component).toContain(providerHref);
+			const markup = component
+				.slice(component.indexOf('</script>') + '</script>'.length)
+				.replace(providerHref, `href={${listing.mapHref}}`);
+			const digest = createHash('sha256').update(markup).digest('hex');
+			expect(digest).toBe(listing.markupSha256);
+		},
+	);
 });

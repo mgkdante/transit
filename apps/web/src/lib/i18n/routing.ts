@@ -31,7 +31,14 @@ export const pathLocale = routing.pathLocale;
 
 export const delocalizePath = routing.delocalizePath;
 
-export const localizeHref = routing.localizeHref;
+export function localizeHref(href: string, locale: Locale, provider?: string): string {
+	const localized = routing.localizeHref(href, locale);
+	if (!provider || !localized.startsWith('/') || localized.startsWith('//')) return localized;
+	const url = new URL(localized, 'https://transit.local');
+	if (isPathExempt(url.pathname)) return localized;
+	url.searchParams.set('provider', provider);
+	return url.pathname + url.search + url.hash;
+}
 
 export const localizeUrl: (url: URL, locale: Locale) => string = routing.localizeUrl;
 

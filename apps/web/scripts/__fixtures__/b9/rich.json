@@ -2,6 +2,22 @@
 	"name": "rich",
 	"frozen_utc": "2026-08-30T16:00:00Z",
 	"files": {
+		"providers.json": {
+			"schema_version": 1,
+			"generated_utc": "2026-08-30T16:00:00Z",
+			"default_provider": "stm",
+			"providers": [
+				{
+					"id": "stm",
+					"labels": {
+						"en": { "city": "Montréal", "operator": "STM" },
+						"fr": { "city": "Montréal", "operator": "STM" }
+					},
+					"inputs": {},
+					"alert_links": {}
+				}
+			]
+		},
 		"manifest.json": {
 			"provider": "stm",
 			"display_name": "Société de transport de Montréal",

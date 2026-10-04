@@ -34,10 +34,37 @@ provider:
     min_latitude: 45.10
     max_latitude: 45.55
     min_longitude: -76.05
-    max_longitude: -75.35
+    max_longitude: -75.33
   attribution_text: Contains information licensed under the Open Government Licence – City of Ottawa.
   website_url: https://www.octranspo.com/
   is_active: true
+
+public:
+  enabled: false
+  labels:
+    en: {city: Ottawa, operator: OC Transpo}
+    fr: {city: Ottawa, operator: OC Transpo}
+  fit_bounds:
+    min_longitude: -75.95
+    min_latitude: 45.20
+    max_longitude: -75.43
+    max_latitude: 45.55
+  max_bounds:
+    min_longitude: -76.15
+    min_latitude: 45.10
+    max_longitude: -75.24
+    max_latitude: 45.65
+  geocode_context: Ottawa, Ontario
+  basemap_url: /data/v1/octranspo/static/basemap/ottawa.pmtiles
+  basemap_bounds:
+    min_longitude: -76.15
+    min_latitude: 45.0
+    max_longitude: -75.24
+    max_latitude: 45.65
+  posters_url: /map/basemap-ottawa-posters.json
+  alert_links:
+    en: https://www.octranspo.com/en/alerts/
+    fr: https://www.octranspo.com/fr/alertes/
 
 feeds:
   static_schedule:

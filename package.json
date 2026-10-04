@@ -2,7 +2,7 @@
   "name": "transit",
   "private": true,
   "type": "module",
-  "description": "Transit — STM transit operations analytics turborepo: apps/db (Python pipeline) + apps/web (SvelteKit citizen dashboard) + apps/data-proxy (Cloudflare /v1 snapshot worker).",
+  "description": "Transit operations analytics: Python data pipeline, SvelteKit citizen dashboard and Cloudflare snapshot worker for Montréal and Ottawa.",
   "packageManager": "bun@1.3.11",
   "workspaces": [
     "apps/*"

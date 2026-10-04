@@ -9,13 +9,14 @@
 	interface Props {
 		stop: MapStopRef;
 		locale: Locale;
+		timeZone?: string;
 		t: MapSelectionDetailCopy;
 		seqUnknownAria: string;
 		onselect: (id: string) => void;
 		onpreview?: (selection: { kind: 'stop'; id: string } | null) => void;
 	}
 
-	let { stop, locale, t, seqUnknownAria, onselect, onpreview }: Props = $props();
+	let { stop, locale, timeZone, t, seqUnknownAria, onselect, onpreview }: Props = $props();
 	let pointerPreview = $state(false);
 	let focusPreview = $state(false);
 	const previewing = $derived(pointerPreview || focusPreview);
@@ -26,7 +27,7 @@
 		onpreview?.(pointer || focus ? { kind: 'stop', id: stop.id } : null);
 	}
 	const accessibleName = $derived(
-		`${t.selectStop(stopDisplayName(stop, locale))}${stop.seq == null ? `, ${seqUnknownAria}` : `, ${stop.seq}`}${stop.etaUtc ? `, ${timeLabel(stop.etaUtc, locale)}` : ''}`,
+		`${t.selectStop(stopDisplayName(stop, locale))}${stop.seq == null ? `, ${seqUnknownAria}` : `, ${stop.seq}`}${stop.etaUtc ? `, ${timeLabel(stop.etaUtc, locale, timeZone)}` : ''}`,
 	);
 </script>
 
@@ -45,7 +46,7 @@
 >
 	<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>{stop.seq ?? ''}</span>
 	<strong><DetailEntityName ref={stop} {locale} /></strong>
-	{#if stop.etaUtc}<small><time>{timeLabel(stop.etaUtc, locale)}</time></small>{/if}
+	{#if stop.etaUtc}<small><time>{timeLabel(stop.etaUtc, locale, timeZone)}</time></small>{/if}
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 </button>
 

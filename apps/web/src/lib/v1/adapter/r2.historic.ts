@@ -39,6 +39,7 @@ import {
 	IMMUTABLE_CACHE,
 	MUTABLE_CACHE,
 	fetchOf,
+	providerOf,
 	loadManifest,
 	readEntity,
 	readOptionalWhole,
@@ -47,8 +48,8 @@ import {
 
 let historyRefreshSequence = 0;
 
-function freshHistoryUrl(path: string, fresh: boolean | undefined): string {
-	const url = resolveUrl(path);
+function freshHistoryUrl(path: string, fresh: boolean | undefined, ctx?: AdapterCtx): string {
+	const url = resolveUrl(path, providerOf(ctx));
 	if (!fresh) return url;
 	historyRefreshSequence += 1;
 	const token = `${Date.now().toString(36)}-${historyRefreshSequence.toString(36)}`;
@@ -61,7 +62,7 @@ async function readOptionalHistory<T>(
 	label: string,
 	ctx?: AdapterCtx,
 ): Promise<T | null> {
-	const url = freshHistoryUrl(path, ctx?.freshHistoryParent);
+	const url = freshHistoryUrl(path, ctx?.freshHistoryParent, ctx);
 	const expectedSha = historyPointerPayloadSha(path);
 	const init = {
 		cache: ctx?.freshHistoryParent
@@ -69,6 +70,7 @@ async function readOptionalHistory<T>(
 			: expectedSha === null
 				? MUTABLE_CACHE
 				: IMMUTABLE_CACHE,
+		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 	};
 	if (expectedSha !== null) {
@@ -143,10 +145,17 @@ async function readRawHistoryPartition<T>(
 	label: string,
 	ctx?: AdapterCtx,
 ) {
-	const value = await getEntityJsonWithBytes(resolveUrl(path), schema, label, fetchOf(ctx), {
-		cache: IMMUTABLE_CACHE,
-		signal: ctx?.signal,
-	});
+	const value = await getEntityJsonWithBytes(
+		resolveUrl(path, providerOf(ctx)),
+		schema,
+		label,
+		fetchOf(ctx),
+		{
+			cache: IMMUTABLE_CACHE,
+			providerId: providerOf(ctx),
+			signal: ctx?.signal,
+		},
+	);
 	return value ?? null;
 }
 
@@ -253,13 +262,18 @@ export const historicPort = {
 	},
 	alertArchivePage: async (path: string, ctx?: AdapterCtx) => {
 		const safePath = assertSafeHistoryArtifactPath(path);
-		const url = resolveUrl(safePath);
+		const url = resolveUrl(safePath, providerOf(ctx));
 		const value = await getEntityJson(
 			url,
 			AlertArchivePageSchema,
 			'historic.alertArchivePage',
 			fetchOf(ctx),
-			{ cache: IMMUTABLE_CACHE, signal: ctx?.signal, serverErrorRetries: 1 },
+			{
+				cache: IMMUTABLE_CACHE,
+				providerId: providerOf(ctx),
+				signal: ctx?.signal,
+				serverErrorRetries: 1,
+			},
 		);
 		return value ?? null;
 	},
@@ -317,13 +331,14 @@ export const historicPort = {
 		const manifest = await loadManifest(ctx);
 		const url = resolveUrl(
 			manifest.files.historic?.route_reliability_index ?? DEFAULTS.historic.route_reliability_index,
+			providerOf(ctx),
 		);
 		const value = await getEntityJson(
 			url,
 			RouteReliabilityIndexSchema,
 			'historic.routeReliabilityIndex',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		return value ?? null;
 	},

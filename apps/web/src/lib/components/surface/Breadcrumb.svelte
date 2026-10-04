@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { type Locale, localizeHref } from '$lib/i18n';
+	import { type Locale, getLocalizeHref } from '$lib/i18n';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
+
+	const localizeHref = getLocalizeHref();
 
 	export interface BreadcrumbProps {
 		trail: readonly BreadcrumbTrailItem[];

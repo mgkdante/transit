@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import UTC, date, datetime
 
@@ -119,7 +118,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
                         :snapshot_id,
                         0,
                         :provider_id,
-                        NULL,
+                        'ARCHIVE-A',
                         'Votre ligne',
                         'Terminus temporaire.',
                         'Your line',
@@ -169,6 +168,21 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
             )
 
             connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
+            connection.execute(
+                text(
+                    "INSERT INTO silver.i3_alerts (i3_alert_snapshot_id, alert_index, provider_id, "
+                    "alert_id, "
+                    "alert_header_text, description_text_en, captured_at_utc, raw_alert_json, "
+                    "content_hash, first_seen_at, last_seen_at, valid_to, "
+                    "active_period_start_utc, active_period_end_utc) "
+                    "SELECT i3_alert_snapshot_id, 1, provider_id, alert_id, alert_header_text, "
+                    "'Obsolete translation', captured_at_utc, '{}', 'archive-older', "
+                    "first_seen_at, captured_at_utc, captured_at_utc, "
+                    "active_period_start_utc, active_period_end_utc "
+                    "FROM silver.i3_alerts WHERE i3_alert_snapshot_id = :snapshot_id"
+                ),
+                {"snapshot_id": snapshot_id},
+            )
             first = sync_alert_archive_on_connection(
                 connection,
                 provider_id=provider_id,
@@ -177,18 +191,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
                 synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
             )
             assert (first.inserted_count, first.updated_count, first.unchanged_count) == (1, 0, 0)
-            synthetic_basis = "|".join(
-                str(value or "")
-                for value in (
-                    "Votre ligne",
-                    datetime(2026, 7, 8, 13, 0, tzinfo=UTC),
-                    datetime(2026, 7, 10, 19, 0, tzinfo=UTC),
-                )
-            )
-            expected_alert_id = (
-                f"{provider_id}-alert-"
-                f"{hashlib.sha1(synthetic_basis.encode(), usedforsecurity=False).hexdigest()[:12]}"
-            )
+            expected_alert_id = "ARCHIVE-A"
             initial = (
                 connection.execute(
                     text(
@@ -261,7 +264,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
             assert changed["archive_month"] == initial["archive_month"]
             assert changed["first_seen_utc"] == initial["first_seen_utc"]
             assert changed["description_text"] == "Terminus déplacé."
-            assert changed["description_text_en"] == "Temporary terminus."
+            assert changed["description_text_en"] is None
             assert changed["route_ids"] == ["45", "747"]
 
             connection.execute(text("SET LOCAL TIME ZONE 'Asia/Tokyo'"))

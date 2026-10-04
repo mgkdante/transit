@@ -6,6 +6,9 @@ import { RouteFileSchema, type RouteFile } from '$lib/v1/schemas/route';
 import MapHero from './MapHero.svelte';
 import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
+import type { PublicProvider } from '$lib/v1/providers';
+
+const providerContext = vi.hoisted(() => ({ value: undefined as PublicProvider | undefined }));
 
 const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
@@ -559,8 +562,11 @@ vi.mock('$lib/stores', async () => {
 
 vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
+		provider: providerContext.value,
 		manifest: {
 			provider: 'stm',
+			bbox: [-74.1, 45.25, -73.2, 45.75],
+			tz: 'America/Toronto',
 			files: { live: { ttl_s: 30 } },
 		},
 		labels: {},
@@ -770,6 +776,36 @@ function peekText(container: HTMLElement): string {
 }
 
 describe('MapHero stage lifecycle', () => {
+	it('keeps a provider without an alert feed unavailable even when a snapshot contains alerts', async () => {
+		providerContext.value = {
+			id: 'octranspo',
+			labels: {
+				en: { city: 'Ottawa', operator: 'OC Transpo' },
+				fr: { city: 'Ottawa', operator: 'OC Transpo' },
+			},
+			inputs: { i3_alerts: false, service_alerts: false },
+			alert_links: {},
+		};
+		try {
+			harness.setPageUrl('http://localhost/map?provider=octranspo&alert=has_alert');
+			const { container } = render(MapHero);
+			await waitFor(() =>
+				expect(harness.goto).toHaveBeenCalledWith('/map?provider=octranspo', expect.anything()),
+			);
+			expect(screen.queryByRole('button', { name: /Has alert/i })).toBeNull();
+			await waitFor(() =>
+				expect(container.querySelector('.map-hero')).toHaveAttribute(
+					'data-motion-vehicle-count',
+					'1',
+				),
+			);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+			expect(await screen.findByText('Alert data unavailable')).toBeVisible();
+			expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();
+		} finally {
+			providerContext.value = undefined;
+		}
+	});
 	it('waits for each new map to reach first idle before resuming saved smooth motion', async () => {
 		mapHeroReceiptSignals.setMotionMode('smooth');
 		for (let visit = 0; visit < 2; visit += 1) {
@@ -1157,7 +1193,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		const closeLabel = isDesktop ? 'Close panel' : 'Close details';
 		const close = await screen.findByRole('button', { name: closeLabel });
 		const selectionIdentity = (await screen.findAllByRole('heading', { level: 2 })).find(
-			(heading) => heading.textContent === 'Bus bus-1',
+			(heading) => heading.textContent === 'Vehicle bus-1',
 		);
 		expect(selectionIdentity).toBeDefined();
 		const selectionStart = activeLastGoto();
@@ -1309,7 +1345,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
 				expect(screen.getByRole('button', { name: before.closeLabel })).toBe(before.close);
 				expect(document.body.contains(before.selectionIdentity!)).toBe(true);
-				expect(before.selectionIdentity).toHaveTextContent('Bus bus-1');
+				expect(before.selectionIdentity).toHaveTextContent('Vehicle bus-1');
 				expect([...(harness.toVehicleFeatures.mock.lastCall?.[1].vehicles ?? [])]).toEqual(
 					winner.filtersPreserved ? before.selectionOwnedVehicles : [],
 				);
@@ -2229,7 +2265,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		render(MapHero);
 		await tick();
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
-		const busRow = await screen.findByRole('button', { name: /^Select bus bus-1,/ });
+		const busRow = await screen.findByRole('button', { name: /^Select vehicle bus-1,/ });
 
 		mapHeroReceiptSignals.clearFeatureStateEvents();
 		await fireEvent.pointerEnter(busRow);
@@ -2460,7 +2496,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 		});
 		expect(
 			(await screen.findAllByRole('heading', { level: 2 })).some(
-				(heading) => heading.textContent === 'Bus bus-1',
+				(heading) => heading.textContent === 'Vehicle bus-1',
 			),
 		).toBe(true);
 	});

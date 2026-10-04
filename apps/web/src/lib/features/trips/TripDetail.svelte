@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import { createLiveResource } from '$lib/v1/live/resource';
 	import { getStopsIndex } from '$lib/v1/repositories/static';
@@ -24,6 +24,8 @@
 	import { formatUtc } from '$lib/utils/time';
 	import { delayMeasurement, delayTone, delayLabel } from '$lib/site/delayPresentation';
 	import { tripCopy } from './trips.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface TripDetailProps {
 		id: string;
@@ -133,7 +135,7 @@
 								{@render reportFreshness()}
 							{/if}
 							<MapDrilldownLink
-								href={mapHrefFor({ trip: id }, locale)}
+								href={localizeHref(mapHrefFor({ trip: id }, locale), locale)}
 								label={t.viewOnMap}
 								ariaLabel={t.viewTripOnMap(id)}
 							/>

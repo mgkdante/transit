@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { localizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -9,6 +9,8 @@
 	import { selectWeakStops } from '../selectors/weakStops';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface Section4WorstStopsProps {
 		punctuality: PunctualityVM;

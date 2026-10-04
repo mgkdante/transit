@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
@@ -78,6 +78,8 @@
 	import { buildOffenderLedger } from './selectors/offenderLedger';
 	import RepeatOffendersSection from './sections/RepeatOffendersSection.svelte';
 	import { copy as COPY } from './repeatOffenders.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);

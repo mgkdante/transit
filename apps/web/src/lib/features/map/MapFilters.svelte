@@ -29,6 +29,7 @@
 	interface Props {
 		store: FilterStore;
 		locale: Locale;
+		alertsAvailable?: boolean;
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
 		collapsible?: boolean;
@@ -40,6 +41,7 @@
 	let {
 		store,
 		locale,
+		alertsAvailable = true,
 		routes = [],
 		stops = [],
 		collapsible = true,
@@ -305,30 +307,34 @@
 				</div>
 			</MapFilterGroup>
 
-			<MapFilterGroup
-				kind="alerts"
-				label={t.modeAlerts}
-				open={alertsOpen}
-				{presentation}
-				ontoggle={() => toggleGroup('alerts')}
-			>
-				<div class="mf-chips">
-					{#each alertOptions as item (item.kind)}
-						<button
-							type="button"
-							class="mf-chip mf-alert-chip"
-							data-on={store.alerts.includes(item.kind)}
-							aria-label={item.aria}
-							aria-pressed={store.alerts.includes(item.kind)}
-							style="--chip:var(--dataviz-severity-high)"
-							onclick={() => toggleAlert(item.kind)}
-						>
-							<span class="mf-swatch"></span>
-							<span class="mf-chip-text">{item.label}</span>
-						</button>
-					{/each}
-				</div>
-			</MapFilterGroup>
+			{#if alertsAvailable}
+				<MapFilterGroup
+					kind="alerts"
+					label={t.modeAlerts}
+					open={alertsOpen}
+					{presentation}
+					ontoggle={() => toggleGroup('alerts')}
+				>
+					<div class="mf-chips">
+						{#each alertOptions as item (item.kind)}
+							<button
+								type="button"
+								class="mf-chip mf-alert-chip"
+								data-on={store.alerts.includes(item.kind)}
+								aria-label={item.aria}
+								aria-pressed={store.alerts.includes(item.kind)}
+								style="--chip:var(--dataviz-severity-high)"
+								onclick={() => toggleAlert(item.kind)}
+							>
+								<span class="mf-swatch"></span>
+								<span class="mf-chip-text">{item.label}</span>
+							</button>
+						{/each}
+					</div>
+				</MapFilterGroup>
+			{:else}
+				<p>{t.alertFilterUnavailable}</p>
+			{/if}
 
 			<MapFilterGroup
 				kind="active"
@@ -492,6 +498,7 @@
 
 	{#if collapsible && !panelOpen}
 		<MapFilterRail
+			{alertsAvailable}
 			copy={t}
 			activeCount={selectedCount}
 			hasFilters={!store.isEmpty}

@@ -60,7 +60,7 @@ describe('r2 static ports', () => {
 			lon: -73.5,
 		};
 		const basemap = {
-			url: 'pmtiles://example.test/stm.pmtiles',
+			url: `${DIRECT_R2_BASE}/stm/static/basemap/stm.pmtiles`,
 			attribution: 'STM',
 			generated_utc: ISO,
 		};

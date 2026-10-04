@@ -6,7 +6,14 @@ import { NetworkFileSchema } from '$lib/v1/schemas/network';
 import { StopDeparturesFileSchema } from '$lib/v1/schemas/stop_departures';
 import { TripsFileSchema } from '$lib/v1/schemas/trips';
 import { VehiclesFileSchema } from '$lib/v1/schemas/vehicles';
-import { fetchOf, loadManifest, MUTABLE_CACHE, R2_DEFAULTS, readWhole } from './r2.core';
+import {
+	fetchOf,
+	providerOf,
+	loadManifest,
+	MUTABLE_CACHE,
+	R2_DEFAULTS,
+	readWhole,
+} from './r2.core';
 import type { AdapterCtx } from './types';
 
 export const livePort = {
@@ -67,11 +74,11 @@ export const dataHealthPort = {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.files.live.data_health ?? R2_DEFAULTS.live.data_health;
 		const value = await getEntityJson(
-			resolveUrl(relativePath),
+			resolveUrl(relativePath, providerOf(ctx)),
 			DataHealthSchema,
 			'dataHealth',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		return value ?? null;
 	},

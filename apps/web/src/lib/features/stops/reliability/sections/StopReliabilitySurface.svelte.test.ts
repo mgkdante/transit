@@ -90,7 +90,7 @@ const PRESENT_SECTIONS = [
 	['stop-rel-trend', 'Daily trend'],
 	['stop-rel-percentiles', 'Daily delay'],
 	['stop-rel-pane', 'Predicted delays'],
-	['stop-rel-crowding', 'Crowding on buses seen here'],
+	['stop-rel-crowding', 'Crowding on vehicles seen here'],
 	['stop-rel-by-route', 'Avg delay by route'],
 ] as const;
 
@@ -284,7 +284,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 		expect(labels).toContain('Daily trend');
 		expect(labels).toContain('Daily delay');
 		expect(labels).toContain('Predicted delays');
-		expect(labels).toContain('Crowding on buses seen here');
+		expect(labels).toContain('Crowding on vehicles seen here');
 		expect(labels).toContain('Avg delay by route');
 		expect(labels).not.toContain('Relative severe-delay score by hour');
 		expect(labels).not.toContain('By day of week');
@@ -373,7 +373,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 		const crowdingTrigger = disclosureTrigger(
 			container,
 			'stop-rel-crowding',
-			'Crowding on buses seen here',
+			'Crowding on vehicles seen here',
 		);
 
 		await fireEvent.click(routeTrigger);

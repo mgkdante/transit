@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { isoUtc, SeverityCodeSchema, payloadEnvelopeFields } from './types';
-import { AlertActivePeriodSchema } from './alert_history';
+import { AlertActivePeriodSchema, AlertMessageProvenanceSchema } from './alert_history';
 
 export const AlertSchema = z.object({
 	id: z.string(),
+	message: AlertMessageProvenanceSchema.nullable().optional(),
 	severity: SeverityCodeSchema,
 	header_key: z.string(),
 	header_text: z.string().optional(),

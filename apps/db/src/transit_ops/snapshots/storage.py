@@ -884,15 +884,12 @@ class LocalSnapshotStorage:
         return payload
 
 
-def state_fingerprint(tier: str) -> str:
-    """Stable fingerprint for a tier's hash-state object.
-
-    Embeds the tier's ``Cache-Control`` string so that a header-policy change
-    (e.g. the static 7-day -> 1-day+SWR move) invalidates every prior hash and
-    forces a one-time full rewrite that re-stamps the new header on every object.
-    """
-    revision = 2 if tier == "static" else 1
-    return f"v{revision}|cc:{CACHE_CONTROL[tier]}"
+def state_fingerprint(tier: str, *, config: BaseModel | None = None) -> str:
+    """Invalidate prior hashes when cache policy or static output configuration changes."""
+    if tier == "static":
+        digest = hashlib.sha256(_body(config) if config else b"").hexdigest()
+        return f"v3|cc:{CACHE_CONTROL[tier]}|config:{digest}"
+    return f"v1|cc:{CACHE_CONTROL[tier]}"
 
 
 class HashGatedStorage:
@@ -1042,11 +1039,11 @@ def _snapshot_publish_pool_size(settings: Settings) -> int:
 def build_snapshot_storage(
     settings: Settings,
     *,
-    provider_id: str,
+    provider_id: str | None,
     client: object | None = None,
 ) -> SnapshotStorage | LocalSnapshotStorage:
-    """Construct storage for the provider with snapshot-owned bucket validation."""
-    base_prefix = f"v1/{provider_id}"
+    """Construct provider storage, or the v1 root for explicit catalog publication."""
+    base_prefix = f"v1/{provider_id}" if provider_id is not None else "v1"
 
     if settings.SNAPSHOT_STORAGE_BACKEND == "local":
         if not settings.SNAPSHOT_LOCAL_ROOT:

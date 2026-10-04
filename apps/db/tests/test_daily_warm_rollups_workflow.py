@@ -725,9 +725,6 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert publish["env"]["SNAPSHOT_PUBLIC_BASE_URL"] == (
         "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"
     )
-    assert publish["env"]["SNAPSHOT_BASEMAP_PMTILES_URL"] == (
-        "${{ vars.SNAPSHOT_BASEMAP_PMTILES_URL }}"
-    )
     assert publish["env"]["SNAPSHOT_BASEMAP_STYLE_URL"] == (
         "${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}"
     )

@@ -22,10 +22,10 @@ type CopyKey =
 
 export const homeCopy = defineCopy({
 	fr: {
-		auditKicker: 'Montréal · Données publiques',
+		auditKicker: '{city} · Données publiques',
 		auditBody:
 			'Un regard citoyen sur la santé du réseau : retards, fiabilité et limites des données publiques.',
-		headline: 'Le transport à Montréal,',
+		headline: 'Le transport à {city},',
 		headlineAccent: 'à l’épreuve des données.',
 		clearFilters: 'Effacer les filtres',
 		filterLabel: 'Filtres',
@@ -43,10 +43,10 @@ export const homeCopy = defineCopy({
 		exploreNav: 'Tout explorer',
 	},
 	en: {
-		auditKicker: 'Montréal · Public data',
+		auditKicker: '{city} · Public data',
 		auditBody:
 			'A citizen’s view of network health: delays, reliability, and the limits of public data.',
-		headline: 'How Montréal’s',
+		headline: 'How {city}’s',
 		headlineAccent: 'transit holds up.',
 		clearFilters: 'Clear filters',
 		filterLabel: 'Filters',

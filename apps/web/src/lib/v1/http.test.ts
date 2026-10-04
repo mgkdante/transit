@@ -28,6 +28,27 @@ async function loadHttp() {
 
 const schema = z.object({ ok: z.boolean() });
 
+it.each(['getEntityJson', 'getEntityJsonWithBytes'] as const)(
+	'%s rejects foreign generations before schemas strip unknown fields, preserving legacy absence',
+	async (method) => {
+		const http = await loadHttp();
+		const read = (generation?: string | null) =>
+			http[method](
+				'/data/v1/octranspo/live/test.json',
+				schema,
+				'live.test',
+				vi.fn(
+					async () => new Response(JSON.stringify({ ok: true, publish_generation_id: generation })),
+				),
+				{ providerId: 'octranspo' },
+			);
+		await expect(read('stm@2026-07-15T12:00:00Z')).rejects.toThrow('generation');
+		await expect(read('octranspo@2026-07-14T00:00:00Z')).resolves.toBeDefined();
+		await expect(read()).resolves.toBeDefined();
+		await expect(read(null)).resolves.toBeDefined();
+	},
+);
+
 function fetchWithHeaders(headers: Record<string, string>): typeof fetch {
 	return vi.fn(async () =>
 		Promise.resolve(

@@ -690,7 +690,7 @@ def test_publish_static_writes_expected_keys() -> None:
     assert "labels/en.json" in written
     assert "static/routes/165.json" in written
     assert not any(k.startswith("static/stops/") for k in written)
-    assert "static/basemap.json" not in written
+    assert "static/basemap.json" in written
     assert "_meta/publish_state_static.json" in store.store
     import json as _json
 
@@ -844,6 +844,7 @@ def test_publish_static_route_hash_gate_keeps_identical_bytes_and_rewrites_only_
     )
     assert changed.written == ["static/routes/101.json"]
     assert set(changed.skipped) == {
+        "static/basemap.json",
         "static/routes_index.json",
         "static/stops_index.json",
         "labels/fr.json",
@@ -1686,7 +1687,7 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     import json
 
     bm = json.loads(store.store["static/basemap.json"])
-    assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
+    assert bm["url"] == "/data/v1/stm/static/basemap/montreal.pmtiles"
     assert bm["format"] == "pmtiles"
 
 
@@ -1700,109 +1701,54 @@ def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
     assert "route_reliability_monthly" not in sql
 
 
-def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monkeypatch) -> None:
-    import datetime as _dt
-    from contextlib import contextmanager
+def test_static_publish_rebuilds_unchanged_gtfs_after_upgrade_or_asset_changes(monkeypatch) -> None:
+    import json
 
-    from transit_ops.snapshots import publish as _pub
-    from transit_ops.snapshots.storage import state_fingerprint
+    from transit_ops.providers.registry import ProviderRegistry
+    from transit_ops.snapshots.storage import CACHE_CONTROL
 
-    _STAMP = _dt.datetime(2026, 6, 10, 19, 47, 28, tzinfo=_dt.UTC)
-
-    class _Res:
-        def __init__(self, rows):
-            self._rows = list(rows)
-
-        def mappings(self):
-            outer = self
-
-            class _M:
-                def fetchone(self_m):
-                    return outer._rows[0] if outer._rows else None
-
-            return _M()
-
-        def fetchone(self):
-            return self._rows[0] if self._rows else None
-
-        def scalar_one(self):
-            return self._rows[0] if self._rows else None
-
-    class _Conn:
-        def __init__(self, *, skip_row: bool) -> None:
-            self._skip_row = skip_row
-            self.executed: list[str] = []
+    class DatasetConn(_RecordingConn):
+        unchanged = True
 
         def execute(self, statement, params=None):
-            s = str(statement)
-            self.executed.append(s)
-            if query_name(statement) == "publish.lock.try_acquire":
-                return _Res([True])
-            if "loaded_at_utc FROM core.dataset_versions" in s:
-                return _Res([{"loaded_at_utc": _STAMP}])
-            if "core.snapshot_publish_state" in s and "CAST" in s:
-                return _Res([(9222,)] if self._skip_row else [])
-            return _Res([])
+            if query_name(statement) == "publish.static_skip.match":
+                return NamedRowsResult([(5,)] if self.unchanged else [])
+            return super().execute(statement, params)
 
-    class _Engine:
-        def __init__(self, conn) -> None:
-            self._conn = conn
+    registry = ProviderRegistry.from_project_root()
+    monkeypatch.setattr(ProviderRegistry, "from_project_root", lambda **kwargs: registry)
+    public = registry.get_provider("stm").public
+    settings = FakeSettings()
+    store, conn = StatefulFakeStore(), DatasetConn()
+    state_key = "_meta/publish_state_static.json"
+    basemap_key = "static/basemap.json"
+    assert basemap_key in _publish_static_once(store, conn, settings).keys_written
+    assert _publish_static_once(store, conn, settings).keys_written == []
 
-        def begin(self):
-            @contextmanager
-            def _cm():
-                yield self._conn
+    state = json.loads(store.store[state_key])
+    state["fingerprint"] = f"v2|cc:{CACHE_CONTROL['static']}"
+    store.store[state_key] = json.dumps(state).encode()
+    assert basemap_key in _publish_static_once(store, conn, settings).keys_written
+    assert _publish_static_once(store, conn, settings).keys_written == []
 
-            return _cm()
+    public.basemap_url = "/data/v1/stm/static/basemap/updated.pmtiles"
+    assert basemap_key in _publish_static_once(store, conn, settings).keys_written
+    assert json.loads(store.store[basemap_key])["url"] == public.basemap_url
+    assert _publish_static_once(store, conn, settings).keys_written == []
 
-    class _Store:
-        def __init__(self, *, fp_doc) -> None:
-            self._fp_doc = fp_doc
+    settings.SNAPSHOT_BASEMAP_STYLE_URL = "/map/updated-style.json"
+    assert basemap_key in _publish_static_once(store, conn, settings).keys_written
+    assert json.loads(store.store[basemap_key])["style_url"] == settings.SNAPSHOT_BASEMAP_STYLE_URL
 
-        def get_json(self, rel_key):
-            return self._fp_doc
+    public.basemap_url = None
+    result = _publish_static_once(store, conn, settings)
+    assert "static/routes_index.json" in result.keys_written
+    assert basemap_key not in result.keys_written
+    assert _publish_static_once(store, conn, settings).keys_written == []
 
-        def put_bytes(self, rel_key, body, *, tier):
-            return rel_key
-
-        def put_json(self, rel_key, payload, *, tier):
-            return rel_key
-
-        def full_key(self, rel_key):
-            return rel_key
-
-    calls: list[str] = []
-
-    def _spy(conn, storage, *, provider_id, settings, stamp):
-        calls.append(stamp)
-        return []
-
-    monkeypatch.setattr(_pub, "_publish_static", _spy)
-
-    good_fp = {"fingerprint": state_fingerprint("static"), "hashes": {"a": "0" * 32}}
-    stale_fp = {"fingerprint": "v0|cc:stale", "hashes": {"a": "0" * 32}}
-
-    def _run(*, skip_row, fp_doc):
-        return _pub.publish_snapshot(
-            "stm",
-            tier="static",
-            settings=FakeSettings(),
-            engine=_Engine(_Conn(skip_row=skip_row)),
-            storage=_Store(fp_doc=fp_doc),
-        )
-
-    calls.clear()
-    res = _run(skip_row=True, fp_doc=good_fp)
-    assert calls == [], "rebuild should be skipped when the dataset is unchanged"
-    assert res.keys_written == [] and res.keys_skipped == []
-
-    calls.clear()
-    _run(skip_row=False, fp_doc=good_fp)
-    assert len(calls) == 1, "a new dataset edition must trigger the full rebuild"
-
-    calls.clear()
-    _run(skip_row=True, fp_doc=stale_fp)
-    assert len(calls) == 1, "a fingerprint change must force a full re-stamp rebuild"
+    conn.unchanged = False
+    result = _publish_static_once(store, conn, settings)
+    assert "static/routes_index.json" in result.keys_skipped
 
 
 def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(

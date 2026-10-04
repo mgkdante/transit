@@ -12,13 +12,15 @@
 </script>
 
 <script lang="ts">
-	import { localizeHref } from '$lib/i18n';
+	import { getLocalizeHref } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { stopNameFallback } from '$lib/site/absence';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
 	import { AbsentValue } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+
+	const localizeHref = getLocalizeHref();
 
 	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();
 

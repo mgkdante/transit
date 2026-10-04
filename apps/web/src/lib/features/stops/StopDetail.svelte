@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
 	import { getStop } from '$lib/v1/repositories/static';
@@ -49,6 +49,8 @@
 	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
+
+	const localizeHref = getLocalizeHref();
 
 	interface StopDetailProps {
 		id: string;
@@ -476,7 +478,7 @@
 			{/snippet}
 			{#snippet actions()}
 				<MapDrilldownLink
-					href={mapHrefFor({ stop: id }, locale)}
+					href={localizeHref(mapHrefFor({ stop: id }, locale), locale)}
 					label={t.viewOnMap}
 					ariaLabel={t.viewStopOnMap(id)}
 				/>

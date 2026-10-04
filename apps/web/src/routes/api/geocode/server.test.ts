@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providers = vi.hoisted(() => ({
-	geocodeMontreal: vi.fn(),
-	geocodeMontrealSuggestions: vi.fn(),
+	geocode: vi.fn(),
+	geocodeSuggestions: vi.fn(),
 }));
 
 vi.mock('$lib/geocode/geoCa', () => ({
-	geocodeMontreal: providers.geocodeMontreal,
-	geocodeMontrealSuggestions: providers.geocodeMontrealSuggestions,
+	geocode: providers.geocode,
+	geocodeSuggestions: providers.geocodeSuggestions,
 }));
 
 import { GET } from './+server';
+import { loadProviderCatalog } from '$lib/v1/providers';
+import { getManifest } from '$lib/v1/repositories/manifest';
+vi.mock('$lib/v1/providers', () => ({ loadProviderCatalog: vi.fn() }));
+vi.mock('$lib/v1/repositories/manifest', () => ({ getManifest: vi.fn() }));
+const AREA = { bbox: [-74.1, 45.25, -73.2, 45.75], context: 'Montréal, Québec', lang: 'en' };
 
 type Handler = typeof GET;
 type HeaderValue = string | null;
@@ -27,7 +32,8 @@ function event(
 	} = {},
 ): Parameters<Handler>[0] {
 	clientSequence += 1;
-	const url = new URL(`/api/geocode/montreal${query}`, ORIGIN);
+	const url = new URL(`/api/geocode${query}`, ORIGIN);
+	if (!url.searchParams.has('provider')) url.searchParams.set('provider', 'stm');
 	const headers = new Headers({
 		'sec-fetch-site': 'same-origin',
 		'cf-connecting-ip': options.ip ?? `test-client-${clientSequence}`,
@@ -58,22 +64,57 @@ async function responseBody(response: Response): Promise<unknown> {
 
 beforeEach(() => {
 	clientSequence = 0;
+	vi.mocked(loadProviderCatalog).mockResolvedValue({
+		providers: [
+			{ id: 'stm', geocode_context: AREA.context },
+			{ id: 'octranspo', geocode_context: 'Ottawa, Ontario' },
+		],
+	} as never);
+	vi.mocked(getManifest).mockResolvedValue({ provider: 'stm', bbox: AREA.bbox } as never);
 	for (const provider of Object.values(providers)) provider.mockReset();
-	providers.geocodeMontreal.mockResolvedValue({
+	providers.geocode.mockResolvedValue({
 		lat: 45.5,
 		lon: -73.6,
 		label: 'Montréal',
 		source: 'geo_ca',
 		precision: 'place',
 	});
-	providers.geocodeMontrealSuggestions.mockResolvedValue([]);
+	providers.geocodeSuggestions.mockResolvedValue([]);
 });
 
 afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe('/api/geocode/montreal provenance gate', () => {
+it('resolves Ottawa geography and French language before geocoding', async () => {
+	const bbox = [-76.05, 45.1, -75.33, 45.55];
+	vi.mocked(getManifest).mockResolvedValueOnce({ provider: 'octranspo', bbox } as never);
+	const request = event('?q=Bank+Street&provider=octranspo&lang=fr');
+	expect((await GET(request)).status).toBe(200);
+	expect(getManifest).toHaveBeenLastCalledWith({ providerId: 'octranspo', fetch: request.fetch });
+	expect(providers.geocode).toHaveBeenCalledWith(
+		'Bank Street',
+		{ bbox, context: 'Ottawa, Ontario', lang: 'fr' },
+		request.fetch,
+	);
+});
+
+it('rejects unknown or repeated providers without geocoding', async () => {
+	for (const provider of ['unknown', 'stm&provider=octranspo']) {
+		expect((await GET(event(`?q=Bank&provider=${provider}`))).status).toBe(400);
+	}
+	expect(providerCallCount()).toBe(0);
+});
+
+it('does not borrow another city when selected provider metadata is unavailable', async () => {
+	vi.mocked(getManifest).mockRejectedValueOnce(new Error('offline'));
+	const response = await GET(event('?q=Bank&provider=octranspo'));
+	expect(response.status).toBe(503);
+	expect(response.headers.get('cache-control')).toBe('no-store');
+	expect(providerCallCount()).toBe(0);
+});
+
+describe('/api/geocode provenance gate', () => {
 	it.each([
 		['missing all provenance headers', { 'sec-fetch-site': null }],
 		['a cross-site Fetch-Metadata value', { 'sec-fetch-site': 'cross-site' }],
@@ -120,7 +161,7 @@ describe('/api/geocode/montreal provenance gate', () => {
 		);
 
 		expect(response.status).toBe(200);
-		expect(providers.geocodeMontreal).toHaveBeenCalledOnce();
+		expect(providers.geocode).toHaveBeenCalledOnce();
 	});
 
 	it('runs provenance before mode parsing or the native rate decision', async () => {
@@ -138,7 +179,7 @@ describe('/api/geocode/montreal provenance gate', () => {
 	});
 });
 
-describe('/api/geocode/montreal input contract', () => {
+describe('/api/geocode input contract', () => {
 	it.each([
 		['neither mode', ''],
 		['the removed placeId mode', '?placeId=ChIJabc'],
@@ -164,7 +205,7 @@ describe('/api/geocode/montreal input contract', () => {
 		const response = await GET(event(`?q=${encodeURIComponent(query)}`));
 
 		expect(response.status).toBe(200);
-		expect(providers.geocodeMontreal).toHaveBeenCalledWith(query, expect.any(Function));
+		expect(providers.geocode).toHaveBeenCalledWith(query, AREA, expect.any(Function));
 	});
 
 	it('accepts the exact query upper bound', async () => {
@@ -174,7 +215,7 @@ describe('/api/geocode/montreal input contract', () => {
 	});
 
 	it('serves Geo.ca suggestions without a provider session', async () => {
-		providers.geocodeMontrealSuggestions.mockResolvedValueOnce([
+		providers.geocodeSuggestions.mockResolvedValueOnce([
 			{
 				lat: 45.5,
 				lon: -73.6,
@@ -187,8 +228,9 @@ describe('/api/geocode/montreal input contract', () => {
 		const response = await GET(event('?q=Montr%C3%A9al&suggest=1&limit=4'));
 
 		expect(response.status).toBe(200);
-		expect(providers.geocodeMontrealSuggestions).toHaveBeenCalledWith(
+		expect(providers.geocodeSuggestions).toHaveBeenCalledWith(
 			'Montréal',
+			AREA,
 			expect.any(Function),
 			4,
 		);
@@ -220,9 +262,9 @@ describe('/api/geocode/montreal input contract', () => {
 	});
 });
 
-describe('/api/geocode/montreal privacy cache contract', () => {
+describe('/api/geocode privacy cache contract', () => {
 	it('marks Geo.ca suggestions private and non-cacheable', async () => {
-		providers.geocodeMontrealSuggestions.mockResolvedValueOnce([
+		providers.geocodeSuggestions.mockResolvedValueOnce([
 			{
 				lat: 45.5,
 				lon: -73.6,
@@ -239,7 +281,7 @@ describe('/api/geocode/montreal privacy cache contract', () => {
 	});
 
 	it('marks a missing text-geocode result private and non-cacheable', async () => {
-		providers.geocodeMontreal.mockResolvedValueOnce(null);
+		providers.geocode.mockResolvedValueOnce(null);
 
 		const response = await GET(event('?q=Montr%C3%A9al'));
 
@@ -255,7 +297,7 @@ describe('/api/geocode/montreal privacy cache contract', () => {
 	});
 });
 
-describe('/api/geocode/montreal limiter', () => {
+describe('/api/geocode limiter', () => {
 	it.each([
 		{ cadenceMs: 121, acceptedCalls: 61, deniedCall: 62, ip: '198.51.100.80' },
 		{ cadenceMs: 251, acceptedCalls: 71, deniedCall: 72, ip: '198.51.100.82' },

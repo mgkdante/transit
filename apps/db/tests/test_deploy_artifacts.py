@@ -561,7 +561,14 @@ def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_isl
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/refresh-basemap.yml").read_text(encoding="utf-8")
     )
-    bbox_raw = workflow["env"]["BBOX"]
+    from transit_ops.providers.registry import ProviderRegistry
+
+    assert workflow["jobs"]["refresh-basemap"]["env"]["BBOX"] == "${{ matrix.bbox }}"
+    bounds = ProviderRegistry.from_project_root().get_provider("stm").public.basemap_bounds
+    assert bounds is not None
+    bbox_raw = ",".join(map(str, (
+        bounds.min_longitude, bounds.min_latitude, bounds.max_longitude, bounds.max_latitude,
+    )))
     min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
 
     assert bbox_raw == "-74.17628,45.23742,-73.27628,45.86764"

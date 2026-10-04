@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
 	import { getRoute, getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
@@ -28,10 +28,17 @@
 	import { fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-	import { stopGroupKey, stopModeHint, stopModeTag, routeModeHint } from '$lib/search/stopMode';
+	import {
+		stopGroupKey,
+		stopModeHint,
+		stopModeTag,
+		routeModeHint,
+		TRANSIT_MODE_FILTERS,
+	} from '$lib/search/stopMode';
 	import { indexCopy } from './stops.copy';
 	import StopsBlueprint from './StopsBlueprint.svelte';
 
+	const localizeHref = getLocalizeHref();
 	const locale: Locale = getLocale();
 	const t = $derived(indexCopy[locale]);
 	const listingSubtitle = $derived([t.kicker, t.subheading].filter(Boolean).join(' '));
@@ -199,15 +206,14 @@
 	const stopModesComplete = $derived(
 		index.data != null && index.data.stops.every((stop) => stop.mode != null),
 	);
-	const busStopCount = $derived(
-		!stopModesComplete || index.data == null
-			? null
-			: index.data.stops.filter((stop) => stop.mode === 'bus').length,
-	);
-	const metroStopCount = $derived(
-		!stopModesComplete || index.data == null
-			? null
-			: index.data.stops.filter((stop) => stop.mode === 'metro').length,
+	const modeCounts = $derived(
+		TRANSIT_MODE_FILTERS.map(({ key, tag }) => ({
+			key,
+			label: key === 'metro' ? t.inventory.metro : tag,
+			count: index.data?.stops.filter((stop) => stop.mode === key).length ?? 0,
+		}))
+			.filter(({ count }) => count > 0)
+			.sort((a, b) => a.key.localeCompare(b.key)),
 	);
 	const numberFmt = $derived(new Intl.NumberFormat(locale));
 	const inventoryStats = $derived([
@@ -215,14 +221,10 @@
 			label: t.inventory.stops,
 			value: stopCount == null ? null : numberFmt.format(stopCount),
 		},
-		{
-			label: t.inventory.bus,
-			value: busStopCount == null ? null : numberFmt.format(busStopCount),
-		},
-		{
-			label: t.inventory.metro,
-			value: metroStopCount == null ? null : numberFmt.format(metroStopCount),
-		},
+		...modeCounts.map(({ label, count }) => ({
+			label,
+			value: stopModesComplete ? numberFmt.format(count) : null,
+		})),
 		{
 			label: t.inventory.lines,
 			value: lineCount == null ? null : numberFmt.format(lineCount),
@@ -430,7 +432,7 @@
 		{/snippet}
 		{#snippet stopAction()}
 			<MapDrilldownLink
-				href={mapHrefFor({ stop: stop.id }, locale)}
+				href={localizeHref(mapHrefFor({ stop: stop.id }, locale), locale)}
 				label={t.mapAction}
 				ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
 			/>

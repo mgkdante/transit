@@ -4,7 +4,7 @@
 	import { formatUtc } from '$lib/utils/time';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { alertDisplayText, alertDisplayUrl } from '$lib/v1/alertDisplay';
+	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
 
 	export interface AffectedAlertsCopy {
 		readonly heading: string;
@@ -16,7 +16,6 @@
 		readonly severity: Record<SeverityCode, string>;
 		readonly more: (n: number) => string;
 		readonly showLess: string;
-		readonly foreignLanguage: string;
 		readonly link: string;
 		readonly linkAria: (host: string) => string;
 	}
@@ -74,6 +73,7 @@
 				{@const from = windowTime(alert.start_utc)}
 				{@const until = windowTime(alert.end_utc)}
 				{@const title = headline(alert)}
+				{@const marker = alertLanguageNotice(title, locale)}
 				{@const url = alertDisplayUrl(alert, locale)}
 				<li class="affected-alert" data-severity={alert.severity}>
 					<p class="affected-alert-head">
@@ -82,11 +82,9 @@
 						</span>
 						<span class="sr-only">{copy.severity[alert.severity]}</span>
 						<span class="affected-alert-title">
-							<span lang={title.lang && title.lang !== locale ? title.lang : undefined}
-								>{title.text}</span
-							>
-							{#if title.isFallback && title.lang && title.lang !== locale}
-								<span class="alert-language-marker">{copy.foreignLanguage}</span>
+							<span lang={title.lang ?? ''}>{title.text}</span>
+							{#if marker}
+								<span class="alert-language-marker">{marker}</span>
 							{/if}
 						</span>
 					</p>
@@ -122,13 +120,16 @@
 						<p class="affected-alert-link">
 							<a
 								href={url.href}
-								hreflang={url.lang}
+								hreflang={url.lang ?? undefined}
 								target="_blank"
 								rel="noopener noreferrer"
 								aria-label={copy.linkAria(url.host)}
 							>
 								{copy.link} · {url.host}
 							</a>
+							{#if alertLanguageNotice(url, locale)}
+								<span class="alert-language-marker">{alertLanguageNotice(url, locale)}</span>
+							{/if}
 						</p>
 					{/if}
 				</li>

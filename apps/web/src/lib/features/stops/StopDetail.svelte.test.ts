@@ -1028,15 +1028,15 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		expect(crowding).not.toBeNull();
 		expect(
 			within(articleCardFor(crowding)).getByRole('button', {
-				name: 'Crowding on buses seen here',
+				name: 'Crowding on vehicles seen here',
 			}),
 		).toBeInTheDocument();
 		expect(
-			within(crowding).getByText(/How full the buses observed at this stop ran/),
+			within(crowding).getByText(/How full the vehicles observed at this stop ran/),
 		).toBeInTheDocument();
 		expect(
 			within(crowding).getByRole('figure', {
-				name: /Occupancy mix of buses observed at this stop/,
+				name: /Occupancy mix of vehicles observed at this stop/,
 			}),
 		).toBeInTheDocument();
 		expect(within(crowding).getAllByText('45%').length).toBeGreaterThan(0);
@@ -1052,7 +1052,7 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
 		expect(empty).not.toBeNull();
 		expect(
-			within(articleCardFor(empty)).getByRole('button', { name: 'Crowding on buses seen here' }),
+			within(articleCardFor(empty)).getByRole('button', { name: 'Crowding on vehicles seen here' }),
 		).toBeInTheDocument();
 		const chip = within(empty)
 			.getByText('not enough readings yet')
@@ -1114,7 +1114,7 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 		expect(crowding).not.toBeNull();
 		expect(
 			within(articleCardFor(crowding)).getByRole('button', {
-				name: 'Crowding on buses seen here',
+				name: 'Crowding on vehicles seen here',
 			}),
 		).toBeInTheDocument();
 		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);

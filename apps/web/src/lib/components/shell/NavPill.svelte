@@ -25,12 +25,16 @@
 	import RefreshButton from './RefreshButton.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import LangSwitch from './LangSwitch.svelte';
+	import { providerHref, type PublicProvider } from '$lib/v1/providers';
+	import { v1Provider } from '$lib/v1/config';
 
 	interface NavPillProps {
 		locale?: Locale;
 		url?: URL;
 		providerName?: string;
 		providerShortName?: string;
+		providerId?: string;
+		providers?: PublicProvider[];
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
@@ -46,6 +50,8 @@
 		url = new URL('https://transit.local/'),
 		providerName: _providerName,
 		providerShortName: _providerShortName,
+		providerId = v1Provider(url),
+		providers = [],
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
@@ -58,6 +64,9 @@
 
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
+	const selectedUrl = $derived(
+		new URL(localizeHref(url.pathname + url.search + url.hash, locale, providerId), url),
+	);
 	const currentPath = $derived(delocalizePath(url.pathname));
 
 	const searchPlaceholder = $derived(
@@ -107,7 +116,7 @@
 		const index = Math.max(0, availableLocales.indexOf(locale));
 		const target = availableLocales[(index + 1) % availableLocales.length];
 		return {
-			href: localizeUrl(url, target),
+			href: localizeUrl(selectedUrl, target),
 			label: target === 'fr' ? 'Français' : 'English',
 			aria:
 				locale === 'fr'
@@ -119,7 +128,7 @@
 	const navItems = $derived(
 		SURFACE_NAV.map((item) => ({
 			key: item.key,
-			href: localizeHref(item.href, locale),
+			href: localizeHref(item.href, locale, providerId),
 			label: item.label[locale],
 			active: isSurfaceActive(item, currentPath),
 		})),
@@ -127,7 +136,7 @@
 	const auditItems = $derived(
 		AUDIT_NAV.map((item) => ({
 			key: item.key,
-			href: localizeHref(item.href, locale),
+			href: localizeHref(item.href, locale, providerId),
 			label: item.label[locale],
 			active: isSurfaceActive(item, currentPath),
 		})),
@@ -139,6 +148,26 @@
 	let rootEl = $state<HTMLElement>();
 	let pillEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
+	$effect(() => {
+		if (!rootEl || !pillEl || typeof ResizeObserver === 'undefined') return;
+		const root = rootEl.ownerDocument.documentElement;
+		const rail = rootEl.querySelector<HTMLElement>('.nav-rail')!;
+		const measure = () => {
+			const pill = pillEl!.getBoundingClientRect();
+			const provider = rootEl!.querySelector('.nav-provider')!.getBoundingClientRect();
+			root.style.setProperty(
+				'--pill-h',
+				`${Math.ceil(Math.max(pill.bottom, provider.bottom) - pill.top)}px`,
+			);
+		};
+		const observer = new ResizeObserver(measure);
+		observer.observe(rail);
+		measure();
+		return () => {
+			observer.disconnect();
+			root.style.removeProperty('--pill-h');
+		};
+	});
 
 	let searchFamily = $state<SearchScopeKey>('all');
 	const familyOf = (result: ChromeSearchResult): SearchScopeKey =>
@@ -271,7 +300,7 @@
 		if (result.kind === 'route') return locale === 'fr' ? 'Ligne' : 'Route';
 		if (result.kind === 'stop') return locale === 'fr' ? 'Arrêt' : 'Stop';
 		if (result.kind === 'address') return locale === 'fr' ? 'Adresse' : 'Address';
-		return 'Bus';
+		return locale === 'fr' ? 'Véhicule' : 'Vehicle';
 	}
 </script>
 
@@ -299,7 +328,7 @@
 			ontransitionend={onPillTransitionEnd}
 		>
 			<BrandWordmark
-				href={localizeHref('/', locale)}
+				href={localizeHref('/', locale, providerId)}
 				text="Transit"
 				external={false}
 				class="nav-wordmark"
@@ -379,9 +408,30 @@
 			<span class="nav-divider" aria-hidden="true"></span>
 
 			<div class="nav-controls" data-slot="nav-controls">
+				<select
+					class="nav-provider"
+					aria-label={locale === 'fr' ? 'Réseau de transport' : 'Transit network'}
+					value={providerId}
+					onchange={(event) =>
+						location.assign(providerHref(url, event.currentTarget.value, locale))}
+				>
+					{#each providers as provider (provider.id)}
+						<option value={provider.id}
+							>{provider.labels[locale].city} · {provider.labels[locale].operator}</option
+						>
+					{/each}
+					{#if !providers.length}
+						<option value={providerId}>{providerId}</option>
+						{#if providerId !== v1Provider()}
+							<option value={v1Provider()}
+								>{locale === 'fr' ? 'Réseau par défaut' : 'Default network'}</option
+							>
+						{/if}
+					{/if}
+				</select>
 				<RefreshButton {locale} class="nav-control" />
 				<a
-					href={localizeHref('/search', locale)}
+					href={localizeHref('/search', locale, providerId)}
 					class="tap-press nav-control nav-compact-search"
 					aria-label={searchAria}
 					data-slot="nav-compact-search"
@@ -389,7 +439,7 @@
 					<SearchIcon size={17} strokeWidth={1.8} aria-hidden="true" />
 				</a>
 				<ThemeToggle {locale} class="nav-control" />
-				<LangSwitch {locale} {url} {availableLocales} class="nav-control" />
+				<LangSwitch {locale} url={selectedUrl} {availableLocales} class="nav-control" />
 
 				<button
 					bind:this={menuToggle}
@@ -491,6 +541,21 @@
 </nav>
 
 <style>
+	.nav-provider {
+		--size-provider-select: 12.5rem;
+		max-width: var(--size-provider-select);
+		min-height: 44px;
+		padding-inline: 0.5rem;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: var(--background);
+		color: var(--foreground);
+		font: inherit;
+	}
+	.nav-provider:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 	:root {
 		--pill-h: 72px;
 		--app-effective-rail-offset: 0px;
@@ -884,7 +949,7 @@
 		}
 	}
 
-	@container nav-rail (width < 705px) {
+	@container nav-rail (width < 1000px) {
 		.nav-links {
 			display: none;
 		}
@@ -1110,6 +1175,25 @@
 		}
 		.nav-menu-language {
 			display: flex;
+		}
+	}
+
+	@media (max-width: 599px) {
+		:root {
+			--pill-h: 116px;
+		}
+	}
+	@container nav-rail (width < 600px) {
+		.nav-provider {
+			position: absolute;
+			inset-block-start: calc(100% + 8px);
+			inset-inline-start: 50%;
+			transform: translateX(-50%);
+			--size-provider-select: calc(100cqi - 2rem);
+			padding-inline: 1rem;
+			border: 2px solid var(--border-brand);
+			border-radius: var(--radius-pill);
+			box-shadow: var(--shadow-nav);
 		}
 	}
 

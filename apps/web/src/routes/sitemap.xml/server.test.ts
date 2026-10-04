@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 const getRoutesIndex = vi.fn();
 const getStopsIndex = vi.fn();
 

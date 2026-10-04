@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
+import { PublicProviderCatalogSchema } from '../providers';
+
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
 import {
 	ManifestSchema,
 	LabelsFileSchema,
@@ -41,6 +44,7 @@ import { resolve, join } from 'node:path';
 type Family = { label: string; mirror: string; schema: z.ZodTypeAny };
 
 const FAMILIES: Family[] = [
+	{ label: 'providers', mirror: 'providers.schema.json', schema: PublicProviderCatalogSchema },
 	{ label: 'manifest', mirror: 'manifest.schema.json', schema: ManifestSchema },
 	{ label: 'labels', mirror: 'static_labels.schema.json', schema: LabelsFileSchema },
 	{ label: 'network', mirror: 'live_network.schema.json', schema: NetworkFileSchema },
@@ -182,11 +186,11 @@ function jsonEnum(node: JsonNode, root: JsonSchema): string[] | null {
 	const candidates = branches(node).flatMap((b) => {
 		const d = deref(b, root);
 		if (Array.isArray(d.enum)) return [d.enum as string[]];
-		return typeof d.const === 'string' ? [[d.const]] : [];
+		return d.const !== undefined ? [[String(d.const)]] : [];
 	});
 	const direct = deref(node, root);
 	if (Array.isArray(direct.enum)) candidates.unshift(direct.enum as string[]);
-	else if (typeof direct.const === 'string') candidates.unshift([direct.const]);
+	else if (direct.const !== undefined) candidates.unshift([String(direct.const)]);
 	return candidates.length ? candidates[0] : null;
 }
 
@@ -354,8 +358,8 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		expect(onDisk.size).toBe(33);
-		expect(FAMILIES.length).toBe(33);
+		expect(onDisk.size).toBe(34);
+		expect(FAMILIES.length).toBe(34);
 	});
 
 	for (const family of FAMILIES) {

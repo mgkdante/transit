@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { getLocale } from '$lib/i18n';
+	const locale = getLocale();
 	let {
 		class: className = '',
 		...rest
@@ -56,6 +59,6 @@
 		text-anchor="middle">12 400 mm · LOW-FLOOR BUS</text
 	>
 	<text x="55" y="245" fill="currentColor" font-family="JetBrains Mono" font-size="9"
-		>SIDE ELEVATION · STM URBAN FLEET</text
+		>SIDE ELEVATION · {page.data?.provider?.labels[locale].operator ?? 'STM'} URBAN FLEET</text
 	>
 </svg>

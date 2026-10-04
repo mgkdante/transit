@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocale } from '$lib/i18n';
+	import { getLocalizeHref, getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1/repositories/static';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
@@ -28,6 +28,7 @@
 	import { indexCopy } from './lines.copy';
 	import LinesBlueprint from './LinesBlueprint.svelte';
 
+	const localizeHref = getLocalizeHref();
 	const locale = getLocale();
 	const t = $derived(indexCopy[locale]);
 
@@ -74,14 +75,10 @@
 			label: t.inventory.lines,
 			value: routes.data ? numberFmt.format(routes.data.routes.length) : null,
 		},
-		{
-			label: t.inventory.bus,
-			value: routes.data ? numberFmt.format(modeCounts.bus?.count ?? 0) : null,
-		},
-		{
-			label: t.inventory.metro,
-			value: routes.data ? numberFmt.format(modeCounts.metro?.count ?? 0) : null,
-		},
+		...Object.entries(modeCounts).map(([key, { label, count }]) => ({
+			label: key === 'metro' ? t.inventory.metro : label,
+			value: numberFmt.format(count),
+		})),
 		{
 			label: t.inventory.modes,
 			value: routeModesComplete ? numberFmt.format(Object.keys(modeCounts).length) : null,
@@ -234,7 +231,7 @@
 					{/snippet}
 					{#snippet lineAction()}
 						<MapDrilldownLink
-							href={mapHrefFor({ route: r.id }, locale)}
+							href={localizeHref(mapHrefFor({ route: r.id }, locale), locale)}
 							label={t.mapAction}
 							ariaLabel={t.viewRouteOnMap(r.short)}
 						/>

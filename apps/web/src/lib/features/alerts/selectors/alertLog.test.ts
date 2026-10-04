@@ -196,6 +196,7 @@ describe('sortNewestFirst — newest observed alert first, truly undated rows la
 
 describe('buildAlertRow', () => {
 	const resolvers = {
+		locale: 'en' as const,
 		headline: () => ({ text: 'Resolved', lang: 'en' as const, isFallback: false }),
 		windowTime: (iso: string | null | undefined) => (iso == null ? null : iso.slice(0, 10)),
 	};

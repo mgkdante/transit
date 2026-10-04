@@ -159,6 +159,17 @@
           "title": "Last Seen Utc",
           "type": "string"
         },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlertMessageProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "routes": {
           "items": {
             "type": "string"
@@ -220,6 +231,18 @@
           ],
           "default": null,
           "title": "Url"
+        },
+        "url_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url En"
         }
       },
       "required": [
@@ -228,6 +251,65 @@
         "last_seen_utc"
       ],
       "title": "AlertArchiveEntry",
+      "type": "object"
+    },
+    "AlertMessageProvenance": {
+      "properties": {
+        "alert_index": {
+          "title": "Alert Index",
+          "type": "integer"
+        },
+        "captured_utc": {
+          "title": "Captured Utc",
+          "type": "string"
+        },
+        "description_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description Language"
+        },
+        "header_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Language"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "url_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url Language"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "alert_index",
+        "captured_utc"
+      ],
+      "title": "AlertMessageProvenance",
       "type": "object"
     }
   },

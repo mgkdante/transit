@@ -5,8 +5,10 @@
 	import ErrorIllustration from '$lib/components/shared/ErrorIllustration.svelte';
 	import { TerminalCursor } from '@yesid/ui/brand';
 	import { Separator } from '@yesid/ui/separator';
-	import { localizeHref, pathLocale, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, pathLocale, type Locale } from '$lib/i18n';
 	import { errorDocumentHead, errorPageCopy } from '$lib/site/errorPage';
+
+	const localizeHref = getLocalizeHref();
 
 	const locale = $derived<Locale>(pathLocale($page.url?.pathname ?? '/'));
 	const status = $derived($page.status);

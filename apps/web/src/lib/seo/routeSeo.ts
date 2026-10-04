@@ -301,9 +301,10 @@ export function breadcrumbItemsForHead(
 	pathname: string,
 	locale: Locale,
 	siteOrigin: string,
+	provider?: string,
 ): { name: string; url: string }[] {
 	return resolveBreadcrumbTrail(pathname, locale).map((crumb) => ({
 		name: crumb.name,
-		url: `${siteOrigin}${localizeHref(crumb.path, locale)}`,
+		url: `${siteOrigin}${localizeHref(crumb.path, locale, provider)}`,
 	}));
 }

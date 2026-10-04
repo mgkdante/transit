@@ -7,6 +7,7 @@ import { StopFileSchema } from '$lib/v1/schemas/stop';
 import { StopsIndexSchema } from '$lib/v1/schemas/stops_index';
 import {
 	fetchOf,
+	providerOf,
 	loadManifest,
 	MUTABLE_CACHE,
 	R2_DEFAULTS,
@@ -67,13 +68,13 @@ export const basemapPort = {
 		const manifest = await loadManifest(ctx);
 		const relativePath = manifest.basemap ?? R2_DEFAULTS.basemap;
 		const value = await getEntityJson(
-			resolveUrl(relativePath),
+			resolveUrl(relativePath, providerOf(ctx)),
 			BasemapFileSchema,
 			'basemap',
 			fetchOf(ctx),
-			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
+			{ cache: MUTABLE_CACHE, providerId: providerOf(ctx), signal: ctx?.signal },
 		);
 		if (value === undefined) return null;
-		return { ...value, url: normalizeSnapshotPointer(value.url) };
+		return { ...value, url: normalizeSnapshotPointer(value.url, providerOf(ctx)) };
 	},
 };

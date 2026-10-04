@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -71,6 +71,7 @@ def _seed(connection, *, provider=PROVIDER, offset=0) -> None:
     for run_id, snap_id, captured in (
         (IN_RUN + offset, IN_SNAP + offset, IN_TIME),
         (OUT_RUN + offset, OUT_SNAP + offset, OUT_TIME),
+        (IN_RUN + 2 + offset, IN_SNAP + 2 + offset, NOW),
     ):
         connection.execute(
             text(
@@ -102,6 +103,13 @@ def _seed(connection, *, provider=PROVIDER, offset=0) -> None:
 
 
 def _load(connection, snap_id: int, captured: datetime, alerts: list, *, provider=PROVIDER) -> None:
+    connection.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET captured_at_utc=:captured, "
+            "raw_payload_json=CAST(:payload AS jsonb) WHERE i3_alert_snapshot_id=:id"
+        ),
+        {"captured": captured, "payload": json.dumps(alerts), "id": snap_id},
+    )
     load_i3_snapshot_to_silver(
         connection,
         snapshot=RawI3AlertSnapshot(
@@ -171,7 +179,7 @@ def test_pre_0077_row_falls_back_to_scalar_period(conn) -> None:  # noqa: ANN001
         {"start": 1000, "end": 2000},
     ],
 )
-def test_enrichment_matches_nullable_identity_across_all_versions(conn, seed_provider, first):
+def test_distinct_messages_never_share_nullable_header_window_metadata(conn, seed_provider, first):
     def alert(description, url, periods, *, header=None, entities=()):
         return {
             "header": header,
@@ -237,12 +245,12 @@ def test_enrichment_matches_nullable_identity_across_all_versions(conn, seed_pro
     )
 
     out = build_alert_history(conn, PROVIDER, generated_utc="t")
-    assert out.total_in_window == 1
-    assert len(out.alerts) == 1
-    entry = out.alerts[0]
+    assert out.total_in_window == 2
+    assert {entry.description for entry in out.alerts} == {"inside only", "inside earlier"}
+    assert len({entry.id for entry in out.alerts}) == 2
+    entry = next(entry for entry in out.alerts if entry.description == "inside only")
     assert entry.header_text is None
-    assert entry.description == "inside only"
-    assert entry.url == "https://example.com/z"
+    assert all(entry.url == "https://example.com/b" for entry in out.alerts)
     assert entry.routes == ["2", "10"]
     assert entry.stops == ["A", "B"]
 
@@ -254,7 +262,7 @@ def test_enrichment_matches_nullable_identity_across_all_versions(conn, seed_pro
             "start_utc": iso(bounds["start"]) if "start" in bounds else None,
             "end_utc": iso(bounds["end"]) if "end" in bounds else None,
         }
-        for bounds in (first, period(5000), period(4000), period(8000))
+        for bounds in (first, period(6000), period(7000), period(8000))
     ]
 
 
@@ -291,3 +299,91 @@ def test_alert_cap_preserves_precap_count_and_start_order(conn, tied):
     else:
         assert out.alerts[0].header_text == "Alert 500"
         assert out.alerts[-1].header_text == "Alert 1"
+
+
+@pytest.mark.parametrize("upstream_ids", [False, True])
+def test_message_observation_survives_live_history_and_archive(conn, upstream_ids):
+    from transit_ops.gold.alert_archive import _stable_alert_id, sync_alert_archive_on_connection
+    from transit_ops.snapshots.builders import build_alert_archive, build_alerts
+
+    def alert(key, english):
+        return {
+            **({"id": key} if upstream_ids else {}),
+            "header": {"fr-CA": "Votre arret", "en-CA": "Your stop"},
+            "description": {
+                "fr-CA": "Shared text" if upstream_ids else f"Message {key}",
+                "en-CA": english,
+            },
+            "severity": "WARNING",
+            "url": [
+                {"language": "fr-CA", "text": f"https://example.com/fr/{key}"},
+                {"language": "en-CA", "text": f"https://example.com/en/{key}"},
+            ],
+            "routes": [key],
+            "activePeriods": [
+                {
+                    "start": int((NOW - timedelta(days=3)).timestamp()),
+                    "end": int((NOW + timedelta(days=1)).timestamp()),
+                }
+            ],
+        }
+
+    _load(
+        conn, OUT_SNAP, NOW - timedelta(days=2), [alert("A", "English A"), alert("B", "English B")]
+    )
+    _load(conn, IN_SNAP, NOW - timedelta(days=1), [alert("B", "English B"), alert("A", "Edited A")])
+    legacy_id = None
+
+    def published():
+        live = build_alerts(conn, provider_id=PROVIDER, generated_utc="t").alerts
+        history = build_alert_history(conn, PROVIDER, generated_utc="t")
+        sync_alert_archive_on_connection(
+            conn,
+            provider_id=PROVIDER,
+            from_date=(NOW - timedelta(days=4)).date(),
+            to_date=NOW.date(),
+            synced_at_utc=NOW,
+        )
+        archive = build_alert_archive(conn, PROVIDER, generated_utc="t")
+        archived = [entry for _, page in archive.page_items for entry in page.alerts]
+        assert len(live) == history.total_in_window == len(archived) == 2
+        current_ids = {entry.id for entry in live}
+        assert current_ids == {entry.id for entry in history.alerts}
+        entries = [
+            next(entry for entry in group if entry.routes == ["A"])
+            for group in (live, history.alerts, archived)
+        ]
+        expected_ids = (
+            current_ids if legacy_id is None else (current_ids - {entries[0].id}) | {legacy_id}
+        )
+        assert expected_ids == {entry.id for entry in archived}
+        return entries
+
+    initial = published()
+    for entry in initial:
+        assert entry.description_en == "Edited A" and entry.routes == ["A"]
+        assert (
+            entry.url == "https://example.com/fr/A" and entry.url_en == "https://example.com/en/A"
+        )
+        assert entry.message.snapshot_id == str(IN_SNAP) and entry.message.alert_index == 1
+        assert entry.message.description_language == entry.message.url_language == "fr"
+    if not upstream_ids:
+        entry = initial[2]
+        legacy_id = _stable_alert_id(
+            PROVIDER, None, entry.header_text, entry.start_utc, entry.end_utc
+        )
+        conn.execute(
+            text(
+                "UPDATE gold.alert_archive_entry SET alert_id=:legacy, message=NULL, url_en=NULL "
+                "WHERE provider_id=:provider AND alert_id=:current"
+            ),
+            {"legacy": legacy_id, "provider": PROVIDER, "current": entry.id},
+        )
+    refreshed = alert("A", None)
+    refreshed.pop("url")
+    _load(conn, IN_SNAP + 2, NOW, [refreshed, {**alert("B", "English B"), "severity": "SEVERE"}])
+    for entry in published():
+        assert entry.description_en is None and entry.url is None and entry.url_en is None
+        assert entry.message.snapshot_id == str(IN_SNAP + 2)
+        assert entry.message.alert_index == 0 and entry.message.url_language is None
+        assert entry.message.captured_utc == NOW.isoformat().replace("+00:00", "Z")

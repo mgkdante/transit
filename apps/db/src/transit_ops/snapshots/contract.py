@@ -8,10 +8,13 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from transit_ops.core.models import ProviderLabel
+
 PAYLOAD_SCHEMA_VERSION = 1
 
 # Methodology tokens describe metric meaning; every top-level family requires one.
 PAYLOAD_METHODOLOGY: dict[str, str] = {
+    "providers": "providers-1",
     "manifest": "manifest-1",
     "live_vehicles": "live-2",
     "live_trips": "live-2",
@@ -136,8 +139,18 @@ class AlertActivePeriod(BaseModel):
     end_utc: str | None = None
 
 
+class AlertMessageProvenance(BaseModel):
+    snapshot_id: str
+    alert_index: int
+    captured_utc: str
+    header_language: str | None = None
+    description_language: str | None = None
+    url_language: str | None = None
+
+
 class Alert(BaseModel):
     id: str
+    message: AlertMessageProvenance | None = None
     severity: Severity
     header_key: str
     # English text is absent unless explicitly supplied upstream.
@@ -230,7 +243,7 @@ class ManifestStaticFiles(BaseModel):
     stops_index: str = Field(default="static/stops_index.json")
     basemap: str | None = Field(
         default=None,
-        description="static/basemap.json pointer; null until SNAPSHOT_BASEMAP_PMTILES_URL is set",
+        description="static/basemap.json pointer; null when the provider has no basemap configured",
     )
     routes_prefix: str = Field(
         default="static/routes/",
@@ -324,6 +337,24 @@ class Manifest(PayloadEnvelope):
     files: ManifestFiles
     surfaces: list[str]
     capabilities: ProviderCapabilities | None = None
+
+
+class PublicProvider(BaseModel):
+    id: str
+    labels: dict[str, ProviderLabel]
+    fit_bounds: list[float] | None = None
+    max_bounds: list[float] | None = None
+    geocode_context: str | None = None
+    posters_url: str | None = None
+    alert_links: dict[str, str]
+    inputs: dict[str, bool]
+
+
+class PublicProviderCatalog(PayloadEnvelope):
+    schema_version: Literal[1] = 1
+    generated_utc: str
+    default_provider: str
+    providers: list[PublicProvider]
 
 
 class RouteIndexEntry(BaseModel):
@@ -860,6 +891,7 @@ RECEIPT_BYTE_CEILING = 65536
 
 class AlertHistoryEntry(BaseModel):
     id: str
+    message: AlertMessageProvenance | None = None
     severity: str | None = None
     header_text: str | None = None
     header_text_en: str | None = None
@@ -877,6 +909,7 @@ class AlertHistoryEntry(BaseModel):
     effect: str | None = None
     severity_level: str | None = None
     url: str | None = None
+    url_en: str | None = None
     active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
 
@@ -1446,9 +1479,9 @@ class DataHealth(PayloadEnvelope):
 
 
 class BasemapFile(PayloadEnvelope):
-    """static/basemap.json — a settings-driven pointer to the hosted PMTiles archive.
+    """static/basemap.json — a provider-configured pointer to the hosted PMTiles archive.
 
-    Published only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then
+    Published only when the provider's public.basemap_url is configured; until then
     Manifest.basemap is null and no basemap.json object exists.
     """
 
@@ -1497,6 +1530,7 @@ class RouteReliabilityIndex(PayloadEnvelope):
 
 
 TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
+    "providers": PublicProviderCatalog,
     "manifest": Manifest,
     "live_vehicles": VehiclesFile,
     "live_trips": TripsFile,

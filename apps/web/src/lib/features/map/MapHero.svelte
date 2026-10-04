@@ -58,13 +58,8 @@
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
-	import {
-		deriveMapFitPadding,
-		ISLAND_FIT_BOUNDS,
-		MAP_MAX_BOUNDS,
-		mapInitialCenter,
-	} from './mapCameraFraming';
-	import { copy as MAP_COPY } from './map.copy';
+	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
+	import { mapCopy } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
@@ -86,10 +81,18 @@
 	let { onready, onidle, onrecovering, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const t = $derived(MAP_COPY[locale]);
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
+	const framing = mapCameraFraming(v1);
+	const alertsAvailable = !(
+		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
+	);
+	function readMapFilters(params: URLSearchParams) {
+		const state = fromSearchParams(params);
+		return alertsAvailable ? state : { ...state, alerts: [] };
+	}
 
 	let mapWidthPx = $state(1280);
 
@@ -114,13 +117,16 @@
 
 	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
 	const filters = createFilterStore(
-		fromSearchParams($page.url.searchParams),
+		readMapFilters($page.url.searchParams),
 		urlCoordinator.writeFilters,
 	);
 	const nearMeController = createMapNearMeController({
+		providerId: manifest.provider,
+		bbox: manifest.bbox,
+		locale,
 		goto: urlCoordinator.goto,
 		currentUrl: urlCoordinator.currentUrl,
-		readTarget: nearTargetFromSearchParams,
+		readTarget: (params) => nearTargetFromSearchParams(params, manifest.bbox),
 		targetKey: nearTargetKey,
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
@@ -128,7 +134,7 @@
 		fetch: (input, init) => globalThis.fetch(input, init),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
-		translations: MAP_COPY[locale],
+		translations: t,
 	});
 	const focusController = createMapFocusController({
 		readFocus: parseMapFocus,
@@ -154,7 +160,12 @@
 		const urlIdentity = `${url.pathname}${url.search}`;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
+		filters.replaceFromUrl(readMapFilters(url.searchParams), urlCoordinator.settle(url));
+		if (!alertsAvailable && url.searchParams.has('alert')) {
+			const next = new URL(url);
+			next.searchParams.delete('alert');
+			void urlCoordinator.goto(`${next.pathname}${next.search}`, MAP_URL_REWRITE);
+		}
 		nearMeController.syncFromUrl(url.searchParams);
 		const previousFocus = focusController.pending;
 		focusController.syncFromUrl(url.searchParams);
@@ -326,7 +337,8 @@
 				: null,
 	);
 
-	const alertList = $derived(live.alerts?.alerts ?? []);
+	const availableAlerts = $derived(alertsAvailable ? (live.alerts?.alerts ?? null) : null);
+	const alertList = $derived(availableAlerts ?? []);
 	const alertEntitySets = $derived(buildAlertEntitySets(alertList));
 	const alertVehicleIds = $derived.by(() => {
 		const ids = new SvelteSet<string>();
@@ -356,11 +368,12 @@
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			locale,
+			timeZone: manifest.tz,
 			index: live.index,
 			stops: stopList,
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
-			alerts: live.alerts?.alerts ?? null,
+			alerts: availableAlerts,
 			departuresAvailable,
 		}),
 	);
@@ -371,7 +384,7 @@
 			stops: stopList,
 			routesIndex: routesIndex.data?.routes ?? [],
 			clock: sharedClock,
-			alerts: live.alerts?.alerts ?? null,
+			alerts: availableAlerts,
 			departuresAvailable,
 			hoverRoute:
 				hovered?.kind === 'route' && focusedRoute.data?.id === hovered.id
@@ -731,9 +744,9 @@
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
 		{theme}
-		center={mapInitialCenter}
-		bounds={ISLAND_FIT_BOUNDS}
-		maxBounds={MAP_MAX_BOUNDS}
+		center={framing.center}
+		bounds={framing.bounds}
+		maxBounds={framing.maxBounds}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onrecovering={onMapRecovering}
@@ -757,6 +770,7 @@
 			<MapSelectionDetail
 				detail={selectedDetail}
 				{locale}
+				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
 				{selectionPresence}
 				{selectionSourceHealth}
@@ -779,6 +793,7 @@
 {#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
 		store={filters}
+		{alertsAvailable}
 		{locale}
 		routes={routesIndex.data?.routes ?? []}
 		stops={stops.data?.stops ?? []}
@@ -878,6 +893,7 @@
 			}
 			{locale}
 			identity={detailIdentity}
+			timeZone={v1.manifest.tz}
 			footer={detailFooter}
 			surfaceKey={detailSurfaceKey}
 			canGoBack={selectionStack.length > 0}

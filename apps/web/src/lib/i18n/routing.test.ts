@@ -11,6 +11,17 @@ import {
 } from './routing';
 
 describe('Transit locale routing wrapper', () => {
+	it('retains the provider on internal links without changing external or API destinations', () => {
+		expect(localizeHref('/map?vehicle=42#details', 'fr', 'octranspo')).toBe(
+			'/fr/map?vehicle=42&provider=octranspo#details',
+		);
+		expect(localizeHref('/fr/lines?provider=stm', 'en', 'octranspo')).toBe(
+			'/lines?provider=octranspo',
+		);
+		for (const href of ['https://yesid.dev', '/api/stops/slim', '#details']) {
+			expect(localizeHref(href, 'en', 'octranspo')).toBe(href);
+		}
+	});
 	it('preserves locale levers and core path behavior', () => {
 		const pathLocaleFixtures: readonly [string, Locale][] = [
 			['', 'en'],

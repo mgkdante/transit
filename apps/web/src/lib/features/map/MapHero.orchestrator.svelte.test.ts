@@ -48,7 +48,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(script).toContain('function onMapFailure(failure: MapStageFailure | null): void');
 	});
 
-	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
+	it('uses one normal-script URL ingestion seam behind the shared coordinator', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
@@ -60,7 +60,6 @@ describe('MapHero orchestrator — structural law', () => {
 		);
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
-		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
 	});
 
 	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {
@@ -93,9 +92,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toBeDefined();
 		expect(mapStage).toContain('basemapLoader={({ signal }) => getBasemap({ signal })}');
 		expect(mapStage).not.toContain('basemap={');
-		expect(mapStage).toContain('center={mapInitialCenter}');
-		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
-		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
+		expect(mapStage).toContain('center={framing.center}');
+		expect(mapStage).toContain('bounds={framing.bounds}');
+		expect(mapStage).toContain('maxBounds={framing.maxBounds}');
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
 		expect(mapStage).toContain('onidle={onMapIdle}');
 		expect(mapStage).toContain('onerror={onMapFailure}');

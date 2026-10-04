@@ -9,6 +9,12 @@ const alertCount = (count: number) =>
 
 export const alertHistoryCopy = defineCopy({
 	fr: {
+		unavailable: {
+			title: 'Avis de service indisponibles',
+			body: (operator: string) =>
+				`Aucun flux d’avis de ${operator} n’est connecté ici. Cela ne signifie pas qu’il n’y a aucune perturbation.`,
+			link: 'Consulter les avis officiels',
+		},
 		kicker: 'AVIS · ARCHIVE',
 		heading: 'Avis',
 		subheading: '// HISTORIQUE',
@@ -49,7 +55,6 @@ export const alertHistoryCopy = defineCopy({
 			`${shown} sur ${total} avis ${shown === 1 ? 'affiché' : 'affichés'}`,
 		more: (n: number) => `+${n} de plus`,
 		showLess: 'Réduire',
-		foreignLanguage: '(en anglais seulement)',
 		empty: 'Aucun avis de service archivé pour le moment.',
 		truncatedNote: (shown: number, total: number) =>
 			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
@@ -147,6 +152,12 @@ export const alertHistoryCopy = defineCopy({
 		},
 	},
 	en: {
+		unavailable: {
+			title: 'Service alerts unavailable',
+			body: (operator: string) =>
+				`No ${operator} alert feed is connected here. This does not mean there are no disruptions.`,
+			link: 'Check official service alerts',
+		},
 		kicker: 'ALERTS · ARCHIVE',
 		heading: 'Alerts',
 		subheading: '// HISTORY',
@@ -186,7 +197,6 @@ export const alertHistoryCopy = defineCopy({
 		count: (shown, total) => `Showing ${shown} of ${alertCount(total)}`,
 		more: (n) => `+${n} more`,
 		showLess: 'Show less',
-		foreignLanguage: '(French only)',
 		empty: 'No archived service alerts yet.',
 		truncatedNote: (shown, total) =>
 			`Window capped: showing the ${shown} most recent of ${total} alerts; counts and the breakdown reflect only these.`,

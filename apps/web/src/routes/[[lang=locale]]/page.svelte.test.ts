@@ -4,13 +4,12 @@ import { createServer } from 'vite';
 import Page from './+page.svelte';
 
 const { state, createLiveStoreSpy } = vi.hoisted(() => ({
-	state: { locale: 'en' as 'en' | 'fr', desktop: true },
+	state: { locale: 'en' as 'en' | 'fr', desktop: true, city: 'Montréal' },
 	createLiveStoreSpy: vi.fn(),
 }));
-vi.mock('$lib/i18n', () => ({
+vi.mock('$lib/i18n', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/i18n')>()),
 	getLocale: () => state.locale,
-	localizeHref: (path: string, locale: 'en' | 'fr') =>
-		locale === 'fr' ? `/fr${path === '/' ? '' : path}` : path,
 }));
 vi.mock('$lib/nav', async () => {
 	const { routeFor } =
@@ -25,6 +24,18 @@ vi.mock('$lib/nav/layout.svelte', () => ({
 	},
 }));
 vi.mock('$lib/v1/live/store.svelte', () => ({ createLiveStore: createLiveStoreSpy }));
+
+function pageData() {
+	const label = { city: state.city, operator: 'Fixture Transit' };
+	return {
+		provider: { id: 'fixture', labels: { en: label, fr: label }, inputs: {}, alert_links: {} },
+		v1: null,
+	};
+}
+
+function renderHome() {
+	return render(Page, { props: { data: pageData() } });
+}
 
 const destinations = [
 	['/network', 'Network health', 'Santé du réseau'],
@@ -47,15 +58,27 @@ const nav = () =>
 afterEach(() => {
 	state.locale = 'en';
 	state.desktop = true;
+	state.city = 'Montréal';
 	createLiveStoreSpy.mockClear();
 });
 
 describe('Home civic overview and directory', () => {
 	it.each(['en', 'fr'] as const)(
+		'uses the selected city in the %s heading and kicker',
+		(locale) => {
+			state.locale = locale;
+			state.city = 'Ottawa';
+			const { container } = renderHome();
+			expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Ottawa');
+			expect(container.querySelector('.home-kicker')).toHaveTextContent('Ottawa');
+			expect(container).not.toHaveTextContent('Montréal');
+		},
+	);
+	it.each(['en', 'fr'] as const)(
 		'preserves every destination once as a native localized link in %s',
 		(locale) => {
 			state.locale = locale;
-			render(Page);
+			renderHome();
 			const links = within(nav()).getAllByRole('link');
 			expect(links).toHaveLength(11);
 			for (const [path, en, fr] of destinations) {
@@ -69,7 +92,7 @@ describe('Home civic overview and directory', () => {
 	);
 
 	it('introduces the civic purpose, then the network overview and map, without fetching live data', () => {
-		const { container } = render(Page);
+		const { container } = renderHome();
 		expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
 			'How Montréal’s transit holds up.',
@@ -88,7 +111,7 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('retains all four question groups while making the remaining directory compact', () => {
-		render(Page);
+		renderHome();
 		for (const name of [
 			'How is the network running?',
 			'Which line can I trust?',
@@ -100,7 +123,7 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('filters all destinations by question, including the featured network overview', async () => {
-		const { container } = render(Page);
+		const { container } = renderHome();
 		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
 		expect(
 			within(nav())
@@ -112,7 +135,7 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('keeps answer-kind filtering and restores the full composition on clear', async () => {
-		render(Page);
+		renderHome();
 		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
 		expect(
 			within(nav())
@@ -124,7 +147,7 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('keeps the exact question and kind intersection for a single result', async () => {
-		render(Page);
+		renderHome();
 		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
 		await fireEvent.click(screen.getByRole('radio', { name: 'Live now' }));
 		expect(within(nav()).getAllByRole('link')).toHaveLength(1);
@@ -135,7 +158,7 @@ describe('Home civic overview and directory', () => {
 		'announces an empty intersection with direct recovery in %s',
 		async (locale) => {
 			state.locale = locale;
-			render(Page);
+			renderHome();
 			await fireEvent.click(
 				screen.getByRole('radio', {
 					name: locale === 'fr' ? 'Comment va le réseau ?' : 'How is the network running?',
@@ -157,7 +180,7 @@ describe('Home civic overview and directory', () => {
 	);
 
 	it('keeps the same native disclosure available on desktop', async () => {
-		const { container } = render(Page);
+		const { container } = renderHome();
 		const details = container.querySelector('details') as HTMLDetailsElement;
 		await vi.waitFor(() => expect(details.open).toBe(true));
 		details.open = false;
@@ -167,7 +190,7 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('preserves arrow-key movement in the question filter', async () => {
-		render(Page);
+		renderHome();
 		const all = within(screen.getByRole('group', { name: 'By question' })).getByRole('radio', {
 			name: 'All',
 		});
@@ -177,7 +200,7 @@ describe('Home civic overview and directory', () => {
 
 	it('keeps one inline mobile filter tree and restores its disclosure focus on Escape', async () => {
 		state.desktop = false;
-		const { container } = render(Page);
+		const { container } = renderHome();
 		const details = container.querySelector('details') as HTMLDetailsElement;
 		const summary = details.querySelector('summary') as HTMLElement;
 		expect(details.open).toBe(false);
@@ -207,7 +230,7 @@ describe('Home civic overview and directory', () => {
 			const context = new Map<unknown, unknown>([
 				[Symbol.for('transit.i18n.locale'), () => 'en' as const],
 			]);
-			const { body } = renderSsr(module.default, { context });
+			const { body } = renderSsr(module.default, { context, props: { data: pageData() } });
 			expect(body).toContain('How Montréal’s');
 			expect(body).toContain('the limits of public data');
 			for (const [href] of destinations) expect(body).toContain(`href="${href}"`);

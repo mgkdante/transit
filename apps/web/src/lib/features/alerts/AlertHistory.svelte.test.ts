@@ -10,6 +10,7 @@ import {
 import { compile } from 'svelte/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
+import type { PublicProvider } from '$lib/v1/providers';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
@@ -75,7 +76,11 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 }));
 
 const nav = vi.hoisted(() => {
-	const page = { url: new URL('http://localhost/alerts'), state: {} };
+	const page = {
+		url: new URL('http://localhost/alerts'),
+		state: {},
+		data: {} as { provider?: PublicProvider },
+	};
 	const defaultReplaceState = (url: string | URL) => {
 		page.url = new URL(url, 'http://localhost');
 	};
@@ -97,13 +102,17 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 });
 
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
+	createResource: <T>(
+		fetcher: (signal: AbortSignal) => Promise<T> | T,
+		options?: { enabled?: () => boolean },
+	) => {
 		const signal = new AbortController().signal;
 		let data: T | null = null;
 		let error: Error | null = null;
 		let rangeFetcher = false;
 
 		const pump = () => {
+			if (options?.enabled?.() === false) return;
 			try {
 				const value = fetcher(signal);
 				rangeFetcher ||= value != null && typeof (value as Promise<T>).then === 'function';
@@ -290,7 +299,37 @@ const alertSurface = createSurfaceHarness({
 });
 const render = alertSurface.mount;
 
-beforeEach(() => alertSurface.reset());
+beforeEach(() => {
+	nav.page.data = {};
+	alertSurface.reset();
+});
+
+it.each(['en', 'fr'] as const)(
+	'shows honest OC source availability and the official %s link without fetching history',
+	(locale) => {
+		currentLocale.value = locale;
+		nav.page.data.provider = {
+			id: 'octranspo',
+			labels: {
+				en: { city: 'Ottawa', operator: 'OC Transpo' },
+				fr: { city: 'Ottawa', operator: 'OC Transpo' },
+			},
+			inputs: { i3_alerts: false, service_alerts: false },
+			alert_links: {
+				en: 'https://www.octranspo.com/en/alerts/',
+				fr: 'https://www.octranspo.com/fr/alertes/',
+			},
+		};
+		render(AlertHistoryScreen);
+		expect(screen.getByText(alertHistoryCopy[locale].unavailable.body('OC Transpo'))).toBeVisible();
+		expect(
+			screen.getByRole('link', { name: alertHistoryCopy[locale].unavailable.link }),
+		).toHaveAttribute('href', nav.page.data.provider.alert_links[locale]);
+		expect(ports.getAlertHistory).not.toHaveBeenCalled();
+		expect(ports.getAlertArchiveIndex).not.toHaveBeenCalled();
+		expect(ports.getAlertArchiveRange).not.toHaveBeenCalled();
+	},
+);
 
 describe('AlertHistory article shell', () => {
 	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
@@ -610,6 +649,12 @@ describe('AlertHistory log', () => {
 				severity: 'watch',
 				header_key: 'Votre ligne',
 				description: 'Détour français seulement',
+				message: {
+					snapshot_id: '1',
+					alert_index: 0,
+					captured_utc: '2026-10-04T00:00:00Z',
+					description_language: 'fr',
+				},
 				description_en: null,
 				routes: ['10'],
 				stops: [],

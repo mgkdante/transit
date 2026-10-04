@@ -224,11 +224,11 @@ export const reliabilityCopy = defineCopy({
 			},
 			theWait: {
 				label: "L'attente",
-				question: 'Combien de temps faut-il attendre, et les bus sont-ils collés ?',
+				question: 'Combien de temps faut-il attendre, et les véhicules sont-ils collés ?',
 			},
 			runAndFit: {
 				label: 'Service et place',
-				question: 'Le bus passe-t-il, et y aura-t-il de la place ?',
+				question: 'Le véhicule passe-t-il, et y aura-t-il de la place ?',
 			},
 			worstStops: { label: 'Les pires arrêts', question: 'Où le retard s’accumule-t-il ?' },
 			detailShow: 'Voir le détail',
@@ -278,7 +278,7 @@ export const reliabilityCopy = defineCopy({
 			weakStopNote: { severe: 'severe', avg: 'avg', samples: 'n' },
 			weakStopCi: '95% CI',
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
-			skippedStopCaption: "Stops the bus didn't serve",
+			skippedStopCaption: "Stops the vehicle didn't serve",
 			wilsonBandCaption:
 				'Shaded band: 95% Wilson interval. Wider means less precision; repeated updates from the same trip can make it too narrow. Dashed line: the 80% target.',
 			rampInNote: 'Missing feed reports can hide service gaps.',
@@ -444,8 +444,8 @@ export const reliabilityCopy = defineCopy({
 				label: 'When to ride',
 				question: 'When is it good, and when does it fall apart?',
 			},
-			theWait: { label: 'The wait', question: 'How long will you wait, and do buses bunch?' },
-			runAndFit: { label: 'Service & space', question: 'Will the bus run, and will you fit?' },
+			theWait: { label: 'The wait', question: 'How long will you wait, and do vehicles bunch?' },
+			runAndFit: { label: 'Service & space', question: 'Will the vehicle run, and will you fit?' },
 			worstStops: { label: "Where it's worst", question: 'Where does the delay pile up?' },
 			detailShow: 'Show the detail',
 			detailHide: 'Hide the detail',

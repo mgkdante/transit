@@ -10,9 +10,15 @@ export const load: PageServerLoad = async (event) => {
 
 	const id = event.params.id.trim() || event.params.id;
 	const fallback: IdentitySeed = { id, name: id };
+	const { v1 } = await event.parent();
+	if (!v1) return { seed: fallback, stopSeed: null };
 
 	try {
-		const stop = await getStop(id, serverV1Context(event));
+		const stop = await getStop(id, {
+			...serverV1Context(event),
+			providerId: v1.manifest.provider,
+			manifest: v1.manifest,
+		});
 		const name = stop?.name.trim();
 		return {
 			seed: name ? { id, name } : fallback,

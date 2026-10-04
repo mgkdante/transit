@@ -2,13 +2,15 @@
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
+	import { setV1Context } from '$lib/v1/boot';
+	import { ManifestSchema } from '$lib/v1/schemas';
 	import type { LatLon, WithDistance } from '$lib/components/map';
 	import type { GeocodePrecision } from '$lib/geocode/types';
 	import type { MapHoverPeek } from '../mapHoverPeek';
 	import MapFilters from '../MapFilters.svelte';
 	import MapMotionControl from '../MapMotionControl.svelte';
 	import MapOverlayChrome from '../MapOverlayChrome.svelte';
-	import { copy as MAP_COPY } from '../map.copy';
+	import { mapCopy } from '../map.copy';
 
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
@@ -52,7 +54,20 @@
 		onstopselect = () => {},
 	}: Props = $props();
 
-	const t = $derived(MAP_COPY[locale]);
+	const manifest = ManifestSchema.parse({
+		provider: 'stm',
+		display_name: 'STM',
+		city: 'Montréal',
+		tz: 'America/Toronto',
+		bbox: [-74.2, 45.2, -73.2, 45.9],
+		attribution: 'Fixture',
+		dataset_version: 'fixture',
+		labels: {},
+		files: { live: { generated_utc: '2026-06-15T00:00:00Z' } },
+		surfaces: [],
+	});
+	setV1Context(() => ({ manifest, labels: {}, lang: locale }));
+	const t = $derived(mapCopy(locale, 'Montréal'));
 
 	let nearMeOpen = $state(false);
 	let nearMeQuery = $state('');

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { BlueprintShell } from '@yesid/ui/brand';
 	import BlueprintBridge from '$lib/components/svg/transit/BlueprintBridge.svelte';
 	import BlueprintBusSide from '$lib/components/svg/transit/BlueprintBusSide.svelte';
@@ -33,11 +34,11 @@
 			data-blueprint-part="lines-catenary"
 			style="top:-4%;left:52%;width:48%;height:48%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
-		<BlueprintMr73Side
-			class="edge-detail"
-			data-blueprint-part="lines-metro-car"
-			style="top:-18%;left:-4%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
-		/>
+		{#if (page.data?.providerId ?? 'stm') === 'stm'}<BlueprintMr73Side
+				class="edge-detail"
+				data-blueprint-part="lines-metro-car"
+				style="top:-18%;left:-4%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
+			/>{/if}
 		<BlueprintBusSide
 			class="edge-detail"
 			data-blueprint-part="lines-bus"

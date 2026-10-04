@@ -2,7 +2,13 @@ import type { AlertBreakdownBucket, AlertHistoryEntry } from '$lib/v1/schemas/al
 import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 import type { DateWindow, AlertAffects } from '$lib/filters';
 import { providerLocalDateKey } from '$lib/utils/time';
-import type { AlertDisplayResult } from '$lib/v1/alertDisplay';
+import {
+	alertDisplayUrl,
+	type AlertDisplayResult,
+	type AlertDisplayUrlResult,
+} from '$lib/v1/alertDisplay';
+import type { Locale } from '$lib/i18n';
+export { safeAlertUrl } from '$lib/v1/alertDisplay';
 
 const SEVERITY_SET = new Set<string>(SEVERITY_CODES);
 
@@ -105,28 +111,13 @@ export interface AlertRowVM {
 	readonly durationMin: number | null;
 	readonly routes: readonly string[];
 	readonly stops: readonly string[];
-	readonly url: { readonly href: string; readonly host: string } | null;
+	readonly url: AlertDisplayUrlResult | null;
 }
 
 export interface AlertRowResolvers {
+	readonly locale: Locale;
 	readonly headline: (entry: AlertHistoryEntry) => AlertDisplayResult;
 	readonly windowTime: (iso: string | null | undefined) => string | null;
-}
-
-export function safeAlertUrl(
-	raw: string | null | undefined,
-): { readonly href: string; readonly host: string } | null {
-	if (raw == null) return null;
-	const trimmed = raw.trim();
-	if (!trimmed) return null;
-	let parsed: URL;
-	try {
-		parsed = new URL(trimmed);
-	} catch {
-		return null;
-	}
-	if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-	return { href: parsed.href, host: parsed.host };
 }
 
 export function buildAlertRow(entry: AlertHistoryEntry, r: AlertRowResolvers): AlertRowVM {
@@ -143,7 +134,7 @@ export function buildAlertRow(entry: AlertHistoryEntry, r: AlertRowResolvers): A
 		durationMin: entry.duration_min ?? null,
 		routes: entry.routes ?? [],
 		stops: entry.stops ?? [],
-		url: safeAlertUrl(entry.url),
+		url: alertDisplayUrl(entry, r.locale),
 	};
 }
 

@@ -284,38 +284,45 @@ describe('resolveMapSelection', () => {
 		);
 	});
 
-	it('returns stop detail with routes and past/future times grouped by route', () => {
-		const detail = resolveMapSelection(
-			{ kind: 'stop', id: 'stop-1' },
-			{
-				index,
-				stops,
-				alerts,
-				stopFiles,
-				now: new Date('2026-06-15T16:30:00Z'),
-			},
-		);
-		expect(detail?.kind).toBe('stop');
-		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+	it.each([
+		['America/Toronto', ['08:00', '12:00'], ['23:50']],
+		['America/Vancouver', ['08:00'], ['12:00', '23:50']],
+	] as const)(
+		'groups stop times in the selected timezone %s',
+		(timeZone, pastTimes, futureTimes) => {
+			const detail = resolveMapSelection(
+				{ kind: 'stop', id: 'stop-1' },
+				{
+					index,
+					stops,
+					alerts,
+					stopFiles,
+					now: new Date('2026-06-15T16:30:00Z'),
+					timeZone,
+				},
+			);
+			expect(detail?.kind).toBe('stop');
+			if (detail?.kind !== 'stop') throw new Error('expected stop detail');
 
-		expect(detail).toMatchObject({
-			kind: 'stop',
-			id: 'stop-1',
-			title: 'Sherbrooke / Saint-Denis',
-			stop: { code: '52618' },
-		});
-		expect(detail?.departures).toHaveLength(2);
-		expect(detail.routeTimes.map((route) => route.route)).toEqual(['24', '55']);
-		expect(detail.routeTimes[0]).toMatchObject({
-			route: '24',
-			headsign: 'East',
-			pastTimes: ['08:00', '12:00'],
-			futureTimes: ['23:50'],
-		});
-		expect(detail.routeTimes[0].liveDepartures).toHaveLength(1);
-		expect(detail?.vehicles.map((vehicle) => vehicle.id)).toEqual([]);
-		expect(detail?.alerts?.map((alert) => alert.id)).toEqual(['stop-alert']);
-	});
+			expect(detail).toMatchObject({
+				kind: 'stop',
+				id: 'stop-1',
+				title: 'Sherbrooke / Saint-Denis',
+				stop: { code: '52618' },
+			});
+			expect(detail?.departures).toHaveLength(2);
+			expect(detail.routeTimes.map((route) => route.route)).toEqual(['24', '55']);
+			expect(detail.routeTimes[0]).toMatchObject({
+				route: '24',
+				headsign: 'East',
+				pastTimes,
+				futureTimes,
+			});
+			expect(detail.routeTimes[0].liveDepartures).toHaveLength(1);
+			expect(detail?.vehicles.map((vehicle) => vehicle.id)).toEqual([]);
+			expect(detail?.alerts?.map((alert) => alert.id)).toEqual(['stop-alert']);
+		},
+	);
 
 	it('wraps static scheduled next times to the next service day instead of showing no data', () => {
 		const detail = resolveMapSelection(

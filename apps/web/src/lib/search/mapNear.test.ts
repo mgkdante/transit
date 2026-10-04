@@ -31,7 +31,12 @@ describe('mapNear URL helpers', () => {
 
 	it('drops invalid or out-of-provider-bounds targets', () => {
 		expect(nearTargetFromSearchParams(new URLSearchParams('near=hello'))).toBeNull();
-		expect(nearTargetFromSearchParams(new URLSearchParams('near=46.8,-71.2'))).toBeNull();
+		expect(
+			nearTargetFromSearchParams(
+				new URLSearchParams('near=46.8,-71.2'),
+				[-74.05, 45.35, -73.35, 45.75],
+			),
+		).toBeNull();
 	});
 
 	it('copies a valid near target without copying unrelated URL state', () => {

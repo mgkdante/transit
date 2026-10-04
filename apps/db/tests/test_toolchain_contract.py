@@ -73,6 +73,7 @@ COMPATIBILITY_PROOFS = {
 }
 PUBLIC_RECEIPTS = {
     "apps/web/static/map/basemap-montreal-posters.json",
+    "apps/web/static/map/basemap-ottawa-posters.json",
     "apps/web/wrangler.toml",
 }
 TOOL_NAMES = r"node(?:js|\.js)?|python|bun|uv|wrangler|playwright(?:[-_]?core)?|chromium|gitleaks"

@@ -5,152 +5,37 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
+import stm from '../../static/map/basemap-montreal-posters.json';
+import oc from '../../static/map/basemap-ottawa-posters.json';
 
 const MAP_DIR = resolve(process.cwd(), 'static/map');
 
-interface PosterReceipt {
-	schema_version: number;
-	source: {
-		descriptor_url: string;
-		descriptor_etag: string;
-		publish_generation_id: string;
-		generated_utc: string;
-		pmtiles_url: string;
-		pmtiles_etag: string;
-		pmtiles_size_bytes: number;
-		attribution: string;
-		min_zoom: number;
-		max_zoom: number;
-	};
-	reproduced_with: {
-		playwright_core_version: string;
-		chromium_version: string;
-	};
-	render_inputs: Array<{ path: string; sha256: string }>;
-	posters: Array<{
-		filename: string;
-		theme: 'dark' | 'light';
-		width: number;
-		height: number;
-		format: 'avif';
-		bytes: number;
-		sha256: string;
-	}>;
-}
-
-async function readReceipt(): Promise<PosterReceipt> {
-	return JSON.parse(
-		await readFile(resolve(MAP_DIR, 'basemap-montreal-posters.json'), 'utf8'),
-	) as PosterReceipt;
-}
-
-describe('static Montréal basemap posters', () => {
-	it('binds the dated assets to one source identity and renderer receipt', async () => {
-		const receipt = await readReceipt();
-
-		expect(receipt).toEqual({
-			schema_version: 1,
-			source: {
-				descriptor_url: 'https://data.yesid.dev/v1/stm/static/basemap.json',
-				descriptor_etag: '"fdc22eb8d25e3e97bf7c16e670a8d532"',
-				publish_generation_id: 'stm@2026-08-26T06:59:45Z',
-				generated_utc: '2026-08-26T06:59:45Z',
-				pmtiles_url: 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles',
-				pmtiles_etag: '"b7011436dd321da88d6caabb246b4c24"',
-				pmtiles_size_bytes: 82_724_670,
-				attribution: '© OpenStreetMap contributors, © Protomaps',
-				min_zoom: 0,
-				max_zoom: 15,
-			},
-			reproduced_with: {
-				playwright_core_version: '1.62.0',
-				chromium_version: '151.0.7922.34',
-			},
-			render_inputs: [
-				{
-					path: 'browser-toolchain.json',
-					sha256: 'e20c01b5a24b2f71e495edd72c931a5914ea7ec2c8d449a753744e6c18ea27b7',
-				},
-				{
-					path: 'scripts/build-map-posters.ts',
-					sha256: 'c9d9e3dd9229e0a7b89fd8251c491b35eb5b7a9e1e3b544e8ee56823b271d6d3',
-				},
-				{
-					path: 'src/lib/components/map/basemap.ts',
-					sha256: '3d0f658aaabc0eed0787bbd367949f9bd2b8b3fa32a4b24e29ad30ccbffff7b1',
-				},
-				{
-					path: 'src/lib/components/map/viewport.ts',
-					sha256: '0d752d353888887752fce1e0e8f09599b2db3562078608c7c7da489cbe4e8094',
-				},
-				{
-					path: 'src/lib/features/map/mapCameraFraming.ts',
-					sha256: 'c2af44c95b30c679210cda9b45e3d89513c937d8bf965c6d9d4c85790419d5e1',
-				},
-			],
-			posters: [
-				{
-					filename: 'basemap-montreal-dark-mobile-20260812.avif',
-					theme: 'dark',
-					width: 390,
-					height: 844,
-					format: 'avif',
-					bytes: 39_203,
-					sha256: '952aaebf39586e7b2415a804f5233f03e11f0666fb2d817ef78232ae9610ee56',
-				},
-				{
-					filename: 'basemap-montreal-light-mobile-20260812.avif',
-					theme: 'light',
-					width: 390,
-					height: 844,
-					format: 'avif',
-					bytes: 48_302,
-					sha256: '24ad1bf15bd6e395df02a48ec6e3d66099673580f43cd3d516390db98cbb38e9',
-				},
-				{
-					filename: 'basemap-montreal-dark-desktop-20260812.avif',
-					theme: 'dark',
-					width: 1280,
-					height: 720,
-					format: 'avif',
-					bytes: 95_331,
-					sha256: '46af3471ec6b3db071304caa82c3b8254419afd890dfc8efbdea626e2f9861d1',
-				},
-				{
-					filename: 'basemap-montreal-light-desktop-20260812.avif',
-					theme: 'light',
-					width: 1280,
-					height: 720,
-					format: 'avif',
-					bytes: 113_759,
-					sha256: 'd767b242f2722504dd4390eaa33a540eb7fe27aa71a05c7a3fd76485a92f0675',
-				},
-			],
-		});
-	});
-
-	it('binds the poster renderer implementation into the offline receipt', async () => {
-		const receipt = await readReceipt();
-		expect(receipt.render_inputs.map((input) => input.path)).toContain(
-			'scripts/build-map-posters.ts',
-		);
-	});
-
-	it('matches every receipt digest, byte count, viewport, and AVIF limit', async () => {
-		const receipt = await readReceipt();
-
-		for (const poster of receipt.posters) {
-			const bytes = await readFile(resolve(MAP_DIR, poster.filename));
-			const metadata = await sharp(bytes).metadata();
-
-			expect(metadata.format, poster.filename).toBe('heif');
-			expect(metadata.width, poster.filename).toBe(poster.width);
-			expect(metadata.height, poster.filename).toBe(poster.height);
-			expect(bytes.byteLength, poster.filename).toBe(poster.bytes);
-			expect(bytes.byteLength, poster.filename).toBeLessThanOrEqual(125 * 1024);
-			expect(createHash('sha256').update(bytes).digest('hex'), poster.filename).toBe(poster.sha256);
-		}
-	});
+describe('provider basemap posters', () => {
+	it.each([
+		[stm, 'stm', 'montreal', [-74.17628, 45.23742, -73.27628, 45.86764]],
+		[oc, 'octranspo', 'ottawa', [-76.15, 45, -75.24, 45.65]],
+	] as const)(
+		'binds $1 images to their own archive and renderer',
+		async (receipt, id, city, bounds) => {
+			expect(receipt.provider_id).toBe(id);
+			expect(receipt.source.pmtiles_url).toBe(`/data/v1/${id}/static/basemap/${city}.pmtiles`);
+			expect(receipt.source.bounds).toEqual(bounds);
+			expect(receipt.source.sha256).toMatch(/^[0-9a-f]{64}$/u);
+			expect(receipt.render_inputs.map((input) => input.path)).toContain(
+				`../db/config/providers/${id}.yaml`,
+			);
+			for (const poster of receipt.posters) {
+				const bytes = await readFile(resolve(MAP_DIR, poster.filename));
+				const metadata = await sharp(bytes).metadata();
+				expect(poster.filename).toMatch(new RegExp(`^basemap-${city}-${poster.theme}-`));
+				expect(metadata.format).toBe('heif');
+				expect([metadata.width, metadata.height]).toEqual([poster.width, poster.height]);
+				expect(bytes.byteLength).toBe(poster.bytes);
+				expect(bytes.byteLength).toBeLessThanOrEqual(125 * 1024);
+				expect(createHash('sha256').update(bytes).digest('hex')).toBe(poster.sha256);
+			}
+		},
+	);
 
 	it('checks the receipt without network or a browser executable', async () => {
 		const temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'transit-poster-offline-'));
