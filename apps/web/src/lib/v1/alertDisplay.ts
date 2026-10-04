@@ -1,6 +1,8 @@
 import type { Locale } from '$lib/i18n';
+import type { AlertMessageProvenance } from './schemas/alert_history';
 
 export interface AlertDisplaySource {
+	readonly message?: AlertMessageProvenance | null;
 	readonly header_key?: string | null;
 	readonly header_text?: string | null;
 	readonly header_text_en?: string | null;
@@ -12,18 +14,20 @@ export interface AlertDisplaySource {
 
 export interface AlertDisplayResult {
 	readonly text: string;
-	readonly lang: 'en' | 'fr' | null;
+	readonly lang: string | null;
 	readonly isFallback: boolean;
 }
 
 export interface AlertDisplayUrlResult {
 	readonly href: string;
 	readonly host: string;
-	readonly lang: 'en' | 'fr';
+	readonly lang: string | null;
 	readonly isFallback: boolean;
 }
 
-function safeUrl(raw: string | null | undefined): { href: string; host: string } | null {
+export function safeAlertUrl(
+	raw: string | null | undefined,
+): { href: string; host: string } | null {
 	if (raw == null || !raw.trim()) return null;
 	try {
 		const parsed = new URL(raw.trim());
@@ -35,15 +39,31 @@ function safeUrl(raw: string | null | undefined): { href: string; host: string }
 }
 
 export function alertDisplayUrl(
-	alert: Pick<AlertDisplaySource, 'url' | 'url_en'>,
+	alert: Pick<AlertDisplaySource, 'url' | 'url_en' | 'message'>,
 	locale: Locale,
 ): AlertDisplayUrlResult | null {
-	const requestedLang = locale === 'fr' ? 'fr' : 'en';
-	const otherLang = requestedLang === 'fr' ? 'en' : 'fr';
-	const requested = safeUrl(requestedLang === 'fr' ? alert.url : alert.url_en);
-	if (requested) return { ...requested, lang: requestedLang, isFallback: false };
-	const fallback = safeUrl(otherLang === 'fr' ? alert.url : alert.url_en);
-	return fallback ? { ...fallback, lang: otherLang, isFallback: true } : null;
+	const candidates = [
+		{ value: safeAlertUrl(alert.url), lang: alert.message?.url_language ?? null },
+		{ value: safeAlertUrl(alert.url_en), lang: 'en' },
+	];
+	const selected =
+		candidates.find((item) => item.value && item.lang === locale) ??
+		candidates.find((item) => item.value);
+	return selected?.value
+		? { ...selected.value, lang: selected.lang, isFallback: selected.lang !== locale }
+		: null;
+}
+
+export function alertLanguageNotice(
+	result: Pick<AlertDisplayResult, 'lang' | 'isFallback'> | null,
+	locale: Locale,
+): string | null {
+	if (!result?.isFallback) return null;
+	if (result.lang === 'fr') return '(French only)';
+	if (result.lang === 'en') return '(en anglais seulement)';
+	if (result.lang == null)
+		return locale === 'fr' ? '(langue source non précisée)' : '(Source language unspecified)';
+	return locale === 'fr' ? '(traduction indisponible)' : '(Translation unavailable)';
 }
 
 const GENERIC_ALERT_HEADERS = new Set([
@@ -93,41 +113,23 @@ function meaningfulHeader(value: string | null | undefined): string | null {
 }
 
 export function alertDisplayText(alert: AlertDisplaySource, locale: Locale): AlertDisplayResult {
-	const requestedLang = locale === 'fr' ? 'fr' : 'en';
-	const otherLang = requestedLang === 'fr' ? 'en' : 'fr';
-	const requestedDescription = requestedLang === 'fr' ? alert.description : alert.description_en;
-	const requestedHeader = requestedLang === 'fr' ? alert.header_text : alert.header_text_en;
-	const otherDescription = otherLang === 'fr' ? alert.description : alert.description_en;
-	const otherHeader = otherLang === 'fr' ? alert.header_text : alert.header_text_en;
-
-	const requestedDescriptionText = cleanText(requestedDescription);
-	if (requestedDescriptionText) {
-		return { text: requestedDescriptionText, lang: requestedLang, isFallback: false };
+	const candidates = [
+		{ text: cleanText(alert.description), lang: alert.message?.description_language ?? null },
+		{ text: cleanText(alert.description_en), lang: 'en' },
+		{ text: meaningfulHeader(alert.header_text), lang: alert.message?.header_language ?? null },
+		{ text: meaningfulHeader(alert.header_text_en), lang: 'en' },
+	];
+	const selected =
+		candidates.find((item) => item.text && item.lang === locale) ??
+		candidates.find((item) => item.text);
+	if (selected?.text) {
+		return { text: selected.text, lang: selected.lang, isFallback: selected.lang !== locale };
 	}
-
-	const requestedHeaderText = meaningfulHeader(requestedHeader);
-	if (requestedHeaderText) {
-		return { text: requestedHeaderText, lang: requestedLang, isFallback: false };
-	}
-
-	const otherDescriptionText = cleanText(otherDescription);
-	if (otherDescriptionText) {
-		return { text: otherDescriptionText, lang: otherLang, isFallback: true };
-	}
-
-	const otherHeaderText = meaningfulHeader(otherHeader);
-	if (otherHeaderText) {
-		return { text: otherHeaderText, lang: otherLang, isFallback: true };
-	}
-
 	const headerKeyText = meaningfulHeader(alert.header_key);
-	if (headerKeyText) {
-		return { text: headerKeyText, lang: null, isFallback: true };
-	}
-
+	if (headerKeyText) return { text: headerKeyText, lang: null, isFallback: true };
 	return {
-		text: requestedLang === 'fr' ? 'Alerte de service' : 'Service alert',
-		lang: requestedLang,
+		text: locale === 'fr' ? 'Alerte de service' : 'Service alert',
+		lang: locale,
 		isFallback: false,
 	};
 }

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -124,7 +123,6 @@ def test_source_queries_are_named_bounded_and_uncapped() -> None:
     assert "pg_advisory_xact_lock" in str(_ALERT_ARCHIVE_LOCK_SQL)
     assert "EXTRACT(EPOCH FROM a.active_period_start_utc)" in source
     assert "EXTRACT(EPOCH FROM a.active_period_end_utc)" in source
-    assert "l.upstream_alert_id AS alert_id" in source
     latest_values = source.split("latest_values AS (", 1)[1].split("), seen AS (", 1)[0]
     assert "i3_alert_snapshot_id DESC" in latest_values
     assert "alert_index DESC" in latest_values
@@ -356,3 +354,22 @@ def test_empty_source_reports_honest_null_bounds_and_zero_counts() -> None:
         "alerts.archive.lock",
         "alerts.archive.source",
     ]
+
+
+@pytest.mark.parametrize("same_message", [True, False])
+def test_synthetic_cutover_reuses_only_matching_legacy_message(same_message):
+    initial = FakeConnection(source=[source_row(alert_id=None)])
+    run_sync(initial)
+    stored = initial.writes[0]
+    source = source_row(
+        alert_id="stm-alert-new-family",
+        upstream_alert_id=None,
+        description_text=stored["description_text"] if same_message else "Another incident",
+        last_seen_utc=datetime(2026, 7, 11, tzinfo=UTC),
+    )
+    changed = FakeConnection(source=[source], existing=[stored])
+    result = run_sync(changed)
+    assert (result.inserted_count, result.updated_count) == ((0, 1) if same_message else (1, 0))
+    assert changed.writes[0]["alert_id"] == (
+        stored["alert_id"] if same_message else source["alert_id"]
+    )

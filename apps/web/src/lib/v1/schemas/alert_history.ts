@@ -7,8 +7,19 @@ export const AlertActivePeriodSchema = z.object({
 });
 export type AlertActivePeriod = z.infer<typeof AlertActivePeriodSchema>;
 
+export const AlertMessageProvenanceSchema = z.object({
+	snapshot_id: z.string(),
+	alert_index: z.number().int(),
+	captured_utc: isoUtc(),
+	header_language: z.string().nullable().optional(),
+	description_language: z.string().nullable().optional(),
+	url_language: z.string().nullable().optional(),
+});
+export type AlertMessageProvenance = z.infer<typeof AlertMessageProvenanceSchema>;
+
 export const AlertHistoryEntrySchema = z.object({
 	id: z.string(),
+	message: AlertMessageProvenanceSchema.nullable().optional(),
 	header_text: z.string().nullable().optional(),
 	header_text_en: z.string().nullable().optional(),
 	description: z.string().nullable().optional(),
@@ -24,6 +35,7 @@ export const AlertHistoryEntrySchema = z.object({
 	effect: z.string().nullable().optional(),
 	severity_level: z.string().nullable().optional(),
 	url: z.string().nullable().optional(),
+	url_en: z.string().nullable().optional(),
 	active_periods: z.array(AlertActivePeriodSchema).optional(),
 });
 export type AlertHistoryEntry = z.infer<typeof AlertHistoryEntrySchema>;

@@ -13,6 +13,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
+from transit_ops.silver.i3 import alert_message_provenance
 from transit_ops.sql_registry import named_query
 
 _ALERT_ARCHIVE_LOCK_SQL = named_query(
@@ -34,20 +35,17 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
             a.alert_index,
             a.provider_id,
             NULLIF(BTRIM(a.alert_id), '') AS upstream_alert_id,
-            COALESCE(
-                'upstream:' || NULLIF(BTRIM(a.alert_id), ''),
-                'synthetic:' || SUBSTRING(
-                    MD5(
-                        COALESCE(a.alert_header_text, '') || '|' ||
-                        COALESCE(EXTRACT(EPOCH FROM a.active_period_start_utc)::text, '') || '|' ||
-                        COALESCE(EXTRACT(EPOCH FROM a.active_period_end_utc)::text, '')
-                    ) FROM 1 FOR 12
-                )
-            ) AS stable_alert_id,
+            COALESCE('upstream:' || NULLIF(BTRIM(a.alert_id), ''),
+                'synthetic:' || MD5(JSONB_BUILD_ARRAY(
+                    COALESCE(a.alert_header_text, ''), COALESCE(a.description_text, ''),
+                    EXTRACT(EPOCH FROM a.active_period_start_utc),
+                    EXTRACT(EPOCH FROM a.active_period_end_utc)
+                )::text)) AS stable_alert_id,
             a.alert_header_text,
             a.alert_header_text_en,
             a.description_text,
             a.description_text_en,
+            a.raw_alert_json, a.message_snapshot_id, a.message_alert_index,
             a.severity,
             a.cause,
             a.effect,
@@ -72,9 +70,9 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
             ROW_NUMBER() OVER (
                 PARTITION BY stable_alert_id
                 ORDER BY last_seen_utc DESC,
-                         captured_at_utc DESC,
-                         i3_alert_snapshot_id DESC,
-                         alert_index DESC
+                         COALESCE(message_snapshot_id, i3_alert_snapshot_id) DESC,
+                         COALESCE(message_alert_index, alert_index) DESC,
+                         i3_alert_snapshot_id DESC, alert_index DESC
             ) AS version_rank
         FROM base
     ), latest AS (
@@ -156,7 +154,11 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
         FROM base
     )
     SELECT
-        l.upstream_alert_id AS alert_id,
+        COALESCE(l.upstream_alert_id,
+            :provider_id || '-alert-' || SUBSTRING(l.stable_alert_id FROM 11 FOR 12)) AS alert_id,
+        l.upstream_alert_id,
+        l.raw_alert_json, l.message_snapshot_id, l.message_alert_index,
+        l.last_seen_utc AS message_captured_utc,
         DATE_TRUNC(
             'month',
             COALESCE(v.start_utc, s.first_seen_utc)
@@ -174,7 +176,7 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
         v.start_utc,
         v.end_utc,
         COALESCE(p.active_periods, '[]'::jsonb) AS active_periods,
-        COALESCE(l.url, l.url_en) AS url,
+        l.url, l.url_en,
         s.first_seen_utc,
         s.last_seen_utc,
         bounds.source_from,
@@ -208,7 +210,7 @@ _ALERT_ARCHIVE_EXISTING_SQL = named_query(
         start_utc,
         end_utc,
         active_periods,
-        url,
+        url, url_en, message,
         first_seen_utc,
         last_seen_utc,
         content_hash,
@@ -238,7 +240,7 @@ _ALERT_ARCHIVE_UPSERT_SQL = named_query(
         start_utc,
         end_utc,
         active_periods,
-        url,
+        url, url_en, message,
         first_seen_utc,
         last_seen_utc,
         content_hash,
@@ -259,7 +261,7 @@ _ALERT_ARCHIVE_UPSERT_SQL = named_query(
         :start_utc,
         :end_utc,
         CAST(:active_periods AS jsonb),
-        :url,
+        :url, :url_en, CAST(:message AS jsonb),
         :first_seen_utc,
         :last_seen_utc,
         :content_hash,
@@ -279,6 +281,8 @@ _ALERT_ARCHIVE_UPSERT_SQL = named_query(
         end_utc = EXCLUDED.end_utc,
         active_periods = EXCLUDED.active_periods,
         url = EXCLUDED.url,
+        url_en = EXCLUDED.url_en,
+        message = EXCLUDED.message,
         last_seen_utc = EXCLUDED.last_seen_utc,
         content_hash = EXCLUDED.content_hash,
         updated_at_utc = EXCLUDED.updated_at_utc
@@ -291,6 +295,8 @@ _MESSAGE_FIELDS = (
     "description_text",
     "description_text_en",
     "url",
+    "url_en",
+    "message",
 )
 _SCALAR_FIELDS = (
     *_MESSAGE_FIELDS,
@@ -442,6 +448,12 @@ def _record_from_source(
         "alert_id": alert_id,
         "archive_month": archive_month,
         **{field: row.get(field) for field in _SCALAR_FIELDS},
+        "message": alert_message_provenance(
+            row.get("raw_alert_json"),
+            row.get("message_snapshot_id"),
+            row.get("message_alert_index"),
+            row.get("message_captured_utc"),
+        ),
         "start_utc": _utc(row.get("start_utc")),
         "end_utc": _utc(row.get("end_utc")),
         "route_ids": _ids(row.get("route_ids")),
@@ -509,6 +521,7 @@ def _content_hash(record: Mapping[str, Any]) -> str:
 
 def _write_params(record: Mapping[str, Any]) -> dict[str, Any]:
     params = dict(record)
+    params["message"] = json.dumps(params["message"]) if params["message"] is not None else None
     params["active_periods"] = json.dumps(
         params["active_periods"], ensure_ascii=False, separators=(",", ":")
     )
@@ -552,7 +565,14 @@ def sync_alert_archive_on_connection(
     source_records = [
         _record_from_source(row, provider_id=provider_id, synced_at_utc=synced_at) for row in rows
     ]
-    alert_ids = [record["alert_id"] for record in source_records]
+    legacy_ids = {
+        record["alert_id"]: _stable_alert_id(
+            provider_id, None, row.get("header_text"), row.get("start_utc"), row.get("end_utc")
+        )
+        for row, record in zip(rows, source_records, strict=True)
+        if row.get("upstream_alert_id", row.get("alert_id")) is None
+    }
+    alert_ids = [record["alert_id"] for record in source_records] + list(legacy_ids.values())
     existing_rows = list(
         connection.execute(
             _ALERT_ARCHIVE_EXISTING_SQL,
@@ -567,6 +587,15 @@ def sync_alert_archive_on_connection(
     writes: list[dict[str, Any]] = []
     for source in source_records:
         existing = existing_by_id.get(source["alert_id"])
+        if existing is None:
+            legacy = existing_by_id.get(legacy_ids.get(source["alert_id"], ""))
+            if legacy and all(
+                legacy.get(field) == source.get(field)
+                for field in ("header_text", "description_text", "start_utc", "end_utc")
+            ):
+                source["alert_id"] = legacy["alert_id"]
+                source["content_hash"] = _content_hash(source)
+                existing = legacy
         if existing is None:
             inserted += 1
             writes.append(source)

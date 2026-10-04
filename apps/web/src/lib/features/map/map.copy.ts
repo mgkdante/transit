@@ -76,6 +76,7 @@ export const copy = defineCopy({
 		stopRemove: 'Remove stop',
 		tripRemove: 'Remove trip',
 		alertHas: 'Has alert',
+		alertFilterUnavailable: 'Filter unavailable: no alert feed connected.',
 		alertHasAria: 'Show markers with alerts',
 		latestReport: 'Latest report',
 		liveUnavailable: 'Live vehicle positions unavailable right now. The map and stops still work.',
@@ -177,6 +178,7 @@ export const copy = defineCopy({
 		stopRemove: "Retirer l'arrêt",
 		tripRemove: 'Retirer le trajet',
 		alertHas: 'Avec alerte',
+		alertFilterUnavailable: 'Filtre indisponible : aucune source d’alertes connectée.',
 		alertHasAria: 'Afficher les marqueurs avec alertes',
 		latestReport: 'Dernier rapport',
 		liveUnavailable:

@@ -377,7 +377,7 @@
 		expanded || overflow === 0 ? filtered : filtered.slice(0, VISIBLE_CAP),
 	);
 	const visibleRows = $derived<readonly AlertRowVM[]>(
-		visibleEntries.map((e) => buildAlertRow(e, { headline, windowTime })),
+		visibleEntries.map((e) => buildAlertRow(e, { locale, headline, windowTime })),
 	);
 
 	const lineOptions = $derived(buildLineOptions(sorted, foldSearchText));

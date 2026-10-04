@@ -86,6 +86,13 @@
 	const manifest = v1.manifest;
 	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
 	const framing = mapCameraFraming(v1);
+	const alertsAvailable = !(
+		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
+	);
+	function readMapFilters(params: URLSearchParams) {
+		const state = fromSearchParams(params);
+		return alertsAvailable ? state : { ...state, alerts: [] };
+	}
 
 	let mapWidthPx = $state(1280);
 
@@ -110,7 +117,7 @@
 
 	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
 	const filters = createFilterStore(
-		fromSearchParams($page.url.searchParams),
+		readMapFilters($page.url.searchParams),
 		urlCoordinator.writeFilters,
 	);
 	const nearMeController = createMapNearMeController({
@@ -153,7 +160,12 @@
 		const urlIdentity = `${url.pathname}${url.search}`;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
+		filters.replaceFromUrl(readMapFilters(url.searchParams), urlCoordinator.settle(url));
+		if (!alertsAvailable && url.searchParams.has('alert')) {
+			const next = new URL(url);
+			next.searchParams.delete('alert');
+			void urlCoordinator.goto(`${next.pathname}${next.search}`, MAP_URL_REWRITE);
+		}
 		nearMeController.syncFromUrl(url.searchParams);
 		const previousFocus = focusController.pending;
 		focusController.syncFromUrl(url.searchParams);
@@ -325,11 +337,7 @@
 				: null,
 	);
 
-	const availableAlerts = $derived(
-		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
-			? null
-			: (live.alerts?.alerts ?? null),
-	);
+	const availableAlerts = $derived(alertsAvailable ? (live.alerts?.alerts ?? null) : null);
 	const alertList = $derived(availableAlerts ?? []);
 	const alertEntitySets = $derived(buildAlertEntitySets(alertList));
 	const alertVehicleIds = $derived.by(() => {
@@ -785,6 +793,7 @@
 {#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
 		store={filters}
+		{alertsAvailable}
 		{locale}
 		routes={routesIndex.data?.routes ?? []}
 		stops={stops.data?.stops ?? []}

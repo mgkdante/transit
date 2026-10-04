@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -408,7 +407,7 @@ def test_archive_empty_index_is_honest_and_stable() -> None:
     assert len(bundle.index.collection_generation_id) == 64
 
 
-def test_legacy_newest_500_payload_bytes_window_count_and_truncation_are_unchanged() -> None:
+def test_legacy_window_and_truncation_keep_unknown_provenance() -> None:
     from transit_ops.snapshots.builders import build_alert_history
     from transit_ops.snapshots.builders.historic.small_surfaces import _ALERT_HISTORY_SQL
 
@@ -450,12 +449,12 @@ def test_legacy_newest_500_payload_bytes_window_count_and_truncation_are_unchang
     assert payload.model_dump_json() == (
         '{"schema_version":1,"methodology_version":null,"publish_generation_id":null,'
         '"generated_utc":"2026-07-13T00:00:00Z","alerts":[{"id":'
-        '"stm-alert-c05f3bcfdc39","severity":"high","header_text":"Fermeture métro",'
+        '"stm-alert-c05f3bcfdc39","message":null,"severity":"high","header_text":"Fermeture métro",'
         '"header_text_en":"Metro closure","description":"<p>FR</p>",'
         '"description_en":"<p>EN</p>","routes":["1","2"],"stops":["10","20"],'
         '"start_utc":"2026-07-01T01:00:00Z","end_utc":"2026-07-01T02:00:00Z",'
         '"duration_min":60.0,"impact_passages":null,"cause":"CONSTRUCTION",'
-        '"effect":"NO_SERVICE","severity_level":"WARNING","url":"https://stm.info/a",'
+        '"effect":"NO_SERVICE","severity_level":"WARNING","url":"https://stm.info/a","url_en":null,'
         '"active_periods":[{"start_utc":"2026-07-01T01:00:00Z",'
         '"end_utc":"2026-07-01T02:00:00Z"}]}],"breakdown":{"by_cause":'
         '[{"key":"CONSTRUCTION","count":1,"median_duration_min":60.0}],"by_effect":'

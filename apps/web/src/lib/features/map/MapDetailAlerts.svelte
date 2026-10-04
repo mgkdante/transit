@@ -2,7 +2,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Alert } from '$lib/v1/schemas';
-	import { alertDisplayText, alertDisplayUrl } from '$lib/v1/alertDisplay';
+	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
 	import { StateNotice } from '$lib/components/edge';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
@@ -34,7 +34,7 @@
 				{@const cause = causeLabel(alert.cause, locale)}
 				{@const effect = effectLabel(alert.effect, locale)}
 				{@const display = displayAlert(alert)}
-				{@const marker = display.isFallback && display.lang && display.lang !== locale}
+				{@const marker = alertLanguageNotice(display, locale)}
 				{@const url = alertDisplayUrl(alert, locale)}
 				{@const labelId = `${uid}-map-alert-label-${index}`}
 				<li class="map-alert" data-severity={alert.severity}>
@@ -43,10 +43,8 @@
 							<span class="map-alert-severity" aria-hidden="true"
 								>{alert.severity === 'critical' ? '◆' : alert.severity === 'high' ? '▲' : '●'}</span
 							>
-							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}
-								>{display.text}</span
-							>
-							{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
+							<span lang={display.lang ?? ''}>{display.text}</span>
+							{#if marker}<span class="alert-language-marker">{marker}</span>{/if}
 						</span>
 					{:else}<button
 							type="button"
@@ -55,31 +53,34 @@
 							onclick={() => onalertselect?.(alert)}
 						>
 							<span class="map-alert-text">
-								<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+								<span lang={display.lang ?? ''}>
 									{display.text}
 								</span>
-								{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
+								{#if marker}<span class="alert-language-marker">{marker}</span>{/if}
 							</span>
 							<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							<span id={labelId} class="sr-only">
 								{t.selectAlertAction}
-								<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+								<span lang={display.lang ?? ''}>
 									{display.text}
 								</span>
-								{#if marker}<span>{t.foreignLanguage}</span>{/if}
+								{#if marker}<span>{marker}</span>{/if}
 							</span>
 						</button>{/if}
 					{#if presentation === 'detail' && url}
 						<a
 							class="map-alert-link"
 							href={url.href}
-							hreflang={url.lang}
+							hreflang={url.lang ?? undefined}
 							target="_blank"
 							rel="noopener noreferrer"
 							aria-label={t.alertLinkAria(url.host)}
 						>
 							{t.alertLink} · {url.host}
 						</a>
+						{#if alertLanguageNotice(url, locale)}
+							<span class="alert-language-marker">{alertLanguageNotice(url, locale)}</span>
+						{/if}
 					{/if}
 					{#if presentation === 'detail' && (cause || effect)}
 						<dl class="map-alert-meta">

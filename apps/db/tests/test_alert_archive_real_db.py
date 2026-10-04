@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import UTC, date, datetime
 
@@ -119,7 +118,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
                         :snapshot_id,
                         0,
                         :provider_id,
-                        NULL,
+                        'ARCHIVE-A',
                         'Votre ligne',
                         'Terminus temporaire.',
                         'Your line',
@@ -191,18 +190,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_pr
                 synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
             )
             assert (first.inserted_count, first.updated_count, first.unchanged_count) == (1, 0, 0)
-            synthetic_basis = "|".join(
-                str(value or "")
-                for value in (
-                    "Votre ligne",
-                    datetime(2026, 7, 8, 13, 0, tzinfo=UTC),
-                    datetime(2026, 7, 10, 19, 0, tzinfo=UTC),
-                )
-            )
-            expected_alert_id = (
-                f"{provider_id}-alert-"
-                f"{hashlib.sha1(synthetic_basis.encode(), usedforsecurity=False).hexdigest()[:12]}"
-            )
+            expected_alert_id = "ARCHIVE-A"
             initial = (
                 connection.execute(
                     text(

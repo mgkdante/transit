@@ -139,8 +139,18 @@ class AlertActivePeriod(BaseModel):
     end_utc: str | None = None
 
 
+class AlertMessageProvenance(BaseModel):
+    snapshot_id: str
+    alert_index: int
+    captured_utc: str
+    header_language: str | None = None
+    description_language: str | None = None
+    url_language: str | None = None
+
+
 class Alert(BaseModel):
     id: str
+    message: AlertMessageProvenance | None = None
     severity: Severity
     header_key: str
     # English text is absent unless explicitly supplied upstream.
@@ -881,6 +891,7 @@ RECEIPT_BYTE_CEILING = 65536
 
 class AlertHistoryEntry(BaseModel):
     id: str
+    message: AlertMessageProvenance | None = None
     severity: str | None = None
     header_text: str | None = None
     header_text_en: str | None = None
@@ -898,6 +909,7 @@ class AlertHistoryEntry(BaseModel):
     effect: str | None = None
     severity_level: str | None = None
     url: str | None = None
+    url_en: str | None = None
     active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import round_half_away
 from transit_ops.providers.registry import ProviderRegistry
+from transit_ops.silver.i3 import alert_message_provenance
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
@@ -225,7 +226,8 @@ def build_stop_departures(
 _ALERTS_SQL = named_query(
     "live.alerts",
     """
-    SELECT alert_id,
+    SELECT alert_id, resolved_alert_id, raw_alert_json, message_snapshot_id, message_alert_index,
+           COALESCE(last_seen_at, captured_at_utc) AS message_captured_utc,
            alert_header_text,
            description_text,
            alert_header_text_en,
@@ -243,7 +245,7 @@ _ALERTS_SQL = named_query(
     FROM gold.current_i3_alerts
     WHERE provider_id = :provider_id
     ORDER BY active_period_start_utc NULLS LAST, alert_header_text, description_text
-    """
+    """,
 )
 
 
@@ -251,7 +253,7 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
     alerts: list[Alert] = []
     for r in conn.execute(_ALERTS_SQL, {"provider_id": provider_id}).mappings():
         # Synthesize content-stable IDs for alerts without upstream IDs.
-        alert_id = r["alert_id"]
+        alert_id = r.get("resolved_alert_id") or r["alert_id"]
         if not alert_id:
             basis = "|".join(
                 str(r[c] or "") for c in ("description_text", "severity", "cause", "effect")
@@ -260,6 +262,12 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
         alerts.append(
             Alert(
                 id=str(alert_id),
+                message=alert_message_provenance(
+                    r.get("raw_alert_json"),
+                    r.get("message_snapshot_id"),
+                    r.get("message_alert_index"),
+                    r.get("message_captured_utc"),
+                ),
                 severity=_severity_code(r["severity"]),
                 header_key=r["alert_header_text"] or "",
                 header_text=r["alert_header_text"] or "",
@@ -347,6 +355,7 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
         DelayBucket(lo_min=lo, hi_min=hi, count=counts[i])
         for i, (lo, hi) in enumerate(_DELAY_HISTOGRAM_EDGES)
     ]
+
 
 _NETWORK_FRESHNESS_SQL = named_query(
     "network.live.freshness",

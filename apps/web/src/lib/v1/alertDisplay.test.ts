@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { alertDisplayText, alertDisplayUrl, type AlertDisplaySource } from './alertDisplay';
+import { AlertMessageProvenanceSchema } from './schemas/alert_history';
+import {
+	alertDisplayText,
+	alertDisplayUrl,
+	alertLanguageNotice,
+	type AlertDisplaySource,
+} from './alertDisplay';
+
+const message = AlertMessageProvenanceSchema.parse({
+	snapshot_id: '1',
+	alert_index: 0,
+	captured_utc: '2026-10-04T00:00:00Z',
+	header_language: 'fr',
+	description_language: 'fr',
+	url_language: 'fr',
+});
 
 const localizedSource = {
+	message,
 	header_key: 'Votre arrêt',
 	header_text: 'Votre arrêt',
 	header_text_en: 'Your stop',
@@ -38,6 +54,7 @@ describe('alertDisplayText', () => {
 				{
 					description_en: 'English message',
 					header_text: 'En-tête français',
+					message,
 				},
 				'fr',
 			),
@@ -45,7 +62,7 @@ describe('alertDisplayText', () => {
 	});
 
 	it('reports the actual language when falling back to foreign-language copy', () => {
-		expect(alertDisplayText({ description: 'Message français' }, 'en')).toEqual({
+		expect(alertDisplayText({ description: 'Message français', message }, 'en')).toEqual({
 			text: 'Message français',
 			lang: 'fr',
 			isFallback: true,
@@ -62,14 +79,17 @@ describe('alertDisplayText', () => {
 			alertDisplayText({ description_en: '<p>Route <strong>24</strong> &amp; 55</p>' }, 'en'),
 		).toEqual({ text: 'Route 24 & 55', lang: 'en', isFallback: false });
 		expect(
-			alertDisplayText({ description: '<div>Lignes <b>24</b> &amp; 55&nbsp;touchées</div>' }, 'fr'),
+			alertDisplayText(
+				{ description: '<div>Lignes <b>24</b> &amp; 55&nbsp;touchées</div>', message },
+				'fr',
+			),
 		).toEqual({ text: 'Lignes 24 & 55 touchées', lang: 'fr', isFallback: false });
 	});
 
 	it('uses meaningful localized header copy when source descriptions are absent', () => {
 		expect(
 			alertDisplayText(
-				{ header_key: 'Votre ligne', header_text: 'Travaux sur René-Lévesque' },
+				{ header_key: 'Votre ligne', header_text: 'Travaux sur René-Lévesque', message },
 				'fr',
 			),
 		).toEqual({ text: 'Travaux sur René-Lévesque', lang: 'fr', isFallback: false });
@@ -147,7 +167,11 @@ describe('alertDisplayText', () => {
 
 describe('alertDisplayUrl', () => {
 	it('uses the requested-language live URL when it is safe', () => {
-		const source = { url: 'https://example.test/fr/avis', url_en: 'https://example.test/en/alert' };
+		const source = {
+			message,
+			url: 'https://example.test/fr/avis',
+			url_en: 'https://example.test/en/alert',
+		};
 		expect(alertDisplayUrl(source, 'en')).toEqual({
 			href: 'https://example.test/en/alert',
 			host: 'example.test',
@@ -164,7 +188,10 @@ describe('alertDisplayUrl', () => {
 
 	it('falls back to the safe other-language URL when requested is missing or unsafe', () => {
 		expect(
-			alertDisplayUrl({ url: 'https://example.test/fr/avis', url_en: 'javascript:alert(1)' }, 'en'),
+			alertDisplayUrl(
+				{ message, url: 'https://example.test/fr/avis', url_en: 'javascript:alert(1)' },
+				'en',
+			),
 		).toEqual({
 			href: 'https://example.test/fr/avis',
 			host: 'example.test',
@@ -181,4 +208,34 @@ describe('alertDisplayUrl', () => {
 		});
 		expect(alertDisplayUrl({ url: 'javascript:alert(1)', url_en: 'not a url' }, 'en')).toBeNull();
 	});
+});
+
+it.each(['en', 'fr'] as const)('keeps untagged legacy wording unknown on %s pages', (locale) => {
+	const result = alertDisplayText({ description: 'Agency wording' }, locale);
+	expect(result).toEqual({ text: 'Agency wording', lang: null, isFallback: true });
+	expect(alertLanguageNotice(result, locale)).toBe(
+		locale === 'fr' ? '(langue source non précisée)' : '(Source language unspecified)',
+	);
+});
+
+it('uses independent source tags for requested headers, foreign text and URLs', () => {
+	const source = {
+		description: 'English body',
+		header_text: 'Titre français',
+		url: 'https://example.test/en',
+		message: { ...message, description_language: 'en', url_language: 'en' },
+	};
+	expect(alertDisplayText(source, 'fr')).toEqual({
+		text: 'Titre français',
+		lang: 'fr',
+		isFallback: false,
+	});
+	expect(alertDisplayText({ ...source, header_text: 'Votre ligne' }, 'fr')).toEqual({
+		text: 'English body',
+		lang: 'en',
+		isFallback: true,
+	});
+	const link = alertDisplayUrl(source, 'fr');
+	expect(link).toMatchObject({ lang: 'en', isFallback: true });
+	expect(alertLanguageNotice(link, 'fr')).toBe('(en anglais seulement)');
 });

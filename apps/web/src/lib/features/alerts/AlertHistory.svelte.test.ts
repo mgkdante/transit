@@ -649,6 +649,12 @@ describe('AlertHistory log', () => {
 				severity: 'watch',
 				header_key: 'Votre ligne',
 				description: 'Détour français seulement',
+				message: {
+					snapshot_id: '1',
+					alert_index: 0,
+					captured_utc: '2026-10-04T00:00:00Z',
+					description_language: 'fr',
+				},
 				description_en: null,
 				routes: ['10'],
 				stops: [],

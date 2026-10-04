@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { alertLanguageNotice } from '$lib/v1/alertDisplay';
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
 	import type { SeverityCode } from '$lib/v1/schemas';
@@ -25,18 +26,17 @@
 
 <ul id={logId} class="alert-history-log" aria-label={copy.logListLabel} data-slot="alert-log">
 	{#each rows as row (row.id)}
+		{@const marker = alertLanguageNotice(row.headline, locale)}
 		<li class="alert-history-row" data-severity={row.severity} data-slot="alert-row">
 			<p class="alert-history-row-head">
 				<span class="alert-history-dot" aria-hidden="true">{SEVERITY_GLYPH[row.severity]}</span>
 				<span class="sr-only">{copy.severity[row.severity]}</span>
 				<span class="alert-history-title">
-					<span
-						lang={row.headline.lang && row.headline.lang !== locale ? row.headline.lang : undefined}
-					>
+					<span lang={row.headline.lang ?? ''}>
 						{row.headline.text}
 					</span>
-					{#if row.headline.isFallback && row.headline.lang && row.headline.lang !== locale}
-						<span class="alert-language-marker">{copy.foreignLanguage}</span>
+					{#if marker}
+						<span class="alert-language-marker">{marker}</span>
 					{/if}
 				</span>
 			</p>
@@ -99,6 +99,7 @@
 				<p class="alert-history-link">
 					<a
 						href={row.url.href}
+						hreflang={row.url.lang ?? undefined}
 						target="_blank"
 						rel="noopener noreferrer"
 						data-slot="alert-link"
@@ -106,6 +107,9 @@
 					>
 						{copy.meta.link} · {row.url.host}
 					</a>
+					{#if alertLanguageNotice(row.url, locale)}
+						<span class="alert-language-marker">{alertLanguageNotice(row.url, locale)}</span>
+					{/if}
 				</p>
 			{/if}
 		</li>

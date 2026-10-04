@@ -343,73 +343,69 @@ def _value(payload: dict[str, Any], *keys: str) -> object:
 def _primary_language(value: object) -> str:
     if not isinstance(value, str):
         return ""
-    return value.strip().lower().replace("_", "-").split("-", 1)[0]
+    language = value.strip().lower().replace("_", "-").split("-", 1)[0]
+    return {"fra": "fr", "eng": "en"}.get(language, language)
+
+
+def _translated_texts(payload: object, language: str = "") -> dict[str, str]:
+    if isinstance(payload, str | int | float):
+        value = str(payload).strip()
+        return {language: value} if value else {}
+    if isinstance(payload, dict):
+        for key in ("text", "value"):
+            if key in payload:
+                texts = _translated_texts(
+                    payload[key], _primary_language(payload.get("language")) or language
+                )
+                if texts:
+                    return texts
+        values = [
+            _translated_texts(value, _primary_language(key))
+            for key, value in payload.items()
+            if 2 <= len(_primary_language(key)) <= 3 and _primary_language(key).isalpha()
+        ]
+    elif isinstance(payload, list):
+        values = [_translated_texts(value, language) for value in payload]
+    else:
+        return {}
+    texts: dict[str, str] = {}
+    for variants in values:
+        for tag, value in variants.items():
+            texts.setdefault(tag, value)
+    return texts
 
 
 def _text(payload: object) -> str | None:
-    if payload is None:
-        return None
-    if isinstance(payload, str):
-        stripped = payload.strip()
-        return stripped or None
-    if isinstance(payload, list):
-        preferred = [
-            item
-            for item in payload
-            if isinstance(item, dict) and _primary_language(item.get("language")) in {"fr", "fra"}
-        ]
-        for item in [*preferred, *payload]:
-            value = _text(item)
-            if value:
-                return value
-        return None
-    if isinstance(payload, dict):
-        for key in ("text", "value", "fr", "en"):
-            value = _text(payload.get(key))
-            if value:
-                return value
-    if isinstance(payload, int | float):
-        return str(payload)
-    return None
+    texts = _translated_texts(payload)
+    return texts.get("fr") or next(iter(texts.values()), None)
 
 
 def _text_en(payload: object) -> str | None:
-    if isinstance(payload, list):
-        for item in payload:
-            if isinstance(item, dict) and _primary_language(item.get("language")) in {"en", "eng"}:
-                value = _text(item.get("text") or item.get("value"))
-                if value:
-                    return value
-        return None
-    if isinstance(payload, dict):
-        english = payload.get("en")
-        if isinstance(english, dict):
-            return _text(english.get("text") or english.get("value"))
-        return _text(english)
-    return None
+    return _translated_texts(payload).get("en")
 
 
 def _has_explicit_language(payload: object, accepted: set[str]) -> bool:
+    return bool(_translated_texts(payload).keys() & {_primary_language(tag) for tag in accepted})
 
-    if isinstance(payload, list):
-        return any(
-            isinstance(item, dict)
-            and _primary_language(item.get("language")) in accepted
-            and _text(item.get("text") or item.get("value")) is not None
-            for item in payload
-        )
-    if not isinstance(payload, dict):
-        return False
-    if (
-        _primary_language(payload.get("language")) in accepted
-        and _text(payload.get("text") or payload.get("value")) is not None
+
+def alert_message_provenance(
+    raw: object, snapshot_id: object, alert_index: int | None, captured_at: datetime | None
+) -> dict[str, object] | None:
+    if snapshot_id is None or alert_index is None or captured_at is None:
+        return None
+    message: dict[str, object] = {
+        "snapshot_id": str(snapshot_id),
+        "alert_index": int(alert_index),
+        "captured_utc": captured_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+    }
+    for field, keys in (
+        ("header", _ALERT_HEADER_KEYS),
+        ("description", _ALERT_DESCRIPTION_KEYS),
+        ("url", ("url", "link")),
     ):
-        return True
-    return any(
-        _primary_language(key) in accepted and _text(value) is not None
-        for key, value in payload.items()
-        if isinstance(key, str)
-    )
+        texts = _translated_texts(_value(raw, *keys)) if isinstance(raw, dict) else {}
+        message[f"{field}_language"] = ("fr" if "fr" in texts else next(iter(texts), None)) or None
+    return message
 
 
 _ALERT_HEADER_KEYS = ("header", "title", "summary", "header_texts")

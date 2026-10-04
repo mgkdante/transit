@@ -55,7 +55,6 @@ export const alertHistoryCopy = defineCopy({
 			`${shown} sur ${total} avis ${shown === 1 ? 'affiché' : 'affichés'}`,
 		more: (n: number) => `+${n} de plus`,
 		showLess: 'Réduire',
-		foreignLanguage: '(en anglais seulement)',
 		empty: 'Aucun avis de service archivé pour le moment.',
 		truncatedNote: (shown: number, total: number) =>
 			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
@@ -198,7 +197,6 @@ export const alertHistoryCopy = defineCopy({
 		count: (shown, total) => `Showing ${shown} of ${alertCount(total)}`,
 		more: (n) => `+${n} more`,
 		showLess: 'Show less',
-		foreignLanguage: '(French only)',
 		empty: 'No archived service alerts yet.',
 		truncatedNote: (shown, total) =>
 			`Window capped: showing the ${shown} most recent of ${total} alerts; counts and the breakdown reflect only these.`,

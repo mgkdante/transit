@@ -787,7 +787,18 @@ describe('MapHero stage lifecycle', () => {
 			alert_links: {},
 		};
 		try {
-			render(MapHero);
+			harness.setPageUrl('http://localhost/map?provider=octranspo&alert=has_alert');
+			const { container } = render(MapHero);
+			await waitFor(() =>
+				expect(harness.goto).toHaveBeenCalledWith('/map?provider=octranspo', expect.anything()),
+			);
+			expect(screen.queryByRole('button', { name: /Has alert/i })).toBeNull();
+			await waitFor(() =>
+				expect(container.querySelector('.map-hero')).toHaveAttribute(
+					'data-motion-vehicle-count',
+					'1',
+				),
+			);
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			expect(await screen.findByText('Alert data unavailable')).toBeVisible();
 			expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -326,9 +325,17 @@ def test_message_provenance_migration_preserves_legacy_unknown_then_refreshes(co
 
     _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
     migration = import_module("transit_ops.db.migrations.versions.0092_alert_message_observation")
+    publication = import_module(
+        "transit_ops.db.migrations.versions.0093_alert_publication_provenance"
+    )
     with Operations.context(MigrationContext.configure(conn)):
+        publication.downgrade()
         migration.downgrade()
         migration.upgrade()
+        publication.upgrade()
+    from transit_ops.snapshots.builders import build_alerts
+
+    assert build_alerts(conn, provider_id=PROVIDER, generated_utc="t").alerts[0].message is None
     legacy = _active_en(conn)
     assert legacy["message_snapshot_id"] is None and legacy["message_alert_index"] is None
     assert legacy["raw_alert_json"] == ALERT_BILINGUAL
