@@ -1874,8 +1874,9 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
 
     conn = FakeConn(
         {
+            "alerts.history.anchor": [],
             "alerts.history.count": [{"total": 1}],
-            "i3_alert_history_reporting": [
+            "alerts.history": [
                 {
                     "alert_header_text": "Votre ligne",
                     "header_text_en": "{'text': None, 'language': 'en'}",

@@ -2928,7 +2928,7 @@ def test_alert_history_sql_uses_windowed_binds_not_now_clause() -> None:
     assert ":win_start" in sql and ":win_end" in sql
     assert "now() AT TIME ZONE" not in sql
     assert "LIMIT 500" in sql
-    assert "active_periods" in sql and "json_agg" in sql
+    assert "active_periods" in sql and "JSONB_AGG" in sql
 
 
 def test_build_alert_history_window_fields_from_anchor() -> None:
