@@ -65,7 +65,7 @@ export const networkReliabilityCopy = defineCopy({
 		reporting: {
 			heading: 'Reporting & coverage',
 			caveat:
-				'Coverage is the share of the fleet whose live status is known. “Not reporting” counts scheduled trips currently running with no live vehicle: a per-line silent-trip tally, not identifiable buses. Every vehicle shares one feed timestamp, so we can never single out one silent bus. Metro is excluded.',
+				'Coverage is the share of the fleet whose live status is known. “Not reporting” counts scheduled trips currently running with no live vehicle: a per-line silent-trip tally, not identifiable buses. Individual position reports can be older than the feed update. Metro is excluded.',
 		},
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
@@ -219,7 +219,7 @@ export const networkReliabilityCopy = defineCopy({
 		reporting: {
 			heading: 'Signalement et couverture',
 			caveat:
-				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les voyages planifiés qui circulent actuellement sans véhicule en direct : un décompte de voyages silencieux par ligne, pas des véhicules identifiables. Chaque véhicule partage un seul horodatage de flux, on ne peut donc jamais isoler un véhicule silencieux précis. Le métro est exclu.',
+				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les voyages planifiés qui circulent actuellement sans véhicule en direct : un décompte de voyages silencieux par ligne, pas des véhicules identifiables. Les positions individuelles peuvent être plus anciennes que la mise à jour du flux. Le métro est exclu.',
 		},
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',

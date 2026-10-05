@@ -49,6 +49,7 @@
 	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
+	import { alertHistoryCopy } from '../alerts/alerts.copy';
 
 	const localizeHref = getLocalizeHref();
 
@@ -62,6 +63,11 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(detailCopy[locale]);
+	const unavailableAlerts = $derived(alertHistoryCopy[locale].unavailable);
+	const provider = $derived(page.data?.provider);
+	const alertsAvailable = $derived(
+		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),
+	);
 	const reliabilityT = $derived(stopReliabilityCopy[locale]);
 	const articleNav = $derived(articleNavigationCopy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
@@ -397,28 +403,43 @@
 			{/snippet}
 		</ResourceBoundary>
 		<div class="stop-alert-report" aria-label={t.alerts.heading}>
-			{#if alertLive.generatedUtc == null}<SectionLabel
-					text={t.report.alerts}
-					variant="metric"
-				/>{/if}
-			<ResourceBoundary resource={alertReport} lang={locale}>
-				{#snippet children(_report)}
-					{@render liveStatus(alertLive, 'alerts', t.report.alerts)}
-					{#if stop.data == null}<StateNotice
-							title={t.alertState.limited}
-							presentation="silo"
-						/>{/if}
-					{#if stopAlerts.length === 0}
-						<StateNotice
-							title={t.alertState.none}
-							presentation="silo"
-							data-testid="stop-alerts-empty"
-						/>
-					{:else}
-						<AffectedAlerts alerts={stopAlerts} {locale} copy={t.alerts} testId="stop-alerts" />
-					{/if}
-				{/snippet}
-			</ResourceBoundary>
+			{#if !alertsAvailable}
+				<StateNotice
+					title={unavailableAlerts.title}
+					body={unavailableAlerts.body(provider?.labels[locale].operator ?? shortName)}
+					presentation="silo"
+					role="status"
+				>
+					{#snippet action()}
+						{#if provider?.alert_links[locale]}<a href={provider.alert_links[locale]}
+								>{unavailableAlerts.link}</a
+							>{/if}
+					{/snippet}
+				</StateNotice>
+			{:else}
+				{#if alertLive.generatedUtc == null}<SectionLabel
+						text={t.report.alerts}
+						variant="metric"
+					/>{/if}
+				<ResourceBoundary resource={alertReport} lang={locale}>
+					{#snippet children(_report)}
+						{@render liveStatus(alertLive, 'alerts', t.report.alerts)}
+						{#if stop.data == null}<StateNotice
+								title={t.alertState.limited}
+								presentation="silo"
+							/>{/if}
+						{#if stopAlerts.length === 0}
+							<StateNotice
+								title={t.alertState.none}
+								presentation="silo"
+								data-testid="stop-alerts-empty"
+							/>
+						{:else}
+							<AffectedAlerts alerts={stopAlerts} {locale} copy={t.alerts} testId="stop-alerts" />
+						{/if}
+					{/snippet}
+				</ResourceBoundary>
+			{/if}
 		</div>
 	</div>
 {/snippet}

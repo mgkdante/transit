@@ -10,6 +10,8 @@ import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
+import type { PublicProvider } from '$lib/v1/providers';
+import { alertHistoryCopy } from '../alerts/alerts.copy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
@@ -20,7 +22,11 @@ const stopDetailSource = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'), 'utf-8');
 
 const stopDetailNav = vi.hoisted(() => {
-	const page = { url: new URL('http://localhost/stop/57191'), state: {} };
+	const page = {
+		url: new URL('http://localhost/stop/57191'),
+		state: {},
+		data: {} as { provider?: Partial<PublicProvider> },
+	};
 	const defaultReplaceState = (url: string | URL) => {
 		page.url = new URL(url, 'http://localhost');
 	};
@@ -368,6 +374,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 function resetStopSurfaceState() {
+	stopDetailNav.page.data = {};
 	stopDetailNav.replaceState.mockReset().mockImplementation(stopDetailNav.defaultReplaceState);
 	useEmptyLive = false;
 	useSilentBoard = false;
@@ -430,8 +437,36 @@ function articleCardFor(body: Element | null): HTMLElement {
 }
 
 describe('StopDetail article contract', () => {
-	it('uses the server identity seed for the first-render title and renders one article head', () => {
-		const { container } = render(StopDetail, {
+	it.each(['en', 'fr'] as const)(
+		'explains unsupported alerts with the official %s link',
+		(locale) => {
+			currentLocale = locale;
+			stopDetailNav.page.data.provider = {
+				labels: {
+					en: { city: 'Ottawa', operator: 'OC Transpo' },
+					fr: { city: 'Ottawa', operator: 'OC Transpo' },
+				},
+				inputs: { i3_alerts: false, service_alerts: false },
+				alert_links: {
+					en: 'https://www.octranspo.com/en/alerts/',
+					fr: 'https://www.octranspo.com/fr/alertes/',
+				},
+			};
+			const { container } = render(StopDetail, { props: { id: '57191' } });
+			expect(
+				screen.getByText(alertHistoryCopy[locale].unavailable.body('OC Transpo')),
+			).toBeVisible();
+			expect(
+				screen.getByRole('link', { name: alertHistoryCopy[locale].unavailable.link }),
+			).toHaveAttribute('href', stopDetailNav.page.data.provider.alert_links![locale]);
+			expect(
+				container.querySelector('[data-testid="stop-alerts-empty"], [data-testid="stop-alerts"]'),
+			).toBeNull();
+		},
+	);
+
+	it('renders the seeded identity, article head and tabs, recovering a name from an id-only seed', async () => {
+		const { container, rerender } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
 		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
@@ -444,24 +479,13 @@ describe('StopDetail article contract', () => {
 		expect(container.querySelectorAll('h1')).toHaveLength(1);
 		expect(container.querySelectorAll('[data-slot="article-header"]')).toHaveLength(1);
 		expect(container.querySelector('.surface-head')).toBeNull();
-	});
-
-	it('recovers the real client name when the server seed had to fall back to the id', () => {
-		render(StopDetail, {
-			props: { id: '57191', seed: { id: '57191', name: '57191' } },
-		});
-
-		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
-	});
-
-	it('exposes exactly the canonical Detail, Schedule and Reliability tabs', () => {
-		render(StopDetail, { props: { id: '57191' } });
-
 		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
 			'Detail',
 			'Schedule',
 			'Reliability',
 		]);
+		await rerender({ id: '57191', seed: { id: '57191', name: '57191' } });
+		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
 	});
 
 	it('keeps exactly one centered reliability summary while its owning rail changes by tab', async () => {
