@@ -49,7 +49,7 @@
 	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
-	import { alertHistoryCopy } from '../alerts/alerts.copy';
+	import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
 
 	const localizeHref = getLocalizeHref();
 
@@ -63,7 +63,7 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(detailCopy[locale]);
-	const unavailableAlerts = $derived(alertHistoryCopy[locale].unavailable);
+	const unavailableAlerts = $derived(alertUnavailableCopy[locale]);
 	const provider = $derived(page.data?.provider);
 	const alertsAvailable = $derived(
 		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),

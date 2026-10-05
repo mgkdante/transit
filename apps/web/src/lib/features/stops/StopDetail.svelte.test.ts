@@ -11,7 +11,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import type { PublicProvider } from '$lib/v1/providers';
-import { alertHistoryCopy } from '../alerts/alerts.copy';
+import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
@@ -453,12 +453,11 @@ describe('StopDetail article contract', () => {
 				},
 			};
 			const { container } = render(StopDetail, { props: { id: '57191' } });
-			expect(
-				screen.getByText(alertHistoryCopy[locale].unavailable.body('OC Transpo')),
-			).toBeVisible();
-			expect(
-				screen.getByRole('link', { name: alertHistoryCopy[locale].unavailable.link }),
-			).toHaveAttribute('href', stopDetailNav.page.data.provider.alert_links![locale]);
+			expect(screen.getByText(alertUnavailableCopy[locale].body('OC Transpo'))).toBeVisible();
+			expect(screen.getByRole('link', { name: alertUnavailableCopy[locale].link })).toHaveAttribute(
+				'href',
+				stopDetailNav.page.data.provider.alert_links![locale],
+			);
 			expect(
 				container.querySelector('[data-testid="stop-alerts-empty"], [data-testid="stop-alerts"]'),
 			).toBeNull();
