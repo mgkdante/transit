@@ -304,16 +304,16 @@
 	const historyCoverageText = $derived.by<string | null>(() => {
 		if (historyAvailability.kind !== 'continuous') return null;
 		return t.filters.history.coverage(
-			formatDateKey(historyAvailability.firstDate, locale),
-			formatDateKey(historyAvailability.lastDate, locale),
+			formatDateKey(historyAvailability.firstDate, locale, true),
+			formatDateKey(historyAvailability.lastDate, locale, true),
 		);
 	});
 	const historySelectionText = $derived(
 		pickedWindow == null
 			? null
 			: t.filters.history.selection(
-					formatDateKey(pickedWindow.from, locale),
-					formatDateKey(pickedWindow.to, locale),
+					formatDateKey(pickedWindow.from, locale, true),
+					formatDateKey(pickedWindow.to, locale, true),
 				),
 	);
 	const historyAnnouncement = $derived(

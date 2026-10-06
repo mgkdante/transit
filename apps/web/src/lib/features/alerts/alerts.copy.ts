@@ -109,7 +109,7 @@ export const alertHistoryCopy = defineCopy({
 					previous: 'Période précédente',
 					next: 'Période suivante',
 				}),
-				coverage: (from: string, to: string) => `Archives : du ${from} au ${to}`,
+				coverage: (from: string, to: string) => `Dates des avis : du ${from} au ${to}`,
 				selection: (from: string, to: string) => `Sélection : du ${from} au ${to}`,
 				correction: {
 					malformed: 'La plage de dates invalide a été remplacée par la période courante.',
@@ -244,7 +244,7 @@ export const alertHistoryCopy = defineCopy({
 						anyEnd: 'Latest',
 					},
 				}),
-				coverage: (from, to) => `Archive coverage: ${from} to ${to}`,
+				coverage: (from, to) => `Alert date range: ${from} to ${to}`,
 				selection: (from, to) => `Selected: ${from} to ${to}`,
 				correction: {
 					malformed: 'The invalid date range was reset to the current window.',

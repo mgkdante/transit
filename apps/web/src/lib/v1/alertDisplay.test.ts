@@ -166,6 +166,40 @@ describe('alertDisplayText', () => {
 });
 
 describe('alertDisplayUrl', () => {
+	it.each(['en', 'fr'] as const)('restores the published UCI link on %s pages', (locale) => {
+		const fr =
+			'https://www.stm.info/fr/infos/etat-du-service/calendrier-des-evenements-planifies?utm_campaign=mip&utm_source=UCI&utm_medium=horairesstm';
+		const en =
+			'https://www.stm.info/en/info/service-updates/planned-events-calendar#id_deuxieme?utm_campaign=mip&utm_source=UCI&utm_medium=horairesstm';
+		const source = {
+			description: `Du 19 au 27 septembre, en raison des Championnats du Monde Route UCI 2026, votre ligne est déroutée durant certaines périodes. Info: stm.info/uci <a class="external" href="${fr}" target="_blank">Prévoyez vos déplacements</a>`,
+			description_en: `From September 19 to 27, with the UCI Road World Championships 2026 taking place, this line is rerouted at certain times. stm.info/uci <a class="external" href="${en}" target="_blank">More info.</a>`,
+		};
+		expect(alertDisplayUrl(source, locale)).toEqual({
+			href: locale === 'en' ? en : fr,
+			host: 'www.stm.info',
+			lang: locale === 'en' ? 'en' : null,
+			isFallback: locale === 'fr',
+		});
+		expect(alertDisplayText(source, locale).text).not.toContain('<a');
+		expect(alertDisplayUrl({ ...source, url: 'https://example.test/explicit' }, locale)?.href).toBe(
+			'https://example.test/explicit',
+		);
+	});
+
+	it.each([
+		['No link', null],
+		['<a href="https://example.test', null],
+		['<a data-href="https://example.test">Info</a>', null],
+		[
+			'<a href="jav&#x61;script:alert(1)">Bad</a><a href="https://example.test/?a=1&amp;b=2">Info</a>',
+			'https://example.test/?a=1&b=2',
+		],
+		['<a href="https://example.test/a">A</a><a href="https://example.test/b">B</a>', null],
+	])('does not invent or conflate an embedded target: %s', (description_en, href) => {
+		expect(alertDisplayUrl({ description_en }, 'en')?.href ?? null).toBe(href);
+	});
+
 	it('uses the requested-language live URL when it is safe', () => {
 		const source = {
 			message,

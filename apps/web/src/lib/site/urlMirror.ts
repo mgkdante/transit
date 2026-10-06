@@ -1,25 +1,16 @@
 import { page } from '$app/state';
 import { replaceState } from '$app/navigation';
 
-function currentMirrorUrl(): URL {
+export function currentMirrorUrl(stateUrl = page.url): URL {
+	if (typeof window === 'undefined') return new URL(stateUrl);
 	const browserUrl = new URL(window.location.href);
-	const stateUrl = page.url;
 	return browserUrl.origin === stateUrl.origin && browserUrl.pathname === stateUrl.pathname
 		? browserUrl
 		: new URL(stateUrl);
 }
 
 export function mirrorSearchParam(key: string, value: string | null): void {
-	if (typeof window === 'undefined') return;
-	const url = currentMirrorUrl();
-	if (url.searchParams.get(key) === value) return;
-	if (value === null) url.searchParams.delete(key);
-	else url.searchParams.set(key, value);
-	try {
-		replaceState(url, page.state);
-	} catch {
-		// The router may not be ready; the URL hint is best effort.
-	}
+	mirrorSearchParams({ [key]: value });
 }
 
 export function mirrorSearchParams(params: Record<string, string | null>): void {

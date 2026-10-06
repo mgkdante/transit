@@ -39,19 +39,62 @@ export function safeAlertUrl(
 }
 
 export function alertDisplayUrl(
-	alert: Pick<AlertDisplaySource, 'url' | 'url_en' | 'message'>,
+	alert: AlertDisplaySource,
 	locale: Locale,
 ): AlertDisplayUrlResult | null {
 	const candidates = [
 		{ value: safeAlertUrl(alert.url), lang: alert.message?.url_language ?? null },
 		{ value: safeAlertUrl(alert.url_en), lang: 'en' },
 	];
-	const selected =
+	let selected =
 		candidates.find((item) => item.value && item.lang === locale) ??
 		candidates.find((item) => item.value);
+	if (!selected) {
+		const embedded = [
+			{
+				value: embeddedAlertUrl(alert.description),
+				lang: alert.message?.description_language ?? null,
+			},
+			{ value: embeddedAlertUrl(alert.description_en), lang: 'en' },
+		];
+		selected =
+			embedded.find((item) => item.value && item.lang === locale) ??
+			embedded.find((item) => item.value);
+	}
 	return selected?.value
 		? { ...selected.value, lang: selected.lang, isFallback: selected.lang !== locale }
 		: null;
+}
+
+function embeddedAlertUrl(description: string | null | undefined) {
+	const urls = new Map<string, { href: string; host: string }>();
+	const entities: Record<string, string> = {
+		amp: '&',
+		quot: '"',
+		apos: "'",
+		lt: '<',
+		gt: '>',
+		colon: ':',
+	};
+	for (const [tag] of (description ?? '').matchAll(
+		/<a(?:\s+[\w:-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*\s*>/gi,
+	)) {
+		const attr = [...tag.matchAll(/\s+([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g)].find(
+			(match) => match[1].toLowerCase() === 'href',
+		);
+		const href = (attr?.[2] ?? attr?.[3] ?? '').replace(
+			/&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+			(entity, key: string) => {
+				if (!key.startsWith('#')) return entities[key.toLowerCase()] ?? entity;
+				const code =
+					key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+				return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+			},
+		);
+		const url = /&(?:#\w+|[a-z]+);/i.test(href) ? null : safeAlertUrl(href);
+		if (url) urls.set(url.href, url);
+	}
+	return urls.size === 1 ? [...urls.values()][0] : null;
 }
 
 export function alertLanguageNotice(
