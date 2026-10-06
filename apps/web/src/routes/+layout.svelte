@@ -34,6 +34,7 @@
 	} from '$lib/seo/routeSeo';
 	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
+	import { currentMirrorUrl } from '$lib/site/urlMirror';
 	import { errorDocumentHead } from '$lib/site/errorPage';
 	import { setV1Context } from '$lib/v1/boot';
 	import { v1Provider } from '$lib/v1/config';
@@ -316,7 +317,7 @@
 
 <AppShell
 	{locale}
-	url={$page.url}
+	url={currentMirrorUrl($page.url)}
 	providerName={v1?.manifest.display_name}
 	providerShortName={v1?.manifest.short_name ?? undefined}
 	providerId={data.providerId}
