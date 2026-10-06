@@ -2,6 +2,8 @@ import { page } from '$app/state';
 import { replaceState } from '$app/navigation';
 
 export function currentMirrorUrl(stateUrl = page.url): URL {
+	// Shallow navigation changes page.state while page.url can stay unchanged.
+	void page.state;
 	if (typeof window === 'undefined') return new URL(stateUrl);
 	const browserUrl = new URL(window.location.href);
 	return browserUrl.origin === stateUrl.origin && browserUrl.pathname === stateUrl.pathname
@@ -31,7 +33,7 @@ export function mirrorSearchParams(params: Record<string, string | null>): void 
 	}
 	if (!changed) return;
 	try {
-		replaceState(url, page.state);
+		replaceState(url, { ...page.state });
 	} catch {
 		// The router may not be ready; the URL hint is best effort.
 	}

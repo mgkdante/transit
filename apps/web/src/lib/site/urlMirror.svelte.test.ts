@@ -15,6 +15,7 @@ vi.mock('$app/navigation', () => ({
 }));
 
 import { mirrorSearchParam, mirrorSearchParams } from './urlMirror';
+import { page } from '$app/state';
 
 const writtenParam = (key: string): string | null => {
 	const u = replaceState.mock.calls[0][0] as string | URL;
@@ -31,6 +32,8 @@ describe('mirrorSearchParam', () => {
 		mirrorSearchParam('grain', 'week');
 		expect(replaceState).toHaveBeenCalledOnce();
 		expect(writtenParam('grain')).toBe('week');
+		expect(replaceState.mock.calls[0][1]).toEqual(page.state);
+		expect(replaceState.mock.calls[0][1]).not.toBe(page.state);
 	});
 
 	it('deletes the param when the value is null (default-omit → clean URL)', () => {
