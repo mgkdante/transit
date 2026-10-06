@@ -175,12 +175,14 @@ describe('alertDisplayUrl', () => {
 			description: `Du 19 au 27 septembre, en raison des Championnats du Monde Route UCI 2026, votre ligne est déroutée durant certaines périodes. Info: stm.info/uci <a class="external" href="${fr}" target="_blank">Prévoyez vos déplacements</a>`,
 			description_en: `From September 19 to 27, with the UCI Road World Championships 2026 taking place, this line is rerouted at certain times. stm.info/uci <a class="external" href="${en}" target="_blank">More info.</a>`,
 		};
-		expect(alertDisplayUrl(source, locale)).toEqual({
+		const link = alertDisplayUrl(source, locale);
+		expect(link).toEqual({
 			href: locale === 'en' ? en : fr,
 			host: 'www.stm.info',
-			lang: locale === 'en' ? 'en' : null,
-			isFallback: locale === 'fr',
+			lang: null,
+			isFallback: true,
 		});
+		expect(alertDisplayUrl({ ...source, message }, locale)).toEqual(link);
 		expect(alertDisplayText(source, locale).text).not.toContain('<a');
 		expect(alertDisplayUrl({ ...source, url: 'https://example.test/explicit' }, locale)?.href).toBe(
 			'https://example.test/explicit',
@@ -191,6 +193,8 @@ describe('alertDisplayUrl', () => {
 		['No link', null],
 		['<a href="https://example.test', null],
 		['<a data-href="https://example.test">Info</a>', null],
+		['<a href="https&Colon;//example.test">Info</a>', null],
+		['<a href="https://example.test/?q=&constructor;">Info</a>', null],
 		[
 			'<a href="jav&#x61;script:alert(1)">Bad</a><a href="https://example.test/?a=1&amp;b=2">Info</a>',
 			'https://example.test/?a=1&b=2',

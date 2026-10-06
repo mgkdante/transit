@@ -42,28 +42,24 @@ export function alertDisplayUrl(
 	alert: AlertDisplaySource,
 	locale: Locale,
 ): AlertDisplayUrlResult | null {
-	const candidates = [
-		{ value: safeAlertUrl(alert.url), lang: alert.message?.url_language ?? null },
-		{ value: safeAlertUrl(alert.url_en), lang: 'en' },
-	];
-	let selected =
-		candidates.find((item) => item.value && item.lang === locale) ??
-		candidates.find((item) => item.value);
-	if (!selected) {
-		const embedded = [
-			{
-				value: embeddedAlertUrl(alert.description),
-				lang: alert.message?.description_language ?? null,
-			},
-			{ value: embeddedAlertUrl(alert.description_en), lang: 'en' },
+	for (const [source, english, language, embedded] of [
+		[alert.url, alert.url_en, alert.message?.url_language, false],
+		[alert.description, alert.description_en, alert.message?.description_language, true],
+	] as const) {
+		const parse = embedded ? embeddedAlertUrl : safeAlertUrl;
+		const candidates = [
+			{ value: parse(source), lang: language ?? null },
+			{ value: parse(english), lang: 'en' },
 		];
-		selected =
-			embedded.find((item) => item.value && item.lang === locale) ??
-			embedded.find((item) => item.value);
+		const selected =
+			candidates.find((item) => item.value && item.lang === locale) ??
+			candidates.find((item) => item.value);
+		if (selected?.value) {
+			const lang = embedded ? null : selected.lang;
+			return { ...selected.value, lang, isFallback: lang !== locale };
+		}
 	}
-	return selected?.value
-		? { ...selected.value, lang: selected.lang, isFallback: selected.lang !== locale }
-		: null;
+	return null;
 }
 
 function embeddedAlertUrl(description: string | null | undefined) {
@@ -85,7 +81,7 @@ function embeddedAlertUrl(description: string | null | undefined) {
 		const href = (attr?.[2] ?? attr?.[3] ?? '').replace(
 			/&(#x[\da-f]+|#\d+|[a-z]+);/gi,
 			(entity, key: string) => {
-				if (!key.startsWith('#')) return entities[key.toLowerCase()] ?? entity;
+				if (!key.startsWith('#')) return Object.hasOwn(entities, key) ? entities[key] : entity;
 				const code =
 					key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
 				return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
