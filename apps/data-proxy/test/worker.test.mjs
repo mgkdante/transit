@@ -195,88 +195,54 @@ test("HEAD returns 200 with headers and empty body", async () => {
   assert.equal(await response.text(), "");
 });
 
-test("conditional HEAD returns 304 when If-None-Match matches", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", {
-    method: "HEAD",
+for (const { name, headers, status } of [
+  {
+    name: "matching If-None-Match",
     headers: { "if-none-match": '"manifest-rev-7"' },
-  });
-  assert.equal(response.status, 304);
-  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-  assert.equal(await response.text(), "");
-});
-
-test("conditional HEAD returns 412 when If-Match fails", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", {
-    method: "HEAD",
+    status: 304,
+  },
+  {
+    name: "mismatching If-Match",
     headers: { "if-match": '"different-revision"' },
-  });
-  assert.equal(response.status, 412);
-  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-  assert.equal(await response.text(), "");
-});
-
-test("If-None-Match matching etag returns 304", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", {
-    headers: { "if-none-match": '"manifest-rev-7"' },
-  });
-  assert.equal(response.status, 304);
-  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-  assert.equal(await response.text(), "");
-});
-
-test("If-Match mismatch returns 412", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", {
-    headers: { "if-match": '"different-revision"' },
-  });
-  assert.equal(response.status, 412);
-  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-  assert.equal(await response.text(), "");
-});
-
-test("satisfied If-Match is evaluated before matching If-None-Match", async () => {
+    status: 412,
+  },
+  {
+    name: "satisfied If-Match followed by matching If-None-Match",
+    headers: {
+      "if-match": '"manifest-rev-7"',
+      "if-none-match": '"manifest-rev-7"',
+    },
+    status: 304,
+  },
+  {
+    name: "satisfied If-Unmodified-Since followed by matching If-None-Match",
+    headers: {
+      "if-unmodified-since": "Wed, 15 Jul 2026 12:00:01 GMT",
+      "if-none-match": '"manifest-rev-7"',
+    },
+    status: 304,
+  },
+  {
+    name: "failed If-Match takes precedence over matching If-None-Match",
+    headers: {
+      "if-match": '"different-revision"',
+      "if-none-match": '"manifest-rev-7"',
+    },
+    status: 412,
+  },
+]) {
   for (const method of ["GET", "HEAD"]) {
-    const response = await fetchWorker("/data/v1/stm/manifest.json", {
-      method,
-      headers: {
-        "if-match": '"manifest-rev-7"',
-        "if-none-match": '"manifest-rev-7"',
-      },
+    test(`${method} ${name} returns ${status}`, async () => {
+      const response = await fetchWorker("/data/v1/stm/manifest.json", {
+        method,
+        headers,
+      });
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+      assert.equal(await response.text(), "");
     });
-    assert.equal(response.status, 304, `expected 304 for ${method}`);
-    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-    assert.equal(await response.text(), "");
   }
-});
-
-test("satisfied If-Unmodified-Since is evaluated before matching If-None-Match", async () => {
-  for (const method of ["GET", "HEAD"]) {
-    const response = await fetchWorker("/data/v1/stm/manifest.json", {
-      method,
-      headers: {
-        "if-unmodified-since": "Wed, 15 Jul 2026 12:00:01 GMT",
-        "if-none-match": '"manifest-rev-7"',
-      },
-    });
-    assert.equal(response.status, 304, `expected 304 for ${method}`);
-    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-    assert.equal(await response.text(), "");
-  }
-});
-
-test("failed If-Match keeps 412 precedence over If-None-Match", async () => {
-  for (const method of ["GET", "HEAD"]) {
-    const response = await fetchWorker("/data/v1/stm/manifest.json", {
-      method,
-      headers: {
-        "if-match": '"different-revision"',
-        "if-none-match": '"manifest-rev-7"',
-      },
-    });
-    assert.equal(response.status, 412, `expected 412 for ${method}`);
-    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
-    assert.equal(await response.text(), "");
-  }
-});
+}
 
 test("GET response carries Access-Control-Allow-Origin star", async () => {
   const response = await fetchWorker("/data/v1/stm/static/routes_index.json");
