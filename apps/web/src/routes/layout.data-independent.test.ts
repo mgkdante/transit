@@ -49,7 +49,7 @@ vi.mock('$app/stores', async () => {
 	return { page };
 });
 
-vi.mock('$app/state', () => ({ updated: { current: false } }));
+vi.mock('$app/state', () => ({ updated: { current: false }, page: { state: {} } }));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
 	invalidateAll: vi.fn(),

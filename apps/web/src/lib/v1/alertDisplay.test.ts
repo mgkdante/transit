@@ -204,22 +204,16 @@ describe('alertDisplayUrl', () => {
 		expect(alertDisplayUrl({ description_en }, 'en')?.href ?? null).toBe(href);
 	});
 
-	it('uses the requested-language live URL when it is safe', () => {
+	it.each(['en', 'fr'] as const)('uses the safe explicit URL in %s', (locale) => {
 		const source = {
 			message,
 			url: 'https://example.test/fr/avis',
 			url_en: 'https://example.test/en/alert',
 		};
-		expect(alertDisplayUrl(source, 'en')).toEqual({
-			href: 'https://example.test/en/alert',
+		expect(alertDisplayUrl(source, locale)).toEqual({
+			href: source[locale === 'en' ? 'url_en' : 'url'],
 			host: 'example.test',
-			lang: 'en',
-			isFallback: false,
-		});
-		expect(alertDisplayUrl(source, 'fr')).toEqual({
-			href: 'https://example.test/fr/avis',
-			host: 'example.test',
-			lang: 'fr',
+			lang: locale,
 			isFallback: false,
 		});
 	});
