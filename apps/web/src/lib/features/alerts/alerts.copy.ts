@@ -2,6 +2,7 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
+import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 const alertCount = (count: number) =>
@@ -9,12 +10,7 @@ const alertCount = (count: number) =>
 
 export const alertHistoryCopy = defineCopy({
 	fr: {
-		unavailable: {
-			title: 'Avis de service indisponibles',
-			body: (operator: string) =>
-				`Aucun flux d’avis de ${operator} n’est connecté ici. Cela ne signifie pas qu’il n’y a aucune perturbation.`,
-			link: 'Consulter les avis officiels',
-		},
+		unavailable: alertUnavailableCopy.fr,
 		kicker: 'AVIS · ARCHIVE',
 		heading: 'Avis',
 		subheading: '// HISTORIQUE',
@@ -152,12 +148,7 @@ export const alertHistoryCopy = defineCopy({
 		},
 	},
 	en: {
-		unavailable: {
-			title: 'Service alerts unavailable',
-			body: (operator: string) =>
-				`No ${operator} alert feed is connected here. This does not mean there are no disruptions.`,
-			link: 'Check official service alerts',
-		},
+		unavailable: alertUnavailableCopy.en,
 		kicker: 'ALERTS · ARCHIVE',
 		heading: 'Alerts',
 		subheading: '// HISTORY',

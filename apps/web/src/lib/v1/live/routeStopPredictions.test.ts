@@ -36,9 +36,23 @@ function snapshot(vehicles: Vehicle[], trips: Record<string, Trip>): LiveSnapsho
 }
 
 describe('deriveRouteStopPredictions', () => {
-	it('returns an empty map when no vehicle is on the route', () => {
+	it('returns an empty map when no prediction or vehicle is available', () => {
 		const index = buildLiveIndex({});
 		expect(deriveRouteStopPredictions('161', index).size).toBe(0);
+	});
+
+	it('includes route predictions without vehicles and ignores other or unidentified routes', () => {
+		const index = buildLiveIndex(
+			snapshot([], {
+				future: trip({ route: '161', stops: [{ stop: 'sA', eta_utc: '2026-06-15T12:05:00Z' }] }),
+				other: trip({ route: '80', stops: [{ stop: 'sA', eta_utc: '2026-06-15T12:01:00Z' }] }),
+				unknown: trip({ stops: [{ stop: 'sB', eta_utc: '2026-06-15T12:02:00Z' }] }),
+				invalid: trip({ route: '161', stops: [{ stop: 'sC', eta_utc: 'invalid' }] }),
+			}),
+		);
+		expect([...deriveRouteStopPredictions('161', index)]).toEqual([
+			['sA', { etaUtc: '2026-06-15T12:05:00Z', delayMin: null }],
+		]);
 	});
 
 	it('derives the soonest predicted arrival per stop from the route trips', () => {
