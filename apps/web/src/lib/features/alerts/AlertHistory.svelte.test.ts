@@ -1396,7 +1396,7 @@ describe('AlertHistory retained archive integration', () => {
 			currentLocale.value = locale;
 			seedArchive([makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21')]);
 			archiveState.index = makeArchiveIndex('2010-03-16', '2028-03-31');
-			alertSurface.setUrl('/fr/alerts?from=&to=');
+			alertSurface.setUrl(`${locale === 'fr' ? '/fr' : ''}/alerts?from=&to=`);
 
 			const { container } = render(AlertHistoryScreen);
 
@@ -1404,10 +1404,10 @@ describe('AlertHistory retained archive integration', () => {
 				expect(container.querySelector('[data-slot="history-coverage"]')).not.toBeNull(),
 			);
 			expect(container.querySelector('[data-slot="history-coverage"]')).toHaveTextContent(
-				/2010.*2028/,
+				locale === 'fr' ? /Dates des avis.*2010.*2028/ : /Alert date range.*2010.*2028/,
 			);
 			expect(container.querySelector('[data-slot="history-selection"]')).toHaveTextContent(
-				/2026.*2026/,
+				locale === 'fr' ? /Sélection.*2026.*2026/ : /Selected.*2026.*2026/,
 			);
 			expect(document.querySelector('[data-slot="history-announcement"]')).not.toHaveTextContent(
 				/^\s*$/,
