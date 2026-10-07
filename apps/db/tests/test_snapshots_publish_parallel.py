@@ -401,45 +401,6 @@ def _historic_dispatch_conn(
 ):
     import datetime
 
-    class _R:
-        def __init__(self, rows):
-            self._rows = list(rows)
-
-        def mappings(self):
-            outer = self
-
-            class M:
-                def fetchone(self):
-                    return outer._rows[0] if outer._rows else None
-
-                def all(self):
-                    return list(outer._rows)
-
-                def __iter__(self):
-                    return iter(outer._rows)
-
-            return M()
-
-        def __iter__(self):
-            return iter(self._rows)
-
-        def fetchone(self):
-            return self._rows[0] if self._rows else None
-
-        def fetchall(self):
-            out = []
-            for r in self._rows:
-                if isinstance(r, dict):
-                    out.append(tuple(r.values()))
-                elif isinstance(r, tuple):
-                    out.append(r)
-                else:
-                    out.append((r,))
-            return out
-
-        def scalar_one(self):
-            return self._rows[0] if self._rows else 0
-
     dispatch = {
         "publish.lock.try_acquire": [True],
         "history.hotspots.timezone": [{"timezone": "UTC"}],
@@ -658,7 +619,7 @@ def _historic_dispatch_conn(
             name = query_name(statement)
             if name == "publish.state.upsert":
                 self.state_writes.append(dict(params))
-            return _R(dispatch.get(name, []))
+            return _StaticResult(dispatch.get(name, []))
 
     return _Conn()
 
