@@ -13,7 +13,7 @@ from transit_ops.snapshots.builders._helpers import (
     _iso_date,
     _opt_int,
     _severe_pct,
-    _wilson_hi,
+    _wilson_bounds,
     _wilson_lo,
 )
 from transit_ops.snapshots.contract import HotspotEntry, HotspotGrain, RepeatOffenderEntry
@@ -59,6 +59,22 @@ def otp_delta_points(
     return float(round_half_away(Decimal(numerator) / Decimal(denominator), 1))
 
 
+def _ranking_key(
+    row: RankingRow, id_column: str, minimum_observations: int
+) -> tuple[float, float, str] | None:
+    observations = int(row["obs"] or 0)
+    if observations < minimum_observations:
+        return None
+    lower_bound = _wilson_lo(observations - int(row["severe"] or 0), observations)
+    if lower_bound is None:
+        return None
+    sum_seconds = row["sum_delay_sec"]
+    average_minutes = (
+        _avg_delay_min(float(sum_seconds) / observations) if sum_seconds is not None else None
+    )
+    return lower_bound, -(average_minutes or 0.0), str(row[id_column])
+
+
 def _hotspot_ranked_entry(
     row: RankingRow,
     kind: HotspotKind,
@@ -74,10 +90,10 @@ def _hotspot_ranked_entry(
     if observation_count < MIN_N_HOTSPOT:
         return None
     not_severe_count = observation_count - severe_count
-    wilson_lo = _wilson_lo(not_severe_count, observation_count)
-    wilson_hi = _wilson_hi(not_severe_count, observation_count)
-    if wilson_lo is None:
+    bounds = _wilson_bounds(not_severe_count, observation_count)
+    if bounds is None:
         return None
+    wilson_lo, wilson_hi = bounds
     sum_seconds = row["sum_delay_sec"]
     average_minutes = (
         _avg_delay_min(float(sum_seconds) / observation_count) if sum_seconds is not None else None
@@ -158,25 +174,28 @@ def build_hotspot_kind_ladder(
     if not materialized_rows:
         return None
     network_observations, network_severe = _network_counts(materialized_rows, kind)
-    ranked: list[tuple[float, float, str, HotspotEntry]] = []
+    ranked: list[tuple[float, float, str, RankingRow]] = []
     tray_rows: list[RankingRow] = []
+    id_column = "route_id" if kind == "route" else "stop_id"
     for row in materialized_rows:
-        entry = _hotspot_ranked_entry(
-            row,
+        key = _ranking_key(row, id_column, MIN_N_HOTSPOT)
+        if key is None:
+            tray_rows.append(row)
+        else:
+            ranked.append((*key, row))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+    total_ranked = len(ranked)
+    entries: list[HotspotEntry] = []
+    for rank, item in enumerate(ranked[:HOTSPOTS_BY_GRAIN_CAP], start=1):
+        selected = _hotspot_ranked_entry(
+            item[3],
             kind,
             names,
             network_observations=network_observations,
             network_severe=network_severe,
         )
-        if entry is None:
-            tray_rows.append(row)
-        else:
-            ranked.append(entry)
-    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
-    total_ranked = len(ranked)
-    entries: list[HotspotEntry] = []
-    for rank, item in enumerate(ranked[:HOTSPOTS_BY_GRAIN_CAP], start=1):
-        entry = item[3]
+        assert selected is not None
+        entry = selected[3]
         entry.rank = rank
         entries.append(entry)
     return HotspotKindLadder(kind, entries, total_ranked, tray_rows, names)
@@ -271,10 +290,10 @@ def _offender_ranked_entry(
     if observation_count < MIN_N_OFFENDER:
         return None
     not_severe_count = observation_count - severe_count
-    wilson_lo = _wilson_lo(not_severe_count, observation_count)
-    wilson_hi = _wilson_hi(not_severe_count, observation_count)
-    if wilson_lo is None:
+    bounds = _wilson_bounds(not_severe_count, observation_count)
+    if bounds is None:
         return None
+    wilson_lo, wilson_hi = bounds
     recurrence_days = _opt_int(row["recurrence_days"])
     average_minutes = _offender_window_value(row["sum_delay_sec"], observation_count)
     route_id = row["route_id"]
@@ -343,20 +362,22 @@ def build_offender_kind_ladder(
     route_names: EntityNameMap,
 ) -> OffenderKindLadder:
 
-    ranked: list[tuple[float, float, str, RepeatOffenderEntry]] = []
+    ranked: list[tuple[float, float, str, RankingRow]] = []
     tray: list[RepeatOffenderEntry] = []
     for row in rows:
-        entry = _offender_ranked_entry(row, kind, route_names)
-        if entry is None:
+        key = _ranking_key(row, "entity_id", MIN_N_OFFENDER)
+        if key is None:
             if (row["recurrence_days"] or 0) >= OFFENDER_TRAY_MIN_RECURRENCE:
                 tray.append(_offender_tray_entry(row, kind, route_names))
         else:
-            ranked.append(entry)
+            ranked.append((*key, row))
     ranked.sort(key=lambda item: (item[0], item[1], item[2]))
     total_ranked = len(ranked)
     entries: list[RepeatOffenderEntry] = []
     for rank, item in enumerate(ranked[:OFFENDERS_BY_GRAIN_CAP], start=1):
-        entry = item[3]
+        selected = _offender_ranked_entry(item[3], kind, route_names)
+        assert selected is not None
+        entry = selected[3]
         entry.rank = rank
         entries.append(entry)
     return OffenderKindLadder(entries, total_ranked, tray)

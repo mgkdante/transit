@@ -255,17 +255,23 @@ def test_validate_static_feeds_reports_download_failure_as_unavailable() -> None
     assert "network unavailable" in display["active_static"]["message"]
 
 
-@pytest.mark.parametrize("truncated", [False, True], ids=["complete", "truncated"])
+@pytest.mark.parametrize(
+    "truncated_attempts", [0, 1, 2], ids=["complete", "recovered", "exhausted"]
+)
 def test_static_validation_reports_chunked_download_and_cleans_temporary_files(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truncated: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, truncated_attempts: int
 ) -> None:
     archive = tmp_path / "static.zip"
     _write_gtfs_zip(archive)
     body = archive.read_bytes()
     monkeypatch.setattr(static_feed_validation.tempfile, "tempdir", str(tmp_path))
+    attempts = 0
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
+            nonlocal attempts
+            attempts += 1
+            truncated = attempts <= truncated_attempts
             self.send_response(200)
             self.send_header("Transfer-Encoding", "chunked")
             self.send_header("Connection", "close")
@@ -289,6 +295,8 @@ def test_static_validation_reports_chunked_download_and_cleans_temporary_files(
             thread.join(timeout=2)
     assert not thread.is_alive()
     assert not list(tmp_path.glob("static_feed_validation_*"))
+    assert attempts == min(truncated_attempts + 1, 2)
+    truncated = truncated_attempts == 2
     assert result.active_static.status == ("unavailable" if truncated else "ok")
     if truncated:
         assert result.active_static.error_type == "download_error"

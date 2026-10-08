@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal, cast
@@ -52,6 +53,7 @@ type _LegacyCollected = tuple[list[CollectedItem], list[CollectedItem], str, int
 type HistoricInclude = Literal["archive", "network", "lines", "stops", "points"]
 STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
 HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 32
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,7 @@ def publish(
             prepare_historic_receipt_preflight,
         )
 
+        logger.info("historic_publish_stage provider=%s stage=point_days", provider_id)
         hotspot_summary, hotspot_keys = consume_point_days(
             point_plans.hotspots,
             family="hotspots",
@@ -255,6 +258,7 @@ def publish(
                 write_mode="immutable",
             )
 
+        logger.info("historic_publish_stage provider=%s stage=history_children", provider_id)
         children = consume_history_children(
             HistoricPlans(network_history, line_history, stop_history),
             effective_report,
@@ -315,6 +319,7 @@ def publish(
             )
         gate.enforce(effective_report, force=force)
 
+        logger.info("historic_publish_stage provider=%s stage=receipt_assembly", provider_id)
         _historic._finalize_historic_receipt_run(
             _historic_run,
             provider_id,
@@ -325,6 +330,7 @@ def publish(
         )
 
         _historic._activate_historic_phase(_historic_run, "compatibility")
+        logger.info("historic_publish_stage provider=%s stage=compatibility_upload", provider_id)
         point_index_keys = uploads.put_batch(
             storage,
             [hotspot_index_item, repeat_offenders_index_item],
@@ -337,6 +343,7 @@ def publish(
             concurrency=concurrency,
         )
         _historic._activate_historic_phase(_historic_run, "parent_compose")
+        logger.info("historic_publish_stage provider=%s stage=parent_upload", provider_id)
         root_family_index_keys = uploads.put_batch(
             storage,
             [
@@ -376,6 +383,7 @@ def publish(
             concurrency=concurrency,
             write_mode="immutable",
         )
+        logger.info("historic_publish_stage provider=%s stage=gc_mark_clear", provider_id)
         _clear_referenced_historic_gc_marks(
             conn,
             provider_id,
@@ -385,6 +393,7 @@ def publish(
                 stop_keys=stop_referenced_generation_keys,
             ),
         )
+        logger.info("historic_publish_stage provider=%s stage=root_activation", provider_id)
         root_key = storage.activate_stable_json(
             root_rel_key,
             root,

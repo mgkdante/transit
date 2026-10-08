@@ -92,7 +92,7 @@ class HistoricProofDeadlineExceeded(TimeoutError):
 
 
 class _PublicHttpxRequestError(HTTPException):
-    """Non-retryable HTTPX failure normalized to the prior artifact-error path."""
+    """HTTPX failure normalized to the artifact-error path without private details."""
 
     def __init__(self, artifact_error_type: str) -> None:
         self.artifact_error_type = artifact_error_type
@@ -198,9 +198,13 @@ _ACTIVE_PROOF_EXECUTOR: ContextVar[Executor | None] = ContextVar(
 
 
 def _is_transient_transport_error(exc: Exception) -> bool:
-    if isinstance(exc, (HistoricProofDeadlineExceeded, HTTPError)):
+    if isinstance(exc, HistoricProofDeadlineExceeded):
         return False
+    if isinstance(exc, HTTPError):
+        return exc.code == 502
     reason = exc.reason if isinstance(exc, URLError) else exc
+    if isinstance(reason, _PublicHttpxRequestError):
+        return reason.artifact_error_type == "RemoteProtocolError"
     return not isinstance(reason, HistoricProofDeadlineExceeded) and isinstance(
         reason,
         (TimeoutError, ConnectionError, IncompleteRead),

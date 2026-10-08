@@ -1009,9 +1009,9 @@ def test_origin_gate_evidence_is_fail_closed_and_writer_enforces_map_cardinality
         )
 
 
-def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
+def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows(monkeypatch):
     receipts = tuple(
-        _persistence_receipt(f"S{position:04d}", revision="new", padding_bytes=256)
+        _persistence_receipt(f"Arrêt{position:04d}", revision="new", padding_bytes=256)
         for position in range(504)
     )
     unchanged = receipts[0]
@@ -1115,6 +1115,16 @@ def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
                 return Result(rowcount=deleted)
             raise AssertionError(name)
 
+    month_maps = {id(receipt.month_receipts) for receipt in receipts}
+    serialized_maps = []
+    canonical_json_bytes = receipts_module._canonical_json_bytes
+
+    def track_serialization(value):
+        if id(value) in month_maps:
+            serialized_maps.append(id(value))
+        return canonical_json_bytes(value)
+
+    monkeypatch.setattr(receipts_module, "_canonical_json_bytes", track_serialization)
     connection = Connection()
     stats = receipts_module.persist_historic_receipts(
         connection,
@@ -1122,6 +1132,7 @@ def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
         receipts=receipts,
         complete_families=("stops",),
     )
+    assert len(serialized_maps) == len(receipts)
 
     canonical_size = lambda value: len(  # noqa: E731
         json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
