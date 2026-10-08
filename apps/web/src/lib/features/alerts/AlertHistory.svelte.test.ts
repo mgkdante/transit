@@ -1390,24 +1390,30 @@ describe('AlertHistory retained archive integration', () => {
 		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
 
-	it('renders localized coverage, selection, and correction copy', async () => {
-		currentLocale.value = 'fr';
-		seedArchive([makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21')]);
-		alertSurface.setUrl('/fr/alerts?from=&to=');
+	it.each(['en', 'fr'] as const)(
+		'renders %s date bounds and selection with years',
+		async (locale) => {
+			currentLocale.value = locale;
+			seedArchive([makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21')]);
+			archiveState.index = makeArchiveIndex('2010-03-16', '2028-03-31');
+			alertSurface.setUrl(`${locale === 'fr' ? '/fr' : ''}/alerts?from=&to=`);
 
-		const { container } = render(AlertHistoryScreen);
+			const { container } = render(AlertHistoryScreen);
 
-		await waitFor(() =>
-			expect(container.querySelector('[data-slot="history-coverage"]')).not.toBeNull(),
-		);
-		expect(container.querySelector('[data-slot="history-coverage"]')).toHaveTextContent('Archives');
-		expect(container.querySelector('[data-slot="history-selection"]')).toHaveTextContent(
-			'Sélection',
-		);
-		expect(document.querySelector('[data-slot="history-announcement"]')).not.toHaveTextContent(
-			/^\s*$/,
-		);
-	});
+			await waitFor(() =>
+				expect(container.querySelector('[data-slot="history-coverage"]')).not.toBeNull(),
+			);
+			expect(container.querySelector('[data-slot="history-coverage"]')).toHaveTextContent(
+				locale === 'fr' ? /Dates des avis.*2010.*2028/ : /Alert date range.*2010.*2028/,
+			);
+			expect(container.querySelector('[data-slot="history-selection"]')).toHaveTextContent(
+				locale === 'fr' ? /Sélection.*2026.*2026/ : /Selected.*2026.*2026/,
+			);
+			expect(document.querySelector('[data-slot="history-announcement"]')).not.toHaveTextContent(
+				/^\s*$/,
+			);
+		},
+	);
 });
 
 describe('AlertHistory combined rail and disclosure behavior', () => {

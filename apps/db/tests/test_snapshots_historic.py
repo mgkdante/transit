@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import re
+from unittest.mock import Mock
 
 import pytest
 from _sqlfakes import NamedQueryConn
@@ -31,6 +32,7 @@ from transit_ops.snapshots.builders._helpers import (
 from transit_ops.snapshots.builders.historic.network_trend import _TREND_DAILY_SQL, _TREND_FACT_SQL
 from transit_ops.snapshots.builders.historic.ranking_kernel import (
     MIN_N_OFFENDER,
+    build_hotspot_kind_ladder,
     build_offender_kind_ladder,
     offender_severity,
 )
@@ -1908,6 +1910,39 @@ def test_offender_ladder_preserves_caller_order_for_exact_ties() -> None:
 
     assert [entry.route for entry in current] == ["Z", "A"]
     assert [entry.route for entry in historical] == ["A", "Z"]
+
+
+@pytest.mark.parametrize("family", ["hotspots", "offenders"])
+def test_ranked_name_lookups_are_limited_to_emitted_entries(family: str) -> None:
+    rows = [
+        {
+            "stop_id": f"S{index:03}",
+            "entity_id": f"S{index:03}",
+            "route_id": "R1",
+            "obs": 100,
+            "severe": 10,
+            "sum_delay_sec": 12_000,
+            "recurrence_days": 3,
+            "observed_days": 7,
+            "window_days": 7,
+        }
+        for index in reversed(range(101))
+    ]
+    rows.append(rows[0] | {"obs": 10})
+    names = Mock(spec=dict)
+    names.get.return_value = None
+    if family == "hotspots":
+        ladder = build_hotspot_kind_ladder(rows, "stop", names)
+        assert ladder is not None
+        assert len(ladder.tray_rows) == 1
+        expected_lookups = 50
+    else:
+        ladder = build_offender_kind_ladder(rows, "trip", names)
+        assert len(ladder.tray) == 1
+        expected_lookups = 51
+    assert ladder.total_ranked == 101
+    assert [entry.id for entry in ladder.entries] == [f"S{index:03}" for index in range(50)]
+    assert names.get.call_count == expected_lookups
 
 
 def _receipts_dispatch(

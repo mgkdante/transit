@@ -893,7 +893,7 @@ def _build_default_httpx_report(
         ),
         pytest.param(
             lambda request: httpx.RemoteProtocolError("private protocol", request=request),
-            False,
+            True,
             id="protocol",
         ),
         pytest.param(
@@ -903,7 +903,7 @@ def _build_default_httpx_report(
         ),
     ],
 )
-def test_default_httpx_transport_retries_only_prior_connect_timeout_allowlist(
+def test_default_httpx_transport_retries_only_transient_failures(
     monkeypatch: pytest.MonkeyPatch,
     error_factory: Callable[[httpx.Request], Exception],
     retryable: bool,
@@ -2678,6 +2678,7 @@ def test_historic_publish_proof_recovers_one_transient_timeout() -> None:
         lambda: URLError(TimeoutError("private wrapped timeout")),
         lambda: URLError(ConnectionError("private wrapped connection")),
         lambda: URLError(IncompleteRead(b"private wrapped partial body", 100)),
+        lambda: HTTPError("https://data.example.com/private", 502, "private gateway", None, None),
     ],
     ids=[
         "connection-family",
@@ -2685,6 +2686,7 @@ def test_historic_publish_proof_recovers_one_transient_timeout() -> None:
         "url-timeout",
         "url-connection-family",
         "url-incomplete-read",
+        "bad-gateway",
     ],
 )
 def test_historic_publish_proof_recovers_allowlisted_transport_failure(
@@ -2795,9 +2797,19 @@ def test_historic_publish_proof_never_retries_nontransport_url_errors(
     assert "private" not in str(report.display_dict())
 
 
-def test_historic_publish_proof_fails_closed_after_transport_retry_exhaustion() -> None:
-    report, _, attempts = _transport_probe(
+@pytest.mark.parametrize(
+    "error_factory",
+    [
         lambda: TimeoutError("private repeated timeout"),
+        lambda: HTTPError("https://data.example.com/private", 502, "private gateway", None, None),
+        lambda: historic_publish_module._PublicHttpxRequestError("RemoteProtocolError"),
+    ],
+)
+def test_historic_publish_proof_fails_closed_after_transport_retry_exhaustion(
+    error_factory: Callable[[], Exception],
+) -> None:
+    report, _, attempts = _transport_probe(
+        error_factory,
         failure_count=None,
     )
 
@@ -2805,7 +2817,8 @@ def test_historic_publish_proof_fails_closed_after_transport_retry_exhaustion() 
     assert "public_artifact_fetch_failed" in report.failures
     assert attempts == 2
     artifact = report.public["artifacts"]["manifest.json"]
-    assert artifact["error_type"] == "TimeoutError"
+    error = error_factory()
+    assert artifact["error_type"] == getattr(error, "artifact_error_type", type(error).__name__)
     assert artifact["failures"] == ["public_artifact_fetch_failed"]
     transport = report.public["deadline"]["transport"]
     assert transport["retries"] == 1

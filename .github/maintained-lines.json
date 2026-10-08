@@ -88,7 +88,8 @@
         "64e8aad75e79e2dcf043a0b17108ae0c97703a55e1a505a2398f96bf8f503fa8",
         "3aec1e18b824bed71afa307a2226b43abdc70168a00c2a983c2ca5883fc2e4e5",
         "d4c8586d94dcc78958fee5cfc37ad35c01ba31acafbbc5e204a9e971e501cff2",
-        "c57aceea91fceb35fc30399d298f99d8318acd81550278419c6c444258e7bf94"
+        "c57aceea91fceb35fc30399d298f99d8318acd81550278419c6c444258e7bf94",
+        "3b2a0d1f6e70bf74ccc6579b370db1767dc7494cea03bcc1f4e903c2d716f5c7"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },
@@ -296,7 +297,8 @@
       ],
       "sha256": [
         "31a24c9613c69375a515026756c58b0cfca2c481f50644ed2a6f7a07e16cdfcf",
-        "ed1448ff235074f0d7eaf80ebc170bb9df90512bec81e46a710d60af9bcf369a"
+        "ed1448ff235074f0d7eaf80ebc170bb9df90512bec81e46a710d60af9bcf369a",
+        "2c281f18a3519addfda9899e78420cc21d4c8e34dfbf2b54e3684a0dd5bdad71"
       ],
       "origin": "uv Python dependency resolution; exact lock path and executable project owner."
     },

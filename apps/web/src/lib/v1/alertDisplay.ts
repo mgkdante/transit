@@ -39,19 +39,58 @@ export function safeAlertUrl(
 }
 
 export function alertDisplayUrl(
-	alert: Pick<AlertDisplaySource, 'url' | 'url_en' | 'message'>,
+	alert: AlertDisplaySource,
 	locale: Locale,
 ): AlertDisplayUrlResult | null {
-	const candidates = [
-		{ value: safeAlertUrl(alert.url), lang: alert.message?.url_language ?? null },
-		{ value: safeAlertUrl(alert.url_en), lang: 'en' },
-	];
-	const selected =
-		candidates.find((item) => item.value && item.lang === locale) ??
-		candidates.find((item) => item.value);
-	return selected?.value
-		? { ...selected.value, lang: selected.lang, isFallback: selected.lang !== locale }
-		: null;
+	for (const [source, english, language, embedded] of [
+		[alert.url, alert.url_en, alert.message?.url_language, false],
+		[alert.description, alert.description_en, alert.message?.description_language, true],
+	] as const) {
+		const parse = embedded ? embeddedAlertUrl : safeAlertUrl;
+		const candidates = [
+			{ value: parse(source), lang: language ?? null },
+			{ value: parse(english), lang: 'en' },
+		];
+		const selected =
+			candidates.find((item) => item.value && item.lang === locale) ??
+			candidates.find((item) => item.value);
+		if (selected?.value) {
+			const lang = embedded ? null : selected.lang;
+			return { ...selected.value, lang, isFallback: lang !== locale };
+		}
+	}
+	return null;
+}
+
+function embeddedAlertUrl(description: string | null | undefined) {
+	const urls = new Map<string, { href: string; host: string }>();
+	const entities: Record<string, string> = {
+		amp: '&',
+		quot: '"',
+		apos: "'",
+		lt: '<',
+		gt: '>',
+		colon: ':',
+	};
+	for (const [tag] of (description ?? '').matchAll(
+		/<a(?:\s+[\w:-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*\s*>/gi,
+	)) {
+		const attr = [...tag.matchAll(/\s+([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g)].find(
+			(match) => match[1].toLowerCase() === 'href',
+		);
+		const href = (attr?.[2] ?? attr?.[3] ?? '').replace(
+			/&(#x[\da-f]+|#\d+|[a-z][a-z\d]*);/gi,
+			(entity, key: string) => {
+				if (!key.startsWith('#')) return Object.hasOwn(entities, key) ? entities[key] : entity;
+				const code =
+					key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+				return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+			},
+		);
+		const url = /&(?:#\w+|[a-z][a-z\d]*);/i.test(href) ? null : safeAlertUrl(href);
+		if (url) urls.set(url.href, url);
+	}
+	return urls.size === 1 ? [...urls.values()][0] : null;
 }
 
 export function alertLanguageNotice(

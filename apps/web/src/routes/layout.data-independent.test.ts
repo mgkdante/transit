@@ -11,6 +11,7 @@ const harness = vi.hoisted(() => {
 	const runViewTransition = vi.fn(async () => {});
 	return {
 		setPath: (_pathname: string) => {},
+		shallowUrl: (_pathname: string) => {},
 		beforeNavigateCallbacks,
 		onNavigateCallbacks,
 		runViewTransition,
@@ -31,7 +32,7 @@ vi.mock('$app/stores', async () => {
 	});
 	harness.setPath = (pathname: string) => {
 		page.set({
-			url: new URL(`https://transit.yesid.dev${pathname}`),
+			url: new URL(pathname, window.location.origin),
 			params: pathname.startsWith('/fr/') ? { lang: 'fr' } : {},
 			route: { id: '/[[lang=locale]]/legal' },
 			status: 200,
@@ -41,10 +42,14 @@ vi.mock('$app/stores', async () => {
 			state: {},
 		});
 	};
+	harness.shallowUrl = (pathname: string) => {
+		window.history.replaceState({}, '', pathname);
+		page.update((current) => ({ ...current }));
+	};
 	return { page };
 });
 
-vi.mock('$app/state', () => ({ updated: { current: false } }));
+vi.mock('$app/state', () => ({ updated: { current: false }, page: { state: {} } }));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
 	invalidateAll: vi.fn(),
@@ -209,6 +214,26 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
+	it.each(['en', 'fr'] as const)(
+		'preserves shallow filters in both %s language links',
+		async (locale) => {
+			const path = `${locale === 'fr' ? '/fr' : ''}/alerts`;
+			const { getByRole, container } = renderWithoutV1(path, locale);
+			await fireEvent.click(getByRole('button', { name: /Open menu|Ouvrir le menu/ }));
+			for (const severity of ['watch', 'critical', '']) {
+				const query = `?provider=stm&route=144&stop=52458&from=2026-09-21&to=2026-09-21${severity ? `&severity=${severity}` : ''}#alerts`;
+				harness.shallowUrl(path + query);
+				await tick();
+				const links = container.querySelectorAll(
+					'a[aria-label^="Switch language"], a[aria-label^="Changer de langue"]',
+				);
+				expect(links).toHaveLength(2);
+				for (const link of links)
+					expect(link).toHaveAttribute('href', `${locale === 'en' ? '/fr' : ''}/alerts${query}`);
+			}
+		},
+	);
+
 	it('does not geocode a submitted header search while provider boot is unavailable', async () => {
 		const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"results":[]}'));
 		try {

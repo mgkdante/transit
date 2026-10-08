@@ -37,7 +37,7 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
     assert steps[0]["with"] == {"python-version-file": ".python-version"}
     assert (
         steps[1]["uses"]
-        == "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
+        == "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7"
     )
     assert steps[1]["with"] == {"version": "0.11.15"}
     assert steps[2] == {

@@ -1852,7 +1852,6 @@ def persist_historic_receipts(
             "month_keys": normalized_month_keys,
         }
 
-    attempted_bytes = sum(_receipt_json_bytes(receipt) for receipt in materialized)
     changed_new = {
         (receipt.family, receipt.entity_key)
         for receipt in materialized
@@ -1861,6 +1860,20 @@ def persist_historic_receipts(
         )
         != receipt.entity_receipt_sha256
     }
+    attempted_bytes = changed_bytes = 0
+    changed_params = []
+    for receipt in materialized:
+        if (receipt.family, receipt.entity_key) in changed_new:
+            params = receipt.as_sql_params()
+            byte_size = sum(
+                len(cast(str, params[field]).encode("utf-8"))
+                for field in ("common_envelope", "month_receipts")
+            )
+            changed_bytes += byte_size
+            changed_params.append(params)
+        else:
+            byte_size = _receipt_json_bytes(receipt)
+        attempted_bytes += byte_size
     stale_keys = set(existing) - keys
     stale_json: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
     for family in families:
@@ -1891,11 +1904,6 @@ def persist_historic_receipts(
             )
     if set(stale_json) != stale_keys:
         raise HistoricReceiptEvidenceError("stale receipt JSON lookup was incomplete")
-    changed_bytes = sum(
-        _receipt_json_bytes(receipt)
-        for receipt in materialized
-        if (receipt.family, receipt.entity_key) in changed_new
-    )
     changed_bytes += sum(
         len(_canonical_json_bytes(stale_json[key][0]))
         + len(_canonical_json_bytes(stale_json[key][1]))
@@ -1909,11 +1917,6 @@ def persist_historic_receipts(
     stale_months += sum(len(existing[key]["month_keys"]) for key in stale_keys)
 
     upserted = 0
-    changed_params = [
-        receipt.as_sql_params()
-        for receipt in materialized
-        if (receipt.family, receipt.entity_key) in changed_new
-    ]
     for offset in range(0, len(changed_params), HISTORIC_RECEIPT_UPSERT_BATCH_SIZE):
         result = conn.execute(
             _UPSERT_RECEIPT_SQL,

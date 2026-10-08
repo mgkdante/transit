@@ -1859,6 +1859,14 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				await installNetworkBoundary(context, preview.origin, replay, cell);
 				const page = await context.newPage();
 				const errors = [];
+				page.on('response', (response) => {
+					if (response.status() >= 500)
+						void response.text().then(
+							(body) =>
+								errors.push(`${response.status()} ${response.url()}: ${body.slice(0, 2_000)}`),
+							(error) => errors.push(`${response.status()} ${response.url()}: ${error}`),
+						);
+				});
 				page.on('pageerror', (error) => errors.push(String(error)));
 				page.on('console', (message) => {
 					if (message.type() === 'error')
@@ -1870,7 +1878,14 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
-				await settleSurface(page, cell, fixture);
+				try {
+					await settleSurface(page, cell, fixture);
+				} catch (error) {
+					throw new Error(
+						`run ${run + 1} ${cell.fixture}/${cell.locale}/${cell.surface} did not settle\nbrowser errors ${JSON.stringify(errors)}\nreplay ledger ${JSON.stringify(replay.state.ledger)}`,
+						{ cause: error },
+					);
+				}
 				await verifySsr(page, cell, fixture, ssrHtml);
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					const control = await toggle.elementHandle();

@@ -5,7 +5,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from http.client import HTTPException
+from http.client import HTTPException, IncompleteRead
 from io import TextIOWrapper
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
@@ -73,11 +73,18 @@ class StaticFeedsValidationResult:
 
 
 def _default_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-    return download_to_tempfile(
-        source_url=source_url,
-        temp_dir=temp_dir,
-        default_filename="static_gtfs.zip",
-    )
+    retry = False
+    while True:
+        try:
+            return download_to_tempfile(
+                source_url=source_url,
+                temp_dir=temp_dir,
+                default_filename="static_gtfs.zip",
+            )
+        except IncompleteRead:
+            if retry:
+                raise
+            retry = True
 
 
 def _unavailable_detail(
