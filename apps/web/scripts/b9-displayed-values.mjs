@@ -1859,14 +1859,12 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				await installNetworkBoundary(context, preview.origin, replay, cell);
 				const page = await context.newPage();
 				const errors = [];
-				const failedResponses = [];
 				page.on('response', (response) => {
 					if (response.status() >= 500)
-						failedResponses.push(
-							response.text().then(
-								(body) => `${response.status()} ${response.url()}: ${body.slice(0, 2_000)}`,
-								(error) => `${response.status()} ${response.url()}: ${error}`,
-							),
+						void response.text().then(
+							(body) =>
+								errors.push(`${response.status()} ${response.url()}: ${body.slice(0, 2_000)}`),
+							(error) => errors.push(`${response.status()} ${response.url()}: ${error}`),
 						);
 				});
 				page.on('pageerror', (error) => errors.push(String(error)));
@@ -1883,7 +1881,6 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				try {
 					await settleSurface(page, cell, fixture);
 				} catch (error) {
-					errors.push(...(await Promise.all(failedResponses)));
 					throw new Error(
 						`run ${run + 1} ${cell.fixture}/${cell.locale}/${cell.surface} did not settle\nbrowser errors ${JSON.stringify(errors)}\nreplay ledger ${JSON.stringify(replay.state.ledger)}`,
 						{ cause: error },
