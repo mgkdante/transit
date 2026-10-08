@@ -1870,7 +1870,14 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
-				await settleSurface(page, cell, fixture);
+				try {
+					await settleSurface(page, cell, fixture);
+				} catch (error) {
+					throw new Error(
+						`run ${run + 1} ${cell.fixture}/${cell.locale}/${cell.surface} did not settle\nbrowser errors ${JSON.stringify(errors)}\nreplay ledger ${JSON.stringify(replay.state.ledger)}`,
+						{ cause: error },
+					);
+				}
 				await verifySsr(page, cell, fixture, ssrHtml);
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					const control = await toggle.elementHandle();
