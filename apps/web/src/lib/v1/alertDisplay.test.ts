@@ -195,6 +195,7 @@ describe('alertDisplayUrl', () => {
 		['<a data-href="https://example.test">Info</a>', null],
 		['<a href="https&Colon;//example.test">Info</a>', null],
 		['<a href="https://example.test/?q=&constructor;">Info</a>', null],
+		['<a href="https://example.test/?q=&frac12;">Info</a>', null],
 		[
 			'<a href="jav&#x61;script:alert(1)">Bad</a><a href="https://example.test/?a=1&amp;b=2">Info</a>',
 			'https://example.test/?a=1&b=2',

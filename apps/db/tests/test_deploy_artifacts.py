@@ -29,7 +29,7 @@ EXPECTED_PINNED_ACTION_LINES = {
         "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
     ),
     "astral-sh/setup-uv": (
-        "uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0"
+        "uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0"
     ),
     "cloudflare/wrangler-action": (
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"

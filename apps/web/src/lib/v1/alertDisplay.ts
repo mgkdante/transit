@@ -79,7 +79,7 @@ function embeddedAlertUrl(description: string | null | undefined) {
 			(match) => match[1].toLowerCase() === 'href',
 		);
 		const href = (attr?.[2] ?? attr?.[3] ?? '').replace(
-			/&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+			/&(#x[\da-f]+|#\d+|[a-z][a-z\d]*);/gi,
 			(entity, key: string) => {
 				if (!key.startsWith('#')) return Object.hasOwn(entities, key) ? entities[key] : entity;
 				const code =
@@ -87,7 +87,7 @@ function embeddedAlertUrl(description: string | null | undefined) {
 				return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
 			},
 		);
-		const url = /&(?:#\w+|[a-z]+);/i.test(href) ? null : safeAlertUrl(href);
+		const url = /&(?:#\w+|[a-z][a-z\d]*);/i.test(href) ? null : safeAlertUrl(href);
 		if (url) urls.set(url.href, url);
 	}
 	return urls.size === 1 ? [...urls.values()][0] : null;
