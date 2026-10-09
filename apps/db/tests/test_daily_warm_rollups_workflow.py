@@ -20,6 +20,7 @@ ATTEMPT_SCOPED_ARTIFACT_NAMES = {
     "prepare": "daily-warm-prepare-${{ github.run_id }}-${{ github.run_attempt }}",
     "rollups": "daily-warm-rollups-${{ github.run_id }}-${{ github.run_attempt }}",
     "publish": "daily-warm-publish-${{ github.run_id }}-${{ github.run_attempt }}",
+    "proof": "daily-warm-proof-${{ github.run_id }}-${{ github.run_attempt }}",
     "retention": "daily-warm-retention-${{ github.run_id }}-${{ github.run_attempt }}",
 }
 ARTIFACT_UPLOAD_WITH = {
@@ -93,15 +94,17 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
         "group": "daily-warm-rollups",
         "cancel-in-progress": False,
     }
-    assert set(jobs) == {"prepare", "rollups", "publish", "retention", "notify"}
+    assert set(jobs) == {"prepare", "rollups", "publish", "proof", "retention", "notify"}
     assert all("strategy" not in job for job in jobs.values())
     assert jobs["rollups"]["needs"] == "prepare"
     assert set(jobs["publish"]["needs"]) == {"prepare", "rollups"}
-    assert set(jobs["retention"]["needs"]) == {"prepare", "publish"}
+    assert set(jobs["proof"]["needs"]) == {"prepare", "publish"}
+    assert set(jobs["retention"]["needs"]) == {"prepare", "proof"}
     assert set(jobs["notify"]["needs"]) == {
         "prepare",
         "rollups",
         "publish",
+        "proof",
         "retention",
     }
     provider_jobs = [jobs["rollups"], jobs["retention"]]
@@ -138,14 +141,14 @@ def test_evidence_uploads_are_attempt_scoped_required_and_exact() -> None:
 def test_publish_uses_prepare_artifact_id_when_only_failed_jobs_and_dependents_rerun() -> None:
     jobs = _load(DAILY_WORKFLOW)["jobs"]
     prepare_upload = _step(jobs["prepare"], "Upload prepare evidence")
-    prepare_download = _step(jobs["publish"], "Download alert archive receipts")
+    prepare_download = _step(jobs["proof"], "Download alert archive receipts")
 
     assert prepare_upload["id"] == "upload-prepare-evidence"
     assert jobs["prepare"]["outputs"] == {
         "providers": "${{ steps.discover.outputs.providers }}",
         "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
     }
-    assert "prepare" in jobs["publish"]["needs"]
+    assert "prepare" in jobs["proof"]["needs"]
     assert prepare_download == {
         "name": "Download alert archive receipts",
         "uses": DOWNLOAD_ACTION,
@@ -706,7 +709,7 @@ def test_serial_daily_provider_extraction_propagates_failure_before_commands(
     assert not calls.exists()
 
 
-def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> None:
+def test_publish_requires_prepare_and_rollups_success() -> None:
     publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
 
     assert publish["env"]["BRONZE_STORAGE_BACKEND"] == "s3"
@@ -733,21 +736,10 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert "needs.prepare.result == 'success'" in guard
     assert "needs.rollups.result == 'success'" in guard
     assert publish["timeout-minutes"] == 90
-    download = _step(publish, "Download alert archive receipts")
-    assert download["uses"] == DOWNLOAD_ACTION
-    assert download["with"] == {
-        "artifact-ids": "${{ needs.prepare.outputs.prepare_artifact_id }}",
-        "path": "apps/db/artifacts/daily-warm-rollups/prepare",
-    }
     publish_run = _step(publish, "Publish gated historic snapshot")["run"]
     assert "publish-all" in publish_run
     assert "--tier historic" in publish_run
     assert "--report-dir" in publish_run
-    proof = _step(publish, "Prove public historic snapshots and source messages")["run"]
-    assert "verify-historic-publish" in proof
-    assert "--sync-report" in proof
-    assert "--gate-report" in proof
-    assert "--report-path" in proof
     upload = _step(publish, "Upload publish evidence")
     assert upload["if"] == "always()"
     assert "continue-on-error" not in upload
@@ -783,6 +775,106 @@ def _write_daily_publish_inputs(
     )
 
 
+def test_proof_has_its_own_budget_and_exact_producing_artifact_ids() -> None:
+    jobs = _load(DAILY_WORKFLOW)["jobs"]
+    proof = jobs["proof"]
+    provider_count = len(list((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
+    assert provider_count * 35 + 5 <= proof["timeout-minutes"] <= 120
+    assert proof["if"] == "needs.publish.result == 'success'"
+    assert "continue-on-error" not in proof
+    assert all("continue-on-error" not in step for step in proof["steps"])
+    assert jobs["publish"]["outputs"] == {
+        "publish_artifact_id": "${{ steps.upload-publish-evidence.outputs.artifact-id }}"
+    }
+    assert _step(jobs["publish"], "Upload publish evidence")["id"] == "upload-publish-evidence"
+    guard = _step(proof, "Validate proof artifact handoff")
+    for producer, label in (("prepare", "alert archive receipts"), ("publish", "publish evidence")):
+        source = "${{ needs." + producer + ".outputs." + producer + "_artifact_id }}"
+        download = _step(proof, "Download " + label)
+        assert download["uses"] == DOWNLOAD_ACTION
+        # No name search, cross-run token, repository override or attempt-derived lookup.
+        assert download["with"] == {
+            "artifact-ids": source, "path": "apps/db/artifacts/daily-warm-rollups/" + producer
+        }
+        assert guard["env"][producer.upper() + "_ARTIFACT_ID"] == source
+        assert proof["steps"].index(guard) < proof["steps"].index(download)
+
+
+@pytest.mark.parametrize("artifact_id", ["", "0", "1,2", "../12", "123"])
+@pytest.mark.parametrize("producer", ["PREPARE", "PUBLISH"])
+def test_proof_rejects_missing_or_ambiguous_artifact_ids_before_download(
+    tmp_path: Path, artifact_id: str, producer: str,
+) -> None:
+    environment = dict(os.environ, PREPARE_ARTIFACT_ID="111", PUBLISH_ARTIFACT_ID="222")
+    environment[producer + "_ARTIFACT_ID"] = artifact_id
+    result = _run_step(_load(DAILY_WORKFLOW)["jobs"]["proof"], "Validate proof artifact handoff",
+                       cwd=tmp_path, environment=environment)
+    assert (result.returncode == 0) == (artifact_id == "123")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate", "unsafe", "sync"])
+def test_proof_rejects_provider_set_corruption_before_verification(
+    tmp_path: Path, mutation: str,
+) -> None:
+    receipts = {p: {"provider_id": p} for p in ("oc", "stm")}
+    published = [{"provider_id": p} for p in ("oc", "stm")]
+    if mutation == "missing":
+        published.pop()
+    elif mutation == "sync":
+        receipts["stm"]["provider_id"] = "oc"
+    else:
+        provider = {"extra": "sto", "duplicate": "stm", "unsafe": "../x"}[mutation]
+        published.append({"provider_id": provider})
+    _write_daily_publish_inputs(
+        tmp_path, discovery=["oc", "stm"], receipts=receipts, published=published,
+    )
+    calls = tmp_path / "calls"
+    environment = _fake_uv_environment(tmp_path, 'touch "$CALLS"\n')
+    environment["CALLS"] = str(calls)
+    result = _run_step(_load(DAILY_WORKFLOW)["jobs"]["proof"],
+                       "Prove public historic snapshots and source messages",
+                       cwd=tmp_path, environment=environment)
+    assert result.returncode != 0
+    assert not calls.exists()
+
+
+@pytest.mark.parametrize("outcome", ["pass", "failure", "cancelled", "empty", "wrong", "failed"])
+def test_proof_requires_fresh_passing_evidence_from_every_provider(
+    tmp_path: Path, outcome: str,
+) -> None:
+    _write_daily_publish_inputs(tmp_path, discovery=["oc", "stm"],
+                                receipts={p: {"provider_id": p} for p in ("oc", "stm")},
+                                published=[{"provider_id": p} for p in ("oc", "stm")])
+    proof_dir = tmp_path / "artifacts/daily-warm-rollups/proof"
+    proof_dir.mkdir()
+    (proof_dir / "public-proof-stm.json").write_text('{"provider_id":"stm","status":"pass"}')
+    environment = _fake_uv_environment(tmp_path, '''\
+provider="$6"
+report="${!#}"
+printf '%s\\n' "$provider" >> "$CALLS"
+if [[ "$provider" == "stm" ]]; then
+  case "$OUTCOME" in
+    failure) exit 42;;
+    cancelled) kill -TERM "$PPID"; exit 143;;
+    empty) exit 0;;
+    wrong) provider="oc";;
+    failed) printf '{"provider_id":"stm","status":"fail"}' > "$report"; exit 0;;
+  esac
+fi
+printf '{"provider_id":"%s","status":"pass"}' "$provider" > "$report"
+''')
+    calls = tmp_path / "calls"
+    environment.update(OUTCOME=outcome, CALLS=str(calls))
+    result = _run_step(_load(DAILY_WORKFLOW)["jobs"]["proof"],
+                       "Prove public historic snapshots and source messages",
+                       cwd=tmp_path, environment=environment)
+    assert (result.returncode == 0) == (outcome == "pass")
+    assert calls.read_text() == "oc\nstm\n"
+    if outcome != "pass":
+        report = json.loads((proof_dir / "public-proof-stm.json").read_text())
+        assert report["provider_id"] != "stm" or report["status"] != "pass"
+
+
 def test_publish_proof_accepts_seeded_provider_and_skips_unseeded_receipt(
     tmp_path: Path,
 ) -> None:
@@ -803,13 +895,13 @@ if [[ "$*" == *"verify-historic-publish"* ]]; then
   provider="$6"
   printf '%s\\n' "$provider" >> "$VERIFY_CALLS"
   printf '{"provider_id":"%s","status":"pass"}\\n' "$provider" \\
-    > "artifacts/daily-warm-rollups/publish/public-proof-${provider}.json"
+    > "artifacts/daily-warm-rollups/proof/public-proof-${provider}.json"
 fi
 exit 0
 """,
     )
     environment["VERIFY_CALLS"] = str(calls)
-    publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
+    publish = _load(DAILY_WORKFLOW)["jobs"]["proof"]
 
     result = _run_step(
         publish,
@@ -837,7 +929,7 @@ def test_publish_proof_rejects_multiple_sync_documents_before_verification(
         'printf "%s\\n" "$*" >> "$VERIFY_CALLS"\nexit 0\n',
     )
     environment["VERIFY_CALLS"] = str(calls)
-    publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
+    publish = _load(DAILY_WORKFLOW)["jobs"]["proof"]
 
     result = _run_step(
         publish,
@@ -850,10 +942,10 @@ def test_publish_proof_rejects_multiple_sync_documents_before_verification(
     assert not calls.exists()
 
 
-def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> None:
+def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> None:
     retention = _load(DAILY_WORKFLOW)["jobs"]["retention"]
 
-    assert retention["if"] == "needs.publish.result == 'success'"
+    assert retention["if"] == "needs.proof.result == 'success'"
     assert retention["timeout-minutes"] == 150
     assert retention["env"]["PROVIDER_PLAN"] == "${{ needs.prepare.outputs.providers }}"
     stage = _step(retention, "Prune retained storage and write proofs")
@@ -1118,6 +1210,7 @@ def test_notify_always_fires_or_resolves_one_existing_issue_from_all_results() -
         "PREPARE_RESULT": "${{ needs.prepare.result }}",
         "ROLLUPS_RESULT": "${{ needs.rollups.result }}",
         "PUBLISH_RESULT": "${{ needs.publish.result }}",
+        "PROOF_RESULT": "${{ needs.proof.result }}",
         "RETENTION_RESULT": "${{ needs.retention.result }}",
         "GH_TOKEN": "${{ github.token }}",
         "GH_REPO": "${{ github.repository }}",
@@ -1129,13 +1222,15 @@ def test_notify_always_fires_or_resolves_one_existing_issue_from_all_results() -
 @pytest.mark.parametrize(
     ("results", "expected_action"),
     [
-        (("success", "success", "success", "success"), "resolve"),
-        (("success", "failure", "success", "skipped"), "fire"),
+        (("success", "success", "success", "success", "success"), "resolve"),
+        (("success", "failure", "success", "skipped", "skipped"), "fire"),
+        *(( ("success", "success", "success", result, "success"), "fire")
+          for result in ("failure", "cancelled", "skipped")),
     ],
 )
 def test_notify_shell_selects_action_from_all_job_results(
     tmp_path: Path,
-    results: tuple[str, str, str, str],
+    results: tuple[str, str, str, str, str],
     expected_action: str,
 ) -> None:
     script_dir = tmp_path / ".github" / "scripts"
@@ -1153,7 +1248,8 @@ def test_notify_shell_selects_action_from_all_job_results(
             "PREPARE_RESULT": results[0],
             "ROLLUPS_RESULT": results[1],
             "PUBLISH_RESULT": results[2],
-            "RETENTION_RESULT": results[3],
+            "PROOF_RESULT": results[3],
+            "RETENTION_RESULT": results[4],
             "GH_TOKEN": "test-token",
             "GH_REPO": "owner/repo",
             "ALERT_CALLS": str(calls),
