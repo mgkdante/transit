@@ -17,7 +17,7 @@ CRON_WORKFLOWS = {
 }
 DAILY_NOTIFY_JOBS = {
     "daily-static-pipeline.yml": {"run-static-pipeline"},
-    "daily-warm-rollups.yml": {"prepare", "rollups", "publish", "retention"},
+    "daily-warm-rollups.yml": {"prepare", "rollups", "publish", "proof", "retention"},
 }
 
 

@@ -14,6 +14,7 @@ EXPECTED_CALLERS = {
     ("daily-warm-rollups.yml", "prepare"),
     ("daily-warm-rollups.yml", "rollups"),
     ("daily-warm-rollups.yml", "publish"),
+    ("daily-warm-rollups.yml", "proof"),
     ("daily-warm-rollups.yml", "retention"),
     ("freshness-probe.yml", "backup-freshness"),
     ("historic-publish-recovery.yml", "publish-historic-recovery"),
