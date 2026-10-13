@@ -2928,28 +2928,6 @@ def test_build_alert_history_negative_window_yields_none_duration() -> None:
     assert e.end_utc is not None
 
 
-def test_build_alert_history_200_cap() -> None:
-    import datetime as _dt
-
-    start = _dt.datetime(2026, 5, 1, tzinfo=_dt.UTC)
-    rows = [
-        {
-            "alert_header_text": f"H{i}",
-            "header_text_en": None,
-            "alert_id": None,
-            "severity": "INFO",
-            "routes": None,
-            "stops": None,
-            "start_utc": start,
-            "end_utc": start,
-        }
-        for i in range(200)
-    ]
-    conn = FakeConn({"alerts.history": rows})
-    out = build_alert_history(conn, generated_utc="t")
-    assert len(out.alerts) == 200
-
-
 def test_build_alert_history_empty() -> None:
     conn = FakeConn({"alerts.history": []})
     out = build_alert_history(conn, generated_utc="t")
@@ -3073,10 +3051,9 @@ def test_build_alert_history_pre_0077_falls_back_to_scalar_period() -> None:
     assert e.active_periods[0].end_utc == "2026-05-01T09:00:00Z"
 
 
-def test_build_alert_history_500_cap_and_truncation_disclosed() -> None:
-    import datetime as _dt
-
-    start = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
+@pytest.mark.parametrize("count,total", [(200, None), (500, 512), (500, 500)])
+def test_build_alert_history_count_cap_and_truncation(count, total) -> None:
+    start = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
     rows = [
         {
             "alert_header_text": f"H{i}",
@@ -3088,48 +3065,68 @@ def test_build_alert_history_500_cap_and_truncation_disclosed() -> None:
             "start_utc": start,
             "end_utc": start,
         }
-        for i in range(500)
+        for i in range(count)
     ]
-    conn = FakeConn(
-        {
-            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
-            "alerts.history.count": [{"total": 512}],
-            "alerts.history": rows,
-        }
-    )
+    conn = FakeConn({
+        "alerts.history.anchor": [{"anchor": datetime.date(2026, 7, 1)}],
+        "alerts.history.count": [{"total": total}] if total is not None else [],
+        "alerts.history": rows,
+    })
     out = build_alert_history(conn, generated_utc="t")
-    assert len(out.alerts) == 500
-    assert out.total_in_window == 512
-    assert out.truncated is True
+    assert len(out.alerts) == count
+    assert out.total_in_window == total
+    assert out.truncated is (total is not None and total > count)
 
 
-def test_build_alert_history_exact_cap_fill_is_not_truncated() -> None:
-    import datetime as _dt
+@pytest.mark.parametrize("count,total", [(1, 1), (2, 2), (2, 512), (2, None)])
+@pytest.mark.parametrize("overflow", [0, 1])
+def test_alert_history_exact_stamped_byte_budget(count, total, overflow) -> None:
+    from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
+    from transit_ops.snapshots.envelope import stamp_envelope
+    from transit_ops.snapshots.gate import check_alert_history
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
 
-    start = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
-    rows = [
-        {
-            "alert_header_text": f"H{i}",
-            "header_text_en": None,
-            "alert_id": None,
-            "severity": "INFO",
-            "routes": None,
-            "stops": None,
-            "start_utc": start,
-            "end_utc": start,
-        }
-        for i in range(500)
-    ]
-    conn = FakeConn(
-        {
-            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
-            "alerts.history.count": [{"total": 500}],
-            "alerts.history": rows,
-        }
-    )
-    out = build_alert_history(conn, generated_utc="t")
-    assert out.total_in_window == 500
-    assert out.truncated is False
+    stamp, provider = "2026-10-13T00:00:00Z", "provider-with-a-long-id"
+    start = datetime.datetime(2026, 10, 12, tzinfo=datetime.UTC)
+    rows = [{
+        "alert_id": f"alert-{i}", "alert_header_text": 'Détour "🚇"',
+        "header_text_en": "Detour", "description": "Avis\n", "description_en": "Notice",
+        "severity": "WARNING", "cause": "CONSTRUCTION", "effect": "DETOUR",
+        "routes": ["9", "51"], "stops": ["123"], "url": "https://agency.test/fr",
+        "url_en": "https://agency.test/en", "start_utc": start,
+        "end_utc": start + datetime.timedelta(minutes=10 + 20 * i),
+        "active_periods": [{"start_utc": stamp}, {"end_utc": stamp}],
+        "message_snapshot_id": 42, "message_alert_index": i, "message_captured_utc": start,
+        "raw_alert_json": {"header": {"fr": "Détour", "en": "Detour"}},
+    } for i in range(count)]
+    conn = FakeConn({
+        "alerts.history.anchor": [{"anchor": start.date()}], "alerts.history": rows,
+        "alerts.history.count": [{"total": total}] if total is not None else [],
+    })
+    expected = build_alert_history(conn, provider, generated_utc=stamp)
+    stamp_envelope([("historic/alert_history.json", expected, "historic")],
+                   provider_id=provider, stamp=stamp)
+    padding = "x" * (ALERT_HISTORY_BYTE_CEILING - len(snapshot_json_bytes(expected)) + overflow)
+    rows[-1]["description"] += padding
+    expected.alerts[-1].description += padding
+    assert len(snapshot_json_bytes(expected)) == ALERT_HISTORY_BYTE_CEILING + overflow
+    out = build_alert_history(conn, provider, generated_utc=stamp)
+    before_stamp = len(out.alerts)
+    stamp_envelope([("historic/alert_history.json", out, "historic")],
+                   provider_id=provider, stamp=stamp)
+    assert len(out.alerts) == before_stamp == count - overflow
+    assert out.alerts == expected.alerts[:count - overflow]
+    assert (out.window_start, out.window_end) == (expected.window_start, expected.window_end)
+    assert out.total_in_window == total
+    assert out.truncated is (bool(overflow) or (total is not None and total > count))
+    assert len(snapshot_json_bytes(out)) <= ALERT_HISTORY_BYTE_CEILING
+    assert not check_alert_history(out, rel_key="historic/alert_history.json")
+    if out.alerts:
+        for group in (out.breakdown.by_cause, out.breakdown.by_effect, out.breakdown.by_severity):
+            assert len(group) == 1 and group[0].count == count - overflow
+            assert group[0].median_duration_min == (20 if count == 2 and not overflow else 10)
+    else:
+        assert out.breakdown is None
 
 
 def test_build_provenance_sources_and_freshness() -> None:

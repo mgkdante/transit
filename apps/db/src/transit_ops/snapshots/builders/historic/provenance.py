@@ -203,7 +203,7 @@ def build_provenance(
                 f"span — the trailing {_settings.SILVER_I3_CLOSED_RETENTION_DAYS} "
                 "days (SILVER_I3_CLOSED_RETENTION_DAYS), provider-local, disclosed "
                 "as window_start/window_end; alerts are the newest-first distinct "
-                "alerts in that window, capped at 500 with total_in_window + "
+                "alerts in that window, capped at 500 and 524288 bytes with total_in_window + "
                 "truncated flagging when more existed. Each entry lists ALL its "
                 "active windows (active_periods); alerts captured before the S15 "
                 "multi-period capture (2026-07-02) carry only their primary window "

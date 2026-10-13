@@ -40,6 +40,7 @@ from transit_ops.snapshots.builders.historic.ranking_kernel import (
     otp_delta_points,
 )
 from transit_ops.snapshots.contract import (
+    ALERT_HISTORY_BYTE_CEILING,
     NOT_REPORTED_ROUTES_CAP,
     AlertBreakdown,
     AlertBreakdownBucket,
@@ -58,6 +59,8 @@ from transit_ops.snapshots.contract import (
     RepeatOffenderGrain,
     RepeatOffenders,
 )
+from transit_ops.snapshots.envelope import stamp_envelope
+from transit_ops.snapshots.serialization import snapshot_json_bytes
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -1025,7 +1028,7 @@ def build_alert_history(
                 active_periods=active_periods,
             )
         )
-    return AlertHistory(
+    payload = AlertHistory(
         generated_utc=generated_utc,
         alerts=entries,
         breakdown=_alert_breakdown(breakdown_records),
@@ -1034,3 +1037,15 @@ def build_alert_history(
         total_in_window=total_in_window,
         truncated=(total_in_window is not None and total_in_window > len(rows)),
     )
+    # Budget the final envelope; retain whole entries in the query's newest-first order.
+    unstamped = payload.model_dump(include={"methodology_version", "publish_generation_id"})
+    stamp_envelope(
+        [("historic/alert_history.json", payload, "historic")],
+        provider_id=provider_id, stamp=generated_utc,
+    )
+    while payload.alerts and len(snapshot_json_bytes(payload)) > ALERT_HISTORY_BYTE_CEILING:
+        payload.alerts.pop()
+        breakdown_records.pop()
+        payload.breakdown = _alert_breakdown(breakdown_records)
+        payload.truncated = True
+    return payload.model_copy(update=unstamped)
