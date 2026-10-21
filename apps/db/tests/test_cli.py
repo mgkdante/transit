@@ -1916,16 +1916,21 @@ def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
     assert "--full-historic-rebuild requires --tier historic" in rejected.output
 
 
-def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("provider_id", [None, "oc", "stm"])
+def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path, provider_id) -> None:
+    published = []
     monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
     monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
     monkeypatch.setattr(
         cli_module,
         "_provider_registry",
-        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["stm"]),
+        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["oc", "stm"]),
     )
 
     def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001
+        assert kwargs["gate_enabled"] is True
+        assert kwargs["force"] is False
+        published.append(provider_id)
         return SimpleNamespace(
             display_dict=lambda: {"provider_id": provider_id, "tier": tier},
             gate_report={"provider_id": provider_id, "tier": tier, "errors": 0, "warnings": 0},
@@ -1933,15 +1938,36 @@ def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> Non
 
     monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
 
-    result = runner.invoke(
-        app, ["publish-all", "--tier", "historic", "--report-dir", str(tmp_path)]
-    )
+    args = ["publish-all", "--tier", "historic", "--report-dir", str(tmp_path)]
+    if provider_id is not None:
+        args += ["--provider-id", provider_id]
+    result = runner.invoke(app, args)
     assert result.exit_code == 0
-    report_file = tmp_path / "publish-gate-stm.json"
-    assert report_file.exists()
-    written = json.loads(report_file.read_text())
-    assert written["provider_id"] == "stm"
-    assert written["errors"] == 0
+    expected = [provider_id] if provider_id is not None else ["oc", "stm"]
+    assert published == expected
+    assert [item["provider_id"] for item in json.loads(result.stdout)] == expected
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        f"publish-gate-{provider}.json" for provider in expected
+    ]
+    for provider in expected:
+        written = json.loads((tmp_path / f"publish-gate-{provider}.json").read_text())
+        assert written["provider_id"] == provider
+        assert written["errors"] == 0
+
+
+def test_publish_all_rejects_unconfigured_provider_before_database_access(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli_module, "_provider_registry",
+        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["oc", "stm"]),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "make_engine",
+        lambda settings: pytest.fail("must reject before database access"),
+    )
+    result = runner.invoke(app, ["publish-all", "--provider-id", "unknown"])
+    assert result.exit_code == 2
+    assert "not an active provider" in result.output
 
 
 def _stub_verify_historic_publish_ready(monkeypatch) -> object:  # noqa: ANN001

@@ -1345,6 +1345,11 @@ def publish_all_command(
         "--report-dir",
         help="write each provider's gate report JSON to {report_dir}/publish-gate-{provider}.json",
     ),
+    provider_id: str | None = typer.Option(  # noqa: B008
+        None,
+        "--provider-id",
+        help="publish only this active provider (default: every active provider)",
+    ),
 ) -> None:
     """Build and publish the /v1 snapshot for every active configured provider.
 
@@ -1356,13 +1361,18 @@ def publish_all_command(
         raise typer.BadParameter("--full-historic-rebuild requires --tier historic")
     settings = get_settings()
     registry = _provider_registry(settings)
+    provider_ids = registry.list_active_provider_ids()
+    if provider_id is not None:
+        if provider_id not in provider_ids:
+            raise typer.BadParameter(f"{provider_id!r} is not an active provider")
+        provider_ids = [provider_id]
     engine = make_engine(settings)
     if report_dir is not None:
         _preflight_report_dir(report_dir)
     results: list[dict[str, object]] = []
     failures: list[str] = []
     skipped: list[str] = []
-    for provider_id in registry.list_active_provider_ids():
+    for provider_id in provider_ids:
         # An enrolled provider may have no data before its first static pipeline run.
         if not provider_is_seeded(engine, provider_id):
             logger.info(

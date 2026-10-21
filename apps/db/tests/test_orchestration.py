@@ -4,7 +4,7 @@ import inspect
 import json
 import logging
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from types import SimpleNamespace
 
@@ -500,6 +500,7 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
         registry,
         engine,
         last_captures=None,
+        last_attempts=None,
         bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
@@ -589,6 +590,7 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
         registry,
         engine,
         last_captures=None,
+        last_attempts=None,
         bronze_storage_resolver=None,
     ):
         return _worker_loop_cycle_result(provider_id, step_timings=_WORKER_STEP_TIMINGS)
@@ -708,6 +710,7 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
         registry,
         engine,
         last_captures=None,
+        last_attempts=None,
         bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
@@ -750,6 +753,7 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
         registry,
         engine,
         last_captures=None,
+        last_attempts=None,
         bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
@@ -939,6 +943,7 @@ def test_worker_cycle_retries_constructor_after_endpoint_local_failure(
         registry=_fake_registry_with_intervals(),
         engine=object(),
         last_captures=None,
+        last_attempts=None,
         bronze_storage_resolver=scope.resolve,
     )
     scope.close()
@@ -1646,6 +1651,84 @@ def test_run_realtime_cycle_runs_i3_when_interval_elapsed(realtime_cycle, monkey
     i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
     assert i3_result.status == "succeeded"
     assert last_captures["i3_alerts"] == frozen_now
+
+
+@pytest.mark.parametrize(
+    ("provider_id", "failed_endpoint", "interval", "preceding_work_seconds"),
+    [
+        ("stm", "i3_alerts", 300, 0),
+        ("stm", "i3_alerts", 300, 330),
+        ("stm", "trip_updates", 30, 0),
+        ("octranspo", "vehicle_positions", 30, 0),
+    ],
+)
+def test_worker_preserves_feed_cadence_after_failure_and_recovers(
+    monkeypatch, caplog, provider_id, failed_endpoint, interval, preceding_work_seconds
+) -> None:
+    origin = datetime(2026, 10, 21, 15, 57, 41, tzinfo=UTC)
+    now = [origin]
+    offsets = iter([30, 300, 330, 600])
+    attempts: dict[str, list[int]] = {}
+    capture_states: list[dict[str, datetime]] = []
+    registry = _fake_registry_with_intervals()
+    if provider_id == "octranspo":
+        registry.get_provider(provider_id).feeds.pop("i3_alerts")
+    _patch_worker_startup(monkeypatch)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now[0])
+
+    def capture(provider, endpoint_key, **kwargs):
+        assert provider == provider_id
+        elapsed = int((now[0] - origin).total_seconds())
+        attempts.setdefault(endpoint_key, []).append(elapsed)
+        failed = endpoint_key == failed_endpoint and len(attempts[endpoint_key]) == 1
+        if endpoint_key == "trip_updates" and elapsed == 0:
+            now[0] += timedelta(seconds=preceding_work_seconds)
+        return orchestration.RealtimeEndpointCycleResult(
+            endpoint_key=endpoint_key,
+            status="failed" if failed else "succeeded",
+            capture_duration_seconds=0.0,
+            silver_load_duration_seconds=None,
+            total_endpoint_duration_seconds=0.0,
+            capture_result=None,
+            silver_load_result=None,
+            error_message="HTTP 400" if failed else None,
+        )
+
+    real_cycle = orchestration._run_realtime_cycle
+
+    def observe_cycle(*args, **kwargs):
+        result = real_cycle(*args, **kwargs)
+        capture_states.append(dict(kwargs["last_captures"]))
+        return result
+
+    monkeypatch.setattr(orchestration, "_capture_and_load_realtime_source", capture)
+    monkeypatch.setattr(orchestration, "_run_realtime_cycle", observe_cycle)
+    caplog.set_level(logging.INFO, logger="transit_ops.orchestration")
+    run_realtime_worker_loop(
+        provider_id,
+        settings=_pipeline_settings(),
+        registry=registry,
+        engine=object(),
+        max_cycles=5,
+        should_shutdown=lambda: False,
+        utc_now_fn=lambda: now[0],
+        sleep_fn=lambda _: now.__setitem__(
+            0, origin + timedelta(seconds=preceding_work_seconds + next(offsets))
+        ),
+    )
+
+    assert attempts[failed_endpoint] == (
+        [preceding_work_seconds + offset for offset in [0, 300, 600]]
+        if interval == 300 else [0, 30, 300, 330, 600]
+    )
+    assert attempts[
+        "trip_updates" if failed_endpoint != "trip_updates" else "vehicle_positions"
+    ] == [0, *[preceding_work_seconds + offset for offset in [30, 300, 330, 600]]]
+    assert failed_endpoint not in capture_states[0]
+    assert capture_states[-1][failed_endpoint] == origin + timedelta(
+        seconds=preceding_work_seconds + 600
+    )
+    assert "HTTP 400" in caplog.text
 
 
 def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(

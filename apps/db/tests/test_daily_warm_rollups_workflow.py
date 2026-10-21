@@ -735,7 +735,7 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
     assert "always()" in guard
     assert "needs.prepare.result == 'success'" in guard
     assert "needs.rollups.result == 'success'" in guard
-    assert publish["timeout-minutes"] == 90
+    assert 3 * 90 + 10 <= publish["timeout-minutes"] <= 360
     publish_run = _step(publish, "Publish gated historic snapshot")["run"]
     assert "publish-all" in publish_run
     assert "--tier historic" in publish_run
@@ -746,6 +746,66 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
     assert upload["uses"] == UPLOAD_ACTION
     assert upload["with"]["name"] == ATTEMPT_SCOPED_ARTIFACT_NAMES["publish"]
     assert upload["with"]["if-no-files-found"] == "warn"
+
+
+@pytest.mark.parametrize(("failed_provider", "exit_code"), [(None, 0), ("oc", 1), ("stm", 124)])
+def test_serial_publish_bounds_each_provider_and_retains_completed_results(
+    tmp_path, failed_provider, exit_code
+) -> None:
+    environment = _fake_uv_environment(tmp_path, r'''
+provider=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--provider-id" ]]; then provider="$2"; shift; fi
+  shift
+done
+[[ -n "$provider" ]] || { echo 'missing provider boundary' >&2; exit 64; }
+printf '%s\n' "$provider" >> "$PUBLISH_CALLS"
+if [[ "$provider" == "$FAIL_PROVIDER" ]]; then exit "$FAIL_STATUS"; fi
+if [[ "$provider" == sto ]]; then printf '[]\n'; exit 0; fi
+report="artifacts/daily-warm-rollups/publish/publish-gate-${provider}.json"
+printf '{"provider_id":"%s","errors":0}\n' "$provider" > "$report"
+printf '[{"provider_id":"%s","tier":"historic"}]\n' "$provider"
+''')
+    timeout = tmp_path / "bin" / "timeout"
+    timeout.write_text('''#!/usr/bin/env bash
+set -eu
+[[ "$1" == --signal=TERM && "$2" == --kill-after=30s && "$3" == 90m ]]
+shift 3
+exec "$@"
+''', encoding="utf-8")
+    timeout.chmod(0o755)
+    calls = tmp_path / "publish-calls.txt"
+    environment.update({
+        "PROVIDER_PLAN": json.dumps(["oc", "stm", "sto"]),
+        "PUBLISH_CALLS": str(calls),
+        "FAIL_PROVIDER": failed_provider or "",
+        "FAIL_STATUS": str(exit_code),
+    })
+    publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
+    result = _run_step(publish, "Publish gated historic snapshot", cwd=tmp_path,
+                       environment=environment)
+    assert result.returncode == exit_code, result.stderr
+    assert calls.read_text().splitlines() == ["oc", "stm", "sto"]
+    report_dir = tmp_path / "artifacts" / "daily-warm-rollups" / "publish"
+    completed = [provider for provider in ["oc", "stm"] if provider != failed_provider]
+    assert json.loads((report_dir / "historic-publish.json").read_text()) == [
+        {"provider_id": provider, "tier": "historic"} for provider in completed
+    ]
+    for provider in completed:
+        assert json.loads((report_dir / f"publish-gate-{provider}.json").read_text())["errors"] == 0
+    stage = _step(publish, "Publish gated historic snapshot")
+    assert 3 * 90 + 2 <= stage["timeout-minutes"] < publish["timeout-minutes"] <= 360
+
+
+@pytest.mark.parametrize("plan", [[], ["oc", "oc"], ["../stm"], ["a", "b", "c", "d"]])
+def test_publish_rejects_unsafe_or_unbudgeted_plan_before_running_commands(tmp_path, plan) -> None:
+    environment = _fake_uv_environment(tmp_path, 'touch "$PUBLISH_CALLS"; exit 0')
+    calls = tmp_path / "publish-calls.txt"
+    environment.update({"PROVIDER_PLAN": json.dumps(plan), "PUBLISH_CALLS": str(calls)})
+    result = _run_step(_load(DAILY_WORKFLOW)["jobs"]["publish"], "Publish gated historic snapshot",
+                       cwd=tmp_path, environment=environment)
+    assert result.returncode != 0
+    assert not calls.exists()
 
 
 def _write_daily_publish_inputs(

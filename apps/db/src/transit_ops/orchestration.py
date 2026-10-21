@@ -675,6 +675,7 @@ def _run_realtime_cycle(
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
+    last_attempts: dict[str, datetime] | None = None,
     bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeCycleResult:
     settings = settings or get_settings()
@@ -683,7 +684,7 @@ def _run_realtime_cycle(
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
-    # Capture times gate worker intervals; single calls run every configured feed.
+    # Failed attempts retain the configured cadence without advancing capture freshness.
     manifest = registry.get_provider(provider_id)
     cycle_endpoints = realtime_endpoints_for_manifest(manifest)
     initialize_realtime_serving(
@@ -701,15 +702,19 @@ def _run_realtime_cycle(
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results: list[RealtimeEndpointCycleResult] = []
     for endpoint_key in cycle_endpoints:
+        attempt_started_at_utc = utc_now() if last_attempts is not None else started_at_utc
         interval_seconds = refresh_intervals.get(endpoint_key)
         last_capture_at = last_captures.get(endpoint_key) if last_captures is not None else None
+        last_attempt_at = last_attempts.get(endpoint_key) if last_attempts is not None else None
+        if last_attempt_at is not None:
+            last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
         if interval_seconds is not None and last_capture_at is not None:
-            elapsed_seconds = (started_at_utc - last_capture_at).total_seconds()
+            elapsed_seconds = (attempt_started_at_utc - last_capture_at).total_seconds()
             if elapsed_seconds < interval_seconds:
                 logger.info(
                     (
                         "Skipping realtime cycle endpoint '%s' for provider '%s' "
-                        "(refresh_interval=%ds, last capture %.1fs ago)."
+                        "(refresh_interval=%ds, last capture or attempt %.1fs ago)."
                     ),
                     endpoint_key,
                     provider_id,
@@ -734,6 +739,8 @@ def _run_realtime_cycle(
                 )
                 continue
 
+        if last_attempts is not None:
+            last_attempts[endpoint_key] = attempt_started_at_utc
         endpoint_result = _capture_and_load_realtime_source(
             provider_id,
             endpoint_key,
@@ -959,6 +966,7 @@ def _run_realtime_worker_loop(
     cycle_number = 0
     previous_cycle_start_utc: datetime | None = None
     last_captures: dict[str, datetime] = {}
+    last_attempts: dict[str, datetime] = {}
     while max_cycles is None or cycle_number < max_cycles:
         if should_shutdown():
             logger.info(
@@ -992,6 +1000,7 @@ def _run_realtime_worker_loop(
                 registry=registry,
                 engine=engine,
                 last_captures=last_captures,
+                last_attempts=last_attempts,
                 bronze_storage_resolver=bronze_storage_resolver,
             )
         except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the loop
