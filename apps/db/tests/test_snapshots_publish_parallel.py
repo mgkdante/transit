@@ -20,6 +20,22 @@ from transit_ops.snapshots.uploads import put_batch as _parallel_put
 from transit_ops.sql_registry import query_name
 
 
+class _PublishSettings:
+    SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+    SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+
+def _publish_historic_snapshot(store, engine, *, gate_enabled=True):
+    return publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_PublishSettings(),
+        engine=engine,
+        storage=store,
+        gate_enabled=gate_enabled,
+    )
+
+
 class _ConcurrencyProbe:
 
     def __init__(self, delay: float = 0.02) -> None:
@@ -661,13 +677,9 @@ def _archive_publish_row() -> dict[str, object]:
 def test_historic_publish_uploads_index_after_receipts() -> None:
     from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn()
-    keys = _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+    keys = _publish_historic(conn, store, provider_id="stm", settings=_PublishSettings())
 
     index_key = "historic/receipts/index.json"
     assert index_key in keys
@@ -687,13 +699,8 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
 def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
     import hashlib
 
-    from transit_ops.snapshots.publish import publish_snapshot
     from transit_ops.snapshots.serialization import snapshot_json_bytes
     from transit_ops.snapshots.storage import state_fingerprint
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
     stale_key = "historic/receipts/2024-01-01.json"
     stale_body = snapshot_json_bytes({"date": "2024-01-01"})
@@ -707,13 +714,7 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
     )
     conn = _historic_dispatch_conn()
 
-    publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=_FakeEngine(conn),
-        storage=store,
-    )
+    _publish_historic_snapshot(store, _FakeEngine(conn))
 
     index = store.get_json("historic/receipts/index.json")
     assert index["dates"] == ["2025-01-01", "2026-06-02"]
@@ -724,10 +725,6 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
 
 def test_historic_receipt_file_failure_keeps_previous_index() -> None:
     from transit_ops.snapshots.historic_tier import publish as _publish_historic
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
     class _FailingReceiptStore(_OrderTrackingStore):
         def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
@@ -744,7 +741,7 @@ def test_historic_receipt_file_failure_keeps_previous_index() -> None:
             _historic_dispatch_conn(),
             store,
             provider_id="stm",
-            settings=_Settings(),
+            settings=_PublishSettings(),
         )
 
     assert store.store["historic/receipts/index.json"] == old_index
@@ -754,13 +751,9 @@ def test_historic_receipt_file_failure_keeps_previous_index() -> None:
 def test_historic_publish_uploads_route_index_after_route_files() -> None:
     from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn()
-    _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+    _publish_historic(conn, store, provider_id="stm", settings=_PublishSettings())
 
     index_key = "historic/route_reliability/index.json"
     assert index_key in store.keys
@@ -777,13 +770,9 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
 def test_historic_publish_completes_all_archive_pages_before_stable_index() -> None:
     from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
-    _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+    _publish_historic(conn, store, provider_id="stm", settings=_PublishSettings())
 
     page_positions = [
         index
@@ -849,10 +838,6 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
 def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
     from transit_ops.snapshots.historic_tier import publish as _publish_historic
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     class _FailingPageStore(_OrderTrackingStore):
         def put_immutable_json(self, rel_key: str, payload: object) -> str:
             raise RuntimeError("archive page upload failed")
@@ -862,28 +847,16 @@ def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
 
     with pytest.raises(RuntimeError, match="archive page upload failed"):
-        _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+        _publish_historic(conn, store, provider_id="stm", settings=_PublishSettings())
 
     assert store.store["historic/alerts/index.json"] == b'{"old":true}'
     assert "historic/alerts/index.json" not in store.keys
 
 
 def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_baseline() -> None:
-    from transit_ops.snapshots.publish import publish_snapshot
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
-    result = publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=_FakeEngine(conn),
-        storage=store,
-    )
+    result = _publish_historic_snapshot(store, _FakeEngine(conn))
 
     page_keys = [
         key
@@ -902,30 +875,12 @@ def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_base
 
 
 def test_unchanged_historic_republish_counts_immutable_skip_physically_and_exposes_it() -> None:
-    from transit_ops.snapshots.publish import publish_snapshot
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
     engine = _FakeEngine(conn)
 
-    first = publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=engine,
-        storage=store,
-    )
-    second = publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=engine,
-        storage=store,
-    )
+    first = _publish_historic_snapshot(store, engine)
+    second = _publish_historic_snapshot(store, engine)
 
     page_keys = [
         key
@@ -949,10 +904,6 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
 def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_to_end() -> None:
     import datetime
     import hashlib
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
     network_rows = [
         {
@@ -1055,21 +1006,9 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
     )
     engine = _FakeEngine(conn)
 
-    first = publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=engine,
-        storage=store,
-    )
+    first = _publish_historic_snapshot(store, engine)
     first_put_count = len(store.keys)
-    second = publish_snapshot(
-        "stm",
-        tier="historic",
-        settings=_Settings(),
-        engine=engine,
-        storage=store,
-    )
+    second = _publish_historic_snapshot(store, engine)
 
     state_key = "_meta/publish_state_historic.json"
     public = set(first.keys_written)
@@ -1166,12 +1105,6 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
 
 @pytest.mark.parametrize("failure", ["page", "index"])
 def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: str) -> None:
-    from transit_ops.snapshots.publish import publish_snapshot
-
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     class _FailingInner(_OrderTrackingStore):
         def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
             is_index = rel_key == "historic/alerts/index.json"
@@ -1190,13 +1123,7 @@ def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: 
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
 
     with pytest.raises(RuntimeError, match=f"archive {failure} upload failed"):
-        publish_snapshot(
-            "stm",
-            tier="historic",
-            settings=_Settings(),
-            engine=_FakeEngine(conn),
-            storage=store,
-        )
+        _publish_historic_snapshot(store, _FakeEngine(conn))
 
     assert store.store["historic/alerts/index.json"] == old_index
     assert "_meta/publish_state_historic.json" not in store.store
@@ -1206,15 +1133,11 @@ def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: 
 def test_static_publish_manifest_index_keys_present_and_complete() -> None:
     conn = _RecordingStaticConn()
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _OrderTrackingStore()
     res = publish_snapshot(
         "stm",
         tier="static",
-        settings=_Settings(),
+        settings=_PublishSettings(),
         engine=_FakeEngine(conn),
         storage=store,
     )
@@ -1381,10 +1304,6 @@ def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write()
                     raise TimeoutError("test did not release the winning publisher")
             return super().get_json(rel_key)
 
-    class _Settings:
-        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
-        SNAPSHOT_PUBLISH_CONCURRENCY = 8
-
     store = _PausedHashLoadStore()
     engine = _LockedEngine()
     winner_results: list[object] = []
@@ -1393,14 +1312,7 @@ def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write()
     def _run_winner() -> None:
         try:
             winner_results.append(
-                publish_snapshot(
-                    "stm",
-                    tier="historic",
-                    settings=_Settings(),
-                    engine=engine,
-                    storage=store,
-                    gate_enabled=False,
-                )
+                _publish_historic_snapshot(store, engine, gate_enabled=False)
             )
         except BaseException as exc:  # noqa: BLE001 - surfaced below with full repr
             winner_errors.append(exc)
@@ -1414,14 +1326,7 @@ def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write()
             snapshot_publish.PublishLockUnavailableError,
             match=r"provider='stm'.*tier='historic'",
         ):
-            publish_snapshot(
-                "stm",
-                tier="historic",
-                settings=_Settings(),
-                engine=engine,
-                storage=store,
-                gate_enabled=False,
-            )
+            _publish_historic_snapshot(store, engine, gate_enabled=False)
 
         assert store.hash_loads == 1
         assert store.keys == []
