@@ -63,6 +63,7 @@ failures=()
 manifest_url="${SNAPSHOT_PUBLIC_BASE_URL}/v1/${PROVIDER_ID}/manifest.json?probe=$(date -u +%s)"
 manifest_json="$(curl -fsS -H 'Cache-Control: no-cache' "$manifest_url" || true)"
 now_epoch="$(date -u +%s)"
+live_age="unavailable"
 
 check_live_manifest_age() {
   local generated_utc
@@ -84,6 +85,7 @@ check_live_manifest_age() {
     failures+=("manifest: live generated_utc unparseable '${generated_utc}'")
   else
     manifest_age=$(( now_epoch - generated_epoch ))
+    live_age="$manifest_age"
     if (( manifest_age > LIVE_MAX_AGE_SECONDS )); then
       failures+=("manifest: live age ${manifest_age}s > ${LIVE_MAX_AGE_SECONDS}s")
     fi
@@ -179,11 +181,13 @@ failed_runs="$(
     FROM raw.ingestion_runs
     WHERE status = 'failed'
       AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
-  " 2>/dev/null || echo "0"
+  " 2>/dev/null || echo "unavailable"
 )"
 failed_runs="${failed_runs//[[:space:]]/}"
-[[ "$failed_runs" =~ ^[0-9]+$ ]] || failed_runs=0
-if (( failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
+if [[ ! "$failed_runs" =~ ^[0-9]+$ ]]; then
+  failed_runs="unavailable"
+  failures+=("failed_runs: count unavailable (query failed or returned invalid output)")
+elif (( failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
   failures+=("failed_runs: ${failed_runs} failed runs in ${FAILED_RUNS_WINDOW_MINUTES}m >= ${FAILED_RUNS_ALERT_THRESHOLD}")
 fi
 
@@ -204,6 +208,10 @@ silver_age="${silver_age//[[:space:]]/}"
 if (( silver_age > SILVER_STALE_MAX_AGE_SECONDS )); then
   failures+=("silver_stale: newest silver snapshot age ${silver_age}s > ${SILVER_STALE_MAX_AGE_SECONDS}s")
 fi
+
+printf 'freshness-probe: readings provider=%s manifest_age_seconds=%s static_age_seconds=%s historic_age_seconds=%s db_capture_age_seconds=%s failed_runs=%s silver_age_seconds=%s\n' \
+  "$PROVIDER_ID" "$live_age" "$static_heartbeat_age" "$historic_heartbeat_age" \
+  "$capture_age" "$failed_runs" "$silver_age"
 
 # --- Fire / resolve ----------------------------------------------------------
 if (( ${#failures[@]} > 0 )); then

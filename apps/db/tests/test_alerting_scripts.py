@@ -7,6 +7,8 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GH_SCRIPTS_DIR = REPO_ROOT / ".github" / "scripts"
 ALERT_ISSUE = GH_SCRIPTS_DIR / "alert-issue.sh"
@@ -58,8 +60,9 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'state="${PSQL_STATE_FILE:?PSQL_STATE_FILE unset}"\n'
         'idx=$(cat "$state" 2>/dev/null || echo 0)\n'
         'mapfile -t outs <<< "${PSQL_OUTPUTS:-}"\n'
-        'printf \'%s\\n\' "${outs[$idx]:-0}"\n'
-        'echo $((idx + 1)) > "$state"\n',
+        'echo $((idx + 1)) > "$state"\n'
+        'if [[ "${PSQL_FAIL_INDEX:-}" == "$idx" ]]; then exit 2; fi\n'
+        'printf \'%s\\n\' "${outs[$idx]-0}"\n',
     )
 
     env = os.environ.copy()
@@ -342,6 +345,47 @@ def test_freshness_probe_fires_on_failed_run_burst(tmp_path) -> None:
     assert result.returncode != 0
     lines = _read_log(log)
     assert any(ln.startswith("alert-issue|fire freshness") for ln in lines)
+
+
+@pytest.mark.parametrize("output,fail_index", [("", ""), ("invalid", ""), ("-1", ""), ("42", "3")])
+def test_freshness_probe_never_resolves_an_unavailable_failed_run_count(
+    tmp_path, output: str, fail_index: str,
+) -> None:
+    env, log = _probe_env(tmp_path)
+    outputs = _psql_outputs().splitlines()
+    outputs[3] = output
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+        PSQL_OUTPUTS="\n".join(outputs), PSQL_FAIL_INDEX=fail_index,
+    )
+    result = _run(FRESHNESS_PROBE, [], env)
+    assert result.returncode == 1
+    assert "failed_runs: count unavailable" in result.stderr
+    assert "failed_runs=unavailable" in result.stdout
+    lines = _read_log(log)
+    assert any(ln.startswith("alert-issue|fire freshness") for ln in lines)
+    assert not any(ln.startswith("alert-issue|resolve") for ln in lines)
+
+
+@pytest.mark.parametrize(
+    "failed_runs,live_age,failing",
+    [(72, 832, True), (94, 60, True), (6, 60, False), (9, 60, False), (10, 60, True)],
+)
+def test_freshness_probe_keeps_burst_boundary_and_incident_readings(
+    tmp_path, failed_runs: int, live_age: int, failing: bool,
+) -> None:
+    env, log = _probe_env(tmp_path)
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=live_age)),
+        PSQL_OUTPUTS=_psql_outputs(failed_runs=failed_runs),
+    )
+    result = _run(FRESHNESS_PROBE, [], env)
+    assert result.returncode == int(failing), result.stderr
+    assert "freshness-probe: readings provider=stm" in result.stdout
+    assert f"failed_runs={failed_runs}" in result.stdout
+    assert "static_age_seconds=120 historic_age_seconds=120" in result.stdout
+    action = "fire" if failing else "resolve"
+    assert any(ln.startswith(f"alert-issue|{action} freshness") for ln in _read_log(log))
 
 
 def test_freshness_probe_fires_on_unparseable_manifest(tmp_path) -> None:
