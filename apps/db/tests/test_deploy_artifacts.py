@@ -389,7 +389,12 @@ def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
     assert required_attempt_minutes < build["timeout-minutes"]
     assert build["timeout-minutes"] + 10 <= rollups["timeout-minutes"] <= 360
     assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
-    assert publish["timeout-minutes"] == 90
+    publish_step = next(
+        step for step in publish["steps"] if step["name"] == "Publish gated historic snapshot"
+    )
+    assert "timeout --signal=TERM --kill-after=30s 90m" in publish_step["run"]
+    assert provider_count * 91 < publish_step["timeout-minutes"]
+    assert publish_step["timeout-minutes"] + 10 <= publish["timeout-minutes"] <= 360
     assert publish["if"] == (
         "${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}"
     )
