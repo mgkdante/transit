@@ -156,6 +156,7 @@ def make_fixture(directory):
         "server.pem",
     )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(directory / "server.pem", directory / "server.key")
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     try:
@@ -233,7 +234,7 @@ def verify_transports(directory, contexts):
                     raise RuntimeError(f"{name}: no unknown-CA rejection proof") from error
             except Exception as error:
                 raise VerificationFailure(f"context_handshake:{name}") from error
-        return results
+        return results, server.socket.context.minimum_version.name
     finally:
         server.shutdown()
         server.server_close()
@@ -319,12 +320,13 @@ def main():
                 session.close()
         stage = "fixture"
         with tempfile.TemporaryDirectory(prefix="transit-tls-") as directory:
-            transports = verify_transports(Path(directory), contexts)
+            transports, minimum_tls = verify_transports(Path(directory), contexts)
         print(
             json.dumps(
                 {
                     "ok": True,
                     "public_trust_checked": not args.synthetic_only,
+                    "fixture_minimum_tls": minimum_tls,
                     "versions": versions,
                     "contexts": reports,
                     "transports": transports,

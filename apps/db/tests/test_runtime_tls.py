@@ -88,6 +88,7 @@ def test_cli_exercises_real_client_tls_and_hostname_rejection():
     report = json.loads(result.stdout)
     assert report["ok"] is True
     assert report["public_trust_checked"] is False
+    assert report["fixture_minimum_tls"] in ("TLSv1_2", "TLSv1_3")
     for client in ("urllib", "httpx", "botocore"):
         assert report["transports"][client] == {
             "trusted": "accepted",
