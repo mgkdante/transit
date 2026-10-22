@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from zipfile import BadZipFile
 
 import pytest
-from versioned_capture_fixtures import FakeEngine, FakeResult, RecordingConnection, prepare_capture
+from versioned_capture_fixtures import (
+    FakeEngine,
+    FakeResult,
+    RecordingConnection,
+    prepare_capture,
+    zip_payload,
+)
 
 import transit_ops.ingestion.static_gtfs as static_gtfs
 from transit_ops.ingestion.common import (
@@ -158,7 +165,7 @@ def test_ingest_static_feed_uses_storage_abstraction_for_s3(
         monkeypatch,
         static_gtfs,
         filename="download.zip",
-        payload=b"gtfs-static-zip",
+        payload=zip_payload(b"gtfs-static-zip"),
         source_url="https://override.example.com/stm.zip",
         url_setting="STM_STATIC_GTFS_URL",
     )
@@ -191,7 +198,7 @@ def test_ingest_static_feed_skips_unchanged_zip_without_bronze_or_raw_object(
         monkeypatch,
         static_gtfs,
         filename="download.zip",
-        payload=b"same-static-zip",
+        payload=zip_payload(b"same-static-zip"),
         source_url="https://override.example.com/stm.zip",
         url_setting="STM_STATIC_GTFS_URL",
     )
@@ -244,7 +251,7 @@ def test_ingest_static_feed_persists_changed_zip_without_promoting_dataset(
         monkeypatch,
         static_gtfs,
         filename="download.zip",
-        payload=b"changed-static-zip",
+        payload=zip_payload(b"changed-static-zip"),
         source_url="https://override.example.com/stm.zip",
         url_setting="STM_STATIC_GTFS_URL",
     )
@@ -299,7 +306,7 @@ def test_ingest_static_feed_deletes_orphan_object_when_metadata_write_fails(
         monkeypatch,
         static_gtfs,
         filename="download.zip",
-        payload=b"changed-static-zip",
+        payload=zip_payload(b"changed-static-zip"),
         source_url="https://override.example.com/stm.zip",
         url_setting="STM_STATIC_GTFS_URL",
     )
@@ -335,7 +342,7 @@ def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
         monkeypatch,
         static_gtfs,
         filename="download.zip",
-        payload=b"changed-static-zip",
+        payload=zip_payload(b"changed-static-zip"),
         source_url="https://override.example.com/stm.zip",
         url_setting="STM_STATIC_GTFS_URL",
     )
@@ -359,3 +366,50 @@ def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
 
     assert exc_info.value is boom
     assert fake_storage.deleted == [fake_storage.persisted[0][1]]
+
+
+@pytest.mark.parametrize("provider", ["stm", "octranspo"])
+@pytest.mark.parametrize("matches_previous", [False, True])
+@pytest.mark.parametrize(
+    "payload", [b"<!DOCTYPE html><title>Welcome</title>", b"PK\x03\x04truncated"]
+)
+def test_ingest_static_feed_rejects_non_zip_before_observing_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    matches_previous: bool,
+    payload: bytes,
+) -> None:
+    artifact, storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="download.zip",
+        payload=payload,
+        source_url=f"https://example.com/{provider}.zip",
+        url_setting=f"{provider.upper()}_STATIC_GTFS_URL",
+    )
+    connection = RecordingConnection(
+        current_dataset_checksum=artifact.checksum_sha256 if matches_previous else "0" * 64,
+        current_dataset_version_id=76,
+    )
+
+    with pytest.raises(BadZipFile, match="File is not a zip file"):
+        ingest_static_feed(
+            provider,
+            settings=settings,
+            registry=registry,
+            engine=FakeEngine(connection),
+        )
+
+    updates = [
+        (sql, params) for sql, params in connection.calls if "UPDATE raw.ingestion_runs" in sql
+    ]
+    assert len(updates) == 1
+    assert "status = 'failed'" in updates[0][0]
+    assert updates[0][1]["http_status_code"] == 200
+    assert "File is not a zip file" in updates[0][1]["error_message"]
+    assert not any("core.dataset_versions" in sql for sql, _ in connection.calls)
+    assert not any("INSERT INTO raw.ingestion_objects" in sql for sql, _ in connection.calls)
+    assert storage.persisted == storage.deleted == []
+    assert not artifact.temp_path.exists()

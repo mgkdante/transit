@@ -105,6 +105,7 @@ class VersionedCaptureSpec:
     build_storage_path: Callable[..., str]
     download: Callable[[str, Path], DownloadedArtifact]
     missing_endpoint_message: str
+    validate_download: Callable[[DownloadedArtifact], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,8 @@ def _run_versioned_capture[ResultT: VersionedCaptureResult](
     persisted = False
     try:
         artifact = spec.download(config.source_url, bronze_root / ".tmp")
+        if spec.validate_download is not None:
+            spec.validate_download(artifact)
         storage_path = spec.build_storage_path(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
