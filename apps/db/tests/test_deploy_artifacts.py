@@ -1,8 +1,12 @@
 import math
 import os
+import re
 import shutil
+import ssl
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
@@ -338,10 +342,86 @@ def test_runtime_dockerfiles_pin_base_images_and_uv() -> None:
     assert health.splitlines()[0] == f"FROM {PYTHON_IMAGE}"
     assert postgres.splitlines()[0] == f"FROM {POSTGRES_IMAGE}"
     for dockerfile in (worker, health):
-        assert 'pip install --no-cache-dir "uv==0.11.15"' in dockerfile
+        assert 'pip install --no-cache-dir "uv==0.13.4"' in dockerfile
 
     assert "intentionally float" in worker
     assert "intentionally float" in postgres
+
+
+@pytest.mark.parametrize("filename", ["Dockerfile", "Dockerfile.health"])
+def test_runtime_bootstrap_verifies_trust_before_each_installer(filename: str) -> None:
+    recipe = (DB_ROOT / filename).read_text(encoding="utf-8")
+    checks = re.findall(r"python -c '([^']+)'", recipe)
+    assert len(checks) == 2
+    assert "cafile=" not in checks[0]
+    assert "from pip._vendor import certifi" in checks[1]
+    stages = [
+        "apt-get install -y --no-install-recommends ca-certificates",
+        "sed -i 's|^mozilla/emSign_ECC_Root_CA_-_G3.crt$|"
+        "!mozilla/emSign_ECC_Root_CA_-_G3.crt|' /etc/ca-certificates.conf",
+        "update-ca-certificates --fresh",
+        checks[0],
+        "pip-26.2.2-py3-none-any.whl#sha256="
+        "fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70",
+        checks[1],
+        'python -m pip install --no-cache-dir "uv==0.13.4"',
+    ]
+    positions = [recipe.index(stage) for stage in stages]
+    assert positions == sorted(positions)
+    assert "||" not in recipe[: recipe.index("COPY pyproject.toml")]
+
+
+@pytest.mark.parametrize("filename", ["Dockerfile", "Dockerfile.health"])
+@pytest.mark.parametrize("store", [0, 1], ids=["system", "pip-vendored"])
+@pytest.mark.parametrize(
+    ("roots", "hostname", "verify_mode", "accepted"),
+    [
+        (["ISRG Root X1"], True, ssl.CERT_REQUIRED, True),
+        (["ISRG Root X1", "emSign ECC Root CA - G3"], True, ssl.CERT_REQUIRED, False),
+        ([], True, ssl.CERT_REQUIRED, False),
+        (["ISRG Root X1"], False, ssl.CERT_REQUIRED, False),
+        (["ISRG Root X1"], True, ssl.CERT_NONE, False),
+    ],
+    ids=["healthy", "compromised-root", "missing-public-root", "no-hostname", "no-verification"],
+)
+def test_runtime_bootstrap_trust_checks_reject_unsafe_contexts(
+    filename: str,
+    store: int,
+    roots: list[str],
+    hostname: bool,
+    verify_mode: ssl.VerifyMode,
+    accepted: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe = (DB_ROOT / filename).read_text(encoding="utf-8")
+    checks = re.findall(r"python -c '([^']+)'", recipe)
+    assert len(checks) == 2
+    calls: list[dict[str, object]] = []
+
+    def controlled_context(**options: object) -> SimpleNamespace:
+        calls.append(options)
+        return SimpleNamespace(
+            get_ca_certs=lambda: [{"subject": ((("commonName", root),),)} for root in roots],
+            check_hostname=hostname,
+            verify_mode=verify_mode,
+        )
+
+    # Evaluate the embedded guards without installing pip or opening a trust store.
+    pip_vendor = ModuleType("pip._vendor")
+    pip_vendor.certifi = SimpleNamespace(where=lambda: "controlled-pip-ca.pem")
+    monkeypatch.setitem(sys.modules, "pip", ModuleType("pip"))
+    monkeypatch.setitem(sys.modules, "pip._vendor", pip_vendor)
+    monkeypatch.setattr(ssl, "create_default_context", controlled_context)
+    guard = compile(checks[store], f"{filename}:trust-check", "exec")
+    if accepted:
+        exec(guard, {})
+    else:
+        with pytest.raises(AssertionError):
+            exec(guard, {})
+    if store == 0:
+        assert calls == [{}]
+    else:
+        assert calls == [{"cafile": "controlled-pip-ca.pem"}]
 
 
 def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:

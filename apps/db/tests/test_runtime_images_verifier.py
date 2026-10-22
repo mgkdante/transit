@@ -55,7 +55,7 @@ elif "--entrypoint" in argv:
     entrypoint = argv[argv.index("--entrypoint") + 1]
     output = {
         "python": "Python 3.12.14",
-        "uv": "uv 0.11.15 (fake-build)",
+        "uv": "uv 0.13.4 (fake-build)",
         "postgres": "postgres (PostgreSQL) 16.15 (Debian fake)",
         "pg_repack": "pg_repack 1.5.2",
         "dpkg-query": "fake-package=1.0",
