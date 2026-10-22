@@ -323,7 +323,8 @@
       ],
       "sha256": [
         "596c119f908f11ff867d05cf010fcc98ed26386182093e60a5a69316d857efa6",
-        "d99cd67522584284318c9581aa82e48f9bdee4e92f6a4dd3e1db407199030103"
+        "d99cd67522584284318c9581aa82e48f9bdee4e92f6a4dd3e1db407199030103",
+        "c656addb9c8b5d50b6cd16d47eaed4d98908a1e79235e6b211c8c066663a078d"
       ],
       "origin": "apps/web/scripts/build-map-posters.ts; receipt render-input and image hashes independently verified for all accepted snapshots."
     },
@@ -407,7 +408,8 @@
       ],
       "sha256": [
         "04c72517f0a1f1cc7495c3bdbfe4e5b579ccaea04117fe88ead242c88d9fd72c",
-        "f09f6f7ad5a67891407a14afb3b622d897298ce22b5fc3429781d7cd714f1384"
+        "f09f6f7ad5a67891407a14afb3b622d897298ce22b5fc3429781d7cd714f1384",
+        "f0b2f0cd2791a068fc738da2deb8104ebe9504bb08b378f78b210fe1b97575a0"
       ],
       "origin": "Pinned build-map-posters.ts renders; both receipts verify archive/config/render-input identities and each image hash, dimensions and 125 KiB limit. The new Ottawa JSON receipt remains counted."
     }
