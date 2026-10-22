@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 from transit_ops.ingestion.common import DownloadedArtifact, compute_sha256_hex
 from transit_ops.providers.registry import ProviderRegistry
@@ -109,6 +111,13 @@ class FakeBronzeStorage:
         self.deleted.append(storage_path)
         if self.delete_should_raise:
             raise RuntimeError("simulated R2 delete failure")
+
+
+def zip_payload(payload: bytes) -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("routes.txt", payload)
+    return buffer.getvalue()
 
 
 def prepare_capture(

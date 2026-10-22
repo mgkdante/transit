@@ -4,6 +4,7 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from zipfile import ZipFile
 
 from sqlalchemy.engine import Engine
 
@@ -126,6 +127,11 @@ _MISSING_ENDPOINT_MESSAGE = (
 )
 
 
+def _validate_download(artifact: DownloadedArtifact) -> None:
+    with ZipFile(artifact.temp_path):
+        pass
+
+
 def ingest_static_feed(
     provider_id: str,
     *,
@@ -154,6 +160,7 @@ def ingest_static_feed(
         build_storage_path=build_static_object_storage_path,
         download=lambda source_url, temp_dir: _download_to_tempfile(source_url, temp_dir),
         missing_endpoint_message=_MISSING_ENDPOINT_MESSAGE,
+        validate_download=_validate_download,
     )
     return _run_versioned_capture(
         provider_id,

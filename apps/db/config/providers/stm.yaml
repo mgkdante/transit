@@ -44,9 +44,9 @@ feeds:
     endpoint_key: static_schedule
     feed_kind: static_schedule
     source_format: gtfs_schedule_zip
-    source_url: https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip
+    source_url: https://beta.stm.info/getContentAsset/38dcb679-4237-4c02-b6f4-5f8434665e5c/dfc3d011-8f63-43f6-9ed8-4b444333a1d0/GTFS_STM.zip?language=fr
     source_url_env_var: STM_STATIC_GTFS_URL
-    documentation_url: https://www.stm.info/fr/node/529
+    documentation_url: https://beta.stm.info/a-propos/documents-donnees/donnees-ouvertes
     auth:
       auth_type: none
       notes: Live current static schedule used to join STM GTFS-RT trip updates to stop_times for computed delay facts.
@@ -57,9 +57,9 @@ feeds:
     endpoint_key: gis_static
     feed_kind: gis_static
     source_format: stm_gis_zip
-    source_url: https://www.stm.info/sites/default/files/gtfs/stm_sig.zip
+    source_url: https://beta.stm.info/getContentAsset/3023ab97-ecd3-4b5e-ab25-16c90fe0bdd1/dfc3d011-8f63-43f6-9ed8-4b444333a1d0/stm_sig.zip?language=fr
     source_url_env_var: STM_GIS_URL
-    documentation_url: https://www.stm.info/fr/node/529
+    documentation_url: https://beta.stm.info/a-propos/documents-donnees/donnees-ouvertes
     auth:
       auth_type: none
     refresh_interval_seconds: 86400
