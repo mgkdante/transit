@@ -40,7 +40,7 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
         steps[1]["uses"]
         == "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7"
     )
-    assert steps[1]["with"] == {"version": "0.11.15"}
+    assert steps[1]["with"] == {"version": "0.13.4"}
     assert steps[2] == {
         "name": "Install project dependencies",
         "shell": "bash",
@@ -55,7 +55,7 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
             "set -euo pipefail\n"
             "uv run python --version\n"
             "uv run python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))'\n"
-            'test "$(uv --version | cut -d\' \' -f1,2)" = "uv 0.11.15"\n'
+            'test "$(uv --version | cut -d\' \' -f1,2)" = "uv 0.13.4"\n'
         ),
     }
 
