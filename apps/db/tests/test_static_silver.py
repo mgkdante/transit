@@ -519,6 +519,14 @@ def test_register_dataset_version_updates_current_then_inserts_new_row(tmp_path:
     insert_params = connection.calls[1][1]
     assert insert_params["source_version"] == archive.storage_path
     assert insert_params["content_hash"] == archive.checksum_sha256
+    assert archive.source_completed_at_utc != loaded_at_utc
+    assert insert_params["first_seen_at_utc"] == archive.source_completed_at_utc
+    assert insert_params["last_seen_at_utc"] == archive.source_completed_at_utc
+    insert_sql = connection.calls[1][0]
+    assert "first_seen_at_utc" in insert_sql.split("VALUES")[0]
+    assert "last_seen_at_utc" in insert_sql.split("VALUES")[0]
+    assert ":first_seen_at_utc" in insert_sql.split("VALUES")[1]
+    assert ":last_seen_at_utc" in insert_sql.split("VALUES")[1]
 
 
 def test_load_static_zip_to_silver_records_row_counts(tmp_path: Path) -> None:
