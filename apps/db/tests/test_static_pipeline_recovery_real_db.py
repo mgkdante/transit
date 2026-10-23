@@ -82,6 +82,21 @@ class StaticPipeline:
             ).scalar_one_or_none()
         return current, gold_version
 
+    def heartbeat(self):
+        with self.engine.connect() as connection:
+            return connection.execute(
+                text("""
+                    SELECT dv.dataset_version_id, dv.first_seen_at_utc, dv.last_seen_at_utc,
+                           ir.completed_at_utc
+                    FROM core.dataset_versions AS dv
+                    JOIN raw.ingestion_runs AS ir
+                      ON ir.ingestion_run_id = dv.source_ingestion_run_id
+                    WHERE dv.provider_id=:p AND dv.is_current
+                      AND dv.dataset_kind='static_schedule'
+                """),
+                {"p": self.provider_id},
+            ).one()
+
 
 @pytest.fixture
 def subject(real_db_engine, seed_provider, tmp_path, monkeypatch):
@@ -194,6 +209,41 @@ def test_initial_capture_does_not_publish_a_dataset_until_loaded(subject):
     assert current is not None and current == gold_version
 
 
+def test_new_static_editions_start_with_their_capture_heartbeat(subject):
+    subject.run()
+    initial = subject.heartbeat()
+    assert initial.first_seen_at_utc == initial.last_seen_at_utc == initial.completed_at_utc
+    assert initial.last_seen_at_utc is not None
+
+    subject.payload = static_zip("Replacement")
+    subject.run()
+    changed = subject.heartbeat()
+    assert changed.dataset_version_id != initial.dataset_version_id
+    assert changed.first_seen_at_utc == changed.last_seen_at_utc == changed.completed_at_utc
+    assert changed.last_seen_at_utc > initial.last_seen_at_utc
+    with subject.engine.connect() as connection:
+        historical = connection.execute(
+            text("""
+                SELECT first_seen_at_utc, last_seen_at_utc FROM core.dataset_versions
+                WHERE dataset_version_id=:id AND NOT is_current
+            """),
+            {"id": initial.dataset_version_id},
+        ).one()
+    assert historical == (initial.first_seen_at_utc, initial.last_seen_at_utc)
+
+
+def test_unchanged_static_observation_advances_heartbeat_preserving_first_seen(subject):
+    subject.run()
+    initial = subject.heartbeat()
+    observed = subject.ingest()
+    assert observed.content_changed is False
+    current = subject.heartbeat()
+    assert current.dataset_version_id == initial.dataset_version_id
+    assert current.first_seen_at_utc == initial.first_seen_at_utc
+    assert current.last_seen_at_utc == observed.last_seen_at_utc
+    assert current.last_seen_at_utc > initial.last_seen_at_utc
+
+
 def test_reverting_source_bytes_applies_the_reverted_edition(subject):
     original = subject.payload
     subject.run()
@@ -252,11 +302,13 @@ def test_upgrade_restores_usable_dataset_before_retrying_captured_only_current(s
 def test_empty_routes_cannot_replace_the_usable_dataset(subject):
     subject.run()
     previous = subject.state()
+    previous_heartbeat = subject.heartbeat()
     subject.payload = static_zip("Empty", empty=True)
     for _ in range(2):
         with pytest.raises(ValueError, match="routes.txt must contain at least one route"):
             subject.run()
         assert subject.state() == previous
+        assert subject.heartbeat() == previous_heartbeat
 
 
 def test_analyze_failure_rolls_back_materialization_and_retries_identical_source(subject):

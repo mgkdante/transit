@@ -1366,6 +1366,8 @@ def _insert_dataset_version(
                 content_hash,
                 loaded_at_utc,
                 effective_at_utc,
+                first_seen_at_utc,
+                last_seen_at_utc,
                 is_current
             )
             VALUES (
@@ -1378,6 +1380,8 @@ def _insert_dataset_version(
                 :content_hash,
                 :loaded_at_utc,
                 :effective_at_utc,
+                :first_seen_at_utc,
+                :last_seen_at_utc,
                 true
             )
             RETURNING dataset_version_id
@@ -1392,6 +1396,8 @@ def _insert_dataset_version(
             "content_hash": archive.checksum_sha256,
             "loaded_at_utc": loaded_at_utc,
             "effective_at_utc": archive.source_completed_at_utc,
+            "first_seen_at_utc": archive.source_completed_at_utc,
+            "last_seen_at_utc": archive.source_completed_at_utc,
         },
     )
     return int(result.scalar_one())
