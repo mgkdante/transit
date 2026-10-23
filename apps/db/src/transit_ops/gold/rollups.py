@@ -2412,7 +2412,7 @@ def build_warm_rollups(
         built_trip_delay_periods=built_trip_delay,
         reporting_aggregate_row_counts=reporting_aggregate_row_counts,
         refreshed_delay_hours=changed_hours.rows,
-        completed_at_utc=now,
+        completed_at_utc=utc_now(),
         built_route_percentile_days=daily_receipts["route_percentile_daily"].rows,
         built_stop_percentile_days=daily_receipts["stop_percentile_daily"].rows,
         built_route_scheduled_trips_days=daily_receipts["route_scheduled_trips_daily"].rows,

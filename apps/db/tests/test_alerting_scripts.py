@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import os
+import shutil
+import sqlite3
 import stat
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +19,7 @@ FRESHNESS_PROBE = GH_SCRIPTS_DIR / "freshness-probe.sh"
 
 
 def _make_executable(path: Path, body: str) -> None:
-    path.write_text(body, encoding="utf-8")
+    path.write_text(body, encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
@@ -57,6 +60,12 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'if [[ -n "${COMMAND_LOG:-}" ]]; then\n'
         "  printf 'psql|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
         "fi\n"
+        'if [[ -n "${PSQL_FAIL_PATTERN:-}" && "$*" == *"${PSQL_FAIL_PATTERN}"* ]]; then\n'
+        '  exit 2\n'
+        "fi\n"
+        'if [[ -n "${PSQL_FIXTURE_DB:-}" ]]; then\n'
+        '  exec "$PSQL_PYTHON" "$PSQL_FIXTURE_RUNNER" "$@"\n'
+        "fi\n"
         'state="${PSQL_STATE_FILE:?PSQL_STATE_FILE unset}"\n'
         'idx=$(cat "$state" 2>/dev/null || echo 0)\n'
         'mapfile -t outs <<< "${PSQL_OUTPUTS:-}"\n'
@@ -66,7 +75,8 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     )
 
     env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["TEST_BIN_DIR"] = bin_dir.as_posix()
     env["PSQL_STATE_FILE"] = str(tmp_path / "psql_state")
     return env, bin_dir
 
@@ -87,14 +97,97 @@ def _read_log(path: Path) -> list[str]:
 
 
 def _run(script: Path, args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    env = env.copy()
+    for key in ("COMMAND_LOG", "PSQL_STATE_FILE"):
+        if key in env:
+            env[key] = env[key].replace("\\", "/")
+    bash = shutil.which("bash")
+    if os.name == "nt":
+        # Windows' system bash launches WSL. Keep execution on the native host.
+        git_bash = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe"
+        bash = str(git_bash) if git_bash.is_file() else None
+    if not bash:
+        pytest.skip("native Bash is unavailable")
+    bin_path = '$(cygpath -u "$TEST_BIN_DIR")' if os.name == "nt" else "$TEST_BIN_DIR"
     return subprocess.run(
-        ["bash", str(script), *args],
+        [bash, "-c", f'export PATH="{bin_path}:$PATH"; source "$@"',
+         "alerting-test", script.as_posix(), *args],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _provider_fixture_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    """Run the emitted SQL against isolated rows, translating only PG age syntax."""
+    env, log = _probe_env(tmp_path)
+    database = tmp_path / "freshness.sqlite"
+    with sqlite3.connect(database) as conn:
+        conn.executescript("""
+            CREATE TABLE feed_endpoints (
+                feed_endpoint_id INTEGER, provider_id TEXT, endpoint_key TEXT, is_enabled BOOLEAN
+            );
+            CREATE TABLE realtime_snapshot_index (
+                feed_endpoint_id INTEGER, captured_at_utc INTEGER
+            );
+            CREATE TABLE i3_alert_snapshots (feed_endpoint_id INTEGER, captured_at_utc INTEGER);
+            CREATE TABLE rt_feed_snapshots (
+                provider_id TEXT, feed_endpoint_id INTEGER,
+                endpoint_key TEXT, captured_at_utc INTEGER
+            );
+            CREATE TABLE ingestion_runs (provider_id TEXT, status TEXT, started_at_utc INTEGER);
+            CREATE TABLE dataset_versions (
+                provider_id TEXT, dataset_kind TEXT, is_current BOOLEAN, last_seen_at_utc INTEGER
+            );
+            CREATE TABLE snapshot_publish_state (
+                provider_id TEXT, tier TEXT, updated_at_utc INTEGER
+            );
+        """)
+        for provider, base in (("stm", 0), ("octranspo", 10)):
+            for offset, endpoint in ((1, "trip_updates"), (2, "vehicle_positions")):
+                endpoint_id = base + offset
+                conn.execute("INSERT INTO feed_endpoints VALUES (?, ?, ?, true)",
+                             (endpoint_id, provider, endpoint))
+                conn.execute("INSERT INTO realtime_snapshot_index VALUES (?, 1999999880)",
+                             (endpoint_id,))
+                conn.execute("INSERT INTO rt_feed_snapshots VALUES (?, ?, ?, 1999999880)",
+                             (provider, endpoint_id, endpoint))
+            conn.execute("INSERT INTO dataset_versions "
+                         "VALUES (?, 'static_schedule', true, 1999999880)",
+                         (provider,))
+            conn.execute("INSERT INTO snapshot_publish_state VALUES (?, 'historic', 1999999880)",
+                         (provider,))
+        conn.execute("INSERT INTO feed_endpoints VALUES (3, 'stm', 'i3_alerts', true)")
+        conn.execute("INSERT INTO i3_alert_snapshots VALUES (3, 1999999880)")
+    runner = tmp_path / "fixture_psql.py"
+    runner.write_text('''import os
+import re
+import sqlite3
+import sys
+
+query = sys.argv[sys.argv.index("-c") + 1]
+query = re.sub(r"\\b(?:core|raw|silver)\\.", "", query)
+query = re.sub(
+    r"EXTRACT\\(EPOCH FROM \\(now\\(\\) - (.*?)\\)\\)::bigint",
+    r"age_seconds(\\1)", query, flags=re.S,
+)
+query = re.sub(r"make_interval\\(mins => (\\d+)\\)", r"(\\1 * 60)", query)
+with sqlite3.connect(os.environ["PSQL_FIXTURE_DB"]) as conn:
+    conn.create_function("now", 0, lambda: 2000000000)
+    conn.create_function("age_seconds", 1,
+                         lambda value: None if value is None else 2000000000 - value)
+    print(conn.execute(query).fetchone()[0])
+''', encoding="utf-8")
+    env.update(
+        PROVIDER_ID="octranspo",
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+        PSQL_FIXTURE_DB=database.as_posix(),
+        PSQL_FIXTURE_RUNNER=runner.as_posix(),
+        PSQL_PYTHON=Path(sys.executable).as_posix(),
+    )
+    return env, log
 
 
 def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None:
@@ -229,6 +322,7 @@ def _probe_env(tmp_path: Path):
         GH_REPO="mgkdante/transit",
         DATABASE_URL="postgresql://u:p@h/db",
         SNAPSHOT_PUBLIC_BASE_URL="https://transit.example/data",
+        CHECK_GLOBAL_FAILED_RUNS="false",
     )
     return env, log
 
@@ -414,3 +508,195 @@ def test_freshness_probe_fires_on_manifest_fetch_failure(tmp_path) -> None:
     assert result.returncode != 0
     lines = _read_log(log)
     assert any(ln.startswith("alert-issue|fire freshness") for ln in lines)
+
+
+@pytest.mark.parametrize("change", ["missing_provider", "stale_provider", "missing_endpoint"])
+def test_freshness_probe_fails_for_ottawa_silver_while_stm_is_fresh(tmp_path, change) -> None:
+    env, log = _provider_fixture_env(tmp_path)
+    with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
+        if change == "missing_provider":
+            conn.execute("DELETE FROM rt_feed_snapshots WHERE provider_id = 'octranspo'")
+        elif change == "stale_provider":
+            conn.execute("UPDATE rt_feed_snapshots SET captured_at_utc = 1999999000 "
+                         "WHERE provider_id = 'octranspo'")
+        else:
+            conn.execute("DELETE FROM rt_feed_snapshots WHERE feed_endpoint_id = 12")
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "silver_stale:" in result.stderr
+    assert "db_capture_age_seconds=120" in result.stdout
+    assert any(line.startswith("alert-issue|fire freshness-octranspo ") for line in _read_log(log))
+    assert not any(line.startswith("alert-issue|resolve") for line in _read_log(log))
+
+
+def test_freshness_probe_fails_when_one_ottawa_capture_endpoint_is_missing(tmp_path) -> None:
+    env, _ = _provider_fixture_env(tmp_path)
+    with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
+        conn.execute("DELETE FROM realtime_snapshot_index WHERE feed_endpoint_id = 12")
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "db_capture: worst-endpoint age 999999s > 900s" in result.stderr
+
+
+@pytest.mark.parametrize("failed_provider,expected_status", [("stm", 0), ("octranspo", 1)])
+def test_freshness_probe_attributes_failed_runs_to_their_provider(
+    tmp_path, failed_provider, expected_status,
+) -> None:
+    env, _ = _provider_fixture_env(tmp_path)
+    with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
+        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880)",
+                         [(failed_provider,)] * 10)
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == expected_status, result.stdout + result.stderr
+    assert f"failed_runs={10 if expected_status else 0}" in result.stdout
+
+
+@pytest.mark.parametrize("table,signal", [
+    ("core.dataset_versions", "static_heartbeat:"),
+    ("core.snapshot_publish_state", "historic_heartbeat:"),
+    ("raw.realtime_snapshot_index", "db_capture:"),
+    ("raw.ingestion_runs", "failed_runs: count unavailable"),
+    ("silver.rt_feed_snapshots", "silver_stale:"),
+])
+def test_freshness_probe_ottawa_query_errors_cannot_resolve_alerts(tmp_path, table, signal) -> None:
+    env, log = _provider_fixture_env(tmp_path)
+    env["PSQL_FAIL_PATTERN"] = table
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert signal in result.stderr
+    assert any(line.startswith("alert-issue|fire freshness-octranspo ") for line in _read_log(log))
+    assert not any(line.startswith("alert-issue|resolve") for line in _read_log(log))
+
+
+@pytest.mark.parametrize("provider", ["stm", "octranspo"])
+def test_freshness_probe_recovery_only_addresses_its_provider_issue(tmp_path, provider) -> None:
+    env, log = _provider_fixture_env(tmp_path)
+    env.update(PROVIDER_ID=provider, ALERT_ISSUE_SCRIPT=ALERT_ISSUE.as_posix(),
+               GH_ISSUE_LIST_OUTPUT="123")
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    queries = [line for line in _read_log(log) if line.startswith("gh|issue list")]
+    assert len(queries) == 1
+    assert f"--label alert:freshness-{provider} " in queries[0]
+    assert "--label alert:freshness " not in queries[0]
+    assert any(line.startswith("gh|issue close 123 ") for line in _read_log(log))
+
+
+@pytest.mark.parametrize("live_age,capture_age,silver_age,signal", [
+    (300, 900, 900, None),
+    (301, 900, 900, "manifest: live age 301s > 300s"),
+    (300, 901, 900, "db_capture: worst-endpoint age 901s > 900s"),
+    (300, 900, 901, "silver_stale: worst-endpoint silver snapshot age 901s > 900s"),
+])
+def test_freshness_probe_preserves_live_capture_and_silver_budgets(
+    tmp_path, live_age, capture_age, silver_age, signal,
+) -> None:
+    env, _ = _probe_env(tmp_path)
+    _make_executable(tmp_path / "bin" / "date", """#!/usr/bin/env bash
+if [[ "$*" == '-u +%s' ]]; then
+  echo 2000000000
+else
+  exec /usr/bin/date "$@"
+fi
+""")
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.fromtimestamp(2000000000 - live_age, tz=UTC)),
+        PSQL_OUTPUTS=_psql_outputs(capture_age=capture_age, silver_age=silver_age),
+    )
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == int(signal is not None), result.stdout + result.stderr
+    if signal:
+        assert signal in result.stderr
+
+
+def test_freshness_probe_preserves_global_burst_for_six_failures_per_provider(tmp_path) -> None:
+    env, log = _provider_fixture_env(tmp_path)
+    env["CHECK_GLOBAL_FAILED_RUNS"] = "true"
+    with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
+        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880)",
+                         [("stm",)] * 6 + [("octranspo",)] * 6)
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "global_failed_runs: 12 failed runs in 30m >= 10" in result.stderr
+    assert "global_readings checked=true failed_runs=12" in result.stdout
+    assert "silver_age_seconds=120" in result.stdout
+    alerts = [line for line in _read_log(log) if line.startswith("alert-issue|")]
+    assert any(line.startswith("alert-issue|fire freshness-global-failures ") for line in alerts)
+    assert any(line.startswith("alert-issue|resolve freshness-octranspo ") for line in alerts)
+    assert not any(line.startswith("alert-issue|fire freshness-octranspo ") for line in alerts)
+
+
+@pytest.mark.parametrize("output,fail_index", [("", ""), ("invalid", ""), ("-1", ""), ("0", "5")])
+def test_freshness_probe_global_query_failure_cannot_resolve_global_alert(
+    tmp_path, output, fail_index,
+) -> None:
+    env, log = _probe_env(tmp_path)
+    env.update(CHECK_GLOBAL_FAILED_RUNS="true", PSQL_FAIL_INDEX=fail_index,
+               CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+               PSQL_OUTPUTS=_psql_outputs() + "\n" + output)
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "global_failed_runs: count unavailable" in result.stderr
+    assert "global_readings checked=true failed_runs=unavailable" in result.stdout
+    alerts = [line for line in _read_log(log) if line.startswith("alert-issue|")]
+    assert any(line.startswith("alert-issue|fire freshness-global-failures ") for line in alerts)
+    assert not any(line.startswith("alert-issue|resolve freshness-global-failures ")
+                   for line in alerts)
+    assert any(line.startswith("alert-issue|resolve freshness-stm ") for line in alerts)
+
+
+@pytest.mark.parametrize("enabled", ["true", "false"])
+def test_freshness_probe_only_designated_global_writer_can_resolve_global_alert(tmp_path, enabled):
+    env, log = _provider_fixture_env(tmp_path)
+    env["CHECK_GLOBAL_FAILED_RUNS"] = enabled
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"global_readings checked={enabled} failed_runs=" in result.stdout
+    alerts = [line for line in _read_log(log) if line.startswith("alert-issue|")]
+    global_resolves = [line for line in alerts
+                       if line.startswith("alert-issue|resolve freshness-global-failures ")]
+    assert len(global_resolves) == int(enabled == "true")
+    assert not any(line.startswith("alert-issue|resolve freshness ") for line in alerts)
+
+
+def test_freshness_probe_direct_invocation_preserves_global_detection_by_default(tmp_path) -> None:
+    env, _ = _provider_fixture_env(tmp_path)
+    env.pop("CHECK_GLOBAL_FAILED_RUNS")
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "global_readings checked=true failed_runs=0" in result.stdout
+
+
+def test_freshness_probe_global_recovery_does_not_mask_provider_failure(tmp_path) -> None:
+    env, log = _provider_fixture_env(tmp_path)
+    env["CHECK_GLOBAL_FAILED_RUNS"] = "true"
+    with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
+        conn.execute("DELETE FROM rt_feed_snapshots WHERE provider_id = 'octranspo'")
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    alerts = [line for line in _read_log(log) if line.startswith("alert-issue|")]
+    assert any(line.startswith("alert-issue|fire freshness-octranspo ") for line in alerts)
+    assert any(line.startswith("alert-issue|resolve freshness-global-failures ") for line in alerts)
+    assert not any(line.startswith("alert-issue|resolve freshness-octranspo ") for line in alerts)
