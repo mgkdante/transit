@@ -240,7 +240,7 @@ def test_unchanged_static_observation_advances_heartbeat_preserving_first_seen(s
     current = subject.heartbeat()
     assert current.dataset_version_id == initial.dataset_version_id
     assert current.first_seen_at_utc == initial.first_seen_at_utc
-    assert current.last_seen_at_utc == observed.completed_at_utc
+    assert current.last_seen_at_utc == observed.last_seen_at_utc
     assert current.last_seen_at_utc > initial.last_seen_at_utc
 
 
