@@ -89,6 +89,7 @@ def subject(real_db_engine, seed_provider, tmp_path, monkeypatch):
     manifest = yaml.safe_load((Path(__file__).parents[1] / "config/providers/stm.yaml").read_text())
     manifest["provider"]["provider_id"] = provider_id
     manifest["feeds"] = {"static_schedule": manifest["feeds"]["static_schedule"]}
+    manifest["feeds"]["static_schedule"]["source_url"] = "https://fixture.test/legacy-gtfs.zip"
     config = tmp_path / "providers"
     config.mkdir()
     (config / "provider.yaml").write_text(yaml.safe_dump(manifest))

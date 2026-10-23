@@ -13,6 +13,14 @@ from transit_ops.providers.registry import ProviderRegistry, load_provider_manif
 from transit_ops.settings import Settings
 
 runner = CliRunner()
+STM_STATIC_URL = (
+    "https://beta.stm.info/getContentAsset/38dcb679-4237-4c02-b6f4-5f8434665e5c/"
+    "dfc3d011-8f63-43f6-9ed8-4b444333a1d0/GTFS_STM.zip?language=fr"
+)
+STM_GIS_URL = (
+    "https://beta.stm.info/getContentAsset/3023ab97-ecd3-4b5e-ab25-16c90fe0bdd1/"
+    "dfc3d011-8f63-43f6-9ed8-4b444333a1d0/stm_sig.zip?language=fr"
+)
 
 
 def test_oc_bounds_include_published_eastern_stops_and_route_geometry() -> None:
@@ -189,10 +197,10 @@ def test_manifest_loading() -> None:
     assert registry.list_active_provider_ids() == ["octranspo", "stm"]
     assert provider.provider.provider_id == "stm"
     assert static_url is not None
-    assert static_url.endswith("/gtfs_stm.zip")
+    assert static_url == STM_STATIC_URL
     assert "static_schedule_current_fallback" not in provider.feeds
     assert gis_url is not None
-    assert gis_url.endswith("/stm_sig.zip")
+    assert gis_url == STM_GIS_URL
 
 
 def test_stm_manifest_has_live_current_static_gis_and_no_current_fallback() -> None:
@@ -273,7 +281,7 @@ def test_live_current_static_feed_is_seeded_as_canonical_static_schedule() -> No
     seeded_by_endpoint = {seed.endpoint_key: seed for seed in seeds}
 
     assert "static_schedule" in seeded_by_endpoint
-    assert (seeded_by_endpoint["static_schedule"].source_url or "").endswith("/gtfs_stm.zip")
+    assert seeded_by_endpoint["static_schedule"].source_url == STM_STATIC_URL
     assert "static_schedule_current_fallback" not in seeded_by_endpoint, (
         "Current GTFS is the live static source used to join realtime delay facts; "
         "do not seed it as a fallback endpoint."

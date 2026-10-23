@@ -93,6 +93,15 @@ assert_version_prefix Python "Python ${expected_python}" \
 assert_version_prefix uv "uv ${expected_uv}" \
   docker run --rm --entrypoint uv "${health_tag}" --version
 
+printf '%s\n' '== Isolated TLS and client verification =='
+for image in "${worker_tag}" "${health_tag}"; do
+  timeout 60s docker run --rm --network none --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+    --mount "type=bind,src=${DB_ROOT}/scripts/verify-runtime-tls.py,dst=/verify-runtime-tls.py,readonly" \
+    --entrypoint python "${image}" -B /verify-runtime-tls.py \
+    --bootstrap-python /usr/local/bin/python
+done
+
 printf '%s\n' '== PostgreSQL runtime =='
 assert_version_prefix PostgreSQL "postgres (PostgreSQL) ${expected_postgres}" \
   docker run --rm --entrypoint postgres "${postgres_tag}" --version

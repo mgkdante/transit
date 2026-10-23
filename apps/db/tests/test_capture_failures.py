@@ -6,6 +6,7 @@ from urllib.error import HTTPError
 
 import pytest
 from google.transit import gtfs_realtime_pb2
+from versioned_capture_fixtures import zip_payload
 
 from transit_ops.ingestion import i3, realtime_gtfs, static_gtfs
 from transit_ops.ingestion.common import DownloadedArtifact, finish_failed_capture
@@ -40,6 +41,8 @@ def test_capture_preserves_original_error_and_cleans_resources(
     feed.header.gtfs_realtime_version = "2.0"
     feed.header.timestamp = 1_788_588_000
     payload = b'{"alerts": []}' if kind == "i3" else feed.SerializeToString()
+    if kind == "static":
+        payload = zip_payload(payload)
     temp_path = tmp_path / "download"
     if stage == "metadata":
         temp_path.write_bytes(payload)

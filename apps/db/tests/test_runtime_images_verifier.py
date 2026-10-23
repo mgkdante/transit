@@ -18,6 +18,21 @@ HEALTH_TAG = f"transit-runtime-verify-health:{SUFFIX}"
 POSTGRES_TAG = f"transit-runtime-verify-postgres:{SUFFIX}"
 
 
+def test_runtime_verifier_isolates_tls_checks_for_both_app_images() -> None:
+    script = SCRIPT.read_text(encoding="utf-8").replace("\\\n", " ")
+    assert 'for image in "${worker_tag}" "${health_tag}"; do' in script
+    assert "--synthetic-only" not in script
+    for protection in (
+        "timeout 60s docker run --rm --network none --read-only",
+        "--tmpfs /tmp:rw,noexec,nosuid,size=16m",
+        "type=bind,src=${DB_ROOT}/scripts/verify-runtime-tls.py,"
+        "dst=/verify-runtime-tls.py,readonly",
+        '--entrypoint python "${image}" -B /verify-runtime-tls.py',
+        "--bootstrap-python /usr/local/bin/python",
+    ):
+        assert protection in script
+
+
 def _fake_docker(tmp_path: Path) -> tuple[Path, Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -113,6 +128,28 @@ def _run(
     return result, calls
 
 
+def _tls_call(tag: str) -> list[str]:
+    return [
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=16m",
+        "--mount",
+        f"type=bind,src={DB_ROOT}/scripts/verify-runtime-tls.py,"
+        "dst=/verify-runtime-tls.py,readonly",
+        "--entrypoint",
+        "python",
+        tag,
+        "-B",
+        "/verify-runtime-tls.py",
+        "--bootstrap-python",
+        "/usr/local/bin/python",
+    ]
+
+
 def _expected_calls() -> list[list[str]]:
     package_format = r"${binary:Package}=${Version}\n"
     return [
@@ -137,6 +174,8 @@ def _expected_calls() -> list[list[str]]:
         ],
         ["run", "--rm", "--entrypoint", "python", HEALTH_TAG, "--version"],
         ["run", "--rm", "--entrypoint", "uv", HEALTH_TAG, "--version"],
+        _tls_call(WORKER_TAG),
+        _tls_call(HEALTH_TAG),
         ["run", "--rm", "--entrypoint", "postgres", POSTGRES_TAG, "--version"],
         ["run", "--rm", "--entrypoint", "pg_repack", POSTGRES_TAG, "--version"],
         [
@@ -204,6 +243,16 @@ def test_runtime_verifier_propagates_cleanup_failure(tmp_path: Path) -> None:
 
     assert result.returncode == 37
     assert calls == _expected_calls()
+
+
+@pytest.mark.parametrize(("tag", "completed"), [(WORKER_TAG, 11), (HEALTH_TAG, 12)])
+def test_runtime_verifier_propagates_tls_failure_and_cleans_images(
+    tmp_path: Path, tag: str, completed: int
+) -> None:
+    result, calls = _run(tmp_path, fail_match=f"{tag} -B /verify-runtime-tls.py")
+
+    assert result.returncode == 37
+    assert calls == _expected_calls()[:completed] + [_expected_calls()[-1]]
 
 
 @pytest.mark.parametrize(("signal_name", "status"), [("INT", 130), ("TERM", 143)])
