@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import real_db_seed as db_seed
 from google.transit import gtfs_realtime_pb2
 from sqlalchemy import text
 
@@ -186,25 +187,12 @@ def _seed_provider_and_static(connection, seed_provider) -> None:  # noqa: ANN00
         ),
         {"static_id": STATIC_ENDPOINT_ID, "trip_id": TRIP_ENDPOINT_ID, "p": PROVIDER},
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :endpoint_id, 'static_schedule', 'succeeded')
-            """
-        ),
-        {"run_id": STATIC_RUN_ID, "p": PROVIDER, "endpoint_id": STATIC_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'run_id': STATIC_RUN_ID, 'p': PROVIDER, 'endpoint_id': STATIC_ENDPOINT_ID},
+        ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id', run_kind="'static_schedule'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_objects
-                (ingestion_object_id, ingestion_run_id, provider_id, object_kind,
-                 storage_backend, storage_path, checksum_sha256, byte_size)
-            VALUES (:obj_id, :run_id, :p, 'static_schedule', 'local', :path, :hash, 1)
-            """
-        ),
+    db_seed.ingestion_objects(
+        connection,
         {
             "obj_id": STATIC_OBJECT_ID,
             "run_id": STATIC_RUN_ID,
@@ -212,18 +200,11 @@ def _seed_provider_and_static(connection, seed_provider) -> None:  # noqa: ANN00
             "path": f"{PROVIDER}/static/schedule.zip",
             "hash": "s" * 64,
         },
+        ingestion_object_id=':obj_id', ingestion_run_id=':run_id', object_kind="'static_schedule'",
+        storage_backend="'local'", checksum_sha256=':hash', byte_size='1',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions
-                (dataset_version_id, provider_id, feed_endpoint_id,
-                 source_ingestion_run_id, source_ingestion_object_id,
-                 dataset_kind, content_hash, is_current)
-            VALUES (:dv, :p, :endpoint_id, :run_id, :obj_id,
-                    'static_schedule', 'replay-static', true)
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "dv": DATASET_VERSION_ID,
             "p": PROVIDER,
@@ -231,72 +212,22 @@ def _seed_provider_and_static(connection, seed_provider) -> None:  # noqa: ANN00
             "run_id": STATIC_RUN_ID,
             "obj_id": STATIC_OBJECT_ID,
         },
+        dataset_version_id=':dv', feed_endpoint_id=':endpoint_id',
+        source_ingestion_run_id=':run_id', source_ingestion_object_id=':obj_id',
+        content_hash="'replay-static'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO silver.routes (dataset_version_id, provider_id, route_id, route_type)
-            VALUES (:dv, :p, '51', 3)
-            """
-        ),
-        {"dv": DATASET_VERSION_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO silver.stops (dataset_version_id, provider_id, stop_id, stop_name)
-            VALUES (:dv, :p, 'S1', 'Stop 1'), (:dv, :p, 'S2', 'Stop 2')
-            """
-        ),
-        {"dv": DATASET_VERSION_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO silver.trips
-                (dataset_version_id, provider_id, trip_id, route_id, service_id)
-            VALUES (:dv, :p, 'T_REPLAY', '51', 'WK')
-            """
-        ),
-        {"dv": DATASET_VERSION_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO silver.stop_times
-                (dataset_version_id, provider_id, trip_id, stop_sequence,
-                 stop_id, arrival_time, departure_time)
-            VALUES
-                (:dv, :p, 'T_REPLAY', 1, 'S1', '12:00:00', '12:00:00'),
-                (:dv, :p, 'T_REPLAY', 2, 'S2', '12:08:00', '12:08:00')
-            """
-        ),
-        {"dv": DATASET_VERSION_ID, "p": PROVIDER},
-    )
+    db_seed.replay_static_graph(connection, {"dv": DATASET_VERSION_ID, "p": PROVIDER})
 
 
 def _seed_raw_realtime_snapshots(connection, snapshots=SNAPSHOTS) -> None:  # noqa: ANN001
     for snapshot_id, run_id, obj_id, captured_at, delay in snapshots:
         payload = _build_trip_update_bytes(captured_at=captured_at, delay_seconds=delay)
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-                VALUES (:run_id, :p, :endpoint_id, 'trip_updates', 'succeeded')
-                """
-            ),
-            {"run_id": run_id, "p": PROVIDER, "endpoint_id": TRIP_ENDPOINT_ID},
+        db_seed.ingestion_runs(
+            connection, {'run_id': run_id, 'p': PROVIDER, 'endpoint_id': TRIP_ENDPOINT_ID},
+            ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id',
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_objects
-                    (ingestion_object_id, ingestion_run_id, provider_id, object_kind,
-                     storage_backend, storage_path, checksum_sha256, byte_size)
-                VALUES (:obj_id, :run_id, :p, 'realtime_feed', 'local', :path, :hash, :size)
-                """
-            ),
+        db_seed.ingestion_objects(
+            connection,
             {
                 "obj_id": obj_id,
                 "run_id": run_id,
@@ -305,18 +236,12 @@ def _seed_raw_realtime_snapshots(connection, snapshots=SNAPSHOTS) -> None:  # no
                 "hash": hashlib.sha256(payload).hexdigest(),
                 "size": len(payload),
             },
+            ingestion_object_id=':obj_id', ingestion_run_id=':run_id',
+            object_kind="'realtime_feed'", storage_backend="'local'", checksum_sha256=':hash',
+            byte_size=':size',
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.realtime_snapshot_index
-                    (realtime_snapshot_id, ingestion_run_id, ingestion_object_id,
-                     provider_id, feed_endpoint_id, feed_timestamp_utc,
-                     entity_count, captured_at_utc)
-                VALUES (:snapshot_id, :run_id, :obj_id, :p, :endpoint_id,
-                        :captured, 1, :captured)
-                """
-            ),
+        db_seed.realtime_snapshot_index(
+            connection,
             {
                 "snapshot_id": snapshot_id,
                 "run_id": run_id,
@@ -325,6 +250,9 @@ def _seed_raw_realtime_snapshots(connection, snapshots=SNAPSHOTS) -> None:  # no
                 "endpoint_id": TRIP_ENDPOINT_ID,
                 "captured": captured_at,
             },
+            realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id',
+            ingestion_object_id=':obj_id', feed_endpoint_id=':endpoint_id',
+            feed_timestamp_utc=':captured', entity_count='1', captured_at_utc=':captured',
         )
 
 

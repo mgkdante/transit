@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -32,15 +33,9 @@ def conn(real_db_engine, seed_provider):
 
 def _seed_provider_and_snapshots(connection, seed_provider) -> None:  # noqa: ANN001
     seed_provider(connection, PROVIDER, display_name="STM alert count regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'api_i3_json')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
     )
     for run_id, snap_id, captured_at in zip(
         RUN_IDS,
@@ -48,15 +43,8 @@ def _seed_provider_and_snapshots(connection, seed_provider) -> None:  # noqa: AN
         (D1_CAPTURED_1, D1_CAPTURED_2, D2_CAPTURED_1, D2_CAPTURED_2),
         strict=True,
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-                VALUES (:r, :p, :e, 'i3_alerts', 'succeeded')
-                """
-            ),
-            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
+        db_seed.ingestion_runs(
+            connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID}, run_kind="'i3_alerts'",
         )
         connection.execute(
             text(

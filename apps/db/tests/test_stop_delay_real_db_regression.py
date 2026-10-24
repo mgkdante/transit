@@ -9,6 +9,7 @@ import time
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
@@ -67,14 +68,8 @@ def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
         (STATIC_ENDPOINT_ID, "static_schedule", "static_schedule", "gtfs_schedule_zip"),
         (TRIP_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
     ]
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:endpoint_id, :p, :endpoint_key, :feed_kind, :source_format)
-            """
-        ),
+    db_seed.feed_endpoints(
+        connection,
         [
             {
                 "endpoint_id": endpoint_id,
@@ -85,29 +80,18 @@ def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
             }
             for endpoint_id, endpoint_key, feed_kind, source_format in endpoints
         ],
+        feed_endpoint_id=':endpoint_id', endpoint_key=':endpoint_key', feed_kind=':feed_kind',
+        source_format=':source_format',
     )
 
 
 def _seed_raw_snapshot(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :endpoint_id, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"run_id": TRIP_RUN_ID, "p": PROVIDER, "endpoint_id": TRIP_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'run_id': TRIP_RUN_ID, 'p': PROVIDER, 'endpoint_id': TRIP_ENDPOINT_ID},
+        ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:snapshot_id, :run_id, :p, :endpoint_id, :captured, 0, :captured)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "snapshot_id": SNAPSHOT_ID,
             "run_id": TRIP_RUN_ID,
@@ -115,6 +99,9 @@ def _seed_raw_snapshot(connection) -> None:  # noqa: ANN001
             "endpoint_id": TRIP_ENDPOINT_ID,
             "captured": PERIOD,
         },
+        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id',
+        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':captured', entity_count='0',
+        captured_at_utc=':captured',
     )
 
 
@@ -711,32 +698,20 @@ def test_rollup_lock_timeout_and_advisory_probe_fail_fast(real_db_engine) -> Non
 
 
 def _seed_static_schedule(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :endpoint_id, 'static_schedule', 'succeeded')
-            """
-        ),
-        {"run_id": STATIC_RUN_ID, "p": PROVIDER, "endpoint_id": STATIC_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'run_id': STATIC_RUN_ID, 'p': PROVIDER, 'endpoint_id': STATIC_ENDPOINT_ID},
+        ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id', run_kind="'static_schedule'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions
-                (dataset_version_id, provider_id, feed_endpoint_id,
-                 source_ingestion_run_id, dataset_kind, content_hash, is_current)
-            VALUES (:dataset_version_id, :p, :endpoint_id, :run_id,
-                    'static_schedule', 'stop-delay-static', true)
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "dataset_version_id": DATASET_VERSION_ID,
             "p": PROVIDER,
             "endpoint_id": STATIC_ENDPOINT_ID,
             "run_id": STATIC_RUN_ID,
         },
+        dataset_version_id=':dataset_version_id', feed_endpoint_id=':endpoint_id',
+        source_ingestion_run_id=':run_id', content_hash="'stop-delay-static'",
     )
     connection.execute(
         text(

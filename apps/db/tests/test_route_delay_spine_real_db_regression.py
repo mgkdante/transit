@@ -6,6 +6,7 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -53,14 +54,7 @@ def conn(real_db_engine, seed_provider):
 def _seed(connection, seed_provider) -> None:  # noqa: ANN001
     cld = _closed_local_date()
     seed_provider(connection, PROVIDER, display_name="STM spine regression")
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
-        ),
-        {"eid": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'eid': ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid')
 
     h8 = datetime.combine(cld, time(8, 0), tzinfo=TORONTO).astimezone(UTC)
     h9 = datetime.combine(cld, time(9, 0), tzinfo=TORONTO).astimezone(UTC)
@@ -100,21 +94,9 @@ def _seed(connection, seed_provider) -> None:  # noqa: ANN001
 def _insert_rows(  # noqa: ANN001
     connection, local_date, snapshot_id, run_id, captured_at, rows, *, trip_ids=None
 ) -> None:
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
-        ),
-        {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
-    )
-    connection.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            " feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:s, :r, :p, :e, :ts, :n, :ts)"
-        ),
+    db_seed.ingestion_runs(connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID})
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "s": snapshot_id,
             "r": run_id,

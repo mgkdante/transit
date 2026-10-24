@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_stop_departures, build_trips
@@ -26,36 +27,12 @@ def conn(real_db_engine, seed_provider):
 
 def _seed_parents(connection, seed_provider) -> None:
     seed_provider(connection, PROVIDER, display_name="STM stop-departures regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id,
-                 feed_endpoint_id, feed_timestamp_utc)
-            VALUES (:rs, :r, :p, :e, now())
-            """
-        ),
-        {"rs": RAW_SNAP_ID, "r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
+    db_seed.feed_endpoints(connection, {'e': ENDPOINT_ID, 'p': PROVIDER})
+    db_seed.ingestion_runs(connection, {'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID})
+    db_seed.realtime_snapshot_index(
+        connection, {'rs': RAW_SNAP_ID, 'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID},
+        realtime_snapshot_id=':rs', feed_timestamp_utc='now()', entity_count=None,
+        captured_at_utc=None,
     )
     connection.execute(
         text(

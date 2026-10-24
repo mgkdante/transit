@@ -9,6 +9,7 @@ from uuid import uuid4
 from zipfile import ZipFile
 
 import pytest
+import real_db_seed as db_seed
 import yaml
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import ProgrammingError
@@ -120,12 +121,9 @@ def subject(real_db_engine, seed_provider, tmp_path, monkeypatch):
     )
     with real_db_engine.begin() as connection:
         seed_provider(connection, provider_id, display_name="Static pipeline recovery")
-        connection.execute(
-            text("""
-                INSERT INTO core.feed_endpoints(provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:p, 'static_schedule', 'static_schedule', 'gtfs_schedule_zip')
-            """),
-            {"p": provider_id},
+        db_seed.feed_endpoints(
+            connection, {'p': provider_id}, feed_endpoint_id=None, endpoint_key="'static_schedule'",
+            feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
         )
     monkeypatch.setattr(capture, "_download_to_tempfile", subject.download)
     monkeypatch.setattr(

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold.rollups import (
@@ -33,30 +34,17 @@ def _seed_provider_edition(connection) -> None:  # noqa: ANN001
         ),
         {"p": PROVIDER},
     )
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:e, :p, 'static_schedule', 'static_schedule', 'gtfs_schedule_zip')"
-        ),
-        {"e": STATIC_ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': STATIC_ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'static_schedule', 'succeeded')"
-        ),
-        {"r": STATIC_RUN_ID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'r': STATIC_RUN_ID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID},
+        run_kind="'static_schedule'",
     )
-    connection.execute(
-        text(
-            "INSERT INTO core.dataset_versions "
-            "(dataset_version_id, provider_id, feed_endpoint_id, source_ingestion_run_id, "
-            " dataset_kind, content_hash, is_current) "
-            "VALUES (:d, :p, :e, :r, 'static_schedule', 'sched-test-hash', true)"
-        ),
-        {"d": DVID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "r": STATIC_RUN_ID},
+    db_seed.dataset_versions(
+        connection, {'d': DVID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID, 'r': STATIC_RUN_ID},
+        content_hash="'sched-test-hash'",
     )
     connection.execute(
         text(
@@ -167,32 +155,19 @@ RT_RUN_ID = 993102
 
 
 def _seed_fact_trip_days(connection, target: date, canceled: int, delivered: int) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
-        ),
-        {"e": RT_ENDPOINT_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
-        ),
-        {"r": RT_RUN_ID, "p": PROVIDER, "e": RT_ENDPOINT_ID},
-    )
+    db_seed.feed_endpoints(connection, {'e': RT_ENDPOINT_ID, 'p': PROVIDER})
+    db_seed.ingestion_runs(connection, {'r': RT_RUN_ID, 'p': PROVIDER, 'e': RT_ENDPOINT_ID})
     ts = datetime(target.year, target.month, target.day, 12, 0, tzinfo=UTC)
-    connection.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            " feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:s, :r, :p, :e, :ts, :n, :ts)"
-        ),
-        {"s": 993301, "r": RT_RUN_ID, "p": PROVIDER, "e": RT_ENDPOINT_ID,
-         "ts": ts, "n": canceled + delivered},
+    db_seed.realtime_snapshot_index(
+        connection,
+        {
+            "s": 993301,
+            "r": RT_RUN_ID,
+            "p": PROVIDER,
+            "e": RT_ENDPOINT_ID,
+            "ts": ts,
+            "n": canceled + delivered,
+        },
     )
     date_key = int(target.strftime("%Y%m%d"))
     idx = 0
@@ -391,23 +366,11 @@ def _seed_capture_day_snapshot(
         ),
         {"e": RT_ENDPOINT_ID, "p": PROVIDER},
     )
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
-        ),
-        {"r": run_id, "p": PROVIDER, "e": RT_ENDPOINT_ID},
-    )
+    db_seed.ingestion_runs(connection, {'r': run_id, 'p': PROVIDER, 'e': RT_ENDPOINT_ID})
     ts = datetime(capture_day.year, capture_day.month, capture_day.day, hour, 0, tzinfo=UTC)
-    connection.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            " feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:s, :r, :p, :e, :ts, 50, :ts)"
-        ),
-        {"s": snapshot_id, "r": run_id, "p": PROVIDER, "e": RT_ENDPOINT_ID, "ts": ts},
+    db_seed.realtime_snapshot_index(
+        connection, {'s': snapshot_id, 'r': run_id, 'p': PROVIDER, 'e': RT_ENDPOINT_ID, 'ts': ts},
+        entity_count='50',
     )
     return ts
 

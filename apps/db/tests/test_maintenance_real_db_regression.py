@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.maintenance import prune_static_silver_datasets
@@ -41,40 +42,19 @@ def _seed(connection, seed_provider) -> None:
         PROVIDER,
         display_name="STM dataset-version prune regression",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'static_schedule', 'static_schedule', 'gtfs_schedule_zip')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'static_schedule', 'succeeded')
-            """
-        ),
-        {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID}, run_kind="'static_schedule'",
     )
     for version_id, loaded_at, is_current, content_hash in (
         (V1, T1, False, f"{PROVIDER}-hash-v1"),
         (V2, T2, True, f"{PROVIDER}-hash-v2"),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.dataset_versions
-                    (dataset_version_id, provider_id, feed_endpoint_id,
-                     source_ingestion_run_id, dataset_kind, content_hash,
-                     loaded_at_utc, is_current)
-                VALUES (:v, :p, :e, :r, 'static_schedule', :h, :loaded, :cur)
-                """
-            ),
+        db_seed.dataset_versions(
+            connection,
             {
                 "v": version_id,
                 "p": PROVIDER,
@@ -84,6 +64,7 @@ def _seed(connection, seed_provider) -> None:
                 "loaded": loaded_at,
                 "cur": is_current,
             },
+            dataset_version_id=':v', is_current=':cur', loaded_at_utc=':loaded',
         )
         connection.execute(
             text(

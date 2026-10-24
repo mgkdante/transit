@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.maintenance import DELETE_ORPHANED_INGESTION_RUNS
@@ -32,30 +33,15 @@ def conn(real_db_engine, seed_provider):
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'api_i3_json')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
     )
     for run_id in (I3_RUN_WITH_SNAPSHOT, ORPHAN_RUN):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind,
-                     status, started_at_utc)
-                VALUES (
-                    CAST(:r AS bigint), :p, CAST(:e AS bigint), 'i3_alerts',
-                    'succeeded', CAST(:ts AS timestamptz)
-                )
-                """
-            ),
-            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "ts": AGED},
+        db_seed.ingestion_runs(
+            connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID, 'ts': AGED},
+            ingestion_run_id='CAST(:r AS bigint)', feed_endpoint_id='CAST(:e AS bigint)',
+            run_kind="'i3_alerts'", started_at_utc='CAST(:ts AS timestamptz)',
         )
     connection.execute(
         text(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 import transit_ops.maintenance.i3 as i3_maintenance_module
@@ -75,43 +76,24 @@ def _seed(connection) -> None:
         ),
         {"p": PROVIDER},
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'api_i3_json')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
     )
     for run_id, snap_id, obj_id in zip(RUN_IDS, SNAP_IDS, OBJ_IDS, strict=True):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status,
-                     started_at_utc)
-                VALUES (:r, :p, :e, 'i3_alerts', 'succeeded', :t)
-                """
-            ),
-            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "t": SNAP_TIMES[snap_id]},
+        db_seed.ingestion_runs(
+            connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID, 't': SNAP_TIMES[snap_id]},
+            run_kind="'i3_alerts'", started_at_utc=':t',
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_objects
-                    (ingestion_object_id, ingestion_run_id, provider_id, storage_backend,
-                     storage_path, object_kind)
-                VALUES (:o, :r, :p, 's3', :path, 'i3_alerts')
-                """
-            ),
+        db_seed.ingestion_objects(
+            connection,
             {
                 "o": obj_id,
                 "r": run_id,
                 "p": PROVIDER,
                 "path": f"{PROVIDER}/i3_alerts/captured_at_utc={snap_id}/payload.json",
             },
+            object_kind="'i3_alerts'",
         )
         connection.execute(
             text(
