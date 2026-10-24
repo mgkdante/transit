@@ -1,5 +1,4 @@
 import pytest
-from sqlalchemy.sql.elements import TextClause
 
 from transit_ops.settings import Settings
 from transit_ops.source_factory.guards import (
@@ -7,7 +6,6 @@ from transit_ops.source_factory.guards import (
     build_r2_namespace_proof,
     build_worker_stopped_proof,
     validate_destructive_confirmations,
-    validate_migration_revision,
 )
 
 
@@ -67,42 +65,6 @@ def test_missing_database_target_is_rejected(database_url: str | None) -> None:
 def test_empty_host_database_target_is_rejected() -> None:
     with pytest.raises(ValueError, match="host"):
         assert_oracle_database_target("postgresql:///transit_ops", confirm_oracle_target=True)
-
-
-class FakeScalarResult:
-    def __init__(self, revision: str | None) -> None:
-        self.revision = revision
-
-    def scalar_one_or_none(self) -> str | None:
-        return self.revision
-
-
-class FakeConnection:
-    def __init__(self, revision: str | None) -> None:
-        self.revision = revision
-        self.statements: list[object] = []
-
-    def execute(self, statement: object) -> FakeScalarResult:
-        self.statements.append(statement)
-        return FakeScalarResult(self.revision)
-
-
-def test_validate_migration_revision_accepts_exact_expected_revision() -> None:
-    connection = FakeConnection("0013_gold_ops_brain_contract")
-
-    proof = validate_migration_revision(connection)
-
-    assert proof == {"status": "ok", "revision": "0013_gold_ops_brain_contract"}
-    assert len(connection.statements) == 1
-    assert isinstance(connection.statements[0], TextClause)
-    assert "alembic_version" in str(connection.statements[0])
-
-
-def test_validate_migration_revision_rejects_mismatch() -> None:
-    connection = FakeConnection("0012_previous_revision")
-
-    with pytest.raises(ValueError, match="0013_gold_ops_brain_contract"):
-        validate_migration_revision(connection)
 
 
 def test_destructive_confirmations_allow_dry_run_without_confirmations() -> None:

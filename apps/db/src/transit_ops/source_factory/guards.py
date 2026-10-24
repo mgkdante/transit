@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote, urlsplit
 
-from sqlalchemy import text
-
 from transit_ops.settings import Settings
 
 NON_ORACLE_HOST_MARKERS = (
@@ -57,22 +55,6 @@ def assert_oracle_database_target(
         proof["database"] = database
 
     return proof
-
-
-def validate_migration_revision(
-    connection,
-    *,
-    expected_revision: str = "0013_gold_ops_brain_contract",
-) -> dict[str, str]:
-    result = connection.execute(text("SELECT version_num FROM alembic_version"))
-    revision = result.scalar_one_or_none()
-
-    if revision != expected_revision:
-        raise ValueError(
-            f"Expected Alembic revision {expected_revision}; found {revision or '<missing>'}."
-        )
-
-    return {"status": "ok", "revision": revision}
 
 
 def validate_destructive_confirmations(

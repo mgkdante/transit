@@ -404,7 +404,7 @@ def test_build_gold_marts_requires_current_static_dataset() -> None:
     engine = FakeEngine(connection)
     settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
-    with pytest.raises(ValueError, match="Run load-static-silver before build-gold-marts"):
+    with pytest.raises(ValueError, match="Run run-static-pipeline before build-gold-marts"):
         build_gold_marts(
             "stm",
             settings=settings,
@@ -540,7 +540,7 @@ def test_refresh_gold_static_raises_when_current_version_has_no_silver_rows() ->
     engine = FakeEngine(connection)
     settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
-    with pytest.raises(ValueError, match="load-static-silver"):
+    with pytest.raises(ValueError, match="run-static-pipeline"):
         refresh_gold_static(
             "stm",
             settings=settings,

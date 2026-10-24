@@ -911,7 +911,7 @@ def find_latest_gis_bronze_archive(
     if archive_row is None:
         raise ValueError(
             "No current Bronze GIS dataset version was found for this provider. "
-            "Run ingest-gis before load-gis-silver."
+            "Run run-static-pipeline to ingest and load GIS data."
         )
     storage_path = _blank_to_none(archive_row["storage_path"])
     if storage_path is None:

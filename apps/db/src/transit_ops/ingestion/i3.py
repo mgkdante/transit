@@ -476,7 +476,7 @@ def _capture_i3_alerts(
         default_filename="i3_alerts.json",
         missing_endpoint_message=(
             "i3 alert feed endpoint was not found in core.feed_endpoints. "
-            "Run seed-core before capture-i3."
+            "Run seed-core before run-realtime-cycle."
         ),
         bronze_storage_resolver=bronze_storage_resolver,
     )

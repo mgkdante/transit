@@ -123,7 +123,7 @@ def _get_feed_endpoint_id(connection, provider_id: str, endpoint_key: str) -> in
 
 _MISSING_ENDPOINT_MESSAGE = (
     "Static feed endpoint was not found in core.feed_endpoints. "
-    "Run seed-core before ingest-static."
+    "Run seed-core before run-static-pipeline."
 )
 
 
