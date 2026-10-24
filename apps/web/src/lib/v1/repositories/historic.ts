@@ -56,11 +56,9 @@ export {
 	getRepeatOffendersHistoryIndex,
 } from './pointHistory';
 
-export async function getHistoricAvailability(
+export const getHistoricAvailability: (
 	ctx?: AdapterCtx,
-): Promise<HistoricAvailabilityIndex | null> {
-	return adapter.historic.historyIndex(ctx);
-}
+) => Promise<HistoricAvailabilityIndex | null> = (ctx) => adapter.historic.historyIndex(ctx);
 
 const ALL_HISTORY: DateWindow = { from: '0001-01-01', to: '9999-12-31' };
 
@@ -474,9 +472,9 @@ export async function loadStopHistoryRange(
 	);
 }
 
-export async function getAlertArchiveIndex(ctx?: AdapterCtx): Promise<AlertArchiveIndex | null> {
-	return adapter.historic.alertArchiveIndex(ctx);
-}
+export const getAlertArchiveIndex: (ctx?: AdapterCtx) => Promise<AlertArchiveIndex | null> = (
+	ctx,
+) => adapter.historic.alertArchiveIndex(ctx);
 
 export async function getAlertArchiveRange(
 	index: AlertArchiveIndex,
@@ -508,34 +506,30 @@ export function clearAlertArchivePageMemoForTest(): void {
 	alertArchivePageMemo.clear();
 }
 
-export async function getNetworkTrend(ctx?: AdapterCtx): Promise<NetworkTrend> {
-	return adapter.historic.networkTrend(ctx);
-}
+export const getNetworkTrend: (ctx?: AdapterCtx) => Promise<NetworkTrend> = (ctx) =>
+	adapter.historic.networkTrend(ctx);
 
-export async function getHotspots(ctx?: AdapterCtx): Promise<Hotspots> {
-	return adapter.historic.hotspots(ctx);
-}
+export const getHotspots: (ctx?: AdapterCtx) => Promise<Hotspots> = (ctx) =>
+	adapter.historic.hotspots(ctx);
 
-export async function getRepeatOffenders(ctx?: AdapterCtx): Promise<RepeatOffenders> {
-	return adapter.historic.repeatOffenders(ctx);
-}
+export const getRepeatOffenders: (ctx?: AdapterCtx) => Promise<RepeatOffenders> = (ctx) =>
+	adapter.historic.repeatOffenders(ctx);
 
-export async function getAlertHistory(ctx?: AdapterCtx): Promise<AlertHistory> {
-	return adapter.historic.alertHistory(ctx);
-}
+export const getAlertHistory: (ctx?: AdapterCtx) => Promise<AlertHistory> = (ctx) =>
+	adapter.historic.alertHistory(ctx);
 
-export async function getReceiptsIndex(ctx?: AdapterCtx): Promise<ReceiptsIndex> {
-	return adapter.historic.receiptsIndex(ctx);
-}
+export const getReceiptsIndex: (ctx?: AdapterCtx) => Promise<ReceiptsIndex> = (ctx) =>
+	adapter.historic.receiptsIndex(ctx);
 
 export async function getRouteReliabilityIndex(ctx?: AdapterCtx): Promise<Set<string> | null> {
 	const idx = await adapter.historic.routeReliabilityIndex(ctx);
 	return idx ? new Set(idx.route_ids ?? []) : null;
 }
 
-export async function getReceipt(date: string, ctx?: AdapterCtx): Promise<Receipt | null> {
-	return adapter.historic.receipt(date, ctx);
-}
+export const getReceipt: (date: string, ctx?: AdapterCtx) => Promise<Receipt | null> = (
+	date,
+	ctx,
+) => adapter.historic.receipt(date, ctx);
 
 export async function getAdvertisedReceipt(
 	index: ReceiptsIndex,
@@ -562,16 +556,14 @@ export async function getAdvertisedReceipt(
 	return receipt;
 }
 
-export async function getRouteReliability(
+export const getRouteReliability: (
 	routeId: string,
 	ctx?: AdapterCtx,
-): Promise<RouteReliability | null> {
-	return adapter.historic.routeReliability(routeId, ctx);
-}
+) => Promise<RouteReliability | null> = (routeId, ctx) =>
+	adapter.historic.routeReliability(routeId, ctx);
 
-export async function getStopReliability(
+export const getStopReliability: (
 	stopId: string,
 	ctx?: AdapterCtx,
-): Promise<StopReliability | null> {
-	return adapter.historic.stopReliability(stopId, ctx);
-}
+) => Promise<StopReliability | null> = (stopId, ctx) =>
+	adapter.historic.stopReliability(stopId, ctx);
