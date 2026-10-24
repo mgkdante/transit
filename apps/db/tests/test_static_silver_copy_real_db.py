@@ -7,6 +7,7 @@ from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+import real_db_seed as db_seed
 from psycopg.errors import UniqueViolation
 from sqlalchemy import text
 
@@ -117,42 +118,18 @@ def _seed_lineage(connection, *, provider_id: str, base: int, seed_provider) -> 
         display_name="F3c COPY test",
         timezone="UTC",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints (
-                feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format
-            ) VALUES (
-                :endpoint_id, :provider_id, 'static', 'static_schedule', 'gtfs_schedule_zip'
-            )
-            """
-        ),
-        {"endpoint_id": base + 1, "provider_id": provider_id},
+    db_seed.feed_endpoints(
+        connection, {'endpoint_id': base + 1, 'provider_id': provider_id},
+        feed_endpoint_id=':endpoint_id', provider_id=':provider_id', endpoint_key="'static'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs (
-                ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status
-            ) VALUES (
-                :run_id, :provider_id, :endpoint_id, 'static_schedule', 'succeeded'
-            )
-            """
-        ),
-        {"run_id": base + 2, "provider_id": provider_id, "endpoint_id": base + 1},
+    db_seed.ingestion_runs(
+        connection, {'run_id': base + 2, 'provider_id': provider_id, 'endpoint_id': base + 1},
+        ingestion_run_id=':run_id', provider_id=':provider_id', feed_endpoint_id=':endpoint_id',
+        run_kind="'static_schedule'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_objects (
-                ingestion_object_id, ingestion_run_id, provider_id, object_kind,
-                storage_backend, storage_path, checksum_sha256
-            ) VALUES (
-                :object_id, :run_id, :provider_id, 'gtfs_schedule_zip',
-                'local', :storage_path, :checksum
-            )
-            """
-        ),
+    db_seed.ingestion_objects(
+        connection,
         {
             "object_id": base + 3,
             "run_id": base + 2,
@@ -160,24 +137,16 @@ def _seed_lineage(connection, *, provider_id: str, base: int, seed_provider) -> 
             "storage_path": f"{provider_id}/static_schedule/test.zip",
             "checksum": "a" * 64,
         },
+        ingestion_object_id=':object_id', ingestion_run_id=':run_id', provider_id=':provider_id',
+        object_kind="'gtfs_schedule_zip'", storage_backend="'local'", storage_path=':storage_path',
+        checksum_sha256=':checksum',
     )
 
 
 def _seed_current_dataset_version(connection, *, provider_id: str, base: int, checksum: str) -> int:  # noqa: ANN001
     version_id = base + 4
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions (
-                dataset_version_id, provider_id, feed_endpoint_id,
-                source_ingestion_run_id, source_ingestion_object_id,
-                dataset_kind, content_hash, is_current
-            ) VALUES (
-                :version_id, :provider_id, :endpoint_id, :run_id, :object_id,
-                'static_schedule', :checksum, true
-            )
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "version_id": version_id,
             "provider_id": provider_id,
@@ -186,6 +155,9 @@ def _seed_current_dataset_version(connection, *, provider_id: str, base: int, ch
             "object_id": base + 3,
             "checksum": checksum,
         },
+        dataset_version_id=':version_id', provider_id=':provider_id',
+        feed_endpoint_id=':endpoint_id', source_ingestion_run_id=':run_id',
+        source_ingestion_object_id=':object_id', content_hash=':checksum',
     )
     return version_id
 

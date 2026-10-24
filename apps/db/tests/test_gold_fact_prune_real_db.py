@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.maintenance import prune_gold_fact_history
@@ -28,53 +29,22 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN201
 
 def _seed(connection, seed_provider) -> None:  # noqa: ANN001
     seed_provider(connection, PROVIDER, display_name="STM gold-fact prune regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
-    )
+    db_seed.feed_endpoints(connection, {'e': ENDPOINT_ID, 'p': PROVIDER})
+    db_seed.ingestion_runs(connection, {'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID})
 
 
 def _insert_fact_rows(connection, *, snapshot_id: int, count: int, captured_at) -> None:
     run_id = snapshot_id + 1_000_000
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (CAST(:r AS bigint), :p, CAST(:e AS bigint), 'trip_updates', 'succeeded')
-            """
-        ),
-        {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID},
+        ingestion_run_id='CAST(:r AS bigint)', feed_endpoint_id='CAST(:e AS bigint)',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id,
-                 feed_endpoint_id, feed_timestamp_utc)
-            VALUES (
-                CAST(:sid AS bigint), CAST(:r AS bigint), :p,
-                CAST(:e AS bigint), CAST(:ts AS timestamptz)
-            )
-            """
-        ),
-        {"sid": snapshot_id, "r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "ts": captured_at},
+    db_seed.realtime_snapshot_index(
+        connection,
+        {'sid': snapshot_id, 'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID, 'ts': captured_at},
+        realtime_snapshot_id='CAST(:sid AS bigint)', ingestion_run_id='CAST(:r AS bigint)',
+        feed_endpoint_id='CAST(:e AS bigint)', feed_timestamp_utc='CAST(:ts AS timestamptz)',
+        entity_count=None, captured_at_utc=None,
     )
     connection.execute(
         text(

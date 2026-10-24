@@ -2,6 +2,7 @@
 import json
 from datetime import UTC
 
+import real_db_seed as db_seed
 from sqlalchemy import text
 from test_snapshots_live_departures_real_db import (
     ENDPOINT_ID,
@@ -34,23 +35,11 @@ def _later_inserted_snapshot(
         "capture_minutes": capture_minutes,
         "entities": int(departure_minutes is not None),
     }
-    connection.execute(
-        text("""
-        INSERT INTO raw.ingestion_runs
-            (ingestion_run_id,provider_id,feed_endpoint_id,run_kind,status)
-        VALUES (:run,:p,:e,'trip_updates','succeeded')
-        """),
-        params,
-    )
-    connection.execute(
-        text("""
-        INSERT INTO raw.realtime_snapshot_index
-            (realtime_snapshot_id,ingestion_run_id,provider_id,feed_endpoint_id,
-             captured_at_utc,feed_timestamp_utc,entity_count)
-        VALUES (:raw,:run,:p,:e,now()+make_interval(mins=>:capture_minutes),
-                now()-interval '20 minutes',:entities)
-        """),
-        params,
+    db_seed.ingestion_runs(connection, params, ingestion_run_id=':run')
+    db_seed.realtime_snapshot_index(
+        connection, params, realtime_snapshot_id=':raw', ingestion_run_id=':run',
+        feed_timestamp_utc="now()-interval '20 minutes'", entity_count=':entities',
+        captured_at_utc='now()+make_interval(mins=>:capture_minutes)',
     )
     connection.execute(
         text("""

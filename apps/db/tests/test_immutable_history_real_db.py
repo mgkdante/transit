@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
@@ -265,14 +266,8 @@ def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
             "gtfs_rt_vehicle_positions",
         ),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:e, :p, :endpoint_key, :feed_kind, :source_format)
-                """
-            ),
+        db_seed.feed_endpoints(
+            connection,
             {
                 "e": endpoint_id,
                 "p": PROVIDER,
@@ -280,6 +275,7 @@ def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
                 "feed_kind": feed_kind,
                 "source_format": source_format,
             },
+            endpoint_key=':endpoint_key', feed_kind=':feed_kind', source_format=':source_format',
         )
 
 
@@ -294,30 +290,13 @@ def _insert_snapshot(
     entity_count: int = 1,
     provider_id: str = PROVIDER,
 ) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :endpoint_id, :run_kind, 'succeeded')
-            """
-        ),
-        {
-            "run_id": run_id,
-            "p": provider_id,
-            "endpoint_id": endpoint_id,
-            "run_kind": run_kind,
-        },
+    db_seed.ingestion_runs(
+        connection,
+        {'run_id': run_id, 'p': provider_id, 'endpoint_id': endpoint_id, 'run_kind': run_kind},
+        ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id', run_kind=':run_kind',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:snapshot_id, :run_id, :p, :endpoint_id, :captured, :n, :captured)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "snapshot_id": snapshot_id,
             "run_id": run_id,
@@ -326,6 +305,9 @@ def _insert_snapshot(
             "captured": captured_at,
             "n": entity_count,
         },
+        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id',
+        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':captured',
+        captured_at_utc=':captured',
     )
 
 
