@@ -19,11 +19,9 @@ from test_realtime_silver import (
 
 from transit_ops import orchestration
 from transit_ops.ingestion import realtime_gtfs as capture
-from transit_ops.ingestion import storage as bronze_storage
 from transit_ops.ingestion.common import DownloadedArtifact
 from transit_ops.settings import Settings
 from transit_ops.silver import realtime_gtfs as silver
-from transit_ops.source_factory import runner
 
 
 class CaptureConnection(RecordingConnection):
@@ -63,12 +61,10 @@ class CapturedStorage(FakeBronzeStorage):
 
 
 @pytest.mark.parametrize("endpoint_key", ["trip_updates", "vehicle_positions"])
-@pytest.mark.parametrize("caller", ["cycle", "source_factory"])
 def test_worker_normalizes_just_archived_capture_without_an_archive_get(
     tmp_path,
     monkeypatch,
     endpoint_key,
-    caller,
 ):
     payload = (
         _build_trip_updates_bytes()
@@ -90,36 +86,17 @@ def test_worker_normalizes_just_archived_capture_without_an_archive_get(
     settings = Settings(_env_file=None, BRONZE_STORAGE_BACKEND="local", STM_API_KEY="test")
     registry = FakeRegistry(_build_manifest())
     engine = FakeEngine(connection, connection)
-    if caller == "cycle":
-        result = orchestration._capture_and_load_realtime_source(
-            "stm",
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            bronze_storage_resolver=lambda backend: storage,
-        )
-        assert result.status == "succeeded"
-        captured = result.capture_result
-        loaded = result.silver_load_result
-    else:
-        monkeypatch.setattr(bronze_storage, "get_bronze_storage", lambda *a, **k: storage)
-        sources = tuple(
-            source
-            for source in runner.build_source_factory_catalog("stm").sources
-            if source.endpoint_key == endpoint_key
-        )
-        backfill = runner._execute_source_backfill(
-            "stm",
-            sources,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            operation_impls=runner.SourceFactoryOperationImpls(),
-        )
-        assert len(backfill.steps) == 1
-        captured = backfill.steps[0]["capture"].display_dict()
-        loaded = backfill.realtime_receipts[0]
+    result = orchestration._capture_and_load_realtime_source(
+        "stm",
+        endpoint_key,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        bronze_storage_resolver=lambda backend: storage,
+    )
+    assert result.status == "succeeded"
+    captured = result.capture_result
+    loaded = result.silver_load_result
     assert storage.uploaded == [(captured["storage_path"], payload)]
     assert storage.read_calls == []
     assert loaded.source_ingestion_object_id == 202

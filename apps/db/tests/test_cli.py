@@ -45,7 +45,6 @@ def test_cli_help() -> None:
     assert "build-warm-rollups" in result.stdout
     assert "sync-alert-archive" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
-    assert "rebuild-source-factory" in result.stdout
     assert LEGACY_ORACLE_REBUILD_COMMAND not in result.stdout
     assert LEGACY_BETA_REBUILD_COMMAND not in result.stdout
     assert RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND not in result.stdout
@@ -59,7 +58,7 @@ def test_cli_help() -> None:
     [
         "ingest-static", "ingest-gis", "capture-i3", "load-static-silver",
         "load-gis-silver", "load-i3-silver", "refresh-gold-static",
-        "backfill-dim-history",
+        "backfill-dim-history", "rebuild-source-factory",
     ],
 )
 def test_forwarding_commands_are_removed(command: str) -> None:
@@ -861,209 +860,15 @@ def test_build_warm_rollups_help() -> None:
     assert "--since" in result.stdout
 
 
-def test_source_factory_help_is_available() -> None:
-    result = runner.invoke(app, ["rebuild-source-factory", "--help"])
-
-    assert result.exit_code == 0
-    assert "Rebuild STM Oracle from source truth" in result.stdout
-    assert "--execute" in result.stdout
-    assert "--destructive-r2-cleanup" in result.stdout
-    assert "--active-prefix-wipe" in result.stdout
-    assert "--confirm-oracle-target" in result.stdout
-    assert "--confirm-worker-stopped" in result.stdout
-    assert "--confirm-r2-cleanup" in result.stdout
-    assert "--confirm-active-prefix-wipe" in result.stdout
-    assert "--report-dir" in result.stdout
-
-
 def test_retired_commands_are_removed() -> None:
     help_result = runner.invoke(app, ["--help"])
 
     assert help_result.exit_code == 0
-    assert "rebuild-source-factory" in help_result.stdout
+    assert "rebuild-source-factory" not in help_result.stdout
     assert "sync-alert-archive" in help_result.stdout
     assert LEGACY_ORACLE_REBUILD_COMMAND not in help_result.stdout
     assert LEGACY_BETA_REBUILD_COMMAND not in help_result.stdout
     assert RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND not in help_result.stdout
-
-
-class FakeSourceFactoryCliResult:
-    def __init__(self, provider_id: str, execute: bool) -> None:
-        self.provider_id = provider_id
-        self.execute = execute
-
-    def display_dict(self) -> dict[str, object]:
-        return {
-            "provider_id": self.provider_id,
-            "execute": self.execute,
-            "phase_status": {"preflight": "ok"},
-            "artifacts": {"source_factory_result": "artifacts/source-factory/result.json"},
-        }
-
-
-def test_rebuild_source_factory_default_report_dir_bootstraps_clean_checkout(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    recorded: dict[str, object] = {}
-
-    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
-        recorded.update(provider_id=provider_id, **kwargs)
-        return FakeSourceFactoryCliResult(provider_id, execute=False)
-
-    monkeypatch.setattr(
-        cli_module,
-        "run_source_factory_rebuild",
-        fake_run_source_factory_rebuild,
-    )
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(app, ["rebuild-source-factory", "stm"])
-
-    expected = Path("artifacts/source-factory")
-    assert result.exit_code == 0
-    assert recorded["artifact_dir"] == expected
-    assert (tmp_path / expected).is_dir()
-
-
-def test_rebuild_source_factory_passes_destructive_gate_options(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    recorded: dict[str, object] = {}
-
-    def fake_run_source_factory_rebuild(
-        provider_id,
-        *,
-        artifact_dir,
-        keep_from_date,
-        execute,
-        destructive_r2_cleanup,
-        active_prefix_wipe,
-        confirm_worker_stopped,
-        confirm_oracle_target,
-        confirm_r2_cleanup,
-        confirm_active_prefix_wipe,
-        settings,
-    ):  # noqa: ANN001
-        recorded.update(
-            {
-                "provider_id": provider_id,
-                "artifact_dir": artifact_dir,
-                "keep_from_date": keep_from_date,
-                "execute": execute,
-                "destructive_r2_cleanup": destructive_r2_cleanup,
-                "active_prefix_wipe": active_prefix_wipe,
-                "confirm_worker_stopped": confirm_worker_stopped,
-                "confirm_oracle_target": confirm_oracle_target,
-                "confirm_r2_cleanup": confirm_r2_cleanup,
-                "confirm_active_prefix_wipe": confirm_active_prefix_wipe,
-                "settings": settings,
-            }
-        )
-        return FakeSourceFactoryCliResult(provider_id, execute=execute)
-
-    monkeypatch.setattr(
-        cli_module,
-        "run_source_factory_rebuild",
-        fake_run_source_factory_rebuild,
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "_default_source_factory_keep_from_date",
-        lambda settings: date(2026, 4, 25),
-        raising=False,
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "rebuild-source-factory",
-            "stm",
-            "--execute",
-            "--destructive-r2-cleanup",
-            "--active-prefix-wipe",
-            "--confirm-worker-stopped",
-            "--confirm-oracle-target",
-            "--confirm-r2-cleanup",
-            "--confirm-active-prefix-wipe",
-            "--report-dir",
-            str(tmp_path),
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert recorded["provider_id"] == "stm"
-    assert recorded["artifact_dir"] == tmp_path
-    assert recorded["keep_from_date"] == date(2026, 4, 25)
-    assert recorded["execute"] is True
-    assert recorded["destructive_r2_cleanup"] is True
-    assert recorded["active_prefix_wipe"] is True
-    assert recorded["confirm_worker_stopped"] is True
-    assert recorded["confirm_oracle_target"] is True
-    assert recorded["confirm_r2_cleanup"] is True
-    assert recorded["confirm_active_prefix_wipe"] is True
-    assert '"execute": true' in result.stdout
-
-
-def test_rebuild_source_factory_bad_report_dir_prevents_run(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    called = False
-
-    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
-        nonlocal called
-        called = True
-        return FakeSourceFactoryCliResult(provider_id, execute=False)
-
-    monkeypatch.setattr(
-        cli_module,
-        "run_source_factory_rebuild",
-        fake_run_source_factory_rebuild,
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "rebuild-source-factory",
-            "stm",
-            "--report-dir",
-            str(tmp_path / "missing" / "source-factory"),
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "--report-dir parent directory does not exist" in result.output
-    assert called is False
-
-
-def test_rebuild_source_factory_execute_requires_destructive_cleanup_gate() -> None:
-    result = runner.invoke(app, ["rebuild-source-factory", "stm", "--execute"])
-
-    assert result.exit_code == 2
-    assert "--destructive-r2-cleanup is required with --execute" in result.output
-
-
-def test_rebuild_source_factory_surfaces_guardrail_failure_as_invalid_parameter(
-    monkeypatch,
-) -> None:
-    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
-        raise ValueError("guardrail failed")
-
-    monkeypatch.setattr(
-        cli_module,
-        "run_source_factory_rebuild",
-        fake_run_source_factory_rebuild,
-    )
-
-    result = runner.invoke(
-        app,
-        ["rebuild-source-factory", "stm", "--execute", "--destructive-r2-cleanup"],
-    )
-
-    assert result.exit_code == 2
-    assert "Invalid value: guardrail failed" in result.output
 
 
 def test_prune_warm_rollup_storage_help() -> None:
@@ -1867,6 +1672,30 @@ def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path, provid
         written = json.loads((tmp_path / f"publish-gate-{provider}.json").read_text())
         assert written["provider_id"] == provider
         assert written["errors"] == 0
+
+
+def test_publish_all_rejects_missing_report_dir_parent_before_publishing(monkeypatch, tmp_path):
+    published: list[str] = []
+    monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
+    monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["stm"]),
+    )
+
+    def fake_publish_snapshot(provider_id, **kwargs):  # noqa: ANN001
+        published.append(provider_id)
+        return SimpleNamespace(display_dict=lambda: {"provider_id": provider_id}, gate_report=None)
+
+    monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
+    report_dir = tmp_path / "missing" / "reports"
+
+    result = runner.invoke(app, ["publish-all", "--report-dir", str(report_dir)])
+
+    assert result.exit_code == 2, result.output
+    assert "--report-dir parent directory does not exist" in result.output
+    assert published == []
 
 
 def test_publish_all_rejects_unconfigured_provider_before_database_access(monkeypatch) -> None:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from io import BytesIO
 from pathlib import Path
 
@@ -25,8 +24,6 @@ class FakeS3Client:
         self.upload_calls: list[tuple[str, str]] = []
         self.delete_objects_calls: list[dict[str, object]] = []
         self.delete_objects_outcomes: list[dict[str, object] | Exception] = []
-        self.paginator_calls: list[str] = []
-        self.paginator_pages: list[dict[str, object]] | None = None
         self.close_calls = 0
 
     def upload_fileobj(self, fileobj, bucket: str, key: str) -> None:  # noqa: ANN001
@@ -43,10 +40,6 @@ class FakeS3Client:
     def get_object(self, Bucket: str, Key: str) -> dict[str, BytesIO]:  # noqa: N803
         return {"Body": BytesIO(self.objects[(Bucket, Key)])}
 
-    def get_paginator(self, operation_name: str):  # noqa: ANN201
-        self.paginator_calls.append(operation_name)
-        return FakeS3Paginator(self)
-
     def delete_objects(self, **kwargs):  # noqa: ANN003, ANN201
         self.delete_objects_calls.append(kwargs)
         if self.delete_objects_outcomes:
@@ -58,22 +51,6 @@ class FakeS3Client:
 
     def close(self) -> None:
         self.close_calls += 1
-
-
-class FakeS3Paginator:
-    def __init__(self, client: FakeS3Client) -> None:
-        self.client = client
-
-    def paginate(self, *, Bucket: str, Prefix: str):  # noqa: N803, ANN201
-        if self.client.paginator_pages is not None:
-            return self.client.paginator_pages
-
-        contents = [
-            {"Key": key, "Size": len(payload)}
-            for (bucket, key), payload in sorted(self.client.objects.items())
-            if bucket == Bucket and key.startswith(Prefix)
-        ]
-        return [{"Contents": contents}]
 
 
 def _s3_settings() -> Settings:
@@ -277,53 +254,6 @@ def test_s3_bronze_storage_persists_and_reads_bytes(tmp_path: Path) -> None:
     assert storage.read_bytes(storage_path) == b"static-zip-bytes"
 
 
-def test_local_bronze_storage_list_objects_by_prefix(tmp_path: Path) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-    matching_dir = storage.root / "stm/trip_updates/captured_at_utc=2026-05-01"
-    matching_dir.mkdir(parents=True)
-    (matching_dir / "b.pb").write_bytes(b"bb")
-    (matching_dir / "a.pb").write_bytes(b"a")
-    other_dir = storage.root / "stm/vehicle_positions/captured_at_utc=2026-05-01"
-    other_dir.mkdir(parents=True)
-    (other_dir / "c.pb").write_bytes(b"ccc")
-
-    objects = list(storage.list_objects("stm/trip_updates/"))
-
-    assert [obj.storage_path for obj in objects] == [
-        "stm/trip_updates/captured_at_utc=2026-05-01/a.pb",
-        "stm/trip_updates/captured_at_utc=2026-05-01/b.pb",
-    ]
-    assert [obj.byte_size for obj in objects] == [1, 2]
-
-
-def test_local_bronze_storage_list_objects_missing_prefix_returns_empty(tmp_path: Path) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-    matching_dir = storage.root / "stm/trip_updates"
-    matching_dir.mkdir(parents=True)
-    (matching_dir / "a.pb").write_bytes(b"a")
-
-    objects = list(storage.list_objects("stm/static_schedule/"))
-
-    assert objects == []
-
-
-def test_local_bronze_storage_list_objects_empty_prefix_lists_all_files(tmp_path: Path) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-    trip_updates_dir = storage.root / "stm/trip_updates"
-    trip_updates_dir.mkdir(parents=True)
-    (trip_updates_dir / "b.pb").write_bytes(b"bb")
-    static_schedule_dir = storage.root / "stm/static_schedule"
-    static_schedule_dir.mkdir(parents=True)
-    (static_schedule_dir / "a.zip").write_bytes(b"zip")
-
-    objects = list(storage.list_objects(""))
-
-    assert [obj.storage_path for obj in objects] == [
-        "stm/static_schedule/a.zip",
-        "stm/trip_updates/b.pb",
-    ]
-
-
 def test_local_bronze_storage_bulk_delete_preserves_per_path_failures(
     tmp_path: Path,
     caplog,
@@ -352,105 +282,6 @@ def test_local_bronze_storage_bulk_delete_preserves_per_path_failures(
     assert isinstance(error, OSError)
     assert error.filename == str(storage.root / "cannot-unlink")
     assert str(error) in records[0].getMessage()
-
-
-@pytest.mark.parametrize(
-    "prefix",
-    ["/definitely-not-a-bronze-prefix"]
-    + (
-        [r"\outside", "C:outside", "D:outside", r"\\server\share\outside"]
-        if os.name == "nt"
-        else []
-    ),
-)
-def test_local_bronze_storage_list_objects_rejects_anchored_prefix(
-    tmp_path: Path, monkeypatch, prefix: str
-) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-
-    def unexpected_probe(path: Path) -> bool:
-        raise AssertionError("Invalid prefixes must be rejected before filesystem access")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(Path, "exists", unexpected_probe)
-        with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
-            list(storage.list_objects(prefix))
-
-
-def test_local_bronze_storage_list_objects_rejects_native_absolute_prefix(tmp_path: Path) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-
-    with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
-        list(storage.list_objects(str(tmp_path / "outside")))
-
-
-@pytest.mark.parametrize("prefix", ["../outside"] + ([r"..\outside"] if os.name == "nt" else []))
-def test_local_bronze_storage_list_objects_rejects_parent_traversal(
-    tmp_path: Path, prefix: str
-) -> None:
-    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
-
-    with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
-        list(storage.list_objects(prefix))
-
-
-def test_s3_bronze_storage_list_objects_with_paginator() -> None:
-    fake_client = FakeS3Client()
-    static_schedule_key = "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
-    trip_updates_key = "stm/trip_updates/captured_at_utc=2026-05-01/a.pb"
-    fake_client.objects[("bronze-bucket", static_schedule_key)] = b"zip"
-    fake_client.objects[("bronze-bucket", trip_updates_key)] = b"pb"
-    storage = S3BronzeStorage(
-        storage_backend="s3",
-        bucket="bronze-bucket",
-        endpoint_url="https://example.r2.cloudflarestorage.com",
-        client=fake_client,
-    )
-
-    objects = list(storage.list_objects("stm/static_schedule/"))
-
-    assert fake_client.paginator_calls == ["list_objects_v2"]
-    assert [obj.storage_path for obj in objects] == [
-        "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
-    ]
-    assert objects[0].byte_size == 3
-
-
-def test_s3_bronze_storage_list_objects_missing_contents_returns_empty() -> None:
-    fake_client = FakeS3Client()
-    fake_client.paginator_pages = [{}]
-    storage = S3BronzeStorage(
-        storage_backend="s3",
-        bucket="bronze-bucket",
-        endpoint_url="https://example.r2.cloudflarestorage.com",
-        client=fake_client,
-    )
-
-    objects = list(storage.list_objects("stm/static_schedule/"))
-
-    assert objects == []
-
-
-def test_s3_bronze_storage_list_objects_consumes_multiple_pages() -> None:
-    fake_client = FakeS3Client()
-    fake_client.paginator_pages = [
-        {"Contents": [{"Key": "stm/static_schedule/a.zip", "Size": 3}]},
-        {"Contents": [{"Key": "stm/static_schedule/b.zip", "Size": 4}]},
-    ]
-    storage = S3BronzeStorage(
-        storage_backend="s3",
-        bucket="bronze-bucket",
-        endpoint_url="https://example.r2.cloudflarestorage.com",
-        client=fake_client,
-    )
-
-    objects = list(storage.list_objects("stm/static_schedule/"))
-
-    assert [obj.storage_path for obj in objects] == [
-        "stm/static_schedule/a.zip",
-        "stm/static_schedule/b.zip",
-    ]
-    assert [obj.byte_size for obj in objects] == [3, 4]
 
 
 def test_s3_bronze_storage_bulk_delete_chunks_at_one_thousand_keys() -> None:

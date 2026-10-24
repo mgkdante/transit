@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -16,22 +15,6 @@ from transit_ops.s3 import validated_s3_target
 from transit_ops.settings import Settings
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_bronze_object_prefix(prefix: str) -> Path:
-    prefix_path = Path(prefix)
-    if prefix_path.anchor or ".." in prefix_path.parts:
-        raise BronzeStorageError(
-            "Bronze object prefix must be a relative object-key prefix without parent traversal."
-        )
-    return prefix_path
-
-
-@dataclass(frozen=True)
-class BronzeObjectInfo:
-    storage_path: str
-    byte_size: int | None
-    last_modified: datetime | None
 
 
 @dataclass(frozen=True)
@@ -68,9 +51,6 @@ class BronzeStorage:
                 failed_paths.add(storage_path)
         return failed_paths
 
-    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
-        raise NotImplementedError
-
 
 type BronzeStorageResolver = Callable[[str], BronzeStorage]
 
@@ -98,19 +78,6 @@ class LocalBronzeStorage(BronzeStorage):
 
     def delete_object(self, storage_path: str) -> None:
         (self.root / Path(storage_path)).unlink(missing_ok=True)
-
-    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
-        prefix_root = self.root / _normalize_bronze_object_prefix(prefix)
-        if not prefix_root.exists():
-            return
-
-        for object_path in sorted(path for path in prefix_root.rglob("*") if path.is_file()):
-            stat = object_path.stat()
-            yield BronzeObjectInfo(
-                storage_path=object_path.relative_to(self.root).as_posix(),
-                byte_size=stat.st_size,
-                last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
-            )
 
 
 @dataclass(frozen=True)
@@ -220,23 +187,6 @@ class S3BronzeStorage(BronzeStorage):
                     error.get("Message", "unknown"),
                 )
         return failed_paths
-
-    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
-        try:
-            paginator = self.client.get_paginator("list_objects_v2")
-            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
-            for page in pages:
-                for item in page.get("Contents", []):
-                    yield BronzeObjectInfo(
-                        storage_path=item["Key"],
-                        byte_size=item.get("Size"),
-                        last_modified=item.get("LastModified"),
-                    )
-        except (BotoCoreError, ClientError) as exc:
-            raise BronzeStorageError(
-                "Failed to list Bronze artifacts under "
-                f"{self.describe_location(prefix)} via endpoint {self.endpoint_url}: {exc}"
-            ) from exc
 
 
 def resolve_local_bronze_root(settings: Settings, *, project_root: Path) -> Path:
