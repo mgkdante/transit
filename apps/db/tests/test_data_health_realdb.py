@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -10,10 +9,6 @@ from transit_ops.snapshots.builders import build_data_health
 from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
 
 PROVIDER = "stm_datahealth_test"
-NOW = datetime.now(UTC)
-LIVE_GEN = NOW - timedelta(seconds=60)
-HISTORIC_GEN = NOW - timedelta(hours=6)
-STATIC_GEN = NOW - timedelta(days=1)
 
 
 @pytest.fixture()
@@ -29,6 +24,7 @@ def conn(real_db_engine, seed_provider):
 
 
 def _seed(connection) -> None:
+    now = datetime.now(UTC)
     connection.execute(
         text(
             """
@@ -38,7 +34,7 @@ def _seed(connection) -> None:
             VALUES (:p, 'live', :g, 7, 0, 7, 7, 0, 2, 'warn', :g)
             """
         ),
-        {"p": PROVIDER, "g": LIVE_GEN},
+        {"p": PROVIDER, "g": now - timedelta(seconds=60)},
     )
     connection.execute(
         text(
@@ -49,7 +45,7 @@ def _seed(connection) -> None:
             VALUES (:p, 'historic', :g, 300, 50, 350, 350, 0, 0, 'pass', :g)
             """
         ),
-        {"p": PROVIDER, "g": HISTORIC_GEN},
+        {"p": PROVIDER, "g": now - timedelta(hours=6)},
     )
     connection.execute(
         text(
@@ -59,7 +55,7 @@ def _seed(connection) -> None:
             VALUES (:p, 'static', :g, 100, 0, 100)
             """
         ),
-        {"p": PROVIDER, "g": STATIC_GEN},
+        {"p": PROVIDER, "g": now - timedelta(days=1)},
     )
 
 
