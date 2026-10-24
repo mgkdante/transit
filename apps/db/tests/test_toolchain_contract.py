@@ -67,7 +67,6 @@ COMPATIBILITY_PROOFS = {
     "apps/db/tests/test_health_checks.py",
     "apps/db/tests/test_snapshot_publish_typing_contract.py",
     "apps/web/scripts/install-browser-toolchain.test.mjs",
-    "apps/web/scripts/verify-browser-toolchain.test.mjs",
     "apps/web/src/tests/shared-tooling-adoption.test.ts",
     "apps/web/src/tests/map-poster-assets.test.ts",
 }
@@ -469,7 +468,7 @@ def test_browser_runtime_is_verified_from_installed_playwright_metadata() -> Non
     browser_contract = _json("apps/web/browser-toolchain.json")
     installer = REPO_ROOT / "apps/web/scripts/install-browser-toolchain.mjs"
     artifact_verifier = REPO_ROOT / "apps/web/scripts/browser-toolchain.mjs"
-    verifier = REPO_ROOT / "apps/web/scripts/verify-browser-toolchain.mjs"
+    verifier = REPO_ROOT / "apps/web/scripts/b9-displayed-values.mjs"
 
     assert web_package["devDependencies"]["playwright-core"] == PLAYWRIGHT_VERSION
     assert receipt["reproduced_with"] == {
@@ -492,7 +491,7 @@ def test_browser_runtime_is_verified_from_installed_playwright_metadata() -> Non
     assert "playwright-core install" not in ci_runs
     assert "install-browser-toolchain.test.mjs" in ci_runs
     assert "install-browser-toolchain.mjs" in ci_runs
-    assert "verify-browser-toolchain.mjs" in ci_runs
+    assert "bun run test:b9-display" in ci_runs
 
 
 def test_external_container_images_are_readable_and_immutable() -> None:
