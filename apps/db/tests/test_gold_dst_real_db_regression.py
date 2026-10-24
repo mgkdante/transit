@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import marts
@@ -140,16 +141,8 @@ def _seed(connection, seed_provider) -> None:  # noqa: ANN001
             "rt_endpoint_id": RT_ENDPOINT_ID,
         },
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:snapshot_id, :run_id, :provider_id, :endpoint_id, :feed_ts,
-                    :entity_count, :feed_ts)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "snapshot_id": SOURCE_REALTIME_SNAPSHOT_ID,
             "run_id": RT_RUN_ID,
@@ -158,23 +151,21 @@ def _seed(connection, seed_provider) -> None:  # noqa: ANN001
             "feed_ts": max(s.actual_arrival_utc for s in SCENARIOS),
             "entity_count": len(SCENARIOS),
         },
+        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id', provider_id=':provider_id',
+        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':feed_ts',
+        entity_count=':entity_count', captured_at_utc=':feed_ts',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions
-                (dataset_version_id, provider_id, feed_endpoint_id, source_ingestion_run_id,
-                 dataset_kind, content_hash, is_current)
-            VALUES (:dataset_version_id, :provider_id, :feed_endpoint_id, :run_id,
-                    'static_schedule', 'dst-regression-static', true)
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "dataset_version_id": DATASET_VERSION_ID,
             "provider_id": PROVIDER,
             "feed_endpoint_id": STATIC_ENDPOINT_ID,
             "run_id": STATIC_RUN_ID,
         },
+        dataset_version_id=':dataset_version_id', provider_id=':provider_id',
+        feed_endpoint_id=':feed_endpoint_id', source_ingestion_run_id=':run_id',
+        content_hash="'dst-regression-static'",
     )
     connection.execute(
         text(

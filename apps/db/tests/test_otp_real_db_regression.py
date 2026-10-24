@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -28,42 +29,12 @@ def conn(real_db_engine, seed_provider):
 
 def _seed_provider_and_snapshot(connection, seed_provider) -> None:
     seed_provider(connection, PROVIDER, display_name="STM OTP regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:s, :r, :p, :e, :captured, 0, :captured)
-            """
-        ),
-        {
-            "s": SNAPSHOT_ID,
-            "r": RUN_ID,
-            "p": PROVIDER,
-            "e": ENDPOINT_ID,
-            "captured": PERIOD,
-        },
+    db_seed.feed_endpoints(connection, {'e': ENDPOINT_ID, 'p': PROVIDER})
+    db_seed.ingestion_runs(connection, {'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID})
+    db_seed.realtime_snapshot_index(
+        connection,
+        {'s': SNAPSHOT_ID, 'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID, 'captured': PERIOD},
+        feed_timestamp_utc=':captured', entity_count='0', captured_at_utc=':captured',
     )
 
 

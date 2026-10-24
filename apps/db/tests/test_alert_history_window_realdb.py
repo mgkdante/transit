@@ -5,6 +5,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.silver.i3 import RawI3AlertSnapshot, load_i3_snapshot_to_silver
@@ -58,30 +59,18 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001
 
 
 def _seed(connection, *, provider=PROVIDER, offset=0) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'api_i3_json')
-            """
-        ),
-        {"e": ENDPOINT_ID + offset, "p": provider},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID + offset, 'p': provider}, endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
     )
     for run_id, snap_id, captured in (
         (IN_RUN + offset, IN_SNAP + offset, IN_TIME),
         (OUT_RUN + offset, OUT_SNAP + offset, OUT_TIME),
         (IN_RUN + 2 + offset, IN_SNAP + 2 + offset, NOW),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-                VALUES (:r, :p, :e, 'i3_alerts', 'succeeded')
-                """
-            ),
-            {"r": run_id, "p": provider, "e": ENDPOINT_ID + offset},
+        db_seed.ingestion_runs(
+            connection, {'r': run_id, 'p': provider, 'e': ENDPOINT_ID + offset},
+            run_kind="'i3_alerts'",
         )
         connection.execute(
             text(

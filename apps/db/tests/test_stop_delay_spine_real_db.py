@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -41,14 +42,7 @@ def _build(connection) -> None:  # noqa: ANN001
 
 def _provider_and_endpoint(connection, seed_provider) -> None:  # noqa: ANN001
     seed_provider(connection, PROVIDER, display_name="STM stop builder")
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
-        ),
-        {"eid": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'eid': ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid')
 
 
 def _seed_rows(connection, local_date, rows, base=997100) -> None:  # noqa: ANN001
@@ -56,20 +50,10 @@ def _seed_rows(connection, local_date, rows, base=997100) -> None:  # noqa: ANN0
     date_key = int(local_date.strftime("%Y%m%d"))
     for i, (stop_id, route_id, delay) in enumerate(rows):
         sid, run_id = base + i, base + 500 + i
-        connection.execute(
-            text(
-                "INSERT INTO raw.ingestion_runs (ingestion_run_id, provider_id, feed_endpoint_id, "
-                "run_kind, status) VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
-            ),
-            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
-        )
-        connection.execute(
-            text(
-                "INSERT INTO raw.realtime_snapshot_index (realtime_snapshot_id, ingestion_run_id, "
-                "provider_id, feed_endpoint_id, feed_timestamp_utc, entity_count, captured_at_utc) "
-                "VALUES (:s, :r, :p, :e, :ts, 1, :ts)"
-            ),
-            {"s": sid, "r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "ts": captured_at},
+        db_seed.ingestion_runs(connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID})
+        db_seed.realtime_snapshot_index(
+            connection, {'s': sid, 'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID, 'ts': captured_at},
+            entity_count='1',
         )
         connection.execute(
             text(

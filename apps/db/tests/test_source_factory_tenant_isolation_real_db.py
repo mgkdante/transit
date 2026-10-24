@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import Connection, text
 from test_delay_days_real_db import DAY, capture, metric, rows, watermark
 
@@ -36,13 +37,11 @@ def _seed_source_chain(connection: Connection, provider_id: str) -> None:
         ),
         {"pid": provider_id, "feid": feed_endpoint_id},
     ).scalar_one()
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_objects "
-            "(ingestion_run_id, provider_id, object_kind, storage_backend, storage_path) "
-            "VALUES (:rid, :pid, 'gtfs_schedule_zip', 'local', :path)"
-        ),
-        {"rid": ingestion_run_id, "pid": provider_id, "path": f"{provider_id}/static/x.zip"},
+    db_seed.ingestion_objects(
+        connection,
+        {'rid': ingestion_run_id, 'pid': provider_id, 'path': f'{provider_id}/static/x.zip'},
+        ingestion_object_id=None, ingestion_run_id=':rid', provider_id=':pid',
+        object_kind="'gtfs_schedule_zip'", storage_backend="'local'",
     )
 
 

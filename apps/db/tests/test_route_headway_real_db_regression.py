@@ -6,6 +6,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -31,16 +32,7 @@ def conn(real_db_engine, seed_provider):
 
 def _seed_provider(connection, seed_provider) -> None:
     seed_provider(connection, PROVIDER, display_name="STM headway regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'e': ENDPOINT_ID, 'p': PROVIDER})
 
 
 def _recent_weekday(index: int) -> date:
@@ -83,25 +75,12 @@ def _seed_observation(
 ) -> None:
     run_id = RUN_ID_BASE + seq
     snapshot_id = SNAPSHOT_ID_BASE + seq
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :endpoint_id, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"run_id": run_id, "p": PROVIDER, "endpoint_id": ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'run_id': run_id, 'p': PROVIDER, 'endpoint_id': ENDPOINT_ID},
+        ingestion_run_id=':run_id', feed_endpoint_id=':endpoint_id',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:snapshot_id, :run_id, :p, :endpoint_id, :captured, 1, :captured)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "snapshot_id": snapshot_id,
             "run_id": run_id,
@@ -109,6 +88,9 @@ def _seed_observation(
             "endpoint_id": ENDPOINT_ID,
             "captured": captured_at_utc,
         },
+        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id',
+        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':captured', entity_count='1',
+        captured_at_utc=':captured',
     )
     connection.execute(
         text(

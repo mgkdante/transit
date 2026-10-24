@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_receipts
@@ -41,29 +42,17 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN201
 
 def _seed(c, seed_provider) -> None:  # noqa: ANN001
     seed_provider(c, PROVIDER, display_name="STM S13 receipts")
-    c.execute(
-        text(
-            "INSERT INTO core.feed_endpoints (feed_endpoint_id, provider_id, endpoint_key,"
-            " feed_kind, source_format) VALUES (:e, :p, 'static_schedule',"
-            " 'static_schedule', 'gtfs_schedule_zip')"
-        ),
-        {"e": STATIC_ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        c, {'e': STATIC_ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
-    c.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs (ingestion_run_id, provider_id,"
-            " feed_endpoint_id, run_kind, status) VALUES (:r, :p, :e, 'static_schedule',"
-            " 'succeeded')"
-        ),
-        {"r": STATIC_RUN_ID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        c, {'r': STATIC_RUN_ID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID},
+        run_kind="'static_schedule'",
     )
-    c.execute(
-        text(
-            "INSERT INTO core.dataset_versions (dataset_version_id, provider_id,"
-            " feed_endpoint_id, source_ingestion_run_id, dataset_kind, content_hash,"
-            " is_current) VALUES (:d, :p, :e, :r, 'static_schedule', 's13-hash', true)"
-        ),
-        {"d": DVID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "r": STATIC_RUN_ID},
+    db_seed.dataset_versions(
+        c, {'d': DVID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID, 'r': STATIC_RUN_ID},
+        content_hash="'s13-hash'",
     )
     for rid, name in (("51", "Édouard-Montpetit"), ("24", "Sherbrooke"), ("747", "YUL")):
         c.execute(

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -50,39 +51,20 @@ def conn(real_db_engine, seed_provider):
 
 def _seed(connection, seed_provider) -> None:
     seed_provider(connection, PROVIDER, display_name="STM dim history regression")
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'static_schedule', 'static_schedule', 'gtfs_schedule_zip')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
     for run_id, dsv, content_hash, is_current in (
         (RUN_IDS[0], DSV1, "dimhist-h1", False),
         (RUN_IDS[1], DSV2, "dimhist-h2", True),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-                VALUES (:r, :p, :e, 'static_schedule', 'succeeded')
-                """
-            ),
-            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
+        db_seed.ingestion_runs(
+            connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID},
+            run_kind="'static_schedule'",
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.dataset_versions
-                    (dataset_version_id, provider_id, feed_endpoint_id,
-                     source_ingestion_run_id, content_hash, is_current)
-                VALUES (:d, :p, :e, :r, :h, :c)
-                """
-            ),
+        db_seed.dataset_versions(
+            connection,
             {
                 "d": dsv,
                 "p": PROVIDER,
@@ -91,6 +73,7 @@ def _seed(connection, seed_provider) -> None:
                 "h": content_hash,
                 "c": is_current,
             },
+            dataset_kind=None, is_current=':c',
         )
     for dsv, routes in ((DSV1, V1_ROUTES), (DSV2, V2_ROUTES)):
         for r in routes:

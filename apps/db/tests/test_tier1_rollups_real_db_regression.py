@@ -7,6 +7,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -66,15 +67,9 @@ def _seed(connection, seed: _Seed, seed_provider) -> None:  # noqa: ANN001
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions", "vehicle_positions", "gtfs_rt_vehicle_positions"),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:eid, :p, :key, :kind, :fmt)
-                """
-            ),
-            {"eid": endpoint_id, "p": PROVIDER, "key": key, "kind": kind, "fmt": fmt},
+        db_seed.feed_endpoints(
+            connection, {'eid': endpoint_id, 'p': PROVIDER, 'key': key, 'kind': kind, 'fmt': fmt},
+            feed_endpoint_id=':eid', endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
         )
 
     local_date = seed.closed_local_date
@@ -119,25 +114,12 @@ def _insert_snapshot(
     entity_count: int,
 ) -> int:
     snapshot_id, run_id = seed.next_ids()
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :eid, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"run_id": run_id, "p": PROVIDER, "eid": endpoint_id},
+    db_seed.ingestion_runs(
+        connection, {'run_id': run_id, 'p': PROVIDER, 'eid': endpoint_id},
+        ingestion_run_id=':run_id', feed_endpoint_id=':eid',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:sid, :run_id, :p, :eid, :ts, :n, :ts)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "sid": snapshot_id,
             "run_id": run_id,
@@ -146,6 +128,7 @@ def _insert_snapshot(
             "ts": captured_at,
             "n": entity_count,
         },
+        realtime_snapshot_id=':sid', ingestion_run_id=':run_id', feed_endpoint_id=':eid',
     )
     return snapshot_id
 
