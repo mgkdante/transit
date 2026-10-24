@@ -196,12 +196,6 @@ export function addToSet(s: FilterState, key: IdSetKey, value: string): FilterSt
 	return next;
 }
 
-export function removeFromSet(s: FilterState, key: IdSetKey, value: string): FilterState {
-	const next = cloneFilterState(s);
-	next[key].delete(value.trim());
-	return next;
-}
-
 export function clear(_s?: FilterState): FilterState {
 	return emptyFilterState();
 }

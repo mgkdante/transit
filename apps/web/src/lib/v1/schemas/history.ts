@@ -6,23 +6,20 @@ import {
 	isRetainedPointHistoryFamily,
 	isRetainedRangeHistoryFamily,
 } from '../history/pointers';
-import { isoUtc, payloadEnvelopeFields } from './types';
+import * as collection from './generated/historic_collection_index';
+import * as availability from './generated/historic_availability_index';
+import * as directory from './generated/historic_entity_directory_index';
+import * as network from './generated/historic_network_history_partition';
+import * as line from './generated/historic_line_history_partition';
+import * as stop from './generated/historic_stop_history_partition';
 
-export const HistorySelectionModeSchema = z.enum(['range', 'date']);
+export const HistorySelectionModeSchema = collection.HistorySelectionModeSchema;
 export type HistorySelectionMode = z.infer<typeof HistorySelectionModeSchema>;
 
-export const HistoryMetricAggregationSchema = z.enum(['additive', 'daily_only', 'current_only']);
+export const HistoryMetricAggregationSchema = collection.HistoryMetricAggregationSchema;
 export type HistoryMetricAggregation = z.infer<typeof HistoryMetricAggregationSchema>;
 
-export const HistoryMetricNameSchema = z.enum([
-	'delay',
-	'delay_percentiles',
-	'vehicles',
-	'cancellation',
-	'occupancy',
-	'service_span',
-	'skipped_stops',
-]);
+export const HistoryMetricNameSchema = collection.HistoryMetricNameSchema;
 export type HistoryMetricName = z.infer<typeof HistoryMetricNameSchema>;
 
 const isCanonicalDate = (value: string): boolean => {
@@ -42,64 +39,20 @@ export const HistoryDateSchema = z
 	.refine(isCanonicalDate, 'Expected a valid YYYY-MM-DD date.');
 const HistoryMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 
-export const HistoricCoverageGapSchema = z.object({
-	start_date: z.string(),
-	end_date: z.string(),
-	reason: z.string().nullable().optional(),
-});
+export const HistoricCoverageGapSchema = collection.HistoricCoverageGapSchema;
 export type HistoricCoverageGap = z.infer<typeof HistoricCoverageGapSchema>;
 
-export const HistoricPartitionRefSchema = z.object({
-	path: z.string(),
-	coverage_start: z.string(),
-	coverage_end: z.string(),
-	count: z.number().int().min(0).nullable().optional(),
-	sha256: z
-		.string()
-		.regex(/^[0-9a-f]{64}$/)
-		.nullable()
-		.optional(),
-	byte_size: z.number().int().min(1).nullable().optional(),
-});
+export const HistoricPartitionRefSchema = collection.HistoricPartitionRefSchema;
 export type HistoricPartitionRef = z.infer<typeof HistoricPartitionRefSchema>;
 
-export const HistoricMetricCoverageSchema = z.object({
-	metric: HistoryMetricNameSchema,
-	aggregation: HistoryMetricAggregationSchema,
-	first_available_date: z.string().nullable().optional(),
-	last_available_date: z.string().nullable().optional(),
-	gaps: z.array(HistoricCoverageGapSchema).optional(),
-});
+export const HistoricMetricCoverageSchema = collection.HistoricMetricCoverageSchema;
 export type HistoricMetricCoverage = z.infer<typeof HistoricMetricCoverageSchema>;
 
-export const HistoricCollectionIndexSchema = z.object({
-	generated_utc: isoUtc(),
-	family: z.string(),
-	selection_mode: HistorySelectionModeSchema,
-	entity_id: z.string().nullable().optional(),
-	collection_generation_id: z.string().nullable().optional(),
-	first_available_date: z.string().nullable().optional(),
-	last_available_date: z.string().nullable().optional(),
-	available_dates: z.array(z.string()).optional(),
-	gaps: z.array(HistoricCoverageGapSchema).optional(),
-	partitions: z.array(HistoricPartitionRefSchema).optional(),
-	metrics: z.array(HistoricMetricCoverageSchema).optional(),
-	...payloadEnvelopeFields(),
-});
+export const HistoricCollectionIndexSchema = collection.HistoricCollectionIndexSchema;
 export type HistoricCollectionIndex = z.infer<typeof HistoricCollectionIndexSchema>;
 
-export const HistoricFamilyAvailabilitySchema = z
-	.object({
-		family: z.string(),
-		selection_mode: HistorySelectionModeSchema,
-		index_path: z.string(),
-		collection_generation_id: z.string().nullable().optional(),
-		first_available_date: z.string().nullable().optional(),
-		last_available_date: z.string().nullable().optional(),
-		gaps: z.array(HistoricCoverageGapSchema).optional(),
-		metrics: z.array(HistoricMetricCoverageSchema).optional(),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricFamilyAvailabilitySchema =
+	availability.HistoricFamilyAvailabilitySchema.superRefine((value, ctx) => {
 		const family = value.family;
 		if (
 			(isRetainedRangeHistoryFamily(family) || isRetainedPointHistoryFamily(family)) &&
@@ -128,16 +81,11 @@ export const HistoricFamilyAvailabilitySchema = z
 	});
 export type HistoricFamilyAvailability = z.infer<typeof HistoricFamilyAvailabilitySchema>;
 
-export const HistoricEntityIndexRefSchema = z
-	.object({
-		entity_id: z.string().min(1),
-		encoded_id: z.string().regex(/^(?:[0-9a-f]{2})+$/),
-		index_path: z.string().min(1),
-		collection_generation_id: z.string().min(1),
-		first_available_date: z.string().nullable().optional(),
-		last_available_date: z.string().nullable().optional(),
-	})
-	.superRefine((value, ctx) => {
+const HistoricEntityIndexRefBaseSchema = directory.HistoricEntityIndexRefSchema.extend({
+	encoded_id: z.string().regex(/^(?:[0-9a-f]{2})+$/),
+});
+export const HistoricEntityIndexRefSchema = HistoricEntityIndexRefBaseSchema.superRefine(
+	(value, ctx) => {
 		let expectedEncodedId: string;
 		try {
 			expectedEncodedId = encodeHistoryEntityId(value.entity_id);
@@ -156,21 +104,14 @@ export const HistoricEntityIndexRefSchema = z
 				message: 'encoded_id must be the lowercase UTF-8 hex of entity_id',
 			});
 		}
-	});
+	},
+);
 export type HistoricEntityIndexRef = z.infer<typeof HistoricEntityIndexRefSchema>;
 
-export const HistoricEntityDirectoryIndexSchema = z
-	.object({
-		generated_utc: isoUtc(),
-		family: z.enum(['lines', 'stops']),
-		selection_mode: z.literal('range'),
-		collection_generation_id: z.string().min(1),
-		first_available_date: z.string().nullable().optional(),
-		last_available_date: z.string().nullable().optional(),
+export const HistoricEntityDirectoryIndexSchema =
+	directory.HistoricEntityDirectoryIndexSchema.extend({
 		entities: z.array(HistoricEntityIndexRefSchema).optional(),
-		...payloadEnvelopeFields(),
-	})
-	.superRefine((value, ctx) => {
+	}).superRefine((value, ctx) => {
 		for (const [index, entity] of (value.entities ?? []).entries()) {
 			if (!isHistoryEntityIndexPath(value.family, entity.entity_id, entity.index_path)) {
 				ctx.addIssue({
@@ -183,15 +124,8 @@ export const HistoricEntityDirectoryIndexSchema = z
 	});
 export type HistoricEntityDirectoryIndex = z.infer<typeof HistoricEntityDirectoryIndexSchema>;
 
-export const HistoricDelayMetricSchema = z
-	.object({
-		observation_count: z.number().int().min(1),
-		in_clamp_observation_count: z.number().int().min(1).nullable().optional(),
-		on_time_count: z.number().int().min(0).nullable().optional(),
-		severe_count: z.number().int().min(0).nullable().optional(),
-		sum_delay_seconds: z.number().int().nullable().optional(),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricDelayMetricSchema = network.HistoricDelayMetricSchema.superRefine(
+	(value, ctx) => {
 		for (const field of ['in_clamp_observation_count', 'on_time_count', 'severe_count'] as const) {
 			const count = value[field];
 			if (count != null && count > value.observation_count) {
@@ -238,16 +172,12 @@ export const HistoricDelayMetricSchema = z
 				message: 'sum_delay_seconds exceeds the capped in-clamp population',
 			});
 		}
-	});
+	},
+);
 export type HistoricDelayMetric = z.infer<typeof HistoricDelayMetricSchema>;
 
-export const HistoricDelayPercentilesSchema = z
-	.object({
-		observation_count: z.number().int().min(1),
-		p50_delay_seconds: z.number().nullable().optional(),
-		p90_delay_seconds: z.number().nullable().optional(),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricDelayPercentilesSchema = network.HistoricDelayPercentilesSchema.superRefine(
+	(value, ctx) => {
 		if (value.p50_delay_seconds == null && value.p90_delay_seconds == null) {
 			ctx.addIssue({
 				code: 'custom',
@@ -275,18 +205,12 @@ export const HistoricDelayPercentilesSchema = z
 				message: 'p50_delay_seconds cannot exceed p90_delay_seconds',
 			});
 		}
-	});
+	},
+);
 export type HistoricDelayPercentiles = z.infer<typeof HistoricDelayPercentilesSchema>;
 
-export const HistoricCancellationMetricSchema = z
-	.object({
-		canceled_trip_days: z.number().int().min(0),
-		total_trip_days: z.number().int().min(0),
-		scheduled_trip_days: z.number().int().min(0).nullable().optional(),
-		delivered_trip_days: z.number().int().min(0).nullable().optional(),
-		silent_trip_days: z.number().int().min(0).nullable().optional(),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricCancellationMetricSchema =
+	network.HistoricCancellationMetricSchema.superRefine((value, ctx) => {
 		if (value.canceled_trip_days > value.total_trip_days) {
 			ctx.addIssue({
 				code: 'custom',
@@ -335,39 +259,23 @@ export const HistoricCancellationMetricSchema = z
 	});
 export type HistoricCancellationMetric = z.infer<typeof HistoricCancellationMetricSchema>;
 
-export const HistoricOccupancyMetricSchema = z
-	.object({
-		empty: z.number().int().min(0),
-		many_seats: z.number().int().min(0),
-		few_seats: z.number().int().min(0),
-		standing: z.number().int().min(0),
-		full: z.number().int().min(0),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricOccupancyMetricSchema = network.HistoricOccupancyMetricSchema.superRefine(
+	(value, ctx) => {
 		if (value.empty + value.many_seats + value.few_seats + value.standing + value.full === 0) {
 			ctx.addIssue({
 				code: 'custom',
 				message: 'occupancy requires at least one telemetry observation',
 			});
 		}
-	});
+	},
+);
 export type HistoricOccupancyMetric = z.infer<typeof HistoricOccupancyMetricSchema>;
 
-export const HistoricServiceSpanMetricSchema = z.object({
-	trip_count: z.number().int().min(1),
-	first_trip_utc: z.string().nullable().optional(),
-	last_trip_utc: z.string().nullable().optional(),
-	first_trip_delay_seconds: z.number().int().nullable().optional(),
-	last_trip_delay_seconds: z.number().int().nullable().optional(),
-});
+export const HistoricServiceSpanMetricSchema = line.HistoricServiceSpanMetricSchema;
 export type HistoricServiceSpanMetric = z.infer<typeof HistoricServiceSpanMetricSchema>;
 
-export const HistoricSkippedStopMetricSchema = z
-	.object({
-		skipped_stop_count: z.number().int().min(0),
-		stop_time_update_count: z.number().int().min(1),
-	})
-	.superRefine((value, ctx) => {
+export const HistoricSkippedStopMetricSchema = line.HistoricSkippedStopMetricSchema.superRefine(
+	(value, ctx) => {
 		if (value.skipped_stop_count > value.stop_time_update_count) {
 			ctx.addIssue({
 				code: 'custom',
@@ -375,7 +283,8 @@ export const HistoricSkippedStopMetricSchema = z
 				message: 'skipped_stop_count cannot exceed stop_time_update_count',
 			});
 		}
-	});
+	},
+);
 export type HistoricSkippedStopMetric = z.infer<typeof HistoricSkippedStopMetricSchema>;
 
 const requireHistoryDayMetric = (value: Record<string, unknown>, ctx: z.RefinementCtx) => {
@@ -384,15 +293,13 @@ const requireHistoryDayMetric = (value: Record<string, unknown>, ctx: z.Refineme
 	}
 };
 
-export const NetworkHistoryDaySchema = z
-	.object({
-		date: HistoryDateSchema,
-		delay: HistoricDelayMetricSchema.nullable().optional(),
-		delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
-		cancellation: HistoricCancellationMetricSchema.nullable().optional(),
-		occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
-		vehicles: z.number().int().min(1).nullable().optional(),
-	})
+export const NetworkHistoryDaySchema = network.NetworkHistoryDaySchema.extend({
+	date: HistoryDateSchema,
+	delay: HistoricDelayMetricSchema.nullable().optional(),
+	delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
+	cancellation: HistoricCancellationMetricSchema.nullable().optional(),
+	occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
+})
 	.superRefine(requireHistoryDayMetric)
 	.superRefine((value, ctx) => {
 		if (
@@ -409,27 +316,22 @@ export const NetworkHistoryDaySchema = z
 	});
 export type NetworkHistoryDay = z.infer<typeof NetworkHistoryDaySchema>;
 
-export const LineHistoryDaySchema = z
-	.object({
-		date: HistoryDateSchema,
-		delay: HistoricDelayMetricSchema.nullable().optional(),
-		delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
-		cancellation: HistoricCancellationMetricSchema.nullable().optional(),
-		occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
-		service_span: HistoricServiceSpanMetricSchema.nullable().optional(),
-		skipped_stops: HistoricSkippedStopMetricSchema.nullable().optional(),
-	})
-	.superRefine(requireHistoryDayMetric);
+export const LineHistoryDaySchema = line.LineHistoryDaySchema.extend({
+	date: HistoryDateSchema,
+	delay: HistoricDelayMetricSchema.nullable().optional(),
+	delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
+	cancellation: HistoricCancellationMetricSchema.nullable().optional(),
+	occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
+	skipped_stops: HistoricSkippedStopMetricSchema.nullable().optional(),
+}).superRefine(requireHistoryDayMetric);
 export type LineHistoryDay = z.infer<typeof LineHistoryDaySchema>;
 
-export const StopHistoryDaySchema = z
-	.object({
-		date: HistoryDateSchema,
-		delay: HistoricDelayMetricSchema.nullable().optional(),
-		delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
-		occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
-	})
-	.superRefine(requireHistoryDayMetric);
+export const StopHistoryDaySchema = stop.StopHistoryDaySchema.extend({
+	date: HistoryDateSchema,
+	delay: HistoricDelayMetricSchema.nullable().optional(),
+	delay_percentiles: HistoricDelayPercentilesSchema.nullable().optional(),
+	occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
+}).superRefine(requireHistoryDayMetric);
 export type StopHistoryDay = z.infer<typeof StopHistoryDaySchema>;
 
 const validatePartitionDays = (
@@ -455,41 +357,25 @@ const validatePartitionDays = (
 	}
 };
 
-export const NetworkHistoryPartitionSchema = z
-	.object({
-		generated_utc: isoUtc(),
-		month: HistoryMonthSchema,
-		days: z.array(NetworkHistoryDaySchema).min(1),
-		...payloadEnvelopeFields(),
-	})
-	.superRefine(validatePartitionDays);
+export const NetworkHistoryPartitionSchema = network.NetworkHistoryPartitionSchema.extend({
+	month: HistoryMonthSchema,
+	days: z.array(NetworkHistoryDaySchema).min(1),
+}).superRefine(validatePartitionDays);
 export type NetworkHistoryPartition = z.infer<typeof NetworkHistoryPartitionSchema>;
 
-export const LineHistoryPartitionSchema = z
-	.object({
-		generated_utc: isoUtc(),
-		month: HistoryMonthSchema,
-		entity_id: z.string().min(1),
-		days: z.array(LineHistoryDaySchema).min(1),
-		...payloadEnvelopeFields(),
-	})
-	.superRefine(validatePartitionDays);
+export const LineHistoryPartitionSchema = line.LineHistoryPartitionSchema.extend({
+	month: HistoryMonthSchema,
+	days: z.array(LineHistoryDaySchema).min(1),
+}).superRefine(validatePartitionDays);
 export type LineHistoryPartition = z.infer<typeof LineHistoryPartitionSchema>;
 
-export const StopHistoryPartitionSchema = z
-	.object({
-		generated_utc: isoUtc(),
-		month: HistoryMonthSchema,
-		entity_id: z.string().min(1),
-		days: z.array(StopHistoryDaySchema).min(1),
-		...payloadEnvelopeFields(),
-	})
-	.superRefine(validatePartitionDays);
+export const StopHistoryPartitionSchema = stop.StopHistoryPartitionSchema.extend({
+	month: HistoryMonthSchema,
+	days: z.array(StopHistoryDaySchema).min(1),
+}).superRefine(validatePartitionDays);
 export type StopHistoryPartition = z.infer<typeof StopHistoryPartitionSchema>;
 
-export const HistoricAvailabilityIndexSchema = z.object({
-	generated_utc: isoUtc(),
+export const HistoricAvailabilityIndexSchema = availability.HistoricAvailabilityIndexSchema.extend({
 	families: z.array(HistoricFamilyAvailabilitySchema).optional(),
-	...payloadEnvelopeFields(),
 });
 export type HistoricAvailabilityIndex = z.infer<typeof HistoricAvailabilityIndexSchema>;

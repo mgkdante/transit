@@ -1,37 +1,10 @@
-import { z } from 'zod';
-import { isoUtc, payloadEnvelopeFields } from './types';
-
-export const RouteStopSchema = z.object({
-	id: z.string(),
-	seq: z.number().int(),
-	name: z.string().nullable().optional(),
-});
-export type RouteStop = z.infer<typeof RouteStopSchema>;
-
-export const RouteDirectionSchema = z.object({
-	dir: z.number().int(),
-	headsign: z.string().nullable().optional(),
-	shape: z.record(z.string(), z.unknown()).nullable().optional(),
-	stops: z.array(RouteStopSchema).optional(),
-});
-export type RouteDirection = z.infer<typeof RouteDirectionSchema>;
-
-export const ServicePeriodSchema = z.object({
-	shift: z.string(),
-	window: z.string().nullable().optional(),
-	headway_min: z.number().nullable().optional(),
-});
-export type ServicePeriod = z.infer<typeof ServicePeriodSchema>;
-
-export const RouteFileSchema = z.object({
-	generated_utc: isoUtc(),
-	id: z.string(),
-	long: z.string().nullable().optional(),
-	type: z.number().int().nullable().optional(),
-	directions: z.array(RouteDirectionSchema).optional(),
-	service_periods: z.array(ServicePeriodSchema).optional(),
-	first_departure: z.string().nullable().optional(),
-	last_departure: z.string().nullable().optional(),
-	...payloadEnvelopeFields(),
-});
-export type RouteFile = z.infer<typeof RouteFileSchema>;
+export {
+	RouteStopSchema,
+	type RouteStop,
+	RouteDirectionSchema,
+	type RouteDirection,
+	ServicePeriodSchema,
+	type ServicePeriod,
+	RouteFileSchema,
+	type RouteFile,
+} from './generated/static_route';

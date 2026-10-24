@@ -12,6 +12,8 @@ pnpm-lock.yaml
 src/app.css
 src/lib/styles/tokens.css
 src/lib/v1/schemas/json
+src/lib/v1/schemas/generated
+.scratch-s1
 vendor/design
 
 # static assets + docs

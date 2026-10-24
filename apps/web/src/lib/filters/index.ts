@@ -38,7 +38,6 @@ export {
 	cloneFilterState,
 	isEmptyFilterState,
 	addToSet,
-	removeFromSet,
 	clear,
 } from './state';
 
@@ -55,7 +54,6 @@ export {
 	availableGrains,
 	defaultGrain,
 	isGrainAvailable,
-	resolveGrain,
 	resolveWindow,
 	usableGrains,
 	usableFromOffered,

@@ -90,7 +90,8 @@
         "d4c8586d94dcc78958fee5cfc37ad35c01ba31acafbbc5e204a9e971e501cff2",
         "c57aceea91fceb35fc30399d298f99d8318acd81550278419c6c444258e7bf94",
         "3b2a0d1f6e70bf74ccc6579b370db1767dc7494cea03bcc1f4e903c2d716f5c7",
-        "c9a6e986166198e8bb3535631c7a73a58d0aeda234ee2cc233415c275b45fbbf"
+        "c9a6e986166198e8bb3535631c7a73a58d0aeda234ee2cc233415c275b45fbbf",
+        "543d588194e06068334229952e44d04716489a6c18a9caffa818fda2bbf10226"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },
@@ -384,7 +385,8 @@
       "sha256": [
         "1c715f9b08315cad8a75e6360ee0b1d6befe032980d2925dadc1c68556b9dbf1",
         "8eb90030304657eeeacd659dad08fd33eaec9bad8389e147987581e604b4740a",
-        "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477"
+        "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477",
+        "ef8e07d24cf7da4e1d3de6eff91a9d8e2795a269601758956a9a8faef8543967"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

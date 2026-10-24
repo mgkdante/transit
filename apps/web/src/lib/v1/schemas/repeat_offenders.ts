@@ -1,52 +1,18 @@
 import { z } from 'zod';
 import { HistoryDateSchema } from './history';
-import { isoUtc, payloadEnvelopeFields } from './types';
+import * as base from './generated/historic_repeat_offenders';
+import * as historic from './generated/historic_repeat_offenders_day';
 
-export const OffenderSchema = z.object({
-	type: z.string(),
-	id: z.string(),
-	route: z.string().nullable().optional(),
-	route_name: z.string().nullable().optional(),
-	avg_delay_min: z.number().nullable().optional(),
-	recurrence: z.string().nullable().optional(),
-	recurrence_days: z.number().int().nullable().optional(),
-	window_days: z.number().int().nullable().optional(),
-	severity: z.string().nullable().optional(),
-});
+export const OffenderSchema = base.OffenderSchema;
 export type Offender = z.infer<typeof OffenderSchema>;
 
-export const RepeatOffenderEntrySchema = z.object({
-	type: z.string(),
-	id: z.string(),
-	rank: z.number().int().nullable().optional(),
-	route: z.string().nullable().optional(),
-	route_name: z.string().nullable().optional(),
-	observation_count: z.number().int().nullable().optional(),
-	severe_count: z.number().int().nullable().optional(),
-	severe_pct: z.number().nullable().optional(),
-	wilson_lo: z.number().nullable().optional(),
-	wilson_hi: z.number().nullable().optional(),
-	recurrence_days: z.number().int().nullable().optional(),
-	observed_days: z.number().int().nullable().optional(),
-	window_days: z.number().int().nullable().optional(),
-	avg_delay_min: z.number().nullable().optional(),
-	severity: z.string().nullable().optional(),
-});
+export const RepeatOffenderEntrySchema = base.RepeatOffenderEntrySchema;
 export type RepeatOffenderEntry = z.infer<typeof RepeatOffenderEntrySchema>;
 
-export const RepeatOffenderGrainSchema = z.object({
-	grain: z.string(),
-	window_days: z.number().int().nullable().optional(),
-	entries: z.array(RepeatOffenderEntrySchema).optional(),
-	tray: z.array(RepeatOffenderEntrySchema).optional(),
-	total_ranked_trips: z.number().int().nullable().optional(),
-	total_ranked_vehicles: z.number().int().nullable().optional(),
-	tray_total: z.number().int().nullable().optional(),
-});
+export const RepeatOffenderGrainSchema = base.RepeatOffenderGrainSchema;
 export type RepeatOffenderGrain = z.infer<typeof RepeatOffenderGrainSchema>;
 
-export const HistoricRepeatOffenderGrainSchema = RepeatOffenderGrainSchema.extend({
-	grain: z.enum(['week', 'month']),
+export const HistoricRepeatOffenderGrainSchema = historic.HistoricRepeatOffenderGrainSchema.extend({
 	date: HistoryDateSchema,
 	window_end: HistoryDateSchema,
 }).superRefine((value, ctx) => {
@@ -79,15 +45,10 @@ export const HistoricRepeatOffenderGrainSchema = RepeatOffenderGrainSchema.exten
 });
 export type HistoricRepeatOffenderGrain = z.infer<typeof HistoricRepeatOffenderGrainSchema>;
 
-export const RepeatOffendersSchema = z.object({
-	generated_utc: isoUtc(),
-	offenders: z.array(OffenderSchema).optional(),
-	by_grain: z.array(RepeatOffenderGrainSchema).optional(),
-	...payloadEnvelopeFields(),
-});
+export const RepeatOffendersSchema = base.RepeatOffendersSchema;
 export type RepeatOffenders = z.infer<typeof RepeatOffendersSchema>;
 
-export const HistoricRepeatOffendersDaySchema = RepeatOffendersSchema.extend({
+export const HistoricRepeatOffendersDaySchema = historic.HistoricRepeatOffendersDaySchema.extend({
 	date: HistoryDateSchema,
 	by_grain: z.array(HistoricRepeatOffenderGrainSchema).optional(),
 }).superRefine((value, ctx) => {
