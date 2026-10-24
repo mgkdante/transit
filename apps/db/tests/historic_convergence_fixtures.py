@@ -219,7 +219,6 @@ class HistoryScenario:
                 .all()
                 for table in (
                     "core.snapshot_publish_state",
-                    "core.snapshot_historic_receipts",
                     "gold.warm_rollup_periods",
                 )
             }
@@ -265,17 +264,6 @@ class HistoryScenario:
         }
         return hashes
 
-    def receipt_hashes(self):
-        receipts = self.state()["core.snapshot_historic_receipts"]
-        assert receipts, "native publisher did not persist source receipts"
-        return {
-            f"{row['family']}:{row['entity_key']}:{month}": {
-                name: receipt[name]
-                for name in ("combined_source_sha256", "input_sha256", "scope_receipt_sha256")
-            }
-            for row in receipts
-            for month, receipt in row["month_receipts"].items()
-        }
 
     def network_day(self):
         root = self.storage.get_json(ROOT_KEY)

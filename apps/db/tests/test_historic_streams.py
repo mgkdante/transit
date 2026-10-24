@@ -8,7 +8,7 @@ from test_partitioned_history_publish import (
     _stop_history_plan,
 )
 
-from transit_ops.snapshots import gate, historic_receipts
+from transit_ops.snapshots import gate
 from transit_ops.snapshots.historic_streams import HistoricPlans, consume_history_children
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
@@ -129,30 +129,3 @@ def test_writer_failure_preserves_error_and_stops_advancing_the_lazy_plan(monkey
         )
     assert raised.value is failure
     assert len(seen) == 1
-
-
-@pytest.mark.parametrize(
-    "relative", ["snapshots/historic_streams.py", "snapshots/historic_graph.py"],
-)
-def test_moved_owner_is_required_by_family_and_gate_code_evidence(tmp_path, relative):
-    manifests = (historic_receipts._FAMILY_MANIFEST_SHARED, historic_receipts._GATE_MANIFEST)
-    for filename in set().union(*manifests):
-        path = tmp_path / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(filename)
-    for manifest in manifests:
-        assert relative in manifest
-    before = [
-        historic_receipts.digest_file_manifest(tmp_path, required_relative_paths=m)
-        for m in manifests
-    ]
-    (tmp_path / relative).write_text("changed stream policy")
-    after = [
-        historic_receipts.digest_file_manifest(tmp_path, required_relative_paths=m)
-        for m in manifests
-    ]
-    assert all(left != right for left, right in zip(before, after, strict=True))
-    (tmp_path / relative).unlink()
-    for manifest in manifests:
-        with pytest.raises(historic_receipts.HistoricReceiptEvidenceError, match="missing"):
-            historic_receipts.digest_file_manifest(tmp_path, required_relative_paths=manifest)

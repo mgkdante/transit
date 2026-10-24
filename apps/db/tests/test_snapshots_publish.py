@@ -4,9 +4,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 import pytest
+from _sqlfakes import history_count_rows
 from snapshot_storage_fixtures import MemorySnapshotStore
 
-from transit_ops.snapshots import envelope, historic_compatibility, historic_receipts, historic_tier
+from transit_ops.snapshots import envelope, historic_compatibility, historic_run, historic_tier
 from transit_ops.snapshots.builders.historic.route_reliability_batch import (
     _ROUTE_INVENTORY_SQL,
 )
@@ -143,6 +144,9 @@ class StatefulFakeStore(MemorySnapshotStore):
 class FakeSettings:
 
     SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+    GOLD_REPORTING_OPEN_WINDOW_DAYS = 10
+    GOLD_FACT_RETENTION_DAYS = 14
+    GOLD_WARM_ROLLUP_RETENTION_DAYS = 730
 
 
 def test_publish_live_uploads_all_files_manifest_last() -> None:
@@ -317,42 +321,10 @@ def test_full_historic_rebuild_rejects_non_historic_before_io(monkeypatch) -> No
             )
 
 
-@pytest.mark.parametrize(
-    ("evidence_available", "failure_at"),
-    [(False, None), (True, None), (True, "entry"), (True, "write"), (True, "release")],
-)
-def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
-    monkeypatch, evidence_available, failure_at,
-) -> None:
+def test_historic_phase_ledger_is_exclusive_and_populates_publish_state(monkeypatch) -> None:
     from types import SimpleNamespace
 
     from transit_ops.snapshots import publish as snapshot_publish
-
-    observation_fields = historic_receipts._HistoricPartitionObservation.__dataclass_fields__
-    assert "partition" not in observation_fields
-    assert {"ref", "raw_day_count", "detached_summary"} <= set(observation_fields)
-
-    empty_one_entity = historic_receipts.HistoryScopeCardinality(
-        entity_count=1,
-        month_count=0,
-        dense_scope_count=0,
-        observed_scope_count=0,
-    )
-    assert historic_receipts._receipt_cardinality_mapping(
-        "network",
-        empty_one_entity,
-        (),
-    )[1]
-    assert not historic_receipts._receipt_cardinality_mapping(
-        "lines",
-        empty_one_entity,
-        (),
-    )[1]
-    assert not historic_receipts._receipt_cardinality_mapping(
-        "stops",
-        empty_one_entity,
-        (),
-    )[1]
 
     class Clock:
         def __init__(self) -> None:
@@ -371,7 +343,7 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
             pass
         yield object(), object()
 
-    _, _, batch_scope_build_ns = historic_receipts._next_historic_partition(
+    _, _, batch_scope_build_ns = historic_run._next_historic_partition(
         iter(lazy_batch()),
         batch_run,
     )
@@ -410,20 +382,6 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
                 state_params.append(dict(params))
             return Result()
 
-        @contextmanager
-        def begin_nested(self):
-            events.append("savepoint_begin")
-            if failure_at == "entry":
-                raise RuntimeError("savepoint entry failed")
-            try:
-                yield self
-                if failure_at == "release":
-                    raise RuntimeError("savepoint release failed")
-            except Exception:
-                events.append("savepoint_rollback")
-                raise
-            else:
-                events.append("savepoint_commit")
 
     connection = Connection()
 
@@ -478,19 +436,6 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
             ):
                 pass
             _historic_run.observations["network"].append(SimpleNamespace(scope_class=scope_class))
-        _historic_run.receipt_evidence_available = evidence_available
-        _historic_run.receipt_cardinality_gate_passed = True
-        _historic_run.receipt_scope_cardinality = {
-            "network": {
-                "entity_count": 1,
-                "observed_scope_count": 3,
-                "cardinality_gate_passed": True,
-            }
-        }
-        _historic_run.entity_receipts = [SimpleNamespace(scope_count=3)]
-        _historic_run.complete_receipt_families = ("network", "lines", "stops")
-        _historic_run.receipt_rows_attempted = 1
-        _historic_run.receipt_json_bytes_attempted = 100
         storage.put_json(
             "historic/phase-ledger-fixture.json",
             {"fixture": True},
@@ -498,18 +443,7 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         )
         return ["historic/phase-ledger-fixture.json"]
 
-    def persist_receipts(*_args, **_kwargs):
-        events.append("receipt_write")
-        if failure_at == "write":
-            raise RuntimeError("receipt write failed")
-        return historic_receipts.HistoricReceiptPersistenceStats(1, 1, 100, 100, 7, 11)
-
     monkeypatch.setattr(historic_tier, "publish", publish_historic)
-    monkeypatch.setattr(
-        historic_receipts,
-        "persist_historic_receipts",
-        persist_receipts,
-    )
 
     result = snapshot_publish.publish_snapshot(
         "stm",
@@ -534,28 +468,13 @@ def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
         "mutable_edge": 1,
         "settled_candidate": 1,
     }
-    assert telemetry["receipt_rows_attempted"] == 1
-    changed = int(evidence_available and failure_at is None)
-    assert telemetry["receipt_rows_changed"] == changed
-    assert telemetry["receipt_json_bytes_attempted"] == 100
-    assert telemetry["receipt_json_bytes_changed"] == changed * 100
-    assert telemetry["receipt_persist_failed"] is (failure_at is not None)
     assert telemetry["timing_complete"] is True
-    receipt_events = {
-        None: ["savepoint_begin", "receipt_write", "savepoint_commit"],
-        "entry": ["savepoint_begin"],
-        "write": ["savepoint_begin", "receipt_write", "savepoint_rollback"],
-        "release": ["savepoint_begin", "receipt_write", "savepoint_rollback"],
-    }[failure_at] if evidence_available else []
-    assert events == ["outer_begin", *receipt_events, "state_upsert", "outer_commit"]
-    assigned_stats = evidence_available and failure_at not in {"entry", "write"}
-    assert telemetry["stale_receipt_entities_deleted"] == (7 if assigned_stats else 0)
-    assert telemetry["stale_receipt_months_deleted"] == (11 if assigned_stats else 0)
+    assert events == ["outer_begin", "state_upsert", "outer_commit"]
     assert "outer_rollback" not in events
     assert len(state_params) == 1
     assert state_params[0]["historic_phase_detail"]["timing_complete"] is False
-    assert state_params[0]["historic_receipt_rows_attempted"] == 1
-    assert state_params[0]["historic_receipt_rows_changed"] == changed
+    assert state_params[0]["historic_receipt_rows_attempted"] is None
+    assert state_params[0]["historic_receipt_rows_changed"] is None
 
 
 def test_publish_accepts_registry_kwarg() -> None:
@@ -661,7 +580,9 @@ def test_publish_static_writes_expected_keys() -> None:
 
     class FC:
         def execute(self, statement, params=None):
-            return _FakeResult(dispatch.get(query_name(statement), []))
+            return _FakeResult(history_count_rows(
+                statement, dispatch.get(query_name(statement), []),
+            ))
 
     class FakeEngine2:
         def begin(self):
@@ -960,7 +881,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
         "history.repeat_offenders.names": [],
         "history.repeat_offenders.daily": [],
-        "history.network.delay": [
+        "history.network.delay.inner": [
             {
                 "local_date": datetime.date(2026, 6, 1),
                 "observation_count": 10,
@@ -971,9 +892,9 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
                 "source_generated_utc": datetime.datetime(2026, 6, 2, 1, tzinfo=datetime.UTC),
             }
         ],
-        "history.network.fact": [],
-        "history.network.cancellation": [],
-        "history.network.occupancy": [],
+        "history.network.fact.inner": [],
+        "history.network.cancellation.inner": [],
+        "history.network.occupancy.inner": [],
         "receipts.network_daily": [
             {
                 "local_date": datetime.date(2025, 1, 1),
@@ -1294,7 +1215,9 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
 
     class FakeConnHistoric:
         def execute(self, statement, params=None):
-            return _FakeResult(dispatch.get(query_name(statement), []))
+            return _FakeResult(history_count_rows(
+                statement, dispatch.get(query_name(statement), []),
+            ))
 
     class FakeEngineHistoric:
         def begin(self):
