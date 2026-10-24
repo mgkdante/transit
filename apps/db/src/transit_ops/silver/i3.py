@@ -14,7 +14,7 @@ from sqlalchemy.engine import Connection, Engine
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
 
-# Identity separator must match migration 0021.
+# Identity separator must match the persisted alert content hashes.
 _HASH_FIELD_SEP = "\x1f"
 
 
