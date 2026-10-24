@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { absenceShort, routeNameFallback, stopNameFallback } from '$lib/site/absence';
@@ -37,14 +38,7 @@
 		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import {
-		CollapsibleSection,
-		TocNav,
-		TypedInformationCard,
-		reconcileActiveToc,
-		revealTocTarget,
-		type TocEntry,
-	} from '$lib/components/shared';
+	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -280,18 +274,20 @@
 			present: currentReceipt != null && notReported.hasData,
 		},
 	]);
-	const tocEntries = $derived<TocEntry[]>(
-		sectionDefs
-			.filter((section) => section.present)
-			.map((section) => ({
-				id: section.id,
-				title: section.title,
-				level: 2,
-				badge: { kind: 'number' as const, value: section.number },
-				children: [],
-			})),
+	const settledEmpty = $derived(
+		selectedDate !== '' &&
+			receipt.settled &&
+			!receipt.loading &&
+			receipt.error == null &&
+			receipt.data == null,
 	);
-	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const navigation = createArticleNavigation(() => sectionDefs, {
+		openSignal: () => quietModeStore.openSignal,
+		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
+		reconcileEmpty: () => settledEmpty,
+	});
+	const tocEntries = $derived(navigation.entries);
+	const { cardOpenSignal, navigate } = navigation;
 	const railSummary = $derived(selectedDate ? formatDateKey(selectedDate, locale) : '');
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
@@ -313,40 +309,6 @@
 			!index.settled ||
 			(selectedDate !== '' && (receipt.loading || !receipt.settled)),
 	);
-
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	let navigationGeneration = 0;
-	let previousTocIds: string[] = [];
-	function openCard(id: string): void {
-		cardOpenSignals = {
-			...cardOpenSignals,
-			[id]: (cardOpenSignals[id] ?? 0) + 1,
-		};
-	}
-	function cardOpenSignal(id: string): number {
-		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
-	}
-	async function navigate(id: string): Promise<void> {
-		const generation = ++navigationGeneration;
-		await revealTocTarget(id, {
-			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
-			isCurrent: () => generation === navigationGeneration,
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
-	$effect(() => {
-		const next = tocEntries.map((entry) => entry.id);
-		const settledEmpty =
-			selectedDate !== '' &&
-			receipt.settled &&
-			!receipt.loading &&
-			receipt.error == null &&
-			receipt.data == null;
-		if (next.length === 0 && !settledEmpty) return;
-		activeId = reconcileActiveToc(activeId, previousTocIds, next);
-		previousTocIds = next;
-	});
 </script>
 
 <p
@@ -361,7 +323,7 @@
 
 <DetailShell
 	class="receipt-detail"
-	bind:activeId
+	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	{tocEntries}
 	combinedRailConfig={hasDates
 		? {
@@ -435,7 +397,7 @@
 			<div class="receipt-rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
-					{activeId}
+					activeId={navigation.activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
 					bind:open={

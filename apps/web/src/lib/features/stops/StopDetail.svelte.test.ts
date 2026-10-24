@@ -436,6 +436,13 @@ function articleCardFor(body: Element | null): HTMLElement {
 	return card;
 }
 
+function renderReliability(locale: 'en' | 'fr' = currentLocale) {
+	currentLocale = locale;
+	const view = render(StopDetail, { props: { id: '57191' } });
+	fireEvent.click(screen.getByRole('tab', { name: locale === 'fr' ? 'Fiabilité' : 'Reliability' }));
+	return view;
+}
+
 describe('StopDetail article contract', () => {
 	it.each(['en', 'fr'] as const)(
 		'explains unsupported alerts with the official %s link',
@@ -993,32 +1000,21 @@ describe('StopDetail article head', () => {
 });
 
 describe('StopDetail reliability — grain picker', () => {
-	it('localizes the reliability card grain heading (EN) instead of the raw contract string', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
+	it.each([
+		['en', 'Day'],
+		['fr', 'Jour'],
+	] as const)('localizes the reliability card grain heading in %s', (locale, heading) => {
+		renderReliability(locale);
 		const pane = document.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
 		expect(pane).not.toBeNull();
-		expect(within(pane).getByText('Day')).toBeInTheDocument();
-		expect(within(pane).queryByText('day')).not.toBeInTheDocument();
-	});
-
-	it('localizes the reliability card grain heading in FR (Jour, not the raw "day")', () => {
-		currentLocale = 'fr';
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
-
-		const pane = document.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
-		expect(pane).not.toBeNull();
-		expect(within(pane).getByText('Jour')).toBeInTheDocument();
+		expect(within(pane).getByText(heading)).toBeInTheDocument();
 		expect(within(pane).queryByText('day')).not.toBeInTheDocument();
 	});
 });
 
 describe('StopDetail reliability — habits heatmap', () => {
 	it('renders the habits heatmap when the matrix carries data', () => {
-		const { container } = render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		const { container } = renderReliability();
 
 		const habitsTile = container.querySelector('[data-slot="stop-habits"]') as HTMLElement;
 		expect(
@@ -1035,8 +1031,7 @@ describe('StopDetail reliability — habits heatmap', () => {
 
 	it('renders NO heatmap (not a fabricated grid) when habits is absent', () => {
 		reliabilityData = { ...RELIABILITY, habits: null };
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		expect(screen.queryByText('Relative severe-delay score by hour')).not.toBeInTheDocument();
 	});
@@ -1044,8 +1039,7 @@ describe('StopDetail reliability — habits heatmap', () => {
 
 describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	it('renders the occupancy proportion bar when occupancy_mix is present', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
 		expect(crowding).not.toBeNull();
@@ -1066,55 +1060,26 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
 	});
 
-	it('stands the crowding BAR down but shows the honest no-telemetry note when occupancy_mix is null', () => {
-		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
+	it.each([
+		['null EN', 'en', null, 'not enough readings yet'],
+		['undefined', 'en', undefined, null],
+		['all-zero', 'en', { empty: 0, many_seats: 0, few_seats: 0, standing: 0, full: 0 }, null],
+		['null FR', 'fr', null, 'pas assez de mesures'],
+	] as const)('stands down with honest crowding absence: %s', (_, locale, mix, note) => {
+		reliabilityData = { ...RELIABILITY, occupancy_mix: mix };
+		renderReliability(locale);
 		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
 		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
-		expect(empty).not.toBeNull();
-		expect(
-			within(articleCardFor(empty)).getByRole('button', { name: 'Crowding on vehicles seen here' }),
-		).toBeInTheDocument();
-		const chip = within(empty)
-			.getByText('not enough readings yet')
-			.closest('[data-slot="absent-value"]');
-		expect(chip).not.toBeNull();
-	});
-
-	it('stands the crowding section down when occupancy_mix is absent (undefined)', () => {
-		reliabilityData = { ...RELIABILITY, occupancy_mix: undefined } as StopReliability;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
-		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
-	});
-
-	it('stands down on an all-zero mix (no even split, no all-empty bar)', () => {
-		reliabilityData = {
-			...RELIABILITY,
-			occupancy_mix: { empty: 0, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
-		} as StopReliability;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
-		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
-		expect(document.querySelector('[data-slot="stop-crowding-empty"]')).not.toBeNull();
-	});
-
-	it('renders the FR no-telemetry note when occupancy_mix is null', () => {
-		currentLocale = 'fr';
-		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
-
-		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
-		expect(empty).not.toBeNull();
-		const chip = within(empty)
-			.getByText('pas assez de mesures')
-			.closest('[data-slot="absent-value"]');
-		expect(chip).not.toBeNull();
+		if (mix !== undefined) expect(empty).not.toBeNull();
+		if (mix === null && locale === 'en') {
+			expect(
+				within(articleCardFor(empty)).getByRole('button', {
+					name: 'Crowding on vehicles seen here',
+				}),
+			).toBeInTheDocument();
+		}
+		if (note)
+			expect(within(empty).getByText(note).closest('[data-slot="absent-value"]')).not.toBeNull();
 	});
 });
 
@@ -1130,8 +1095,7 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 			by_route: [],
 			occupancy_mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.2, standing: 0.4, full: 0.1 },
 		} as unknown as StopReliability;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
 		expect(crowding).not.toBeNull();
@@ -1149,8 +1113,7 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 
 describe('StopDetail reliability — by_route ranked bars', () => {
 	it('ranks routes worst-delay first and drops rows with no delay', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		expect(screen.getByText('12.5 min')).toBeInTheDocument();
 		expect(screen.getByText('4.1 min')).toBeInTheDocument();
@@ -1166,8 +1129,7 @@ describe('StopDetail reliability — by_route ranked bars', () => {
 
 describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	it('ranks weekdays worst-delay first and drops a null-mean weekday (no fake-0 row)', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
 		expect(weekday).not.toBeNull();
@@ -1190,8 +1152,7 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	});
 
 	it('gates the severe share on observation count (under-sampled weekday withheld)', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
 		expect(within(weekday).getByText('Severe-delay share 5.0%')).toBeInTheDocument();
@@ -1202,33 +1163,24 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 		).toBeInTheDocument();
 	});
 
-	it('stands the weekday section down when day_of_week is absent', () => {
-		reliabilityData = { ...RELIABILITY, day_of_week: undefined };
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
-		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
-		expect(screen.queryByText('By day of week')).not.toBeInTheDocument();
-	});
-
-	it('stands the weekday section down when every weekday carries a null mean (no fake-0)', () => {
-		reliabilityData = {
-			...RELIABILITY,
-			day_of_week: [
+	it.each([
+		['absent', undefined],
+		[
+			'null means',
+			[
 				{ day_of_week_iso: 2, avg_delay_min: null, severe_pct: null, observation_count: 0 },
 				{ day_of_week_iso: 6, avg_delay_min: null, severe_pct: 4.0, observation_count: 0 },
 			],
-		} as StopReliability;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
+		],
+	] as const)('stands the weekday section down for %s', (_, rows) => {
+		reliabilityData = { ...RELIABILITY, day_of_week: rows ? [...rows] : undefined };
+		renderReliability();
 		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
+		if (rows === undefined) expect(screen.queryByText('By day of week')).not.toBeInTheDocument();
 	});
 
 	it('localizes weekday names in FR (Vendredi, not the ISO integer or EN name)', () => {
-		currentLocale = 'fr';
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
+		renderReliability('fr');
 
 		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
 		expect(weekday).not.toBeNull();
@@ -1245,8 +1197,7 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 describe('StopDetail reliability — by time of day (shift + day-type grains)', () => {
 	it('renders the by-time-of-day shift list + weekday/weekend comparison when present', () => {
 		reliabilityData = RELIABILITY_WITH_TOD;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
 		expect(tod).not.toBeNull();
@@ -1274,8 +1225,7 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 	});
 
 	it('stands the whole section down when the stop carries no shift/day-type grains', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		expect(document.querySelector('[data-slot="stop-time-of-day"]')).toBeNull();
 		expect(screen.queryByText('By time of day')).not.toBeInTheDocument();
@@ -1290,8 +1240,7 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 				{ grain: 'midday', otp_pct: 91, avg_delay_min: 1.4, severe_pct: 3 },
 			],
 		} as StopReliability;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
 		expect(tod).not.toBeNull();
@@ -1303,8 +1252,7 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 
 	it('keeps the GrainPicker calendar-only even when shift grains are present', () => {
 		reliabilityData = RELIABILITY_WITH_TOD;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		renderReliability();
 
 		const group = screen.getAllByRole('radiogroup', { name: 'Roll-up period' })[0];
 		const radios = within(group).getAllByRole('radio');
@@ -1531,25 +1479,18 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 		expect(info.querySelector('[data-testid="stop-alerts"]')).not.toBeNull();
 	});
 
-	it('renders accessibility as YES when wheelchair === true', () => {
-		stopFileData = { ...STOP_FILE, wheelchair: true } as unknown as StopFile;
+	it.each([
+		[true, 'Wheelchair accessible'],
+		[false, 'Not wheelchair accessible'],
+		[undefined, 'Accessibility'],
+	] as const)('renders tri-state accessibility for %s', (wheelchair, expected) => {
+		if (wheelchair !== undefined) stopFileData = { ...STOP_FILE, wheelchair } as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		expect(screen.getByText('Wheelchair accessible')).toBeInTheDocument();
-	});
-
-	it('renders accessibility as NO when wheelchair === false', () => {
-		stopFileData = { ...STOP_FILE, wheelchair: false } as unknown as StopFile;
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		expect(screen.getByText('Not wheelchair accessible')).toBeInTheDocument();
-	});
-
-	it('renders an honest UNKNOWN (not a silent omit) when wheelchair is absent', () => {
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		expect(screen.getByText('Accessibility')).toBeInTheDocument();
-		expect(screen.queryByText('Wheelchair accessible')).not.toBeInTheDocument();
-		expect(screen.queryByText('Not wheelchair accessible')).not.toBeInTheDocument();
+		expect(screen.getByText(expected)).toBeInTheDocument();
+		if (wheelchair === undefined) {
+			expect(screen.queryByText('Wheelchair accessible')).not.toBeInTheDocument();
+			expect(screen.queryByText('Not wheelchair accessible')).not.toBeInTheDocument();
+		}
 	});
 });
