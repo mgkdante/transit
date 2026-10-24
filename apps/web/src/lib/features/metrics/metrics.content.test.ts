@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
 	METRICS,
-	METRICS_BY_KEY,
-	METRIC_KEYS,
 	METRIC_CLUSTER_ORDER,
 	metricInfoFor,
 	type MetricEntry,
@@ -143,31 +141,34 @@ describe('metrics.content — anchors', () => {
 	});
 
 	it('metric keys are unique', () => {
-		expect(new Set(METRIC_KEYS).size).toBe(METRIC_KEYS.length);
+		expect(new Set(METRICS.map((entry) => entry.key)).size).toBe(METRICS.length);
 	});
 });
 
 describe('metrics.content — reliability-surface coverage', () => {
 	it('every reliability-surface metric has an explainer entry', () => {
 		for (const key of SURFACE_METRICS) {
-			expect(METRICS_BY_KEY[key], `surface metric "${key}" needs a content entry`).toBeDefined();
+			expect(
+				METRICS.find((entry) => entry.key === key),
+				`surface metric "${key}" needs a content entry`,
+			).toBeDefined();
 		}
 	});
 
 	it('the explainer covers exactly the surface metric set (no orphans, none missing)', () => {
-		expect([...METRIC_KEYS].sort()).toEqual([...SURFACE_METRICS].sort());
+		expect(METRICS.map((entry) => entry.key).sort()).toEqual([...SURFACE_METRICS].sort());
 	});
 });
 
 describe('metricInfoFor — (i) affordance payload', () => {
 	it('returns the one-line tip and a localized deep link to the anchor', () => {
 		const en = metricInfoFor('otp', 'en');
-		expect(en.tip).toBe(METRICS_BY_KEY.otp.oneLiner.en);
+		expect(en.tip).toBe(METRICS.find((entry) => entry.key === 'otp')?.oneLiner.en);
 		expect(en.anchor).toBe('otp');
 		expect(en.href).toBe('/metrics#otp');
 
 		const fr = metricInfoFor('otp', 'fr');
-		expect(fr.tip).toBe(METRICS_BY_KEY.otp.oneLiner.fr);
+		expect(fr.tip).toBe(METRICS.find((entry) => entry.key === 'otp')?.oneLiner.fr);
 		expect(fr.href).toBe('/fr/metrics#otp');
 	});
 

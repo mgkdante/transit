@@ -14,3 +14,4 @@ scripts/__probe-debug__/
 scripts/.map-posters.mjs
 /src/lib/v1/schemas/generated/
 /.scratch-s1/
+/.scratch-s2/

@@ -1,5 +1,3 @@
-import type { SeverityCode } from '$lib/v1';
-
 export type DelayTone = 'none' | 'early' | 'on-time' | 'late' | 'severe';
 
 export function delayTone(delay: number | null | undefined): DelayTone {
@@ -22,15 +20,6 @@ const TONE_VAR: Record<DelayTone, string | undefined> = {
 	severe: 'var(--dataviz-status-severe)',
 	none: undefined,
 };
-
-export function delayColorVar(delay: number | null | undefined): string | undefined {
-	return TONE_VAR[delayTone(delay)];
-}
-
-export function delaySeverity(delay: number | null | undefined): SeverityCode {
-	if (delay == null || delay <= 0) return 'watch';
-	return delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
-}
 
 export interface DelayLabelCopy {
 	readonly early: (minutes: number) => string;

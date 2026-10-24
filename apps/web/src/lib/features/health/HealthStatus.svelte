@@ -471,162 +471,54 @@
 				</div>
 			</CollapsibleSection>
 
-			{#if laneRows.length > 0}
-				<CollapsibleSection
-					title={t.lanes.section}
-					headerVariant="article-summary"
-					index={0}
-					anchor="health-lanes"
-					sectionKey="status-card-health-lanes"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-lanes')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionLanes rows={laneRows} copy={t} {locale} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if freshness.length > 0}
-				<CollapsibleSection
-					title={t.freshness.section}
-					headerVariant="article-summary"
-					index={1}
-					anchor="health-freshness"
-					sectionKey="status-card-health-freshness"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-freshness')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if sources.length > 0}
-				<CollapsibleSection
-					title={t.sources.section}
-					headerVariant="article-summary"
-					index={2}
-					anchor="health-sources"
-					sectionKey="status-card-health-sources"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-sources')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionSources items={sources} {lastLoaded} copy={t} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if gaps.length > 0}
-				<CollapsibleSection
-					title={t.gaps.section}
-					headerVariant="article-summary"
-					index={3}
-					anchor="health-gaps"
-					sectionKey="status-card-health-gaps"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-gaps')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionGaps {gaps} {humanizeGap} copy={t} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if pipelineNotes.length > 0}
-				<CollapsibleSection
-					title={t.pipelineNotes.section}
-					headerVariant="article-summary"
-					index={4}
-					anchor="health-pipeline-notes"
-					sectionKey="status-card-health-pipeline-notes"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-pipeline-notes')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionNotes notes={pipelineNotes} copy={t} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if hasRetention}
-				<CollapsibleSection
-					title={t.retention.section}
-					headerVariant="article-summary"
-					index={5}
-					anchor="health-retention"
-					sectionKey="status-card-health-retention"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-retention')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionRetention
-						detail={retention.detail}
-						aggregate={retention.aggregate}
-						{fmtDays}
-						copy={t}
-						{locale}
-					/>
-				</CollapsibleSection>
-			{/if}
-
-			{#if conformance}
-				<CollapsibleSection
-					title={t.conformance.section}
-					headerVariant="article-summary"
-					index={6}
-					anchor="health-conformance"
-					sectionKey="status-card-health-conformance"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-conformance')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionConformance
-						{conformance}
-						copy={t}
-						{locale}
+			{#each sectionDefs as section (section.id)}
+				{section.number === 1 ? '' : ' '}{#if section.present}
+					<CollapsibleSection
+						title={section.title}
+						headerVariant="article-summary"
+						index={section.number - 1}
+						anchor={section.id}
+						sectionKey={`status-card-${section.id}`}
+						open={true}
 						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal}
+						openSignal={quietModeStore.openSignal + cardOpenSignal(section.id)}
 						bulkCollapsed={quietModeStore.enabled}
-					/>
-				</CollapsibleSection>
-			{/if}
-
-			{#if hasEnvelope}
-				<CollapsibleSection
-					title={t.envelope.section}
-					headerVariant="article-summary"
-					index={7}
-					anchor="health-envelope"
-					sectionKey="status-card-health-envelope"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-envelope')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionEnvelope {envelope} copy={t} {locale} />
-				</CollapsibleSection>
-			{/if}
-
-			{#if historyCoverageRows.length > 0}
-				<CollapsibleSection
-					title={t.historyCoverage.section}
-					headerVariant="article-summary"
-					index={8}
-					anchor="health-history-coverage"
-					sectionKey="status-card-health-history-coverage"
-					open={true}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal + cardOpenSignal('health-history-coverage')}
-					bulkCollapsed={quietModeStore.enabled}
-				>
-					<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
-				</CollapsibleSection>
-			{/if}
+					>
+						{#if section.id === 'health-lanes'}
+							<SectionLanes rows={laneRows} copy={t} {locale} />
+						{:else if section.id === 'health-freshness'}
+							<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
+						{:else if section.id === 'health-sources'}
+							<SectionSources items={sources} {lastLoaded} copy={t} />
+						{:else if section.id === 'health-gaps'}
+							<SectionGaps {gaps} {humanizeGap} copy={t} />
+						{:else if section.id === 'health-pipeline-notes'}
+							<SectionNotes notes={pipelineNotes} copy={t} />
+						{:else if section.id === 'health-retention'}
+							<SectionRetention
+								detail={retention.detail}
+								aggregate={retention.aggregate}
+								{fmtDays}
+								copy={t}
+								{locale}
+							/>
+						{:else if section.id === 'health-conformance' && conformance}
+							<SectionConformance
+								{conformance}
+								copy={t}
+								{locale}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+								bulkCollapsed={quietModeStore.enabled}
+							/>
+						{:else if section.id === 'health-envelope'}
+							<SectionEnvelope {envelope} copy={t} {locale} />
+						{:else if section.id === 'health-history-coverage'}
+							<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
+						{/if}
+					</CollapsibleSection>
+				{/if}
+			{/each}
 		</ArticleSectionStack>
 	{/snippet}
 </DetailShell>

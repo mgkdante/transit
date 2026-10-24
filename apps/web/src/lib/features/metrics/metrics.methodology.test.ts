@@ -3,7 +3,7 @@ import {
 	methodologyNoteFor,
 	METHODOLOGY_METRIC_KEY,
 	METRIC_METHODOLOGY_KEY,
-	METRICS_BY_KEY,
+	METRICS,
 } from './metrics.content';
 
 describe('methodologyNoteFor (pure resolver)', () => {
@@ -42,7 +42,7 @@ describe('methodologyNoteFor (pure resolver)', () => {
 
 	it('maps every methodology key to a real, distinct metric', () => {
 		const metricKeys = Object.values(METHODOLOGY_METRIC_KEY);
-		for (const k of metricKeys) expect(METRICS_BY_KEY[k]).toBeDefined();
+		for (const k of metricKeys) expect(METRICS.find((entry) => entry.key === k)).toBeDefined();
 		expect(new Set(metricKeys).size).toBe(metricKeys.length);
 	});
 });

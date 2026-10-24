@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitEasterSegments, hasEasterMatch, EASTER_PHRASES } from './easterWords';
+import { splitEasterSegments, EASTER_PHRASES } from './easterWords';
 
 function matches(text: string): string[] {
 	return splitEasterSegments(text)
@@ -90,10 +90,10 @@ describe('splitEasterSegments — case-insensitivity + fr/en forms', () => {
 	});
 });
 
-describe('hasEasterMatch', () => {
+describe('splitEasterSegments — match presence', () => {
 	it('is true when a match exists and false otherwise', () => {
-		expect(hasEasterMatch('the bus is late')).toBe(true);
-		expect(hasEasterMatch('the system is late')).toBe(false);
+		expect(splitEasterSegments('the bus is late').some((segment) => segment.match)).toBe(true);
+		expect(splitEasterSegments('the system is late').some((segment) => segment.match)).toBe(false);
 	});
 });
 
