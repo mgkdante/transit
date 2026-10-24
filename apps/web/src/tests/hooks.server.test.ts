@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handle } from '../hooks.server';
 
 const appPaths = vi.hoisted(() => ({ assets: '' }));
+const publicEnv = vi.hoisted(() => ({ PUBLIC_INDEXING: 'true' }));
 vi.mock('$app/paths', () => appPaths);
+vi.mock('$env/dynamic/public', () => ({ env: publicEnv }));
 afterEach(() => {
 	appPaths.assets = '';
+	publicEnv.PUBLIC_INDEXING = 'true';
 });
 
 interface CacheHarness {
@@ -70,6 +73,17 @@ function html(body = 'fresh', init: ResponseInit = {}): Response {
 }
 
 describe('server request locale', () => {
+	it('sets the non-indexing header only when public indexing is off', async () => {
+		for (const indexing of [false, true]) {
+			publicEnv.PUBLIC_INDEXING = String(indexing);
+			const response = await handle({
+				event: event(),
+				resolve: vi.fn(async () => html()),
+			});
+			expect(response.headers.get('x-robots-tag')).toBe(indexing ? null : 'noindex, nofollow');
+		}
+	});
+
 	it('stores the path locale for error layouts that have no route params', async () => {
 		const request = event('https://transit.yesid.dev/fr/missing-route');
 		const resolve = vi.fn(async () => new Response('ok'));
