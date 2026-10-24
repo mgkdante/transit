@@ -523,7 +523,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		);
 		const browserContract = work.indexOf('node --test scripts/install-browser-toolchain.test.mjs');
 		const chromiumInstall = work.indexOf('node scripts/install-browser-toolchain.mjs');
-		const browserProof = work.indexOf('verify-browser-toolchain.mjs');
+		const browserProof = work.indexOf('bun run test:b9-display');
 		expect(proxyDryRun).toBeGreaterThanOrEqual(0);
 		expect(webDryRun).toBeGreaterThan(proxyDryRun);
 		expect(browserContract).toBeGreaterThan(webDryRun);

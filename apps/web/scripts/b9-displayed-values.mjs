@@ -908,7 +908,7 @@ function verifyLedger(cell, fixture, ledger) {
 				for (const ref of refs) {
 					if (lane === 'ssr') {
 						expected.push(['ssr', ref.path, 200, 1]);
-						if (cell.fixture !== 'live') expected.push(['browser', ref.path, 200, 1]);
+						expected.push(['browser', ref.path, 200, 1]);
 					} else {
 						expected.push(['browser', ref.path, 200, 1]);
 					}
@@ -1020,11 +1020,10 @@ async function verifySsr(page, cell, fixture, html) {
 				date && ssr.window.includes(date),
 				`${cell.path} SSR omitted selected/current date ${date}`,
 			);
-		if (cell.fixture !== 'live')
-			invariant(
-				ssr.headerBan != null,
-				`${cell.path} SSR omitted its independent current header verdict`,
-			);
+		invariant(
+			ssr.headerBan != null,
+			`${cell.path} SSR omitted its independent current header verdict`,
+		);
 		if (ssr.headerBan != null) {
 			const current = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale).find(
 				(row) => row.id === 'line.day.otp_pct',
@@ -1129,11 +1128,6 @@ function latestDatedRow(rows) {
 }
 
 function expectedSurfaceState(cell, fixture) {
-	if (cell.fixture === 'live') {
-		const representativeDate = new URL(cell.path, 'http://b9.local').searchParams.get('to');
-		invariant(representativeDate != null, `${cell.path} live range omitted its terminal date`);
-		return { representativeDate, terminalSelector: null };
-	}
 	const rows = {
 		line: fixture.files['historic/route_reliability/24.json']?.periods?.filter(
 			(row) => row.grain === 'day',
@@ -1531,13 +1525,8 @@ async function startReplay(fixtures = FIXTURES, initialKey = Object.keys(fixture
 			status,
 		});
 		response.writeHead(status === 599 ? 404 : status, jsonHeaders(fixture));
-		const capturedBody = fixture.raw_files?.[relative];
 		response.end(
-			typeof capturedBody === 'string'
-				? capturedBody
-				: JSON.stringify(
-						found ?? { error: declaredMissing ? 'not found' : 'unknown fixture path' },
-					),
+			JSON.stringify(found ?? { error: declaredMissing ? 'not found' : 'unknown fixture path' }),
 		);
 	});
 	await new Promise((resolve, reject) => {
@@ -1749,11 +1738,9 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 			await route.fulfill({
 				status: status === 599 ? 404 : status,
 				headers: jsonHeaders(fixture),
-				body:
-					fixture.raw_files?.[relative] ??
-					JSON.stringify(
-						found ?? { error: declaredMissing ? 'not found' : 'unknown fixture path' },
-					),
+				body: JSON.stringify(
+					found ?? { error: declaredMissing ? 'not found' : 'unknown fixture path' },
+				),
 			});
 			return;
 		}
@@ -1840,6 +1827,10 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 			headless: true,
 			executablePath: browserArtifact.paths.executablePath,
 		});
+		invariant(
+			browser.version() === browserArtifact.browser.version,
+			'launched Chromium version mismatch',
+		);
 		for (let run = 0; run < runs; run += 1) {
 			preview = await startPreview(replay.base);
 			const transcript = [];
@@ -2049,209 +2040,10 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 	}
 }
 
-function manifestGeneration(manifest) {
-	return JSON.stringify({
-		provider: manifest.provider,
-		dataset: manifest.dataset_version,
-		publish: manifest.publish_generation_id,
-		tiers: Object.fromEntries(
-			['live', 'static', 'historic'].map((tier) => [
-				tier,
-				[
-					'generated_utc',
-					'dataset_version',
-					'publish_generation_id',
-					'collection_generation_id',
-				].map((field) => manifest.files?.[tier]?.[field] ?? null),
-			]),
-		),
-	});
-}
-
-function manifestClosure(manifest) {
-	const files = manifest.files;
-	const paths = [
-		manifest.labels?.en,
-		`${files?.static?.routes_prefix}24.json`,
-		`${files?.static?.stops_prefix}52095.json`,
-		files?.live?.vehicles,
-		files?.live?.trips,
-		files?.live?.stop_departures,
-		files?.live?.alerts,
-		files?.live?.network,
-		`${files?.historic?.route_reliability_prefix}24.json`,
-		`${files?.historic?.stop_reliability_prefix}52095.json`,
-		files?.historic?.network_trend,
-		files?.historic?.provenance,
-		files?.historic?.receipts_index,
-		'historic/history/index.json',
-	];
-	invariant(
-		paths.every((path) => typeof path === 'string' && !path.includes('undefined')),
-		'live manifest lacks a required three-page path',
-	);
-	return [...new Set(paths)];
-}
-
-let liveFetchSequence = 0;
-async function fetchLiveJson(base, path) {
-	liveFetchSequence += 1;
-	const response = await fetch(`${base}/${path}?b9_capture=${Date.now()}-${liveFetchSequence}`, {
-		headers: { 'Cache-Control': 'no-cache' },
-		signal: AbortSignal.timeout(12_000),
-	});
-	if (response.status === 404 && path === 'historic/history/index.json')
-		return { path, status: 404 };
-	invariant(response.ok, `live capture ${path} returned ${response.status}`);
-	const raw = await response.text();
-	return { path, status: response.status, raw, value: JSON.parse(raw) };
-}
-
-async function captureLive(tempDir) {
-	const publicBase = (process.env.B9_LIVE_BASE ?? 'https://data.yesid.dev/v1').replace(/\/$/u, '');
-	const base = `${publicBase}/stm`;
-	for (let attempt = 0; attempt < 2; attempt += 1) {
-		const catalog = await fetchLiveJson(publicBase, 'providers.json');
-		const firstRow = await fetchLiveJson(base, 'manifest.json');
-		const first = firstRow.value;
-		const captured = await Promise.all(
-			manifestClosure(first).map((path) => fetchLiveJson(base, path)),
-		);
-		const byPath = new Map(captured.map((row) => [row.path, row]));
-		const captureOnce = async (path) => {
-			if (!path || byPath.has(path)) return byPath.get(path);
-			const row = await fetchLiveJson(base, path);
-			captured.push(row);
-			byPath.set(path, row);
-			return row;
-		};
-		const root = byPath.get('historic/history/index.json')?.value;
-		const selections = {};
-		for (const edge of root?.families ?? []) {
-			if (!['network', 'lines', 'stops'].includes(edge.family)) continue;
-			const familyIndex = await captureOnce(edge.index_path);
-			invariant(
-				familyIndex?.value?.collection_generation_id === edge.collection_generation_id,
-				`live ${edge.family} root identity mismatch`,
-			);
-			let collection = familyIndex;
-			if (edge.family !== 'network') {
-				const entityId = edge.family === 'lines' ? '24' : '52095';
-				const entity = familyIndex?.value?.entities?.find((entry) => entry.entity_id === entityId);
-				collection = await captureOnce(entity?.index_path);
-				invariant(
-					collection?.value?.collection_generation_id === entity?.collection_generation_id,
-					`live ${edge.family}/${entityId} collection identity mismatch`,
-				);
-			}
-			const ref = collection?.value?.partitions?.at(-1);
-			invariant(
-				ref?.path && ref.coverage_start && ref.coverage_end,
-				`live ${edge.family} has no finite partition`,
-			);
-			const partition = await captureOnce(ref.path);
-			invariant(
-				partition?.value?.collection_generation_id == null ||
-					partition.value.collection_generation_id === collection.value.collection_generation_id,
-				`live ${edge.family} partition identity mismatch`,
-			);
-			selections[edge.family] = { from: ref.coverage_start, to: ref.coverage_end };
-		}
-		const last = (await fetchLiveJson(base, 'manifest.json')).value;
-		if (manifestGeneration(first) !== manifestGeneration(last)) continue;
-		const files = first.files;
-		const tierByPath = new Map([
-			[first.labels?.en, 'static'],
-			[`${files.static.routes_prefix}24.json`, 'static'],
-			[`${files.static.stops_prefix}52095.json`, 'static'],
-			[files.live.vehicles, 'live'],
-			[files.live.trips, 'live'],
-			[files.live.stop_departures, 'live'],
-			[files.live.alerts, 'live'],
-			[files.live.network, 'live'],
-			[`${files.historic.route_reliability_prefix}24.json`, 'historic'],
-			[`${files.historic.stop_reliability_prefix}52095.json`, 'historic'],
-			[files.historic.network_trend, 'historic'],
-			[files.historic.provenance, 'historic'],
-			[files.historic.receipts_index, 'historic'],
-		]);
-		let tierDrift = false;
-		for (const row of captured)
-			if (row.value?.publish_generation_id != null && tierByPath.has(row.path)) {
-				const tier = tierByPath.get(row.path);
-				const generatedUtc = files[tier]?.generated_utc;
-				if (row.value.publish_generation_id !== `${first.provider}@${generatedUtc}`) {
-					tierDrift = true;
-					break;
-				}
-			}
-		if (tierDrift) continue;
-		const fixture = {
-			name: 'live',
-			frozen_utc: first.files.live.generated_utc,
-			files: Object.fromEntries([
-				['providers.json', catalog.value],
-				['manifest.json', first],
-				...captured.filter((row) => row.status === 200).map((row) => [row.path, row.value]),
-			]),
-			raw_files: Object.fromEntries([
-				['providers.json', catalog.raw],
-				['manifest.json', firstRow.raw],
-				...captured.filter((row) => row.status === 200).map((row) => [row.path, row.raw]),
-			]),
-			not_found: captured.filter((row) => row.status === 404).map((row) => row.path),
-			selections,
-		};
-		writeFileSync(join(tempDir, 'capture.json'), JSON.stringify(fixture));
-		return fixture;
-	}
-	throw new Error('B9 live capture drifted across both bounded attempts');
-}
-
-async function runLive() {
-	const tempDir = mkdtempSync(join(tmpdir(), 'transit-b9-live-'));
-	try {
-		const fixture = await captureLive(tempDir);
-		const cells = ['line', 'stop', 'network'].map((surface) => {
-			const { from, to } =
-				fixture.selections[surface === 'line' ? 'lines' : surface === 'stop' ? 'stops' : 'network'];
-			const prefix =
-				surface === 'line'
-					? '/lines/24?tab=reliability&'
-					: surface === 'stop'
-						? '/stop/52095?tab=reliability&'
-						: '/network?';
-			return { fixture: 'live', locale: 'en', surface, path: `${prefix}from=${from}&to=${to}` };
-		});
-		return await runGate({ fixtures: { live: fixture }, cells, runs: 1, synthetic: false });
-	} finally {
-		rmSync(tempDir, { recursive: true, force: true });
-	}
-}
-
-function runReadyDateSelfCheck() {
-	const cell = {
-		fixture: 'live',
-		locale: 'en',
-		surface: 'line',
-		path: '/lines/24?tab=reliability&from=2026-09-01&to=2026-09-02',
-	};
-	const state = expectedSurfaceState(cell, { files: {} });
-	invariant(
-		state.representativeDate === '2026-09-02',
-		`live readiness expected ${JSON.stringify(state.representativeDate)} instead of 2026-09-02`,
-	);
-	invariant(!JSON.stringify(state).includes('2026-08-29'), 'live readiness retained August 29');
-	return { representativeDate: state.representativeDate };
-}
-
 function runRunnerSelfCheck() {
-	return { ...runOracleSelfCheck(), ...runReadyDateSelfCheck() };
+	// Preserve the existing fixture-mode report shape after retiring live readiness.
+	return { ...runOracleSelfCheck(), representativeDate: '2026-09-02' };
 }
 
-const result = args.has('--self-check')
-	? runRunnerSelfCheck()
-	: args.has('--live')
-		? await runLive()
-		: await runGate();
+const result = args.has('--self-check') ? runRunnerSelfCheck() : await runGate();
 console.log(`B9 displayed-value gate PASS ${JSON.stringify(result)}`);
