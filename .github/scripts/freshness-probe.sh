@@ -10,23 +10,27 @@
 #      observation must be no older than the 36-hour daily-tier SLA.
 #   C. Historic publish heartbeat — the last successful historic-publish
 #      transaction must be no older than the same daily-tier SLA.
-#   D. DB capture age — the worst (oldest) of the three realtime endpoints'
+#   D. DB capture age — the worst (oldest) of the enabled realtime endpoints'
 #      latest captured_at_utc must be younger than DB_MAX_AGE_SECONDS.
 #   E. Failed-run burst — fewer than FAILED_RUNS_ALERT_THRESHOLD failed
-#      raw.ingestion_runs in the last FAILED_RUNS_WINDOW_MINUTES. This is the
+#      provider's raw.ingestion_runs in the last FAILED_RUNS_WINDOW_MINUTES.
+#      This is the
 #      ONLY detector for the silver-load-freeze incident class: during it,
 #      captures and publishes kept succeeding (so A-D stayed green) while
 #      the silver load failed silently. The new run_kind='silver_load' rows
 #      make those failures countable here.
-#   F. Stale newest silver snapshot — the newest silver.rt_feed_snapshots row
-#      must be younger than SILVER_STALE_MAX_AGE_SECONDS. With silver now
-#      ephemeral (1-day retention; raw R2 is the rebuild source), a silent
+#      The designated global writer also preserves the aggregate failed-run
+#      budget across providers, using an independent alert identity.
+#   F. Stale silver snapshot — each enabled trip/vehicle endpoint's newest
+#      silver.rt_feed_snapshots row must be younger than SILVER_STALE_MAX_AGE_SECONDS.
+#      With silver ephemeral (1-day retention; raw R2 is the rebuild source), a silent
 #      silver-load freeze must be caught even when raw capture stays green
 #      (Checks A-D do not prove silver is advancing): this is the positive signal
 #      that the silver load is still ADVANCING, not just that raw is fresh.
 #
-# Any failed check fires a single alert issue and exits nonzero (so the run
-# itself goes red); all-green resolves any open alert.
+# Provider failures fire their provider alert; aggregate failures use their own
+# alert. Any failure exits nonzero. Recovery resolves only its matching identity.
+# Legacy alert:freshness stays open for explicit reconciliation after rollout.
 set -euo pipefail
 
 : "${SNAPSHOT_PUBLIC_BASE_URL:?SNAPSHOT_PUBLIC_BASE_URL must be set}"
@@ -39,6 +43,7 @@ FAILED_RUNS_WINDOW_MINUTES="${FAILED_RUNS_WINDOW_MINUTES:-30}"
 FAILED_RUNS_ALERT_THRESHOLD="${FAILED_RUNS_ALERT_THRESHOLD:-10}"
 SILVER_STALE_MAX_AGE_SECONDS="${SILVER_STALE_MAX_AGE_SECONDS:-900}"
 PROVIDER_ID="${PROVIDER_ID:-stm}"
+CHECK_GLOBAL_FAILED_RUNS="${CHECK_GLOBAL_FAILED_RUNS:-true}"
 
 # psql cannot parse SQLAlchemy's "postgresql+psycopg://" driver tag — strip it so
 # the same secret works for both the python jobs and this bare-psql probe.
@@ -48,6 +53,9 @@ PSQL_URL="${DATABASE_URL//+psycopg/}"
 # Check D return the 999999 sentinel and Check E return 0 every run). Guard them
 # strictly so a bad override can neither break nor inject into the query.
 [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_]+$ ]] || { echo "freshness-probe: invalid PROVIDER_ID '${PROVIDER_ID}'" >&2; exit 2; }
+[[ "$CHECK_GLOBAL_FAILED_RUNS" == true || "$CHECK_GLOBAL_FAILED_RUNS" == false ]] || {
+  echo "freshness-probe: CHECK_GLOBAL_FAILED_RUNS must be true or false" >&2; exit 2;
+}
 [[ "$FAILED_RUNS_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || FAILED_RUNS_WINDOW_MINUTES=30
 [[ "$SILVER_STALE_MAX_AGE_SECONDS" =~ ^[0-9]+$ ]] || SILVER_STALE_MAX_AGE_SECONDS=900
 
@@ -163,8 +171,9 @@ capture_age="$(
       FROM core.feed_endpoints fe
       WHERE fe.provider_id = '${PROVIDER_ID}'
         AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions', 'i3_alerts')
+        AND fe.is_enabled = true
     )
-    SELECT COALESCE(max(EXTRACT(EPOCH FROM (now() - latest_at))::bigint), 999999)
+    SELECT COALESCE(max(COALESCE(EXTRACT(EPOCH FROM (now() - latest_at))::bigint, 999999)), 999999)
     FROM latest
   " 2>/dev/null || echo "999999"
 )"
@@ -179,7 +188,8 @@ failed_runs="$(
   psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
     SELECT count(*)
     FROM raw.ingestion_runs
-    WHERE status = 'failed'
+    WHERE provider_id = '${PROVIDER_ID}'
+      AND status = 'failed'
       AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
   " 2>/dev/null || echo "unavailable"
 )"
@@ -191,36 +201,89 @@ elif (( failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
   failures+=("failed_runs: ${failed_runs} failed runs in ${FAILED_RUNS_WINDOW_MINUTES}m >= ${FAILED_RUNS_ALERT_THRESHOLD}")
 fi
 
-# --- Check F: stale newest silver snapshot ----------------------------------
-# silver.rt_feed_snapshots is the small snapshot-grain parent table; its newest
-# row is the high-water mark of the silver load. With ephemeral silver, a silent
-# silver-load freeze (raw capture still green) shows up here as a stalled
-# high-water mark long before retention notices anything. Same hardening as B/C:
+# --- Check F: worst-endpoint silver snapshot age ----------------------------
+# silver.rt_feed_snapshots stores trip/vehicle snapshots, not i3 alerts. Check
+# each enabled endpoint for this provider so a fresh provider/feed cannot hide
+# another's missing or frozen load. Missing data gets a sentinel BEFORE max(),
+# since the aggregate otherwise ignores NULL. Same hardening as B/C:
 # ON_ERROR_STOP, sentinel-on-error, whitespace strip, ^[0-9]+$ guard.
 silver_age="$(
   psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
-    SELECT COALESCE(EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::bigint, 999999)
-    FROM silver.rt_feed_snapshots
+    WITH latest AS (
+      SELECT (
+        SELECT max(s.captured_at_utc)
+        FROM silver.rt_feed_snapshots s
+        WHERE s.provider_id = fe.provider_id
+          AND s.feed_endpoint_id = fe.feed_endpoint_id
+          AND s.endpoint_key = fe.endpoint_key
+      ) AS latest_at
+      FROM core.feed_endpoints fe
+      WHERE fe.provider_id = '${PROVIDER_ID}'
+        AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
+        AND fe.is_enabled = true
+    )
+    SELECT COALESCE(max(COALESCE(EXTRACT(EPOCH FROM (now() - latest_at))::bigint, 999999)), 999999)
+    FROM latest
   " 2>/dev/null || echo "999999"
 )"
 silver_age="${silver_age//[[:space:]]/}"
 [[ "$silver_age" =~ ^[0-9]+$ ]] || silver_age=999999
 if (( silver_age > SILVER_STALE_MAX_AGE_SECONDS )); then
-  failures+=("silver_stale: newest silver snapshot age ${silver_age}s > ${SILVER_STALE_MAX_AGE_SECONDS}s")
+  failures+=("silver_stale: worst-endpoint silver snapshot age ${silver_age}s > ${SILVER_STALE_MAX_AGE_SECONDS}s")
+fi
+
+# Preserve the original aggregate budget: e.g. six STM plus six Ottawa failures
+# must still alert. Only one workflow matrix job owns this query and alert;
+# provider-only jobs neither query nor resolve the global identity.
+global_failed_runs="not_checked"
+global_failure=""
+if [[ "$CHECK_GLOBAL_FAILED_RUNS" == true ]]; then
+  global_failed_runs="$(
+    psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
+      SELECT count(*)
+      FROM raw.ingestion_runs
+      WHERE status = 'failed'
+        AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
+    " 2>/dev/null || echo "unavailable"
+  )"
+  global_failed_runs="${global_failed_runs//[[:space:]]/}"
+  if [[ ! "$global_failed_runs" =~ ^[0-9]+$ ]]; then
+    global_failed_runs="unavailable"
+    global_failure="global_failed_runs: count unavailable (query failed or returned invalid output)"
+  elif (( global_failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
+    global_failure="global_failed_runs: ${global_failed_runs} failed runs in ${FAILED_RUNS_WINDOW_MINUTES}m >= ${FAILED_RUNS_ALERT_THRESHOLD}"
+  fi
 fi
 
 printf 'freshness-probe: readings provider=%s manifest_age_seconds=%s static_age_seconds=%s historic_age_seconds=%s db_capture_age_seconds=%s failed_runs=%s silver_age_seconds=%s\n' \
   "$PROVIDER_ID" "$live_age" "$static_heartbeat_age" "$historic_heartbeat_age" \
   "$capture_age" "$failed_runs" "$silver_age"
+printf 'freshness-probe: global_readings checked=%s failed_runs=%s window_minutes=%s threshold=%s\n' \
+  "$CHECK_GLOBAL_FAILED_RUNS" "$global_failed_runs" "$FAILED_RUNS_WINDOW_MINUTES" "$FAILED_RUNS_ALERT_THRESHOLD"
 
 # --- Fire / resolve ----------------------------------------------------------
+probe_status=0
 if (( ${#failures[@]} > 0 )); then
   body="$(printf '%s\n' "${failures[@]}")"
-  "$ALERT_ISSUE" fire freshness "[alert] ${PROVIDER_ID} pipeline stale/failing" "$body"
-  echo "freshness-probe: FAILING" >&2
+  "$ALERT_ISSUE" fire "freshness-${PROVIDER_ID}" "[alert] ${PROVIDER_ID} pipeline stale/failing" "$body" || probe_status=1
   printf '%s\n' "${failures[@]}" >&2
-  exit 1
+  probe_status=1
+else
+  "$ALERT_ISSUE" resolve "freshness-${PROVIDER_ID}" "recovered: all ${PROVIDER_ID} freshness probes green" || probe_status=1
 fi
 
-"$ALERT_ISSUE" resolve freshness "recovered: all freshness probes green"
+if [[ "$CHECK_GLOBAL_FAILED_RUNS" == true ]]; then
+  if [[ -n "$global_failure" ]]; then
+    "$ALERT_ISSUE" fire freshness-global-failures "[alert] pipeline aggregate failed-run burst" "$global_failure" || probe_status=1
+    echo "$global_failure" >&2
+    probe_status=1
+  else
+    "$ALERT_ISSUE" resolve freshness-global-failures "recovered: aggregate failed-run count below ${FAILED_RUNS_ALERT_THRESHOLD} in ${FAILED_RUNS_WINDOW_MINUTES}m" || probe_status=1
+  fi
+fi
+
+if (( probe_status != 0 )); then
+  echo "freshness-probe: FAILING" >&2
+  exit "$probe_status"
+fi
 echo "freshness-probe: all checks green"

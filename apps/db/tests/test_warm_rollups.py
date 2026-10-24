@@ -1064,6 +1064,30 @@ def test_build_warm_rollups_seeded_provider_unchanged_regression() -> None:
     assert result.reporting_aggregate_row_counts == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
 
 
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+def test_warm_completion_timestamp_follows_work_without_moving_source_cutoffs(
+    monkeypatch: pytest.MonkeyPatch, provider_id: str
+) -> None:
+    started = datetime(2026, 3, 26, 12, tzinfo=UTC)
+    finished = started + timedelta(minutes=50)
+    clock = iter([started, finished])
+    monkeypatch.setattr(rollups, "utc_now", lambda: next(clock))
+    materialization_times: list[datetime] = []
+
+    class RecordingConnection(FakeConnection):
+        def execute(self, statement, params=None):  # noqa: ANN001
+            if params and "built_at_utc" in params:
+                materialization_times.append(params["built_at_utc"])
+            return super().execute(statement, params)
+
+    result = build_warm_rollups(provider_id, engine=FakeEngine(RecordingConnection()))
+
+    assert materialization_times
+    assert set(materialization_times) == {started}
+    assert result.completed_at_utc == finished
+    assert result.display_dict()["completed_at_utc"] == finished.isoformat()
+
+
 def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)

@@ -103,6 +103,25 @@ def test_freshness_probe_pins_daily_heartbeat_age_contract() -> None:
     assert ".files.historic.generated_utc" not in script
 
 
+def test_freshness_probe_schedules_both_active_providers_without_fail_fast() -> None:
+    probe = _load(PROBE)["jobs"]["probe"]
+    assert probe["strategy"]["fail-fast"] is False
+    assert set(probe["strategy"]["matrix"]["provider"]) == {"stm", "octranspo"}
+    step = next(step for step in probe["steps"] if "freshness-probe.sh" in step.get("run", ""))
+    assert step["env"]["PROVIDER_ID"] == "${{ matrix.provider }}"
+
+
+def test_freshness_probe_designates_exactly_one_global_failure_writer() -> None:
+    probe = _load(PROBE)["jobs"]["probe"]
+    providers = probe["strategy"]["matrix"]["include"]
+    assert len(providers) == 2
+    assert {row["provider"] for row in providers} == {"stm", "octranspo"}
+    assert sum(row["check_global_failed_runs"] == "true" for row in providers) == 1
+    assert all(row["check_global_failed_runs"] in {"true", "false"} for row in providers)
+    step = next(step for step in probe["steps"] if "freshness-probe.sh" in step.get("run", ""))
+    assert step["env"]["CHECK_GLOBAL_FAILED_RUNS"] == "${{ matrix.check_global_failed_runs }}"
+
+
 def test_cron_workflows_carry_issues_write_permission() -> None:
     for filename in CRON_WORKFLOWS:
         doc = _load(WORKFLOWS / filename)

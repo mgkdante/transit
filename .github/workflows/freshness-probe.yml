@@ -19,6 +19,15 @@ jobs:
     if: github.event.schedule != '7 * * * *'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [stm, octranspo]
+        include:
+          - provider: stm
+            check_global_failed_runs: "true"
+          - provider: octranspo
+            check_global_failed_runs: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -26,6 +35,8 @@ jobs:
       - name: Run freshness probe
         run: .github/scripts/freshness-probe.sh
         env:
+          PROVIDER_ID: ${{ matrix.provider }}
+          CHECK_GLOBAL_FAILED_RUNS: ${{ matrix.check_global_failed_runs }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
           GH_TOKEN: ${{ github.token }}
