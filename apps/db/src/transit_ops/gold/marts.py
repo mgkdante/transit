@@ -1122,7 +1122,7 @@ def _resolve_gold_build_context(
     if dataset_row is None:
         raise ValueError(
             "No current static Silver dataset was found for this provider. "
-            "Run load-static-silver before build-gold-marts."
+            "Run run-static-pipeline before build-gold-marts."
         )
 
     return GoldBuildContext(
@@ -1426,7 +1426,7 @@ def refresh_gold_static(
         if not has_silver_routes:
             raise ValueError(
                 f"Current static dataset version {context.dataset_version_id} has no "
-                "Silver rows — run load-static-silver before refresh-gold-static."
+                "Silver rows — run run-static-pipeline to load Silver and refresh Gold dimensions."
             )
         _refresh_gold_dimensions(connection, context=context)
         row_counts = {

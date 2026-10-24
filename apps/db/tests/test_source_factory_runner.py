@@ -644,13 +644,13 @@ def test_execute_records_optional_missing_endpoint_as_skipped(tmp_path) -> None:
             "ingest_gis_feed": lambda *args, **kwargs: (_ for _ in ()).throw(
                 ValueError(
                     "GIS feed endpoint was not found in core.feed_endpoints. "
-                    "Run seed-core before ingest-gis."
+                    "Run seed-core before run-static-pipeline."
                 )
             ),
             "capture_i3_alerts": lambda *args, **kwargs: (_ for _ in ()).throw(
                 ValueError(
                     "i3 alert feed endpoint was not found in core.feed_endpoints. "
-                    "Run seed-core before capture-i3."
+                    "Run seed-core before run-realtime-cycle."
                 )
             ),
         }

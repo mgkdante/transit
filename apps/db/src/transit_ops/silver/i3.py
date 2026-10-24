@@ -899,7 +899,7 @@ def find_i3_raw_snapshot(
             )
         raise ValueError(
             "No successful raw i3 alert snapshot was found for this provider. "
-            "Run capture-i3 before load-i3-silver."
+            "Run run-realtime-cycle to capture and load i3 alerts."
         )
     return RawI3AlertSnapshot(
         i3_alert_snapshot_id=int(row["i3_alert_snapshot_id"]),

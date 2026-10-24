@@ -119,7 +119,7 @@ def _download_to_tempfile(source_url: str, temp_dir: Path) -> DownloadedArtifact
 
 _MISSING_ENDPOINT_MESSAGE = (
     "GIS feed endpoint was not found in core.feed_endpoints. "
-    "Run seed-core before ingest-gis."
+    "Run seed-core before run-static-pipeline."
 )
 
 

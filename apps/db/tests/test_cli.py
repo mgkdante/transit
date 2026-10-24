@@ -29,18 +29,11 @@ def test_cli_help() -> None:
     assert "db-test" in result.stdout
     assert "init-db" in result.stdout
     assert "seed-core" in result.stdout
-    assert "ingest-static" in result.stdout
-    assert "ingest-gis" in result.stdout
     assert "capture-realtime" in result.stdout
-    assert "capture-i3" in result.stdout
-    assert "load-gis-silver" in result.stdout
-    assert "load-static-silver" in result.stdout
     assert "load-realtime-silver" in result.stdout
-    assert "load-i3-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
     assert "replay-realtime-silver" in result.stdout
     assert "refresh-gold-realtime" in result.stdout
-    assert "refresh-gold-static" in result.stdout
     assert "prune-silver-storage" in result.stdout
     assert "prune-gold-storage" in result.stdout
     assert "prune-bronze-storage" in result.stdout
@@ -59,6 +52,20 @@ def test_cli_help() -> None:
     assert "validate-static-feeds" in result.stdout
     assert "retention-proof-report" in result.stdout
     assert "recover" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "ingest-static", "ingest-gis", "capture-i3", "load-static-silver",
+        "load-gis-silver", "load-i3-silver", "refresh-gold-static",
+    ],
+)
+def test_forwarding_commands_are_removed(command: str) -> None:
+    result = runner.invoke(app, [command, "--help"])
+
+    assert result.exit_code == 2
+    assert f"No such command '{command}'" in result.output
 
 
 def test_recover_help_mentions_health_report_and_guardrails() -> None:
@@ -144,20 +151,6 @@ def test_recover_execute_requires_matching_confirmation() -> None:
 
     assert result.exit_code == 2
     assert "requires --confirm restart-worker" in result.stderr
-
-
-def test_ingest_static_help() -> None:
-    result = runner.invoke(app, ["ingest-static", "--help"])
-
-    assert result.exit_code == 0
-    assert "Download, archive, and register one static GTFS feed." in result.stdout
-
-
-def test_ingest_gis_help() -> None:
-    result = runner.invoke(app, ["ingest-gis", "--help"])
-
-    assert result.exit_code == 0
-    assert "Download, archive, and register one STM GIS ZIP." in result.stdout
 
 
 def test_validate_static_feeds_help() -> None:
@@ -348,53 +341,6 @@ def test_capture_realtime_help() -> None:
     assert "Capture, archive, and register one GTFS-RT snapshot." in result.stdout
 
 
-def test_load_static_silver_help() -> None:
-    result = runner.invoke(app, ["load-static-silver", "--help"])
-
-    assert result.exit_code == 0
-    assert "Parse the latest Bronze static GTFS archive into Silver tables." in result.stdout
-
-
-def test_load_gis_silver_help() -> None:
-    result = runner.invoke(app, ["load-gis-silver", "--help"])
-
-    assert result.exit_code == 0
-    assert "Parse the latest Bronze GIS ZIP into Silver source tables." in result.stdout
-
-
-def test_load_gis_silver_calls_loader(monkeypatch) -> None:
-    from dataclasses import dataclass
-
-    recorded: dict[str, object] = {}
-
-    @dataclass(frozen=True)
-    class FakeGisSilverResult:
-        provider_id: str
-
-        def display_dict(self) -> dict[str, object]:
-            return {
-                "provider_id": self.provider_id,
-                "dataset_version_id": 88,
-                "row_counts": {"gis_datasets": 1},
-            }
-
-    def fake_load_latest_gis_to_silver(provider_id, *, settings, registry):  # noqa: ANN001
-        recorded["provider_id"] = provider_id
-        recorded["settings_type"] = type(settings).__name__
-        recorded["registry_type"] = type(registry).__name__
-        return FakeGisSilverResult(provider_id=provider_id)
-
-    monkeypatch.setattr(cli_module, "load_latest_gis_to_silver", fake_load_latest_gis_to_silver)
-
-    result = runner.invoke(app, ["load-gis-silver", "stm"])
-
-    assert result.exit_code == 0
-    assert recorded["provider_id"] == "stm"
-    payload = json.loads(result.stdout)
-    assert payload["provider_id"] == "stm"
-    assert payload["row_counts"] == {"gis_datasets": 1}
-
-
 def test_load_realtime_silver_help() -> None:
     result = runner.invoke(app, ["load-realtime-silver", "--help"])
 
@@ -415,40 +361,6 @@ def test_refresh_gold_realtime_help() -> None:
     assert result.exit_code == 0
     assert "Verify newest archived realtime captures" in result.stdout
     assert "--bootstrap-from-archive" in result.stdout
-
-
-def test_refresh_gold_static_help() -> None:
-    result = runner.invoke(app, ["refresh-gold-static", "--help"])
-
-    assert result.exit_code == 0
-    assert "Refresh only Gold dimension tables" in result.stdout
-
-
-def test_refresh_gold_static_calls_refresh_gold_static(monkeypatch) -> None:
-    from datetime import UTC, datetime
-
-    from transit_ops.gold import GoldStaticRefreshResult
-
-    recorded: dict[str, object] = {}
-
-    def fake_refresh_gold_static(provider_id, *, settings, registry):  # noqa: ANN001
-        recorded["provider_id"] = provider_id
-        return GoldStaticRefreshResult(
-            provider_id=provider_id,
-            provider_timezone="America/Toronto",
-            dataset_version_id=7,
-            refreshed_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
-            row_counts={"dim_route": 100, "dim_stop": 200, "dim_date": 365},
-        )
-
-    monkeypatch.setattr(cli_module, "refresh_gold_static", fake_refresh_gold_static)
-
-    result = runner.invoke(app, ["refresh-gold-static", "stm"])
-
-    assert result.exit_code == 0
-    assert recorded == {"provider_id": "stm"}
-    assert '"dim_route": 100' in result.stdout
-    assert '"dataset_version_id": 7' in result.stdout
 
 
 def test_prune_silver_storage_help() -> None:
@@ -472,8 +384,8 @@ def test_run_static_pipeline_help(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert (
-        "Run ingest-static, load-static-silver, refresh-gold-static, "
-        "then the GIS chain (best-effort)" in result.stdout
+        "Ingest static GTFS, load Silver, refresh Gold dimensions, "
+        "then run the GIS chain (best-effort)" in result.stdout
     )
 
 

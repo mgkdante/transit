@@ -13,7 +13,6 @@ from transit_ops.source_factory.guards import (
     build_r2_namespace_proof,
     build_worker_stopped_proof,
     validate_destructive_confirmations,
-    validate_migration_revision,
 )
 from transit_ops.source_factory.models import (
     ArtifactRef,
@@ -82,6 +81,5 @@ __all__ = [
     "run_source_factory_rebuild",
     "run_r2_prune_cycle",
     "validate_destructive_confirmations",
-    "validate_migration_revision",
     "write_json_artifact",
 ]

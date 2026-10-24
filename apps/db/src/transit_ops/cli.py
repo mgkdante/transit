@@ -32,19 +32,13 @@ from transit_ops.gold import (
     provider_is_seeded,
     rebuild_warm_rollups,
     refresh_gold_realtime,
-    refresh_gold_static,
     sync_alert_archive,
 )
 from transit_ops.gold.delay_hours import refresh_changed_delay_hours
 from transit_ops.gold.delay_periods import PeriodBuildProgress, build_delay_periods
 from transit_ops.gold.delay_sums import recover_delay_sums
 from transit_ops.gold.realtime import initialize_realtime_serving, refresh_gold_snapshots
-from transit_ops.ingestion import (
-    capture_i3_alerts,
-    capture_realtime_feed,
-    ingest_gis_feed,
-    ingest_static_feed,
-)
+from transit_ops.ingestion import capture_realtime_feed
 from transit_ops.logging import configure_logging
 from transit_ops.maintenance import (
     prune_bronze_storage,
@@ -65,10 +59,7 @@ from transit_ops.providers import ProviderRegistry
 from transit_ops.recovery import RECOVERY_ACTION_IDS, run_recovery_action
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
-    load_latest_gis_to_silver,
-    load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
-    load_latest_static_to_silver,
     replay_realtime_silver_window,
 )
 from transit_ops.silver.realtime_gtfs import load_latest_realtime_snapshots_to_silver
@@ -472,38 +463,6 @@ def seed_core(
     )
 
 
-@app.command("ingest-static")
-def ingest_static(provider_id: str) -> None:
-    """Download, archive, and register one static GTFS feed."""
-
-    settings = get_settings()
-    try:
-        result = ingest_static_feed(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
-@app.command("ingest-gis")
-def ingest_gis(provider_id: str) -> None:
-    """Download, archive, and register one STM GIS ZIP."""
-
-    settings = get_settings()
-    try:
-        result = ingest_gis_feed(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
 @app.command("validate-static-feeds")
 def validate_static_feeds_command(
     provider_id: str,
@@ -710,54 +669,6 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
-@app.command("capture-i3")
-def capture_i3(provider_id: str) -> None:
-    """Capture, archive, and register one API i3 alert snapshot."""
-
-    settings = get_settings()
-    try:
-        result = capture_i3_alerts(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
-@app.command("load-static-silver")
-def load_static_silver(provider_id: str) -> None:
-    """Parse the latest Bronze static GTFS archive into Silver tables."""
-
-    settings = get_settings()
-    try:
-        result = load_latest_static_to_silver(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
-@app.command("load-gis-silver")
-def load_gis_silver(provider_id: str) -> None:
-    """Parse the latest Bronze GIS ZIP into Silver source tables."""
-
-    settings = get_settings()
-    try:
-        result = load_latest_gis_to_silver(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
 @app.command("load-realtime-silver")
 def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
     """Parse the latest Bronze realtime snapshot into Silver tables."""
@@ -775,21 +686,6 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
             endpoint_key,
             settings=settings,
             registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
-@app.command("load-i3-silver")
-def load_i3_silver(provider_id: str) -> None:
-    """Normalize the latest raw i3 alert snapshot into Silver tables."""
-
-    settings = get_settings()
-    try:
-        result = load_latest_i3_to_silver(
-            provider_id,
-            settings=settings,
         )
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -1025,22 +921,6 @@ def backfill_dim_history_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
-@app.command("refresh-gold-static")
-def refresh_gold_static_command(provider_id: str) -> None:
-    """Refresh only Gold dimension tables from the current static Silver dataset."""
-
-    settings = get_settings()
-    try:
-        result = refresh_gold_static(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
 @app.command("prune-silver-storage")
 def prune_silver_storage_command(
     provider_id: str,
@@ -1229,8 +1109,8 @@ def prune_bronze_storage_command(
 
 @app.command("run-static-pipeline")
 def run_static_pipeline_command(provider_id: str) -> None:
-    """Run ingest-static, load-static-silver, refresh-gold-static, then the GIS
-    chain (best-effort) for one provider."""
+    """Ingest static GTFS, load Silver, refresh Gold dimensions, then run the
+    GIS chain (best-effort) for one provider."""
 
     settings = get_settings()
     try:

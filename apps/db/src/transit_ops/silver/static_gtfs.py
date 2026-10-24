@@ -1300,7 +1300,7 @@ def find_latest_static_bronze_archive(
     if archive_row is None:
         raise ValueError(
             "No successful Bronze static GTFS archive was found for this provider. "
-            "Run ingest-static before load-static-silver."
+            "Run run-static-pipeline to ingest and load static GTFS data."
         )
     bronze_storage = get_bronze_storage(
         settings,
