@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from transit_ops.gold.reader import cov_case_sql
 from transit_ops.snapshots.builders._helpers import (
     _ACTIVE_SERVICES_SQL,
-    _ALL_ROUTE_SCHEDULES_SQL,
     _CURRENT_DATASET_VERSION_SQL,
     _REP_DATES_SQL,
     _ROUTE_NAMES_SQL,
@@ -24,6 +23,30 @@ if TYPE_CHECKING:
     from datetime import date
 
     from sqlalchemy.engine import Connection
+
+
+# Historic headway consumes weekday departures only for routes with published history.
+_WEEKDAY_SCHEDULES_SQL = named_query(
+    "route.reliability.batch.weekday_schedules",
+    """
+    SELECT DISTINCT
+        t.route_id,
+        t.direction_id,
+        true AS is_weekday,
+        st.departure_time
+    FROM silver.trips AS t
+    JOIN silver.stop_times AS st
+        ON st.trip_id = t.trip_id
+        AND st.dataset_version_id = t.dataset_version_id
+        AND st.provider_id = t.provider_id
+    WHERE t.provider_id = :provider_id
+      AND t.dataset_version_id = :dataset_version_id
+      AND t.route_id = ANY(:route_ids)
+      AND t.service_id = ANY(:weekday_services)
+      AND st.stop_sequence = 1
+      AND st.departure_time IS NOT NULL
+    """,
+)
 
 
 _ROUTE_INVENTORY_SQL = named_query(
@@ -1026,11 +1049,9 @@ def build_all_route_reliability(
         rep_rows = _mapping_rows(conn.execute(_REP_DATES_SQL, static_params))
         _put_shared(stores, route_ids_ordered, "static.rep_dates", rep_rows)
         weekday_services: list[str] = []
-        weekend_services: list[str] = []
         if rep_rows:
             rep = rep_rows[0]
             weekday_date = rep.get("weekday_date")
-            weekend_date = rep.get("weekend_date")
             if weekday_date is not None:
                 weekday_services = [
                     str(row[0])
@@ -1046,28 +1067,13 @@ def build_all_route_reliability(
                     tuple((service,) for service in weekday_services),
                     repdate=weekday_date,  # type: ignore[arg-type]
                 )
-            if weekend_date is not None:
-                weekend_services = [
-                    str(row[0])
-                    for row in conn.execute(
-                        _ACTIVE_SERVICES_SQL,
-                        {**static_params, "repdate": weekend_date},
-                    )
-                ]
-                _put_shared(
-                    stores,
-                    route_ids_ordered,
-                    "static.active_services",
-                    tuple((service,) for service in weekend_services),
-                    repdate=weekend_date,  # type: ignore[arg-type]
-                )
         schedule_rows = _mapping_rows(
             conn.execute(
-                _ALL_ROUTE_SCHEDULES_SQL,
+                _WEEKDAY_SCHEDULES_SQL,
                 {
                     **static_params,
                     "weekday_services": weekday_services or [""],
-                    "weekend_services": weekend_services or [""],
+                    "route_ids": route_ids_ordered,
                 },
             )
         )

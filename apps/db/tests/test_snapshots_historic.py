@@ -3347,8 +3347,7 @@ _BATCH_QUERY_ORDER = [
     "static.dataset_version",
     "static.rep_dates",
     "static.active_services",
-    "static.active_services",
-    "static.all_route_schedules",
+    "route.reliability.batch.weekday_schedules",
     "route.reliability.batch.headway_direction",
     "route.reliability.batch.headway_windows",
     "route.reliability.batch.weak_stops",
@@ -3475,7 +3474,7 @@ class _BatchPhysicalConn:
                 else "svc_we"
             )
             rows = [(service,)]
-        elif name == "static.all_route_schedules":
+        elif name == "route.reliability.batch.weekday_schedules":
             rows = [
                 {
                     "route_id": "R1",
@@ -3613,8 +3612,66 @@ def test_build_all_route_reliability_two_route_bytes_hashes_and_row_order() -> N
     assert outputs[0] == outputs[1]
 
 
+def test_historic_headway_schedule_ignores_weekend_and_unpublished_route_rows() -> None:
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    class UnusedScheduleRowsConn(_BatchPhysicalConn):
+        def _fixture_rows(self, name: str | None, params: dict) -> list:
+            rows = super()._fixture_rows(name, params)
+            if name in {"static.all_route_schedules", "route.reliability.batch.weekday_schedules"}:
+                rows.extend([
+                    {
+                        "route_id": "R1", "direction_id": 0,
+                        "is_weekday": False, "departure_time": "07:01:00",
+                    },
+                    {
+                        "route_id": "FOREIGN", "direction_id": 0,
+                        "is_weekday": True, "departure_time": "07:02:00",
+                    },
+                ])
+            return rows
+
+    kwargs = {"provider_id": "stm", "generated_utc": "2026-07-21T00:00:00Z"}
+    baseline = _batch_builder()(_BatchPhysicalConn(), **kwargs)
+    with_unused_rows = _batch_builder()(UnusedScheduleRowsConn(), **kwargs)
+    assert list(with_unused_rows) == ["R1", "R2"]
+    assert {
+        key: snapshot_json_bytes(payload) for key, payload in with_unused_rows.items()
+    } == {key: snapshot_json_bytes(payload) for key, payload in baseline.items()}
+
+
+def test_historic_headway_schedule_request_excludes_unused_routes_and_weekend_services() -> None:
+    schedule_requests = []
+    service_dates = []
+
+    class ScheduleRequestConn(_BatchPhysicalConn):
+        def execute(self, statement, params=None):  # noqa: ANN001
+            name = query_name(statement)
+            if name in {"static.all_route_schedules", "route.reliability.batch.weekday_schedules"}:
+                schedule_requests.append((str(statement), dict(params or {})))
+            if name == "static.active_services":
+                service_dates.append(params["repdate"])
+            return super().execute(statement, params)
+
+    built = _batch_builder()(
+        ScheduleRequestConn(("R2", "R1")), provider_id="stm", generated_utc="t",
+    )
+    assert list(built) == ["R1", "R2"]
+    assert len(schedule_requests) == 1
+    sql, params = schedule_requests[0]
+    assert params == {
+        "provider_id": "stm", "dataset_version_id": 1,
+        "weekday_services": ["svc_wd"], "route_ids": ["R1", "R2"],
+    }
+    normalized = " ".join(sql.split())
+    assert "t.route_id = ANY(:route_ids)" in normalized
+    assert "t.service_id = ANY(:weekday_services)" in normalized
+    assert "weekend_services" not in normalized
+    assert service_dates == [datetime.date(2026, 6, 3)]
+
+
 @pytest.mark.parametrize("route_count", [2, 200])
-def test_build_all_route_reliability_has_constant_twenty_query_budget(route_count: int) -> None:
+def test_build_all_route_reliability_has_constant_nineteen_query_budget(route_count: int) -> None:
     route_ids = tuple(f"R{index:03d}" for index in range(route_count))
     conn = _BatchPhysicalConn(route_ids)
 
@@ -3688,7 +3745,7 @@ def test_build_all_route_reliability_shares_provider_static_rows_across_routes(
     assert all(len(rows) == 200 for rows in seen.values())
     assert all(len({id(rows) for rows in route_rows}) == 1 for route_rows in seen.values())
     assert len(seen["weekday_services"][0]) == 50
-    assert len(seen["weekend_services"][0]) == 50
+    assert seen["weekend_services"][0] == ()
 
 
 def test_build_all_route_reliability_empty_inventory_is_one_query() -> None:

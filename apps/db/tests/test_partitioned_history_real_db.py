@@ -1024,3 +1024,78 @@ def test_route_reliability_batch_real_db_matches_standalone_bytes_and_scope(
             standalone_bytes
         ).hexdigest()
         assert len(batched_bytes) <= ROUTE_RELIABILITY_BYTE_CEILING
+
+
+def test_historic_weekday_schedule_sql_matches_consumed_shared_rows(line_history_conn) -> None:
+    from transit_ops.snapshots.builders._helpers import _ALL_ROUTE_SCHEDULES_SQL
+    from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+        _WEEKDAY_SCHEDULES_SQL,
+    )
+
+    conn = line_history_conn
+    endpoint = conn.execute(text("""
+        INSERT INTO core.feed_endpoints (provider_id, endpoint_key, feed_kind, source_format)
+        VALUES (:p, 'weekday-schedule', 'static_schedule', 'gtfs_schedule_zip')
+        RETURNING feed_endpoint_id
+    """), {"p": LINE_PROVIDER}).scalar_one()
+    run = conn.execute(text("""
+        INSERT INTO raw.ingestion_runs (provider_id, feed_endpoint_id, run_kind, status)
+        VALUES (:p, :e, 'static_schedule', 'succeeded') RETURNING ingestion_run_id
+    """), {"p": LINE_PROVIDER, "e": endpoint}).scalar_one()
+    edition = conn.execute(text("""
+        INSERT INTO core.dataset_versions
+            (provider_id, feed_endpoint_id, source_ingestion_run_id,
+             dataset_kind, content_hash, is_current)
+        VALUES (:p, :e, :r, 'static_schedule', 'weekday-schedule', true)
+        RETURNING dataset_version_id
+    """), {"p": LINE_PROVIDER, "e": endpoint, "r": run}).scalar_one()
+    params = {"provider_id": LINE_PROVIDER, "dataset_version_id": edition}
+    conn.execute(text("""
+        INSERT INTO silver.routes (provider_id, dataset_version_id, route_id, route_type)
+        VALUES (:provider_id, :dataset_version_id, 'A', 3),
+               (:provider_id, :dataset_version_id, 'A1', 3)
+    """), params)
+    conn.execute(text("""
+        INSERT INTO silver.stops (provider_id, dataset_version_id, stop_id, stop_name)
+        VALUES (:provider_id, :dataset_version_id, 'schedule-stop', 'Schedule stop')
+    """), params)
+    trips = [
+        ("wd-1", "A", "wd", 0, "07:00:00"),
+        ("wd-duplicate", "A", "wd", 0, "07:00:00"),
+        ("wd-2", "A", "wd", 0, "07:10:00"),
+        ("we", "A", "we", 0, "07:03:00"),
+        ("both", "A", "both", 1, "27:00:00"),
+        ("unpublished", "A1", "wd", 0, "07:02:00"),
+        ("missing-departure", "A", "wd", 0, None),
+    ]
+    for trip_id, route_id, service_id, direction_id, departure in trips:
+        trip_params = {
+            **params, "trip": trip_id, "route": route_id, "service": service_id,
+            "direction": direction_id, "departure": departure,
+        }
+        conn.execute(text("""
+            INSERT INTO silver.trips
+                (provider_id, dataset_version_id, trip_id, route_id, service_id, direction_id)
+            VALUES (:provider_id, :dataset_version_id, :trip, :route, :service, :direction)
+        """), trip_params)
+        conn.execute(text("""
+            INSERT INTO silver.stop_times
+                (provider_id, dataset_version_id, trip_id, stop_id, stop_sequence, departure_time)
+            VALUES (:provider_id, :dataset_version_id, :trip, 'schedule-stop', 1, :departure),
+                   (:provider_id, :dataset_version_id, :trip, 'schedule-stop', 2, '08:00:00')
+        """), trip_params)
+
+    shared = list(conn.execute(_ALL_ROUTE_SCHEDULES_SQL, {
+        **params, "weekday_services": ["wd", "both"], "weekend_services": ["we", "both"],
+    }).mappings())
+    scoped = list(conn.execute(_WEEKDAY_SCHEDULES_SQL, {
+        **params, "weekday_services": ["wd", "both"], "route_ids": ["A"],
+    }).mappings())
+    consumed = [row for row in shared if row["route_id"] == "A" and row["is_weekday"]]
+    expected = {
+        ("A", 0, True, "07:00:00"), ("A", 0, True, "07:10:00"),
+        ("A", 1, True, "27:00:00"),
+    }
+    assert {tuple(row.values()) for row in scoped} == expected
+    assert {tuple(row.values()) for row in consumed} == expected
+    assert len(scoped) == 3 < len(shared) == 5
