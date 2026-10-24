@@ -590,6 +590,19 @@
 </DetailShell>
 
 <style>
+	:global(.receipt-detail .receipt-panel) {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.875rem;
+		padding: 1.1rem 1.2rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
+	}
+	:global(.receipt-detail .receipt-primary) {
+		gap: 1rem;
+	}
 	.receipt-controls,
 	.receipt-main-body {
 		min-width: 0;

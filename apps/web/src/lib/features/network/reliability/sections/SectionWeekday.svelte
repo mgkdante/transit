@@ -56,12 +56,4 @@
 		gap: 0.5rem;
 		max-width: 100%;
 	}
-	.network-shift-caveat {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-		max-width: 100%;
-	}
 </style>

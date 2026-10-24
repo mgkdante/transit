@@ -33,16 +33,6 @@
 </section>
 
 <style>
-	.receipt-panel {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.875rem;
-		padding: 1.1rem 1.2rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
 	.receipt-affected {
 		container-type: inline-size;
 		container-name: receipt-affected;

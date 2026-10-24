@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertHistory, IsoUtc } from '$lib/v1/schemas';
 import { AlertArchiveIndexSchema } from '$lib/v1/schemas';
+import { datesForAvailability } from '$lib/v1/history/selection';
 import { filterAlertLog } from '../selectors/alertLog';
 import {
 	currentAlertWindow,
@@ -31,6 +32,20 @@ function archive(first: string | null, last: string | null) {
 }
 
 describe('currentAlertWindow', () => {
+	it('keeps every served day selectable, including zero-alert days, and rejects invalid bounds', () => {
+		const dates = (from: string, to: string) => {
+			const window = currentAlertWindow(history({ window_start: from, window_end: to }), null);
+			return datesForAvailability(
+				window
+					? { kind: 'continuous', firstDate: window.from, lastDate: window.to, gaps: [] }
+					: { kind: 'empty' },
+			);
+		};
+		expect(dates('2026-06-01', '2026-06-03')).toEqual(['2026-06-01', '2026-06-02', '2026-06-03']);
+		expect(dates('2026-06-03', '2026-06-01')).toEqual([]);
+		expect(dates('bad', '2026-06-03')).toEqual([]);
+	});
+
 	it('uses the valid legacy served window and clamps it to archive coverage', () => {
 		expect(
 			currentAlertWindow(

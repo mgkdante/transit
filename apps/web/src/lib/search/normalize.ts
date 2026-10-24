@@ -12,11 +12,6 @@ export function foldSearchText(value: string | null | undefined): string {
 		.trim();
 }
 
-export function tokenize(value: string | null | undefined): string[] {
-	const folded = foldSearchText(value);
-	return folded ? folded.split(' ') : [];
-}
-
 export function dedupeBy<T>(items: readonly T[], key: (item: T) => string): T[] {
 	const seen = new Set<string>();
 	const out: T[] = [];

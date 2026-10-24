@@ -376,7 +376,7 @@
 
 		{#snippet reliabilityContent()}
 			<p
-				class="stop-history-announcement"
+				class="stop-history-announcement visually-hidden"
 				data-slot="history-page-announcement"
 				role="status"
 				aria-live="polite"
@@ -683,17 +683,6 @@
 		gap: var(--space-card-gap);
 		min-width: 0;
 	}
-	.stop-history-announcement {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
 	.stop-history-state,
 	.stop-history-correction {
 		margin: 0;
@@ -723,13 +712,6 @@
 		font-size: var(--text-caption);
 		line-height: 1.3;
 		color: var(--muted-foreground);
-	}
-
-	.rail-toc {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
 	}
 
 	.stop-anchor {
