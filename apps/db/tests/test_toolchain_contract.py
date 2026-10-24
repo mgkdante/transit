@@ -502,9 +502,11 @@ def test_external_container_images_are_readable_and_immutable() -> None:
     assert _external_docker_images(sources["apps/db/Dockerfile.postgis"]) == [POSTGRES_IMAGE]
 
     compose = _yaml(REPO_ROOT / "apps/db/docker-compose.yml")
-    disposable = _yaml(REPO_ROOT / "apps/db/docker-compose.real-db.yml")
+    ci = _yaml(WORKFLOWS / "ci.yml")
     assert compose["services"]["caddy"]["image"] == CADDY_IMAGE
-    assert disposable["services"]["postgres"]["image"] == DISPOSABLE_POSTGIS_IMAGE
+    assert ci["jobs"]["real-db-tests-work"]["services"]["postgres"]["image"] == (
+        DISPOSABLE_POSTGIS_IMAGE
+    )
 
 
 def test_protected_ci_executes_container_runtime_proof_without_renaming_contexts() -> None:

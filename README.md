@@ -92,12 +92,15 @@ Local Bronze and snapshot storage are the defaults. Live feed capture requires
 the relevant provider credentials; publication to remote storage needs explicit
 configuration. Never point test or migration commands at production by accident.
 
-Real-database tests need a dedicated disposable local PostgreSQL/PostGIS database.
+To test against any disposable local PostgreSQL with PostGIS, set
+`TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://transit_ci:transit_ci@127.0.0.1:5432/transit_ci`
+(adjust the password and port) and
+`TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE`.
 The [target guard](apps/db/src/transit_ops/db/target_safety.py) requires an approved
-local role/database pair and exact `TRANSIT_TEST_DATABASE_DISPOSABLE` confirmation;
-tests can change its contents. See the
-[real-DB command](apps/db/scripts/run-real-db-tests.sh) and
-[backend workflow](.github/workflows/ci.yml) for the hosted Linux lifecycle.
+local role/database pair; tests can change its contents. From `apps/db`, set
+`DATABASE_URL` to that same URL for `uv run alembic upgrade head`, then run
+`uv run pytest tests`. The [backend workflow](.github/workflows/ci.yml) provisions
+its own disposable PostGIS service on the hosted Linux runner.
 Operational Bash scripts and container verification belong on the supported Linux
 host; local Docker is not part of the Windows/WSL contributor workflow.
 

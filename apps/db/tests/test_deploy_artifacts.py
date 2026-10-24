@@ -499,35 +499,40 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
     assert set(on["push"]["paths"]) == expected_paths
 
 
-def test_real_db_ci_uses_the_disposable_script_interface() -> None:
+def test_real_db_ci_uses_a_disposable_postgres_service() -> None:
     document = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     job = document["jobs"]["real-db-tests-work"]
 
     assert document["defaults"]["run"]["working-directory"] == "apps/db"
     assert job["runs-on"] == "ubuntu-24.04"
     assert job["timeout-minutes"] == 40
-    assert "services" not in job
-    assert "env" not in job
-    assert job["steps"] == [
-        {
-            "name": "Check out repository",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-        },
-        {
-            "name": "Set up Python workspace",
-            "uses": "./.github/actions/setup-py",
-        },
-        {
-            "name": "Verify runtime container toolchain",
-            "run": "bash scripts/verify-runtime-images.sh",
-            "working-directory": "apps/db",
-        },
-        {
-            "name": "Run disposable real-DB verification",
-            "run": "bash scripts/run-real-db-tests.sh",
-            "working-directory": "apps/db",
-        },
+    service = job["services"]["postgres"]
+    assert service["env"] == {
+        "POSTGRES_USER": "transit_ci",
+        "POSTGRES_PASSWORD": "transit_ci",
+        "POSTGRES_DB": "transit_ci",
+    }
+    assert service["ports"] == ["5432:5432"]
+    assert service["options"] == (
+        '--health-cmd "pg_isready -U transit_ci -d transit_ci" '
+        "--health-interval 10s --health-timeout 5s --health-retries 10"
+    )
+    url = "postgresql+psycopg://transit_ci:transit_ci@127.0.0.1:5432/transit_ci"
+    assert job["env"] == {
+        "DATABASE_URL": url,
+        "TRANSIT_TEST_DATABASE_URL": url,
+        "TRANSIT_TEST_DATABASE_DISPOSABLE": "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE",
+    }
+    assert document["env"]["COLUMNS"] == "200"
+    assert job["steps"][1]["uses"] == "./.github/actions/setup-py"
+    runs = [step for step in job["steps"] if "run" in step]
+    scrub = "unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE\n"
+    assert [step["run"].strip() for step in runs] == [
+        "bash scripts/verify-runtime-images.sh",
+        scrub + "uv run alembic upgrade head",
+        scrub + "uv run pytest tests",
     ]
+    assert all(step["working-directory"] == "apps/db" for step in runs)
 
     required_job = document["jobs"]["required-contexts"]
     assert required_job["needs"] == [

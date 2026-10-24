@@ -134,6 +134,24 @@ jobs:
     if: ${{ fromJSON(needs.classify.outputs.classification).relevant['real-db-tests-work'] }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: transit_ci
+          POSTGRES_PASSWORD: transit_ci
+          POSTGRES_DB: transit_ci
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U transit_ci -d transit_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@127.0.0.1:5432/transit_ci
+      TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@127.0.0.1:5432/transit_ci
+      TRANSIT_TEST_DATABASE_DISPOSABLE: I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -145,8 +163,16 @@ jobs:
         run: bash scripts/verify-runtime-images.sh
         working-directory: apps/db
 
-      - name: Run disposable real-DB verification
-        run: bash scripts/run-real-db-tests.sh
+      - name: Replay migrations on disposable PostgreSQL
+        run: |
+          unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
+          uv run alembic upgrade head
+        working-directory: apps/db
+
+      - name: Run real-DB test suite
+        run: |
+          unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
+          uv run pytest tests
         working-directory: apps/db
 
   required-contexts:
