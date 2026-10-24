@@ -356,8 +356,9 @@ describe('HealthStatus — full manifest render', () => {
 			'utf8',
 		);
 
-		expect(source).toContain('sectionKey="status-card-health-history-coverage"');
-		expect(source).toContain('anchor="health-history-coverage"');
+		expect(source).toContain('sectionKey={`status-card-${section.id}`}');
+		expect(source).toContain("id: 'health-history-coverage'");
+		expect(source).toContain('anchor={section.id}');
 		expect(source).not.toContain('status-card-health-history-coverage-fr');
 	});
 

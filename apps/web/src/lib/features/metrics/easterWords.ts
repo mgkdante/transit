@@ -58,7 +58,3 @@ export function splitEasterSegments(
 	flushRun(lower.length);
 	return segments;
 }
-
-export function hasEasterMatch(text: string, phrases: readonly string[] = EASTER_PHRASES): boolean {
-	return splitEasterSegments(text, phrases).some((s) => s.match);
-}

@@ -9,7 +9,6 @@ import {
 	buildAlertRow,
 	safeAlertUrl,
 	deriveSpan,
-	enumerateDates,
 	medianOf,
 	summarizeAlertBreakdown,
 	toBreakdownRows,
@@ -242,7 +241,7 @@ describe('safeAlertUrl — http/https only, hostname exposed', () => {
 	});
 });
 
-describe('deriveSpan + enumerateDates — the legacy fallback + every-day-selectable', () => {
+describe('deriveSpan — the legacy fallback', () => {
 	it('derives the provider-local min→max active date across every window', () => {
 		expect(
 			deriveSpan([
@@ -255,15 +254,6 @@ describe('deriveSpan + enumerateDates — the legacy fallback + every-day-select
 	});
 	it('returns null when nothing is datable', () => {
 		expect(deriveSpan([entry({}), entry({ routes: ['10'] })])).toBeNull();
-	});
-	it('enumerates every served day inclusive (a zero-alert day is a real answer)', () => {
-		expect(enumerateDates('2026-06-01', '2026-06-03')).toEqual([
-			'2026-06-01',
-			'2026-06-02',
-			'2026-06-03',
-		]);
-		expect(enumerateDates('2026-06-03', '2026-06-01')).toEqual([]);
-		expect(enumerateDates('bad', '2026-06-03')).toEqual([]);
 	});
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeBy, foldDiacritics, foldSearchText, tokenize, tokenMatchScore } from './normalize';
+import { dedupeBy, foldDiacritics, foldSearchText, tokenMatchScore } from './normalize';
 
 describe('foldDiacritics', () => {
 	it('strips accents and lowercases without touching separators', () => {
@@ -30,10 +30,10 @@ describe('foldSearchText', () => {
 	});
 });
 
-describe('tokenize', () => {
-	it('splits the folded query into tokens', () => {
-		expect(tokenize('Berri-UQAM')).toEqual(['berri', 'uqam']);
-		expect(tokenize('')).toEqual([]);
+describe('tokenMatchScore — folded tokens', () => {
+	it('splits the folded query into tokens and rejects an empty query', () => {
+		expect(tokenMatchScore(['uqam berri'], 'Berri-UQAM')).toBe(3);
+		expect(tokenMatchScore(['uqam berri'], '')).toBeNull();
 	});
 });
 
