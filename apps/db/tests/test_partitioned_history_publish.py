@@ -20,13 +20,12 @@ from transit_ops.snapshots import (
     envelope,
     gate,
     historic_compatibility,
-    historic_receipts,
+    historic_run,
     historic_tier,
     publish,
     uploads,
 )
 from transit_ops.snapshots.builders.historic.history_common import (
-    HistoryDigestCollector,
     HistoryNameIndex,
     PointHistorySummary,
     encode_history_entity_id,
@@ -49,12 +48,6 @@ from transit_ops.snapshots.builders.historic.stop_history import (
 )
 from transit_ops.snapshots.builders.historic.stop_history import (
     build_stop_history_plan_from_rows,
-)
-from transit_ops.snapshots.historic_receipts import (
-    HistoricProviderContext,
-    HistoricReceiptPersistenceStats,
-    HistoricReceiptPreflight,
-    build_historic_common_envelope,
 )
 from transit_ops.snapshots.historic_tier import publish as _publish_historic
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
@@ -3785,118 +3778,13 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
     full_historic_rebuild: bool,
     force: bool,
 ):
-    digest_sidecar_fields = (
-        "__f7_digest_entity_key",
-        "__f7_digest_month",
-        "__f7_digest_row_count",
-        "__f7_digest_min_date",
-        "__f7_digest_max_date",
-        "__f7_digest_sha256",
-    )
-
-    def receipt_collector(family, plan, entity_field):  # noqa: ANN001, ANN202
-        rows = []
-        for _ref, partition in plan.iter_partition_items():
-            entity_key = "" if entity_field is None else partition.entity_id
-            dates = [day.date for day in partition.days]
-            month = date.fromisoformat(f"{partition.month}-01")
-            for index, local_date in enumerate(dates):
-                row = {
-                    "local_date": local_date,
-                    "source_generated_utc": partition.generated_utc,
-                }
-                if entity_field is not None:
-                    row[entity_field] = entity_key
-                row.update(dict.fromkeys(digest_sidecar_fields))
-                if index == 0:
-                    row.update(
-                        {
-                            "__f7_digest_entity_key": entity_key,
-                            "__f7_digest_month": month,
-                            "__f7_digest_row_count": len(dates),
-                            "__f7_digest_min_date": dates[0],
-                            "__f7_digest_max_date": dates[-1],
-                            "__f7_digest_sha256": hashlib.sha256(
-                                f"{family}:{entity_key}:{partition.month}".encode()
-                            ).hexdigest(),
-                        }
-                    )
-                rows.append(row)
-        if family == "stops" and rows:
-            source_only_date = date(2025, 1, 1)
-            source_only_entity = rows[0]["stop_id"]
-            rows.append(
-                {
-                    "stop_id": source_only_entity,
-                    "local_date": source_only_date,
-                    "source_generated_utc": "2025-01-02T00:00:00Z",
-                    "__f7_digest_entity_key": source_only_entity,
-                    "__f7_digest_month": source_only_date,
-                    "__f7_digest_row_count": 1,
-                    "__f7_digest_min_date": source_only_date,
-                    "__f7_digest_max_date": source_only_date,
-                    "__f7_digest_sha256": hashlib.sha256(
-                        f"{family}:{source_only_entity}:source-only".encode()
-                    ).hexdigest(),
-                }
-            )
-        query_name = f"test.history.{family}"
-        collector = HistoryDigestCollector(
-            provider_id="stm",
-            family=family,
-            source_names=("fixture",),
-            named_query_sha256={query_name: "0" * 64},
-        )
-        collector.consume_source_rows(
-            "fixture",
-            rows,
-            entity_field=entity_field,
-        )
-        return collector
-
-    collectors = {
-        "network": receipt_collector("network", _network_history_plan(), None),
-        "lines": receipt_collector("lines", _line_history_plan(), "route_id"),
-        "stops": receipt_collector("stops", _stop_history_plan(), "stop_id"),
+    source_scopes = {
+        "network": _network_history_plan().source_scopes,
+        "lines": _line_history_plan().source_scopes,
+        "stops": _stop_history_plan().source_scopes,
     }
-
-    def common_envelope(family):  # noqa: ANN001, ANN202
-        return build_historic_common_envelope(
-            provider_id="stm",
-            provider_timezone="America/Toronto",
-            family=family,
-            installed_code_sha256="1" * 64,
-            family_manifest_sha256="2" * 64,
-            named_query_sha256={f"test.history.{family}": "0" * 64},
-            pyproject_sha256="3" * 64,
-            uv_lock_sha256="4" * 64,
-            schema_sha256="5" * 64,
-            alembic_sha256="6" * 64,
-            config_sha256="7" * 64,
-            gate_sha256="8" * 64,
-            runtime_sha256="9" * 64,
-            repository_alembic_head="0083_snapshot_historic_receipts",
-            database_alembic_head="0083_snapshot_historic_receipts",
-            configuration={"open_window_days": 10, "retention_days": 730},
-            runtime={"python": "test", "postgresql": "test"},
-            gate_values={"test": True},
-        )
-
-    preflights = {
-        family: HistoricReceiptPreflight(
-            available=True,
-            provider=HistoricProviderContext(
-                provider_id="stm",
-                timezone="America/Toronto",
-                today_local=date(2026, 7, 13),
-                open_window_days=10,
-                fact_retention_days=14,
-                retention_days=730,
-            ),
-            common_envelope=common_envelope(family),
-        )
-        for family in ("network", "lines", "stops")
-    }
+    # Stops can load a scope whose zero-valued metrics emit no partition.
+    source_scopes["stops"].scopes.append((source_scopes["stops"].entity_ids[0], "2025-01"))
     settings = SimpleNamespace(
         SNAPSHOT_PUBLISH_CONCURRENCY=1,
         GOLD_REPORTING_OPEN_WINDOW_DAYS=10,
@@ -3906,7 +3794,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
 
     def run_publish(label, *, rebuild, forced):  # noqa: ANN001, ANN202
         calls = Counter()
-        persisted_receipts = []
         state_rows = []
         _patch_minimal_historic(monkeypatch)
         build_compatibility = historic_compatibility._build_items
@@ -3922,36 +3809,7 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
                 "lines": _line_history_plan,
                 "stops": _stop_history_plan,
             }[family]
-            return replace(factory(), receipt_evidence=collectors[family])
-
-        def prepare_preflight(*args, family, **kwargs):  # noqa: ANN002, ANN003, ANN202
-            calls[f"query.receipt_preflight.{family}"] += 1
-            return preflights[family]
-
-        def persist_receipts(
-            conn,  # noqa: ANN001, ARG001
-            *,
-            provider_id,  # noqa: ANN001, ARG001
-            receipts,
-            complete_families,
-        ):
-            calls["query.receipt_persist"] += 1
-            materialized = tuple(receipts)
-            assert tuple(complete_families) == ("network", "lines", "stops")
-            persisted_receipts.append(materialized)
-            attempted_bytes = sum(
-                len(receipt.as_sql_params()["common_envelope"].encode())
-                + len(receipt.as_sql_params()["month_receipts"].encode())
-                for receipt in materialized
-            )
-            return HistoricReceiptPersistenceStats(
-                rows_attempted=len(materialized),
-                rows_changed=len(materialized),
-                json_bytes_attempted=attempted_bytes,
-                json_bytes_changed=attempted_bytes,
-                stale_entities_deleted=0,
-                stale_months_deleted=0,
-            )
+            return replace(factory(), source_scopes=source_scopes[family])
 
         def record_state(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
             calls["query.state_upsert"] += 1
@@ -3970,10 +3828,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             def all(self):
                 return []
 
-            @contextmanager
-            def begin_nested(self):
-                calls["transaction.receipt_savepoint"] += 1
-                yield self
 
         connection = Connection()
 
@@ -4010,12 +3864,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             "_prior_files_total",
             lambda *args, **kwargs: calls.update(["query.prior_files_total"]),
         )
-        monkeypatch.setattr(
-            historic_tier,
-            "prepare_historic_receipt_preflight",
-            prepare_preflight,
-        )
-        monkeypatch.setattr(historic_receipts, "persist_historic_receipts", persist_receipts)
         monkeypatch.setattr(publish, "_record_publish_state", record_state)
 
         root = tmp_path / label
@@ -4035,7 +3883,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             for path in sorted(artifact_root.rglob("*"))
             if path.is_file()
         }
-        assert len(persisted_receipts) == 1
         assert len(state_rows) == 1
         return SimpleNamespace(
             artifacts=artifacts,
@@ -4053,7 +3900,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
                     if not key.startswith("builder.")
                 }
             ),
-            receipts=persisted_receipts[0],
             result=result,
             state=state_rows[0],
         )
@@ -4080,11 +3926,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             "query.publish_lock": 1,
             "query.prior_files_total": 1,
             "query.compatibility": 1,
-            "query.receipt_preflight.network": 1,
-            "query.receipt_preflight.lines": 1,
-            "query.receipt_preflight.stops": 1,
-            "transaction.receipt_savepoint": 1,
-            "query.receipt_persist": 1,
             "query.state_upsert": 1,
         }
     )
@@ -4099,93 +3940,58 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
     assert telemetry["historic_files_reused"] == 0
     assert telemetry["historic_scopes_reused"] == 0
     assert telemetry["historic_scopes_rebuilt"] > 0
-    assert telemetry["receipt_evidence_available"] is True
-    assert telemetry["receipt_persist_failed"] is False
-    assert telemetry["receipt_entity_count"] == len(candidate.receipts) > 0
-    assert telemetry["receipt_scope_count"] == sum(
-        receipt.scope_count for receipt in candidate.receipts
-    ) > 0
-    assert telemetry["receipt_rows_attempted"] == telemetry["receipt_entity_count"]
-    assert telemetry["receipt_rows_changed"] == telemetry["receipt_entity_count"]
-    assert telemetry["receipt_entity_count"] == baseline_telemetry["receipt_entity_count"]
-    assert telemetry["receipt_scope_count"] == baseline_telemetry["receipt_scope_count"]
-    assert (
-        telemetry["receipt_scope_cardinality"]
-        == baseline_telemetry["receipt_scope_cardinality"]
-    )
-    assert all(
-        family["cardinality_gate_passed"] is True
-        for family in telemetry["receipt_scope_cardinality"].values()
-    )
-    assert telemetry["receipt_scope_cardinality"]["stops"][
-        "source_only_scope_count"
-    ] == 1
+    assert telemetry["source_only_scope_count"]["stops"] == 1
+    assert telemetry["source_only_scope_count"] == baseline_telemetry["source_only_scope_count"]
     assert telemetry["publish_total_ns"] == sum(telemetry["phase_ns"].values())
-    assert {
-        scope["origin_gate"]["force"]
-        for receipt in candidate.receipts
-        for scope in receipt.month_receipts.values()
-    } == {force}
-    family_metrics = {
-        "network": {
-            "delay",
-            "delay_percentiles",
-            "vehicles",
-            "cancellation",
-            "occupancy",
-        },
-        "lines": {
-            "delay",
-            "delay_percentiles",
-            "cancellation",
-            "occupancy",
-            "service_span",
-            "skipped_stops",
-        },
-        "stops": {
-            "delay",
-            "delay_percentiles",
-            "occupancy",
-        },
-    }
-    for receipt in candidate.receipts:
-        assert receipt.scope_count == len(receipt.month_receipts)
-        for month, scope in receipt.month_receipts.items():
-            detached = scope["detached_summary"]
-            assert set(detached) == {
-                "schema_version",
-                "family",
-                "entity_key",
-                "month",
-                "artifact_ref",
-                "partition_header",
-                "builder_summary_contribution",
-                "gate_summary_contribution",
-            }
-            assert detached["schema_version"] == 1
-            assert detached["family"] == receipt.family
-            assert detached["entity_key"] == receipt.entity_key
-            assert detached["month"] == month
-            assert detached["artifact_ref"] == {
-                "path": scope["artifact"]["path"],
-                "coverage_start": scope["scope_start"],
-                "coverage_end": scope["scope_end"],
-                "count": scope["artifact"]["day_count"],
-                "sha256": scope["artifact"]["sha256"],
-                "byte_size": scope["artifact"]["byte_size"],
-            }
-            builder = detached["builder_summary_contribution"]
-            gate_contribution = detached["gate_summary_contribution"]
-            assert set(builder["metric_dates"]) == family_metrics[receipt.family]
-            assert set(gate_contribution["metric_date_masks"]) == family_metrics[
-                receipt.family
-            ]
-            assert builder["partition_ref"] == detached["artifact_ref"]
-            assert gate_contribution["partition_ref"] == detached["artifact_ref"]
-            assert gate_contribution["raw_day_count"] == scope["raw_day_count"]
-            assert gate_contribution["unique_day_count"] == len(
-                gate_contribution["available_date_mask"]
-            )
+
+
+@pytest.mark.parametrize("provider_timezone", [None, "invalid/timezone"])
+def test_invalid_or_missing_telemetry_timezone_uses_utc_bucket_and_publish_succeeds(
+    monkeypatch, provider_timezone,
+):
+    from snapshot_storage_fixtures import MemorySnapshotStore
+
+    _patch_minimal_historic(monkeypatch, stop_plan=_stop_history_plan())
+    monkeypatch.setattr(historic_tier, "publication_stamp", lambda: "2026-08-15T00:00:00Z")
+    monkeypatch.setattr(publish, "acquire_publication_lane", lambda *args, **kwargs: None)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+    monkeypatch.setattr(publish, "_record_publish_state", lambda *args, **kwargs: None)
+    prepare = historic_run._prepare_historic_run
+
+    def prepare_with_unavailable_timezone(run, plans, **kwargs):
+        prepare(run, plans, provider_timezone=provider_timezone)
+        assert run.today_local == date(2026, 8, 15)
+
+    monkeypatch.setattr(historic_run, "_prepare_historic_run", prepare_with_unavailable_timezone)
+
+    class Connection:
+        def execute(self, statement, params=None):
+            assert "provider_today" not in str(statement)
+            return self
+
+        def scalar_one(self):
+            return False
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class Engine:
+        @contextmanager
+        def begin(self):
+            yield Connection()
+
+    store = MemorySnapshotStore()
+    result = publish.publish_snapshot(
+        "stm", tier="historic", settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        engine=Engine(), storage=store,
+    )
+    assert "historic/history/index.json" in store.objects
+    buckets = result.historic_telemetry["family_scope_detail"]["network"]
+    assert buckets["mutable_edge"]["scopes_rebuilt"] == 0
+    assert buckets["settled_candidate"]["scopes_rebuilt"] > 0
 
 
 def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):

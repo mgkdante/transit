@@ -518,9 +518,6 @@ def test_network_history_real_db_matches_cross_month_sql(
         generated_utc=stamp,
     )
     bundle = plan.materialize()
-    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
-    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
-    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     direct = network_history_conn.execute(
         text(
@@ -703,9 +700,6 @@ def test_line_history_real_db_matches_cross_month_sql_and_sparse_auxiliary_entit
         generated_utc=stamp,
     )
     bundle = plan.materialize()
-    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
-    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
-    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     assert [(partition.entity_id, partition.month) for partition in bundle.partitions] == [
         ("A", "2026-05"),
@@ -891,9 +885,6 @@ def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibil
         generated_utc=stamp,
     )
     bundle = plan.materialize()
-    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
-    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
-    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     main_stop = "A/B é雪"
     aux_stop = "aux/%雪"

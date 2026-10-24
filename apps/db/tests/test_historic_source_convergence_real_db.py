@@ -47,7 +47,6 @@ def test_correction_during_publication_preserves_dirty_state_until_repaired(
     assert history.network_day()["delay_percentiles"]["p90_delay_seconds"] == 60
     old_root = history.storage.get_json(ROOT_KEY)
     old_graph = history.graph_hashes()
-    old_receipts = history.receipt_hashes()
     old_state = history.state()
     assert history.dirty()["dirty_day_count"] == 1
     with pytest.raises(ValueError, match="dirty"):
@@ -62,9 +61,7 @@ def test_correction_during_publication_preserves_dirty_state_until_repaired(
     assert history.network_day()["delay"]["sum_delay_seconds"] == 240
     new_root = history.storage.get_json(ROOT_KEY)
     new_graph = history.graph_hashes()
-    new_receipts = history.receipt_hashes()
     assert snapshot_sha256(new_root) != snapshot_sha256(old_root)
-    assert new_receipts != old_receipts
     assert new_root["publish_generation_id"] == old_root["publish_generation_id"]
     assert len(snapshots) == 1
     assert started < corrected_at < monotonic()
@@ -75,8 +72,6 @@ def test_correction_during_publication_preserves_dirty_state_until_repaired(
                 "snapshot": snapshots[0],
                 "old_graph": old_graph,
                 "new_graph": new_graph,
-                "old_receipts": old_receipts,
-                "new_receipts": new_receipts,
                 "elapsed_seconds": monotonic() - started,
                 "correction_to_republished_seconds": monotonic() - corrected_at,
             }
@@ -150,7 +145,6 @@ def test_activated_root_survives_database_failure_and_retry_reconciles(
     assert history.dirty()["dirty_day_count"] == 0
     assert history.network_day()["delay"]["sum_delay_seconds"] == (420 if dirty_retry else 240)
     reconciled_graph = history.graph_hashes()
-    assert history.receipt_hashes()
     if not dirty_retry:
         assert reconciled_graph == activated_graph
     assert (

@@ -9,8 +9,8 @@ from sqlalchemy.engine import Connection
 
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings
-from transit_ops.snapshots import builders, envelope, gate, historic_compatibility, uploads
-from transit_ops.snapshots import historic_receipts as _historic
+from transit_ops.snapshots import builders, gate, historic_compatibility, uploads
+from transit_ops.snapshots import historic_run as _historic
 from transit_ops.snapshots.builders.historic.history_common import (
     history_pointer_path,
 )
@@ -28,9 +28,8 @@ from transit_ops.snapshots.historic_graph import (
     LineHistoryFamily,
     StopHistoryFamily,
 )
-from transit_ops.snapshots.historic_receipts import (
+from transit_ops.snapshots.historic_run import (
     _HistoricPublishRun,
-    prepare_historic_receipt_preflight,
 )
 from transit_ops.snapshots.historic_streams import (
     HistoricParentComposer,
@@ -203,12 +202,11 @@ def publish(
             effective_report.checks_run = 2
         gate.enforce(effective_report, force=force)
 
-        _historic._prepare_historic_receipt_run(
+        _historic._prepare_historic_run(
             _historic_run,
-            conn,
-            provider_id,
             (network_history, line_history, stop_history),
-            prepare_historic_receipt_preflight,
+            provider_timezone=getattr(alert_archive, "provider_timezone", None),
+            provider_id=provider_id,
         )
 
         logger.info("historic_publish_stage provider=%s stage=point_days", provider_id)
@@ -319,15 +317,8 @@ def publish(
             )
         gate.enforce(effective_report, force=force)
 
-        logger.info("historic_publish_stage provider=%s stage=receipt_assembly", provider_id)
-        _historic._finalize_historic_receipt_run(
-            _historic_run,
-            provider_id,
-            envelope.publish_generation_id(provider_id, stamp),
-            effective_report,
-            gate_report is not None,
-            force,
-        )
+        logger.info("historic_publish_stage provider=%s stage=history_finalize", provider_id)
+        _historic._finalize_historic_run(_historic_run)
 
         _historic._activate_historic_phase(_historic_run, "compatibility")
         logger.info("historic_publish_stage provider=%s stage=compatibility_upload", provider_id)

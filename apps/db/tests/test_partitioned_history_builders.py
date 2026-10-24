@@ -551,10 +551,10 @@ def test_network_history_builder_executes_each_full_retention_source_once():
         def __init__(self):
             super().__init__(
                 {
-                    "history.network.delay": [],
-                    "history.network.fact": [],
-                    "history.network.cancellation": [],
-                    "history.network.occupancy": [],
+                    "history.network.delay.inner": [],
+                    "history.network.fact.inner": [],
+                    "history.network.cancellation.inner": [],
+                    "history.network.occupancy.inner": [],
                 }
             )
             self.names: list[str | None] = []
@@ -574,10 +574,10 @@ def test_network_history_builder_executes_each_full_retention_source_once():
 
     assert bundle.partitions == []
     assert conn.names == [
-        "history.network.delay",
-        "history.network.fact",
-        "history.network.cancellation",
-        "history.network.occupancy",
+        "history.network.delay.inner",
+        "history.network.fact.inner",
+        "history.network.cancellation.inner",
+        "history.network.occupancy.inner",
     ]
     assert set(conn.params[0]) == {"provider_id", "warm_retention_days"}
     assert set(conn.params[1]) == {"provider_id", "fact_retention_days"}
@@ -1105,7 +1105,9 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
 
     class RecordingConn(NamedQueryConn):
         def __init__(self):
-            super().__init__({"history.lines.ids": [{"route_id": f"R{i:02d}"} for i in range(26)]})
+            super().__init__({
+                "history.lines.ids.inner": [{"route_id": f"R{i:02d}"} for i in range(26)]
+            })
             self.names: list[str | None] = []
             self.params: list[dict] = []
 
@@ -1124,17 +1126,17 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
 
     assert bundle.partitions == []
     assert conn.names == [
-        "history.lines.ids",
+        "history.lines.ids.inner",
         *[
             name
             for _batch in range(2)
             for name in (
-                "history.lines.delay",
-                "history.lines.percentiles",
-                "history.lines.cancellation",
-                "history.lines.occupancy",
-                "history.lines.service_span",
-                "history.lines.skipped_stops",
+                "history.lines.delay.inner",
+                "history.lines.percentiles.inner",
+                "history.lines.cancellation.inner",
+                "history.lines.occupancy.inner",
+                "history.lines.service_span.inner",
+                "history.lines.skipped_stops.inner",
             )
         ],
     ]
@@ -1407,7 +1409,9 @@ def test_stop_history_plan_batches_three_sources_and_retains_no_payload_models()
 
     class RecordingConn(NamedQueryConn):
         def __init__(self):
-            super().__init__({"history.stops.ids": [{"stop_id": f"S{i:03d}"} for i in range(101)]})
+            super().__init__({
+                "history.stops.ids.inner": [{"stop_id": f"S{i:03d}"} for i in range(101)]
+            })
             self.names: list[str | None] = []
             self.params: list[dict] = []
 
@@ -1425,14 +1429,14 @@ def test_stop_history_plan_batches_three_sources_and_retains_no_payload_models()
 
     assert list(plan.iter_partition_items()) == []
     assert conn.names == [
-        "history.stops.ids",
+        "history.stops.ids.inner",
         *[
             name
             for _batch in range(2)
             for name in (
-                "history.stops.delay",
-                "history.stops.percentiles",
-                "history.stops.occupancy",
+                "history.stops.delay.inner",
+                "history.stops.percentiles.inner",
+                "history.stops.occupancy.inner",
             )
         ],
     ]
@@ -1612,17 +1616,17 @@ def test_line_and_stop_history_sql_text_is_frozen():
         "stop.occupancy": stop._STOP_HISTORY_OCCUPANCY_SQL,
     }
     expected = {
-        "line.ids": "0642b8a1ab2f9df6df56a8a1c1b063cca2e236ac2114733b8212f6340eb79595",
-        "line.delay": "65aac7777f19b18c435aad1efd31f953b266a614955ee08f560b41156b16ec48",
-        "line.percentiles": "2393e0e88b036c8ef42bfe1341b9a252e4b8015c52024eaac19af4267e96294e",
-        "line.cancellation": "9c01fcdfd3186c098479d9c2c49c93aa67fba442aa256da19afa26b6067e26e9",
-        "line.occupancy": "697fd3008231132a6e15ad6fdb5309808a30ff7ee93041ccb2de757412a87ee8",
-        "line.service_span": "7047e155453e28f823a337d4c2dbb0281de12178e1ef23d404214ae107f2449f",
-        "line.skipped": "3b270a948c168c92f15d43ea94fb06c97ce197ba911244812fd6fcdb18db9ff0",
-        "stop.ids": "b865607ceb55550c60cfdf8fd7bab2ab0308278a481eeb6bb00879d0322267a0",
-        "stop.delay": "bc99d98ac6cd88c3d2a4c4fc910e8ee2744aef813eab502c709c8ff26904e6f8",
-        "stop.percentiles": "c6034c05ca45b9ccaab352f91e6151a2c1aee3806c547a551c3f9ab81277256b",
-        "stop.occupancy": "7f776febf4c89708a1625967915b7e9d710ec389b613a8107fb3987bb0b50a24",
+        "line.ids": "0fe294ad9c6eb9a4bf6dec6741e627a2ccd14d83730ca26cdc67d72db8a36c18",
+        "line.delay": "2cd87c85c0d8b3eac6e5f4e8ac25ece1885dd14d0cb99e494d87a4e4ffc3f7df",
+        "line.percentiles": "21315ae7e30a6562c669d7b18d9e66e9579a298643385817daa7109739382640",
+        "line.cancellation": "d00f872efb8f5b7e184a4aa3bba8d9ce3665743f6677f5b437623993cb958400",
+        "line.occupancy": "30e9ab78e5c963d7dc46fdc6e1b0809da27ce58c9e55875fd8edd42126b6eef1",
+        "line.service_span": "de1bdf1847fa8d8e9ccb4921e856ab364a456c90a2d17a8bc364990535332e80",
+        "line.skipped": "5fa8b53ab4537590e97c0f04c4895d638e7da9c0e7804dfd7b87ec7e9e220632",
+        "stop.ids": "275087747169c0086b9371680980b3e3a8a66db51131f59eba8504a4f497a327",
+        "stop.delay": "cc8e382a00bab3edef1412a6a750ae4bee7368d50f8ab160284ada6ca8785319",
+        "stop.percentiles": "f36f94fc74b156284c208ccdd36156d0058575332f65c3b7c34c5debf84ca84f",
+        "stop.occupancy": "e226bc646138cd4d5aceb31d9c84c629cee060557706a29b714d9aced0310f6b",
     }
 
     public_query_names = {
@@ -1818,20 +1822,23 @@ def test_history_common_batch_loader_helpers_and_family_adoption():
     stop = _stop_history_module()
     conn = NamedQueryConn(
         {
-            "history.stops.delay": [{"stop_id": "A"}],
-            "history.stops.percentiles": [{"stop_id": "B"}],
+            "history.stops.delay.inner": [{"stop_id": "A", "local_date": "2026-07-01"}],
+            "history.stops.percentiles.inner": [{"stop_id": "B", "local_date": "2026-07-01"}],
         },
         strict=True,
     )
     sql_loader = common.prepare_history_sql_batch_loader(
         conn,
         (
-            stop._STOP_HISTORY_DELAY_DIGEST_SQL,
-            stop._STOP_HISTORY_PERCENTILES_DIGEST_SQL,
+            stop._STOP_HISTORY_DELAY_SQL,
+            stop._STOP_HISTORY_PERCENTILES_SQL,
         ),
         base_params={"provider_id": "stm"},
     )
-    assert sql_loader(["A"]) == ([{"stop_id": "A"}], [{"stop_id": "B"}])
+    assert sql_loader(["A"]) == (
+        [{"stop_id": "A", "local_date": "2026-07-01"}],
+        [{"stop_id": "B", "local_date": "2026-07-01"}],
+    )
 
     line_source = inspect.getsource(_line_history_module())
     stop_source = inspect.getsource(stop)

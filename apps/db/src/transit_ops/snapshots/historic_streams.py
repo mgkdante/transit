@@ -2,8 +2,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypeVar, cast
 
-from transit_ops.snapshots import builders, envelope, gate, uploads
-from transit_ops.snapshots import historic_receipts as receipts
+from transit_ops.snapshots import builders, envelope, gate, historic_run, uploads
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
     history_pointer_path,
@@ -16,7 +15,7 @@ from transit_ops.snapshots.contract import (
     HistoricPartitionRef,
     HistoricRepeatOffendersDay,
 )
-from transit_ops.snapshots.historic_receipts import _HistoricPublishRun
+from transit_ops.snapshots.historic_run import _HistoricPublishRun
 from transit_ops.snapshots.protocols import PayloadSink, PutItem, SnapshotPayload
 from transit_ops.snapshots.serialization import snapshot_sha256
 
@@ -129,8 +128,10 @@ def consume_history_children(
                 result.written_keys.extend(write_batch(batch))
                 batch.clear()
 
-        for ref, payload, scope_class in receipts._iter_historic_partitions(iterator, run, family):
-            with receipts._historic_child_gate_phase(run, family, scope_class):
+        for ref, payload, scope_class in historic_run._iter_historic_partitions(
+            iterator, run, family,
+        ):
+            with historic_run._historic_child_gate_phase(run, family, scope_class):
                 if record_payloads:
                     gate.record(report, ref.path, payload, retain_sha=family != "stops")
                 else:
@@ -143,12 +144,12 @@ def consume_history_children(
                 for observe in observers:
                     observe(ref, payload)
             if write_batch is not None:
-                with receipts._historic_phase_context(run, "upload"):
+                with historic_run._historic_phase_context(run, "upload"):
                     batch.append((ref.path, payload))
                     if len(batch) >= batch_size:
                         flush()
         if write_batch is not None:
-            with receipts._historic_phase_context(run, "upload"):
+            with historic_run._historic_phase_context(run, "upload"):
                 flush()
 
     if plans.network is not None:
