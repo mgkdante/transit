@@ -180,7 +180,7 @@ export function createMapRuntime(options: {
 		if (vehicleMotionMap !== m) {
 			vehicleMotion?.destroy();
 			const overlay = foreground;
-			vehicleMotion = createVehicleMotionController(m, {}, (features) => overlay.draw(features));
+			vehicleMotion = createVehicleMotionController({}, (features) => overlay.draw(features));
 			vehicleMotionMap = m;
 		}
 		ensureInteractions(m);

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
 	createVehicleMotionController,
 	type FixResolver,
@@ -9,7 +8,7 @@ import {
 	type VehicleFix,
 	type VehicleMotionController,
 } from '../vehicleMotion';
-import { VEHICLE_SOURCE, type VehicleFC, type VehicleFeature } from '../vehicleLayer';
+import type { VehicleFC, VehicleFeature } from '../vehicleLayer';
 import { type Coord } from '../polyline';
 import { BLEND_MS } from './constants';
 import { STALE_CUTOFF_S } from '../vehicleProjection';
@@ -208,10 +207,7 @@ function createControlledEngine(quantizeMs: number): ControlledEngine {
 		latestFc = cloneFc(data as VehicleFC);
 		uploads.push({ elapsedMs, fc: latestFc });
 	};
-	const map = {
-		getSource: (id: string) => (id === VEHICLE_SOURCE ? { setData } : undefined),
-	} as unknown as MapLibreMap;
-	const controller = createVehicleMotionController(map, runtime);
+	const controller = createVehicleMotionController(runtime, setData);
 	liveControllers.add(controller);
 
 	function requireLatestFc(): VehicleFC {

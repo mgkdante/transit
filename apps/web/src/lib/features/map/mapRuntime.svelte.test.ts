@@ -171,7 +171,7 @@ describe('map runtime ownership', () => {
 		const target = mapHarness();
 		const projected = { type: 'FeatureCollection', features: [] };
 		rendering.createMotion.mockImplementation((...args: unknown[]) => {
-			const publish = args[2] as (value: typeof projected) => void;
+			const publish = args[1] as (value: typeof projected) => void;
 			return { set: vi.fn(() => publish(projected)), destroy: vi.fn() };
 		});
 		rendering.feed.mockImplementation((...args: unknown[]) => {

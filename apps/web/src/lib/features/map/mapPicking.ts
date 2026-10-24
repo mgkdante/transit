@@ -1,9 +1,4 @@
-import {
-	ROUTE_LINE_HIT_LAYER,
-	STOP_EXCEPTION_LAYER,
-	STOPS_LAYER,
-	VEHICLE_BODY_LAYER,
-} from '$lib/components/map';
+import { ROUTE_LINE_HIT_LAYER, STOPS_LAYER, VEHICLE_BODY_LAYER } from '$lib/components/map';
 import { PICKABLE_MAP_LAYERS } from './mapLayerModules';
 import type { MapSelection } from './mapSelection';
 
@@ -32,7 +27,7 @@ function selectionFromFeature(feature: PickableMapFeature): MapSelection | null 
 		return id ? { kind: 'vehicle', id } : null;
 	}
 
-	if (layerId === STOPS_LAYER || layerId === STOP_EXCEPTION_LAYER) {
+	if (layerId === STOPS_LAYER) {
 		const id = stringProperty(feature, 'id');
 		return id ? { kind: 'stop', id } : null;
 	}

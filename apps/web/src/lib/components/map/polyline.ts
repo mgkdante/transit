@@ -114,39 +114,3 @@ export function walkAlong(
 		bearing: bearingFromDelta(bLon - aLon, bLat - aLat),
 	};
 }
-
-export type PathInterpolator = (progress: number) => PathSample;
-
-export function buildPathBetween(
-	coords: readonly Coord[],
-	fromPoint: Coord,
-	toPoint: Coord,
-	maxOffRouteM = 60,
-): PathInterpolator | null {
-	if (coords.length < 2) return null;
-	const lengths = cumulativeLengths(coords);
-	if (lengths[lengths.length - 1] <= 0) return null;
-
-	const projFrom = projectToPolyline(coords, fromPoint, lengths);
-	const projTo = projectToPolyline(coords, toPoint, lengths);
-	if (!projFrom || !projTo) return null;
-	if (projFrom.distance > maxOffRouteM || projTo.distance > maxOffRouteM) return null;
-
-	const sFrom = projFrom.s;
-	const sTo = projTo.s;
-	if (Math.abs(sTo - sFrom) < 1) return null;
-
-	return (progress: number) => {
-		const t = progress <= 0 ? 0 : progress >= 1 ? 1 : progress;
-		const s = sFrom + (sTo - sFrom) * t;
-		return walkAlong(coords, s, lengths) as PathSample;
-	};
-}
-
-export function chordBearing(fromPoint: Coord, toPoint: Coord): number | null {
-	const dLon = toPoint[0] - fromPoint[0];
-	const dLat = toPoint[1] - fromPoint[1];
-	const { x, y } = toMetres(dLon, dLat);
-	if (x === 0 && y === 0) return null;
-	return bearingFromDelta(dLon, dLat);
-}

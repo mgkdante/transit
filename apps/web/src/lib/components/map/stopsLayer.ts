@@ -6,8 +6,6 @@ import { resolveColor, STOP_ICON } from './vehicleSprites';
 export const STOPS_SOURCE = 'stops';
 export const STOP_HIGHLIGHT_LAYER = 'stop-highlight';
 export const STOPS_LAYER = 'stops';
-export const STOP_EXCEPTION_SOURCE = 'stop-exception';
-export const STOP_EXCEPTION_LAYER = 'stop-exception';
 
 interface StopFeature {
 	type: 'Feature';
@@ -274,95 +272,4 @@ export function setStops(
 			GeoJSONSource['setData']
 		>[0],
 	);
-}
-
-interface StopExceptionFeature {
-	type: 'Feature';
-	geometry: { type: 'Point'; coordinates: [number, number] };
-	properties: {
-		id: string;
-		name: string;
-		code: string;
-		selected: number;
-		hovered: number;
-	};
-}
-
-interface StopExceptionFC {
-	type: 'FeatureCollection';
-	features: StopExceptionFeature[];
-}
-
-const EMPTY_EXCEPTION_FC: StopExceptionFC = { type: 'FeatureCollection', features: [] };
-
-export function addStopExceptionSource(map: MapLibreMap): void {
-	if (map.getSource(STOP_EXCEPTION_SOURCE)) return;
-	map.addSource(STOP_EXCEPTION_SOURCE, { type: 'geojson', data: EMPTY_EXCEPTION_FC });
-}
-
-export function addStopExceptionLayer(map: MapLibreMap): void {
-	if (map.getLayer(STOP_EXCEPTION_LAYER)) return;
-	map.addLayer({
-		id: STOP_EXCEPTION_LAYER,
-		type: 'symbol',
-		source: STOP_EXCEPTION_SOURCE,
-		maxzoom: 8,
-		layout: {
-			'icon-image': STOP_ICON,
-			'icon-size': [
-				'interpolate',
-				['linear'],
-				['zoom'],
-				0,
-				['case', ['==', ['get', 'selected'], 1], 0.62, ['==', ['get', 'hovered'], 1], 1.3, 0],
-				8,
-				['case', ['==', ['get', 'selected'], 1], 0.95, ['==', ['get', 'hovered'], 1], 1.55, 0],
-			],
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-		},
-		paint: {
-			'icon-opacity': [
-				'case',
-				['==', ['get', 'selected'], 1],
-				0.95,
-				['==', ['get', 'hovered'], 1],
-				1,
-				0,
-			],
-		},
-	} as unknown as LayerSpecification);
-}
-
-export function setStopException(
-	map: MapLibreMap,
-	stopsById: Readonly<Record<string, StopIndexEntry>>,
-	selectedStopId: string | null,
-	hoveredStopId: string | null,
-): void {
-	const features: StopExceptionFeature[] = [];
-	const add = (id: string, selected: number, hovered: number) => {
-		const stop = Object.hasOwn(stopsById, id) ? stopsById[id] : undefined;
-		if (!stop) return;
-		features.push({
-			type: 'Feature',
-			geometry: { type: 'Point', coordinates: [stop.lon, stop.lat] },
-			properties: {
-				id: stop.id,
-				name: stop.name,
-				code: stop.code ?? '',
-				selected,
-				hovered,
-			},
-		});
-	};
-
-	if (selectedStopId) add(selectedStopId, 1, 0);
-	if (hoveredStopId && hoveredStopId !== selectedStopId) add(hoveredStopId, 0, 1);
-
-	const source = map.getSource(STOP_EXCEPTION_SOURCE) as GeoJSONSource | undefined;
-	source?.setData({
-		type: 'FeatureCollection',
-		features,
-	} as unknown as Parameters<GeoJSONSource['setData']>[0]);
 }
