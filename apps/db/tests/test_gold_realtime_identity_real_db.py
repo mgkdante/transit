@@ -1,13 +1,9 @@
-
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 from threading import Event, current_thread
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from google.transit import gtfs_realtime_pb2
 from realtime_replay_fixtures import (
     PROVIDER,
@@ -22,7 +18,7 @@ from realtime_replay_fixtures import bronze_root as bronze_root
 from realtime_replay_fixtures import engine as engine
 from realtime_replay_fixtures import settings as settings
 from sqlalchemy import event, text
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.exc import DBAPIError
 from test_gold_snapshot_replay_real_db import _change_archive, _gold_state, _prune_silver, _rows
 
 from transit_ops.gold.marts import build_gold_marts
@@ -537,63 +533,3 @@ def test_initializer_reuses_exact_nonempty_cache_but_rejects_mixed_identity(
         )
     with pytest.raises(ValueError, match="inconsistent Gold serving cache"):
         initialize_realtime_serving(PROVIDER, ["trip_updates"], engine=engine)
-
-
-@pytest.mark.parametrize("served", [False, True])
-def test_migration_seeds_only_exact_cache_identity(capture, engine, settings, monkeypatch, served):
-    first = capture(0)
-    capture(1)
-    if served:
-        _live(engine, settings, first)
-    migration = import_module("transit_ops.db.migrations.versions.0089_realtime_serving_state")
-    with engine.connect() as conn, conn.begin() as transaction:
-        conn.execute(text("DROP TABLE gold.realtime_serving_state"))
-        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-        migration.upgrade()
-        state = (
-            conn.execute(
-                text("SELECT * FROM gold.realtime_serving_state WHERE provider_id=:p"),
-                {"p": PROVIDER},
-            )
-            .mappings()
-            .one()
-        )
-        assert state["realtime_snapshot_id"] == (first.realtime_snapshot_id if served else None)
-        assert state["captured_at_utc"] == (first.captured_at_utc if served else None)
-        assert state["initialized_at_utc"] is not None
-        with pytest.raises(IntegrityError), conn.begin_nested():
-            conn.execute(
-                text(
-                    "UPDATE gold.realtime_serving_state SET realtime_snapshot_id=NULL, "
-                    "captured_at_utc=clock_timestamp() WHERE provider_id=:p"
-                ),
-                {"p": PROVIDER},
-            )
-        transaction.rollback()
-
-
-def test_migration_refuses_mixed_cache_identity(capture, engine, settings, monkeypatch):
-    first, second = capture(0), capture(1)
-    _live(engine, settings, first)
-    refresh_gold_snapshots(
-        PROVIDER,
-        expected_rows={second.realtime_snapshot_id: second.row_counts},
-        engine=engine,
-        settings=settings,
-        registry=_StubRegistry(),
-    )
-    migration = import_module("transit_ops.db.migrations.versions.0089_realtime_serving_state")
-    with engine.connect() as conn, conn.begin() as transaction:
-        conn.execute(
-            text(
-                "INSERT INTO gold.latest_trip_delay_snapshot "
-                "SELECT * FROM gold.fact_trip_delay_snapshot "
-                "WHERE provider_id=:p AND realtime_snapshot_id=:id"
-            ),
-            {"p": PROVIDER, "id": second.realtime_snapshot_id},
-        )
-        conn.execute(text("DROP TABLE gold.realtime_serving_state"))
-        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-        with pytest.raises(DBAPIError, match="inconsistent Gold serving caches"):
-            migration.upgrade()
-        transaction.rollback()

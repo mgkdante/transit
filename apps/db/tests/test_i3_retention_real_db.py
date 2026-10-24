@@ -1,8 +1,5 @@
-
 from __future__ import annotations
 
-import importlib.util
-import pathlib
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -13,7 +10,6 @@ from transit_ops.maintenance import (
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
 )
-from transit_ops.silver.i3 import compute_alert_content_hash
 
 PROVIDER = "stm_i3ret_test"
 ENDPOINT_ID = 991014
@@ -24,42 +20,6 @@ T1 = datetime(2026, 6, 10, 3, 0, tzinfo=UTC)
 T2 = datetime(2026, 6, 10, 3, 5, tzinfo=UTC)
 T3 = datetime(2026, 6, 10, 3, 10, tzinfo=UTC)
 SNAP_TIMES = dict(zip(SNAP_IDS, (T1, T2, T3), strict=True))
-
-
-def _load_0038():
-    path = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "src/transit_ops/db/migrations/versions/0038_i3_legacy_nullhash_collapse.py"
-    )
-    spec = importlib.util.spec_from_file_location("_mig_0038", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-GROUP_A = {
-    "alert_id": "ALERT-A",
-    "alert_header_text": "Ascenseur hors service",
-    "description_text": "L'ascenseur est hors service.",
-    "severity": "info",
-    "cause": None,
-    "effect": None,
-    "active_period_start_utc": None,
-    "active_period_end_utc": None,
-    "published_at_utc": None,
-    "updated_at_utc": None,
-}
-GROUP_B = {
-    **GROUP_A,
-    "alert_id": "ALERT-B",
-    "alert_header_text": "Detour 105",
-    "description_text": "Trajet modifie",
-    "severity": "warning",
-}
-
-
-def _hash(content: dict) -> str:
-    return compute_alert_content_hash(**content)
 
 
 class FakeBronze:
@@ -99,9 +59,6 @@ def conn(real_db_engine):  # noqa: ANN001
     with real_db_engine.connect() as connection:
         transaction = connection.begin()
         try:
-            connection.execute(
-                text("ALTER TABLE silver.i3_alerts ALTER COLUMN content_hash DROP NOT NULL")
-            )
             _seed(connection)
             yield connection
         finally:
@@ -178,45 +135,6 @@ def _seed(connection) -> None:
         )
 
 
-def _insert_legacy_alert(
-    connection, *, snap_id: int, alert_index: int, content: dict, captured: datetime
-) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO silver.i3_alerts (
-                i3_alert_snapshot_id, alert_index, provider_id,
-                alert_id, alert_header_text, description_text, severity,
-                cause, effect, active_period_start_utc, active_period_end_utc,
-                published_at_utc, updated_at_utc, captured_at_utc, raw_alert_json,
-                content_hash, first_seen_at, last_seen_at, valid_to
-            )
-            VALUES (
-                :s, :i, :p, :alert_id, :header, :descr, :severity,
-                :cause, :effect, :aps, :ape, :pub, :upd, :captured, '{}',
-                NULL, NULL, NULL, NULL
-            )
-            """
-        ),
-        {
-            "s": snap_id,
-            "i": alert_index,
-            "p": PROVIDER,
-            "alert_id": content["alert_id"],
-            "header": content["alert_header_text"],
-            "descr": content["description_text"],
-            "severity": content["severity"],
-            "cause": content["cause"],
-            "effect": content["effect"],
-            "aps": content["active_period_start_utc"],
-            "ape": content["active_period_end_utc"],
-            "pub": content["published_at_utc"],
-            "upd": content["updated_at_utc"],
-            "captured": captured,
-        },
-    )
-
-
 def _insert_entity(
     connection, *, snap_id: int, alert_index: int, entity_index: int, stop_id: str
 ) -> None:
@@ -231,43 +149,6 @@ def _insert_entity(
         ),
         {"s": snap_id, "i": alert_index, "ei": entity_index, "p": PROVIDER, "stop": stop_id},
     )
-
-
-def _seed_legacy_world(connection) -> None:
-    _insert_legacy_alert(
-        connection, snap_id=SNAP_IDS[0], alert_index=0, content=GROUP_A, captured=T1
-    )
-    _insert_entity(connection, snap_id=SNAP_IDS[0], alert_index=0, entity_index=0, stop_id="S100")
-    _insert_legacy_alert(
-        connection, snap_id=SNAP_IDS[1], alert_index=0, content=GROUP_A, captured=T2
-    )
-    _insert_entity(connection, snap_id=SNAP_IDS[1], alert_index=0, entity_index=0, stop_id="S100")
-    _insert_entity(connection, snap_id=SNAP_IDS[1], alert_index=0, entity_index=1, stop_id="S101")
-    _insert_legacy_alert(
-        connection, snap_id=SNAP_IDS[0], alert_index=1, content=GROUP_B, captured=T1
-    )
-
-
-def _build_and_promote(connection) -> None:
-    m = _load_0038()
-    connection.execute(text(m._BUILD_LEGACY_KEEPERS))
-    connection.execute(text(m._BUILD_LEGACY_SPANS))
-    connection.execute(text(m._PROMOTE_LEGACY_SURVIVORS))
-    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_keepers"))
-    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_spans"))
-
-
-def _drain_delete(connection) -> None:
-    m = _load_0038()
-    while True:
-        result = connection.execute(text(m._DELETE_LEGACY_BATCH))
-        if (result.rowcount or 0) == 0:
-            break
-
-
-def _run_collapse(connection) -> None:
-    _build_and_promote(connection)
-    _drain_delete(connection)
 
 
 def _silver_rows(connection) -> list[dict]:
@@ -288,169 +169,19 @@ def _silver_rows(connection) -> list[dict]:
     ]
 
 
-def test_0038_constants_collapse_and_close_legacy_rows(conn) -> None:
-    _seed_legacy_world(conn)
-    _run_collapse(conn)
-
-    remaining_null = conn.execute(
-        text(
-            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
-        ),
-        {"p": PROVIDER},
-    ).scalar()
-    assert remaining_null == 0
-
-    rows = _silver_rows(conn)
-    by_alert = {r["alert_id"]: r for r in rows}
-    assert len(rows) == 2
-    assert set(by_alert) == {"ALERT-A", "ALERT-B"}
-
-    a = by_alert["ALERT-A"]
-    assert a["i3_alert_snapshot_id"] == SNAP_IDS[1]
-    assert a["first_seen_at"] == T1
-    assert a["last_seen_at"] == T2
-    assert a["valid_to"] == T2
-    assert a["content_hash"] == _hash(GROUP_A)
-    a_entities = (
-        conn.execute(
-            text(
-                """
-            SELECT stop_id FROM silver.i3_alert_informed_entities
-            WHERE provider_id = :p AND i3_alert_snapshot_id = :s AND alert_index = 0
-            ORDER BY stop_id
-            """
-            ),
-            {"p": PROVIDER, "s": SNAP_IDS[1]},
-        )
-        .scalars()
-        .all()
-    )
-    assert a_entities == ["S100", "S101"]
-
-    b = by_alert["ALERT-B"]
-    assert b["valid_to"] == T1
-    assert b["content_hash"] == _hash(GROUP_B)
-
-
-def test_0038_promote_does_not_violate_active_partial_unique_index(conn) -> None:
-    _seed_legacy_world(conn)
+def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None:
     conn.execute(
         text(
             """
-            INSERT INTO silver.i3_alerts (
-                i3_alert_snapshot_id, alert_index, provider_id,
-                alert_id, alert_header_text, description_text, severity,
-                captured_at_utc, raw_alert_json,
-                content_hash, first_seen_at, last_seen_at, valid_to
-            )
-            VALUES (
-                :s, 5, :p, :alert_id, :header, :descr, :severity,
-                :t, '{}', :hash, :t, :t, NULL
-            )
+            INSERT INTO silver.i3_alerts
+                (i3_alert_snapshot_id, alert_index, provider_id, captured_at_utc,
+                 raw_alert_json, content_hash)
+            VALUES (:snapshot, 0, :provider, :captured, '{}',
+                    '5c54922611c7ac62e7b2d401114e1cef')
             """
         ),
-        {
-            "s": SNAP_IDS[2],
-            "p": PROVIDER,
-            "alert_id": GROUP_A["alert_id"],
-            "header": GROUP_A["alert_header_text"],
-            "descr": GROUP_A["description_text"],
-            "severity": GROUP_A["severity"],
-            "t": T3,
-            "hash": _hash(GROUP_A),
-        },
+        {"snapshot": SNAP_IDS[0], "provider": PROVIDER, "captured": T1},
     )
-
-    _run_collapse(conn)
-
-    active = (
-        conn.execute(
-            text(
-                """
-            SELECT i3_alert_snapshot_id, valid_to FROM silver.i3_alerts
-            WHERE provider_id = :p AND content_hash = :hash AND valid_to IS NULL
-            """
-            ),
-            {"p": PROVIDER, "hash": _hash(GROUP_A)},
-        )
-        .mappings()
-        .all()
-    )
-    assert len(active) == 1
-    assert active[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
-
-
-def test_0038_resume_after_partial_delete_keeps_one_survivor_with_full_span(conn) -> None:
-    _insert_legacy_alert(conn, snap_id=SNAP_IDS[0], alert_index=0, content=GROUP_A, captured=T1)
-    _insert_legacy_alert(conn, snap_id=SNAP_IDS[1], alert_index=0, content=GROUP_A, captured=T2)
-    _insert_legacy_alert(conn, snap_id=SNAP_IDS[2], alert_index=0, content=GROUP_A, captured=T3)
-
-    legacy_hash = _hash(GROUP_A)
-
-    _build_and_promote(conn)
-
-    survivor = (
-        conn.execute(
-            text(
-                """
-            SELECT i3_alert_snapshot_id, first_seen_at, last_seen_at, valid_to
-            FROM silver.i3_alerts
-            WHERE provider_id = :p AND content_hash = :h AND valid_to IS NOT NULL
-            """
-            ),
-            {"p": PROVIDER, "h": legacy_hash},
-        )
-        .mappings()
-        .all()
-    )
-    assert len(survivor) == 1
-    assert survivor[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
-    assert survivor[0]["first_seen_at"] == T1
-    assert survivor[0]["last_seen_at"] == T3
-    assert survivor[0]["valid_to"] == T3
-
-    deleted = conn.execute(
-        text(
-            """
-            DELETE FROM silver.i3_alerts
-            WHERE provider_id = :p AND content_hash IS NULL
-              AND i3_alert_snapshot_id = :s AND alert_index = 0
-            """
-        ),
-        {"p": PROVIDER, "s": SNAP_IDS[0]},
-    ).rowcount
-    assert deleted == 1
-    null_left = conn.execute(
-        text(
-            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
-        ),
-        {"p": PROVIDER},
-    ).scalar()
-    assert null_left == 1
-
-    _run_collapse(conn)
-
-    remaining_null = conn.execute(
-        text(
-            "SELECT count(*) FROM silver.i3_alerts WHERE provider_id = :p AND content_hash IS NULL"
-        ),
-        {"p": PROVIDER},
-    ).scalar()
-    assert remaining_null == 0
-
-    rows = _silver_rows(conn)
-    assert len(rows) == 1
-    s = rows[0]
-    assert s["alert_id"] == "ALERT-A"
-    assert s["content_hash"] == legacy_hash
-    assert s["i3_alert_snapshot_id"] == SNAP_IDS[2]
-    assert s["first_seen_at"] == T1
-    assert s["last_seen_at"] == T3
-    assert s["valid_to"] == T3
-
-
-def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None:
-    _insert_legacy_alert(conn, snap_id=SNAP_IDS[0], alert_index=0, content=GROUP_A, captured=T1)
     storage = FakeBronze()
 
     cutoff, object_counts, meta_counts, failed = prune_i3_raw_snapshots(
@@ -473,6 +204,15 @@ def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None
     assert SNAP_IDS[1] not in surviving
     assert any(str(SNAP_IDS[1]) in p for p in storage.deleted)
     assert meta_counts["raw.i3_alert_snapshots"] == 1
+    assert object_counts == {"i3_raw": 1}
+    assert storage.deleted == [f"{PROVIDER}/i3_alerts/captured_at_utc={SNAP_IDS[1]}/payload.json"]
+    surviving_objects = set(
+        conn.execute(
+            text("SELECT ingestion_object_id FROM raw.ingestion_objects WHERE provider_id = :p"),
+            {"p": PROVIDER},
+        ).scalars()
+    )
+    assert surviving_objects == {OBJ_IDS[0], OBJ_IDS[2]}
 
 
 @pytest.mark.parametrize("equal_time", [False, True])

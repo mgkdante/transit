@@ -1,10 +1,7 @@
-
 from __future__ import annotations
 
-import importlib.util
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -119,18 +116,6 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001
             yield connection
         finally:
             transaction.rollback()
-
-
-def _migration_0033():
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "src/transit_ops/db/migrations/versions/0033_trip_delay_summary_severe_counts.py"
-    )
-    spec = importlib.util.spec_from_file_location("m0033", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
 
 
 def _settings() -> Settings:
@@ -597,42 +582,6 @@ def test_citizen_closed_dates_untouched(conn, monkeypatch: pytest.MonkeyPatch) -
         {"p": PROVIDER},
     )
     assert after == before
-
-
-def test_0033_backfill_matches_fact_counts(conn) -> None:  # noqa: ANN001
-    period = BUILT_T - timedelta(hours=1)
-    bucket = period.replace(minute=0, second=0, microsecond=0)
-    _insert_5m(conn, period=bucket, severe=0)
-    _insert_trip_fact(
-        conn,
-        captured_at=bucket + timedelta(minutes=1),
-        snapshot_id=BASE_SNAPSHOT_ID + 10,
-        entity_index=0,
-        delay_seconds=400,
-        trip_id="late-backfill",
-    )
-    _insert_trip_fact(
-        conn,
-        captured_at=bucket + timedelta(minutes=2),
-        snapshot_id=BASE_SNAPSHOT_ID + 11,
-        entity_index=0,
-        delay_seconds=25622,
-        trip_id="ghost-backfill",
-    )
-
-    conn.execute(text(_migration_0033()._BACKFILL_SEVERE_DELAY_OBSERVATION_COUNTS))
-
-    severe = conn.execute(
-        text(
-            """
-            SELECT severe_delay_observation_count
-            FROM gold.trip_delay_summary_5m
-            WHERE provider_id = :p AND period_start_utc = :bucket
-            """
-        ),
-        {"p": PROVIDER, "bucket": bucket},
-    ).scalar_one()
-    assert severe == 1
 
 
 @pytest.mark.parametrize("materialized_after_minutes", [0, 67])

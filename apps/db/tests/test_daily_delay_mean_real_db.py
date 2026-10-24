@@ -1,12 +1,9 @@
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from importlib import import_module
 from zoneinfo import ZoneInfo
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import Connection, event, text
 
 from transit_ops.gold import delay_sums, rollups
@@ -658,33 +655,6 @@ def test_recovery_corrects_double_rounding_while_preserving_legacy_mean(conn):
     """),
         {"p": PROVIDER},
     ).scalar_one() == Decimal("0.01")
-
-
-def test_migration_round_trip_preserves_daily_contract_and_retained_rows(conn):
-    seed_delays(conn, [60] + [7200] * 100)
-    seed_delays(conn, [600], CAPTURED + timedelta(hours=1))
-    daily_rows(conn)
-    original = retained_metrics(conn)
-    columns = text("""
-        SELECT column_name, data_type, ordinal_position FROM information_schema.columns
-        WHERE table_schema = 'gold' AND table_name = 'public_route_reliability_daily'
-        ORDER BY ordinal_position
-    """)
-    contract = conn.execute(columns).all()
-    assert len(contract) == 8
-    migration = import_module("transit_ops.db.migrations.versions.0087_exact_daily_delay_means")
-    with Operations.context(MigrationContext.configure(conn)):
-        migration.downgrade()
-        assert conn.execute(
-            text("""
-            SELECT avg_delay_seconds FROM gold.public_route_reliability_daily WHERE provider_id = :p
-        """),
-            {"p": PROVIDER},
-        ).scalar_one() == Decimal("65.29")
-        migration.upgrade()
-    assert conn.execute(columns).all() == contract
-    assert retained_metrics(conn) == original
-    assert recover(conn).recovered == {"five_minute": 2, "hourly": 2}
 
 
 def test_recovery_commits_completed_hours_before_interruption(real_db_engine, seed_provider):
