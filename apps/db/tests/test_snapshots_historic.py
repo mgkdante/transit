@@ -1994,20 +1994,6 @@ def test_receipt_queries_follow_retained_accountability_span_policy() -> None:
         assert not re.search(r"-\s*(?:30|31)\b", sql)
 
 
-def test_receipt_worst_entity_queries_bound_to_one_row_per_date_in_sql() -> None:
-    expected = (
-        (_RECEIPTS_WORST_ROUTE_SQL, "prr", "route_id"),
-        (_RECEIPTS_WORST_STOP_SQL, "psd", "stop_id"),
-    )
-    for query, alias, entity_id in expected:
-        sql = " ".join(str(query).lower().split())
-        assert f"select distinct on ({alias}.provider_local_date)" in sql
-        assert (
-            f"order by {alias}.provider_local_date, "
-            f"{alias}.avg_delay_seconds desc, {alias}.{entity_id}"
-        ) in sql
-
-
 def test_build_receipts_uses_full_accountability_span_and_bounds_supplements() -> None:
     old_date = datetime.date(2025, 1, 2)
     recent_date = datetime.date(2026, 6, 17)

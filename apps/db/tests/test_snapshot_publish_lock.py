@@ -71,25 +71,11 @@ class _Engine:
 
 class _Store(MemorySnapshotStore):
     def __init__(self, events: list[str]) -> None:
-        super().__init__()
-        self.events = events
-
-    def full_key(self, rel_key: str) -> str:
-        return rel_key
+        super().__init__(event_sink=events)
 
     def get_json(self, rel_key: str):  # noqa: ANN201
-        self.events.append(f"get:{rel_key}")
+        super().get_json(rel_key)
         return None
-
-    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
-        self.events.append(f"put:{rel_key}")
-        self.objects[rel_key] = body
-        return rel_key
-
-    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        from transit_ops.snapshots.serialization import snapshot_json_bytes
-
-        return self.put_bytes(rel_key, snapshot_json_bytes(payload), tier=tier)
 
 
 class _Settings:
