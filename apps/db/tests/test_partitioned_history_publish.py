@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from historic_graph_fixtures import graph_from_bundles
+from snapshot_storage_fixtures import MemorySnapshotStore
 from test_partitioned_history_builders import _line_history_rows, _network_history_rows
 
 from transit_ops.snapshots import (
@@ -512,13 +513,11 @@ def _readdress_network_bundle(index, partitions):  # noqa: ANN001, ANN202
 
 
 class _RecordingStore:
-    def __init__(self, *, fail_index: bool = False, fail_partition: bool = False) -> None:
+    def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.objects: dict[str, bytes] = {}
         self.immutable_written: list[str] = []
         self.immutable_skipped: list[str] = []
-        self.fail_index = fail_index
-        self.fail_partition = fail_partition
 
     def capture_stable_version(self, rel_key):  # noqa: ANN001, ANN201
         body = self.objects.get(rel_key)
@@ -528,13 +527,6 @@ class _RecordingStore:
     def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
         body = snapshot_json_bytes(payload)
         self.calls.append(("immutable", rel_key))
-        if self.fail_partition:
-            raise RuntimeError("partition write failed")
-        if self.fail_index and re.fullmatch(
-            r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
-            rel_key,
-        ):
-            raise RuntimeError("index write failed")
         if self.objects.get(rel_key) == body:
             self.immutable_skipped.append(rel_key)
         else:
@@ -1309,54 +1301,23 @@ def test_pointer_stage_failure_preserves_complete_previously_active_graph(
         stop_plan=stop_plan,
     )
 
-    class FailStage(_RecordingStore):
-        active_failure: str | None = None
+    patterns = {
+        "network_index": r"^historic/history/network/generations/[0-9a-f]{64}/index\.json$",
+        "alert_index": r"^historic/alerts/generations/[0-9a-f]{64}/index\.json$",
+        "receipt_index": r"^historic/receipts/generations/[0-9a-f]{64}/index\.json$",
+        "line_entity_index": (
+            r"^historic/history/lines/[0-9a-f]+/generations/"
+            r"[0-9a-f]{64}/index\.json$"
+        ),
+        "stop_entity_index": (
+            r"^historic/history/stops/[0-9a-f]+/generations/"
+            r"[0-9a-f]{64}/index\.json$"
+        ),
+        "lines_directory": (r"^historic/history/lines/generations/[0-9a-f]{64}/index\.json$"),
+        "stops_directory": (r"^historic/history/stops/generations/[0-9a-f]{64}/index\.json$"),
+    }
 
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            patterns = {
-                "network_index": r"^historic/history/network/generations/[0-9a-f]{64}/index\.json$",
-                "alert_index": r"^historic/alerts/generations/[0-9a-f]{64}/index\.json$",
-                "receipt_index": r"^historic/receipts/generations/[0-9a-f]{64}/index\.json$",
-                "line_entity_index": (
-                    r"^historic/history/lines/[0-9a-f]+/generations/"
-                    r"[0-9a-f]{64}/index\.json$"
-                ),
-                "stop_entity_index": (
-                    r"^historic/history/stops/[0-9a-f]+/generations/"
-                    r"[0-9a-f]{64}/index\.json$"
-                ),
-                "lines_directory": (
-                    r"^historic/history/lines/generations/[0-9a-f]{64}/index\.json$"
-                ),
-                "stops_directory": (
-                    r"^historic/history/stops/generations/[0-9a-f]{64}/index\.json$"
-                ),
-            }
-            pattern = patterns.get(self.active_failure or "")
-            if pattern is not None and re.fullmatch(pattern, rel_key):
-                self.calls.append(("immutable", rel_key))
-                raise RuntimeError(f"{self.active_failure} failed")
-            return super().put_immutable_json(rel_key, payload)
-
-        def activate_stable_json(
-            self,
-            rel_key,
-            payload,
-            *,
-            expected_version,
-            tier,
-        ):  # noqa: ANN001, ANN201
-            if self.active_failure == "root":
-                self.calls.append(("normal", rel_key))
-                raise RuntimeError("root failed")
-            return super().activate_stable_json(
-                rel_key,
-                payload,
-                expected_version=expected_version,
-                tier=tier,
-            )
-
-    store = FailStage()
+    store = MemorySnapshotStore()
     _publish_historic(
         object(),
         store,
@@ -1366,7 +1327,9 @@ def test_pointer_stage_failure_preserves_complete_previously_active_graph(
         gate_report=_gate_report(analytics_gate),
     )
     old_graph = _reachable_history_graph(store)
-    store.active_failure = failure_stage
+    store.fail_key = "historic/history/index.json" if failure_stage == "root" else None
+    store.fail_pattern = patterns.get(failure_stage)
+    store.error = RuntimeError(f"{failure_stage} failed")
 
     with pytest.raises(RuntimeError, match=rf"{failure_stage} failed"):
         _publish_historic(
@@ -1740,14 +1703,7 @@ def test_line_history_second_immutable_failure_preserves_every_existing_pointer(
     target = bundle.partition_items[1][0]
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
 
-    class FailSecondLineImmutable(_RecordingStore):
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if rel_key == target:
-                self.calls.append(("immutable", rel_key))
-                raise RuntimeError("second Line immutable failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailSecondLineImmutable()
+    store = MemorySnapshotStore(fail_key=target, error=RuntimeError("second Line immutable failed"))
     expected_pointers = _seed_retained_pointers(store, bundle)
 
     with pytest.raises(RuntimeError, match="second Line immutable failed"):
@@ -1780,14 +1736,9 @@ def test_line_history_compatibility_failure_preserves_every_existing_pointer(
         compatibility_items=[(compatibility_key, {"ready": True}, "historic")],
     )
 
-    class FailCompatibility(_RecordingStore):
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if rel_key == compatibility_key:
-                self.calls.append(("normal", rel_key))
-                raise RuntimeError("compatibility failed")
-            return super().put_json(rel_key, payload, tier=tier)
-
-    store = FailCompatibility()
+    store = MemorySnapshotStore(
+        fail_key=compatibility_key, error=RuntimeError("compatibility failed")
+    )
     expected_pointers = _seed_retained_pointers(store, bundle)
 
     with pytest.raises(RuntimeError, match="compatibility failed"):
@@ -1815,18 +1766,13 @@ def test_line_history_entity_index_failure_preserves_directory_and_later_pointer
     encoded_target = encode_history_entity_id(bundle.indexes[1].entity_id or "")
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
 
-    class FailEntityIndex(_RecordingStore):
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if re.fullmatch(
-                rf"historic/history/lines/{encoded_target}/generations/"
-                r"[0-9a-f]{64}/index\.json",
-                rel_key,
-            ):
-                self.calls.append(("immutable", rel_key))
-                raise RuntimeError("Line entity index failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailEntityIndex()
+    store = MemorySnapshotStore(
+        fail_pattern=(
+            rf"historic/history/lines/{encoded_target}/generations/"
+            r"[0-9a-f]{64}/index\.json"
+        ),
+        error=RuntimeError("Line entity index failed"),
+    )
     expected_pointers = _seed_retained_pointers(store, bundle)
 
     with pytest.raises(RuntimeError, match="Line entity index failed"):
@@ -1841,44 +1787,6 @@ def test_line_history_entity_index_failure_preserves_directory_and_later_pointer
 
     assert all(store.objects[key] == value for key, value in expected_pointers.items())
     assert "historic/history/index.json" not in store.objects
-
-
-@pytest.mark.parametrize("analytics_gate", [False, True])
-def test_line_history_directory_failure_preserves_existing_directory_bytes(
-    monkeypatch,
-    analytics_gate: bool,
-):
-    line_plan = _line_history_plan()
-    bundle = line_plan.materialize()
-    directory_key = "historic/history/lines/index.json"
-    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
-
-    class FailDirectory(_RecordingStore):
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if re.fullmatch(
-                r"historic/history/lines/generations/[0-9a-f]{64}/index\.json",
-                rel_key,
-            ):
-                self.calls.append(("immutable", rel_key))
-                raise RuntimeError("Lines directory failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailDirectory()
-    expected_pointers = _seed_retained_pointers(store, bundle)
-
-    with pytest.raises(RuntimeError, match="Lines directory failed"):
-        _publish_historic(
-            object(),
-            store,
-            provider_id="stm",
-            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
-            stamp="2026-07-13T00:00:00Z",
-            gate_report=_gate_report(analytics_gate),
-        )
-
-    assert store.objects[directory_key] == expected_pointers[directory_key]
-    assert "historic/history/index.json" not in store.objects
-    assert store.calls[-1][0] == "immutable"
 
 
 def test_network_history_actual_historic_publish_is_structural_and_root_last(
@@ -2100,25 +2008,20 @@ def test_concurrent_delayed_network_child_failure_never_activates_parents(
         stop_plan=_empty_stop_history_plan(),
     )
 
-    class FailingConcurrentStore(_RecordingStore):
-        def __init__(self) -> None:
-            super().__init__()
-            self.second_started = threading.Event()
+    second_started = threading.Event()
 
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if rel_key == first_path:
-                if not self.second_started.wait(timeout=1):
-                    raise AssertionError("failing child did not run concurrently")
-                return super().put_immutable_json(rel_key, payload)
-            if rel_key == second_path:
-                self.second_started.set()
-                self.calls.append(("immutable", rel_key))
-                if failure_kind == "collision":
-                    raise ImmutableKeyCollisionError(rel_key)
-                raise RuntimeError("Network child upload failed")
-            return super().put_immutable_json(rel_key, payload)
+    def pause_child(rel_key: str) -> None:
+        if rel_key == first_path and not second_started.wait(timeout=1):
+            raise AssertionError("failing child did not run concurrently")
+        if rel_key == second_path:
+            second_started.set()
 
-    store = FailingConcurrentStore()
+    error = (
+        ImmutableKeyCollisionError(second_path)
+        if failure_kind == "collision"
+        else RuntimeError("Network child upload failed")
+    )
+    store = MemorySnapshotStore(fail_key=second_path, error=error, pause=pause_child)
     old_pointers = {
         "historic/history/network/index.json": b"old-network-index",
         "historic/history/lines/index.json": b"old-lines-directory",
@@ -2444,20 +2347,8 @@ def test_network_history_second_month_put_failure_preserves_existing_pointer(
     index_key = "historic/history/network/index.json"
     old_pointer = b"preexisting-network-index"
 
-    class FailSecondPartitionStore(_RecordingStore):
-        def __init__(self) -> None:
-            super().__init__()
-            self.objects[index_key] = old_pointer
-            self.partition_puts = 0
-
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            self.partition_puts += 1
-            if self.partition_puts == 2:
-                self.calls.append(("immutable", rel_key))
-                raise RuntimeError("second partition write failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailSecondPartitionStore()
+    store = MemorySnapshotStore(fail_at=2, error=RuntimeError("second partition write failed"))
+    store.objects[index_key] = old_pointer
     with pytest.raises(RuntimeError, match="second partition write failed"):
         _publish_historic(
             object(),
@@ -2472,44 +2363,6 @@ def test_network_history_second_month_put_failure_preserves_existing_pointer(
     assert bundle.index.partitions[0].path in store.objects
     assert bundle.index.partitions[1].path not in store.objects
     assert not any(kind == "normal" for kind, _path in store.calls)
-
-
-@pytest.mark.parametrize("analytics_gate", [False, True])
-def test_network_history_index_put_failure_leaves_children_without_activating_root(
-    monkeypatch,
-    analytics_gate: bool,
-):
-    plan = _network_history_plan()
-    bundle = plan.materialize()
-    _patch_minimal_historic(
-        monkeypatch,
-        network_plan=plan,
-        line_plan=_empty_line_history_plan(),
-    )
-    monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
-    store = _RecordingStore(fail_index=True)
-    index_key = "historic/history/network/index.json"
-    old_pointer = b"preexisting-network-index"
-    store.objects[index_key] = old_pointer
-
-    with pytest.raises(RuntimeError, match="index write failed"):
-        _publish_historic(
-            object(),
-            store,
-            provider_id="stm",
-            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
-            stamp="2026-07-13T00:00:00Z",
-            gate_report=_gate_report(analytics_gate),
-        )
-
-    assert {ref.path for ref in bundle.index.partitions}.issubset(store.objects)
-    assert store.objects[index_key] == old_pointer
-    assert store.calls[-1][0] == "immutable"
-    assert re.fullmatch(
-        r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
-        store.calls[-1][1],
-    )
-    assert "historic/history/index.json" not in store.objects
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -2531,18 +2384,10 @@ def test_network_history_compatibility_stage_failure_preserves_existing_pointer(
     index_key = "historic/history/network/index.json"
     old_pointer = b"preexisting-network-index"
 
-    class FailCompatibilityStore(_RecordingStore):
-        def __init__(self) -> None:
-            super().__init__()
-            self.objects[index_key] = old_pointer
-
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if rel_key == compatibility_key:
-                self.calls.append(("normal", rel_key))
-                raise RuntimeError("compatibility stage write failed")
-            return super().put_json(rel_key, payload, tier=tier)
-
-    store = FailCompatibilityStore()
+    store = MemorySnapshotStore(
+        fail_key=compatibility_key, error=RuntimeError("compatibility stage write failed")
+    )
+    store.objects[index_key] = old_pointer
     with pytest.raises(RuntimeError, match="compatibility stage write failed"):
         _publish_historic(
             object(),
@@ -3949,7 +3794,6 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
 def test_invalid_or_missing_telemetry_timezone_uses_utc_bucket_and_publish_succeeds(
     monkeypatch, provider_timezone,
 ):
-    from snapshot_storage_fixtures import MemorySnapshotStore
 
     _patch_minimal_historic(monkeypatch, stop_plan=_stop_history_plan())
     monkeypatch.setattr(historic_tier, "publication_stamp", lambda: "2026-08-15T00:00:00Z")

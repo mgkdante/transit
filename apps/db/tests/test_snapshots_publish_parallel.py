@@ -339,56 +339,6 @@ def test_snapshot_storage_shares_client_without_factory() -> None:
     assert c.puts == 2
 
 
-class _OrderTrackingStore(MemorySnapshotStore):
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.keys: list[str] = []
-        self.store = self.objects
-        self._lock = threading.Lock()
-
-    def full_key(self, rel_key: str) -> str:
-        return rel_key
-
-    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
-        with self._lock:
-            self.store[rel_key] = body
-            self.keys.append(rel_key)
-        return rel_key
-
-    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        from transit_ops.snapshots.serialization import snapshot_json_bytes
-
-        with self._lock:
-            self.keys.append(rel_key)
-            self.store[rel_key] = snapshot_json_bytes(payload)
-        return rel_key
-
-    def put_immutable_json_outcome(self, rel_key: str, payload: object):
-        from transit_ops.snapshots.serialization import snapshot_json_bytes
-        from transit_ops.snapshots.storage import ImmutablePutOutcome
-
-        body = snapshot_json_bytes(payload)
-        with self._lock:
-            prior = self.store.get(rel_key)
-            if prior is not None:
-                if prior != body:
-                    raise RuntimeError(f"immutable key collision: {rel_key}")
-                return ImmutablePutOutcome(key=rel_key, written=False)
-            self.keys.append(rel_key)
-            self.store[rel_key] = body
-            return ImmutablePutOutcome(key=rel_key, written=True)
-
-    def put_immutable_json(self, rel_key: str, payload: object) -> str:
-        return self.put_immutable_json_outcome(rel_key, payload).key
-
-    def get_json(self, rel_key: str):
-        import json as _json
-
-        raw = self.store.get(rel_key)
-        return _json.loads(raw) if raw is not None else None
-
-
 def _historic_dispatch_conn(
     *,
     archive_rows=None,  # noqa: ANN001
@@ -666,7 +616,7 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn()
     keys = _publish_historic(conn, store, provider_id="stm", settings=_Settings())
 
@@ -698,7 +648,7 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
 
     stale_key = "historic/receipts/2024-01-01.json"
     stale_body = snapshot_json_bytes({"date": "2024-01-01"})
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     store.store[stale_key] = stale_body
     store.store["_meta/publish_state_historic.json"] = snapshot_json_bytes(
         {
@@ -730,14 +680,11 @@ def test_historic_receipt_file_failure_keeps_previous_index() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    class _FailingReceiptStore(_OrderTrackingStore):
-        def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-            if rel_key == "historic/receipts/2025-01-01.json":
-                raise RuntimeError("receipt upload failed")
-            return super().put_json(rel_key, payload, tier=tier)
-
+    store = MemorySnapshotStore(
+        fail_key="historic/receipts/2025-01-01.json",
+        error=RuntimeError("receipt upload failed"),
+    )
     old_index = b'{"dates":["2024-01-01"]}'
-    store = _FailingReceiptStore()
     store.store["historic/receipts/index.json"] = old_index
 
     with pytest.raises(RuntimeError, match="receipt upload failed"):
@@ -759,7 +706,7 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn()
     _publish_historic(conn, store, provider_id="stm", settings=_Settings())
 
@@ -782,7 +729,7 @@ def test_historic_publish_completes_all_archive_pages_before_stable_index() -> N
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
     _publish_historic(conn, store, provider_id="stm", settings=_Settings())
 
@@ -805,12 +752,10 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 3
 
-    class _DelayedPages(_OrderTrackingStore):
-        def put_immutable_json(self, rel_key: str, payload: object) -> str:
-            if "page-" in rel_key:
-                page_number = int(rel_key.rsplit("page-", 1)[1][:4])
-                time.sleep(0.004 * (4 - page_number))
-            return super().put_immutable_json(rel_key, payload)
+    def pause_page(rel_key: str) -> None:
+        if "page-" in rel_key:
+            page_number = int(rel_key.rsplit("page-", 1)[1][:4])
+            time.sleep(0.004 * (4 - page_number))
 
     base = _archive_publish_row()
     archive_rows = []
@@ -830,7 +775,7 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
         ]
         archive_rows.append(row)
 
-    store = _DelayedPages()
+    store = MemorySnapshotStore(pause=pause_page)
     _publish_historic(
         _historic_dispatch_conn(archive_rows=archive_rows),
         store,
@@ -854,11 +799,9 @@ def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    class _FailingPageStore(_OrderTrackingStore):
-        def put_immutable_json(self, rel_key: str, payload: object) -> str:
-            raise RuntimeError("archive page upload failed")
-
-    store = _FailingPageStore()
+    store = MemorySnapshotStore(
+        fail_pattern=r".*/generations/.*", error=RuntimeError("archive page upload failed")
+    )
     store.store["historic/alerts/index.json"] = b'{"old":true}'
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
 
@@ -876,7 +819,7 @@ def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_base
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
     result = publish_snapshot(
         "stm",
@@ -909,7 +852,7 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
     engine = _FakeEngine(conn)
 
@@ -1046,7 +989,7 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
             "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
         }
     ]
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     conn = _historic_dispatch_conn(
         hotspot_route_rows=hotspot_route_rows,
         repeat_offender_daily_rows=repeat_offender_daily_rows,
@@ -1173,19 +1116,11 @@ def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: 
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    class _FailingInner(_OrderTrackingStore):
-        def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
-            is_index = rel_key == "historic/alerts/index.json"
-            if failure == "index" and is_index:
-                raise RuntimeError(f"archive {failure} upload failed")
-            return super().put_bytes(rel_key, body, tier=tier)
-
-        def put_immutable_json_outcome(self, rel_key: str, payload: object):
-            if failure == "page" and rel_key.startswith("historic/alerts/generations/"):
-                raise RuntimeError("archive page upload failed")
-            return super().put_immutable_json_outcome(rel_key, payload)
-
-    store = _FailingInner()
+    store = MemorySnapshotStore(
+        fail_key="historic/alerts/index.json" if failure == "index" else None,
+        fail_pattern=r"historic/alerts/generations/.*" if failure == "page" else None,
+        error=RuntimeError(f"archive {failure} upload failed"),
+    )
     old_index = b'{"old":true}'
     store.store["historic/alerts/index.json"] = old_index
     conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
@@ -1211,7 +1146,7 @@ def test_static_publish_manifest_index_keys_present_and_complete() -> None:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
-    store = _OrderTrackingStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="static",
@@ -1367,7 +1302,7 @@ def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write()
 
             return _transaction()
 
-    class _PausedHashLoadStore(_OrderTrackingStore):
+    class _PausedHashLoadStore(MemorySnapshotStore):
         def __init__(self) -> None:
             super().__init__()
             self.load_started = threading.Event()

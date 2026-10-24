@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from _sqlfakes import NamedQueryConn
 from historic_graph_fixtures import graph_from_bundles
+from snapshot_storage_fixtures import MemorySnapshotStore
 from test_partitioned_history_publish import (
     _line_history_plan,
     _network_history_plan,
@@ -452,37 +453,6 @@ def test_point_day_batch_memory_cap_is_fixed_even_with_extreme_executor_concurre
     ]
 
 
-def test_point_child_or_index_failure_leaves_old_root_active(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_minimal_historic(monkeypatch)
-    _patch_points(monkeypatch, hotspots=(_hotspots_day(),), repeat=(_repeat_day(),))
-
-    class FailingStore(_RecordingStore):
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if re.fullmatch(
-                r"historic/history/repeat_offenders/generations/[0-9a-f]{64}/index\.json",
-                rel_key,
-            ):
-                raise RuntimeError("point index failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailingStore()
-    old_root = b'{"old":true}'
-    store.objects["historic/history/index.json"] = old_root
-
-    with pytest.raises(RuntimeError, match="point index failed"):
-        historic_tier.publish(  # noqa: SLF001
-            object(),
-            store,
-            provider_id="stm",
-            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
-            stamp=STAMP,
-        )
-
-    assert store.objects["historic/history/index.json"] == old_root
-
-
 def test_point_indexes_extend_root_timestamp_and_exact_child_graph() -> None:
     from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
 
@@ -741,16 +711,11 @@ def test_each_point_family_write_failure_preserves_old_root(
     _patch_minimal_historic(monkeypatch)
     _patch_points(monkeypatch, hotspots=(_hotspots_day(),), repeat=(_repeat_day(),))
 
-    class FailingStore(_RecordingStore):
-        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            is_family = rel_key.startswith(f"historic/history/{family}/generations/")
-            is_index = rel_key.endswith("/index.json")
-            matches_stage = (stage == "index" and is_index) or (stage == "child" and not is_index)
-            if is_family and matches_stage:
-                raise RuntimeError(f"{family} {stage} failed")
-            return super().put_immutable_json(rel_key, payload)
-
-    store = FailingStore()
+    suffix = r"index\.json" if stage == "index" else r"\d{4}-\d{2}-\d{2}\.json"
+    store = MemorySnapshotStore(
+        fail_pattern=rf"historic/history/{family}/generations/[0-9a-f]{{64}}/{suffix}",
+        error=RuntimeError(f"{family} {stage} failed"),
+    )
     old_root = b'{"old":true}'
     store.objects["historic/history/index.json"] = old_root
 
