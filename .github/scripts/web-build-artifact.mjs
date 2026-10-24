@@ -71,8 +71,6 @@ function targetFor(env) {
     if (env.GITHUB_REF === "refs/heads/develop") return "dev";
   }
   if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
-    if (env.TRANSIT_DEPLOY_TARGET === "verify-dev") return "dev";
-    if (env.TRANSIT_DEPLOY_TARGET === "verify-production") return "production";
     if (env.TRANSIT_DEPLOY_TARGET === "dev") return "dev";
     if (
       env.TRANSIT_DEPLOY_TARGET === "production" &&
