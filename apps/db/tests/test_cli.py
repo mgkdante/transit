@@ -59,6 +59,7 @@ def test_cli_help() -> None:
     [
         "ingest-static", "ingest-gis", "capture-i3", "load-static-silver",
         "load-gis-silver", "load-i3-silver", "refresh-gold-static",
+        "backfill-dim-history",
     ],
 )
 def test_forwarding_commands_are_removed(command: str) -> None:
@@ -353,6 +354,7 @@ def test_build_gold_marts_help() -> None:
 
     assert result.exit_code == 0
     assert "Run the heavy full-history Gold rebuild" in result.stdout
+    assert "14 days" in result.stdout
 
 
 def test_refresh_gold_realtime_help() -> None:

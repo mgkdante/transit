@@ -163,6 +163,11 @@ const networkSurface = createSurfaceHarness({
 });
 const render = networkSurface.mount;
 
+function renderPicker(name: 'Trend window' | 'Delay series' | 'Trend grain') {
+	render(NetworkSurface);
+	return screen.getByRole('radiogroup', { name });
+}
+
 vi.mock('$lib/nav', async () => {
 	return {
 		layout: { isDesktop: true },
@@ -738,24 +743,21 @@ describe('NetworkSurface delay distribution (ChartSpec re-seat)', () => {
 
 describe('NetworkSurface trend window + series', () => {
 	it('offers a 7/30/90-day trend window selector', () => {
-		render(NetworkSurface);
-		const group = screen.getByRole('radiogroup', { name: 'Trend window' });
+		const group = renderPicker('Trend window');
 		expect(within(group).getByRole('radio', { name: '7d' })).toBeInTheDocument();
 		expect(within(group).getByRole('radio', { name: '30d' })).toBeInTheDocument();
 		expect(within(group).getByRole('radio', { name: '90d' })).toBeInTheDocument();
 	});
 
 	it('disables a window longer than the available series (2 days → 30d/90d disabled)', () => {
-		render(NetworkSurface);
-		const group = screen.getByRole('radiogroup', { name: 'Trend window' });
+		const group = renderPicker('Trend window');
 		expect(within(group).getByRole('radio', { name: '7d' })).not.toBeDisabled();
 		expect(within(group).getByRole('radio', { name: '30d' })).toBeDisabled();
 		expect(within(group).getByRole('radio', { name: '90d' })).toBeDisabled();
 	});
 
 	it('offers a delay-series toggle (slowest 10% vs average)', () => {
-		render(NetworkSurface);
-		const group = screen.getByRole('radiogroup', { name: 'Delay series' });
+		const group = renderPicker('Delay series');
 		expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).toBeInTheDocument();
 		expect(within(group).getByRole('radio', { name: 'Average' })).toBeInTheDocument();
 	});
@@ -768,8 +770,7 @@ describe('NetworkSurface trend window + series', () => {
 			{ date: '2026-06-15', otp_pct: 81, avg_delay_min: null, p90_min: null },
 		);
 
-		render(NetworkSurface);
-		const group = screen.getByRole('radiogroup', { name: 'Delay series' });
+		const group = renderPicker('Delay series');
 		expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).not.toBeDisabled();
 		expect(within(group).getByRole('radio', { name: 'Average' })).not.toBeDisabled();
 	});
@@ -802,32 +803,40 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		Array.from(trendFigure(container).querySelectorAll('table.sr-only tbody tr'));
 	const rowY = (row: Element) => row.querySelectorAll('td')[0]?.textContent ?? '';
 
-	it('offers a day/week/month grain picker when the coarse series carry data', () => {
+	it.each([
+		['all grains', true, true],
+		['no coarse data', false, false],
+		['weekly only', true, false],
+	] as const)('matches grain picker availability to %s', (_, weekly, monthly) => {
+		if (!weekly) weeklySeries.splice(0, weeklySeries.length);
+		if (!monthly) monthlySeries.splice(0, monthlySeries.length);
 		render(NetworkSurface);
+		if (!weekly) {
+			expect(screen.queryByRole('radiogroup', { name: 'Trend grain' })).toBeNull();
+			expect(screen.getByRole('radiogroup', { name: 'Trend window' })).toBeInTheDocument();
+			return;
+		}
 		const group = screen.getByRole('radiogroup', { name: 'Trend grain' });
-		expect(within(group).getByRole('radio', { name: 'Day' })).toBeInTheDocument();
-		expect(within(group).getByRole('radio', { name: 'Week' })).toBeInTheDocument();
-		expect(within(group).getByRole('radio', { name: 'Month' })).toBeInTheDocument();
+		for (const name of ['Day', 'Week', 'Month'])
+			expect(within(group).getByRole('radio', { name })).toBeInTheDocument();
+		if (!monthly) {
+			expect(within(group).getByRole('radio', { name: 'Week' })).not.toBeDisabled();
+			expect(within(group).getByRole('radio', { name: 'Month' })).toBeDisabled();
+		}
 	});
 
-	it('switches the plotted series from daily to weekly when "Week" is picked (never flattened)', async () => {
+	it.each([
+		['Week', 3, '83%'],
+		['Month', 2, '76%'],
+	] as const)('plots the distinct %s rows without flattening', async (grain, count, last) => {
 		const { container } = render(NetworkSurface);
 		const dayRows = trendRows(container);
 		expect(dayRows).toHaveLength(2);
 		expect(rowY(dayRows[dayRows.length - 1])).toBe('81%');
-
-		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
-		const weekRows = trendRows(container);
-		expect(weekRows).toHaveLength(3);
-		expect(rowY(weekRows[weekRows.length - 1])).toBe('83%');
-	});
-
-	it('switches the plotted series to monthly when "Month" is picked', async () => {
-		const { container } = render(NetworkSurface);
-		await fireEvent.click(screen.getByRole('radio', { name: 'Month' }));
-		const monthRows = trendRows(container);
-		expect(monthRows).toHaveLength(2);
-		expect(rowY(monthRows[monthRows.length - 1])).toBe('76%');
+		await fireEvent.click(screen.getByRole('radio', { name: grain }));
+		const rows = trendRows(container);
+		expect(rows).toHaveLength(count);
+		expect(rowY(rows[rows.length - 1])).toBe(last);
 	});
 
 	it('hides the daily-only marks under week/month (window picker, vehicles row, per-day crowding)', async () => {
@@ -854,22 +863,6 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		expect(header?.textContent).not.toContain('Slowest 10% (min)');
 		const rows = trendRows(container);
 		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6 min');
-	});
-
-	it('stands the grain picker down when no coarse series carries data', () => {
-		weeklySeries.splice(0, weeklySeries.length);
-		monthlySeries.splice(0, monthlySeries.length);
-		render(NetworkSurface);
-		expect(screen.queryByRole('radiogroup', { name: 'Trend grain' })).toBeNull();
-		expect(screen.getByRole('radiogroup', { name: 'Trend window' })).toBeInTheDocument();
-	});
-
-	it('offers the grain picker when only weekly data exists (monthly empty)', () => {
-		monthlySeries.splice(0, monthlySeries.length);
-		render(NetworkSurface);
-		const group = screen.getByRole('radiogroup', { name: 'Trend grain' });
-		expect(within(group).getByRole('radio', { name: 'Week' })).not.toBeDisabled();
-		expect(within(group).getByRole('radio', { name: 'Month' })).toBeDisabled();
 	});
 });
 

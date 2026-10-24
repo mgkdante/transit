@@ -859,83 +859,50 @@ describe('AlertHistory analytical filter coherence', () => {
 	});
 });
 
+function seedEntityFilterFixture(detailed = false): void {
+	const rows = [
+		['L1', 'critical', 'Line closed', 'Ligne fermée', ['10'], [], '09:00', '10:00', 100],
+		['S1', 'high', 'Stop moved', 'Arrêt déplacé', [], ['52458'], '11:00', '12:00', 50],
+		['B1', 'watch', 'Detour', 'Détour', ['24'], ['99999'], '13:00', '14:00', 25],
+	] as const;
+	fixture.alerts = rows.map(
+		([id, severity, header, french, routes, stops, start, end, impact]) => ({
+			id,
+			severity,
+			header_text_en: header,
+			routes: [...routes],
+			stops: [...stops],
+			start_utc: `2026-06-20T${start}:00Z`,
+			end_utc: `2026-06-20T${end}:00Z`,
+			...(detailed ? { header_text: french, duration_min: 60, impact_passages: impact } : {}),
+		}),
+	) as unknown as AlertHistory['alerts'];
+	fixture.breakdown = null;
+}
+
+function logRows(): HTMLElement[] {
+	const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
+	return list ? within(list).getAllByRole('listitem') : [];
+}
+
 describe('AlertHistory filters — entity-type + severity radiogroups (codec-backed)', () => {
-	function seedFilterFixture(): void {
-		fixture.alerts = [
-			{
-				id: 'L1',
-				severity: 'critical',
-				header_text: 'Ligne fermée',
-				header_text_en: 'Line closed',
-				routes: ['10'],
-				stops: [],
-				start_utc: '2026-06-20T09:00:00Z',
-				end_utc: '2026-06-20T10:00:00Z',
-				duration_min: 60,
-				impact_passages: 100,
-			},
-			{
-				id: 'S1',
-				severity: 'high',
-				header_text: 'Arrêt déplacé',
-				header_text_en: 'Stop moved',
-				routes: [],
-				stops: ['52458'],
-				start_utc: '2026-06-20T11:00:00Z',
-				end_utc: '2026-06-20T12:00:00Z',
-				duration_min: 60,
-				impact_passages: 50,
-			},
-			{
-				id: 'B1',
-				severity: 'watch',
-				header_text: 'Détour',
-				header_text_en: 'Detour',
-				routes: ['24'],
-				stops: ['99999'],
-				start_utc: '2026-06-20T13:00:00Z',
-				end_utc: '2026-06-20T14:00:00Z',
-				duration_min: 60,
-				impact_passages: 25,
-			},
-		] as unknown as AlertHistory['alerts'];
-		fixture.breakdown = null;
-	}
-
-	function logRows(): HTMLElement[] {
-		const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
-		return list ? within(list).getAllByRole('listitem') : [];
-	}
-
-	it('filters by entity type — "affects lines" excludes the stops-only alert AND mirrors ?affects', async () => {
-		seedFilterFixture();
+	it.each([
+		['lines', 'Line closed', 'Stop moved'],
+		['stops', 'Stop moved', 'Line closed'],
+	] as const)('filters by entity type and mirrors affects=%s', async (axis, included, excluded) => {
+		seedEntityFilterFixture(true);
 		render(AlertHistoryScreen);
 		expect(logRows()).toHaveLength(3);
-
-		const linesChip = screen.getByRole('radio', { name: copyEn.filters.entity.lines });
-		await fireEvent.click(linesChip);
-
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.filters.entity[axis] }));
 		expect(logRows()).toHaveLength(2);
-		expect(screen.getByText('Line closed')).toBeInTheDocument();
+		expect(screen.getByText(included)).toBeInTheDocument();
 		expect(screen.getByText('Detour')).toBeInTheDocument();
-		expect(screen.queryByText('Stop moved')).toBeNull();
-		expect(nav.page.url.searchParams.get('affects')).toBe('lines');
-	});
-
-	it('filters by entity type — "affects stops" excludes the lines-only alert', async () => {
-		seedFilterFixture();
-		render(AlertHistoryScreen);
-		const stopsChip = screen.getByRole('radio', { name: copyEn.filters.entity.stops });
-		await fireEvent.click(stopsChip);
-
-		expect(logRows()).toHaveLength(2);
-		expect(screen.getByText('Stop moved')).toBeInTheDocument();
-		expect(screen.getByText('Detour')).toBeInTheDocument();
-		expect(screen.queryByText('Line closed')).toBeNull();
+		expect(screen.queryByText(excluded)).toBeNull();
+		expect(nav.page.url.searchParams.get('affects')).toBe(axis);
 	});
 
 	it('filters by severity — "Critical" narrows to the single critical alert AND mirrors ?severity', async () => {
-		seedFilterFixture();
+		seedEntityFilterFixture(true);
 		render(AlertHistoryScreen);
 		const criticalChip = screen.getByRole('radio', { name: copyEn.severity.critical });
 		await fireEvent.click(criticalChip);
@@ -946,7 +913,7 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 	});
 
 	it('shows the honest no-match note (never an empty void) when filters match nothing', async () => {
-		seedFilterFixture();
+		seedEntityFilterFixture(true);
 		render(AlertHistoryScreen);
 		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
 		await fireEvent.click(screen.getByRole('radio', { name: copyEn.filters.entity.stops }));
@@ -961,7 +928,7 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 	});
 
 	it('clears the filters and restores the full log', async () => {
-		seedFilterFixture();
+		seedEntityFilterFixture(true);
 		render(AlertHistoryScreen);
 		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
 		expect(logRows()).toHaveLength(1);
@@ -976,46 +943,8 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 });
 
 describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', () => {
-	function seedFilterFixture(): void {
-		fixture.alerts = [
-			{
-				id: 'L1',
-				severity: 'critical',
-				header_text_en: 'Line closed',
-				routes: ['10'],
-				stops: [],
-				start_utc: '2026-06-20T09:00:00Z',
-				end_utc: '2026-06-20T10:00:00Z',
-			},
-			{
-				id: 'S1',
-				severity: 'high',
-				header_text_en: 'Stop moved',
-				routes: [],
-				stops: ['52458'],
-				start_utc: '2026-06-20T11:00:00Z',
-				end_utc: '2026-06-20T12:00:00Z',
-			},
-			{
-				id: 'B1',
-				severity: 'watch',
-				header_text_en: 'Detour',
-				routes: ['24'],
-				stops: ['99999'],
-				start_utc: '2026-06-20T13:00:00Z',
-				end_utc: '2026-06-20T14:00:00Z',
-			},
-		] as unknown as AlertHistory['alerts'];
-		fixture.breakdown = null;
-	}
-
-	function logRows(): HTMLElement[] {
-		const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
-		return list ? within(list).getAllByRole('listitem') : [];
-	}
-
 	it('exposes a labeled Line picker and a Stop picker (the type carried once, no per-row prefix)', () => {
-		seedFilterFixture();
+		seedEntityFilterFixture();
 		render(AlertHistoryScreen);
 		const linePick = document.querySelector('[data-slot="line-pick"]');
 		const stopPick = document.querySelector('[data-slot="stop-pick"]');
@@ -1032,27 +961,23 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 		expect(document.querySelector('[data-slot="entity-chips"]')).toBeNull();
 	});
 
-	it('seeds the Line pick from ?route= and narrows the log to that line', () => {
-		seedFilterFixture();
-		alertSurface.setUrl('/alerts?route=24');
-		render(AlertHistoryScreen);
-		expect(logRows()).toHaveLength(1);
-		expect(screen.getByText('Detour')).toBeInTheDocument();
-		expect(screen.queryByText('Line closed')).toBeNull();
-		expect(screen.queryByText('Stop moved')).toBeNull();
-	});
-
-	it('seeds the Stop pick from ?stop= and narrows the log to that stop (route 24 vs stop never collide)', () => {
-		seedFilterFixture();
-		alertSurface.setUrl('/alerts?stop=52458');
-		render(AlertHistoryScreen);
-		expect(logRows()).toHaveLength(1);
-		expect(screen.getByText('Stop moved')).toBeInTheDocument();
-		expect(screen.queryByText('Detour')).toBeNull();
-	});
+	it.each([
+		['route=24', 'Detour', ['Line closed', 'Stop moved']],
+		['stop=52458', 'Stop moved', ['Detour']],
+	] as const)(
+		'seeds the entity pick from %s without cross-axis collisions',
+		(query, included, excluded) => {
+			seedEntityFilterFixture();
+			alertSurface.setUrl(`/alerts?${query}`);
+			render(AlertHistoryScreen);
+			expect(logRows()).toHaveLength(1);
+			expect(screen.getByText(included)).toBeInTheDocument();
+			for (const title of excluded) expect(screen.queryByText(title)).toBeNull();
+		},
+	);
 
 	it('seeds affects + severity from the URL (promoted axes round-trip)', () => {
-		seedFilterFixture();
+		seedEntityFilterFixture();
 		alertSurface.setUrl('/alerts?affects=lines&severity=critical');
 		render(AlertHistoryScreen);
 		expect(logRows()).toHaveLength(1);
@@ -1088,17 +1013,12 @@ describe('AlertHistory date window (?from/?to)', () => {
 			},
 		] as unknown as AlertHistory['alerts'];
 		fixture.breakdown = null;
-	}
-
-	function logRows(): HTMLElement[] {
-		const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
-		return list ? within(list).getAllByRole('listitem') : [];
+		(fixture as AlertHistory).window_start = '2026-06-01';
+		(fixture as AlertHistory).window_end = '2026-06-30';
 	}
 
 	it('seeds ?from/?to and clips the log to alerts intersecting the span', () => {
 		seedWindowFixture();
-		(fixture as AlertHistory).window_start = '2026-06-01';
-		(fixture as AlertHistory).window_end = '2026-06-30';
 		alertSurface.setUrl('/alerts?from=2026-06-15&to=2026-06-25');
 		render(AlertHistoryScreen);
 		expect(logRows()).toHaveLength(1);
@@ -1108,8 +1028,6 @@ describe('AlertHistory date window (?from/?to)', () => {
 
 	it('renders the date-range picker over the served span (both native date inputs present)', () => {
 		seedWindowFixture();
-		(fixture as AlertHistory).window_start = '2026-06-01';
-		(fixture as AlertHistory).window_end = '2026-06-30';
 		render(AlertHistoryScreen);
 		const picker = document.querySelector('[data-slot="date-range"]');
 		expect(picker).not.toBeNull();
@@ -1118,8 +1036,6 @@ describe('AlertHistory date window (?from/?to)', () => {
 
 	it('clamps unavailable URL bounds away and restores the full served log', async () => {
 		seedWindowFixture();
-		(fixture as AlertHistory).window_start = '2026-06-01';
-		(fixture as AlertHistory).window_end = '2026-06-30';
 		alertSurface.setUrl('/alerts?from=2026-05-01&to=2026-07-01');
 		render(AlertHistoryScreen);
 
