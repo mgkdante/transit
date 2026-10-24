@@ -3,7 +3,6 @@ from transit_ops.gold.alert_archive import (
     alert_archive_default_bounds,
     sync_alert_archive,
 )
-from transit_ops.gold.dim_history import DimHistoryBackfillResult, backfill_dim_name_history
 from transit_ops.gold.marts import (
     GoldBuildResult,
     GoldRealtimeRefreshResult,
@@ -24,13 +23,11 @@ from transit_ops.gold.rollups import (
 __all__ = [
     "REBUILDABLE_KINDS",
     "AlertArchiveSyncResult",
-    "DimHistoryBackfillResult",
     "GoldBuildResult",
     "GoldRealtimeRefreshResult",
     "GoldStaticRefreshResult",
     "WarmRollupBuildResult",
     "WarmRollupRebuildResult",
-    "backfill_dim_name_history",
     "alert_archive_default_bounds",
     "build_gold_marts",
     "build_warm_rollups",

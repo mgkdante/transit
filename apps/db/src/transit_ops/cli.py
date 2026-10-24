@@ -26,7 +26,6 @@ from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.gold import (
     alert_archive_default_bounds,
-    backfill_dim_name_history,
     build_gold_marts,
     build_warm_rollups,
     provider_is_seeded,
@@ -722,7 +721,12 @@ def measure_alert_language_coverage_command(
 
 @app.command("build-gold-marts")
 def build_gold(provider_id: str) -> None:
-    """Run the heavy full-history Gold rebuild and refresh latest snapshot tables."""
+    """Run the heavy full-history Gold rebuild and refresh latest snapshot tables.
+
+    Do not run within 14 days after a GTFS edition drop: it re-derives all retained
+    facts against the new version only and silently NULLs pre-drop delay_seconds.
+    The per-cycle refresh-gold-realtime stays safe.
+    """
 
     settings = get_settings()
     try:
@@ -885,40 +889,6 @@ def refresh_gold_realtime_command(
     payload = result.display_dict()
     payload["status"] = "refreshed" if snapshots else "no-archived-snapshots"
     typer.echo(json.dumps(payload, indent=2))
-
-
-@app.command("backfill-dim-history")
-def backfill_dim_history_command(
-    provider_id: str,
-    from_gtfs_zip: Path = typer.Option(  # noqa: B008
-        ...,
-        "--from-gtfs-zip",
-        help=(
-            "Archived GTFS zip (e.g. from bronze R2) whose routes.txt/stops.txt "
-            "carry the names of ids retired before migration 0029 existed."
-        ),
-    ),
-) -> None:
-    """Heal gold.dim_*_history from an archived GTFS zip.
-
-    Inserts CLOSED name rows ONLY for ids missing entirely from the history
-    tables (e.g. route/stop ids retired by a GTFS edition drop that predates
-    migration 0029). Existing history rows are never touched, so the command
-    is idempotent and a current-edition zip is a no-op. When healing from
-    several old editions, run the NEWEST zip first — the first zip providing
-    a missing id wins.
-    """
-
-    settings = get_settings()
-    try:
-        result = backfill_dim_name_history(
-            provider_id,
-            gtfs_zip_path=from_gtfs_zip,
-            settings=settings,
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
 @app.command("prune-silver-storage")
