@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
@@ -42,14 +43,7 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
-	import {
-		CollapsibleSection,
-		TocNav,
-		TypedInformationCard,
-		reconcileActiveToc,
-		revealTocTarget,
-		type TocEntry,
-	} from '$lib/components/shared';
+	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -441,18 +435,12 @@
 			present: hasGrains && (vehicleLadder.shown > 0 || vehicleTray.length > 0),
 		},
 	]);
-	const tocEntries = $derived<TocEntry[]>(
-		sectionDefs
-			.filter((section) => section.present)
-			.map((section) => ({
-				id: section.id,
-				title: section.title,
-				level: 2,
-				badge: { kind: 'number' as const, value: section.number },
-				children: [],
-			})),
-	);
-	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const navigation = createArticleNavigation(() => sectionDefs, {
+		openSignal: () => quietModeStore.openSignal,
+		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
+	});
+	const tocEntries = $derived(navigation.entries);
+	const { cardOpenSignal, navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -465,38 +453,11 @@
 		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
 		return entries;
 	});
-
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	let navigationGeneration = 0;
-	let previousTocIds: string[] = [];
-	function openCard(id: string): void {
-		cardOpenSignals = {
-			...cardOpenSignals,
-			[id]: (cardOpenSignals[id] ?? 0) + 1,
-		};
-	}
-	function cardOpenSignal(id: string): number {
-		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
-	}
-	async function navigate(id: string): Promise<void> {
-		const generation = ++navigationGeneration;
-		await revealTocTarget(id, {
-			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
-			isCurrent: () => generation === navigationGeneration,
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
-	$effect(() => {
-		const next = tocEntries.map((entry) => entry.id);
-		activeId = reconcileActiveToc(activeId, previousTocIds, next);
-		previousTocIds = next;
-	});
 </script>
 
 <DetailShell
 	class="repeat-offenders-detail"
-	bind:activeId
+	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	{tocEntries}
 	combinedRailConfig={showCombinedRail
 		? {
@@ -593,7 +554,7 @@
 			<div class="repeat-rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
-					{activeId}
+					activeId={navigation.activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
 					bind:open={
