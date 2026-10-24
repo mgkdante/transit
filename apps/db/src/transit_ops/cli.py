@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from dataclasses import asdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated
@@ -67,7 +67,6 @@ from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.providers import build_public_provider_catalog
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.snapshots.storage import SnapshotStorage, build_snapshot_storage
-from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.alert_language_coverage import (
     run_alert_language_coverage_measurement,
 )
@@ -79,8 +78,6 @@ from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_SOURCE_FACTORY_REPORT_DIR = Path("artifacts/source-factory")
 
 app = typer.Typer(
     help=(
@@ -202,14 +199,6 @@ def _preflight_report_dir(report_dir: Path, *, create_parents: bool = False) -> 
         report_dir.mkdir(parents=create_parents, exist_ok=True)
     except OSError as exc:
         raise typer.BadParameter(f"--report-dir is not writable: {report_dir}") from exc
-
-
-def _default_source_factory_keep_from_date(settings: Settings) -> date:
-    retention_days = max(
-        settings.BRONZE_REALTIME_RETENTION_DAYS,
-        settings.BRONZE_STATIC_RETENTION_DAYS,
-    )
-    return datetime.now(UTC).date() - timedelta(days=retention_days)
 
 
 def _parse_alert_archive_date(value: str, *, option_name: str) -> date:
@@ -1565,80 +1554,6 @@ def rebuild_warm_rollups_command(
             "to refresh the derived DELETE+UPSERT reporting marts.",
             err=True,
         )
-
-
-@app.command("rebuild-source-factory")
-def rebuild_source_factory_command(
-    provider_id: str,
-    execute: bool = typer.Option(
-        False,
-        "--execute",
-        help="Actually reset and rebuild Oracle data. Defaults to dry-run proof only.",
-    ),
-    destructive_r2_cleanup: bool = typer.Option(
-        False,
-        "--destructive-r2-cleanup",
-        help="Allow approved known Bronze cleanup as part of an execute rebuild.",
-    ),
-    active_prefix_wipe: bool = typer.Option(
-        False,
-        "--active-prefix-wipe",
-        help="Plan or execute a separately confirmed active-prefix wipe.",
-    ),
-    confirm_worker_stopped: bool = typer.Option(
-        False,
-        "--confirm-worker-stopped",
-        help="Confirm the realtime worker is stopped before executing the rebuild.",
-    ),
-    confirm_oracle_target: bool = typer.Option(
-        False,
-        "--confirm-oracle-target",
-        help="Confirm DATABASE_URL points at the Oracle runtime database.",
-    ),
-    confirm_r2_cleanup: bool = typer.Option(
-        False,
-        "--confirm-r2-cleanup",
-        help="Confirm approved known Bronze objects may be deleted.",
-    ),
-    confirm_active_prefix_wipe: bool = typer.Option(
-        False,
-        "--confirm-active-prefix-wipe",
-        help="Confirm active Bronze prefixes may be wiped.",
-    ),
-    report_dir: Path = typer.Option(  # noqa: B008
-        _DEFAULT_SOURCE_FACTORY_REPORT_DIR,
-        "--report-dir",
-        help="Directory for source-factory proof artifacts.",
-    ),
-) -> None:
-    """Rebuild STM Oracle from source truth and write source-factory proof artifacts."""
-
-    settings = get_settings()
-    try:
-        _preflight_report_dir(
-            report_dir,
-            create_parents=report_dir == _DEFAULT_SOURCE_FACTORY_REPORT_DIR,
-        )
-        if execute and not destructive_r2_cleanup:
-            raise typer.BadParameter("--destructive-r2-cleanup is required with --execute.")
-        result = run_source_factory_rebuild(
-            provider_id,
-            artifact_dir=report_dir,
-            keep_from_date=_default_source_factory_keep_from_date(settings),
-            execute=execute,
-            destructive_r2_cleanup=destructive_r2_cleanup,
-            active_prefix_wipe=active_prefix_wipe,
-            confirm_worker_stopped=confirm_worker_stopped,
-            confirm_oracle_target=confirm_oracle_target,
-            confirm_r2_cleanup=confirm_r2_cleanup,
-            confirm_active_prefix_wipe=confirm_active_prefix_wipe,
-            settings=settings,
-        )
-        report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
-    except (ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-
-    typer.echo(report)
 
 
 @app.command("prune-warm-rollup-storage")

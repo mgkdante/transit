@@ -18,7 +18,6 @@ DAILY_DELAY_TABLES = {
 
 # Retain coordination rows by day with surviving daily history, excluding them from metric status.
 DAY_COORDINATION_KIND = "delay_day_coordination"
-DAILY_DELAY_STATE_KINDS = (*DAILY_DELAY_TABLES, DAY_COORDINATION_KIND)
 
 _DAY_LOCK = named_query(
     "rollup.delay_day.lock",

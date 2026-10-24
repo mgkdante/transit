@@ -20,7 +20,6 @@ from transit_ops.settings import Settings
 from transit_ops.silver.realtime_gtfs import load_realtime_to_silver
 from transit_ops.snapshots import publish
 from transit_ops.snapshots.storage import LocalSnapshotStorage
-from transit_ops.source_factory.catalog import reset_source_factory_tables
 
 PROVIDER = "historic_convergence_test"
 TZ = ZoneInfo("America/Toronto")
@@ -46,7 +45,78 @@ def cleanup(engine):
         )
         for table in retained:
             conn.execute(text(f"DELETE FROM {table} WHERE provider_id=:p"), {"p": PROVIDER})
-        reset_source_factory_tables(conn, PROVIDER)
+        daily_state_kinds = (*delay_days.DAILY_DELAY_TABLES, delay_days.DAY_COORDINATION_KIND)
+        non_daily_state = (
+            "rollup_kind NOT IN (" + ", ".join(f"'{kind}'" for kind in daily_state_kinds) + ")"
+        )
+        for qualified_table in (
+            "gold.report_labels",
+            "gold.repeated_problem_route_stop",
+            "gold.trip_delay_summary_5m",
+            "gold.warm_rollup_periods",
+            "gold.realtime_serving_state",
+            "gold.latest_trip_delay_snapshot",
+            "gold.latest_vehicle_snapshot",
+            "gold.fact_trip_delay_snapshot",
+            "gold.fact_vehicle_snapshot",
+            "gold.dim_date",
+            "gold.dim_route_pattern",
+            "gold.dim_stop",
+            "gold.dim_route",
+            "silver.i3_alert_informed_entities",
+            "silver.i3_alerts",
+            "silver.gis_gtfs_matches",
+            "silver.gis_line_features",
+            "silver.gis_stop_features",
+            "silver.gis_datasets",
+            "silver.gtfs_extra_rows",
+            "silver.gtfs_source_members",
+            "silver.rt_trip_update_stop_times",
+            "silver.rt_trip_updates",
+            "silver.rt_vehicle_positions",
+            "silver.rt_entities",
+            "silver.rt_feed_snapshots",
+            "silver.translations",
+            "silver.shapes",
+            "silver.stop_times",
+            "silver.calendar_dates",
+            "silver.calendar",
+            "silver.trips",
+            "silver.route_patterns",
+            "silver.directions",
+            "silver.stops",
+            "silver.routes",
+            "silver.feed_info",
+            "silver.agency",
+            "core.dataset_versions",
+            "raw.i3_alert_snapshots",
+            "raw.realtime_snapshot_index",
+            "raw.ingestion_objects",
+            "raw.ingestion_runs",
+        ):
+            schema, _, table = qualified_table.partition(".")
+            if conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = :schema "
+                    "AND table_name = :table "
+                    "AND column_name = 'provider_id' "
+                    "LIMIT 1"
+                ),
+                {"schema": schema, "table": table},
+            ).first() is None:
+                continue
+            conn.execute(
+                text(
+                    f"DELETE FROM {qualified_table} WHERE provider_id = :provider_id"
+                    + (
+                        f" AND {non_daily_state}"
+                        if qualified_table == "gold.warm_rollup_periods"
+                        else ""
+                    )
+                ),
+                {"provider_id": PROVIDER},
+            )
         conn.execute(text("DELETE FROM core.feed_endpoints WHERE provider_id=:p"), {"p": PROVIDER})
         conn.execute(text("DELETE FROM core.providers WHERE provider_id=:p"), {"p": PROVIDER})
 

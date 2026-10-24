@@ -63,9 +63,6 @@ select = ["B", "E", "F", "I", "UP"]
 python_version = "3.12"
 files = [
     "src/transit_ops/s3.py",
-    "src/transit_ops/source_factory/runner.py",
-    "src/transit_ops/source_factory/operations.py",
-    "tests/typing/source_factory.py",
     "src/transit_ops/snapshots/publish.py",
     "src/transit_ops/snapshots/publication_lane.py",
     "src/transit_ops/snapshots/historic_streams.py",
