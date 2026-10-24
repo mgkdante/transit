@@ -2,12 +2,7 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { minimalDarkStyle } from '$lib/components/map/basemap';
-import {
-	STOP_EXCEPTION_LAYER,
-	STOP_HIGHLIGHT_LAYER,
-	STOPS_LAYER,
-	STOPS_SOURCE,
-} from '$lib/components/map/stopsLayer';
+import { STOP_HIGHLIGHT_LAYER, STOPS_LAYER, STOPS_SOURCE } from '$lib/components/map/stopsLayer';
 import {
 	createMapLayerFeedController,
 	firstSymbolLayerId,
@@ -181,7 +176,7 @@ describe('installMapInteractions', () => {
 describe('map layer feed invariants', () => {
 	it('keeps geography and stops in MapLibre while vehicle painting has no GL pick layer', () => {
 		expect(MAP_LAYER_MODULES.map((module) => module.id)).toEqual(['routes', 'stops', 'vehicles']);
-		expect(PICKABLE_MAP_LAYERS).toEqual(['stops', STOP_EXCEPTION_LAYER, 'route-lines-hit']);
+		expect(PICKABLE_MAP_LAYERS).toEqual(['stops', 'route-lines-hit']);
 		expect(MAP_LAYER_MODULES.find((module) => module.id === 'vehicles')?.pick).toBeUndefined();
 	});
 
@@ -360,7 +355,7 @@ describe('map layer feed invariants', () => {
 		MAP_LAYER_MODULES.find((module) => module.id === 'stops')?.install?.(map);
 		expect([...sources]).toEqual([STOPS_SOURCE]);
 		expect([...layers]).toEqual([STOP_HIGHLIGHT_LAYER, STOPS_LAYER]);
-		expect(PICKABLE_MAP_LAYERS).toEqual([STOPS_LAYER, STOP_EXCEPTION_LAYER, 'route-lines-hit']);
+		expect(PICKABLE_MAP_LAYERS).toEqual([STOPS_LAYER, 'route-lines-hit']);
 		expect(PICKABLE_MAP_LAYERS).not.toContain('stops-overview');
 	});
 });
