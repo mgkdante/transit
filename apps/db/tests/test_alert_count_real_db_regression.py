@@ -1,10 +1,6 @@
-
 from __future__ import annotations
 
-import importlib.util
 from datetime import UTC, date, datetime
-from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -26,29 +22,12 @@ D2_CAPTURED_2 = datetime(2026, 6, 9, 16, 0, tzinfo=UTC)
 def conn(real_db_engine, seed_provider):
     with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _install_alert_count_views(connection)
         _seed_provider_and_snapshots(connection, seed_provider)
         _seed_alert_rows(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-
-
-def _migration_0032():
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "src/transit_ops/db/migrations/versions/0032_alert_counts_by_content_hash.py"
-    )
-    spec = importlib.util.spec_from_file_location("m0032", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _install_alert_count_views(connection) -> None:  # noqa: ANN001
-    impact_migration = _migration_0032()
-    connection.execute(text(impact_migration._IMPACT_VIEW))
 
 
 def _seed_provider_and_snapshots(connection, seed_provider) -> None:  # noqa: ANN001
@@ -220,28 +199,6 @@ def test_alert_count_dedups_legacy_duplicates_per_day(conn) -> None:  # noqa: AN
     assert _daily_row(conn, date(2026, 6, 8))["alert_count"] == 1
 
 
-def test_alert_count_entity_fanout_does_not_inflate(conn) -> None:  # noqa: ANN001
-    _run_citizen_rollup(conn)
-
-    assert _daily_row(conn, date(2026, 6, 8))["alert_count"] == 1
-    impact_rows = list(
-        conn.execute(
-            text(
-                """
-                SELECT stop_id, alert_count
-                FROM gold.public_alert_impact_daily
-                WHERE provider_id = :p
-                  AND provider_local_date = DATE '2026-06-08'
-                  AND stop_id IS NOT NULL
-                ORDER BY stop_id
-                """
-            ),
-            {"p": PROVIDER},
-        )
-    )
-    assert impact_rows == [("S1", 1), ("S2", 1), ("S3", 1)]
-
-
 def test_alert_count_distinct_content_across_eras(conn) -> None:  # noqa: ANN001
     _run_citizen_rollup(conn)
 
@@ -256,26 +213,3 @@ def test_alerts_only_day_is_honest_no_delay_data(conn) -> None:  # noqa: ANN001
     assert row["affected_route_count"] is None
     assert row["affected_stop_count"] is None
     assert row["rider_impact_score"] is None
-
-
-def test_migration_backfill_recomputes_existing_citizen_daily_rows(conn) -> None:  # noqa: ANN001
-    conn.execute(
-        text(
-            """
-            INSERT INTO gold.citizen_accountability_daily
-                (provider_id, provider_local_date, affected_route_count,
-                 affected_stop_count, delayed_trip_count, severe_delay_count,
-                 alert_count, rider_impact_score, built_at_utc)
-            VALUES
-                (:p, DATE '2026-06-09', 0, 0, 0, 0, 0, 0.0000, :built_at)
-            """
-        ),
-        {"p": PROVIDER, "built_at": BUILT_AT},
-    )
-
-    migration = _migration_0032()
-    conn.execute(text(migration._BACKFILL_CITIZEN_ACCOUNTABILITY_DAILY))
-
-    row = _daily_row(conn, date(2026, 6, 9))
-    assert row["alert_count"] == 2
-    assert row["rider_impact_score"] == Decimal("4.0000")

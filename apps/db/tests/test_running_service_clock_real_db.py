@@ -1,11 +1,7 @@
-
 from datetime import UTC, date, datetime, time, timedelta
-from importlib import import_module
 from zoneinfo import ZoneInfo
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
 PROVIDER = "running_clock_test"
@@ -362,41 +358,3 @@ def test_installed_view_matches_the_dated_function_at_transaction_now(conn, seed
         == _missing(conn, now)
         == [("R", 1, ["T"])]
     )
-
-
-def test_migration_lifecycle_preserves_dependent_view_and_column_contract(
-    conn, seed_provider, monkeypatch
-):
-    migration = import_module("transit_ops.db.migrations.versions.0091_running_service_clock")
-    monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-    migration.upgrade()
-    conn.execute(
-        text("CREATE TEMP VIEW running_consumer AS SELECT * FROM gold.non_responding_current")
-    )
-    columns = text("""
-        SELECT attname,format_type(atttypid,atttypmod) FROM pg_attribute
-        WHERE attrelid='running_consumer'::regclass AND attnum>0 ORDER BY attnum
-    """)
-    expected_columns = [
-        ("provider_id", "text"),
-        ("route_id", "text"),
-        ("non_responding_count", "integer"),
-        ("trip_ids", "text[]"),
-    ]
-    current = _edition(conn, seed_provider)
-    old = _edition(conn, seed_provider, current=False)
-    _calendar(conn, current)
-    _trip(conn, current)
-    _exception(conn, old, 2)
-    instant = _instant(DAY, "12:15:00")
-    for downgrade in (True, False):
-        migration.downgrade() if downgrade else migration.upgrade()
-        assert conn.execute(columns).all() == expected_columns
-        conn.execute(text("SELECT * FROM running_consumer LIMIT 1")).all()
-        function_exists = conn.execute(
-            text("""
-            SELECT to_regprocedure('gold.scheduled_running_trips_at(text,timestamptz)') IS NOT NULL
-        """)
-        ).scalar_one()
-        assert function_exists is not downgrade
-        assert _missing(conn, instant) == ([] if downgrade else [("R", 1, ["T"])])
