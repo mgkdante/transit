@@ -1,13 +1,8 @@
-import type { LayerSpecification, Map as MapLibreMap, SourceSpecification } from 'maplibre-gl';
+import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import {
-	addStopExceptionLayer,
-	addStopExceptionSource,
 	addStopsLayer,
-	setStopException,
-	STOP_EXCEPTION_LAYER,
-	STOP_EXCEPTION_SOURCE,
 	STOP_HIGHLIGHT_LAYER,
 	STOPS_LAYER,
 	STOPS_SOURCE,
@@ -223,65 +218,5 @@ describe('addStopsLayer', () => {
 			{ id: 's1', selected: 0 },
 			{ id: 's2', selected: 0 },
 		]);
-	});
-});
-
-describe('low-zoom stop exception', () => {
-	const stops = [
-		{ id: 's1', name: 'Stop 1', code: '1001', lat: 45.5, lon: -73.6 },
-		{ id: 's2', name: 'Stop 2', code: '1002', lat: 45.51, lon: -73.61 },
-	];
-
-	it('uses a dedicated non-promoted source and a data-property-styled maxzoom-8 layer', () => {
-		const sources: Array<[string, SourceSpecification]> = [];
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getSource: () => undefined,
-			addSource: (id: string, source: SourceSpecification) => sources.push([id, source]),
-			getLayer: () => undefined,
-			addLayer: (layer: LayerSpecification) => layers.push(layer),
-		} as unknown as MapLibreMap;
-
-		addStopExceptionSource(map);
-		addStopExceptionLayer(map);
-
-		expect(sources).toHaveLength(1);
-		expect(sources[0]?.[0]).toBe(STOP_EXCEPTION_SOURCE);
-		expect(sources[0]?.[1]).not.toHaveProperty('promoteId');
-		const layer = layers.find((candidate) => candidate.id === STOP_EXCEPTION_LAYER);
-		expect(layer).toMatchObject({
-			type: 'symbol',
-			source: STOP_EXCEPTION_SOURCE,
-			maxzoom: 8,
-		});
-		const rendered = JSON.stringify(layer);
-		expect(rendered).toContain(JSON.stringify(['get', 'selected']));
-		expect(rendered).toContain(JSON.stringify(['get', 'hovered']));
-		expect(rendered).not.toContain('feature-state');
-	});
-
-	it('writes at most selected plus hovered and gives selected priority on the same stop', () => {
-		const setData = vi.fn();
-		const map = {
-			getSource: (id: string) => (id === STOP_EXCEPTION_SOURCE ? { setData } : undefined),
-		} as unknown as MapLibreMap;
-		const stopsById = Object.fromEntries(stops.map((stop) => [stop.id, stop]));
-
-		setStopException(map, stopsById, 's2', 's1');
-		let collection = setData.mock.calls.at(-1)?.[0] as {
-			features: Array<{ properties: Record<string, unknown> }>;
-		};
-		expect(collection.features).toHaveLength(2);
-		expect(collection.features.map((feature) => feature.properties)).toEqual([
-			expect.objectContaining({ id: 's2', selected: 1, hovered: 0 }),
-			expect.objectContaining({ id: 's1', selected: 0, hovered: 1 }),
-		]);
-
-		setStopException(map, stopsById, 's2', 's2');
-		collection = setData.mock.calls.at(-1)?.[0] as typeof collection;
-		expect(collection.features).toHaveLength(1);
-		expect(collection.features[0]?.properties).toEqual(
-			expect.objectContaining({ id: 's2', selected: 1, hovered: 0 }),
-		);
 	});
 });

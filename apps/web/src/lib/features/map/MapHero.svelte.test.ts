@@ -180,7 +180,7 @@ const harness = vi.hoisted(() => {
 		}),
 	);
 	const createVehicleMotionController = vi.fn(
-		(_map: unknown, _runtime: unknown, publish: (features: unknown) => void) => {
+		(_runtime: unknown, publish: (features: unknown) => void) => {
 			publishMotionFrame = publish;
 			return { set: motionSet, destroy: motionDestroy };
 		},

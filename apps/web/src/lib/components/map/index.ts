@@ -8,29 +8,16 @@ export type { VehicleSpriteReceipt } from './vehicleSprites';
 export { createVehicleOverlay, VEHICLE_OVERLAY_RECEIPT } from './vehicleOverlay';
 export type { VehicleOverlay, VehicleOverlayReceipt } from './vehicleOverlay';
 
-export {
-	addVehicleSource,
-	addVehicleLayers,
-	setStale,
-	toVehicleFeatures,
-	VEHICLE_BODY_LAYER,
-	VEHICLE_HIGHLIGHT_LAYER,
-	VEHICLE_SOURCE,
-} from './vehicleLayer';
+export { toVehicleFeatures, VEHICLE_BODY_LAYER } from './vehicleLayer';
 export type { VehicleFeature } from './vehicleLayer';
 export { createVehicleMotionController } from './vehicleMotion';
 export type { VehicleMotionController, ShapeResolver, FixResolver } from './vehicleMotion';
 export type { Coord } from './polyline';
 
 export {
-	addStopExceptionLayer,
-	addStopExceptionSource,
 	addStopsSource,
 	addStopsLayer,
-	setStopException,
 	setStops,
-	STOP_EXCEPTION_LAYER,
-	STOP_EXCEPTION_SOURCE,
 	STOP_HIGHLIGHT_LAYER,
 	STOPS_LAYER,
 	STOPS_SOURCE,
@@ -41,13 +28,7 @@ export {
 	setRouteLines,
 	ROUTE_LINE_HIT_LAYER,
 } from './routeLines';
-export {
-	bakeLocationPinSprite,
-	bakeLocationPinImage,
-	addNearTargetSource,
-	addNearTargetLayer,
-	setNearTarget,
-} from './nearTargetLayer';
+export { bakeLocationPinImage } from './nearTargetLayer';
 export type { NearTarget } from './nearTargetLayer';
 
 export { nearestStops } from './nearbyStops';

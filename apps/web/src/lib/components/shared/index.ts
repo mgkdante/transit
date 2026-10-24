@@ -5,7 +5,6 @@ export { articleNavigationCopy, type ArticleNavigationCopy } from './articleNavi
 export { default as SectionIcon, type SectionIconName } from './SectionIcon.svelte';
 export { default as TypedInformationCard } from './TypedInformationCard.svelte';
 export type { InformationKind, TypedInformationCardProps } from './TypedInformationCard.svelte';
-export { findScrollParent, observeViewportPresence } from './viewportPresence';
 export {
 	flattenToc,
 	resolveTocCounter,

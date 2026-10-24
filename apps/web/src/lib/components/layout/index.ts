@@ -1,5 +1,4 @@
 export { default as DashboardGrid } from './DashboardGrid.svelte';
-export { default as RailLayout } from './RailLayout.svelte';
 export { default as ControlsRail } from './ControlsRail.svelte';
 
 export { default as Surface } from './Surface.svelte';

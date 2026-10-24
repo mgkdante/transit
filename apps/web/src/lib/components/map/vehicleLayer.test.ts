@@ -1,43 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
 import type { VehicleSilenceContext } from './vehicleLayer';
-import {
-	addVehicleLayers,
-	ICON_SIZE_Z11_DEFAULT,
-	mapLibreRawIconOffset,
-	SILENT_BADGE_SCALE,
-	SILENT_ICON_SIZE_Z11,
-	SILENT_ICON_SIZE_Z15,
-	VEHICLE_BODY_LAYER,
-	VEHICLE_HEADING_LAYER,
-	VEHICLE_HIGHLIGHT_LAYER,
-	VEHICLE_SILENT_LAYER,
-	VEHICLE_SOURCE,
-	VEHICLE_STATE_BADGE_LAYER,
-	setStale,
-	toVehicleFeatures,
-} from './vehicleLayer';
-import {
-	BUS_ICON,
-	HEADING_ICON,
-	SILENT_ICON,
-	stateBadgeIconId,
-	VEHICLE_MARKER_GEOMETRY,
-} from './vehicleSprites';
+import { toVehicleFeatures } from './vehicleLayer';
+import { BUS_ICON, stateBadgeIconId, VEHICLE_MARKER_GEOMETRY } from './vehicleSprites';
 import { STALE_CUTOFF_S } from './vehicleProjection';
-
-function usesTopLevelZoomExpression(value: unknown): boolean {
-	return (
-		Array.isArray(value) &&
-		(value[0] === 'interpolate' || value[0] === 'step') &&
-		Array.isArray(value[2]) &&
-		value[2][0] === 'zoom'
-	);
-}
 
 const EMPTY_FILTER: FilterState = {
 	routes: new Set(),
@@ -66,131 +35,6 @@ const vehicles = [
 ].map((vehicle) => VehicleSchema.parse(vehicle));
 
 describe('toVehicleFeatures entity filtering', () => {
-	it('keeps icon-size on one static zoom ramp with no feature or feature-state branches', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		const layer = layers.find((candidate) => candidate.id === VEHICLE_BODY_LAYER);
-		expect(layer).toBeDefined();
-		if (!layer) throw new Error('expected vehicle body layer');
-		expect(layer).toMatchObject({
-			id: VEHICLE_BODY_LAYER,
-			type: 'symbol',
-			source: VEHICLE_SOURCE,
-		});
-		const layout = (layer.layout ?? {}) as Record<string, unknown>;
-		expect(usesTopLevelZoomExpression(layout['icon-size'])).toBe(true);
-		expect(JSON.stringify(layout['icon-size'])).not.toContain('selected');
-		expect(JSON.stringify(layout['icon-size'])).not.toContain('hovered');
-		expect(JSON.stringify(layout['icon-size'])).not.toContain('feature-state');
-		expect(layout['icon-rotate']).toBeUndefined();
-		expect(layout['icon-rotation-alignment']).toBe('viewport');
-	});
-
-	it('renders heading as a SEPARATE rotated chevron layer that only shows for vehicles with a bearing', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		const heading = layers.find((l) => l.id === VEHICLE_HEADING_LAYER);
-		expect(heading).toBeDefined();
-		if (!heading) throw new Error('expected heading layer');
-		expect(heading).toMatchObject({ type: 'symbol', source: VEHICLE_SOURCE });
-		const rendered = heading as LayerSpecification & {
-			layout: Record<string, unknown>;
-			filter: unknown;
-		};
-		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
-		expect(layout['icon-image']).toBe(HEADING_ICON);
-		expect(JSON.stringify(layout['icon-rotate'])).toContain('bearing');
-		expect(layout['icon-rotation-alignment']).toBe('map');
-		expect(layout['icon-pitch-alignment']).toBe('viewport');
-		expect(layout['icon-offset']).toEqual([0, -9]);
-		expect(JSON.stringify(rendered.filter)).toContain('matched');
-		expect(JSON.stringify(rendered.filter)).toContain('hasHeading');
-		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
-		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
-		expect(headingIndex).toBeGreaterThan(bodyIndex);
-	});
-
-	it('re-sources hover and committed selection opacity to feature-state while retaining filter-only selection', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER, VEHICLE_STATE_BADGE_LAYER]) {
-			const paint = (layers.find((l) => l.id === id)?.paint ?? {}) as Record<string, unknown>;
-			const opacity = JSON.stringify(paint['icon-opacity']);
-			expect(opacity).toContain('feature-state');
-			expect(opacity).toContain('hovered');
-			expect(opacity).toContain('selected');
-			expect(opacity).toContain(JSON.stringify(['get', 'selected']));
-			expect(opacity).not.toContain(JSON.stringify(['get', 'hovered']));
-			expect(opacity).not.toContain(JSON.stringify(['get', 'opacity']));
-		}
-	});
-
-	it.each([
-		['fresh', false, 1],
-		['globally stale', true, 0.45],
-	] as const)(
-		'keeps hover, committed selection, and serialized selection ahead of the %s fallback',
-		(_name, stale, fallback) => {
-			const setPaintProperty = vi.fn();
-			const map = {
-				getLayer: (id: string) =>
-					id === VEHICLE_BODY_LAYER ||
-					id === VEHICLE_HEADING_LAYER ||
-					id === VEHICLE_STATE_BADGE_LAYER
-						? { id }
-						: undefined,
-				setPaintProperty,
-			} as unknown as MapLibreMap;
-			const expectedOpacity = [
-				'case',
-				['boolean', ['feature-state', 'hovered'], false],
-				1,
-				['boolean', ['feature-state', 'selected'], false],
-				0.95,
-				['==', ['get', 'selected'], 1],
-				0.95,
-				fallback,
-			];
-
-			setStale(map, stale);
-
-			expect(setPaintProperty.mock.calls).toEqual([
-				[VEHICLE_BODY_LAYER, 'icon-opacity', expectedOpacity],
-				[VEHICLE_HEADING_LAYER, 'icon-opacity', expectedOpacity],
-				[VEHICLE_STATE_BADGE_LAYER, 'icon-opacity', expectedOpacity],
-			]);
-			expect(setPaintProperty).not.toHaveBeenCalledWith(
-				VEHICLE_SILENT_LAYER,
-				'icon-opacity',
-				expect.anything(),
-			);
-		},
-	);
-
 	it('serializes the exact state badge mark for every filter mode with status precedence', () => {
 		const [vehicle] = [
 			{
@@ -244,63 +88,6 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect(nullProperties).toHaveProperty('mark');
 	});
 
-	it('adds exactly one dynamic state-badge layer from the frozen geometry table', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		expect(layers.map(({ id }) => id)).toEqual([
-			VEHICLE_HIGHLIGHT_LAYER,
-			VEHICLE_BODY_LAYER,
-			VEHICLE_HEADING_LAYER,
-			VEHICLE_STATE_BADGE_LAYER,
-			VEHICLE_SILENT_LAYER,
-		]);
-		expect(layers.filter(({ id }) => id === VEHICLE_STATE_BADGE_LAYER)).toHaveLength(1);
-		const badge = layers.find(({ id }) => id === VEHICLE_STATE_BADGE_LAYER);
-		expect(badge).toBeDefined();
-		if (!badge) throw new Error('expected vehicle state-badge layer');
-		expect(badge).toMatchObject({
-			id: VEHICLE_STATE_BADGE_LAYER,
-			type: 'symbol',
-			source: VEHICLE_SOURCE,
-			filter: ['all', ['==', ['get', 'matched'], 1], ['!=', ['get', 'mark'], '']],
-		});
-		const layout = (badge.layout ?? {}) as Record<string, unknown>;
-		const rawStateOffset = mapLibreRawIconOffset(
-			VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
-			VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-		);
-		expect(layout).toMatchObject({
-			'icon-image': ['get', 'mark'],
-			'icon-offset': [
-				'case',
-				['==', ['get', 'stale'], 1],
-				['literal', [-15, 30 / 0.6]],
-				['literal', rawStateOffset],
-			],
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-		});
-		expect(layout['icon-size']).toEqual([
-			'interpolate',
-			['linear'],
-			['zoom'],
-			11,
-			VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11 * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-			15,
-			VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15 * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
-		]);
-		const body = layers.find(({ id }) => id === VEHICLE_BODY_LAYER);
-		expect((body?.layout as Record<string, unknown>)['icon-image']).toEqual(['get', 'body']);
-	});
-
 	it('keeps every bearing outside the upright bus silhouette', () => {
 		const bodyRadius = Math.hypot(6.5 - 4, 9.5 - 4) + 4 + 1;
 		expect(VEHICLE_MARKER_GEOMETRY.chevronAnnulus.inner).toBeGreaterThan(bodyRadius);
@@ -310,9 +97,6 @@ describe('toVehicleFeatures entity filtering', () => {
 		const { stateBadge, silentBadge, box, plateMargin, chevronAnnulus } = VEHICLE_MARKER_GEOMETRY;
 		const halfPlate = box / 2 - plateMargin + 1;
 		for (const badge of [stateBadge, silentBadge]) {
-			const raw = mapLibreRawIconOffset(badge.offset, badge.scale);
-			expect(raw[0] * badge.scale).toBe(0);
-			expect(raw[1] * badge.scale).toBeCloseTo(30);
 			for (const offset of [badge.offset, badge.pairedOffset]) {
 				expect(offset[1] - halfPlate * badge.scale).toBeGreaterThan(chevronAnnulus.outer);
 			}
@@ -328,31 +112,6 @@ describe('toVehicleFeatures entity filtering', () => {
 		);
 
 		expect(source).not.toContain('SILENCE_OPACITY');
-	});
-
-	it('rests buses at a solid base size while the highlight layer carries interaction emphasis', () => {
-		expect(ICON_SIZE_Z11_DEFAULT).toBeGreaterThanOrEqual(0.7);
-	});
-
-	it('retints an existing highlight layer on a live theme change', () => {
-		const setPaintProperty = vi.fn();
-		const map = {
-			getLayer: (id: string) => ({ id }),
-			setPaintProperty,
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		expect(setPaintProperty).toHaveBeenCalledWith(
-			VEHICLE_HIGHLIGHT_LAYER,
-			'circle-color',
-			'rgb(20, 20, 20)',
-		);
-		expect(setPaintProperty).toHaveBeenCalledWith(
-			VEHICLE_HIGHLIGHT_LAYER,
-			'circle-stroke-color',
-			'rgb(255, 95, 87)',
-		);
 	});
 
 	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {
@@ -560,96 +319,5 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
 		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER).features;
 		expect(features.map((f) => f.properties.stale)).toEqual([0, 0]);
-	});
-
-	it('adds a VEHICLE_SILENT_LAYER filtered on matched + stale, using the "!" badge sprite', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-		addVehicleLayers(map);
-
-		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
-		expect(silent).toBeDefined();
-		if (!silent) throw new Error('expected silent layer');
-		expect(silent).toMatchObject({ type: 'symbol', source: VEHICLE_SOURCE });
-		const rendered = silent as LayerSpecification & {
-			layout: Record<string, unknown>;
-			filter: unknown;
-		};
-		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
-		expect(layout['icon-image']).toBe(SILENT_ICON);
-		expect(layout['icon-offset']).toEqual([
-			'case',
-			['!=', ['coalesce', ['get', 'mark'], ''], ''],
-			['literal', [12, 30 / 0.75]],
-			['literal', [0, 30 / 0.75]],
-		]);
-		expect(JSON.stringify(rendered.filter)).toContain('matched');
-		expect(JSON.stringify(rendered.filter)).toContain('stale');
-		expect(layout['icon-allow-overlap']).toBe(true);
-		expect(layout['icon-ignore-placement']).toBe(true);
-		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
-		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
-		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
-		expect(silentIndex).toBeGreaterThan(bodyIndex);
-		expect(silentIndex).toBeGreaterThan(headingIndex);
-	});
-
-	it('installs a feature-state ring below the bus using the contrasting background casing', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-
-		addVehicleLayers(map);
-
-		const highlight = layers.find((layer) => layer.id === VEHICLE_HIGHLIGHT_LAYER);
-		expect(highlight).toBeDefined();
-		if (!highlight) throw new Error('expected vehicle highlight layer');
-		expect(highlight).toMatchObject({ type: 'circle', source: VEHICLE_SOURCE });
-		const paint = (highlight.paint ?? {}) as Record<string, unknown>;
-		const renderedPaint = JSON.stringify(paint);
-		expect(renderedPaint).toContain('feature-state');
-		expect(renderedPaint).toContain('hovered');
-		expect(renderedPaint).toContain('selected');
-		expect(paint['circle-color']).toMatch(/^rgb/);
-		expect(paint['circle-stroke-color']).toMatch(/^rgb/);
-		expect(layers.findIndex((layer) => layer.id === VEHICLE_HIGHLIGHT_LAYER)).toBeLessThan(
-			layers.findIndex((layer) => layer.id === VEHICLE_BODY_LAYER),
-		);
-	});
-
-	it('sizes the big "!" badge at ~75% of the bus icon, scaling with zoom (S5.1: prominent flag)', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-		addVehicleLayers(map);
-
-		expect(SILENT_BADGE_SCALE).toBe(0.75);
-		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(ICON_SIZE_Z11_DEFAULT * 0.75, 6);
-		expect(SILENT_ICON_SIZE_Z11 / ICON_SIZE_Z11_DEFAULT).toBeCloseTo(0.75, 6);
-		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(0.585, 3);
-		expect(SILENT_ICON_SIZE_Z15).toBeCloseTo(0.975, 3);
-		expect(SILENT_ICON_SIZE_Z15).toBeGreaterThan(SILENT_ICON_SIZE_Z11);
-
-		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
-		if (!silent) throw new Error('expected silent layer');
-		const layout = (silent.layout ?? {}) as Record<string, unknown>;
-		const size = layout['icon-size'];
-		expect(usesTopLevelZoomExpression(size)).toBe(true);
-		const sizeJson = JSON.stringify(size);
-		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z11));
-		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z15));
 	});
 });
