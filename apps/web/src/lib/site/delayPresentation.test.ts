@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	delayTone,
-	delayColorVar,
-	delaySeverity,
-	delayLabel,
-	delayMeasurement,
-} from './delayPresentation';
+import { delayTone, rowColorVar, delayLabel, delayMeasurement } from './delayPresentation';
 
 describe('delayTone', () => {
 	it('bands a delay to a calm-by-default status tone', () => {
@@ -18,24 +12,13 @@ describe('delayTone', () => {
 	});
 });
 
-describe('delayColorVar', () => {
+describe('rowColorVar', () => {
 	it('maps each tone to the dataviz STATUS scale, undefined for no-data', () => {
-		expect(delayColorVar(null)).toBeUndefined();
-		expect(delayColorVar(-3)).toBe('var(--dataviz-status-early)');
-		expect(delayColorVar(0)).toBe('var(--dataviz-status-on-time)');
-		expect(delayColorVar(2)).toBe('var(--dataviz-status-late)');
-		expect(delayColorVar(8)).toBe('var(--dataviz-status-severe)');
-	});
-});
-
-describe('delaySeverity', () => {
-	it('keys the a11y band off lateness only (early/on-time stay calm)', () => {
-		expect(delaySeverity(null)).toBe('watch');
-		expect(delaySeverity(-3)).toBe('watch');
-		expect(delaySeverity(0)).toBe('watch');
-		expect(delaySeverity(2)).toBe('watch');
-		expect(delaySeverity(6)).toBe('high');
-		expect(delaySeverity(12)).toBe('critical');
+		expect(rowColorVar(delayTone(null))).toBeUndefined();
+		expect(rowColorVar(delayTone(-3))).toBe('var(--dataviz-status-early)');
+		expect(rowColorVar(delayTone(0))).toBe('var(--dataviz-status-on-time)');
+		expect(rowColorVar(delayTone(2))).toBe('var(--dataviz-status-late)');
+		expect(rowColorVar(delayTone(8))).toBe('var(--dataviz-status-severe)');
 	});
 });
 

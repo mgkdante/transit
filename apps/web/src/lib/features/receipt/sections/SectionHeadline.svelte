@@ -37,19 +37,6 @@
 </section>
 
 <style>
-	.receipt-panel {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.875rem;
-		padding: 1.1rem 1.2rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-	.receipt-primary {
-		gap: 1rem;
-	}
 	.receipt-metrics {
 		margin: 0;
 		display: grid;

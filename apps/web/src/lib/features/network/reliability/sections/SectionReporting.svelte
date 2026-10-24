@@ -84,14 +84,6 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
-	.network-reporting-caveat {
-		margin: 0;
-		max-width: 100%;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-	}
 	.network-silent-tile {
 		display: flex;
 		flex-direction: column;

@@ -680,8 +680,10 @@
 			/>
 			{#each presentedGrainSegments as seg (seg.key)}
 				{#if seg.describedById}
-					<span id={seg.describedById} class="network-reason" data-slot="controls-reason"
-						>{grainDisabledReason}</span
+					<span
+						id={seg.describedById}
+						class="network-reason visually-hidden"
+						data-slot="controls-reason">{grainDisabledReason}</span
 					>
 				{/if}
 			{/each}
@@ -817,6 +819,15 @@
 </DetailShell>
 
 <style>
+	:global(.network-detail .network-shift-caveat),
+	:global(.network-detail .network-reporting-caveat) {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+		max-width: 100%;
+	}
 	:global([data-slot='detail-shell'].network-detail) {
 		--detail-center-max: var(--container-wide);
 	}
@@ -849,24 +860,6 @@
 		margin: 0;
 	}
 
-	.network-reason {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
-	.rail-toc {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-	}
 	.network-region {
 		display: flex;
 		flex-direction: column;

@@ -555,7 +555,11 @@
 			/>
 			{#each presentedGrainSegments as segment (segment.key)}
 				{#if segment.describedById}
-					<span id={segment.describedById} class="repeat-grain-reason" data-slot="controls-reason">
+					<span
+						id={segment.describedById}
+						class="repeat-grain-reason visually-hidden"
+						data-slot="controls-reason"
+					>
 						{disabledReason}
 					</span>
 				{/if}
@@ -606,7 +610,7 @@
 
 	{#snippet center()}
 		<p
-			class="repeat-history-live"
+			class="repeat-history-live visually-hidden"
 			data-slot="history-page-announcement"
 			role="status"
 			aria-live="polite"
@@ -761,28 +765,6 @@
 </DetailShell>
 
 <style>
-	.repeat-grain-reason {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-	.repeat-history-live {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
 	.repeat-window {
 		margin: 0;
 		font-family: var(--font-mono);

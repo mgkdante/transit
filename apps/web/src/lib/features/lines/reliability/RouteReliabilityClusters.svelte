@@ -330,8 +330,10 @@
 				/>
 				{#each presentedSegments as seg (seg.key)}
 					{#if seg.describedById}
-						<span id={seg.describedById} class="reliability-reason" data-slot="controls-reason"
-							>{disabledReason}</span
+						<span
+							id={seg.describedById}
+							class="reliability-reason visually-hidden"
+							data-slot="controls-reason">{disabledReason}</span
 						>
 					{/if}
 				{/each}
@@ -373,7 +375,7 @@
 
 		{#snippet reliabilityContent()}
 			<p
-				class="reliability-history-announcement"
+				class="reliability-history-announcement visually-hidden"
 				data-slot="history-page-announcement"
 				role="status"
 				aria-live="polite"
@@ -504,18 +506,6 @@
 		min-width: 0;
 	}
 
-	.reliability-reason {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
 	.reliability-window {
 		margin: 0;
 		flex-basis: 100%;
@@ -523,17 +513,6 @@
 		font-size: var(--text-caption);
 		line-height: 1.3;
 		color: var(--muted-foreground);
-	}
-	.reliability-history-announcement {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 	.reliability-history-state {
 		display: flex;
@@ -564,13 +543,6 @@
 		background: var(--surface-2);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
-	}
-
-	.rail-toc {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
 	}
 
 	.reliability-clusters :global([data-surface-controls] [data-slot='controls-nav']) {

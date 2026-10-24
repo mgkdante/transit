@@ -837,12 +837,6 @@ ORDER BY 1;`,
 	},
 ] as const;
 
-export const METRICS_BY_KEY: Readonly<Record<MetricKey, MetricEntry>> = Object.fromEntries(
-	METRICS.map((m) => [m.key, m]),
-) as Record<MetricKey, MetricEntry>;
-
-export const METRIC_KEYS: readonly MetricKey[] = METRICS.map((m) => m.key);
-
 export const METHODOLOGY_METRIC_KEY: Readonly<Record<string, MetricKey>> = {
 	otp_definition: 'otp',
 	delay_unit: 'avgDelay',

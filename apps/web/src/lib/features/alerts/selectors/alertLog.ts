@@ -157,21 +157,6 @@ export function deriveSpan(
 	return min != null && max != null ? { start: min, end: max } : null;
 }
 
-export function enumerateDates(start: string, end: string): string[] {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return [];
-	if (start > end) return [];
-	const out: string[] = [];
-	const cursor = new Date(`${start}T12:00:00Z`);
-	const last = new Date(`${end}T12:00:00Z`);
-	let guard = 0;
-	while (cursor <= last && guard < 100000) {
-		out.push(cursor.toISOString().slice(0, 10));
-		cursor.setUTCDate(cursor.getUTCDate() + 1);
-		guard += 1;
-	}
-	return out;
-}
-
 export interface SummarizedAlertBreakdown {
 	readonly by_cause: readonly AlertBreakdownBucket[];
 	readonly by_effect: readonly AlertBreakdownBucket[];
