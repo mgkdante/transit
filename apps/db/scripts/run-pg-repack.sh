@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 # Run a conservative pg_repack maintenance pass against the configured database.
 #
-# The previous DEFAULT_TABLES named silver.trip_updates /
-# silver.trip_update_stop_time_updates / silver.vehicle_positions were all dropped by
-# migration 0014, so every live/dry run failed with "relations do not exist"
-# (exit 21). The list below is the 7 current churn tables, mirroring the
-# canonical sets in maintenance.py: REALTIME_SILVER_TABLES minus the 29GB
-# silver.rt_trip_update_stop_times, plus the gold.latest_* live tables and
-# gold.trip_delay_summary_5m (the only live warm rollup). The two hot gold.fact_*
-# tables are carved out of the CI default (see below); the dead
-# gold.vehicle/occupancy_summary_5m sinks were dropped in migration 0061.
+# Default to current churn tables from REALTIME_SILVER_TABLES, excluding
+# silver.rt_trip_update_stop_times, plus gold.latest_* live tables and
+# gold.trip_delay_summary_5m (the only live warm rollup). The baseline schema
+# has no silver.trip_updates, silver.trip_update_stop_time_updates or
+# silver.vehicle_positions, nor gold.vehicle/occupancy_summary_5m sinks.
+# The two hot gold.fact_* tables are excluded from the CI default (see below).
 #
 # silver.rt_trip_update_stop_times (~29GB, ~252M largely-LIVE rows at 14d
 # retention) is DELIBERATELY EXCLUDED from the CI default: a weekly WAN-attached
@@ -44,7 +41,7 @@ if ! command -v pg_repack >/dev/null 2>&1; then
 fi
 
 # pg_repack's CREATE INDEX phase can spawn parallel maintenance workers that each
-# allocate a DSM segment; on the small-/dev/shm A1 VM that reproduces the 0017
+# allocate a DSM segment; on the small-/dev/shm A1 VM that reproduces the
 # parallel-VACUUM crash ("could not resize shared memory segment"). Force serial
 # index builds for every repack connection. Caller may override PGOPTIONS.
 export PGOPTIONS="${PGOPTIONS:--c max_parallel_maintenance_workers=0}"

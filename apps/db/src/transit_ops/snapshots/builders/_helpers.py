@@ -31,7 +31,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from transit_ops.snapshots.contract import RouteHabits
 
 
-# Status CASE text must match migration 0020.
+# Status CASE text must match gold.current_vehicle_map_with_status in the baseline schema.
 STATUS_BAND_CASE_SQL = """
         CASE
             WHEN {col} IS NULL THEN 'Inconnu / Unknown'
