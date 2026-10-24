@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+from _sqlfakes import history_count_rows
 from snapshot_storage_fixtures import MemorySnapshotStore
 
 from transit_ops.snapshots import publish as snapshot_publish
@@ -410,31 +411,31 @@ def _historic_dispatch_conn(
         "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
         "history.repeat_offenders.names": [],
         "history.repeat_offenders.daily": list(repeat_offender_daily_rows or []),
-        "history.network.delay": list(network_delay_rows or []),
-        "history.network.fact": list(network_fact_rows or []),
-        "history.network.cancellation": [],
-        "history.network.occupancy": [],
-        "history.lines.ids": [
+        "history.network.delay.inner": list(network_delay_rows or []),
+        "history.network.fact.inner": list(network_fact_rows or []),
+        "history.network.cancellation.inner": [],
+        "history.network.occupancy.inner": [],
+        "history.lines.ids.inner": [
             {"route_id": route_id}
             for route_id in sorted(
                 {row.get("route_id") for row in (line_delay_rows or []) if row.get("route_id")}
             )
         ],
-        "history.lines.delay": list(line_delay_rows or []),
-        "history.lines.percentiles": [],
-        "history.lines.cancellation": [],
-        "history.lines.occupancy": [],
-        "history.lines.service_span": [],
-        "history.lines.skipped_stops": [],
-        "history.stops.ids": [
+        "history.lines.delay.inner": list(line_delay_rows or []),
+        "history.lines.percentiles.inner": [],
+        "history.lines.cancellation.inner": [],
+        "history.lines.occupancy.inner": [],
+        "history.lines.service_span.inner": [],
+        "history.lines.skipped_stops.inner": [],
+        "history.stops.ids.inner": [
             {"stop_id": stop_id}
             for stop_id in sorted(
                 {row.get("stop_id") for row in (stop_delay_rows or []) if row.get("stop_id")}
             )
         ],
-        "history.stops.delay": list(stop_delay_rows or []),
-        "history.stops.percentiles": [],
-        "history.stops.occupancy": [],
+        "history.stops.delay.inner": list(stop_delay_rows or []),
+        "history.stops.percentiles.inner": [],
+        "history.stops.occupancy.inner": [],
         "receipts.network_daily": [
             {
                 "local_date": datetime.date(2025, 1, 1),
@@ -619,7 +620,7 @@ def _historic_dispatch_conn(
             name = query_name(statement)
             if name == "publish.state.upsert":
                 self.state_writes.append(dict(params))
-            return _StaticResult(dispatch.get(name, []))
+            return _StaticResult(history_count_rows(statement, dispatch.get(name, [])))
 
     return _Conn()
 

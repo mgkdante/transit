@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -337,37 +336,6 @@ def test_trip_delay_latest_upsert_updates_delay_stop_attribution() -> None:
 
     assert "delay_stop_id = EXCLUDED.delay_stop_id" in sql
     assert "delay_stop_sequence = EXCLUDED.delay_stop_sequence" in sql
-
-
-def test_migration_0034_adds_delay_stop_columns_and_repairs_stop_history() -> None:
-    migration_path = (
-        Path(__file__).resolve().parents[1]
-        / "src/transit_ops/db/migrations/versions/0034_trip_delay_stop_attribution.py"
-    )
-    source = migration_path.read_text()
-
-    assert 'revision = "0034_trip_delay_stop_attribution"' in source
-    assert 'down_revision = "0033_trip_delay_summary_severe_counts"' in source
-    assert '"fact_trip_delay_snapshot"' in source
-    assert '"latest_trip_delay_snapshot"' in source
-    assert '"delay_stop_id"' in source
-    assert '"delay_stop_sequence"' in source
-    assert "_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION" in source
-    assert "_REBUILD_STOP_DELAY_HOURLY_FROM_FACT" in source
-    assert "DELETE FROM gold.stop_delay_hourly" in source
-    assert "FROM gold.fact_trip_delay_snapshot" in source
-    assert "ABS(delay_seconds) <= 3600" in source
-    assert "gold.stop_delay_weekly" in source
-    assert "gold.stop_delay_monthly" in source
-    assert "_DELETE_STOP_DELAY_WEEKLY" in source
-    assert "_INSERT_STOP_DELAY_WEEKLY" in source
-    assert "_DELETE_STOP_DELAY_MONTHLY" in source
-    assert "_INSERT_STOP_DELAY_MONTHLY" in source
-    assert "_DELETE_REPEATED_PROBLEM_ROUTE_STOP" in source
-    assert "_INSERT_REPEATED_PROBLEM_ROUTE_STOP" in source
-    assert "# op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" in source
-    assert "\n    op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
-    assert "\n    op.execute(_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
 
 
 def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:

@@ -16,9 +16,9 @@ from transit_ops.ingestion.common import utc_now
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.snapshots import builders, envelope, gate, historic_tier, uploads
-from transit_ops.snapshots import historic_receipts as _historic
+from transit_ops.snapshots import historic_run as _historic
 from transit_ops.snapshots.builders._helpers import _iso, _static_schedule_context
-from transit_ops.snapshots.historic_receipts import (
+from transit_ops.snapshots.historic_run import (
     _HistoricPhaseLedger,
     _HistoricPublishRun,
 )
@@ -555,7 +555,6 @@ def publish_snapshot(
         physical_total = physical_written + physical_skipped
         stable_total = uploads.stable_outcome_total(gated)
         if historic_run is not None:
-            _historic._persist_historic_receipt_run(conn, provider_id, historic_run)
             historic_state = _historic._snapshot_historic_telemetry(historic_run)
         else:
             historic_state = None

@@ -1,10 +1,5 @@
-import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import type { GeocodePrecision } from '$lib/geocode/types';
 import { resolveColor } from './vehicleSprites';
-
-export const NEAR_TARGET_SOURCE = 'near-target';
-export const NEAR_TARGET_LAYER = 'near-target-pin';
-export const LOCATION_PIN_ICON = 'near-target-pin';
 
 export interface NearTarget {
 	readonly lat: number;
@@ -13,46 +8,9 @@ export interface NearTarget {
 	readonly precision?: GeocodePrecision;
 }
 
-interface NearTargetFeature {
-	type: 'Feature';
-	geometry: { type: 'Point'; coordinates: [number, number] };
-	properties: { id: string; label: string; precision: string };
-}
-
-interface NearTargetFC {
-	type: 'FeatureCollection';
-	features: NearTargetFeature[];
-}
-
-const EMPTY_FC: NearTargetFC = { type: 'FeatureCollection', features: [] };
 const PIN_WIDTH = 44;
 const PIN_HEIGHT = 60;
 const PIN_RATIO = 2;
-
-export function toNearTargetFeatures(target: NearTarget | null): NearTargetFC {
-	if (!target) return EMPTY_FC;
-	return {
-		type: 'FeatureCollection',
-		features: [
-			{
-				type: 'Feature',
-				geometry: { type: 'Point', coordinates: [target.lon, target.lat] },
-				properties: {
-					id: 'near-target',
-					label: target.label,
-					precision: target.precision ?? 'place',
-				},
-			},
-		],
-	};
-}
-
-export function bakeLocationPinSprite(map: MapLibreMap): void {
-	if (typeof document === 'undefined') return;
-	const image = bakeLocationPinImage();
-	if (map.hasImage(LOCATION_PIN_ICON)) map.removeImage(LOCATION_PIN_ICON);
-	map.addImage(LOCATION_PIN_ICON, image, { pixelRatio: PIN_RATIO });
-}
 
 export function bakeLocationPinImage(): ImageData {
 	if (typeof document === 'undefined') throw new Error('Location pin requires a browser canvas');
@@ -60,35 +18,6 @@ export function bakeLocationPinImage(): ImageData {
 	const halo = resolveColor('var(--background)', 'rgb(20, 20, 20)');
 	const inner = resolveColor('var(--card)', 'rgb(255, 255, 255)');
 	return pinImage(fill, halo, inner);
-}
-
-export function addNearTargetSource(map: MapLibreMap): void {
-	if (map.getSource(NEAR_TARGET_SOURCE)) return;
-	map.addSource(NEAR_TARGET_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
-}
-
-export function addNearTargetLayer(map: MapLibreMap): void {
-	if (map.getLayer(NEAR_TARGET_LAYER)) return;
-	map.addLayer({
-		id: NEAR_TARGET_LAYER,
-		type: 'symbol',
-		source: NEAR_TARGET_SOURCE,
-		layout: {
-			'icon-image': LOCATION_PIN_ICON,
-			'icon-anchor': 'bottom',
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-			'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.82, 13, 1.03, 17, 1.18],
-		},
-		paint: {
-			'icon-opacity': 1,
-		},
-	} as unknown as LayerSpecification);
-}
-
-export function setNearTarget(map: MapLibreMap, target: NearTarget | null): void {
-	const src = map.getSource(NEAR_TARGET_SOURCE) as GeoJSONSource | undefined;
-	src?.setData(toNearTargetFeatures(target) as unknown as Parameters<GeoJSONSource['setData']>[0]);
 }
 
 function pinImage(fill: string, halo: string, inner: string): ImageData {

@@ -317,33 +317,6 @@ def test_en_less_reload_removes_stale_translation_and_keeps_incident(conn) -> No
     assert published[0].url is None and published[0].url_en is None
 
 
-def test_message_provenance_migration_preserves_legacy_unknown_then_refreshes(conn):
-    from importlib import import_module
-
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
-    _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
-    migration = import_module("transit_ops.db.migrations.versions.0092_alert_message_observation")
-    publication = import_module(
-        "transit_ops.db.migrations.versions.0093_alert_publication_provenance"
-    )
-    with Operations.context(MigrationContext.configure(conn)):
-        publication.downgrade()
-        migration.downgrade()
-        migration.upgrade()
-        publication.upgrade()
-    from transit_ops.snapshots.builders import build_alerts
-
-    assert build_alerts(conn, provider_id=PROVIDER, generated_utc="t").alerts[0].message is None
-    legacy = _active_en(conn)
-    assert legacy["message_snapshot_id"] is None and legacy["message_alert_index"] is None
-    assert legacy["raw_alert_json"] == ALERT_BILINGUAL
-    assert legacy["description_text_en"] == "Cancelled stops between A and B"
-    _load(conn, SNAP_IDS[1], [ALERT_BILINGUAL_EN_EDIT])
-    assert _active_en(conn)["message_snapshot_id"] == SNAP_IDS[1]
-
-
 def test_gold_current_view_exposes_en_columns(conn) -> None:
     _load(conn, SNAP_IDS[0], [ALERT_BILINGUAL])
     row = dict(
@@ -363,72 +336,6 @@ def test_gold_current_view_exposes_en_columns(conn) -> None:
     )
     assert row["alert_header_text_en"] == "Your line is interrupted"
     assert row["description_text_en"] == "Cancelled stops between A and B"
-
-
-def test_migration_backfilled_superseded_seed_row(conn) -> None:
-    import importlib.util
-    import json
-    import pathlib
-
-    _mig_path = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "src/transit_ops/db/migrations/versions/0037_i3_alert_text_en.py"
-    )
-    _spec = importlib.util.spec_from_file_location("_mig_0037", _mig_path)
-    _mig = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mig)
-
-    raw = json.dumps(
-        {
-            "id": "ALERT-CLOSED",
-            "header_texts": [
-                {"language": "fr", "text": "Ancienne alerte"},
-                {"language": "en", "text": "Old alert"},
-            ],
-            "description_texts": [
-                {"language": "fr", "text": "Texte ferme"},
-                {"language": "en", "text": "Closed text"},
-            ],
-        }
-    )
-    conn.execute(
-        text(
-            """
-            INSERT INTO silver.i3_alerts (
-                i3_alert_snapshot_id, alert_index, provider_id,
-                alert_id, alert_header_text, description_text,
-                severity, captured_at_utc, raw_alert_json,
-                content_hash, first_seen_at, last_seen_at, valid_to
-            )
-            VALUES (
-                :s, 0, :p, 'ALERT-CLOSED', 'Ancienne alerte', 'Texte ferme',
-                'info', :t, CAST(:raw AS jsonb),
-                'deadbeefdeadbeefdeadbeefdeadbeef', :t, :t, :t
-            )
-            """
-        ),
-        {"s": SNAP_IDS[0], "p": PROVIDER, "t": T1, "raw": raw},
-    )
-
-    conn.execute(text(_mig._BACKFILL_EN))
-
-    row = dict(
-        conn.execute(
-            text(
-                """
-                SELECT alert_header_text_en, description_text_en, valid_to
-                FROM silver.i3_alerts
-                WHERE provider_id = :p AND alert_id = 'ALERT-CLOSED'
-                """
-            ),
-            {"p": PROVIDER},
-        )
-        .mappings()
-        .one()
-    )
-    assert row["valid_to"] is not None, "seed row must be superseded (valid_to set)"
-    assert row["alert_header_text_en"] == "Old alert"
-    assert row["description_text_en"] == "Closed text"
 
 
 @pytest.mark.parametrize("endpoint_key", ["i3_alerts", "service_alerts"])

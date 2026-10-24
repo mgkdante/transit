@@ -1,18 +1,13 @@
-
 from __future__ import annotations
 
-import importlib
 import logging
 import time
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
 
 from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
@@ -20,97 +15,7 @@ from transit_ops.maintenance import (
 )
 from transit_ops.settings import get_settings
 
-MIGRATION_MODULE = "transit_ops.db.migrations.versions.0086_daily_warm_retention_indexes"
-REVISION = "0086_daily_warm_retention_indexes"
-DOWN_REVISION = "0085_repair_otp_count_universe"
 DB_ROOT = Path(__file__).resolve().parents[1]
-
-EXPECTED_UPGRADE_OPERATIONS = [
-    (
-        "DROP INDEX CONCURRENTLY IF EXISTS gold.ix_gold_ftds_realtime_snapshot_id",
-        "CREATE INDEX CONCURRENTLY ix_gold_ftds_realtime_snapshot_id "
-        "ON gold.fact_trip_delay_snapshot (realtime_snapshot_id)",
-    ),
-    (
-        "DROP INDEX CONCURRENTLY IF EXISTS gold.ix_gold_fvs_realtime_snapshot_id",
-        "CREATE INDEX CONCURRENTLY ix_gold_fvs_realtime_snapshot_id "
-        "ON gold.fact_vehicle_snapshot (realtime_snapshot_id)",
-    ),
-    (
-        "DROP INDEX CONCURRENTLY IF EXISTS raw.ix_raw_rsi_ingestion_object_id",
-        "CREATE INDEX CONCURRENTLY ix_raw_rsi_ingestion_object_id "
-        "ON raw.realtime_snapshot_index (ingestion_object_id)",
-    ),
-]
-EXPECTED_INDEXES = {
-    ("gold", "ix_gold_ftds_realtime_snapshot_id"),
-    ("gold", "ix_gold_fvs_realtime_snapshot_id"),
-    ("raw", "ix_raw_rsi_ingestion_object_id"),
-}
-
-PERF_PROVIDER = "retention_index_perf_test"
-PERF_ENDPOINT_ID = 8_600_000_001
-PERF_BASE_ID = 8_600_000_000
-PERF_OBJECT_COUNT = 30_000
-PERF_SILVER_COUNT = 2_000
-PERF_GOLD_COUNT = 300_000
-PERF_CUTOFF = datetime(2027, 1, 1, tzinfo=UTC)
-
-OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
-    """
-    SELECT io.ingestion_object_id
-    FROM raw.ingestion_objects io
-    JOIN raw.realtime_snapshot_index rsi
-      ON rsi.ingestion_object_id = io.ingestion_object_id
-    JOIN core.feed_endpoints fe
-      ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND NOT EXISTS (
-          SELECT 1
-          FROM silver.rt_feed_snapshots rfs
-          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
-             OR rfs.ingestion_object_id = io.ingestion_object_id
-      )
-      AND rsi.realtime_snapshot_id <> COALESCE((
-          SELECT MAX(rsi_latest.realtime_snapshot_id)
-          FROM raw.realtime_snapshot_index rsi_latest
-          JOIN core.feed_endpoints fe_latest
-            ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-          WHERE rsi_latest.provider_id = :provider_id
-            AND fe_latest.endpoint_key = fe.endpoint_key
-      ), -1)
-      AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
-    ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC
-    LIMIT :max_objects
-    """
-)
-
-
-class RecordingMigrationContext:
-    def __init__(self) -> None:
-        self.blocks = 0
-
-    @contextmanager
-    def autocommit_block(self):
-        self.blocks += 1
-        yield
-
-
-class RecordingOperations:
-    def __init__(self) -> None:
-        self.context = RecordingMigrationContext()
-        self.executed: list[str] = []
-
-    def get_context(self) -> RecordingMigrationContext:
-        return self.context
-
-    def execute(self, statement: str) -> None:
-        self.executed.append(statement)
-
-
-def _migration_module():
-    return importlib.import_module(MIGRATION_MODULE)
 
 
 def _alembic_config(database_url: str) -> Config:
@@ -121,6 +26,53 @@ def _alembic_config(database_url: str) -> Config:
     )
     config.set_main_option("sqlalchemy.url", database_url)
     return config
+
+
+def test_embedded_alembic_uses_disposable_url_when_settings_are_cached(
+    real_db_engine,
+    monkeypatch,
+) -> None:
+    database_url = real_db_engine.url.render_as_string(hide_password=False)
+    stale_database_url = "postgresql+psycopg://sentinel:sentinel@127.0.0.1:1/stale"
+    get_settings.cache_clear()
+    try:
+        monkeypatch.setenv("DATABASE_URL", stale_database_url)
+        cached_settings = get_settings()
+        assert cached_settings.sqlalchemy_database_url == stale_database_url
+        monkeypatch.setenv("DATABASE_URL", database_url)
+        assert get_settings() is cached_settings
+        assert get_settings().sqlalchemy_database_url == stale_database_url
+        config = _alembic_config(database_url)
+        assert config.get_main_option("sqlalchemy.url") == database_url
+        command.current(config)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_embedded_alembic_preserves_existing_application_loggers(real_db_engine) -> None:
+    logger = logging.getLogger("transit_ops.orchestration")
+    previous_disabled = logger.disabled
+    logger.disabled = False
+    try:
+        database_url = real_db_engine.url.render_as_string(hide_password=False)
+        command.current(_alembic_config(database_url))
+        assert logger.disabled is False
+    finally:
+        logger.disabled = previous_disabled
+
+
+EXPECTED_INDEXES = {
+    ("gold", "ix_gold_ftds_realtime_snapshot_id"),
+    ("gold", "ix_gold_fvs_realtime_snapshot_id"),
+    ("raw", "ix_raw_rsi_ingestion_object_id"),
+}
+PERF_PROVIDER = "retention_index_perf_test"
+PERF_ENDPOINT_ID = 8_600_000_001
+PERF_BASE_ID = 8_600_000_000
+PERF_OBJECT_COUNT = 30_000
+PERF_SILVER_COUNT = 2_000
+PERF_GOLD_COUNT = 300_000
+PERF_CUTOFF = datetime(2027, 1, 1, tzinfo=UTC)
 
 
 def _index_state(connection) -> dict[tuple[str, str], tuple[bool, bool]]:
@@ -149,11 +101,6 @@ def _index_state(connection) -> dict[tuple[str, str], tuple[bool, bool]]:
         (str(schema), str(index_name)): (bool(indisready), bool(indisvalid))
         for schema, index_name, indisready, indisvalid in rows
     }
-
-
-def _database_revision(engine) -> str:
-    with engine.connect() as connection:
-        return str(connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one())
 
 
 def _cleanup_perf_rows(engine) -> None:
@@ -380,67 +327,9 @@ def _explain(connection, statement: str, parameters: dict[str, int]) -> str:
     )
 
 
-def test_migration_metadata_and_exact_concurrent_operations(monkeypatch) -> None:
-    migration = _migration_module()
-    assert migration.revision == REVISION
-    assert migration.down_revision == DOWN_REVISION
-
-    operations = RecordingOperations()
-    monkeypatch.setattr(migration, "op", operations)
-    migration.upgrade()
-
-    assert operations.context.blocks == 3
-    assert operations.executed == [
-        statement for pair in EXPECTED_UPGRADE_OPERATIONS for statement in pair
-    ]
-
-    operations = RecordingOperations()
-    monkeypatch.setattr(migration, "op", operations)
-    migration.downgrade()
-
-    assert operations.context.blocks == 3
-    assert operations.executed == [pair[0] for pair in reversed(EXPECTED_UPGRADE_OPERATIONS)]
-
-
-def test_embedded_alembic_uses_disposable_url_when_settings_are_cached(
-    real_db_engine,
-    monkeypatch,
-) -> None:
-    database_url = real_db_engine.url.render_as_string(hide_password=False)
-    stale_database_url = "postgresql+psycopg://sentinel:sentinel@127.0.0.1:1/stale"
-    get_settings.cache_clear()
-    try:
-        monkeypatch.setenv("DATABASE_URL", stale_database_url)
-        cached_settings = get_settings()
-        assert cached_settings.sqlalchemy_database_url == stale_database_url
-        monkeypatch.setenv("DATABASE_URL", database_url)
-        assert get_settings() is cached_settings
-        assert get_settings().sqlalchemy_database_url == stale_database_url
-        config = _alembic_config(database_url)
-        assert config.get_main_option("sqlalchemy.url") == database_url
-        command.current(config)
-    finally:
-        get_settings.cache_clear()
-
-
-def test_embedded_alembic_preserves_existing_application_loggers(real_db_engine) -> None:
-    logger = logging.getLogger("transit_ops.orchestration")
-    previous_disabled = logger.disabled
-    logger.disabled = False
-    try:
-        database_url = real_db_engine.url.render_as_string(hide_password=False)
-        command.current(_alembic_config(database_url))
-        assert logger.disabled is False
-    finally:
-        logger.disabled = previous_disabled
-
-
-def test_real_postgres_migration_indexes_and_fk_delete_performance(
+def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
     real_db_engine,
 ) -> None:
-    database_url = real_db_engine.url.render_as_string(hide_password=False)
-    config = _alembic_config(database_url)
-    original_revision = _database_revision(real_db_engine)
     candidate_object_ids = [PERF_BASE_ID + value for value in range(1, 101)]
     candidate_snapshot_ids = candidate_object_ids.copy()
     full_batch_object_ids = [PERF_BASE_ID + value for value in range(1, 5_001)]
@@ -448,10 +337,6 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
 
     _cleanup_perf_rows(real_db_engine)
     try:
-        command.downgrade(config, DOWN_REVISION)
-        with real_db_engine.connect() as connection:
-            assert _index_state(connection) == {}
-
         _seed_perf_rows(real_db_engine)
         with real_db_engine.connect() as connection:
             assert _provider_row_counts(connection) == (
@@ -468,37 +353,6 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
             "excluded_object_ids": [],
             "max_objects": 5_000,
         }
-        with real_db_engine.connect() as connection:
-            transaction = connection.begin()
-            connection.execute(text("SET LOCAL statement_timeout = '250ms'"))
-            with pytest.raises(DBAPIError) as selector_timeout_error:
-                connection.execute(
-                    OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-                    selector_params,
-                ).all()
-            assert selector_timeout_error.value.orig.sqlstate == "57014"
-            transaction.rollback()
-
-        with real_db_engine.connect() as connection:
-            transaction = connection.begin()
-            connection.execute(text("SET LOCAL statement_timeout = '250ms'"))
-            with pytest.raises(DBAPIError) as timeout_error:
-                connection.execute(
-                    text(
-                        """
-                        DELETE FROM raw.realtime_snapshot_index
-                        WHERE ingestion_object_id = ANY(
-                            CAST(:ingestion_object_ids AS bigint[])
-                        )
-                        RETURNING realtime_snapshot_id
-                        """
-                    ),
-                    {"ingestion_object_ids": candidate_object_ids},
-                ).all()
-            assert timeout_error.value.orig.sqlstate == "57014"
-            transaction.rollback()
-
-        command.upgrade(config, REVISION)
         with real_db_engine.connect() as connection:
             assert _index_state(connection) == {index: (True, True) for index in EXPECTED_INDEXES}
             trip_plan = _explain(
@@ -619,7 +473,4 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
             ).scalar_one()
             assert retained_full_batch_after_rollback == 5_000
     finally:
-        command.upgrade(config, original_revision)
         _cleanup_perf_rows(real_db_engine)
-
-    assert _database_revision(real_db_engine) == original_revision

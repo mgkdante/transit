@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
-import { STOPS_SOURCE, VEHICLE_SOURCE } from '$lib/components/map';
+import { STOPS_SOURCE } from '$lib/components/map';
 import { createMapEmphasisController } from './mapEmphasisController.svelte';
 import { createMapSelectionController } from './mapSelectionController.svelte';
 
@@ -43,7 +43,6 @@ describe('map emphasis controller', () => {
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
 		emphasis.apply(harness.map);
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		harness.setFeatureState.mockClear();
 		harness.removeFeatureState.mockClear();
 
@@ -73,7 +72,6 @@ describe('map emphasis controller', () => {
 
 		selection.setHovered(null);
 		emphasis.apply(harness.map);
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(emphasis.hoveredTarget).toBeNull();
 		expect(emphasis.selectedTargets).toEqual([target]);
 	});
@@ -87,11 +85,9 @@ describe('map emphasis controller', () => {
 		selection.selectFromDetail({ kind: 'vehicle', id: 'bus-a' });
 		emphasis.apply(harness.map);
 		expect(emphasis.selectedTargets).toEqual([{ kind: 'vehicle', id: 'bus-a' }]);
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 
 		selection.goBack();
 		emphasis.apply(harness.map);
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
 
 		selection.close();
@@ -112,7 +108,6 @@ describe('map emphasis controller', () => {
 
 		expect(first.states.size).toBe(0);
 		expect(second.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
-		expect(second.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});
 
@@ -131,7 +126,6 @@ describe('map emphasis controller', () => {
 
 		expect(harness.setFeatureState).toHaveBeenCalledTimes(1);
 		expect(harness.states.get(`${STOPS_SOURCE}:stop-a`)).toEqual({ selected: true });
-		expect(harness.states.has(`${VEHICLE_SOURCE}:bus-a`)).toBe(false);
 		expect(emphasis.selectedTargets).toEqual([{ kind: 'stop', id: 'stop-a' }]);
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});

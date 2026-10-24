@@ -98,10 +98,6 @@ const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 		prefix: 'src/routes/+error.svelte',
 		reason: 'structural error containers and responsive wrapper',
 	},
-	{
-		prefix: 'src/routes/[[lang=locale]]/_kit/',
-		reason: 'dev-only route subtree',
-	},
 ] as const;
 const EMPTY_MEASURE_LITERAL_ALLOWLIST: readonly string[] = [];
 
