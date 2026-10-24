@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
@@ -175,14 +176,8 @@ def _seed(connection, seed_provider) -> None:
         (VP_ENDPOINT_ID, "vehicle_positions", "vehicle_positions", "gtfs_rt_vehicle_positions"),
         (STATIC_ENDPOINT_ID, "static_schedule", "static_schedule", "gtfs_schedule_zip"),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:e, :p, :key, :kind, :fmt)
-                """
-            ),
+        db_seed.feed_endpoints(
+            connection,
             {
                 "e": endpoint_id,
                 "p": PROVIDER,
@@ -190,18 +185,12 @@ def _seed(connection, seed_provider) -> None:
                 "kind": feed_kind,
                 "fmt": source_format,
             },
+            endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
         )
     for run_id, object_id, snapshot_id, endpoint_id, captured_at, storage_path in REALTIME_ROWS:
         run_kind = "trip_updates" if endpoint_id == TU_ENDPOINT_ID else "vehicle_positions"
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id,
-                     run_kind, status, started_at_utc)
-                VALUES (:r, :p, :e, :kind, 'succeeded', :started)
-                """
-            ),
+        db_seed.ingestion_runs(
+            connection,
             {
                 "r": run_id,
                 "p": PROVIDER,
@@ -209,27 +198,13 @@ def _seed(connection, seed_provider) -> None:
                 "kind": run_kind,
                 "started": captured_at,
             },
+            run_kind=':kind', started_at_utc=':started',
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_objects
-                    (ingestion_object_id, ingestion_run_id, provider_id,
-                     object_kind, storage_backend, storage_path)
-                VALUES (:o, :r, :p, 'gtfs_rt_feed', 's3', :path)
-                """
-            ),
-            {"o": object_id, "r": run_id, "p": PROVIDER, "path": storage_path},
+        db_seed.ingestion_objects(
+            connection, {'o': object_id, 'r': run_id, 'p': PROVIDER, 'path': storage_path},
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.realtime_snapshot_index
-                    (realtime_snapshot_id, ingestion_run_id, ingestion_object_id,
-                     provider_id, feed_endpoint_id, feed_timestamp_utc, captured_at_utc)
-                VALUES (:s, :r, :o, :p, :e, :captured, :captured)
-                """
-            ),
+        db_seed.realtime_snapshot_index(
+            connection,
             {
                 "s": snapshot_id,
                 "r": run_id,
@@ -238,6 +213,8 @@ def _seed(connection, seed_provider) -> None:
                 "e": endpoint_id,
                 "captured": captured_at,
             },
+            ingestion_object_id=':o', feed_timestamp_utc=':captured', entity_count=None,
+            captured_at_utc=':captured',
         )
 
 
@@ -251,26 +228,12 @@ def _seed_realtime_row(
     snapshot_id: int,
     captured_at: datetime,
 ) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id,
-                 run_kind, status, started_at_utc)
-            VALUES (:r, :p, :e, 'trip_updates', 'succeeded', :captured)
-            """
-        ),
-        {"r": run_id, "p": provider_id, "e": endpoint_id, "captured": captured_at},
+    db_seed.ingestion_runs(
+        connection, {'r': run_id, 'p': provider_id, 'e': endpoint_id, 'captured': captured_at},
+        started_at_utc=':captured',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_objects
-                (ingestion_object_id, ingestion_run_id, provider_id,
-                 object_kind, storage_backend, storage_path)
-            VALUES (:o, :r, :p, 'gtfs_rt_feed', 's3', :path)
-            """
-        ),
+    db_seed.ingestion_objects(
+        connection,
         {
             "o": object_id,
             "r": run_id,
@@ -278,15 +241,8 @@ def _seed_realtime_row(
             "path": f"bronze-prune-parity/{provider_id}/{object_id}.pb",
         },
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, ingestion_object_id,
-                 provider_id, feed_endpoint_id, feed_timestamp_utc, captured_at_utc)
-            VALUES (:s, :r, :o, :p, :e, :captured, :captured)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "s": snapshot_id,
             "r": run_id,
@@ -295,6 +251,8 @@ def _seed_realtime_row(
             "e": endpoint_id,
             "captured": captured_at,
         },
+        ingestion_object_id=':o', feed_timestamp_utc=':captured', entity_count=None,
+        captured_at_utc=':captured',
     )
 
 
@@ -311,57 +269,32 @@ def _seed_static_runs(connection) -> None:
             "bronze-prune-test/static/unreferenced.zip",
         ),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_runs
-                    (ingestion_run_id, provider_id, feed_endpoint_id,
-                     run_kind, status, started_at_utc)
-                VALUES (:r, :p, :e, 'static_schedule', 'succeeded', :started)
-                """
-            ),
-            {"r": run_id, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "started": STATIC_STARTED_AT},
+        db_seed.ingestion_runs(
+            connection,
+            {'r': run_id, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID, 'started': STATIC_STARTED_AT},
+            run_kind="'static_schedule'", started_at_utc=':started',
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO raw.ingestion_objects
-                    (ingestion_object_id, ingestion_run_id, provider_id,
-                     object_kind, storage_backend, storage_path)
-                VALUES (:o, :r, :p, 'gtfs_schedule_zip', 's3', :path)
-                """
-            ),
-            {"o": object_id, "r": run_id, "p": PROVIDER, "path": storage_path},
+        db_seed.ingestion_objects(
+            connection, {'o': object_id, 'r': run_id, 'p': PROVIDER, 'path': storage_path},
+            object_kind="'gtfs_schedule_zip'",
         )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions
-                (dataset_version_id, provider_id, feed_endpoint_id,
-                 source_ingestion_run_id, dataset_kind, content_hash, is_current)
-            VALUES (:dv, :p, :e, :r, 'static_schedule', 'bronze-prune-test-hash', false)
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "dv": DATASET_VERSION_ID,
             "p": PROVIDER,
             "e": STATIC_ENDPOINT_ID,
             "r": STATIC_RUN_REFERENCED,
         },
+        dataset_version_id=':dv', content_hash="'bronze-prune-test-hash'", is_current='false',
     )
 
 
 def _seed_objectless_run(connection, run_id: int, started_at: datetime, status: str) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id,
-                 run_kind, status, started_at_utc)
-            VALUES (:r, :p, :e, 'trip_updates', :status, :started)
-            """
-        ),
-        {"r": run_id, "p": PROVIDER, "e": TU_ENDPOINT_ID, "status": status, "started": started_at},
+    db_seed.ingestion_runs(
+        connection,
+        {'r': run_id, 'p': PROVIDER, 'e': TU_ENDPOINT_ID, 'status': status, 'started': started_at},
+        status=':status', started_at_utc=':started',
     )
 
 

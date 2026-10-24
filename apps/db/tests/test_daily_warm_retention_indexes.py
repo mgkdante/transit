@@ -5,6 +5,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import real_db_seed as db_seed
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
@@ -151,16 +152,9 @@ def _seed_perf_rows(engine) -> None:
             ),
             {"provider": PERF_PROVIDER},
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:endpoint, :provider, 'trip_updates',
-                        'trip_updates', 'gtfs_rt_trip_updates')
-                """
-            ),
-            {"endpoint": PERF_ENDPOINT_ID, "provider": PERF_PROVIDER},
+        db_seed.feed_endpoints(
+            connection, {'endpoint': PERF_ENDPOINT_ID, 'provider': PERF_PROVIDER},
+            feed_endpoint_id=':endpoint', provider_id=':provider',
         )
         connection.execute(
             text(

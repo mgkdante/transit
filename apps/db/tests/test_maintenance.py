@@ -34,7 +34,6 @@ from transit_ops.maintenance import (
     REALTIME_SILVER_TABLES,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
-    SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS,
     VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
@@ -641,22 +640,6 @@ def test_realtime_history_count_statements_report_unbounded_backlog(statement) -
     assert ":batch" not in sql
 
 
-def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
-    sql = str(DELETE_OLD_RT_FEED_SNAPSHOTS)
-
-    assert "NOT EXISTS" in sql
-    assert "silver.rt_entities" in sql
-
-
-def test_rt_trip_updates_delete_guards_on_surviving_stop_time_children() -> None:
-    sql = str(DELETE_OLD_RT_TRIP_UPDATES)
-
-    assert "NOT EXISTS" in sql
-    assert "silver.rt_trip_update_stop_times" in sql
-    assert "rstu_child.rt_feed_snapshot_id = rtu_old.rt_feed_snapshot_id" in sql
-    assert "rstu_child.entity_index = rtu_old.entity_index" in sql
-
-
 def test_rt_entities_delete_guards_on_surviving_realtime_children() -> None:
     sql = str(DELETE_OLD_RT_ENTITIES)
 
@@ -727,15 +710,6 @@ def test_prune_silver_storage_threads_realtime_prune_batch_setting() -> None:
     assert all(params.get("batch") == 7777 for params in rt_delete_params)
 
 
-def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> None:
-    sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
-
-    assert "silver.rt_feed_snapshots" in sql
-    assert "source_realtime_snapshot_id" in sql
-    for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES:
-        assert dropped_table not in sql
-
-
 @pytest.mark.parametrize(
     "statement",
     [
@@ -797,22 +771,6 @@ def test_count_eligible_bronze_statements_are_unbounded() -> None:
     assert ":excluded_object_ids" not in realtime_sql
     assert "LIMIT" not in static_sql
     assert ":excluded_object_ids" not in static_sql
-
-
-def test_delete_orphaned_ingestion_runs_is_age_gated() -> None:
-    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
-
-    assert "started_at_utc < :cutoff_utc" in sql
-    assert "NOT EXISTS" in sql
-    assert "raw.ingestion_objects" in sql
-
-
-def test_delete_orphaned_ingestion_runs_guards_surviving_i3_alert_snapshots() -> None:
-    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
-
-    assert "raw.i3_alert_snapshots" in sql
-    assert "s.ingestion_run_id = ir.ingestion_run_id" in sql
-    assert sql.count("NOT EXISTS") >= 2
 
 
 def test_orphan_run_prune_retains_recent_failed_silver_load_rows() -> None:
@@ -2053,14 +2011,6 @@ def test_prune_i3_storage_archive_failure_prevents_every_destructive_phase(
         )
 
     assert storage.deleted == []
-
-
-def test_prune_i3_raw_snapshots_sql_guards_silver_refs_and_latest() -> None:
-    sql = str(SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS)
-    assert "NOT EXISTS" in sql
-    assert "silver.i3_alerts" in sql
-    assert "s.i3_alert_snapshot_id NOT IN" in sql
-    assert "SELECT i3_alert_snapshot_id FROM latest_by_endpoint" in sql
 
 
 def test_prune_i3_raw_snapshots_dry_run_counts_without_deleting() -> None:

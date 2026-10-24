@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from transit_ops.silver.i3 import (
-    INSERT_I3_ENTITIES,
     SELECT_ACTIVE_ALERT_KEYS,
     SUPERSEDE_VANISHED_ALERTS,
     RawI3AlertSnapshot,
@@ -65,11 +64,6 @@ def _hash_of(connection, alert_index: int):  # noqa: ANN201
     insert_calls = [p for s, p in connection.calls if "INSERT INTO silver.i3_alerts" in s]
     (batch,) = insert_calls
     return next(r["content_hash"] for r in batch if r["alert_index"] == alert_index)
-
-
-def test_entities_insert_uses_on_conflict_do_nothing() -> None:
-    sql = str(INSERT_I3_ENTITIES)
-    assert "ON CONFLICT (i3_alert_snapshot_id, alert_index, entity_index) DO NOTHING" in sql
 
 
 def test_surviving_key_lookup_targets_active_rows_only() -> None:

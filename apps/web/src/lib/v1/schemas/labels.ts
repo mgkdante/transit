@@ -1,12 +1,6 @@
 import { z } from 'zod';
-import { isoUtc, payloadEnvelopeFields } from './types';
+import { LabelsFileSchema } from './generated/static_labels';
+export { LabelsFileSchema, type LabelsFile } from './generated/static_labels';
 
-export const LabelsSchema = z.record(z.string(), z.string());
+export const LabelsSchema = LabelsFileSchema.shape.labels;
 export type Labels = z.infer<typeof LabelsSchema>;
-
-export const LabelsFileSchema = z.object({
-	generated_utc: isoUtc(),
-	labels: LabelsSchema,
-	...payloadEnvelopeFields(),
-});
-export type LabelsFile = z.infer<typeof LabelsFileSchema>;

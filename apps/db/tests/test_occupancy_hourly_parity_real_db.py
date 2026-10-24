@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold.rollups import (
@@ -34,14 +35,10 @@ class _Counter:
 
 def _seed(connection, local_date: date, seed_provider) -> None:  # noqa: ANN001
     seed_provider(connection, PROVIDER, display_name="STM occ hourly gate")
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:eid, :p, 'vehicle_positions', 'vehicle_positions', "
-            "'gtfs_rt_vehicle_positions')"
-        ),
-        {"eid": VP_ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'eid': VP_ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid',
+        endpoint_key="'vehicle_positions'", feed_kind="'vehicle_positions'",
+        source_format="'gtfs_rt_vehicle_positions'",
     )
     ids = _Counter(994100)
     for route in _ROUTES:
@@ -52,21 +49,12 @@ def _seed(connection, local_date: date, seed_provider) -> None:  # noqa: ANN001
 def _insert_vehicle_snapshot(connection, ids, route, local_date, hour, codes) -> None:  # noqa: ANN001
     captured_at = datetime.combine(local_date, time(hour, 0), tzinfo=TORONTO).astimezone(UTC)
     sid, run_id = ids.next(), ids.next()
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'vehicle_positions', 'succeeded')"
-        ),
-        {"r": run_id, "p": PROVIDER, "e": VP_ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'r': run_id, 'p': PROVIDER, 'e': VP_ENDPOINT_ID},
+        run_kind="'vehicle_positions'",
     )
-    connection.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            " feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:s, :r, :p, :e, :ts, :n, :ts)"
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "s": sid,
             "r": run_id,

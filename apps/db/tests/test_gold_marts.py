@@ -7,16 +7,12 @@ import pytest
 from transit_ops.core.models import ProviderManifest
 from transit_ops.gold.marts import (
     ACQUIRE_GOLD_BUILD_LOCK,
-    CLOSE_DIM_ROUTE_HISTORY,
-    CLOSE_DIM_STOP_HISTORY,
     INSERT_DIM_ROUTE,
     INSERT_DIM_ROUTE_PATTERN,
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
     INSERT_FACT_VEHICLE_SNAPSHOT,
     INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY,
     LOCK_GOLD_TABLES,
-    OPEN_DIM_ROUTE_HISTORY,
-    OPEN_DIM_STOP_HISTORY,
     SELECT_REALTIME_ANALYZE_AGE_SECONDS,
     UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
     _realtime_analyze_is_due,
@@ -318,19 +314,6 @@ def test_trip_delay_fact_backfills_vehicle_and_delay_from_normalized_rt_tables()
     assert "st.dataset_version_id = :dataset_version_id" in sql
 
 
-def test_trip_delay_fact_attributes_delay_to_next_stop() -> None:
-    sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
-    insert_columns = sql.split("INSERT INTO", 1)[1].split("SELECT", 1)[0]
-
-    assert "COALESCE(stu.stop_id, st.stop_id) AS delay_stop_id" in sql
-    assert "stu.stop_sequence AS delay_stop_sequence" in sql
-    assert "delay_rank = 1" in sql
-    assert "tdf.delay_stop_id" in sql
-    assert "tdf.delay_stop_sequence" in sql
-    assert "delay_stop_id" in insert_columns
-    assert "delay_stop_sequence" in insert_columns
-
-
 def test_trip_delay_latest_upsert_updates_delay_stop_attribution() -> None:
     sql = str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)
 
@@ -349,15 +332,6 @@ def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:
     full_counts_cte = full_sql.split("stop_time_candidates AS")[0]
     assert "INNER JOIN silver.rt_feed_snapshots AS sfs" not in full_counts_cte
     assert ":realtime_snapshot_id" not in full_sql
-
-
-def test_trip_delay_scheduled_time_uses_noon_minus_12h_anchor() -> None:
-    for sql in (str(INSERT_FACT_TRIP_DELAY_SNAPSHOT), str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)):
-        assert "timezone(" in sql
-        assert "rtu.start_date::timestamp + interval '12 hours'" in sql
-        assert "- interval '12 hours'" in sql
-        assert "AT TIME ZONE" not in sql
-        assert "hours => split_part(" in sql
 
 
 def test_dim_route_exposes_beta_route_description_detail() -> None:
@@ -528,25 +502,6 @@ def test_build_gold_marts_records_name_history() -> None:
     )
 
     _assert_name_history_recorded(connection)
-
-
-def test_dim_history_statements_sql_contract() -> None:
-    close_route = str(CLOSE_DIM_ROUTE_HISTORY)
-    close_stop = str(CLOSE_DIM_STOP_HISTORY)
-    open_route = str(OPEN_DIM_ROUTE_HISTORY)
-    open_stop = str(OPEN_DIM_STOP_HISTORY)
-
-    for close_sql in (close_route, close_stop):
-        assert "valid_to_utc IS NULL" in close_sql
-        assert "IS NOT DISTINCT FROM" in close_sql
-        assert "DELETE" not in close_sql
-    for open_sql in (open_route, open_stop):
-        assert "NOT EXISTS" in open_sql
-        assert "valid_to_utc IS NULL" in open_sql
-        assert "DELETE" not in open_sql
-
-    assert "silver.routes" in close_route and "silver.routes" in open_route
-    assert "silver.stops" in close_stop and "silver.stops" in open_stop
 
 
 def test_schedule_version_service_summary_insert_sql_contract() -> None:

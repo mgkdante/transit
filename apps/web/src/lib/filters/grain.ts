@@ -23,11 +23,6 @@ export function isGrainAvailable(tier: DataTier, grain: string): grain is Grain 
 	return isGrain(grain) && availableGrains(tier).includes(grain);
 }
 
-export function resolveGrain(tier: DataTier, requested: string | undefined): Grain {
-	if (requested !== undefined && isGrainAvailable(tier, requested)) return requested;
-	return defaultGrain(tier);
-}
-
 export function resolveWindow(
 	window: DateWindow | undefined,
 	availableDates: ReadonlySet<string>,

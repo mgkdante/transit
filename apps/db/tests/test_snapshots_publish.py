@@ -82,63 +82,13 @@ class RecordingNamedConn:
         return NamedRowsResult(self.responses.get(name, []))
 
 
-class FakeStore:
-
-    def __init__(self) -> None:
-        self.keys: list[str] = []
-        self.tiers: list[str] = []
-        self.payloads: list[object] = []
-
-    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        self.keys.append(rel_key)
-        self.tiers.append(tier)
-        self.payloads.append(payload)
-        return rel_key
-
-
-class CloseTrackingStore(FakeStore):
+class CloseTrackingStore(MemorySnapshotStore):
     def __init__(self, *, fail_on_write: bool = False) -> None:
-        super().__init__()
-        self.fail_on_write = fail_on_write
+        super().__init__(fail_pattern=".*" if fail_on_write else None)
         self.close_calls = 0
-
-    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        if self.fail_on_write:
-            raise RuntimeError("snapshot write failed")
-        return super().put_json(rel_key, payload, tier=tier)
 
     def close(self) -> None:
         self.close_calls += 1
-
-
-class StatefulFakeStore(MemorySnapshotStore):
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.keys: list[str] = []
-        self.store = self.objects
-        self.get_json_calls: list[str] = []
-
-    def full_key(self, rel_key: str) -> str:
-        return rel_key
-
-    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
-        self.store[rel_key] = body
-        return rel_key
-
-    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        from transit_ops.snapshots.storage import _body
-
-        self.keys.append(rel_key)
-        self.store[rel_key] = _body(payload)
-        return rel_key
-
-    def get_json(self, rel_key: str):
-        import json as _json
-
-        self.get_json_calls.append(rel_key)
-        raw = self.store.get(rel_key)
-        return _json.loads(raw) if raw is not None else None
 
 
 class FakeSettings:
@@ -150,7 +100,7 @@ class FakeSettings:
 
 
 def test_publish_live_uploads_all_files_manifest_last() -> None:
-    store = FakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="live",
@@ -239,7 +189,7 @@ def test_publish_never_closes_caller_owned_storage(fail_on_write: bool) -> None:
 
 
 def test_publish_live_stamps_h4_envelope_on_every_payload() -> None:
-    store = FakeStore()
+    store = MemorySnapshotStore()
     publish_snapshot(
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
@@ -276,7 +226,7 @@ def test_collect_payloads_stamps_h4_envelope() -> None:
 
 
 def test_publish_result_display_dict() -> None:
-    store = FakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="live",
@@ -298,7 +248,7 @@ def test_publish_rejects_unimplemented_tier() -> None:
             tier="unknown_tier",
             settings=FakeSettings(),
             engine=FakeEngine(),
-            storage=FakeStore(),
+            storage=MemorySnapshotStore(),
         )
 
 
@@ -450,7 +400,7 @@ def test_historic_phase_ledger_is_exclusive_and_populates_publish_state(monkeypa
         tier="historic",
         settings=FakeSettings(),
         engine=Engine(),
-        storage=StatefulFakeStore(),
+        storage=MemorySnapshotStore(),
         gate_enabled=False,
     )
 
@@ -478,7 +428,7 @@ def test_historic_phase_ledger_is_exclusive_and_populates_publish_state(monkeypa
 
 
 def test_publish_accepts_registry_kwarg() -> None:
-    store = FakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="live",
@@ -592,7 +542,7 @@ def test_publish_static_writes_expected_keys() -> None:
 
             return _cm()
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="static",
@@ -660,7 +610,7 @@ def test_publish_static_hoists_schedule_context_for_two_routes() -> None:
     class SequentialSettings(FakeSettings):
         SNAPSHOT_PUBLISH_CONCURRENCY = 1
 
-    store = FakeStore()
+    store = MemorySnapshotStore()
     _publish_static(
         conn,
         store,
@@ -725,7 +675,7 @@ def test_publish_static_route_hash_gate_keeps_identical_bytes_and_rewrites_only_
             }
         )
 
-    inner = StatefulFakeStore()
+    inner = MemorySnapshotStore()
     state_key = "_meta/publish_state_static.json"
     fingerprint = state_fingerprint("static")
 
@@ -1390,7 +1340,7 @@ def _publish_static_once(store, conn, settings=None):
 
 def test_publish_records_state_row_per_tier() -> None:
     conn = _RecordingConn()
-    _publish_static_once(StatefulFakeStore(), conn)
+    _publish_static_once(MemorySnapshotStore(), conn)
     inserts = [s for s in conn.sql if "INSERT INTO core.snapshot_publish_state" in s]
     assert len(inserts) == 1
     assert "ON CONFLICT (provider_id, tier)" in inserts[0]
@@ -1460,7 +1410,7 @@ def test_publish_live_persists_state_with_gate_summary() -> None:
             return _cm()
 
     res = publish_snapshot(
-        "stm", tier="live", settings=FakeSettings(), engine=_Engine(), storage=FakeStore()
+        "stm", tier="live", settings=FakeSettings(), engine=_Engine(), storage=MemorySnapshotStore()
     )
     assert res.tier == "live"
     assert len(conn.state_params) == 1
@@ -1474,7 +1424,7 @@ def test_publish_live_persists_state_with_gate_summary() -> None:
 
 def test_publish_result_reports_skip_counts() -> None:
     conn = _RecordingConn()
-    res = _publish_static_once(StatefulFakeStore(), conn)
+    res = _publish_static_once(MemorySnapshotStore(), conn)
     d = res.display_dict()
     assert d["files_written"] == len(res.keys_written)
     assert d["files_skipped"] == 0
@@ -1484,14 +1434,14 @@ def test_publish_result_reports_skip_counts() -> None:
 def test_static_stamp_uses_dataset_loaded_at() -> None:
     import json
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     _publish_static_once(store, _RecordingConn())
     for key in ("static/routes_index.json", "static/stops_index.json", "labels/fr.json"):
         assert json.loads(store.store[key])["generated_utc"] == "2026-06-01T00:00:00Z"
 
 
 def test_publish_static_second_run_skips_unchanged() -> None:
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res1 = _publish_static_once(store, _RecordingConn())
     assert res1.keys_skipped == []
     run1_written = set(res1.keys_written)
@@ -1508,7 +1458,7 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
 
     from transit_ops.snapshots.storage import CACHE_CONTROL, _body
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res1 = _publish_static_once(store, _RecordingConn())
     run1_written = set(res1.keys_written)
 
@@ -1523,7 +1473,7 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
 
 def test_publish_live_is_not_hash_gated() -> None:
 
-    class GuardStore(FakeStore):
+    class GuardStore(MemorySnapshotStore):
         def get_json(self, rel_key):  # pragma: no cover - must not be reached
             raise AssertionError("live tier must not be hash-gated")
 
@@ -1544,7 +1494,7 @@ def test_live_gate_checker_crash_never_aborts_cycle(monkeypatch) -> None:
 
     monkeypatch.setattr(_gate, "check_payload", _boom)
 
-    store = FakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
@@ -1564,7 +1514,7 @@ def test_static_gate_blocks_sentinel_payload(monkeypatch) -> None:
 
     monkeypatch.setattr(_pub, "_publish_static", _poison)
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     with pytest.raises(_gate.GateError):
         _publish_static_once(store, _RecordingConn())
     assert "static/routes_index.json" not in store.store
@@ -1580,7 +1530,7 @@ def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
 
     monkeypatch.setattr(_pub, "_publish_static", _poison)
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res = publish_snapshot(
         "stm",
         tier="static",
@@ -1593,7 +1543,7 @@ def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
 
 
 def test_static_gate_reports_on_success(monkeypatch) -> None:
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res = _publish_static_once(store, _RecordingConn())
     assert res.gate_report is not None
     assert res.gate_report["tier"] == "static"
@@ -1604,7 +1554,7 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     class BasemapSettings(FakeSettings):
         SNAPSHOT_BASEMAP_PMTILES_URL = "https://data.example.com/basemap/quebec.pmtiles"
 
-    store = StatefulFakeStore()
+    store = MemorySnapshotStore()
     res = _publish_static_once(store, _RecordingConn(), settings=BasemapSettings())
     assert "static/basemap.json" in res.keys_written
     import json
@@ -1642,7 +1592,7 @@ def test_static_publish_rebuilds_unchanged_gtfs_after_upgrade_or_asset_changes(m
     monkeypatch.setattr(ProviderRegistry, "from_project_root", lambda **kwargs: registry)
     public = registry.get_provider("stm").public
     settings = FakeSettings()
-    store, conn = StatefulFakeStore(), DatasetConn()
+    store, conn = MemorySnapshotStore(), DatasetConn()
     state_key = "_meta/publish_state_static.json"
     basemap_key = "static/basemap.json"
     assert basemap_key in _publish_static_once(store, conn, settings).keys_written
@@ -1746,7 +1696,7 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
 
     fingerprint = state_fingerprint("historic")
     assert fingerprint == "v1|cc:public, max-age=3600, stale-while-revalidate=86400"
-    inner = StatefulFakeStore()
+    inner = MemorySnapshotStore()
     state_key = "_meta/publish_state_historic.json"
 
     first = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)

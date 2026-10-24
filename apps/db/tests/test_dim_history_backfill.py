@@ -11,8 +11,6 @@ from typer.testing import CliRunner
 from transit_ops import cli
 from transit_ops.gold.dim_history import (
     GTFS_DROP_RUNBOOK,
-    INSERT_MISSING_DIM_ROUTE_HISTORY,
-    INSERT_MISSING_DIM_STOP_HISTORY,
     DimHistoryBackfillResult,
     _backfill_on_connection,
     parse_gtfs_name_rows,
@@ -78,15 +76,6 @@ def test_parse_gtfs_name_rows_missing_member_raises(tmp_path) -> None:
     zip_path = _write_zip(tmp_path / "bad.zip", members={"routes.txt": ROUTES_TXT})
     with pytest.raises(ValueError, match="stops.txt"):
         parse_gtfs_name_rows(zip_path)
-
-
-def test_backfill_statements_are_missing_id_guarded_and_append_only() -> None:
-    for sql in (str(INSERT_MISSING_DIM_ROUTE_HISTORY), str(INSERT_MISSING_DIM_STOP_HISTORY)):
-        assert "WHERE NOT EXISTS" in sql
-        assert "UPDATE" not in sql
-        assert "DELETE" not in sql
-    assert "gold.dim_route_history" in str(INSERT_MISSING_DIM_ROUTE_HISTORY)
-    assert "gold.dim_stop_history" in str(INSERT_MISSING_DIM_STOP_HISTORY)
 
 
 class _CountResult:

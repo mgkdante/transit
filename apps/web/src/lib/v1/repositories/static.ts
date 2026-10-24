@@ -3,17 +3,16 @@ import { providerOf } from '$lib/v1/adapter/r2.core';
 import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '$lib/v1/schemas';
 import { isSlimStopsIndex, toSlimStopsIndex, type SlimStopsIndex } from './stopsSlim';
 
-export async function getRoutesIndex(ctx?: AdapterCtx): Promise<RoutesIndex> {
-	return adapter.static.routesIndex(ctx);
-}
+export const getRoutesIndex: (ctx?: AdapterCtx) => Promise<RoutesIndex> = (ctx) =>
+	adapter.static.routesIndex(ctx);
 
-export async function getRoute(routeId: string, ctx?: AdapterCtx): Promise<RouteFile | null> {
-	return adapter.static.route(routeId, ctx);
-}
+export const getRoute: (routeId: string, ctx?: AdapterCtx) => Promise<RouteFile | null> = (
+	routeId,
+	ctx,
+) => adapter.static.route(routeId, ctx);
 
-export async function getStopsIndex(ctx?: AdapterCtx): Promise<StopsIndex> {
-	return adapter.static.stopsIndex(ctx);
-}
+export const getStopsIndex: (ctx?: AdapterCtx) => Promise<StopsIndex> = (ctx) =>
+	adapter.static.stopsIndex(ctx);
 
 export async function getStopsIndexSlim(ctx?: AdapterCtx): Promise<SlimStopsIndex> {
 	const fetchFn = ctx?.fetch ?? fetch;
@@ -34,6 +33,7 @@ export async function getStopsIndexSlim(ctx?: AdapterCtx): Promise<SlimStopsInde
 	return toSlimStopsIndex(await adapter.static.stopsIndex(ctx));
 }
 
-export async function getStop(stopId: string, ctx?: AdapterCtx): Promise<StopFile | null> {
-	return adapter.static.stop(stopId, ctx);
-}
+export const getStop: (stopId: string, ctx?: AdapterCtx) => Promise<StopFile | null> = (
+	stopId,
+	ctx,
+) => adapter.static.stop(stopId, ctx);

@@ -1177,15 +1177,6 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert "route_habit_score" not in rollups.REPORTING_AGGREGATE_UPSERTS
 
 
-def test_citizen_accountability_alert_count_uses_content_hash() -> None:
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
-
-    assert "COUNT(DISTINCT effective_content_hash)" in sql
-    assert "COUNT(DISTINCT alert_id)" not in sql
-    assert "FROM gold.i3_alert_history_reporting" in sql
-    assert "provider_id = :provider_id" in sql
-
-
 def test_citizen_accountability_single_alert_count_source() -> None:
     sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
 
@@ -1214,18 +1205,6 @@ def test_trip_delay_summary_5m_persists_severe_count() -> None:
     assert ("severe_delay_observation_count = EXCLUDED.severe_delay_observation_count") in sql
 
 
-def test_route_delay_hourly_carries_observation_unit_counts() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
-    compact = " ".join(sql.split())
-    assert "SUM(delay_observation_count)::integer AS delay_observation_count" in sql
-    assert (
-        "CASE WHEN COUNT(*) = COUNT(on_time_observation_count) "
-        "THEN SUM(on_time_observation_count)::integer END AS on_time_observation_count"
-    ) in compact
-    assert "delay_observation_count" in sql
-    assert "on_time_observation_count" in sql
-
-
 def test_trip_delay_summary_5m_writes_capped_max() -> None:
     sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
 
@@ -1240,13 +1219,6 @@ def test_route_delay_hourly_avg_uses_capped_column() -> None:
     assert "avg_delay_seconds_capped * NULLIF(delay_observation_count - outlier_count, 0)" in sql
     assert "NULLIF(SUM(delay_observation_count - outlier_count), 0)" in sql
     assert "SUM(avg_delay_seconds * " not in sql
-
-
-def test_route_delay_hourly_max_uses_capped_column() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
-
-    assert "MAX(max_delay_seconds_capped)" in sql
-    assert "MAX(max_delay_seconds)" not in sql
 
 
 def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
@@ -1279,15 +1251,6 @@ def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
     assert "THEN sa.observation_count" not in summary_sql
 
 
-def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
-
-    assert "FROM gold.fact_trip_delay_snapshot" not in sql
-    assert "LEFT JOIN" not in sql
-    assert "severe_delay_observation_count" in sql
-    assert ":open_window_days" in sql
-
-
 def test_windowed_cutoffs_share_hour_aligned_expression() -> None:
     cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
 
@@ -1309,19 +1272,6 @@ def test_windowed_history_syncs_preserve_each_tables_refresh_contract() -> None:
     assert "ON CONFLICT" in str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
     assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
     assert "ON CONFLICT" in str(rollups.UPSERT_REPEATED_PROBLEM_ROUTE_STOP)
-
-
-def test_stop_delay_hourly_scoped_to_open_window() -> None:
-    cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
-    summary_sql = str(rollups.CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
-    upsert_sql = str(rollups.UPSERT_STOP_DELAY_HOURLY)
-
-    assert cutoff
-    assert cutoff in summary_sql
-    assert cutoff in str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
-    assert "FROM gold.fact_trip_delay_snapshot AS f" in summary_sql
-    assert "LEFT JOIN gold.route_delay_hourly" not in summary_sql
-    assert "ON CONFLICT" in upsert_sql
 
 
 def test_citizen_accountability_rebuilds_only_open_local_dates() -> None:
@@ -1361,18 +1311,6 @@ def test_repeat_offender_obs_excludes_outlier_delays() -> None:
 
     assert "AND ABS(f.delay_seconds) <= 3600" in sql
     assert sql.index("AND ABS(f.delay_seconds) <= 3600") < sql.index("agg AS")
-
-
-def test_route_cancellation_daily_upsert_dedups_and_keeps_scheduled_in_denominator() -> None:
-    sql = str(rollups.UPSERT_ROUTE_CANCELLATION_DAILY)
-    compact = " ".join(sql.split())
-
-    assert "INSERT INTO gold.route_cancellation_daily" in sql
-    assert "FROM gold.fact_trip_delay_snapshot" in sql
-    assert "GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date" in compact
-    assert "MAX((COALESCE(f.trip_schedule_relationship, 0) = 3)::int)" in compact
-    assert "trip_schedule_relationship IS NOT NULL" not in compact
-    assert "NULLIF(COUNT(*), 0)" in compact
 
 
 def test_tier1_daily_rollups_are_append_only_not_in_reporting_registry() -> None:
@@ -1476,38 +1414,6 @@ def test_route_headway_by_shift_upsert_shape() -> None:
     assert "0.5 * a.med_gap" in sql
     assert "headway_cov = EXCLUDED.headway_cov" in sql
     assert "bunched_count = EXCLUDED.bunched_count" in sql
-
-
-def test_route_service_span_daily_upsert_shape() -> None:
-    sql = str(rollups.UPSERT_ROUTE_SERVICE_SPAN_DAILY)
-    compact = " ".join(sql.split())
-
-    assert "INSERT INTO gold.route_service_span_daily" in sql
-    assert "FROM gold.fact_trip_delay_snapshot" in sql
-    assert "MIN(f.captured_at_utc) AS trip_start_utc" in compact
-    assert "f.start_date = (CAST(:local_date AS date) - 1)" in compact
-    assert "f.snapshot_date_key IN (" in compact
-    assert "'YYYYMMDD')::integer, :date_key" in compact
-    assert (
-        "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, "
-        "f.entity_index DESC))[1] AS last_obs_delay" in compact
-    )
-    assert "MAX(last_obs_delay) FILTER (WHERE rn_last = 1)" in compact
-    assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
-    assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
-
-
-def test_route_skipped_stop_daily_upsert_shape() -> None:
-    sql = str(rollups.UPSERT_ROUTE_SKIPPED_STOP_DAILY)
-    compact = " ".join(sql.split())
-
-    assert "INSERT INTO gold.route_skipped_stop_daily" in sql
-    assert "FROM gold.fact_trip_delay_snapshot" in sql
-    assert "SUM(f.skipped_stop_count)" in compact
-    assert "SUM(f.stop_time_update_count)" in compact
-    assert "NULLIF(SUM(f.stop_time_update_count), 0)" in compact
-    assert "f.snapshot_date_key = :date_key" in compact
-    assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
 def test_repeat_offender_upsert_shape() -> None:

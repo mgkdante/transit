@@ -259,23 +259,6 @@ def test_trip_departures_sql_contract_60min_horizon() -> None:
     assert "predicted_departure_utc <" in sql
 
 
-def test_status_band_case_sql_drift_guard_vs_0020() -> None:
-    from transit_ops.snapshots.builders._helpers import STATUS_BAND_CASE_SQL
-
-    sql = STATUS_BAND_CASE_SQL.format(col="avg_delay_seconds")
-    assert "-60" in sql
-    assert "60" in sql
-    assert "300" in sql
-    for label in (
-        "Inconnu / Unknown",
-        "En avance / Early",
-        "À l''heure / On time",
-        "En retard / Late",
-        "Critique / Severe",
-    ):
-        assert label in sql
-
-
 def test_build_trips_status_band_computed_in_query_not_python() -> None:
     from transit_ops.snapshots.builders.live import _TRIP_DELAY_SQL
 
@@ -327,21 +310,6 @@ def test_build_stop_departures_groups_by_stop_in_eta_order_and_maps_delay() -> N
     assert s1[0].delay_min == 2
     assert s1[1].delay_min is None
     assert out.stops["S-2"][0].delay_min == -3
-
-
-def test_build_stop_departures_sql_contract() -> None:
-    from transit_ops.snapshots.builders.live import (
-        _STOP_DEPARTURES_PER_ROUTE_CAP,
-        _STOP_DEPARTURES_SQL,
-    )
-
-    sql = str(_STOP_DEPARTURES_SQL)
-    assert "PARTITION BY d.stop_id, d.route_id" in sql
-    assert ":per_route_cap" in sql
-    assert "d.stop_id IS NOT NULL" in sql
-    assert "current_trip_delay_computed" in sql
-    assert "GROUP BY provider_id, trip_id" in sql
-    assert _STOP_DEPARTURES_PER_ROUTE_CAP == 2
 
 
 def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:

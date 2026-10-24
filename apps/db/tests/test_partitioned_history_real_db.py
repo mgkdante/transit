@@ -4,6 +4,7 @@ import hashlib
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.settings import get_settings
@@ -52,26 +53,12 @@ def _insert_fact_snapshot(
 ) -> None:
     run_id = BASE_RUN_ID + snapshot_id - BASE_SNAPSHOT_ID
     local_date = captured_at.date()
-    conn.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:run_id, :provider_id, :endpoint_id, 'trip_updates', 'succeeded')"
-        ),
-        {
-            "run_id": run_id,
-            "provider_id": provider_id,
-            "endpoint_id": endpoint_id,
-        },
+    db_seed.ingestion_runs(
+        conn, {'run_id': run_id, 'provider_id': provider_id, 'endpoint_id': endpoint_id},
+        ingestion_run_id=':run_id', provider_id=':provider_id', feed_endpoint_id=':endpoint_id',
     )
-    conn.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            "feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:snapshot_id, :run_id, :provider_id, :endpoint_id, "
-            ":captured_at, :entity_count, :captured_at)"
-        ),
+    db_seed.realtime_snapshot_index(
+        conn,
         {
             "snapshot_id": snapshot_id,
             "run_id": run_id,
@@ -80,6 +67,9 @@ def _insert_fact_snapshot(
             "captured_at": captured_at,
             "entity_count": len(rows),
         },
+        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id', provider_id=':provider_id',
+        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':captured_at',
+        entity_count=':entity_count', captured_at_utc=':captured_at',
     )
     for entity_index, (delay_seconds, vehicle_id) in enumerate(rows):
         conn.execute(
@@ -130,14 +120,9 @@ def network_history_conn(real_db_engine):  # noqa: ANN001
             (TRIP_ENDPOINT_ID, PROVIDER),
             (OTHER_TRIP_ENDPOINT_ID, OTHER_PROVIDER),
         ):
-            conn.execute(
-                text(
-                    "INSERT INTO core.feed_endpoints "
-                    "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-                    "VALUES (:endpoint_id, :provider_id, 'trip_updates', 'trip_updates', "
-                    "'gtfs_rt_trip_updates')"
-                ),
-                {"endpoint_id": endpoint_id, "provider_id": provider_id},
+            db_seed.feed_endpoints(
+                conn, {'endpoint_id': endpoint_id, 'provider_id': provider_id},
+                feed_endpoint_id=':endpoint_id', provider_id=':provider_id',
             )
         for local_date, route, obs, on_time, severe, delay_sum, built in (
             (date(2026, 5, 31), "A", 4, 3, 1, 120, datetime(2026, 6, 1, tzinfo=UTC)),

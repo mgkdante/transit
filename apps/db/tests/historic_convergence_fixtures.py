@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from google.transit import gtfs_realtime_pb2
 from realtime_replay_fixtures import _build_trip_update_bytes
 from sqlalchemy import text
@@ -69,19 +70,9 @@ def seed_static(conn):
     """),
         {"p": PROVIDER},
     ).scalar_one()
-    for statement in (
-        "INSERT INTO silver.routes(dataset_version_id,provider_id,route_id,route_type,"
-        "route_short_name) VALUES (:v,:p,'51',3,'51')",
-        "INSERT INTO silver.stops(dataset_version_id,provider_id,stop_id,stop_name) "
-        "VALUES (:v,:p,'S1','Stop 1'),(:v,:p,'S2','Stop 2')",
-        "INSERT INTO silver.trips(dataset_version_id,provider_id,trip_id,route_id,service_id) "
-        "VALUES (:v,:p,'T_REPLAY','51','WK')",
-        "INSERT INTO silver.stop_times(dataset_version_id,provider_id,trip_id,stop_sequence,"
-        "stop_id,arrival_time,departure_time) "
-        "VALUES (:v,:p,'T_REPLAY',1,'S1','12:00:00','12:00:00'),"
-        "(:v,:p,'T_REPLAY',2,'S2','12:08:00','12:08:00')",
-    ):
-        conn.execute(text(statement), {"p": PROVIDER, "v": version})
+    db_seed.replay_static_graph(
+        conn, {"p": PROVIDER, "v": version}, version=":v", route_short_name="'51'",
+    )
 
 
 @dataclass

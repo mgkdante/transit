@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -58,16 +59,7 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001
 
 
 def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')
-            """
-        ),
-        {"eid": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'eid': ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid')
 
     local_date = seed.closed_local_date
     day_local_midnight = datetime(
@@ -88,25 +80,12 @@ def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
 
 def _insert_snapshot(connection, seed: _Seed, captured_at: datetime) -> int:  # noqa: ANN001
     snapshot_id, run_id = seed.next_ids()
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:run_id, :p, :eid, 'trip_updates', 'succeeded')
-            """
-        ),
-        {"run_id": run_id, "p": PROVIDER, "eid": ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'run_id': run_id, 'p': PROVIDER, 'eid': ENDPOINT_ID},
+        ingestion_run_id=':run_id', feed_endpoint_id=':eid',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id,
-                 feed_timestamp_utc, entity_count, captured_at_utc)
-            VALUES (:sid, :run_id, :p, :eid, :ts, 1, :ts)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "sid": snapshot_id,
             "run_id": run_id,
@@ -114,6 +93,8 @@ def _insert_snapshot(connection, seed: _Seed, captured_at: datetime) -> int:  # 
             "eid": ENDPOINT_ID,
             "ts": captured_at,
         },
+        realtime_snapshot_id=':sid', ingestion_run_id=':run_id', feed_endpoint_id=':eid',
+        entity_count='1',
     )
     return snapshot_id
 
@@ -174,14 +155,7 @@ def _build_rollups(connection) -> None:  # noqa: ANN001
 
 
 def _seed_span(connection, seed: _Seed) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
-        ),
-        {"eid": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'eid': ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid')
     service_date = seed.closed_local_date - timedelta(days=1)
     d_midnight = datetime(service_date.year, service_date.month, service_date.day, tzinfo=TORONTO)
 
@@ -300,14 +274,7 @@ def test_skipped_stop_rate_sums_fact_counts(conn) -> None:  # noqa: ANN001
 
 
 def _seed_crowding(connection, seed: _Seed) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO core.feed_endpoints "
-            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-            "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
-        ),
-        {"eid": ENDPOINT_ID, "p": PROVIDER},
-    )
+    db_seed.feed_endpoints(connection, {'eid': ENDPOINT_ID, 'p': PROVIDER}, feed_endpoint_id=':eid')
     local_date = seed.closed_local_date
     day_local_midnight = datetime(local_date.year, local_date.month, local_date.day, tzinfo=TORONTO)
     rows = [

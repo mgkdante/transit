@@ -19,12 +19,6 @@ function noteServerTime(res: Response): void {
 
 export type FetchFn = typeof fetch;
 
-export interface FetchCtx {
-	fetch?: FetchFn;
-	cache?: RequestCache;
-	signal?: AbortSignal;
-}
-
 export interface RawJsonEntity<T> {
 	readonly value: T;
 	readonly bytes: Uint8Array;

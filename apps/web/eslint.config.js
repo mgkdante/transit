@@ -45,6 +45,8 @@ export default ts.config(
 			'.wrangler/',
 			'src/lib/styles/tokens.css',
 			'src/lib/v1/schemas/json/',
+			'src/lib/v1/schemas/generated/',
+			'.scratch-s1/',
 			'tools/tokens/**',
 			'vendor/',
 		],

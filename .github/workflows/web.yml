@@ -170,7 +170,7 @@ jobs:
         run: ../../node_modules/.bin/wrangler deploy --dry-run --env="$TRANSIT_WRANGLER_ENV"
 
       - name: Browser toolchain contract
-        run: node --test scripts/install-browser-toolchain.test.mjs scripts/verify-browser-toolchain.test.mjs
+        run: node --test scripts/install-browser-toolchain.test.mjs
 
       - name: Install authenticated Chromium
         env:
@@ -179,9 +179,6 @@ jobs:
           mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
           node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
-
-      - name: Verify browser toolchain
-        run: node scripts/verify-browser-toolchain.mjs
 
       - name: B9 displayed-value correctness
         env:

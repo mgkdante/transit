@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
@@ -101,13 +102,9 @@ def _seed(connection) -> None:  # noqa: ANN001
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions", "vehicle_positions", "gtfs_rt_vehicle_positions"),
     ):
-        connection.execute(
-            text(
-                "INSERT INTO core.feed_endpoints "
-                "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
-                "VALUES (:eid, :p, :key, :kind, :fmt)"
-            ),
-            {"eid": eid, "p": PROVIDER, "key": key, "kind": kind, "fmt": fmt},
+        db_seed.feed_endpoints(
+            connection, {'eid': eid, 'p': PROVIDER, 'key': key, 'kind': kind, 'fmt': fmt},
+            feed_endpoint_id=':eid', endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
         )
 
     ids = _Counter(995100)
@@ -174,22 +171,9 @@ def _insert_vehicle_snapshot(connection, ids, route, local_date, hour, codes) ->
 
 
 def _snapshot_header(connection, sid, run_id, eid, captured_at, n) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO raw.ingestion_runs "
-            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
-            "VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
-        ),
-        {"r": run_id, "p": PROVIDER, "e": eid},
-    )
-    connection.execute(
-        text(
-            "INSERT INTO raw.realtime_snapshot_index "
-            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
-            " feed_timestamp_utc, entity_count, captured_at_utc) "
-            "VALUES (:s, :r, :p, :e, :ts, :n, :ts)"
-        ),
-        {"s": sid, "r": run_id, "p": PROVIDER, "e": eid, "ts": captured_at, "n": n},
+    db_seed.ingestion_runs(connection, {'r': run_id, 'p': PROVIDER, 'e': eid})
+    db_seed.realtime_snapshot_index(
+        connection, {'s': sid, 'r': run_id, 'p': PROVIDER, 'e': eid, 'ts': captured_at, 'n': n},
     )
 
 

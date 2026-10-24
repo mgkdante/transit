@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.ingestion.common import insert_failed_ingestion_run
@@ -55,14 +56,8 @@ def _seed(connection, seed_provider) -> None:
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (I3_ENDPOINT_ID, "i3_alerts", "i3_alerts", "api_i3_json"),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:e, :p, :key, :kind, :fmt)
-                """
-            ),
+        db_seed.feed_endpoints(
+            connection,
             {
                 "e": endpoint_id,
                 "p": PROVIDER,
@@ -70,38 +65,18 @@ def _seed(connection, seed_provider) -> None:
                 "kind": feed_kind,
                 "fmt": source_format,
             },
+            endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
         )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id,
-                 run_kind, status, started_at_utc, completed_at_utc)
-            VALUES (:r, :p, :e, 'trip_updates', 'succeeded', :at, :at)
-            """
-        ),
-        {"r": CAPTURE_RUN_ID, "p": PROVIDER, "e": TU_ENDPOINT_ID, "at": CAPTURE_AT},
+    db_seed.ingestion_runs(
+        connection, {'r': CAPTURE_RUN_ID, 'p': PROVIDER, 'e': TU_ENDPOINT_ID, 'at': CAPTURE_AT},
+        started_at_utc=':at', completed_at_utc=':at',
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_objects
-                (ingestion_object_id, ingestion_run_id, provider_id,
-                 object_kind, storage_backend, storage_path)
-            VALUES (:o, :r, :p, 'gtfs_rt_feed', 's3', 'silver-load-test/tu/capture.pb')
-            """
-        ),
-        {"o": CAPTURE_OBJECT_ID, "r": CAPTURE_RUN_ID, "p": PROVIDER},
+    db_seed.ingestion_objects(
+        connection, {'o': CAPTURE_OBJECT_ID, 'r': CAPTURE_RUN_ID, 'p': PROVIDER},
+        storage_path="'silver-load-test/tu/capture.pb'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.realtime_snapshot_index
-                (realtime_snapshot_id, ingestion_run_id, ingestion_object_id,
-                 provider_id, feed_endpoint_id, feed_timestamp_utc, captured_at_utc)
-            VALUES (:s, :r, :o, :p, :e, :at, :at)
-            """
-        ),
+    db_seed.realtime_snapshot_index(
+        connection,
         {
             "s": CAPTURE_SNAPSHOT_ID,
             "r": CAPTURE_RUN_ID,
@@ -110,6 +85,8 @@ def _seed(connection, seed_provider) -> None:
             "e": TU_ENDPOINT_ID,
             "at": CAPTURE_AT,
         },
+        ingestion_object_id=':o', feed_timestamp_utc=':at', entity_count=None,
+        captured_at_utc=':at',
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_routes_index
@@ -30,36 +31,15 @@ def conn(real_db_engine, seed_provider):
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.feed_endpoints
-                (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'static_schedule', 'static_schedule', 'gtfs_schedule_zip')
-            """
-        ),
-        {"e": ENDPOINT_ID, "p": PROVIDER},
+    db_seed.feed_endpoints(
+        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'static_schedule', 'succeeded')
-            """
-        ),
-        {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
+    db_seed.ingestion_runs(
+        connection, {'r': RUN_ID, 'p': PROVIDER, 'e': ENDPOINT_ID}, run_kind="'static_schedule'",
     )
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.dataset_versions
-                (dataset_version_id, provider_id, feed_endpoint_id,
-                 source_ingestion_run_id, dataset_kind, content_hash,
-                 loaded_at_utc, is_current)
-            VALUES (:v, :p, :e, :r, 'static_schedule', :h, :loaded, true)
-            """
-        ),
+    db_seed.dataset_versions(
+        connection,
         {
             "v": VERSION_ID,
             "p": PROVIDER,
@@ -68,6 +48,7 @@ def _seed(connection) -> None:
             "h": f"{PROVIDER}-hash",
             "loaded": LOADED,
         },
+        dataset_version_id=':v', loaded_at_utc=':loaded',
     )
     for route_id, sort_order in ((ROUTE_WITH, 1), (ROUTE_WITHOUT, 2)):
         connection.execute(

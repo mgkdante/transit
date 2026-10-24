@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.maintenance.silver import prune_realtime_silver_history
@@ -35,35 +36,19 @@ def _seed_refs(connection, seed_provider) -> None:
         (TU_ENDPOINT_ID, "trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions"),
     ):
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.feed_endpoints
-                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-                VALUES (:e, :p, :k, :k, :fmt)
-                """
-            ),
-            {
-                "e": endpoint_id,
-                "p": PROVIDER,
-                "k": endpoint_key,
-                "fmt": f"gtfs_rt_{endpoint_key}",
-            },
+        db_seed.feed_endpoints(
+            connection,
+            {'e': endpoint_id, 'p': PROVIDER, 'k': endpoint_key, 'fmt': f'gtfs_rt_{endpoint_key}'},
+            endpoint_key=':k', feed_kind=':k', source_format=':fmt',
         )
 
 
 def _insert_snapshot(connection, *, snapshot_id: int, endpoint_key: str, captured_at) -> None:
     endpoint_id = TU_ENDPOINT_ID if endpoint_key == "trip_updates" else VP_ENDPOINT_ID
     run_id = RUN_BASE + snapshot_id
-    connection.execute(
-        text(
-            """
-            INSERT INTO raw.ingestion_runs
-                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (CAST(:r AS bigint), :p, CAST(:e AS bigint), :k, 'succeeded')
-            """
-        ),
-        {"r": run_id, "p": PROVIDER, "e": endpoint_id, "k": endpoint_key},
+    db_seed.ingestion_runs(
+        connection, {'r': run_id, 'p': PROVIDER, 'e': endpoint_id, 'k': endpoint_key},
+        ingestion_run_id='CAST(:r AS bigint)', feed_endpoint_id='CAST(:e AS bigint)', run_kind=':k',
     )
     connection.execute(
         text(
