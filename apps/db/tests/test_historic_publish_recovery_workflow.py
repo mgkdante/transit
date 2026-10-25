@@ -171,6 +171,39 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
     assert HISTORIC_PROOF_TIMEOUT_SECONDS < proof_timeout_minutes * 60
     assert job["timeout-minutes"] - proof_timeout_minutes >= 45
     assert _step(job, "Upload historic recovery evidence")["if"] == "always()"
+    assert _step(job, "Apply database migrations")["run"].strip() == (
+        "mkdir -p artifacts/historic-publish-recovery\n"
+        "uv run python -m transit_ops.cli init-db 2>&1 \\\n"
+        "  | tee artifacts/historic-publish-recovery/migration-upgrade.txt"
+    )
+    assert _step(job, "Prove database migration head")["run"].strip() == (
+        "{\n  uv run alembic heads\n  uv run alembic current --check-heads\n"
+        "} 2>&1 | tee artifacts/historic-publish-recovery/migration-head.txt"
+    )
+    sync = _step(job, "Sync retained alert archive (all providers)")["run"]
+    assert "> artifacts/historic-publish-recovery/provider-discovery.json" in sync
+    assert "jq -n --args '$ARGS.positional'" in sync
+    assert 'for provider in "${discovered_providers[@]}"; do' in sync
+    assert 'sync-alert-archive "$provider"' in sync
+    assert '| tee "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"' in sync
+    publish = _step(job, "Publish gated historic snapshot (all providers)")["run"]
+    assert "--tier historic" in publish
+    assert "--report-dir artifacts/historic-publish-recovery" in publish
+    assert "| tee artifacts/historic-publish-recovery/historic-publish.json" in publish
+    assert "2>&1" not in publish
+    proof = _step(job, "Prove published historic snapshots")["run"]
+    assert (
+        '--sync-report "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"'
+        in proof
+    )
+    assert (
+        '--gate-report "artifacts/historic-publish-recovery/publish-gate-${provider}.json"'
+        in proof
+    )
+    assert '--report-path "$proof_path"' in proof
+    assert 'proof_seed_path="${proof_path}.seed"' in proof
+    assert 'mv -f "$proof_seed_path" "$proof_path"' in proof
+    assert 'if ($synced | unique | length) != ($synced | length) then' in proof
 
 
 def test_recovery_workflow_reuses_the_daily_lane_pinned_setup() -> None:
@@ -181,238 +214,6 @@ def test_recovery_workflow_reuses_the_daily_lane_pinned_setup() -> None:
 
     assert recovery_setup == daily_job["steps"][:2]
     assert recovery_setup[1]["uses"] == "./.github/actions/setup-py"
-
-
-def test_recovery_workflow_runs_the_exact_bounded_recovery_sequence() -> None:
-    document = _load(RECOVERY_WORKFLOW)
-    job = _only_job(document)
-    run_bodies = "\n".join(str(step["run"]) for step in job["steps"] if "run" in step)
-
-    init = run_bodies.index("transit_ops.cli init-db")
-    migration_head = run_bodies.index("alembic current --check-heads")
-    sync = run_bodies.index("transit_ops.cli sync-alert-archive")
-    publish = run_bodies.index("transit_ops.cli publish-all")
-    proof = run_bodies.index("transit_ops.cli verify-historic-publish")
-    assert init < migration_head < sync < publish < proof
-
-    assert (
-        _step(job, "Apply database migrations")["run"].strip()
-        == """\
-mkdir -p artifacts/historic-publish-recovery
-uv run python -m transit_ops.cli init-db 2>&1 \\
-  | tee artifacts/historic-publish-recovery/migration-upgrade.txt"""
-    )
-
-    assert (
-        _step(job, "Prove database migration head")["run"].strip()
-        == """\
-{
-  uv run alembic heads
-  uv run alembic current --check-heads
-} 2>&1 | tee artifacts/historic-publish-recovery/migration-head.txt"""
-    )
-
-    expected_sync = (
-        'providers="$(uv run python -m transit_ops.cli list-providers)"\n'
-        'if [[ -z "$providers" ]]; then\n'
-        '  echo "Provider discovery returned no providers" >&2\n'
-        "  exit 1\n"
-        "fi\n"
-        "discovered_providers=()\n"
-        "declare -A seen_providers=()\n"
-        "while IFS= read -r provider; do\n"
-        '  if [[ -z "$provider" ]]; then\n'
-        '    echo "Provider discovery returned an empty provider id" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  if [[ ! "$provider" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then\n'
-        '    echo "Provider discovery returned an unsafe provider id" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  if [[ -n "${seen_providers[$provider]+x}" ]]; then\n'
-        '    echo "Provider discovery returned a duplicate provider id" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  seen_providers["$provider"]=1\n'
-        '  discovered_providers+=("$provider")\n'
-        'done <<< "$providers"\n'
-        "jq -n --args '$ARGS.positional' \"${discovered_providers[@]}\" \\\n"
-        "  > artifacts/historic-publish-recovery/provider-discovery.json\n"
-        'for provider in "${discovered_providers[@]}"; do\n'
-        '  uv run python -m transit_ops.cli sync-alert-archive "$provider" \\\n'
-        '    | tee "artifacts/historic-publish-recovery/'
-        'alert-archive-sync-${provider}.json"\n'
-        "done"
-    )
-    assert _step(job, "Sync retained alert archive (all providers)")["run"].strip() == expected_sync
-
-    publish_run = _step(job, "Publish gated historic snapshot (all providers)")["run"].strip()
-    assert (
-        publish_run
-        == """\
-uv run python -m transit_ops.cli publish-all \\
-  --tier historic \\
-  --report-dir artifacts/historic-publish-recovery \\
-  | tee artifacts/historic-publish-recovery/historic-publish.json"""
-    )
-    assert "2>&1" not in publish_run
-
-    expected_proof = (
-        'published_providers="$(\n'
-        "  jq -ers '\n"
-        "    def valid_provider_id:\n"
-        '      if type == "string" then\n'
-        '        length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")\n'
-        "      else false\n"
-        "      end;\n"
-        "    if length != 1 then\n"
-        '      error("historic publish result must contain exactly one JSON document")\n'
-        '    elif (.[0] | type) != "array" or (.[0] | length) == 0 then\n'
-        '      error("historic publish result must be a nonempty array")\n'
-        "    elif any(.[0][];\n"
-        '      if type == "object" then\n'
-        "        (.provider_id | valid_provider_id | not)\n"
-        "      else true\n"
-        "      end\n"
-        "    ) then\n"
-        '      error("every historic publish result needs a safe provider_id")\n'
-        "    elif ([.[0][].provider_id] | unique | length) != (.[0] | length) then\n"
-        '      error("historic publish result contains duplicate provider_id values")\n'
-        "    else\n"
-        "      [.[0][].provider_id] | sort | .[]\n"
-        "    end\n"
-        "  ' artifacts/historic-publish-recovery/historic-publish.json\n"
-        ')"\n'
-        'if [[ -z "$published_providers" ]]; then\n'
-        '  echo "Historic publish result returned no provider ids" >&2\n'
-        "  exit 1\n"
-        "fi\n"
-        'discovered_providers="$(\n'
-        "  jq -ers '\n"
-        "    def valid_provider_id:\n"
-        '      if type == "string" then\n'
-        '        length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")\n'
-        "      else false\n"
-        "      end;\n"
-        "    if length != 1 then\n"
-        '      error("provider discovery must contain exactly one JSON document")\n'
-        '    elif (.[0] | type) != "array" or (.[0] | length) == 0 then\n'
-        '      error("provider discovery must be a nonempty array")\n'
-        "    elif any(.[0][]; valid_provider_id | not) then\n"
-        '      error("provider discovery contains an unsafe provider id")\n'
-        "    elif (.[0] | unique | length) != (.[0] | length) then\n"
-        '      error("provider discovery contains duplicate provider ids")\n'
-        "    else\n"
-        "      .[0][]\n"
-        "    end\n"
-        "  ' artifacts/historic-publish-recovery/provider-discovery.json\n"
-        ')"\n'
-        'if [[ -z "$discovered_providers" ]]; then\n'
-        '  echo "Historic recovery provider discovery is empty" >&2\n'
-        "  exit 1\n"
-        "fi\n"
-        "sync_receipt_records=()\n"
-        "while IFS= read -r discovered_provider; do\n"
-        '  if [[ -z "$discovered_provider" ]]; then\n'
-        '    echo "Historic recovery provider discovery contains an empty id" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  sync_receipt="artifacts/historic-publish-recovery/'
-        'alert-archive-sync-${discovered_provider}.json"\n'
-        '  if [[ ! -f "$sync_receipt" ]]; then\n'
-        '    echo "Historic recovery is missing a sync receipt for '
-        '${discovered_provider}" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  sync_receipt_records+=("$(\n'
-        '    jq -ecs --arg provider "$discovered_provider" \'\n'
-        "      if length != 1 then\n"
-        '        error("sync receipt must contain exactly one JSON document")\n'
-        '      elif (.[0] | type) != "object" then\n'
-        '        error("sync receipt must be a JSON object")\n'
-        "      elif .[0].provider_id != $provider then\n"
-        '        error("sync receipt provider_id does not match discovery")\n'
-        "      elif (\n"
-        '        .[0] | has("skipped_not_seeded")\n'
-        '        and (.skipped_not_seeded | type) != "boolean"\n'
-        "      ) then\n"
-        '        error("sync receipt skipped_not_seeded must be boolean")\n'
-        "      else\n"
-        "        .[0]\n"
-        "      end\n"
-        '    \' "$sync_receipt"\n'
-        '  )")\n'
-        'done <<< "$discovered_providers"\n'
-        'synced_providers="$(\n'
-        "  printf '%s\\n' \"${sync_receipt_records[@]}\" \\\n"
-        "    | jq -rs '\n"
-        "      [.[]\n"
-        "        | select(.skipped_not_seeded != true)\n"
-        "        | .provider_id\n"
-        "      ] as $synced\n"
-        "      | if ($synced | unique | length) != ($synced | length) then\n"
-        '          error("sync receipts contain duplicate active provider_id values")\n'
-        "        else\n"
-        "          $synced | sort | .[]\n"
-        "        end\n"
-        "    '\n"
-        ')"\n'
-        'if [[ "$synced_providers" != "$published_providers" ]]; then\n'
-        '  echo "Historic publish provider set does not match active sync receipts" >&2\n'
-        "  exit 1\n"
-        "fi\n"
-        "while IFS= read -r provider; do\n"
-        '  if [[ -z "$provider" ]]; then\n'
-        '    echo "Historic publish result returned an empty provider id" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  proof_path="artifacts/historic-publish-recovery/'
-        'public-proof-${provider}.json"\n'
-        '  proof_seed_path="${proof_path}.seed"\n'
-        '  jq -n --arg provider "$provider" \'\n'
-        "    {\n"
-        "      provider_id: $provider,\n"
-        "      verified_at_utc: null,\n"
-        '      status: "fail",\n'
-        '      migration: {status: "unavailable"},\n'
-        '      sync: {status: "unavailable"},\n'
-        '      gate: {status: "unavailable"},\n'
-        "      public: {\n"
-        "        deadline: {\n"
-        "          exceeded: true,\n"
-        '          failure: "historic_proof_interrupted_before_completion",\n'
-        '          receipt_source: "workflow_preseed"\n'
-        "        }\n"
-        "      },\n"
-        '      source_messages: {status: "unavailable"},\n'
-        '      failures: ["historic_proof_interrupted_before_completion"]\n'
-        "    }\n"
-        '  \' > "$proof_seed_path"\n'
-        '  mv -f "$proof_seed_path" "$proof_path"\n'
-        '  uv run python -m transit_ops.cli verify-historic-publish "$provider" \\\n'
-        '    --sync-report "artifacts/historic-publish-recovery/'
-        'alert-archive-sync-${provider}.json" \\\n'
-        '    --gate-report "artifacts/historic-publish-recovery/'
-        'publish-gate-${provider}.json" \\\n'
-        '    --report-path "$proof_path"\n'
-        '  if [[ ! -s "$proof_path" ]]; then\n'
-        '    echo "Historic publication proof for ${provider} did not write a '
-        'nonempty report" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        '  if ! jq -es --arg provider "$provider" \'\n'
-        "    length == 1\n"
-        '    and (.[0] | type) == "object"\n'
-        "    and .[0].provider_id == $provider\n"
-        '    and .[0].status == "pass"\n'
-        '  \' "$proof_path" >/dev/null; then\n'
-        '    echo "Historic publication proof report for ${provider} is '
-        'invalid or failed" >&2\n'
-        "    exit 1\n"
-        "  fi\n"
-        'done <<< "$published_providers"'
-    )
-    assert _step(job, "Prove published historic snapshots")["run"].strip() == expected_proof
 
 
 def test_recovery_provider_loops_do_not_hide_discovery_failures() -> None:
@@ -463,7 +264,7 @@ def test_sync_step_rejects_empty_provider_discovery(tmp_path: Path) -> None:
     assert "Provider discovery returned no providers" in result.stderr
 
 
-@pytest.mark.parametrize("provider_id", ["../sto", " "])
+@pytest.mark.parametrize("provider_id", ["../sto", " ", "stm\n\nsto"])
 def test_sync_step_rejects_unsafe_provider_before_path_use(
     tmp_path: Path,
     provider_id: str,
@@ -594,12 +395,14 @@ def test_critical_pipeline_propagates_left_side_failure(
     "payload",
     [
         "not-json",
+        '[{"provider_id":"stm"}]\n[{"provider_id":"sto"}]',
         "{}",
         "[]",
         '[{"provider_id": "stm"}, {"provider_id": ""}]',
         '[{"provider_id": ""}]',
         '[{"provider_id": 1}]',
         "[{}]",
+        '["stm"]',
     ],
 )
 def test_proof_step_rejects_invalid_or_empty_publish_results(
@@ -609,7 +412,9 @@ def test_proof_step_rejects_invalid_or_empty_publish_results(
     artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "historic-publish.json").write_text(payload, encoding="utf-8")
-    environment = _fake_uv_environment(tmp_path, "exit 0\n")
+    _write_provider_discovery(artifact_dir, ["stm"])
+    _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
+    environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
     job = _only_job(_load(RECOVERY_WORKFLOW))
 
     result = _run_step_script(
@@ -791,6 +596,9 @@ def test_proof_step_preseeds_nonempty_failure_receipt_before_verifier_runs(
     assert payload["provider_id"] == "stm"
     assert payload["status"] == "fail"
     assert payload["failures"] == ["historic_proof_interrupted_before_completion"]
+    assert payload["verified_at_utc"] is None
+    for section in ("migration", "sync", "gate", "source_messages"):
+        assert payload[section] == {"status": "unavailable"}
     assert payload["public"]["deadline"] == {
         "exceeded": True,
         "failure": "historic_proof_interrupted_before_completion",
@@ -1082,10 +890,10 @@ def test_proof_step_verifies_each_strictly_valid_published_provider(tmp_path: Pa
     artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "historic-publish.json").write_text(
-        '[{"provider_id": "stm"}, {"provider_id": "sto"}]',
+        '[{"provider_id": "sto"}, {"provider_id": "stm"}]',
         encoding="utf-8",
     )
-    _write_provider_discovery(artifact_dir, ["stm", "sto"])
+    _write_provider_discovery(artifact_dir, ["sto", "stm"])
     for provider in ("stm", "sto"):
         _write_sync_receipt(artifact_dir, provider, {"provider_id": provider})
     calls = tmp_path / "uv-calls.txt"

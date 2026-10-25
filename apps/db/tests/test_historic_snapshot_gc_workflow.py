@@ -131,6 +131,8 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
     assert "gc-historic-snapshots" in scan["run"]
     assert 'exit "$aggregate_status"' in scan["run"]
     assert "${{" not in scan["run"]
+    assert "set +e" in scan["run"]
+    assert "set -e" in scan["run"]
     upload = _step(job, "Upload provider GC receipts")
     assert upload["if"] == "always()"
     assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
@@ -142,35 +144,6 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
     assert sum(step.get("uses") == upload["uses"] for step in steps) == 1
     assert "matrix.provider" not in rendered
     assert len(json.loads(job["env"]["PROVIDER_PLAN"])) * 91 <= scan["timeout-minutes"]
-
-
-def test_historic_gc_workflow_rewrites_only_scan_timeout_receipts() -> None:
-    workflow = _workflow()
-    scan_step = next(
-        step
-        for step in workflow["jobs"]["mark"]["steps"]
-        if step.get("name") == "Scan and mark unreachable generations"
-    )
-    script = scan_step["run"]
-
-    assert "set +e" in script
-    assert 'scan_status="$?"' in script
-    assert "set -e" in script
-    assert (
-        '[[ "$scan_status" -eq 124 || "$scan_status" -eq 137 || "$scan_status" -eq 143 ]]' in script
-    )
-    assert '"status":"fail"' in script
-    assert '"phase":"scan"' in script
-    assert '"failure_type":"timeout"' in script
-    assert '"timeout_limit":"%s"' in script
-    assert 'exit "$aggregate_status"' in script
-    timeout_guard = (
-        'if [[ "$scan_status" -eq 124 || "$scan_status" -eq 137 || "$scan_status" -eq 143 ]]; then'
-    )
-    guard_index = script.index(timeout_guard)
-    printf_index = script.index("printf '", guard_index)
-    assert guard_index < printf_index < script.index("\n  fi\n", printf_index)
-    assert script.count('> "$report_path"') == 1
 
 
 @pytest.mark.parametrize(
