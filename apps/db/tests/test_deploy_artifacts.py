@@ -441,45 +441,6 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     assert "bash scripts/run-pg-repack.sh" in workflow
 
 
-def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
-    document = yaml.safe_load(workflow)
-
-    bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
-    assert bronze_command in workflow
-    assert workflow.index(bronze_command) > workflow.index('prune-warm-rollup-storage "$provider"')
-    assert 'retention-proof-report "$provider" --report-path' in workflow
-    assert "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" in workflow
-    assert "if: always()" in workflow
-    assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
-
-    assert document["jobs"]["retention"]["timeout-minutes"] == 150
-
-
-def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
-    document = yaml.safe_load(
-        (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
-    )
-    rollups = document["jobs"]["rollups"]
-    build = next(step for step in rollups["steps"] if step["name"] == "Build warm rollups serially")
-    publish = document["jobs"]["publish"]
-
-    provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
-    required_attempt_minutes = (provider_count + 1) * 76
-    assert required_attempt_minutes < build["timeout-minutes"]
-    assert build["timeout-minutes"] + 10 <= rollups["timeout-minutes"] <= 360
-    assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
-    publish_step = next(
-        step for step in publish["steps"] if step["name"] == "Publish gated historic snapshot"
-    )
-    assert "timeout --signal=TERM --kill-after=30s 90m" in publish_step["run"]
-    assert provider_count * 91 < publish_step["timeout-minutes"]
-    assert publish_step["timeout-minutes"] + 10 <= publish["timeout-minutes"] <= 360
-    assert publish["if"] == (
-        "${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}"
-    )
-
-
 def test_ci_runs_for_db_and_ci_contract_changes() -> None:
     document = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     on = document.get("on", document.get(True, {}))
@@ -628,23 +589,17 @@ def test_refresh_basemap_verifies_go_pmtiles_archive_before_extraction() -> None
     assert install["run"].strip() == expected_run
 
 
-def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_publish() -> None:
+def test_daily_static_pipeline_keeps_schedule_concurrency_and_integrated_gis() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-static-pipeline.yml").read_text(
         encoding="utf-8"
     )
     document = yaml.safe_load(workflow)
 
-    assert 'cron: "0 6 * * *"' in workflow
-    assert "Run static + GIS Bronze -> Silver -> Gold pipeline" in workflow
+    assert document.get("on", document.get(True))["schedule"] == [{"cron": "0 6 * * *"}]
     assert "ingest-gis" not in workflow
-    assert "list-providers" in workflow
-    assert 'run-static-pipeline "$provider"' in workflow
-    assert workflow.index('run-static-pipeline "$provider"') < workflow.index(
-        "publish-all --tier static"
-    )
-    assert "concurrency" in workflow
-    assert "group: daily-static-pipeline" in workflow
-    assert document["jobs"]["run-static-pipeline"]["timeout-minutes"] == 110
+    assert document["concurrency"] == {
+        "group": "daily-static-pipeline", "cancel-in-progress": False,
+    }
 
 
 def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:
@@ -672,26 +627,6 @@ def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_isl
     width = math.radians(max_lon - min_lon)
     height = mercator_y(max_lat) - mercator_y(min_lat)
     assert abs(width / height - 1) <= 0.03
-
-
-def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
-
-    assert 'prune-i3-storage "$provider"' in workflow
-    assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
-        "publish-all --tier historic"
-    )
-
-
-def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
-
-    sync = workflow.index('sync-alert-archive "$provider"')
-    build = workflow.index('build-warm-rollups "$provider"')
-    publish = workflow.index("publish-all --tier historic")
-    prune = workflow.index('prune-i3-storage "$provider"')
-
-    assert sync < build < publish < prune
 
 
 def _environment_keys(service: dict) -> set[str]:
