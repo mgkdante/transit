@@ -143,7 +143,7 @@ function walk(root, path, files, directories) {
   }
 }
 
-export function inventory(root, staging = false) {
+function inventory(root, staging = false) {
   plainDirectories(root);
   const files = [];
   const directories = [];
