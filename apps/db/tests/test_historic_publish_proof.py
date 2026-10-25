@@ -1393,8 +1393,9 @@ def test_historic_publish_proof_deadline_cancels_bounded_fetches_without_waiting
     )
 
 
-def test_bounded_fetch_deadline_never_queues_a_later_worker_window() -> None:
+def test_bounded_fetch_deadline_never_queues_a_later_worker_window(monkeypatch) -> None:
     release = Event()
+    clock_value = [0.0]
     fetch_calls: list[str] = []
     artifacts: dict[str, dict[str, object]] = {}
     failures: list[str] = []
@@ -1407,8 +1408,16 @@ def test_bounded_fetch_deadline_never_queues_a_later_worker_window() -> None:
 
     deadline = historic_publish_module._HistoricProofDeadline(  # noqa: SLF001
         budget_seconds=0.1,
-        monotonic=monotonic,
+        monotonic=lambda: clock_value[0],
     )
+    record_batch = deadline.record_batch
+
+    def expire_after_batch(size: int) -> None:
+        record_batch(size)
+        clock_value[0] = 1.0
+
+    # Expire after submission, before a wall-clock future timeout can race the clock.
+    monkeypatch.setattr(deadline, "record_batch", expire_after_batch)
     token = historic_publish_module._ACTIVE_PROOF_DEADLINE.set(deadline)  # noqa: SLF001
     started = monotonic()
     try:
@@ -1612,7 +1621,23 @@ def test_isolated_whole_proof_removes_outcome_file_when_process_start_fails(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_whole_proof_uses_spawn_by_default_without_injected_process_state() -> None:
+def test_whole_proof_uses_spawn_by_default_without_injected_process_state(monkeypatch) -> None:
+    class CompletionWaitingContext:
+        def __init__(self, start_method: str) -> None:
+            assert start_method == "spawn"
+
+        class Process:
+            def __init__(self, *args, **kwargs):
+                self._process = get_context("spawn").Process(*args, **kwargs)
+
+            def __getattr__(self, name: str):
+                return getattr(self._process, name)
+
+            def start(self) -> None:
+                self._process.start()
+                self._process.join()
+
+    monkeypatch.setattr(historic_publish_module, "get_context", CompletionWaitingContext)
     fixture = _complete_public_fixture()
 
     report = build_historic_publish_proof(
@@ -1622,6 +1647,7 @@ def test_whole_proof_uses_spawn_by_default_without_injected_process_state() -> N
         settings=Settings(_env_file=None),
         now_utc=NOW_UTC,
         proof_timeout_seconds=5,
+        monotonic=float,  # Picklable fixed clock; OS startup is outside this selection test.
     )
 
     assert report.status == "fail"
