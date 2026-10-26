@@ -13,6 +13,59 @@ from transit_ops.sql_registry import query_name
 _DEFAULT_ON_TIME = object()
 
 
+@pytest.mark.parametrize("family", ["hotspots_history", "repeat_offenders_history"])
+def test_point_windows_own_totals_without_mutating_shared_expiration_inputs(family: str) -> None:
+    from importlib import import_module
+
+    module = import_module(f"transit_ops.snapshots.builders.historic.{family}")
+    first = date(2026, 3, 7)
+    key = ("stop", "S1", "R1")
+    original = module._Counts(
+        present=1, observation_count=5, severe_count=1, sum_delay_seconds=-13,
+    )
+    daily = {key: original}
+    day_window = module._CountsWindow(1)
+    week_window = module._CountsWindow(7)
+    for window in (day_window, week_window):
+        window.add_day(first, daily)
+        window.add_day(first + timedelta(days=1), {
+            key: module._Counts(present=1, observation_count=7, sum_delay_seconds=3),
+        })
+
+    assert (original.present, original.observation_count, original.sum_delay_seconds) == (1, 5, -13)
+    assert day_window.totals[key].observation_count == 7
+    assert week_window.totals[key].observation_count == 12
+    assert week_window.totals[key].sum_delay_seconds == -10
+    week_window.add_day(first + timedelta(days=8), {})
+    assert week_window.totals == {}
+    assert day_window.totals[key].observation_count == 7
+
+
+def test_history_names_revisit_dates_and_keep_returned_maps_independent() -> None:
+    from transit_ops.snapshots.builders.historic.history_common import HistoryNameIndex
+
+    names = HistoryNameIndex(
+        [
+            _name("route", "same", "Before", "2026-01-01T00:00:00Z", "2026-03-08T05:00:00Z"),
+            _name("route", "same", "After", "2026-03-08T05:00:00Z"),
+            _name("stop", "same", "Stop", "2026-01-01T00:00:00Z"),
+        ],
+        provider_timezone="America/Toronto",
+    )
+    for local_date, expected in (
+        ("2026-03-07", "Before"), ("2026-03-08", "After"), ("2026-03-07", "Before"),
+    ):
+        resolved = names.names_at("route", ["same", "missing", "same"], local_date)
+        assert list(resolved) == ["missing", "same"]
+        assert resolved == {"missing": None, "same": expected}
+        resolved["same"] = "Changed by caller"
+        assert names.name_at("route", "same", local_date) == expected
+        assert names.name_at("stop", "same", local_date) == "Stop"
+    with pytest.raises(ValueError, match="valid local calendar date"):
+        names.name_at("route", "same", "2026-3-07")
+    assert names.name_at("route", "same", "2026-03-07") == "Before"
+
+
 def _history_module():  # noqa: ANN202
     from transit_ops.snapshots.builders import historic
 

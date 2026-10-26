@@ -172,7 +172,7 @@ _HOTSPOTS_HISTORY_STOP_DAILY_SQL = named_query(
 _EntityKey = tuple[str, str, str]
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True)
 class _Counts:
     present: int = 0
     observation_count: int = 0
@@ -187,21 +187,33 @@ class _Counts:
     peak_severe_count: int = 0
     peak_sum_delay_seconds: int = 0
 
-    def __add__(self, other: _Counts) -> _Counts:
-        return _Counts(
-            **{
-                field: getattr(self, field) + getattr(other, field)
-                for field in self.__dataclass_fields__
-            }
-        )
+    def add(self, other: _Counts) -> None:
+        self.present += other.present
+        self.observation_count += other.observation_count
+        self.severe_count += other.severe_count
+        self.sum_delay_seconds += other.sum_delay_seconds
+        self.in_clamp_observation_count += other.in_clamp_observation_count
+        self.on_time_count += other.on_time_count
+        self.known_observation_count += other.known_observation_count
+        self.on_time_known += other.on_time_known
+        self.peak_present += other.peak_present
+        self.peak_observation_count += other.peak_observation_count
+        self.peak_severe_count += other.peak_severe_count
+        self.peak_sum_delay_seconds += other.peak_sum_delay_seconds
 
-    def __sub__(self, other: _Counts) -> _Counts:
-        return _Counts(
-            **{
-                field: getattr(self, field) - getattr(other, field)
-                for field in self.__dataclass_fields__
-            }
-        )
+    def subtract(self, other: _Counts) -> None:
+        self.present -= other.present
+        self.observation_count -= other.observation_count
+        self.severe_count -= other.severe_count
+        self.sum_delay_seconds -= other.sum_delay_seconds
+        self.in_clamp_observation_count -= other.in_clamp_observation_count
+        self.on_time_count -= other.on_time_count
+        self.known_observation_count -= other.known_observation_count
+        self.on_time_known -= other.on_time_known
+        self.peak_present -= other.peak_present
+        self.peak_observation_count -= other.peak_observation_count
+        self.peak_severe_count -= other.peak_severe_count
+        self.peak_sum_delay_seconds -= other.peak_sum_delay_seconds
 
     def peak(self) -> _Counts | None:
         if self.peak_present <= 0:
@@ -226,16 +238,19 @@ class _CountsWindow:
     def add_day(self, local_date: date, values: dict[_EntityKey, _Counts]) -> None:
         self._days.append((local_date, values))
         for key, counts in values.items():
-            self.totals[key] = self.totals.get(key, _Counts()) + counts
+            total = self.totals.get(key)
+            if total is None:
+                # Daily values are shared by several windows and retained for expiration.
+                total = self.totals[key] = _Counts()
+            total.add(counts)
         cutoff = local_date - timedelta(days=self._width_days - 1)
         while self._days and self._days[0][0] < cutoff:
             _expired_date, expired = self._days.popleft()
             for key, counts in expired.items():
-                remaining = self.totals[key] - counts
+                remaining = self.totals[key]
+                remaining.subtract(counts)
                 if remaining.present <= 0:
                     del self.totals[key]
-                else:
-                    self.totals[key] = remaining
 
 
 def _required_id(row: Mapping[str, Any], field: str) -> str:
@@ -301,13 +316,21 @@ def _daily_counts(
     for row in route_rows:
         route_id = _required_id(row, "route_id")
         key = ("route", route_id, route_id)
-        all_counts[key] = all_counts.get(key, _Counts()) + _counts_from_row(row, route=True)
+        counts = _counts_from_row(row, route=True)
+        if key in all_counts:
+            all_counts[key].add(counts)
+        else:
+            all_counts[key] = counts
         timestamps.append(history_row_timestamp(row))
     for row in stop_rows:
         stop_id = _required_id(row, "stop_id")
         route_id = _required_id(row, "route_id")
         key = ("stop", stop_id, route_id)
-        all_counts[key] = all_counts.get(key, _Counts()) + _counts_from_row(row, route=False)
+        counts = _counts_from_row(row, route=False)
+        if key in all_counts:
+            all_counts[key].add(counts)
+        else:
+            all_counts[key] = counts
         timestamps.append(history_row_timestamp(row))
     base = {key: counts for key, counts in all_counts.items() if counts.present > 0}
     peak = {
@@ -358,9 +381,13 @@ def _scalar_hotspots(
     net_route_known = sum(value.known_observation_count for value in route_counts.values())
     net_stop_obs = sum(value.observation_count for value in stop_counts.values())
     net_stop_severe = sum(value.severe_count for value in stop_counts.values())
-    stop_totals: dict[str, _Counts] = {}
+    stop_totals: dict[str, tuple[int, int]] = {}
     for (_kind, stop_id, _route_id), value in stop_counts.items():
-        stop_totals[stop_id] = stop_totals.get(stop_id, _Counts()) + value
+        observations, severe = stop_totals.get(stop_id, (0, 0))
+        stop_totals[stop_id] = (
+            observations + value.observation_count,
+            severe + value.severe_count,
+        )
 
     candidates: list[tuple[int, str, str, str, str, float | None]] = []
     for (kind, entity_id, route_id), value in counts.items():
@@ -386,10 +413,10 @@ def _scalar_hotspots(
                 net_route_known,
             )
         else:
-            stop_value = stop_totals[entity_id]
+            stop_observations, stop_severe = stop_totals[entity_id]
             delta = otp_delta_points(
-                stop_value.observation_count - stop_value.severe_count,
-                stop_value.observation_count,
+                stop_observations - stop_severe,
+                stop_observations,
                 net_stop_obs - net_stop_severe,
                 net_stop_obs,
             )
@@ -416,18 +443,26 @@ def _ladder_rows(
     *,
     kind: str,
 ) -> list[dict[str, object]]:
-    grouped: dict[str, _Counts] = {}
+    grouped: dict[str, list[int]] = {}
     for (entity_kind, entity_id, _route_id), value in counts.items():
         if entity_kind != kind or entity_id in SENTINEL_ENTITY_IDS:
             continue
-        grouped[entity_id] = grouped.get(entity_id, _Counts()) + value
+        total = grouped.get(entity_id)
+        if total is None:
+            grouped[entity_id] = [
+                value.in_clamp_observation_count, value.severe_count, value.sum_delay_seconds,
+            ]
+        else:
+            total[0] += value.in_clamp_observation_count
+            total[1] += value.severe_count
+            total[2] += value.sum_delay_seconds
     id_field = "route_id" if kind == "route" else "stop_id"
     return [
         {
             id_field: entity_id,
-            "obs": value.in_clamp_observation_count,
-            "severe": value.severe_count,
-            "sum_delay_sec": value.sum_delay_seconds,
+            "obs": value[0],
+            "severe": value[1],
+            "sum_delay_sec": value[2],
         }
         for entity_id, value in sorted(grouped.items())
     ]

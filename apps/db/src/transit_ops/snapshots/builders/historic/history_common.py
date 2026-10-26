@@ -321,24 +321,34 @@ class HistoryNameIndex:
             key: tuple(sorted(values, key=lambda value: value.valid_from_utc))
             for key, values in intervals.items()
         }
+        # Grains revisit the same entities on one date. Retain only that date's lookups.
+        self._name_lookup: tuple[str, datetime, dict[tuple[str, str], str | None]] | None = None
 
     def name_at(self, kind: str, entity_id: str, local_date: str) -> str | None:
 
-        parsed = date.fromisoformat(history_date(local_date, field="date"))
-        closing_utc = datetime.combine(
-            parsed + timedelta(days=1),
-            time.min,
-            tzinfo=self._timezone,
-        ).astimezone(UTC)
+        lookup = self._name_lookup
+        if lookup is None or local_date != lookup[0]:
+            parsed = date.fromisoformat(history_date(local_date, field="date"))
+            closing_utc = datetime.combine(
+                parsed + timedelta(days=1),
+                time.min,
+                tzinfo=self._timezone,
+            ).astimezone(UTC)
+            lookup = (local_date, closing_utc, {})
+            self._name_lookup = lookup
+        _, closing_utc, resolved_names = lookup
+        key = (kind, entity_id)
+        if key in resolved_names:
+            return resolved_names[key]
         candidates = [
             interval
-            for interval in self._intervals.get((kind, entity_id), ())
+            for interval in self._intervals.get(key, ())
             if interval.valid_from_utc < closing_utc
             and (interval.valid_to_utc is None or interval.valid_to_utc >= closing_utc)
         ]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda value: value.valid_from_utc).name
+        name = max(candidates, key=lambda value: value.valid_from_utc).name if candidates else None
+        resolved_names[key] = name
+        return name
 
     def names_at(
         self,
