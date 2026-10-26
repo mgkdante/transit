@@ -1045,10 +1045,51 @@ printf '{"provider_id":"%s","status":"pass"}' "$provider" > "$report"
                        "Prove public historic snapshots and source messages",
                        cwd=tmp_path, environment=environment)
     assert (result.returncode == 0) == (outcome == "pass")
-    assert calls.read_text() == "oc\nstm\n"
+    assert sorted(calls.read_text().splitlines()) == ["oc", "stm"]
     if outcome != "pass":
         report = json.loads((proof_dir / "public-proof-stm.json").read_text())
         assert report["provider_id"] != "stm" or report["status"] != "pass"
+
+
+@pytest.mark.parametrize("first_status", [0, 42])
+def test_proof_providers_overlap(tmp_path: Path, first_status: int) -> None:
+    providers = ("oc", "stm")
+    _write_daily_publish_inputs(
+        tmp_path, discovery=list(providers),
+        receipts={p: {"provider_id": p} for p in providers},
+        published=[{"provider_id": p} for p in providers],
+    )
+    events = tmp_path / "events"
+    events.mkdir()
+    environment = _fake_uv_environment(
+        tmp_path,
+        r'''
+provider="$6"
+report="${!#}"
+touch "$EVENTS/$provider.started"
+timeout 5s bash -c '
+  until [[ -f "$EVENTS/oc.started" && -f "$EVENTS/stm.started" ]]; do
+    sleep 0.01
+  done
+'
+touch "$EVENTS/$provider.finished"
+if [[ "$provider" == oc && "$FIRST_STATUS" -ne 0 ]]; then
+  exit "$FIRST_STATUS"
+fi
+printf '{"provider_id":"%s","status":"pass"}' "$provider" > "$report"
+''',
+    )
+    environment.update(EVENTS=str(events), FIRST_STATUS=str(first_status))
+    result = _run_step(
+        _load(DAILY_WORKFLOW)["jobs"]["proof"],
+        "Prove public historic snapshots and source messages",
+        cwd=tmp_path, environment=environment,
+    )
+
+    assert result.returncode == first_status, result.stderr
+    assert sorted(path.name for path in events.iterdir()) == [
+        "oc.finished", "oc.started", "stm.finished", "stm.started",
+    ]
 
 
 def test_publish_proof_accepts_seeded_provider_and_skips_unseeded_receipt(
