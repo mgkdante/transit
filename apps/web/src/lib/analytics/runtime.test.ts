@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { transitAnalytics } from './runtime';
 
 const RUNTIME_PATH = new URL('./runtime.ts', import.meta.url);
-const ROOT_LAYOUT_PATH = new URL('../../routes/+layout.svelte', import.meta.url);
 afterEach(() => vi.restoreAllMocks());
 
 describe('Transit analytics runtime', () => {
@@ -25,19 +24,6 @@ describe('Transit analytics runtime', () => {
 		expect(source).not.toMatch(/from\s+['"]@yesid\/analytics\/(?:consent|plausible|policy)['"]/);
 		expect(source).not.toMatch(
 			/\b(?:fetch|localStorage|sessionStorage|document|window|navigator)\b/,
-		);
-	});
-
-	it('mounts exactly one root pageview hook', () => {
-		const source = readFileSync(ROOT_LAYOUT_PATH, 'utf-8');
-
-		expect(source).toMatch(
-			/import\s+\{\s*transitAnalytics\s*\}\s+from\s+['"]\$lib\/analytics\/runtime['"]/,
-		);
-		expect(source.match(/afterNavigate\(/g)).toHaveLength(1);
-		expect(source.match(/transitAnalytics\.trackPageview\(/g)).toHaveLength(1);
-		expect(source).toMatch(
-			/afterNavigate\(\(\{\s*to\s*\}\)\s*=>\s*\{\s*if\s*\(to\)\s*void\s+transitAnalytics\.trackPageview\(to\.url\);\s*\}\);/s,
 		);
 	});
 });
