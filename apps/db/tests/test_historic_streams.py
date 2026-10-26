@@ -1,5 +1,6 @@
 
 from collections import Counter
+from concurrent.futures import Executor, Future
 
 import pytest
 from test_partitioned_history_publish import (
@@ -8,7 +9,7 @@ from test_partitioned_history_publish import (
     _stop_history_plan,
 )
 
-from transit_ops.snapshots import gate
+from transit_ops.snapshots import gate, uploads
 from transit_ops.snapshots.historic_streams import HistoricPlans, consume_history_children
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
@@ -129,3 +130,118 @@ def test_writer_failure_preserves_error_and_stops_advancing_the_lazy_plan(monkey
         )
     assert raised.value is failure
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize("stage", ["children", "parents"])
+def test_upload_window_overlaps_production_without_waiting_for_a_slow_first_upload(stage):
+    items = list(_network_history_plan().iter_partition_items())
+    # Reuse valid children; this test checks scheduling rather than graph identity.
+    items = (items * 3)[:5]
+    produced = []
+    futures = []
+    first_work = []
+    peak = 0
+
+    class ControlledExecutor(Executor):
+        def submit(self, fn, /, *args, **kwargs):
+            nonlocal peak
+            future = Future()
+            futures.append(future)
+            peak = max(peak, sum(not item.done() for item in futures))
+            if len(futures) == 1:
+                first_work.append(lambda: future.set_result(fn(*args, **kwargs)))
+            else:
+                future.set_result(fn(*args, **kwargs))
+            return future
+
+    class Plan:
+        def iter_partition_items(self):
+            for index, item in enumerate(items):
+                if index == 1:
+                    assert futures, "first upload must be submitted before producing child two"
+                if index == 2:
+                    assert not futures[0].done(), "window waited for the slow first upload"
+                    first_work[0]()
+                produced.append(item[0].path)
+                yield item
+
+    class Store:
+        def put_json(self, key, payload, *, tier):
+            return key
+
+    token = uploads._ACTIVE_PUBLISH_EXECUTOR.set(ControlledExecutor())
+    try:
+        if stage == "children":
+            result = consume_history_children(
+                HistoricPlans(network=Plan()),
+                gate.new_report("stm", "historic", "2026-07-13T00:00:00Z"),
+                batch_size=2,
+                write_batch=lambda batch: [path for path, _payload in batch],
+            ).written_keys
+        else:
+            result = uploads.put_batches(
+                Store(),
+                ((ref.path, payload, "historic") for ref, payload in Plan().iter_partition_items()),
+                concurrency=2,
+                batch_size=2,
+            )
+    finally:
+        uploads._ACTIVE_PUBLISH_EXECUTOR.reset(token)
+    assert result == produced
+    assert len(produced) == 5
+    assert peak <= 2
+    assert all(future.done() for future in futures)
+
+
+@pytest.mark.parametrize("stage", ["children", "parents"])
+def test_upload_window_failure_stops_production_and_drains_pending_uploads(stage):
+    items = list(_network_history_plan().iter_partition_items())
+    produced = []
+    futures = []
+    failure = RuntimeError("window upload failed")
+
+    class FailingExecutor(Executor):
+        def submit(self, fn, /, *args, **kwargs):
+            future = Future()
+            futures.append(future)
+            if len(futures) == 2:
+                future.set_exception(failure)
+            return future
+
+    class Plan:
+        def iter_partition_items(self):
+            for item in items * 3:
+                produced.append(item[0].path)
+                yield item
+
+    class Store:
+        def put_json(self, key, payload, *, tier):
+            return key
+
+    token = uploads._ACTIVE_PUBLISH_EXECUTOR.set(FailingExecutor())
+    try:
+        with pytest.raises(RuntimeError, match="window upload failed") as raised:
+            if stage == "children":
+                consume_history_children(
+                    HistoricPlans(network=Plan()),
+                    gate.new_report("stm", "historic", "2026-07-13T00:00:00Z"),
+                    batch_size=2,
+                    write_batch=lambda batch: [path for path, _payload in batch],
+                )
+            else:
+                uploads.put_batches(
+                    Store(),
+                    (
+                        (ref.path, payload, "historic")
+                        for ref, payload in Plan().iter_partition_items()
+                    ),
+                    concurrency=2,
+                    batch_size=2,
+                )
+            pytest.fail("later stage ran after an upload failed")
+    finally:
+        uploads._ACTIVE_PUBLISH_EXECUTOR.reset(token)
+    assert raised.value is failure
+    assert len(produced) == 2
+    assert futures[0].cancelled()
+    assert all(future.done() for future in futures)
