@@ -21,9 +21,9 @@
 	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { navPillCopy } from './navPill.copy';
 	import { magnetic } from '@yesid/motion';
+	import { ThemeToggle } from '@yesid/ui/brand';
 	import BrandWordmark from './BrandWordmark.svelte';
 	import RefreshButton from './RefreshButton.svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
 	import LangSwitch from './LangSwitch.svelte';
 	import { providerHref, type PublicProvider } from '$lib/v1/providers';
 	import { v1Provider } from '$lib/v1/config';
@@ -97,6 +97,7 @@
 	);
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
+	const themeLabel = $derived(locale === 'fr' ? 'Thème sombre' : 'Dark theme');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
 	const navAria = $derived(locale === 'fr' ? 'Navigation principale' : 'Primary navigation');
 	const auditLabel = $derived(footerCopy[locale].auditLabel);
@@ -441,7 +442,7 @@
 				>
 					<SearchIcon size={17} strokeWidth={1.8} aria-hidden="true" />
 				</a>
-				<ThemeToggle {locale} class="nav-control" />
+				<ThemeToggle label={themeLabel} class="nav-control" />
 				<LangSwitch {locale} url={selectedUrl} {availableLocales} class="nav-control" />
 
 				<button

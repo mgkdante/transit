@@ -48,7 +48,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { ResourceBoundary } from '$lib/components/surface';
-	import { layout } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { Button } from '@yesid/ui/button';
 
 	let {
@@ -111,7 +111,7 @@
 		return error instanceof Error ? error : new Error(String(error));
 	}
 
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 	const failureCopy = $derived(IMPORT_FAILURE_COPY[locale]);
 </script>
 

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import RailDisclosureControllerHarness from './__fixtures__/RailDisclosureControllerHarness.svelte';
 
 const controllerPath = resolve(
@@ -43,14 +43,14 @@ const consumers = [
 ] as const;
 
 beforeEach(() => {
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	sessionStorage.removeItem(PRIMARY_STORAGE_KEY);
 	sessionStorage.removeItem(TOC_STORAGE_KEY);
 });
 
 afterEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	sessionStorage.removeItem(PRIMARY_STORAGE_KEY);
 	sessionStorage.removeItem(TOC_STORAGE_KEY);
 });
@@ -109,7 +109,7 @@ describe('combined rail disclosure controller', () => {
 	it('lets the remembered collapsed preference win on mount', async () => {
 		sessionStorage.setItem(PRIMARY_STORAGE_KEY, 'true');
 		sessionStorage.setItem(TOC_STORAGE_KEY, 'true');
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
 
 		render(RailDisclosureControllerHarness);
 

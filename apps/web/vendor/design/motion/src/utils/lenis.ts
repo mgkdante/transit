@@ -15,14 +15,23 @@
 // `ScrollTrigger.config({ ignoreMobileResize: true })` (set in gsap.ts).
 
 import Lenis from 'lenis';
-import { gsap, ScrollTrigger } from './gsap.js';
+import { gsap, initScrollTriggerConfig, ScrollTrigger } from './gsap.js';
 import { shouldAnimate } from '../policy.js';
 
 let instance: Lenis | null = null;
 let tickerCallback: ((time: number) => void) | null = null;
 let isTouchDevice = false;
 
-export function initLenis(): void {
+/**
+ * An element scroller in place of the window. `content` must wrap the whole scrolling flow so
+ * Lenis sees its height change; Lenis would otherwise measure `document.documentElement`.
+ */
+export interface LenisScroller {
+	readonly wrapper: HTMLElement;
+	readonly content: HTMLElement;
+}
+
+export function initLenis(scroller?: LenisScroller): void {
 	if (instance) return;
 
 	// MOTION-GATED tier: reduced-motion users get native
@@ -30,7 +39,9 @@ export function initLenis(): void {
 	// correct reduce behavior; ScrollTrigger keeps working off native scroll.
 	if (!shouldAnimate('motion-gated')) return;
 
-	// ScrollTrigger.isTouch: 0 = no touch, 1 = touch only, 2 = touch + pointer
+	// ScrollTrigger.isTouch is only set once the plugin is registered.
+	// 0 = no touch, 1 = touch only, 2 = touch + pointer
+	initScrollTriggerConfig();
 	isTouchDevice = ScrollTrigger.isTouch > 0;
 
 	if (isTouchDevice) {
@@ -41,6 +52,7 @@ export function initLenis(): void {
 
 	// Desktop: Lenis for smooth wheel scroll
 	instance = new Lenis({
+		...scroller,
 		autoRaf: false, // We drive RAF via GSAP ticker — prevent double-update
 		duration: 1.2,
 		easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),

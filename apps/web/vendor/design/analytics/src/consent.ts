@@ -69,10 +69,14 @@ export function createAnalyticsConsentStore(
 	let focusRequest = 0;
 	let storageSafetyFailed = false;
 	let stopListening: (() => void) | null = null;
+	let listenerTeardownFailed = false;
 
 	function commit(next: AnalyticsConsentState): void {
-		current = next;
-		set(next);
+		const safeNext = listenerTeardownFailed && next.available
+			? { ...next, available: false }
+			: next;
+		current = safeNext;
+		set(safeNext);
 	}
 
 	function requestPreferencesFocus(): void {
@@ -106,9 +110,21 @@ export function createAnalyticsConsentStore(
 		}
 	}
 
-	function stopStorageListener(): void {
-		stopListening?.();
-		stopListening = null;
+	function stopStorageListener(expected = stopListening): boolean {
+		if (!expected || stopListening !== expected) return true;
+		listenerTeardownFailed = true;
+		try {
+			expected();
+		} catch {
+			return false;
+		}
+		listenerTeardownFailed = false;
+		if (stopListening === expected) stopListening = null;
+		return true;
+	}
+
+	function disposeStorageListener(expected: (() => void) | null): void {
+		if (!stopStorageListener(expected)) commitUnavailable(current.choice);
 	}
 
 	function commitUnavailable(choice: AnalyticsConsentChoice = 'unknown'): void {
@@ -117,7 +133,7 @@ export function createAnalyticsConsentStore(
 	}
 
 	function syncExternalChoice(value: string | null): void {
-		if (!current.ready || !current.available) return;
+		if (listenerTeardownFailed || !current.ready || !current.available) return;
 		if (value === 'granted') {
 			clearSafetyMarker();
 			refreshOpenMarker('granted');
@@ -242,8 +258,18 @@ export function createAnalyticsConsentStore(
 		subscribe,
 		preferencesFocusRequests,
 		init(): () => void {
-			stopStorageListener();
-			const available = dependencies.hostname() === preset.domain;
+			const previousListener = stopListening;
+			if (!stopStorageListener(previousListener)) {
+				commitUnavailable(current.choice);
+				return () => disposeStorageListener(previousListener);
+			}
+			let available: boolean;
+			try {
+				available = dependencies.hostname() === preset.domain;
+			} catch {
+				commitUnavailable();
+				return () => {};
+			}
 			if (!available) {
 				commitUnavailable();
 				return () => {};
@@ -318,10 +344,7 @@ export function createAnalyticsConsentStore(
 			} else if (preferencesMarker !== null) {
 				clearPreferencesMarker();
 			}
-			return () => {
-				if (stopListening === unsubscribe) stopListening = null;
-				unsubscribe();
-			};
+			return () => disposeStorageListener(unsubscribe);
 		},
 		grant(): void {
 			chooseGranted();

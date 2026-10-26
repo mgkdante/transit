@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricsExplainer from './MetricsExplainer.svelte';
@@ -47,12 +47,12 @@ const viewport = window as typeof window & { happyDOM: { setInnerWidth(width: nu
 
 beforeEach(() => {
 	viewport.happyDOM.setInnerWidth(1280);
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 afterEach(() => {
 	viewport.happyDOM.setInnerWidth(1280);
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	for (const key of ['provenance', 'coverage', 'freshness']) {
 		sessionStorage.removeItem(`transit.persisted:metrics-rail-${key}`);
 	}

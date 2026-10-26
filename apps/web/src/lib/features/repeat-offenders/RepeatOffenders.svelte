@@ -45,7 +45,7 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -436,7 +436,7 @@
 		},
 	]);
 	const navigation = createArticleNavigation(() => sectionDefs, {
-		openSignal: () => quietModeStore.openSignal,
+		openSignal: () => quietMode.openSignal,
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
@@ -596,9 +596,9 @@
 								sectionKey={section.sectionKey}
 								index={section.number - 1}
 								open={true}
-								closeSignal={quietModeStore.closeSignal}
+								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal(section.id)}
-								bulkCollapsed={quietModeStore.enabled}
+								bulkCollapsed={quietMode.enabled}
 							>
 								{#if section.id === 'repeat-worst' && hasGrains}
 									<div class="repeat-offenders-article-prose">

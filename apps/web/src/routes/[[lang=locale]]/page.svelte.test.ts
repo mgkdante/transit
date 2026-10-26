@@ -16,9 +16,9 @@ vi.mock('$lib/nav', async () => {
 		await vi.importActual<typeof import('$lib/nav/intent.svelte')>('$lib/nav/intent.svelte');
 	return { routeFor };
 });
-vi.mock('$lib/nav/layout.svelte', () => ({
-	layout: {
-		get isDesktop() {
+vi.mock('@yesid/ui/state', () => ({
+	desktop: {
+		get current() {
 			return state.desktop;
 		},
 	},

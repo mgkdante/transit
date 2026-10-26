@@ -35,9 +35,9 @@
 	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { Separator } from '@yesid/ui/separator';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { desktop, quietMode } from '@yesid/ui/state';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
-	import { layout, mapHrefFor } from '$lib/nav';
+	import { mapHrefFor } from '$lib/nav';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
@@ -70,7 +70,7 @@
 	);
 	const reliabilityT = $derived(stopReliabilityCopy[locale]);
 	const articleNav = $derived(articleNavigationCopy[locale]);
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const SCHEDULE_CAP = 30;
 
@@ -517,9 +517,9 @@
 						index={0}
 						anchor="stop-detail-departures"
 						sectionKey={`stop-detail-${id}-departures`}
-						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal}
-						bulkCollapsed={quietModeStore.enabled}
+						closeSignal={quietMode.closeSignal}
+						openSignal={quietMode.openSignal}
+						bulkCollapsed={quietMode.enabled}
 					>
 						<ResourceBoundary resource={departureReport} lang={locale}>
 							{#snippet children(_report)}
@@ -635,9 +635,9 @@
 						index={1}
 						anchor="stop-detail-facts"
 						sectionKey={`stop-detail-${id}-facts`}
-						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal}
-						bulkCollapsed={quietModeStore.enabled}
+						closeSignal={quietMode.closeSignal}
+						openSignal={quietMode.openSignal}
+						bulkCollapsed={quietMode.enabled}
 					>
 						{@render stopInformation()}
 					</CollapsibleSection>
@@ -652,9 +652,9 @@
 						index={0}
 						anchor="stop-schedule-service"
 						sectionKey={`stop-schedule-${id}-service`}
-						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal}
-						bulkCollapsed={quietModeStore.enabled}
+						closeSignal={quietMode.closeSignal}
+						openSignal={quietMode.openSignal}
+						bulkCollapsed={quietMode.enabled}
 					>
 						<ResourceBoundary resource={stop} lang={locale}>
 							{#snippet children(s: StopFile | null)}

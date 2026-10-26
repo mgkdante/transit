@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryArtifactContractError } from '$lib/v1/history';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
 import { dataRefresh } from '$lib/stores';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { copy as receiptCopy } from './receipt.copy';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
@@ -146,8 +146,8 @@ async function activate(container: HTMLElement, id: string): Promise<void> {
 beforeEach(() => {
 	cleanup();
 	currentLocale.value = 'en';
-	quietModeStore.resetForTest();
-	localStorage.removeItem('transit:quiet-mode');
+	quietMode.resetForTest();
+	localStorage.removeItem('quiet-mode');
 	for (const key of ['receipt-controls', 'receipt-toc']) {
 		sessionStorage.removeItem(`transit.persisted:${key}`);
 	}
@@ -170,7 +170,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	currentLocale.value = 'en';
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	vi.unstubAllGlobals();
 });
 
@@ -594,7 +594,8 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 		'exposes one $locale page announcement while collapsed and before/after the mobile sheet',
 		async ({ locale, expected }) => {
 			currentLocale.value = locale;
-			localStorage.setItem('transit:quiet-mode', 'true');
+			localStorage.setItem('quiet-mode', 'true');
+			quietMode.init();
 			nav.url = new URL('http://localhost/receipt?date=');
 			const { container } = render(AccountabilityReceipt);
 			const bundle = receiptCopy[locale];

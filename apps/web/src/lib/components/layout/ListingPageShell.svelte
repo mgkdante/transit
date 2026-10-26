@@ -3,7 +3,7 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { Separator } from '@yesid/ui/separator';
 	import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@yesid/ui/collapsible';
-	import { isDesktopViewport, layout } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { persisted } from '$lib/stores';
 
 	export interface ListingPageShellProps {
@@ -30,11 +30,10 @@
 		filterPersistKey ? persisted(filterPersistKey, false) : null,
 	);
 	let localOpen = $state(false);
-	const desktop = $derived(layout.isDesktop || isDesktopViewport());
 	const mobileFilterOpen = $derived(persistedOpen ? persistedOpen.value : localOpen);
-	const filterOpen = $derived(desktop || mobileFilterOpen);
+	const filterOpen = $derived(desktop.current || mobileFilterOpen);
 	function setFilterOpen(next: boolean): void {
-		if (desktop) return;
+		if (desktop.current) return;
 		if (persistedOpen) persistedOpen.value = next;
 		else localOpen = next;
 	}

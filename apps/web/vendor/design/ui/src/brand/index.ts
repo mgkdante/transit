@@ -26,5 +26,8 @@ export type { StopLabelProps } from './StopLabel.svelte';
 export { default as TerminalCursor } from './TerminalCursor.svelte';
 export type { TerminalCursorProps } from './TerminalCursor.svelte';
 
+export { default as ThemeToggle } from './ThemeToggle.svelte';
+export type { ThemeToggleProps } from './ThemeToggle.svelte';
+
 export { default as TocBadge } from './TocBadge.svelte';
 export type { TocBadgeSpec } from './TocBadge.svelte';

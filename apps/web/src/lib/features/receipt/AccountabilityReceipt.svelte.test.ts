@@ -1,7 +1,7 @@
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
@@ -94,8 +94,8 @@ function resetReceiptState(): void {
 	}
 	sessionStorage.removeItem('transit.persisted:receipt-controls');
 	sessionStorage.removeItem('transit.persisted:receipt-toc');
-	localStorage.removeItem('transit:quiet-mode');
-	quietModeStore.resetForTest();
+	localStorage.removeItem('quiet-mode');
+	quietMode.resetForTest();
 }
 
 const ports = vi.hoisted(() => ({
@@ -351,7 +351,8 @@ describe('AccountabilityReceipt article shell', () => {
 		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		const { container } = render(AccountabilityReceipt);
 		await screen.findByText('82%');
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
@@ -368,12 +369,13 @@ describe('AccountabilityReceipt article shell', () => {
 				expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 			}
 		});
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 	});
 
 	it('a late optional card mounted by a date change adopts remembered collapsed mode', async () => {
 		const v1 = await import('$lib/v1/repositories/historic');
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		const base = receiptData as Receipt;
 		const byDate: Record<string, Receipt> = {
 			'2026-06-17': base,

@@ -33,7 +33,7 @@
 	} from '$lib/components/shared';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { persisted, sharedClock } from '$lib/stores';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -394,9 +394,9 @@
 						heading={t.toc.label}
 						counterPrefix={t.toc.counterPrefix}
 						sectionKey="status-toc"
-						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal}
-						bulkCollapsed={quietModeStore.enabled}
+						closeSignal={quietMode.closeSignal}
+						openSignal={quietMode.openSignal}
+						bulkCollapsed={quietMode.enabled}
 					/>
 				{/if}
 			</div>
@@ -417,9 +417,9 @@
 				headerVariant="article-summary"
 				sectionKey="status-overview"
 				open={true}
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			>
 				<div class="health-overview">
 					<p class="health-lede">{t.lede}</p>
@@ -480,9 +480,9 @@
 						anchor={section.id}
 						sectionKey={`status-card-${section.id}`}
 						open={true}
-						closeSignal={quietModeStore.closeSignal}
-						openSignal={quietModeStore.openSignal + cardOpenSignal(section.id)}
-						bulkCollapsed={quietModeStore.enabled}
+						closeSignal={quietMode.closeSignal}
+						openSignal={quietMode.openSignal + cardOpenSignal(section.id)}
+						bulkCollapsed={quietMode.enabled}
 					>
 						{#if section.id === 'health-lanes'}
 							<SectionLanes rows={laneRows} copy={t} {locale} />
@@ -507,9 +507,9 @@
 								{conformance}
 								copy={t}
 								{locale}
-								closeSignal={quietModeStore.closeSignal}
-								openSignal={quietModeStore.openSignal}
-								bulkCollapsed={quietModeStore.enabled}
+								closeSignal={quietMode.closeSignal}
+								openSignal={quietMode.openSignal}
+								bulkCollapsed={quietMode.enabled}
 							/>
 						{:else if section.id === 'health-envelope'}
 							<SectionEnvelope {envelope} copy={t} {locale} />
@@ -530,9 +530,9 @@
 				title={t.statRail.lanes.title}
 				headerVariant="article-summary"
 				bind:open={() => railOpen.lanes.value, (next) => setRailOpen('lanes', next)}
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			>
 				{#snippet icon()}
 					<SectionIcon name="grid" class="h-4 w-4 shrink-0 text-primary" />
@@ -556,9 +556,9 @@
 				title={t.statRail.feeds.title}
 				headerVariant="article-summary"
 				bind:open={() => railOpen.feeds.value, (next) => setRailOpen('feeds', next)}
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			>
 				{#snippet icon()}
 					<SectionIcon name="list" class="h-4 w-4 shrink-0 text-primary" />

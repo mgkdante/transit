@@ -15,13 +15,17 @@ import { gsap } from 'gsap';
 
 export type TickerCallback = (time: number, deltaTime: number) => void;
 
-const subscribers = new Map<string, TickerCallback>();
+interface TickerRegistration {
+	callback: TickerCallback;
+}
+
+const subscribers = new Map<string, TickerRegistration>();
 let internalSubscription: TickerCallback | null = null;
 
 function ensureTickerSubscription(): void {
 	if (internalSubscription) return;
 	internalSubscription = (time: number, deltaTime: number) => {
-		subscribers.forEach((callback) => callback(time, deltaTime));
+		subscribers.forEach(({ callback }) => callback(time, deltaTime));
 	};
 	gsap.ticker.add(internalSubscription);
 }
@@ -32,12 +36,15 @@ function ensureTickerSubscription(): void {
  * @param id Unique identifier. Reusing an ID replaces its previous callback.
  * @param callback Receives elapsed `time` in seconds and `deltaTime` in
  * milliseconds, matching the first two arguments of `gsap.ticker.add`.
- * @returns A disposer that unsubscribes the ID.
+ * @returns A disposer that removes this registration while it remains current for the ID.
  */
 export function subscribe(id: string, callback: TickerCallback): () => void {
 	ensureTickerSubscription();
-	subscribers.set(id, callback);
-	return () => unsubscribe(id);
+	const registration = { callback };
+	subscribers.set(id, registration);
+	return () => {
+		if (subscribers.get(id) === registration) subscribers.delete(id);
+	};
 }
 
 /** Remove a subscribed callback by ID. Unknown IDs are a no-op. */

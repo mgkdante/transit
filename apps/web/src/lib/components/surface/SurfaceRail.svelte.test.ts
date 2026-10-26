@@ -5,8 +5,8 @@ import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { responsiveLayoutHarness } from './__fixtures__/ResponsiveLayoutHarness.svelte';
 
-vi.mock('$lib/nav/layout.svelte', async () => ({
-	layout: (await import('./__fixtures__/ResponsiveLayoutHarness.svelte')).responsiveLayoutHarness,
+vi.mock('@yesid/ui/state', async () => ({
+	desktop: (await import('./__fixtures__/ResponsiveLayoutHarness.svelte')).responsiveLayoutHarness,
 }));
 
 import SurfaceRail from './SurfaceRail.svelte';

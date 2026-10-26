@@ -1,0 +1,177 @@
+/* Shared app base styles. */
+@import '@yesid/motion/tap-feedback.css';
+
+*,
+*::before,
+*::after {
+	-webkit-tap-highlight-color: transparent;
+}
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+button,
+[type="button"],
+[type="submit"],
+[type="reset"] {
+	-webkit-appearance: none;
+	appearance: none;
+}
+input,
+textarea,
+select {
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+@custom-variant dark (&:is([data-theme="dark"] *, .theme-dark *));
+
+html {
+	background-color: var(--background);
+	color: var(--foreground);
+	overflow-x: clip;
+	overscroll-behavior: none;
+}
+
+body {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+img, svg, video, iframe, canvas {
+	max-width: 100%;
+	height: auto;
+}
+
+pre, code, table {
+	overflow-x: auto;
+	max-width: 100%;
+}
+
+::selection {
+	background: var(--accent);
+	color: #000000;
+}
+
+@layer base {
+	:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
+	}
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--primary) 40%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--primary) 35%, transparent);
+	border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+[data-theme="light"] *,
+.theme-light * {
+	scrollbar-color: color-mix(in srgb, var(--primary) 50%, transparent) transparent;
+}
+[data-theme="light"] *::-webkit-scrollbar-thumb,
+.theme-light *::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
+.circuit-grid {
+	position: relative;
+	background-image:
+		repeating-linear-gradient(90deg, var(--grid-block-marker) 0px, transparent 1px, transparent 400px),
+		repeating-linear-gradient(90deg, var(--grid-line-major) 0px, transparent 1px, transparent 80px),
+		repeating-linear-gradient(0deg, var(--grid-line-major) 0px, transparent 1px, transparent 80px),
+		repeating-linear-gradient(90deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px),
+		repeating-linear-gradient(0deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px);
+}
+
+[data-theme="light"], .theme-light {
+	--shadow-card: 0 1px 2px rgba(28, 24, 19, 0.06), 0 4px 12px rgba(28, 24, 19, 0.08), inset 0 1px 0 var(--edge-highlight);
+	--shadow-nav: 0 4px 24px rgba(28, 24, 19, 0.1), 0 0 0 1px rgba(28, 24, 19, 0.04);
+	--shadow-section: 0 8px 32px rgba(28, 24, 19, 0.08);
+	--shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
+	--shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 12%, transparent);
+	--shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 9%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 4%, transparent);
+	--shadow-sheet: 0 -8px 32px rgba(28, 24, 19, 0.12);
+}
+
+[data-theme="light"], .theme-light {
+	--border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+@keyframes blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0; }
+}
+
+@keyframes pulse-glow {
+	0%, 100% {
+		opacity: 1;
+		box-shadow: 0 0 4px 1px rgb(var(--primary-rgb) / 0.5);
+	}
+	50% {
+		opacity: 0.7;
+		box-shadow: 0 0 10px 4px rgb(var(--primary-rgb) / 0.8);
+	}
+}
+
+@keyframes station-ping {
+	0% { transform: scale(1); opacity: 0.6; }
+	75%, 100% { transform: scale(2.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.led-pulse { animation: none; }
+}
+
+.divider-dashed {
+	border-top: 2px dashed var(--border-rule);
+}
+
+.scrollbar-hidden {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+	display: none;
+}
+
+.label-section {
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--muted-foreground);
+}
+
+.label-station {
+	font-family: var(--font-mono);
+	font-size: var(--text-small);
+	letter-spacing: 3px;
+	text-transform: uppercase;
+	color: var(--accent-text);
+}
+.label-metric {
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	letter-spacing: 2px;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+}
+
+.led-pulse {
+	animation: pulse-glow 2s ease-in-out infinite;
+}

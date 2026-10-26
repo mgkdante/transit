@@ -3,7 +3,7 @@ import { fireEvent, render as renderSvelte, screen, within } from '@testing-libr
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -257,7 +257,7 @@ function resetHealthSurfaceState(): void {
 	getDataHealth.mockReset();
 	getHistoricAvailability.mockReset();
 	resourceOptions.length = 0;
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 const healthSurface = createSurfaceHarness({

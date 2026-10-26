@@ -35,6 +35,10 @@ const ADOPTED_LOCAL_PATHS = [
 	'lib/components/shared/TocBadge.svelte',
 	'lib/components/shared/TocBadge.test.ts',
 	'lib/utils/create-cn.ts',
+	'lib/components/shell/ThemeToggle.svelte',
+	'lib/nav/layout.svelte.ts',
+	'lib/stores/quiet-mode.svelte.ts',
+	'lib/stores/theme.svelte.ts',
 ] as const;
 
 const RETIRED_LOCAL_MOTION_PATHS = [
@@ -75,16 +79,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.13.3',
-	tagObject: '91ae5f2ad5f37f43b6355af30237bf65bb09d583',
-	peeledCommit: 'd55acda36ca350715fd35ae08f194f8f35260e53',
-	assetName: 'yesid.dev-design-v0.13.3.tar',
-	assetSize: 819_200,
-	assetDigest: 'sha256:f6fdabe8e9bb7acdb648236cbc0d7e9ea59969e0c79d2405ba4f91ffc84464d6',
+	tag: 'v0.14.1',
+	tagObject: '1121e3f9b348ccbc87ee74add76052528f7f7a13',
+	peeledCommit: '46dcfbff5a3e65bf1fb0b1c3a86e3a86d5bcb1a1',
+	assetName: 'yesid.dev-design-v0.14.1.tar',
+	assetSize: 952_320,
+	assetDigest: 'sha256:02af450956ad93a293a066668d995e740b3528b666ad3a73d28471114c85fe21',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
-	toolDigest: 'sha256:650011070755661770506f51bc07f99ba6905fc62a573a4fcf0b668c00cbe2b8',
-	treeHash: 'sha256:89c7a502515d9b97db5ed77d8b60ed21c6b896e7fcff406d7989c93414c11eb1',
-	manifestDigest: '06fcc2d12ad6d777bbda863e46a2f80a864e52786cf4f97158b7fc5632a9814d',
+	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
+	treeHash: 'sha256:d1795ef03214007d8f3f645829cb15118351fc6c095eac66dd1c93b44e3bfee8',
+	manifestDigest: '566a1f0314d69704fe20ca7b7655ae46a1829f1701d78c4bc51595d27383fe35',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -169,7 +173,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.13.3');
+		expect(packageJson.version).toBe('0.14.1');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -178,6 +182,14 @@ describe('vendor/design integrity', () => {
 		expect(files).not.toContain('src/primitives/line-combobox/line-combobox.svelte');
 		expect(files).toContain('src/brand/BlueprintShell.svelte');
 		expect(files).toContain('src/brand/QuietModeButton.svelte');
+		expect(files).toContain('src/brand/ThemeToggle.svelte');
+		expect(files).toContain('src/layout/SiteRoot.svelte');
+		expect(files).toContain('src/state/theme.svelte.js');
+		expect(files).toContain('src/state/theme.svelte.d.ts');
+		expect(files).toContain('src/state/quiet-mode.svelte.js');
+		expect(files).toContain('src/state/quiet-mode.svelte.d.ts');
+		expect(files).not.toContain('src/state/theme.svelte.ts');
+		expect(files).not.toContain('src/state/quiet-mode.svelte.ts');
 		expect(existsSync(join(VENDOR, 'gates/src/presets'))).toBe(false);
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
@@ -196,14 +208,14 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.13.3',
+			version: '0.14.1',
 		});
 		expect(files).toEqual([
 			'README.md',
 			'package.json',
 			'src/client.ts',
 			'src/config.ts',
-			'src/consent.svelte.ts',
+			'src/consent.ts',
 			'src/index.ts',
 			'src/plausible.ts',
 			'src/policy.ts',

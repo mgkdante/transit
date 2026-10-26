@@ -2,7 +2,7 @@
 	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
-	import { layout } from '$lib/nav/layout.svelte';
+	import { desktop } from '@yesid/ui/state';
 	import { StateNotice } from '$lib/components/edge';
 	import {
 		HOME_FILTER_COUNT_LABEL,
@@ -36,7 +36,7 @@
 	function closeFilters(event: KeyboardEvent): void {
 		if (
 			event.key !== 'Escape' ||
-			layout.isDesktop ||
+			desktop.current ||
 			!filterDisclosure?.contains(document.activeElement)
 		)
 			return;
@@ -45,7 +45,7 @@
 	}
 
 	$effect(() => {
-		if (layout.isDesktop) filtersOpen = true;
+		if (desktop.current) filtersOpen = true;
 	});
 
 	const filtersActive = $derived(activeQuestion != null || activeTempo != null);

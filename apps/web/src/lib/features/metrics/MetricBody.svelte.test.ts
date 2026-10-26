@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { fireEvent, render } from '@testing-library/svelte';
 import type { ViteDevServer } from 'vite';
 import type { Locale } from '$lib/i18n';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { METRICS, type MetricEntry } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
 import MetricBody, { type MetricBodies } from './MetricBody.svelte';
@@ -67,11 +67,11 @@ beforeEach(() => {
 		state.disposers.push(destroy);
 		return { destroy };
 	});
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 afterEach(() => {
 	sessionStorage.clear();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 function documentBody(html: string): HTMLDivElement {

@@ -3,10 +3,9 @@
 // DEVIATION MOTION-1 from yesid.dev @ 2bdb611d (dated 2026-07-02): the source
 // file also eagerly imported MorphSVGPlugin and shipped lazy loaders
 // (loadDrawSVG/loadMorphSVG/loadFlip/loadCustomEase). Their only consumers are
-// the Tier-2 actions (morphHover, scrollChain) and app components that stay
-// vendored app-side, so this package ships only what the Tier-1 vocabulary
-// needs. Apps keep their own registration module for Tier-2 plugins until
-// those actions promote. Everything kept below is byte-equivalent.
+// morphHover and app components that stay app-side, so this package ships only
+// what the shared vocabulary needs. Apps keep their own registration module for
+// those plugins. Everything kept below is byte-equivalent.
 //
 // Eager:
 //   - ScrollTrigger  — config applied via initScrollTriggerConfig().

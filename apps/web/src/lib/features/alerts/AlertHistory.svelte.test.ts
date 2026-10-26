@@ -11,7 +11,7 @@ import { compile } from 'svelte/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import type { PublicProvider } from '$lib/v1/providers';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
@@ -272,7 +272,7 @@ function resetAlertSurfaceState(): void {
 	ports.getAlertArchiveIndex.mockImplementation(() => archiveState.index as never);
 	ports.getAlertArchiveRange.mockImplementation(() => archiveState.entries as never);
 	Element.prototype.scrollIntoView = vi.fn();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 const alertSurface = createSurfaceHarness({
@@ -1262,7 +1262,8 @@ describe('AlertHistory retained archive integration', () => {
 	});
 
 	it('announces a correction once outside collapsed controls before and after the mobile sheet opens', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		seedArchive([
 			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
 		]);
@@ -1403,7 +1404,8 @@ describe('AlertHistory combined rail and disclosure behavior', () => {
 	});
 
 	it('Always start collapsed initializes both rail disclosures and every article card closed', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		const { container } = render(AlertHistoryScreen);
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 
@@ -1420,7 +1422,7 @@ describe('AlertHistory combined rail and disclosure behavior', () => {
 				expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 			}
 		});
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 	});
 
 	it('opens the target card before a TOC scroll while leaving sibling cards closed', async () => {

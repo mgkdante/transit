@@ -9,7 +9,7 @@
 // (`import type { VariantProps } ...`) are allowed anywhere.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { walkFiltered } from './walk.js';
+import { isPathWithin, relativePathFromRoot, walkFiltered } from './walk.js';
 import { blankComments } from './comments.js';
 
 export interface TvOnlyInUiConfig {
@@ -34,18 +34,19 @@ export function tvOnlyInUiViolations(config: TvOnlyInUiConfig): TvGateResult {
 	const extensions = config.extensions ?? ['.svelte', '.ts'];
 	const rootAbs = resolve(config.root);
 	const uiRoots = config.uiRoots.map((r) => resolve(r));
-	const files = walkFiltered(config.root, {
+	const files = walkFiltered(rootAbs, {
 		extensions,
-		exclude: (p) => /\.(test|spec)\.ts$/.test(p) || uiRoots.some((ui) => p.startsWith(ui + '/')),
+		exclude: (p) => /\.(test|spec)\.ts$/.test(p) || uiRoots.some((ui) => isPathWithin(ui, p)),
 	});
-	const rel = (p: string) => p.replace(rootAbs + '/', '');
 	const violations: string[] = [];
 	for (const file of files) {
 		const scanned = blankComments(readFileSync(file, 'utf-8'));
 		const matches = scanned.match(TV_VALUE_IMPORT);
 		if (!matches) continue;
 		for (const m of matches) {
-			violations.push(`${rel(file)}: ${m.replace(/\s+/g, ' ').trim()}`);
+			violations.push(
+				`${relativePathFromRoot(rootAbs, file)}: ${m.replace(/\s+/g, ' ').trim()}`,
+			);
 		}
 	}
 	return { fileCount: files.length, violations };

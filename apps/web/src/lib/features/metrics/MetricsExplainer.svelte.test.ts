@@ -6,7 +6,7 @@ import { tick } from 'svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { METRICS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 
 const { provState } = vi.hoisted(() => ({
 	provState: {
@@ -50,7 +50,7 @@ function resetMetricsStorage(): void {
 		sessionStorage.removeItem(`transit.persisted:metrics-rail-${rail}`);
 	}
 	sessionStorage.removeItem('transit.persisted:metrics-toc');
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	if (window.location.hash) window.location.hash = '';
 }
 beforeEach(resetMetricsStorage);
@@ -58,7 +58,8 @@ afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
 	it('reveals interval assumptions through a saved collapse without live provenance', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		window.location.hash = '#confidence-intervals';
 		const { container } = render(MetricsExplainer);
 		await tick();
@@ -382,7 +383,8 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('a malformed hash fragment never throws during mount (review F2)', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		window.location.hash = '#%';
 		expect(() => render(MetricsExplainer)).not.toThrow();
 		await tick();
@@ -501,7 +503,8 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('opens the hash-named card on mount even when a saved collapse default folded the page', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
 		await tick();
@@ -520,7 +523,8 @@ describe('MetricsExplainer', () => {
 		const scrollCalls: Array<{ expanded: string | null; args: unknown }> = [];
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const { container } = await (async () => {
-			localStorage.setItem('transit:quiet-mode', 'true');
+			localStorage.setItem('quiet-mode', 'true');
+			quietMode.init();
 			window.location.hash = '#otp';
 			return render(MetricsExplainer);
 		})();
@@ -611,7 +615,8 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('opens the provenance card on mount when a saved collapse default folded the page', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		window.location.hash = '#metrics-provenance';
 		const { container } = render(MetricsExplainer);
 		await tick();
@@ -656,7 +661,7 @@ describe('MetricsExplainer', () => {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
+		expect(localStorage.getItem('quiet-mode')).toBeNull();
 
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		expect(rail).not.toBeNull();
@@ -758,7 +763,7 @@ describe('MetricsExplainer', () => {
 		expect(remember).toHaveTextContent("Don't start collapsed");
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
@@ -766,13 +771,14 @@ describe('MetricsExplainer', () => {
 		await fireEvent.click(remember);
 		expect(remember).toHaveAttribute('data-remembered', 'false');
 		expect(remember).toHaveTextContent('Always start collapsed');
-		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
+		expect(localStorage.getItem('quiet-mode')).toBeNull();
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 	});
 
 	it('restores a saved collapsed preference on mount → cards + ToC folded, rail still present', () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		const { container } = render(MetricsExplainer);
 
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { StopReliability, IsoUtc } from '$lib/v1';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -101,7 +101,7 @@ const disclosureTrigger = (container: HTMLElement, id: string, name: string): HT
 	within(disclosure(container, id)).getByRole('button', { name });
 
 beforeEach(() => {
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	sessionStorage.clear();
 	motion.reduced = false;
 });
@@ -330,7 +330,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			expect(disclosureTrigger(container, id, label)).toHaveAttribute('aria-expanded', 'true');
 		}
 
-		quietModeStore.toggle();
+		quietMode.toggle();
 		await waitFor(() => {
 			for (const [id, label] of PRESENT_SECTIONS) {
 				expect(disclosureTrigger(container, id, label)).toHaveAttribute('aria-expanded', 'false');
@@ -340,7 +340,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			container.querySelector('[data-slot="surface-rail"] [data-slot="section-toc"]'),
 		).toBeVisible();
 
-		quietModeStore.toggle();
+		quietMode.toggle();
 		await waitFor(() => {
 			for (const [id, label] of PRESENT_SECTIONS) {
 				expect(disclosureTrigger(container, id, label)).toHaveAttribute('aria-expanded', 'true');
@@ -396,7 +396,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 
 	it('restores the remembered collapsed default after a clean remount', async () => {
 		const first = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
-		quietModeStore.rememberCurrent();
+		quietMode.rememberCurrent();
 		await waitFor(() =>
 			expect(disclosureTrigger(first.container, 'stop-rel-trend', 'Daily trend')).toHaveAttribute(
 				'aria-expanded',
@@ -406,7 +406,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 		first.unmount();
 
 		sessionStorage.clear();
-		quietModeStore.init();
+		quietMode.init();
 		const second = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 
 		await waitFor(() => {
@@ -430,7 +430,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			value: scrollIntoView,
 		});
 		motion.reduced = true;
-		quietModeStore.toggle();
+		quietMode.toggle();
 
 		try {
 			const { container } = render(StopReliabilitySurface, {

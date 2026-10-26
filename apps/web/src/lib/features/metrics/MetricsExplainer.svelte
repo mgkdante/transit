@@ -10,9 +10,8 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { desktop, quietMode } from '@yesid/ui/state';
 	import { persisted } from '$lib/stores';
-	import { layout } from '$lib/nav/layout.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import {
 		CollapsibleSection,
@@ -48,7 +47,7 @@
 
 	let desktopRailVisited = $state(false);
 	$effect(() => {
-		if (layout.isDesktop) desktopRailVisited = true;
+		if (desktop.current) desktopRailVisited = true;
 	});
 
 	const generatedMeta = $derived(
@@ -136,13 +135,13 @@
 		},
 	]);
 
-	const cardCloseSignal = $derived(quietModeStore.closeSignal);
+	const cardCloseSignal = $derived(quietMode.closeSignal);
 
 	const cardKey = (anchor: string): string => `metrics-card-${anchor}`;
 
 	let cardOpenSignals = $state<Record<string, number>>({});
 	const cardOpenSignal = (anchor: string): number =>
-		(cardOpenSignals[anchor] ?? 0) + quietModeStore.openSignal;
+		(cardOpenSignals[anchor] ?? 0) + quietMode.openSignal;
 
 	const railOpen = {
 		provenance: persisted('metrics-rail-provenance', true),
@@ -224,9 +223,9 @@
 				title={t.statRail.provenance.title}
 				headerVariant="article-summary"
 				bind:open={() => railOpen.provenance.value, (next) => setRailOpen('provenance', next)}
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			>
 				{#snippet icon()}
 					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
@@ -250,9 +249,9 @@
 			title={t.statRail.coverage.title}
 			headerVariant="article-summary"
 			bind:open={() => railOpen.coverage.value, (next) => setRailOpen('coverage', next)}
-			closeSignal={quietModeStore.closeSignal}
-			openSignal={quietModeStore.openSignal}
-			bulkCollapsed={quietModeStore.enabled}
+			closeSignal={quietMode.closeSignal}
+			openSignal={quietMode.openSignal}
+			bulkCollapsed={quietMode.enabled}
 		>
 			{#snippet icon()}
 				<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -279,9 +278,9 @@
 				title={t.statRail.freshness.title}
 				headerVariant="article-summary"
 				bind:open={() => railOpen.freshness.value, (next) => setRailOpen('freshness', next)}
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			>
 				{#snippet icon()}
 					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
@@ -334,9 +333,9 @@
 				heading={t.tocLabel}
 				counterPrefix={t.tocCounterPrefix}
 				sectionKey="metrics-toc"
-				closeSignal={quietModeStore.closeSignal}
-				openSignal={quietModeStore.openSignal}
-				bulkCollapsed={quietModeStore.enabled}
+				closeSignal={quietMode.closeSignal}
+				openSignal={quietMode.openSignal}
+				bulkCollapsed={quietMode.enabled}
 			/>
 
 			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
@@ -356,7 +355,7 @@
 					open={true}
 					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(PROVENANCE_ANCHOR)}
-					bulkCollapsed={quietModeStore.enabled}
+					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
@@ -458,7 +457,7 @@
 									open={true}
 									closeSignal={cardCloseSignal}
 									openSignal={cardOpenSignal(entry.anchor)}
-									bulkCollapsed={quietModeStore.enabled}
+									bulkCollapsed={quietMode.enabled}
 								>
 									<div class="metric__body">
 										<p class="metric__meta">
@@ -497,7 +496,7 @@
 					open={true}
 					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
-					bulkCollapsed={quietModeStore.enabled}
+					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -526,7 +525,7 @@
 					open={true}
 					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(LACUNES_ANCHOR)}
-					bulkCollapsed={quietModeStore.enabled}
+					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />

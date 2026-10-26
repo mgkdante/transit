@@ -10,12 +10,13 @@
 
 	export type QuietModeActiveEffect = 'none' | 'glow';
 
+	/** State and actions default to the shared `quietMode` store. */
 	export interface QuietModeButtonProps {
 		copy: QuietModeButtonCopy;
-		enabled: boolean;
-		remembered: boolean;
-		onToggle: () => void;
-		onRememberToggle: () => void;
+		enabled?: boolean;
+		remembered?: boolean;
+		onToggle?: () => void;
+		onRememberToggle?: () => void;
 		activeEffect?: QuietModeActiveEffect;
 		class?: string;
 	}
@@ -23,17 +24,21 @@
 
 <script lang="ts">
 	import { cn } from '../cn/index.js';
+	import { quietMode } from '../state/quiet-mode.svelte.js';
 
 	let {
 		copy,
-		enabled,
-		remembered,
-		onToggle,
-		onRememberToggle,
+		enabled: enabledProp,
+		remembered: rememberedProp,
+		onToggle = () => quietMode.toggle(),
+		onRememberToggle = () =>
+			quietMode.remembered ? quietMode.forgetDefault() : quietMode.rememberCurrent(),
 		activeEffect = 'none',
 		class: className,
 	}: QuietModeButtonProps = $props();
 
+	const enabled = $derived(enabledProp ?? quietMode.enabled);
+	const remembered = $derived(rememberedProp ?? quietMode.remembered);
 	const label = $derived(enabled ? copy.expand : copy.collapse);
 	const title = $derived(enabled ? copy.expandTitle : copy.collapseTitle);
 	const rememberLabel = $derived(remembered ? copy.forget : copy.remember);

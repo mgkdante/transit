@@ -3,9 +3,7 @@
 // plus supporting types. sectionGlow provides section-scoped feedback on
 // background layers, distinct from cursorGlow on card surfaces.
 //
-// morphHover and scrollChain are not exported: they remain component- or
-// scrub-coupled to MorphSVG helpers and ScrollTrigger machinery. Consumers own
-// them locally until the rule of three justifies a package contract.
+// morphHover is not exported: it stays coupled to app-side MorphSVG helpers.
 
 export { boop, type BoopParams } from './boop.js';
 // reveal is excluded because the Snappy Doctrine forbids entrance actions.
@@ -16,6 +14,5 @@ export { cursorGlow, type CursorGlowParams } from './cursorGlow.js';
 export { sectionGlow } from './sectionGlow.js';
 export { cardParallax } from './cardParallax.js';
 export { wordmarkHover, type WordmarkHoverParams } from './wordmarkHover.js';
-// morphHover — Tier 2, stays app-side (see header)
-// scrollChain — Tier 2, stays app-side (see header)
+export { scrollChain } from './scrollChain.js';
 export { pressBounce } from './pressBounce.js';

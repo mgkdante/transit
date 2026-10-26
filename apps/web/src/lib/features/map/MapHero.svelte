@@ -6,8 +6,7 @@
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { themeStore } from '$lib/stores';
-	import { layout, isDesktopViewport } from '$lib/nav';
+	import { desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '$lib/components/edge';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
 	import { getV1Context } from '$lib/v1/boot';
@@ -81,7 +80,6 @@
 	let { onready, onidle, onrecovering, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
 	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
@@ -96,24 +94,12 @@
 
 	let mapWidthPx = $state(1280);
 
-	let isDesktopLayout = $state(isDesktopViewport());
-	onMount(() => {
-		if (typeof window === 'undefined') return;
-		const mql = window.matchMedia('(min-width: 1024px)');
-		isDesktopLayout = mql.matches;
-		const onChange = (e: MediaQueryListEvent) => {
-			isDesktopLayout = e.matches;
-		};
-		mql.addEventListener('change', onChange);
-		return () => releaseMapOwner(() => mql.removeEventListener('change', onChange));
-	});
-
 	let detailWidthPx = $state(readStoredDetailPanelWidth());
 	let detailCollapsed = $state(false);
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
-	const mapFitPadding = $derived(deriveMapFitPadding(isDesktopLayout, mapWidthPx));
+	const mapFitPadding = $derived(deriveMapFitPadding(desktop.current, mapWidthPx));
 
 	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
 	const filters = createFilterStore(
@@ -729,7 +715,7 @@
 	$effect(() => {
 		const el = heroEl;
 		if (!el) return;
-		const open = detailOpen && layout.isDesktop;
+		const open = detailOpen && desktop.current;
 		const dispose = publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
 		return () => releaseMapOwner(dispose);
 	});
@@ -743,7 +729,7 @@
 	<MapStage
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
-		{theme}
+		theme={theme.current}
 		center={framing.center}
 		bounds={framing.bounds}
 		maxBounds={framing.maxBounds}
@@ -848,7 +834,7 @@
 				onsuggestion={nearMeController.selectSuggestion}
 				onstopselect={selectNearbyStop}
 				onclear={nearMeController.clear}
-				isDesktop={layout.isDesktop}
+				isDesktop={desktop.current}
 				filtersStore={filters}
 				{detailOpen}
 				{liveEdgeState}
@@ -872,7 +858,7 @@
 >
 	{@render mapSurface()}
 
-	{#if layout.isDesktop && detailOpen}
+	{#if desktop.current && detailOpen}
 		<MapDetailOverlay
 			bind:widthPx={detailWidthPx}
 			bind:collapsed={detailCollapsed}
@@ -882,7 +868,7 @@
 		/>
 	{/if}
 
-	{#if detailOpen && !layout.isDesktop}
+	{#if detailOpen && !desktop.current}
 		<MapMobileDetailSheet
 			bind:open={
 				() => selectionController.detailOpen,

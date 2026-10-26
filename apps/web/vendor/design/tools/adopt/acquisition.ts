@@ -2,11 +2,11 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
-	readFileSync,
+	realpathSync,
 	rmSync,
-	statSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,9 +15,11 @@ import {
 	REPOSITORY_ID,
 	assertCommit,
 	assertTag,
+	requiredLegalFilesForTag,
 	type AdoptProvenance,
 	type TagIdentity,
 } from './contract.js';
+import { guardExistingDirectory, guardExistingFile, readStableFile } from './path-safety.js';
 
 export { REPOSITORY_ID } from './contract.js';
 
@@ -30,6 +32,18 @@ const MAX_JSON_BYTES = 1024 * 1024;
 const MAX_ENTRIES = 10_000;
 const RECEIPT_NAME = '.yesid-release.json';
 const DEFAULT_RELEASE_TIMEOUT_MS = 60_000;
+const GIT_TIMEOUT_MS = 30_000;
+const MAX_GIT_OUTPUT_BYTES = 1024 * 1024;
+const EMPTY_GIT_CONFIG = process.platform === 'win32' ? 'NUL' : '/dev/null';
+const SAFE_GIT_CONFIG = [
+	'--no-replace-objects',
+	'-c',
+	'core.fsmonitor=false',
+	'-c',
+	'core.hooksPath=',
+	'-c',
+	`core.attributesFile=${EMPTY_GIT_CONFIG}`,
+] as const;
 
 export interface AcquiredSource {
 	source: string;
@@ -55,12 +69,71 @@ interface SourceReceipt {
 }
 
 function runGit(source: string, args: string[]): string {
-	const result = spawnSync('git', args, { cwd: source, encoding: 'utf8' });
-	if (result.status !== 0) {
-		const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.status}`;
+	const result = spawnSync('git', [...SAFE_GIT_CONFIG, ...args], {
+		cwd: source,
+		encoding: 'utf8',
+		env: {
+			...process.env,
+			GIT_ATTR_NOSYSTEM: '1',
+		},
+		maxBuffer: MAX_GIT_OUTPUT_BYTES,
+		timeout: GIT_TIMEOUT_MS,
+	});
+	if (result.error || result.status !== 0 || result.signal) {
+		const detail = result.error?.message || result.stderr.trim() || result.stdout.trim() ||
+			`exit ${result.status ?? 1}${result.signal ? ` via ${result.signal}` : ''}`;
 		throw new Error(detail);
 	}
 	return result.stdout.trim();
+}
+
+function assertNoLocalGitOverrides(source: string): void {
+	for (const relative of ['info/attributes', 'info/grafts']) {
+		const path = resolve(source, runGit(source, ['rev-parse', '--git-path', relative]));
+		try {
+			const stats = lstatSync(path);
+			if (stats.isSymbolicLink() || !stats.isFile() || stats.size !== 0) {
+				throw new Error(`worktree adoption refuses local Git override ${relative} at ${path}`);
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+			throw error;
+		}
+	}
+}
+
+function localFilterNeutralizers(source: string): string[] {
+	const result = spawnSync(
+		'git',
+		[
+			...SAFE_GIT_CONFIG,
+			'config',
+			'--name-only',
+			'--get-regexp',
+			'^filter\\..*\\.(clean|process)$',
+		],
+		{
+			cwd: source,
+			encoding: 'utf8',
+			env: {
+				...process.env,
+				GIT_ATTR_NOSYSTEM: '1',
+			},
+			maxBuffer: MAX_GIT_OUTPUT_BYTES,
+			timeout: GIT_TIMEOUT_MS,
+		},
+	);
+	if (result.error || result.signal || ![0, 1].includes(result.status ?? 1)) {
+		throw new Error(
+			result.error?.message || result.stderr.trim() || 'could not inspect executable Git filters',
+		);
+	}
+	if (result.status === 1 || result.stdout.trim() === '') return [];
+	return result.stdout
+		.trim()
+		.split('\n')
+		.filter(Boolean)
+		.flatMap((key) => ['-c', `${key}=`]);
 }
 
 function annotatedTagIdentity(source: string, tag: string): TagIdentity {
@@ -71,27 +144,47 @@ function annotatedTagIdentity(source: string, tag: string): TagIdentity {
 	} catch (error) {
 		throw new Error(`worktree requires an annotated tag ${tag}`, { cause: error });
 	}
-	const peeledCommit = runGit(source, ['rev-parse', `refs/tags/${tag}^{commit}`]);
+	const peeledCommit = runGit(source, ['rev-parse', `${object}^{commit}`]);
 	assertCommit(object);
 	assertCommit(peeledCommit);
 	if (runGit(source, ['cat-file', '-t', object]) !== 'tag') {
 		throw new Error(`worktree requires an annotated tag ${tag}`);
 	}
+	const headers = new Map<string, string>();
+	for (const line of runGit(source, ['cat-file', '-p', object]).split('\n')) {
+		if (line === '') break;
+		const separator = line.indexOf(' ');
+		if (separator > 0) headers.set(line.slice(0, separator), line.slice(separator + 1));
+	}
+	if (
+		headers.get('object') !== peeledCommit ||
+		headers.get('type') !== 'commit' ||
+		headers.get('tag') !== tag
+	) {
+		throw new Error(`annotated tag ${tag} does not bind its captured commit identity`);
+	}
 	return { name: tag, object, peeledCommit };
 }
 
 export function acquireWorktree(sourceInput: string, tag: string): AcquiredSource {
-	const source = resolve(sourceInput);
-	if (!existsSync(source) || !statSync(source).isDirectory()) {
-		throw new Error(`worktree source does not exist: ${source}`);
-	}
+	const sourceGuard = guardExistingDirectory(sourceInput, 'worktree source');
+	const source = sourceGuard.path;
+	sourceGuard.assertStable();
+	assertNoLocalGitOverrides(source);
 	const identity = annotatedTagIdentity(source, tag);
 	const head = runGit(source, ['rev-parse', 'HEAD']);
 	assertCommit(head);
 	if (head !== identity.peeledCommit) {
 		throw new Error(`worktree HEAD ${head} does not match ${tag} at ${identity.peeledCommit}`);
 	}
-	if (runGit(source, ['status', '--porcelain=v1', '--untracked-files=all']) !== '') {
+	if (
+		runGit(source, [
+			...localFilterNeutralizers(source),
+			'status',
+			'--porcelain=v1',
+			'--untracked-files=all',
+		]) !== ''
+	) {
 		throw new Error(`local adoption requires a clean worktree at ${source}`);
 	}
 	const tree = runGit(source, ['rev-parse', `${identity.peeledCommit}^{tree}`]);
@@ -99,18 +192,36 @@ export function acquireWorktree(sourceInput: string, tag: string): AcquiredSourc
 	const rootName = `yesid.dev-design-${tag}`;
 	const archived = spawnSync(
 		'git',
-		['archive', '--format=tar', `--prefix=${rootName}/`, tree],
+		[
+			...SAFE_GIT_CONFIG,
+			'-c',
+			'core.autocrlf=false',
+			'-c',
+			'core.eol=lf',
+			'archive',
+			'--format=tar',
+			`--prefix=${rootName}/`,
+			tree,
+		],
 		{
 			cwd: source,
+			env: {
+				...process.env,
+				GIT_ATTR_NOSYSTEM: '1',
+			},
 			maxBuffer: MAX_ARCHIVE_BYTES,
+			timeout: GIT_TIMEOUT_MS,
 		},
 	);
-	if (archived.status !== 0 || !Buffer.isBuffer(archived.stdout)) {
-		const detail = Buffer.isBuffer(archived.stderr)
+	if (archived.error || archived.status !== 0 || archived.signal || !Buffer.isBuffer(archived.stdout)) {
+		const stderr = Buffer.isBuffer(archived.stderr)
 			? archived.stderr.toString('utf8').trim()
-			: `exit ${archived.status}`;
+			: '';
+		const detail = archived.error?.message || stderr ||
+			`exit ${archived.status ?? 1}${archived.signal ? ` via ${archived.signal}` : ''}`;
 		throw new Error(`could not snapshot tagged worktree: ${detail}`);
 	}
+	sourceGuard.assertStable();
 	return materializeEntries(
 		parseTar(archived.stdout, tag),
 		rootName,
@@ -176,7 +287,7 @@ function validateArchivePath(
 				part === '..' ||
 				/[<>:"|?*]/u.test(part) ||
 				/[. ]$/u.test(part) ||
-				/^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/iu.test(deviceStem)
+				/^(?:CON|CONIN\$|CONOUT\$|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/iu.test(deviceStem)
 			);
 		})
 	) {
@@ -296,7 +407,9 @@ function materializeEntries(
 	provenance: AdoptProvenance,
 ): AcquiredSource {
 	const tempRoot = mkdtempSync(join(tmpdir(), 'yesid-adopt-archive-'));
-	const source = join(tempRoot, rootName);
+	const canonicalTempRoot = realpathSync.native(tempRoot);
+	const tempRootGuard = guardExistingDirectory(canonicalTempRoot, 'owned archive temporary root');
+	const source = join(tempRootGuard.path, rootName);
 	try {
 		for (const entry of entries) {
 			const relative =
@@ -308,12 +421,16 @@ function materializeEntries(
 				writeFileSync(destination, entry.content, { flag: 'wx', mode: 0o644 });
 			}
 		}
-		for (const required of [
-			'LICENSE',
-			'tools/adopt.ts',
-			'tools/adopt',
-			'packages',
-		]) {
+		for (const required of requiredLegalFilesForTag(provenance.tag.name)) {
+			const path = join(source, required);
+			if (!existsSync(path)) {
+				throw new Error(`unsafe archive: missing required path ${required}`);
+			}
+			if (!lstatSync(path).isFile()) {
+				throw new Error(`unsafe archive: required path ${required} must be a regular file`);
+			}
+		}
+		for (const required of ['tools/adopt.ts', 'tools/adopt', 'packages']) {
 			if (!existsSync(join(source, required))) {
 				throw new Error(`unsafe archive: missing required path ${required}`);
 			}
@@ -322,11 +439,13 @@ function materializeEntries(
 			source,
 			provenance,
 			cleanup() {
-				rmSync(tempRoot, { recursive: true, force: true });
+				tempRootGuard.assertStable();
+				rmSync(tempRootGuard.path, { recursive: true, force: true });
 			},
 		};
 	} catch (error) {
-		rmSync(tempRoot, { recursive: true, force: true });
+		tempRootGuard.assertStable();
+		rmSync(tempRootGuard.path, { recursive: true, force: true });
 		throw error;
 	}
 }
@@ -355,13 +474,21 @@ function materializeArchive(
 
 export function acquireArchive(archiveInput: string, tag: string): AcquiredSource {
 	assertTag(tag);
-	const archivePath = resolve(archiveInput);
-	if (!existsSync(archivePath) || !statSync(archivePath).isFile()) {
-		throw new Error(`archive does not exist: ${archivePath}`);
+	const archiveGuard = guardExistingFile(archiveInput, 'archive source');
+	const archive = readStableFile(
+		archiveGuard,
+		MAX_ARCHIVE_BYTES,
+		'unsafe archive: invalid archive size',
+	);
+	return acquireArchiveBytes(archive, tag);
+}
+
+export function acquireArchiveBytes(archive: Buffer, tag: string): AcquiredSource {
+	assertTag(tag);
+	if (archive.length === 0 || archive.length > MAX_ARCHIVE_BYTES) {
+		throw new Error('unsafe archive: invalid archive size');
 	}
-	const size = statSync(archivePath).size;
-	if (size <= 0 || size > MAX_ARCHIVE_BYTES) throw new Error(`unsafe archive: invalid archive size`);
-	return materializeArchive(readFileSync(archivePath), tag, 'archive');
+	return materializeArchive(archive, tag, 'archive');
 }
 
 function timeoutError(): Error {

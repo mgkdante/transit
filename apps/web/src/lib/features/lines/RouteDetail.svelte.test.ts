@@ -12,7 +12,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
 import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import type { IdentitySeed } from '$lib/v1/serverContext';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
@@ -279,7 +279,7 @@ function resetRouteSurfaceState(): void {
 	createLiveStoreSpy.mockReset();
 	liveStore.start.mockReset();
 	liveStore.stop.mockReset();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 const routeSurface = createSurfaceHarness({

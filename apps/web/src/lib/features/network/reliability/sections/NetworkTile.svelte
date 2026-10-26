@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import CollapsibleSection from '$lib/components/shared/CollapsibleSection.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 	import { cn } from '$lib/utils';
 
 	interface NetworkTileProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
@@ -46,9 +46,9 @@
 		headerVariant="article-summary"
 		{sectionKey}
 		{index}
-		closeSignal={quietModeStore.closeSignal}
-		openSignal={quietModeStore.openSignal}
-		bulkCollapsed={quietModeStore.enabled}
+		closeSignal={quietMode.closeSignal}
+		openSignal={quietMode.openSignal}
+		bulkCollapsed={quietMode.enabled}
 		{headerActions}
 	>
 		{@render children?.()}
