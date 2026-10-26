@@ -101,11 +101,15 @@ describe('MapFilterPill', () => {
 
 		await fireEvent.click(trigger);
 		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
-		await waitFor(() =>
-			expect(
-				(Reflect.get(globalThis, 'bitsDismissableLayers') as Map<unknown, unknown>)?.size,
-			).toBeGreaterThan(0),
-		);
+		// Animation-frame cleanup can leave older layers registered while this Sheet opens.
+		const dialog = screen.getByRole('dialog');
+		await waitFor(() => {
+			const layers = Reflect.get(globalThis, 'bitsDismissableLayers') as Map<
+				{ opts: { ref: { current: HTMLElement | null } } },
+				unknown
+			>;
+			expect([...layers.keys()].some((layer) => layer.opts.ref.current === dialog)).toBe(true);
+		});
 		const overlay = document.querySelector<HTMLElement>(
 			'[data-slot="sheet-overlay"]:has(+ [data-m6b-controls-drawer])',
 		);
