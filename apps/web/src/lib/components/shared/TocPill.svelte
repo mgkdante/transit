@@ -2,6 +2,7 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { TocBadge } from '@yesid/ui/brand';
 	import { flattenToc, resolveTocCounter, tocElement, type TocEntry } from './toc';
+	import { scrollChain } from '@yesid/motion/actions';
 
 	let {
 		entries,
@@ -93,7 +94,7 @@
 			aria-label={closeAria}
 		></button>
 
-		<div class="toc-drawer" bind:this={drawerEl}>
+		<div class="toc-drawer" bind:this={drawerEl} use:scrollChain>
 			<nav class="toc-drawer-nav flex flex-col gap-0.5 p-4">
 				{#each entries as entry (entry.id)}
 					<button

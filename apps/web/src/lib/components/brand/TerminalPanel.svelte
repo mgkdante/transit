@@ -3,6 +3,7 @@
 	import StatusDot from './StatusDot.svelte';
 	import { Separator } from '@yesid/ui/separator';
 	import { cn } from '$lib/utils';
+	import { scrollChain } from '@yesid/motion/actions';
 
 	export interface TerminalFooterItem {
 		label: string;
@@ -58,7 +59,7 @@
 
 	<Separator variant="hazard" hazardSize="sm" />
 
-	<div class="terminal-body" class:no-pad={noPadding}>
+	<div class="terminal-body" class:no-pad={noPadding} use:scrollChain>
 		{@render children?.()}
 	</div>
 

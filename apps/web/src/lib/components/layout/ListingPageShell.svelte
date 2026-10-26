@@ -5,6 +5,7 @@
 	import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@yesid/ui/collapsible';
 	import { desktop } from '@yesid/ui/state';
 	import { persisted } from '$lib/stores';
+	import { scrollChain } from '@yesid/motion/actions';
 
 	export interface ListingPageShellProps {
 		heading: string;
@@ -71,7 +72,7 @@
 
 		<div class="listing-grid">
 			<aside class="listing-filter-column" data-slot="listing-filter-column">
-				<div class="listing-filter-sticky">
+				<div class="listing-filter-sticky" use:scrollChain>
 					{#if search}
 						<div class="listing-filter-search" data-slot="listing-filter-search">
 							{@render search()}

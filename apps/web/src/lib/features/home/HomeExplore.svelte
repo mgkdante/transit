@@ -4,6 +4,7 @@
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { desktop } from '@yesid/ui/state';
 	import { StateNotice } from '$lib/components/edge';
+	import { scrollChain } from '@yesid/motion/actions';
 	import {
 		HOME_FILTER_COUNT_LABEL,
 		homeGroups,
@@ -125,7 +126,12 @@
 			<span class="label-metric" aria-live="polite">{matchSummary}</span>
 		</div>
 		<div class="hub-launch">
-			<details class="home-filters" bind:this={filterDisclosure} bind:open={filtersOpen}>
+			<details
+				class="home-filters"
+				use:scrollChain
+				bind:this={filterDisclosure}
+				bind:open={filtersOpen}
+			>
 				<summary>{t.filterLabel}<span aria-hidden="true">+</span></summary>
 				<div class="explore-filters" role="group" aria-label={t.filterLabel}>
 					<FilterGroup
