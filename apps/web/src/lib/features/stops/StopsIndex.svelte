@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
-	import { layout, mapHrefFor } from '$lib/nav';
+	import { mapHrefFor } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
 	import { getRoute, getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import type { RouteIndexEntry } from '$lib/v1/schemas/routes_index';
@@ -42,7 +43,7 @@
 	const locale: Locale = getLocale();
 	const t = $derived(indexCopy[locale]);
 	const listingSubtitle = $derived([t.kicker, t.subheading].filter(Boolean).join(' '));
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());

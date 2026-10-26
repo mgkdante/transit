@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
+import { quietMode } from '@yesid/ui/state';
 import type { V1Context } from '$lib/v1/boot';
 import type { IsoUtc } from '$lib/v1/schemas';
 
@@ -123,7 +124,6 @@ vi.mock('$lib/stores', () => ({
 		subscribe: vi.fn(() => vi.fn()),
 	},
 	motionMode: { current: 'raw', isSmooth: false, toggle: vi.fn() },
-	themeStore: { init: vi.fn(), current: 'dark', isDark: true, toggle: vi.fn() },
 }));
 vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
 vi.mock('$lib/pwa/appVersion', () => ({
@@ -132,7 +132,10 @@ vi.mock('$lib/pwa/appVersion', () => ({
 vi.mock('$lib/vitals/collect', () => ({ startVitals: () => vi.fn() }));
 vi.mock('$lib/motion/view-transition', () => ({ runViewTransition: harness.runViewTransition }));
 vi.mock('@yesid/motion/utils/globalRipple', () => ({ initGlobalRipple: () => vi.fn() }));
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: true }, isDesktopViewport: () => true }));
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	desktop: { current: true },
+}));
 vi.mock('$lib/search/chromeSearch', () => ({
 	chromeSearchResultHref: () => '/map',
 	chromeSearchResults: () => [],
@@ -209,11 +212,18 @@ function expectLegalDestinationsAbsent(
 
 afterEach(() => {
 	cleanup();
+	quietMode.resetForTest();
 	document.body.style.removeProperty('overflow');
 	document.body.style.removeProperty('pointer-events');
 });
 
 describe('root layout data-independent legal routes', () => {
+	it('restores the remembered quiet mode from the Transit storage key', () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		renderWithoutV1('/privacy', 'en');
+		expect(document.documentElement.dataset.quietMode).toBe('true');
+	});
+
 	it.each(['en', 'fr'] as const)(
 		'preserves shallow filters in both %s language links',
 		async (locale) => {

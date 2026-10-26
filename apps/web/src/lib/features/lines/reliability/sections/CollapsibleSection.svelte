@@ -3,7 +3,7 @@
 
 	import type { Snippet } from 'svelte';
 	import SharedCollapsibleSection from '$lib/components/shared/CollapsibleSection.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 
 	interface CollapsibleSectionProps {
 		eyebrow: string;
@@ -30,9 +30,9 @@
 		headerVariant="article-summary"
 		index={number == null ? null : number - 1}
 		bind:open
-		closeSignal={quietModeStore.closeSignal}
-		openSignal={quietModeStore.openSignal}
-		bulkCollapsed={quietModeStore.enabled}
+		closeSignal={quietMode.closeSignal}
+		openSignal={quietMode.openSignal}
+		bulkCollapsed={quietMode.enabled}
 	>
 		{@render children()}
 	</SharedCollapsibleSection>

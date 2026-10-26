@@ -566,24 +566,7 @@ describe('MapOverlayChrome', () => {
 	);
 
 	it('closes the portaled drawer at 1024px and hands focus to desktop Controls', async () => {
-		let desktopListener: ((event: MediaQueryListEvent) => void) | undefined;
-		vi.spyOn(window, 'matchMedia').mockImplementation(
-			(query) =>
-				({
-					matches: false,
-					media: query,
-					onchange: null,
-					addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
-						if (query === '(min-width: 1024px)') {
-							desktopListener = listener as (event: MediaQueryListEvent) => void;
-						}
-					},
-					removeEventListener: () => {},
-					addListener: () => {},
-					removeListener: () => {},
-					dispatchEvent: () => true,
-				}) as MediaQueryList,
-		);
+		installViewportMatchMedia(900);
 		const store = createFilterStore(emptyFilterState());
 		const view = render(MapOverlayChromeHarness, {
 			props: { store, locale: 'en', isDesktop: false },
@@ -593,7 +576,7 @@ describe('MapOverlayChrome', () => {
 		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
 		await view.rerender({ store, locale: 'en', isDesktop: true });
-		desktopListener?.({ matches: true, media: '(min-width: 1024px)' } as MediaQueryListEvent);
+		installViewportMatchMedia(1280);
 
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		expect(screen.getByRole('button', { name: 'Collapse controls' })).toHaveFocus();
@@ -601,24 +584,7 @@ describe('MapOverlayChrome', () => {
 
 	it('hands 1024px drawer focus to Expand when the desktop rail was persisted collapsed', async () => {
 		localStorage.setItem('transit:controls-rail', 'true');
-		let desktopListener: ((event: MediaQueryListEvent) => void) | undefined;
-		vi.spyOn(window, 'matchMedia').mockImplementation(
-			(query) =>
-				({
-					matches: false,
-					media: query,
-					onchange: null,
-					addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
-						if (query === '(min-width: 1024px)') {
-							desktopListener = listener as (event: MediaQueryListEvent) => void;
-						}
-					},
-					removeEventListener: () => {},
-					addListener: () => {},
-					removeListener: () => {},
-					dispatchEvent: () => true,
-				}) as MediaQueryList,
-		);
+		installViewportMatchMedia(900);
 		const store = createFilterStore(emptyFilterState());
 		const view = render(MapOverlayChromeHarness, {
 			props: { store, locale: 'en', isDesktop: false },
@@ -631,7 +597,7 @@ describe('MapOverlayChrome', () => {
 			'data-open',
 			'false',
 		);
-		desktopListener?.({ matches: true, media: '(min-width: 1024px)' } as MediaQueryListEvent);
+		installViewportMatchMedia(1280);
 
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		expect(screen.getByRole('button', { name: 'Expand controls' })).toHaveFocus();

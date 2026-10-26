@@ -4,6 +4,8 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 
 export const REPOSITORY_ID = 'github.com/mgkdante/yesid.dev-design' as const;
 export const MANIFEST_SCHEMA = 2 as const;
+export const REQUIRED_LEGAL_FILES = ['LICENSE', 'NOTICE', 'TRADEMARK.md'] as const;
+export const LEGAL_BUNDLE_CUTOVER_TAG = 'v0.13.4' as const;
 export const PACKAGE_NAMES = [
 	'tokens',
 	'motion',
@@ -57,6 +59,9 @@ function normalizedRelative(root: string, path: string): string {
 }
 
 export function walkFiles(root: string, out: string[] = []): string[] {
+	const rootStat = lstatSync(root);
+	if (rootStat.isSymbolicLink()) throw new Error(`refusing symbolic link ${root}`);
+	if (!rootStat.isDirectory()) throw new Error(`refusing non-directory filesystem root ${root}`);
 	for (const entry of readdirSync(root).sort()) {
 		const path = join(root, entry);
 		const stat = lstatSync(path);
@@ -167,6 +172,29 @@ export function assertTag(tag: string): void {
 	if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag)) {
 		throw new Error(`invalid tag "${tag}"; expected vX.Y.Z`);
 	}
+}
+
+function tagCore(tag: string): readonly [bigint, bigint, bigint] {
+	assertTag(tag);
+	const [major = '', minor = '', patch = ''] = tag.slice(1).split(/[.+-]/u, 3);
+	return [BigInt(major), BigInt(minor), BigInt(patch)];
+}
+
+export function requiresCompleteLegalBundle(tag: string): boolean {
+	const actual = tagCore(tag);
+	const cutover = tagCore(LEGAL_BUNDLE_CUTOVER_TAG);
+	for (let index = 0; index < actual.length; index += 1) {
+		const left = actual[index] ?? 0n;
+		const right = cutover[index] ?? 0n;
+		if (left !== right) return left > right;
+	}
+	return true;
+}
+
+export function requiredLegalFilesForTag(
+	tag: string,
+): readonly (typeof REQUIRED_LEGAL_FILES)[number][] {
+	return requiresCompleteLegalBundle(tag) ? REQUIRED_LEGAL_FILES : REQUIRED_LEGAL_FILES.slice(0, 1);
 }
 
 export function assertCommit(commit: string): void {

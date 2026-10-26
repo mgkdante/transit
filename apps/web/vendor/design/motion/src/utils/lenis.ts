@@ -22,7 +22,16 @@ let instance: Lenis | null = null;
 let tickerCallback: ((time: number) => void) | null = null;
 let isTouchDevice = false;
 
-export function initLenis(): void {
+/**
+ * An element scroller in place of the window. `content` must wrap the whole scrolling flow so
+ * Lenis sees its height change; Lenis would otherwise measure `document.documentElement`.
+ */
+export interface LenisScroller {
+	readonly wrapper: HTMLElement;
+	readonly content: HTMLElement;
+}
+
+export function initLenis(scroller?: LenisScroller): void {
 	if (instance) return;
 
 	// MOTION-GATED tier: reduced-motion users get native
@@ -41,6 +50,7 @@ export function initLenis(): void {
 
 	// Desktop: Lenis for smooth wheel scroll
 	instance = new Lenis({
+		...scroller,
 		autoRaf: false, // We drive RAF via GSAP ticker — prevent double-update
 		duration: 1.2,
 		easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),

@@ -3,7 +3,7 @@
 	import type { Locale } from '$lib/i18n';
 	import type { Resource } from '$lib/v1/resource.svelte';
 	import { asDataState } from '$lib/v1/data-state';
-	import { layout } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { EdgeState, type StateNoticePresentation } from '$lib/components/edge';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 
@@ -33,7 +33,7 @@
 
 	const resolvedEmptyVariant = $derived(emptyReason ? 'empty' : emptyVariant);
 
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const state = $derived(asDataState(resource, { isEmpty, isNoResults, emptyReason }));
 </script>

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import Harness from './__fixtures__/CollapsibleSectionQuietModeHarness.svelte';
 
 function sectionToggle(container: HTMLElement, dataSection = 'when-to-ride'): HTMLButtonElement {
@@ -18,11 +18,11 @@ function sectionToggles(container: HTMLElement): HTMLButtonElement[] {
 }
 
 beforeEach(() => {
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 afterEach(() => {
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 describe('reliability CollapsibleSection quiet-mode integration', () => {
@@ -89,7 +89,7 @@ describe('reliability CollapsibleSection quiet-mode integration', () => {
 		await waitFor(() => {
 			for (const toggle of toggles) expect(toggle).toHaveAttribute('aria-expanded', 'false');
 		});
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 	});
 
 	it('reapplies the remembered collapsed default after a full remount', async () => {
@@ -100,7 +100,7 @@ describe('reliability CollapsibleSection quiet-mode integration', () => {
 		await waitFor(() => expect(firstToggle).toHaveAttribute('aria-expanded', 'false'));
 		await fireEvent.click(firstToggle);
 		expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 
 		first.unmount();
 		const second = render(Harness);

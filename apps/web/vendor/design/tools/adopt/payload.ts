@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	readdirSync,
+	realpathSync,
 	writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -20,6 +21,7 @@ import {
 	parseManifest,
 	parseProvenance,
 	pathInside,
+	requiredLegalFilesForTag,
 	toolDigest,
 	treeHash,
 	type AdoptManifest,
@@ -32,6 +34,11 @@ import {
 	type AdoptResult,
 	type AdoptRuntime,
 } from './transaction.js';
+import {
+	guardDestinationPath,
+	guardExistingDirectory,
+	guardExistingFile,
+} from './path-safety.js';
 
 export interface AdoptFromSourceOptions {
 	source: string;
@@ -43,7 +50,11 @@ export interface AdoptFromSourceOptions {
 
 function assertSafeDestination(dest: string, source?: string): void {
 	const resolvedDest = resolve(dest);
-	const forbidden = new Set([parsePath(resolvedDest).root, resolve(process.cwd()), resolve(homedir())]);
+	const forbidden = new Set([
+		parsePath(resolvedDest).root,
+		realpathSync.native(process.cwd()),
+		realpathSync.native(homedir()),
+	]);
 	if (forbidden.has(resolvedDest)) {
 		throw new Error(`refusing unsafe destination ${resolvedDest}`);
 	}
@@ -91,6 +102,9 @@ function normalizedRelative(root: string, path: string): string {
 }
 
 function walkSourceFiles(root: string, current = root, out: string[] = []): string[] {
+	const rootStat = lstatSync(current);
+	if (rootStat.isSymbolicLink()) throw new Error(`refusing symbolic link ${current}`);
+	if (!rootStat.isDirectory()) throw new Error(`source path is not a directory ${current}`);
 	for (const entry of readdirSync(current).sort()) {
 		const path = join(current, entry);
 		const rel = normalizedRelative(root, path);
@@ -181,8 +195,10 @@ function rewriteInternalWorkspaceDependencies(packageRoot: string): void {
 }
 
 export function checkAdoption(destInput: string): AdoptManifest {
-	const dest = resolve(destInput);
+	const destination = guardExistingDirectory(destInput, 'destination');
+	const dest = destination.path;
 	assertSafeDestination(dest);
+	destination.assertStable();
 	const manifest = readManifest(dest);
 	const actualToolDigest = toolDigest(dest);
 	if (actualToolDigest !== manifest.toolDigest) {
@@ -199,24 +215,43 @@ export function checkAdoption(destInput: string): AdoptManifest {
 				'Vendored design files changed after adoption. Upstream the change and bump the pinned tag.',
 		);
 	}
+	destination.assertStable();
 	return manifest;
 }
 
 export function adoptFromSource(options: AdoptFromSourceOptions): AdoptResult {
-	const source = resolve(options.source);
-	const dest = resolve(options.dest);
+	const sourceGuard = guardExistingDirectory(options.source, 'source');
+	const destinationGuard = guardDestinationPath(options.dest);
+	const source = sourceGuard.path;
+	const dest = destinationGuard.path;
 	const provenance = parseProvenance(options.provenance, 'adoption source');
 	assertSafeDestination(dest, source);
+	destinationGuard.prepareParent();
+	sourceGuard.assertStable();
+	walkSourceFiles(source);
+	sourceGuard.assertStable();
 	assertReplaceableDestination(dest);
 	validatePackageClosure(source, options.packages);
-	const license = join(source, 'LICENSE');
-	if (!existsSync(license)) throw new Error(`LICENSE not found at ${license}`);
+	const legalFiles = requiredLegalFilesForTag(provenance.tag.name).map((name) => {
+		const path = join(source, name);
+		if (!existsSync(path)) throw new Error(`required legal file ${name} not found at ${path}`);
+		return { name, path, guard: guardExistingFile(path, `source legal file ${name}`) };
+	});
 
 	return installAdoption(
 		{
 			dest,
+			destinationGuard,
+			assertSourceStable() {
+				sourceGuard.assertStable();
+				for (const legal of legalFiles) legal.guard.assertStable();
+			},
 			build(stage) {
-				copyFileSync(license, join(stage, 'LICENSE'));
+				for (const legal of legalFiles) {
+					legal.guard.assertStable();
+					copyFileSync(legal.path, join(stage, legal.name));
+					legal.guard.assertStable();
+				}
 				copyToolBundle(source, stage);
 				for (const name of options.packages) {
 					const packageDest = join(stage, name);

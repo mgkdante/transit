@@ -12,7 +12,7 @@ import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import type { PublicProvider } from '$lib/v1/providers';
 import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
 
@@ -399,7 +399,7 @@ function resetStopSurfaceState() {
 	liveStore.index.byStopId.clear();
 	liveStore.index.byStopId.set('57191', DEPARTURES);
 	liveStore.index.byStopId.set('99999', DEPARTURES_B);
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 beforeEach(() => stopSurface.reset());

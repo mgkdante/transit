@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import QuietModeButton from './QuietModeButton.svelte';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 
 const localeContext = (locale: 'en' | 'fr') =>
 	new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
@@ -12,10 +12,10 @@ function renderControls(locale: 'en' | 'fr' = 'en') {
 	return render(QuietModeButton, { context: localeContext(locale) });
 }
 
-beforeEach(() => quietModeStore.resetForTest());
+beforeEach(() => quietMode.resetForTest());
 afterEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 describe('QuietModeButton source parity', () => {
@@ -40,12 +40,12 @@ describe('QuietModeButton source parity', () => {
 			'data-remembered',
 			'true',
 		);
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 
 		await fireEvent.click(screen.getByRole('button', { name: "Don't start collapsed" }));
 		expect(screen.getByRole('button', { name: 'Always start collapsed' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
-		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
+		expect(localStorage.getItem('quiet-mode')).toBeNull();
 	});
 
 	it('uses the exact French labels', async () => {
@@ -55,18 +55,6 @@ describe('QuietModeButton source parity', () => {
 		expect(screen.getByRole('button', { name: 'Tout déplier' })).toBeInTheDocument();
 		await fireEvent.click(screen.getByRole('button', { name: 'Toujours replier' }));
 		expect(screen.getByRole('button', { name: 'Ne plus replier' })).toBeInTheDocument();
-	});
-
-	it('resets unsaved collapsed mode when a new article control mounts', async () => {
-		const first = renderControls('en');
-		await tick();
-		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
-		expect(quietModeStore.enabled).toBe(true);
-		first.unmount();
-		renderControls('en');
-		await tick();
-		expect(quietModeStore.enabled).toBe(false);
-		expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
 	});
 
 	it('keeps the two controls side-by-side at every width, exactly like the source', () => {

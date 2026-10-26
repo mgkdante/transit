@@ -6,10 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ListingPageShell from './ListingPageShell.svelte';
 
 const viewport = vi.hoisted(() => ({ desktop: false }));
-vi.mock('$lib/nav', () => ({
-	isDesktopViewport: () => viewport.desktop,
-	layout: {
-		get isDesktop() {
+vi.mock('@yesid/ui/state', () => ({
+	desktop: {
+		get current() {
 			return viewport.desktop;
 		},
 	},

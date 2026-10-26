@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
+	import { desktop } from '@yesid/ui/state';
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { copy as MAP_COPY } from './map.copy';
@@ -22,15 +23,10 @@
 	let pillBtn = $state<HTMLButtonElement | null>(null);
 	let drawerTitle = $state<HTMLElement | null>(null);
 
-	onMount(() => {
-		const desktopQuery = window.matchMedia('(min-width: 1024px)');
-		const closeAtDesktop = (event: MediaQueryListEvent) => {
-			if (!event.matches || !drawerOpen) return;
-			desktopHandoff = true;
-			drawerOpen = false;
-		};
-		desktopQuery.addEventListener('change', closeAtDesktop);
-		return () => desktopQuery.removeEventListener('change', closeAtDesktop);
+	$effect(() => {
+		if (!desktop.current || !untrack(() => drawerOpen)) return;
+		desktopHandoff = true;
+		drawerOpen = false;
 	});
 
 	function focusTitle(event: Event): void {

@@ -5,7 +5,7 @@
 // comment-STRIPPED source. Product hex policy is always supplied by consumers.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { walkFiltered } from './walk.js';
+import { relativePathFromRoot, walkFiltered } from './walk.js';
 import { blankComments, numbered } from './comments.js';
 
 export interface BrandHexConfig {
@@ -44,16 +44,17 @@ export function brandHexViolations(config: BrandHexConfig): BrandHexResult {
 	const allowlist = config.allowlist ?? new Set<string>();
 	const pattern = buildBrandHexPattern(config.hexes);
 	const rootAbs = resolve(config.root);
-	const files = walkFiltered(config.root, {
+	const files = walkFiltered(rootAbs, {
 		extensions,
 		exclude: (p) => /\.(test|spec)\.ts$/.test(p) || allowlist.has(p),
 	});
-	const rel = (p: string) => p.replace(rootAbs + '/', '');
 	const violations: string[] = [];
 	for (const file of files) {
 		const scanned = blankComments(readFileSync(file, 'utf-8'));
 		for (const [n, line] of numbered(scanned)) {
-			if (pattern.test(line)) violations.push(`${rel(file)}:${n}: ${line.trim()}`);
+			if (pattern.test(line)) {
+				violations.push(`${relativePathFromRoot(rootAbs, file)}:${n}: ${line.trim()}`);
+			}
 		}
 	}
 	return { fileCount: files.length, violations };

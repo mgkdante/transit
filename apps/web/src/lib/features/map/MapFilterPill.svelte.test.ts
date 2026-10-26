@@ -193,8 +193,7 @@ describe('MapFilterPill', () => {
 		expect(source).toMatch(
 			/@media \(min-width: 1024px\)[\s\S]*\.map-filter-pill-container[\s\S]*display:\s*none/,
 		);
-		expect(source).toContain("window.matchMedia('(min-width: 1024px)')");
-		expect(source).not.toContain("window.matchMedia('(max-width: 768px)')");
+		expect(source).toContain('desktop.current');
 
 		expect(source).not.toContain('stalled');
 		expect(source).not.toContain('stallHidesTrigger');

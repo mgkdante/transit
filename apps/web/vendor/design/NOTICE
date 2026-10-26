@@ -1,0 +1,30 @@
+yesid.dev-design
+Copyright (c) 2026 Yesid Otalora
+
+Repository code
+---------------
+
+Except for the third-party component identified below, the software authored
+in this repository is licensed under the MIT License. See LICENSE for the
+complete grant and conditions.
+
+The yesid name and brand identifiers are addressed separately in TRADEMARK.md.
+That notice is not an additional restriction on the software license.
+
+Third-party software
+--------------------
+
+The current lockfile resolves GSAP 3.15.0.
+GSAP is not covered by this repository's MIT License.
+Webflow licenses GSAP under the Standard "No Charge" GSAP License:
+
+https://gsap.com/community/standard-license/
+
+That license permits implementing and using GSAP on websites, web
+applications, and digital interfaces, including commercial projects. It
+prohibits using GSAP in tools that let users build visual animations without
+code when that use encourages, induces, or materially assists creation of a
+solution competing with Webflow's visual animation-building capabilities. It
+also restricts reverse engineering GSAP to create competitive products and
+removing GSAP proprietary notices. The linked license is the controlling
+source for its complete terms and current wording.

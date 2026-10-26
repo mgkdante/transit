@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
@@ -225,7 +225,7 @@ function resetHotspotsState(): void {
 	}
 	sessionStorage.removeItem('transit.persisted:hotspots-controls');
 	sessionStorage.removeItem('transit.persisted:hotspots-toc');
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 type CapturedMagnitudeDatum = MagnitudeDatum & {
@@ -632,7 +632,7 @@ describe('HotspotsBoard article', () => {
 		for (const id of ['hotspots-top', 'hotspots-lines', 'hotspots-stops']) {
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 		}
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 	});
 
 	it('reapplies remembered quiet mode across a full board remount', async () => {
@@ -644,7 +644,7 @@ describe('HotspotsBoard article', () => {
 		await fireEvent.click(firstControls);
 		expect(firstControls).toHaveAttribute('aria-expanded', 'true');
 		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('true');
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 
 		first.unmount();
 		const second = render(HotspotsBoard);
@@ -660,7 +660,8 @@ describe('HotspotsBoard article', () => {
 	});
 
 	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		mockUrl = new URL('http://localhost/hotspots?grain=week');
 		const { container } = render(HotspotsBoard);
 		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();

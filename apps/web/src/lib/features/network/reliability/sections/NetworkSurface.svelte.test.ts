@@ -12,7 +12,7 @@ import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
 
 const copy = networkReliabilityCopy.en;
@@ -148,7 +148,7 @@ function resetNetworkSurfaceState(): void {
 	openSurface.mockClear();
 	createLiveStoreSpy.mockClear();
 	createResourceSpy.mockClear();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 const networkSurface = createSurfaceHarness({
@@ -259,7 +259,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => networkSurface.reset());
 
 afterEach(() => {
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 describe('NetworkSurface article shell', () => {

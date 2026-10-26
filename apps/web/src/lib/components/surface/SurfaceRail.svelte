@@ -2,7 +2,7 @@
 	import { onMount, tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ChevronToggle } from '@yesid/ui/brand';
-	import { layout } from '$lib/nav/layout.svelte';
+	import { desktop } from '@yesid/ui/state';
 	import { modalSheet } from '$lib/components/shared/modalSheet';
 
 	export type SurfaceRailPresentation = 'desktop' | 'mobile';
@@ -36,8 +36,8 @@
 	let desktopRailEl = $state<HTMLElement>();
 	let railHomeParent: Node | undefined;
 	let railHomeNextSibling: Node | null = null;
-	let wasDesktop = layout.isDesktop;
-	const presentation = $derived<SurfaceRailPresentation>(layout.isDesktop ? 'desktop' : 'mobile');
+	let wasDesktop = desktop.current;
+	const presentation = $derived<SurfaceRailPresentation>(desktop.current ? 'desktop' : 'mobile');
 
 	onMount(() => {
 		railHomeParent = desktopRailEl?.parentNode ?? undefined;
@@ -69,9 +69,9 @@
 	});
 
 	$effect(() => {
-		const desktop = layout.isDesktop;
-		const crossedToDesktop = desktop && !wasDesktop;
-		wasDesktop = desktop;
+		const isDesktop = desktop.current;
+		const crossedToDesktop = isDesktop && !wasDesktop;
+		wasDesktop = isDesktop;
 		if (!crossedToDesktop || !sheetOpen) return;
 
 		const focusWasInSheet = sheetEl?.contains(document.activeElement) ?? false;

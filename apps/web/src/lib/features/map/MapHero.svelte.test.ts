@@ -521,13 +521,17 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	return { ...actual, getLocale: () => harness.locale };
 });
 
-vi.mock('$lib/nav', () => ({
-	layout: {
-		get isDesktop() {
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	desktop: {
+		get current() {
 			return harness.isDesktop;
 		},
 	},
-	isDesktopViewport: () => false,
+	theme: { current: 'dark' },
+}));
+
+vi.mock('$lib/nav', () => ({
 	routeFor: (target: { kind: string; id: string }) => {
 		if (target.kind === 'stop') return `/stop/${target.id}`;
 		if (target.kind === 'line') return `/lines/${target.id}`;
@@ -540,13 +544,6 @@ vi.mock('$lib/stores', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
 	return {
-		themeStore: {
-			current: 'dark',
-			isDark: true,
-			toggle: vi.fn(),
-			apply: vi.fn(),
-			init: vi.fn(),
-		},
 		sharedClock: signals.clock,
 		motionMode: {
 			get current() {
@@ -1464,70 +1461,6 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', stopError);
 		} finally {
 			subscribe.mockRestore();
-			pageErrors.dispose();
-		}
-	});
-
-	it('contains a breakpoint-listener disposer fault without skipping route-unmount owners', async () => {
-		const pageErrors = capturePageErrors();
-		const cleanupError = new Error('matchMedia cleanup failed before mutation');
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const listeners = new Set<EventListenerOrEventListenerObject>();
-		let failCleanup = true;
-		let targetRemoveCalls = 0;
-		const breakpoint = {
-			matches: true,
-			media: '(min-width: 1024px)',
-			onchange: null,
-			addListener: vi.fn(),
-			removeListener: vi.fn(),
-			addEventListener: vi.fn(
-				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
-					if (listener) listeners.add(listener);
-				},
-			),
-			removeEventListener: vi.fn(
-				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
-					const isMapHeroListener = typeof listener === 'function' && listener.name === 'onChange';
-					if (isMapHeroListener) targetRemoveCalls += 1;
-					if (isMapHeroListener && failCleanup) {
-						failCleanup = false;
-						throw cleanupError;
-					}
-					if (listener) listeners.delete(listener);
-				},
-			),
-			dispatchEvent: vi.fn(() => true),
-		} as unknown as MediaQueryList;
-		const nativeMatchMedia = window.matchMedia.bind(window);
-		const matchMedia = vi
-			.spyOn(window, 'matchMedia')
-			.mockImplementation((query) =>
-				query === breakpoint.media ? breakpoint : nativeMatchMedia(query),
-			);
-		try {
-			const before = await openDetail(true);
-			expect(
-				[...listeners].filter(
-					(listener) => typeof listener === 'function' && listener.name === 'onChange',
-				),
-			).toHaveLength(1);
-
-			await commitLines(before.currentUrl);
-
-			expect(pageErrors.values).toEqual([]);
-			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
-			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
-			expect(harness.releaseLease).toHaveBeenCalledOnce();
-			expect(harness.activeLeaseCount()).toBe(0);
-			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
-			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
-			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
-			expect(listeners).toHaveLength(0);
-			expect(targetRemoveCalls).toBe(2);
-			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', cleanupError);
-		} finally {
-			matchMedia.mockRestore();
 			pageErrors.dispose();
 		}
 	});

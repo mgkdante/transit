@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 
 const ports = vi.hoisted(() => ({
 	getAlertHistory: vi.fn(),
@@ -86,7 +86,7 @@ let rangeCalls: RangeCall[];
 
 beforeEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	nav.url = new URL('http://localhost/alerts');
 	replaceState.mockClear();
 	rangeCalls = [];
@@ -115,7 +115,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 });
 
 describe('AlertHistory asynchronous catalog and range transitions', () => {

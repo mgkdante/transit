@@ -38,7 +38,7 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
@@ -358,7 +358,7 @@
 		},
 	]);
 	const navigation = createArticleNavigation(() => sectionDefs, {
-		openSignal: () => quietModeStore.openSignal,
+		openSignal: () => quietMode.openSignal,
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
@@ -516,9 +516,9 @@
 								sectionKey={section.sectionKey}
 								index={section.number - 1}
 								open={true}
-								closeSignal={quietModeStore.closeSignal}
+								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal(section.id)}
-								bulkCollapsed={quietModeStore.enabled}
+								bulkCollapsed={quietMode.enabled}
 							>
 								{#if section.id === 'hotspots-top'}
 									<div class="hotspots-article-prose">

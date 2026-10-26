@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { layout } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import { getV1Context } from '$lib/v1/boot';
@@ -48,7 +48,7 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(copy[locale]);
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const routes = createResource(() => getRoutesIndex());
 	const stops = createResource(() => getStopsIndex());

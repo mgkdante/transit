@@ -21,7 +21,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { getLocale } from '$lib/i18n';
-	import { themeStore } from '$lib/stores';
+	import { theme } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { mapCopy } from './map.copy';
 	import { getV1Context } from '$lib/v1/boot';
@@ -44,7 +44,7 @@
 	}>('/static/map/*-posters.json', { eager: true, import: 'default' });
 	const selected = receipts[`/static${v1.provider?.posters_url}`];
 	const receipt = selected?.provider_id === v1.manifest.provider ? selected : undefined;
-	const posterTheme = $derived(themeStore.current);
+	const posterTheme = $derived(theme.current);
 	const posterMobile = $derived(
 		receipt?.posters.find((p) => p.theme === posterTheme && p.width === 390),
 	);

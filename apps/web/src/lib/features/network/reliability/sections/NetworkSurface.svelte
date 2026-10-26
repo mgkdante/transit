@@ -8,7 +8,8 @@
 		describeAbsence,
 		routeNameFallback,
 	} from '$lib/site/absence';
-	import { layout, routeFor } from '$lib/nav';
+	import { routeFor } from '$lib/nav';
+	import { desktop } from '@yesid/ui/state';
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -122,7 +123,7 @@
 		seed: () => provenanceSeed,
 	});
 
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 	const noObservationLabel = $derived(absenceShort('no-observations', locale));
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 

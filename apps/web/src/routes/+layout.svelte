@@ -41,7 +41,7 @@
 	import { getVehicles } from '$lib/v1/repositories/live';
 	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { dataPulse, themeStore } from '$lib/stores';
+	import { dataPulse } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
@@ -50,7 +50,8 @@
 	import { AppShell } from '$lib/components/shell';
 	import Footer from '$lib/components/layout/Footer.svelte';
 	import { EdgeState } from '$lib/components/edge';
-	import { layout } from '$lib/nav';
+	import { SiteRoot } from '@yesid/ui/layout';
+	import { desktop } from '@yesid/ui/state';
 	import { mainLandmarkLabel } from '$lib/content/nav';
 	import { legalCopy } from '$lib/features/legal/legal.copy';
 	import {
@@ -132,7 +133,7 @@
 	});
 	$effect(() => dataPulse.subscribe(v1?.manifest ?? null));
 
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
 	const searchModes = new SvelteSet<TransitModeKey>();
@@ -187,7 +188,6 @@
 	});
 
 	onMount(() => {
-		themeStore.init();
 		if (data.v1Error && !data.v1) void invalidateAll();
 
 		if (browser && navigator.serviceWorker) {
@@ -298,65 +298,71 @@
 	}
 </script>
 
-<SeoHead
-	title={headTitle}
-	description={headDescription}
-	siteName={headSiteName}
-	path={seoPath}
-	{locale}
-	siteOrigin={siteConfig.siteOrigin}
-	noIndex={noIndex || isErrorStatus}
-	suppressCanonical={isErrorStatus}
-	twitterSite={siteConfig.twitterSite}
-	twitterCreator={siteConfig.twitterCreator}
-	author={siteConfig.author}
-	{jsonLd}
-/>
+<SiteRoot smoothScroll={false} quietModeKey="transit:quiet-mode">
+	<SeoHead
+		title={headTitle}
+		description={headDescription}
+		siteName={headSiteName}
+		path={seoPath}
+		{locale}
+		siteOrigin={siteConfig.siteOrigin}
+		noIndex={noIndex || isErrorStatus}
+		suppressCanonical={isErrorStatus}
+		twitterSite={siteConfig.twitterSite}
+		twitterCreator={siteConfig.twitterCreator}
+		author={siteConfig.author}
+		{jsonLd}
+	/>
 
-<a class="skip-link" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
+	<a class="skip-link" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
 
-<AppShell
-	{locale}
-	url={currentMirrorUrl($page.url)}
-	providerName={v1?.manifest.display_name}
-	providerShortName={v1?.manifest.short_name ?? undefined}
-	providerId={data.providerId}
-	providers={data.providers}
-	bind:search={topSearch}
-	searchResults={topSearchResults}
-	{searchScope}
-	{searchModes}
-	onsearch={submitSearch}
-	onresultselect={selectSearchResult}
-	{mainLabel}
->
-	{#snippet main()}
-		<div
-			id="main"
-			class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
-			tabindex="-1"
-		>
+	<AppShell
+		{locale}
+		url={currentMirrorUrl($page.url)}
+		providerName={v1?.manifest.display_name}
+		providerShortName={v1?.manifest.short_name ?? undefined}
+		providerId={data.providerId}
+		providers={data.providers}
+		bind:search={topSearch}
+		searchResults={topSearchResults}
+		{searchScope}
+		{searchModes}
+		onsearch={submitSearch}
+		onresultselect={selectSearchResult}
+		{mainLabel}
+	>
+		{#snippet main()}
 			<div
-				class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
+				id="main"
+				class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
+				tabindex="-1"
 			>
-				{#if !v1 && !isDataIndependentRoute(seoPath)}
-					<div class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6">
-						<p>{data.provider?.labels[locale].city ?? data.providerId}</p>
-						<EdgeState
-							variant="error-v1"
-							lang={locale}
-							layout={edgeLayout}
-							onRetry={retryBoot}
-							class="w-full"
-						/>
-					</div>
-				{:else}
-					{@render children?.()}
+				<div
+					class={isFullBleed
+						? 'min-h-0 grow'
+						: 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
+				>
+					{#if !v1 && !isDataIndependentRoute(seoPath)}
+						<div
+							class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6"
+						>
+							<p>{data.provider?.labels[locale].city ?? data.providerId}</p>
+							<EdgeState
+								variant="error-v1"
+								lang={locale}
+								layout={edgeLayout}
+								onRetry={retryBoot}
+								class="w-full"
+							/>
+						</div>
+					{:else}
+						{@render children?.()}
+					{/if}
+				</div>
+				{#if !isFullBleed}
+					<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
 				{/if}
 			</div>
-			{#if !isFullBleed}
-				<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
-			{/if}
-		</div>
-	{/snippet}
-</AppShell>
+		{/snippet}
+	</AppShell>
+</SiteRoot>

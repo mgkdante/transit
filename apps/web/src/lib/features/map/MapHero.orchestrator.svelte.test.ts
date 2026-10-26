@@ -81,13 +81,6 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(toggle).not.toMatch(/map\??\.resize|fitBounds|setCenter|setZoom|easeTo|flyTo|jumpTo/);
 	});
 
-	it('keeps the hydration-safe layout snapshot independent of the hydration-flipping store', () => {
-		const fitPaddingBlock = source.match(/const mapFitPadding = \$derived[\s\S]*?\);/)?.[0] ?? '';
-		expect(source).toContain('let isDesktopLayout = $state(isDesktopViewport())');
-		expect(fitPaddingBlock).toContain('deriveMapFitPadding(isDesktopLayout, mapWidthPx)');
-		expect(fitPaddingBlock).not.toContain('layout.isDesktop');
-	});
-
 	it('wires hot-first-paint loading and extracted camera framing into MapStage', () => {
 		expect(mapStage).toBeDefined();
 		expect(mapStage).toContain('basemapLoader={({ signal }) => getBasemap({ signal })}');
@@ -99,7 +92,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('onidle={onMapIdle}');
 		expect(mapStage).toContain('onerror={onMapFailure}');
 		expect(mapStage).toContain('onbeforeremove={runtime.release}');
-		expect(mapStage).not.toContain('layout.isDesktop');
+		expect(mapStage).not.toContain('desktop.current');
 	});
 
 	it('composes the extracted children (a thin orchestrator, not a god-file)', () => {
@@ -178,10 +171,10 @@ describe('MapHero orchestrator — structural law', () => {
 
 	it('routes the detail to the desktop OVERLAY vs the mobile SHEET by layout', () => {
 		expect(source).toMatch(
-			/\{#if layout\.isDesktop && detailOpen\}[\s\S]*<MapDetailOverlay[\s\S]*\{\/if\}/,
+			/\{#if desktop\.current && detailOpen\}[\s\S]*<MapDetailOverlay[\s\S]*\{\/if\}/,
 		);
 		expect(source).toMatch(
-			/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*<MapMobileDetailSheet[\s\S]*\{\/if\}/,
+			/\{#if detailOpen && !desktop\.current\}[\s\S]*<MapMobileDetailSheet[\s\S]*\{\/if\}/,
 		);
 		expect(source).toMatch(
 			/bind:open=\{\s*\(\) => selectionController\.detailOpen,\s*\(next\) => \{\s*if \(next\) selectionController\.detailOpen = true;\s*else closeDetail\(\);/u,

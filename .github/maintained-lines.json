@@ -123,15 +123,17 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "5ea36e4e5ebd17eddb72d0b5b4052e7215c35d11d9979523762671c5d767e6d6"
+        "f303dc55457ba3b43a9879940ebb5082e7f517f4a7d4cf897f935cbeeb1a00f3"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.13.3 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.14.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
+        "apps/web/vendor/design/NOTICE",
+        "apps/web/vendor/design/TRADEMARK.md",
         "apps/web/vendor/design/analytics/README.md",
         "apps/web/vendor/design/analytics/package.json",
         "apps/web/vendor/design/analytics/src/client.ts",
@@ -169,6 +171,7 @@
         "apps/web/vendor/design/motion/src/actions/index.ts",
         "apps/web/vendor/design/motion/src/actions/magnetic.ts",
         "apps/web/vendor/design/motion/src/actions/pressBounce.ts",
+        "apps/web/vendor/design/motion/src/actions/scrollChain.ts",
         "apps/web/vendor/design/motion/src/actions/sectionGlow.ts",
         "apps/web/vendor/design/motion/src/actions/wordmarkHover.ts",
         "apps/web/vendor/design/motion/src/index.ts",
@@ -206,9 +209,11 @@
         "apps/web/vendor/design/tools/adopt.ts",
         "apps/web/vendor/design/tools/adopt/acquisition.ts",
         "apps/web/vendor/design/tools/adopt/contract.ts",
+        "apps/web/vendor/design/tools/adopt/path-safety.ts",
         "apps/web/vendor/design/tools/adopt/payload.ts",
         "apps/web/vendor/design/tools/adopt/transaction.ts",
         "apps/web/vendor/design/ui/README.md",
+        "apps/web/vendor/design/ui/base.css",
         "apps/web/vendor/design/ui/package.json",
         "apps/web/vendor/design/ui/src/brand/BlueprintShell.svelte",
         "apps/web/vendor/design/ui/src/brand/ChevronToggle.svelte",
@@ -218,12 +223,15 @@
         "apps/web/vendor/design/ui/src/brand/StickyPanel.svelte",
         "apps/web/vendor/design/ui/src/brand/StopLabel.svelte",
         "apps/web/vendor/design/ui/src/brand/TerminalCursor.svelte",
+        "apps/web/vendor/design/ui/src/brand/ThemeToggle.svelte",
         "apps/web/vendor/design/ui/src/brand/TocBadge.svelte",
         "apps/web/vendor/design/ui/src/brand/index.ts",
         "apps/web/vendor/design/ui/src/brand/section-icon.internal.svelte",
         "apps/web/vendor/design/ui/src/cn/create-cn.ts",
         "apps/web/vendor/design/ui/src/cn/index.ts",
         "apps/web/vendor/design/ui/src/index.ts",
+        "apps/web/vendor/design/ui/src/layout/SiteRoot.svelte",
+        "apps/web/vendor/design/ui/src/layout/index.ts",
         "apps/web/vendor/design/ui/src/primitives/badge/badge.svelte",
         "apps/web/vendor/design/ui/src/primitives/badge/index.ts",
         "apps/web/vendor/design/ui/src/primitives/button/button.svelte",
@@ -272,6 +280,10 @@
         "apps/web/vendor/design/ui/src/primitives/toggle-group/toggle-group.svelte",
         "apps/web/vendor/design/ui/src/primitives/toggle/index.ts",
         "apps/web/vendor/design/ui/src/primitives/toggle/toggle.svelte",
+        "apps/web/vendor/design/ui/src/state/desktop.ts",
+        "apps/web/vendor/design/ui/src/state/index.ts",
+        "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.ts",
+        "apps/web/vendor/design/ui/src/state/theme.svelte.ts",
         "apps/web/vendor/design/ui/svelte.config.js",
         "apps/web/vendor/design/ui/tsconfig.json"
       ],
@@ -279,9 +291,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "df5b53cec852a3fdcb5070e76093f8877d80728bc4cddd6e72bfcdea45244fc3"
+        "c5f6d9ed7d335b9bd72a7c671d58455980c3363d7eb96fc7cb43281439fa25e2"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.13.3; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.14.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -295,7 +307,8 @@
       "sha256": [
         "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0",
         "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9",
-        "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e"
+        "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e",
+        "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -401,7 +414,8 @@
         "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477",
         "ef8e07d24cf7da4e1d3de6eff91a9d8e2795a269601758956a9a8faef8543967",
         "0a2af52bd6a965d7e1c98d08bdf2e3b4770ea631656e96617b445b9271854678",
-        "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a"
+        "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a",
+        "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

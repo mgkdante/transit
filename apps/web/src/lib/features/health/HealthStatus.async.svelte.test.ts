@@ -49,7 +49,7 @@ vi.mock('$lib/components/shared/toc', async (importOriginal) => {
 });
 
 import { dataRefresh } from '$lib/stores';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import { replaceState } from '$app/navigation';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -137,9 +137,10 @@ async function replaceHash(hash: string): Promise<void> {
 
 beforeEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	resetStatusStorage();
-	localStorage.setItem('transit:quiet-mode', 'true');
+	localStorage.setItem('quiet-mode', 'true');
+	quietMode.init();
 	sessionStorage.setItem('transit.persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
 	navigation.page.url = new URL('http://localhost/status');
@@ -170,7 +171,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 	resetStatusStorage();
 	window.location.hash = '';
 });
@@ -272,7 +273,7 @@ describe('HealthStatus — async reveal navigation', () => {
 	});
 
 	it('reopens a stale session CLOSE choice on an unremembered mount once data arrives', async () => {
-		localStorage.removeItem('transit:quiet-mode');
+		quietMode.resetForTest();
 		const { container } = render(HealthStatus);
 		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
 		provenanceGate.resolve(provenanceFixture);

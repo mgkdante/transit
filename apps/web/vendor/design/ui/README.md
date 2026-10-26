@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.3/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.14.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -260,16 +260,60 @@ package mode.
 ### QuietModeButton
 
 `QuietModeButton` owns the shared two-button markup, icons, minimum targets, interaction geometry,
-active visuals, and reduced-motion CSS. The caller owns copy, state, persistence, locale
-resolution, and both actions. `activeEffect="none"` preserves flat marks; `"glow"` adds the scoped
-core/bookmark filters without selecting a product.
+active visuals, and reduced-motion CSS. The caller owns copy and locale resolution. State and both
+actions default to the shared `quietMode` store; pass `enabled`, `remembered`, `onToggle`, and
+`onRememberToggle` to control it instead. `activeEffect="none"` preserves flat marks; `"glow"` adds
+the scoped core/bookmark filters without selecting a product.
+
+### ThemeToggle
+
+`ThemeToggle` is a `role="switch"` signal lamp bound to the shared `theme` store. The caller
+supplies one fixed `label`; `aria-checked` carries the state.
 
 ### CollapsibleSection
 
-The composed section remains consumer-owned. Current products differ in header composition,
-control signals, persistence, content ownership, and animation/inert policy, and a third
-independent consumer has not established one shared contract. Lower-level Collapsible primitives
-remain package-owned; composing them does not authorize promotion of the section controller.
+The composed section remains consumer-owned until its merged contract ships. Current products
+differ in header composition, control signals, persistence, content ownership, and
+animation/inert policy. Lower-level Collapsible primitives remain package-owned.
+
+## Site root and shared state
+
+`@yesid/ui/layout` exports `SiteRoot`, the app root. On mount it adopts the theme applied by the
+app's pre-paint script, restores quiet mode, and starts Lenis through `@yesid/motion`; it cleans
+up on unmount and renders no element of its own. Props:
+
+- `smoothScroll` (default `true`): `false` leaves native scrolling.
+- `scroller`: `{ wrapper, content }` selectors for an element scroller. `content` must wrap the
+  whole scrolling flow. Omit it to scroll the window.
+- `quietModeKey`: the localStorage key for the remembered quiet-mode default, `quiet-mode` by
+  default.
+
+The app keeps its pre-paint script, which reads the `theme` key and sets `data-theme` before
+first paint, and its own navigation, scroll-restoration, and analytics handling.
+
+`@yesid/ui/state` exports the stores that `SiteRoot` initializes:
+
+- `theme`: `current`, `isDark`, `set`, `toggle`, `init`. Dark is the default, system preference
+  is ignored, the choice persists under `theme`, `data-theme` is set on `<html>`, `meta[name=
+  "theme-color"]` follows `--background`, and a `themechange` event fires on `document`.
+- `quietMode`: `enabled`, `remembered`, `closeSignal`, `openSignal`, `set`, `toggle`,
+  `rememberCurrent`, `forgetDefault`, `init`. Sections close on `closeSignal` and reopen on
+  `openSignal`. `init` closes them when a default is remembered and never issues an open.
+- `desktop`: a Svelte `MediaQuery` at the `breakpoint.desktop-min` token (1024px). It is false
+  during SSR.
+
+## Base stylesheet
+
+`@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
+focus ring, scrollbar, circuit grid, shared keyframes, and label styles. It uses Tailwind v4
+directives, so import it from the app stylesheet after Tailwind:
+
+```css
+@import 'tailwindcss';
+@import '@yesid/ui/base.css';
+```
+
+Like every package stylesheet, it is opt-in; no JavaScript import loads it.
 
 ## Adoption verification contract
 
@@ -306,5 +350,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.3/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.14.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { quietMode } from '@yesid/ui/state';
 	import { createRailDisclosureController } from '../createRailDisclosureController.svelte';
 
 	const disclosures = createRailDisclosureController({
@@ -8,7 +8,7 @@
 		toc: 'rail-controller-test-toc',
 	});
 
-	onMount(() => quietModeStore.init());
+	onMount(() => quietMode.init());
 </script>
 
 <div
@@ -36,7 +36,7 @@
 	<button type="button" data-testid="open-all" onclick={() => disclosures.setAll(true)}>
 		Open all
 	</button>
-	<button type="button" data-testid="quiet-toggle" onclick={() => quietModeStore.toggle()}>
+	<button type="button" data-testid="quiet-toggle" onclick={() => quietMode.toggle()}>
 		Toggle quiet mode
 	</button>
 </div>

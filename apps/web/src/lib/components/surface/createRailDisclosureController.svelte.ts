@@ -1,6 +1,6 @@
 import { onMount, tick } from 'svelte';
 import { persisted, type Persisted } from '$lib/stores';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 
 export interface RailDisclosureController<Key extends string> {
 	isOpen(key: Key): boolean;
@@ -32,17 +32,17 @@ export function createRailDisclosureController<
 	}
 
 	let signalsReady = $state(false);
-	let lastCloseSignal = quietModeStore.closeSignal;
-	let lastOpenSignal = quietModeStore.openSignal;
+	let lastCloseSignal = quietMode.closeSignal;
+	let lastOpenSignal = quietMode.openSignal;
 
 	onMount(() => {
 		let cancelled = false;
 		void (async () => {
 			await tick();
 			if (cancelled) return;
-			lastCloseSignal = quietModeStore.closeSignal;
-			lastOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAll(false);
+			lastCloseSignal = quietMode.closeSignal;
+			lastOpenSignal = quietMode.openSignal;
+			if (quietMode.enabled) setAll(false);
 			signalsReady = true;
 		})();
 		return () => {
@@ -51,8 +51,8 @@ export function createRailDisclosureController<
 	});
 
 	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
+		const closeSignal = quietMode.closeSignal;
+		const openSignal = quietMode.openSignal;
 		if (!signalsReady) return;
 		if (closeSignal !== lastCloseSignal) {
 			lastCloseSignal = closeSignal;

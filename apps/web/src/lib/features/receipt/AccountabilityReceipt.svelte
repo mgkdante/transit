@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { absenceShort, routeNameFallback, stopNameFallback } from '$lib/site/absence';
-	import { layout, routeFor } from '$lib/nav';
+	import { routeFor } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import {
@@ -40,7 +40,7 @@
 	} from '$lib/components/layout';
 	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { desktop, quietMode } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
@@ -69,7 +69,7 @@
 		toc: 'receipt-toc',
 	});
 
-	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const index = createResource((signal) => getReceiptsIndex({ signal }));
 	const historyAvailability = $derived(availabilityFromReceiptsIndex(index.data));
@@ -282,7 +282,7 @@
 			receipt.data == null,
 	);
 	const navigation = createArticleNavigation(() => sectionDefs, {
-		openSignal: () => quietModeStore.openSignal,
+		openSignal: () => quietMode.openSignal,
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 		reconcileEmpty: () => settledEmpty,
 	});
@@ -452,9 +452,9 @@
 								sectionKey={section.sectionKey}
 								index={section.number - 1}
 								open={true}
-								closeSignal={quietModeStore.closeSignal}
+								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal(section.id)}
-								bulkCollapsed={quietModeStore.enabled}
+								bulkCollapsed={quietMode.enabled}
 							>
 								{#if section.id === 'receipt-main'}
 									<div class="receipt-main-body">

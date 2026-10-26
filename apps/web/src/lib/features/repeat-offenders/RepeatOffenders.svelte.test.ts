@@ -11,7 +11,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
-import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { quietMode } from '@yesid/ui/state';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
@@ -211,7 +211,7 @@ function resetRepeatSurfaceState(): void {
 	payload.current = seed();
 	reconciliationIntersectionCallback = undefined;
 	Element.prototype.scrollIntoView = vi.fn();
-	quietModeStore.resetForTest();
+	quietMode.resetForTest();
 }
 
 const repeatSurface = createSurfaceHarness({
@@ -403,7 +403,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		for (const id of ['repeat-worst', 'repeat-trips', 'repeat-vehicles']) {
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 		}
-		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+		expect(localStorage.getItem('quiet-mode')).toBe('true');
 	});
 
 	it('restores independent rail choices across a full same-tab remount', async () => {
@@ -452,7 +452,8 @@ describe('RepeatOffenders — approved analytical article', () => {
 	});
 
 	it('applies remembered collapsed mode to a Vehicle card that mounts after a grain change', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
+		quietMode.init();
 		repeatSurface.setUrl('/repeat-offenders?grain=month');
 		const { container } = render(RepeatOffenders);
 		expect(container.querySelector('[data-toc="repeat-vehicles"]')).toBeNull();
