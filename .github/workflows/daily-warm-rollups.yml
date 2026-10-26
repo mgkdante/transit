@@ -158,6 +158,7 @@ jobs:
           declare -A attempt_exit_codes=()
           declare -A effective_exit_codes=()
           declare -A started_at_by_provider=()
+          declare -A attempt_pids=()
           deferred_provider=""
 
           pgapp_component() {
@@ -186,8 +187,8 @@ jobs:
             local provider="$1"
             local provider_attempt
             provider_attempt="$(($(jq 'length' <<< "${attempt_exit_codes[$provider]}") + 1))"
-            local receipt_path="$artifact_dir/rollup-stage-${provider}.json"
             local log_path="$artifact_dir/rollup-${provider}.log"
+            local pipeline_status command_status log_status
             local tee_args=()
             if [[ "${attempt_exit_codes[$provider]}" != "[]" ]]; then
               tee_args=(-a)
@@ -204,6 +205,13 @@ jobs:
             if [[ "$log_status" -ne 0 ]]; then
               command_status="$log_status"
             fi
+            printf '%s\n' "$command_status" > "$artifact_dir/attempt-status-${provider}.txt"
+          }
+
+          record_rollup_attempt() {
+            local provider="$1"
+            local receipt_path="$artifact_dir/rollup-stage-${provider}.json"
+            command_status="$(cat "$artifact_dir/attempt-status-${provider}.txt")"
             attempt_exit_codes[$provider]="$(
               jq -cn \
                 --argjson attempts "${attempt_exit_codes[$provider]}" \
@@ -251,7 +259,13 @@ jobs:
                 attempt_exit_codes: [], attempt_count: 0,
                 recovered_after_timeout: false}' \
               > "$receipt_path"
-            run_rollup_attempt "$provider"
+            run_rollup_attempt "$provider" &
+            attempt_pids[$provider]=$!
+          done
+
+          for provider in "${providers[@]}"; do
+            wait "${attempt_pids[$provider]}"
+            record_rollup_attempt "$provider"
             if [[ "$command_status" -eq 124 && -z "$deferred_provider" ]]; then
               deferred_provider="$provider"
             fi
@@ -260,6 +274,7 @@ jobs:
           if [[ -n "$deferred_provider" ]]; then
             original_timeout_status="${effective_exit_codes[$deferred_provider]}"
             run_rollup_attempt "$deferred_provider"
+            record_rollup_attempt "$deferred_provider"
             if [[ "$command_status" -ne 0 ]]; then
               effective_exit_codes[$deferred_provider]="$original_timeout_status"
             fi
@@ -287,7 +302,7 @@ jobs:
     needs: [prepare, rollups]
     if: ${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}
     runs-on: ubuntu-24.04
-    # Three serial providers, each with its own 90m bound, plus setup/cleanup.
+    # Up to three concurrent providers, each with its own unchanged 90m bound.
     timeout-minutes: 285
     outputs:
       publish_artifact_id: ${{ steps.upload-publish-evidence.outputs.artifact-id }}
@@ -311,6 +326,7 @@ jobs:
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
+      SNAPSHOT_PUBLISH_CONCURRENCY: "64"
       PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
@@ -337,14 +353,25 @@ jobs:
           aggregate="$publish_dir/historic-publish.json"
           printf '[]\n' > "$aggregate"
           aggregate_status=0
+          declare -A publish_pids=()
+          while IFS= read -r provider; do
+            result="$publish_dir/result-${provider}.json"
+            (
+              started_seconds=$SECONDS
+              status=0
+              echo "Historic publish start provider=$provider deadline_seconds=5400"
+              timeout --signal=TERM --kill-after=30s 90m \
+                uv run python -m transit_ops.cli publish-all --tier historic \
+                  --provider-id "$provider" --report-dir "$publish_dir" > "$result" || status=$?
+              printf '%s\n' "$((SECONDS - started_seconds))" > "$publish_dir/elapsed-${provider}.txt"
+              exit "$status"
+            ) &
+            publish_pids[$provider]=$!
+          done <<< "$providers"
           while IFS= read -r provider; do
             result="$publish_dir/result-${provider}.json"
             status=0
-            SECONDS=0
-            echo "Historic publish start provider=$provider deadline_seconds=5400"
-            timeout --signal=TERM --kill-after=30s 90m \
-              uv run python -m transit_ops.cli publish-all --tier historic \
-                --provider-id "$provider" --report-dir "$publish_dir" > "$result" || status=$?
+            wait "${publish_pids[$provider]}" || status=$?
             if [[ "$status" -eq 0 ]]; then
               jq -es --arg provider "$provider" '
                 length == 1 and (.[0] | type) == "array" and (.[0] | length) <= 1
@@ -357,7 +384,8 @@ jobs:
             elif [[ "$aggregate_status" -eq 0 ]]; then
               aggregate_status="$status"
             fi
-            echo "Historic publish finish provider=$provider exit_code=$status elapsed_seconds=$SECONDS"
+            elapsed_seconds="$(cat "$publish_dir/elapsed-${provider}.txt")"
+            echo "Historic publish finish provider=$provider exit_code=$status elapsed_seconds=$elapsed_seconds"
           done <<< "$providers"
           cat "$aggregate"
           exit "$aggregate_status"
