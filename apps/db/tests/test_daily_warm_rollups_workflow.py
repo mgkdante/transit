@@ -295,7 +295,7 @@ def test_prepare_discovery_propagates_list_provider_failure(tmp_path: Path) -> N
     assert result.returncode == 23
 
 
-def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> None:
+def test_rollups_keep_per_provider_bounded_budget_and_receipt() -> None:
     rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
 
     assert rollups["env"]["PROVIDER_PLAN"] == "${{ needs.prepare.outputs.providers }}"
@@ -383,17 +383,17 @@ def test_rollup_identity_hash_disambiguates_sanitized_and_shared_prefixes(tmp_pa
 
     assert result.returncode == 0, result.stderr
     names = identities.read_text(encoding="utf-8").splitlines()
-    assert names == [
+    assert sorted(names) == sorted([
         "dwr-r33279553860-a2-pa_b-h2e7336dc-crollup-pa1",
         "dwr-r33279553860-a2-pa_b-h648fa9b3-crollup-pa1",
         "dwr-r33279553860-a2-pshared-prefi-h625cafcd-crollup-pa1",
         "dwr-r33279553860-a2-pshared-prefi-h2e8b9bcd-crollup-pa1",
-    ]
+    ])
     assert len(names) == len(set(names))
     assert all(name.isascii() and len(name.encode("ascii")) <= 63 for name in names)
 
 
-def test_rollups_preserve_order_continue_after_failures_and_return_first_nonzero(
+def test_rollups_continue_after_failures_and_return_first_nonzero_in_plan_order(
     tmp_path: Path,
 ) -> None:
     calls = tmp_path / "rollup-calls.txt"
@@ -422,7 +422,7 @@ exit 0
     )
 
     assert result.returncode == 41
-    assert calls.read_text(encoding="utf-8") == "stm\nsto\noctranspo\n"
+    assert sorted(calls.read_text(encoding="utf-8").splitlines()) == ["octranspo", "stm", "sto"]
     artifact_dir = tmp_path / "artifacts" / "daily-warm-rollups" / "rollups"
     expected = {"stm": ("success", 0), "sto": ("failure", 41), "octranspo": ("failure", 43)}
     for provider, (status, exit_code) in expected.items():
@@ -471,7 +471,9 @@ exit 0
     )
 
     assert result.returncode == 0, result.stderr
-    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    attempts = calls.read_text(encoding="utf-8").splitlines()
+    assert sorted(attempts[:2]) == ["stm", "sto"]
+    assert attempts[2:] == ["stm"]
     artifact_dir = tmp_path / "artifacts" / "daily-warm-rollups" / "rollups"
     receipt = json.loads((artifact_dir / "rollup-stage-stm.json").read_text(encoding="utf-8"))
     assert receipt["attempt_exit_codes"] == [124, 0]
@@ -509,7 +511,9 @@ exit 0
     )
 
     assert result.returncode == 124
-    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    attempts = calls.read_text(encoding="utf-8").splitlines()
+    assert sorted(attempts[:2]) == ["stm", "sto"]
+    assert attempts[2:] == ["stm"]
     receipt = json.loads(
         (tmp_path / "artifacts/daily-warm-rollups/rollups/rollup-stage-stm.json").read_text(
             encoding="utf-8"
@@ -545,7 +549,7 @@ exit 0
     )
 
     assert result.returncode == 41
-    assert calls.read_text(encoding="utf-8") == "stm\nsto\n"
+    assert sorted(calls.read_text(encoding="utf-8").splitlines()) == ["stm", "sto"]
     receipt = json.loads(
         (tmp_path / "artifacts/daily-warm-rollups/rollups/rollup-stage-stm.json").read_text(
             encoding="utf-8"
@@ -590,7 +594,9 @@ exit 0
     )
 
     assert result.returncode == 124
-    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    attempts = calls.read_text(encoding="utf-8").splitlines()
+    assert sorted(attempts[:2]) == ["stm", "sto"]
+    assert attempts[2:] == ["stm"]
     artifact_dir = tmp_path / "artifacts/daily-warm-rollups/rollups"
     stm_receipt = json.loads((artifact_dir / "rollup-stage-stm.json").read_text())
     sto_receipt = json.loads((artifact_dir / "rollup-stage-sto.json").read_text())
@@ -623,6 +629,127 @@ def test_rollups_treat_receipt_log_pipeline_failure_as_stage_failure(tmp_path: P
     )
     assert receipt["status"] == "failure"
     assert receipt["exit_code"] == 52
+
+
+@pytest.mark.parametrize(
+    ("job_name", "step_name"),
+    [
+        ("rollups", "Build warm rollups serially"),
+        ("publish", "Publish gated historic snapshot"),
+    ],
+)
+def test_provider_first_attempts_overlap(
+    tmp_path: Path, job_name: str, step_name: str
+) -> None:
+    events = tmp_path / "events"
+    events.mkdir()
+    environment = _fake_uv_environment(
+        tmp_path,
+        r'''
+provider="${!#}"
+for ((i=1; i<=$#; i++)); do
+  if [[ "${!i}" == --provider-id ]]; then
+    next=$((i + 1))
+    provider="${!next}"
+    break
+  fi
+done
+touch "$EVENTS/$provider.started"
+timeout 5s bash -c '
+  until [[ -f "$EVENTS/stm.started" && -f "$EVENTS/sto.started" ]]; do
+    sleep 0.01
+  done
+'
+touch "$EVENTS/$provider.finished"
+if [[ "$*" == *publish-all* ]]; then
+  printf '[{"provider_id":"%s","tier":"historic"}]\n' "$provider"
+else
+  printf 'rollup output for %s\n' "$provider"
+fi
+''',
+    )
+    environment.update({"PROVIDER_PLAN": '["stm","sto"]', "EVENTS": str(events)})
+    result = _run_step(
+        _load(DAILY_WORKFLOW)["jobs"][job_name], step_name,
+        cwd=tmp_path, environment=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in events.iterdir()) == [
+        "stm.finished", "stm.started", "sto.finished", "sto.started",
+    ]
+    if job_name == "publish":
+        report_dir = tmp_path / "artifacts/daily-warm-rollups/publish"
+        assert json.loads((report_dir / "historic-publish.json").read_text()) == [
+            {"provider_id": provider, "tier": "historic"} for provider in ["stm", "sto"]
+        ]
+        for provider in ["stm", "sto"]:
+            assert (
+                f"Historic publish start provider={provider} deadline_seconds=5400"
+            ) in result.stdout
+            assert (
+                f"Historic publish finish provider={provider} exit_code=0 elapsed_seconds="
+            ) in result.stdout
+    else:
+        report_dir = tmp_path / "artifacts/daily-warm-rollups/rollups"
+        for provider in ["stm", "sto"]:
+            receipt = json.loads((report_dir / f"rollup-stage-{provider}.json").read_text())
+            assert receipt["attempt_exit_codes"] == [0]
+            assert receipt["attempt_count"] == 1
+
+
+@pytest.mark.parametrize(("retry_status", "aggregate_status"), [(0, 43), (41, 124)])
+def test_concurrent_rollups_defer_one_retry_and_preserve_receipts_and_aggregate(
+    tmp_path: Path, retry_status: int, aggregate_status: int
+) -> None:
+    events = tmp_path / "events"
+    events.mkdir()
+    environment = _fake_uv_environment(
+        tmp_path,
+        r'''
+provider="${!#}"
+if [[ "$PGAPPNAME" == *-pa2 ]]; then
+  [[ "$provider" == stm ]]
+  [[ -f "$EVENTS/stm.finished" && -f "$EVENTS/sto.finished" && -f "$EVENTS/oc.finished" ]]
+  touch "$EVENTS/$provider.retried"
+  printf 'retry output for %s\n' "$provider"
+  exit "$RETRY_STATUS"
+fi
+printf 'first output for %s\n' "$provider"
+touch "$EVENTS/$provider.finished"
+if [[ "$provider" == sto ]]; then exit 43; fi
+exit 124
+''',
+    )
+    environment.update({
+        "PROVIDER_PLAN": '["stm","sto","oc"]',
+        "EVENTS": str(events), "RETRY_STATUS": str(retry_status),
+    })
+    result = _run_step(
+        _load(DAILY_WORKFLOW)["jobs"]["rollups"], "Build warm rollups serially",
+        cwd=tmp_path, environment=environment,
+    )
+
+    assert result.returncode == aggregate_status, result.stderr
+    assert sorted(path.name for path in events.glob("*.retried")) == ["stm.retried"]
+    report_dir = tmp_path / "artifacts/daily-warm-rollups/rollups"
+    expected_attempts = {"stm": [124, retry_status], "sto": [43], "oc": [124]}
+    for provider, attempts in expected_attempts.items():
+        receipt = json.loads((report_dir / f"rollup-stage-{provider}.json").read_text())
+        assert set(receipt) == {
+            "provider_id", "status", "started_utc", "completed_utc", "exit_code",
+            "attempt_exit_codes", "attempt_count", "recovered_after_timeout",
+        }
+        assert receipt["provider_id"] == provider
+        assert receipt["attempt_exit_codes"] == attempts
+        assert receipt["attempt_count"] == len(attempts)
+        assert receipt["exit_code"] == attempts[-1]
+        assert receipt["status"] == ("success" if attempts[-1] == 0 else "failure")
+        assert receipt["recovered_after_timeout"] is (provider == "stm" and retry_status == 0)
+        expected_log = f"first output for {provider}\n"
+        if provider == "stm":
+            expected_log += f"retry output for {provider}\n"
+        assert (report_dir / f"rollup-{provider}.log").read_text() == expected_log
 
 
 @pytest.mark.parametrize(
@@ -715,6 +842,7 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
         "${{ secrets.BRONZE_S3_SECRET_KEY }}"
     )
     assert publish["env"]["SNAPSHOT_STORAGE_BACKEND"] == "s3"
+    assert publish["env"]["SNAPSHOT_PUBLISH_CONCURRENCY"] == "64"
     assert publish["env"]["SNAPSHOT_R2_BUCKET"] == "${{ secrets.SNAPSHOT_R2_BUCKET }}"
     assert publish["env"]["SNAPSHOT_PUBLIC_BASE_URL"] == (
         "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"
@@ -737,7 +865,7 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
 
 
 @pytest.mark.parametrize(("failed_provider", "exit_code"), [(None, 0), ("oc", 1), ("stm", 124)])
-def test_serial_publish_bounds_each_provider_and_retains_completed_results(
+def test_concurrent_publish_bounds_each_provider_and_retains_completed_results(
     tmp_path, failed_provider, exit_code
 ) -> None:
     environment = _fake_uv_environment(tmp_path, r'''
@@ -773,7 +901,7 @@ exec "$@"
     result = _run_step(publish, "Publish gated historic snapshot", cwd=tmp_path,
                        environment=environment)
     assert result.returncode == exit_code, result.stderr
-    assert calls.read_text().splitlines() == ["oc", "stm", "sto"]
+    assert sorted(calls.read_text().splitlines()) == ["oc", "stm", "sto"]
     report_dir = tmp_path / "artifacts" / "daily-warm-rollups" / "publish"
     completed = [provider for provider in ["oc", "stm"] if provider != failed_provider]
     assert json.loads((report_dir / "historic-publish.json").read_text()) == [

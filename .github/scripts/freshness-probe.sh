@@ -184,12 +184,15 @@ if (( capture_age > DB_MAX_AGE_SECONDS )); then
 fi
 
 # --- Check E: failed-run burst ----------------------------------------------
+# Upstream HTTP errors are left to Check D's capture-age alert; count internal
+# failures, including HTTP 200 responses and failures without an HTTP status.
 failed_runs="$(
   psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
     SELECT count(*)
     FROM raw.ingestion_runs
     WHERE provider_id = '${PROVIDER_ID}'
       AND status = 'failed'
+      AND (http_status_code IS NULL OR http_status_code < 400)
       AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
   " 2>/dev/null || echo "unavailable"
 )"
@@ -243,6 +246,7 @@ if [[ "$CHECK_GLOBAL_FAILED_RUNS" == true ]]; then
       SELECT count(*)
       FROM raw.ingestion_runs
       WHERE status = 'failed'
+        AND (http_status_code IS NULL OR http_status_code < 400)
         AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
     " 2>/dev/null || echo "unavailable"
   )"

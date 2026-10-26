@@ -35,7 +35,12 @@ class LegacyDatabaseUrlGuardSource(PydanticBaseSettingsSource):
     def _legacy_keys_from_env_vars(self) -> Mapping[str, str | None]:
         env_vars = getattr(self.wrapped, "env_vars", None)
         if isinstance(env_vars, Mapping):
-            return env_vars
+            key = LEGACY_DATABASE_URL_KEY
+            # EnvSettingsSource normalizes Windows environment keys to lowercase.
+            if not getattr(self.wrapped, "case_sensitive", True):
+                key = key.lower()
+            if key in env_vars:
+                return {LEGACY_DATABASE_URL_KEY: env_vars[key]}
         return {}
 
     def _legacy_keys_from_file_secrets(self) -> Mapping[str, str | None]:
