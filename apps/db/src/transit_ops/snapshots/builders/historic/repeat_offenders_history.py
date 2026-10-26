@@ -84,7 +84,7 @@ _SCALAR_WINDOW_DAYS = 14
 _SCALAR_MIN_RECURRENCE = 3
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True)
 class _Counts:
     present: int = 0
     recurrence_days: int = 0
@@ -92,21 +92,19 @@ class _Counts:
     severe_count: int = 0
     sum_delay_seconds: int = 0
 
-    def __add__(self, other: _Counts) -> _Counts:
-        return _Counts(
-            **{
-                field: getattr(self, field) + getattr(other, field)
-                for field in self.__dataclass_fields__
-            }
-        )
+    def add(self, other: _Counts) -> None:
+        self.present += other.present
+        self.recurrence_days += other.recurrence_days
+        self.observation_count += other.observation_count
+        self.severe_count += other.severe_count
+        self.sum_delay_seconds += other.sum_delay_seconds
 
-    def __sub__(self, other: _Counts) -> _Counts:
-        return _Counts(
-            **{
-                field: getattr(self, field) - getattr(other, field)
-                for field in self.__dataclass_fields__
-            }
-        )
+    def subtract(self, other: _Counts) -> None:
+        self.present -= other.present
+        self.recurrence_days -= other.recurrence_days
+        self.observation_count -= other.observation_count
+        self.severe_count -= other.severe_count
+        self.sum_delay_seconds -= other.sum_delay_seconds
 
 
 class _CountsWindow:
@@ -120,16 +118,19 @@ class _CountsWindow:
     def add_day(self, local_date: date, values: dict[_EntityKey, _Counts]) -> None:
         self._days.append((local_date, values))
         for key, counts in values.items():
-            self.totals[key] = self.totals.get(key, _Counts()) + counts
+            total = self.totals.get(key)
+            if total is None:
+                # Each window owns its totals; the daily values remain expiration inputs.
+                total = self.totals[key] = _Counts()
+            total.add(counts)
         cutoff = local_date - timedelta(days=self._width_days - 1)
         while self._days and self._days[0][0] < cutoff:
             _expired_date, expired = self._days.popleft()
             for key, counts in expired.items():
-                remaining = self.totals[key] - counts
+                remaining = self.totals[key]
+                remaining.subtract(counts)
                 if remaining.present <= 0:
                     del self.totals[key]
-                else:
-                    self.totals[key] = remaining
 
 
 def _required_id(row: Mapping[str, Any], field: str) -> str:
