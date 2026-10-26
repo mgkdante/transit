@@ -50,8 +50,8 @@ from transit_ops.sql_registry import named_query
 
 type _LegacyCollected = tuple[list[CollectedItem], list[CollectedItem], str, int | None]
 type HistoricInclude = Literal["archive", "network", "lines", "stops", "points"]
-STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
-HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 32
+STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 512
+HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 256
 logger = logging.getLogger(__name__)
 
 
@@ -249,10 +249,11 @@ def publish(
         _historic._activate_historic_phase(_historic_run, "other")
 
         def write_children(batch: Sequence[tuple[str, SnapshotPayload]]) -> list[str]:
+            # The child window already schedules this work on the provider pool.
             return uploads.put_batch(
                 storage,
                 [(path, payload, "historic_immutable") for path, payload in batch],
-                concurrency=concurrency,
+                concurrency=1,
                 write_mode="immutable",
             )
 

@@ -1,5 +1,5 @@
-from collections.abc import Iterable, Iterator, Sequence
-from concurrent.futures import Executor, ThreadPoolExecutor, wait
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from concurrent.futures import FIRST_COMPLETED, Executor, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -37,6 +37,59 @@ def concurrency(settings: Settings) -> int:
         return max(1, int(value))
     except (TypeError, ValueError):
         return 16
+
+
+class UploadWindow[ItemT]:
+    """Bound payload futures while retaining the caller's written-key order."""
+
+    def __init__(self, put: Callable[[ItemT], list[str]], size: int) -> None:
+        if size < 1:
+            raise ValueError("Snapshot upload window size must be positive")
+        self.put = put
+        self.size = size
+        self.executor = _ACTIVE_PUBLISH_EXECUTOR.get()
+        self.pending: dict[Future[list[str]], int] = {}
+        self.results: list[list[str]] = []
+
+    def collect_completed(self) -> None:
+        for future in list(self.pending):
+            if future.done():
+                self.results[self.pending.pop(future)] = future.result()
+
+    def submit(self, item: ItemT) -> None:
+        self.collect_completed()
+        if self.executor is None:
+            self.results.append(self.put(item))
+            return
+        self.pending[self.executor.submit(self.put, item)] = len(self.results)
+        self.results.append([])
+        if len(self.pending) >= self.size:
+            wait(self.pending, return_when=FIRST_COMPLETED)
+            self.collect_completed()
+
+    def finish(self) -> list[str]:
+        while self.pending:
+            wait(self.pending, return_when=FIRST_COMPLETED)
+            self.collect_completed()
+        return [key for keys in self.results for key in keys]
+
+    def cancel_and_drain(self) -> None:
+        for future in self.pending:
+            future.cancel()
+        wait([future for future in self.pending if not future.cancelled()])
+
+
+@contextmanager
+def upload_window[ItemT](
+    put: Callable[[ItemT], list[str]], size: int,
+) -> Iterator[UploadWindow[ItemT]]:
+    window = UploadWindow(put, size)
+    try:
+        yield window
+        window.finish()
+    finally:
+        # Drain even when production, validation, submission or an upload fails.
+        window.cancel_and_drain()
 
 
 def put_batch(
@@ -129,15 +182,17 @@ def put_batches(
 ) -> list[str]:
     if batch_size < 1:
         raise ValueError("Snapshot upload batch size must be positive")
-    written: list[str] = []
-    batch: list[PutItem] = []
-    for item in items:
-        batch.append(item)
-        if len(batch) == batch_size:
-            written.extend(
-                put_batch(storage, batch, concurrency=concurrency, write_mode=write_mode)
-            )
-            batch.clear()
-    if batch:
-        written.extend(put_batch(storage, batch, concurrency=concurrency, write_mode=write_mode))
-    return written
+    def put(item: PutItem) -> list[str]:
+        # The window owns scheduling; avoid submitting nested work to its pool.
+        return put_batch(storage, [item], concurrency=1, write_mode=write_mode)
+
+    with provider_executor(concurrency), upload_window(put, batch_size) as window:
+        iterator = iter(items)
+        while True:
+            window.collect_completed()
+            try:
+                item = next(iterator)
+            except StopIteration:
+                break
+            window.submit(item)
+        return window.finish()
