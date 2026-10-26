@@ -79,16 +79,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.14.0',
-	tagObject: 'ea8ce3340fc6a0374aa432757fcd03e2d97af126',
-	peeledCommit: '7d94f36efba50b556f8d9a4cd1ae9ced6bfdd302',
-	assetName: 'yesid.dev-design-v0.14.0.tar',
-	assetSize: 942_080,
-	assetDigest: 'sha256:b44b36d819dd32de7326ebac340c69fb2096b6f9d46f602eba6ffc1a432b754b',
+	tag: 'v0.14.1',
+	tagObject: '1121e3f9b348ccbc87ee74add76052528f7f7a13',
+	peeledCommit: '46dcfbff5a3e65bf1fb0b1c3a86e3a86d5bcb1a1',
+	assetName: 'yesid.dev-design-v0.14.1.tar',
+	assetSize: 952_320,
+	assetDigest: 'sha256:02af450956ad93a293a066668d995e740b3528b666ad3a73d28471114c85fe21',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:bf10ecc20571b7aebdc297d2551514f959d8243822d27262247c25d4cef36164',
-	manifestDigest: 'dc84d2417f0142fddbd6f867270b8b6a8878180e54fca8c347440d0277440be5',
+	treeHash: 'sha256:d1795ef03214007d8f3f645829cb15118351fc6c095eac66dd1c93b44e3bfee8',
+	manifestDigest: '566a1f0314d69704fe20ca7b7655ae46a1829f1701d78c4bc51595d27383fe35',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -173,7 +173,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.14.0');
+		expect(packageJson.version).toBe('0.14.1');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -184,6 +184,12 @@ describe('vendor/design integrity', () => {
 		expect(files).toContain('src/brand/QuietModeButton.svelte');
 		expect(files).toContain('src/brand/ThemeToggle.svelte');
 		expect(files).toContain('src/layout/SiteRoot.svelte');
+		expect(files).toContain('src/state/theme.svelte.js');
+		expect(files).toContain('src/state/theme.svelte.d.ts');
+		expect(files).toContain('src/state/quiet-mode.svelte.js');
+		expect(files).toContain('src/state/quiet-mode.svelte.d.ts');
+		expect(files).not.toContain('src/state/theme.svelte.ts');
+		expect(files).not.toContain('src/state/quiet-mode.svelte.ts');
 		expect(existsSync(join(VENDOR, 'gates/src/presets'))).toBe(false);
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
@@ -202,14 +208,14 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.14.0',
+			version: '0.14.1',
 		});
 		expect(files).toEqual([
 			'README.md',
 			'package.json',
 			'src/client.ts',
 			'src/config.ts',
-			'src/consent.svelte.ts',
+			'src/consent.ts',
 			'src/index.ts',
 			'src/plausible.ts',
 			'src/policy.ts',

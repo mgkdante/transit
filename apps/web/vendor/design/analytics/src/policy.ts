@@ -1,4 +1,4 @@
-import type { AnalyticsConsentState } from './consent.svelte';
+import type { AnalyticsConsentState } from './consent';
 
 export interface AnalyticsControlsInput {
 	enabled?: unknown;

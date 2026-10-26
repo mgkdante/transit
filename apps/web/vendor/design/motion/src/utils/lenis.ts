@@ -15,7 +15,7 @@
 // `ScrollTrigger.config({ ignoreMobileResize: true })` (set in gsap.ts).
 
 import Lenis from 'lenis';
-import { gsap, ScrollTrigger } from './gsap.js';
+import { gsap, initScrollTriggerConfig, ScrollTrigger } from './gsap.js';
 import { shouldAnimate } from '../policy.js';
 
 let instance: Lenis | null = null;
@@ -39,7 +39,9 @@ export function initLenis(scroller?: LenisScroller): void {
 	// correct reduce behavior; ScrollTrigger keeps working off native scroll.
 	if (!shouldAnimate('motion-gated')) return;
 
-	// ScrollTrigger.isTouch: 0 = no touch, 1 = touch only, 2 = touch + pointer
+	// ScrollTrigger.isTouch is only set once the plugin is registered.
+	// 0 = no touch, 1 = touch only, 2 = touch + pointer
+	initScrollTriggerConfig();
 	isTouchDevice = ScrollTrigger.isTouch > 0;
 
 	if (isTouchDevice) {

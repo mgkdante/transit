@@ -1,7 +1,3 @@
-export interface QuietModeInit {
-	readonly storageKey?: string;
-}
-
 const DEFAULT_STORAGE_KEY = 'quiet-mode';
 
 let storageKey = DEFAULT_STORAGE_KEY;
@@ -10,7 +6,7 @@ let remembered = $state(false);
 let closeSignal = $state(0);
 let openSignal = $state(0);
 
-function readRemembered(): boolean {
+function readRemembered() {
 	try {
 		return localStorage.getItem(storageKey) === 'true';
 	} catch {
@@ -18,21 +14,24 @@ function readRemembered(): boolean {
 	}
 }
 
-function syncDocument(next: boolean): void {
+/** @param {boolean} next */
+function syncDocument(next) {
 	if (typeof document === 'undefined') return;
 	if (next) document.documentElement.dataset.quietMode = 'true';
 	else delete document.documentElement.dataset.quietMode;
 	document.dispatchEvent(new CustomEvent('quietmodechange', { detail: { enabled: next } }));
 }
 
-function setEnabled(next: boolean): void {
+/** @param {boolean} next */
+function setEnabled(next) {
 	enabled = next;
 	if (next) closeSignal += 1;
 	else openSignal += 1;
 	syncDocument(next);
 }
 
-function setRemembered(next: boolean): void {
+/** @param {boolean} next */
+function setRemembered(next) {
 	remembered = next;
 	try {
 		if (next) localStorage.setItem(storageKey, 'true');
@@ -42,44 +41,42 @@ function setRemembered(next: boolean): void {
 	}
 }
 
-/**
- * Collapses every collapsible section on request. Sections close on `closeSignal` and reopen on
- * `openSignal`; `init()` closes them when a remembered default exists and never issues an open.
- */
 export const quietMode = {
-	get enabled(): boolean {
+	get enabled() {
 		return enabled;
 	},
-	get remembered(): boolean {
+	get remembered() {
 		return remembered;
 	},
-	get closeSignal(): number {
+	get closeSignal() {
 		return closeSignal;
 	},
-	get openSignal(): number {
+	get openSignal() {
 		return openSignal;
 	},
-	set(next: boolean): void {
+	/** @param {boolean} next */
+	set(next) {
 		setEnabled(next);
 	},
-	toggle(): void {
+	toggle() {
 		setEnabled(!enabled);
 	},
-	rememberCurrent(): void {
+	rememberCurrent() {
 		setEnabled(true);
 		setRemembered(true);
 	},
-	forgetDefault(): void {
+	forgetDefault() {
 		setRemembered(false);
 	},
-	init(options: QuietModeInit = {}): void {
+	/** @param {import('./quiet-mode.svelte.js').QuietModeInit} [options] */
+	init(options = {}) {
 		if (typeof window === 'undefined') return;
 		storageKey = options.storageKey ?? DEFAULT_STORAGE_KEY;
 		remembered = readRemembered();
 		if (remembered) setEnabled(true);
 		else syncDocument(enabled);
 	},
-	resetForTest(): void {
+	resetForTest() {
 		enabled = false;
 		remembered = false;
 		closeSignal = 0;

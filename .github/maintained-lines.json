@@ -123,13 +123,13 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "f303dc55457ba3b43a9879940ebb5082e7f517f4a7d4cf897f935cbeeb1a00f3"
+        "edbbfdbc27ef083bbacf77613c36cf9e63bbe72c85ef1db5b9fe79ed8dacdcc2"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.14.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.14.1 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -138,7 +138,7 @@
         "apps/web/vendor/design/analytics/package.json",
         "apps/web/vendor/design/analytics/src/client.ts",
         "apps/web/vendor/design/analytics/src/config.ts",
-        "apps/web/vendor/design/analytics/src/consent.svelte.ts",
+        "apps/web/vendor/design/analytics/src/consent.ts",
         "apps/web/vendor/design/analytics/src/index.ts",
         "apps/web/vendor/design/analytics/src/plausible.ts",
         "apps/web/vendor/design/analytics/src/policy.ts",
@@ -282,8 +282,10 @@
         "apps/web/vendor/design/ui/src/primitives/toggle/toggle.svelte",
         "apps/web/vendor/design/ui/src/state/desktop.ts",
         "apps/web/vendor/design/ui/src/state/index.ts",
-        "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.ts",
-        "apps/web/vendor/design/ui/src/state/theme.svelte.ts",
+        "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.d.ts",
+        "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.js",
+        "apps/web/vendor/design/ui/src/state/theme.svelte.d.ts",
+        "apps/web/vendor/design/ui/src/state/theme.svelte.js",
         "apps/web/vendor/design/ui/svelte.config.js",
         "apps/web/vendor/design/ui/tsconfig.json"
       ],
@@ -291,9 +293,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "c5f6d9ed7d335b9bd72a7c671d58455980c3363d7eb96fc7cb43281439fa25e2"
+        "fc9f25806c607df7efce58bc1ddc30274bad51d4e25d44e219dc0a0d0b121709"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.14.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.14.1; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -415,7 +417,8 @@
         "ef8e07d24cf7da4e1d3de6eff91a9d8e2795a269601758956a9a8faef8543967",
         "0a2af52bd6a965d7e1c98d08bdf2e3b4770ea631656e96617b445b9271854678",
         "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a",
-        "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9"
+        "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9",
+        "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

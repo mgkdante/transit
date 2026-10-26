@@ -1,17 +1,17 @@
-export type Theme = 'dark' | 'light';
-
 const STORAGE_KEY = 'theme';
 const SURFACE_META = 'meta[name="theme-color"]:not([media])';
 
-function readDocumentTheme(): Theme {
+/** @returns {import('./theme.svelte.js').Theme} */
+function readDocumentTheme() {
 	if (typeof document === 'undefined') return 'dark';
 	return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
-let current = $state<Theme>(readDocumentTheme());
-let surfaceFrame: number | null = null;
+let current = $state(readDocumentTheme());
+/** @type {number | null} */
+let surfaceFrame = null;
 
-function updateSurfaceMeta(): void {
+function updateSurfaceMeta() {
 	if (surfaceFrame !== null || !document.querySelector(SURFACE_META)) return;
 	surfaceFrame = requestAnimationFrame(() => {
 		surfaceFrame = null;
@@ -20,7 +20,11 @@ function updateSurfaceMeta(): void {
 	});
 }
 
-function apply(next: Theme, persist: boolean): void {
+/**
+ * @param {import('./theme.svelte.js').Theme} next
+ * @param {boolean} persist
+ */
+function apply(next, persist) {
 	current = next;
 	if (typeof document === 'undefined') return;
 	if (document.documentElement.dataset.theme !== next) {
@@ -37,24 +41,21 @@ function apply(next: Theme, persist: boolean): void {
 	document.dispatchEvent(new CustomEvent('themechange', { detail: { theme: next } }));
 }
 
-/**
- * Dark is the default. The app's pre-paint script owns first paint from the `theme` storage key;
- * `init()` adopts what it applied. System preference is intentionally ignored.
- */
 export const theme = {
-	get current(): Theme {
+	get current() {
 		return current;
 	},
-	get isDark(): boolean {
+	get isDark() {
 		return current === 'dark';
 	},
-	set(next: Theme): void {
+	/** @param {import('./theme.svelte.js').Theme} next */
+	set(next) {
 		apply(next, true);
 	},
-	toggle(): void {
+	toggle() {
 		apply(current === 'dark' ? 'light' : 'dark', true);
 	},
-	init(): void {
+	init() {
 		if (typeof document === 'undefined') return;
 		apply(readDocumentTheme(), false);
 	},

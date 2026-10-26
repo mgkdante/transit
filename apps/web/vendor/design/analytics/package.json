@@ -1,6 +1,6 @@
 {
 	"name": "@yesid/analytics",
-	"version": "0.14.0",
+	"version": "0.14.1",
 	"private": true,
 	"type": "module",
 	"description": "Consumer-neutral, consent-aware analytics policy, client, sanitization, and injected Plausible transport primitives.",
@@ -19,8 +19,8 @@
 			"default": "./src/config.ts"
 		},
 		"./consent": {
-			"types": "./src/consent.svelte.ts",
-			"default": "./src/consent.svelte.ts"
+			"types": "./src/consent.ts",
+			"default": "./src/consent.ts"
 		},
 		"./plausible": {
 			"types": "./src/plausible.ts",
