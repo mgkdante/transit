@@ -121,36 +121,36 @@ def consume_history_children(
         check_ref: Callable[[object, object], list[gate.CheckResult]],
         observers: Sequence[Callable[[HistoricPartitionRef, PartitionT], None]],
     ) -> None:
-        batch: list[tuple[str, SnapshotPayload]] = []
+        def put(item: tuple[str, SnapshotPayload]) -> list[str]:
+            return write_batch([item]) if write_batch is not None else []
 
-        def flush() -> None:
-            if write_batch is not None and batch:
-                result.written_keys.extend(write_batch(batch))
-                batch.clear()
-
-        for ref, payload, scope_class in historic_run._iter_historic_partitions(
-            iterator, run, family,
-        ):
-            with historic_run._historic_child_gate_phase(run, family, scope_class):
-                if record_payloads:
-                    gate.record(report, ref.path, payload, retain_sha=family != "stops")
-                else:
-                    report.results.extend(check(payload, rel_key=ref.path))
-                    report.payloads_checked += 1
-                    report.checks_run += 2
-                report.results.extend(check_ref(ref, payload))
-                if write_batch is not None:
-                    gate.enforce(report, force=force)
-                for observe in observers:
-                    observe(ref, payload)
-            if write_batch is not None:
+        with uploads.upload_window(put, batch_size) as window:
+            partitions = historic_run._iter_historic_partitions(iterator, run, family)
+            while True:
+                # Observe failures before advancing the lazy DB/build iterator.
                 with historic_run._historic_phase_context(run, "upload"):
-                    batch.append((ref.path, payload))
-                    if len(batch) >= batch_size:
-                        flush()
-        if write_batch is not None:
+                    window.collect_completed()
+                try:
+                    ref, payload, scope_class = next(partitions)
+                except StopIteration:
+                    break
+                with historic_run._historic_child_gate_phase(run, family, scope_class):
+                    if record_payloads:
+                        gate.record(report, ref.path, payload, retain_sha=family != "stops")
+                    else:
+                        report.results.extend(check(payload, rel_key=ref.path))
+                        report.payloads_checked += 1
+                        report.checks_run += 2
+                    report.results.extend(check_ref(ref, payload))
+                    if write_batch is not None:
+                        gate.enforce(report, force=force)
+                    for observe in observers:
+                        observe(ref, payload)
+                if write_batch is not None:
+                    with historic_run._historic_phase_context(run, "upload"):
+                        window.submit((ref.path, payload))
             with historic_run._historic_phase_context(run, "upload"):
-                flush()
+                result.written_keys.extend(window.finish())
 
     if plans.network is not None:
         consume(

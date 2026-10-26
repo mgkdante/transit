@@ -1689,7 +1689,8 @@ def test_line_history_invalid_later_partition_preserves_every_existing_pointer(
 
     assert all(store.objects[key] == value for key, value in expected_pointers.items())
     line_calls = [path for kind, path in store.calls if kind == "immutable" and "/lines/" in path]
-    assert line_calls == []
+    # The valid earlier child can upload while the later child is being gated.
+    assert line_calls == [bundle.indexes[0].partitions[0].path]
     assert not any(kind == "normal" for kind, _path in store.calls)
 
 
@@ -2053,7 +2054,7 @@ def test_concurrent_delayed_network_child_failure_never_activates_parents(
     assert not any(kind == "normal" for kind, _rel_key in store.calls)
 
 
-def test_network_history_actual_publish_builds_gates_then_uploads_a_bounded_batch(
+def test_network_history_actual_publish_gates_each_child_before_its_upload(
     monkeypatch,
 ):
     bundle = _network_history_bundle()
@@ -2135,7 +2136,7 @@ def test_network_history_actual_publish_builds_gates_then_uploads_a_bounded_batc
     )
 
     assert plan.max_live == 1
-    assert events == [
+    assert [event for event in events if event[0] != "put-partition"] == [
         ("build", "2026-06"),
         ("gate-partition", "2026-06"),
         ("gate-ref", "2026-06"),
@@ -2144,12 +2145,14 @@ def test_network_history_actual_publish_builds_gates_then_uploads_a_bounded_batc
         ("gate-partition", "2026-07"),
         ("gate-ref", "2026-07"),
         ("release", "2026-07"),
-        ("put-partition", "2026-06"),
-        ("put-partition", "2026-07"),
         ("build-index", "network"),
         ("gate-index", "network"),
         ("put-index", "network"),
     ]
+    for month in ("2026-06", "2026-07"):
+        assert events.count(("put-partition", month)) == 1
+        assert events.index(("gate-ref", month)) < events.index(("put-partition", month))
+        assert events.index(("put-partition", month)) < events.index(("build-index", "network"))
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -2848,7 +2851,7 @@ def test_historic_validate_consumes_lazy_history_plans_before_connection_closes(
     assert report.passed
 
 
-def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
+def test_stop_history_entity_indexes_submit_individually_to_the_window(monkeypatch):
     _patch_minimal_historic(monkeypatch, stop_plan=_many_stop_history_plan())
     monkeypatch.setattr(historic_tier, "STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE", 2, raising=False)
     real_parallel_put = uploads.put_batch
@@ -2877,7 +2880,7 @@ def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
         stamp="2026-07-13T00:00:00Z",
     )
 
-    assert batch_sizes == [2, 2, 1]
+    assert batch_sizes == [1, 1, 1, 1, 1]
 
 
 def test_analytics_gate_does_not_retain_stop_generation_digests(monkeypatch):

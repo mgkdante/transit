@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 
 from test_partitioned_history_builders import _line_history_rows, _network_history_rows
@@ -307,9 +308,14 @@ def test_public_history_gate_outputs_have_an_ordered_fingerprint() -> None:
         for name, findings in _ordered_characterization()
     ]
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    encoded = re.sub(
+        rb"https://errors\.pydantic\.dev/\d+(?:\.\d+)*/",
+        b"https://errors.pydantic.dev/<version>/",
+        encoded,
+    )
 
     assert hashlib.sha256(encoded).hexdigest() == (
-        "0b321ff698c407fee716a0ff1eb40db0067e5f3d472c857785f483e83dd71301"
+        "91ac0b9599a998f63cc94a805816e0cba1aa7c5db8057d26c2fc4c66db0445c2"
     )
 
 
