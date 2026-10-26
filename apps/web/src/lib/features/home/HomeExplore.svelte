@@ -126,7 +126,12 @@
 			<span class="label-metric" aria-live="polite">{matchSummary}</span>
 		</div>
 		<div class="hub-launch">
-			<details class="home-filters" use:scrollChain bind:this={filterDisclosure} bind:open={filtersOpen}>
+			<details
+				class="home-filters"
+				use:scrollChain
+				bind:this={filterDisclosure}
+				bind:open={filtersOpen}
+			>
 				<summary>{t.filterLabel}<span aria-hidden="true">+</span></summary>
 				<div class="explore-filters" role="group" aria-label={t.filterLabel}>
 					<FilterGroup

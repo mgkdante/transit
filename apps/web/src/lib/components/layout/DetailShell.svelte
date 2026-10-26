@@ -157,7 +157,11 @@
 		</div>
 
 		{#if right}
-			<aside use:scrollChain class="detail-shell-rail detail-shell-rail--right" data-slot="detail-shell-right">
+			<aside
+				use:scrollChain
+				class="detail-shell-rail detail-shell-rail--right"
+				data-slot="detail-shell-right"
+			>
 				{@render right()}
 			</aside>
 		{/if}
