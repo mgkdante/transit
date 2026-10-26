@@ -135,7 +135,10 @@ describe('tracked Bits touch outside-interaction patch', () => {
 		await advance();
 		expect(onInnerOutside).toHaveBeenCalledExactlyOnceWith(originalClick);
 		expect(onOuterOutside).not.toHaveBeenCalled();
-		expect(screen.queryByRole('dialog', { name: 'Inner' })).not.toBeInTheDocument();
+		// happy-dom 21 exposes getAnimations(), so Bits removes the dialog on a later frame.
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('dialog', { name: 'Inner' })).not.toBeInTheDocument(),
+		);
 		expect(screen.getByRole('dialog', { name: 'Outer' })).toBeInTheDocument();
 	});
 
