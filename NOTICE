@@ -5,10 +5,10 @@ This file is a factual attribution index, not an additional license or policy.
 
 ## Vendored yesid.dev-design snapshot
 
-The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.13.2`:
+The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.13.3`:
 
-- annotated tag object `2809b5a33ed08cf0c2e470cbc56d2a8ac68836cb`;
-- peeled commit `bcc628763245387c23eeeb7d81af7c0f75176421`.
+- annotated tag object `91ae5f2ad5f37f43b6355af30237bf65bb09d583`;
+- peeled commit `d55acda36ca350715fd35ae08f194f8f35260e53`.
 
 The snapshot retains its license at
 [`apps/web/vendor/design/LICENSE`](apps/web/vendor/design/LICENSE).

@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.2 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.2/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.3/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -291,3 +291,20 @@ For every exact-tag adoption:
 Package tests and Gallery browser checks remain required upstream, but neither proves that an
 external consumer retained its product-specific behavior. This installed guide is the durable
 owner for the package/consumer UI seams and verification duties listed above.
+
+## Commands, failures, and release implications
+
+```sh
+bun run --cwd packages/ui test
+bun run --cwd packages/ui check
+bun run api:check
+```
+
+An import/type failure points to a public interface or consumer-tooling mismatch. A package test
+failure belongs to shared rendering mechanics; a Gallery failure belongs to neutral integration;
+a product-only visual or policy failure stays in that product. Do not cure one layer by moving
+its policy into another.
+
+Source, public-interface, compatibility-documentation, or README changes alter the coordinated
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.3/RELEASING.md), regenerate the API report only for
+public-interface changes, and preserve consumer seams through separate adoption verification.
