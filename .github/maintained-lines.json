@@ -123,15 +123,16 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "854b924ca4ae6ffadeade7d5e2b6948a715d68d102f7019b73bf798bef28c065"
+        "5ea36e4e5ebd17eddb72d0b5b4052e7215c35d11d9979523762671c5d767e6d6"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.13.2 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.13.3 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
+        "apps/web/vendor/design/analytics/README.md",
         "apps/web/vendor/design/analytics/package.json",
         "apps/web/vendor/design/analytics/src/client.ts",
         "apps/web/vendor/design/analytics/src/config.ts",
@@ -140,6 +141,7 @@
         "apps/web/vendor/design/analytics/src/plausible.ts",
         "apps/web/vendor/design/analytics/src/policy.ts",
         "apps/web/vendor/design/analytics/tsconfig.json",
+        "apps/web/vendor/design/gates/README.md",
         "apps/web/vendor/design/gates/package.json",
         "apps/web/vendor/design/gates/src/engines/brandHex.ts",
         "apps/web/vendor/design/gates/src/engines/colorMixFloors.ts",
@@ -152,11 +154,13 @@
         "apps/web/vendor/design/gates/src/engines/walk.ts",
         "apps/web/vendor/design/gates/src/index.ts",
         "apps/web/vendor/design/gates/tsconfig.json",
+        "apps/web/vendor/design/i18n-core/README.md",
         "apps/web/vendor/design/i18n-core/package.json",
         "apps/web/vendor/design/i18n-core/src/index.ts",
         "apps/web/vendor/design/i18n-core/src/routing.ts",
         "apps/web/vendor/design/i18n-core/tsconfig.json",
         "apps/web/vendor/design/manifest.json",
+        "apps/web/vendor/design/motion/README.md",
         "apps/web/vendor/design/motion/package.json",
         "apps/web/vendor/design/motion/ripple.css",
         "apps/web/vendor/design/motion/src/actions/boop.ts",
@@ -179,12 +183,14 @@
         "apps/web/vendor/design/motion/src/utils/ticker.ts",
         "apps/web/vendor/design/motion/tap-feedback.css",
         "apps/web/vendor/design/motion/tsconfig.json",
+        "apps/web/vendor/design/seo-kit/README.md",
         "apps/web/vendor/design/seo-kit/package.json",
         "apps/web/vendor/design/seo-kit/src/index.ts",
         "apps/web/vendor/design/seo-kit/src/jsonld.ts",
         "apps/web/vendor/design/seo-kit/src/satori.ts",
         "apps/web/vendor/design/seo-kit/src/sitemap.ts",
         "apps/web/vendor/design/seo-kit/tsconfig.json",
+        "apps/web/vendor/design/tokens/README.md",
         "apps/web/vendor/design/tokens/package.json",
         "apps/web/vendor/design/tokens/src/build.ts",
         "apps/web/vendor/design/tokens/src/generators/design-md.ts",
@@ -273,9 +279,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "a624da7b1bba88787a6dc7172b6aaea9b972129e3f666a1042dcab84fbe35065"
+        "df5b53cec852a3fdcb5070e76093f8877d80728bc4cddd6e72bfcdea45244fc3"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.13.2; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.13.3; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -394,7 +400,8 @@
         "8eb90030304657eeeacd659dad08fd33eaec9bad8389e147987581e604b4740a",
         "c1cf06b5390d2895310ff07799217d8d68f108c9ef19b3b27945207ca9ff5477",
         "ef8e07d24cf7da4e1d3de6eff91a9d8e2795a269601758956a9a8faef8543967",
-        "0a2af52bd6a965d7e1c98d08bdf2e3b4770ea631656e96617b445b9271854678"
+        "0a2af52bd6a965d7e1c98d08bdf2e3b4770ea631656e96617b445b9271854678",
+        "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },
