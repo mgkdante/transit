@@ -6,6 +6,7 @@
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
 	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import ArticleSummaryLane from './ArticleSummaryLane.svelte';
+	import { scrollChain } from '@yesid/motion/actions';
 
 	export interface DetailShellCombinedRailConfig {
 		label: string;
@@ -137,6 +138,7 @@
 			/>
 		{:else if left}
 			<aside
+				use:scrollChain
 				class="detail-shell-rail detail-shell-rail--left"
 				class:detail-shell-rail--mobile={leftMobile}
 				data-slot="detail-shell-left"
@@ -155,7 +157,7 @@
 		</div>
 
 		{#if right}
-			<aside class="detail-shell-rail detail-shell-rail--right" data-slot="detail-shell-right">
+			<aside use:scrollChain class="detail-shell-rail detail-shell-rail--right" data-slot="detail-shell-right">
 				{@render right()}
 			</aside>
 		{/if}

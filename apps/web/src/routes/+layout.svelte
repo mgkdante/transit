@@ -47,6 +47,8 @@
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion/view-transition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
+	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
+	import { getLenis } from '@yesid/motion/utils/lenis';
 	import { AppShell } from '$lib/components/shell';
 	import Footer from '$lib/components/layout/Footer.svelte';
 	import { EdgeState } from '$lib/components/edge';
@@ -187,6 +189,24 @@
 		};
 	});
 
+	// SiteRoot's initLenis reads ScrollTrigger.isTouch, which is only set once the plugin
+	// is registered. Upstream registers it itself from the next design release.
+	if (browser) initScrollTriggerConfig();
+
+	// The page scrolls inside #main, which SvelteKit's own scroll reset does not reach.
+	function resetMainScroll(hash: string): void {
+		const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
+		const lenis = getLenis();
+		if (lenis) {
+			lenis.resize();
+			lenis.scrollTo(target ?? 0, { immediate: true, force: true });
+		} else if (target) {
+			target.scrollIntoView();
+		} else {
+			document.getElementById('main')?.scrollTo({ top: 0 });
+		}
+	}
+
 	onMount(() => {
 		if (data.v1Error && !data.v1) void invalidateAll();
 
@@ -210,8 +230,12 @@
 
 	onNavigate((navigation) => runViewTransition(navigation));
 
-	afterNavigate(({ to }) => {
+	afterNavigate(({ from, to, type }) => {
 		if (to) void transitAnalytics.trackPageview(to.url);
+		if (!to || type === 'enter' || type === 'popstate') return;
+		if (from?.url.pathname !== to.url.pathname || from.url.hash !== to.url.hash) {
+			resetMainScroll(to.url.hash);
+		}
 	});
 
 	beforeNavigate((navigation) => {
@@ -298,7 +322,7 @@
 	}
 </script>
 
-<SiteRoot smoothScroll={false} quietModeKey="transit:quiet-mode">
+<SiteRoot scroller={{ wrapper: '#main', content: '#main-flow' }} quietModeKey="transit:quiet-mode">
 	<SeoHead
 		title={headTitle}
 		description={headDescription}
@@ -338,30 +362,36 @@
 				tabindex="-1"
 			>
 				<div
-					class={isFullBleed
-						? 'min-h-0 grow'
-						: 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
+					id="main-flow"
+					class="flex flex-col {isFullBleed ? 'h-full' : 'min-h-full shrink-0'}"
+					data-lenis-prevent={isFullBleed || undefined}
 				>
-					{#if !v1 && !isDataIndependentRoute(seoPath)}
-						<div
-							class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6"
-						>
-							<p>{data.provider?.labels[locale].city ?? data.providerId}</p>
-							<EdgeState
-								variant="error-v1"
-								lang={locale}
-								layout={edgeLayout}
-								onRetry={retryBoot}
-								class="w-full"
-							/>
-						</div>
-					{:else}
-						{@render children?.()}
+					<div
+						class={isFullBleed
+							? 'min-h-0 grow'
+							: 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
+					>
+						{#if !v1 && !isDataIndependentRoute(seoPath)}
+							<div
+								class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 p-6"
+							>
+								<p>{data.provider?.labels[locale].city ?? data.providerId}</p>
+								<EdgeState
+									variant="error-v1"
+									lang={locale}
+									layout={edgeLayout}
+									onRetry={retryBoot}
+									class="w-full"
+								/>
+							</div>
+						{:else}
+							{@render children?.()}
+						{/if}
+					</div>
+					{#if !isFullBleed}
+						<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
 					{/if}
 				</div>
-				{#if !isFullBleed}
-					<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
-				{/if}
 			</div>
 		{/snippet}
 	</AppShell>

@@ -4,6 +4,7 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
 	import { modalSheet } from '$lib/components/shared/modalSheet';
+	import { scrollChain } from '@yesid/motion/actions';
 
 	export type SurfaceRailPresentation = 'desktop' | 'mobile';
 	export interface SurfaceRailContext {
@@ -94,6 +95,7 @@
 
 <aside
 	bind:this={desktopRailEl}
+	use:scrollChain
 	class={cn('surface-rail', className)}
 	class:surface-rail--mobile={presentation === 'mobile' && sheetOpen}
 	data-slot="surface-rail"
@@ -126,6 +128,7 @@
 				aria-label={closeAria}
 			></button>
 			<div
+				use:scrollChain
 				class="surface-rail-sheet glass-chrome"
 				bind:this={sheetEl}
 				role="dialog"
