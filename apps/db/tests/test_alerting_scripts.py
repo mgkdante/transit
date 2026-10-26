@@ -137,7 +137,9 @@ def _provider_fixture_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
                 provider_id TEXT, feed_endpoint_id INTEGER,
                 endpoint_key TEXT, captured_at_utc INTEGER
             );
-            CREATE TABLE ingestion_runs (provider_id TEXT, status TEXT, started_at_utc INTEGER);
+            CREATE TABLE ingestion_runs (
+                provider_id TEXT, status TEXT, started_at_utc INTEGER, http_status_code INTEGER
+            );
             CREATE TABLE dataset_versions (
                 provider_id TEXT, dataset_kind TEXT, is_current BOOLEAN, last_seen_at_utc INTEGER
             );
@@ -548,7 +550,7 @@ def test_freshness_probe_attributes_failed_runs_to_their_provider(
 ) -> None:
     env, _ = _provider_fixture_env(tmp_path)
     with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
-        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880)",
+        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880, NULL)",
                          [(failed_provider,)] * 10)
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -625,7 +627,7 @@ def test_freshness_probe_preserves_global_burst_for_six_failures_per_provider(tm
     env, log = _provider_fixture_env(tmp_path)
     env["CHECK_GLOBAL_FAILED_RUNS"] = "true"
     with sqlite3.connect(env["PSQL_FIXTURE_DB"]) as conn:
-        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880)",
+        conn.executemany("INSERT INTO ingestion_runs VALUES (?, 'failed', 1999999880, NULL)",
                          [("stm",)] * 6 + [("octranspo",)] * 6)
 
     result = _run(FRESHNESS_PROBE, [], env)

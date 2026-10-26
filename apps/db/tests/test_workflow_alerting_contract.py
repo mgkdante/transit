@@ -122,6 +122,13 @@ def test_freshness_probe_designates_exactly_one_global_failure_writer() -> None:
     assert step["env"]["CHECK_GLOBAL_FAILED_RUNS"] == "${{ matrix.check_global_failed_runs }}"
 
 
+def test_freshness_probe_excludes_upstream_http_errors_from_both_failure_counts() -> None:
+    queries = _raw(PROBE_SCRIPT).split("FROM raw.ingestion_runs")[1:]
+    assert len(queries) == 2
+    for query in queries:
+        assert "AND (http_status_code IS NULL OR http_status_code < 400)" in query.split('"', 1)[0]
+
+
 def test_cron_workflows_carry_issues_write_permission() -> None:
     for filename in CRON_WORKFLOWS:
         doc = _load(WORKFLOWS / filename)
