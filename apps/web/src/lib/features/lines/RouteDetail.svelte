@@ -572,12 +572,14 @@
 									{#if (file.service_periods ?? []).length > 0}
 										<ScheduleTable
 											mode="service"
-											rows={(file.service_periods ?? []).map((period): ScheduleRow => ({
-												kind: 'service',
-												period: dayTypeLabel(shiftLabel(period.shift, locale), locale),
-												window: period.window,
-												headway: fmtMin(period.headway_min),
-											}))}
+											rows={(file.service_periods ?? []).map(
+												(period): ScheduleRow => ({
+													kind: 'service',
+													period: dayTypeLabel(shiftLabel(period.shift, locale), locale),
+													window: period.window,
+													headway: fmtMin(period.headway_min),
+												}),
+											)}
 											{locale}
 											labels={t.scheduleTable}
 										/>

@@ -807,7 +807,8 @@ describe('StopDetail retained-history ownership', () => {
 		expect(stopHistoryHarness.getStopHistoryIndex.mock.calls[1]?.[0]).toBe('NEXT/STOP');
 
 		const secondContext = stopHistoryHarness.getStopHistoryIndex.mock.calls[1]?.[1] as
-			{ signal: AbortSignal } | undefined;
+			| { signal: AbortSignal }
+			| undefined;
 		view.unmount();
 		expect(secondContext?.signal.aborted).toBe(true);
 	});

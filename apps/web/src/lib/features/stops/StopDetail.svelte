@@ -600,13 +600,15 @@
 										{:else}
 											<ScheduleTable
 												mode="board"
-												rows={(filteredDepartures ?? []).map((d): ScheduleRow => ({
-													kind: 'board',
-													route: d.route,
-													eta_utc: d.eta_utc,
-													delay_min: d.delay_min,
-													trip: d.trip,
-												}))}
+												rows={(filteredDepartures ?? []).map(
+													(d): ScheduleRow => ({
+														kind: 'board',
+														route: d.route,
+														eta_utc: d.eta_utc,
+														delay_min: d.delay_min,
+														trip: d.trip,
+													}),
+												)}
 												{locale}
 												labels={t.next.table}
 												delayCopy={t.next}
@@ -657,12 +659,14 @@
 									{:else}
 										<ScheduleTable
 											mode="grid"
-											rows={(s?.scheduled ?? []).map((entry): ScheduleRow => ({
-												kind: 'grid',
-												route: entry.route,
-												headsign: entry.headsign,
-												times: entry.times ?? [],
-											}))}
+											rows={(s?.scheduled ?? []).map(
+												(entry): ScheduleRow => ({
+													kind: 'grid',
+													route: entry.route,
+													headsign: entry.headsign,
+													times: entry.times ?? [],
+												}),
+											)}
 											{locale}
 											labels={t.schedule.table}
 											cap={SCHEDULE_CAP}
