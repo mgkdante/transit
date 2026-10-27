@@ -316,7 +316,7 @@
         "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9",
         "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e",
         "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55",
-        "6513c0d72a3095f819583b348a015f53bfbaa165c4afe68e02f268fde83bc820"
+        "ff6abac0aab463e8fab31d9386051dbe1d2449df6ff415cbd1b2e01a08a97e73"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
