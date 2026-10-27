@@ -145,10 +145,11 @@ def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
     assert not any(key.startswith("BRONZE_S3") for key in pruner_keys)
     assert not any(key.startswith("SNAPSHOT_") for key in pruner_keys)
     assert pruner["environment"]["DATABASE_URL"] == (
-        "postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}"
+        "postgresql://${TRANSIT_APP_DB_USER:-${POSTGRES_USER:-transit}}"
+        "@postgres:5432/${POSTGRES_DB:-transit}"
     )
     assert pruner["environment"]["PGPASSWORD"] == (
-        "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+        "${TRANSIT_APP_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}}"
     )
     assert {
         "PRUNER_SLEEP_SECONDS",
@@ -176,13 +177,16 @@ def test_compose_waits_for_postgres_health_before_app_services() -> None:
 
 def test_compose_requires_database_secret_and_binds_postgres_to_loopback() -> None:
     services = _compose()["services"]
-    expected = "postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}"
+    expected = (
+        "postgresql://${TRANSIT_APP_DB_USER:-${POSTGRES_USER:-transit}}"
+        "@postgres:5432/${POSTGRES_DB:-transit}"
+    )
     required_password = "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
     assert services["postgres"]["environment"]["POSTGRES_PASSWORD"] == required_password
     for service_name in ("worker", "pruner", "health"):
         environment = services[service_name]["environment"]
         assert environment["DATABASE_URL"] == expected
-        assert environment["PGPASSWORD"] == required_password
+        assert environment["PGPASSWORD"] == f"${{TRANSIT_APP_DB_PASSWORD:-{required_password}}}"
     assert services["postgres"]["ports"] == [
         "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
     ]
@@ -428,6 +432,8 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(encoding="utf-8")
 
     assert 'cron: "0 8 * * 0"' in workflow
+    assert "DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}" in workflow
+    assert "DATABASE_URL: ${{ secrets.DATABASE_URL }}" not in workflow
     assert 'PG_REPACK_DRY_RUN: "true"' in workflow
     assert "github.event_name == 'schedule'" not in workflow
     assert "&& 'false'" not in workflow
