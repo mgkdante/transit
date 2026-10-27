@@ -67,12 +67,12 @@ const immutableListings = [
 	{
 		file: 'src/lib/features/lines/LinesIndex.svelte',
 		mapHref: 'mapHrefFor({ route: r.id }, locale)',
-		markupSha256: 'ddb5948aabfce2a48d2a73f080799d29a704d26cedde57ce5639866be3556830',
+		markupSha256: '771266f79bebef89cd25a30c9b0ee0484b33d6bfe15796cbfe2b915a5e6d302e',
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
 		mapHref: 'mapHrefFor({ stop: stop.id }, locale)',
-		markupSha256: '2a3f371e08911eb8c6234d3381823df1c44482648c90485bc4209dc70bb478d7',
+		markupSha256: '13216282a72cf38abe7ad07cd6de824c5e7bf5d1039bf3cf8712339bfa829d98',
 	},
 ] as const;
 

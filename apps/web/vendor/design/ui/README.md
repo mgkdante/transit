@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -299,6 +299,36 @@ replaces an empty value and `info` follows the label, so absence text and toolti
 caller. `SectionHeading` takes `heading` or `overline`, plus `number`, `headingAccent`, and an
 `explainer` snippet. `SectionIcon` is the closed `SectionIconName` set that `TocBadge` also uses.
 
+### FilterGroup, FilterSection, FilterSummary, and SearchInput
+
+The listing filter family; every label comes from the caller. `FilterGroup` is a single choice
+with an "All" reset (`allLabel`) mapped to `null`; choosing the active item again clears it
+unless `allowDeselect={false}`. With `collapsible` it gets a header toggle, and `persistKey`
+keeps its open state under `persisted:<persistKey>`. `FilterSection` wraps one block of a filter
+panel with the dashed rule. `FilterSummary` shows `countLabel.singular` or `countLabel.plural`
+(each with a `{count}` placeholder) by the plural rule of `locale`, plus a `clearLabel` button.
+`SearchInput` is the listing search field; `label` is its accessible name.
+
+## Listing frame
+
+`@yesid/ui/layout` exports `ListingFrame`, the listing page template. From 1024px it adds a
+vertical edge title (`edgeTitle`, default `heading`) and an accent rail beside the page and hides
+the `heading` h1 visually. The header renders the `blueprint` snippet behind `heading`,
+`subtitle` and an optional `description`, with an optional `aside` beside them on desktop.
+`onHeaderMount(header, frame)` runs once on mount for header motion such as a scroll scrub; return
+its cleanup.
+
+The filter column holds the `search` snippet and a panel with the `filters` snippet. From 1024px
+the panel is always shown and the column is sticky. Below 1024px a button labelled `filterLabel`
+opens it, and `filterPersistKey` keeps that state under `persisted:<filterPersistKey>`. The panel
+never uses `inert`; a closed panel is `visibility: hidden` below 1024px only. So from 1024px the
+filters are visible and reachable by keyboard before hydration and without JavaScript, and below
+1024px opening them needs JavaScript. Wheel scrolling in the sticky column chains to the page
+through `scrollChain`.
+
+The frame reads `--chrome-offset`, the height of the fixed site chrome, to pull the header under
+it and to park the sticky column below it. It falls back to `0px`.
+
 ## Site root and shared state
 
 `@yesid/ui/layout` exports `SiteRoot`, the app root. On mount it adopts the theme applied by the
@@ -379,5 +409,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

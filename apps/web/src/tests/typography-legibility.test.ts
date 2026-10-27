@@ -73,7 +73,6 @@ describe('approved public-site typography contract', () => {
 			'src/lib/features/health/HealthStatus.svelte',
 			'src/lib/features/health/sections/health-sections.css',
 			'src/lib/features/lines/reliability/sections/reliability-sections.css',
-			'src/lib/components/layout/BlueprintListingHeader.svelte',
 		];
 
 		for (const relativePath of audited) {

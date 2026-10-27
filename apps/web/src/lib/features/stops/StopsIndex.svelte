@@ -17,14 +17,11 @@
 		MapDrilldownLink,
 		createReliabilityListingController,
 	} from '$lib/components/surface';
-	import { BlueprintListingHeader, ListingPageShell } from '$lib/components/layout';
+	import { ListingHeaderStats } from '$lib/components/layout';
+	import { ListingFrame } from '@yesid/ui/layout';
+	import { startBlueprintScrub } from '$lib/motion/scrubs/blueprint-scrub';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
-	import {
-		FilterGroup,
-		ListingFilterPanel,
-		ListingFilterSection,
-		ListingSearchField,
-	} from '$lib/components/filter';
+	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
@@ -151,7 +148,6 @@
 
 	type SortKey = 'default' | 'worst';
 	let sort = $state<SortKey>('default');
-	const sortAllLabel = { en: indexCopy.en.sortDefault, fr: indexCopy.fr.sortDefault };
 	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityCandidates = $derived.by<readonly StopIndexEntry[]>(() =>
 		lineActive ? lineStopGroups.flatMap((group) => narrowByText(group.stops)) : matches,
@@ -242,20 +238,16 @@
 	<StopsBlueprint />
 {/snippet}
 
-{#snippet listingHeader()}
-	<BlueprintListingHeader
-		heading={t.heading}
-		subtitle={listingSubtitle}
-		description={t.lede}
-		statsLabel={t.inventory.label}
-		statsUnknownLabel={t.inventory.unavailable}
+{#snippet listingStats()}
+	<ListingHeaderStats
+		label={t.inventory.label}
+		unknownLabel={t.inventory.unavailable}
 		stats={inventoryStats}
-		blueprint={listingBlueprint}
 	/>
 {/snippet}
 
 {#snippet listingSearch()}
-	<ListingSearchField
+	<SearchInput
 		label={t.searchLabel}
 		placeholder={t.searchPlaceholder}
 		testId="stops-filter-input"
@@ -264,43 +256,45 @@
 {/snippet}
 
 {#snippet listingFilters()}
-	<ListingFilterPanel showSearch={false}>
-		<ListingFilterSection>
-			<div class="stops-line-filter">
-				<span class="label-section text-sm font-semibold">{t.lineLabel}</span>
-				<Combobox
-					options={lineOptions}
-					bind:value={selectedLineId}
-					label={t.lineLabel}
-					placeholder={t.linePlaceholder}
-					clearLabel={t.lineClear}
-					emptyLabel={t.lineEmpty}
-					fold={foldSearchText}
-				/>
-			</div>
-		</ListingFilterSection>
-
-		<ListingFilterSection>
-			<FilterGroup
-				label={t.sortLabel}
-				items={[{ key: 'worst', label: t.sortWorst }]}
-				activeKey={sort === 'default' ? null : sort}
-				allLabel={sortAllLabel}
-				allowDeselect={false}
-				collapsible
-				persistKey="stops-filter-sort-group"
-				testIdPrefix="stops-sort"
-				onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'default')}
+	<FilterSection>
+		<div class="stops-line-filter">
+			<span class="label-section text-sm font-semibold">{t.lineLabel}</span>
+			<Combobox
+				options={lineOptions}
+				bind:value={selectedLineId}
+				label={t.lineLabel}
+				placeholder={t.linePlaceholder}
+				clearLabel={t.lineClear}
+				emptyLabel={t.lineEmpty}
+				fold={foldSearchText}
 			/>
-		</ListingFilterSection>
-	</ListingFilterPanel>
+		</div>
+	</FilterSection>
+
+	<FilterSection>
+		<FilterGroup
+			label={t.sortLabel}
+			items={[{ key: 'worst', label: t.sortWorst }]}
+			activeKey={sort === 'default' ? null : sort}
+			allLabel={t.sortDefault}
+			allowDeselect={false}
+			collapsible
+			persistKey="stops-filter-sort-group"
+			testIdPrefix="stops-sort"
+			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'default')}
+		/>
+	</FilterSection>
 {/snippet}
 
-<ListingPageShell
+<ListingFrame
 	heading={t.heading}
+	subtitle={listingSubtitle}
+	description={t.lede}
+	blueprint={listingBlueprint}
+	aside={listingStats}
+	onHeaderMount={startBlueprintScrub}
 	filterLabel={t.controlsLabel}
 	filterPersistKey="stops-listing-filters"
-	header={listingHeader}
 	search={listingSearch}
 	filters={listingFilters}
 >
@@ -411,7 +405,7 @@
 			{/if}
 		</ResourceBoundary>
 	</ResourceBoundary>
-</ListingPageShell>
+</ListingFrame>
 
 {#snippet stopRow(stop: StopIndexEntry)}
 	{@const hint = stopModeHint(stop)}

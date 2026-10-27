@@ -8,6 +8,7 @@ type CopyKey =
 	| 'headlineAccent'
 	| 'clearFilters'
 	| 'filterLabel'
+	| 'filterAll'
 	| 'filterByQuestion'
 	| 'filterByKind'
 	| 'tempoNow'
@@ -29,6 +30,7 @@ export const homeCopy = defineCopy({
 		headlineAccent: 'à l’épreuve des données.',
 		clearFilters: 'Effacer les filtres',
 		filterLabel: 'Filtres',
+		filterAll: 'Tous',
 		filterByQuestion: 'Par question',
 		filterByKind: 'Par genre',
 		tempoNow: 'En direct',
@@ -50,6 +52,7 @@ export const homeCopy = defineCopy({
 		headlineAccent: 'transit holds up.',
 		clearFilters: 'Clear filters',
 		filterLabel: 'Filters',
+		filterAll: 'All',
 		filterByQuestion: 'By question',
 		filterByKind: 'By kind',
 		tempoNow: 'Live now',

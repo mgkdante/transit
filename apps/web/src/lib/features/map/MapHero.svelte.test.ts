@@ -1399,7 +1399,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(pageErrors.values).toEqual([]);
 				expect(main).toHaveClass('overflow-y-auto');
 				expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
-				expect(document.querySelector('[data-slot="listing-page-shell"]')).toBeInTheDocument();
+				expect(document.querySelector('[data-slot="listing-frame"]')).toBeInTheDocument();
 				expect(document.querySelector('.map-hero')).not.toBeInTheDocument();
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});

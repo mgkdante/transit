@@ -123,13 +123,13 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "61e67bfd9dd831a3732c7a788da2748833b85985febf1b1c226c4aee35ebf6de"
+        "e9a733a1a267a63dbc34d8a3e072ee5761decce509f60fccab39807db51d8e39"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.15.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.16.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -220,9 +220,13 @@
         "apps/web/vendor/design/ui/src/brand/ChevronToggle.svelte",
         "apps/web/vendor/design/ui/src/brand/CollapsibleSection.svelte",
         "apps/web/vendor/design/ui/src/brand/CornerMarks.svelte",
+        "apps/web/vendor/design/ui/src/brand/FilterGroup.svelte",
+        "apps/web/vendor/design/ui/src/brand/FilterSection.svelte",
+        "apps/web/vendor/design/ui/src/brand/FilterSummary.svelte",
         "apps/web/vendor/design/ui/src/brand/MetricDisplay.svelte",
         "apps/web/vendor/design/ui/src/brand/MetroStation.svelte",
         "apps/web/vendor/design/ui/src/brand/QuietModeButton.svelte",
+        "apps/web/vendor/design/ui/src/brand/SearchInput.svelte",
         "apps/web/vendor/design/ui/src/brand/SectionHeading.svelte",
         "apps/web/vendor/design/ui/src/brand/SectionIcon.svelte",
         "apps/web/vendor/design/ui/src/brand/SectionLabel.svelte",
@@ -240,6 +244,7 @@
         "apps/web/vendor/design/ui/src/cn/create-cn.ts",
         "apps/web/vendor/design/ui/src/cn/index.ts",
         "apps/web/vendor/design/ui/src/index.ts",
+        "apps/web/vendor/design/ui/src/layout/ListingFrame.svelte",
         "apps/web/vendor/design/ui/src/layout/SiteRoot.svelte",
         "apps/web/vendor/design/ui/src/layout/index.ts",
         "apps/web/vendor/design/ui/src/primitives/badge/badge.svelte",
@@ -305,9 +310,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "2bad02521b0c7827fe981ca2434850d0e26a8ae0f89d6237108d8910a8b7d3f5"
+        "909424a27fb120eafd8af2bb4bcf5370e7feb55f80f7eb3f155469fc99c9b560"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.15.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.16.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -431,7 +436,8 @@
         "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a",
         "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9",
         "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121",
-        "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3"
+        "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3",
+        "65932c25a1b0e5729bf5642fd44b3bf33e6d6069ff1508c73d6badc68caac00e"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

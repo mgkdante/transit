@@ -110,7 +110,6 @@ describe('M6C-2 token and protected-surface contract', () => {
 			'app.css:--size-tap-min: 44px;',
 			'app.css:--strip-h: 68px;',
 			'lib/components/edge/EdgeState.svelte:min-height: var(--size-tap-min);',
-			'lib/components/layout/ListingPageShell.svelte:min-height: var(--size-tap-min);',
 			'lib/components/surface/EntityDetail.svelte:min-height: var(--size-tap-min);',
 			'lib/components/surface/EntityDetail.svelte:padding-block: calc((var(--strip-h) - 3px - var(--size-tap-min)) / 2);',
 			'lib/components/surface/MapDrilldownLink.svelte:min-height: var(--size-tap-min);',
