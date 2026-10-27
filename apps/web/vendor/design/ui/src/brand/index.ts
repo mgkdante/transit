@@ -10,6 +10,15 @@ export type { CollapsibleSectionProps } from './CollapsibleSection.svelte';
 export { default as CornerMarks } from './CornerMarks.svelte';
 export type { CornerMarksProps } from './CornerMarks.svelte';
 
+export { default as FilterGroup } from './FilterGroup.svelte';
+export type { FilterGroupItem, FilterGroupProps } from './FilterGroup.svelte';
+
+export { default as FilterSection } from './FilterSection.svelte';
+export type { FilterSectionProps } from './FilterSection.svelte';
+
+export { default as FilterSummary } from './FilterSummary.svelte';
+export type { FilterSummaryProps } from './FilterSummary.svelte';
+
 export { default as MetricDisplay } from './MetricDisplay.svelte';
 export type { MetricDisplayProps } from './MetricDisplay.svelte';
 
@@ -22,6 +31,9 @@ export type {
 	QuietModeButtonCopy,
 	QuietModeButtonProps,
 } from './QuietModeButton.svelte';
+
+export { default as SearchInput } from './SearchInput.svelte';
+export type { SearchInputProps } from './SearchInput.svelte';
 
 export { default as SectionHeading } from './SectionHeading.svelte';
 export type { SectionHeadingProps } from './SectionHeading.svelte';

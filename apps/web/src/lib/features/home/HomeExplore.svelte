@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
-	import { FilterGroup, FilterSummary } from '$lib/components/filter';
+	import { FilterGroup, FilterSummary } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
 	import { StateNotice } from '$lib/components/edge';
 	import { scrollChain } from '@yesid/motion/actions';
@@ -138,6 +138,7 @@
 						label={t.filterByQuestion}
 						items={questionItems}
 						activeKey={activeQuestion}
+						allLabel={t.filterAll}
 						density="spacious"
 						onSelect={(key) => (activeQuestion = key as HomeGroup['key'] | null)}
 						testIdPrefix="hub-filter-question"
@@ -146,13 +147,16 @@
 						label={t.filterByKind}
 						items={tempoItems}
 						activeKey={activeTempo}
+						allLabel={t.filterAll}
 						density="spacious"
 						onSelect={(key) => (activeTempo = key as HomeTempo | null)}
 						testIdPrefix="hub-filter-kind"
 					/>
 					{#if filtersActive}<FilterSummary
 							count={matchCount}
-							countLabel={HOME_FILTER_COUNT_LABEL}
+							countLabel={HOME_FILTER_COUNT_LABEL[locale]}
+							{locale}
+							clearLabel={t.clearFilters}
 							onClear={clearFilters}
 						/>{/if}
 				</div>

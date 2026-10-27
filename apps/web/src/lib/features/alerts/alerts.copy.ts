@@ -124,6 +124,7 @@ export const alertHistoryCopy = defineCopy({
 				fr: { singular: '{count} avis', plural: '{count} avis' },
 				en: { singular: '{count} alert', plural: '{count} alerts' },
 			},
+			clearFilters: 'Effacer les filtres',
 		},
 		headline: {
 			label: 'Avis dans la fenêtre',
@@ -258,6 +259,7 @@ export const alertHistoryCopy = defineCopy({
 				fr: { singular: '{count} avis', plural: '{count} avis' },
 				en: { singular: '{count} alert', plural: '{count} alerts' },
 			},
+			clearFilters: 'Clear filters',
 		},
 		headline: {
 			label: 'Alerts in window',

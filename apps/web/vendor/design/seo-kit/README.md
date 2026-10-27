@@ -7,7 +7,7 @@ canonical routes, indexing policy, fonts, templates, filesystem writes, and HTTP
 ## Interface
 
 Consumers can use the root export or the `./jsonld`, `./sitemap`, and `./satori` subpaths. See
-[`api-reports/seo-kit.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/api-reports/seo-kit.api.md) for exact types and exports.
+[`api-reports/seo-kit.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/api-reports/seo-kit.api.md) for exact types and exports.
 
 ## Invariants
 
@@ -23,8 +23,8 @@ Consumers can use the root export or the `./jsonld`, `./sitemap`, and `./satori`
 
 Consumers supply content and adapters at their own framework seam. `satori` is a peer dependency
 within the supported manifest range. Current adoption receipts live in
-[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/CONSUMERS.md); product SEO policy stays in
-[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/BOUNDARIES.md).
+[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/CONSUMERS.md); product SEO policy stays in
+[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/BOUNDARIES.md).
 
 ## Commands
 
@@ -40,5 +40,5 @@ mechanics; Satori or rasterizer failures reject to the caller. Consumers decide 
 build, retry, or provide another asset.
 
 Builder behavior, output bytes, exports, or README changes alter the coordinated release payload.
-Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/RELEASING.md); update the API report only for public-interface
+Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/RELEASING.md); update the API report only for public-interface
 changes. Do not promote one product's route/content policy into this package.

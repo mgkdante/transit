@@ -63,11 +63,53 @@ describe('AlertFilters history composition', () => {
 		expect(joinedGroups[1]).toHaveAttribute('data-segment-count', '4');
 	});
 
+	it('maps All to the unfiltered state', async () => {
+		const { container } = render(AlertFilters, { props: props({ affects: 'stops' }) as never });
+		const group = within(container).getByRole('radiogroup', { name: 'Affects' });
+
+		await fireEvent.click(within(group).getByRole('radio', { name: 'All' }));
+
+		expect(within(group).getByRole('radio', { name: 'All' })).toHaveAttribute(
+			'aria-checked',
+			'true',
+		);
+	});
+
+	it.each([
+		{
+			mode: 'pointer click',
+			activate: async (target: HTMLElement) => {
+				await fireEvent.click(target, { detail: 1 });
+			},
+		},
+		{
+			mode: 'keyboard-style native button activation',
+			activate: async (target: HTMLElement) => {
+				await fireEvent.keyDown(target, { key: 'Enter' });
+				await fireEvent.click(target, { detail: 0 });
+				await fireEvent.keyUp(target, { key: 'Enter' });
+			},
+		},
+	])('clears a repeated active choice via $mode', async ({ activate }) => {
+		const { container } = render(AlertFilters, { props: props({ severity: 'high' }) as never });
+		const group = within(container).getByRole('radiogroup', { name: 'Severity' });
+		const active = within(group)
+			.getAllByRole('radio')
+			.find((r) => r.getAttribute('aria-checked') === 'true');
+		expect(active).not.toHaveTextContent('All');
+
+		await activate(active as HTMLElement);
+
+		expect(within(group).getByRole('radio', { name: 'All' })).toHaveAttribute(
+			'aria-checked',
+			'true',
+		);
+	});
+
 	it('delegates outer control order and spacing without page-local stack geometry', () => {
 		expect(executableSource).toMatch(
 			/import\s*\{[^}]*\bArticleControlStack(?:\s+as\s+\w+)?[^}]*\}\s*from\s*['"]\$lib\/components\/surface['"]/,
 		);
-		expect(executableSource.match(/variant="joined-grid"/g)).toHaveLength(2);
 		const localBodyRule = source.match(/\.alert-filters-body\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 		expect(localBodyRule).not.toMatch(/display\s*:\s*(?:flex|grid)/);
 		expect(localBodyRule).not.toMatch(/gap\s*:/);

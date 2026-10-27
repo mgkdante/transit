@@ -16,13 +16,10 @@
 		createReliabilityListingController,
 		isReliabilitySnapshotPending,
 	} from '$lib/components/surface';
-	import { BlueprintListingHeader, ListingPageShell } from '$lib/components/layout';
-	import {
-		FilterGroup,
-		ListingFilterPanel,
-		ListingFilterSection,
-		ListingSearchField,
-	} from '$lib/components/filter';
+	import { ListingHeaderStats } from '$lib/components/layout';
+	import { ListingFrame } from '@yesid/ui/layout';
+	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
+	import { startBlueprintScrub } from '$lib/motion/scrubs/blueprint-scrub';
 	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { routeModeHint, routeModeKey } from '$lib/search/stopMode';
 	import { indexCopy } from './lines.copy';
@@ -41,14 +38,11 @@
 
 	type SortKey = 'alpha' | 'worst';
 	let sort = $state<SortKey>('alpha');
-	const sortAllLabel = { en: indexCopy.en.sortAlpha, fr: indexCopy.fr.sortAlpha };
 
 	type StatusKey = 'all' | 'problem';
 	let status = $state<StatusKey>('all');
-	const statusAllLabel = { en: indexCopy.en.statusAll, fr: indexCopy.fr.statusAll };
 
 	let mode = $state('all');
-	const modeAllLabel = { en: indexCopy.en.modeAll, fr: indexCopy.fr.modeAll };
 
 	const collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
 	const numberFmt = $derived(new Intl.NumberFormat(locale));
@@ -122,20 +116,16 @@
 	<LinesBlueprint />
 {/snippet}
 
-{#snippet listingHeader()}
-	<BlueprintListingHeader
-		heading={t.heading}
-		subtitle={t.kicker}
-		description={t.directionsNote}
-		statsLabel={t.inventory.label}
-		statsUnknownLabel={t.inventory.unavailable}
+{#snippet listingStats()}
+	<ListingHeaderStats
+		label={t.inventory.label}
+		unknownLabel={t.inventory.unavailable}
 		stats={inventoryStats}
-		blueprint={listingBlueprint}
 	/>
 {/snippet}
 
 {#snippet listingSearch()}
-	<ListingSearchField
+	<SearchInput
 		label={t.filterLabel}
 		placeholder={t.filterPlaceholder}
 		testId="lines-filter-input"
@@ -144,56 +134,58 @@
 {/snippet}
 
 {#snippet listingFilters()}
-	<ListingFilterPanel showSearch={false}>
-		<ListingFilterSection>
-			<FilterGroup
-				label={t.sortLabel}
-				items={[{ key: 'worst', label: t.sortWorst }]}
-				activeKey={sort === 'alpha' ? null : sort}
-				allLabel={sortAllLabel}
-				allowDeselect={false}
-				collapsible
-				persistKey="lines-filter-sort-group"
-				testIdPrefix="lines-sort"
-				onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'alpha')}
-			/>
-		</ListingFilterSection>
+	<FilterSection>
+		<FilterGroup
+			label={t.sortLabel}
+			items={[{ key: 'worst', label: t.sortWorst }]}
+			activeKey={sort === 'alpha' ? null : sort}
+			allLabel={t.sortAlpha}
+			allowDeselect={false}
+			collapsible
+			persistKey="lines-filter-sort-group"
+			testIdPrefix="lines-sort"
+			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'alpha')}
+		/>
+	</FilterSection>
 
-		<ListingFilterSection>
-			<FilterGroup
-				label={t.statusFilterLabel}
-				items={[{ key: 'problem', label: t.statusProblem }]}
-				activeKey={status === 'all' ? null : status}
-				allLabel={statusAllLabel}
-				allowDeselect={false}
-				collapsible
-				persistKey="lines-filter-status-group"
-				testIdPrefix="lines-status"
-				onSelect={(key) => (status = key === 'problem' ? 'problem' : 'all')}
-			/>
-		</ListingFilterSection>
+	<FilterSection>
+		<FilterGroup
+			label={t.statusFilterLabel}
+			items={[{ key: 'problem', label: t.statusProblem }]}
+			activeKey={status === 'all' ? null : status}
+			allLabel={t.statusAll}
+			allowDeselect={false}
+			collapsible
+			persistKey="lines-filter-status-group"
+			testIdPrefix="lines-status"
+			onSelect={(key) => (status = key === 'problem' ? 'problem' : 'all')}
+		/>
+	</FilterSection>
 
-		<ListingFilterSection>
-			<FilterGroup
-				label={t.modeFilterLabel}
-				items={modeItems}
-				activeKey={mode === 'all' ? null : mode}
-				allLabel={modeAllLabel}
-				allowDeselect={false}
-				collapsible
-				persistKey="lines-filter-mode-group"
-				testIdPrefix="lines-mode"
-				onSelect={(key) => (mode = key ?? 'all')}
-			/>
-		</ListingFilterSection>
-	</ListingFilterPanel>
+	<FilterSection>
+		<FilterGroup
+			label={t.modeFilterLabel}
+			items={modeItems}
+			activeKey={mode === 'all' ? null : mode}
+			allLabel={t.modeAll}
+			allowDeselect={false}
+			collapsible
+			persistKey="lines-filter-mode-group"
+			testIdPrefix="lines-mode"
+			onSelect={(key) => (mode = key ?? 'all')}
+		/>
+	</FilterSection>
 {/snippet}
 
-<ListingPageShell
+<ListingFrame
 	heading={t.heading}
+	subtitle={t.kicker}
+	description={t.directionsNote}
+	blueprint={listingBlueprint}
+	aside={listingStats}
+	onHeaderMount={startBlueprintScrub}
 	filterLabel={t.controlsLabel}
 	filterPersistKey="lines-listing-filters"
-	header={listingHeader}
 	search={listingSearch}
 	filters={listingFilters}
 >
@@ -245,4 +237,4 @@
 			{/snippet}
 		</EntityList>
 	</ResourceBoundary>
-</ListingPageShell>
+</ListingFrame>

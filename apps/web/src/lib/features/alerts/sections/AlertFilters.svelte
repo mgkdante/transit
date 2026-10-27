@@ -4,7 +4,8 @@
 	import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
 	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
-	import { FilterGroup, FilterSummary } from '$lib/components/filter';
+	import { FilterSummary } from '@yesid/ui/brand';
+	import SegmentedChoice from '$lib/components/surface/SegmentedChoice.svelte';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { foldSearchText } from '$lib/search/normalize';
 
@@ -63,9 +64,35 @@
 	}
 </script>
 
+{#snippet choiceGroup(
+	label: string,
+	allLabel: string,
+	items: readonly { key: string; label: string }[],
+	activeKey: string | null,
+	onSelect: (key: string | null) => void,
+)}
+	<div>
+		<div class="label-section text-sm font-semibold">{label}</div>
+		<SegmentedChoice
+			options={[{ key: '__all__', label: allLabel }, ...items]}
+			value={activeKey ?? '__all__'}
+			{label}
+			variant="joined-grid"
+			class="mt-2"
+			onSelect={(key) => onSelect(key === '__all__' || key === activeKey ? null : key)}
+		/>
+	</div>
+{/snippet}
+
 {#snippet summaryControls()}
 	<div class="alert-history-summary" data-slot="filter-summary-wrap">
-		<FilterSummary count={matchCount ?? 0} countLabel={copy.filters.summary} {onClear} />
+		<FilterSummary
+			count={matchCount ?? 0}
+			countLabel={copy.filters.summary[locale]}
+			{locale}
+			clearLabel={copy.filters.clearFilters}
+			{onClear}
+		/>
 	</div>
 {/snippet}
 
@@ -95,22 +122,20 @@
 
 		{#snippet primary()}
 			<div class="alert-filter-groups">
-				<FilterGroup
-					label={copy.filters.entity.label}
-					items={entityItems}
-					activeKey={affects === 'all' ? null : affects}
-					allLabel={{ en: copy.filters.entity.all, fr: copy.filters.entity.all }}
-					variant="joined-grid"
-					onSelect={setAffects}
-				/>
-				<FilterGroup
-					label={copy.filters.severity.label}
-					items={severityItems}
-					activeKey={severity === 'all' ? null : severity}
-					allLabel={{ en: copy.filters.severity.all, fr: copy.filters.severity.all }}
-					variant="joined-grid"
-					onSelect={setSeverity}
-				/>
+				{@render choiceGroup(
+					copy.filters.entity.label,
+					copy.filters.entity.all,
+					entityItems,
+					affects === 'all' ? null : affects,
+					setAffects,
+				)}
+				{@render choiceGroup(
+					copy.filters.severity.label,
+					copy.filters.severity.all,
+					severityItems,
+					severity === 'all' ? null : severity,
+					setSeverity,
+				)}
 			</div>
 		{/snippet}
 
