@@ -34,7 +34,7 @@ jobs:
       run:
         working-directory: apps/db
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
       # ALWAYS dry-run. This workflow is a monitor and must never execute a
       # repack over the WAN (see the header comment). Real repack is on-box.
       PG_REPACK_DRY_RUN: "true"

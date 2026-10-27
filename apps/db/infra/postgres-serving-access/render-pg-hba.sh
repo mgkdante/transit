@@ -3,6 +3,7 @@ set -euo pipefail
 
 database="${POSTGRES_DB:-transit}"
 app_role="${POSTGRES_USER:-transit}"
+app_login_role="${TRANSIT_APP_ROLE:-transit_app}"
 reporting_role="${TRANSIT_REPORTING_ROLE:-transit-reporting}"
 db_role="${TRANSIT_DB_ROLE:-transit-db}"
 db_public_mode="${TRANSIT_DB_PUBLIC_MODE:-ssh}"
@@ -24,6 +25,7 @@ fi
 
 validate_hba_identifier "POSTGRES_DB" "$database"
 validate_hba_identifier "POSTGRES_USER" "$app_role"
+validate_hba_identifier "TRANSIT_APP_ROLE" "$app_login_role"
 validate_hba_identifier "TRANSIT_REPORTING_ROLE" "$reporting_role"
 validate_hba_identifier "TRANSIT_DB_ROLE" "$db_role"
 
@@ -39,6 +41,11 @@ host        all           ${app_role}         10.0.0.0/8      scram-sha-256
 host        all           ${app_role}         192.168.0.0/16  scram-sha-256
 hostssl     ${database}   ${app_role}         0.0.0.0/0       scram-sha-256
 hostssl     ${database}   ${app_role}         ::/0            scram-sha-256
+host        all           ${app_login_role}   172.16.0.0/12   scram-sha-256
+host        all           ${app_login_role}   10.0.0.0/8      scram-sha-256
+host        all           ${app_login_role}   192.168.0.0/16  scram-sha-256
+hostssl     ${database}   ${app_login_role}   0.0.0.0/0       scram-sha-256
+hostssl     ${database}   ${app_login_role}   ::/0            scram-sha-256
 hostssl     ${database}   ${reporting_role}   0.0.0.0/0       scram-sha-256
 hostssl     ${database}   ${reporting_role}   ::/0            scram-sha-256
 hostssl     ${database}   ${db_role}          127.0.0.1/32    scram-sha-256

@@ -35,10 +35,11 @@ services:
     # secrets reach the container. The raw password stays in libpq's PGPASSWORD
     # instead of being embedded in the URL, so reserved URL characters remain
     # valid.
+    # Production sets TRANSIT_APP_DB_USER/TRANSIT_APP_DB_PASSWORD to the non-superuser role.
     environment:
       PGAPPNAME: transit-worker
-      DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DATABASE_URL: postgresql://${TRANSIT_APP_DB_USER:-${POSTGRES_USER:-transit}}@postgres:5432/${POSTGRES_DB:-transit}
+      PGPASSWORD: ${TRANSIT_APP_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}}
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       PROVIDER_TIMEZONE: ${PROVIDER_TIMEZONE:-America/Toronto}
@@ -112,8 +113,8 @@ services:
     # second transaction.
     environment:
       PGAPPNAME: transit-pruner
-      DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DATABASE_URL: postgresql://${TRANSIT_APP_DB_USER:-${POSTGRES_USER:-transit}}@postgres:5432/${POSTGRES_DB:-transit}
+      PGPASSWORD: ${TRANSIT_APP_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}}
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       STM_PROVIDER_ID: ${STM_PROVIDER_ID:-stm}
@@ -139,8 +140,8 @@ services:
     # never calls check_stm_feed) and no third-party AI-tooling secrets.
     environment:
       PGAPPNAME: transit-health
-      DATABASE_URL: postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DATABASE_URL: postgresql://${TRANSIT_APP_DB_USER:-${POSTGRES_USER:-transit}}@postgres:5432/${POSTGRES_DB:-transit}
+      PGPASSWORD: ${TRANSIT_APP_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}}
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       STM_PROVIDER_ID: ${STM_PROVIDER_ID:-stm}

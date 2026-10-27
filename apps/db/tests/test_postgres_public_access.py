@@ -42,6 +42,16 @@ def test_hba_renderer_limits_public_access_to_tls_reporting_and_app_owner() -> N
     public_reader = "hostssl transit transit-reporting 0.0.0.0/0 scram-sha-256"
     public_reject = "hostssl all all 0.0.0.0/0 reject"
 
+    app_login_lines = [
+        "host all transit_app 172.16.0.0/12 scram-sha-256",
+        "host all transit_app 10.0.0.0/8 scram-sha-256",
+        "host all transit_app 192.168.0.0/16 scram-sha-256",
+        "hostssl transit transit_app 0.0.0.0/0 scram-sha-256",
+        "hostssl transit transit_app ::/0 scram-sha-256",
+    ]
+    start = lines.index("hostssl transit transit ::/0 scram-sha-256") + 1
+    assert lines[start : start + 5] == app_login_lines
+    assert lines[start + 5] == public_reader
     assert public_app_owner in lines
     assert public_reader in lines
     assert "hostnossl all all 0.0.0.0/0 reject" in lines
@@ -56,6 +66,7 @@ def test_hba_renderer_accepts_explicit_database_app_role_and_reader_role() -> No
     env = os.environ | {
         "POSTGRES_DB": "analytics",
         "POSTGRES_USER": "app_owner",
+        "TRANSIT_APP_ROLE": "pipeline_app",
         "TRANSIT_REPORTING_ROLE": "bi_reader",
         "TRANSIT_DB_ROLE": "sql_dev",
         "TRANSIT_DB_PUBLIC_MODE": "allow",
@@ -71,6 +82,11 @@ def test_hba_renderer_accepts_explicit_database_app_role_and_reader_role() -> No
 
     assert "host all app_owner 172.16.0.0/12 scram-sha-256" in lines
     assert "hostssl analytics app_owner 0.0.0.0/0 scram-sha-256" in lines
+    assert "host all pipeline_app 172.16.0.0/12 scram-sha-256" in lines
+    assert "host all pipeline_app 10.0.0.0/8 scram-sha-256" in lines
+    assert "host all pipeline_app 192.168.0.0/16 scram-sha-256" in lines
+    assert "hostssl analytics pipeline_app 0.0.0.0/0 scram-sha-256" in lines
+    assert "hostssl analytics pipeline_app ::/0 scram-sha-256" in lines
     assert "hostssl analytics bi_reader 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl analytics sql_dev 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl all all 0.0.0.0/0 reject" in lines
@@ -94,6 +110,9 @@ def test_hba_renderer_rejects_invalid_policy_identifiers() -> None:
     for variable_name, value in (
         ("POSTGRES_DB", "all"),
         ("POSTGRES_USER", "app owner"),
+        ("TRANSIT_APP_ROLE", "all"),
+        ("TRANSIT_APP_ROLE", "app login"),
+        ("TRANSIT_APP_ROLE", "reader\nhost all all 0.0.0.0/0 trust"),
         ("TRANSIT_REPORTING_ROLE", "all"),
         ("TRANSIT_DB_ROLE", "reader\nhost all all 0.0.0.0/0 trust"),
     ):
