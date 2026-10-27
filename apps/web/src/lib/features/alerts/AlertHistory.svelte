@@ -33,13 +33,11 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { StateNotice } from '$lib/components/edge';
-	import { CollapsibleSection, TocNav } from '$lib/components/shared';
+	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { quietMode } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
@@ -480,7 +478,6 @@
 		},
 	]);
 	const navigation = createArticleNavigation(() => sectionDefs, {
-		openSignal: () => quietMode.openSignal,
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
@@ -598,6 +595,7 @@
 					activeId={navigation.activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
+					quiet={false}
 					bind:open={
 						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
 					}
@@ -645,9 +643,7 @@
 								sectionKey={section.sectionKey}
 								index={section.number - 1}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal(section.id)}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#if section.id === 'alerts-window'}
 									<div class="alert-history-headline" data-slot="alert-headline">

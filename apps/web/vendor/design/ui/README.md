@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.14.1/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -246,9 +246,9 @@ semantics do not enter `@yesid/ui`.
 
 ### TocBadge
 
-The package owns the narrow badge-spec union and keeps the icon renderer private. Its number stays
-at `0.75rem` across current products even where a consumer's general `text-micro` token differs.
-Broader product table-of-contents helpers remain local.
+The package owns the narrow badge-spec union and renders icons with the public `SectionIcon`. Its
+number stays at `0.75rem` across current products even where a consumer's general `text-micro`
+token differs.
 
 ### TerminalCursor
 
@@ -272,9 +272,32 @@ supplies one fixed `label`; `aria-checked` carries the state.
 
 ### CollapsibleSection
 
-The composed section remains consumer-owned until its merged contract ships. Current products
-differ in header composition, control signals, persistence, content ownership, and
-animation/inert policy. Lower-level Collapsible primitives remain package-owned.
+A card with a toggle header, an optional index badge, `icon` and `headerActions` snippets, and an
+`anchor` that emits `data-toc` for the TOC family. It follows the shared `quietMode` store by
+default; pass `quiet={false}` when another owner already applies it. `sectionKey` stores the
+reader's open/closed choice for the tab under `persisted:<sectionKey>`. Quiet mode changes what a
+keyed section shows without overwriting that choice. `openSignal` is a product counter: each
+change opens the section like a reader click and is stored, so never feed it
+`quietMode.openSignal`.
+
+### TocNav, TocPill, and toc helpers
+
+Both take a `TocEntry[]` and an `activeId`; the page owns the active id. `TocNav` is the desktop
+list inside a `CollapsibleSection` and skips entries marked `rail`. `TocPill` is the mobile pill
+and drawer, hidden at the desktop breakpoint; the caller supplies `openAria` and `closeAria`, and
+`onNavigate` defaults to `navigateToc`. `observeActiveToc` reports the active id from
+`[data-section-index]` and `[data-toc]` targets, and `onTocNavigate` belongs in `afterNavigate`.
+`landTocFragments()` is opt-in for apps whose layout does not already land same-page fragment
+links; start it next to `observeActiveToc` and run its cleanup on unmount.
+
+### CornerMarks, StatusDot, MetricDisplay, SectionHeading, and SectionIcon
+
+Stateless atoms. `CornerMarks` draws four corner ticks and needs a positioned parent. `StatusDot`
+takes a signal aspect (`orange` to `lunar`) or a data status (`early` to `unknown`), with
+optional `pulse` and `ring`. `MetricDisplay` renders `value` and `label`; the `absent` snippet
+replaces an empty value and `info` follows the label, so absence text and tooltips stay with the
+caller. `SectionHeading` takes `heading` or `overline`, plus `number`, `headingAccent`, and an
+`explainer` snippet. `SectionIcon` is the closed `SectionIconName` set that `TocBadge` also uses.
 
 ## Site root and shared state
 
@@ -301,6 +324,12 @@ first paint, and its own navigation, scroll-restoration, and analytics handling.
   `openSignal`. `init` closes them when a default is remembered and never issues an open.
 - `desktop`: a Svelte `MediaQuery` at the `breakpoint.desktop-min` token (1024px). It is false
   during SSR.
+
+`persisted(key, initial)` is not initialized by `SiteRoot`. It returns tab-scoped state in
+`sessionStorage` under `persisted:<key>`: it survives reloads and navigation within the tab and
+resets in a new tab. `bind:value={state.value}` works directly. Values must be `LocaleFree`
+(strings, numbers, booleans, null, and arrays of those), so store ids and flags, never translated
+text. During SSR it returns the seed.
 
 ## Base stylesheet
 
@@ -350,5 +379,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.14.1/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.15.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

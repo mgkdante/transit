@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import SectionHeading from './SectionHeading.svelte';
+	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
 	import { Separator } from '@yesid/ui/separator';
 
 	export interface MastheadProps {

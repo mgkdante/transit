@@ -4,7 +4,7 @@
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { freshnessAgeSeconds } from '$lib/v1/freshness';
 	import { sharedClock } from '$lib/stores';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 
 	type Variant = 'live' | 'updated';
 

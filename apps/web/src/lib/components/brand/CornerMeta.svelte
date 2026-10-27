@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import CornerMarks from './CornerMarks.svelte';
+	import { CornerMarks } from '@yesid/ui/brand';
 	import { cn } from '$lib/utils';
 
 	export interface CornerMetaProps {

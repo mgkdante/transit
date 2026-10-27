@@ -38,9 +38,10 @@
 		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { CollapsibleSection, TocNav, TypedInformationCard } from '$lib/components/shared';
+	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
+	import { TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { desktop, quietMode } from '@yesid/ui/state';
+	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
@@ -282,7 +283,6 @@
 			receipt.data == null,
 	);
 	const navigation = createArticleNavigation(() => sectionDefs, {
-		openSignal: () => quietMode.openSignal,
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 		reconcileEmpty: () => settledEmpty,
 	});
@@ -356,6 +356,7 @@
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 		<CollapsibleSection
 			title={t.rail.controls}
+			quiet={false}
 			bind:open={
 				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
 			}
@@ -400,6 +401,7 @@
 					activeId={navigation.activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
+					quiet={false}
 					bind:open={
 						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
 					}
@@ -452,9 +454,7 @@
 								sectionKey={section.sectionKey}
 								index={section.number - 1}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal(section.id)}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#if section.id === 'receipt-main'}
 									<div class="receipt-main-body">

@@ -274,7 +274,7 @@ describe('RouteReliabilityClusters', () => {
 
 		const readout = container.querySelector('.toc-counter-text');
 		expect(readout).not.toBeNull();
-		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 01 / 05');
+		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 1 / 5');
 	});
 
 	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
@@ -533,7 +533,7 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 	});
 
 	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
-		const storageKey = 'transit.persisted:reliability-toc';
+		const storageKey = 'persisted:reliability-toc';
 		sessionStorage.removeItem(storageKey);
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },

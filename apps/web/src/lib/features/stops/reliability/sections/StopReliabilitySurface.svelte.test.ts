@@ -246,7 +246,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 	});
 
 	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
-		const storageKey = 'transit.persisted:stop-reliability-toc';
+		const storageKey = 'persisted:stop-reliability-toc';
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		const desktopToc = container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="section-toc"]',
@@ -440,6 +440,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
 			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: 'Jump to a section' }));
 			await fireEvent.click(within(rail).getByRole('button', { name: 'Daily trend' }));
 
 			await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));

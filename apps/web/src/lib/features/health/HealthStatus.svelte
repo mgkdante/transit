@@ -20,20 +20,19 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { ResourceBoundary } from '$lib/components/surface';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import {
+		SectionLabel,
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
 		tocElement,
 		settleLayout,
 		type TocEntry,
-	} from '$lib/components/shared';
+	} from '@yesid/ui/brand';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { persisted, sharedClock } from '$lib/stores';
-	import { quietMode } from '@yesid/ui/state';
+	import { sharedClock } from '$lib/stores';
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -255,15 +254,6 @@
 		const ok = freshness.filter((f) => verdictFor(f.status).aspect === 'on_time').length;
 		return { total, ok };
 	});
-	const railOpen = {
-		lanes: persisted('status-rail-lanes', true),
-		feeds: persisted('status-rail-feeds', true),
-	};
-
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-
 	let activeId = $state('');
 	let cardOpenSignals = $state<Record<string, number>>({});
 	const cardOpenSignal = (id: string): number => cardOpenSignals[id] ?? 0;
@@ -394,9 +384,6 @@
 						heading={t.toc.label}
 						counterPrefix={t.toc.counterPrefix}
 						sectionKey="status-toc"
-						closeSignal={quietMode.closeSignal}
-						openSignal={quietMode.openSignal}
-						bulkCollapsed={quietMode.enabled}
 					/>
 				{/if}
 			</div>
@@ -417,9 +404,6 @@
 				headerVariant="article-summary"
 				sectionKey="status-overview"
 				open={true}
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
 			>
 				<div class="health-overview">
 					<p class="health-lede">{t.lede}</p>
@@ -480,9 +464,7 @@
 						anchor={section.id}
 						sectionKey={`status-card-${section.id}`}
 						open={true}
-						closeSignal={quietMode.closeSignal}
-						openSignal={quietMode.openSignal + cardOpenSignal(section.id)}
-						bulkCollapsed={quietMode.enabled}
+						openSignal={cardOpenSignal(section.id)}
 					>
 						{#if section.id === 'health-lanes'}
 							<SectionLanes rows={laneRows} copy={t} {locale} />
@@ -503,14 +485,7 @@
 								{locale}
 							/>
 						{:else if section.id === 'health-conformance' && conformance}
-							<SectionConformance
-								{conformance}
-								copy={t}
-								{locale}
-								closeSignal={quietMode.closeSignal}
-								openSignal={quietMode.openSignal}
-								bulkCollapsed={quietMode.enabled}
-							/>
+							<SectionConformance {conformance} copy={t} {locale} />
 						{:else if section.id === 'health-envelope'}
 							<SectionEnvelope {envelope} copy={t} {locale} />
 						{:else if section.id === 'health-history-coverage'}
@@ -529,10 +504,7 @@
 			<CollapsibleSection
 				title={t.statRail.lanes.title}
 				headerVariant="article-summary"
-				bind:open={() => railOpen.lanes.value, (next) => setRailOpen('lanes', next)}
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
+				sectionKey="status-rail-lanes"
 			>
 				{#snippet icon()}
 					<SectionIcon name="grid" class="h-4 w-4 shrink-0 text-primary" />
@@ -555,10 +527,7 @@
 			<CollapsibleSection
 				title={t.statRail.feeds.title}
 				headerVariant="article-summary"
-				bind:open={() => railOpen.feeds.value, (next) => setRailOpen('feeds', next)}
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
+				sectionKey="status-rail-feeds"
 			>
 				{#snippet icon()}
 					<SectionIcon name="list" class="h-4 w-4 shrink-0 text-primary" />

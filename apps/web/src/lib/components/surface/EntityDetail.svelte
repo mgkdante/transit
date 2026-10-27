@@ -2,19 +2,19 @@
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import { DetailShell, Surface } from '$lib/components/layout';
-	import { Separator } from '@yesid/ui/separator';
-	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
-	import { getLocale } from '$lib/i18n';
-	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
 	import {
+		SectionLabel,
 		TocNav,
 		openCollapsedTocTarget,
 		reconcileActiveToc,
 		revealTocTarget,
 		type TocEntry,
-	} from '$lib/components/shared';
+	} from '@yesid/ui/brand';
+	import { DetailShell, Surface } from '$lib/components/layout';
+	import { Separator } from '@yesid/ui/separator';
+	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
+	import { getLocale } from '$lib/i18n';
+	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
 	import { cn } from '$lib/utils';
 	import Breadcrumb from './Breadcrumb.svelte';
 
@@ -295,6 +295,7 @@
 				heading={articleToc.heading}
 				sectionKey={articleToc.sectionKey}
 				counterPrefix={articleToc.counterPrefix}
+				quiet={false}
 			/>
 		{/key}
 	{/if}

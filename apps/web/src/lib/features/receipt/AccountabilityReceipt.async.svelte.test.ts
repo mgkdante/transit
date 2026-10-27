@@ -149,7 +149,7 @@ beforeEach(() => {
 	quietMode.resetForTest();
 	localStorage.removeItem('quiet-mode');
 	for (const key of ['receipt-controls', 'receipt-toc']) {
-		sessionStorage.removeItem(`transit.persisted:${key}`);
+		sessionStorage.removeItem(`persisted:${key}`);
 	}
 	nav.url = new URL('http://localhost/receipt');
 	nav.replaceState.mockClear();

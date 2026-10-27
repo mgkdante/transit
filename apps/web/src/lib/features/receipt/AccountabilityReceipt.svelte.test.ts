@@ -90,10 +90,10 @@ function resetReceiptState(): void {
 		'receipt-card-delivered',
 		'receipt-card-silent',
 	]) {
-		sessionStorage.removeItem(`transit.persisted:${key}`);
+		sessionStorage.removeItem(`persisted:${key}`);
 	}
-	sessionStorage.removeItem('transit.persisted:receipt-controls');
-	sessionStorage.removeItem('transit.persisted:receipt-toc');
+	sessionStorage.removeItem('persisted:receipt-controls');
+	sessionStorage.removeItem('persisted:receipt-toc');
 	localStorage.removeItem('quiet-mode');
 	quietMode.resetForTest();
 }
@@ -343,8 +343,8 @@ describe('AccountabilityReceipt article shell', () => {
 			'aria-expanded',
 			'true',
 		);
-		expect(sessionStorage.getItem('transit.persisted:receipt-controls')).toBe('false');
-		expect(sessionStorage.getItem('transit.persisted:receipt-toc')).toBe('true');
+		expect(sessionStorage.getItem('persisted:receipt-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:receipt-toc')).toBe('true');
 	});
 
 	it('Always start collapsed initializes both rail disclosures and every current card closed', async () => {

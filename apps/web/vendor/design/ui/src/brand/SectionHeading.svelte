@@ -1,21 +1,32 @@
-<script lang="ts">
-	import { cn } from '$lib/utils';
+<!--
+  Section title with the brand dot, or a mono overline when only `overline` is set.
+  The dot stays on the last word's line and is hidden from assistive tech.
+-->
+<script lang="ts" module>
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import NumberedChip from './NumberedChip.svelte';
 
 	export interface SectionHeadingProps extends HTMLAttributes<HTMLDivElement> {
 		heading?: string;
 		subheading?: string;
+		/** Renders the mono overline style; ignored when `heading` is set. */
 		overline?: string;
 		level?: 1 | 2 | 3 | 4 | 5 | 6;
 		dot?: boolean;
+		/** Leading zero-padded section number. */
 		number?: number;
 		numberTone?: 'rest' | 'active';
+		/** Inline content after the title, such as an info trigger. */
 		explainer?: Snippet;
+		/** Second, accent-colored line after the heading. */
 		headingAccent?: string;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
+	import NumberedChip from './numbered-chip.internal.svelte';
 
 	let {
 		heading,
@@ -36,12 +47,16 @@
 	const titleText = $derived(isOverline ? (overline ?? '') : (heading ?? ''));
 
 	function splitTail(text: string): { head: string; tail: string } {
-		const m = /^([\s\S]*\s)(\S+)$/.exec(text);
-		return m ? { head: m[1], tail: m[2] } : { head: '', tail: text };
+		const match = /^([\s\S]*\s)(\S+)$/.exec(text);
+		return match ? { head: match[1], tail: match[2] } : { head: '', tail: text };
 	}
 	const titleParts = $derived(splitTail(titleText));
 	const accentParts = $derived(splitTail(headingAccent ?? ''));
 </script>
+
+{#snippet brandDot()}<span data-slot="section-heading-dot" class="section-heading-dot" aria-hidden="true"
+		>.</span
+	>{/snippet}
 
 <div
 	data-slot="section-heading"
@@ -49,31 +64,17 @@
 	class={cn('section-heading', className)}
 	{...restProps}
 >
-	<svelte:element
-		this={tag}
-		class={isOverline ? 'section-heading-overline' : 'section-heading-text'}
-	>
-		{#if number != null}<NumberedChip
-				value={number}
-				tone={numberTone}
-				class="section-heading-chip"
-			/>{/if}<span class="section-heading-title"
+	<svelte:element this={tag} class={isOverline ? 'section-heading-overline' : 'section-heading-text'}>
+		{#if number != null}<NumberedChip value={number} tone={numberTone} class="section-heading-chip" />{/if}<span
+			class="section-heading-title"
 			>{#if headingAccent && !isOverline}{titleText}<span
 					data-slot="section-heading-accent"
 					class="section-heading-accent"
 					>{accentParts.head}<span class="section-heading-tail"
-						>{accentParts.tail}{#if dot}<span
-								data-slot="section-heading-dot"
-								class="section-heading-dot"
-								aria-hidden="true">.</span
-							>{/if}</span
+						>{accentParts.tail}{#if dot}{@render brandDot()}{/if}</span
 					></span
 				>{:else if dot && !isOverline}{titleParts.head}<span class="section-heading-tail"
-					>{titleParts.tail}<span
-						data-slot="section-heading-dot"
-						class="section-heading-dot"
-						aria-hidden="true">.</span
-					></span
+					>{titleParts.tail}{@render brandDot()}</span
 				>{:else}{titleText}{/if}</span
 		>{#if explainer}<span class="section-heading-explainer">{@render explainer()}</span>{/if}
 	</svelte:element>
@@ -107,7 +108,7 @@
 	}
 	.section-heading-sub {
 		font-family: var(--font-mono);
-		font-size: var(--text-mono);
+		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 		letter-spacing: 2px;
 		text-transform: uppercase;

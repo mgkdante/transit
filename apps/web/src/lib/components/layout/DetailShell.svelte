@@ -2,8 +2,7 @@
 	import { tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { Separator } from '@yesid/ui/separator';
-	import TocPill from '$lib/components/shared/TocPill.svelte';
-	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
+	import { TocPill, observeActiveToc, type TocEntry } from '@yesid/ui/brand';
 	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import ArticleSummaryLane from './ArticleSummaryLane.svelte';
 	import { scrollChain } from '@yesid/motion/actions';

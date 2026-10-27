@@ -4,7 +4,7 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { ToggleGroup, ToggleGroupItem } from '@yesid/ui/toggle-group';
 	import SegmentedChoice from '$lib/components/surface/SegmentedChoice.svelte';
-	import { persisted } from '$lib/stores/persisted.svelte';
+	import { persisted } from '@yesid/ui/state';
 
 	const locale: Locale = getLocale();
 

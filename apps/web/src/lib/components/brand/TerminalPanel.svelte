@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import StatusDot from './StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 	import { Separator } from '@yesid/ui/separator';
 	import { cn } from '$lib/utils';
 	import { scrollChain } from '@yesid/motion/actions';

@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it } from 'vitest';
+import { quietMode } from '@yesid/ui/state';
 import ArticleControlDisclosure from './ArticleControlDisclosure.svelte';
 
 const componentPath = resolve(
@@ -42,8 +43,6 @@ describe('ArticleControlDisclosure', () => {
 		expect(existsSync(componentPath)).toBe(true);
 		const source = readFileSync(componentPath, 'utf-8');
 
-		expect(source).toContain("import { CollapsibleSection } from '$lib/components/shared';");
-		expect(source).toMatch(/<CollapsibleSection\s+\{title\}\s+bind:open>/);
 		expect(source.match(/data-slot=["']controls-body["']/g)).toHaveLength(1);
 		expect(source).not.toContain('<style>');
 		expect(source).not.toContain('ChevronToggle');
@@ -66,5 +65,14 @@ describe('ArticleControlDisclosure', () => {
 		expect(content).toHaveAttribute('data-state', 'open');
 		expect(content).not.toHaveAttribute('inert');
 		expect(content).not.toHaveAttribute('aria-hidden');
+	});
+
+	it('leaves quiet mode to the rail controller that owns its open state', async () => {
+		await renderDisclosure(true);
+		quietMode.set(true);
+		await tick();
+
+		expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-expanded', 'true');
+		quietMode.resetForTest();
 	});
 });

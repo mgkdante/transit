@@ -9,13 +9,13 @@ const tocObserver = vi.hoisted(() => ({
 	cleanups: [] as ReturnType<typeof vi.fn>[],
 }));
 
-vi.mock('$lib/components/shared/toc', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/components/shared/toc')>();
+vi.mock('@yesid/ui/brand', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@yesid/ui/brand')>();
 	return { ...actual, observeActiveToc: tocObserver.observe };
 });
 
 import DetailShell from './DetailShell.svelte';
-import type { TocEntry } from '$lib/components/shared/toc';
+import type { TocEntry } from '@yesid/ui/brand';
 
 const mk = (id: string) =>
 	createRawSnippet(() => ({ render: () => `<div data-testid="${id}">${id}</div>` }));

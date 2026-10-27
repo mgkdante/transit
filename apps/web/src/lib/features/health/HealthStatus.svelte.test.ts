@@ -264,8 +264,8 @@ const healthSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			keys: ['transit.persisted:health-conformance-members'],
-			prefixes: ['transit.persisted:status-'],
+			keys: ['persisted:health-conformance-members'],
+			prefixes: ['persisted:status-'],
 		},
 	],
 	resetters: [resetHealthSurfaceState],
@@ -803,7 +803,7 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 		expect(screen.queryByRole('list', { name: en.lanes.listLabel })).toBeNull();
 		expect(screen.queryByText(en.lanes.section)).toBeNull();
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
-		expect(within(left).getByText(/SEC\s*02\s*\/\s*09/)).toBeInTheDocument();
+		expect(within(left).getByText(/SEC\s*2\s*\/\s*9/)).toBeInTheDocument();
 	});
 });
 

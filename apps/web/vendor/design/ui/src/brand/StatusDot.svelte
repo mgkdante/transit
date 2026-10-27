@@ -1,18 +1,33 @@
-<script lang="ts">
-	import { cn } from '$lib/utils';
+<!-- Status lamp. Decorative unless `label` gives it an accessible name. -->
+<script lang="ts" module>
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	type StatusAspect = 'early' | 'on_time' | 'late' | 'severe' | 'unknown';
-	type SignalAspect = 'orange' | 'green' | 'caution' | 'stop' | 'lunar';
+	export type StatusDotColor =
+		| 'orange'
+		| 'green'
+		| 'caution'
+		| 'stop'
+		| 'lunar'
+		| 'early'
+		| 'on_time'
+		| 'late'
+		| 'severe'
+		| 'unknown';
 
 	export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
-		color?: SignalAspect | StatusAspect;
+		/** Signal aspects (orange to lunar) or data statuses (early to unknown). */
+		color?: StatusDotColor;
 		pulse?: boolean;
 		size?: 'sm' | 'md';
+		/** Muted halo for dots over muted surfaces; an outline, so it composes with the pulse shadow. */
 		ring?: boolean;
 		label?: string;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
 
 	let {
 		color = 'orange',
@@ -32,11 +47,11 @@
 		caution: 'bg-[var(--signal-caution)]',
 		stop: 'bg-[var(--signal-stop)]',
 		lunar: 'bg-[var(--signal-lunar)]',
-		early: 'bg-dataviz-status-early',
-		on_time: 'bg-dataviz-status-on-time',
-		late: 'bg-dataviz-status-late',
-		severe: 'bg-dataviz-status-severe',
-		unknown: 'bg-dataviz-status-unknown',
+		early: 'bg-[var(--dataviz-status-early)]',
+		on_time: 'bg-[var(--dataviz-status-on-time)]',
+		late: 'bg-[var(--dataviz-status-late)]',
+		severe: 'bg-[var(--dataviz-status-severe)]',
+		unknown: 'bg-[var(--dataviz-status-unknown)]',
 	} as const;
 </script>
 
@@ -50,6 +65,7 @@
 		className,
 	)}
 	data-slot="status-dot"
+	aria-hidden={label ? undefined : 'true'}
 	{...restProps}
 >
 	{#if label}<span class="sr-only">{label}</span>{/if}

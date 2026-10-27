@@ -45,12 +45,10 @@ describe('flat data-surface contract', () => {
 
 	it('uses solid control state without halo or drop-shadow decoration', () => {
 		const grainPicker = read('src/lib/components/surface/GrainPicker.svelte');
-		const toc = read('src/lib/components/shared/TocNav.svelte');
 		const quietMode = read('src/lib/components/shared/QuietModeButton.svelte');
 		const freshnessStamp = read('src/lib/components/surface/FreshnessStamp.svelte');
 
 		expect(grainPicker).not.toContain('var(--shadow-glow-sm)');
-		expect(toc).not.toMatch(/\.toc-counter-dot\s*\{[^}]*box-shadow:/s);
 		expect(quietMode).toMatch(/activeEffect=["']none["']/);
 		expect(freshnessStamp).not.toMatch(/<StatusDot[^>]*\bpulse(?:=|\s|\/>)/s);
 	});

@@ -54,7 +54,7 @@ afterEach(() => {
 	viewport.happyDOM.setInnerWidth(1280);
 	quietMode.resetForTest();
 	for (const key of ['provenance', 'coverage', 'freshness']) {
-		sessionStorage.removeItem(`transit.persisted:metrics-rail-${key}`);
+		sessionStorage.removeItem(`persisted:metrics-rail-${key}`);
 	}
 	provState.data = null;
 	provState.error = null;

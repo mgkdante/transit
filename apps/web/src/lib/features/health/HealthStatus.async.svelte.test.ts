@@ -43,8 +43,8 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('$lib/components/shared/toc', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/components/shared/toc')>();
+vi.mock('@yesid/ui/brand', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@yesid/ui/brand')>();
 	return { ...actual, observeActiveToc: () => () => {} };
 });
 
@@ -117,9 +117,9 @@ const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype
 function resetStatusStorage(): void {
 	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
 		const key = sessionStorage.key(index);
-		if (key?.startsWith('transit.persisted:status-')) sessionStorage.removeItem(key);
+		if (key?.startsWith('persisted:status-')) sessionStorage.removeItem(key);
 	}
-	sessionStorage.removeItem('transit.persisted:health-conformance-members');
+	sessionStorage.removeItem('persisted:health-conformance-members');
 }
 
 async function openHealthToc(left: HTMLElement): Promise<HTMLElement> {
@@ -141,7 +141,7 @@ beforeEach(() => {
 	resetStatusStorage();
 	localStorage.setItem('quiet-mode', 'true');
 	quietMode.init();
-	sessionStorage.setItem('transit.persisted:status-card-health-lanes', 'false');
+	sessionStorage.setItem('persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
 	navigation.page.url = new URL('http://localhost/status');
 	navigation.replaceState.mockClear();
@@ -186,7 +186,7 @@ afterAll(() => {
 
 describe('HealthStatus — async reveal navigation', () => {
 	it('mounts the history card and ToC together after discovery, honoring quiet mode and Expand all', async () => {
-		sessionStorage.removeItem('transit.persisted:status-card-health-history-coverage');
+		sessionStorage.removeItem('persisted:status-card-health-history-coverage');
 		const { container } = render(HealthStatus);
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
@@ -259,7 +259,7 @@ describe('HealthStatus — async reveal navigation', () => {
 	});
 
 	it('collapses cards that mount after the remembered start signal', async () => {
-		sessionStorage.removeItem('transit.persisted:status-card-health-lanes');
+		sessionStorage.removeItem('persisted:status-card-health-lanes');
 		const { container } = render(HealthStatus);
 		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
 		provenanceGate.resolve(provenanceFixture);
@@ -272,18 +272,30 @@ describe('HealthStatus — async reveal navigation', () => {
 		expect(lanes).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('reopens a stale session CLOSE choice on an unremembered mount once data arrives', async () => {
+	it('leaves no section stuck closed after Collapse all here and Expand all on another page', async () => {
 		quietMode.resetForTest();
-		const { container } = render(HealthStatus);
-		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		sessionStorage.removeItem('persisted:status-card-health-lanes');
 		provenanceGate.resolve(provenanceFixture);
 		dataHealthGate.resolve(dataHealthFixture);
+		const lanesCard = (view: { container: HTMLElement }) =>
+			waitFor(() =>
+				within(
+					view.container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement,
+				).getByRole('button', { name: copy.en.lanes.section }),
+			);
 
-		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
-		const lanes = await waitFor(() =>
-			within(center).getByRole('button', { name: copy.en.lanes.section }),
-		);
+		const first = render(HealthStatus);
+		const lanes = await lanesCard(first);
 		expect(lanes).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+		expect(lanes).toHaveAttribute('aria-expanded', 'false');
+		first.unmount();
+
+		const second = render(HealthStatus);
+		const again = await lanesCard(second);
+		expect(again).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+		expect(again).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('opens a ToC target before scrolling and uses auto behavior for reduced motion', async () => {

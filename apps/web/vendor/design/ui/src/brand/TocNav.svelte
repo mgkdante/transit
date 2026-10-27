@@ -1,8 +1,29 @@
+<!--
+  Desktop table of contents: a collapsible card with badge-led entries and a "SEC n / total"
+  counter. The page owns the active id and the navigation.
+-->
+<script lang="ts" module>
+	import type { TocEntry } from './toc.js';
+
+	export interface TocNavProps {
+		entries: TocEntry[];
+		activeId: string;
+		onNavigate: (id: string) => void;
+		heading: string;
+		counterPrefix?: string;
+		open?: boolean;
+		collapsible?: boolean;
+		sectionKey?: string;
+		/** Follow quiet mode. Pass false when another owner already applies it. */
+		quiet?: boolean;
+	}
+</script>
+
 <script lang="ts">
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import SectionIcon from './SectionIcon.svelte';
-	import { TocBadge } from '@yesid/ui/brand';
-	import { resolveTocCounter, type TocEntry } from './toc';
+	import TocBadge from './TocBadge.svelte';
+	import { resolveTocCounter } from './toc.js';
 
 	let {
 		entries,
@@ -12,37 +33,16 @@
 		counterPrefix = 'SEC',
 		collapsible = true,
 		open = $bindable(true),
-		sectionKey = undefined,
-		closeSignal = null,
-		openSignal = null,
-		bulkCollapsed = null,
-	}: {
-		entries: TocEntry[];
-		activeId: string;
-		onNavigate: (id: string) => void;
-		heading: string;
-		counterPrefix?: string;
-		open?: boolean;
-		collapsible?: boolean;
-		sectionKey?: string;
-		closeSignal?: number | null;
-		openSignal?: number | null;
-		bulkCollapsed?: boolean | null;
-	} = $props();
+		sectionKey,
+		quiet = true,
+	}: TocNavProps = $props();
 
+	// Rail entries already show in the desktop side rail; the mobile pill keeps them.
 	const shown = $derived(entries.filter((e) => !e.rail));
 	const counter = $derived(resolveTocCounter(shown, activeId));
 </script>
 
-<CollapsibleSection
-	title={heading}
-	{collapsible}
-	{sectionKey}
-	{closeSignal}
-	{openSignal}
-	{bulkCollapsed}
-	bind:open
->
+<CollapsibleSection title={heading} {collapsible} {sectionKey} {quiet} bind:open>
 	{#snippet icon()}
 		<SectionIcon name="toc" class="h-4 w-4 shrink-0 text-primary" />
 	{/snippet}
@@ -77,7 +77,7 @@
 		<div class="toc-counter-dot"></div>
 		<span class="toc-counter-text font-mono text-micro tracking-[1.5px]">
 			{counterPrefix}
-			{String(counter.current).padStart(2, '0')} / {String(counter.total).padStart(2, '0')}
+			{counter.current} / {counter.total}
 		</span>
 	</div>
 </CollapsibleSection>
@@ -85,16 +85,18 @@
 <style>
 	.toc-nav {
 		font-family: var(--font-heading);
-		font-size: var(--text-body);
+		font-size: var(--text-menu-subtitle);
+		border-left: 2px solid color-mix(in srgb, var(--primary) 12%, transparent);
+		padding-left: 14px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.125rem;
+		gap: 2px;
 	}
 
 	.toc-item {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.55rem;
 		width: 100%;
 		text-align: left;
 		background: none;
@@ -121,6 +123,7 @@
 		border-radius: 2px;
 	}
 
+	/* Fixed-width slot keeps labels aligned with a number, an icon or no badge. */
 	.toc-badge {
 		display: inline-flex;
 		align-items: center;
@@ -134,18 +137,10 @@
 		flex: 1;
 	}
 
+	/* Sub-items keep the item colors: a fainter tint fails 4.5:1 at caption size. */
 	.toc-sub-item {
 		font-size: var(--text-caption);
 		min-height: 36px;
-		color: color-mix(in srgb, var(--foreground) 20%, transparent);
-	}
-
-	.toc-sub-item:hover {
-		color: color-mix(in srgb, var(--foreground) 50%, transparent);
-	}
-
-	.toc-sub-item.active {
-		color: var(--primary);
 	}
 
 	.toc-counter-dot {
@@ -153,8 +148,10 @@
 		height: 6px;
 		border-radius: 50%;
 		background: var(--primary);
+		box-shadow: 0 0 8px color-mix(in srgb, var(--glow) 40%, transparent);
 	}
 
+	/* Muted foreground, not a primary tint: small mono text needs 4.5:1. */
 	.toc-counter-text {
 		color: var(--muted-foreground);
 	}

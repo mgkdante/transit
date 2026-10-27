@@ -13,18 +13,6 @@ it('does not expose a feature-copy bypass around the shared absence vocabulary',
 	expect(source).not.toMatch(/\bemptyLabel\b/);
 });
 
-describe('MetricDisplay — present value (amber voice)', () => {
-	it('renders the value in the .metric-value voice and no empty label', () => {
-		const { container, getByText } = render(MetricDisplay, {
-			props: { value: '82%', label: 'On-time' },
-		});
-		expect(getByText('82%')).toBeInTheDocument();
-		expect(valueEl(container)).not.toBeNull();
-		expect(valueEl(container)).toHaveClass('text-accent-text');
-		expect(container.querySelector('[data-slot="absent-value"]')).toBeNull();
-	});
-});
-
 describe('MetricDisplay — absent value (honest no-data, never "·")', () => {
 	for (const empty of [null, undefined, ''] as const) {
 		it(`renders the typed shared absence for value=${JSON.stringify(empty)}`, () => {

@@ -33,7 +33,7 @@
 		revealTocTarget,
 		TocNav,
 		type TocEntry,
-	} from '$lib/components/shared';
+	} from '@yesid/ui/brand';
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '$lib/components/edge';
 	import { toReliabilityClusters } from './clusters';
@@ -361,6 +361,7 @@
 				<TocNav
 					entries={tocEntries}
 					{activeId}
+					quiet={false}
 					bind:open={
 						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
 					}

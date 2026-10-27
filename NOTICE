@@ -5,13 +5,17 @@ This file is a factual attribution index, not an additional license or policy.
 
 ## Vendored yesid.dev-design snapshot
 
-The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.14.1`:
+The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.15.0`:
 
-- annotated tag object `1121e3f9b348ccbc87ee74add76052528f7f7a13`;
-- peeled commit `46dcfbff5a3e65bf1fb0b1c3a86e3a86d5bcb1a1`.
+- annotated tag object `e3e3dd76e30547be8e31a2fe925ffa0daad2d010`;
+- peeled commit `60cb1aceccfa65b8d0720327bbaf46a67f9ca699`.
 
 The snapshot retains its license at
 [`apps/web/vendor/design/LICENSE`](apps/web/vendor/design/LICENSE).
+
+`apps/web/vendor/design/motion/lenis.css` is copied from Lenis 1.3, Copyright
+(c) 2024 darkroom.engineering, and is used under the MIT License. Its text
+matches that LICENSE apart from the copyright line.
 
 ## GSAP
 

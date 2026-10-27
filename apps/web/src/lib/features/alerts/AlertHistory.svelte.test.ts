@@ -291,7 +291,7 @@ const alertSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			prefixes: ['transit.persisted:alerts-'],
+			prefixes: ['persisted:alerts-'],
 		},
 	],
 	resetters: [resetAlertSurfaceState],
@@ -1359,8 +1359,8 @@ describe('AlertHistory combined rail and disclosure behavior', () => {
 		await fireEvent.click(firstFilters);
 		expect(firstFilters).toHaveAttribute('aria-expanded', 'false');
 		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('transit.persisted:alerts-filters')).toBe('false');
-		expect(sessionStorage.getItem('transit.persisted:alerts-toc')).toBeNull();
+		expect(sessionStorage.getItem('persisted:alerts-filters')).toBe('false');
+		expect(sessionStorage.getItem('persisted:alerts-toc')).toBeNull();
 		first.unmount();
 
 		const second = render(AlertHistoryScreen);

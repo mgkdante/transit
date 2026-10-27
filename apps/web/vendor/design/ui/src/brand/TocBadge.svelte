@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { SectionIconName } from './section-icon.internal.svelte';
+	import type { SectionIconName } from './SectionIcon.svelte';
 
 	export type TocBadgeSpec =
 		| { kind: 'number'; value: number }
@@ -8,7 +8,7 @@
 
 <script lang="ts">
 	import { Badge } from '../primitives/badge/index.js';
-	import SectionIcon from './section-icon.internal.svelte';
+	import SectionIcon from './SectionIcon.svelte';
 
 	let {
 		badge,

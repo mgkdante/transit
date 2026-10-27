@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';

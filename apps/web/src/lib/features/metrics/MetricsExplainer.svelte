@@ -7,21 +7,20 @@
 	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
 	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { StateNotice } from '$lib/components/edge';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { desktop, quietMode } from '@yesid/ui/state';
-	import { persisted } from '$lib/stores';
-	import { formatUtc } from '$lib/utils/time';
 	import {
+		SectionLabel,
+		SectionHeading,
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
-		TypedInformationCard,
 		tocElement,
 		settleLayout,
 		type TocEntry,
-	} from '$lib/components/shared';
+	} from '@yesid/ui/brand';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { desktop } from '@yesid/ui/state';
+	import { formatUtc } from '$lib/utils/time';
+	import { TypedInformationCard } from '$lib/components/shared';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import {
 		METRICS,
@@ -135,23 +134,10 @@
 		},
 	]);
 
-	const cardCloseSignal = $derived(quietMode.closeSignal);
-
 	const cardKey = (anchor: string): string => `metrics-card-${anchor}`;
 
 	let cardOpenSignals = $state<Record<string, number>>({});
-	const cardOpenSignal = (anchor: string): number =>
-		(cardOpenSignals[anchor] ?? 0) + quietMode.openSignal;
-
-	const railOpen = {
-		provenance: persisted('metrics-rail-provenance', true),
-		coverage: persisted('metrics-rail-coverage', true),
-		freshness: persisted('metrics-rail-freshness', true),
-	};
-
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
+	const cardOpenSignal = (anchor: string): number => cardOpenSignals[anchor] ?? 0;
 
 	function openCard(anchor: string): void {
 		cardOpenSignals = { ...cardOpenSignals, [anchor]: (cardOpenSignals[anchor] ?? 0) + 1 };
@@ -222,10 +208,7 @@
 			<CollapsibleSection
 				title={t.statRail.provenance.title}
 				headerVariant="article-summary"
-				bind:open={() => railOpen.provenance.value, (next) => setRailOpen('provenance', next)}
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
+				sectionKey="metrics-rail-provenance"
 			>
 				{#snippet icon()}
 					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
@@ -248,10 +231,7 @@
 		<CollapsibleSection
 			title={t.statRail.coverage.title}
 			headerVariant="article-summary"
-			bind:open={() => railOpen.coverage.value, (next) => setRailOpen('coverage', next)}
-			closeSignal={quietMode.closeSignal}
-			openSignal={quietMode.openSignal}
-			bulkCollapsed={quietMode.enabled}
+			sectionKey="metrics-rail-coverage"
 		>
 			{#snippet icon()}
 				<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -277,10 +257,7 @@
 			<CollapsibleSection
 				title={t.statRail.freshness.title}
 				headerVariant="article-summary"
-				bind:open={() => railOpen.freshness.value, (next) => setRailOpen('freshness', next)}
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
+				sectionKey="metrics-rail-freshness"
 			>
 				{#snippet icon()}
 					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
@@ -333,9 +310,6 @@
 				heading={t.tocLabel}
 				counterPrefix={t.tocCounterPrefix}
 				sectionKey="metrics-toc"
-				closeSignal={quietMode.closeSignal}
-				openSignal={quietMode.openSignal}
-				bulkCollapsed={quietMode.enabled}
 			/>
 
 			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
@@ -353,9 +327,7 @@
 					anchor={PROVENANCE_ANCHOR}
 					sectionKey={cardKey(PROVENANCE_ANCHOR)}
 					open={true}
-					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(PROVENANCE_ANCHOR)}
-					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
@@ -455,9 +427,7 @@
 									index={metricIndex}
 									sectionKey={cardKey(entry.anchor)}
 									open={true}
-									closeSignal={cardCloseSignal}
 									openSignal={cardOpenSignal(entry.anchor)}
-									bulkCollapsed={quietMode.enabled}
 								>
 									<div class="metric__body">
 										<p class="metric__meta">
@@ -494,9 +464,7 @@
 					anchor={LIVE_POSITIONS_ANCHOR}
 					sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
 					open={true}
-					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
-					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -523,9 +491,7 @@
 					anchor={LACUNES_ANCHOR}
 					sectionKey={cardKey(LACUNES_ANCHOR)}
 					open={true}
-					closeSignal={cardCloseSignal}
 					openSignal={cardOpenSignal(LACUNES_ANCHOR)}
-					bulkCollapsed={quietMode.enabled}
 				>
 					{#snippet icon()}
 						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />

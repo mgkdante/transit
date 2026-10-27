@@ -1,4 +1,4 @@
-import { reconcileActiveToc, revealTocTarget, type TocEntry } from '$lib/components/shared/toc';
+import { reconcileActiveToc, revealTocTarget, type TocEntry } from '@yesid/ui/brand';
 
 interface ArticleSection {
 	id: string;
@@ -8,7 +8,6 @@ interface ArticleSection {
 }
 
 interface ArticleNavigationOptions {
-	openSignal: () => number;
 	behavior: () => ScrollBehavior;
 	reconcileEmpty?: () => boolean;
 }
@@ -55,7 +54,7 @@ export function createArticleNavigation(
 			activeId = id;
 		},
 		cardOpenSignal(id: string): number {
-			return options.openSignal() + (cardOpenSignals[id] ?? 0);
+			return cardOpenSignals[id] ?? 0;
 		},
 		async navigate(id: string): Promise<void> {
 			const generation = ++navigationGeneration;

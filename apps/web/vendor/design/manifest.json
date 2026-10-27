@@ -4,14 +4,14 @@
 	"provenance": {
 		"mode": "release",
 		"tag": {
-			"name": "v0.14.1",
-			"object": "1121e3f9b348ccbc87ee74add76052528f7f7a13",
-			"peeledCommit": "46dcfbff5a3e65bf1fb0b1c3a86e3a86d5bcb1a1"
+			"name": "v0.15.0",
+			"object": "e3e3dd76e30547be8e31a2fe925ffa0daad2d010",
+			"peeledCommit": "60cb1aceccfa65b8d0720327bbaf46a67f9ca699"
 		},
 		"asset": {
-			"name": "yesid.dev-design-v0.14.1.tar",
-			"size": 952320,
-			"digest": "sha256:02af450956ad93a293a066668d995e740b3528b666ad3a73d28471114c85fe21"
+			"name": "yesid.dev-design-v0.15.0.tar",
+			"size": 1064960,
+			"digest": "sha256:e22c153631057245f35aed6a6f38ae3feaa4f426c24807403a2b6bff15dae13e"
 		}
 	},
 	"packages": [
@@ -25,5 +25,5 @@
 	],
 	"exclusionPolicyDigest": "sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300",
 	"toolDigest": "sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6",
-	"treeHash": "sha256:d1795ef03214007d8f3f645829cb15118351fc6c095eac66dd1c93b44e3bfee8"
+	"treeHash": "sha256:3941a40c1fcf66e56675d92c9c9e63925b6e513c206aab5ee7c3ef83df300611"
 }

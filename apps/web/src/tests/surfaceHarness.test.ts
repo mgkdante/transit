@@ -31,8 +31,8 @@ function basicHarness() {
 		locale: 'fr' as 'en' | 'fr',
 	};
 	const storage = memoryStorage({
-		'transit.persisted:surface': 'closed',
-		'transit.persisted:surface:child': 'closed',
+		'persisted:surface': 'closed',
+		'persisted:surface:child': 'closed',
 		'test-only:surface:first': '1',
 		'test-only:surface:second': '2',
 		unrelated: 'keep',
@@ -58,7 +58,7 @@ function basicHarness() {
 		storage: [
 			{
 				port: storage,
-				keys: ['transit.persisted:surface'],
+				keys: ['persisted:surface'],
 				prefixes: ['test-only:surface:'],
 			},
 		],
@@ -88,8 +88,8 @@ describe('surface test lifecycle harness', () => {
 		harness.reset();
 
 		expect(state.locale).toBe('en');
-		expect(storage.getItem('transit.persisted:surface')).toBeNull();
-		expect(storage.getItem('transit.persisted:surface:child')).toBe('closed');
+		expect(storage.getItem('persisted:surface')).toBeNull();
+		expect(storage.getItem('persisted:surface:child')).toBe('closed');
 		expect(storage.getItem('test-only:surface:first')).toBeNull();
 		expect(storage.getItem('test-only:surface:second')).toBeNull();
 		expect(storage.getItem('unrelated')).toBe('keep');

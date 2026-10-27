@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ChartLegend, SeverityBar, type ChartLegendItem } from '$lib/components/dataviz';
 	import { Chart, ScrollFrame, type StackedShareSpec } from '$lib/components/dataviz/chart';
-	import CollapsibleSection from '../CollapsibleSection.svelte';
+	import { CollapsibleSection } from '@yesid/ui/brand';
 
 	const shareSpec: StackedShareSpec = {
 		kind: 'stacked-share',
@@ -29,7 +29,7 @@
 	<span>Hourly cells</span>
 {/snippet}
 
-<CollapsibleSection title="Reliability" open={true}>
+<CollapsibleSection title="Reliability" open={true} quiet={false}>
 	<p data-testid="plain-card-prose">Plain card prose</p>
 	<Chart spec={shareSpec} />
 	<ChartLegend items={standaloneLegendItems} data-testid="standalone-chart-legend" />

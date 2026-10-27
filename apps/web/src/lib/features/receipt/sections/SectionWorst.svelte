@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { WorstOfDayVM } from '../selectors/day-worst';
 

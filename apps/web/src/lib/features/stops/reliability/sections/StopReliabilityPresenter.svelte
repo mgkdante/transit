@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey } from '$lib/metrics';
 	import { cn } from '$lib/utils';

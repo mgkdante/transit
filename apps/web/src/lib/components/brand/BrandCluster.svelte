@@ -1,6 +1,6 @@
 <script lang="ts">
 	import BrandWordmark from '$lib/components/shell/BrandWordmark.svelte';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 	import { YESID_HOUSE_LINK } from '$lib/content/nav';
 
 	interface BrandClusterProps {

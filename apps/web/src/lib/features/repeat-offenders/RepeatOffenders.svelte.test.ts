@@ -230,11 +230,8 @@ const repeatSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			keys: [
-				'transit.persisted:repeat-offenders-controls',
-				'transit.persisted:repeat-offenders-toc',
-			],
-			prefixes: ['transit.persisted:repeat-card-'],
+			keys: ['persisted:repeat-offenders-controls', 'persisted:repeat-offenders-toc'],
+			prefixes: ['persisted:repeat-card-'],
 		},
 	],
 	resetters: [resetRepeatSurfaceState],
@@ -329,9 +326,9 @@ describe('RepeatOffenders — approved analytical article', () => {
 		await fireEvent.click(filters);
 		expect(filters).toHaveAttribute('aria-expanded', 'false');
 		expect(toc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('transit.persisted:repeat-offenders-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:repeat-offenders-controls')).toBe('false');
 		await fireEvent.click(toc);
-		expect(sessionStorage.getItem('transit.persisted:repeat-offenders-toc')).toBe('false');
+		expect(sessionStorage.getItem('persisted:repeat-offenders-toc')).toBe('false');
 	});
 
 	it('keeps both week and month visible while disabling and describing the unavailable grain', () => {
@@ -458,6 +455,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		const { container } = render(RepeatOffenders);
 		expect(container.querySelector('[data-toc="repeat-vehicles"]')).toBeNull();
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await fireEvent.click(within(rail).getByRole('button', { name: 'View controls' }));
 		const week = within(rail)
 			.getAllByRole('radio')
 			.find((radio) => radio.textContent?.trim() === 'Week');

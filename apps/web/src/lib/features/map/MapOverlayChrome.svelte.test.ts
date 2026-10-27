@@ -139,7 +139,7 @@ describe('MapOverlayChrome', () => {
 					expect(stamp).toHaveAttribute('data-stale', 'false');
 					expect(stamp).not.toHaveAttribute('aria-live');
 					expect(stamp.querySelector('[data-slot="status-dot"]')).toHaveClass(
-						degraded ? 'bg-[var(--signal-caution)]' : 'bg-dataviz-status-on-time',
+						degraded ? 'bg-[var(--signal-caution)]' : 'bg-[var(--dataviz-status-on-time)]',
 					);
 				}
 			};

@@ -32,13 +32,13 @@
 		ControlsRail,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
+	import { articleNavigationCopy } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { Separator } from '@yesid/ui/separator';
-	import { desktop, quietMode } from '@yesid/ui/state';
+	import { desktop } from '@yesid/ui/state';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { mapHrefFor } from '$lib/nav';
-	import { SectionLabel } from '@yesid/ui/brand';
+	import { SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
 	import { formatUtc, formatDateKey } from '$lib/utils/time';
@@ -517,9 +517,6 @@
 						index={0}
 						anchor="stop-detail-departures"
 						sectionKey={`stop-detail-${id}-departures`}
-						closeSignal={quietMode.closeSignal}
-						openSignal={quietMode.openSignal}
-						bulkCollapsed={quietMode.enabled}
 					>
 						<ResourceBoundary resource={departureReport} lang={locale}>
 							{#snippet children(_report)}
@@ -635,9 +632,6 @@
 						index={1}
 						anchor="stop-detail-facts"
 						sectionKey={`stop-detail-${id}-facts`}
-						closeSignal={quietMode.closeSignal}
-						openSignal={quietMode.openSignal}
-						bulkCollapsed={quietMode.enabled}
 					>
 						{@render stopInformation()}
 					</CollapsibleSection>
@@ -652,9 +646,6 @@
 						index={0}
 						anchor="stop-schedule-service"
 						sectionKey={`stop-schedule-${id}-service`}
-						closeSignal={quietMode.closeSignal}
-						openSignal={quietMode.openSignal}
-						bulkCollapsed={quietMode.enabled}
 					>
 						<ResourceBoundary resource={stop} lang={locale}>
 							{#snippet children(s: StopFile | null)}

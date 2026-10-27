@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import EntityDetail from '../EntityDetail.svelte';
-	import type { TocEntry } from '$lib/components/shared/toc';
+	import type { TocEntry } from '@yesid/ui/brand';
 	import { ReliabilityRailLayout } from '$lib/components/layout';
 
 	type TabKey = 'detail' | 'schedule' | 'reliability';

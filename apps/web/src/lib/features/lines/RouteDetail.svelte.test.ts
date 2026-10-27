@@ -295,7 +295,7 @@ const routeSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			keys: ['transit.persisted:reliability-controls', 'transit.persisted:reliability-toc'],
+			keys: ['persisted:reliability-controls', 'persisted:reliability-toc'],
 		},
 	],
 	resetters: [resetRouteSurfaceState],

@@ -25,18 +25,27 @@ const ADOPTED_LOCAL_PATHS = [
 	...[
 		'BlueprintShell',
 		'ChevronToggle',
+		'CornerMarks',
 		'MetroStation',
+		'NumberedChip',
+		'SectionHeading',
 		'SectionLabel',
+		'StatusDot',
 		'StickyPanel',
 		'StopLabel',
 	].map((component) => `lib/components/brand/${component}.svelte`),
 	'lib/components/brand/StopLabel.svelte.test.ts',
+	...['CollapsibleSection', 'SectionIcon', 'TocNav', 'TocPill'].map(
+		(component) => `lib/components/shared/${component}.svelte`,
+	),
+	'lib/components/shared/toc.ts',
 	'lib/components/shared/TerminalCursor.svelte',
 	'lib/components/shared/TocBadge.svelte',
 	'lib/components/shared/TocBadge.test.ts',
 	'lib/utils/create-cn.ts',
 	'lib/components/shell/ThemeToggle.svelte',
 	'lib/nav/layout.svelte.ts',
+	'lib/stores/persisted.svelte.ts',
 	'lib/stores/quiet-mode.svelte.ts',
 	'lib/stores/theme.svelte.ts',
 ] as const;
@@ -79,16 +88,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.14.1',
-	tagObject: '1121e3f9b348ccbc87ee74add76052528f7f7a13',
-	peeledCommit: '46dcfbff5a3e65bf1fb0b1c3a86e3a86d5bcb1a1',
-	assetName: 'yesid.dev-design-v0.14.1.tar',
-	assetSize: 952_320,
-	assetDigest: 'sha256:02af450956ad93a293a066668d995e740b3528b666ad3a73d28471114c85fe21',
+	tag: 'v0.15.0',
+	tagObject: 'e3e3dd76e30547be8e31a2fe925ffa0daad2d010',
+	peeledCommit: '60cb1aceccfa65b8d0720327bbaf46a67f9ca699',
+	assetName: 'yesid.dev-design-v0.15.0.tar',
+	assetSize: 1_064_960,
+	assetDigest: 'sha256:e22c153631057245f35aed6a6f38ae3feaa4f426c24807403a2b6bff15dae13e',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:d1795ef03214007d8f3f645829cb15118351fc6c095eac66dd1c93b44e3bfee8',
-	manifestDigest: '566a1f0314d69704fe20ca7b7655ae46a1829f1701d78c4bc51595d27383fe35',
+	treeHash: 'sha256:3941a40c1fcf66e56675d92c9c9e63925b6e513c206aab5ee7c3ef83df300611',
+	manifestDigest: '494c2ea72a7525de09da0e5a8697f10fe388060265286f965a965e9403b020b7',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -173,7 +182,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.14.1');
+		expect(packageJson.version).toBe('0.15.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -183,6 +192,9 @@ describe('vendor/design integrity', () => {
 		expect(files).toContain('src/brand/BlueprintShell.svelte');
 		expect(files).toContain('src/brand/QuietModeButton.svelte');
 		expect(files).toContain('src/brand/ThemeToggle.svelte');
+		expect(files).toContain('src/brand/CollapsibleSection.svelte');
+		expect(files).toContain('src/brand/TocNav.svelte');
+		expect(files).toContain('src/state/persisted.svelte.js');
 		expect(files).toContain('src/layout/SiteRoot.svelte');
 		expect(files).toContain('src/state/theme.svelte.js');
 		expect(files).toContain('src/state/theme.svelte.d.ts');
@@ -208,7 +220,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.14.1',
+			version: '0.15.0',
 		});
 		expect(files).toEqual([
 			'README.md',
@@ -233,6 +245,13 @@ describe('@yesid/ui adoption', () => {
 });
 
 describe('@yesid/motion adoption', () => {
+	it('credits the Lenis stylesheet vendored with motion', () => {
+		expect(existsSync(join(VENDOR, 'motion/lenis.css'))).toBe(true);
+		expect(readFileSync(resolve(process.cwd(), '../../NOTICE'), 'utf-8')).toContain(
+			'darkroom.engineering',
+		);
+	});
+
 	it('keeps one upstream authority and only product-specific local motion', () => {
 		const retained = RETIRED_LOCAL_MOTION_PATHS.filter((path) => existsSync(join(APP_SRC, path)));
 
