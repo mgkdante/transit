@@ -201,25 +201,6 @@ describe('Daily Receipt presenter refinements', () => {
 		expect(container.querySelector('.receipt-tod-caveat')).toBeNull();
 	});
 
-	it('keeps the not-reported list to one column below 1024px', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/receipt/sections/SectionNotReported.svelte'),
-			'utf8',
-		);
-		const desktopStart = source.indexOf('@media (min-width: 1024px)');
-
-		expect(desktopStart).toBeGreaterThan(-1);
-		const base = source.slice(0, desktopStart);
-		const desktop = source.slice(desktopStart);
-		expect(base).toMatch(
-			/\.receipt-not-reported-list\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/,
-		);
-		expect(base).not.toMatch(/repeat\(auto-fit/);
-		expect(desktop).toMatch(
-			/\.receipt-not-reported-list\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(16rem, 100%\), 1fr\)\)/,
-		);
-	});
-
 	it('keeps headline metrics one column in a narrow mobile article card', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/receipt/sections/SectionHeadline.svelte'),

@@ -383,7 +383,7 @@
 		}
 	}
 
-	@media (max-width: 1023px) {
+	@media (--desktop-max) {
 		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table,
 		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table thead,
 		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tbody,

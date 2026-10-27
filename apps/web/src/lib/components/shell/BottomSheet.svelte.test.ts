@@ -189,7 +189,7 @@ describe('BottomSheet', () => {
 		const appCss = readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf8');
 		const importEnd =
 			appCss.indexOf("@import 'tw-animate-css';") + "@import 'tw-animate-css';".length;
-		const nextDirective = appCss.indexOf('/* ===== TOKENS:START', importEnd);
+		const nextDirective = appCss.indexOf('@theme inline', importEnd);
 		const prmBlock = appCss.slice(importEnd, nextDirective);
 
 		expect(compactCss(prmBlock)).toBe(

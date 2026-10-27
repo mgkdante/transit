@@ -55,7 +55,9 @@ function installCompiledCss(...paths: string[]): HTMLStyleElement {
 					css: 'external',
 				}).css?.code ?? '',
 		)
-		.join('\n');
+		.join('\n')
+		.replaceAll('(--desktop-min)', '(min-width: 1024px)')
+		.replaceAll('(--desktop-max)', '(max-width: 1023px)');
 	document.head.append(style);
 	return style;
 }

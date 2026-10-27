@@ -173,13 +173,13 @@
 		border-radius: var(--radius-sm);
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.search-controls[data-variant='page'] .search-controls__filters {
 			position: sticky;
 			top: var(--chrome-offset);
 			z-index: var(--z-rail);
 			background: color-mix(in srgb, var(--background) 92%, transparent);
-			backdrop-filter: blur(16px) saturate(1.1);
+			backdrop-filter: blur(var(--glass-blur));
 			padding-block: 0.5rem;
 		}
 	}
@@ -191,8 +191,8 @@
 		background: color-mix(in srgb, var(--background) 96%, transparent);
 		border: 1px solid var(--border-brand);
 		box-shadow: var(--shadow-nav);
-		backdrop-filter: blur(16px) saturate(1.1);
-		-webkit-backdrop-filter: blur(16px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur));
+		backdrop-filter: blur(var(--glass-blur));
 	}
 
 	.search-controls[data-variant='panel'] .search-controls__filters {

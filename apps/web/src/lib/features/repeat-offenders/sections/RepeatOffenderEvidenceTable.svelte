@@ -119,7 +119,7 @@
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		:global(table.offender-evidence-table.data-table) {
 			font-size: var(--text-detail-body-desktop);
 		}

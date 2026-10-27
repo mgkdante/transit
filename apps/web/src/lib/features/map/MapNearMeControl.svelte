@@ -348,8 +348,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 	}
 	.map-near-action {
 		min-height: 2rem;
@@ -528,7 +528,7 @@
 		}
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-near {
 			top: auto;
 			right: 0.75rem;

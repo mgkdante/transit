@@ -1,7 +1,7 @@
 /// <reference types="@sveltejs/kit" />
 /// <reference lib="webworker" />
 
-import { files, version } from '$service-worker';
+import { build, files, version } from '$service-worker';
 import {
 	KILL_FLAG_PATH,
 	cacheNameFor,
@@ -25,7 +25,9 @@ const NON_MAP_STATIC_FILES = files.filter(
 	(file) => !new URL(file, ORIGIN).pathname.startsWith(MAP_POSTER_PATH_PREFIX),
 );
 
-const PRECACHE = precachePathnames(NON_MAP_STATIC_FILES, ORIGIN, OFFLINE_PATH);
+const FONT_FILES = build.filter((path) => path.endsWith('.woff2'));
+
+const PRECACHE = precachePathnames([...NON_MAP_STATIC_FILES, ...FONT_FILES], ORIGIN, OFFLINE_PATH);
 
 const KILL_CHECK_THROTTLE_MS = 5 * 60 * 1000;
 let lastKillCheck = 0;

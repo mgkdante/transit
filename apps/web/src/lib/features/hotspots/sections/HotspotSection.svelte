@@ -168,7 +168,7 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.caption {
 			font-size: var(--text-detail-body-desktop);
 		}

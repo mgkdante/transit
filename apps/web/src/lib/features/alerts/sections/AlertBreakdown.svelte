@@ -104,7 +104,7 @@
 	.alert-history-block :global(.alert-breakdown-grid) {
 		grid-template-columns: minmax(0, 1fr);
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.alert-history-block :global(.alert-breakdown-grid) {
 			grid-template-columns: repeat(auto-fit, minmax(min(var(--min-tile), 100%), 1fr));
 		}

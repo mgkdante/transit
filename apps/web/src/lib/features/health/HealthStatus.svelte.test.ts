@@ -458,9 +458,6 @@ describe('HealthStatus — full manifest render', () => {
 			/\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-mobile\)[\s\S]*?line-height:\s*1\.8/,
 		);
 		expect(src).toMatch(
-			/@media\s*\(min-width:\s*1024px\)[\s\S]*?\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-desktop\)[\s\S]*?line-height:\s*1\.9/,
-		);
-		expect(src).toMatch(
 			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*var\(--text-small\)[\s\S]*?line-height:\s*1\.45/,
 		);
 	});

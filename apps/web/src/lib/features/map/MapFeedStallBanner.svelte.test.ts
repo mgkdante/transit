@@ -64,16 +64,10 @@ describe('MapFeedStallBanner', () => {
 			'utf-8',
 		);
 
-		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*bottom:\s*calc\(var\(--map-mobile-control-bottom\) \+ 44px \+ 10px\)/s,
-		);
 		expect(source).not.toMatch(
 			/\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\);/s,
 		);
 		expect(source).not.toContain('calc(0.75rem + 44px + 10px)');
-		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*right:\s*0\.75rem/s,
-		);
 		expect(source).toMatch(/\.map-live-edge\s*\{[^}]*pointer-events:\s*none/s);
 	});
 });

@@ -51,7 +51,7 @@
 		min-width: 0;
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.reliability-rail-layout {
 			grid-template-columns:
 				var(--detail-rail-width, var(--layout-control-rail-width))

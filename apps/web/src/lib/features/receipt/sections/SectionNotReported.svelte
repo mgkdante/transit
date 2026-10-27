@@ -97,7 +97,7 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.receipt-not-reported-list {
 			grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
 		}

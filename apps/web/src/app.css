@@ -1,4 +1,4 @@
-@import '$lib/styles/tokens.css';
+@import '@yesid/tokens/tokens.css';
 
 @import 'tailwindcss';
 @import '@yesid/ui/base.css';
@@ -10,7 +10,13 @@ html {
 }
 
 :root {
-	--size-tap-min: 44px;
+	--measure-absence: 34ch;
+	--text-stat-value: 1.75rem;
+	--dataviz-vehicle-on-time: var(--dataviz-status-on-time);
+	--dataviz-vehicle-delayed: var(--dataviz-status-late);
+	--dataviz-vehicle-cancelled: var(--dataviz-status-severe);
+	--dataviz-vehicle-no-data: var(--dataviz-status-unknown);
+	--map-stop-fill: var(--accent);
 	--size-detail-panel: 360px;
 	--size-detail-rail: 3.7rem;
 	--shadow-detail-panel:
@@ -31,7 +37,7 @@ html {
 	opacity: var(--blueprint-part-ink) !important;
 }
 
-@media (max-width: 1023px) {
+@media (--desktop-max) {
 	[data-slot='blueprint-listing-header']
 		.edge-details
 		[data-blueprint-part][data-blueprint-part].edge-detail {
@@ -49,58 +55,6 @@ html {
 		transition: none;
 	}
 }
-
-/* ===== TOKENS:START ===== */
-/* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
-/* Hand-edits to this region will be overwritten on the next build. */
-/* Run `bun run tokens:build` to regenerate. */
-@theme {
-  --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
-  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --text-hero: clamp(3.25rem, min(7.5vw, 9svh), 6.5rem);
-  --text-hero-mobile: clamp(2.5rem, min(11vw, 7svh), 3.25rem);
-  --text-display: clamp(2.125rem, 4vw, 3.25rem);
-  --text-title: clamp(1.625rem, 3vw, 2.125rem);
-  --text-heading: clamp(1.25rem, 3vw, 1.5rem);
-  --text-subheading: 1.125rem;
-  --text-body: 1rem;
-  --text-stat-value: 1.75rem;
-  --text-listing-title: clamp(2rem, 5vw, 3rem);
-  --text-listing-subtitle-desktop: 1.1rem;
-  --text-small: 0.9375rem;
-  --text-control: 0.9375rem;
-  --text-tag: 0.9375rem;
-  --text-mono: 0.875rem;
-  --text-caption: 0.8125rem;
-  --text-micro: 0.75rem;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-pill: 9999px;
-  --shadow-glow-sm: var(--shadow-glow-sm);
-  --shadow-glow-md: var(--shadow-glow-md);
-  --shadow-glow-lg: var(--shadow-glow-lg);
-  --shadow-card: var(--shadow-card);
-  --shadow-section: var(--shadow-section);
-  --shadow-nav: var(--shadow-nav);
-  --shadow-sheet: var(--shadow-sheet);
-  --z-index-base: var(--z-base);
-  --z-index-content: var(--z-content);
-  --z-index-rail: var(--z-rail);
-  --z-index-sheet: var(--z-sheet);
-  --z-index-menu: var(--z-menu);
-  --z-index-nav: var(--z-nav);
-  --z-index-overlay: var(--z-overlay);
-  --z-index-ripple: var(--z-ripple);
-  --width-content: var(--container-content);
-  --width-wide: var(--container-wide);
-  --spacing-page-x: var(--space-page-x);
-  --spacing-section-y: var(--space-section-y);
-  --spacing-card-gap: var(--space-card-gap);
-}
-/* ===== TOKENS:END ===== */
 
 @theme inline {
 	--color-dataviz-status-early: var(--dataviz-status-early);
@@ -126,12 +80,6 @@ html {
 	--color-dataviz-vehicle-delayed: var(--dataviz-vehicle-delayed);
 	--color-dataviz-vehicle-cancelled: var(--dataviz-vehicle-cancelled);
 	--color-dataviz-vehicle-no-data: var(--dataviz-vehicle-no-data);
-}
-
-:root {
-	--font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
-	--font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
-	--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
 body {
@@ -188,16 +136,9 @@ body {
 	top: 0.5rem;
 }
 
-.glass-chrome {
-	background: color-mix(in srgb, var(--background) 92%, transparent);
-	border: 1px solid var(--border-brand);
-	backdrop-filter: blur(16px) saturate(1.1);
-	-webkit-backdrop-filter: blur(16px) saturate(1.1);
-	box-shadow: var(--shadow-nav);
-}
-
 [data-theme='light'],
 .theme-light {
+	--map-stop-fill: #E8540E;
 	--blueprint-ink-quiet: 0.28;
 	--blueprint-ink-mid: 0.42;
 	--blueprint-ink-accent: 0.56;

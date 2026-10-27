@@ -178,8 +178,8 @@
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		pointer-events: none;
 	}
 	.map-peek :global(.map-hover-peek) {
@@ -191,7 +191,7 @@
 		}
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-filter-panel {
 			display: none;
 		}

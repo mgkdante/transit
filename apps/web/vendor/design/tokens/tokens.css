@@ -59,7 +59,15 @@
   --text-menu-label-desktop: 1.875rem;
   --text-menu-subtitle: 1rem;
   --text-micro: 0.6875rem;
+  --tracking-tight: -0.025em;
+  --tracking-wide: 0.05em;
+  --tracking-eyebrow: 0.1em;
+  --measure-body: 60rem;
+  --measure-lede: 34rem;
+  --measure-notice: 28rem;
+  --measure-display: 28ch;
   --strip-h: 68px;
+  --size-tap-min: 44px;
   --space-page-x: clamp(1.5rem, 4vw, 5rem);
   --space-section-y: clamp(3rem, 8vw, 6rem);
   --space-card-gap: clamp(1rem, 2vw, 1.5rem);
@@ -83,6 +91,8 @@
   --surface-3: var(--muted);
   --surface-4: var(--popover);
   --surface-hero: var(--manifesto);
+  --glass-blur: 16px;
+  --glass-blur-sm: 12px;
   --border-brand: color-mix(in srgb, var(--primary) 45%, transparent);
   --border-brand-active: color-mix(in srgb, var(--primary) 85%, transparent);
   --border-hairline: color-mix(in srgb, var(--foreground) 8%, transparent);
@@ -91,6 +101,7 @@
   --z-base: 0;
   --z-content: 1;
   --z-rail: 30;
+  --z-footer: 45;
   --z-sheet: 50;
   --z-menu: 60;
   --z-nav: 70;
@@ -390,4 +401,16 @@
     --secondary: var(--popover);
     --ring: var(--primary);
   }
+}
+
+[data-density="compact"] {
+  --text-hero: clamp(3.25rem, min(7.5vw, 9svh), 6.5rem);
+  --text-hero-mobile: clamp(2.5rem, min(11vw, 7svh), 3.25rem);
+  --text-display: clamp(2.125rem, 4vw, 3.25rem);
+  --text-title: clamp(1.625rem, 3vw, 2.125rem);
+  --text-subheading: 1.125rem;
+  --text-body: 1rem;
+  --text-detail-body-mobile: 1rem;
+  --text-detail-body-desktop: 1.0625rem;
+  --text-micro: 0.75rem;
 }

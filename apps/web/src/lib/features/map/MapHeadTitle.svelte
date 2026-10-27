@@ -95,7 +95,7 @@
 		color: var(--primary);
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-head {
 			top: var(--chrome-offset);
 			left: 0.75rem;
@@ -106,7 +106,7 @@
 			font-size: var(--text-subheading);
 		}
 	}
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-title-row {
 			order: -1;
 		}

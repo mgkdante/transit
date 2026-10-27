@@ -386,7 +386,7 @@
 	.surface-head--cornered {
 		position: relative;
 	}
-	@media (min-width: 768px) {
+	@media (--tablet-min) {
 		.surface-head--cornered {
 			padding-top: 1.5rem;
 			padding-bottom: 2rem;

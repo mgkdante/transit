@@ -126,8 +126,8 @@
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		pointer-events: none;
 	}
 	.map-live-edge[data-state='idle'] {
@@ -144,7 +144,7 @@
 	.map-live-edge[data-state='global-stall'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-live-edge:is(
 			[data-state='unavailable'],
 			[data-state='selected-family-failure'],

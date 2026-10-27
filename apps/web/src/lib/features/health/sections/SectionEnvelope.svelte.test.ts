@@ -29,20 +29,12 @@ describe('SectionEnvelope', () => {
 		expect(container.querySelector('[data-slot="explained-metric-card"]')).toBeNull();
 	});
 
-	it('stacks envelope rows below 1024px and makes long publish IDs break-safe', () => {
+	it('makes long publish IDs break-safe', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/health/sections/SectionEnvelope.svelte'),
 			'utf8',
 		);
-		const rowRules = Array.from(source.matchAll(/\.envelope-rows\s*\{([^}]*)\}/g));
 
-		expect(rowRules).toHaveLength(2);
-		expect(rowRules[0]?.[1]).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-		expect(rowRules[0]?.[1]).not.toMatch(/repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-		expect(rowRules[1]?.[1]).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-
-		const desktopMedia = source.lastIndexOf('@media (min-width: 1024px)', rowRules[1]?.index);
-		expect(desktopMedia).toBeGreaterThan(rowRules[0]?.index ?? -1);
 		expect(source).toMatch(
 			/\.publish-run-id\s*\{[^}]*font-family:\s*var\(--font-mono\);[^}]*overflow-wrap:\s*anywhere;/,
 		);

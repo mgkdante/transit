@@ -72,7 +72,7 @@
 		min-width: 0;
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.controls-rail--sticky {
 			position: sticky;
 			top: var(--chrome-offset);
@@ -82,7 +82,7 @@
 		.controls-rail--sticky[data-stuck='true'] {
 			border-bottom: 1px solid var(--border);
 			background: color-mix(in srgb, var(--background) 92%, transparent);
-			backdrop-filter: blur(16px) saturate(1.1);
+			backdrop-filter: blur(var(--glass-blur));
 		}
 	}
 </style>

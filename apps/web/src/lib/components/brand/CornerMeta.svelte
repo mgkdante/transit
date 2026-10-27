@@ -51,7 +51,7 @@
 		display: none;
 	}
 
-	@media (min-width: 768px) {
+	@media (--tablet-min) {
 		.corner-meta {
 			display: block;
 		}

@@ -64,8 +64,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		transition:
 			right var(--duration-normal) var(--ease-out),
 			border-color var(--duration-fast) var(--ease-default),
@@ -101,7 +101,7 @@
 		}
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-freshness[data-placement='floating'] {
 			display: none;
 		}
@@ -120,8 +120,8 @@
 			border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 			border-radius: var(--radius-pill);
 			box-shadow: var(--shadow-card);
-			backdrop-filter: blur(12px) saturate(1.1);
-			-webkit-backdrop-filter: blur(12px) saturate(1.1);
+			-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+			backdrop-filter: blur(var(--glass-blur-sm));
 		}
 
 		.map-freshness[data-placement='head'][data-stale='true'] {

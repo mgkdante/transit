@@ -10,11 +10,11 @@ vi.mock('$service-worker', () => ({
 		'/_app/immutable/chunks/MapHero.def456.js',
 		'/_app/immutable/chunks/vendor-maplibre.ghi789.js',
 		'/_app/immutable/assets/maplibre.jkl012.css',
+		'/_app/immutable/assets/inter-latin-wght-normal.mno345.woff2',
 	],
 	files: [
 		'/offline.html',
 		'/favicon.svg',
-		'/fonts/inter-latin.woff2',
 		'/map/basemap-montreal-dark-mobile-20260812.avif',
 		'/map/basemap-montreal-light-mobile-20260812.avif',
 		'/map/basemap-montreal-dark-desktop-20260812.avif',
@@ -67,7 +67,7 @@ function dispatchInstall() {
 }
 
 describe('service-worker install wiring', () => {
-	it('precaches non-map static files and offline, never build chunks or map posters', async () => {
+	it('precaches non-map static files, offline and bundled fonts, never build chunks or map posters', async () => {
 		const add = vi.fn().mockResolvedValue(undefined);
 		vi.mocked(caches.open).mockResolvedValue({ add } as unknown as Cache);
 
@@ -77,10 +77,12 @@ describe('service-worker install wiring', () => {
 		expect(requests.map((request) => request.url)).toEqual([
 			'https://transit.yesid.dev/offline.html',
 			'https://transit.yesid.dev/favicon.svg',
-			'https://transit.yesid.dev/fonts/inter-latin.woff2',
+			'https://transit.yesid.dev/_app/immutable/assets/inter-latin-wght-normal.mno345.woff2',
 		]);
 		expect(requests.every((request) => request.cache === 'reload')).toBe(true);
-		expect(requests.some((request) => request.url.includes('/_app/immutable/'))).toBe(false);
+		expect(requests.some((request) => /immutable\/(?:chunks|entry)\//.test(request.url))).toBe(
+			false,
+		);
 		expect(requests.some((request) => request.url.includes('/map/basemap-montreal-'))).toBe(false);
 	});
 });

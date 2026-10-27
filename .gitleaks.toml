@@ -5,7 +5,6 @@ useDefault = true
 description = "Transit false positives and generated/local build outputs"
 paths = [
   '''(^|/)bun\.lock$''',
-  '''(^|/)apps/web/static/fonts/''',
   '''(^|/)apps/web/scripts/og-fonts/''',
 ]
 regexes = [

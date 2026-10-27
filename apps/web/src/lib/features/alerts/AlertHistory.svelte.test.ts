@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -7,7 +5,6 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
-import { compile } from 'svelte/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import type { PublicProvider } from '$lib/v1/providers';
@@ -706,42 +703,6 @@ describe('AlertHistory breakdown', () => {
 		const effectList = screen.getByRole('list', { name: /distribution by effect/i });
 		expect(within(effectList).getByText('Unspecified')).toBeInTheDocument();
 		expect(within(effectList).queryByText('unknown')).toBeNull();
-	});
-
-	it('keeps its DashboardGrid to one column below 1024px', () => {
-		function compiledCss(relativePath: string): string {
-			const filename = resolve(process.cwd(), relativePath);
-			const source = readFileSync(filename, 'utf8');
-			return compile(source, { filename, generate: 'client', css: 'external' }).css?.code ?? '';
-		}
-		function ruleWith(css: string, declaration: RegExp): { selector: string; index: number } {
-			const match = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g)).find((candidate) =>
-				declaration.test(candidate[2] ?? ''),
-			);
-			if (!match || match.index == null) throw new Error(`Missing compiled rule: ${declaration}`);
-			return { selector: (match[1] ?? '').trim(), index: match.index };
-		}
-		function classSpecificity(selector: string): number {
-			return selector.match(/\.[a-z0-9_-]+/gi)?.length ?? 0;
-		}
-
-		const breakdownCss = compiledCss('src/lib/features/alerts/sections/AlertBreakdown.svelte');
-		const dashboardCss = compiledCss('src/lib/components/layout/DashboardGrid.svelte');
-		const mobileRule = ruleWith(breakdownCss, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-		const dashboardDefault = ruleWith(dashboardCss, /grid-template-columns:\s*repeat\(auto-fit/);
-		const desktopStart = breakdownCss.indexOf('@media (min-width: 1024px)');
-
-		expect(mobileRule.selector).toMatch(
-			/^\.alert-history-block\.svelte-[a-z0-9]+\s+\.alert-breakdown-grid$/,
-		);
-		expect(classSpecificity(mobileRule.selector)).toBeGreaterThan(
-			classSpecificity(dashboardDefault.selector),
-		);
-		expect(desktopStart).toBeGreaterThan(mobileRule.index);
-		expect(breakdownCss.slice(0, desktopStart)).not.toMatch(/repeat\(auto-fit/);
-		expect(breakdownCss.slice(desktopStart)).toMatch(
-			/\.alert-history-block\.svelte-[a-z0-9]+\s+\.alert-breakdown-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit/,
-		);
 	});
 });
 

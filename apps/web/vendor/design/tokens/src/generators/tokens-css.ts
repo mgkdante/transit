@@ -98,6 +98,38 @@ function emitBreakpointMedia(tree: TokenTree): string {
   }).join('\n');
 }
 
+/** Every override leaf must sit at the same path as a leaf in the base tree. */
+function assertOverridesBase(overrides: TokenTree, base: TokenTree, path: string): void {
+  for (const [key, value] of Object.entries(overrides)) {
+    if (key.startsWith('$')) continue;
+    const target = base[key];
+    const here = `${path}.${key}`;
+    if (isLeaf(value)) {
+      if (!isLeaf(target)) throw new Error(`${here} overrides no base token`);
+    } else if (target === undefined || isLeaf(target)) {
+      throw new Error(`${here} overrides no base token group`);
+    } else {
+      assertOverridesBase(value as TokenTree, target as TokenTree, here);
+    }
+  }
+}
+
+/** One `[data-density]` block per mode, overriding base tokens by path. */
+function emitDensity(tree: TokenTree): string {
+  const density = tree.density;
+  if (density === undefined) return '';
+  if (isLeaf(density)) throw new Error('density must be a token group');
+
+  return Object.entries(density)
+    .filter(([mode]) => !mode.startsWith('$'))
+    .map(([mode, overrides]) => {
+      if (isLeaf(overrides)) throw new Error(`density.${mode} must be a token group`);
+      assertOverridesBase(overrides as TokenTree, tree, `density.${mode}`);
+      return emitBlock(`[data-density="${mode}"]`, null, flatten(overrides as TokenTree));
+    })
+    .join('\n');
+}
+
 export function generateTokensCss(tree: TokenTree): string {
   // :root holds brand + non-themed tokens (radius, duration, ease, z, opacity,
   // container, font, text, space, shadow, surface aliases, color.brand).
@@ -106,7 +138,7 @@ export function generateTokensCss(tree: TokenTree): string {
   const lightItems: FlatToken[] = [];
 
   for (const [topKey, topValue] of Object.entries(tree)) {
-    if (topKey.startsWith('$')) continue;
+    if (topKey.startsWith('$') || topKey === 'density') continue;
     if (topKey === 'color') {
       for (const [subKey, subValue] of Object.entries(topValue as TokenTree)) {
         const flat = flatten(subValue as TokenTree, '');
@@ -131,6 +163,7 @@ export function generateTokensCss(tree: TokenTree): string {
   const darkMedia = emitMedia('dark', ':root:not([data-theme="light"])', darkItems);
   const lightMedia = emitMedia('light', ':root:not([data-theme="dark"])', lightItems);
   const breakpointMedia = emitBreakpointMedia(tree);
+  const densityBlocks = emitDensity(tree);
 
   return (
     HEADER + '\n' +
@@ -139,6 +172,7 @@ export function generateTokensCss(tree: TokenTree): string {
     darkBlock + '\n' +
     lightBlock + '\n' +
     darkMedia + '\n' +
-    lightMedia
+    lightMedia +
+    (densityBlocks ? '\n' + densityBlocks : '')
   );
 }

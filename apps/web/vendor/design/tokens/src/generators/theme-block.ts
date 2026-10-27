@@ -66,6 +66,7 @@ function emitTokens(tree: TokenTree): string[] {
   return out;
 }
 
+/** @deprecated Since v0.18.0. Import `@yesid/tokens/theme.css` instead of pasting this block. */
 export function generateThemeBlock(tree: TokenTree): string {
   const lines = emitTokens(tree);
   return `${HEADER}
@@ -75,6 +76,7 @@ ${lines.join('\n')}
 ${FOOTER}`;
 }
 
+/** @deprecated Since v0.18.0, with `generateThemeBlock`. */
 export function replaceThemeRegion(fileContent: string, freshRegion: string): string {
   const startIdx = fileContent.indexOf(START);
   const endIdx = fileContent.indexOf(END);

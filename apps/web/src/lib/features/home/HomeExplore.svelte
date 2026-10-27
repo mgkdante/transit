@@ -404,7 +404,7 @@
 			column-gap: 2rem;
 		}
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.hub-launch {
 			grid-template-columns: 17rem minmax(0, 1fr);
 			gap: 3rem;

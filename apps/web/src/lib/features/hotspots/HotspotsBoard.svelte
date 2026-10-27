@@ -627,7 +627,7 @@
 		justify-content: center;
 		padding: 0.5rem 0;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.hotspots-article-prose {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

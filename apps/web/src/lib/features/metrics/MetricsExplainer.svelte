@@ -782,7 +782,7 @@
 		line-height: 1.8;
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.metrics-article-prose,
 		.metrics-live__lede,
 		.metrics-live__point p,

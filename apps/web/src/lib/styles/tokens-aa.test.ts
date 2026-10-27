@@ -12,10 +12,10 @@ import {
 } from '../../../tools/design-gates';
 
 const tokens = JSON.parse(
-	readFileSync(resolve(process.cwd(), 'tools/tokens/tokens.json'), 'utf-8'),
+	readFileSync(resolve(process.cwd(), 'vendor/design/tokens/tokens.json'), 'utf-8'),
 ) as Record<string, unknown>;
 
-describe('tokens AA — computed contrast from tools/tokens/tokens.json', () => {
+describe('tokens AA — computed contrast from the vendored tokens.json', () => {
 	it('prints the computed ratio table', () => {
 		const rows = runContrastPairs(tokens, TRANSIT_AA_PAIRS).map(
 			(r) => `  ${r.pass ? 'PASS' : 'FAIL'}  ${r.ratio.toFixed(2)}:1  (>=${r.floor})  ${r.label}`,

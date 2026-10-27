@@ -2,8 +2,6 @@ import type { ContrastPair } from '@yesid/gates';
 
 export const TRANSIT_BRAND_HEXES = ['#E07800', '#FFB627'] as const;
 
-export const TRANSIT_BRAND_HEX_ALLOWLIST_REL = ['src/lib/styles/tokens.css'] as const;
-
 export const TRANSIT_AFFORDANCE_TOKENS = ['primary', 'success', 'destructive', 'accent'] as const;
 
 export const TRANSIT_ALLOW_MARKERS = [

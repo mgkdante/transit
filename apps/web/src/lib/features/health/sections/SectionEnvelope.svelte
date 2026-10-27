@@ -110,7 +110,7 @@
 		gap: 1.25rem 2rem;
 		max-width: 28rem;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.publish-run-explanation {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

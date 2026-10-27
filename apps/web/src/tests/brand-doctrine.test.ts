@@ -6,7 +6,6 @@ import { resolve } from 'node:path';
 import { brandHexViolations, datavizViolations, tvOnlyInUiViolations, walk } from '@yesid/gates';
 import {
 	TRANSIT_BRAND_HEXES,
-	TRANSIT_BRAND_HEX_ALLOWLIST_REL,
 	TRANSIT_AFFORDANCE_TOKENS,
 	TRANSIT_ALLOW_MARKERS,
 } from '../../tools/design-gates';
@@ -21,7 +20,6 @@ describe('brand doctrine — no raw brand hex anywhere in src', () => {
 	const result = brandHexViolations({
 		root: SRC,
 		hexes: TRANSIT_BRAND_HEXES,
-		allowlist: new Set(TRANSIT_BRAND_HEX_ALLOWLIST_REL.map((r) => resolve(process.cwd(), r))),
 	});
 
 	it('scans a non-empty source tree (guards against a wrong path)', () => {

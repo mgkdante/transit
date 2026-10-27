@@ -159,7 +159,7 @@
 	.surface-rail--mobile > :global(*) {
 		flex: none;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.surface-rail-mobile[data-open='false'] {
 			display: none;
 		}

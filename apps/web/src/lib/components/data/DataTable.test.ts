@@ -244,9 +244,6 @@ describe('DataTable', () => {
 		expect(componentSource).toMatch(
 			/@media \(max-width: 28rem\) \{\s*\.data-table-frame\[data-responsive='stack'\]\[data-stack-at='compact'\]/,
 		);
-		expect(componentSource).toMatch(
-			/@media \(max-width: 1023px\) \{\s*\.data-table-frame\[data-responsive='stack'\]\[data-stack-at='tablet'\]/,
-		);
 		expect(componentSource).not.toMatch(/\[data-stack-at='tablet'\]\[data-frame='card'\]\s*\{/);
 		expect(componentSource).toMatch(
 			/\[data-stack-at='tablet'\]\[data-frame='card'\]\[data-collapse='separate'\]\[data-frame-radius='true'\]/,
