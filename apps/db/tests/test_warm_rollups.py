@@ -1429,7 +1429,10 @@ def test_repeat_offender_upsert_shape() -> None:
     assert "'vehicle'::text" in sql
     assert "UNION ALL" in sql
     assert "vehicle_id IS NOT NULL" in sql
-    assert "COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)" in sql
+    assert "bool_or(f.delay_seconds > 300) AS late" in sql
+    assert "GROUP BY f.provider_id, f.route_id, f.trip_id, f.vehicle_id, local_day" in sql
+    assert "COUNT(DISTINCT local_day) FILTER (WHERE late)" in sql
+    assert "ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1)" in sql
     assert "WHERE recurrence_days >= 3" in sql
     assert "'critical'" in sql
     assert "'high'" in sql

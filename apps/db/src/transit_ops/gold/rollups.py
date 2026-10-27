@@ -1786,8 +1786,10 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             f.route_id,
             f.trip_id,
             f.vehicle_id,
-            f.delay_seconds,
-            timezone(dp.timezone, f.captured_at_utc)::date AS local_day
+            timezone(dp.timezone, f.captured_at_utc)::date AS local_day,
+            bool_or(f.delay_seconds > 300) AS late,
+            SUM(f.delay_seconds) AS delay_sum,
+            COUNT(*) AS delay_count
         FROM gold.fact_trip_delay_snapshot AS f
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = f.provider_id
@@ -1796,6 +1798,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
           AND f.delay_seconds IS NOT NULL
           AND ABS(f.delay_seconds) <= 3600
           AND f.route_id IS NOT NULL
+        GROUP BY f.provider_id, f.route_id, f.trip_id, f.vehicle_id, local_day
     ),
     agg AS (
         SELECT
@@ -1803,9 +1806,8 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             trip_id AS entity_id,
             route_id,
             provider_id,
-            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)
-                AS recurrence_days,
-            ROUND(AVG(delay_seconds)::numeric, 1) AS avg_delay_seconds
+            COUNT(DISTINCT local_day) FILTER (WHERE late) AS recurrence_days,
+            ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1) AS avg_delay_seconds
         FROM obs
         WHERE trip_id IS NOT NULL
         GROUP BY provider_id, route_id, trip_id
@@ -1815,8 +1817,8 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             vehicle_id,
             route_id,
             provider_id,
-            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300),
-            ROUND(AVG(delay_seconds)::numeric, 1)
+            COUNT(DISTINCT local_day) FILTER (WHERE late),
+            ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1)
         FROM obs
         WHERE vehicle_id IS NOT NULL
         GROUP BY provider_id, route_id, vehicle_id
