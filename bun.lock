@@ -1200,7 +1200,7 @@
 
     "@transit/web/@yesid/ui/@yesid/motion": ["@yesid/motion@file:./apps/web/vendor/design/motion", {}],
 
-    "@transit/web/@yesid/ui/@yesid/tokens": ["@yesid/tokens@file:apps\\web\\vendor\\design\\tokens", {}],
+    "@transit/web/@yesid/ui/@yesid/tokens": ["@yesid/tokens@file:apps/web/vendor/design/tokens", {}],
 
     "d3-sankey/d3-array/internmap": ["internmap@1.0.1", "", {}, "sha512-lDB5YccMydFBtasVtxnZ3MRBHuaoE8GKsppq+EchKL2U4nK/DmEpPHNH8MZe5HkMtpSiTSOZwfN0tzYjO/lJEw=="],
 
