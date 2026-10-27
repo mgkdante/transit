@@ -39,6 +39,8 @@ from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
+SET_ROLLUP_WORK_MEM = named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'")
+
 
 def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
     sql = named_query(
@@ -2026,7 +2028,7 @@ def _write_daily_rollup(
 ) -> None:
     period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
     # Transaction-local sort memory and disabled nested loops prevent repeated fact scans.
-    conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
+    conn.execute(SET_ROLLUP_WORK_MEM)
     conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
     kind = REBUILDABLE_KINDS.get(rollup_kind)
     if kind is not None and kind.select_missing is SELECT_MISSING_CAPTURE_DAYS:
@@ -2354,6 +2356,7 @@ def build_warm_rollups(
                 }
             with engine.begin() as conn:
                 set_daily_warm_transaction_timeouts(conn)
+                conn.execute(SET_ROLLUP_WORK_MEM)
                 if table_name == "route_delay_hourly":
                     lock_delay_hours(conn, provider_id)
                     built_at = materialization_time(conn)
