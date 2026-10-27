@@ -843,6 +843,7 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
     )
     assert publish["env"]["SNAPSHOT_STORAGE_BACKEND"] == "s3"
     assert publish["env"]["SNAPSHOT_PUBLISH_CONCURRENCY"] == "64"
+    assert publish["env"]["PGOPTIONS"] == "-c work_mem=256MB"
     assert publish["env"]["SNAPSHOT_R2_BUCKET"] == "${{ secrets.SNAPSHOT_R2_BUCKET }}"
     assert publish["env"]["SNAPSHOT_PUBLIC_BASE_URL"] == (
         "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"

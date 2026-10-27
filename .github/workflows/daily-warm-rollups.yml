@@ -327,6 +327,7 @@ jobs:
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
       SNAPSHOT_PUBLISH_CONCURRENCY: "64"
+      PGOPTIONS: "-c work_mem=256MB"
       PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
