@@ -115,9 +115,3 @@ export const TRANSIT_DATAVIZ_OCCUPANCY_ON_CARD: readonly ContrastPair[] = [
 		2.7,
 	],
 ];
-
-export const TRANSIT_AA_PAIRS: readonly ContrastPair[] = [
-	...TRANSIT_TEXT_PAIRS,
-	...TRANSIT_DATAVIZ_STATUS_ON_CARD,
-	...TRANSIT_DATAVIZ_OCCUPANCY_ON_CARD,
-];
