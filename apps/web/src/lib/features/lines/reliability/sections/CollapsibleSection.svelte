@@ -2,8 +2,7 @@
 	import './reliability-sections.css';
 
 	import type { Snippet } from 'svelte';
-	import SharedCollapsibleSection from '$lib/components/shared/CollapsibleSection.svelte';
-	import { quietMode } from '@yesid/ui/state';
+	import { CollapsibleSection as SharedCollapsibleSection } from '@yesid/ui/brand';
 
 	interface CollapsibleSectionProps {
 		eyebrow: string;
@@ -30,9 +29,6 @@
 		headerVariant="article-summary"
 		index={number == null ? null : number - 1}
 		bind:open
-		closeSignal={quietMode.closeSignal}
-		openSignal={quietMode.openSignal}
-		bulkCollapsed={quietMode.enabled}
 	>
 		{@render children()}
 	</SharedCollapsibleSection>

@@ -10,8 +10,7 @@
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import Breadcrumb from '$lib/components/surface/Breadcrumb.svelte';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
 	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';

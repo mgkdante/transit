@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { CollapsibleSection } from '$lib/components/shared';
+	import { CollapsibleSection } from '@yesid/ui/brand';
 
 	export interface ArticleControlDisclosureProps {
 		title: string;
@@ -11,7 +11,7 @@
 	let { title, open = $bindable(true), children }: ArticleControlDisclosureProps = $props();
 </script>
 
-<CollapsibleSection {title} bind:open>
+<CollapsibleSection {title} quiet={false} bind:open>
 	<div data-slot="controls-body">
 		{@render children()}
 	</div>

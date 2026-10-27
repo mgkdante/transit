@@ -47,7 +47,7 @@
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
+	import { revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
@@ -709,6 +709,7 @@
 			<TocNav
 				entries={tocEntries}
 				{activeId}
+				quiet={false}
 				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
 				onNavigate={(id) => {
 					navigate(id);

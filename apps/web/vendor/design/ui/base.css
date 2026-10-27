@@ -1,5 +1,6 @@
 /* Shared app base styles. */
 @import '@yesid/motion/tap-feedback.css';
+@import '@yesid/motion/lenis.css';
 
 *,
 *::before,

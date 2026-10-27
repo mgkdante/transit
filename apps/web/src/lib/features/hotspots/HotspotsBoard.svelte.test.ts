@@ -221,10 +221,10 @@ function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
 
 function resetHotspotsState(): void {
 	for (const key of ['hotspots-card-top', 'hotspots-card-lines', 'hotspots-card-stops']) {
-		sessionStorage.removeItem(`transit.persisted:${key}`);
+		sessionStorage.removeItem(`persisted:${key}`);
 	}
-	sessionStorage.removeItem('transit.persisted:hotspots-controls');
-	sessionStorage.removeItem('transit.persisted:hotspots-toc');
+	sessionStorage.removeItem('persisted:hotspots-controls');
+	sessionStorage.removeItem('persisted:hotspots-toc');
 	quietMode.resetForTest();
 }
 
@@ -538,10 +538,10 @@ describe('HotspotsBoard article', () => {
 		await fireEvent.click(controls);
 		expect(controls).toHaveAttribute('aria-expanded', 'false');
 		expect(toc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
 
 		await fireEvent.click(toc);
-		expect(sessionStorage.getItem('transit.persisted:hotspots-toc')).toBe('false');
+		expect(sessionStorage.getItem('persisted:hotspots-toc')).toBe('false');
 
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		const pill = mobile.querySelector(':scope > button') as HTMLButtonElement;
@@ -577,7 +577,7 @@ describe('HotspotsBoard article', () => {
 		await waitFor(() => expect(firstControls).toHaveAttribute('aria-expanded', 'true'));
 		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(firstControls);
-		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
 		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
 
 		first.unmount();
@@ -590,7 +590,7 @@ describe('HotspotsBoard article', () => {
 
 		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
 		expect(secondToc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
 	});
 
 	it('Collapse all closes every card and Expand all reopens every card', async () => {
@@ -643,7 +643,7 @@ describe('HotspotsBoard article', () => {
 		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
 		await fireEvent.click(firstControls);
 		expect(firstControls).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('true');
+		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('true');
 		expect(localStorage.getItem('quiet-mode')).toBe('true');
 
 		first.unmount();

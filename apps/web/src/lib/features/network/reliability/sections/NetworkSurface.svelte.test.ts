@@ -155,7 +155,7 @@ const networkSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			keys: ['transit.persisted:network-daily-trend', 'transit.persisted:network-toc'],
+			prefixes: ['persisted:network-'],
 		},
 	],
 	resetters: [resetNetworkSurfaceState],
@@ -264,7 +264,7 @@ afterEach(() => {
 
 describe('NetworkSurface article shell', () => {
 	it('requests only the network live family', () => {
-		const foreignKey = 'transit.persisted:stop-reliability-toc';
+		const foreignKey = 'persisted:stop-reliability-toc';
 		sessionStorage.setItem(foreignKey, 'keep');
 		try {
 			networkSurface.reset();
@@ -467,7 +467,7 @@ describe('NetworkSurface article shell', () => {
 			'[data-network-section="network-daily-trend"] > [data-slot="card"]',
 		) as HTMLElement;
 		await fireEvent.click(within(trend).getByRole('button', { name: copy.trendSection }));
-		expect(sessionStorage.getItem('transit.persisted:network-daily-trend')).toBe('false');
+		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBe('false');
 	});
 
 	it('uses the shared ArticleSectionStack rhythm for both primary card groups', () => {
@@ -1070,7 +1070,7 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 	});
 
 	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
-		const storageKey = 'transit.persisted:network-toc';
+		const storageKey = 'persisted:network-toc';
 		const { container } = render(NetworkSurface);
 		const desktopToc = container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="section-toc"]',

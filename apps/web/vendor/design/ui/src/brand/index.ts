@@ -4,6 +4,15 @@ export type { BlueprintShellProps } from './BlueprintShell.svelte';
 export { default as ChevronToggle } from './ChevronToggle.svelte';
 export type { ChevronToggleProps } from './ChevronToggle.svelte';
 
+export { default as CollapsibleSection } from './CollapsibleSection.svelte';
+export type { CollapsibleSectionProps } from './CollapsibleSection.svelte';
+
+export { default as CornerMarks } from './CornerMarks.svelte';
+export type { CornerMarksProps } from './CornerMarks.svelte';
+
+export { default as MetricDisplay } from './MetricDisplay.svelte';
+export type { MetricDisplayProps } from './MetricDisplay.svelte';
+
 export { default as MetroStation } from './MetroStation.svelte';
 export type { MetroStationProps } from './MetroStation.svelte';
 
@@ -14,8 +23,17 @@ export type {
 	QuietModeButtonProps,
 } from './QuietModeButton.svelte';
 
+export { default as SectionHeading } from './SectionHeading.svelte';
+export type { SectionHeadingProps } from './SectionHeading.svelte';
+
+export { default as SectionIcon } from './SectionIcon.svelte';
+export type { SectionIconName } from './SectionIcon.svelte';
+
 export { default as SectionLabel } from './SectionLabel.svelte';
 export type { SectionLabelProps } from './SectionLabel.svelte';
+
+export { default as StatusDot } from './StatusDot.svelte';
+export type { StatusDotColor, StatusDotProps } from './StatusDot.svelte';
 
 export { default as StickyPanel } from './StickyPanel.svelte';
 export type { StickyPanelProps } from './StickyPanel.svelte';
@@ -31,3 +49,26 @@ export type { ThemeToggleProps } from './ThemeToggle.svelte';
 
 export { default as TocBadge } from './TocBadge.svelte';
 export type { TocBadgeSpec } from './TocBadge.svelte';
+
+export { default as TocNav } from './TocNav.svelte';
+export type { TocNavProps } from './TocNav.svelte';
+
+export { default as TocPill } from './TocPill.svelte';
+export type { TocPillProps } from './TocPill.svelte';
+
+export {
+	TOC_TARGET_SELECTOR,
+	flattenToc,
+	landTocFragments,
+	navigateToc,
+	observeActiveToc,
+	onTocNavigate,
+	openCollapsedTocTarget,
+	reconcileActiveToc,
+	resolveTocCounter,
+	revealTocTarget,
+	settleLayout,
+	tocElement,
+	type RevealTocTargetOptions,
+	type TocEntry,
+} from './toc.js';

@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
-	import { SectionLabel } from '@yesid/ui/brand';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { StateCutsVM } from '../selectors/stateCuts';
 

@@ -1,22 +1,28 @@
-<script lang="ts">
-	import { ChevronToggle } from '@yesid/ui/brand';
-	import { TocBadge } from '@yesid/ui/brand';
-	import { flattenToc, resolveTocCounter, tocElement, type TocEntry } from './toc';
-	import { scrollChain } from '@yesid/motion/actions';
+<!--
+  Mobile table of contents: a floating pill with the active heading and counter that opens a
+  drawer of entries. The page owns the active id.
+-->
+<script lang="ts" module>
+	import type { TocEntry } from './toc.js';
 
-	let {
-		entries,
-		activeId,
-		openAria,
-		closeAria,
-		onNavigate,
-	}: {
+	export interface TocPillProps {
 		entries: TocEntry[];
 		activeId: string;
+		/** Appended to the visible text to form the pill's accessible name. */
 		openAria: string;
 		closeAria: string;
+		/** Defaults to `navigateToc`, which jumps instead of gliding under reduced motion. */
 		onNavigate?: (id: string) => void;
-	} = $props();
+	}
+</script>
+
+<script lang="ts">
+	import { scrollChain } from '@yesid/motion/actions';
+	import ChevronToggle from './ChevronToggle.svelte';
+	import TocBadge from './TocBadge.svelte';
+	import { flattenToc, navigateToc, resolveTocCounter } from './toc.js';
+
+	let { entries, activeId, openAria, closeAria, onNavigate = navigateToc }: TocPillProps = $props();
 
 	const flat = $derived(flattenToc(entries));
 	const activeIndex = $derived(
@@ -34,7 +40,7 @@
 
 	function closeDrawer(restoreFocus = false): void {
 		drawerOpen = false;
-		if (restoreFocus) pillBtn?.focus();
+		if (restoreFocus) pillBtn?.focus({ preventScroll: true });
 	}
 
 	function onKeydown(e: KeyboardEvent): void {
@@ -51,18 +57,8 @@
 	});
 
 	function scrollTo(id: string): void {
-		if (onNavigate) {
-			onNavigate(id);
-			closeDrawer(true);
-			return;
-		}
-		const el = tocElement(id);
-		if (el) {
-			const reduce =
-				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-			el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
-			closeDrawer(true);
-		}
+		closeDrawer(true);
+		onNavigate(id);
 	}
 </script>
 
@@ -76,6 +72,7 @@
 		aria-expanded={drawerOpen}
 		aria-label={`${activeName} ${counter.current}/${counter.total} · ${openAria}`}
 	>
+		<!-- The accessible name starts with the visible text (WCAG 2.5.3, label in name). -->
 		<div class="h-1.5 w-1.5 rounded-full bg-primary"></div>
 		<span class="toc-pill-name font-mono text-caption">
 			{activeName}
@@ -125,6 +122,13 @@
 </div>
 
 <style>
+	/* Keeps headings landed by navigation clear of the pill. 1023.98px is below the desktop token. */
+	@media (max-width: 1023.98px) {
+		:global(html:has(.toc-pill-container) .section-header) {
+			scroll-margin-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+		}
+	}
+
 	.toc-pill-container {
 		position: fixed;
 		bottom: calc(20px + env(safe-area-inset-bottom, 0px));
@@ -157,7 +161,7 @@
 	}
 
 	.toc-pill-counter {
-		color: var(--primary);
+		color: color-mix(in srgb, var(--primary) 85%, transparent);
 		flex-shrink: 0;
 	}
 

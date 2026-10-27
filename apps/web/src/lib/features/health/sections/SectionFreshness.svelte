@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 	import type { ProvenanceFreshness } from '$lib/v1/schemas';
 	import type { FreshnessVerdict } from '../selectors/provenanceViews';
 	import type { HealthCopy } from '../health.copy';

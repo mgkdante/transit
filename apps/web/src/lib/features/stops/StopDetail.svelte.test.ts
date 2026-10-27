@@ -303,10 +303,8 @@ const stopSurface = createSurfaceHarness({
 	storage: [
 		{
 			port: sessionStorage,
-			keys: [
-				'transit.persisted:stop-reliability-controls',
-				'transit.persisted:stop-reliability-toc',
-			],
+			keys: ['persisted:stop-reliability-controls', 'persisted:stop-reliability-toc'],
+			prefixes: ['persisted:stop-detail-'],
 		},
 	],
 	resetters: [resetStopSurfaceState],

@@ -1,3 +1,4 @@
+import { persisted as persistedState } from './persisted.svelte.js';
 import { quietMode as quietModeStore } from './quiet-mode.svelte.js';
 import { theme as themeStore } from './theme.svelte.js';
 
@@ -36,6 +37,28 @@ export interface QuietModeStore {
 	resetForTest(): void;
 }
 
+/** A value that stays valid in every locale: ids, slugs, flags, numbers, never translated text. */
+export type LocaleFree = string | number | boolean | null | LocaleFree[];
+
+/** Widens a literal seed (`''` to `string`) and keeps explicit unions such as `Locale | null`. */
+export type Widen<T> = [T] extends [string]
+	? string
+	: [T] extends [number]
+		? number
+		: [T] extends [boolean]
+			? boolean
+			: T;
+
+/**
+ * Tab-scoped state: survives reloads and navigation within the tab, resets in a new tab.
+ * `bind:value={state.value}` works directly.
+ */
+export interface Persisted<T extends LocaleFree> {
+	value: T;
+}
+
 export const theme: ThemeStore = themeStore;
 export const quietMode: QuietModeStore = quietModeStore;
+export const persisted: <T extends LocaleFree>(key: string, initial: T) => Persisted<Widen<T>> =
+	persistedState;
 export { desktop, DESKTOP_MIN_WIDTH } from './desktop.js';

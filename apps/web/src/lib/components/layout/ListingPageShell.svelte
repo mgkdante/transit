@@ -3,8 +3,7 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { Separator } from '@yesid/ui/separator';
 	import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@yesid/ui/collapsible';
-	import { desktop } from '@yesid/ui/state';
-	import { persisted } from '$lib/stores';
+	import { desktop, persisted } from '@yesid/ui/state';
 	import { scrollChain } from '@yesid/motion/actions';
 
 	export interface ListingPageShellProps {

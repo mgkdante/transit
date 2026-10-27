@@ -1,12 +1,17 @@
-<script lang="ts">
-	import { cn } from '$lib/utils';
+<!-- Blueprint corner ticks. Place inside a positioned parent. -->
+<script lang="ts" module>
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	export interface CornerMarksProps extends HTMLAttributes<HTMLDivElement> {
+		/** Arm length: sm 12px, md 32px. */
 		size?: 'sm' | 'md';
 		opacity?: number;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
 
 	let { size = 'sm', opacity = 0.4, class: className, ...restProps }: CornerMarksProps = $props();
 
@@ -62,10 +67,7 @@
 		top: -1px;
 		left: -1px;
 	}
-	.mark-tl::before {
-		top: 0;
-		left: 0;
-	}
+	.mark-tl::before,
 	.mark-tl::after {
 		top: 0;
 		left: 0;
@@ -75,10 +77,7 @@
 		top: -1px;
 		right: -1px;
 	}
-	.mark-tr::before {
-		top: 0;
-		right: 0;
-	}
+	.mark-tr::before,
 	.mark-tr::after {
 		top: 0;
 		right: 0;
@@ -88,10 +87,7 @@
 		bottom: -1px;
 		left: -1px;
 	}
-	.mark-bl::before {
-		bottom: 0;
-		left: 0;
-	}
+	.mark-bl::before,
 	.mark-bl::after {
 		bottom: 0;
 		left: 0;
@@ -101,10 +97,7 @@
 		bottom: -1px;
 		right: -1px;
 	}
-	.mark-br::before {
-		bottom: 0;
-		right: 0;
-	}
+	.mark-br::before,
 	.mark-br::after {
 		bottom: 0;
 		right: 0;

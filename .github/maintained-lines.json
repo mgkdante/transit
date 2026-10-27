@@ -123,13 +123,13 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "edbbfdbc27ef083bbacf77613c36cf9e63bbe72c85ef1db5b9fe79ed8dacdcc2"
+        "61e67bfd9dd831a3732c7a788da2748833b85985febf1b1c226c4aee35ebf6de"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.14.1 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.15.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -163,6 +163,7 @@
         "apps/web/vendor/design/i18n-core/tsconfig.json",
         "apps/web/vendor/design/manifest.json",
         "apps/web/vendor/design/motion/README.md",
+        "apps/web/vendor/design/motion/lenis.css",
         "apps/web/vendor/design/motion/package.json",
         "apps/web/vendor/design/motion/ripple.css",
         "apps/web/vendor/design/motion/src/actions/boop.ts",
@@ -217,16 +218,25 @@
         "apps/web/vendor/design/ui/package.json",
         "apps/web/vendor/design/ui/src/brand/BlueprintShell.svelte",
         "apps/web/vendor/design/ui/src/brand/ChevronToggle.svelte",
+        "apps/web/vendor/design/ui/src/brand/CollapsibleSection.svelte",
+        "apps/web/vendor/design/ui/src/brand/CornerMarks.svelte",
+        "apps/web/vendor/design/ui/src/brand/MetricDisplay.svelte",
         "apps/web/vendor/design/ui/src/brand/MetroStation.svelte",
         "apps/web/vendor/design/ui/src/brand/QuietModeButton.svelte",
+        "apps/web/vendor/design/ui/src/brand/SectionHeading.svelte",
+        "apps/web/vendor/design/ui/src/brand/SectionIcon.svelte",
         "apps/web/vendor/design/ui/src/brand/SectionLabel.svelte",
+        "apps/web/vendor/design/ui/src/brand/StatusDot.svelte",
         "apps/web/vendor/design/ui/src/brand/StickyPanel.svelte",
         "apps/web/vendor/design/ui/src/brand/StopLabel.svelte",
         "apps/web/vendor/design/ui/src/brand/TerminalCursor.svelte",
         "apps/web/vendor/design/ui/src/brand/ThemeToggle.svelte",
         "apps/web/vendor/design/ui/src/brand/TocBadge.svelte",
+        "apps/web/vendor/design/ui/src/brand/TocNav.svelte",
+        "apps/web/vendor/design/ui/src/brand/TocPill.svelte",
         "apps/web/vendor/design/ui/src/brand/index.ts",
-        "apps/web/vendor/design/ui/src/brand/section-icon.internal.svelte",
+        "apps/web/vendor/design/ui/src/brand/numbered-chip.internal.svelte",
+        "apps/web/vendor/design/ui/src/brand/toc.ts",
         "apps/web/vendor/design/ui/src/cn/create-cn.ts",
         "apps/web/vendor/design/ui/src/cn/index.ts",
         "apps/web/vendor/design/ui/src/index.ts",
@@ -282,6 +292,8 @@
         "apps/web/vendor/design/ui/src/primitives/toggle/toggle.svelte",
         "apps/web/vendor/design/ui/src/state/desktop.ts",
         "apps/web/vendor/design/ui/src/state/index.ts",
+        "apps/web/vendor/design/ui/src/state/persisted.svelte.d.ts",
+        "apps/web/vendor/design/ui/src/state/persisted.svelte.js",
         "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.d.ts",
         "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.js",
         "apps/web/vendor/design/ui/src/state/theme.svelte.d.ts",
@@ -293,9 +305,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "fc9f25806c607df7efce58bc1ddc30274bad51d4e25d44e219dc0a0d0b121709"
+        "2bad02521b0c7827fe981ca2434850d0e26a8ae0f89d6237108d8910a8b7d3f5"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.14.1; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.15.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -418,7 +430,8 @@
         "0a2af52bd6a965d7e1c98d08bdf2e3b4770ea631656e96617b445b9271854678",
         "11627a53940f2f3bb05798084ccaef7f678407499795d61f021ee3736a222a1a",
         "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9",
-        "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121"
+        "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121",
+        "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

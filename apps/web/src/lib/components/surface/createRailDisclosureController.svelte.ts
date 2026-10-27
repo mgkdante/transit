@@ -1,6 +1,5 @@
-import { onMount, tick } from 'svelte';
-import { persisted, type Persisted } from '$lib/stores';
-import { quietMode } from '@yesid/ui/state';
+import { untrack } from 'svelte';
+import { quietMode, persisted, type Persisted } from '@yesid/ui/state';
 
 export interface RailDisclosureController<Key extends string> {
 	isOpen(key: Key): boolean;
@@ -8,6 +7,8 @@ export interface RailDisclosureController<Key extends string> {
 	setAll(next: boolean): void;
 }
 
+// Only reader actions are stored. Quiet mode overrides what each disclosure shows without
+// touching storage, so Collapse all here and Expand all elsewhere leave no stale close behind.
 export function createRailDisclosureController<
 	const StorageKeys extends Readonly<Record<string, string>>,
 >(storageKeys: StorageKeys): RailDisclosureController<Extract<keyof StorageKeys, string>> {
@@ -16,6 +17,7 @@ export function createRailDisclosureController<
 	const disclosures = Object.fromEntries(
 		entries.map(([key, storageKey]) => [key, persisted(storageKey, true)]),
 	) as Record<Key, Persisted<boolean>>;
+	let quietOverride = $state<Partial<Record<Key, boolean>>>({});
 
 	function disclosure(key: Key): Persisted<boolean> {
 		const value = disclosures[key];
@@ -24,6 +26,7 @@ export function createRailDisclosureController<
 	}
 
 	function set(key: Key, next: boolean): void {
+		quietOverride = { ...quietOverride, [key]: undefined };
 		disclosure(key).value = next;
 	}
 
@@ -31,41 +34,24 @@ export function createRailDisclosureController<
 		for (const [key] of entries) set(key, next);
 	}
 
-	let signalsReady = $state(false);
-	let lastCloseSignal = quietMode.closeSignal;
-	let lastOpenSignal = quietMode.openSignal;
+	function applyQuiet(open: boolean): void {
+		quietOverride = Object.fromEntries(entries.map(([key]) => [key, open])) as Record<Key, boolean>;
+	}
 
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastCloseSignal = quietMode.closeSignal;
-			lastOpenSignal = quietMode.openSignal;
-			if (quietMode.enabled) setAll(false);
-			signalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
+	untrack(() => {
+		if (quietMode.enabled) applyQuiet(false);
 	});
 
+	let lastQuietSignals = untrack(() => `${quietMode.closeSignal}:${quietMode.openSignal}`);
 	$effect(() => {
-		const closeSignal = quietMode.closeSignal;
-		const openSignal = quietMode.openSignal;
-		if (!signalsReady) return;
-		if (closeSignal !== lastCloseSignal) {
-			lastCloseSignal = closeSignal;
-			setAll(false);
-		}
-		if (openSignal !== lastOpenSignal) {
-			lastOpenSignal = openSignal;
-			setAll(true);
-		}
+		const signals = `${quietMode.closeSignal}:${quietMode.openSignal}`;
+		if (signals === lastQuietSignals) return;
+		lastQuietSignals = signals;
+		applyQuiet(!untrack(() => quietMode.enabled));
 	});
 
 	return {
-		isOpen: (key) => disclosure(key).value,
+		isOpen: (key) => quietOverride[key] ?? disclosure(key).value,
 		set,
 		setAll,
 	};

@@ -2,7 +2,7 @@
 	import { cn } from '$lib/utils';
 	import { type Locale } from '$lib/i18n';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 
 	export interface ConformanceBadgeProps {
 		conformance: ProvenanceConformance | null | undefined;

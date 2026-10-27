@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import { RankedRow } from '$lib/components/dataviz';
 	import TypedInformationCard from '$lib/components/shared/TypedInformationCard.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';

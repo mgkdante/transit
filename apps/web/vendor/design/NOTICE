@@ -28,3 +28,7 @@ solution competing with Webflow's visual animation-building capabilities. It
 also restricts reverse engineering GSAP to create competitive products and
 removing GSAP proprietary notices. The linked license is the controlling
 source for its complete terms and current wording.
+
+packages/motion/lenis.css is copied from Lenis 1.3, Copyright (c) 2024
+darkroom.engineering, and is used under the MIT License. Its text matches
+LICENSE apart from the copyright line.

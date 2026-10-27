@@ -473,8 +473,8 @@ describe('EntityDetail — optional article cover', () => {
 	it('rebinds persisted ToC disclosure state when client navigation changes entity keys', async () => {
 		const firstKey = 'entity-route-24-toc-test';
 		const secondKey = 'entity-route-51-toc-test';
-		sessionStorage.removeItem(`transit.persisted:${firstKey}`);
-		sessionStorage.removeItem(`transit.persisted:${secondKey}`);
+		sessionStorage.removeItem(`persisted:${firstKey}`);
+		sessionStorage.removeItem(`persisted:${secondKey}`);
 
 		const view = render(EntityDetailHarness, {
 			props: { mode: 'article', sectionKey: firstKey },
@@ -482,17 +482,17 @@ describe('EntityDetail — optional article cover', () => {
 		const firstToggle = screen.getByRole('button', { name: 'On this page' });
 		expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(firstToggle);
-		expect(sessionStorage.getItem(`transit.persisted:${firstKey}`)).toBe('false');
+		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBe('false');
 
 		await view.rerender({ mode: 'article', sectionKey: secondKey });
 		const secondToggle = screen.getByRole('button', { name: 'On this page' });
 		expect(secondToggle).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(secondToggle);
-		expect(sessionStorage.getItem(`transit.persisted:${secondKey}`)).toBe('false');
-		expect(sessionStorage.getItem(`transit.persisted:${firstKey}`)).toBe('false');
+		expect(sessionStorage.getItem(`persisted:${secondKey}`)).toBe('false');
+		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBe('false');
 
-		sessionStorage.removeItem(`transit.persisted:${firstKey}`);
-		sessionStorage.removeItem(`transit.persisted:${secondKey}`);
+		sessionStorage.removeItem(`persisted:${firstKey}`);
+		sessionStorage.removeItem(`persisted:${secondKey}`);
 	});
 });
 

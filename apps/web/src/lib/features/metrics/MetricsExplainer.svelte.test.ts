@@ -44,12 +44,12 @@ const CARD_ANCHORS = [
 function resetMetricsStorage(): void {
 	provState.data = null;
 	for (const anchor of CARD_ANCHORS) {
-		sessionStorage.removeItem(`transit.persisted:metrics-card-${anchor}`);
+		sessionStorage.removeItem(`persisted:metrics-card-${anchor}`);
 	}
 	for (const rail of ['provenance', 'coverage', 'freshness']) {
-		sessionStorage.removeItem(`transit.persisted:metrics-rail-${rail}`);
+		sessionStorage.removeItem(`persisted:metrics-rail-${rail}`);
 	}
-	sessionStorage.removeItem('transit.persisted:metrics-toc');
+	sessionStorage.removeItem('persisted:metrics-toc');
 	quietMode.resetForTest();
 	if (window.location.hash) window.location.hash = '';
 }
@@ -734,20 +734,20 @@ describe('MetricsExplainer', () => {
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		}
-		expect(sessionStorage.getItem('transit.persisted:metrics-toc')).toBe('false');
+		expect(sessionStorage.getItem('persisted:metrics-toc')).toBe('false');
 	});
 
-	it('writes a per-card CLOSE choice, then resets it on an unremembered article mount', async () => {
-		const { container } = render(MetricsExplainer);
+	it('leaves no card stuck closed after Collapse all here and Expand all on another page', async () => {
+		const first = render(MetricsExplainer);
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		expect(cardTrigger(first.container, 'severe')).toHaveAttribute('aria-expanded', 'false');
+		first.unmount();
 
-		expect(cardTrigger(container, 'severe')).toHaveAttribute('aria-expanded', 'true');
-		await fireEvent.click(cardTrigger(container, 'severe') as HTMLElement);
-		expect(cardTrigger(container, 'severe')).toHaveAttribute('aria-expanded', 'false');
-		expect(sessionStorage.getItem('transit.persisted:metrics-card-severe')).toBe('false');
-
-		const { container: c2 } = render(MetricsExplainer);
-		expect(cardTrigger(c2, 'severe')).toHaveAttribute('aria-expanded', 'true');
-		expect(cardTrigger(c2, 'otp')).toHaveAttribute('aria-expanded', 'true');
+		const second = render(MetricsExplainer);
+		expect(cardTrigger(second.container, 'severe')).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		expect(cardTrigger(second.container, 'severe')).toHaveAttribute('aria-expanded', 'true');
+		expect(cardTrigger(second.container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('Always start collapsed persists; forgetting clears the default without unfolding', async () => {

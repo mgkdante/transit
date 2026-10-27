@@ -20,7 +20,6 @@ const ssrContractTests = [
 	'src/lib/features/metrics/MetricsExplainer.methodology.svelte.test.ts',
 	'src/lib/components/map/MapStage.ssr.test.ts',
 	'src/lib/components/shared/Detail.test.ts',
-	'src/lib/components/shared/CollapsibleSection.test.ts',
 ];
 
 function canonicalDataUrl(value: unknown): URL | null {

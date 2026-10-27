@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { LaneRow } from '../selectors/laneHealth';

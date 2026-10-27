@@ -9,8 +9,8 @@ const controllerPath = resolve(
 	process.cwd(),
 	'src/lib/components/surface/createRailDisclosureController.svelte.ts',
 );
-const PRIMARY_STORAGE_KEY = 'transit.persisted:rail-controller-test-primary';
-const TOC_STORAGE_KEY = 'transit.persisted:rail-controller-test-toc';
+const PRIMARY_STORAGE_KEY = 'persisted:rail-controller-test-primary';
+const TOC_STORAGE_KEY = 'persisted:rail-controller-test-toc';
 const consumers = [
 	{
 		file: 'src/lib/features/alerts/AlertHistory.svelte',
@@ -117,8 +117,8 @@ describe('combined rail disclosure controller', () => {
 			expect(harness()).toHaveAttribute('data-primary-open', 'false');
 			expect(harness()).toHaveAttribute('data-toc-open', 'false');
 		});
-		expect(sessionStorage.getItem(PRIMARY_STORAGE_KEY)).toBe('false');
-		expect(sessionStorage.getItem(TOC_STORAGE_KEY)).toBe('false');
+		expect(sessionStorage.getItem(PRIMARY_STORAGE_KEY)).toBe('true');
+		expect(sessionStorage.getItem(TOC_STORAGE_KEY)).toBe('true');
 	});
 
 	it('mirrors every later quiet-mode close and open signal into both disclosures', async () => {
@@ -136,6 +136,20 @@ describe('combined rail disclosure controller', () => {
 		await fireEvent.click(screen.getByTestId('quiet-toggle'));
 		expect(harness()).toHaveAttribute('data-primary-open', 'true');
 		expect(harness()).toHaveAttribute('data-toc-open', 'true');
+	});
+
+	it('leaves nothing stuck closed after Collapse all here and Expand all on another page', async () => {
+		const first = render(RailDisclosureControllerHarness);
+		await fireEvent.click(screen.getByTestId('quiet-toggle'));
+		expect(harness()).toHaveAttribute('data-primary-open', 'false');
+		first.unmount();
+
+		render(RailDisclosureControllerHarness);
+		expect(harness()).toHaveAttribute('data-primary-open', 'false');
+		await fireEvent.click(screen.getByTestId('quiet-toggle'));
+		expect(harness()).toHaveAttribute('data-primary-open', 'true');
+		expect(harness()).toHaveAttribute('data-toc-open', 'true');
+		expect(sessionStorage.getItem(PRIMARY_STORAGE_KEY)).toBeNull();
 	});
 
 	it('is the single rail-disclosure state and signal owner for every combined-rail surface', () => {

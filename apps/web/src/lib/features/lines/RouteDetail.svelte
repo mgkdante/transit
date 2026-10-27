@@ -19,7 +19,6 @@
 	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { sharedClock } from '$lib/stores';
-	import { quietMode } from '@yesid/ui/state';
 	import { inferAbsenceReason } from '$lib/site/serviceWindow';
 	import { EdgeState, MaybeValue } from '$lib/components/edge';
 	import {
@@ -36,9 +35,9 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
-	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
+	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
+	import { articleNavigationCopy } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -367,9 +366,6 @@
 								index={0}
 								anchor="line-detail-profile"
 								sectionKey={`line-detail-${id}-profile`}
-								closeSignal={quietMode.closeSignal}
-								openSignal={quietMode.openSignal}
-								bulkCollapsed={quietMode.enabled}
 							>
 								<div class="route-profile-grid">
 									<MetricDisplay
@@ -410,9 +406,6 @@
 								index={1}
 								anchor="line-detail-directions"
 								sectionKey={`line-detail-${id}-directions`}
-								closeSignal={quietMode.closeSignal}
-								openSignal={quietMode.openSignal}
-								bulkCollapsed={quietMode.enabled}
 							>
 								<div class="route-section">
 									{#if live.generatedUtc != null || live.ageSeconds != null}
@@ -447,9 +440,6 @@
 									index={2}
 									anchor="line-detail-live"
 									sectionKey={`line-detail-${id}-live`}
-									closeSignal={quietMode.closeSignal}
-									openSignal={quietMode.openSignal}
-									bulkCollapsed={quietMode.enabled}
 								>
 									<div class="route-aside">
 										<AffectedAlerts
@@ -542,9 +532,6 @@
 								index={0}
 								anchor="line-schedule-span"
 								sectionKey={`line-schedule-${id}-span`}
-								closeSignal={quietMode.closeSignal}
-								openSignal={quietMode.openSignal}
-								bulkCollapsed={quietMode.enabled}
 							>
 								<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
 								<div class="route-schedule-span">
@@ -578,9 +565,6 @@
 								index={1}
 								anchor="line-schedule-periods"
 								sectionKey={`line-schedule-${id}-periods`}
-								closeSignal={quietMode.closeSignal}
-								openSignal={quietMode.openSignal}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#snippet headerActions()}
 									{@render scheduleInfo('headway', t.servicePeriods)}

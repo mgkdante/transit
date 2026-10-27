@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ConformanceBadge } from '$lib/components/surface';
-	import { CollapsibleSection } from '$lib/components/shared';
-	import { SectionLabel } from '@yesid/ui/brand';
+	import { SectionLabel, CollapsibleSection } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
@@ -11,18 +10,8 @@
 		conformance: ProvenanceConformance;
 		copy: HealthCopy;
 		locale: Locale;
-		closeSignal?: number | null;
-		openSignal?: number | null;
-		bulkCollapsed?: boolean | null;
 	}
-	let {
-		conformance,
-		copy,
-		locale,
-		closeSignal = null,
-		openSignal = null,
-		bulkCollapsed = null,
-	}: SectionConformanceProps = $props();
+	let { conformance, copy, locale }: SectionConformanceProps = $props();
 	const t = $derived(copy.conformance);
 </script>
 
@@ -37,9 +26,6 @@
 				title={t.detailsTitle}
 				sectionKey="health-conformance-members"
 				open={true}
-				{closeSignal}
-				{openSignal}
-				{bulkCollapsed}
 			>
 				<div class="health-conformance-detail">
 					<MetricDisplay

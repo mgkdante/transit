@@ -1,45 +1,58 @@
-<script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
-	import { ChevronToggle } from '@yesid/ui/brand';
-	import { Badge } from '@yesid/ui/badge';
-	import { Card } from '@yesid/ui/card';
-	import { persisted } from '$lib/stores';
+<!--
+  Collapsible section card. The whole non-interactive card surface toggles it; the header stays
+  the real button. Closed bodies stay mounted (inert) so server markup and anchors are complete.
+-->
+<script lang="ts" module>
+	import type { Snippet } from 'svelte';
 
-	type CollapsibleSectionHeaderVariant = 'default' | 'article-summary';
-
-	let {
-		title,
-		subtitle = undefined,
-		headerVariant = 'default',
-		open = $bindable(true),
-		sectionKey = undefined,
-		index = null,
-		accentColor = 'var(--primary)',
-		collapsible = true,
-		anchor = undefined,
-		closeSignal = null,
-		openSignal = null,
-		bulkCollapsed = null,
-		icon,
-		headerActions,
-		children,
-	}: {
+	export interface CollapsibleSectionProps {
 		title: string;
 		subtitle?: string;
-		headerVariant?: CollapsibleSectionHeaderVariant;
+		/** `article-summary`: a heading row with optional actions and a clamped subtitle. */
+		headerVariant?: 'default' | 'article-summary';
 		open?: boolean;
+		/** Stores the reader's open/closed choice for the tab under this locale-free key. */
 		sectionKey?: string;
+		/** Zero-based; renders the 01, 02 badge. */
 		index?: number | null;
 		accentColor?: string;
 		collapsible?: boolean;
+		/** Emits `data-toc` so TocNav and TocPill can target this section. */
 		anchor?: string;
-		closeSignal?: number | null;
+		/** Follow quiet mode. Pass false when another owner already applies it. */
+		quiet?: boolean;
+		/** A product signal that opens the section whenever it changes, like a reader click. */
 		openSignal?: number | null;
-		bulkCollapsed?: boolean | null;
 		icon?: Snippet;
 		headerActions?: Snippet;
 		children?: Snippet;
-	} = $props();
+	}
+</script>
+
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { Badge } from '../primitives/badge/index.js';
+	import { Card } from '../primitives/card/index.js';
+	import { persisted } from '../state/persisted.svelte.js';
+	import { quietMode } from '../state/quiet-mode.svelte.js';
+	import ChevronToggle from './ChevronToggle.svelte';
+
+	let {
+		title,
+		subtitle,
+		headerVariant = 'default',
+		open = $bindable(true),
+		sectionKey,
+		index = null,
+		accentColor = 'var(--primary)',
+		collapsible = true,
+		anchor,
+		quiet = true,
+		openSignal = null,
+		icon,
+		headerActions,
+		children,
+	}: CollapsibleSectionProps = $props();
 
 	const headerUid = $props.id();
 	const subtitleId = `${headerUid}-summary`;
@@ -47,13 +60,52 @@
 	const usesArticleSummary = $derived(collapsible && headerVariant === 'article-summary');
 	const hasHeaderMark = $derived(index !== null || icon !== undefined);
 
-	const persistedOpen = untrack(() => (sectionKey ? persisted(sectionKey, open) : null));
+	// Only reader choices are stored. Quiet mode changes what a keyed section shows without
+	// overwriting that choice, so Collapse all here and Expand all elsewhere leave no stale close.
+	const stored = untrack(() => (sectionKey ? persisted(sectionKey, open) : null));
+	let quietOverride = $state<boolean | null>(null);
+	// A static card always shows its body; the stored choice waits for it to become collapsible.
+	const isOpen = $derived(!collapsible || (quietOverride ?? (stored ? stored.value : open)));
 
-	let isOpen = $derived(persistedOpen ? persistedOpen.value : open);
-	function setOpen(next: boolean): void {
-		if (persistedOpen) persistedOpen.value = next;
+	function choose(next: boolean): void {
+		quietOverride = null;
+		if (stored) stored.value = next;
 		else open = next;
 	}
+
+	function applyQuiet(next: boolean): void {
+		if (!collapsible || !quiet) return;
+		if (stored) quietOverride = next;
+		else open = next;
+	}
+
+	untrack(() => {
+		if (quietMode.enabled) applyQuiet(false);
+	});
+
+	// One effect for both counters: several toggles in one tick must land on the final mode.
+	let lastQuietSignals = untrack(() => `${quietMode.closeSignal}:${quietMode.openSignal}`);
+	$effect(() => {
+		const signals = `${quietMode.closeSignal}:${quietMode.openSignal}`;
+		if (signals === lastQuietSignals) return;
+		lastQuietSignals = signals;
+		applyQuiet(!untrack(() => quietMode.enabled));
+	});
+
+	let lastOpenSignal = untrack(() => openSignal);
+	$effect(() => {
+		const signal = openSignal;
+		if (signal === lastOpenSignal) return;
+		lastOpenSignal = signal;
+		if (collapsible && signal !== null) choose(true);
+	});
+
+	let trigger = $state<HTMLButtonElement>();
+	let content = $state<HTMLElement>();
+	// A collapse that hides the focused element hands focus back to the trigger.
+	$effect.pre(() => {
+		if (!isOpen && content?.contains(document.activeElement)) trigger?.focus();
+	});
 
 	const triggerProps = $derived({
 		type: 'button' as const,
@@ -64,30 +116,12 @@
 		'aria-expanded': isOpen,
 		onclick: (event: MouseEvent) => {
 			if (event.button !== 0) event.preventDefault();
-			else setOpen(!isOpen);
+			else choose(!isOpen);
 		},
 	});
 
-	let lastCloseSignal = untrack(() => closeSignal);
-	$effect(() => {
-		const signal = closeSignal;
-		if (signal === lastCloseSignal) return;
-		lastCloseSignal = signal;
-		if (collapsible && signal !== null) setOpen(false);
-	});
-
-	let lastOpenSignal = untrack(() => openSignal);
-	$effect(() => {
-		const signal = openSignal;
-		if (signal === lastOpenSignal) return;
-		lastOpenSignal = signal;
-		if (collapsible && signal !== null) setOpen(true);
-	});
-
-	untrack(() => {
-		if (collapsible && bulkCollapsed !== null) setOpen(!bulkCollapsed);
-	});
-
+	// Interactive children keep their own clicks, nested cards own theirs, and ending a text
+	// selection is reading, not toggling.
 	const INTERACTIVE_CHILD =
 		'a,button,input,select,textarea,[role="button"],[data-card-interactive]';
 	function onCardClick(event: MouseEvent) {
@@ -96,7 +130,7 @@
 		if (target.closest(INTERACTIVE_CHILD)) return;
 		if (target.closest('[data-slot="card"]') !== event.currentTarget) return;
 		if (window.getSelection()?.toString()) return;
-		setOpen(!isOpen);
+		choose(!isOpen);
 	}
 </script>
 
@@ -104,6 +138,7 @@
 	{#if index !== null}
 		<Badge
 			variant="number"
+			class="text-[0.75rem]"
 			aria-hidden="true"
 			style={accentColor ? `background-color: ${accentColor}` : ''}
 			>{String(index + 1).padStart(2, '0')}</Badge
@@ -144,6 +179,7 @@
 					<h2 class="section-heading">
 						<button
 							{...triggerProps}
+							bind:this={trigger}
 							aria-describedby={subtitle ? subtitleId : undefined}
 							class="section-header section-header--article-summary {hasHeaderMark
 								? 'section-header--with-mark'
@@ -184,6 +220,7 @@
 			{:else}
 				<button
 					{...triggerProps}
+					bind:this={trigger}
 					class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
 				>
 					{@render legacyHeaderContent()}
@@ -197,6 +234,7 @@
 		{/if}
 
 		<div
+			bind:this={content}
 			id={contentId}
 			class="collapsible-content section-body"
 			data-slot="collapsible-content"
@@ -214,8 +252,14 @@
 </Card>
 
 <style>
+	/* The section card lifts off the board: a lit top bevel and, on hover, the section shadow.
+	   The generic Card stays flat. */
 	:global([data-slot='card'].section-card) {
 		border-width: 3px;
+		box-shadow: inset 0 1px 0 var(--edge-highlight);
+		transition:
+			border-color var(--duration-normal) var(--ease-default),
+			box-shadow var(--duration-normal) var(--ease-default);
 	}
 
 	:global([data-slot='card'].section-card.section-card--article-summary) {
@@ -224,6 +268,9 @@
 
 	:global([data-slot='card'].section-card:hover) {
 		border-color: var(--accent);
+		box-shadow:
+			var(--shadow-section),
+			inset 0 1px 0 var(--edge-highlight);
 	}
 
 	.section-header {
@@ -301,8 +348,8 @@
 		transition:
 			border-color var(--duration-normal) var(--ease-default),
 			box-shadow var(--duration-normal) var(--ease-default),
-			scale var(--duration-instant) var(--ease-out),
-			opacity var(--duration-instant) var(--ease-out);
+			scale 120ms cubic-bezier(0.2, 0, 0, 1),
+			opacity 120ms cubic-bezier(0.2, 0, 0, 1);
 	}
 	:global(
 		[data-slot='card'].section-card.section-card--toggleable:active:not(
@@ -321,10 +368,6 @@
 		opacity: 0.92;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.section-header {
-			cursor: pointer;
-		}
-
 		:global([data-slot='card'].section-card.section-card--toggleable) {
 			transition:
 				border-color var(--duration-normal) var(--ease-default),
@@ -384,15 +427,11 @@
 	.collapsible-content {
 		display: grid;
 		grid-template-rows: 0fr;
-		opacity: 0;
-		transition:
-			grid-template-rows var(--duration-slow) var(--ease-default),
-			opacity var(--duration-slow) var(--ease-default);
+		transition: grid-template-rows var(--duration-slow) var(--ease-default);
 	}
 
 	.collapsible-content[data-state='open'] {
 		grid-template-rows: 1fr;
-		opacity: 1;
 	}
 
 	.collapsible-content__inner {

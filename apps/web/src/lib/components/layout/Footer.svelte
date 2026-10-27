@@ -3,7 +3,7 @@
 	import { DEFAULT_LOCALE, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { FooterGroup, FooterLink } from '@yesid/ui/footer';
 	import { SURFACE_NAV, AUDIT_NAV, LEGAL_NAV } from '$lib/content/nav';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { StatusDot } from '@yesid/ui/brand';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 	import { footerCopy } from './footer.copy';
 

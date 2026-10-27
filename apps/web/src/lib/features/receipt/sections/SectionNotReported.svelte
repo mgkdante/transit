@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { RankedRow } from '$lib/components/dataviz';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import type { Locale } from '$lib/i18n';
 	import { NOT_REPORTED_DOMAIN, type NotReportedVM } from '../selectors/notReportedLines';
 

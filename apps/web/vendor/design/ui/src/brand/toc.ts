@@ -1,15 +1,22 @@
 import { tick } from 'svelte';
-import type { TocBadgeSpec } from '@yesid/ui/brand';
-
-export type { TocBadgeSpec };
+import type { TocBadgeSpec } from './TocBadge.svelte';
 
 export interface TocEntry {
 	id: string;
 	title: string;
 	level: number;
+	/** Leading mark, matching the section card's badge. Sub-headings omit it. */
 	badge?: TocBadgeSpec;
+	/** Lives in the desktop side rail: TocNav skips it, TocPill keeps it. */
 	rail?: boolean;
 	children: TocEntry[];
+}
+
+/** Elements `observeActiveToc` tracks unless the page passes its own selector. */
+export const TOC_TARGET_SELECTOR = '[data-section-index], [data-toc]';
+
+export function prefersReducedMotion(): boolean {
+	return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 export interface RevealTocTargetOptions {
@@ -76,17 +83,46 @@ export function reconcileActiveToc(
 	return winner;
 }
 
+/**
+ * Resolves a TOC id: `section-N` to `[data-section-index="N"]`, then `[data-toc]` (first visible
+ * of desktop and mobile duplicates), then a plain element id.
+ */
 export function tocElement(id: string): Element | null {
 	if (/^section-\d+$/.test(id)) {
 		const el = document.querySelector(`[data-section-index="${id.slice('section-'.length)}"]`);
 		if (el) return el;
 	}
-	const tagged = Array.from(document.querySelectorAll(`[data-toc="${id}"]`));
+	// Compared, not interpolated, so any id is safe.
+	const tagged = Array.from(document.querySelectorAll('[data-toc]')).filter(
+		(el) => el.getAttribute('data-toc') === id,
+	);
 	if (tagged.length > 0) {
 		const visible = tagged.find((el) => (el as HTMLElement).offsetParent !== null);
 		return visible ?? tagged[0];
 	}
 	return document.getElementById(id);
+}
+
+/** Lands the readable heading, including a closed card's visible trigger. */
+export function navigateToc(id: string): void {
+	const element = tocElement(id);
+	if (!element) return;
+	const closed = element.closest('[inert]');
+	const card = closed?.closest('.section-card') ?? element;
+	const target = card.querySelector<HTMLElement>('.section-header') ?? card;
+	target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+/** For `afterNavigate`: lands new fragment requests and leaves history to the router. */
+export function onTocNavigate({ type, to }: { type: string; to: { url: URL } | null }): void {
+	let id = to?.url.hash.slice(1);
+	if (!id || type === 'popstate') return;
+	try {
+		id = decodeURIComponent(id);
+	} catch {
+		return;
+	}
+	navigateToc(id);
 }
 
 export function openCollapsedTocTarget(id: string): boolean {
@@ -110,10 +146,7 @@ export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<v
 		}
 	}
 	const measured = scroller ?? document.scrollingElement ?? document.documentElement;
-	const transitionGraceMs =
-		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-			? 0
-			: 100;
+	const transitionGraceMs = prefersReducedMotion() ? 0 : 100;
 	return new Promise((resolve) => {
 		const startedAt = performance.now();
 		let done = false;
@@ -161,8 +194,15 @@ export async function revealTocTarget(
 	return true;
 }
 
-export function observeActiveToc(setActive: (id: string) => void): () => void {
-	const els = document.querySelectorAll('[data-section-index], [data-toc]');
+/**
+ * One observer reports the active id for both TocNav and TocPill; the page owns that id.
+ * Returns cleanup.
+ */
+export function observeActiveToc(
+	setActive: (id: string) => void,
+	selector: string = TOC_TARGET_SELECTOR,
+): () => void {
+	const els = document.querySelectorAll(selector);
 	if (els.length === 0) return () => {};
 
 	const observer = new IntersectionObserver(
@@ -181,4 +221,61 @@ export function observeActiveToc(setActive: (id: string) => void): () => void {
 	);
 	els.forEach((el) => observer.observe(el));
 	return () => observer.disconnect();
+}
+
+/**
+ * Same-page fragment links bypass `afterNavigate`. Lands each requested fragment after the
+ * router's own handling, unless history or another click supersedes it. Listens on `root`
+ * (the page's `main` by default) so it sees cancellations before SvelteKit's app-root handler.
+ * Returns cleanup.
+ */
+export function landTocFragments(
+	root: Element | Document = document.querySelector('main') ?? document,
+): () => void {
+	let frame = 0;
+	let pendingHref = '';
+	const cancel = () => {
+		cancelAnimationFrame(frame);
+		pendingHref = '';
+	};
+	const onHistory = (event: PopStateEvent) => {
+		// A new native hash entry has null state. Router history can revisit
+		// the same URL at another reading position and must cancel the pending jump.
+		if (event.state !== null || location.href !== pendingHref) cancel();
+	};
+	function onHashLink(event: MouseEvent) {
+		if (
+			event.defaultPrevented ||
+			event.button ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		)
+			return;
+		const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href]');
+		if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
+		const url = new URL(link.href);
+		if (
+			!url.hash ||
+			url.origin !== location.origin ||
+			url.pathname !== location.pathname ||
+			url.search !== location.search
+		)
+			return;
+		cancelAnimationFrame(frame);
+		pendingHref = url.href;
+		frame = requestAnimationFrame(() => {
+			if (location.href === url.href) onTocNavigate({ type: 'link', to: { url } });
+		});
+	}
+	root.addEventListener('click', onHashLink as EventListener);
+	document.addEventListener('click', cancel, true);
+	window.addEventListener('popstate', onHistory);
+	return () => {
+		root.removeEventListener('click', onHashLink as EventListener);
+		document.removeEventListener('click', cancel, true);
+		window.removeEventListener('popstate', onHistory);
+		cancel();
+	};
 }

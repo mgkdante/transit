@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { boop } from '@yesid/motion';
-	import { CornerMarks } from '$lib/components/brand';
+	import { CornerMarks } from '@yesid/ui/brand';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 
 	export interface ArticleHeaderProps {

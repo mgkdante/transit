@@ -5,7 +5,7 @@
 	import type { Snippet } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { RankedRow } from '$lib/components/dataviz';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { SectionHeading } from '@yesid/ui/brand';
 	import { AbsentValue } from '$lib/components/edge';
 
 	interface Props {

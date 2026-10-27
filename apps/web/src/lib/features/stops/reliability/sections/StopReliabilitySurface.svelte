@@ -26,8 +26,7 @@
 		revealTocTarget,
 		TocNav,
 		type TocEntry,
-	} from '$lib/components/shared';
-	import { quietMode } from '@yesid/ui/state';
+	} from '@yesid/ui/brand';
 	import { onMount, type Snippet } from 'svelte';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import { Button } from '@yesid/ui/button';
@@ -298,7 +297,7 @@
 		};
 	}
 	function cardOpenSignal(id: string): number {
-		return quietMode.openSignal + (cardOpenSignals[id] ?? 0);
+		return cardOpenSignals[id] ?? 0;
 	}
 
 	async function navigate(id: string): Promise<void> {
@@ -362,6 +361,7 @@
 				<TocNav
 					entries={tocEntries}
 					{activeId}
+					quiet={false}
 					bind:open={
 						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
 					}
@@ -424,9 +424,7 @@
 							index={sectionIndex('stop-rel-trend')}
 							sectionKey={sectionKey('stop-rel-trend')}
 							open={true}
-							closeSignal={quietMode.closeSignal}
 							openSignal={cardOpenSignal('stop-rel-trend')}
-							bulkCollapsed={quietMode.enabled}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -457,9 +455,7 @@
 								index={sectionIndex('stop-rel-percentiles')}
 								sectionKey={sectionKey('stop-rel-percentiles')}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal('stop-rel-percentiles')}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -490,9 +486,7 @@
 								index={sectionIndex('stop-rel-pane')}
 								sectionKey={sectionKey('stop-rel-pane')}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal('stop-rel-pane')}
-								bulkCollapsed={quietMode.enabled}
 							>
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
 									{#if explicitHistory}
@@ -516,9 +510,7 @@
 								index={sectionIndex('stop-rel-habits')}
 								sectionKey={sectionKey('stop-rel-habits')}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal('stop-rel-habits')}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -543,9 +535,7 @@
 								index={sectionIndex('stop-rel-weekday')}
 								sectionKey={sectionKey('stop-rel-weekday')}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal('stop-rel-weekday')}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -569,9 +559,7 @@
 								index={sectionIndex('stop-rel-time')}
 								sectionKey={sectionKey('stop-rel-time')}
 								open={true}
-								closeSignal={quietMode.closeSignal}
 								openSignal={cardOpenSignal('stop-rel-time')}
-								bulkCollapsed={quietMode.enabled}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -601,9 +589,7 @@
 							index={sectionIndex('stop-rel-crowding')}
 							sectionKey={sectionKey('stop-rel-crowding')}
 							open={true}
-							closeSignal={quietMode.closeSignal}
 							openSignal={cardOpenSignal('stop-rel-crowding')}
-							bulkCollapsed={quietMode.enabled}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -632,9 +618,7 @@
 							index={sectionIndex('stop-rel-by-route')}
 							sectionKey={sectionKey('stop-rel-by-route')}
 							open={true}
-							closeSignal={quietMode.closeSignal}
 							openSignal={cardOpenSignal('stop-rel-by-route')}
-							bulkCollapsed={quietMode.enabled}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
