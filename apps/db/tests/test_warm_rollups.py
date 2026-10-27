@@ -1429,7 +1429,10 @@ def test_repeat_offender_upsert_shape() -> None:
     assert "'vehicle'::text" in sql
     assert "UNION ALL" in sql
     assert "vehicle_id IS NOT NULL" in sql
-    assert "COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)" in sql
+    assert "bool_or(f.delay_seconds > 300) AS late" in sql
+    assert "GROUP BY f.provider_id, f.route_id, f.trip_id, f.vehicle_id, local_day" in sql
+    assert "COUNT(DISTINCT local_day) FILTER (WHERE late)" in sql
+    assert "ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1)" in sql
     assert "WHERE recurrence_days >= 3" in sql
     assert "'critical'" in sql
     assert "'high'" in sql
@@ -1528,6 +1531,14 @@ def test_reporting_aggregates_commit_in_one_transaction_per_table() -> None:
     for transaction, table_name in zip(transactions, BUILD_REPORTING_AGGREGATE_TABLES, strict=True):
         statements = transaction["statements"]
         assert transaction["status"] == "committed"
+        assert "SET LOCAL work_mem = '512MB'" in statements[2]
+        delete = next(
+            i for i, sql in enumerate(statements) if f"DELETE FROM gold.{table_name}" in sql
+        )
+        upsert = next(
+            i for i, sql in enumerate(statements) if f"INSERT INTO gold.{table_name}" in sql
+        )
+        assert 2 < delete < upsert
         assert sum(f"DELETE FROM gold.{table_name}" in sql for sql in statements) == 1
         assert sum(f"INSERT INTO gold.{table_name}" in sql for sql in statements) == 1
         assert all(

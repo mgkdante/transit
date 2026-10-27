@@ -39,6 +39,8 @@ from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
+SET_ROLLUP_WORK_MEM = named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'")
+
 
 def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
     sql = named_query(
@@ -1784,8 +1786,10 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             f.route_id,
             f.trip_id,
             f.vehicle_id,
-            f.delay_seconds,
-            timezone(dp.timezone, f.captured_at_utc)::date AS local_day
+            timezone(dp.timezone, f.captured_at_utc)::date AS local_day,
+            bool_or(f.delay_seconds > 300) AS late,
+            SUM(f.delay_seconds) AS delay_sum,
+            COUNT(*) AS delay_count
         FROM gold.fact_trip_delay_snapshot AS f
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = f.provider_id
@@ -1794,6 +1798,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
           AND f.delay_seconds IS NOT NULL
           AND ABS(f.delay_seconds) <= 3600
           AND f.route_id IS NOT NULL
+        GROUP BY f.provider_id, f.route_id, f.trip_id, f.vehicle_id, local_day
     ),
     agg AS (
         SELECT
@@ -1801,9 +1806,8 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             trip_id AS entity_id,
             route_id,
             provider_id,
-            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)
-                AS recurrence_days,
-            ROUND(AVG(delay_seconds)::numeric, 1) AS avg_delay_seconds
+            COUNT(DISTINCT local_day) FILTER (WHERE late) AS recurrence_days,
+            ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1) AS avg_delay_seconds
         FROM obs
         WHERE trip_id IS NOT NULL
         GROUP BY provider_id, route_id, trip_id
@@ -1813,8 +1817,8 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
             vehicle_id,
             route_id,
             provider_id,
-            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300),
-            ROUND(AVG(delay_seconds)::numeric, 1)
+            COUNT(DISTINCT local_day) FILTER (WHERE late),
+            ROUND(SUM(delay_sum)::numeric / SUM(delay_count), 1)
         FROM obs
         WHERE vehicle_id IS NOT NULL
         GROUP BY provider_id, route_id, vehicle_id
@@ -2026,7 +2030,7 @@ def _write_daily_rollup(
 ) -> None:
     period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
     # Transaction-local sort memory and disabled nested loops prevent repeated fact scans.
-    conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
+    conn.execute(SET_ROLLUP_WORK_MEM)
     conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
     kind = REBUILDABLE_KINDS.get(rollup_kind)
     if kind is not None and kind.select_missing is SELECT_MISSING_CAPTURE_DAYS:
@@ -2354,6 +2358,7 @@ def build_warm_rollups(
                 }
             with engine.begin() as conn:
                 set_daily_warm_transaction_timeouts(conn)
+                conn.execute(SET_ROLLUP_WORK_MEM)
                 if table_name == "route_delay_hourly":
                     lock_delay_hours(conn, provider_id)
                     built_at = materialization_time(conn)
