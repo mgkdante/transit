@@ -36,12 +36,13 @@
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import {
-		ArticleHeader,
+		ArticleKeywords,
 		ArticleSectionStack,
 		DashboardGrid,
-		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
@@ -50,9 +51,9 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type {
-		SurfaceRailContext,
-		SurfaceRailPresentation,
+	import SurfaceRail, {
+		type SurfaceRailContext,
+		type SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
@@ -453,26 +454,111 @@
 	});
 </script>
 
-<DetailShell
-	class="repeat-offenders-detail"
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
-	{tocEntries}
-	combinedRailConfig={showCombinedRail
-		? {
-				label: t.rail.label,
-				summary: controlsSummary,
-				openAria: t.rail.open,
-				closeAria: t.rail.close,
+{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+	{#snippet historyControls()}
+		{#key historyCorrection.revision}
+			<HistoryNavigator
+				mode="date"
+				date={offenders.selectedDate ?? undefined}
+				{dateOptions}
+				previousDate={offenders.previousDate}
+				nextDate={offenders.nextDate}
+				coverageText={historyCoverageText}
+				selectionText={historySelectionText}
+				announcement={historyCorrection.announcement}
+				liveAnnouncement={false}
+				{locale}
+				labels={t.history.navigator}
+				onDateChange={selectHistoryDate}
+			/>
+		{/key}
+	{/snippet}
+	{#snippet primaryControls()}
+		<GrainPicker
+			segments={presentedGrainSegments}
+			bind:value={grainKey}
+			label={t.grain.label}
+			variant="time-grid"
+		/>
+		{#each presentedGrainSegments as segment (segment.key)}
+			{#if segment.describedById}
+				<span
+					id={segment.describedById}
+					class="repeat-grain-reason visually-hidden"
+					data-slot="controls-reason"
+				>
+					{disabledReason}
+				</span>
+			{/if}
+		{/each}
+	{/snippet}
+	{#snippet secondaryControls()}
+		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+	{/snippet}
+	{#snippet windowCaptionControl()}
+		<p class="repeat-window" data-slot="active-window" aria-live="polite">
+			{windowCaption}
+		</p>
+	{/snippet}
+
+	{#if hasGrains || hasHistoryNavigator}
+		<ArticleControlDisclosure
+			title={t.rail.controls}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
 			}
-		: undefined}
+		>
+			<ArticleControlStack
+				history={hasHistoryNavigator ? historyControls : undefined}
+				primary={hasGrains ? primaryControls : undefined}
+				secondary={hasGrains && showWorstN ? secondaryControls : undefined}
+				caption={hasGrains ? windowCaptionControl : undefined}
+			/>
+		</ArticleControlDisclosure>
+	{/if}
+	{#if tocEntries.length > 0}
+		<div class="repeat-rail-toc" data-slot="section-toc">
+			<TocNav
+				entries={tocEntries}
+				activeId={navigation.activeId}
+				heading={t.rail.toc}
+				counterPrefix={t.rail.counterPrefix}
+				quiet={false}
+				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				onNavigate={(id) => {
+					closeSheet();
+					void navigate(id);
+				}}
+			/>
+		</div>
+	{/if}
+	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
+{/snippet}
+
+{#snippet railCell()}
+	<SurfaceRail
+		rail={combinedRail}
+		label={t.rail.label}
+		summary={controlsSummary}
+		openAria={t.rail.open}
+		closeAria={t.rail.close}
+	/>
+{/snippet}
+
+<DetailFrame
+	class="repeat-offenders-detail"
+	railScroll
+	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
+	rail={showCombinedRail ? railCell : undefined}
+	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -482,245 +568,159 @@
 			{#snippet controls()}
 				<QuietModeButton />
 			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
+			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-		{#snippet historyControls()}
-			{#key historyCorrection.revision}
-				<HistoryNavigator
-					mode="date"
-					date={offenders.selectedDate ?? undefined}
-					{dateOptions}
-					previousDate={offenders.previousDate}
-					nextDate={offenders.nextDate}
-					coverageText={historyCoverageText}
-					selectionText={historySelectionText}
-					announcement={historyCorrection.announcement}
-					liveAnnouncement={false}
-					{locale}
-					labels={t.history.navigator}
-					onDateChange={selectHistoryDate}
-				/>
-			{/key}
-		{/snippet}
-		{#snippet primaryControls()}
-			<GrainPicker
-				segments={presentedGrainSegments}
-				bind:value={grainKey}
-				label={t.grain.label}
-				variant="time-grid"
-			/>
-			{#each presentedGrainSegments as segment (segment.key)}
-				{#if segment.describedById}
-					<span
-						id={segment.describedById}
-						class="repeat-grain-reason visually-hidden"
-						data-slot="controls-reason"
-					>
-						{disabledReason}
-					</span>
-				{/if}
-			{/each}
-		{/snippet}
-		{#snippet secondaryControls()}
-			<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
-		{/snippet}
-		{#snippet windowCaptionControl()}
-			<p class="repeat-window" data-slot="active-window" aria-live="polite">
-				{windowCaption}
-			</p>
-		{/snippet}
-
-		{#if hasGrains || hasHistoryNavigator}
-			<ArticleControlDisclosure
-				title={t.rail.controls}
-				bind:open={
-					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-				}
-			>
-				<ArticleControlStack
-					history={hasHistoryNavigator ? historyControls : undefined}
-					primary={hasGrains ? primaryControls : undefined}
-					secondary={hasGrains && showWorstN ? secondaryControls : undefined}
-					caption={hasGrains ? windowCaptionControl : undefined}
-				/>
-			</ArticleControlDisclosure>
-		{/if}
-		{#if tocEntries.length > 0}
-			<div class="repeat-rail-toc" data-slot="section-toc">
-				<TocNav
-					entries={tocEntries}
-					activeId={navigation.activeId}
-					heading={t.rail.toc}
-					counterPrefix={t.rail.counterPrefix}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
-					onNavigate={(id) => {
-						closeSheet();
-						void navigate(id);
-					}}
-				/>
+	<p
+		class="repeat-history-live visually-hidden"
+		data-slot="history-page-announcement"
+		role="status"
+		aria-live="polite"
+		aria-atomic="true"
+	>
+		{historyCorrection.announcement ?? ''}
+	</p>
+	<ResourceBoundary resource={offenders} lang={locale}>
+		{#if isEmpty}
+			<div class="repeat-offenders-note" data-slot="offenders-empty">
+				<AbsentValue variant="block" reason="no-observations" {locale} />
 			</div>
-		{/if}
-	{/snippet}
-
-	{#snippet center()}
-		<p
-			class="repeat-history-live visually-hidden"
-			data-slot="history-page-announcement"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
-		>
-			{historyCorrection.announcement ?? ''}
-		</p>
-		<ResourceBoundary resource={offenders} lang={locale}>
-			{#if isEmpty}
-				<div class="repeat-offenders-note" data-slot="offenders-empty">
-					<AbsentValue variant="block" reason="no-observations" {locale} />
-				</div>
-			{:else}
-				<ArticleSectionStack data-slot="repeat-offenders-sections">
-					{#each sectionDefs as section (section.id)}
-						{#if section.present}
-							<CollapsibleSection
-								title={section.title}
-								subtitle={section.subtitle}
-								headerVariant="article-summary"
-								anchor={section.id}
-								sectionKey={section.sectionKey}
-								index={section.number - 1}
-								open={true}
-								openSignal={cardOpenSignal(section.id)}
-							>
-								{#if section.id === 'repeat-worst' && hasGrains}
-									<div class="repeat-offenders-article-prose">
-										<p class="repeat-offenders-lede">{t.lede}</p>
-										<div
-											class="offenders-hero"
-											data-slot="offenders-hero"
-											aria-label={t.hero.label}
-										>
-											{#if topOffender && heroName != null}
-												<span class="offenders-hero-overline">{t.hero.overline}</span>
-												{#if heroHref}
-													<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
-												{:else}
-													<span class="offenders-hero-name">{heroName}</span>
-												{/if}
-												{#if heroRate}
-													<p class="offenders-hero-rate">{heroRate}</p>
-												{/if}
-												{#if heroRecurrence}
-													<p class="offenders-hero-recurrence">
-														<span class="offenders-hero-recurrence-label"
-															>{t.hero.recurrenceLabel}</span
-														>
-														{heroRecurrence}
-													</p>
-												{/if}
+		{:else}
+			<ArticleSectionStack data-slot="repeat-offenders-sections">
+				{#each sectionDefs as section (section.id)}
+					{#if section.present}
+						<CollapsibleSection
+							title={section.title}
+							subtitle={section.subtitle}
+							headerVariant="article-summary"
+							anchor={section.id}
+							sectionKey={section.sectionKey}
+							index={section.number - 1}
+							open={true}
+							openSignal={cardOpenSignal(section.id)}
+						>
+							{#if section.id === 'repeat-worst' && hasGrains}
+								<div class="repeat-offenders-article-prose">
+									<p class="repeat-offenders-lede">{t.lede}</p>
+									<div class="offenders-hero" data-slot="offenders-hero" aria-label={t.hero.label}>
+										{#if topOffender && heroName != null}
+											<span class="offenders-hero-overline">{t.hero.overline}</span>
+											{#if heroHref}
+												<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
 											{:else}
-												<p class="offenders-hero-none">
-													{offenders.mode === 'history' ? t.history.retainedHeroNone : t.hero.none}
+												<span class="offenders-hero-name">{heroName}</span>
+											{/if}
+											{#if heroRate}
+												<p class="offenders-hero-rate">{heroRate}</p>
+											{/if}
+											{#if heroRecurrence}
+												<p class="offenders-hero-recurrence">
+													<span class="offenders-hero-recurrence-label"
+														>{t.hero.recurrenceLabel}</span
+													>
+													{heroRecurrence}
 												</p>
 											{/if}
-										</div>
-										<p class="offenders-def" data-slot="offenders-def">
-											{t.headline.explanation}
+										{:else}
+											<p class="offenders-hero-none">
+												{offenders.mode === 'history' ? t.history.retainedHeroNone : t.hero.none}
+											</p>
+										{/if}
+									</div>
+									<p class="offenders-def" data-slot="offenders-def">
+										{t.headline.explanation}
+										<MetricInfo
+											metricKey="severe"
+											{locale}
+											name={t.ladder.severeRateLabel}
+											side="bottom"
+										/>
+									</p>
+									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+										<p>{t.caveat}</p>
+									</TypedInformationCard>
+								</div>
+							{:else if section.id === 'repeat-worst'}
+								<div class="repeat-offenders-block">
+									<SectionHeading level={3} overline={t.listSection}>
+										{#snippet explainer()}
 											<MetricInfo
 												metricKey="severe"
 												{locale}
 												name={t.ladder.severeRateLabel}
 												side="bottom"
 											/>
-										</p>
-										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
-											<p>{t.caveat}</p>
-										</TypedInformationCard>
-									</div>
-								{:else if section.id === 'repeat-worst'}
-									<div class="repeat-offenders-block">
-										<SectionHeading level={3} overline={t.listSection}>
-											{#snippet explainer()}
-												<MetricInfo
-													metricKey="severe"
-													{locale}
-													name={t.ladder.severeRateLabel}
-													side="bottom"
-												/>
-											{/snippet}
-										</SectionHeading>
-										<p class="repeat-offenders-caption">{t.rowCaption}</p>
-										<DashboardGrid
-											as="ul"
-											minTile="360px"
-											gutter={false}
-											class="repeat-offenders-ranked"
-											aria-label={t.listSummary}
-										>
-											{#each legacyRows as row (row.key)}
-												<li class="repeat-offenders-item">
-													<a
-														class="repeat-offenders-link"
-														href={row.href}
-														data-sveltekit-preload-data="hover"
-														data-slot="offender-link"
-														aria-label={row.ariaLabel}
-													>
-														<RankedRow
-															bare
-															rank={row.rank}
-															title={row.title}
-															subtitle={row.subtitle}
-															severity={row.severity}
-															value={row.value}
-															domain={DELAY_DIST_DOMAIN}
-															unit={t.units.min}
-															display={row.display}
-															absentReason="no-observations"
-															{locale}
-														/>
-													</a>
-												</li>
-											{/each}
-										</DashboardGrid>
-										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
-											<p>{t.caveat}</p>
-										</TypedInformationCard>
-									</div>
-								{:else if section.id === 'repeat-trips'}
-									<RepeatOffendersSection
-										heading={t.ladder.heading}
-										ladder={tripLadder}
-										tray={tripTray}
-										evidence={tripEvidence}
-										{windowCaption}
-										{locale}
-										copy={t}
-									/>
-								{:else}
-									<RepeatOffendersSection
-										heading={t.ladder.heading}
-										ladder={vehicleLadder}
-										tray={vehicleTray}
-										evidence={vehicleEvidence}
-										{windowCaption}
-										{locale}
-										copy={t}
-									/>
-								{/if}
-							</CollapsibleSection>
-						{/if}
-					{/each}
-				</ArticleSectionStack>
-			{/if}
-		</ResourceBoundary>
-	{/snippet}
-</DetailShell>
+										{/snippet}
+									</SectionHeading>
+									<p class="repeat-offenders-caption">{t.rowCaption}</p>
+									<DashboardGrid
+										as="ul"
+										minTile="360px"
+										gutter={false}
+										class="repeat-offenders-ranked"
+										aria-label={t.listSummary}
+									>
+										{#each legacyRows as row (row.key)}
+											<li class="repeat-offenders-item">
+												<a
+													class="repeat-offenders-link"
+													href={row.href}
+													data-sveltekit-preload-data="hover"
+													data-slot="offender-link"
+													aria-label={row.ariaLabel}
+												>
+													<RankedRow
+														bare
+														rank={row.rank}
+														title={row.title}
+														subtitle={row.subtitle}
+														severity={row.severity}
+														value={row.value}
+														domain={DELAY_DIST_DOMAIN}
+														unit={t.units.min}
+														display={row.display}
+														absentReason="no-observations"
+														{locale}
+													/>
+												</a>
+											</li>
+										{/each}
+									</DashboardGrid>
+									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+										<p>{t.caveat}</p>
+									</TypedInformationCard>
+								</div>
+							{:else if section.id === 'repeat-trips'}
+								<RepeatOffendersSection
+									heading={t.ladder.heading}
+									ladder={tripLadder}
+									tray={tripTray}
+									evidence={tripEvidence}
+									{windowCaption}
+									{locale}
+									copy={t}
+								/>
+							{:else}
+								<RepeatOffendersSection
+									heading={t.ladder.heading}
+									ladder={vehicleLadder}
+									tray={vehicleTray}
+									evidence={vehicleEvidence}
+									{windowCaption}
+									{locale}
+									copy={t}
+								/>
+							{/if}
+						</CollapsibleSection>
+					{/if}
+				{/each}
+			</ArticleSectionStack>
+		{/if}
+	</ResourceBoundary>
+</DetailFrame>
 
 <style>
 	.repeat-window {

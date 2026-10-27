@@ -1,6 +1,4 @@
 import { render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ErrorPage from './+error.svelte';
 
@@ -79,21 +77,9 @@ describe('error route', () => {
 			screen.getByRole('heading', { level: 1, name: 'Something went wrong' }),
 		).toBeInTheDocument();
 		expect(screen.getByText('Database unavailable')).toBeInTheDocument();
-		expect(screen.getByText('500')).toBeInTheDocument();
-		expect(screen.queryByTestId('construction-scene')).not.toBeInTheDocument();
-	});
-
-	it('ports the yesid viewport rhythm without pinning short phones to a clipping height', () => {
-		const source = readFileSync(resolve(process.cwd(), 'src/routes/+error.svelte'), 'utf8');
-
-		expect(source).toMatch(/\.error-page\s*\{[\s\S]*?min-height:\s*calc\(100dvh - 5rem\)/);
-		expect(source).not.toMatch(/(?:^|[;{])\s*height:\s*calc\(100dvh\s*-\s*5rem\)/m);
-		expect(source).toMatch(/\.error-illustration\s*\{[^}]*max-width:\s*24rem/s);
-		expect(source).toMatch(/@media\s*\(min-width:\s*640px\)[\s\S]*?max-width:\s*28rem/);
-		expect(source).toMatch(/\.error-copy h1\s*\{[^}]*font-size:\s*1\.5rem/s);
-		expect(source).toMatch(
-			/@media\s*\(min-width:\s*640px\)[\s\S]*?\.error-copy h1\s*\{[^}]*font-size:\s*2\.25rem/,
-		);
-		expect(source).toMatch(/\.suggestions a\s*\{[^}]*min-width:\s*7\.25rem/s);
+		expect(screen.getByRole('alert')).toHaveTextContent('500');
+		expect(screen.getByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/');
+		expect(screen.getByTestId('construction-scene')).not.toHaveTextContent('500');
+		expect(screen.queryByTestId('terminal-line')).not.toBeInTheDocument();
 	});
 });

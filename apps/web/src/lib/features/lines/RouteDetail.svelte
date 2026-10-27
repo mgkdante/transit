@@ -29,11 +29,9 @@
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { StatusBadge } from '$lib/components/dataviz';
-	import {
-		ArticleHeader,
-		ArticleSectionStack,
-		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ArticleHeader } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '$lib/components/shared';
@@ -179,7 +177,6 @@
 			: null,
 	);
 	const articleEdgeRight = $derived(articleTimeText ?? shortName);
-	const articleTags = $derived<readonly string[]>(shortName ? [id, shortName] : [id]);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (shortName) entries.push({ label: t.article.provider, text: shortName });
@@ -331,8 +328,7 @@
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={articleTitle}
-			tags={articleTags}
-			tagsAria={t.article.tagsAria}
+			highlight={id}
 			backHref={localizeHref('/lines', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -349,6 +345,9 @@
 					label={t.viewOnMap}
 					ariaLabel={t.viewRouteOnMap(id)}
 				/>
+			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

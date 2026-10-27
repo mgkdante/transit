@@ -53,13 +53,11 @@ describe('article design-system composition', () => {
 		},
 	);
 
-	it('keeps the shared independent-card spacing and flat article title contract', () => {
+	it('keeps the shared independent-card spacing contract', () => {
 		const stack = source('src/lib/components/layout/ArticleSectionStack.svelte');
-		const header = source('src/lib/components/layout/ArticleHeader.svelte');
 
 		expect(stack).toMatch(/\.article-section-stack\s*\{[^}]*gap:\s*var\(--space-card-gap\);/s);
 		expect(stack).not.toMatch(/border-radius:\s*0|border-block-start-width:\s*0/);
-		expect(header).not.toMatch(/text-shadow/);
 	});
 
 	it.each(articleControlPages)(
@@ -73,13 +71,4 @@ describe('article design-system composition', () => {
 			expect(actions).not.toContain('QuietModeButton');
 		},
 	);
-
-	it('keeps the shared controls row after every other ArticleHeader content row', () => {
-		const header = source('src/lib/components/layout/ArticleHeader.svelte');
-		const actionsIndex = header.indexOf('data-slot="article-header-actions"');
-		const controlsIndex = header.indexOf('data-slot="article-header-controls"');
-
-		expect(controlsIndex).toBeGreaterThan(actionsIndex);
-		expect(header).toMatch(/\.header__controls\s*\{[^}]*justify-content:\s*center/s);
-	});
 });

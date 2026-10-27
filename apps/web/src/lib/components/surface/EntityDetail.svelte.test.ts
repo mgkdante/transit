@@ -65,8 +65,8 @@ const src = readFileSync(
 	join(process.cwd(), 'src/lib/components/surface/EntityDetail.svelte'),
 	'utf8',
 );
-const detailShellSrc = readFileSync(
-	join(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'),
+const detailFrameSrc = readFileSync(
+	join(process.cwd(), 'vendor/design/ui/src/layout/DetailFrame.svelte'),
 	'utf8',
 );
 
@@ -141,7 +141,7 @@ describe('EntityDetail — signage-active tab pattern', () => {
 			'aria-hidden',
 			'true',
 		);
-		expect(detailShellSrc).toMatch(
+		expect(detailFrameSrc).toMatch(
 			/\.detail-shell-toolbar\s*\{[\s\S]*?width:\s*100%[\s\S]*?background:\s*var\(--primary\)/,
 		);
 		expect(src).toMatch(/overflow-x:\s*auto/);
@@ -149,7 +149,7 @@ describe('EntityDetail — signage-active tab pattern', () => {
 	});
 
 	it('keeps the outer band full bleed while centering a materially narrower tab viewport', () => {
-		expect(detailShellSrc).toMatch(
+		expect(detailFrameSrc).toMatch(
 			/\.detail-shell-toolbar\s*\{[\s\S]*?width:\s*100%[\s\S]*?background:\s*var\(--primary\)/,
 		);
 		expect(src).toMatch(

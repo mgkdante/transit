@@ -565,7 +565,7 @@ describe('StopDetail article contract', () => {
 
 	it('localizes the article identity labels without replacing their real values', () => {
 		currentLocale = 'fr';
-		render(StopDetail, {
+		const { container } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Station test' } },
 		});
 
@@ -573,7 +573,7 @@ describe('StopDetail article contract', () => {
 			'href',
 			'/fr/stops',
 		);
-		expect(screen.getByRole('list', { name: 'Données d’identité de l’arrêt' })).toHaveTextContent(
+		expect(container.querySelector('[data-slot="article-header"]')).toHaveTextContent(
 			'ID arrêt 57191',
 		);
 		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);

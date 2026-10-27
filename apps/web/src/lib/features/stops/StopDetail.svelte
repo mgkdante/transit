@@ -26,12 +26,9 @@
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
-	import {
-		ArticleHeader,
-		ArticleSectionStack,
-		ControlsRail,
-		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	import { ArticleSectionStack, ControlsRail, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ArticleHeader } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { articleNavigationCopy } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { Separator } from '@yesid/ui/separator';
@@ -147,7 +144,6 @@
 			? (reliability.data?.generated_utc ?? null)
 			: (stop.data?.generated_utc ?? null),
 	);
-	const articleTags = $derived([`${t.article.stopId} ${id}`, shortName]);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
 	const articleEdgeRight = $derived(
 		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
@@ -485,8 +481,6 @@
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={articleTitle}
-			tags={articleTags}
-			tagsAria={t.article.tagsAria}
 			backHref={localizeHref('/stops', locale)}
 			backLabel={t.back}
 			meta={articleMeta}
@@ -503,6 +497,9 @@
 					label={t.viewOnMap}
 					ariaLabel={t.viewStopOnMap(id)}
 				/>
+			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

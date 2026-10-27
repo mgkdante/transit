@@ -123,13 +123,13 @@
         "apps/web/vendor/design/tokens/tsconfig.json"
       ],
       "sha256": [
-        "e9a733a1a267a63dbc34d8a3e072ee5761decce509f60fccab39807db51d8e39"
+        "da6fb60b25f80ba8991e0bd2bd48791e2e4e04f283da243bb31296a4d7ac56c1"
       ],
       "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.16.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.17.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -220,6 +220,7 @@
         "apps/web/vendor/design/ui/src/brand/ChevronToggle.svelte",
         "apps/web/vendor/design/ui/src/brand/CollapsibleSection.svelte",
         "apps/web/vendor/design/ui/src/brand/CornerMarks.svelte",
+        "apps/web/vendor/design/ui/src/brand/ErrorIllustration.svelte",
         "apps/web/vendor/design/ui/src/brand/FilterGroup.svelte",
         "apps/web/vendor/design/ui/src/brand/FilterSection.svelte",
         "apps/web/vendor/design/ui/src/brand/FilterSummary.svelte",
@@ -244,7 +245,11 @@
         "apps/web/vendor/design/ui/src/cn/create-cn.ts",
         "apps/web/vendor/design/ui/src/cn/index.ts",
         "apps/web/vendor/design/ui/src/index.ts",
+        "apps/web/vendor/design/ui/src/layout/ArticleHeader.svelte",
+        "apps/web/vendor/design/ui/src/layout/DetailFrame.svelte",
+        "apps/web/vendor/design/ui/src/layout/ErrorPage.svelte",
         "apps/web/vendor/design/ui/src/layout/ListingFrame.svelte",
+        "apps/web/vendor/design/ui/src/layout/SiteFooter.svelte",
         "apps/web/vendor/design/ui/src/layout/SiteRoot.svelte",
         "apps/web/vendor/design/ui/src/layout/index.ts",
         "apps/web/vendor/design/ui/src/primitives/badge/badge.svelte",
@@ -310,9 +315,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "909424a27fb120eafd8af2bb4bcf5370e7feb55f80f7eb3f155469fc99c9b560"
+        "4671320afe19a6be60525e9adad0e918065cd53f278c13128b9319ce22bded10"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.16.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.17.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -437,7 +442,8 @@
         "6ac2362db257926f879a2737fdb0283653fc54e06818e90f37316cc1aa6e07e9",
         "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121",
         "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3",
-        "65932c25a1b0e5729bf5642fd44b3bf33e6d6069ff1508c73d6badc68caac00e"
+        "65932c25a1b0e5729bf5642fd44b3bf33e6d6069ff1508c73d6badc68caac00e",
+        "1da322dfc8f8ee5a304ec4359e8d588a6b4c2ac6a7b5de693481f3cefc15f28b"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

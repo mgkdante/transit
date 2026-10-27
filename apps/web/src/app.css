@@ -103,46 +103,6 @@ html {
 /* ===== TOKENS:END ===== */
 
 @theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-popover: var(--popover);
-	--color-popover-foreground: var(--popover-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-border: var(--border);
-	--color-ring: var(--ring);
-	--color-input: var(--input);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-
-	--color-sidebar: var(--background);
-	--color-sidebar-foreground: var(--foreground);
-	--color-sidebar-accent: var(--accent);
-	--color-sidebar-accent-foreground: var(--accent-foreground);
-	--color-sidebar-border: var(--border);
-	--color-sidebar-ring: var(--ring);
-	--color-sidebar-primary: var(--primary);
-	--color-sidebar-primary-foreground: var(--primary-foreground);
-
-	--color-terminal: var(--terminal);
-	--color-manifesto: var(--manifesto);
-	--color-accent-text: var(--accent-text);
-	--color-border-subtle: var(--border-subtle);
-	--color-border-strong: var(--border-strong);
-	--color-success: var(--success);
-	--color-primary-hover: var(--primary-hover);
-	--color-accent-hover: var(--accent-hover);
-	--color-signage-bg: var(--signage-bg);
-	--color-signage-text: var(--signage-text);
-
 	--color-dataviz-status-early: var(--dataviz-status-early);
 	--color-dataviz-status-on-time: var(--dataviz-status-on-time);
 	--color-dataviz-status-late: var(--dataviz-status-late);
@@ -236,24 +196,6 @@ body {
 	box-shadow: var(--shadow-nav);
 }
 
-.detail-header-grid {
-	background-image:
-		repeating-linear-gradient(90deg, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 0px, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 1px, transparent 1px, transparent 80px),
-		repeating-linear-gradient(0deg, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 0px, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 1px, transparent 1px, transparent 80px);
-}
-
-.detail-header-grid::after {
-	content: '';
-	position: absolute;
-	inset: 0;
-	background-image:
-		radial-gradient(circle 2.5px at 80px 80px, color-mix(in srgb, var(--header-accent, var(--primary)) 12%, transparent) 0%, transparent 4px),
-		radial-gradient(circle 2px at 160px 160px, color-mix(in srgb, var(--header-accent, var(--primary)) 8%, transparent) 0%, transparent 3px),
-		radial-gradient(circle 2.5px at 240px 80px, color-mix(in srgb, var(--header-accent, var(--primary)) 10%, transparent) 0%, transparent 4px),
-		radial-gradient(circle 2px at 80px 240px, color-mix(in srgb, var(--header-accent, var(--primary)) 6%, transparent) 0%, transparent 3px);
-	background-size: 320px 320px;
-}
-
 [data-theme='light'],
 .theme-light {
 	--blueprint-ink-quiet: 0.28;
@@ -295,12 +237,6 @@ body {
 .brand-fade-line {
 	background: linear-gradient(90deg, var(--primary), transparent);
 	height: 1px;
-}
-
-@media (max-width: 768px) {
-	.metric-value.text-title {
-		font-size: var(--text-heading);
-	}
 }
 
 [id],

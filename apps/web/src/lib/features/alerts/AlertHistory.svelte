@@ -27,16 +27,17 @@
 		ResourceBoundary,
 	} from '$lib/components/surface';
 	import {
-		ArticleHeader,
+		ArticleKeywords,
 		ArticleSectionStack,
-		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { StateNotice } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
+	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
@@ -529,26 +530,75 @@
 	{historyAnnouncement ?? ''}
 </p>
 
-<DetailShell
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
+	<ArticleControlDisclosure
+		title={t.filters.railLabel}
+		bind:open={
+			() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
+		}
+	>
+		<AlertFilters
+			bind:affects
+			bind:severity
+			bind:route
+			window={pickedWindow}
+			bind:stop
+			{lineOptions}
+			{stopOptions}
+			{availableDates}
+			{filtersActive}
+			matchCount={readyMatchCount}
+			copy={t}
+			{locale}
+			{historyCoverageText}
+			{historySelectionText}
+			{historyAnnouncement}
+			onWindowChange={selectHistoryWindow}
+			onClear={clearFilters}
+		/>
+	</ArticleControlDisclosure>
+	{#if tocEntries.length > 0}
+		<div class="alert-history-rail-toc" data-slot="section-toc">
+			<TocNav
+				entries={tocEntries}
+				activeId={navigation.activeId}
+				heading={t.rail.toc}
+				counterPrefix={t.rail.counterPrefix}
+				quiet={false}
+				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				onNavigate={(id) => {
+					closeSheet();
+					void navigate(id);
+				}}
+			/>
+		</div>
+	{/if}
+	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
+{/snippet}
+
+{#snippet railCell()}
+	<SurfaceRail
+		rail={combinedRail}
+		label={t.rail.label}
+		summary={readyMatchCount == null ? undefined : t.filters.pillSummary(readyMatchCount)}
+		openAria={t.rail.open}
+		closeAria={t.rail.close}
+	/>
+{/snippet}
+
+<DetailFrame
 	class="alert-history-detail"
+	railScroll
 	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
-	{tocEntries}
-	combinedRailConfig={controlsReady
-		? {
-				label: t.rail.label,
-				summary: readyMatchCount == null ? undefined : t.filters.pillSummary(readyMatchCount),
-				openAria: t.rail.open,
-				closeAria: t.rail.close,
-			}
-		: undefined}
+	rail={controlsReady ? railCell : undefined}
+	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -558,161 +608,115 @@
 			{#snippet controls()}
 				<QuietModeButton />
 			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
+			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-		<ArticleControlDisclosure
-			title={t.filters.railLabel}
-			bind:open={
-				() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
-			}
+	{#if !alertsAvailable}
+		<StateNotice
+			title={t.unavailable.title}
+			body={t.unavailable.body(provider?.labels[locale].operator ?? '')}
+			presentation="silo"
+			role="status"
 		>
-			<AlertFilters
-				bind:affects
-				bind:severity
-				bind:route
-				window={pickedWindow}
-				bind:stop
-				{lineOptions}
-				{stopOptions}
-				{availableDates}
-				{filtersActive}
-				matchCount={readyMatchCount}
-				copy={t}
-				{locale}
-				{historyCoverageText}
-				{historySelectionText}
-				{historyAnnouncement}
-				onWindowChange={selectHistoryWindow}
-				onClear={clearFilters}
-			/>
-		</ArticleControlDisclosure>
-		{#if tocEntries.length > 0}
-			<div class="alert-history-rail-toc" data-slot="section-toc">
-				<TocNav
-					entries={tocEntries}
-					activeId={navigation.activeId}
-					heading={t.rail.toc}
-					counterPrefix={t.rail.counterPrefix}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
-					onNavigate={(id) => {
-						closeSheet();
-						void navigate(id);
-					}}
-				/>
-			</div>
-		{/if}
-	{/snippet}
-
-	{#snippet center()}
-		{#if !alertsAvailable}
-			<StateNotice
-				title={t.unavailable.title}
-				body={t.unavailable.body(provider?.labels[locale].operator ?? '')}
-				presentation="silo"
-				role="status"
-			>
-				{#snippet action()}
-					{#if officialAlertsUrl}<a href={officialAlertsUrl}>{t.unavailable.link}</a>{/if}
-				{/snippet}
-			</StateNotice>
-		{:else}
-			<ResourceBoundary
-				resource={displayResource}
-				lang={locale}
-				isEmpty={(d: AlertHistoryView) => d.entries.length === 0}
-				emptyVariant="empty-avis"
-			>
-				<ArticleSectionStack data-slot="alert-sections">
-					{#if previewingArchive}
-						<p class="alert-history-preview" data-slot="alert-archive-preview" role="status">
-							{t.archivePreviewNote(entries.length)}
-						</p>
-					{/if}
-					{#each sectionDefs as section (section.id)}
-						{#if section.present}
-							<CollapsibleSection
-								title={section.title}
-								subtitle={section.subtitle}
-								headerVariant="article-summary"
-								anchor={section.id}
-								sectionKey={section.sectionKey}
-								index={section.number - 1}
-								open={true}
-								openSignal={cardOpenSignal(section.id)}
-							>
-								{#if section.id === 'alerts-window'}
-									<div class="alert-history-headline" data-slot="alert-headline">
-										<ExplainedMetricCard
-											label={t.headline.label}
-											value={t.headline.value(headlineCount)}
-											explanation={t.headline.explanation}
-											sublabel={headlineSublabel}
-											info={headlineInfo}
-											{locale}
-										/>
-									</div>
-								{:else if section.id === 'alerts-breakdown'}
-									<AlertBreakdown
-										{causeRows}
-										{effectRows}
-										{severityRows}
-										{hasBreakdown}
-										copy={t}
+			{#snippet action()}
+				{#if officialAlertsUrl}<a href={officialAlertsUrl}>{t.unavailable.link}</a>{/if}
+			{/snippet}
+		</StateNotice>
+	{:else}
+		<ResourceBoundary
+			resource={displayResource}
+			lang={locale}
+			isEmpty={(d: AlertHistoryView) => d.entries.length === 0}
+			emptyVariant="empty-avis"
+		>
+			<ArticleSectionStack data-slot="alert-sections">
+				{#if previewingArchive}
+					<p class="alert-history-preview" data-slot="alert-archive-preview" role="status">
+						{t.archivePreviewNote(entries.length)}
+					</p>
+				{/if}
+				{#each sectionDefs as section (section.id)}
+					{#if section.present}
+						<CollapsibleSection
+							title={section.title}
+							subtitle={section.subtitle}
+							headerVariant="article-summary"
+							anchor={section.id}
+							sectionKey={section.sectionKey}
+							index={section.number - 1}
+							open={true}
+							openSignal={cardOpenSignal(section.id)}
+						>
+							{#if section.id === 'alerts-window'}
+								<div class="alert-history-headline" data-slot="alert-headline">
+									<ExplainedMetricCard
+										label={t.headline.label}
+										value={t.headline.value(headlineCount)}
+										explanation={t.headline.explanation}
+										sublabel={headlineSublabel}
+										info={headlineInfo}
 										{locale}
-										{causeInfo}
-										{effectInfo}
-										{severityInfo}
 									/>
-								{:else}
-									<div class="alert-history-content" data-slot="alert-log-content">
-										<div class="alert-history-head">
-											<SectionHeading level={3} overline={t.logSection} explainer={reachInfo} />
-											<span class="alert-history-count" data-slot="alert-count">
-												{t.count(visibleRows.length, filtered.length)}
-											</span>
-										</div>
-
-										{#if truncated && totalInWindow != null}
-											<p class="alert-history-truncated" data-slot="alert-truncated">
-												{t.truncatedNote(entries.length, totalInWindow)}
-											</p>
-										{/if}
-
-										{#if !hasMatches}
-											<StateNotice
-												title={t.filters.noMatch}
-												presentation="silo"
-												role="status"
-												ariaLive="polite"
-												data-slot="alert-no-match"
-											/>
-										{:else}
-											<AlertLog
-												rows={visibleRows}
-												total={filtered.length}
-												{expanded}
-												{overflow}
-												{logId}
-												copy={t}
-												{locale}
-												onToggle={() => (expanded = !expanded)}
-											/>
-										{/if}
+								</div>
+							{:else if section.id === 'alerts-breakdown'}
+								<AlertBreakdown
+									{causeRows}
+									{effectRows}
+									{severityRows}
+									{hasBreakdown}
+									copy={t}
+									{locale}
+									{causeInfo}
+									{effectInfo}
+									{severityInfo}
+								/>
+							{:else}
+								<div class="alert-history-content" data-slot="alert-log-content">
+									<div class="alert-history-head">
+										<SectionHeading level={3} overline={t.logSection} explainer={reachInfo} />
+										<span class="alert-history-count" data-slot="alert-count">
+											{t.count(visibleRows.length, filtered.length)}
+										</span>
 									</div>
-								{/if}
-							</CollapsibleSection>
-						{/if}
-					{/each}
-				</ArticleSectionStack>
-			</ResourceBoundary>
-		{/if}
-	{/snippet}
-</DetailShell>
+
+									{#if truncated && totalInWindow != null}
+										<p class="alert-history-truncated" data-slot="alert-truncated">
+											{t.truncatedNote(entries.length, totalInWindow)}
+										</p>
+									{/if}
+
+									{#if !hasMatches}
+										<StateNotice
+											title={t.filters.noMatch}
+											presentation="silo"
+											role="status"
+											ariaLive="polite"
+											data-slot="alert-no-match"
+										/>
+									{:else}
+										<AlertLog
+											rows={visibleRows}
+											total={filtered.length}
+											{expanded}
+											{overflow}
+											{logId}
+											copy={t}
+											{locale}
+											onToggle={() => (expanded = !expanded)}
+										/>
+									{/if}
+								</div>
+							{/if}
+						</CollapsibleSection>
+					{/if}
+				{/each}
+			</ArticleSectionStack>
+		</ResourceBoundary>
+	{/if}
+</DetailFrame>
 
 <style>
 	.alert-history-rail-toc {

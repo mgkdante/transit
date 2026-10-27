@@ -30,11 +30,12 @@
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import {
-		ArticleHeader,
+		ArticleKeywords,
 		ArticleSectionStack,
-		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
@@ -42,9 +43,9 @@
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import type {
-		SurfaceRailContext,
-		SurfaceRailPresentation,
+	import SurfaceRail, {
+		type SurfaceRailContext,
+		type SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
@@ -376,26 +377,109 @@
 	});
 </script>
 
-<DetailShell
+{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+	{#snippet historyControls()}
+		{#key historyCorrection.revision}
+			<HistoryNavigator
+				mode="date"
+				date={hotspots.selectedDate ?? undefined}
+				{dateOptions}
+				previousDate={hotspots.previousDate}
+				nextDate={hotspots.nextDate}
+				coverageText={historyCoverageText}
+				selectionText={historySelectionText}
+				announcement={historyCorrection.announcement}
+				liveAnnouncement={false}
+				{locale}
+				labels={t.history.navigator}
+				onDateChange={selectHistoryDate}
+			/>
+		{/key}
+	{/snippet}
+	{#snippet primaryControls()}
+		<GrainPicker
+			segments={presentedGrainSegments}
+			bind:value={grainKey}
+			label={t.grain.label}
+			variant="time-grid"
+		/>
+		{#each presentedGrainSegments as segment (segment.key)}
+			{#if segment.describedById}
+				<span
+					id={segment.describedById}
+					class="hotspots-reason visually-hidden"
+					data-slot="controls-reason"
+				>
+					{disabledReason}
+				</span>
+			{/if}
+		{/each}
+	{/snippet}
+	{#snippet secondaryControls()}
+		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+	{/snippet}
+	{#snippet windowCaptionControl()}
+		<p class="hotspots-window" data-slot="active-window" aria-live="polite">
+			{windowCaption}
+		</p>
+	{/snippet}
+
+	<ArticleControlDisclosure
+		title={t.rail.controls}
+		bind:open={
+			() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+		}
+	>
+		<ArticleControlStack
+			history={hasHistoryNavigator ? historyControls : undefined}
+			primary={showGrainPicker ? primaryControls : undefined}
+			secondary={showWorstN ? secondaryControls : undefined}
+			caption={windowCaptionControl}
+		/>
+	</ArticleControlDisclosure>
+	{#if tocEntries.length > 0}
+		<div class="hotspots-rail-toc" data-slot="section-toc">
+			<TocNav
+				entries={tocEntries}
+				activeId={navigation.activeId}
+				heading={t.rail.toc}
+				counterPrefix={t.rail.counterPrefix}
+				quiet={false}
+				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				onNavigate={(id) => {
+					closeSheet();
+					void navigate(id);
+				}}
+			/>
+		</div>
+	{/if}
+	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
+{/snippet}
+
+{#snippet railCell()}
+	<SurfaceRail
+		rail={combinedRail}
+		label={t.rail.label}
+		summary={controlsSummary}
+		openAria={t.rail.open}
+		closeAria={t.rail.close}
+	/>
+{/snippet}
+
+<DetailFrame
 	class="hotspots-detail"
+	railScroll
 	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
-	{tocEntries}
-	combinedRailConfig={showCombinedRail
-		? {
-				label: t.rail.label,
-				summary: controlsSummary,
-				openAria: t.rail.open,
-				closeAria: t.rail.close,
-			}
-		: undefined}
+	rail={showCombinedRail ? railCell : undefined}
+	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -405,167 +489,87 @@
 			{#snippet controls()}
 				<QuietModeButton />
 			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
+			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-		{#snippet historyControls()}
-			{#key historyCorrection.revision}
-				<HistoryNavigator
-					mode="date"
-					date={hotspots.selectedDate ?? undefined}
-					{dateOptions}
-					previousDate={hotspots.previousDate}
-					nextDate={hotspots.nextDate}
-					coverageText={historyCoverageText}
-					selectionText={historySelectionText}
-					announcement={historyCorrection.announcement}
-					liveAnnouncement={false}
-					{locale}
-					labels={t.history.navigator}
-					onDateChange={selectHistoryDate}
-				/>
-			{/key}
-		{/snippet}
-		{#snippet primaryControls()}
-			<GrainPicker
-				segments={presentedGrainSegments}
-				bind:value={grainKey}
-				label={t.grain.label}
-				variant="time-grid"
-			/>
-			{#each presentedGrainSegments as segment (segment.key)}
-				{#if segment.describedById}
-					<span
-						id={segment.describedById}
-						class="hotspots-reason visually-hidden"
-						data-slot="controls-reason"
-					>
-						{disabledReason}
-					</span>
-				{/if}
-			{/each}
-		{/snippet}
-		{#snippet secondaryControls()}
-			<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
-		{/snippet}
-		{#snippet windowCaptionControl()}
-			<p class="hotspots-window" data-slot="active-window" aria-live="polite">
-				{windowCaption}
-			</p>
-		{/snippet}
-
-		<ArticleControlDisclosure
-			title={t.rail.controls}
-			bind:open={
-				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-			}
-		>
-			<ArticleControlStack
-				history={hasHistoryNavigator ? historyControls : undefined}
-				primary={showGrainPicker ? primaryControls : undefined}
-				secondary={showWorstN ? secondaryControls : undefined}
-				caption={windowCaptionControl}
-			/>
-		</ArticleControlDisclosure>
-		{#if tocEntries.length > 0}
-			<div class="hotspots-rail-toc" data-slot="section-toc">
-				<TocNav
-					entries={tocEntries}
-					activeId={navigation.activeId}
-					heading={t.rail.toc}
-					counterPrefix={t.rail.counterPrefix}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
-					onNavigate={(id) => {
-						closeSheet();
-						void navigate(id);
-					}}
-				/>
+	<p
+		class="hotspots-history-live visually-hidden"
+		data-slot="history-page-announcement"
+		role="status"
+		aria-live="polite"
+		aria-atomic="true"
+	>
+		{historyCorrection.announcement ?? ''}
+	</p>
+	<ResourceBoundary resource={hotspots} lang={locale}>
+		{#if isEmpty}
+			<div class="hotspots-note" data-slot="hotspots-empty">
+				<AbsentValue variant="block" reason="no-observations" {locale} />
 			</div>
-		{/if}
-	{/snippet}
-
-	{#snippet center()}
-		<p
-			class="hotspots-history-live visually-hidden"
-			data-slot="history-page-announcement"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
-		>
-			{historyCorrection.announcement ?? ''}
-		</p>
-		<ResourceBoundary resource={hotspots} lang={locale}>
-			{#if isEmpty}
-				<div class="hotspots-note" data-slot="hotspots-empty">
-					<AbsentValue variant="block" reason="no-observations" {locale} />
-				</div>
-			{:else}
-				<ArticleSectionStack data-slot="hotspots-sections">
-					{#each sectionDefs as section (section.id)}
-						{#if section.present}
-							<CollapsibleSection
-								title={section.title}
-								subtitle={section.subtitle}
-								headerVariant="article-summary"
-								anchor={section.id}
-								sectionKey={section.sectionKey}
-								index={section.number - 1}
-								open={true}
-								openSignal={cardOpenSignal(section.id)}
-							>
-								{#if section.id === 'hotspots-top'}
-									<div class="hotspots-article-prose">
-										<p class="hotspots-lede">{t.lede}</p>
-										<div
-											class="hotspots-verdict"
-											data-slot="hotspots-verdict"
-											aria-label={t.verdict.label}
-										>
-											{#if topHotspotHref}
-												<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
-											{:else}
-												<p class="hotspots-verdict-line">{verdictLine}</p>
-											{/if}
-										</div>
-										<p class="hotspots-window hotspots-window--article">{windowCaption}</p>
-										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
-											<p>{t.caveat}</p>
-										</TypedInformationCard>
+		{:else}
+			<ArticleSectionStack data-slot="hotspots-sections">
+				{#each sectionDefs as section (section.id)}
+					{#if section.present}
+						<CollapsibleSection
+							title={section.title}
+							subtitle={section.subtitle}
+							headerVariant="article-summary"
+							anchor={section.id}
+							sectionKey={section.sectionKey}
+							index={section.number - 1}
+							open={true}
+							openSignal={cardOpenSignal(section.id)}
+						>
+							{#if section.id === 'hotspots-top'}
+								<div class="hotspots-article-prose">
+									<p class="hotspots-lede">{t.lede}</p>
+									<div
+										class="hotspots-verdict"
+										data-slot="hotspots-verdict"
+										aria-label={t.verdict.label}
+									>
+										{#if topHotspotHref}
+											<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
+										{:else}
+											<p class="hotspots-verdict-line">{verdictLine}</p>
+										{/if}
 									</div>
-								{:else if section.id === 'hotspots-lines'}
-									<HotspotSection
-										heading={t.ladder.heading}
-										ladder={routeLadder}
-										tray={routeTray}
-										{windowCaption}
-										chartScrollLabel={t.chart.scroll(t.cards.lines.title)}
-										{locale}
-										copy={t}
-									/>
-								{:else}
-									<HotspotSection
-										heading={t.ladder.heading}
-										ladder={stopLadder}
-										tray={stopTray}
-										{windowCaption}
-										chartScrollLabel={t.chart.scroll(t.cards.stops.title)}
-										{locale}
-										copy={t}
-									/>
-								{/if}
-							</CollapsibleSection>
-						{/if}
-					{/each}
-				</ArticleSectionStack>
-			{/if}
-		</ResourceBoundary>
-	{/snippet}
-</DetailShell>
+									<p class="hotspots-window hotspots-window--article">{windowCaption}</p>
+									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+										<p>{t.caveat}</p>
+									</TypedInformationCard>
+								</div>
+							{:else if section.id === 'hotspots-lines'}
+								<HotspotSection
+									heading={t.ladder.heading}
+									ladder={routeLadder}
+									tray={routeTray}
+									{windowCaption}
+									chartScrollLabel={t.chart.scroll(t.cards.lines.title)}
+									{locale}
+									copy={t}
+								/>
+							{:else}
+								<HotspotSection
+									heading={t.ladder.heading}
+									ladder={stopLadder}
+									tray={stopTray}
+									{windowCaption}
+									chartScrollLabel={t.chart.scroll(t.cards.stops.title)}
+									{locale}
+									copy={t}
+								/>
+							{/if}
+						</CollapsibleSection>
+					{/if}
+				{/each}
+			</ArticleSectionStack>
+		{/if}
+	</ResourceBoundary>
+</DetailFrame>
 
 <style>
 	.hotspots-window {

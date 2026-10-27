@@ -136,11 +136,11 @@ describe('MetricsExplainer', () => {
 			'href',
 			'/',
 		);
-		const keywords = within(header).getByRole('list', { name: en.article.tagsAria });
-		for (const keyword of en.article.tags) {
-			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
-		}
-		expect(header.querySelector('.detail-header-grid')).not.toBeNull();
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		expect(within(left).getByText(en.article.tagsAria)).toBeInTheDocument();
+		expect(within(left).getByText(en.article.tags.join(' · '))).toBeInTheDocument();
+		expect(container.querySelectorAll('[data-slot="article-keywords"]')).toHaveLength(2);
+		expect(header.querySelector('.header__circuit-grid')).not.toBeNull();
 		expect(header.querySelector('[data-testid="manifesto-canvas"]')).not.toBeNull();
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
