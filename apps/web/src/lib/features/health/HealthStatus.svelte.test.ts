@@ -290,10 +290,10 @@ describe('HealthStatus — full manifest render', () => {
 			'href',
 			'/',
 		);
-		const keywords = within(header).getByRole('list', { name: en.article.tagsAria });
-		for (const keyword of en.article.tags) {
-			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
-		}
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		expect(within(left).getByText(en.article.tagsAria)).toBeInTheDocument();
+		expect(within(left).getByText(en.article.tags.join(' · '))).toBeInTheDocument();
+		expect(container.querySelectorAll('[data-slot="article-keywords"]')).toHaveLength(2);
 		expect(header).toHaveTextContent(en.article.sections(9));
 		expect(header).toHaveTextContent('2026');
 		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
@@ -396,7 +396,7 @@ describe('HealthStatus — full manifest render', () => {
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 
 		expect(header).not.toBeNull();
-		expect(header.querySelector('.header__meta')?.children).toHaveLength(0);
+		expect(header.querySelector('.header__meta')).toBeNull();
 		expect(header).not.toHaveTextContent('0 sections');
 	});
 

@@ -342,9 +342,9 @@ describe('AlertHistory article shell', () => {
 			'href',
 			'/',
 		);
-		expect(
-			within(screen.getByRole('list', { name: 'Page keywords' })).getAllByRole('listitem'),
-		).toHaveLength(4);
+		const keywords = container.querySelector('[data-slot="article-keywords"]');
+		expect(keywords).toHaveTextContent('Page keywords');
+		expect(keywords).toHaveTextContent('alerts · archive · duration · reach');
 		expect(screen.getByText('AS OF')).toBeInTheDocument();
 		expect(screen.getByText('2 matches')).toBeInTheDocument();
 		expect(screen.getByText('3 sections')).toBeInTheDocument();

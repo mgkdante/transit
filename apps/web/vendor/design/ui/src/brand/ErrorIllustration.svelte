@@ -1,9 +1,23 @@
-<script lang="ts">
-	interface Props {
+<!--
+  Construction scene for error pages: scaffolding, a station sign, barriers, cones and two
+  blinking lamps (static under reduced motion). The sign shows `signLabel` and `code` when given.
+  Colors come from CSS classes because SVG presentation attributes can't read custom properties.
+-->
+<script lang="ts" module>
+	export interface ErrorIllustrationProps {
+		/** Large sign text, such as `404`. */
+		code?: string;
+		/** Small sign text above the code, such as `STATION`. */
+		signLabel?: string;
 		class?: string;
 	}
+</script>
 
-	let { class: className = '' }: Props = $props();
+<script lang="ts">
+	let { code, signLabel, class: className = '' }: ErrorIllustrationProps = $props();
+
+	const uid = $props.id();
+	const patternId = `hazard-pattern-${uid}`;
 </script>
 
 <div class="construction-scene {className}" data-testid="construction-scene">
@@ -30,43 +44,48 @@
 
 		<g>
 			<rect class="sign-bg" x="130" y="70" width="140" height="80" rx="4" stroke-width="1.5" />
-			<text
-				class="sign-label"
-				x="200"
-				y="95"
-				text-anchor="middle"
-				font-family="'JetBrains Mono', monospace"
-				font-size="10"
-				letter-spacing="3">STATION</text
-			>
-			<text
-				class="sign-404"
-				x="200"
-				y="138"
-				text-anchor="middle"
-				font-family="Inter, sans-serif"
-				font-size="40"
-				font-weight="800">404</text
-			>
+			{#if signLabel}
+				<text
+					class="sign-label"
+					x="200"
+					y="95"
+					text-anchor="middle"
+					font-family="'JetBrains Mono', monospace"
+					font-size="10"
+					letter-spacing="3">{signLabel}</text
+				>
+			{/if}
+			{#if code}
+				<text
+					class="sign-code"
+					x="200"
+					y="138"
+					text-anchor="middle"
+					font-family="Inter, sans-serif"
+					font-size="40"
+					font-weight="800">{code}</text
+				>
+			{/if}
 			<line class="scene-post" x1="200" y1="150" x2="200" y2="200" stroke-width="2" />
 		</g>
 
 		<g>
 			<line class="scene-leg" x1="105" y1="185" x2="100" y2="200" stroke-width="1.5" />
 			<line class="scene-leg" x1="135" y1="185" x2="140" y2="200" stroke-width="1.5" />
-			<rect x="98" y="178" width="44" height="8" rx="1" fill="url(#hazard-pattern)" />
+			<rect x="98" y="178" width="44" height="8" rx="1" fill="url(#{patternId})" />
 		</g>
 
 		<g>
 			<line class="scene-leg" x1="265" y1="185" x2="260" y2="200" stroke-width="1.5" />
 			<line class="scene-leg" x1="295" y1="185" x2="300" y2="200" stroke-width="1.5" />
-			<rect x="258" y="178" width="44" height="8" rx="1" fill="url(#hazard-pattern)" />
+			<rect x="258" y="178" width="44" height="8" rx="1" fill="url(#{patternId})" />
 		</g>
 
 		<g>
 			<polygon class="cone-body" points="115,200 120,183 125,200" opacity="0.7" />
 			<rect class="cone-base" x="112" y="200" width="16" height="3" rx="1" />
 		</g>
+
 		<g>
 			<polygon class="cone-body" points="275,200 280,183 285,200" opacity="0.7" />
 			<rect class="cone-base" x="272" y="200" width="16" height="3" rx="1" />
@@ -79,7 +98,7 @@
 
 		<defs>
 			<pattern
-				id="hazard-pattern"
+				id={patternId}
 				width="8"
 				height="8"
 				patternUnits="userSpaceOnUse"
@@ -102,7 +121,8 @@
 		display: block;
 		width: 100%;
 		height: auto;
-		max-width: 28rem;
+		max-width: 24rem;
+		margin-inline: auto;
 	}
 
 	.scene-ground {
@@ -114,15 +134,17 @@
 	.scene-leg {
 		stroke: color-mix(in srgb, var(--foreground) 15%, transparent);
 	}
+
 	.scaffold-vert {
-		stroke: color-mix(in srgb, var(--accent-text) 30%, transparent);
+		stroke: color-mix(in srgb, var(--accent) 30%, transparent);
 	}
 	.scaffold-rung {
-		stroke: color-mix(in srgb, var(--accent-text) 25%, transparent);
+		stroke: color-mix(in srgb, var(--accent) 25%, transparent);
 	}
 	.scaffold-brace {
-		stroke: color-mix(in srgb, var(--accent-text) 15%, transparent);
+		stroke: color-mix(in srgb, var(--accent) 15%, transparent);
 	}
+
 	.sign-bg {
 		fill: color-mix(in srgb, var(--signage-bg) 90%, transparent);
 		stroke: color-mix(in srgb, var(--primary) 30%, transparent);
@@ -130,29 +152,35 @@
 	.sign-label {
 		fill: color-mix(in srgb, var(--primary) 50%, transparent);
 	}
-	.sign-404,
+	.sign-code {
+		fill: var(--primary);
+	}
+
 	.cone-body {
 		fill: var(--primary);
 	}
 	.cone-base {
 		fill: color-mix(in srgb, var(--primary) 40%, transparent);
 	}
-	.hazard-stripe-a,
-	.light {
-		fill: var(--hazard-a);
+
+	.hazard-stripe-a {
+		fill: var(--accent);
 	}
 	.hazard-stripe-b {
 		fill: var(--hazard-b);
 	}
-	.light-glow {
-		fill: color-mix(in srgb, var(--hazard-a) 20%, transparent);
+
+	.light {
+		fill: var(--accent);
 	}
-	.light-a,
-	.light-glow.light-a {
+	.light-glow {
+		fill: color-mix(in srgb, var(--accent) 20%, transparent);
+	}
+
+	.light-a {
 		animation: blink-light 1.2s step-end infinite;
 	}
-	.light-b,
-	.light-glow.light-b {
+	.light-b {
 		animation: blink-light 1.2s step-end infinite;
 		animation-delay: 0.6s;
 	}
@@ -168,13 +196,11 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.light-a,
-		.light-glow.light-a {
+		.light-a {
 			animation: none;
 			opacity: 1;
 		}
-		.light-b,
-		.light-glow.light-b {
+		.light-b {
 			animation: none;
 			opacity: var(--opacity-subtle);
 		}

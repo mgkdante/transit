@@ -1,6 +1,7 @@
 import type { Locale } from '$lib/i18n';
 
 export interface ErrorPageLocaleCopy {
+	suggestionsLabel: string;
 	generic: {
 		label: string;
 		heading: string;
@@ -18,6 +19,7 @@ export interface ErrorPageLocaleCopy {
 
 export const errorPageCopy: Record<Locale, ErrorPageLocaleCopy> = {
 	fr: {
+		suggestionsLabel: 'Destinations suggérées',
 		generic: {
 			label: 'HORS SERVICE',
 			heading: 'Une erreur est survenue',
@@ -38,6 +40,7 @@ export const errorPageCopy: Record<Locale, ErrorPageLocaleCopy> = {
 		},
 	},
 	en: {
+		suggestionsLabel: 'Suggested destinations',
 		generic: {
 			label: 'OUT OF SERVICE',
 			heading: 'Something went wrong',

@@ -10,6 +10,9 @@ export type { CollapsibleSectionProps } from './CollapsibleSection.svelte';
 export { default as CornerMarks } from './CornerMarks.svelte';
 export type { CornerMarksProps } from './CornerMarks.svelte';
 
+export { default as ErrorIllustration } from './ErrorIllustration.svelte';
+export type { ErrorIllustrationProps } from './ErrorIllustration.svelte';
+
 export { default as FilterGroup } from './FilterGroup.svelte';
 export type { FilterGroupItem, FilterGroupProps } from './FilterGroup.svelte';
 

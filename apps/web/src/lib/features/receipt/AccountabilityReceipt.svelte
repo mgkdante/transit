@@ -33,17 +33,18 @@
 	} from '$lib/components/surface';
 	import { historyCopy } from '$lib/components/surface/historyCopy';
 	import {
-		ArticleHeader,
+		ArticleKeywords,
 		ArticleSectionStack,
-		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
+	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { copy as COPY } from './receipt.copy';
@@ -321,26 +322,89 @@
 	{historyAnnouncement ?? ''}
 </p>
 
-<DetailShell
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
+	<CollapsibleSection
+		title={t.rail.controls}
+		quiet={false}
+		bind:open={
+			() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+		}
+	>
+		<div class="receipt-controls" data-slot="receipt-controls">
+			{#key navigatorRevision}
+				<HistoryNavigator
+					mode="date"
+					date={selectedDate}
+					{dateOptions}
+					{previousDate}
+					{nextDate}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					announcement={historyAnnouncement}
+					liveAnnouncement={false}
+					{locale}
+					labels={historyCopy(locale, {
+						mode: 'date',
+						group: t.history.group,
+						picker: {
+							group: t.dateSelectLabel,
+							start: '',
+							end: '',
+							clear: '',
+							anyStart: '',
+							anyEnd: '',
+							single: t.datePicker.label,
+						},
+						previous: t.history.previous,
+						next: t.history.next,
+					})}
+					onDateChange={selectDate}
+				/>
+			{/key}
+		</div>
+	</CollapsibleSection>
+	{#if tocEntries.length > 0}
+		<div class="receipt-rail-toc" data-slot="section-toc">
+			<TocNav
+				entries={tocEntries}
+				activeId={navigation.activeId}
+				heading={t.rail.toc}
+				counterPrefix={t.rail.counterPrefix}
+				quiet={false}
+				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				onNavigate={(id) => {
+					closeSheet();
+					void navigate(id);
+				}}
+			/>
+		</div>
+	{/if}
+	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
+{/snippet}
+
+{#snippet railCell()}
+	<SurfaceRail
+		rail={combinedRail}
+		label={t.rail.label}
+		summary={railSummary}
+		openAria={t.rail.open}
+		closeAria={t.rail.close}
+	/>
+{/snippet}
+
+<DetailFrame
 	class="receipt-detail"
+	railScroll
 	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
-	{tocEntries}
-	combinedRailConfig={hasDates
-		? {
-				label: t.rail.label,
-				summary: railSummary,
-				openAria: t.rail.open,
-				closeAria: t.rail.close,
-			}
-		: undefined}
+	rail={hasDates ? railCell : undefined}
+	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -350,206 +414,146 @@
 			{#snippet controls()}
 				<QuietModeButton />
 			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
+			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-		<CollapsibleSection
-			title={t.rail.controls}
-			quiet={false}
-			bind:open={
-				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-			}
-		>
-			<div class="receipt-controls" data-slot="receipt-controls">
-				{#key navigatorRevision}
-					<HistoryNavigator
-						mode="date"
-						date={selectedDate}
-						{dateOptions}
-						{previousDate}
-						{nextDate}
-						coverageText={historyCoverageText}
-						selectionText={historySelectionText}
-						announcement={historyAnnouncement}
-						liveAnnouncement={false}
-						{locale}
-						labels={historyCopy(locale, {
-							mode: 'date',
-							group: t.history.group,
-							picker: {
-								group: t.dateSelectLabel,
-								start: '',
-								end: '',
-								clear: '',
-								anyStart: '',
-								anyEnd: '',
-								single: t.datePicker.label,
-							},
-							previous: t.history.previous,
-							next: t.history.next,
-						})}
-						onDateChange={selectDate}
-					/>
-				{/key}
-			</div>
-		</CollapsibleSection>
-		{#if tocEntries.length > 0}
-			<div class="receipt-rail-toc" data-slot="section-toc">
-				<TocNav
-					entries={tocEntries}
-					activeId={navigation.activeId}
-					heading={t.rail.toc}
-					counterPrefix={t.rail.counterPrefix}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
-					onNavigate={(id) => {
-						closeSheet();
-						void navigate(id);
-					}}
-				/>
-			</div>
-		{/if}
-	{/snippet}
-
-	{#snippet center()}
-		<ResourceBoundary resource={index} lang={locale}>
-			{#if !hasDates}
-				<StateNotice
-					title={t.emptyIndex}
-					presentation="card"
-					role="status"
-					ariaLive="polite"
-					data-slot="receipt-empty-index"
-				/>
-			{:else if receipt.error}
-				<EdgeState
-					variant="error-v1"
-					lang={locale}
-					layout={edgeLayout}
-					onRetry={() => receipt.reload()}
-				/>
-			{:else if !selectedDate || receipt.loading || !receipt.settled || (receipt.data != null && !receiptReady)}
-				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
-			{:else if receipt.data == null}
-				<StateNotice
-					title={t.emptyReceipt}
-					presentation="card"
-					role="status"
-					ariaLive="polite"
-					data-slot="receipt-empty"
-				/>
-			{:else}
-				{@const r = receipt.data}
-				<ArticleSectionStack data-slot="receipt-sections">
-					{#each sectionDefs as section (section.id)}
-						{#if section.present}
-							<CollapsibleSection
-								title={section.title}
-								subtitle={section.subtitle}
-								headerVariant="article-summary"
-								anchor={section.id}
-								sectionKey={section.sectionKey}
-								index={section.number - 1}
-								open={true}
-								openSignal={cardOpenSignal(section.id)}
-							>
-								{#if section.id === 'receipt-main'}
-									<div class="receipt-main-body">
-										<TerminalPanel
-											title={t.terminalTitle}
-											tag={t.terminalTag}
-											status={formatDateKey(r.date, locale)}
-											footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
-										>
-											<div class="receipt-frame" data-slot="receipt-frame">
-												{#if dayVerdict}
-													<p
-														class="receipt-day-verdict"
-														data-slot="receipt-day-verdict"
-														aria-label={t.dayVerdict.label}
-													>
-														{dayVerdict}
-													</p>
-												{/if}
-												<div
-													class="receipt-layout"
-													class:no-worst={!worst.hasWorst}
-													data-slot="receipt-layout"
+	<ResourceBoundary resource={index} lang={locale}>
+		{#if !hasDates}
+			<StateNotice
+				title={t.emptyIndex}
+				presentation="card"
+				role="status"
+				ariaLive="polite"
+				data-slot="receipt-empty-index"
+			/>
+		{:else if receipt.error}
+			<EdgeState
+				variant="error-v1"
+				lang={locale}
+				layout={edgeLayout}
+				onRetry={() => receipt.reload()}
+			/>
+		{:else if !selectedDate || receipt.loading || !receipt.settled || (receipt.data != null && !receiptReady)}
+			<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+		{:else if receipt.data == null}
+			<StateNotice
+				title={t.emptyReceipt}
+				presentation="card"
+				role="status"
+				ariaLive="polite"
+				data-slot="receipt-empty"
+			/>
+		{:else}
+			{@const r = receipt.data}
+			<ArticleSectionStack data-slot="receipt-sections">
+				{#each sectionDefs as section (section.id)}
+					{#if section.present}
+						<CollapsibleSection
+							title={section.title}
+							subtitle={section.subtitle}
+							headerVariant="article-summary"
+							anchor={section.id}
+							sectionKey={section.sectionKey}
+							index={section.number - 1}
+							open={true}
+							openSignal={cardOpenSignal(section.id)}
+						>
+							{#if section.id === 'receipt-main'}
+								<div class="receipt-main-body">
+									<TerminalPanel
+										title={t.terminalTitle}
+										tag={t.terminalTag}
+										status={formatDateKey(r.date, locale)}
+										footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
+									>
+										<div class="receipt-frame" data-slot="receipt-frame">
+											{#if dayVerdict}
+												<p
+													class="receipt-day-verdict"
+													data-slot="receipt-day-verdict"
+													aria-label={t.dayVerdict.label}
 												>
-													<SectionHeadline
-														kpis={headlineKpis}
-														heading={t.receiptSection}
+													{dayVerdict}
+												</p>
+											{/if}
+											<div
+												class="receipt-layout"
+												class:no-worst={!worst.hasWorst}
+												data-slot="receipt-layout"
+											>
+												<SectionHeadline
+													kpis={headlineKpis}
+													heading={t.receiptSection}
+													headingLevel={3}
+													{locale}
+												/>
+												<SectionAffected
+													counts={affectedCounts}
+													heading={t.countsSection}
+													headingLevel={3}
+													{locale}
+												/>
+												{#if worst.hasWorst}
+													<SectionWorst
+														{worst}
+														heading={t.worstSection}
 														headingLevel={3}
 														{locale}
 													/>
-													<SectionAffected
-														counts={affectedCounts}
-														heading={t.countsSection}
-														headingLevel={3}
-														{locale}
-													/>
-													{#if worst.hasWorst}
-														<SectionWorst
-															{worst}
-															heading={t.worstSection}
-															headingLevel={3}
-															{locale}
-														/>
-													{/if}
-												</div>
+												{/if}
 											</div>
-										</TerminalPanel>
-										{#if observationText != null}
-											{#key observationText}
-												<ObservationCopy text={observationText} {locale} />
-											{/key}
-										{/if}
-										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
-											<p>{t.caveat}</p>
-										</TypedInformationCard>
-									</div>
-								{:else if section.id === 'receipt-time'}
-									<SectionTimeOfDay
-										rows={timeOfDay.rows}
-										heading={t.timeOfDay.heading}
-										subtitle={t.timeOfDay.severeShare}
-										caveat={t.timeOfDay.caveat}
-										caveatLabel={t.caveatLabel}
-										headingLevel={3}
-										{locale}
-									/>
-								{:else if section.id === 'receipt-delivered'}
-									<SectionStateCuts
-										state={stateCuts}
-										heading={t.stateCuts.heading}
-										completenessLabel={t.stateCuts.completenessLabel}
-										explainer={t.stateCuts.explainer}
-										standDown={t.stateCuts.standDown}
-										splitLabel={t.stateCuts.splitLabel}
-										headingLevel={3}
-										{locale}
-									/>
-								{:else}
-									<SectionNotReported
-										list={notReported}
-										heading={t.notReported.heading}
-										caveat={t.notReported.caveat}
-										shownOfTotal={t.notReported.shownOfTotal}
-										headingLevel={3}
-										{locale}
-									/>
-								{/if}
-							</CollapsibleSection>
-						{/if}
-					{/each}
-				</ArticleSectionStack>
-			{/if}
-		</ResourceBoundary>
-	{/snippet}
-</DetailShell>
+										</div>
+									</TerminalPanel>
+									{#if observationText != null}
+										{#key observationText}
+											<ObservationCopy text={observationText} {locale} />
+										{/key}
+									{/if}
+									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+										<p>{t.caveat}</p>
+									</TypedInformationCard>
+								</div>
+							{:else if section.id === 'receipt-time'}
+								<SectionTimeOfDay
+									rows={timeOfDay.rows}
+									heading={t.timeOfDay.heading}
+									subtitle={t.timeOfDay.severeShare}
+									caveat={t.timeOfDay.caveat}
+									caveatLabel={t.caveatLabel}
+									headingLevel={3}
+									{locale}
+								/>
+							{:else if section.id === 'receipt-delivered'}
+								<SectionStateCuts
+									state={stateCuts}
+									heading={t.stateCuts.heading}
+									completenessLabel={t.stateCuts.completenessLabel}
+									explainer={t.stateCuts.explainer}
+									standDown={t.stateCuts.standDown}
+									splitLabel={t.stateCuts.splitLabel}
+									headingLevel={3}
+									{locale}
+								/>
+							{:else}
+								<SectionNotReported
+									list={notReported}
+									heading={t.notReported.heading}
+									caveat={t.notReported.caveat}
+									shownOfTotal={t.notReported.shownOfTotal}
+									headingLevel={3}
+									{locale}
+								/>
+							{/if}
+						</CollapsibleSection>
+					{/if}
+				{/each}
+			</ArticleSectionStack>
+		{/if}
+	</ResourceBoundary>
+</DetailFrame>
 
 <style>
 	:global(.receipt-detail .receipt-panel) {

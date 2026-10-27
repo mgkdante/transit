@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.17.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -329,6 +329,43 @@ through `scrollChain`.
 The frame reads `--chrome-offset`, the height of the fixed site chrome, to pull the header under
 it and to park the sticky column below it. It falls back to `0px`.
 
+## Detail frame and article header
+
+`DetailFrame` is the detail and article page template: the `header` snippet, a hazard rule, an
+optional `toolbar` band, then a grid of an optional left rail, the center (`children`, with an
+optional `summary` on top) and an optional right rail, then `after`. `left` and `right` render in
+frame asides that stick below the chrome at `--detail-rail-top` (default `--chrome-offset`) and
+hide below 1024px, unless `leftMobile` keeps the left one. `rail` replaces the left cell with the
+caller's own element, such as a rail that becomes a sheet on mobile. `railScroll` caps rails to the
+viewport with internal scrolling; `paneOwnedRail` stacks the left rail above the center. With
+both rails the grid is `1fr 2fr 1fr`, or uses `measure` as the center maximum. With `toc` the
+frame tracks the active entry (bind `activeId`), lands same-page fragments when `landFragments` is
+set, and shows `TocPill` below 1024px unless `rail` is set. Keep `afterNavigate(onTocNavigate)` in
+the app. The root takes ordinary attributes such as `class`, `style` and `data-testid`.
+
+`ArticleHeader` is the header those pages share: back link, optional `category`, the `title` with
+its `highlight` keyword in the accent, `subtitle`, `meta` (pending state included), and `actions`
+and `controls` snippets. `watermark`, `edgeLeft`, `edgeRight` and the `decorations` snippet draw
+decorative chrome; `--article-deco-opacity` sets how strongly it reads. The `canvas` snippet
+receives the header element once bound (undefined before and during SSR), for a background canvas.
+Like `ListingFrame`, it expects the page to pad its top by `--chrome-offset` and pulls itself under
+the chrome.
+
+## Site footer and error page
+
+`SiteFooter` renders the hazard strip, the `brand` snippet with a `tagline`, one labelled
+navigation per entry in `groups` (`navLabel` when the accessible name differs from the heading;
+`external` links open in a new tab with `rel="noopener noreferrer"`, and `me` adds `rel="me"` for
+the owner's own profiles; `after` adds controls
+such as a consent button inside the group), and a status row with `statusStart`, a live lamp
+(`liveLabel` for screen readers) and today's date. `data-in-view` reports whether it is on
+screen.
+
+`ErrorPage` is the error route body: hazard rule, `ErrorIllustration`, `label`, `heading`, `body`,
+optional `detail`, `suggestions` in a navigation named `suggestionsLabel`, and a terminal line when
+`statusNote` is given. For 404 the scene's sign shows the code; other statuses announce the code
+with `role="alert"`. The app keeps its copy and `<svelte:head>`.
+
 ## Site root and shared state
 
 `@yesid/ui/layout` exports `SiteRoot`, the app root. On mount it adopts the theme applied by the
@@ -363,8 +400,9 @@ text. During SSR it returns the seed.
 
 ## Base stylesheet
 
-`@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
-focus ring, scrollbar, circuit grid, shared keyframes, and label styles. It uses Tailwind v4
+`@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, the
+semantic color utilities (`bg-primary`, `text-muted-foreground` and the rest), selection, focus
+ring, scrollbar, circuit grid, shared keyframes, and label styles. It uses Tailwind v4
 directives, so import it from the app stylesheet after Tailwind:
 
 ```css
@@ -409,5 +447,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.16.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.17.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

@@ -5,7 +5,9 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import ConformanceBadge from '$lib/components/surface/ConformanceBadge.svelte';
 	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
-	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
+	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { StateNotice } from '$lib/components/edge';
 	import {
 		SectionLabel,
@@ -275,21 +277,23 @@
 	</div>
 {/snippet}
 
-<DetailShell
+<DetailFrame
 	class="metrics-detail"
+	railScroll
 	bind:activeId
-	{tocEntries}
-	onNavigate={navigate}
-	tocOpenAria={t.tocPill.open}
-	tocCloseAria={t.tocPill.close}
+	toc={{
+		entries: tocEntries,
+		openAria: t.tocPill.open,
+		closeAria: t.tocPill.close,
+		onNavigate: navigate,
+	}}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -297,6 +301,9 @@
 		>
 			{#snippet controls()}
 				<QuietModeButton />
+			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -315,204 +322,210 @@
 			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
 				{@render statCards()}
 			</aside>
+			<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 		</div>
 	{/snippet}
 
-	{#snippet center()}
-		<ArticleSectionStack data-testid="metrics-sections">
-			<div class="section-block" id={PROVENANCE_ANCHOR}>
-				<CollapsibleSection
-					title={t.provenance.label}
-					headerVariant="article-summary"
-					anchor={PROVENANCE_ANCHOR}
-					sectionKey={cardKey(PROVENANCE_ANCHOR)}
-					open={true}
-					openSignal={cardOpenSignal(PROVENANCE_ANCHOR)}
-				>
-					{#snippet icon()}
-						<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
-					{/snippet}
-					<div class="metrics-article-prose">
-						<p class="metrics-lede">{t.lede}</p>
-						<p class="metrics-preamble">{t.provenance.body}</p>
-						{#if provenance.data?.conformance}
-							<div class="metrics-conformance">
-								<ConformanceBadge conformance={provenance.data.conformance} {locale} />
-							</div>
-						{:else if provenanceUnavailable}
-							<StateNotice
-								title={t.provenance.unavailable}
-								presentation="silo"
-								role="status"
-								ariaLive="polite"
-							/>
-						{/if}
-
-						<div class="metrics-measure">
-							<SectionLabel text={t.provenance.howWeMeasure.label} variant="metric" />
-							<div class="metrics-measure__item">
-								<h3 class="metrics-measure__heading">
-									{t.provenance.howWeMeasure.serviceDay.heading}
-								</h3>
-								<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
-							</div>
-							<div class="metrics-measure__item" id={CONFIDENCE_INTERVALS_ANCHOR}>
-								<h3 class="metrics-measure__heading">
-									{t.provenance.howWeMeasure.confidenceInterval.heading}
-								</h3>
-								<p class="metric__prose">{t.provenance.howWeMeasure.confidenceInterval.body}</p>
-								<a
-									class="metric__top"
-									href="https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm"
-									>{t.provenance.howWeMeasure.confidenceInterval.reference}</a
-								>
-							</div>
-							<div class="metrics-measure__item">
-								<h3 class="metrics-measure__heading">
-									{t.provenance.howWeMeasure.rounding.heading}
-								</h3>
-								<p class="metric__prose">{t.provenance.howWeMeasure.rounding.body}</p>
-							</div>
-							<div class="metrics-measure__item">
-								<h3 class="metrics-measure__heading">
-									{t.provenance.howWeMeasure.constants.heading}
-								</h3>
-								{#if doctrineConstants}
-									<p class="metric__prose" data-testid="metrics-doctrine-constants">
-										{t.provenance.howWeMeasure.constants.body(
-											doctrineConstants.minN,
-											doctrineConstants.wilsonZ,
-										)}
-									</p>
-								{:else}
-									<p
-										class="metric__prose metric__not"
-										role="status"
-										data-testid="metrics-doctrine-absent"
-									>
-										{t.provenance.howWeMeasure.constants.absent}
-									</p>
-								{/if}
-							</div>
+	<ArticleSectionStack data-testid="metrics-sections">
+		<div class="section-block" id={PROVENANCE_ANCHOR}>
+			<CollapsibleSection
+				title={t.provenance.label}
+				headerVariant="article-summary"
+				anchor={PROVENANCE_ANCHOR}
+				sectionKey={cardKey(PROVENANCE_ANCHOR)}
+				open={true}
+				openSignal={cardOpenSignal(PROVENANCE_ANCHOR)}
+			>
+				{#snippet icon()}
+					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
+				<div class="metrics-article-prose">
+					<p class="metrics-lede">{t.lede}</p>
+					<p class="metrics-preamble">{t.provenance.body}</p>
+					{#if provenance.data?.conformance}
+						<div class="metrics-conformance">
+							<ConformanceBadge conformance={provenance.data.conformance} {locale} />
 						</div>
+					{:else if provenanceUnavailable}
+						<StateNotice
+							title={t.provenance.unavailable}
+							presentation="silo"
+							role="status"
+							ariaLive="polite"
+						/>
+					{/if}
 
-						<div class="metrics-legend">
-							<SectionLabel text={t.confidence.label} variant="metric" />
-							<ul class="metrics-legend__list">
-								{#each Object.entries(t.confidence.levels) as [level, info] (level)}
-									<li class="metrics-legend__item">
-										<span class="metrics-chip">{info.chip}</span>
-										<span class="metrics-legend__meaning">{info.meaning}</span>
-									</li>
-								{/each}
-							</ul>
+					<div class="metrics-measure">
+						<SectionLabel text={t.provenance.howWeMeasure.label} variant="metric" />
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.serviceDay.heading}
+							</h3>
+							<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
+						</div>
+						<div class="metrics-measure__item" id={CONFIDENCE_INTERVALS_ANCHOR}>
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.confidenceInterval.heading}
+							</h3>
+							<p class="metric__prose">{t.provenance.howWeMeasure.confidenceInterval.body}</p>
+							<a
+								class="metric__top"
+								href="https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm"
+								>{t.provenance.howWeMeasure.confidenceInterval.reference}</a
+							>
+						</div>
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.rounding.heading}
+							</h3>
+							<p class="metric__prose">{t.provenance.howWeMeasure.rounding.body}</p>
+						</div>
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.constants.heading}
+							</h3>
+							{#if doctrineConstants}
+								<p class="metric__prose" data-testid="metrics-doctrine-constants">
+									{t.provenance.howWeMeasure.constants.body(
+										doctrineConstants.minN,
+										doctrineConstants.wilsonZ,
+									)}
+								</p>
+							{:else}
+								<p
+									class="metric__prose metric__not"
+									role="status"
+									data-testid="metrics-doctrine-absent"
+								>
+									{t.provenance.howWeMeasure.constants.absent}
+								</p>
+							{/if}
 						</div>
 					</div>
-				</CollapsibleSection>
-			</div>
 
-			{#each groups as group (group.cluster)}
-				<div class="metrics-cluster">
-					<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
-					<ArticleSectionStack class="metrics-cluster__cards" data-slot-variant="metric-cluster">
-						{#each group.entries as entry (entry.key)}
-							{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
-							{@const note = methodologyNote(entry)}
-							<div class="section-block" id={entry.anchor}>
-								<CollapsibleSection
-									title={entry.name[locale]}
-									subtitle={entry.oneLiner[locale]}
-									headerVariant="article-summary"
-									anchor={entry.anchor}
-									index={metricIndex}
-									sectionKey={cardKey(entry.anchor)}
-									open={true}
-									openSignal={cardOpenSignal(entry.anchor)}
-								>
-									<div class="metric__body">
-										<p class="metric__meta">
-											<code class="metric__sci">{entry.sciName}</code>
-											<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span
-											>
-										</p>
-
-										<div class="metric__information-stack">
-											<MetricBody {entry} {locale} serverHtml={metricBodies?.[entry.key]} />
-
-											{#if note}
-												<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
-													<p class="metric__prose metric__pipeline-note" data-slot="pipeline-note">
-														{note}
-													</p>
-												</TypedInformationCard>
-											{/if}
-										</div>
-
-										<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-									</div>
-								</CollapsibleSection>
-							</div>
-						{/each}
-					</ArticleSectionStack>
+					<div class="metrics-legend">
+						<SectionLabel text={t.confidence.label} variant="metric" />
+						<ul class="metrics-legend__list">
+							{#each Object.entries(t.confidence.levels) as [level, info] (level)}
+								<li class="metrics-legend__item">
+									<span class="metrics-chip">{info.chip}</span>
+									<span class="metrics-legend__meaning">{info.meaning}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
 				</div>
-			{/each}
+			</CollapsibleSection>
+		</div>
 
-			<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
-				<CollapsibleSection
-					title={t.livePositions.title}
-					headerVariant="article-summary"
-					anchor={LIVE_POSITIONS_ANCHOR}
-					sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
-					open={true}
-					openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
-				>
-					{#snippet icon()}
-						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
-					{/snippet}
-					<div class="metric__body">
-						<p class="metric__prose metrics-live__lede">{t.livePositions.lede}</p>
-						<ul class="metrics-live__list">
-							{#each t.livePositions.points as point (point.heading)}
-								<li class="metrics-live__point">
-									<h3 class="metrics-live__heading">{point.heading}</h3>
-									<p class="metric__prose">{point.body}</p>
-								</li>
-							{/each}
-						</ul>
-						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-					</div>
-				</CollapsibleSection>
-			</div>
+		{#each groups as group (group.cluster)}
+			<div class="metrics-cluster">
+				<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
+				<ArticleSectionStack class="metrics-cluster__cards" data-slot-variant="metric-cluster">
+					{#each group.entries as entry (entry.key)}
+						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
+						{@const note = methodologyNote(entry)}
+						<div class="section-block" id={entry.anchor}>
+							<CollapsibleSection
+								title={entry.name[locale]}
+								subtitle={entry.oneLiner[locale]}
+								headerVariant="article-summary"
+								anchor={entry.anchor}
+								index={metricIndex}
+								sectionKey={cardKey(entry.anchor)}
+								open={true}
+								openSignal={cardOpenSignal(entry.anchor)}
+							>
+								<div class="metric__body">
+									<p class="metric__meta">
+										<code class="metric__sci">{entry.sciName}</code>
+										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
+									</p>
 
-			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
-				<CollapsibleSection
-					title={t.lacunes.title}
-					headerVariant="article-summary"
-					anchor={LACUNES_ANCHOR}
-					sectionKey={cardKey(LACUNES_ANCHOR)}
-					open={true}
-					openSignal={cardOpenSignal(LACUNES_ANCHOR)}
-				>
-					{#snippet icon()}
-						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
-					{/snippet}
-					<div class="metric__body">
-						<p class="metric__prose metrics-lacunes__lede">{t.lacunes.lede}</p>
-						<ul class="metrics-lacunes__list">
-							{#each t.lacunes.gaps as gap (gap.heading)}
-								<li class="metrics-lacunes__gap">
-									<h3 class="metrics-lacunes__heading">{gap.heading}</h3>
-									<p class="metric__prose">{gap.body}</p>
-								</li>
-							{/each}
-						</ul>
-						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-					</div>
-				</CollapsibleSection>
+									<div class="metric__information-stack">
+										<MetricBody {entry} {locale} serverHtml={metricBodies?.[entry.key]} />
+
+										{#if note}
+											<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
+												<p class="metric__prose metric__pipeline-note" data-slot="pipeline-note">
+													{note}
+												</p>
+											</TypedInformationCard>
+										{/if}
+									</div>
+
+									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+								</div>
+							</CollapsibleSection>
+						</div>
+					{/each}
+				</ArticleSectionStack>
 			</div>
-		</ArticleSectionStack>
+		{/each}
+
+		<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
+			<CollapsibleSection
+				title={t.livePositions.title}
+				headerVariant="article-summary"
+				anchor={LIVE_POSITIONS_ANCHOR}
+				sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
+				open={true}
+				openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
+			>
+				{#snippet icon()}
+					<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
+				<div class="metric__body">
+					<p class="metric__prose metrics-live__lede">{t.livePositions.lede}</p>
+					<ul class="metrics-live__list">
+						{#each t.livePositions.points as point (point.heading)}
+							<li class="metrics-live__point">
+								<h3 class="metrics-live__heading">{point.heading}</h3>
+								<p class="metric__prose">{point.body}</p>
+							</li>
+						{/each}
+					</ul>
+					<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+				</div>
+			</CollapsibleSection>
+		</div>
+
+		<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
+			<CollapsibleSection
+				title={t.lacunes.title}
+				headerVariant="article-summary"
+				anchor={LACUNES_ANCHOR}
+				sectionKey={cardKey(LACUNES_ANCHOR)}
+				open={true}
+				openSignal={cardOpenSignal(LACUNES_ANCHOR)}
+			>
+				{#snippet icon()}
+					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
+				<div class="metric__body">
+					<p class="metric__prose metrics-lacunes__lede">{t.lacunes.lede}</p>
+					<ul class="metrics-lacunes__list">
+						{#each t.lacunes.gaps as gap (gap.heading)}
+							<li class="metrics-lacunes__gap">
+								<h3 class="metrics-lacunes__heading">{gap.heading}</h3>
+								<p class="metric__prose">{gap.body}</p>
+							</li>
+						{/each}
+					</ul>
+					<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+				</div>
+			</CollapsibleSection>
+		</div>
+	</ArticleSectionStack>
+
+	{#snippet after()}
+		<ArticleKeywords
+			class="px-[var(--space-page-x)] pb-8 lg:hidden"
+			label={t.article.tagsAria}
+			keywords={t.article.tags}
+		/>
 	{/snippet}
-</DetailShell>
+</DetailFrame>
 
 <style>
 	.metrics-lede {

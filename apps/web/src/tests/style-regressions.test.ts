@@ -63,10 +63,6 @@ const STYLE_SOURCE_EXTENSIONS = ['.svelte', '.css'] as const;
 
 const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 	{
-		prefix: 'src/lib/components/shared/ErrorIllustration.svelte',
-		reason: 'structural SVG cap',
-	},
-	{
 		prefix: 'src/lib/components/surface/SearchInput.svelte',
 		reason: 'structural input-control width',
 	},
@@ -94,16 +90,10 @@ const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 		prefix: 'src/lib/features/map/MapSelectionDetail.svelte',
 		reason: 'structural compact map panel',
 	},
-	{
-		prefix: 'src/routes/+error.svelte',
-		reason: 'structural error containers and responsive wrapper',
-	},
 ] as const;
 const EMPTY_MEASURE_LITERAL_ALLOWLIST: readonly string[] = [];
 
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
-const OWNER_DIRECTED_FOOTER_DIVIDER = 'src/layout/Footer.svelte';
-const OWNER_DIRECTED_FOOTER_DECLARATION = 'border-top: 2px solid var(--border-rule-accent)';
 
 function measureHitPrefix(scanRoot: (typeof FORBIDDEN_ROOTS)[number], appPrefix: string) {
 	return appPrefix.replace(scanRoot, 'src');
@@ -177,18 +167,6 @@ const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
 const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
 const TO_MIGRATE_2026_07_30 = [] as const;
 
-it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelte', () => {
-	const source = readFileSync(
-		resolve(process.cwd(), 'src/lib/components/layout/Footer.svelte'),
-		'utf8',
-	);
-	const stripePattern = new RegExp(FORBIDDEN[0].pattern.source, 'g');
-	const statusRule = source.match(/\.footer-status-border\s*\{([^}]*)\}/)?.[1] ?? '';
-
-	expect(source.match(stripePattern)).toHaveLength(1);
-	expect(statusRule.replace(/\s+/g, ' ').trim()).toBe(`${OWNER_DIRECTED_FOOTER_DECLARATION};`);
-});
-
 it('keeps the progressive poster heading and kicker on shared type tokens', () => {
 	const source = readFileSync(
 		resolve(process.cwd(), 'src/lib/features/map/MapProgressive.svelte'),
@@ -216,7 +194,6 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 				...r,
 				hits: r.hits
 					.filter((h) => !h.includes(FROZEN_MARKS_SEGMENT))
-					.filter((h) => !(r.reason === FORBIDDEN[0].reason && h === OWNER_DIRECTED_FOOTER_DIVIDER))
 					.filter(
 						(h) => r.pattern !== BARE_PROSE_MEASURE_PATTERN || !isMeasurePathExcluded(rel, h),
 					),

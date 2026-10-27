@@ -50,11 +50,12 @@
 	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
 	import { getLenis } from '@yesid/motion/utils/lenis';
 	import { AppShell } from '$lib/components/shell';
-	import Footer from '$lib/components/layout/Footer.svelte';
+	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
+	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { EdgeState } from '$lib/components/edge';
-	import { SiteRoot } from '@yesid/ui/layout';
+	import { SiteFooter, SiteRoot } from '@yesid/ui/layout';
 	import { desktop } from '@yesid/ui/state';
-	import { mainLandmarkLabel } from '$lib/content/nav';
+	import { AUDIT_NAV, mainLandmarkLabel, SURFACE_NAV } from '$lib/content/nav';
 	import { legalCopy } from '$lib/features/legal/legal.copy';
 	import {
 		chromeSearchResultHref,
@@ -94,6 +95,21 @@
 		dataIndependentRoute ? legalCopy[locale].footerAttribution : v1?.manifest.attribution,
 	);
 	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
+	const footer = $derived(footerCopy[locale]);
+	const footerAgency = $derived(footerProviderName ?? footer.providerFallback);
+	const footerGroups = $derived(
+		[
+			{ label: footer.exploreLabel, links: SURFACE_NAV },
+			{ label: footer.auditLabel, links: AUDIT_NAV },
+			{ label: footer.legalLabel, links: LEGAL_NAV, testId: 'footer-legal' },
+		].map((group) => ({
+			...group,
+			links: group.links.map((link) => ({
+				href: localizeHref(link.href, locale, data.providerId),
+				label: link.label[locale],
+			})),
+		})),
+	);
 
 	const providerShortName = $derived(data.provider?.labels[locale].operator ?? data.providerId);
 	const providerCity = $derived(data.provider?.labels[locale].city);
@@ -389,10 +405,39 @@
 						{/if}
 					</div>
 					{#if !isFullBleed}
-						<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
+						<SiteFooter
+							tagline={footer.tagline(footerAgency)}
+							groups={footerGroups}
+							statusPrefix={footer.statusPrefix}
+							liveLabel={footer.liveLabel}
+						>
+							{#snippet brand()}
+								<BrandCluster
+									variant="footer"
+									productHref={localizeHref('/', locale, data.providerId)}
+								/>
+							{/snippet}
+							{#snippet statusStart()}
+								<p class="footer-honesty m-0 text-center sm:text-left">
+									{#if footerAttribution}<span>{footerAttribution}</span>{/if}
+									<span class="footer-disclaimer">{footer.disclaimer(footerAgency)}</span>
+								</p>
+							{/snippet}
+						</SiteFooter>
 					{/if}
 				</div>
 			</div>
 		{/snippet}
 	</AppShell>
 </SiteRoot>
+
+<style>
+	.footer-honesty {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.footer-disclaimer {
+		color: var(--secondary-foreground);
+	}
+</style>

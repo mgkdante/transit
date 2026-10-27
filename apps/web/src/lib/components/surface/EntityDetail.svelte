@@ -10,7 +10,8 @@
 		revealTocTarget,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import { DetailShell, Surface } from '$lib/components/layout';
+	import { ArticleSummaryLane, Surface } from '$lib/components/layout';
+	import { DetailFrame } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { getLocale } from '$lib/i18n';
@@ -306,29 +307,35 @@
 {/snippet}
 
 {#snippet articleSummary()}
-	{#if banner}
-		<div class="surface-banner surface-banner--article" data-slot="entity-detail-banner">
-			{@render banner()}
-		</div>
-	{/if}
+	<ArticleSummaryLane>
+		{#if banner}
+			<div class="surface-banner surface-banner--article" data-slot="entity-detail-banner">
+				{@render banner()}
+			</div>
+		{/if}
+	</ArticleSummaryLane>
 {/snippet}
 
 <Tabs bind:value={active}>
 	{#if articleHeader}
-		<DetailShell
-			{articleHeader}
+		<DetailFrame
+			header={articleHeader}
 			toolbar={articleToolbar}
 			summary={paneOwnsRail || !banner ? undefined : articleSummary}
 			left={articleTocEntries.length > 0 ? articleRail : undefined}
 			paneOwnedRail={paneOwnsRail}
-			center={articleCenter}
-			tocEntries={articleTocEntries}
+			railScroll
+			toc={{
+				entries: articleTocEntries,
+				openAria: articleToc?.openAria ?? '',
+				closeAria: articleToc?.closeAria ?? '',
+				onNavigate: articleToc ? navigateArticleToc : undefined,
+			}}
 			bind:activeId={activeTocId}
-			onNavigate={articleToc ? navigateArticleToc : undefined}
-			tocOpenAria={articleToc?.openAria}
-			tocCloseAria={articleToc?.closeAria}
 			class={cn('entity-detail-article', className)}
-		/>
+		>
+			{@render articleCenter()}
+		</DetailFrame>
 	{:else}
 		<Surface as="div" class={cn('entity-detail-surface', className)} data-slot="entity-detail">
 			{#if header && kicker}

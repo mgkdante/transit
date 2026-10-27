@@ -27,6 +27,55 @@ select {
 
 @custom-variant dark (&:is([data-theme="dark"] *, .theme-dark *));
 
+/* Semantic color utilities (bg-primary, text-muted-foreground, ...) over the token variables. */
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-border: var(--border);
+	--color-ring: var(--ring);
+	--color-input: var(--input);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+
+	--color-sidebar: var(--background);
+	--color-sidebar-foreground: var(--foreground);
+	--color-sidebar-accent: var(--accent);
+	--color-sidebar-accent-foreground: var(--accent-foreground);
+	--color-sidebar-border: var(--border);
+	--color-sidebar-ring: var(--ring);
+	--color-sidebar-primary: var(--primary);
+	--color-sidebar-primary-foreground: var(--primary-foreground);
+
+	--color-terminal: var(--terminal);
+	--color-manifesto: var(--manifesto);
+	--color-accent-text: var(--accent-text);
+	--color-border-subtle: var(--border-subtle);
+	--color-border-strong: var(--border-strong);
+	--color-success: var(--success);
+	--color-primary-hover: var(--primary-hover);
+	--color-accent-hover: var(--accent-hover);
+	--color-signage-bg: var(--signage-bg);
+	--color-signage-text: var(--signage-text);
+}
+
+@media (max-width: 767.98px) {
+	.metric-value.text-title {
+		font-size: var(--text-heading);
+	}
+}
+
 html {
 	background-color: var(--background);
 	color: var(--foreground);

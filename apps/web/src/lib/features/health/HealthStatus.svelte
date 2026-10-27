@@ -14,11 +14,12 @@
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
 	import {
-		ArticleHeader,
+		ArticleKeywords,
 		ArticleSectionStack,
-		DetailShell,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import {
 		SectionLabel,
@@ -346,21 +347,23 @@
 	}
 </script>
 
-<DetailShell
+<DetailFrame
 	class="health-detail"
+	railScroll
 	bind:activeId
-	{tocEntries}
-	onNavigate={navigate}
-	tocOpenAria={t.toc.pill.open}
-	tocCloseAria={t.toc.pill.close}
+	toc={{
+		entries: tocEntries,
+		openAria: t.toc.pill.open,
+		closeAria: t.toc.pill.close,
+		onNavigate: navigate,
+	}}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -369,6 +372,9 @@
 		>
 			{#snippet controls()}
 				<QuietModeButton />
+			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -394,109 +400,116 @@
 			>
 				{@render statCards()}
 			</section>
+			<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 		</div>
 	{/snippet}
 
-	{#snippet center()}
-		<ArticleSectionStack class="health-sections" data-testid="health-sections">
-			<CollapsibleSection
-				title={t.overview.title}
-				headerVariant="article-summary"
-				sectionKey="status-overview"
-				open={true}
-			>
-				<div class="health-overview">
-					<p class="health-lede">{t.lede}</p>
-					{#if !prov || provenanceIsEmpty(prov)}
-						<div class="health-resource-state" aria-label={t.overview.dailyRecord}>
-							<SectionLabel text={t.overview.dailyRecord} variant="metric" />
-							<ResourceBoundary resource={provenance} lang={locale} isEmpty={provenanceIsEmpty}>
-								{#snippet children(_value)}{/snippet}
-							</ResourceBoundary>
-						</div>
-					{/if}
-					{#if !dh || dataHealthIsEmpty(dh)}
-						<div class="health-resource-state" aria-label={t.overview.liveFeeds}>
-							<SectionLabel text={t.overview.liveFeeds} variant="metric" />
-							<ResourceBoundary resource={dataHealth} lang={locale} isEmpty={dataHealthIsEmpty}>
-								{#snippet children(_value)}{/snippet}
-							</ResourceBoundary>
-						</div>
-					{:else if laneStat.total > 0}
-						<div class="health-aggregate" data-slot="health-aggregate">
-							<TerminalPanel title={t.aggregate.title}>
-								<p class="health-aggregate__verdict">
-									<span class="health-aggregate__summary">
-										{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}
-									</span>
-									<span class="health-aggregate__worst">
-										{#if laneStat.worst}
-											{t.aggregate.worst(laneStat.worst.label)}
-										{:else}
-											{t.aggregate.allClear}
-										{/if}
-									</span>
-								</p>
-							</TerminalPanel>
-						</div>
-					{/if}
-					{#if !historyRoot || historyAvailabilityIsEmpty(historyRoot)}
-						<div class="health-resource-state" aria-label={t.overview.retainedHistory}>
-							<SectionLabel text={t.overview.retainedHistory} variant="metric" />
-							<ResourceBoundary
-								resource={historicAvailability}
-								lang={locale}
-								isEmpty={historyAvailabilityIsEmpty}
-							>
-								{#snippet children(_value)}{/snippet}
-							</ResourceBoundary>
-						</div>
-					{/if}
-				</div>
-			</CollapsibleSection>
-
-			{#each sectionDefs as section (section.id)}
-				{section.number === 1 ? '' : ' '}{#if section.present}
-					<CollapsibleSection
-						title={section.title}
-						headerVariant="article-summary"
-						index={section.number - 1}
-						anchor={section.id}
-						sectionKey={`status-card-${section.id}`}
-						open={true}
-						openSignal={cardOpenSignal(section.id)}
-					>
-						{#if section.id === 'health-lanes'}
-							<SectionLanes rows={laneRows} copy={t} {locale} />
-						{:else if section.id === 'health-freshness'}
-							<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
-						{:else if section.id === 'health-sources'}
-							<SectionSources items={sources} {lastLoaded} copy={t} />
-						{:else if section.id === 'health-gaps'}
-							<SectionGaps {gaps} {humanizeGap} copy={t} />
-						{:else if section.id === 'health-pipeline-notes'}
-							<SectionNotes notes={pipelineNotes} copy={t} />
-						{:else if section.id === 'health-retention'}
-							<SectionRetention
-								detail={retention.detail}
-								aggregate={retention.aggregate}
-								{fmtDays}
-								copy={t}
-								{locale}
-							/>
-						{:else if section.id === 'health-conformance' && conformance}
-							<SectionConformance {conformance} copy={t} {locale} />
-						{:else if section.id === 'health-envelope'}
-							<SectionEnvelope {envelope} copy={t} {locale} />
-						{:else if section.id === 'health-history-coverage'}
-							<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
-						{/if}
-					</CollapsibleSection>
+	<ArticleSectionStack class="health-sections" data-testid="health-sections">
+		<CollapsibleSection
+			title={t.overview.title}
+			headerVariant="article-summary"
+			sectionKey="status-overview"
+			open={true}
+		>
+			<div class="health-overview">
+				<p class="health-lede">{t.lede}</p>
+				{#if !prov || provenanceIsEmpty(prov)}
+					<div class="health-resource-state" aria-label={t.overview.dailyRecord}>
+						<SectionLabel text={t.overview.dailyRecord} variant="metric" />
+						<ResourceBoundary resource={provenance} lang={locale} isEmpty={provenanceIsEmpty}>
+							{#snippet children(_value)}{/snippet}
+						</ResourceBoundary>
+					</div>
 				{/if}
-			{/each}
-		</ArticleSectionStack>
+				{#if !dh || dataHealthIsEmpty(dh)}
+					<div class="health-resource-state" aria-label={t.overview.liveFeeds}>
+						<SectionLabel text={t.overview.liveFeeds} variant="metric" />
+						<ResourceBoundary resource={dataHealth} lang={locale} isEmpty={dataHealthIsEmpty}>
+							{#snippet children(_value)}{/snippet}
+						</ResourceBoundary>
+					</div>
+				{:else if laneStat.total > 0}
+					<div class="health-aggregate" data-slot="health-aggregate">
+						<TerminalPanel title={t.aggregate.title}>
+							<p class="health-aggregate__verdict">
+								<span class="health-aggregate__summary">
+									{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}
+								</span>
+								<span class="health-aggregate__worst">
+									{#if laneStat.worst}
+										{t.aggregate.worst(laneStat.worst.label)}
+									{:else}
+										{t.aggregate.allClear}
+									{/if}
+								</span>
+							</p>
+						</TerminalPanel>
+					</div>
+				{/if}
+				{#if !historyRoot || historyAvailabilityIsEmpty(historyRoot)}
+					<div class="health-resource-state" aria-label={t.overview.retainedHistory}>
+						<SectionLabel text={t.overview.retainedHistory} variant="metric" />
+						<ResourceBoundary
+							resource={historicAvailability}
+							lang={locale}
+							isEmpty={historyAvailabilityIsEmpty}
+						>
+							{#snippet children(_value)}{/snippet}
+						</ResourceBoundary>
+					</div>
+				{/if}
+			</div>
+		</CollapsibleSection>
+
+		{#each sectionDefs as section (section.id)}
+			{section.number === 1 ? '' : ' '}{#if section.present}
+				<CollapsibleSection
+					title={section.title}
+					headerVariant="article-summary"
+					index={section.number - 1}
+					anchor={section.id}
+					sectionKey={`status-card-${section.id}`}
+					open={true}
+					openSignal={cardOpenSignal(section.id)}
+				>
+					{#if section.id === 'health-lanes'}
+						<SectionLanes rows={laneRows} copy={t} {locale} />
+					{:else if section.id === 'health-freshness'}
+						<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
+					{:else if section.id === 'health-sources'}
+						<SectionSources items={sources} {lastLoaded} copy={t} />
+					{:else if section.id === 'health-gaps'}
+						<SectionGaps {gaps} {humanizeGap} copy={t} />
+					{:else if section.id === 'health-pipeline-notes'}
+						<SectionNotes notes={pipelineNotes} copy={t} />
+					{:else if section.id === 'health-retention'}
+						<SectionRetention
+							detail={retention.detail}
+							aggregate={retention.aggregate}
+							{fmtDays}
+							copy={t}
+							{locale}
+						/>
+					{:else if section.id === 'health-conformance' && conformance}
+						<SectionConformance {conformance} copy={t} {locale} />
+					{:else if section.id === 'health-envelope'}
+						<SectionEnvelope {envelope} copy={t} {locale} />
+					{:else if section.id === 'health-history-coverage'}
+						<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
+					{/if}
+				</CollapsibleSection>
+			{/if}
+		{/each}
+	</ArticleSectionStack>
+
+	{#snippet after()}
+		<ArticleKeywords
+			class="px-[var(--space-page-x)] pb-8 lg:hidden"
+			label={t.article.tagsAria}
+			keywords={t.article.tags}
+		/>
 	{/snippet}
-</DetailShell>
+</DetailFrame>
 
 {#snippet statCards()}
 	<div class="health-stat-rail">

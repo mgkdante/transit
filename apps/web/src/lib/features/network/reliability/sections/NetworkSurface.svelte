@@ -42,14 +42,16 @@
 		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import type {
-		SurfaceRailContext,
-		SurfaceRailPresentation,
+	import SurfaceRail, {
+		type SurfaceRailContext,
+		type SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import { revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
+	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
@@ -603,24 +605,94 @@
 	</ArticleSectionStack>
 {/snippet}
 
-<DetailShell
+{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+	{#snippet historyControls()}
+		<HistoryNavigator
+			mode="range"
+			{locale}
+			labels={t.history.navigator}
+			value={historyWindow}
+			availableDates={historyDates}
+			coverageText={historyCoverageText}
+			selectionText={historySelectionText}
+			announcement={historyAnnouncement}
+			liveAnnouncement={false}
+			onRangeChange={historyUi.selectRange}
+		/>
+	{/snippet}
+	{#snippet primaryControls()}
+		<GrainPicker
+			segments={presentedGrainSegments}
+			bind:value={grainKey}
+			label={t.grain.label}
+			variant="time-grid"
+		/>
+		{#each presentedGrainSegments as seg (seg.key)}
+			{#if seg.describedById}
+				<span
+					id={seg.describedById}
+					class="network-reason visually-hidden"
+					data-slot="controls-reason">{grainDisabledReason}</span
+				>
+			{/if}
+		{/each}
+	{/snippet}
+
+	{#if hasViewControls}
+		<ArticleControlDisclosure
+			title={t.viewControlsLabel}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+			}
+		>
+			<ArticleControlStack
+				history={history.index != null ? historyControls : undefined}
+				primary={showGrainPicker ? primaryControls : undefined}
+				secondary={showSecondaryControls ? windowControls : undefined}
+			/>
+		</ArticleControlDisclosure>
+	{/if}
+
+	<div class="rail-toc" data-slot="section-toc">
+		<TocNav
+			entries={tocEntries}
+			{activeId}
+			quiet={false}
+			bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+			onNavigate={(id) => {
+				navigate(id);
+				closeSheet();
+			}}
+			heading={t.rail.toc}
+		/>
+	</div>
+	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
+{/snippet}
+
+{#snippet railCell()}
+	<SurfaceRail
+		rail={combinedRail}
+		label={t.viewControlsLabel}
+		summary={railSummary}
+		openAria={t.rail.pillOpen}
+		closeAria={t.rail.pillClose}
+	/>
+{/snippet}
+
+<DetailFrame
 	class="network-detail"
+	railScroll
 	bind:activeId
-	{tocEntries}
-	combinedRailConfig={{
-		label: t.viewControlsLabel,
-		summary: railSummary,
-		openAria: t.rail.pillOpen,
-		closeAria: t.rail.pillClose,
-	}}
+	rail={railCell}
+	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
 >
-	{#snippet articleHeader()}
+	{#snippet header()}
 		<ArticleHeader
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={t.heading}
-			tags={t.article.tags}
-			tagsAria={t.article.tagsAria}
+			highlight={t.article.tags[0]}
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -653,172 +725,109 @@
 					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
 				</div>
 			{/snippet}
+			{#snippet canvas(el)}
+				<ManifestoCanvas containerEl={el} />
+			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-		{#snippet historyControls()}
-			<HistoryNavigator
-				mode="range"
-				{locale}
-				labels={t.history.navigator}
-				value={historyWindow}
-				availableDates={historyDates}
-				coverageText={historyCoverageText}
-				selectionText={historySelectionText}
-				announcement={historyAnnouncement}
-				liveAnnouncement={false}
-				onRangeChange={historyUi.selectRange}
-			/>
-		{/snippet}
-		{#snippet primaryControls()}
-			<GrainPicker
-				segments={presentedGrainSegments}
-				bind:value={grainKey}
-				label={t.grain.label}
-				variant="time-grid"
-			/>
-			{#each presentedGrainSegments as seg (seg.key)}
-				{#if seg.describedById}
-					<span
-						id={seg.describedById}
-						class="network-reason visually-hidden"
-						data-slot="controls-reason">{grainDisabledReason}</span
-					>
-				{/if}
-			{/each}
-		{/snippet}
-
-		{#if hasViewControls}
-			<ArticleControlDisclosure
-				title={t.viewControlsLabel}
-				bind:open={
-					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-				}
-			>
-				<ArticleControlStack
-					history={history.index != null ? historyControls : undefined}
-					primary={showGrainPicker ? primaryControls : undefined}
-					secondary={showSecondaryControls ? windowControls : undefined}
+	<div class="network-content">
+		<section class="network-region" id="net-live" data-toc="net-live" aria-label={t.liveRegion}>
+			{#if kpis}
+				<ArticleSectionStack class="network-live-content">
+					<SectionLiveHeadline
+						cards={kpis.headline}
+						{locale}
+						copy={t}
+						terminal={{
+							title: t.liveTerminal.title,
+							tag: t.liveTerminal.tag,
+							footerItems: [
+								{
+									label: t.liveTerminal.footerLabel,
+									value: t.liveTerminal.footerValue,
+								},
+							],
+						}}
+					/>
+					<SectionReporting cards={kpis.reporting} {silentRows} copy={t} {locale} />
+					<SectionStatusMix
+						{statusSpec}
+						occupancySpec={occupancyMix.spec}
+						hasOccupancy={occupancyMix.hasOccupancy}
+						copy={t}
+						{locale}
+					/>
+					<SectionDelayHistogram spec={delayHistogramSpec} copy={t} {locale} />
+				</ArticleSectionStack>
+			{:else if live.error}
+				<EdgeState
+					variant="error-v1"
+					lang={locale}
+					layout={edgeLayout}
+					onRetry={() => live.refresh()}
 				/>
-			</ArticleControlDisclosure>
-		{/if}
+			{:else}
+				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+			{/if}
+		</section>
 
-		<div class="rail-toc" data-slot="section-toc">
-			<TocNav
-				entries={tocEntries}
-				{activeId}
-				quiet={false}
-				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
-				onNavigate={(id) => {
-					navigate(id);
-					closeSheet();
-				}}
-				heading={t.rail.toc}
-			/>
-		</div>
-	{/snippet}
+		<section class="network-verdict" aria-label={t.verdictDelta.label}>
+			<VerdictBanner result={networkVerdict} />
+		</section>
 
-	{#snippet center()}
-		<div class="network-content">
-			<section class="network-region" id="net-live" data-toc="net-live" aria-label={t.liveRegion}>
-				{#if kpis}
-					<ArticleSectionStack class="network-live-content">
-						<SectionLiveHeadline
-							cards={kpis.headline}
-							{locale}
-							copy={t}
-							terminal={{
-								title: t.liveTerminal.title,
-								tag: t.liveTerminal.tag,
-								footerItems: [
-									{
-										label: t.liveTerminal.footerLabel,
-										value: t.liveTerminal.footerValue,
-									},
-								],
-							}}
-						/>
-						<SectionReporting cards={kpis.reporting} {silentRows} copy={t} {locale} />
-						<SectionStatusMix
-							{statusSpec}
-							occupancySpec={occupancyMix.spec}
-							hasOccupancy={occupancyMix.hasOccupancy}
-							copy={t}
-							{locale}
-						/>
-						<SectionDelayHistogram spec={delayHistogramSpec} copy={t} {locale} />
-					</ArticleSectionStack>
-				{:else if live.error}
+		<section
+			class="network-region"
+			id="net-historic"
+			data-toc="net-historic"
+			aria-label={t.historicRegion}
+		>
+			{#if explicitHistory}
+				{#if retainedReady && history.value != null}
+					<div class="network-history-notes" data-slot="history-scope-notes">
+						{#if history.state === 'partial'}
+							<p data-slot="history-partial">{t.history.partial}</p>
+						{/if}
+						<p data-slot="history-daily-only">{t.history.dailyOnly}</p>
+						{#if hasShift || hasDayType}
+							<p data-slot="history-current-only">{t.history.currentOnly}</p>
+						{/if}
+					</div>
+					{@render historicBoard()}
+				{:else if history.state === 'no-data'}
+					<StateNotice
+						title={retainedDataAbsence.label}
+						body={retainedDataAbsence.why}
+						presentation="responsive"
+						role="status"
+						ariaLive="polite"
+						data-slot="history-no-data"
+					/>
+				{:else if history.state === 'error'}
 					<EdgeState
 						variant="error-v1"
 						lang={locale}
 						layout={edgeLayout}
-						onRetry={() => live.refresh()}
+						onRetry={() => history.retry()}
 					/>
 				{:else}
 					<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 				{/if}
-			</section>
-
-			<section class="network-verdict" aria-label={t.verdictDelta.label}>
-				<VerdictBanner result={networkVerdict} />
-			</section>
-
-			<section
-				class="network-region"
-				id="net-historic"
-				data-toc="net-historic"
-				aria-label={t.historicRegion}
-			>
-				{#if explicitHistory}
-					{#if retainedReady && history.value != null}
-						<div class="network-history-notes" data-slot="history-scope-notes">
-							{#if history.state === 'partial'}
-								<p data-slot="history-partial">{t.history.partial}</p>
-							{/if}
-							<p data-slot="history-daily-only">{t.history.dailyOnly}</p>
-							{#if hasShift || hasDayType}
-								<p data-slot="history-current-only">{t.history.currentOnly}</p>
-							{/if}
-						</div>
-						{@render historicBoard()}
-					{:else if history.state === 'no-data'}
-						<StateNotice
-							title={retainedDataAbsence.label}
-							body={retainedDataAbsence.why}
-							presentation="responsive"
-							role="status"
-							ariaLive="polite"
-							data-slot="history-no-data"
-						/>
-					{:else if history.state === 'error'}
-						<EdgeState
-							variant="error-v1"
-							lang={locale}
-							layout={edgeLayout}
-							onRetry={() => history.retry()}
-						/>
-					{:else}
-						<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
-					{/if}
-				{:else}
-					<ResourceBoundary
-						resource={trend}
-						lang={locale}
-						isEmpty={(d) =>
-							(d.series?.length ?? 0) === 0 &&
-							(d.weekly?.length ?? 0) === 0 &&
-							(d.monthly?.length ?? 0) === 0}
-					>
-						{@render historicBoard()}
-					</ResourceBoundary>
-				{/if}
-			</section>
-		</div>
-	{/snippet}
-</DetailShell>
+			{:else}
+				<ResourceBoundary
+					resource={trend}
+					lang={locale}
+					isEmpty={(d) =>
+						(d.series?.length ?? 0) === 0 &&
+						(d.weekly?.length ?? 0) === 0 &&
+						(d.monthly?.length ?? 0) === 0}
+				>
+					{@render historicBoard()}
+				</ResourceBoundary>
+			{/if}
+		</section>
+	</div>
+</DetailFrame>
 
 <style>
 	:global(.network-detail .network-shift-caveat),
