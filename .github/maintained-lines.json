@@ -96,7 +96,8 @@
         "944f32675773093218e6d9f42beaef714ce38cbfed6878a8618b51dfd5409466",
         "f51ae0231df01c7d3811f795c66e70d95f442d445bd97d8f38618dda064afe2d",
         "c7fa819ca61b0d42e1390374f3ea4c406f0301cc30dd19729ea3d22cf53cd100",
-        "c49843f78f558ba3e16cc9932165b6080847b92cdd45612c439ad1cef1757fe4"
+        "c49843f78f558ba3e16cc9932165b6080847b92cdd45612c439ad1cef1757fe4",
+        "e9202b5a1a034eddb6125bc464ae85b690a5db70c8dd35d30a6bc410b9214e9c"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },
@@ -301,7 +302,8 @@
       ],
       "owners": ["apps/web/vendor/design/manifest.json"],
       "sha256": [
-        "fd1e77adccb9a8720c6b6e26fb3f74d34f807742e27a0fea2ddf8c7a692db0d7"
+        "fd1e77adccb9a8720c6b6e26fb3f74d34f807742e27a0fea2ddf8c7a692db0d7",
+        "af5ebf160a88e61b8ef0f476c48bd505c17b905e05af2b73dd9e54cad771cadf"
       ],
       "origin": "github.com/mgkdante/yesid.dev-design v0.20.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
@@ -315,7 +317,8 @@
         "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9",
         "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e",
         "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55",
-        "ff6abac0aab463e8fab31d9386051dbe1d2449df6ff415cbd1b2e01a08a97e73"
+        "ff6abac0aab463e8fab31d9386051dbe1d2449df6ff415cbd1b2e01a08a97e73",
+        "a217af022ca3d29c9d0d01dc47a684ffd54699489b4f3a43f29d2211a675148b"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -406,7 +409,8 @@
         "1da322dfc8f8ee5a304ec4359e8d588a6b4c2ac6a7b5de693481f3cefc15f28b",
         "7df925a89bbc9cce6b01369c27b4d355dff796beb4e92ee6d2bc1838017b95a7",
         "e23451f3efe06bd48e7e64a6e813bef3cabdc50152e557917f2fea5b87873243",
-        "8328e9d978969e1af98b02e941a1b8109c9b28572cf445cf2499523d9f7accfc"
+        "8328e9d978969e1af98b02e941a1b8109c9b28572cf445cf2499523d9f7accfc",
+        "befdf309729500ed612e5a5c1233d2253ca471d683c0a086cf38291b384154df"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },
