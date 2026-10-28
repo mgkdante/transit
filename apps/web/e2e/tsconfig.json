@@ -1,6 +1,9 @@
 {
 	"compilerOptions": {
 		"baseUrl": "..",
-		"paths": { "$lib/*": ["src/lib/*"] }
+		"paths": {
+			"$lib/*": ["src/lib/*"],
+			"@yesid/i18n-core": ["vendor/design/i18n-core/src/index.ts"]
+		}
 	}
 }
