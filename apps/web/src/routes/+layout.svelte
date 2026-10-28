@@ -21,18 +21,25 @@
 	import {
 		setLocaleContext,
 		DEFAULT_LOCALE,
+		SUPPORTED_LOCALES,
 		delocalizePath,
 		localizeHref,
 		type Locale,
 	} from '$lib/i18n';
-	import SeoHead from '$lib/components/SeoHead.svelte';
+	import { SeoHead } from '@yesid/ui/head';
 	import {
 		resolveRouteSeo,
 		isEphemeralPath,
 		breadcrumbItemsForHead,
 		resolveDatasetSeo,
 	} from '$lib/seo/routeSeo';
-	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
+	import {
+		breadcrumbJsonLd,
+		organizationJsonLd,
+		datasetJsonLd,
+		websiteJsonLd,
+		type JsonLdNode,
+	} from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import { currentMirrorUrl } from '$lib/site/urlMirror';
 	import { errorDocumentHead } from '$lib/site/errorPage';
@@ -133,7 +140,7 @@
 	const datasetCopy = $derived(resolveDatasetSeo(locale));
 	const jsonLd = $derived.by(() => {
 		if (isErrorStatus) return [];
-		const nodes: unknown[] = [
+		const nodes: JsonLdNode[] = [
 			organizationJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: seoSiteName }),
 			datasetJsonLd({
 				siteOrigin: siteConfig.siteOrigin,
@@ -148,6 +155,33 @@
 		);
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
+	});
+	const headHref = (lang: Locale) =>
+		`${siteConfig.siteOrigin}${localizeHref(seoPath, lang, data.providerId)}`;
+	const head = $derived({
+		title: headTitle === headSiteName ? headTitle : `${headTitle} · ${headSiteName}`,
+		description: headDescription,
+		siteName: headSiteName,
+		canonical: isErrorStatus ? undefined : headHref(locale),
+		alternates: [
+			...SUPPORTED_LOCALES.map((lang) => ({ hreflang: lang, href: headHref(lang) })),
+			{ hreflang: 'x-default', href: headHref(DEFAULT_LOCALE) },
+		],
+		ogLocale: `${locale}_CA`,
+		ogLocaleAlternates: SUPPORTED_LOCALES.filter((lang) => lang !== locale).map(
+			(lang) => `${lang}_CA`,
+		),
+		image: {
+			url: `${siteConfig.siteOrigin}/og/${locale}.png`,
+			alt: `${headSiteName}: ${headTitle}`,
+		},
+		noIndex: noIndex || isErrorStatus,
+		twitter: { site: siteConfig.twitterSite, creator: siteConfig.twitterCreator },
+		author: siteConfig.author,
+		jsonLd: [
+			websiteJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: headSiteName, locale }),
+			...jsonLd,
+		],
 	});
 	$effect(() => dataPulse.subscribe(v1?.manifest ?? null));
 
@@ -339,20 +373,7 @@
 </script>
 
 <SiteRoot scroller={{ wrapper: '#main', content: '#main-flow' }} quietModeKey="transit:quiet-mode">
-	<SeoHead
-		title={headTitle}
-		description={headDescription}
-		siteName={headSiteName}
-		path={seoPath}
-		{locale}
-		siteOrigin={siteConfig.siteOrigin}
-		noIndex={noIndex || isErrorStatus}
-		suppressCanonical={isErrorStatus}
-		twitterSite={siteConfig.twitterSite}
-		twitterCreator={siteConfig.twitterCreator}
-		author={siteConfig.author}
-		{jsonLd}
-	/>
+	<SeoHead {...head} />
 
 	<a class="skip-link" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
 

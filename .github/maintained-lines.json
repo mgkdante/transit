@@ -377,25 +377,11 @@
       "origin": "apps/web/scripts/build-map-posters.ts; receipt render-input and image hashes independently verified for all accepted snapshots."
     },
     {
-      "category": "assets",
-      "reason": "Binary font inputs for the Open Graph generator",
-      "files": [
-        "apps/web/scripts/og-fonts/Inter-Black.ttf",
-        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
-        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf"
-      ],
-      "owners": ["apps/web/scripts/build-og.ts"],
-      "sha256": [
-        "2eb6e99fd558766044a7287d0216d9d2bf92502decd83177cb4600e01e9025f9",
-        "46f7578c40b45891c49dcc59fb65208202a49135dd407be285478b484d96e494"
-      ],
-      "origin": "Explicit Inter and JetBrains Mono font payloads consumed by build-og.ts; no extension-wide exclusion."
-    },
-    {
       "category": "generated",
       "reason": "Generated PNG social images and touch icon",
       "files": [
         "apps/web/static/apple-touch-icon-180.png",
+        "apps/web/static/favicon.svg",
         "apps/web/static/og/en.png",
         "apps/web/static/og/fr.png"
       ],
@@ -403,9 +389,6 @@
         "apps/web/package.json",
         "apps/web/scripts/build-icons.ts",
         "apps/web/scripts/build-og.ts",
-        "apps/web/scripts/og-fonts/Inter-Black.ttf",
-        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
-        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf",
         "apps/web/src/lib/site/deployment.ts",
         "apps/web/vendor/design/manifest.json",
         "bun.lock"

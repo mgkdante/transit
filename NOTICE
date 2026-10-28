@@ -28,10 +28,10 @@ its permitted uses and restrictions.
 ## Fonts
 
 Inter and JetBrains Mono files under `apps/web/vendor/design/tokens/fonts` and
-`apps/web/scripts/og-fonts` are distributed with the SIL Open Font License 1.1
+`apps/web/vendor/design/seo-kit/fonts` are distributed with the SIL Open Font License 1.1
 texts at
-[`LICENSE-Inter.txt`](apps/web/vendor/design/tokens/fonts/LICENSE-Inter.txt) and
-[`LICENSE-JetBrainsMono.txt`](apps/web/vendor/design/tokens/fonts/LICENSE-JetBrainsMono.txt).
+[`LICENSE-Inter.txt`](apps/web/vendor/design/seo-kit/fonts/LICENSE-Inter.txt) and
+[`LICENSE-JetBrains-Mono.txt`](apps/web/vendor/design/seo-kit/fonts/LICENSE-JetBrains-Mono.txt).
 
 The three Satori-compatible TTF files are byte-identical to the documented
 official artifacts used by yesid.dev:
