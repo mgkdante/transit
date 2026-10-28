@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -270,7 +270,9 @@ and drawer, hidden at the desktop breakpoint; the caller supplies `openAria` and
 `onNavigate` defaults to `navigateToc`. `observeActiveToc` reports the active id from
 `[data-section-index]` and `[data-toc]` targets, and `onTocNavigate` belongs in `afterNavigate`.
 `landTocFragments()` is opt-in for apps whose layout does not already land same-page fragment
-links; start it next to `observeActiveToc` and run its cleanup on unmount.
+links; start it next to `observeActiveToc` and run its cleanup on unmount. Jumps through
+`navigateToc` and `revealTocTarget` land the section a quarter down the viewport, the same line
+`observeActiveToc` reads, so the active entry is always the one the reader picked.
 
 ### CornerMarks, StatusDot, MetricDisplay, SectionHeading, and SectionIcon
 
@@ -426,5 +428,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

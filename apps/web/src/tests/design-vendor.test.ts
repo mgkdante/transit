@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.19.0',
-	tagObject: '3ad0965602ee4caaaa0ee601fd0433bd8c59aa69',
-	peeledCommit: '94fee01b139e3a6130d60061f8f84a7b15167c0d',
-	assetName: 'yesid.dev-design-v0.19.0.tar',
-	assetSize: 1_423_360,
-	assetDigest: 'sha256:56e3f61f11a6e2e4587279d0695ceb1c5a762c565b4d86f069edd50e13caee1e',
+	tag: 'v0.19.1',
+	tagObject: 'd66bfea9d5aa4595348934e4e268fffaa236be83',
+	peeledCommit: '9a07f77e5a167bc18607d76b633842ca5030d5bf',
+	assetName: 'yesid.dev-design-v0.19.1.tar',
+	assetSize: 1433600,
+	assetDigest: 'sha256:7c0d7b7038b7826686f25ee15239abe748c34d219faaacca1cd3e8066aaf8ff1',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:952a9dd13f891b0a15e950edd2efceadda414f354dd8e46a275390e7539c418a',
-	manifestDigest: '8070639cfbea2c7c4b4bb03a5a0f2ea2a2a3d39bf944d14074bb09758a5a1bf6',
+	treeHash: 'sha256:79dca32a2d25b0eaed8323c3c96812ac91aacd6751b7f6a74091b8b7c5943737',
+	manifestDigest: 'a110bf261136c6fb474f78cc8efd124fb2db9aea9fdc4290d3f7183fd9635e7c',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -190,7 +190,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.19.0');
+		expect(packageJson.version).toBe('0.19.1');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -259,7 +259,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.19.0',
+			version: '0.19.1',
 		});
 		expect(files).toEqual([
 			'README.md',

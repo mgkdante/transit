@@ -102,7 +102,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.19.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.19.1 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -299,7 +299,7 @@
       "sha256": [
         "12e00c9788b2db62cc2bfa8935a79d04d50833f955180eebc57c9db9a858545f"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.19.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.19.1; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
