@@ -4,7 +4,8 @@
 	import type { Resource } from '$lib/v1/resource.svelte';
 	import { asDataState } from '$lib/v1/data-state';
 	import { desktop } from '@yesid/ui/state';
-	import { EdgeState, type StateNoticePresentation } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
+	import { type StateNoticePresentation } from '@yesid/ui/feedback';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 
 	interface ResourceBoundaryProps {

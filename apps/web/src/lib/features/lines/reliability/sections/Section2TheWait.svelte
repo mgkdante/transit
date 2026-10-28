@@ -5,7 +5,7 @@
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { DeltaStat } from '$lib/components/dataviz';
-	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
+	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
 	import { priorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
@@ -649,7 +649,6 @@
 								frame="none"
 								borderCollapse="collapse"
 								headerBand="none"
-								tableAttrs={{ 'data-slot': 'direction-table' }}
 							/>
 						</div>
 					{/if}

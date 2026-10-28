@@ -32,7 +32,13 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import {
+		ArticleHeader,
+		DetailFrame,
+		SurfaceRail,
+		type SurfaceRailContext,
+		type SurfaceRailPresentation,
+	} from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
@@ -41,10 +47,6 @@
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import SurfaceRail, {
-		type SurfaceRailContext,
-		type SurfaceRailPresentation,
-	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
 		ladderGrains,

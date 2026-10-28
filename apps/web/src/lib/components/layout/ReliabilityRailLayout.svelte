@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
+	import { SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import ArticleSummaryLane from './ArticleSummaryLane.svelte';
 
 	export interface ReliabilityRailLayoutProps {

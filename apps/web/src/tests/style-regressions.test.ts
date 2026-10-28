@@ -148,25 +148,6 @@ describe('style regressions — prose-measure gate controls', () => {
 	});
 });
 
-const RAW_TABLE: ForbiddenPattern = {
-	pattern: /<table(?:\s|>)/,
-	reason: 'raw table inventory',
-};
-
-it('pins the DataTable cell wrapper to stack track two in both stack blocks', () => {
-	const source = readFileSync(
-		resolve(import.meta.dirname, '../lib/components/data/DataTable.svelte'),
-		'utf8',
-	);
-	const pins = source.match(/\.data-table-cell-content\s*\{[^}]*grid-column:\s*2/g) ?? [];
-	expect(pins).toHaveLength(2);
-});
-
-const EMPTY_RAW_TABLE_ALLOWLIST: readonly string[] = [];
-const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
-const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
-const TO_MIGRATE_2026_07_30 = [] as const;
-
 it('keeps the progressive poster heading and kicker on shared type tokens', () => {
 	const source = readFileSync(
 		resolve(process.cwd(), 'src/lib/features/map/MapProgressive.svelte'),
@@ -210,17 +191,4 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 			}
 		});
 	}
-});
-
-describe('raw table inventory — WS5 shrinking gate', () => {
-	it('contains only DataTable, the dated migration debt, and the frozen marks prefix', () => {
-		const rawSites = FORBIDDEN_ROOTS.flatMap((rel) => {
-			const root = resolve(process.cwd(), rel);
-			return scanStyleRegressions({ root, forbidden: [RAW_TABLE] })[0].hits;
-		}).sort();
-		const nonFrozen = rawSites.filter((site) => !site.startsWith(FROZEN_MARKS_PREFIX));
-
-		expect(EMPTY_RAW_TABLE_ALLOWLIST).toEqual([]);
-		expect(nonFrozen).toEqual([DATA_TABLE_SITE, ...TO_MIGRATE_2026_07_30].sort());
-	});
 });

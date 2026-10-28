@@ -619,9 +619,9 @@ describe('RepeatOffenders retained date history', () => {
 			expect(chartRows.map((row) => row.label)).toEqual(fixture.names);
 
 			const section = container.querySelector(`[data-toc="${fixture.card}"]`) as HTMLElement;
-			const table = section.querySelector(
-				'[data-slot="offender-evidence-table"]',
-			) as HTMLTableElement;
+			const table = within(section as HTMLElement).queryByRole('table', {
+				name: repeatCopy.en.evidenceTable.caption,
+			}) as HTMLTableElement;
 			expect(table).not.toBeNull();
 			const tableRows = within(table).getAllByRole('row').slice(1);
 			expect(

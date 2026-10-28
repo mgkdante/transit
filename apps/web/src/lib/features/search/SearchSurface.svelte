@@ -24,9 +24,8 @@
 		SearchControls,
 		type SearchScopeKey,
 	} from '$lib/components/surface';
-	import { Masthead } from '$lib/components/brand';
+	import { Masthead, Surface } from '@yesid/ui/layout';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { Surface } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import SegmentedChoice from './SegmentedChoice.svelte';
-	import type { SegmentedChoiceOption } from './SegmentedChoice.svelte';
+	import { SegmentedChoice, type SegmentedChoiceOption } from '@yesid/ui/brand';
 
 	export type GrainPickerVariant = 'default' | 'time-grid';
 
@@ -63,7 +62,7 @@
 	{label}
 	onSelect={select}
 	variant={variant === 'time-grid' ? 'joined-grid' : 'default'}
-	dataVariant={variant}
-	dataSlot="grain-picker"
+	data-variant={variant}
+	data-slot="grain-picker"
 	class={cn('grain-picker', variant === 'time-grid' && 'grain-picker--time-grid', className)}
 />

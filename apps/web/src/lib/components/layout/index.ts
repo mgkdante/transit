@@ -1,8 +1,3 @@
-export { default as DashboardGrid } from './DashboardGrid.svelte';
-export { default as ControlsRail } from './ControlsRail.svelte';
-
-export { default as Surface } from './Surface.svelte';
-
 export { default as ReliabilityRailLayout } from './ReliabilityRailLayout.svelte';
 export type { ReliabilityRailLayoutProps } from './ReliabilityRailLayout.svelte';
 export type { ArticleMetaEntry } from '@yesid/ui/layout';

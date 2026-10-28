@@ -33,15 +33,20 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import {
+		ArticleHeader,
+		DetailFrame,
+		SurfaceRail,
+		type SurfaceRailContext,
+	} from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
-	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { copy as COPY } from './receipt.copy';
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
@@ -411,7 +416,7 @@
 				title={t.emptyIndex}
 				presentation="card"
 				role="status"
-				ariaLive="polite"
+				aria-live="polite"
 				data-slot="receipt-empty-index"
 			/>
 		{:else if receipt.error}
@@ -428,7 +433,7 @@
 				title={t.emptyReceipt}
 				presentation="card"
 				role="status"
-				ariaLive="polite"
+				aria-live="polite"
 				data-slot="receipt-empty"
 			/>
 		{:else}

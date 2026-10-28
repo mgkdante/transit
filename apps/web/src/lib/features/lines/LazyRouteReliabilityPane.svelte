@@ -46,7 +46,8 @@
 
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import { desktop } from '@yesid/ui/state';
 	import { Button } from '@yesid/ui/button';
@@ -131,7 +132,7 @@
 			glyph="◆"
 			tone="error"
 			role="alert"
-			ariaLive="assertive"
+			aria-live="assertive"
 			action={retryImport}
 			data-slot="reliability-import-error"
 		/>

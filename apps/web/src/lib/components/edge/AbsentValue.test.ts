@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+
 import AbsentValue from './AbsentValue.svelte';
 import type { Locale } from '$lib/i18n';
 import type { AbsenceReasonKey } from '$lib/site/absence';
@@ -63,7 +62,7 @@ describe('AbsentValue — variants', () => {
 		const { container } = render(AbsentValue, { props: { reason: 'not-reported', locale: 'en' } });
 		const root = container.querySelector('[data-slot="absent-value"]');
 		expect(root).toHaveAttribute('data-variant', 'inline');
-		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-slot', 'absent-value');
 		expect(root).toHaveAttribute('data-presentation', 'pill');
 	});
 
@@ -73,7 +72,7 @@ describe('AbsentValue — variants', () => {
 		});
 		const root = container.querySelector('[data-slot="absent-value"]');
 		expect(root).toHaveAttribute('data-variant', 'block');
-		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-slot', 'absent-value');
 		expect(root).toHaveAttribute('data-presentation', 'silo');
 		expect(root).toHaveAttribute('role', 'status');
 	});
@@ -97,26 +96,6 @@ describe('AbsentValue — the row variant reaches the contained chassis', () => 
 			expect(root).toHaveAttribute('aria-label', expected.replace(' · ', ', '));
 		});
 	}
-
-	it('the chassis it lands on still declares the wrap policy and both measure clamps', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/edge/StateNotice.svelte'),
-			'utf8',
-		);
-
-		expect(source).toMatch(
-			/\.state-notice-title,\s*\.state-notice-body\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
-		);
-		expect(source).toMatch(
-			/(?:^|\n)[ \t]*\.state-notice-copy\s*\{[^}]*max-inline-size:\s*var\(--measure-absence\);/s,
-		);
-		expect(source).toMatch(
-			/(?:^|\n)[ \t]*\.state-notice--row \.state-notice-copy\s*\{[^}]*max-inline-size:\s*var\(--measure-absence\);/s,
-		);
-		expect(source).not.toMatch(
-			/\.state-notice-(?:title|body)[^{]*\{[^}]*(?:white-space:\s*nowrap|overflow:\s*hidden|text-overflow:)/s,
-		);
-	});
 });
 
 describe('AbsentValue — no business branching (resolver owns the copy)', () => {

@@ -631,7 +631,7 @@ describe('StopsIndex — find by line', () => {
 		await waitFor(() => expect(getRoute).toHaveBeenCalledWith('80'));
 		const message = await screen.findByText('No published stop list for this line.');
 		expect(message).toBeInTheDocument();
-		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
+		expect(message.closest('[data-slot="state-notice"]')).toHaveAttribute(
 			'data-presentation',
 			'silo',
 		);

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence, type AbsenceReasonKey } from '$lib/site/absence';
-	import StateNotice from './StateNotice.svelte';
+	import { StateNotice } from '@yesid/ui/feedback';
 
 	type Variant = 'inline' | 'row' | 'block';
 
@@ -27,8 +27,8 @@
 	presentation={variant === 'row' ? 'row' : variant === 'block' ? 'silo' : 'pill'}
 	tone="neutral"
 	role={variant === 'block' ? 'status' : undefined}
-	ariaLive={variant === 'block' ? 'polite' : undefined}
-	{ariaLabel}
+	aria-live={variant === 'block' ? 'polite' : undefined}
+	aria-label={ariaLabel}
 	class={className}
 	data-slot="absent-value"
 	data-variant={variant === 'block' ? 'block' : 'inline'}

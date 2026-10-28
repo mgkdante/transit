@@ -604,10 +604,10 @@ describe('NetworkSurface retained-history integration', () => {
 		await waitFor(() => {
 			const empty = view.container.querySelector('[data-slot="history-no-data"]');
 			expect(empty).toHaveTextContent(/No retained data.*no data is retained for this range/i);
-			expect(empty).toHaveAttribute('data-component', 'state-notice');
+			expect(empty).toHaveAttribute('data-slot', 'history-no-data');
 			expect(empty).toHaveAttribute('data-presentation', 'responsive');
 		});
-		expect(view.container.querySelectorAll('[data-component="state-notice"]')).toHaveLength(1);
+		expect(view.container.querySelectorAll('[data-slot="history-no-data"]')).toHaveLength(1);
 		expect(trendRows(view.container)).toHaveLength(0);
 		expect(view.queryByRole('radiogroup', { name: 'Delay series' })).toBeNull();
 	});

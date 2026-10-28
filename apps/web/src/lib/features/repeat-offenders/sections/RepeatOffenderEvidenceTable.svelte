@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
+	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
 	import { MaybeValue } from '$lib/components/edge';
 	import type { OffenderEvidenceRow } from '../selectors/offenderEvidence';
 	import type { RepeatOffendersCopy } from '../repeatOffenders.copy';
@@ -97,7 +97,7 @@
 	frame="none"
 	borderCollapse="collapse"
 	headerBand="none"
-	tableAttrs={{ class: 'offender-evidence-table', 'data-slot': 'offender-evidence-table' }}
+	tableClass="offender-evidence-table"
 />
 
 <style>

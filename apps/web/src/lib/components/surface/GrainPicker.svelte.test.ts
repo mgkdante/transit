@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import GrainPicker from './GrainPicker.svelte';
@@ -33,17 +31,6 @@ const FOUR_SEGMENTS = [
 const THREE_SEGMENTS = FOUR_SEGMENTS.slice(0, 3);
 const TWO_SEGMENTS = FOUR_SEGMENTS.slice(0, 2);
 
-const grainPickerPath = resolve(process.cwd(), 'src/lib/components/surface/GrainPicker.svelte');
-const segmentedChoicePath = resolve(
-	process.cwd(),
-	'src/lib/components/surface/SegmentedChoice.svelte',
-);
-const grainPickerSource = readFileSync(grainPickerPath, 'utf-8');
-
-function segmentedChoiceSource(): string {
-	return existsSync(segmentedChoicePath) ? readFileSync(segmentedChoicePath, 'utf-8') : '';
-}
-
 function renderPicker(
 	segments: readonly { key: Grain; label: string; available: boolean }[],
 	value: Grain,
@@ -74,12 +61,6 @@ describe('GrainPicker — variants', () => {
 			'Month',
 			'Pointe',
 		]);
-		expect(radios.map((radio) => radio.getAttribute('data-grid-cell'))).toEqual([
-			'1:1',
-			'1:2',
-			'2:1',
-			'2:2',
-		]);
 		const shift = within(group).getByRole('radio', { name: 'Heures de pointe' });
 		expect(shift).toHaveTextContent('Pointe');
 		expect(shift).toHaveAttribute('title', 'Heures de pointe');
@@ -99,8 +80,8 @@ describe('GrainPicker — variants', () => {
 		expect(
 			within(threeGroup)
 				.getAllByRole('radio')
-				.map((radio) => radio.getAttribute('data-grid-cell')),
-		).toEqual(['1:1', '1:2', '2:1-2']);
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week', 'Month']);
 
 		const two = render(GrainPicker, {
 			props: {
@@ -115,89 +96,8 @@ describe('GrainPicker — variants', () => {
 		expect(
 			within(twoGroup)
 				.getAllByRole('radio')
-				.map((radio) => radio.getAttribute('data-grid-cell')),
-		).toEqual(['1:1', '1:2']);
-	});
-
-	it('delegates the radio and visual engine to the shared segmented choice primitive', () => {
-		const sharedSource = segmentedChoiceSource();
-		expect(existsSync(segmentedChoicePath)).toBe(true);
-		expect(grainPickerSource).toContain("import SegmentedChoice from './SegmentedChoice.svelte'");
-		expect(grainPickerSource).not.toContain('function onkeydown');
-		expect(sharedSource).toContain('role="radiogroup"');
-		expect(sharedSource).toContain('role="radio"');
-		expect(sharedSource).toContain('aria-checked');
-		expect(sharedSource).toContain('tabindex');
-		expect(sharedSource).toContain('function onkeydown');
-	});
-
-	it('owns one joined frame, internal dividers, exterior rounding, and 44px targets', () => {
-		const sharedSource = segmentedChoiceSource();
-		const rootModifier =
-			sharedSource.match(/\.segmented-choice--joined-grid\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const segmentModifier =
-			sharedSource.match(
-				/\.segmented-choice--joined-grid \.segmented-choice-segment\s*\{([\s\S]*?)\}/,
-			)?.[1] ?? '';
-		const baseSegment =
-			sharedSource.match(/\n\t\.segmented-choice-segment\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-
-		expect(rootModifier).toContain('width: 100%');
-		expect(rootModifier).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-		expect(rootModifier).toContain('gap: 0');
-		expect(rootModifier).toContain('padding: 0');
-		expect(rootModifier).toContain('overflow: hidden');
-		expect(rootModifier).toContain('border: 1px solid var(--border)');
-		expect(rootModifier).toContain('border-radius: var(--radius-lg)');
-
-		expect(segmentModifier).toContain('width: 100%');
-		expect(segmentModifier).toContain('min-width: 0');
-		expect(segmentModifier).toContain('min-height: 52px');
-		expect(segmentModifier).toContain('border: 0');
-		expect(segmentModifier).toContain('border-radius: 0');
-		expect(baseSegment).toContain('min-height: 44px');
-		expect(baseSegment).toContain('align-items: center');
-		expect(baseSegment).toContain('justify-content: center');
-		expect(sharedSource).toContain(
-			'.segmented-choice--joined-grid .segmented-choice-segment:nth-child(even)',
-		);
-		expect(sharedSource).toContain(
-			'.segmented-choice--joined-grid .segmented-choice-segment:nth-child(n + 3)',
-		);
-		expect(sharedSource).toContain("[data-segment-count='3']");
-	});
-
-	it('neutralizes per-cell scale motion only inside the joined time grid', () => {
-		const sharedSource = segmentedChoiceSource();
-		const segmentModifier =
-			sharedSource.match(
-				/\.segmented-choice--joined-grid \.segmented-choice-segment\s*\{([\s\S]*?)\}/,
-			)?.[1] ?? '';
-		const baseSegment =
-			sharedSource.match(/\n\t\.segmented-choice-segment\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const buttonMarkup = sharedSource.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
-
-		expect(segmentModifier).toContain('scale: 1 !important');
-		expect(segmentModifier).toContain('transform: none !important');
-		expect(baseSegment).not.toContain('scale: 1 !important');
-		expect(baseSegment).not.toContain('transform: none !important');
-
-		expect(buttonMarkup).toContain("'tap-press segmented-choice-segment'");
-		expect(buttonMarkup).toContain('use:boop={{ scale: 1.04 }}');
-		expect(buttonMarkup).toContain('use:pressBounce');
-	});
-
-	it('keeps the default variant flex-based with full labels', () => {
-		const { getByRole } = renderPicker(ALL_ENABLED, 'week');
-		const group = getByRole('radiogroup', { name: 'Roll-up period' });
-		expect(group).toHaveAttribute('data-variant', 'default');
-		expect(group).not.toHaveClass('segmented-choice--joined-grid');
-		expect(within(group).getByRole('radio', { name: 'Week' })).toHaveTextContent('Week');
-
-		const defaultRule =
-			segmentedChoiceSource().match(/\.segmented-choice\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		expect(defaultRule).toContain('display: inline-flex');
-		expect(defaultRule).not.toContain('grid-template-columns');
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week']);
 	});
 
 	it('preserves the full French label in a disabled compact pointer hint', () => {

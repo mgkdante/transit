@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chromeSearchResults } from '$lib/search/chromeSearch';
-import type { TransitModeKey } from '$lib/search/stopMode';
+import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
 import type { RouteIndexEntry } from '$lib/v1/schemas';
 import NavPill from './NavPill.svelte';
 
@@ -262,7 +262,11 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		await tick();
 
 		expect(container.querySelector('[data-slot="search-controls"]')).toBeNull();
-		expect(container.querySelector('.search-mode-chip')).toBeNull();
+		for (const chip of TRANSIT_MODE_FILTERS) {
+			expect(
+				within(container).queryByRole('button', { name: chip.tag, pressed: false }),
+			).toBeNull();
+		}
 		expect(modes.size).toBe(0);
 		expect(
 			chromeSearchResults('161', { routes }, { scope: 'route', modes }).map((r) => r.id),

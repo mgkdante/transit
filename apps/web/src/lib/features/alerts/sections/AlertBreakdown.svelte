@@ -3,7 +3,7 @@
 	import type { BreakdownRow } from '../selectors/alertLog';
 	import type { Locale } from '$lib/i18n';
 	import type { Snippet } from 'svelte';
-	import { DashboardGrid } from '$lib/components/layout';
+	import { DashboardGrid } from '@yesid/ui/layout';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { SectionHeading } from '@yesid/ui/brand';
 	import { AbsentValue } from '$lib/components/edge';

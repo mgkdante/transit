@@ -712,7 +712,9 @@ describe('HotspotsBoard article', () => {
 		const { container } = render(HotspotsBoard);
 		const stopCard = card(container, 'hotspots-stops');
 		const stopTray = stopCard.querySelector('[data-slot="hotspot-tray"]') as HTMLElement;
-		const stopTables = stopTray.querySelectorAll('table[data-slot="hotspot-tray-table"]');
+		const stopTables = within(stopTray).getAllByRole('table', {
+			name: hotspotsCopy.en.tray.listLabel,
+		});
 		expect(stopTables).toHaveLength(1);
 		const stopTable = stopTables[0] as HTMLTableElement;
 		expect(
@@ -731,9 +733,9 @@ describe('HotspotsBoard article', () => {
 		expect(stopTable).not.toContainElement(reason);
 
 		const lineCard = card(container, 'hotspots-lines');
-		const lineTable = lineCard.querySelector(
-			'table[data-slot="hotspot-tray-table"]',
-		) as HTMLTableElement;
+		const lineTable = within(lineCard).queryByRole('table', {
+			name: hotspotsCopy.en.tray.listLabel,
+		}) as HTMLTableElement;
 		expect(lineTable).not.toBeNull();
 		const nullTitle = within(lineTable).getByText('Sparse Route');
 		const nullRow = nullTitle.closest('tr') as HTMLTableRowElement;

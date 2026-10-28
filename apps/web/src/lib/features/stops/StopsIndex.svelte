@@ -20,7 +20,8 @@
 	import { ListingHeaderStats } from '$lib/components/layout';
 	import { ListingFrame } from '@yesid/ui/layout';
 	import { startBlueprintScrub } from '$lib/motion/scrubs/blueprint-scrub';
-	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { fromSearchParams } from '$lib/filters';
@@ -317,7 +318,7 @@
 							title={folded ? t.noMatches : t.noLineStops}
 							presentation="silo"
 							role="status"
-							ariaLive="polite"
+							aria-live="polite"
 						/>
 					{/if}
 				{:else}
@@ -389,7 +390,7 @@
 					{/if}
 				</section>
 			{:else if matches.length === 0}
-				<StateNotice title={t.noMatches} presentation="silo" role="status" ariaLive="polite" />
+				<StateNotice title={t.noMatches} presentation="silo" role="status" aria-live="polite" />
 			{:else}
 				<EntityList
 					items={sortedMatches}

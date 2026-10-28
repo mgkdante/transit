@@ -10,14 +10,14 @@
 		revealTocTarget,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import { ArticleSummaryLane, Surface } from '$lib/components/layout';
-	import { DetailFrame } from '@yesid/ui/layout';
+	import { ArticleSummaryLane } from '$lib/components/layout';
+	import { Surface, DetailFrame, Breadcrumb } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
-	import { getLocale } from '$lib/i18n';
+	import { breadcrumbCopy } from './breadcrumb.copy';
+	import { getLocale, getLocalizeHref } from '$lib/i18n';
 	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
 	import { cn } from '$lib/utils';
-	import Breadcrumb from './Breadcrumb.svelte';
 
 	interface EntityDetailSharedProps {
 		lede?: string;
@@ -70,6 +70,7 @@
 	}: EntityDetailProps = $props();
 
 	const locale = getLocale();
+	const localizeHref = getLocalizeHref();
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));
 	const articleTocEntries = $derived(articleToc?.entries[active] ?? []);
@@ -344,7 +345,13 @@
 						{@render cornerMeta()}
 					{/if}
 					{#if trail.length > 1}
-						<Breadcrumb {trail} {locale} />
+						<Breadcrumb
+							items={trail.map((crumb) => ({
+								name: crumb.name,
+								href: localizeHref(crumb.path, locale),
+							}))}
+							label={breadcrumbCopy[locale].label}
+						/>
 					{/if}
 					{#if back}
 						<a class="surface-back" href={back.href}>

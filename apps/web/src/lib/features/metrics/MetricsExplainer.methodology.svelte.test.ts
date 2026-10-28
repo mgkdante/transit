@@ -273,7 +273,7 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 
 		const unavailable = screen.getByText(en.provenance.unavailable);
 		expect(unavailable).toBeInTheDocument();
-		expect(unavailable.closest('[data-component="state-notice"]')).toHaveAttribute(
+		expect(unavailable.closest('[data-slot="state-notice"]')).toHaveAttribute(
 			'data-presentation',
 			'silo',
 		);

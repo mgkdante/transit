@@ -24,16 +24,6 @@ describe('flat data-surface contract', () => {
 		expect(informationCard).not.toMatch(/box-shadow:/);
 	});
 
-	it('keeps Data Health dashboard records and coverage tables free of the glowing card token', () => {
-		const envelope = read('src/lib/features/health/sections/SectionEnvelope.svelte');
-		const historyCoverage = read('src/lib/features/health/sections/SectionHistoryCoverage.svelte');
-		const dataTable = read('src/lib/components/data/DataTable.svelte');
-
-		expect(envelope).not.toContain('var(--shadow-card)');
-		expect(historyCoverage).not.toContain('var(--shadow-card)');
-		expect(dataTable).not.toContain('var(--shadow-card)');
-	});
-
 	it('keeps shared loading, empty, and error edge states flat', () => {
 		const edgeState = read('src/lib/components/edge/EdgeState.svelte');
 

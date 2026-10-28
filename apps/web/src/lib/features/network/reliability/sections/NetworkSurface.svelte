@@ -40,17 +40,20 @@
 		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import SurfaceRail, {
+	import {
+		SurfaceRail,
 		type SurfaceRailContext,
 		type SurfaceRailPresentation,
-	} from '$lib/components/surface/SurfaceRail.svelte';
+		ArticleHeader,
+		DetailFrame,
+	} from '@yesid/ui/layout';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import { CollapsibleSection, revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
-	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import type { MetricKey } from '$lib/metrics';
@@ -788,7 +791,7 @@
 						body={retainedDataAbsence.why}
 						presentation="responsive"
 						role="status"
-						ariaLive="polite"
+						aria-live="polite"
 						data-slot="history-no-data"
 					/>
 				{:else if history.state === 'error'}

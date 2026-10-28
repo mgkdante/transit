@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { breadcrumbCopy } from '$lib/components/surface/breadcrumb.copy';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import { createLiveResource } from '$lib/v1/live/resource';
@@ -6,17 +7,15 @@
 	import { getV1Context } from '$lib/v1/boot';
 	import type { Trip, StopsIndex } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, Breadcrumb, Masthead } from '@yesid/ui/layout';
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
-	import Breadcrumb from '$lib/components/surface/Breadcrumb.svelte';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
-	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
-	import Masthead from '$lib/components/brand/Masthead.svelte';
-	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { SectionLabel, SectionHeading, CornerMeta } from '@yesid/ui/brand';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import { StatusBadge } from '$lib/components/dataviz';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
-	import { MaybeValue, StateNotice } from '$lib/components/edge';
+	import { MaybeValue } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricName } from '$lib/metrics';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -96,7 +95,10 @@
 <Surface as="div" data-slot="trip-detail">
 	<ResourceBoundary resource={trips} lang={locale}>
 		{#snippet children(_file)}
-			<Breadcrumb {trail} {locale} />
+			<Breadcrumb
+				items={trail.map((crumb) => ({ name: crumb.name, href: localizeHref(crumb.path, locale) }))}
+				label={breadcrumbCopy[locale].label}
+			/>
 			{#if reportFailed || live.isStale}
 				<StateNotice
 					title={reportFailed ? t.refreshUnavailable : t.reportBehind}
@@ -104,7 +106,7 @@
 					tone="warning"
 					presentation="silo"
 					role="status"
-					ariaLive="polite"
+					aria-live="polite"
 					data-testid="trip-report-notice"
 				/>
 			{/if}
@@ -232,7 +234,7 @@
 								title={t.noPredictions}
 								presentation="silo"
 								role="status"
-								ariaLive="polite"
+								aria-live="polite"
 								data-testid="trip-no-stops"
 							/>
 						{/if}

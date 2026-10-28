@@ -127,7 +127,7 @@ vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
 vi.mock('$lib/pwa/appVersion', () => ({
 	decideFreshnessReload: () => ({ reload: false, href: null }),
 }));
-vi.mock('$lib/vitals/collect', () => ({ startVitals: () => vi.fn() }));
+vi.mock('@yesid/analytics/vitals', () => ({ startVitals: () => vi.fn() }));
 vi.mock('@yesid/motion/utils/viewTransition', () => ({
 	viewTransition: harness.runViewTransition,
 }));
