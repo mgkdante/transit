@@ -10,11 +10,11 @@ package stylesheet. Repository and consumer adapters own physical output paths.
   semantic color utilities), and `fonts.css` with the bundled Inter and JetBrains Mono files.
 - Public mechanics: parse, serialize, types, `./fonts` (`preloadFont`), and the five generator
   subpaths, including `./generators/theme-css`.
-- Generated interface authority: [`api-reports/tokens.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/api-reports/tokens.api.md).
+- Generated interface authority: [`api-reports/tokens.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/api-reports/tokens.api.md).
 
 The internal `buildAll` module composes generators for repository tooling. It is not a public
 package export. Legacy `./src/*` aliases remain compatibility surfaces until the process in
-[`DEPRECATION.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/DEPRECATION.md) authorizes removal.
+[`DEPRECATION.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/DEPRECATION.md) authorizes removal.
 
 ## Invariants and generated outputs
 
@@ -45,7 +45,7 @@ Svelte styles they need postcss-global-data and postcss-custom-media in the cons
 
 Consumers opt into `tokens.css`; no stylesheet is injected automatically. Consumer-owned token
 overrides and physical output paths stay downstream. Exact consumer receipts live only in
-[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/CONSUMERS.md).
+[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/CONSUMERS.md).
 
 The Figma round-trip remains manual. `figma:push` emits a `FigmaVariable[]` JSON document on
 stdout. A separate operator step writes those variables through Figma tooling, exports the result
@@ -69,6 +69,6 @@ platform-dependent serialization fail their owning tests or drift gates. Fix the
 never normalize a failing derivative by hand.
 
 Token values, public exports, generators, or package documentation change the coordinated release
-payload. Use a release fragment and the process in [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/RELEASING.md). Public
+payload. Use a release fragment and the process in [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/RELEASING.md). Public
 interface changes also require a regenerated API report. Product-specific values or policy do not
-belong here; see [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/BOUNDARIES.md).
+belong here; see [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/BOUNDARIES.md).
