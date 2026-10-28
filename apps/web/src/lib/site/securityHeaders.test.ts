@@ -94,7 +94,7 @@ describe('contentSecurityPolicy — invariants', () => {
 	});
 });
 
-describe('devContentSecurityPolicy — local HMR relaxations only', () => {
+describe('dev security headers — local HMR relaxations only', () => {
 	it('adds the vite websocket + eval over the prod base, nothing tighter', () => {
 		const dev = contentSecurityPolicyFor({ dev: true });
 		expect(dev).toContain('ws:');
