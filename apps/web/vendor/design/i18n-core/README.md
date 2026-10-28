@@ -31,7 +31,7 @@ in Kit 2, `locale: (param) => (routing.isPrefixLocale(param) ? param : undefined
 not import this TypeScript package; keep its prefix list in a dependency-free module.
 
 Locale context and `<html lang>` live in `@yesid/ui` (`createLocaleContext` and `SiteRoot`'s
-`lang`), because they need Svelte. The exact public interface is [`api-reports/i18n-core.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/api-reports/i18n-core.api.md).
+`lang`), because they need Svelte. The exact public interface is [`api-reports/i18n-core.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/api-reports/i18n-core.api.md).
 
 ## Invariants
 
@@ -48,7 +48,7 @@ Locale context and `<html lang>` live in `@yesid/ui` (`createLocaleContext` and 
 
 Consumers create one routing closure from their locale/exemption policy, then adapt it to their
 framework. Unsupported locale input falls back through consumer-defined defaults rather than
-inventing package policy. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/CONSUMERS.md).
+inventing package policy. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/CONSUMERS.md).
 
 ## Commands
 
@@ -64,5 +64,5 @@ route-segment values are consumer configuration defects; diagnose them at the ad
 changing pure routing mechanics.
 
 Routing behavior, types, exports, or README changes alter the coordinated release payload. Follow
-[`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/RELEASING.md) and update the API report for public-interface changes.
-Product locale/copy policy remains downstream per [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/BOUNDARIES.md).
+[`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/RELEASING.md) and update the API report for public-interface changes.
+Product locale/copy policy remains downstream per [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/BOUNDARIES.md).

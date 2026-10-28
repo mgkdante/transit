@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -337,7 +337,10 @@ the caller sets `pressed` (rendered as `aria-pressed`) and changes it in `onclic
 `@yesid/ui/layout` exports `ListingFrame`, the listing page template. From 1024px it adds a
 vertical edge title (`edgeTitle`, default `heading`) and an accent rail beside the page and hides
 the `heading` h1 visually. The header renders the `blueprint` snippet behind `heading`,
-`subtitle` and an optional `description`, with an optional `aside` beside them on desktop.
+`subtitle` and an optional `description`, with an optional `aside` beside them on desktop. The
+copy rests on the bottom of the band. Every drawing in the header renders at the frame's
+`--blueprint-ink`, one value per theme that overrides the opacity `BlueprintShell` and inline styles
+give the drawings.
 `onHeaderMount(header, frame)` runs once on mount for header motion such as a scroll scrub; return
 its cleanup.
 
@@ -587,5 +590,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.1/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.
