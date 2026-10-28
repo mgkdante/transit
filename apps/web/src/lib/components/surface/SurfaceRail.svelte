@@ -34,6 +34,7 @@
 	let sheetOpen = $state(false);
 	let pillBtn = $state<HTMLButtonElement>();
 	let sheetEl = $state<HTMLDivElement | null>(null);
+	let railSlot = $state<HTMLDivElement | null>(null);
 	let desktopRailEl = $state<HTMLElement>();
 	let railHomeParent: Node | undefined;
 	let railHomeNextSibling: Node | null = null;
@@ -55,10 +56,10 @@
 		if (restoreFocus) void tick().then(() => pillBtn?.focus());
 	}
 	$effect(() => {
-		if (!sheetOpen || !sheetEl || !desktopRailEl) return;
+		if (!sheetOpen || !sheetEl || !railSlot || !desktopRailEl) return;
 
 		const activeSheet = sheetEl;
-		activeSheet.append(desktopRailEl);
+		railSlot.append(desktopRailEl);
 		const onClick = (e: MouseEvent) => {
 			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(true);
 		};
@@ -126,13 +127,14 @@
 				portalProps={{ disabled: true }}
 				showCloseButton={false}
 				side="bottom"
+				data-lenis-prevent
 				aria-label={label}
 				onCloseAutoFocus={(event) => {
 					event.preventDefault();
 					if (!desktop.current) pillBtn?.focus();
 				}}
 			>
-				{#snippet children()}{/snippet}
+				<div class="contents" bind:this={railSlot}></div>
 			</Sheet.Content>
 		</Sheet.Root>
 	</div>
