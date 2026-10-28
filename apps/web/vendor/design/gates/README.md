@@ -8,7 +8,7 @@ fail decision.
 
 The root export contains filesystem walking/comment helpers and the style, brand-hex, color-mix,
 contrast, dataviz, Tailwind-variant, and SEO coverage engines. The exact public interface is
-[`api-reports/gates.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/api-reports/gates.api.md).
+[`api-reports/gates.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/api-reports/gates.api.md).
 
 ## Invariants
 
@@ -63,8 +63,8 @@ done
 
 Gallery dogfoods the engines with Gallery-owned policy. Transit and yesid.dev keep their own gate
 adapters and acceptance criteria. A package pass does not prove a product policy is correct. See
-[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/BOUNDARIES.md) and the current receipts in
-[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/CONSUMERS.md).
+[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/BOUNDARIES.md) and the current receipts in
+[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/CONSUMERS.md).
 
 ## Commands
 
@@ -82,5 +82,5 @@ returned paths are not descriptor-bound against a concurrent filesystem rewrite 
 reads them. Do not hide a real violation by broadening package defaults.
 
 Engine behavior, diagnostics, exports, or README changes alter the coordinated release payload.
-Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/RELEASING.md) and regenerate the API report for public-interface
+Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/RELEASING.md) and regenerate the API report for public-interface
 changes. Consumer-only policy changes stay in the consumer.

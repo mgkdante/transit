@@ -103,7 +103,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.21.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.22.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -132,6 +132,8 @@
         "apps/web/vendor/design/gates/tsconfig.json",
         "apps/web/vendor/design/i18n-core/README.md",
         "apps/web/vendor/design/i18n-core/package.json",
+        "apps/web/vendor/design/i18n-core/src/copy.ts",
+        "apps/web/vendor/design/i18n-core/src/format.ts",
         "apps/web/vendor/design/i18n-core/src/index.ts",
         "apps/web/vendor/design/i18n-core/src/routing.ts",
         "apps/web/vendor/design/i18n-core/tsconfig.json",
@@ -304,8 +306,11 @@
         "apps/web/vendor/design/ui/src/primitives/toggle-group/toggle-group.svelte",
         "apps/web/vendor/design/ui/src/primitives/toggle/index.ts",
         "apps/web/vendor/design/ui/src/primitives/toggle/toggle.svelte",
+        "apps/web/vendor/design/ui/src/state/clock.svelte.d.ts",
+        "apps/web/vendor/design/ui/src/state/clock.svelte.js",
         "apps/web/vendor/design/ui/src/state/desktop.ts",
         "apps/web/vendor/design/ui/src/state/index.ts",
+        "apps/web/vendor/design/ui/src/state/locale.ts",
         "apps/web/vendor/design/ui/src/state/persisted.svelte.d.ts",
         "apps/web/vendor/design/ui/src/state/persisted.svelte.js",
         "apps/web/vendor/design/ui/src/state/quiet-mode.svelte.d.ts",
@@ -321,7 +326,7 @@
         "af5ebf160a88e61b8ef0f476c48bd505c17b905e05af2b73dd9e54cad771cadf",
         "8b452e63c103311f05a300e07d9589103c600110b6eb25bc283217a7d38c928c"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.21.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.22.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",

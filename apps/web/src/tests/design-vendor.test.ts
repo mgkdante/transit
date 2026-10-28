@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.21.0',
-	tagObject: 'c2a4d03386511959212aa8577cce84a6e1d29764',
-	peeledCommit: '31957358f1f9984ebfcc9d272a11d9eb0796f814',
-	assetName: 'yesid.dev-design-v0.21.0.tar',
-	assetSize: 2641920,
-	assetDigest: 'sha256:498ec1fdb0ff59f0a862cf8e662a73299b14617420a73b82ca5f161d893f736d',
+	tag: 'v0.22.0',
+	tagObject: 'c0956ce81b1912d4a8e5411ff8e0b7235ea76453',
+	peeledCommit: '3e817a15a5a1b40740ab7583a58e2b90b34f34ef',
+	assetName: 'yesid.dev-design-v0.22.0.tar',
+	assetSize: 2672640,
+	assetDigest: 'sha256:6d8c41f78f144e524e709d427f85e0482e5219e3fbddfb20d2548a866d5112ad',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:21c9b14d28a80903df965e1c070922e1ac310ddcd9622ad09ff2b25eda55f496',
-	manifestDigest: '486e261dcdd66155e249ca012490f3c156b234cbe85173bdaf94be010dbf9972',
+	treeHash: 'sha256:0c9916631dcdcb506cbe860fddd087f6ea523fa06cfa62591161a990dc83c290',
+	manifestDigest: 'c26b746eb42b652fea1f3b6f937666b5076bdcec3e5f1bf6af26c0f31aeeca31',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -163,6 +163,8 @@ describe('vendor/design integrity', () => {
 		expect(walkFiles(join(VENDOR, 'i18n-core')).sort()).toEqual([
 			join(VENDOR, 'i18n-core', 'README.md'),
 			join(VENDOR, 'i18n-core', 'package.json'),
+			join(VENDOR, 'i18n-core', 'src', 'copy.ts'),
+			join(VENDOR, 'i18n-core', 'src', 'format.ts'),
 			join(VENDOR, 'i18n-core', 'src', 'index.ts'),
 			join(VENDOR, 'i18n-core', 'src', 'routing.ts'),
 			join(VENDOR, 'i18n-core', 'tsconfig.json'),
@@ -190,7 +192,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.21.0');
+		expect(packageJson.version).toBe('0.22.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -259,7 +261,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.21.0',
+			version: '0.22.0',
 		});
 		expect(files).toEqual([
 			'README.md',
