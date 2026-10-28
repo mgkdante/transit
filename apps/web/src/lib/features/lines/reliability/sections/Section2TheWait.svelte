@@ -207,7 +207,7 @@
 		const baseLabel = baseShiftLabel(row.baseShift, locale);
 		const extras: string[] = [];
 		if (row.directionId != null) extras.push(`dir ${row.directionId}`);
-		if (row.dayType === 'weekend') extras.push(locale === 'fr' ? 'fin de sem.' : 'weekend');
+		if (row.dayType === 'weekend') extras.push(t.weekendSuffix);
 		return extras.length > 0 ? `${baseLabel} · ${extras.join(' · ')}` : baseLabel;
 	}
 	const isPrimaryShift = (row: ShiftRow): boolean => row.directionId == null && row.dayType == null;

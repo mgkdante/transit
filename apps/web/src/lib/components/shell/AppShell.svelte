@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { navPillCopy } from './navPill.copy';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
@@ -46,13 +47,7 @@
 
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
-	const mainAriaLabel = $derived(
-		mainLabel
-			? mainLabel[locale === 'fr' ? 'fr' : 'en']
-			: locale === 'fr'
-				? 'Carte du réseau'
-				: 'Network map',
-	);
+	const mainAriaLabel = $derived(mainLabel?.[locale] ?? navPillCopy[locale].mapLabel);
 </script>
 
 <div

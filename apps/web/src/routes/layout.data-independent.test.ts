@@ -121,11 +121,6 @@ vi.mock('$lib/stores', () => ({
 		ageSeconds: null,
 	},
 	dataPulse: { subscribe: vi.fn(() => vi.fn()) },
-	sharedClock: {
-		serverNow: Date.parse('2026-08-03T00:00:00Z'),
-		serverNowContinuousMs: () => Date.parse('2026-08-03T00:00:00Z'),
-		subscribe: vi.fn(() => vi.fn()),
-	},
 	motionMode: { current: 'raw', isSmooth: false, toggle: vi.fn() },
 }));
 vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
@@ -139,6 +134,11 @@ vi.mock('@yesid/motion/utils/viewTransition', () => ({
 vi.mock('@yesid/motion/utils/globalRipple', () => ({ initGlobalRipple: () => vi.fn() }));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: {
+		serverNow: Date.parse('2026-08-03T00:00:00Z'),
+		serverNowContinuousMs: () => Date.parse('2026-08-03T00:00:00Z'),
+		subscribe: vi.fn(() => vi.fn()),
+	},
 	desktop: { current: true },
 }));
 vi.mock('$lib/search/chromeSearch', () => ({
@@ -253,7 +253,7 @@ describe('root layout data-independent legal routes', () => {
 	});
 
 	it('restores the remembered quiet mode from the Transit storage key', () => {
-		localStorage.setItem('transit:quiet-mode', 'true');
+		localStorage.setItem('quiet-mode', 'true');
 		renderWithoutV1('/privacy', 'en');
 		expect(document.documentElement.dataset.quietMode).toBe('true');
 	});

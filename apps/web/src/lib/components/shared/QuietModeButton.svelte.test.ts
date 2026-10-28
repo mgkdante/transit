@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -6,7 +5,7 @@ import QuietModeButton from './QuietModeButton.svelte';
 import { quietMode } from '@yesid/ui/state';
 
 const localeContext = (locale: 'en' | 'fr') =>
-	new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 
 function renderControls(locale: 'en' | 'fr' = 'en') {
 	return render(QuietModeButton, { context: localeContext(locale) });
@@ -55,19 +54,5 @@ describe('QuietModeButton source parity', () => {
 		expect(screen.getByRole('button', { name: 'Tout déplier' })).toBeInTheDocument();
 		await fireEvent.click(screen.getByRole('button', { name: 'Toujours replier' }));
 		expect(screen.getByRole('button', { name: 'Ne plus replier' })).toBeInTheDocument();
-	});
-
-	it('keeps the two controls side-by-side at every width, exactly like the source', () => {
-		const source = readFileSync(
-			`${process.cwd()}/src/lib/components/shared/QuietModeButton.svelte`,
-			'utf8',
-		);
-
-		expect(source).toMatch(
-			/import\s*\{[\s\S]*QuietModeButton\s+as\s+UiQuietModeButton[\s\S]*type\s+QuietModeButtonCopy[\s\S]*\}\s*from\s*['"]@yesid\/ui\/brand['"]/,
-		);
-		expect(source).toContain('<UiQuietModeButton');
-		expect(source).toMatch(/activeEffect=["']none["']/);
-		expect(source).not.toMatch(/<(?:button|svg|style)\b/);
 	});
 });

@@ -12,7 +12,7 @@ vi.mock('@testing-library/svelte', { spy: true });
 
 const en = copy.en;
 const localeContext = (locale: 'en' | 'fr') =>
-	new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 const overviewCopy = {
 	en: {
 		title: 'Overview',

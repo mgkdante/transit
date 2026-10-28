@@ -2,6 +2,13 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const copy = defineCopy({
 	en: {
+		precision: {
+			address: 'Address',
+			street: 'Street',
+			neighbourhood: 'Neighbourhood',
+			postal: 'Postal code',
+			place: 'Place',
+		},
 		staticKicker: '{city} · STATIC',
 		staticHeading: '{city} transit map',
 		staticBody:
@@ -103,6 +110,13 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		precision: {
+			address: 'Adresse',
+			street: 'Rue',
+			neighbourhood: 'Quartier',
+			postal: 'Code postal',
+			place: 'Lieu',
+		},
 		staticKicker: '{city} · STATIQUE',
 		staticHeading: 'Carte du réseau · {city}',
 		staticBody:

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
+	import { intl, getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { desktop } from '@yesid/ui/state';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
@@ -65,7 +65,7 @@
 		mirrorSearchParams({ route: selectedLineId });
 	});
 
-	const routeCollator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
+	const routeCollator = intl.collator(locale, { numeric: true, sensitivity: 'base' });
 	const sortedRoutes = $derived.by<RouteIndexEntry[]>(() =>
 		[...(routesIndex.data?.routes ?? [])].sort((a, b) => routeCollator.compare(a.short, b.short)),
 	);
@@ -212,7 +212,7 @@
 			.filter(({ count }) => count > 0)
 			.sort((a, b) => a.key.localeCompare(b.key)),
 	);
-	const numberFmt = $derived(new Intl.NumberFormat(locale));
+	const numberFmt = $derived(intl.number(locale));
 	const inventoryStats = $derived([
 		{
 			label: t.inventory.stops,

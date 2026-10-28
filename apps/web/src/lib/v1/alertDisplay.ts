@@ -1,5 +1,18 @@
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n';
 import type { AlertMessageProvenance } from './schemas/alert_history';
+
+const FALLBACK = defineCopy({
+	fr: {
+		unspecified: '(langue source non précisée)',
+		unavailable: '(traduction indisponible)',
+		serviceAlert: 'Alerte de service',
+	},
+	en: {
+		unspecified: '(Source language unspecified)',
+		unavailable: '(Translation unavailable)',
+		serviceAlert: 'Service alert',
+	},
+});
 
 export interface AlertDisplaySource {
 	readonly message?: AlertMessageProvenance | null;
@@ -100,9 +113,8 @@ export function alertLanguageNotice(
 	if (!result?.isFallback) return null;
 	if (result.lang === 'fr') return '(French only)';
 	if (result.lang === 'en') return '(en anglais seulement)';
-	if (result.lang == null)
-		return locale === 'fr' ? '(langue source non précisée)' : '(Source language unspecified)';
-	return locale === 'fr' ? '(traduction indisponible)' : '(Translation unavailable)';
+	if (result.lang == null) return FALLBACK[locale].unspecified;
+	return FALLBACK[locale].unavailable;
 }
 
 const GENERIC_ALERT_HEADERS = new Set([
@@ -167,7 +179,7 @@ export function alertDisplayText(alert: AlertDisplaySource, locale: Locale): Ale
 	const headerKeyText = meaningfulHeader(alert.header_key);
 	if (headerKeyText) return { text: headerKeyText, lang: null, isFallback: true };
 	return {
-		text: locale === 'fr' ? 'Alerte de service' : 'Service alert',
+		text: FALLBACK[locale].serviceAlert,
 		lang: locale,
 		isFallback: false,
 	};

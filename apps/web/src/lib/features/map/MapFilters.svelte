@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
 	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
 	import RouteIcon from '@lucide/svelte/icons/route';
@@ -64,7 +65,7 @@
 	const panelOpen = $derived(!collapsible || filterOpen);
 	const presentation = $derived<'desktop' | 'drawer'>(collapsible ? 'desktop' : 'drawer');
 	const controlsId = $derived(`map-filter-controls-${presentation}`);
-	const collator = $derived(new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }));
+	const collator = $derived(intl.collator(locale, { numeric: true, sensitivity: 'base' }));
 	const routeById = $derived(new Map(routes.map((route) => [route.id, route])));
 	const stopById = $derived(new Map(stops.map((stop) => [stop.id, stop])));
 	const selectedRouteIds = $derived(

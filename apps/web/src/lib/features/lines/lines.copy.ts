@@ -153,6 +153,7 @@ export const detailCopy = defineCopy({
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n: number) => `sur les ${n} derniers jours`,
 		roster: {
+			delay: 'Retard',
 			heading: 'Véhicules en service',
 			listLabel: 'Véhicules en service sur cette ligne',
 			busLabel: (id: string) => `Véhicule ${id}`,
@@ -249,6 +250,7 @@ export const detailCopy = defineCopy({
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
 		roster: {
+			delay: 'Delay',
 			heading: 'Vehicles in service',
 			listLabel: 'Vehicles currently running this line',
 			busLabel: (id) => `Vehicle ${id}`,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
 	import './sections/health-sections.css';
 
 	import { onMount, tick } from 'svelte';
@@ -33,7 +34,7 @@
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { sharedClock } from '$lib/stores';
+
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -102,7 +103,7 @@
 		return ageS == null ? t.freshness.noAge : formatRelativeSeconds(ageS, locale);
 	}
 	function lastLoaded(iso: string | null | undefined): string {
-		return freshnessRelative(iso, locale, sharedClock.serverNow) ?? t.sources.neverLoaded;
+		return freshnessRelative(iso, locale, clock.serverNow) ?? t.sources.neverLoaded;
 	}
 	function humanizeGap(token: string): string {
 		return t.gaps.tokens[token] ?? token.replace(/_/g, ' ');

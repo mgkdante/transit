@@ -13,4 +13,4 @@ export {
 
 export { setLocaleContext, getLocale, getLocalizeHref } from './context';
 
-export { defineCopy } from './copy';
+export { defineCopy, intl } from './copy';

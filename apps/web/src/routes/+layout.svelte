@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+	import { navPillCopy } from '$lib/components/shell/navPill.copy';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
@@ -372,10 +373,10 @@
 	}
 </script>
 
-<SiteRoot scroller={{ wrapper: '#main', content: '#main-flow' }} quietModeKey="transit:quiet-mode">
+<SiteRoot scroller={{ wrapper: '#main', content: '#main-flow' }} lang={locale}>
 	<SeoHead {...head} />
 
-	<a class="skip-link" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
+	<a class="skip-link" href="#main">{navPillCopy[locale].skipToContent}</a>
 
 	<AppShell
 		{locale}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import ConformanceBadge from '$lib/components/surface/ConformanceBadge.svelte';
@@ -72,8 +72,8 @@
 		const wilsonZ = methodologyNumber('wilson_z');
 		if (minN == null || wilsonZ == null) return null;
 		return {
-			minN: minN.toLocaleString(locale),
-			wilsonZ: wilsonZ.toLocaleString(locale),
+			minN: intl.number(locale).format(minN),
+			wilsonZ: intl.number(locale).format(wilsonZ),
 		};
 	});
 

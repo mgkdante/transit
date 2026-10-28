@@ -1,5 +1,5 @@
 import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { intl, defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
@@ -148,7 +148,7 @@ export const copy = defineCopy({
 			otp: (otpPct) => `${otpPct} of known-delay predictions were in the on-time band`,
 			worst: (name, deltaPts) => `highest mean delay: ${name} (on-time ${deltaPts} vs network)`,
 			affected: (lines) =>
-				`${lines.toLocaleString('en-CA')} ${lines === 1 ? 'line' : 'lines'} with severe-delay predictions`,
+				`${intl.number('en').format(lines)} ${lines === 1 ? 'line' : 'lines'} with severe-delay predictions`,
 			completeness: (pct) => `non-cancelled / scheduled trip-day ratio: ${pct} (capped at 100%)`,
 			completenessStandDown: 'service count comparison not yet available',
 			none: 'No overall reading for this day.',
@@ -302,7 +302,7 @@ export const copy = defineCopy({
 			worst: (name: string, deltaPts: string) =>
 				`retard moyen maximal : ${name} (ponctualité ${deltaPts} c. réseau)`,
 			affected: (lines: number) =>
-				`${lines.toLocaleString('fr-CA')} ${lines === 1 ? 'ligne' : 'lignes'} avec des prévisions de retard grave`,
+				`${intl.number('fr').format(lines)} ${lines === 1 ? 'ligne' : 'lignes'} avec des prévisions de retard grave`,
 			completeness: (pct: string) =>
 				`rapport jours-trajets non annulés / prévus : ${pct} (plafond de 100 %)`,
 			completenessStandDown: 'comparaison des décomptes pas encore disponible',

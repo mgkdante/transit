@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { intl } from '$lib/i18n';
 import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
 import ReliabilityBadge from './ReliabilityBadge.svelte';
 
@@ -9,11 +10,13 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 
 describe('ReliabilityBadge', () => {
 	it.each([
-		['en', '83%', '83% on time in the latest daily summary'],
-		['fr', '83 %', '83 % à l’heure dans le dernier bilan quotidien'],
+		['en', 'on time in the latest daily summary'],
+		['fr', 'à l’heure dans le dernier bilan quotidien'],
 	] as const)(
 		'reports the daily percentage once without a competing verdict in %s',
-		(locale, pct, label) => {
+		(locale, description) => {
+			const pct = intl.number(locale, { style: 'unit', unit: 'percent' }).format(83);
+			const label = `${pct} ${description}`;
 			const { container } = render(ReliabilityBadge, {
 				props: { snapshot: snap({ phase: 'ready', otpPct: 83, verdict: 'late' }), locale },
 			});
@@ -21,7 +24,10 @@ describe('ReliabilityBadge', () => {
 			expect(badges).toHaveLength(1);
 			expect(badges[0]).toHaveAccessibleName(label);
 			expect(badges[0]).toHaveAttribute('title', label);
-			expect(screen.getByText(pct)).toHaveAttribute('aria-hidden', 'true');
+			expect(screen.getByText(pct, { normalizer: (text) => text })).toHaveAttribute(
+				'aria-hidden',
+				'true',
+			);
 			expect(container.querySelector('[data-verdict]')).toBeNull();
 		},
 	);

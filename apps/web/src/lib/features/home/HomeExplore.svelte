@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, intl, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { FilterGroup, FilterSummary } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
@@ -96,9 +96,11 @@
 	);
 
 	const matchSummary = $derived.by(() => {
-		const template = HOME_FILTER_COUNT_LABEL[locale];
-		const isPlural = locale === 'fr' ? matchCount >= 2 : matchCount !== 1;
-		return (isPlural ? template.plural : template.singular).replace('{count}', String(matchCount));
+		const { singular, plural } = HOME_FILTER_COUNT_LABEL[locale];
+		return (intl.plural(locale).select(matchCount) === 'one' ? singular : plural).replace(
+			'{count}',
+			String(matchCount),
+		);
 	});
 </script>
 

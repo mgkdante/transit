@@ -16,7 +16,8 @@ vi.mock('$lib/nav', async () => {
 		await vi.importActual<typeof import('$lib/nav/intent.svelte')>('$lib/nav/intent.svelte');
 	return { routeFor };
 });
-vi.mock('@yesid/ui/state', () => ({
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
 	desktop: {
 		get current() {
 			return state.desktop;
@@ -228,7 +229,7 @@ describe('Home civic overview and directory', () => {
 				'svelte/server',
 			)) as typeof import('svelte/server');
 			const context = new Map<unknown, unknown>([
-				[Symbol.for('transit.i18n.locale'), () => 'en' as const],
+				[Symbol.for('@yesid/ui/locale'), () => 'en' as const],
 			]);
 			const { body } = renderSsr(module.default, { context, props: { data: pageData() } });
 			expect(body).toContain('How Montréal’s');

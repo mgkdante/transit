@@ -1,4 +1,4 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { intl, defineCopy, type Locale } from '$lib/i18n/copy';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
@@ -6,7 +6,7 @@ import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityC
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 const alertCount = (count: number) =>
-	`${count.toLocaleString('en-CA')} ${count === 1 ? 'alert' : 'alerts'}`;
+	`${intl.number('en').format(count)} ${count === 1 ? 'alert' : 'alerts'}`;
 
 export const alertHistoryCopy = defineCopy({
 	fr: {
@@ -19,9 +19,9 @@ export const alertHistoryCopy = defineCopy({
 			watermark: 'Avis',
 			tags: ['avis', 'archive', 'durée', 'portée'],
 			matches: (count: number) =>
-				`${count.toLocaleString('fr-CA')} résultat${count === 1 ? '' : 's'}`,
+				`${intl.number('fr').format(count)} résultat${count === 1 ? '' : 's'}`,
 			sections: (count: number) =>
-				`${count.toLocaleString('fr-CA')} section${count === 1 ? '' : 's'}`,
+				`${intl.number('fr').format(count)} section${count === 1 ? '' : 's'}`,
 		}),
 		asOf: 'À JOUR AU',
 		rail: {
@@ -73,7 +73,7 @@ export const alertHistoryCopy = defineCopy({
 			railLabel: 'Filtres',
 			pillOpen: 'Ouvrir les filtres',
 			pillClose: 'Fermer les filtres',
-			pillSummary: (matchCount: number) => `${matchCount.toLocaleString('fr-CA')} avis`,
+			pillSummary: (matchCount: number) => `${intl.number('fr').format(matchCount)} avis`,
 			entity: {
 				label: 'Touche',
 				all: 'Tout',
@@ -128,7 +128,7 @@ export const alertHistoryCopy = defineCopy({
 		},
 		headline: {
 			label: 'Avis dans la fenêtre',
-			value: (count: number) => count.toLocaleString('fr-CA'),
+			value: (count: number) => intl.number('fr').format(count),
 			explanation:
 				'Le nombre d’avis de service actifs dans la plage de dates choisie, avec leur durée médiane. On compte les avis distincts, jamais une estimation.',
 			median: (min: number) => `durée médiane ${min} min`,
@@ -143,7 +143,7 @@ export const alertHistoryCopy = defineCopy({
 			byCauseLabel: 'Répartition des avis par cause',
 			byEffectLabel: 'Répartition des avis par effet',
 			bySeverityLabel: 'Répartition des avis par gravité',
-			buckets: (count: number) => `${count.toLocaleString('fr-CA')} avis`,
+			buckets: (count: number) => `${intl.number('fr').format(count)} avis`,
 			median: (min: number) => `durée médiane ${min} min`,
 			unspecified: 'Non précisé',
 		},
@@ -158,9 +158,9 @@ export const alertHistoryCopy = defineCopy({
 			watermark: 'Alerts',
 			tags: ['alerts', 'archive', 'duration', 'reach'],
 			matches: (count: number) =>
-				`${count.toLocaleString('en-CA')} ${count === 1 ? 'match' : 'matches'}`,
+				`${intl.number('en').format(count)} ${count === 1 ? 'match' : 'matches'}`,
 			sections: (count: number) =>
-				`${count.toLocaleString('en-CA')} ${count === 1 ? 'section' : 'sections'}`,
+				`${intl.number('en').format(count)} ${count === 1 ? 'section' : 'sections'}`,
 		}),
 		asOf: 'AS OF',
 		rail: {
@@ -263,7 +263,7 @@ export const alertHistoryCopy = defineCopy({
 		},
 		headline: {
 			label: 'Alerts in window',
-			value: (count) => count.toLocaleString('en-CA'),
+			value: (count) => intl.number('en').format(count),
 			explanation:
 				'How many service alerts were active in the chosen date range, with their median duration. We count distinct alerts, never an estimate.',
 			median: (min) => `median duration ${min} min`,

@@ -6,7 +6,7 @@
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { desktop, theme } from '@yesid/ui/state';
+	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '$lib/components/edge';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
 	import { getV1Context } from '$lib/v1/boot';
@@ -33,7 +33,7 @@
 	} from '$lib/components/map';
 	import { createShapeCacheManager } from './mapShapeCache';
 	import { vehicleAbsence } from './vehicleAbsence';
-	import { sharedClock, motionMode } from '$lib/stores';
+	import { motionMode } from '$lib/stores';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
@@ -195,7 +195,7 @@
 	});
 
 	$effect(() => {
-		const unsubscribe = sharedClock.subscribe();
+		const unsubscribe = clock.subscribe();
 		return () => releaseMapOwner(unsubscribe);
 	});
 
@@ -369,7 +369,7 @@
 			index: live.index,
 			stops: stopList,
 			routesIndex: routesIndex.data?.routes ?? [],
-			clock: sharedClock,
+			clock,
 			alerts: availableAlerts,
 			departuresAvailable,
 			hoverRoute:
@@ -433,7 +433,7 @@
 		}
 		return null;
 	});
-	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, sharedClock.serverNow));
+	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, clock.serverNow));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
@@ -667,7 +667,7 @@
 		const reduceMotion = $prefersReducedMotion;
 		const smoothMotion = motionMode.current === 'smooth';
 		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
-		const serverNow = untrack(() => sharedClock.serverNow);
+		const serverNow = untrack(() => clock.serverNow);
 		const filter = filters.state;
 		const stale = live.vehiclesIsStale;
 		const vehicleItems = live.vehicles?.vehicles ?? [];
@@ -688,7 +688,7 @@
 				stale,
 				fixFor,
 				shapeFor: animate ? shapeFor : undefined,
-				serverNowFn: () => untrack(() => sharedClock.serverNowContinuousMs()),
+				serverNowFn: () => untrack(() => clock.serverNowContinuousMs()),
 				animate,
 			},
 			stops: {

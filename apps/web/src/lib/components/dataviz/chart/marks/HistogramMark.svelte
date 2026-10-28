@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import { Chart as LcChart, Svg, Rule, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleLinear } from 'd3-scale';
 	import { cn } from '$lib/utils';
@@ -76,7 +77,7 @@
 	const padding = { top: 12, right: 14, bottom: 40, left: 16 };
 
 	const fmtMinute = (seconds: number): string =>
-		new Intl.NumberFormat(spec.locale, { maximumFractionDigits: 1 }).format(seconds / 60);
+		intl.number(spec.locale, { maximumFractionDigits: 1 }).format(seconds / 60);
 	const fmtRange = (b: { lo: number | null; hi: number | null }): string =>
 		`${b.lo == null ? '-∞' : fmtMinute(b.lo)} ${structure.rangeTo} ${b.hi == null ? '+∞' : fmtMinute(b.hi)} min`;
 	const sharePct = (count: number): string =>

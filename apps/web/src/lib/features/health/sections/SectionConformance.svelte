@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { ConformanceBadge } from '$lib/components/surface';
 	import { SectionLabel, CollapsibleSection } from '@yesid/ui/brand';
@@ -30,7 +31,7 @@
 				<div class="health-conformance-detail">
 					<MetricDisplay
 						value={typeof conformance.extra_row_count === 'number'
-							? conformance.extra_row_count.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA')
+							? intl.number(locale).format(conformance.extra_row_count)
 							: null}
 						absentReason="not-reported"
 						{locale}

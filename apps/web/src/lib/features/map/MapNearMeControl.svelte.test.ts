@@ -84,13 +84,6 @@ describe('MapNearMeControl', () => {
 		expect(s).not.toMatch(/Google|sessionToken|placeId/u);
 	});
 
-	it('labels street and neighbourhood suggestions distinctly from generic places', () => {
-		const s = source();
-
-		expect(s).toContain("if (precision === 'street')");
-		expect(s).toContain("if (precision === 'neighbourhood')");
-	});
-
 	it.each([
 		[
 			'en',

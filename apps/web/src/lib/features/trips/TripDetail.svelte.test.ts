@@ -81,8 +81,10 @@ const clockStub = vi.hoisted(() => ({
 	},
 	subscribe: () => () => {},
 }));
-vi.mock('$lib/stores/clock.svelte', () => ({ sharedClock: clockStub }));
-vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: clockStub,
+}));
 
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
@@ -91,7 +93,7 @@ beforeEach(() => {
 });
 
 describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
-	const context = new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 	it('keeps a prediction caveat without inventing its source', () => {
 		const { container } = render(TripDetail, { props: { id: 't161' }, context });
 		expect(container.querySelector('.trip-prediction-caveat')).toHaveTextContent(
@@ -252,7 +254,7 @@ describe('TripDetail: stand-down honesty', () => {
 });
 
 describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) => {
-	const context = new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 	it('counts prediction rows and names the last reported stop without inferring a terminal', () => {
 		const { container } = render(TripDetail, { props: { id: 't161' }, context });
 		expect(container.querySelector('.trip-last-stop-name')).toHaveTextContent('sB');

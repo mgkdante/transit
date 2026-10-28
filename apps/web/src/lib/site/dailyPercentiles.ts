@@ -1,6 +1,19 @@
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n';
 import { fmtCount, fmtDelayMin } from '$lib/utils';
 import type { LineHistoryRange, StopHistoryRange } from '$lib/v1/history/families';
+
+const COPY = defineCopy({
+	fr: {
+		scope: (date: string, n: string, partial: boolean) =>
+			`${date} · ${n} prévisions de retard admissibles${partial ? ' · couverture partielle' : ''}.`,
+		spread: (spread: string, scope: string) => `Écart p90 − médiane : ${spread}. ${scope}`,
+	},
+	en: {
+		scope: (date: string, n: string, partial: boolean) =>
+			`${date} · ${n} eligible delay predictions${partial ? ' · partial coverage' : ''}.`,
+		spread: (spread: string, scope: string) => `p90 − median spread: ${spread}. ${scope}`,
+	},
+});
 
 export function selectDailyPercentiles(
 	range: Pick<LineHistoryRange | StopHistoryRange, 'window' | 'delayPercentiles'> | null,
@@ -29,13 +42,8 @@ export function dailyPercentileCaption(
 	locale: Locale,
 ): string {
 	const spread = fmtDelayMin(day.spreadMin, { rounding: 'fixed1', locale });
-	const n = fmtCount(day.observationCount, { locale });
-	const scope =
-		locale === 'fr'
-			? `${day.date} · ${n} prévisions de retard admissibles${day.partial ? ' · couverture partielle' : ''}.`
-			: `${day.date} · ${n} eligible delay predictions${day.partial ? ' · partial coverage' : ''}.`;
+	const n = String(fmtCount(day.observationCount, { locale }));
+	const scope = COPY[locale].scope(day.date, n, day.partial);
 	if (spread == null) return scope;
-	return locale === 'fr'
-		? `Écart p90 − médiane : ${spread}. ${scope}`
-		: `p90 − median spread: ${spread}. ${scope}`;
+	return COPY[locale].spread(spread, scope);
 }

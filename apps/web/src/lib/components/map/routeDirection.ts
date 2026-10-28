@@ -2,15 +2,17 @@ import type { Locale } from '$lib/i18n';
 import type { RouteDirection, RouteFile, RouteStop } from '$lib/v1/schemas';
 
 const CARDINAL_HEADSIGN_LABELS = new Map([
-	['east', ['East', 'Est']],
-	['est', ['East', 'Est']],
-	['west', ['West', 'Ouest']],
-	['ouest', ['West', 'Ouest']],
-	['north', ['North', 'Nord']],
-	['nord', ['North', 'Nord']],
-	['south', ['South', 'Sud']],
-	['sud', ['South', 'Sud']],
+	['east', { en: 'East', fr: 'Est' }],
+	['est', { en: 'East', fr: 'Est' }],
+	['west', { en: 'West', fr: 'Ouest' }],
+	['ouest', { en: 'West', fr: 'Ouest' }],
+	['north', { en: 'North', fr: 'Nord' }],
+	['nord', { en: 'North', fr: 'Nord' }],
+	['south', { en: 'South', fr: 'Sud' }],
+	['sud', { en: 'South', fr: 'Sud' }],
 ]);
+
+const TOWARD: Record<Locale, string> = { fr: 'vers', en: 'toward' };
 
 export interface RouteDirectionVariant {
 	readonly key: string;
@@ -45,9 +47,7 @@ function normalizeHeadsign(value: string | null | undefined): string {
 
 function riderFacingHeadsign(value: string | null | undefined, locale: Locale): string {
 	const headsign = cleanName(value);
-	return (
-		CARDINAL_HEADSIGN_LABELS.get(normalizeHeadsign(headsign))?.[locale === 'fr' ? 1 : 0] ?? headsign
-	);
+	return CARDINAL_HEADSIGN_LABELS.get(normalizeHeadsign(headsign))?.[locale] ?? headsign;
 }
 
 function keyToken(value: string | number | null | undefined): string {
@@ -82,7 +82,7 @@ function terminalLabel(
 	locale: Locale,
 ): string | null {
 	const terminal = stopName(last);
-	if (terminal) return `${locale === 'fr' ? 'vers' : 'toward'} ${terminal}`;
+	if (terminal) return `${TOWARD[locale]} ${terminal}`;
 	const headsign = cleanName(direction.headsign);
 	if (headsign && !CARDINAL_HEADSIGN_LABELS.has(normalizeHeadsign(headsign))) return headsign;
 	return null;

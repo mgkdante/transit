@@ -2,6 +2,9 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const MAP_SELECTION_DETAIL_COPY = defineCopy({
 	en: {
+		filter: 'Filter',
+		sequenceUnknown: 'Sequence unknown',
+		ago: (age: string) => `${age} ago`,
 		bus: 'Vehicle',
 		stop: 'Stop',
 		route: 'Route',
@@ -58,6 +61,9 @@ export const MAP_SELECTION_DETAIL_COPY = defineCopy({
 		infoTrigger: (name: string) => `About ${name}`,
 	},
 	fr: {
+		filter: 'Filtrer',
+		sequenceUnknown: 'Séquence inconnue',
+		ago: (age: string) => `il y a ${age}`,
 		bus: 'Véhicule',
 		stop: 'Arrêt',
 		route: 'Ligne',

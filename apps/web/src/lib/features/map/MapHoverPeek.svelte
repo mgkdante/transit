@@ -44,10 +44,7 @@
 			<AbsentValue
 				reason="last-seen"
 				params={{
-					age:
-						locale === 'fr'
-							? `il y a ${formatAge(peek.notReportingAgeS)}`
-							: `${formatAge(peek.notReportingAgeS)} ago`,
+					age: t.ago(formatAge(peek.notReportingAgeS)),
 				}}
 				{locale}
 				class="map-peek-stale"

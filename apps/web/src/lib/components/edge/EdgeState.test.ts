@@ -1,9 +1,9 @@
+import { clock } from '@yesid/ui/state';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import EdgeState from './EdgeState.svelte';
 import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 import type { Locale } from '$lib/i18n';
-import { sharedClock } from '$lib/stores/clock.svelte';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
@@ -258,7 +258,7 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 		async (lang) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(new Date('2026-06-15T12:09:00Z'));
-			sharedClock.noteServerEpochMs(Date.parse('2026-06-15T12:00:00Z'));
+			clock.noteServerEpochMs(Date.parse('2026-06-15T12:00:00Z'));
 			try {
 				const { container } = render(EdgeState, {
 					props: {
@@ -277,7 +277,7 @@ describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
 				);
 			} finally {
 				cleanup();
-				sharedClock.noteServerEpochMs(Date.now());
+				clock.noteServerEpochMs(Date.now());
 				vi.useRealTimers();
 			}
 		},

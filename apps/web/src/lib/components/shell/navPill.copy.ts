@@ -2,6 +2,22 @@ import { defineCopy } from '$lib/i18n/copy';
 
 export const navPillCopy = defineCopy({
 	fr: {
+		skipToContent: 'Aller au contenu',
+		mapLabel: 'Carte du réseau',
+		refresh: 'Actualiser les données',
+		refreshing: 'Actualisation…',
+		searchPlaceholder: {
+			route: 'Rechercher une ligne…',
+			stop: 'Rechercher un arrêt…',
+			all: 'Rechercher une ligne, un arrêt ou une adresse…',
+		},
+		searchAria: {
+			route: 'Rechercher une ligne',
+			stop: 'Rechercher un arrêt',
+			all: 'Rechercher dans le réseau',
+		},
+		searchKind: { route: 'Ligne', stop: 'Arrêt', address: 'Adresse', vehicle: 'Véhicule' },
+
 		searchCollectionNotice:
 			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		searchScopeLabel: 'Afficher',
@@ -22,6 +38,18 @@ export const navPillCopy = defineCopy({
 		newTab: '(nouvel onglet)',
 	},
 	en: {
+		skipToContent: 'Skip to content',
+		mapLabel: 'Network map',
+		refresh: 'Refresh data',
+		refreshing: 'Refreshing…',
+		searchPlaceholder: {
+			route: 'Search a line…',
+			stop: 'Search a stop…',
+			all: 'Search a line, stop, or address…',
+		},
+		searchAria: { route: 'Search a line', stop: 'Search a stop', all: 'Search the network' },
+		searchKind: { route: 'Route', stop: 'Stop', address: 'Address', vehicle: 'Vehicle' },
+
 		searchCollectionNotice:
 			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		searchScopeLabel: 'Show',

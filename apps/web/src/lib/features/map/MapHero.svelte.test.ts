@@ -523,6 +523,7 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: (await import('./__fixtures__/MapHeroReceiptSignals.svelte')).mapHeroReceiptSignals.clock,
 	desktop: {
 		get current() {
 			return harness.isDesktop;
@@ -544,7 +545,6 @@ vi.mock('$lib/stores', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
 	return {
-		sharedClock: signals.clock,
 		motionMode: {
 			get current() {
 				return signals.motionMode;
@@ -1457,6 +1457,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			// The page MapHero navigated to holds the shared clock too: unmount everything, then nothing stays subscribed.
+			cleanup();
 			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
 			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', stopError);
 		} finally {
@@ -1526,6 +1528,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
 			expect(harness.releaseLease).toHaveBeenCalledTimes(2);
 			expect(harness.activeLeaseCount()).toBe(0);
+			// The page MapHero navigated to holds the shared clock too: unmount everything, then nothing stays subscribed.
+			cleanup();
 			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
 			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', leaseError);
 		} finally {
