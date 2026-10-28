@@ -1,6 +1,5 @@
-const DEFAULT_STORAGE_KEY = 'quiet-mode';
+const STORAGE_KEY = 'quiet-mode';
 
-let storageKey = DEFAULT_STORAGE_KEY;
 let enabled = $state(false);
 let remembered = $state(false);
 let closeSignal = $state(0);
@@ -8,7 +7,7 @@ let openSignal = $state(0);
 
 function readRemembered() {
 	try {
-		return localStorage.getItem(storageKey) === 'true';
+		return localStorage.getItem(STORAGE_KEY) === 'true';
 	} catch {
 		return false;
 	}
@@ -34,8 +33,8 @@ function setEnabled(next) {
 function setRemembered(next) {
 	remembered = next;
 	try {
-		if (next) localStorage.setItem(storageKey, 'true');
-		else localStorage.removeItem(storageKey);
+		if (next) localStorage.setItem(STORAGE_KEY, 'true');
+		else localStorage.removeItem(STORAGE_KEY);
 	} catch {
 		// Storage can be unavailable in private mode; the state still applies in memory.
 	}
@@ -68,10 +67,8 @@ export const quietMode = {
 	forgetDefault() {
 		setRemembered(false);
 	},
-	/** @param {import('./quiet-mode.svelte.js').QuietModeInit} [options] */
-	init(options = {}) {
+	init() {
 		if (typeof window === 'undefined') return;
-		storageKey = options.storageKey ?? DEFAULT_STORAGE_KEY;
 		remembered = readRemembered();
 		if (remembered) setEnabled(true);
 		else syncDocument(enabled);
@@ -82,11 +79,10 @@ export const quietMode = {
 		closeSignal = 0;
 		openSignal = 0;
 		try {
-			localStorage.removeItem(storageKey);
+			localStorage.removeItem(STORAGE_KEY);
 		} catch {
 			// Disabled storage must not block the in-memory reset.
 		}
-		storageKey = DEFAULT_STORAGE_KEY;
 		syncDocument(false);
 	},
 };

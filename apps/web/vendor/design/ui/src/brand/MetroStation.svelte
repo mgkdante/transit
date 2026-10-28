@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '../cn/index.js';
 
@@ -7,15 +6,12 @@
 		index: number;
 		showLine?: boolean;
 		pulseDelay?: number;
-		/** @deprecated since v0.19.0. The default roundel now matches every product. */
-		roundel?: Snippet<[stationNo: string]>;
 	};
 
 	let {
 		index,
 		showLine = false,
 		pulseDelay = 0,
-		roundel,
 		class: className,
 		...rest
 	}: MetroStationProps = $props();
@@ -30,11 +26,7 @@
 			class="station-pulse"
 			style="animation-delay: {pulseDelay}s;"
 		></div>
-		{#if roundel}
-			{@render roundel(stationNo)}
-		{:else}
-			<span class="station-number-badge" aria-hidden="true">{stationNo}</span>
-		{/if}
+		<span class="station-number-badge" aria-hidden="true">{stationNo}</span>
 	</div>
 
 	{#if showLine}

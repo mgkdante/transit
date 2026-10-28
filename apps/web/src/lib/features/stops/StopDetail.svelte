@@ -30,7 +30,6 @@
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
 	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { articleNavigationCopy } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { Separator } from '@yesid/ui/separator';
@@ -498,9 +497,6 @@
 					label={t.viewOnMap}
 					ariaLabel={t.viewStopOnMap(id)}
 				/>
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

@@ -8,7 +8,6 @@
 	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import {
 		SectionLabel,
@@ -302,9 +301,6 @@
 		>
 			{#snippet controls()}
 				<QuietModeButton />
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

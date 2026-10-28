@@ -1,11 +1,9 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { getLocale } from '$lib/i18n';
-	const locale = getLocale();
 	let {
+		operator = 'STM',
 		class: className = '',
 		...rest
-	}: { class?: string; style?: string; [key: string]: unknown } = $props();
+	}: { operator?: string; class?: string; style?: string; [key: string]: unknown } = $props();
 </script>
 
 <svg
@@ -59,6 +57,6 @@
 		text-anchor="middle">12 400 mm · LOW-FLOOR BUS</text
 	>
 	<text x="55" y="245" fill="currentColor" font-family="JetBrains Mono" font-size="9"
-		>SIDE ELEVATION · {page.data?.provider?.labels[locale].operator ?? 'STM'} URBAN FLEET</text
+		>SIDE ELEVATION · {operator} URBAN FLEET</text
 	>
 </svg>

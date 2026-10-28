@@ -51,7 +51,6 @@
 	import { CollapsibleSection, revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
@@ -715,9 +714,6 @@
 					{/if}
 					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
 				</div>
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

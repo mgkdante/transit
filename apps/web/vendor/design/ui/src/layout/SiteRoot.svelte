@@ -17,21 +17,19 @@
 		scroller?: SiteRootScroller;
 		/** The page's language. The server fills `<html lang>`; this keeps it current after client navigation. */
 		lang?: string;
-		/** @deprecated since v0.22.0 (removal no earlier than v0.24.0). Use the standard `quiet-mode` key. */
-		quietModeKey?: string;
 	}
 </script>
 
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import { destroyLenis, initLenis } from '@yesid/motion/utils/lenis';
 	import { quietMode } from '../state/quiet-mode.svelte.js';
 	import { theme } from '../state/theme.svelte.js';
 
-	let { children, smoothScroll = true, scroller, lang, quietModeKey }: SiteRootProps = $props();
+	let { children, smoothScroll = true, scroller, lang }: SiteRootProps = $props();
 
 	// Before the children render, so sections hydrate in the quiet mode the boot script painted.
-	quietMode.init({ storageKey: untrack(() => quietModeKey) });
+	quietMode.init();
 
 	$effect(() => {
 		if (lang) document.documentElement.lang = lang;

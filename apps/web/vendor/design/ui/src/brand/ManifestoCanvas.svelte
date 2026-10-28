@@ -1,27 +1,25 @@
-<script module lang="ts">
-	let nextSubscriptionId = 0;
-
-	function createSubscriptionId(): string {
-		nextSubscriptionId += 1;
-		return `manifesto-canvas-${nextSubscriptionId}`;
+<!--
+  Circuit-node backdrop for brand headers: grid nodes glow and link up near the pointer, and a
+  click sends out a ripple. It fills `containerEl`, which must be positioned, and listens on it.
+  Static nodes under reduced motion. Decorative.
+-->
+<script lang="ts" module>
+	export interface ManifestoCanvasProps {
+		containerEl?: HTMLElement;
 	}
 </script>
 
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { subscribe, unsubscribe } from '@yesid/motion/utils/ticker';
 
-	interface Props {
-		containerEl?: HTMLElement;
-	}
-
-	let { containerEl }: Props = $props();
+	let { containerEl }: ManifestoCanvasProps = $props();
 
 	const GRID = 80;
 	const PROXIMITY = 120;
 	const TRACE_PROXIMITY = 160;
-	const subscriptionId = createSubscriptionId();
+	const uid = $props.id();
+	const subscriptionId = `manifesto-canvas-${uid}`;
 
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D | null = null;
@@ -31,7 +29,6 @@
 	let mouseX = -999;
 	let mouseY = -999;
 	let isVisible = false;
-	let visibilityObserver: IntersectionObserver | null = null;
 
 	interface CircuitNode {
 		x: number;
@@ -45,9 +42,9 @@
 
 	let nodes: CircuitNode[] = [];
 
+	// Canvas can't read CSS variables while drawing, so it mirrors --primary-rgb.
 	let primaryRgb = '224,120,0';
 	function readPrimaryRgb() {
-		if (!browser) return;
 		const v = getComputedStyle(document.documentElement).getPropertyValue('--primary-rgb').trim();
 		if (v) primaryRgb = v.split(/\s+/).join(',');
 	}
@@ -80,9 +77,8 @@
 		}
 	}
 
-	function resize() {
-		if (!containerEl) return;
-		const rect = containerEl.getBoundingClientRect();
+	function resize(host: HTMLElement) {
+		const rect = host.getBoundingClientRect();
 		width = rect.width;
 		height = rect.height;
 		canvas.width = width;
@@ -90,13 +86,21 @@
 		generateNodes();
 	}
 
-	function onMouseMove(e: MouseEvent) {
+	function pointAt(clientX: number, clientY: number) {
 		if (!containerEl) return;
 		const rect = containerEl.getBoundingClientRect();
-		mouseX = e.clientX - rect.left;
-		mouseY = e.clientY - rect.top;
+		mouseX = clientX - rect.left;
+		mouseY = clientY - rect.top;
 		warmGlow.style.left = `${mouseX}px`;
 		warmGlow.style.top = `${mouseY}px`;
+	}
+
+	function onMouseMove(e: MouseEvent) {
+		pointAt(e.clientX, e.clientY);
+	}
+
+	function onTouchMove(e: TouchEvent) {
+		pointAt(e.touches[0].clientX, e.touches[0].clientY);
 	}
 
 	function onMouseLeave() {
@@ -106,14 +110,14 @@
 		warmGlow.style.top = '50%';
 	}
 
-	function onTouchMove(e: TouchEvent) {
-		if (!containerEl) return;
-		const rect = containerEl.getBoundingClientRect();
-		const touch = e.touches[0];
-		mouseX = touch.clientX - rect.left;
-		mouseY = touch.clientY - rect.top;
-		warmGlow.style.left = `${mouseX}px`;
-		warmGlow.style.top = `${mouseY}px`;
+	function ripple(host: HTMLElement, className: string, x: number, y: number, lifetime: number) {
+		const ring = document.createElement('div');
+		ring.className = className;
+		ring.setAttribute('aria-hidden', 'true');
+		ring.style.left = `${x}px`;
+		ring.style.top = `${y}px`;
+		host.appendChild(ring);
+		setTimeout(() => ring.remove(), lifetime);
 	}
 
 	function onTap(e: MouseEvent) {
@@ -121,27 +125,12 @@
 		const rect = containerEl.getBoundingClientRect();
 		const x = e.clientX - rect.left;
 		const y = e.clientY - rect.top;
-
-		const outer = document.createElement('div');
-		outer.className = 'manifesto__ripple';
-		outer.setAttribute('aria-hidden', 'true');
-		outer.style.left = `${x}px`;
-		outer.style.top = `${y}px`;
-		containerEl.appendChild(outer);
-		setTimeout(() => outer.remove(), 1200);
-
-		const inner = document.createElement('div');
-		inner.className = 'manifesto__ripple-inner';
-		inner.setAttribute('aria-hidden', 'true');
-		inner.style.left = `${x}px`;
-		inner.style.top = `${y}px`;
-		containerEl.appendChild(inner);
-		setTimeout(() => inner.remove(), 800);
+		ripple(containerEl, 'manifesto__ripple', x, y, 1200);
+		ripple(containerEl, 'manifesto__ripple-inner', x, y, 800);
 	}
 
 	function animate() {
-		if (!isVisible) return;
-		if (!ctx) return;
+		if (!isVisible || !ctx) return;
 		ctx.clearRect(0, 0, width, height);
 
 		const activeNodes: CircuitNode[] = [];
@@ -176,87 +165,73 @@
 			ctx.fill();
 		}
 
-		if (activeNodes.length >= 2) {
-			for (let i = 0; i < activeNodes.length; i++) {
-				for (let j = i + 1; j < activeNodes.length; j++) {
-					const a = activeNodes[i];
-					const b = activeNodes[j];
-					const dx = a.x - b.x;
-					const dy = a.y - b.y;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					if (dist < TRACE_PROXIMITY) {
-						const opacity = (1 - dist / TRACE_PROXIMITY) * 0.25;
-						ctx.beginPath();
-						ctx.moveTo(a.x, a.y);
-						ctx.lineTo(b.x, b.y);
-						ctx.strokeStyle = `rgba(${primaryRgb},${opacity})`;
-						ctx.lineWidth = 1;
-						ctx.stroke();
-					}
+		for (let i = 0; i < activeNodes.length; i++) {
+			for (let j = i + 1; j < activeNodes.length; j++) {
+				const a = activeNodes[i];
+				const b = activeNodes[j];
+				const dist = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+				if (dist < TRACE_PROXIMITY) {
+					ctx.beginPath();
+					ctx.moveTo(a.x, a.y);
+					ctx.lineTo(b.x, b.y);
+					ctx.strokeStyle = `rgba(${primaryRgb},${(1 - dist / TRACE_PROXIMITY) * 0.25})`;
+					ctx.lineWidth = 1;
+					ctx.stroke();
 				}
 			}
 		}
 	}
 
-	let initialized = false;
-	let currentContainer: HTMLElement | undefined;
-
 	$effect(() => {
-		if (!browser || !canvas || !containerEl || initialized) return;
-		initialized = true;
-		currentContainer = containerEl;
-
+		const host = containerEl;
+		if (!host) return;
 		ctx = canvas.getContext('2d');
 		if (!ctx) return;
 
 		const reducedMotion = isPrefersReducedMotion();
 		const resizeObserver = new ResizeObserver(() => {
 			readPrimaryRgb();
-			resize();
+			resize(host);
 			if (reducedMotion) paintStatic();
 		});
-		resizeObserver.observe(containerEl);
+		resizeObserver.observe(host);
+
+		const onThemeChange = () => {
+			readPrimaryRgb();
+			if (reducedMotion) paintStatic();
+		};
+		document.addEventListener('themechange', onThemeChange);
 
 		if (reducedMotion) {
-			const onThemeChange = () => {
-				readPrimaryRgb();
-				paintStatic();
-			};
-			document.addEventListener('themechange', onThemeChange);
 			return () => {
 				resizeObserver.disconnect();
 				document.removeEventListener('themechange', onThemeChange);
 			};
 		}
 
-		visibilityObserver = new IntersectionObserver(
+		// Painting pauses while the host is off screen; 50px of margin resumes it before it shows.
+		const visibilityObserver = new IntersectionObserver(
 			(entries) => {
 				isVisible = entries[0].isIntersecting;
 			},
 			{ rootMargin: '50px' },
 		);
-		visibilityObserver.observe(containerEl);
-
+		visibilityObserver.observe(host);
 		subscribe(subscriptionId, animate);
 
-		containerEl.addEventListener('mousemove', onMouseMove);
-		containerEl.addEventListener('mouseleave', onMouseLeave);
-		containerEl.addEventListener('touchmove', onTouchMove, { passive: true });
-		containerEl.addEventListener('click', onTap);
-		const onThemeChange = () => readPrimaryRgb();
-		document.addEventListener('themechange', onThemeChange);
+		host.addEventListener('mousemove', onMouseMove);
+		host.addEventListener('mouseleave', onMouseLeave);
+		host.addEventListener('touchmove', onTouchMove, { passive: true });
+		host.addEventListener('click', onTap);
 
 		return () => {
 			unsubscribe(subscriptionId);
 			resizeObserver.disconnect();
-			visibilityObserver?.disconnect();
-			visibilityObserver = null;
-			if (currentContainer) {
-				currentContainer.removeEventListener('mousemove', onMouseMove);
-				currentContainer.removeEventListener('mouseleave', onMouseLeave);
-				currentContainer.removeEventListener('touchmove', onTouchMove);
-				currentContainer.removeEventListener('click', onTap);
-			}
+			visibilityObserver.disconnect();
+			host.removeEventListener('mousemove', onMouseMove);
+			host.removeEventListener('mouseleave', onMouseLeave);
+			host.removeEventListener('touchmove', onTouchMove);
+			host.removeEventListener('click', onTap);
 			document.removeEventListener('themechange', onThemeChange);
 		};
 	});
@@ -301,6 +276,7 @@
 		z-index: var(--z-base);
 	}
 
+	/* The dark board's 6%/2% cast disappears on paper; light mode lifts it to read the same. */
 	:global([data-theme='light']) .manifesto__warm-glow {
 		background: radial-gradient(
 			ellipse,
@@ -310,22 +286,20 @@
 		);
 	}
 
-	:global(.manifesto__ripple) {
+	:global(.manifesto__ripple),
+	:global(.manifesto__ripple-inner) {
 		position: absolute;
-		border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
 		border-radius: 50%;
 		transform: translate(-50%, -50%);
 		pointer-events: none;
 		z-index: calc(var(--z-content) + 3);
+	}
+	:global(.manifesto__ripple) {
+		border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
 		animation: ripple-expand 1.2s ease-out forwards;
 	}
 	:global(.manifesto__ripple-inner) {
-		position: absolute;
 		border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-		border-radius: 50%;
-		transform: translate(-50%, -50%);
-		pointer-events: none;
-		z-index: calc(var(--z-content) + 3);
 		animation: ripple-inner 0.8s ease-out forwards;
 	}
 	@keyframes ripple-expand {
@@ -356,7 +330,6 @@
 	@media (prefers-reduced-motion: reduce) {
 		:global(.manifesto__ripple),
 		:global(.manifesto__ripple-inner) {
-			animation: none;
 			display: none;
 		}
 	}

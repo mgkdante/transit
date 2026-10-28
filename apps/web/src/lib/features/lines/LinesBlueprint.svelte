@@ -1,17 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { BlueprintShell } from '@yesid/ui/brand';
-	import BlueprintBridge from '$lib/components/svg/transit/BlueprintBridge.svelte';
-	import BlueprintBusSide from '$lib/components/svg/transit/BlueprintBusSide.svelte';
-	import BlueprintTrackPlan from '$lib/components/svg/transit/BlueprintTrackPlan.svelte';
-	import BlueprintCatenary from '$lib/components/svg/transit/BlueprintCatenary.svelte';
-	import BlueprintMr73Side from '$lib/components/svg/transit/BlueprintMr73Side.svelte';
-	import BlueprintPantographOverheadEquipment from '$lib/components/svg/transit/BlueprintPantographOverheadEquipment.svelte';
-	import BlueprintRailGaugeSection from '$lib/components/svg/transit/BlueprintRailGaugeSection.svelte';
-	import BlueprintSignal from '$lib/components/svg/transit/BlueprintSignal.svelte';
-	import BlueprintSignallingCommunicationsEquipment from '$lib/components/svg/transit/BlueprintSignallingCommunicationsEquipment.svelte';
-	import BlueprintTurnoutCrossoverPlan from '$lib/components/svg/transit/BlueprintTurnoutCrossoverPlan.svelte';
-	import BlueprintDetailBogie from '$lib/components/svg/detail/BlueprintDetailBogie.svelte';
+	import {
+		BlueprintBridge,
+		BlueprintBusSide,
+		BlueprintTrackPlan,
+		BlueprintCatenary,
+		BlueprintMr73Side,
+		BlueprintPantographOverheadEquipment,
+		BlueprintRailGaugeSection,
+		BlueprintSignal,
+		BlueprintSignallingCommunicationsEquipment,
+		BlueprintTurnoutCrossoverPlan,
+		BlueprintDetailBogie,
+	} from '@yesid/ui/blueprints';
+	import { getLocale } from '$lib/i18n';
+
+	const locale = getLocale();
+	const operator = $derived(page.data?.provider?.labels[locale].operator ?? 'STM');
 </script>
 
 <BlueprintShell labels={['SEC-LINES / NETWORK', 'DWG: TRANSIT-LINE-ELEV', 'SCALE NTS | REV.A']}>
@@ -40,6 +46,7 @@
 				style="top:-18%;left:-4%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 			/>{/if}
 		<BlueprintBusSide
+			{operator}
 			class="edge-detail"
 			data-blueprint-part="lines-bus"
 			style="top:-2%;left:30%;width:50%;height:60%;--blueprint-part-ink:var(--blueprint-ink-quiet);"

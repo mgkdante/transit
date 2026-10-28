@@ -3,8 +3,7 @@
 	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import { StatusDot } from '@yesid/ui/brand';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import { TerminalPanel, StatusDot } from '@yesid/ui/brand';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { LaneRow } from '../selectors/laneHealth';
 	import type { HealthCopy } from '../health.copy';
@@ -19,7 +18,7 @@
 	const t = $derived(copy.lanes);
 </script>
 
-<TerminalPanel title={t.terminal.title} tag={t.terminal.tag} class="lanes-terminal">
+<TerminalPanel title={t.terminal.title} tag={t.terminal.tag}>
 	<div class="health-block" data-slot="lanes-section">
 		<p class="health-note">{t.note}</p>
 		<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>

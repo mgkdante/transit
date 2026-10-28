@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
-	import { SectionLabel } from '@yesid/ui/brand';
+	import { TerminalPanel, SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import MetricBullet from './MetricBullet.svelte';
 	import { metricInfoCopy } from '$lib/metrics';
@@ -177,7 +176,6 @@
 	<TerminalPanel
 		title={copy.sections.verdict.terminal.title}
 		tag={copy.sections.verdict.terminal.tag}
-		class="verdict-terminal"
 	>
 		<VerdictBanner result={verdict} />
 

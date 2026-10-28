@@ -32,7 +32,6 @@
 	import { StatusBadge } from '$lib/components/dataviz';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
 	import { ArticleHeader } from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '$lib/components/shared';
@@ -346,9 +345,6 @@
 					label={t.viewOnMap}
 					ariaLabel={t.viewRouteOnMap(id)}
 				/>
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

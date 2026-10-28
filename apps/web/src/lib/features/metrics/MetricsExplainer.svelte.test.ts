@@ -141,7 +141,6 @@ describe('MetricsExplainer', () => {
 		expect(within(left).getByText(en.article.tags.join(' · '))).toBeInTheDocument();
 		expect(container.querySelectorAll('[data-slot="article-keywords"]')).toHaveLength(2);
 		expect(header.querySelector('.header__circuit-grid')).not.toBeNull();
-		expect(header.querySelector('[data-testid="manifesto-canvas"]')).not.toBeNull();
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		expect(within(center).getByText(en.lede)).toBeInTheDocument();

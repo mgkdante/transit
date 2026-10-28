@@ -8,7 +8,7 @@ storage keys, copy, or legal policy.
 ## Interface
 
 The root export and `./config`, `./consent`, `./policy`, `./client`, `./plausible`, and `./vitals`
-subpaths are public. See [`api-reports/analytics.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/api-reports/analytics.api.md) for the exact
+subpaths are public. See [`api-reports/analytics.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/api-reports/analytics.api.md) for the exact
 interface.
 
 ## Web vitals
@@ -36,7 +36,7 @@ runs and where the samples go.
 Products own when the client mounts, consent copy (the consent UI is `AnalyticsConsent` in
 `@yesid/ui/feedback`), storage migration, runtime configuration,
 and provider acceptance. The package accepts injected adapters because browser/test/runtime
-implementations genuinely vary. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/CONSUMERS.md).
+implementations genuinely vary. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/CONSUMERS.md).
 
 ## Commands
 
@@ -52,6 +52,6 @@ load, invalid referrer, timeout, or transport failure sends nothing. Consumers o
 visibility for intentionally soft failures.
 
 Behavior, privacy mechanics, exports, or README changes alter the coordinated release payload.
-Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/RELEASING.md); public-interface changes also require an API report.
+Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/RELEASING.md); public-interface changes also require an API report.
 Product policy and legal conclusions remain downstream as mapped in
-[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/BOUNDARIES.md).
+[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/BOUNDARIES.md).

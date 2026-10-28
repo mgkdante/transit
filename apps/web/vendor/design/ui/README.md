@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -222,8 +222,7 @@ No product locale type or copy table enters the package.
 
 ### MetroStation
 
-Renders the zero-padded station number in a 2rem signage roundel with a pulse. The `roundel`
-snippet is deprecated: the default now matches every product.
+Renders the zero-padded station number in a 2rem signage roundel with a pulse.
 
 ### StickyPanel
 
@@ -239,6 +238,34 @@ token differs.
 ### TerminalCursor
 
 A blinking block cursor in `accent` (`accent-text` in light); it stops blinking under reduced motion.
+
+### TerminalPanel and CodeBlock
+
+`TerminalPanel` is the terminal window: a title bar with the three-aspect signal head, the
+`title`, an optional `tag` and `status` and an `actions` snippet, a hazard rule, the body (pass
+`noPadding` when the content pads itself) and an optional `footer` readout of label and value
+pairs. Extra attributes go to the root. Its look comes from the `.terminal-*` classes in
+`base.css`, so markup rendered on the server can wear the same chrome.
+
+`CodeBlock` puts source in a `TerminalPanel` with the `language` as its tag. Pass `copy` labels
+to show a copy button; it copies `code` and shows ✓ for two seconds, or `copy.failed` if the
+clipboard refuses. Highlighting stays in the app: render the highlighter's `<pre>` as
+`children`, colored through the `--syntax-*` tokens and focusable (`tabindex="0"`) so the keyboard
+can scroll it; give it `role="region"` and an `aria-label` if it needs a name. Without `children`
+the code shows as a plain, focusable `<pre>`.
+
+### ManifestoCanvas
+
+The circuit-node backdrop of brand headers. It fills `containerEl` (which must be positioned) and
+listens there: nodes glow and link up near the pointer, and a click sends out a ripple. Under
+reduced motion the nodes are static. It is decorative and pauses while off screen.
+
+### Blueprint drawings
+
+`@yesid/ui/blueprints` exports the brand's blueprint drawings (`BlueprintBridge`,
+`BlueprintSignal` and the rest), drawn in `currentColor`. Each takes `class`, `style` and other
+attributes, and `BlueprintBusSide` names the fleet's `operator`; compose them in a
+`BlueprintShell`. The Gallery shows every one.
 
 ### QuietModeButton
 
@@ -343,8 +370,9 @@ the app. The root takes ordinary attributes such as `class`, `style` and `data-t
 its `highlight` keyword in the accent, `subtitle`, `meta` (pending state included), and `actions`
 and `controls` snippets. `watermark`, `edgeLeft`, `edgeRight` and the `decorations` snippet draw
 decorative chrome; `--article-deco-opacity` sets how strongly it reads. The subtitle and the meta
-row share one mono type, `--article-meta-size`. The `canvas` snippet
-receives the header element once bound (undefined before and during SSR), for a background canvas.
+row share one mono type, `--article-meta-size`. A `ManifestoCanvas` fills the header; a `canvas`
+snippet replaces it (an empty one leaves the header plain) and receives the header element once
+bound (undefined before and during SSR).
 Like `ListingFrame`, it expects the page to pad its top by `--chrome-offset` and pulls itself under
 the chrome.
 
@@ -446,10 +474,6 @@ unmount and renders no element of its own. Props:
   whole scrolling flow. Omit it to scroll the window.
 - `lang`: the page's language. The server fills `<html lang>` (for example by replacing `%lang%`
   in `transformPageChunk`); `SiteRoot` keeps it current after client navigation.
-- `quietModeKey` (deprecated since v0.22.0; removal no earlier than v0.24.0 and 90 days after
-  v0.22.0): a custom localStorage key for the remembered quiet-mode default. The head boot script only
-  reads the standard `quiet-mode` key, so with a custom key what it paints can disagree with what
-  hydration renders.
 
 The app keeps its own navigation, scroll-restoration, and analytics handling.
 
@@ -514,6 +538,7 @@ relies on `'unsafe-inline'` must not add the hash, because any hash switches `'u
 
 `@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
 focus ring, scrollbar, circuit grid, shared keyframes, label styles, `.glass-chrome`, the
+`TerminalPanel` and `CodeBlock` classes (`.terminal-*`, in the components layer), the
 `SiteHeader` geometry (`--nav-top`, `--nav-padding-y`, `--nav-clearance`) and the
 View Transitions route crossfade (off under reduced motion; pair it with `onNavigate(viewTransition)`
 from `@yesid/motion/utils/viewTransition`). It imports
@@ -556,5 +581,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

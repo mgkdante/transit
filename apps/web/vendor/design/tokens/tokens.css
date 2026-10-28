@@ -91,6 +91,13 @@
   --surface-3: var(--muted);
   --surface-4: var(--popover);
   --surface-hero: var(--manifesto);
+  --syntax-keyword: var(--primary);
+  --syntax-string: var(--accent-text);
+  --syntax-number: var(--secondary-foreground);
+  --syntax-function: var(--secondary-foreground);
+  --syntax-comment: var(--muted-foreground);
+  --syntax-punctuation: var(--terminal-ink-muted);
+  --syntax-plain: var(--terminal-ink);
   --glass-blur: 16px;
   --glass-blur-sm: 12px;
   --border-brand: color-mix(in srgb, var(--primary) 45%, transparent);

@@ -2,9 +2,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '@yesid/ui/layout';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import TerminalPanel, {
-		type TerminalFooterItem,
-	} from '$lib/components/brand/TerminalPanel.svelte';
+	import { TerminalPanel, type TerminalFooterItem } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
@@ -25,12 +23,7 @@
 
 <NetworkTile title={copy.liveSection} sectionKey="network-live-headline">
 	<p class="network-live-lede" data-slot="network-lede">{copy.lede}</p>
-	<TerminalPanel
-		title={terminal.title}
-		tag={terminal.tag}
-		footerItems={terminal.footerItems}
-		class="network-live-terminal"
-	>
+	<TerminalPanel title={terminal.title} tag={terminal.tag} footer={terminal.footerItems}>
 		<DashboardGrid minTile="max(220px, calc((100% - var(--space-card-gap)) / 2))" gutter={false}>
 			{#each cards as card (card.label)}
 				<ExplainedMetricCard
