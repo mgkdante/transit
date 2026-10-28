@@ -96,7 +96,6 @@ describe('TypedInformationCard', () => {
 		expect(root).toBeInTheDocument();
 		expect(root?.querySelector('[data-slot="terminal-panel"]')).toBeInTheDocument();
 		expect(root?.querySelector('.terminal-tag')).toHaveTextContent('SQL');
-		expect(root?.querySelector('.codeblock__chrome')).not.toBeInTheDocument();
 
 		const region = getByRole('region', { name: 'Defining SQL source' });
 		expect(region).toHaveAttribute('tabindex', '0');

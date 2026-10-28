@@ -6,8 +6,8 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import WorkflowIcon from '@lucide/svelte/icons/workflow';
 	import NotebookTextIcon from '@lucide/svelte/icons/notebook-text';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import CodeBlock from '$lib/components/CodeBlock.svelte';
+	import { CodeBlock } from '@yesid/ui/brand';
+	import { tokenizeSql } from '$lib/components/sql-highlight';
 
 	export type InformationKind =
 		| 'definition'
@@ -43,9 +43,15 @@
 		data-slot="typed-information-card"
 		data-kind={kind}
 	>
-		<TerminalPanel title={label} tag="SQL" noPadding>
-			<CodeBlock code={code ?? ''} ariaLabel={codeAriaLabel} embedded />
-		</TerminalPanel>
+		<CodeBlock title={label} language="SQL" code={code ?? ''}>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<pre tabindex="0" role="region" aria-label={codeAriaLabel ?? 'SQL source'}><code
+					>{#each tokenizeSql(code ?? '') as token, i (i)}<span
+							class:italic={token.type === 'comment'}
+							style:color="var(--syntax-{token.type})">{token.value}</span
+						>{/each}</code
+				></pre>
+		</CodeBlock>
 	</div>
 {:else}
 	<div

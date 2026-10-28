@@ -3,8 +3,7 @@
 	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import { StatusDot } from '@yesid/ui/brand';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import { TerminalPanel, StatusDot } from '@yesid/ui/brand';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { LaneRow } from '../selectors/laneHealth';
 	import type { HealthCopy } from '../health.copy';

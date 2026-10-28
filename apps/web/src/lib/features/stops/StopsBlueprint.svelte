@@ -1,16 +1,23 @@
 <script lang="ts">
 	import { BlueprintShell } from '@yesid/ui/brand';
-	import BlueprintGlassShelter from '$lib/components/svg/stops/BlueprintGlassShelter.svelte';
-	import BlueprintAccessibleBusCurbSection from '$lib/components/svg/stops/BlueprintAccessibleBusCurbSection.svelte';
-	import BlueprintHeatedGlassShelterSection from '$lib/components/svg/stops/BlueprintHeatedGlassShelterSection.svelte';
-	import BlueprintMetroPlatformCirculationPlan from '$lib/components/svg/stops/BlueprintMetroPlatformCirculationPlan.svelte';
-	import BlueprintPassengerInformationEquipment from '$lib/components/svg/stops/BlueprintPassengerInformationEquipment.svelte';
-	import BlueprintSimpleShelter from '$lib/components/svg/stops/BlueprintSimpleShelter.svelte';
-	import BlueprintStopPlan from '$lib/components/svg/stops/BlueprintStopPlan.svelte';
-	import BlueprintStopPost from '$lib/components/svg/stops/BlueprintStopPost.svelte';
-	import BlueprintBusSide from '$lib/components/svg/transit/BlueprintBusSide.svelte';
-	import BlueprintSignal from '$lib/components/svg/transit/BlueprintSignal.svelte';
-	import BlueprintStationSection from '$lib/components/svg/transit/BlueprintStationSection.svelte';
+	import {
+		BlueprintGlassShelter,
+		BlueprintAccessibleBusCurbSection,
+		BlueprintHeatedGlassShelterSection,
+		BlueprintMetroPlatformCirculationPlan,
+		BlueprintPassengerInformationEquipment,
+		BlueprintSimpleShelter,
+		BlueprintStopPlan,
+		BlueprintStopPost,
+		BlueprintBusSide,
+		BlueprintSignal,
+		BlueprintStationSection,
+	} from '@yesid/ui/blueprints';
+	import { getLocale } from '$lib/i18n';
+	import { page } from '$app/state';
+
+	const locale = getLocale();
+	const operator = $derived(page.data?.provider?.labels[locale].operator ?? 'STM');
 </script>
 
 <BlueprintShell
@@ -46,6 +53,7 @@
 			style="top:-4%;left:30%;width:50%;height:60%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintBusSide
+			{operator}
 			class="edge-detail"
 			data-blueprint-part="stops-bus"
 			style="top:0;left:50%;width:50%;height:44%;--blueprint-part-ink:var(--blueprint-ink-quiet);"

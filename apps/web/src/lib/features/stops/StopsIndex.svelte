@@ -19,7 +19,7 @@
 	} from '$lib/components/surface';
 	import { ListingHeaderStats } from '$lib/components/layout';
 	import { ListingFrame } from '@yesid/ui/layout';
-	import { startBlueprintScrub } from '$lib/motion/scrubs/blueprint-scrub';
+	import { blueprintScrub } from '@yesid/motion/utils/blueprintScrub';
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
@@ -293,7 +293,7 @@
 	description={t.lede}
 	blueprint={listingBlueprint}
 	aside={listingStats}
-	onHeaderMount={startBlueprintScrub}
+	onHeaderMount={blueprintScrub}
 	filterLabel={t.controlsLabel}
 	filterPersistKey="stops-listing-filters"
 	search={listingSearch}

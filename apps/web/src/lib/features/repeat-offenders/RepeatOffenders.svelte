@@ -46,7 +46,6 @@
 		type SurfaceRailContext,
 		type SurfaceRailPresentation,
 	} from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
@@ -557,9 +556,6 @@
 		>
 			{#snippet controls()}
 				<QuietModeButton />
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}

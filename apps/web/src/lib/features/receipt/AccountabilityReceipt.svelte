@@ -39,15 +39,13 @@
 		SurfaceRail,
 		type SurfaceRailContext,
 	} from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
-	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
+	import { TerminalPanel, CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { copy as COPY } from './receipt.copy';
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
 	import { selectAffectedCounts } from './selectors/affectedCounts';
@@ -404,9 +402,6 @@
 			{#snippet controls()}
 				<QuietModeButton />
 			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
-			{/snippet}
 		</ArticleHeader>
 	{/snippet}
 
@@ -457,7 +452,7 @@
 										title={t.terminalTitle}
 										tag={t.terminalTag}
 										status={formatDateKey(r.date, locale)}
-										footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
+										footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 									>
 										<div class="receipt-frame" data-slot="receipt-frame">
 											{#if dayVerdict}

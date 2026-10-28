@@ -20,9 +20,9 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
-	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import {
+		TerminalPanel,
 		SectionLabel,
 		CollapsibleSection,
 		SectionIcon,
@@ -31,7 +31,6 @@
 		settleLayout,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 
@@ -373,9 +372,6 @@
 		>
 			{#snippet controls()}
 				<QuietModeButton />
-			{/snippet}
-			{#snippet canvas(el)}
-				<ManifestoCanvas containerEl={el} />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
