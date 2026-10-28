@@ -35,11 +35,11 @@
 		'chevron',
 		sizeClass[size],
 		'shrink-0 text-[var(--muted-foreground)] transition-transform',
-		open ? 'chevron-open' : '',
 		direction === 'right' ? 'chevron-right' : 'chevron-down',
 		className,
 	)}
 		data-slot="chevron-toggle"
+		data-state={open ? 'open' : 'closed'}
 		viewBox="0 0 20 20"
 		fill="currentColor"
 		{...restProps}
@@ -55,13 +55,8 @@
 			color var(--duration-fast) var(--ease-default);
 	}
 
-	/* Right-pointing: rotates 90deg clockwise to point down when open */
-	.chevron-right.chevron-open {
-		transform: rotate(90deg);
-	}
-
-	/* Down-pointing: starts right (▶), rotates to down (▼) when open */
-	.chevron-down.chevron-open {
+	/* Both directions start pointing right and turn to point down when open. */
+	.chevron[data-state='open'] {
 		transform: rotate(90deg);
 	}
 

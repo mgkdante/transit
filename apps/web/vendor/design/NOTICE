@@ -38,3 +38,9 @@ packages/tokens/fonts/ holds the latin and latin-ext variable subsets of Inter
 The JetBrains Mono Project Authors), taken unmodified from @fontsource-variable
 5.2.8. Both are licensed under the SIL Open Font License 1.1, not this
 repository's MIT License. The full license texts sit beside the font files.
+
+packages/seo-kit/fonts/ holds Inter Medium and Black from the Inter 4.1 release
+(extras/ttf) and JetBrains Mono Medium from JetBrains Mono 2.304 (fonts/ttf),
+unmodified, for share-card rendering. Both are licensed under the SIL Open Font
+License 1.1, not this repository's MIT License. The full license texts sit
+beside the font files.

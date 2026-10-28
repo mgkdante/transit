@@ -66,6 +66,8 @@
 	let quietOverride = $state<boolean | null>(null);
 	// A static card always shows its body; the stored choice waits for it to become collapsible.
 	const isOpen = $derived(!collapsible || (quietOverride ?? (stored ? stored.value : open)));
+	// The head boot script applies the stored choice to these marked elements before first paint.
+	const persistedKey = $derived(collapsible ? sectionKey : undefined);
 
 	function choose(next: boolean): void {
 		quietOverride = null;
@@ -112,6 +114,7 @@
 		'data-section-trigger': '',
 		'data-slot': 'collapsible-trigger',
 		'data-state': isOpen ? 'open' : 'closed',
+		'data-persisted-key': persistedKey,
 		'aria-controls': contentId,
 		'aria-expanded': isOpen,
 		onclick: (event: MouseEvent) => {
@@ -169,7 +172,11 @@
 	data-header-variant={usesArticleSummary ? 'article-summary' : undefined}
 	onclick={collapsible ? onCardClick : undefined}
 >
-	<div data-slot="collapsible" data-state={isOpen ? 'open' : 'closed'}>
+	<div
+		data-slot="collapsible"
+		data-state={isOpen ? 'open' : 'closed'}
+		data-persisted-key={persistedKey}
+	>
 		{#if collapsible}
 			{#if usesArticleSummary}
 				<div
@@ -203,7 +210,7 @@
 						</div>
 					{/if}
 					<span class="section-header__chevron" aria-hidden="true">
-						<ChevronToggle open={isOpen} direction="right" />
+						<ChevronToggle open={isOpen} direction="right" data-persisted-key={persistedKey} />
 					</span>
 				</div>
 				{#if subtitle}
@@ -213,6 +220,7 @@
 							? 'section-subtitle--with-mark'
 							: ''}"
 						data-state={isOpen ? 'open' : 'closed'}
+						data-persisted-key={persistedKey}
 					>
 						<span class="section-subtitle__text">{subtitle}</span>
 					</p>
@@ -224,7 +232,7 @@
 					class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
 				>
 					{@render legacyHeaderContent()}
-					<ChevronToggle open={isOpen} direction="right" />
+					<ChevronToggle open={isOpen} direction="right" data-persisted-key={persistedKey} />
 				</button>
 			{/if}
 		{:else}
@@ -239,6 +247,7 @@
 			class="collapsible-content section-body"
 			data-slot="collapsible-content"
 			data-state={isOpen ? 'open' : 'closed'}
+			data-persisted-body={persistedKey}
 			inert={!isOpen}
 			aria-hidden={isOpen ? undefined : 'true'}
 		>

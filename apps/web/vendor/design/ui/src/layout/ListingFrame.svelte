@@ -139,10 +139,16 @@
 						data-slot="listing-filter-toggle"
 						aria-expanded={filterOpen}
 						aria-controls={panelId}
+						data-persisted-key={filterPersistKey}
 						onclick={toggleFilters}
 					>
 						<span>{filterLabel}</span>
-						<ChevronToggle open={filterOpen} size="sm" direction="right" />
+						<ChevronToggle
+							open={filterOpen}
+							size="sm"
+							direction="right"
+							data-persisted-key={filterPersistKey}
+						/>
 					</button>
 
 					<div
@@ -150,6 +156,7 @@
 						class="listing-filter-panel"
 						data-slot="listing-filter-panel"
 						data-state={filterOpen ? 'open' : 'closed'}
+						data-persisted-key={filterPersistKey}
 					>
 						<div class="listing-filter-overflow">
 							<div class="listing-filter-shell">{@render filters()}</div>

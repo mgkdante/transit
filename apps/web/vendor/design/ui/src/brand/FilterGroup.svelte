@@ -52,6 +52,8 @@
 	const persistedOpen = untrack(() => (persistKey ? persisted(persistKey, startOpen) : null));
 	let localOpen = $state(untrack(() => startOpen));
 	const isOpen = $derived(persistedOpen ? persistedOpen.value : localOpen);
+	// The head boot script applies the stored choice to these marked elements before first paint.
+	const persistedKey = $derived(collapsible ? persistKey : undefined);
 	function toggleOpen(): void {
 		if (persistedOpen) persistedOpen.value = !persistedOpen.value;
 		else localOpen = !localOpen;
@@ -76,10 +78,11 @@
 			class="tap-press flex w-full items-center justify-between label-section text-sm font-semibold py-2.5 min-h-11 transition-colors hover:text-[var(--foreground)] active:text-[var(--foreground)]"
 			aria-expanded={isOpen}
 			aria-controls={collapseId}
+			data-persisted-key={persistedKey}
 			onclick={toggleOpen}
 		>
 			{label}
-			<ChevronToggle open={isOpen} size="sm" direction="down" />
+			<ChevronToggle open={isOpen} size="sm" direction="down" data-persisted-key={persistedKey} />
 		</button>
 	{:else}
 		<div id={labelId} class="label-section text-sm font-semibold">
@@ -90,7 +93,8 @@
 	<div
 		id={collapseId}
 		class="filter-collapse"
-		class:filter-open={!collapsible || isOpen}
+		data-state={!collapsible || isOpen ? 'open' : 'closed'}
+		data-persisted-body={persistedKey}
 		inert={collapsible && !isOpen}
 		aria-hidden={collapsible && !isOpen ? 'true' : undefined}
 	>
@@ -179,7 +183,7 @@
 		grid-template-rows: 0fr;
 		transition: grid-template-rows var(--duration-slow) var(--ease-default);
 	}
-	.filter-collapse.filter-open {
+	.filter-collapse[data-state='open'] {
 		grid-template-rows: 1fr;
 	}
 	.filter-collapse-inner {
