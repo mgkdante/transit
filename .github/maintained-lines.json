@@ -297,7 +297,7 @@
       ],
       "owners": ["apps/web/vendor/design/manifest.json"],
       "sha256": [
-        "809f85810f11fb11f0ec4e258599fba437888877cb7cccfa97169d151f902c68"
+        "12e00c9788b2db62cc2bfa8935a79d04d50833f955180eebc57c9db9a858545f"
       ],
       "origin": "github.com/mgkdante/yesid.dev-design v0.19.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
@@ -400,7 +400,8 @@
         "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3",
         "65932c25a1b0e5729bf5642fd44b3bf33e6d6069ff1508c73d6badc68caac00e",
         "1da322dfc8f8ee5a304ec4359e8d588a6b4c2ac6a7b5de693481f3cefc15f28b",
-        "7df925a89bbc9cce6b01369c27b4d355dff796beb4e92ee6d2bc1838017b95a7"
+        "7df925a89bbc9cce6b01369c27b4d355dff796beb4e92ee6d2bc1838017b95a7",
+        "e23451f3efe06bd48e7e64a6e813bef3cabdc50152e557917f2fea5b87873243"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

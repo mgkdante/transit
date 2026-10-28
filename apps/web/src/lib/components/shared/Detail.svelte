@@ -32,7 +32,7 @@
 
 <Collapsible.Root bind:open class={cn('detail', className)} data-slot="detail">
 	<Collapsible.Trigger
-		class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-0.5 py-1.5 font-mono text-small font-medium text-muted-foreground transition-colors duration-fast ease-default disabled:cursor-default disabled:opacity-50 hover:text-primary-hover hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:text-primary-hover focus-visible:underline focus-visible:underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring motion-reduce:transition-none"
+		class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-0.5 py-1.5 font-mono text-small font-medium text-muted-foreground transition-[color] duration-(--duration-fast) ease-(--ease-default) disabled:cursor-default disabled:opacity-50 hover:text-primary-hover hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:text-primary-hover focus-visible:underline focus-visible:underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring motion-reduce:transition-none"
 		data-slot="detail-toggle"
 		disabled={!ready}
 	>
