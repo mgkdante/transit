@@ -54,6 +54,10 @@ jobs:
                   "paths": [],
                   "prefixes": ["apps/data-proxy/", "apps/web/", "apps/db/config/providers/"]
                 },
+                "e2e": {
+                  "paths": [],
+                  "prefixes": ["apps/web/"]
+                },
                 "map-poster-check": {
                   "paths": ["apps/web/browser-toolchain.json", "apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
                   "prefixes": ["apps/web/static/map/", "apps/db/config/providers/"]
@@ -202,7 +206,7 @@ jobs:
 
   e2e:
     needs: [classify]
-    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['ci-work'] }}
+    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['e2e'] }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
