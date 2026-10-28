@@ -4,6 +4,9 @@ export type { BlueprintShellProps } from './BlueprintShell.svelte';
 export { default as ChevronToggle } from './ChevronToggle.svelte';
 export type { ChevronToggleProps } from './ChevronToggle.svelte';
 
+export { default as CodeBlock } from './CodeBlock.svelte';
+export type { CodeBlockCopyLabels, CodeBlockProps } from './CodeBlock.svelte';
+
 export { default as CollapsibleSection } from './CollapsibleSection.svelte';
 export type { CollapsibleSectionProps } from './CollapsibleSection.svelte';
 
@@ -24,6 +27,9 @@ export type { FilterSectionProps } from './FilterSection.svelte';
 
 export { default as FilterSummary } from './FilterSummary.svelte';
 export type { FilterSummaryProps } from './FilterSummary.svelte';
+
+export { default as ManifestoCanvas } from './ManifestoCanvas.svelte';
+export type { ManifestoCanvasProps } from './ManifestoCanvas.svelte';
 
 export { default as MetricDisplay } from './MetricDisplay.svelte';
 export type { MetricDisplayProps } from './MetricDisplay.svelte';
@@ -64,6 +70,9 @@ export type { StopLabelProps } from './StopLabel.svelte';
 
 export { default as TerminalCursor } from './TerminalCursor.svelte';
 export type { TerminalCursorProps } from './TerminalCursor.svelte';
+
+export { default as TerminalPanel } from './TerminalPanel.svelte';
+export type { TerminalFooterItem, TerminalPanelProps } from './TerminalPanel.svelte';
 
 export { default as ThemeToggle } from './ThemeToggle.svelte';
 export type { ThemeToggleProps } from './ThemeToggle.svelte';

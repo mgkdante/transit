@@ -33,7 +33,7 @@
 		edgeRight?: string;
 		/** Extra decorative chrome, rendered in the aria-hidden decoration layer. */
 		decorations?: Snippet;
-		/** Background canvas; receives the header element once it is bound (undefined before). */
+		/** Replaces the default ManifestoCanvas; receives the header element once it is bound (undefined before). */
 		canvas?: Snippet<[HTMLElement | undefined]>;
 		actions?: Snippet;
 		controls?: Snippet;
@@ -45,6 +45,7 @@
 <script lang="ts">
 	import { boop } from '@yesid/motion/actions';
 	import CornerMarks from '../brand/CornerMarks.svelte';
+	import ManifestoCanvas from '../brand/ManifestoCanvas.svelte';
 
 	let {
 		title,
@@ -90,7 +91,11 @@
 	data-testid={testId}
 >
 	<div class="header__circuit-grid" aria-hidden="true"></div>
-	{@render canvas?.(headerEl)}
+	{#if canvas}
+		{@render canvas(headerEl)}
+	{:else}
+		<ManifestoCanvas containerEl={headerEl} />
+	{/if}
 
 	<section class="header-section">
 		<div class="header__decoration-layer" aria-hidden="true">

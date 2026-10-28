@@ -17,14 +17,6 @@ export interface ThemeStore {
 	init(): void;
 }
 
-export interface QuietModeInit {
-	/**
-	 * @deprecated since v0.22.0; removal no earlier than v0.24.0 and 90 days after v0.22.0. The head
-	 * boot script only reads the standard `quiet-mode` key, so it can't paint a custom key's state.
-	 */
-	readonly storageKey?: string;
-}
-
 /**
  * Collapses every collapsible section on request. Sections close on `closeSignal` and reopen on
  * `openSignal`; `init()` closes them when a remembered default exists and never issues an open.
@@ -39,7 +31,7 @@ export interface QuietModeStore {
 	toggle(): void;
 	rememberCurrent(): void;
 	forgetDefault(): void;
-	init(options?: QuietModeInit): void;
+	init(): void;
 	resetForTest(): void;
 }
 

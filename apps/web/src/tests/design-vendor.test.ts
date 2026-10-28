@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.23.0',
-	tagObject: '79a2c50260521cef4b356618322fea30e15955f8',
-	peeledCommit: '86796125a19788fd138b5d288d02df0b4cde2621',
-	assetName: 'yesid.dev-design-v0.23.0.tar',
-	assetSize: 2764800,
-	assetDigest: 'sha256:351bdb76195733db150beb878c1075e039248489b457cd338490d6169998b55a',
+	tag: 'v0.24.0',
+	tagObject: '400dd2f413c3567380b1eef3a451839bbf20926e',
+	peeledCommit: 'abe79084d752a9fcee8158952ff7783ea23ce888',
+	assetName: 'yesid.dev-design-v0.24.0.tar',
+	assetSize: 3123200,
+	assetDigest: 'sha256:2a2bdcd0be74c43930c06c8224ed5965a9c978dc6e37a41d0db9a7c19e450d94',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:da5de7eafeff1061d7016e92bb6eb547c3790c77beedd470a4cb0a4c206b9726',
-	manifestDigest: 'e5f9bb327e5065ec7a9eb81f63169de35f7ad8c6dd32e7798093c24952e66588',
+	treeHash: 'sha256:c80edd284d3845c82107ecedbbcebe85dde0226755da1467dcd49a7f65441d4f',
+	manifestDigest: 'eeea8dc167341e76b648e61b917a7b6779280497d052cb2b389911a30e12e113',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -192,7 +192,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.23.0');
+		expect(packageJson.version).toBe(PINNED_RELEASE.tag.slice(1));
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -261,7 +261,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.23.0',
+			version: PINNED_RELEASE.tag.slice(1),
 		});
 		expect(files).toEqual([
 			'README.md',
