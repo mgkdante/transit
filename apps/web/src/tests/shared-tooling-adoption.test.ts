@@ -35,7 +35,6 @@ const ACTIONS = {
 } as const;
 const DB_WORK = ['offline-tests-work', 'alembic-single-head-work', 'real-db-tests-work'];
 const DB_CONTEXTS = ['offline-tests', 'alembic-single-head', 'real-db-tests'];
-const WEB_WORK = ['ci-work', 'map-poster-check'];
 const GOVERNED_PR_WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/web.yml'];
 
 function text(path: string): string {
@@ -103,6 +102,13 @@ function directNeeds(job: string): string[] {
 	}
 	const scalar = job.match(/^ {4}needs:\s*([A-Za-z0-9_-]+)\s*$/mu);
 	return scalar ? [scalar[1]!] : [];
+}
+
+/** Every job the path classifier gates; the always-on reporter must wait for all of them. */
+function classifiedJobs(jobs: Map<string, string>): string[] {
+	return [...jobs]
+		.filter(([, block]) => block.includes('needs.classify.outputs.classification).relevant['))
+		.map(([name]) => name);
 }
 
 function classifierRules(source: string): ClassifierRules {
@@ -272,7 +278,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(directNeeds(work)).toEqual(['classify']);
 		expect(work).toContain("relevant['ci-work']");
 		expect(work).toContain('node --test .github/scripts/deploy-scope.test.mjs');
-		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+		expect(directNeeds(reporter).sort()).toEqual(['classify', ...classifiedJobs(jobs)].sort());
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);
 
@@ -418,7 +424,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		const checkPosters = poster.indexOf('bun run map-posters:check');
 		expect(checkPosters).toBeGreaterThanOrEqual(0);
 		expect(poster).not.toContain('playwright-core install');
-		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+		expect(directNeeds(reporter).sort()).toEqual(['classify', ...classifiedJobs(webJobs)].sort());
 
 		const posterScript = text('apps/web/scripts/build-map-posters.ts');
 		expect(posterScript).not.toContain('/usr/bin/google-chrome');
