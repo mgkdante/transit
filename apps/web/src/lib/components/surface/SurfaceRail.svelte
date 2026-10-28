@@ -34,7 +34,6 @@
 	let sheetOpen = $state(false);
 	let pillBtn = $state<HTMLButtonElement>();
 	let sheetEl = $state<HTMLDivElement | null>(null);
-	let railSlot = $state<HTMLDivElement | null>(null);
 	let desktopRailEl = $state<HTMLElement>();
 	let railHomeParent: Node | undefined;
 	let railHomeNextSibling: Node | null = null;
@@ -56,10 +55,10 @@
 		if (restoreFocus) void tick().then(() => pillBtn?.focus());
 	}
 	$effect(() => {
-		if (!sheetOpen || !sheetEl || !railSlot || !desktopRailEl) return;
+		if (!sheetOpen || !sheetEl || !desktopRailEl) return;
 
 		const activeSheet = sheetEl;
-		railSlot.append(desktopRailEl);
+		activeSheet.querySelector('[data-rail-slot]')?.append(desktopRailEl);
 		const onClick = (e: MouseEvent) => {
 			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(true);
 		};
@@ -134,7 +133,7 @@
 					if (!desktop.current) pillBtn?.focus();
 				}}
 			>
-				<div class="contents" bind:this={railSlot}></div>
+				<div class="contents" data-rail-slot></div>
 			</Sheet.Content>
 		</Sheet.Root>
 	</div>
