@@ -102,7 +102,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.19.1 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.20.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -208,6 +208,7 @@
         "apps/web/vendor/design/ui/src/brand/FilterGroup.svelte",
         "apps/web/vendor/design/ui/src/brand/FilterSection.svelte",
         "apps/web/vendor/design/ui/src/brand/FilterSummary.svelte",
+        "apps/web/vendor/design/ui/src/brand/LanguageToggle.svelte",
         "apps/web/vendor/design/ui/src/brand/MetricDisplay.svelte",
         "apps/web/vendor/design/ui/src/brand/MetroStation.svelte",
         "apps/web/vendor/design/ui/src/brand/QuietModeButton.svelte",
@@ -223,6 +224,8 @@
         "apps/web/vendor/design/ui/src/brand/TocBadge.svelte",
         "apps/web/vendor/design/ui/src/brand/TocNav.svelte",
         "apps/web/vendor/design/ui/src/brand/TocPill.svelte",
+        "apps/web/vendor/design/ui/src/brand/Wordmark.svelte",
+        "apps/web/vendor/design/ui/src/brand/navigation.ts",
         "apps/web/vendor/design/ui/src/brand/index.ts",
         "apps/web/vendor/design/ui/src/brand/numbered-chip.internal.svelte",
         "apps/web/vendor/design/ui/src/brand/toc.ts",
@@ -234,6 +237,7 @@
         "apps/web/vendor/design/ui/src/layout/ErrorPage.svelte",
         "apps/web/vendor/design/ui/src/layout/ListingFrame.svelte",
         "apps/web/vendor/design/ui/src/layout/SiteFooter.svelte",
+        "apps/web/vendor/design/ui/src/layout/SiteHeader.svelte",
         "apps/web/vendor/design/ui/src/layout/SiteRoot.svelte",
         "apps/web/vendor/design/ui/src/layout/index.ts",
         "apps/web/vendor/design/ui/src/primitives/badge/badge.svelte",
@@ -299,7 +303,7 @@
       "sha256": [
         "fd1e77adccb9a8720c6b6e26fb3f74d34f807742e27a0fea2ddf8c7a692db0d7"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.19.1; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.20.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",

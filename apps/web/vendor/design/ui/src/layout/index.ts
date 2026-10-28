@@ -15,3 +15,11 @@ export type { SiteFooterGroup, SiteFooterLink, SiteFooterProps } from './SiteFoo
 
 export { default as SiteRoot } from './SiteRoot.svelte';
 export type { SiteRootProps, SiteRootScroller } from './SiteRoot.svelte';
+
+export { default as SiteHeader } from './SiteHeader.svelte';
+export type {
+	SiteHeaderLabels,
+	SiteHeaderLink,
+	SiteHeaderMenuItem,
+	SiteHeaderProps,
+} from './SiteHeader.svelte';

@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -336,6 +336,38 @@ receives the header element once bound (undefined before and during SSR), for a 
 Like `ListingFrame`, it expects the page to pad its top by `--chrome-offset` and pulls itself under
 the chrome.
 
+## Site header
+
+`SiteHeader` is the floating pill header with a full-screen metro-line menu on a bits-ui Dialog.
+The pill renders inside the dialog, so it stays above the open menu and inside its focus trap.
+Pass `beforeNavigate`, `onNavigate` and `afterNavigate` from `$app/navigation` as `navigation`: the
+menu closes before a navigation lands, and a language switch from the open menu keeps it open.
+
+```svelte
+<SiteHeader
+	navigation={{ beforeNavigate, onNavigate, afterNavigate }}
+	home="/"
+	links={[{ href: '/work', label: 'Work', current: true }, { href: '/blog', label: 'Blog', priority: 2 }]}
+	menuItems={[{ href: '/work', label: 'Work', subtitle: 'Selected projects', current: true }]}
+	labels={{ openMenu: 'Open menu', closeMenu: 'Close menu', menu: 'Site menu', theme: 'Dark theme' }}
+	language={{ locale, locales: ['en', 'fr'], href: (next) => localizeUrl(page.url, next), label: 'Language' }}
+/>
+```
+
+Links with `priority: 2` show from 500px of header width and `priority: 3` from 1024px. The
+optional `search` snippet shows from 1024px and folds away with the links while the menu is open;
+`actions` render before the theme, language and menu controls. The app marks `current` links and
+items; snippets can query the header's width with `@container site-header`.
+`--site-header-inset-end` narrows the header beside a docked panel, animated over
+`--site-header-inset-duration`. The menu starts below the app's `--chrome-offset` (default `--nav-clearance`); page offsets read
+`--nav-clearance` from `base.css`.
+
+`Wordmark` is the name plus accent dot with the `wordmarkHover` effects (`autoPlay` plays one on
+mount). `LanguageToggle` is the signpost: one board per locale, linking to `href(next)`.
+`preserveState` keeps scroll and page state (`data-sveltekit-reset="false"`) and then resets focus
+like a normal navigation through `onNavigate`; `reload` asks for a full document load.
+`resetFocusAfterNavigation` is the same reset for `goto(url, { reset: false })`.
+
 ## Site footer and error page
 
 `SiteFooter` renders the hazard strip, the `brand` snippet with a `tagline`, one labelled
@@ -386,7 +418,8 @@ text. During SSR it returns the seed.
 ## Base stylesheet
 
 `@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
-focus ring, scrollbar, circuit grid, shared keyframes, label styles, `.glass-chrome` and the
+focus ring, scrollbar, circuit grid, shared keyframes, label styles, `.glass-chrome`, the
+`SiteHeader` geometry (`--nav-top`, `--nav-padding-y`, `--nav-clearance`) and the
 View Transitions route crossfade (off under reduced motion; pair it with `onNavigate(viewTransition)`
 from `@yesid/motion/utils/viewTransition`). It imports
 `@yesid/tokens/theme.css`, which provides the Tailwind theme and the semantic color utilities
@@ -428,5 +461,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

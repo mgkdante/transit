@@ -8,7 +8,7 @@ flags.
 ## Interface
 
 The root export exposes the routing configuration/types and `createLocaleRouting`. The exact
-public interface is [`api-reports/i18n-core.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/api-reports/i18n-core.api.md).
+public interface is [`api-reports/i18n-core.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/api-reports/i18n-core.api.md).
 
 ## Invariants
 
@@ -23,7 +23,7 @@ public interface is [`api-reports/i18n-core.api.md`](https://github.com/mgkdante
 
 Consumers create one routing closure from their locale/exemption policy, then adapt it to their
 framework. Unsupported locale input falls back through consumer-defined defaults rather than
-inventing package policy. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/CONSUMERS.md).
+inventing package policy. Current receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/CONSUMERS.md).
 
 ## Commands
 
@@ -39,5 +39,5 @@ route-segment values are consumer configuration defects; diagnose them at the ad
 changing pure routing mechanics.
 
 Routing behavior, types, exports, or README changes alter the coordinated release payload. Follow
-[`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/RELEASING.md) and update the API report for public-interface changes.
-Product locale/copy policy remains downstream per [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.1/BOUNDARIES.md).
+[`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/RELEASING.md) and update the API report for public-interface changes.
+Product locale/copy policy remains downstream per [`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/BOUNDARIES.md).
