@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.25.1',
-	tagObject: '90d15fce7ab9590bd6f672f41760e1df37bb084a',
-	peeledCommit: '9b8e6244387b12b11c1caf6243328a7ff262d4d6',
-	assetName: 'yesid.dev-design-v0.25.1.tar',
+	tag: 'v0.25.2',
+	tagObject: '47fd7b3e463ace09e9dba6624a27fb0fe9e448c1',
+	peeledCommit: 'dc1955a1109c4cb38b0ef76dbb51f732f04d3b66',
+	assetName: 'yesid.dev-design-v0.25.2.tar',
 	assetSize: 3133440,
-	assetDigest: 'sha256:d9894a543ba23d7ee4afaf538fec410259e0e9e6070ee84169a10ee5c72486a2',
+	assetDigest: 'sha256:7112f5a9d215f311ffbab2dc1b4bf894224ffcb78fd3c5e5b7434a4412de7ccb',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:8c2a9059933500535320a1fb85572031eb6fa759254d092932e33b800bd9cb85',
-	manifestDigest: '874a1f53da63a27c36acc9feaf97b151b6b8b0d90731a1ba0f96968379200323',
+	treeHash: 'sha256:b50890db2dccf129c767a2b6e632b762818ba7e93208a4f5f4eb0914363727ad',
+	manifestDigest: '86f4e126554f2b624d3656759db5d0c0b2812c8e40bd1f9b9e1f5979d2a06a28',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {

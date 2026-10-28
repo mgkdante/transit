@@ -224,7 +224,7 @@
 		opacity: var(--blueprint-ink) !important;
 	}
 
-	/* A halo in the page colour behind the copy, where strokes cross it. */
+	/* Solid page colour under each glyph, then a soft halo where strokes cross the copy. */
 	.listing-header-content {
 		position: relative;
 		z-index: calc(var(--z-content) + 10);
@@ -233,6 +233,7 @@
 		min-width: 0;
 		padding: 1rem var(--space-page-x);
 		text-shadow:
+			0 0 0 var(--background),
 			0 0 0.2em var(--background),
 			0 0 0.5em var(--background);
 	}
