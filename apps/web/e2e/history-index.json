@@ -1,0 +1,10 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"families": [
+		{
+			"family": "receipts",
+			"selection_mode": "date",
+			"index_path": "historic/receipts/index.json"
+		}
+	]
+}
