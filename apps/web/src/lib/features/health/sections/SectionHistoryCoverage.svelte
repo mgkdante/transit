@@ -290,7 +290,7 @@
 		font-size: var(--text-caption);
 	}
 
-	@media (max-width: 1023px) {
+	@media (--desktop-max) {
 		:global(
 			.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
 				table.coverage-table.data-table
@@ -328,7 +328,7 @@
 		}
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.coverage-note {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

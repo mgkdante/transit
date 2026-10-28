@@ -1,10 +1,10 @@
 import type { Handle, ServerInit } from '@sveltejs/kit';
 import { dev } from '$app/environment';
-import { assets } from '$app/paths';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { securityHeaders } from '$lib/site/securityHeaders';
 import { configureTransitUi } from '$lib/ui/configure';
+import { preloadFont } from '@yesid/tokens/fonts';
 
 export const init: ServerInit = configureTransitUi;
 
@@ -69,15 +69,6 @@ function applyDocumentHeaders(response: Response): void {
 		response.headers.set(name, value);
 	}
 
-	if (isHtml(response)) {
-		const existing = response.headers.get('link') ?? '';
-		const fonts = ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2']
-			.map((file) => encodeURI(`${assets}/fonts/${file}`))
-			.filter((url) => !existing.includes(`<${url}>`))
-			.map((url) => `<${url}>; rel="preload"; as="font"; type="font/woff2"; crossorigin`);
-		if (fonts.length) response.headers.set('link', [...fonts, existing].filter(Boolean).join(', '));
-	}
-
 	if (!readPublicSiteConfig().indexing) {
 		response.headers.set('x-robots-tag', 'noindex, nofollow');
 	}
@@ -111,7 +102,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const resolved = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
-		preload: () => true,
+		preload: ({ type, path }) => type !== 'font' || preloadFont(path),
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 

@@ -95,16 +95,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.17.0',
-	tagObject: '9d01b265331753dc63de1cfbb30153572d608f99',
-	peeledCommit: 'bde0a0fa342788c251371ff65312a276430e3652',
-	assetName: 'yesid.dev-design-v0.17.0.tar',
-	assetSize: 1_208_320,
-	assetDigest: 'sha256:b79f18b2a634954812ef6f75cc47cfa6852976e256e79ece0f805cf9768b08bd',
+	tag: 'v0.18.0',
+	tagObject: '4304ec3391772d523b31817f4980d805c118a89c',
+	peeledCommit: '9ab6cdffafd1cece9151f6ce67af1a9dee9ac56d',
+	assetName: 'yesid.dev-design-v0.18.0.tar',
+	assetSize: 1_433_600,
+	assetDigest: 'sha256:3a588067ff00702cd741bf4f8a070c4099354ac2e4fc377b8d3c8e17ae0994b3',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:072ee3f40909731c468caa5965b8538a60d289a61f12e267503741f283ec774a',
-	manifestDigest: '073e4056a6348217bbea36ce680351f8a0776b93dc5a8977bda6627a2c9f90ff',
+	treeHash: 'sha256:b87d33d4a894161e2c9f4712d738f557d23f461684346854dd938da306ae5fd6',
+	manifestDigest: '77160cc9290e07ef84737b9c7c92005e391f1bd250ca5c8923994eb504527447',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -189,7 +189,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.17.0');
+		expect(packageJson.version).toBe('0.18.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -224,6 +224,28 @@ describe('vendor/design integrity', () => {
 		).toEqual([]);
 	});
 
+	it('vendors the bundled fonts and the Tailwind theme map with the tokens', () => {
+		const tokensRoot = join(VENDOR, 'tokens');
+		const files = walkFiles(tokensRoot).map((file) =>
+			relative(tokensRoot, file).split(sep).join('/'),
+		);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'fonts.css',
+				'theme.css',
+				'tokens.css',
+				'fonts/LICENSE-Inter.txt',
+				'fonts/LICENSE-JetBrainsMono.txt',
+				'fonts/inter-latin-wght-normal.woff2',
+				'fonts/jetbrains-mono-latin-wght-normal.woff2',
+				'src/fonts.ts',
+				'src/generators/theme-css.ts',
+			]),
+		);
+		expect(files.filter((file) => file.endsWith('.woff2'))).toHaveLength(4);
+	});
+
 	it('vendors the exact @yesid/analytics runtime surface', () => {
 		const analyticsRoot = join(VENDOR, 'analytics');
 		const packageJson = JSON.parse(readFileSync(join(analyticsRoot, 'package.json'), 'utf-8')) as {
@@ -236,7 +258,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.17.0',
+			version: '0.18.0',
 		});
 		expect(files).toEqual([
 			'README.md',

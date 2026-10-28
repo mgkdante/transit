@@ -599,8 +599,8 @@
 		border: 2px solid var(--border-brand);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-nav);
-		backdrop-filter: blur(16px) saturate(1.1);
-		-webkit-backdrop-filter: blur(16px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur));
+		backdrop-filter: blur(var(--glass-blur));
 		transition:
 			padding var(--duration-normal) var(--ease-default),
 			box-shadow var(--duration-normal) var(--ease-default),
@@ -879,7 +879,7 @@
 		border-radius: var(--radius-xl);
 	}
 
-	@media (min-width: 768px) {
+	@media (--tablet-min) {
 		.nav-menu {
 			max-height: min(calc(100dvh - var(--pill-h) - 3rem), 34rem);
 		}
@@ -911,7 +911,7 @@
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.nav-links {
 			display: flex;
 		}
@@ -1071,8 +1071,8 @@
 		background: color-mix(in srgb, var(--background) 96%, transparent);
 		border: 1px solid var(--border-brand);
 		box-shadow: var(--shadow-nav);
-		backdrop-filter: blur(16px) saturate(1.1);
-		-webkit-backdrop-filter: blur(16px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur));
+		backdrop-filter: blur(var(--glass-blur));
 	}
 
 	.nav-search-result {
@@ -1128,13 +1128,13 @@
 		color: var(--muted-foreground);
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.nav-links {
 			gap: 18px;
 		}
 	}
 
-	@media (max-width: 767px) {
+	@media (--tablet-max) {
 		:root {
 			--pill-h: 64px;
 		}

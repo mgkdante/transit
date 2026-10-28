@@ -862,7 +862,7 @@
 		}
 	}
 
-	@media (max-width: 1023.98px) {
+	@media (--desktop-max) {
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;
 			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));

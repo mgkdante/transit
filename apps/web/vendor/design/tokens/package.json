@@ -1,6 +1,6 @@
 {
   "name": "@yesid/tokens",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "DTCG-format design tokens, package-owned generated tokens.css, and generators for yesid.dev. Source of truth: tokens.json.",
@@ -8,6 +8,12 @@
   "exports": {
     "./tokens.json": "./tokens.json",
     "./tokens.css": "./tokens.css",
+    "./theme.css": "./theme.css",
+    "./fonts.css": "./fonts.css",
+    "./fonts": {
+      "types": "./src/fonts.ts",
+      "default": "./src/fonts.ts"
+    },
     "./parse": {
       "types": "./src/parse.ts",
       "default": "./src/parse.ts"
@@ -23,6 +29,10 @@
     "./generators/tokens-css": {
       "types": "./src/generators/tokens-css.ts",
       "default": "./src/generators/tokens-css.ts"
+    },
+    "./generators/theme-css": {
+      "types": "./src/generators/theme-css.ts",
+      "default": "./src/generators/theme-css.ts"
     },
     "./generators/theme-block": {
       "types": "./src/generators/theme-block.ts",

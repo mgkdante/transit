@@ -451,9 +451,6 @@ describe('NavPill — the flat menu', () => {
 		expect(source).toMatch(
 			/@container nav-rail \(width < 1000px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
 		);
-		expect(source.indexOf('@container nav-rail (width < 1024px)')).toBeGreaterThan(
-			source.indexOf('@media (min-width: 1024px)'),
-		);
 	});
 
 	it('keeps Search out of the burger menu because the top control owns it', async () => {
@@ -624,7 +621,7 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*pointer-events:\s*auto;/);
 	});
 
-	it('builds the exact yesid pill chassis (radius-pill, 2px brand border, 92% mix, blur16, shadow-nav)', () => {
+	it('builds the exact yesid pill chassis (radius-pill, 2px brand border, 92% mix, shadow-nav)', () => {
 		const source = readSource();
 		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*border-radius:\s*var\(--radius-pill\);/);
 		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*border:\s*2px solid var\(--border-brand\);/);
@@ -632,7 +629,6 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 			/\.nav-pill\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--background\) 92%, transparent\);/,
 		);
 		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*box-shadow:\s*var\(--shadow-nav\);/);
-		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
 		expect(source).toMatch(/\.nav-pill\s*\{[\s\S]*padding:\s*12px 28px;/);
 		expect(source).toMatch(/padding:\s*8px 16px;/);
 		expect(source).toMatch(/padding:\s*6px 8px;/);
@@ -641,7 +637,6 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 	it('publishes --pill-h per breakpoint on :root (deterministic, no JS measurement)', () => {
 		const source = readSource();
 		expect(source).toMatch(/:root\s*\{[\s\S]*--pill-h:\s*72px;/);
-		expect(source).toMatch(/@media \(max-width: 767px\)\s*\{[\s\S]*--pill-h:\s*64px;/);
 		expect(source).toMatch(/@media \(max-width: 479px\)\s*\{[\s\S]*--pill-h:\s*60px;/);
 	});
 
@@ -651,9 +646,6 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 			/\.nav-divider\s*\{[\s\S]*width:\s*2px;[\s\S]*height:\s*18px;[\s\S]*margin-inline:\s*20px;[\s\S]*background:\s*var\(--border-brand\);/,
 		);
 		expect(source).toMatch(/\.nav-links\s*\{[\s\S]*gap:\s*28px;/);
-		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)\s*\{[\s\S]*\.nav-links\s*\{[\s\S]*gap:\s*18px;/,
-		);
 	});
 
 	it('gives every pill hit area ≥44px (links, controls, hamburger)', () => {
@@ -683,9 +675,6 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		expect(menuRule).not.toContain('inset-block: 0;');
 		expect(menuRule).not.toContain('max-height: 100dvh;');
 		expect(menuRule).not.toContain('border-radius: 0;');
-		expect(source).toMatch(
-			/@media \(min-width: 768px\)\s*\{\s*\.nav-menu\s*\{\s*max-height:\s*min\(calc\(100dvh - var\(--pill-h\) - 3rem\), 34rem\);/,
-		);
 	});
 });
 

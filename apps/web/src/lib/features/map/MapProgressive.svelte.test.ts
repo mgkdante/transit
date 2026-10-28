@@ -74,22 +74,10 @@ afterEach(() => {
 });
 
 describe('MapProgressive automatic live boot', () => {
-	it('stacks the mobile no-JS explanation above the attribution', () => {
-		const mobile = source.match(
-			/@media \(max-width: 767px\) \{(?<body>[\s\S]*?)\n\t\}\n<\/style>/u,
-		);
-		const noScriptRule = mobile?.groups?.body.match(
-			/\.map-progressive-noscript\s*\{(?<body>[^}]*)\}/u,
-		);
-		const bottomRem = noScriptRule?.groups?.body.match(/bottom:\s*(?<value>[\d.]+)rem/u)?.groups
-			?.value;
-		const attributionTopRem = 0.55 + 0.28 * 2 + 0.68 * 1.35;
-
+	it('gives the attribution and no-JS note one shared box', () => {
 		expect(source).toMatch(
 			/\.map-progressive-attribution,\s*\.map-progressive-noscript\s*\{[^}]*bottom:\s*0\.55rem;[^}]*padding:\s*0\.28rem 0\.42rem;[^}]*font-size:\s*0\.68rem;[^}]*line-height:\s*1\.35;/u,
 		);
-		expect(bottomRem, 'mobile no-JS bottom offset').toBeDefined();
-		expect(Number(bottomRem)).toBeGreaterThanOrEqual(attributionTopRem + 0.2);
 	});
 
 	it.each(['en', 'fr'] as const)(

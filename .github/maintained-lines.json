@@ -95,41 +95,14 @@
         "241f155fc36cf349bb825564440f3c1bb25dbd3d586d300e3999917073d1c7f0",
         "944f32675773093218e6d9f42beaef714ce38cbfed6878a8618b51dfd5409466",
         "f51ae0231df01c7d3811f795c66e70d95f442d445bd97d8f38618dda064afe2d",
-        "c7fa819ca61b0d42e1390374f3ea4c406f0301cc30dd19729ea3d22cf53cd100"
+        "c7fa819ca61b0d42e1390374f3ea4c406f0301cc30dd19729ea3d22cf53cd100",
+        "c49843f78f558ba3e16cc9932165b6080847b92cdd45612c439ad1cef1757fe4"
       ],
       "origin": "apps/db/scripts/export_snapshot_schemas.py exports contract.export_schemas; web mirrors are checked-in byte-identical copies. Reviewed raw Git closures at ee6c12c, 6ce479e7 and ffafc75a."
     },
     {
-      "category": "generated",
-      "reason": "Complete generated token CSS output",
-      "files": [
-        "apps/web/src/lib/styles/tokens.css"
-      ],
-      "owners": [
-        "apps/web/tools/tokens/build.ts",
-        "apps/web/tools/tokens/tokens.json",
-        "apps/web/vendor/design/manifest.json",
-        "apps/web/vendor/design/tokens/package.json",
-        "apps/web/vendor/design/tokens/src/build.ts",
-        "apps/web/vendor/design/tokens/src/generators/design-md.ts",
-        "apps/web/vendor/design/tokens/src/generators/motion-ts.ts",
-        "apps/web/vendor/design/tokens/src/generators/theme-block.ts",
-        "apps/web/vendor/design/tokens/src/generators/tokens-css.ts",
-        "apps/web/vendor/design/tokens/src/parse.ts",
-        "apps/web/vendor/design/tokens/src/serialize.ts",
-        "apps/web/vendor/design/tokens/src/types.ts",
-        "apps/web/vendor/design/tokens/tokens.css",
-        "apps/web/vendor/design/tokens/tokens.json",
-        "apps/web/vendor/design/tokens/tsconfig.json"
-      ],
-      "sha256": [
-        "da6fb60b25f80ba8991e0bd2bd48791e2e4e04f283da243bb31296a4d7ac56c1"
-      ],
-      "origin": "apps/web/tools/tokens/build.ts consumes authored token JSON and the immutable vendored token engine. Mixed authored apps/web/src/app.css remains counted."
-    },
-    {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.17.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.18.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -195,15 +168,25 @@
         "apps/web/vendor/design/seo-kit/src/sitemap.ts",
         "apps/web/vendor/design/seo-kit/tsconfig.json",
         "apps/web/vendor/design/tokens/README.md",
+        "apps/web/vendor/design/tokens/fonts.css",
+        "apps/web/vendor/design/tokens/fonts/LICENSE-Inter.txt",
+        "apps/web/vendor/design/tokens/fonts/LICENSE-JetBrainsMono.txt",
+        "apps/web/vendor/design/tokens/fonts/inter-latin-ext-wght-normal.woff2",
+        "apps/web/vendor/design/tokens/fonts/inter-latin-wght-normal.woff2",
+        "apps/web/vendor/design/tokens/fonts/jetbrains-mono-latin-ext-wght-normal.woff2",
+        "apps/web/vendor/design/tokens/fonts/jetbrains-mono-latin-wght-normal.woff2",
         "apps/web/vendor/design/tokens/package.json",
         "apps/web/vendor/design/tokens/src/build.ts",
+        "apps/web/vendor/design/tokens/src/fonts.ts",
         "apps/web/vendor/design/tokens/src/generators/design-md.ts",
         "apps/web/vendor/design/tokens/src/generators/motion-ts.ts",
         "apps/web/vendor/design/tokens/src/generators/theme-block.ts",
+        "apps/web/vendor/design/tokens/src/generators/theme-css.ts",
         "apps/web/vendor/design/tokens/src/generators/tokens-css.ts",
         "apps/web/vendor/design/tokens/src/parse.ts",
         "apps/web/vendor/design/tokens/src/serialize.ts",
         "apps/web/vendor/design/tokens/src/types.ts",
+        "apps/web/vendor/design/tokens/theme.css",
         "apps/web/vendor/design/tokens/tokens.css",
         "apps/web/vendor/design/tokens/tokens.json",
         "apps/web/vendor/design/tokens/tsconfig.json",
@@ -315,9 +298,9 @@
         "apps/web/vendor/design/manifest.json"
       ],
       "sha256": [
-        "4671320afe19a6be60525e9adad0e918065cd53f278c13128b9319ce22bded10"
+        "809f85810f11fb11f0ec4e258599fba437888877cb7cccfa97169d151f902c68"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.17.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.18.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -332,7 +315,8 @@
         "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0",
         "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9",
         "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e",
-        "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55"
+        "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55",
+        "ff6abac0aab463e8fab31d9386051dbe1d2449df6ff415cbd1b2e01a08a97e73"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -381,23 +365,6 @@
     },
     {
       "category": "assets",
-      "reason": "Binary font payloads from the recorded upstream font packages",
-      "files": [
-        "apps/web/static/fonts/inter-latin-ext-wght-normal.woff2",
-        "apps/web/static/fonts/inter-latin-wght-normal.woff2",
-        "apps/web/static/fonts/jetbrains-mono-latin-ext-wght-normal.woff2",
-        "apps/web/static/fonts/jetbrains-mono-latin-wght-normal.woff2"
-      ],
-      "owners": [
-        "apps/web/static/fonts/LICENSES.txt"
-      ],
-      "sha256": [
-        "ff6868d1c7c97fc7362c6c306f533d86d49c717de4a91627a508e79f1b1be94f"
-      ],
-      "origin": "SIL-licensed Inter and JetBrains Mono packages identified by the counted LICENSES.txt owner."
-    },
-    {
-      "category": "assets",
       "reason": "Binary font inputs for the Open Graph generator",
       "files": [
         "apps/web/scripts/og-fonts/Inter-Black.ttf",
@@ -443,7 +410,8 @@
         "7144b48728ff1a0b5ce8734277a524c25ad93c1ce9cb5f4279ff5ecbc92e7121",
         "341580c478386b2c22900f62d0f8a4883ce5c13d4bc76998906ee7441ec92cf3",
         "65932c25a1b0e5729bf5642fd44b3bf33e6d6069ff1508c73d6badc68caac00e",
-        "1da322dfc8f8ee5a304ec4359e8d588a6b4c2ac6a7b5de693481f3cefc15f28b"
+        "1da322dfc8f8ee5a304ec4359e8d588a6b4c2ac6a7b5de693481f3cefc15f28b",
+        "7df925a89bbc9cce6b01369c27b4d355dff796beb4e92ee6d2bc1838017b95a7"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

@@ -123,8 +123,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		cursor: pointer;
 		transition:
 			border-color var(--duration-fast) var(--ease-default),
@@ -197,8 +197,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sheet);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		transform-origin: left bottom;
 		overscroll-behavior: contain;
 	}
@@ -283,7 +283,7 @@
 		}
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.map-filter-pill-container {
 			display: none;
 		}

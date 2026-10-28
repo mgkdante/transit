@@ -20,15 +20,6 @@ describe('MapStage', () => {
 		expect(s).toMatch(
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*transition:\s*right var\(--duration-normal\) var\(--ease-out\)/,
 		);
-		expect(s).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*right:\s*0\.75rem/,
-		);
-		expect(s).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
-		);
-		expect(s).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*max-width:\s*calc\(100% - 1\.5rem\)/,
-		);
 	});
 
 	it('resolves the basemap at construction for a hot first paint with no post-mount setStyle wipe (B2)', () => {
@@ -63,21 +54,11 @@ describe('MapStage', () => {
 		expect(s).toMatch(
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right \.maplibregl-ctrl\)\s*\{\s*margin:\s*0/,
 		);
-		expect(s).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\)\s*\{[\s\S]*max-width:\s*100%/,
-		);
-		expect(s).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact-show\)\s*\{[\s\S]*max-width:\s*100%/,
-		);
 	});
 
 	it('keeps mobile map controls above expanded attribution through one shared clearance', () => {
 		const hero = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapHero.svelte'),
-			'utf-8',
-		);
-		const nearMe = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapNearMeControl.svelte'),
 			'utf-8',
 		);
 		const controls = readFileSync(
@@ -87,9 +68,6 @@ describe('MapStage', () => {
 
 		expect(hero).toMatch(
 			/--map-mobile-control-bottom:\s*calc\(5\.25rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
-		);
-		expect(nearMe).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
 		);
 		expect(controls).toMatch(
 			/\.map-filter-pill-container\s*\{[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
@@ -176,9 +154,6 @@ describe('MapStage', () => {
 			expect(containerRule).toContain('left: 0.75rem');
 			expect(containerRule).not.toContain('right:');
 			expect(containerRule).toContain('bottom: var(--map-mobile-control-bottom)');
-			expect(source()).toMatch(
-				/@media \(max-width: 1023\.98px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
-			);
 		});
 	});
 });

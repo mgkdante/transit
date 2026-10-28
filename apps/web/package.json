@@ -10,7 +10,6 @@
 		"prepare": "node scripts/gen-contract.mjs && (svelte-kit sync || echo '')",
 		"check": "node scripts/gen-contract.mjs && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "node scripts/gen-contract.mjs && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"tokens:build": "bun tools/tokens/build.ts",
 		"og:build": "bun scripts/build-og.ts",
 		"og:check": "bun scripts/build-og.ts --check",
 		"icons:build": "bun scripts/build-icons.ts",
@@ -26,6 +25,7 @@
 		"test:mobile-geometry": "bun scripts/test-mobile-geometry.ts"
 	},
 	"devDependencies": {
+		"@csstools/postcss-global-data": "4.0.0",
 		"@eslint/js": "^10.0.1",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
@@ -47,6 +47,7 @@
 		"globals": "^17.6.0",
 		"happy-dom": "^21.0.4",
 		"playwright-core": "1.62.0",
+		"postcss-custom-media": "12.0.1",
 		"prettier": "^3.8.4",
 		"prettier-plugin-svelte": "^4.1.0",
 		"rollup-plugin-visualizer": "^7.0.1",

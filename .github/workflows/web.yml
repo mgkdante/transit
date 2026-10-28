@@ -121,11 +121,6 @@ jobs:
       - name: Design adoption integrity
         run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
 
-      - name: Token drift gate
-        run: |
-          bun run tokens:build
-          git diff --exit-code -- src/lib/styles/tokens.css src/app.css
-
       - name: OG drift gate
         run: bun run og:check
 

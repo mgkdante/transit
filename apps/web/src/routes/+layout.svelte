@@ -7,7 +7,7 @@
 </script>
 
 <script lang="ts">
-	import '$lib/styles/fonts.css';
+	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
 

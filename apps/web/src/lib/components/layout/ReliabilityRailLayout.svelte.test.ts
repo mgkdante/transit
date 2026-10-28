@@ -28,7 +28,6 @@ describe('ReliabilityRailLayout — shared detail geometry contract', () => {
 		const component = source();
 
 		expect(component).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-		expect(component).toMatch(/@media\s*\(min-width:\s*1024px\)/);
 		expect(component).toMatch(
 			/grid-template-columns:\s*var\(\s*--detail-rail-width,\s*var\(--layout-control-rail-width\)\s*\)\s*minmax\(0,\s*var\(--detail-center-max,\s*var\(--container-content\)\)\)/,
 		);

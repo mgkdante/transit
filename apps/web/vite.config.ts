@@ -1,3 +1,6 @@
+import globalData from '@csstools/postcss-global-data';
+import { fileURLToPath } from 'node:url';
+import customMedia from 'postcss-custom-media';
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -9,6 +12,9 @@ export const ISLAND_CENTERED_BASEMAP_BBOX = [-74.176, 45.237, -73.276, 45.867] a
 export const DEV_MANIFEST_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/manifest.json';
 export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 
+const designTokensCss = fileURLToPath(
+	new URL('./vendor/design/tokens/tokens.css', import.meta.url),
+);
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
 const ssrDataTests = [
 	'src/lib/v1/history/rangeResource.ssr.test.ts',
@@ -145,6 +151,11 @@ function islandCenteredManifestPreviewPlugin(command: string): Plugin {
 // svelteTesting() only activates under VITEST, so it is safe to include always.
 export default defineConfig(({ command, isSsrBuild }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
+	css: {
+		postcss: {
+			plugins: [globalData({ files: [designTokensCss] }), customMedia({ preserve: false })],
+		},
+	},
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
 	build: {
 		chunkSizeWarningLimit: 1100,
@@ -207,7 +218,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 		// plugin exports (gsap/SplitText) need bundling for clean SSR ESM interop;
 		// it loads side-effect-free (window access is deferred) and only animates
 		// client-side. (Lenis is still deliberately absent — no smooth-scroll.)
-		noExternal: ['@yesid/ui', 'bits-ui', 'gsap'],
+		noExternal: ['@yesid/tokens', '@yesid/ui', 'bits-ui', 'gsap'],
 	},
 	test: {
 		// Data and DOM projects run together; the compiler-heavy SSR contract runs afterward.

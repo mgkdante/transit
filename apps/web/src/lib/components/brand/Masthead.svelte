@@ -73,7 +73,7 @@
 	.masthead-head--cornered {
 		position: relative;
 	}
-	@media (min-width: 768px) {
+	@media (--tablet-min) {
 		.masthead-head--cornered {
 			padding-block: 1.75rem;
 		}

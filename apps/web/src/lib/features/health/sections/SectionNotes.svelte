@@ -31,7 +31,7 @@
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 	}
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.health-note {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

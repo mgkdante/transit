@@ -118,7 +118,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.17.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.18.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -400,10 +400,11 @@ text. During SSR it returns the seed.
 
 ## Base stylesheet
 
-`@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, the
-semantic color utilities (`bg-primary`, `text-muted-foreground` and the rest), selection, focus
-ring, scrollbar, circuit grid, shared keyframes, and label styles. It uses Tailwind v4
-directives, so import it from the app stylesheet after Tailwind:
+`@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
+focus ring, scrollbar, circuit grid, shared keyframes, label styles and `.glass-chrome`. It imports
+`@yesid/tokens/theme.css`, which provides the Tailwind theme and the semantic color utilities
+(`bg-primary`, `text-muted-foreground` and the rest). It uses Tailwind v4 directives, so import it
+from the app stylesheet after Tailwind:
 
 ```css
 @import 'tailwindcss';
@@ -447,5 +448,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.17.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.18.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

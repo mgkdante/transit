@@ -277,17 +277,17 @@ const RENDER_SITES: readonly RenderSite[] = [
 				note: "strengthens the primitive's 60%-alpha hairline to full. Two consumers now disagree with the primitive about hairlines.",
 			},
 			{
-				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody tr ) { padding: 0; }",
+				rule: "@media (--desktop-max) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody tr ) { padding: 0; }",
 				verdict: 'drift:responsive-collapse',
 				note: 'zeroes the stacked row padding the primitive sets.',
 			},
 			{
-				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody th ), :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody td ) { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.875rem; border-bottom: 1px solid var(--border); }",
+				rule: "@media (--desktop-max) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody th ), :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody td ) { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.875rem; border-bottom: 1px solid var(--border); }",
 				verdict: 'drift:responsive-collapse',
 				note: "replaces the primitive's stacked label/value grid with a vertical flex layout, and overrides its gap, padding and separator. Responsive collapse remains primitive-owned; this is still drift.",
 			},
 			{
-				rule: "@media (max-width: 1023px) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody tr > :last-child ) { border-bottom: 0; }",
+				rule: "@media (--desktop-max) | :global( .data-table-frame[data-responsive='stack'][data-stack-at='tablet'] table.coverage-table.data-table tbody tr > :last-child ) { border-bottom: 0; }",
 				verdict: 'drift:responsive-collapse',
 				note: 'the trailing-edge cleanup the re-authored stack needs.',
 			},
@@ -303,7 +303,7 @@ const RENDER_SITES: readonly RenderSite[] = [
 				note: 'the detail-body scale, set bespoke.',
 			},
 			{
-				rule: '@media (min-width: 1024px) | :global(table.hotspot-tray-table.data-table) { font-size: var(--text-detail-body-desktop); }',
+				rule: '@media (--desktop-min) | :global(table.hotspot-tray-table.data-table) { font-size: var(--text-detail-body-desktop); }',
 				verdict: 'drift:type-scale',
 				note: 'and its desktop step. Byte-identical to the RepeatOffenderEvidenceTable pair below — the same override, invented twice.',
 			},
@@ -324,7 +324,7 @@ const RENDER_SITES: readonly RenderSite[] = [
 				note: 'the second copy of the HotspotSection pair.',
 			},
 			{
-				rule: '@media (min-width: 1024px) | :global(table.offender-evidence-table.data-table) { font-size: var(--text-detail-body-desktop); }',
+				rule: '@media (--desktop-min) | :global(table.offender-evidence-table.data-table) { font-size: var(--text-detail-body-desktop); }',
 				verdict: 'drift:type-scale',
 				note: 'the second copy of the HotspotSection desktop step.',
 			},

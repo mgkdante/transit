@@ -128,7 +128,7 @@
 		opacity: 1;
 	}
 
-	@media (max-width: 1023px) {
+	@media (--desktop-max) {
 		.chart-output[data-chart-layout='dense'] .chart-viewport {
 			max-width: 100%;
 			overflow-x: auto;

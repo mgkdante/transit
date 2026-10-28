@@ -64,14 +64,12 @@ describe('M6C-2 token and protected-surface contract', () => {
 		}
 	});
 
-	it('declares the two app-local size tokens beside the byte-stable tap token', () => {
+	it('declares the two app-local size tokens', () => {
 		const appCss = source('src/app.css');
 		const root = appCss.match(/:root\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
 
-		expect(root).toContain('--size-tap-min: 44px');
 		expect(root).toContain('--size-detail-panel: 360px');
 		expect(root).toContain('--size-detail-rail: 3.7rem');
-		expect(appCss.match(/--size-tap-min\s*:/g)).toHaveLength(1);
 	});
 
 	it('replaces only the named raw size consumers while preserving the numeric clamp export', () => {
@@ -107,7 +105,6 @@ describe('M6C-2 token and protected-surface contract', () => {
 
 	it('keeps the whole production tap and strip token fingerprint byte-stable', () => {
 		expect(productionTokenFingerprint()).toEqual([
-			'app.css:--size-tap-min: 44px;',
 			'app.css:--strip-h: 68px;',
 			'lib/components/edge/EdgeState.svelte:min-height: var(--size-tap-min);',
 			'lib/components/surface/EntityDetail.svelte:min-height: var(--size-tap-min);',

@@ -1,14 +1,14 @@
 import { generateDesignMd } from './generators/design-md.ts';
 import type { DesignMdOptions } from './generators/design-md.ts';
 import { generateMotionTs } from './generators/motion-ts.ts';
-import { generateThemeBlock } from './generators/theme-block.ts';
+import { generateThemeCss } from './generators/theme-css.ts';
 import { generateTokensCss } from './generators/tokens-css.ts';
 import type { TokenTree } from './types.ts';
 
 const generators = {
   designMd: generateDesignMd,
   motionTs: generateMotionTs,
-  themeBlock: generateThemeBlock,
+  themeCss: generateThemeCss,
   tokensCss: generateTokensCss,
 } as const;
 

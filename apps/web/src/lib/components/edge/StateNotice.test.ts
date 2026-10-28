@@ -108,7 +108,7 @@ describe('StateNotice — shared state presentation chassis', () => {
 			resolve(process.cwd(), 'src/lib/components/edge/StateNotice.svelte'),
 			'utf8',
 		);
-		const tokens = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+		const tokens = readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf8');
 		expect(source).toMatch(
 			/\.state-notice-title,\s*\.state-notice-body\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
 		);

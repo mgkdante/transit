@@ -453,7 +453,7 @@
 		}
 	}
 
-	@media (max-width: 767px) {
+	@media (--tablet-max) {
 		.map-progressive-copy {
 			bottom: 5rem;
 		}

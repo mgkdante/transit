@@ -1,4 +1,5 @@
 /* Shared app base styles. */
+@import '@yesid/tokens/theme.css';
 @import '@yesid/motion/tap-feedback.css';
 @import '@yesid/motion/lenis.css';
 
@@ -26,49 +27,6 @@ select {
 }
 
 @custom-variant dark (&:is([data-theme="dark"] *, .theme-dark *));
-
-/* Semantic color utilities (bg-primary, text-muted-foreground, ...) over the token variables. */
-@theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-popover: var(--popover);
-	--color-popover-foreground: var(--popover-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-border: var(--border);
-	--color-ring: var(--ring);
-	--color-input: var(--input);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-
-	--color-sidebar: var(--background);
-	--color-sidebar-foreground: var(--foreground);
-	--color-sidebar-accent: var(--accent);
-	--color-sidebar-accent-foreground: var(--accent-foreground);
-	--color-sidebar-border: var(--border);
-	--color-sidebar-ring: var(--ring);
-	--color-sidebar-primary: var(--primary);
-	--color-sidebar-primary-foreground: var(--primary-foreground);
-
-	--color-terminal: var(--terminal);
-	--color-manifesto: var(--manifesto);
-	--color-accent-text: var(--accent-text);
-	--color-border-subtle: var(--border-subtle);
-	--color-border-strong: var(--border-strong);
-	--color-success: var(--success);
-	--color-primary-hover: var(--primary-hover);
-	--color-accent-hover: var(--accent-hover);
-	--color-signage-bg: var(--signage-bg);
-	--color-signage-text: var(--signage-text);
-}
 
 @media (max-width: 767.98px) {
 	.metric-value.text-title {
@@ -191,6 +149,14 @@ pre, code, table {
 	border-top: 2px dashed var(--border-rule);
 }
 
+.glass-chrome {
+	background: color-mix(in srgb, var(--background) 92%, transparent);
+	border: 1px solid var(--border-brand);
+	-webkit-backdrop-filter: blur(var(--glass-blur));
+	backdrop-filter: blur(var(--glass-blur));
+	box-shadow: var(--shadow-nav);
+}
+
 .scrollbar-hidden {
 	scrollbar-width: none;
 	-ms-overflow-style: none;
@@ -203,7 +169,7 @@ pre, code, table {
 	font-family: var(--font-mono);
 	font-size: var(--text-caption);
 	text-transform: uppercase;
-	letter-spacing: 0.1em;
+	letter-spacing: var(--tracking-eyebrow);
 	color: var(--muted-foreground);
 }
 

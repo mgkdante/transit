@@ -525,8 +525,8 @@
 		border: 1px solid var(--mf-edge);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+		backdrop-filter: blur(var(--glass-blur-sm));
 		overflow: hidden;
 		transition-property: width;
 		transition-duration: var(--duration-slow);

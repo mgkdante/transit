@@ -1,6 +1,6 @@
 {
   "name": "@yesid/ui",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "svelte": "./src/index.ts",
@@ -113,6 +113,7 @@
   "dependencies": {
     "@lucide/svelte": "^1.18.0",
     "@yesid/motion": "file:../motion",
+    "@yesid/tokens": "file:../tokens",
     "bits-ui": "^2.16.3",
     "clsx": "^2.1.1",
     "paneforge": "^1.0.2",

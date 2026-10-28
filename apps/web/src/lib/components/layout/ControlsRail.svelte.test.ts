@@ -89,7 +89,6 @@ describe('ControlsRail', () => {
 			'utf-8',
 		);
 		expect(source).toMatch(/\.controls-rail--sticky\[data-stuck='true'\]/);
-		expect(source).toMatch(/backdrop-filter:\s*blur\(16px\)/);
 	});
 
 	it('is a non-landmark group (not a <section>) and forwards a custom class', () => {

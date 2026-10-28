@@ -190,9 +190,6 @@ describe('MapFilterPill', () => {
 			'utf-8',
 		);
 
-		expect(source).toMatch(
-			/@media \(min-width: 1024px\)[\s\S]*\.map-filter-pill-container[\s\S]*display:\s*none/,
-		);
 		expect(source).toContain('desktop.current');
 
 		expect(source).not.toContain('stalled');

@@ -147,7 +147,7 @@
 		margin-block-end: 0;
 	}
 
-	@media (min-width: 1024px) {
+	@media (--desktop-min) {
 		.typed-information-body {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;
