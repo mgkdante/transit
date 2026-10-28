@@ -15,3 +15,5 @@ scripts/.map-posters.mjs
 /src/lib/v1/schemas/generated/
 /.scratch-s1/
 /.scratch-s2/
+/test-results
+/playwright-report

@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.19.1',
-	tagObject: 'd66bfea9d5aa4595348934e4e268fffaa236be83',
-	peeledCommit: '9a07f77e5a167bc18607d76b633842ca5030d5bf',
-	assetName: 'yesid.dev-design-v0.19.1.tar',
-	assetSize: 1433600,
-	assetDigest: 'sha256:7c0d7b7038b7826686f25ee15239abe748c34d219faaacca1cd3e8066aaf8ff1',
+	tag: 'v0.20.0',
+	tagObject: '31bf2ad3a8d71a38c5d2e8a377a9bc7e0bfa332a',
+	peeledCommit: 'bd82c869bdeefe73987a1be3989fc2e1f763fb00',
+	assetName: 'yesid.dev-design-v0.20.0.tar',
+	assetSize: 1474560,
+	assetDigest: 'sha256:30d94d267068ba32e2ba97f98e13725fe5928ecdc56450d24d363184a9f4629a',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:79dca32a2d25b0eaed8323c3c96812ac91aacd6751b7f6a74091b8b7c5943737',
-	manifestDigest: 'a110bf261136c6fb474f78cc8efd124fb2db9aea9fdc4290d3f7183fd9635e7c',
+	treeHash: 'sha256:ca3a2f87cf9cab6e65d2433e4e060a4ae0417312813eecf025c021867c647325',
+	manifestDigest: '6dbe4f7da8ebf8e1db6c6e8351174f28be2cb9bd147ec0d3e572c5a1a36f1636',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -190,7 +190,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.19.1');
+		expect(packageJson.version).toBe('0.20.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -259,7 +259,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.19.1',
+			version: '0.20.0',
 		});
 		expect(files).toEqual([
 			'README.md',

@@ -194,7 +194,7 @@
 		position: relative;
 		display: grid;
 		align-items: center;
-		min-height: 300px;
+		min-height: 220px;
 	}
 
 	.header__circuit-grid {
@@ -299,7 +299,7 @@
 		align-items: center;
 		width: 100%;
 		margin-inline: auto;
-		padding: 3rem 1.25rem 2.5rem;
+		padding: 1.5rem 1.25rem 1.5rem;
 		text-align: center;
 	}
 
@@ -307,7 +307,7 @@
 		display: inline-flex;
 		align-items: center;
 		min-height: 44px;
-		margin-bottom: 1.25rem;
+		margin-bottom: 0.75rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-back-link);
 		letter-spacing: 0;
@@ -326,7 +326,7 @@
 		justify-content: center;
 		gap: 1rem;
 		max-width: calc(100% - 2rem);
-		margin-bottom: 1.25rem;
+		margin-bottom: 0.75rem;
 		font-family: var(--font-mono);
 		font-size: 11px;
 		letter-spacing: 3px;
@@ -343,7 +343,7 @@
 	}
 
 	.header__title {
-		margin: 0 0 1.25rem;
+		margin: 0 0 0.75rem;
 		font-family: var(--font-heading);
 		font-size: clamp(2rem, 5vw, 2.5rem);
 		font-weight: 900;
@@ -367,7 +367,7 @@
 
 	.header__subtitle {
 		max-width: 720px;
-		margin: 0 auto 1.25rem;
+		margin: 0 auto 0.75rem;
 		line-height: 1.6;
 	}
 
@@ -418,10 +418,6 @@
 		justify-content: center;
 		gap: 0.5rem;
 		width: 100%;
-		margin-top: 1.25rem;
-	}
-
-	.header__actions + .header__controls {
 		margin-top: 0.75rem;
 	}
 
@@ -447,7 +443,7 @@
 
 	@media (min-width: 1024px) {
 		.header-section {
-			min-height: 320px;
+			min-height: 240px;
 		}
 
 		.header__chevrons {
@@ -459,15 +455,15 @@
 		}
 
 		.header__content {
-			padding: 3.5rem 2rem 3.75rem;
+			padding: 1.75rem 2rem 2rem;
 		}
 
 		.header__back {
-			margin-bottom: 1.75rem;
+			margin-bottom: 1rem;
 		}
 
 		.header__cat-line {
-			margin-bottom: 1.5rem;
+			margin-bottom: 1rem;
 		}
 
 		.header__title {
@@ -476,7 +472,7 @@
 		}
 
 		.header__subtitle {
-			margin-bottom: 1.5rem;
+			margin-bottom: 1rem;
 		}
 	}
 
@@ -491,10 +487,6 @@
 
 		.header__back {
 			margin-bottom: 0.5rem;
-		}
-
-		.header__controls {
-			margin-top: 0.75rem;
 		}
 	}
 

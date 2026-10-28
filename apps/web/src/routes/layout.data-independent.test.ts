@@ -261,7 +261,7 @@ describe('root layout data-independent legal routes', () => {
 	});
 
 	it.each(['en', 'fr'] as const)(
-		'preserves shallow filters in both %s language links',
+		'preserves shallow filters in the %s language link',
 		async (locale) => {
 			const path = `${locale === 'fr' ? '/fr' : ''}/alerts`;
 			const { getByRole, container } = renderWithoutV1(path, locale);
@@ -270,10 +270,8 @@ describe('root layout data-independent legal routes', () => {
 				const query = `?provider=stm&route=144&stop=52458&from=2026-09-21&to=2026-09-21${severity ? `&severity=${severity}` : ''}#alerts`;
 				harness.shallowUrl(path + query);
 				await tick();
-				const links = container.querySelectorAll(
-					'a[aria-label^="Switch language"], a[aria-label^="Changer de langue"]',
-				);
-				expect(links).toHaveLength(2);
+				const links = container.querySelectorAll('[data-testid="language-toggle"]');
+				expect(links).toHaveLength(1);
 				for (const link of links)
 					expect(link).toHaveAttribute('href', `${locale === 'en' ? '/fr' : ''}/alerts${query}`);
 			}
@@ -297,7 +295,7 @@ describe('root layout data-independent legal routes', () => {
 		const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
 		const cancel = vi.fn();
 		const href = 'https://transit.yesid.dev/network?provider=octranspo';
-		harness.beforeNavigateCallbacks.at(-1)?.({
+		harness.beforeNavigateCallbacks[0]?.({
 			willUnload: false,
 			to: { url: new URL(href) },
 			cancel,
@@ -446,7 +444,7 @@ describe('root layout data-independent legal routes', () => {
 			}
 
 			await fireEvent.click(view.getByRole('button', { name: openMenu }));
-			const menu = view.getByTestId('nav-menu');
+			const menu = view.getByRole('dialog');
 			expect(menu).toBeInTheDocument();
 			expectLegalDestinationsAbsent(menu, legalLabel, links);
 
@@ -476,7 +474,7 @@ describe('root layout data-independent legal routes', () => {
 				complete: Promise.resolve(),
 			};
 
-			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
+			const blocker = harness.onNavigateCallbacks[0]?.(navigation);
 
 			expect(harness.runViewTransition).toHaveBeenCalledOnce();
 			expect(harness.runViewTransition).toHaveBeenCalledWith(navigation);

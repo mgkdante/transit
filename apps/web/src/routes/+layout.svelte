@@ -359,8 +359,6 @@
 	<AppShell
 		{locale}
 		url={currentMirrorUrl($page.url)}
-		providerName={v1?.manifest.display_name}
-		providerShortName={v1?.manifest.short_name ?? undefined}
 		providerId={data.providerId}
 		providers={data.providers}
 		bind:search={topSearch}
@@ -412,10 +410,7 @@
 							liveLabel={footer.liveLabel}
 						>
 							{#snippet brand()}
-								<BrandCluster
-									variant="footer"
-									productHref={localizeHref('/', locale, data.providerId)}
-								/>
+								<BrandCluster productHref={localizeHref('/', locale, data.providerId)} />
 							{/snippet}
 							{#snippet statusStart()}
 								<p class="footer-honesty m-0 text-center sm:text-left">

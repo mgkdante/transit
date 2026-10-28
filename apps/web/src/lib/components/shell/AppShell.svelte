@@ -12,8 +12,6 @@
 	interface AppShellProps {
 		locale?: Locale;
 		url?: URL;
-		providerName?: string;
-		providerShortName?: string;
 		providerId?: string;
 		providers?: PublicProvider[];
 		search?: string;
@@ -33,8 +31,6 @@
 	let {
 		locale: localeProp,
 		url,
-		providerName,
-		providerShortName,
 		providerId,
 		providers,
 		search = $bindable(''),
@@ -70,8 +66,6 @@
 		<NavPill
 			{locale}
 			{url}
-			{providerName}
-			{providerShortName}
 			{providerId}
 			{providers}
 			bind:search

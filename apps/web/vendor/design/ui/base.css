@@ -34,6 +34,25 @@ select {
 	}
 }
 
+/* SiteHeader geometry, shared with page offsets and body-portaled dialogs. */
+:root {
+	--nav-top: calc(1rem + env(safe-area-inset-top, 0px));
+	--nav-control: 44px;
+	--nav-padding-y: 12px;
+	--nav-border: 2px;
+	--nav-clearance: calc(var(--nav-top) + var(--nav-control) + 2 * var(--nav-padding-y) + 2 * var(--nav-border));
+}
+@media (max-width: 767px) {
+	:root {
+		--nav-padding-y: 8px;
+	}
+}
+@media (max-width: 479px) {
+	:root {
+		--nav-padding-y: 6px;
+	}
+}
+
 html {
 	background-color: var(--background);
 	color: var(--foreground);

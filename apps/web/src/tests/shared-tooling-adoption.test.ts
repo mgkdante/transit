@@ -35,7 +35,6 @@ const ACTIONS = {
 } as const;
 const DB_WORK = ['offline-tests-work', 'alembic-single-head-work', 'real-db-tests-work'];
 const DB_CONTEXTS = ['offline-tests', 'alembic-single-head', 'real-db-tests'];
-const WEB_WORK = ['ci-work', 'map-poster-check'];
 const GOVERNED_PR_WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/web.yml'];
 
 function text(path: string): string {
@@ -103,6 +102,13 @@ function directNeeds(job: string): string[] {
 	}
 	const scalar = job.match(/^ {4}needs:\s*([A-Za-z0-9_-]+)\s*$/mu);
 	return scalar ? [scalar[1]!] : [];
+}
+
+/** Every job the path classifier gates; the always-on reporter must wait for all of them. */
+function classifiedJobs(jobs: Map<string, string>): string[] {
+	return [...jobs]
+		.filter(([, block]) => block.includes('needs.classify.outputs.classification).relevant['))
+		.map(([name]) => name);
 }
 
 function classifierRules(source: string): ClassifierRules {
@@ -272,7 +278,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(directNeeds(work)).toEqual(['classify']);
 		expect(work).toContain("relevant['ci-work']");
 		expect(work).toContain('node --test .github/scripts/deploy-scope.test.mjs');
-		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+		expect(directNeeds(reporter).sort()).toEqual(['classify', ...classifiedJobs(jobs)].sort());
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);
 
@@ -418,7 +424,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		const checkPosters = poster.indexOf('bun run map-posters:check');
 		expect(checkPosters).toBeGreaterThanOrEqual(0);
 		expect(poster).not.toContain('playwright-core install');
-		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+		expect(directNeeds(reporter).sort()).toEqual(['classify', ...classifiedJobs(webJobs)].sort());
 
 		const posterScript = text('apps/web/scripts/build-map-posters.ts');
 		expect(posterScript).not.toContain('/usr/bin/google-chrome');
@@ -535,7 +541,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 	it('makes an exact Node pin change exercise every affected owned lane', () => {
 		const webRules = classifierRules(text('.github/workflows/web.yml'));
-		expect(classify('.nvmrc', webRules)).toEqual({
+		expect(classify('.nvmrc', webRules)).toMatchObject({
 			'ci-work': true,
 			'map-poster-check': true,
 		});
@@ -569,23 +575,37 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		const posterWeb = { 'ci-work': true, 'map-poster-check': true };
 		const allWeb = { 'ci-work': true, 'map-poster-check': true };
 		const noWeb = { 'ci-work': false, 'map-poster-check': false };
-		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
-		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
-		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
-		expect(classify('apps/web/browser-toolchain.json', webRules)).toEqual(posterWeb);
-		expect(classify('apps/web/package.json', webRules)).toEqual(posterWeb);
-		expect(classify('apps/web/static/map/basemap-montreal-posters.json', webRules)).toEqual(
+		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toMatchObject(productWeb);
+		expect(classify('apps/data-proxy/src/index.ts', webRules)).toMatchObject(productWeb);
+		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toMatchObject(posterWeb);
+		expect(classify('apps/web/browser-toolchain.json', webRules)).toMatchObject(posterWeb);
+		expect(classify('apps/web/package.json', webRules)).toMatchObject(posterWeb);
+		expect(classify('apps/web/static/map/basemap-montreal-posters.json', webRules)).toMatchObject(
 			posterWeb,
 		);
-		expect(classify('apps/web/src/lib/components/map/basemap.ts', webRules)).toEqual(posterWeb);
-		expect(classify('apps/web/src/lib/features/map/mapCameraFraming.ts', webRules)).toEqual(
+		expect(classify('apps/web/src/lib/components/map/basemap.ts', webRules)).toMatchObject(
 			posterWeb,
 		);
-		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
-		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
-		expect(classify('.nvmrc', webRules)).toEqual(allWeb);
-		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);
-		expect(classify('README.md', webRules)).toEqual(noWeb);
-		expect(classify('new-root-surface.txt', webRules)).toEqual(allWeb);
+		expect(classify('apps/web/src/lib/features/map/mapCameraFraming.ts', webRules)).toMatchObject(
+			posterWeb,
+		);
+		expect(classify('.github/workflows/ci.yml', webRules)).toMatchObject(allWeb);
+		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toMatchObject(
+			allWeb,
+		);
+		expect(classify('.nvmrc', webRules)).toMatchObject(allWeb);
+		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toMatchObject(noWeb);
+		expect(classify('README.md', webRules)).toMatchObject(noWeb);
+		expect(classify('new-root-surface.txt', webRules)).toMatchObject(allWeb);
+
+		// The e2e lane runs for web changes and for anything that runs every lane.
+		for (const [path, e2e] of [
+			['apps/web/src/routes/+page.svelte', true],
+			['.nvmrc', true],
+			['apps/data-proxy/src/index.ts', false],
+			['README.md', false],
+		] as const) {
+			expect(classify(path, webRules).e2e).toBe(e2e);
+		}
 	});
 });

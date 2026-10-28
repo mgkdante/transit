@@ -87,3 +87,16 @@ export {
 	type RevealTocTargetOptions,
 	type TocEntry,
 } from './toc.js';
+
+export { default as Wordmark } from './Wordmark.svelte';
+export type { WordmarkProps } from './Wordmark.svelte';
+
+export { default as LanguageToggle } from './LanguageToggle.svelte';
+export type { LanguageToggleProps } from './LanguageToggle.svelte';
+
+export {
+	resetFocusAfterNavigation,
+	type NavigationEvent,
+	type OnNavigate,
+	type SiteNavigation,
+} from './navigation.js';
