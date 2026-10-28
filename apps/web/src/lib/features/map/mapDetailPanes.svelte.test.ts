@@ -154,13 +154,13 @@ describe('mapDetailPanes persistence', () => {
 
 describe('mapDetailPanes rail-offset publication', () => {
 	beforeEach(() => {
-		document.documentElement.style.removeProperty('--app-effective-rail-offset');
-		document.documentElement.style.removeProperty('--app-rail-offset-duration');
+		document.documentElement.style.removeProperty('--site-header-inset-end');
+		document.documentElement.style.removeProperty('--site-header-inset-duration');
 	});
 
 	afterEach(() => {
-		document.documentElement.style.removeProperty('--app-effective-rail-offset');
-		document.documentElement.style.removeProperty('--app-rail-offset-duration');
+		document.documentElement.style.removeProperty('--site-header-inset-end');
+		document.documentElement.style.removeProperty('--site-header-inset-duration');
 	});
 
 	it.each([
@@ -192,10 +192,10 @@ describe('mapDetailPanes rail-offset publication', () => {
 
 			expect(hero.style.getPropertyValue('--app-right-detail-offset')).toBe('440px');
 			expect(hero.style.getPropertyValue('--map-detail-offset')).toBe(expectedOffset);
-			expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			expect(document.documentElement.style.getPropertyValue('--site-header-inset-end')).toBe(
 				expectedOffset,
 			);
-			expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe(
+			expect(document.documentElement.style.getPropertyValue('--site-header-inset-duration')).toBe(
 				'',
 			);
 		},
@@ -206,21 +206,21 @@ describe('mapDetailPanes rail-offset publication', () => {
 		const hero = document.createElement('div');
 
 		const cleanup = publishRailOffset(hero, 360, true, false, true);
-		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+		expect(document.documentElement.style.getPropertyValue('--site-header-inset-end')).toBe(
 			'360px',
 		);
-		expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe(
+		expect(document.documentElement.style.getPropertyValue('--site-header-inset-duration')).toBe(
 			'0ms',
 		);
 
 		cleanup();
-		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
-			'0px',
+		expect(document.documentElement.style.getPropertyValue('--site-header-inset-end')).toBe('0px');
+		expect(document.documentElement.style.getPropertyValue('--site-header-inset-duration')).toBe(
+			'',
 		);
-		expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe('');
 
 		publishRailOffset(hero, 420, true, false, false);
-		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+		expect(document.documentElement.style.getPropertyValue('--site-header-inset-end')).toBe(
 			'420px',
 		);
 		expect(hero.style.getPropertyValue('--map-detail-offset')).toBe('420px');

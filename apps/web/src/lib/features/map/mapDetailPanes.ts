@@ -28,13 +28,13 @@ export function publishRailOffset(
 
 	element.style.setProperty('--app-right-detail-offset', detailWidth);
 	element.style.setProperty('--map-detail-offset', effectiveOffset);
-	root.style.setProperty('--app-effective-rail-offset', effectiveOffset);
-	if (dragging) root.style.setProperty('--app-rail-offset-duration', '0ms');
-	else root.style.removeProperty('--app-rail-offset-duration');
+	root.style.setProperty('--site-header-inset-end', effectiveOffset);
+	if (dragging) root.style.setProperty('--site-header-inset-duration', '0ms');
+	else root.style.removeProperty('--site-header-inset-duration');
 
 	return () => {
-		root.style.setProperty('--app-effective-rail-offset', '0px');
-		root.style.removeProperty('--app-rail-offset-duration');
+		root.style.setProperty('--site-header-inset-end', '0px');
+		root.style.removeProperty('--site-header-inset-duration');
 	};
 }
 

@@ -1476,7 +1476,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		const setPropertySpy = vi
 			.spyOn(rootStyle, 'setProperty')
 			.mockImplementation((property: string, value: string | null, priority?: string) => {
-				if (armed && property === '--app-effective-rail-offset' && value === '0px') {
+				if (armed && property === '--site-header-inset-end' && value === '0px') {
 					targetCleanupCalls += 1;
 					if (targetCleanupCalls === 1) throw cleanupError;
 				}
