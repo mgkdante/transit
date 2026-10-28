@@ -103,7 +103,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.25.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.25.1 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -387,9 +387,10 @@
         "111ab1fe3cc2bc29a4d8c8ce9b171d6c304241c13c41b2df39e63791de7ad727",
         "a728113e0aa1865d2390a32480902c3c0d60c190411c7ea6754dfc3cc62c2c82",
         "afa4c2e19c671b442db3412c55c546cfe50b23c2672f3a29b343b003eec9c3fd",
-        "18ca9668bdc68abb7f7a688930c6edefd12b8e1fbeeeffcfa3ccf4112b69c19e"
+        "18ca9668bdc68abb7f7a688930c6edefd12b8e1fbeeeffcfa3ccf4112b69c19e",
+        "65bf9889517ef8f5b342d23eb0ace8479f046f64c38103ea2eea778b6878f848"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.25.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.25.1; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -486,7 +487,8 @@
         "cdff5534d67e5bf42e20ec6284b58a6b9c0895bca93c4a1f444cfbe1e59e1e53",
         "fe68a0bfbec08d186799662a8ced339ae4404fe9bf5146a7e24d8d21596ac812",
         "343541db680f2367cc65c5ceaba37641c10dbb29adf9e4f8ee275786541edd23",
-        "b3c57392f9effa0dfe8c4498dcd142b00a2ff43e7d77d9d45fedababf3f65a74"
+        "b3c57392f9effa0dfe8c4498dcd142b00a2ff43e7d77d9d45fedababf3f65a74",
+        "43fbe45bf3fd9fcbf79a627c68ed5c5e468e0c076ccaac8fb60ad9dcf9b9eb42"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },
