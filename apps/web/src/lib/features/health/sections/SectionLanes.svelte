@@ -18,7 +18,7 @@
 	const t = $derived(copy.lanes);
 </script>
 
-<TerminalPanel title={t.terminal.title} tag={t.terminal.tag} class="lanes-terminal">
+<TerminalPanel title={t.terminal.title} tag={t.terminal.tag}>
 	<div class="health-block" data-slot="lanes-section">
 		<p class="health-note">{t.note}</p>
 		<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>

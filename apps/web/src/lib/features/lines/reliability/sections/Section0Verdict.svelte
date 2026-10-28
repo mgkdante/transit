@@ -176,7 +176,6 @@
 	<TerminalPanel
 		title={copy.sections.verdict.terminal.title}
 		tag={copy.sections.verdict.terminal.tag}
-		class="verdict-terminal"
 	>
 		<VerdictBanner result={verdict} />
 
