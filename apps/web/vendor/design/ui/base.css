@@ -85,6 +85,17 @@ pre, code, table {
 		outline: 2px solid var(--primary);
 		outline-offset: 2px;
 	}
+
+	/* A link without a class is a text link (prose, CMS HTML, inline copy); components style their own. */
+	a:not([class], svg *) {
+		color: var(--accent-text);
+		text-decoration-line: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.2em;
+	}
+	a:not([class], svg *):hover {
+		text-decoration-thickness: 2px;
+	}
 }
 
 * {

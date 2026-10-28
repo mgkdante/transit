@@ -6,7 +6,7 @@
   `--site-header-inset-duration`. Snippets can query the header's width with `@container site-header`.
 -->
 <script lang="ts" module>
-	import type { Snippet } from 'svelte';
+	import type { Component, Snippet } from 'svelte';
 	import type { LanguageToggleProps } from '../brand/LanguageToggle.svelte';
 	import type { SiteNavigation } from '../brand/navigation.js';
 
@@ -26,6 +26,8 @@
 		/** Opens in a new tab with `rel="noopener noreferrer"`. */
 		external?: boolean;
 		ariaLabel?: string;
+		/** A Lucide-style icon component, lit on the current page; without one the item shows a stop. */
+		icon?: Component<{ class?: string }>;
 	}
 
 	export interface SiteHeaderLabels {
@@ -36,6 +38,7 @@
 		theme: string;
 		/** Accessible name of the header's navigation. */
 		nav?: string;
+		/** Defaults to "Navigation · All routes" in the language's locale; an empty string hides it. */
 		menuFooter?: string;
 	}
 
@@ -53,6 +56,12 @@
 		/** Rendered before the theme, language and menu controls. */
 		actions?: Snippet;
 	}
+
+	const MENU_FOOTER: Readonly<Record<string, string>> = {
+		en: 'Navigation · All routes',
+		fr: 'Navigation · Toutes les routes',
+		es: 'Navegación · Todas las rutas',
+	};
 </script>
 
 <script lang="ts">
@@ -70,6 +79,7 @@
 
 	const contentId = $props.id();
 	const linksFrom = $derived(Math.min(...links.map((link) => link.priority ?? 1)));
+	const menuFooter = $derived(labels.menuFooter ?? MENU_FOOTER[language?.locale ?? 'en'] ?? MENU_FOOTER.en);
 
 	let pill: HTMLElement;
 	let menuToggle: HTMLButtonElement;
@@ -301,9 +311,13 @@
 									onclick={close}
 									style="--item-index: {i}"
 								>
-									<span class="menu-stop" class:menu-stop-active={item.current}>
-										{#if item.current}<span class="menu-stop-fill"></span>{/if}
-									</span>
+									{#if item.icon}
+										<item.icon class="menu-icon" />
+									{:else}
+										<span class="menu-stop" class:menu-stop-active={item.current}>
+											{#if item.current}<span class="menu-stop-fill"></span>{/if}
+										</span>
+									{/if}
 									{#if i < menuItems.length - 1}
 										<span class="menu-line" class:menu-line-active={item.current}></span>
 									{/if}
@@ -314,10 +328,10 @@
 								</a>
 							{/each}
 						</nav>
-						{#if labels.menuFooter}
+						{#if menuFooter}
 							<div class="menu-footer">
 								<span class="menu-footer-line"></span>
-								<span class="menu-footer-label">{labels.menuFooter}</span>
+								<span class="menu-footer-label">{menuFooter}</span>
 								<span class="menu-footer-line"></span>
 							</div>
 						{/if}
@@ -613,7 +627,9 @@
 		display: flex;
 		align-items: flex-start;
 		gap: 20px;
-		padding-block: 14px;
+		--menu-pad: 14px;
+		padding-block: var(--menu-pad);
+		font-size: var(--text-menu-label-mobile);
 		text-decoration: none;
 		opacity: 1;
 		transform: translateY(0);
@@ -658,13 +674,38 @@
 		border-radius: 50%;
 		background: var(--primary);
 	}
+	/* Centred on the label's first line (line-height 1.5). */
+	.menu-item :global(.menu-icon) {
+		flex-shrink: 0;
+		width: 24px;
+		height: 24px;
+		margin-top: calc(0.75em - 12px);
+		color: var(--muted-foreground);
+		stroke-width: 1.75;
+		transition:
+			color var(--duration-fast),
+			fill var(--duration-fast);
+	}
+	.menu-item:hover :global(.menu-icon) {
+		color: var(--primary);
+	}
+	.menu-item-active :global(.menu-icon) {
+		color: var(--primary);
+		fill: color-mix(in srgb, var(--primary) 25%, transparent);
+		filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow) 50%, transparent));
+	}
 	.menu-line {
 		position: absolute;
 		left: 6px;
-		top: 33px;
-		bottom: -14px;
+		top: calc(var(--menu-pad) + 19px);
+		bottom: calc(-1 * var(--menu-pad));
 		width: 2px;
 		background: color-mix(in srgb, var(--foreground) 6%, transparent);
+	}
+	.menu-item:has(> :global(.menu-icon)) .menu-line {
+		left: 11px;
+		top: calc(var(--menu-pad) + 0.75em + 12px);
+		bottom: calc(12px - 0.75em - var(--menu-pad));
 	}
 	.menu-line-active {
 		background: linear-gradient(
@@ -683,15 +724,15 @@
 	}
 	.menu-label {
 		font-family: var(--font-heading);
-		font-size: var(--text-menu-label-mobile);
 		font-weight: 600;
+		line-height: 1.5;
 		color: var(--secondary-foreground);
 		transition:
 			color var(--duration-fast),
 			text-shadow var(--duration-fast);
 	}
 	@media (min-width: 768px) {
-		.menu-label {
+		.menu-item {
 			font-size: var(--text-menu-label-desktop);
 		}
 	}
@@ -730,17 +771,16 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-menu-subtitle);
 		letter-spacing: 0;
+		text-transform: uppercase;
 		color: color-mix(in srgb, var(--primary) 85%, transparent);
 		white-space: nowrap;
 	}
 
 	@media (max-height: 720px) {
-		.menu-label {
-			font-size: clamp(1.5rem, 2vw, 1.75rem);
-		}
 		.menu-item {
 			min-height: 44px;
-			padding-block: 10px;
+			--menu-pad: 10px;
+			font-size: clamp(1.5rem, 2vw, 1.75rem);
 		}
 	}
 
@@ -750,7 +790,8 @@
 		.nav-collapsible,
 		.menu-toggle-line,
 		.menu-overlay,
-		.menu-item {
+		.menu-item,
+		.menu-item :global(.menu-icon) {
 			transition: none;
 		}
 	}
