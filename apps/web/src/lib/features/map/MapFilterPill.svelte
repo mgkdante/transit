@@ -178,7 +178,7 @@
 			1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--map-controls-drawer-gap)
 		);
 		--map-controls-drawer-bottom: calc(
-			5.25rem + env(safe-area-inset-bottom, 0px) + 44px + var(--map-controls-drawer-gap)
+			1rem + env(safe-area-inset-bottom, 0px) + 44px + var(--map-controls-drawer-gap)
 		);
 		top: auto;
 		left: 0.75rem;

@@ -107,7 +107,6 @@
 <svelte:window onkeydown={closeFilters} />
 <section class="home-explore" data-slot="home-explore" aria-labelledby="home-explore-title">
 	<header class="home-intro" data-slot="home-audit-brief">
-		<p class="home-kicker label-metric">{t.auditKicker}</p>
 		<h1 id="home-explore-title">{t.headline} <span>{t.headlineAccent}</span></h1>
 		<p class="home-lede">{t.auditBody}</p>
 	</header>
@@ -211,10 +210,6 @@
 		gap: clamp(1.75rem, 4vw, 3rem);
 		width: 100%;
 		padding-bottom: 3rem;
-	}
-	.home-kicker {
-		margin: 0 0 1rem;
-		color: var(--accent-text);
 	}
 	.home-intro h1 {
 		margin: 0;
@@ -379,9 +374,9 @@
 		margin: 0;
 		color: var(--accent-text);
 		font-family: var(--font-heading);
-		font-size: var(--text-body);
+		font-size: var(--text-heading);
 		font-weight: 800;
-		line-height: 1.4;
+		line-height: 1.25;
 	}
 	.home-clear {
 		min-height: 44px;

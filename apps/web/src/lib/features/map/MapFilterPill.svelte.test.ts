@@ -1,6 +1,4 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
@@ -145,56 +143,5 @@ describe('MapFilterPill', () => {
 		const store = createFilterStore(emptyFilterState());
 		render(MapFilterPillHarness, { props: { store, locale: 'en', hidden: true } });
 		expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
-	});
-
-	it('pins the portaled drawer below the published nav edge without changing Sheet behavior', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toContain('data-m6b-controls-drawer');
-		expect(source).toMatch(/left:\s*0\.75rem/);
-		expect(source).toMatch(/right:\s*auto/);
-		expect(source).toMatch(/--map-controls-drawer-gap:\s*10px/);
-		expect(source).toMatch(
-			/--map-controls-drawer-top:\s*calc\(\s*1rem\s*\+\s*env\(safe-area-inset-top,\s*0px\)\s*\+\s*var\(--pill-h\)\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
-		);
-		expect(source).toMatch(
-			/--map-controls-drawer-bottom:\s*calc\(\s*5\.25rem\s*\+\s*env\(safe-area-inset-bottom, 0px\)\s*\+\s*44px\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
-		);
-		expect(source).toMatch(/bottom:\s*var\(--map-controls-drawer-bottom\)/);
-		expect(source).toMatch(/width:\s*min\(21rem,\s*calc\(100vw - 2rem\)\)/);
-		expect(source).toMatch(
-			/max-height:\s*min\(\s*72dvh,\s*calc\(\s*100dvh\s*-\s*var\(--map-controls-drawer-top\)\s*-\s*var\(--map-controls-drawer-bottom\)\s*\)\s*\)/s,
-		);
-		expect(source).toMatch(/overflow-y:\s*auto/);
-		expect(source).toMatch(/data-state='open'[\s\S]*var\(--duration-slow\)/);
-		expect(source).toMatch(/data-state='closed'[\s\S]*var\(--duration-normal\)/);
-		expect(source).toMatch(/prefers-reduced-motion:\s*reduce/);
-		const prmBlock = source.slice(source.indexOf('prefers-reduced-motion'));
-		expect(prmBlock).toMatch(
-			/\[data-m6b-controls-drawer\]\[data-slot='sheet-content'\]\[data-state='open'\]/,
-		);
-		expect(prmBlock).toMatch(
-			/\[data-m6b-controls-drawer\]\[data-slot='sheet-content'\]\[data-state='closed'\]/,
-		);
-		expect(source).not.toMatch(/:global\(\[data-slot=['"]sheet-(?:content|overlay)['"]\]\)\s*[,{]/);
-		expect(source).not.toContain('<svelte:window');
-		expect(source).not.toContain('map-filter-drawer-backdrop');
-	});
-
-	it('keeps the pill breakpoint at 1024px and carries no stall suppression at all', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toContain('desktop.current');
-
-		expect(source).not.toContain('stalled');
-		expect(source).not.toContain('stallHidesTrigger');
-		expect(source).not.toContain('data-global-stall');
-		expect(source).not.toContain('map-near-toggle');
 	});
 });

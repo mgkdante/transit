@@ -64,17 +64,13 @@ afterEach(() => {
 });
 
 describe('Home civic overview and directory', () => {
-	it.each(['en', 'fr'] as const)(
-		'uses the selected city in the %s heading and kicker',
-		(locale) => {
-			state.locale = locale;
-			state.city = 'Ottawa';
-			const { container } = renderHome();
-			expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Ottawa');
-			expect(container.querySelector('.home-kicker')).toHaveTextContent('Ottawa');
-			expect(container).not.toHaveTextContent('Montréal');
-		},
-	);
+	it.each(['en', 'fr'] as const)('uses the selected city in the %s heading', (locale) => {
+		state.locale = locale;
+		state.city = 'Ottawa';
+		const { container } = renderHome();
+		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Ottawa');
+		expect(container).not.toHaveTextContent('Montréal');
+	});
 	it.each(['en', 'fr'] as const)(
 		'preserves every destination once as a native localized link in %s',
 		(locale) => {

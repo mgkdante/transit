@@ -15,7 +15,6 @@
 	);
 	const copy = $derived({
 		...homeCopy[locale],
-		auditKicker: homeCopy[locale].auditKicker.replace('{city}', city),
 		headline: homeCopy[locale].headline.replace('{city}', city),
 	});
 </script>

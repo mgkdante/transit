@@ -2,7 +2,6 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceTarget } from '$lib/nav';
 
 type CopyKey =
-	| 'auditKicker'
 	| 'auditBody'
 	| 'headline'
 	| 'headlineAccent'
@@ -23,7 +22,6 @@ type CopyKey =
 
 export const homeCopy = defineCopy({
 	fr: {
-		auditKicker: '{city} · Données publiques',
 		auditBody:
 			'Un regard citoyen sur la santé du réseau : retards, fiabilité et limites des données publiques.',
 		headline: 'Le transport à {city},',
@@ -45,7 +43,6 @@ export const homeCopy = defineCopy({
 		exploreNav: 'Tout explorer',
 	},
 	en: {
-		auditKicker: '{city} · Public data',
 		auditBody:
 			'A citizen’s view of network health: delays, reliability, and the limits of public data.',
 		headline: 'How {city}’s',
