@@ -1,1 +1,52 @@
-{"schema_version":1,"methodology_version":"providers-1","publish_generation_id":"providers@2026-10-04T20:52:28.217674Z","generated_utc":"2026-10-04T20:52:28.217674Z","default_provider":"stm","providers":[{"id":"octranspo","labels":{"en":{"city":"Ottawa","operator":"OC Transpo"},"fr":{"city":"Ottawa","operator":"OC Transpo"}},"fit_bounds":[-75.95,45.2,-75.43,45.55],"max_bounds":[-76.15,45.1,-75.24,45.65],"geocode_context":"Ottawa, Ontario","posters_url":"/map/basemap-ottawa-posters.json","alert_links":{"en":"https://www.octranspo.com/en/alerts/","fr":"https://www.octranspo.com/fr/alertes/"},"inputs":{"static_schedule":true,"gis_static":false,"trip_updates":true,"vehicle_positions":true,"i3_alerts":false,"service_alerts":false}},{"id":"stm","labels":{"en":{"city":"Montréal","operator":"STM"},"fr":{"city":"Montréal","operator":"STM"}},"fit_bounds":[-73.9757,45.4022,-73.4764,45.7028],"max_bounds":[-74.28605,45.3,-73.16605,45.82],"geocode_context":"Montréal, Québec","posters_url":"/map/basemap-montreal-posters.json","alert_links":{},"inputs":{"static_schedule":true,"gis_static":true,"trip_updates":true,"vehicle_positions":true,"i3_alerts":true,"service_alerts":false}}]}
+{
+	"schema_version": 1,
+	"methodology_version": "providers-1",
+	"publish_generation_id": "providers@2026-10-04T20:52:28.217674Z",
+	"generated_utc": "2026-10-04T20:52:28.217674Z",
+	"default_provider": "stm",
+	"providers": [
+		{
+			"id": "octranspo",
+			"labels": {
+				"en": { "city": "Ottawa", "operator": "OC Transpo" },
+				"fr": { "city": "Ottawa", "operator": "OC Transpo" }
+			},
+			"fit_bounds": [-75.95, 45.2, -75.43, 45.55],
+			"max_bounds": [-76.15, 45.1, -75.24, 45.65],
+			"geocode_context": "Ottawa, Ontario",
+			"posters_url": "/map/basemap-ottawa-posters.json",
+			"alert_links": {
+				"en": "https://www.octranspo.com/en/alerts/",
+				"fr": "https://www.octranspo.com/fr/alertes/"
+			},
+			"inputs": {
+				"static_schedule": true,
+				"gis_static": false,
+				"trip_updates": true,
+				"vehicle_positions": true,
+				"i3_alerts": false,
+				"service_alerts": false
+			}
+		},
+		{
+			"id": "stm",
+			"labels": {
+				"en": { "city": "Montréal", "operator": "STM" },
+				"fr": { "city": "Montréal", "operator": "STM" }
+			},
+			"fit_bounds": [-73.9757, 45.4022, -73.4764, 45.7028],
+			"max_bounds": [-74.28605, 45.3, -73.16605, 45.82],
+			"geocode_context": "Montréal, Québec",
+			"posters_url": "/map/basemap-montreal-posters.json",
+			"alert_links": {},
+			"inputs": {
+				"static_schedule": true,
+				"gis_static": true,
+				"trip_updates": true,
+				"vehicle_positions": true,
+				"i3_alerts": true,
+				"service_alerts": false
+			}
+		}
+	]
+}
