@@ -1,3 +1,4 @@
+import { clock } from '@yesid/ui/state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { createSubscriber } from 'svelte/reactivity';
@@ -28,6 +29,18 @@ vi.mock('$app/environment', () => ({
 		return mocks.browser;
 	},
 }));
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: {
+		get now() {
+			return mocks.nowMs;
+		},
+		get serverNow() {
+			return mocks.nowMs + mocks.offsetMs;
+		},
+		subscribe: mocks.clockSubscribe,
+	},
+}));
 vi.mock('$lib/stores', async () => {
 	const { createSubscriber } = await import('svelte/reactivity');
 	let refreshEpoch = 0;
@@ -42,15 +55,6 @@ vi.mock('$lib/stores', async () => {
 		};
 	});
 	return {
-		sharedClock: {
-			get now() {
-				return mocks.nowMs;
-			},
-			get serverNow() {
-				return mocks.nowMs + mocks.offsetMs;
-			},
-			subscribe: mocks.clockSubscribe,
-		},
 		dataRefresh: {
 			get epoch() {
 				subscribe();
@@ -72,11 +76,11 @@ vi.mock('$lib/v1/adapter', () => ({
 }));
 
 import { createLiveStore, type LiveFamily } from './store.svelte';
-import { dataRefresh, sharedClock } from '$lib/stores';
+import { dataRefresh } from '$lib/stores';
 import { configureV1Runtime } from '$lib/v1/runtime';
 import type { NetworkFile } from '$lib/v1/schemas';
 
-configureV1Runtime({ clock: sharedClock, refresh: dataRefresh });
+configureV1Runtime({ clock, refresh: dataRefresh });
 
 function resetLiveFetches(): void {
 	mocks.resetRefreshEpoch();

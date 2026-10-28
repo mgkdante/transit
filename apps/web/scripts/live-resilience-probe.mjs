@@ -1255,8 +1255,7 @@ try {
 				ttlMultiplier: STALE_TTL_MULTIPLIER,
 				thresholdS: staleThresholdS,
 				thresholdMs: staleThresholdS * 1_000,
-				comparison:
-					'Math.round((sharedClock.serverNow - vehicles.generated_utc) / 1000) >= thresholdS',
+				comparison: 'Math.round((clock.serverNow - vehicles.generated_utc) / 1000) >= thresholdS',
 			},
 			successfulFixtureStamps: {
 				mode: 'fulfillment-wall-clock-minus-fixed-skew',

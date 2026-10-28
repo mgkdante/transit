@@ -20,7 +20,7 @@
 
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { getLocale } from '$lib/i18n';
+	import { intl, getLocale } from '$lib/i18n';
 	import { theme } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { mapCopy } from './map.copy';
@@ -54,10 +54,12 @@
 	let posterFailed = $state(false);
 	const hasPoster = $derived(Boolean(posterMobile && posterDesktop && !posterFailed));
 	const sourceDate = receipt
-		? new Intl.DateTimeFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
-				dateStyle: 'medium',
-				timeZone: 'UTC',
-			}).format(new Date(receipt.source.osm_updated_utc))
+		? intl
+				.dateTime(locale, {
+					dateStyle: 'medium',
+					timeZone: 'UTC',
+				})
+				.format(new Date(receipt.source.osm_updated_utc))
 		: '';
 
 	let root = $state<HTMLDivElement | null>(null);

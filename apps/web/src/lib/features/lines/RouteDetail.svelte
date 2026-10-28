@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import type { DetailTab } from '$lib/site/detailTabs';
@@ -18,7 +19,7 @@
 	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { minutesSinceMidnight } from '$lib/utils/time';
-	import { sharedClock } from '$lib/stores';
+
 	import { inferAbsenceReason } from '$lib/site/serviceWindow';
 	import { EdgeState, MaybeValue } from '$lib/components/edge';
 	import {
@@ -210,7 +211,7 @@
 			gaps: provenance.data?.gaps ?? null,
 			firstDeparture: route.data?.first_departure ?? null,
 			lastDeparture: route.data?.last_departure ?? null,
-			nowMinutes: minutesSinceMidnight(new Date(sharedClock.serverNow)),
+			nowMinutes: minutesSinceMidnight(new Date(clock.serverNow)),
 			nonResponding: routeNonResponding,
 		}),
 	);
@@ -486,7 +487,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${locale === 'fr' ? 'Retard' : 'Delay'}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

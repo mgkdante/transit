@@ -1,0 +1,7 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"methodology": {
+		"min_n_rate": 30,
+		"wilson_z": 1.96
+	}
+}

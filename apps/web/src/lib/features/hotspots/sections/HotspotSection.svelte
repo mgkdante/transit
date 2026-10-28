@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { SectionHeading } from '@yesid/ui/brand';
 	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
@@ -58,7 +59,7 @@
 
 {#snippet hotspotReadingsCell(row: TrayRow)}
 	<MaybeValue
-		value={row.observationCount == null ? null : row.observationCount.toLocaleString(locale)}
+		value={row.observationCount == null ? null : intl.number(locale).format(row.observationCount)}
 		variant="row"
 		reason="no-observations"
 		{locale}

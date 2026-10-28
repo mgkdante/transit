@@ -1,8 +1,9 @@
+import type { clock } from '@yesid/ui/state';
 import type { Locale } from '$lib/i18n';
 import type { LiveIndex } from '$lib/v1/live';
 import type { Alert, OccupancyCode, RouteFile, RouteIndexEntry, StatusCode } from '$lib/v1/schemas';
 import type { SlimStopEntry } from '$lib/v1';
-import type { sharedClock } from '$lib/stores/clock.svelte';
+
 import { fixAgeS, isVehicleStale, routeDirectionVariants } from '$lib/components/map';
 import type { AbsenceReasonKey } from '$lib/site/absence';
 import {
@@ -19,7 +20,7 @@ export interface MapHoverPeekContext {
 	readonly index: PeekLiveIndex;
 	readonly stops: readonly SlimStopEntry[];
 	readonly routesIndex: readonly RouteIndexEntry[];
-	readonly clock: Pick<typeof sharedClock, 'serverNow'>;
+	readonly clock: Pick<typeof clock, 'serverNow'>;
 	readonly alerts?: readonly Alert[] | null;
 	readonly hoverRoute?: RouteFile | null;
 	readonly departuresAvailable?: boolean;

@@ -41,7 +41,10 @@ vi.mock('$lib/v1/boot', () => ({
 	}),
 }));
 
-vi.mock('$lib/i18n', () => ({ getLocale: () => harness.locale }));
+vi.mock('$lib/i18n', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/i18n')>()),
+	getLocale: () => harness.locale,
+}));
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: harness.prefersReducedMotion,
 }));

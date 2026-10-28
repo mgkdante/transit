@@ -66,8 +66,11 @@
 	let quietOverride = $state<boolean | null>(null);
 	// A static card always shows its body; the stored choice waits for it to become collapsible.
 	const isOpen = $derived(!collapsible || (quietOverride ?? (stored ? stored.value : open)));
-	// The head boot script applies the stored choice to these marked elements before first paint.
+	// The head boot script applies the stored choice, and a remembered quiet mode's close, to these
+	// marked elements before first paint.
 	const persistedKey = $derived(collapsible ? sectionKey : undefined);
+	const quietMark = $derived(collapsible && quiet ? '' : undefined);
+	const bootMarks = $derived({ 'data-persisted-key': persistedKey, 'data-quiet': quietMark });
 
 	function choose(next: boolean): void {
 		quietOverride = null;
@@ -114,7 +117,7 @@
 		'data-section-trigger': '',
 		'data-slot': 'collapsible-trigger',
 		'data-state': isOpen ? 'open' : 'closed',
-		'data-persisted-key': persistedKey,
+		...bootMarks,
 		'aria-controls': contentId,
 		'aria-expanded': isOpen,
 		onclick: (event: MouseEvent) => {
@@ -175,7 +178,7 @@
 	<div
 		data-slot="collapsible"
 		data-state={isOpen ? 'open' : 'closed'}
-		data-persisted-key={persistedKey}
+		{...bootMarks}
 	>
 		{#if collapsible}
 			{#if usesArticleSummary}
@@ -210,7 +213,7 @@
 						</div>
 					{/if}
 					<span class="section-header__chevron" aria-hidden="true">
-						<ChevronToggle open={isOpen} direction="right" data-persisted-key={persistedKey} />
+						<ChevronToggle open={isOpen} direction="right" {...bootMarks} />
 					</span>
 				</div>
 				{#if subtitle}
@@ -220,7 +223,7 @@
 							? 'section-subtitle--with-mark'
 							: ''}"
 						data-state={isOpen ? 'open' : 'closed'}
-						data-persisted-key={persistedKey}
+						{...bootMarks}
 					>
 						<span class="section-subtitle__text">{subtitle}</span>
 					</p>
@@ -232,7 +235,7 @@
 					class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
 				>
 					{@render legacyHeaderContent()}
-					<ChevronToggle open={isOpen} direction="right" data-persisted-key={persistedKey} />
+					<ChevronToggle open={isOpen} direction="right" {...bootMarks} />
 				</button>
 			{/if}
 		{:else}
@@ -247,7 +250,8 @@
 			class="collapsible-content section-body"
 			data-slot="collapsible-content"
 			data-state={isOpen ? 'open' : 'closed'}
-			data-persisted-body={persistedKey}
+			data-persisted-body={persistedKey ?? quietMark}
+			data-quiet={quietMark}
 			inert={!isOpen}
 			aria-hidden={isOpen ? undefined : 'true'}
 		>

@@ -66,7 +66,7 @@
 	}: Props = $props();
 
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
-	const seqUnknownAria = $derived(locale === 'fr' ? 'Séquence inconnue' : 'Sequence unknown');
+	const seqUnknownAria = $derived(t.sequenceUnknown);
 	const action = $derived(detail ? detailActions(detail, locale) : null);
 	let detailElement = $state<HTMLElement>();
 
@@ -97,9 +97,7 @@
 </script>
 
 {#if presentation === 'identity'}
-	<span data-slot="detail-identity"
-		>{detail ? detailIdentity(detail, locale) : locale === 'fr' ? 'Détails' : 'Details'}</span
-	>
+	<span data-slot="detail-identity">{detail ? detailIdentity(detail, locale) : t.alertLink}</span>
 {:else if presentation === 'action' && action}
 	<DetailInlineAction href={localizeHref(action.href, locale)} label={action.label} />
 {:else if presentation === 'body' && detail}
@@ -162,7 +160,7 @@
 								class="detail-fact-action"
 								aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
 								onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
-								>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+								>{t.filter}</button
 							>
 						</dd>
 					</div>
@@ -229,7 +227,7 @@
 										detail.kind === 'vehicle' &&
 										detail.vehicle.occupancy != null &&
 										onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
-									>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+									>{t.filter}</button
 								>
 							</dd>{/if}
 					</div>
@@ -270,10 +268,7 @@
 			{#if notReporting}<AbsentValue
 					reason="last-seen"
 					params={{
-						age:
-							locale === 'fr'
-								? `il y a ${formatAge(notReporting.ageS)}`
-								: `${formatAge(notReporting.ageS)} ago`,
+						age: t.ago(formatAge(notReporting.ageS)),
 					}}
 					{locale}
 					class="map-not-reporting"

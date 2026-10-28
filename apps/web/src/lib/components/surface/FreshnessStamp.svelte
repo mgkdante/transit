@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
 	import { cn } from '$lib/utils';
 	import { type Locale } from '$lib/i18n';
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { freshnessAgeSeconds } from '$lib/v1/freshness';
-	import { sharedClock } from '$lib/stores';
+
 	import { StatusDot } from '@yesid/ui/brand';
 
 	type Variant = 'live' | 'updated';
@@ -32,7 +33,7 @@
 		class: className,
 	}: FreshnessStampProps = $props();
 
-	$effect(() => sharedClock.subscribe());
+	$effect(() => clock.subscribe());
 
 	type Labels = {
 		readonly live: string;
@@ -48,9 +49,7 @@
 	const displayLabel = $derived(label ?? (variant === 'live' ? t.live : t.updated));
 
 	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined
-			? ageSeconds
-			: freshnessAgeSeconds(generatedUtc, sharedClock.serverNow),
+		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc, clock.serverNow),
 	);
 
 	const ABSOLUTE_AFTER_S = 86_400;

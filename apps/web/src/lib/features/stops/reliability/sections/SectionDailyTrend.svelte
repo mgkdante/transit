@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin } from '$lib/utils';
 	import type { DateWindow } from '$lib/filters';
@@ -106,7 +107,7 @@
 					size="md"
 				/>
 				<MetricDisplay
-					value={verdict.observations > 0 ? verdict.observations.toLocaleString(locale) : null}
+					value={verdict.observations > 0 ? intl.number(locale).format(verdict.observations) : null}
 					absentReason="no-observations"
 					{locale}
 					label={copy.trend.observations}

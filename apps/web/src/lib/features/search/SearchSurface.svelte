@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { intl, getLocale, type Locale } from '$lib/i18n';
 	import { desktop } from '@yesid/ui/state';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
@@ -150,7 +150,7 @@
 
 	const lineCount = $derived(routes.data?.routes?.length ?? null);
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
-	const numberFmt = $derived(new Intl.NumberFormat(locale));
+	const numberFmt = $derived(intl.number(locale));
 </script>
 
 <Surface class="surface">

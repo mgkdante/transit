@@ -58,33 +58,15 @@
 	);
 	const currentPath = $derived(delocalizePath(url.pathname));
 
+	const navCopy = $derived(navPillCopy[locale]);
 	const searchPlaceholder = $derived(
-		searchScope === 'route'
-			? locale === 'fr'
-				? 'Rechercher une ligne…'
-				: 'Search a line…'
-			: searchScope === 'stop'
-				? locale === 'fr'
-					? 'Rechercher un arrêt…'
-					: 'Search a stop…'
-				: locale === 'fr'
-					? 'Rechercher une ligne, un arrêt ou une adresse…'
-					: 'Search a line, stop, or address…',
+		navCopy.searchPlaceholder[
+			searchScope === 'route' || searchScope === 'stop' ? searchScope : 'all'
+		],
 	);
 	const searchAria = $derived(
-		searchScope === 'route'
-			? locale === 'fr'
-				? 'Rechercher une ligne'
-				: 'Search a line'
-			: searchScope === 'stop'
-				? locale === 'fr'
-					? 'Rechercher un arrêt'
-					: 'Search a stop'
-				: locale === 'fr'
-					? 'Rechercher dans le réseau'
-					: 'Search the network',
+		navCopy.searchAria[searchScope === 'route' || searchScope === 'stop' ? searchScope : 'all'],
 	);
-	const navCopy = $derived(navPillCopy[locale]);
 	const searchCollectionNotice = $derived(navCopy.searchCollectionNotice);
 	const transmitsSearches = $derived(searchScope === 'map' || searchScope === 'all');
 	const blendIsMixed = $derived(searchScope === 'map' || searchScope === 'all');
@@ -199,10 +181,7 @@
 	}
 
 	function resultKindLabel(result: ChromeSearchResult): string {
-		if (result.kind === 'route') return locale === 'fr' ? 'Ligne' : 'Route';
-		if (result.kind === 'stop') return locale === 'fr' ? 'Arrêt' : 'Stop';
-		if (result.kind === 'address') return locale === 'fr' ? 'Adresse' : 'Address';
-		return locale === 'fr' ? 'Véhicule' : 'Vehicle';
+		return navCopy.searchKind[result.kind];
 	}
 </script>
 

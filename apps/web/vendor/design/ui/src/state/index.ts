@@ -1,3 +1,4 @@
+import { clock as clockStore } from './clock.svelte.js';
 import { persisted as persistedState } from './persisted.svelte.js';
 import { quietMode as quietModeStore } from './quiet-mode.svelte.js';
 import { theme as themeStore } from './theme.svelte.js';
@@ -17,12 +18,17 @@ export interface ThemeStore {
 }
 
 export interface QuietModeInit {
+	/**
+	 * @deprecated since v0.22.0; removal no earlier than v0.24.0 and 90 days after v0.22.0. The head
+	 * boot script only reads the standard `quiet-mode` key, so it can't paint a custom key's state.
+	 */
 	readonly storageKey?: string;
 }
 
 /**
  * Collapses every collapsible section on request. Sections close on `closeSignal` and reopen on
  * `openSignal`; `init()` closes them when a remembered default exists and never issues an open.
+ * `SiteRoot` calls it before its children render, so sections hydrate already closed.
  */
 export interface QuietModeStore {
 	readonly enabled: boolean;
@@ -57,8 +63,27 @@ export interface Persisted<T extends LocaleFree> {
 	value: T;
 }
 
+/**
+ * One shared wall clock for live timestamps. It ticks every second while anything is subscribed
+ * (every 30 s under reduced motion) and pauses in hidden tabs.
+ */
+export interface ClockStore {
+	/** Wall-clock milliseconds, updated on each tick. */
+	readonly now: number;
+	/** `now` corrected by the last server time noted. */
+	readonly serverNow: number;
+	/** Server time read now, never stepping back by less than 2 s, for animation. */
+	serverNowContinuousMs(): number;
+	/** Anchors `serverNow` to a server timestamp, such as a response's `Date` header. */
+	noteServerEpochMs(serverEpochMs: number): void;
+	/** Starts the tick and returns its release; `$effect(() => clock.subscribe())`. */
+	subscribe(): () => void;
+}
+
 export const theme: ThemeStore = themeStore;
+export const clock: ClockStore = clockStore;
 export const quietMode: QuietModeStore = quietModeStore;
 export const persisted: <T extends LocaleFree>(key: string, initial: T) => Persisted<Widen<T>> =
 	persistedState;
 export { desktop, DESKTOP_MIN_WIDTH } from './desktop.js';
+export { createLocaleContext, type LocaleContext } from './locale.js';

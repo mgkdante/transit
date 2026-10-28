@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocalizeHref, getLocale } from '$lib/i18n';
+	import { intl, getLocalizeHref, getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1/repositories/static';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
@@ -44,8 +44,8 @@
 
 	let mode = $state('all');
 
-	const collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
-	const numberFmt = $derived(new Intl.NumberFormat(locale));
+	const collator = intl.collator(locale, { numeric: true, sensitivity: 'base' });
+	const numberFmt = $derived(intl.number(locale));
 	const modeCounts = $derived.by<Record<string, { count: number; label: string }>>(() => {
 		const counts: Record<string, { count: number; label: string }> = {};
 		for (const route of routes.data?.routes ?? []) {

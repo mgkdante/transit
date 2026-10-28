@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { type Locale } from '$lib/i18n';
+	import { intl, type Locale } from '$lib/i18n';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import { StatusDot } from '@yesid/ui/brand';
 
@@ -28,7 +28,7 @@
 			conformantTitle:
 				'Le flux GTFS le plus récent ne contient que des champs que le pipeline modélise.',
 			outOfNormTitle: (rows, members) =>
-				`Le flux contient des champs hors du modèle standard (${members}) : ${rows.toLocaleString('fr-CA')} ligne(s) conservée(s) telles quelles, jamais supprimées.`,
+				`Le flux contient des champs hors du modèle standard (${members}) : ${intl.number('fr').format(rows)} ligne(s) conservée(s) telles quelles, jamais supprimées.`,
 		},
 		en: {
 			conformant: 'Feed compliant',
@@ -36,7 +36,7 @@
 			detail: (n, members) => `${n} unmodelled field${n > 1 ? 's' : ''} (${members})`,
 			conformantTitle: 'The latest GTFS feed only carries fields the pipeline models.',
 			outOfNormTitle: (rows, members) =>
-				`The feed carries fields beyond the standard model (${members}): ${rows.toLocaleString('en-CA')} row(s) captured verbatim, never dropped.`,
+				`The feed carries fields beyond the standard model (${members}): ${intl.number('en').format(rows)} row(s) captured verbatim, never dropped.`,
 		},
 	};
 	const t = $derived(L[locale]);

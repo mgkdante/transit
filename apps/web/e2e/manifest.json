@@ -1,0 +1,17 @@
+{
+	"provider": "stm",
+	"display_name": "STM",
+	"bbox": [],
+	"attribution": "",
+	"dataset_version": "",
+	"labels": {},
+	"files": {
+		"live": {
+			"generated_utc": "2026-06-15T12:00:00Z"
+		},
+		"historic": {
+			"provenance": "provenance.json"
+		}
+	},
+	"surfaces": []
+}

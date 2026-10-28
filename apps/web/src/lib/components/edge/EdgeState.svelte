@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
 	import { cn } from '$lib/utils';
 	import { formatRelative } from '$lib/utils/time';
-	import { sharedClock } from '$lib/stores/clock.svelte';
+
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence, type AbsenceReason } from '$lib/site/absence';
 	import { Skeleton } from '@yesid/ui/skeleton';
@@ -137,7 +138,7 @@
 		'error-v1': 'error',
 	};
 
-	$effect(() => sharedClock.subscribe());
+	$effect(() => clock.subscribe());
 
 	const isSkeleton = $derived(variant === 'skeleton');
 	let skeletonRevealed = $state(false);
@@ -167,7 +168,7 @@
 			const absence = describeAbsence(activeReason.key, lang, {
 				first: activeReason.firstDeparture ?? '',
 				age: activeReason.lastSeenIso
-					? formatRelative(activeReason.lastSeenIso, lang, new Date(sharedClock.serverNow))
+					? formatRelative(activeReason.lastSeenIso, lang, new Date(clock.serverNow))
 					: '',
 			});
 			return { glyph: '○', title: absence.label, body: absence.why };
@@ -178,7 +179,7 @@
 
 	const staleDelta = $derived(
 		variant === 'stale-offline' && lastUpdated
-			? `${MAJ_PREFIX[lang]} ${formatRelative(lastUpdated, lang, new Date(sharedClock.serverNow))}`
+			? `${MAJ_PREFIX[lang]} ${formatRelative(lastUpdated, lang, new Date(clock.serverNow))}`
 			: null,
 	);
 

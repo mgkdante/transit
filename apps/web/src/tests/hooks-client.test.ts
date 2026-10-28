@@ -7,7 +7,11 @@ const mocks = vi.hoisted(() => ({
 	configureUi: vi.fn(),
 }));
 
-vi.mock('$lib/stores', () => ({ sharedClock: mocks.clock, dataRefresh: mocks.refresh }));
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: mocks.clock,
+}));
+vi.mock('$lib/stores', () => ({ dataRefresh: mocks.refresh }));
 vi.mock('$lib/v1/runtime', () => ({ configureV1Runtime: mocks.configureRuntime }));
 vi.mock('$lib/ui/configure', () => ({ configureTransitUi: mocks.configureUi }));
 

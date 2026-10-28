@@ -78,14 +78,6 @@
 		return `${result.lat}:${result.lon}:${result.label}`;
 	}
 
-	function precisionLabel(precision: GeocodeSuggestion['precision']): string {
-		if (precision === 'address') return locale === 'fr' ? 'Adresse' : 'Address';
-		if (precision === 'street') return locale === 'fr' ? 'Rue' : 'Street';
-		if (precision === 'neighbourhood') return locale === 'fr' ? 'Quartier' : 'Neighbourhood';
-		if (precision === 'postal') return locale === 'fr' ? 'Code postal' : 'Postal code';
-		return locale === 'fr' ? 'Lieu' : 'Place';
-	}
-
 	function selectSuggestion(result: GeocodeSuggestion): void {
 		query = result.label;
 		suggestions = [];
@@ -225,7 +217,7 @@
 								onclick={() => selectSuggestion(result)}
 							>
 								<span>{result.label}</span>
-								<small>{precisionLabel(result.precision)}</small>
+								<small>{t.precision[result.precision]}</small>
 							</button>
 						{/each}
 					</div>

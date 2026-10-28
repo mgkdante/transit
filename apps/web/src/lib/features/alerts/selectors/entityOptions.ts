@@ -1,3 +1,4 @@
+import { intl } from '$lib/i18n';
 import type { AlertHistoryEntry } from '$lib/v1/schemas';
 import type { ComboboxOption } from '@yesid/ui/combobox';
 
@@ -13,7 +14,7 @@ function distinctIds(entries: readonly AlertHistoryEntry[], field: EntityField):
 			out.push(id);
 		}
 	}
-	const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+	const collator = intl.collator('en', { numeric: true, sensitivity: 'base' });
 	return out.sort((a, b) => collator.compare(a, b));
 }
 

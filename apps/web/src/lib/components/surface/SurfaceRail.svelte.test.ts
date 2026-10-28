@@ -3,7 +3,8 @@ import { cleanup, render, fireEvent, waitFor, within } from '@testing-library/sv
 import { createRawSnippet } from 'svelte';
 import { responsiveLayoutHarness } from './__fixtures__/ResponsiveLayoutHarness.svelte';
 
-vi.mock('@yesid/ui/state', async () => ({
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
 	desktop: (await import('./__fixtures__/ResponsiveLayoutHarness.svelte')).responsiveLayoutHarness,
 }));
 

@@ -21,9 +21,7 @@
 	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
-		ArticleControlDisclosure,
 		ArticleControlStack,
-		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
@@ -67,10 +65,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railDisclosures = createRailDisclosureController({
-		controls: 'hotspots-controls',
-		toc: 'hotspots-toc',
-	});
 
 	const hotspots = createHistoryDateResource<HistoricCollectionIndex, Hotspots>(
 		{
@@ -425,19 +419,14 @@
 		</p>
 	{/snippet}
 
-	<ArticleControlDisclosure
-		title={t.rail.controls}
-		bind:open={
-			() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-		}
-	>
+	<CollapsibleSection title={t.rail.controls} sectionKey="hotspots-controls">
 		<ArticleControlStack
 			history={hasHistoryNavigator ? historyControls : undefined}
 			primary={showGrainPicker ? primaryControls : undefined}
 			secondary={showWorstN ? secondaryControls : undefined}
 			caption={windowCaptionControl}
 		/>
-	</ArticleControlDisclosure>
+	</CollapsibleSection>
 	{#if tocEntries.length > 0}
 		<div class="hotspots-rail-toc" data-slot="section-toc">
 			<TocNav
@@ -445,8 +434,7 @@
 				activeId={navigation.activeId}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				quiet={false}
-				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				sectionKey="hotspots-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);

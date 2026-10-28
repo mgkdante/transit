@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
 
@@ -14,11 +15,10 @@
 		en: (pct: string) => `${pct} on time in the latest daily summary`,
 		fr: (pct: string) => `${pct} à l’heure dans le dernier bilan quotidien`,
 	} as const;
-	const nf = $derived(locale === 'fr' ? 'fr-CA' : 'en-CA');
 	const pctText = $derived(
 		snapshot.otpPct == null
 			? null
-			: `${snapshot.otpPct.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`,
+			: intl.number(locale, { style: 'unit', unit: 'percent' }).format(snapshot.otpPct),
 	);
 	const show = $derived(snapshot.phase === 'ready' && pctText != null);
 	const label = $derived(pctText ? labels[locale](pctText) : '');

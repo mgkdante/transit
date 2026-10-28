@@ -8,7 +8,7 @@
 	import type { ChartLegendItem } from './ChartLegend.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import type { Locale } from '$lib/i18n';
+	import { defineCopy, type Locale } from '$lib/i18n';
 
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		rank: number;
@@ -64,17 +64,21 @@
 
 	const hasDelta = $derived(delta != null && !Number.isNaN(delta));
 	const activeLocale = $derived(locale ?? 'en');
-	const rankLabel = $derived(
-		showRank
-			? activeLocale === 'fr'
-				? `Rang ${rank} : ${title}`
-				: `Rank ${rank}: ${title}`
-			: title,
-	);
-	const noChangeLabel = $derived(
-		activeLocale === 'fr' ? 'aucune donnée de variation' : 'no change data',
-	);
-	const changeLabel = $derived(activeLocale === 'fr' ? 'variation' : 'change');
+	const COPY = defineCopy({
+		fr: {
+			rank: (rank: number, title: string) => `Rang ${rank} : ${title}`,
+			noChange: 'aucune donnée de variation',
+			change: 'variation',
+		},
+		en: {
+			rank: (rank: number, title: string) => `Rank ${rank}: ${title}`,
+			noChange: 'no change data',
+			change: 'change',
+		},
+	});
+
+	const t = $derived(COPY[activeLocale]);
+	const rankLabel = $derived(showRank ? t.rank(rank, title) : title);
 
 	const showAbsent = $derived(
 		(display == null || display === '') && absentReason != null && locale != null,
@@ -180,7 +184,7 @@
 		class="dv-delta inline-flex shrink-0 items-center gap-1 font-mono text-caption tabular-nums"
 		style="color: {deltaVar};"
 		role="img"
-		aria-label={hasDelta ? `${changeLabel} ${deltaText}` : noChangeLabel}
+		aria-label={hasDelta ? `${t.change} ${deltaText}` : t.noChange}
 	>
 		<span aria-hidden="true">{deltaGlyph}</span>
 		{#if hasDelta}<span aria-hidden="true">{deltaText}</span>{/if}

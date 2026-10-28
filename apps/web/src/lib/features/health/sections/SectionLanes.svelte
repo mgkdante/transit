@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import { StatusDot } from '@yesid/ui/brand';
@@ -49,8 +50,8 @@
 								{#if row.filesWritten != null && row.filesTotal != null}
 									<span class="lane-cell-value"
 										>{t.filesCount(
-											row.filesWritten.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
-											row.filesTotal.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
+											intl.number(locale).format(row.filesWritten),
+											intl.number(locale).format(row.filesTotal),
 										)}</span
 									>
 								{:else}

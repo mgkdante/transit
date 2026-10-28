@@ -42,7 +42,7 @@ export default ts.config(
 			'build/',
 			'dist/',
 			'node_modules/',
-			'.wrangler/',
+			'**/.wrangler/',
 			'src/lib/v1/schemas/json/',
 			'src/lib/v1/schemas/generated/',
 			'.scratch-s1/',

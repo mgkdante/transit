@@ -1,10 +1,7 @@
+import { intl } from '$lib/i18n';
 import { roundHalfAwayFromZero } from './rounding';
 
 export type FormatLang = 'en' | 'fr';
-
-function localeTag(lang: FormatLang): string {
-	return lang === 'fr' ? 'fr-CA' : 'en-CA';
-}
 
 function isPresent(v: number | null | undefined): v is number {
 	return v != null && Number.isFinite(v);
@@ -12,24 +9,16 @@ function isPresent(v: number | null | undefined): v is number {
 
 type Rounding = 'raw' | 'round' | 'fixed1' | 'auto';
 
-const numberFormats = new Map<string, Intl.NumberFormat>();
-
 function core(v: number, rounding: Rounding, locale: FormatLang | undefined): string {
 	const rounded = rounding === 'raw' ? v : roundHalfAwayFromZero(v, rounding === 'round' ? 0 : 1);
 	if (locale) {
-		const key = `${locale}:${rounding}`;
-		let formatter = numberFormats.get(key);
-		if (!formatter) {
-			const options =
-				rounding === 'fixed1'
-					? { minimumFractionDigits: 1, maximumFractionDigits: 1 }
-					: rounding === 'auto'
-						? { maximumFractionDigits: 1 }
-						: undefined;
-			formatter = new Intl.NumberFormat(localeTag(locale), options);
-			numberFormats.set(key, formatter);
-		}
-		return formatter.format(rounded);
+		const options =
+			rounding === 'fixed1'
+				? { minimumFractionDigits: 1, maximumFractionDigits: 1 }
+				: rounding === 'auto'
+					? { maximumFractionDigits: 1 }
+					: undefined;
+		return intl.number(locale, options).format(rounded);
 	}
 
 	switch (rounding) {

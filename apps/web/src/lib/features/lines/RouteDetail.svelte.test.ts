@@ -875,7 +875,7 @@ describe('RouteDetail article schedule structure', () => {
 			const t = detailCopy[locale];
 			routeSurface.mount(RouteDetail, {
 				props: { id: '161', seed: routeSeed() },
-				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
 			await fireEvent.click(
 				screen.getByRole('tab', { name: locale === 'en' ? 'Schedule' : 'Horaire' }),
@@ -1078,7 +1078,7 @@ describe.each(['en', 'fr'] as const)('RouteDetail roster published status in %s'
 		liveIndex = buildIndex([{ ...VEHICLES[0], status, delay_min: delay }]);
 		routeSurface.mount(RouteDetail, {
 			props: { id: '161', seed: routeSeed() },
-			context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 		});
 		const roster = screen.getByTestId('route-roster');
 		const badge = roster.querySelector('[data-slot="status-badge"]');

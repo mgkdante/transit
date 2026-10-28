@@ -99,29 +99,6 @@ describe('shared copy fragment characterization', () => {
 		expect(surface).toHaveProperty('historyCopy');
 	});
 
-	test('locks ArticleHeader copy values, functions, shapes, and key order', () => {
-		expect(fingerprints(FRAGMENTS.article)).toEqual({
-			alertsEn: 'd16ce56892800796b90b4bfaa71d08f3b2e5d469a5ce16123a67dd0dd5667988',
-			alertsFr: 'ed8a19e9f451578c0d0934156afa74e2f6df6552e319348e3858e3045982c962',
-			healthEn: '6979e4434f1d82202075611285ff72deed526c8d8f25d325dc224e1fad3b93b0',
-			healthFr: 'da484c3a2ff31fa85e6b594c824cc6206d169345f41519c8ba1784d3f371ee37',
-			hotspotsEn: 'ce32312fa79dd43d7394d0057828bedbbfcad4de44e4e70b78369feec5fd1dc2',
-			hotspotsFr: 'd8b790ea3a64d4dd55b9039664e477a217bea463d7c2cb36b1b3d06af62e3a47',
-			lineEn: 'a021093edcbc2d3a98867a42aa1d35d88d91a2a108303d09fa5ed601a24d92f0',
-			lineFr: '1153a331b2072a16d4b590bd96e0f9e04d917d84355be61befef28bd89cc85c2',
-			metricsEn: '97e555e99efeb513c62d3d97472f4071c0cf82ebebf72da736d8072bfc500856',
-			metricsFr: '5476360b46b17e8d5a0386f8a723d7cedf21df4be891e69ae1e0defa9886318f',
-			networkEn: 'be1d24bd158a75d267c3beea3614c5d8723a4c6cbaf8321c819b046b232fb56b',
-			networkFr: 'e0a4c198f69732e4dcf62cf986c3cfb5ffce73f0756449a23725cd09b4e8602a',
-			receiptEn: 'dce77fedefeeadff7d7a3b6fb9f1216529b803dc980df55e15f6240b15cf909b',
-			receiptFr: '75cd8552b76c622c5ed1a71577c4ef4f4ea26db021cf297ed21f274de4493458',
-			repeatOffendersEn: '872bc838f04875e327dea624f9215c54d0d79cca4a06ca7c3fc05857673ac775',
-			repeatOffendersFr: 'b3d9bb8383a6b574e41b5e7791bcc23505facd14fd94ad792e69a2088b78e6dc',
-			stopEn: '60c7e8901697ffd45e499e0e06f9b9f42414a010da5084e3a6f1957e8962fe0d',
-			stopFr: 'e83a06e29b69e0c4fbc09ce5cad5acca8bbed364fc94064f8c7600f0bc653170',
-		});
-	});
-
 	test('locks HistoryNavigator copy values, functions, shapes, and key order', () => {
 		expect(fingerprints(FRAGMENTS.history)).toEqual({
 			alertsEn: 'b06d260de93851f8865d6061d1f2c474a93d75a46b983deaab40f313f2eb60e8',

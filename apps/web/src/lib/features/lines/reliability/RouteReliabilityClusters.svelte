@@ -14,9 +14,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, type Snippet } from 'svelte';
 	import {
-		ArticleControlDisclosure,
 		ArticleControlStack,
-		createRailDisclosureController,
 		createRetainedHistoryUi,
 		GrainPicker,
 		HistoryNavigator,
@@ -28,6 +26,7 @@
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 	import {
+		CollapsibleSection,
 		observeActiveToc,
 		openCollapsedTocTarget,
 		revealTocTarget,
@@ -65,10 +64,6 @@
 	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
-	const railDisclosures = createRailDisclosureController({
-		controls: 'reliability-controls',
-		toc: 'reliability-toc',
-	});
 
 	type GrainMode = 'day' | 'week' | 'month' | 'range';
 	const seed = fromSearchParams(page.url.searchParams);
@@ -344,27 +339,19 @@
 				</p>
 			{/snippet}
 
-			<ArticleControlDisclosure
-				title={copy.controls.viewLabel}
-				bind:open={
-					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-				}
-			>
+			<CollapsibleSection title={copy.controls.viewLabel} sectionKey="reliability-controls">
 				<ArticleControlStack
 					primary={primaryControls}
 					secondary={mode === 'range' ? rangeControls : undefined}
 					caption={activeWindowCaptionControl}
 				/>
-			</ArticleControlDisclosure>
+			</CollapsibleSection>
 
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
 					{activeId}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
+					sectionKey="reliability-toc"
 					onNavigate={(id) => {
 						void navigate(id);
 						closeSheet();

@@ -1160,7 +1160,7 @@ describe('NetworkSurface current-position verdict', () => {
 			network.on_time_pct = 80;
 			network.status_dist = { early: 1, on_time: 8, late: 0, severe: 1, unknown: 0 };
 			const { container } = render(NetworkSurface, {
-				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
 			const banner = container.querySelector('.network-verdict [data-slot="verdict"]');
 			expect(banner).toHaveAttribute('data-status', 'reliable');
@@ -1194,7 +1194,7 @@ describe('NetworkSurface daily comparison scope', () => {
 				{ ...trendSeries[1], date: '2026-08-29', otp_pct: 90 },
 			);
 			const { container } = render(NetworkSurface, {
-				context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
 			const change = container.querySelector('[data-slot="verdict-delta"]')!;
 			expect(container.querySelector('[data-toc="net-historic"]')).toContainElement(

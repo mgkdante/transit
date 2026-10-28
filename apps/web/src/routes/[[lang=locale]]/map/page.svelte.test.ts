@@ -79,7 +79,7 @@ it.each(
 						lang: locale,
 					}),
 				],
-				[Symbol.for('transit.i18n.locale'), () => locale],
+				[Symbol.for('@yesid/ui/locale'), () => locale],
 				[
 					'__svelte__',
 					{

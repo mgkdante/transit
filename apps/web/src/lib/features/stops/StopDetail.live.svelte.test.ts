@@ -40,9 +40,9 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	getStopHistoryIndex: fixture.historyIndex,
 	loadStopHistoryRange: fixture.historyRange,
 }));
-vi.mock('$lib/stores', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores')>()),
-	sharedClock: {
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: {
 		subscribe: () => () => {},
 		get serverNow() {
 			return fixture.now;
@@ -111,7 +111,7 @@ async function manualRefresh() {
 function mount(locale: 'en' | 'fr' = 'en') {
 	return render(StopDetail, {
 		props: { id: 'probe', seed: { id: 'probe', name: 'Test stop' } },
-		context: new Map([[Symbol.for('transit.i18n.locale'), () => locale]]),
+		context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 	});
 }
 const reportStamp = (family: string) =>

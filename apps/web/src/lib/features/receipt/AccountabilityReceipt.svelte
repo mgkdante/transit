@@ -26,11 +26,7 @@
 		type HistoryCorrection,
 	} from '$lib/v1/history/selection';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		createRailDisclosureController,
-		HistoryNavigator,
-		ResourceBoundary,
-	} from '$lib/components/surface';
+	import { HistoryNavigator, ResourceBoundary } from '$lib/components/surface';
 	import { historyCopy } from '$lib/components/surface/historyCopy';
 	import {
 		ArticleKeywords,
@@ -66,10 +62,6 @@
 	const locale: Locale = getLocale();
 	const manifest = getV1Context().manifest;
 	const t = $derived(COPY[locale]);
-	const railDisclosures = createRailDisclosureController({
-		controls: 'receipt-controls',
-		toc: 'receipt-toc',
-	});
 
 	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
@@ -323,13 +315,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection
-		title={t.rail.controls}
-		quiet={false}
-		bind:open={
-			() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-		}
-	>
+	<CollapsibleSection title={t.rail.controls} sectionKey="receipt-controls">
 		<div class="receipt-controls" data-slot="receipt-controls">
 			{#key navigatorRevision}
 				<HistoryNavigator
@@ -370,8 +356,7 @@
 				activeId={navigation.activeId}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				quiet={false}
-				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				sectionKey="receipt-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);

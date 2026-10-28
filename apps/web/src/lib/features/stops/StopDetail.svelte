@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
 	import { getStop } from '$lib/v1/repositories/static';
@@ -184,7 +184,7 @@
 	const stopSummarySevere = $derived(
 		stopSummarySeverePct == null
 			? null
-			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummarySeverePct)}%`,
+			: `${intl.number(locale, { maximumFractionDigits: 1 }).format(stopSummarySeverePct)}%`,
 	);
 	const stopSummaryDelayMin = $derived(
 		useDailySummary
@@ -194,7 +194,7 @@
 	const stopSummaryDelay = $derived(
 		stopSummaryDelayMin == null
 			? null
-			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryDelayMin)} ${reliabilityT.trend.minUnit}`,
+			: `${intl.number(locale, { maximumFractionDigits: 1 }).format(stopSummaryDelayMin)} ${reliabilityT.trend.minUnit}`,
 	);
 	const hasStopSummary = $derived(stopSummarySevere != null || stopSummaryDelay != null);
 

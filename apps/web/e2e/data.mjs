@@ -1,11 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 
-// The provider catalog is the only data the header needs; every other v1 path is a 404.
-const providers = readFileSync(new URL('./providers.json', import.meta.url));
+// The provider catalog, STM's manifest and its provenance; every other v1 path is a 404.
+const files = Object.fromEntries(
+	[
+		['/v1/providers.json', 'providers.json'],
+		['/v1/stm/manifest.json', 'manifest.json'],
+		['/v1/stm/provenance.json', 'provenance.json'],
+	].map(([path, file]) => [path, readFileSync(new URL(`./${file}`, import.meta.url))]),
+);
 
 createServer((request, response) => {
-	const found = request.url === '/v1/providers.json';
-	response.writeHead(found ? 200 : 404, { 'content-type': 'application/json' });
-	response.end(found ? providers : '{}');
+	// No Date header: the app anchors its clock to it, which would undo page.clock.
+	response.sendDate = false;
+	const body = files[request.url];
+	response.writeHead(body ? 200 : 404, {
+		'content-type': 'application/json',
+		'access-control-allow-origin': 'http://127.0.0.1:4317',
+	});
+	response.end(body ?? '{}');
 }).listen(4318, '127.0.0.1');

@@ -13,8 +13,10 @@ const clockStub = vi.hoisted(() => ({
 	},
 	subscribe: () => () => {},
 }));
-vi.mock('$lib/stores/clock.svelte', () => ({ sharedClock: clockStub }));
-vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: clockStub,
+}));
 
 const GEN = '2026-06-20T12:00:00Z';
 

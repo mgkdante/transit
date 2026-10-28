@@ -1,14 +1,19 @@
 /**
- * Runs in <head> before first paint. It applies the stored theme, then each persisted
- * collapsible's stored choice as the parser adds its marked elements, so a reload paints what
- * hydration will render. The storage keys are the ones `../state` writes. `boot.json` holds this
- * text's CSP hash; edit both together.
+ * Runs in <head> before first paint. It applies the stored theme, then, as the parser adds marked
+ * elements, each persisted collapsible's stored choice and a remembered quiet mode's close, so a
+ * reload paints what hydration will render. The storage keys are the ones `../state` writes.
+ * `boot.json` holds this text's CSP hash; edit both together.
  */
 export const themeBootScript = `(() => {
 	const root = document.documentElement;
 	let theme = null;
-	try { theme = localStorage.getItem('theme'); } catch {}
+	let quiet = false;
+	try {
+		theme = localStorage.getItem('theme');
+		quiet = localStorage.getItem('quiet-mode') === 'true';
+	} catch {}
 	root.dataset.theme = theme === 'light' ? 'light' : 'dark';
+	if (quiet) root.dataset.quietMode = 'true';
 
 	const stored = new Map();
 	try {
@@ -18,11 +23,13 @@ export const themeBootScript = `(() => {
 			if (value === 'true' || value === 'false') stored.set(key.slice(10), value === 'true');
 		}
 	} catch {}
-	if (stored.size === 0) return;
+	if (stored.size === 0 && !quiet) return;
 
 	const apply = (element) => {
 		const body = element.hasAttribute('data-persisted-body');
-		const open = stored.get(body ? element.dataset.persistedBody : element.dataset.persistedKey);
+		const open = quiet && element.hasAttribute('data-quiet')
+			? false
+			: stored.get(body ? element.dataset.persistedBody : element.dataset.persistedKey);
 		if (open === undefined) return;
 		if (element.hasAttribute('data-state')) element.dataset.state = open ? 'open' : 'closed';
 		if (element.hasAttribute('aria-expanded')) element.setAttribute('aria-expanded', String(open));
@@ -31,7 +38,7 @@ export const themeBootScript = `(() => {
 		if (open) element.removeAttribute('aria-hidden');
 		else element.setAttribute('aria-hidden', 'true');
 	};
-	const marked = '[data-persisted-key], [data-persisted-body]';
+	const marked = '[data-persisted-key], [data-persisted-body], [data-quiet]';
 	const observer = new MutationObserver((records) => {
 		for (const record of records) {
 			for (const node of record.addedNodes) {

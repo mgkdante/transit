@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { navPillCopy } from './navPill.copy';
 	import { cn } from '$lib/utils';
 	import { dataRefresh } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';
@@ -12,15 +13,7 @@
 
 	const refreshing = $derived(dataRefresh.refreshing);
 
-	const label = $derived(
-		refreshing
-			? locale === 'fr'
-				? 'Actualisation…'
-				: 'Refreshing…'
-			: locale === 'fr'
-				? 'Actualiser les données'
-				: 'Refresh data',
-	);
+	const label = $derived(refreshing ? navPillCopy[locale].refreshing : navPillCopy[locale].refresh);
 
 	function onClick(): void {
 		void dataRefresh.run();

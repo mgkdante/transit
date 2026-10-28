@@ -31,8 +31,9 @@ vi.mock('$lib/v1/boot', () => ({
 }));
 vi.mock('$lib/v1/adapter', () => ({ adapter: { live: fixture } }));
 vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: fixture.stopNames }));
-vi.mock('$lib/stores', () => ({
-	sharedClock: {
+vi.mock('@yesid/ui/state', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@yesid/ui/state')>()),
+	clock: {
 		subscribe: () => () => {},
 		get serverNow() {
 			return fixture.now;
