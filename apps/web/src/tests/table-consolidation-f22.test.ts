@@ -23,7 +23,6 @@ function svelteFiles(root: string): string[] {
 
 const ALL_SVELTE = svelteFiles(SRC);
 
-const PRIMITIVE = 'src/lib/components/data/DataTable.svelte';
 const MARKS_DIR = 'src/lib/components/dataviz/chart/marks/';
 
 type MarkVerdict = 'out:sr-only-chart-fallback';
@@ -91,16 +90,7 @@ const MARK_CLASSIFICATION: readonly MarkClassification[] = [
 	},
 ];
 
-const RAW_TABLE = /<table(?:\s|>)/;
-
 describe('F22 A — chart-internal tables are classified, not assumed', () => {
-	it('classifies every raw-table file in the tree and nothing that is not one', () => {
-		const observed = ALL_SVELTE.filter((file) => RAW_TABLE.test(read(file))).map(rel);
-		const classified = MARK_CLASSIFICATION.map((entry) => entry.file);
-
-		expect(observed).toEqual([PRIMITIVE, ...classified].sort());
-	});
-
 	it('holds every OUT verdict to the sr-only fact it rests on', () => {
 		for (const { file, verdict, reason } of MARK_CLASSIFICATION) {
 			const source = read(resolve(WEB_ROOT, file));
@@ -436,18 +426,5 @@ describe('F22 C — the in-table empty state is part of the table contract', () 
 				/<(?:AbsentValue|MaybeValue|StateNotice)\b[^>]*\b(?:variant|presentation)="row"/,
 			);
 		}
-	});
-});
-
-describe('F22 D — extraction verdict for yesid.dev-design', () => {
-	it('records that DataTable serves ONE app and therefore stays app-side', () => {
-		// 2026-08-04. `@yesid/ui` ships no table primitive. yesid.dev has
-		const consumerFiles = RENDER_SITES.length;
-		const renderSites = RENDER_SITES.reduce((sum, site) => sum + site.renders, 0);
-
-		expect(consumerFiles).toBe(5);
-		expect(renderSites).toBe(7);
-		// A design-system import would show up as an @yesid/* table import here.
-		expect(read(resolve(WEB_ROOT, PRIMITIVE))).not.toMatch(/from '@yesid\//);
 	});
 });

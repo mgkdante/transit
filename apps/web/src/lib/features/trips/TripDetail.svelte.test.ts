@@ -228,7 +228,7 @@ describe('TripDetail: a broadcasting trip', () => {
 
 		const empty = screen.getByTestId('trip-no-stops');
 		expect(empty).toBeInTheDocument();
-		expect(empty).toHaveAttribute('data-component', 'state-notice');
+		expect(empty).toHaveAttribute('data-slot', 'state-notice');
 		expect(empty).toHaveAttribute('data-presentation', 'silo');
 		expect(
 			screen.queryByRole('list', { name: 'Reported predictions for this trip' }),

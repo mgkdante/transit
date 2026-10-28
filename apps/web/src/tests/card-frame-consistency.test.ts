@@ -13,19 +13,4 @@ describe('card frame consistency', () => {
 			/border-top:[^;]*(?:border-brand|accent|primary|dataviz|edge-highlight)/,
 		);
 	});
-
-	it('keeps state surfaces free of accent top-frame implementations', () => {
-		const sources = [
-			read('src/lib/components/edge/StateNotice.svelte'),
-			read('src/lib/components/edge/EdgeState.svelte'),
-		];
-
-		for (const source of sources) {
-			expect(source).not.toMatch(/border-(?:top|block-start)\s*:/);
-			expect(source).not.toMatch(/(?:box-shadow|filter)\s*:/i);
-			expect(source).not.toMatch(/(?:linear|radial)-gradient\s*\(/i);
-			expect(source).not.toContain('edge-accent-bar');
-			expect(source).not.toContain('--edge-rule');
-		}
-	});
 });

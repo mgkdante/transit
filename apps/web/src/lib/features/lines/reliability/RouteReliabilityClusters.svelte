@@ -21,10 +21,7 @@
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
-	import type {
-		SurfaceRailContext,
-		SurfaceRailPresentation,
-	} from '$lib/components/surface/SurfaceRail.svelte';
+	import { type SurfaceRailContext, type SurfaceRailPresentation } from '@yesid/ui/layout';
 	import {
 		CollapsibleSection,
 		observeActiveToc,
@@ -34,7 +31,7 @@
 		type TocEntry,
 	} from '@yesid/ui/brand';
 	import { Button } from '@yesid/ui/button';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import { applyRetainedLineHistory, clearRetainedLineHistory } from './data/retainedHistory';

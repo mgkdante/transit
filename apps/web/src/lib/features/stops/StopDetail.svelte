@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ToggleChip, SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -25,9 +26,10 @@
 		MapDrilldownLink,
 		AffectedAlerts,
 	} from '$lib/components/surface';
-	import { EdgeState, StateNotice } from '$lib/components/edge';
-	import { ArticleSectionStack, ControlsRail, type ArticleMetaEntry } from '$lib/components/layout';
-	import { ArticleHeader } from '@yesid/ui/layout';
+	import { EdgeState } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { articleNavigationCopy } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
@@ -35,7 +37,6 @@
 	import { desktop } from '@yesid/ui/state';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { mapHrefFor } from '$lib/nav';
-	import { SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
 	import { formatUtc, formatDateKey } from '$lib/utils/time';
@@ -308,7 +309,7 @@
 				tone="warning"
 				presentation="silo"
 				role="status"
-				ariaLive="polite"
+				aria-live="polite"
 				data-testid={`stop-${family}-notice`}
 			/>
 		{/if}
@@ -323,7 +324,7 @@
 			tone="warning"
 			presentation="silo"
 			role="status"
-			ariaLive="polite"
+			aria-live="polite"
 		/>
 	{/if}
 {/snippet}
@@ -344,7 +345,7 @@
 					tone="warning"
 					presentation="silo"
 					role="status"
-					ariaLive="polite"
+					aria-live="polite"
 				/>{/if}
 		</div>
 	{/if}
@@ -524,7 +525,7 @@
 											title={t.next.none}
 											presentation="silo"
 											role="status"
-											ariaLive="polite"
+											aria-live="polite"
 											data-testid="stop-departures-empty"
 										/>
 									{:else}
@@ -535,11 +536,8 @@
 												aria-label={t.next.filter.statusLabel}
 											>
 												{#each DEPARTURE_TONES as tone (tone)}
-													<button
-														type="button"
-														class="stop-chip"
-														class:stop-chip--active={statusFilter.has(tone)}
-														aria-pressed={statusFilter.has(tone)}
+													<ToggleChip
+														pressed={statusFilter.has(tone)}
 														onclick={() => toggleStatus(tone)}
 													>
 														<span
@@ -548,7 +546,7 @@
 															aria-hidden="true">{TONE_GLYPH[tone]}</span
 														>
 														{toneLabel(tone)}
-													</button>
+													</ToggleChip>
 												{/each}
 											</div>
 											{#if departureRoutes.length > 1}
@@ -557,25 +555,19 @@
 													role="group"
 													aria-label={t.next.filter.routeLabel}
 												>
-													<button
-														type="button"
-														class="stop-chip"
-														class:stop-chip--active={routeFilter == null}
-														aria-pressed={routeFilter == null}
+													<ToggleChip
+														pressed={routeFilter == null}
 														onclick={() => (routeFilter = null)}
 													>
 														{t.next.filter.allRoutes}
-													</button>
+													</ToggleChip>
 													{#each departureRoutes as route (route)}
-														<button
-															type="button"
-															class="stop-chip"
-															class:stop-chip--active={routeFilter === route}
-															aria-pressed={routeFilter === route}
+														<ToggleChip
+															pressed={routeFilter === route}
 															onclick={() => (routeFilter = routeFilter === route ? null : route)}
 														>
 															{route}
-														</button>
+														</ToggleChip>
 													{/each}
 												</div>
 											{/if}
@@ -594,7 +586,7 @@
 												title={t.next.filter.noMatches}
 												presentation="silo"
 												role="status"
-												ariaLive="polite"
+												aria-live="polite"
 												data-testid="departures-filter-empty"
 											/>
 										{:else}
@@ -807,45 +799,11 @@
 		flex-wrap: wrap;
 		gap: 0.375rem;
 	}
-	.stop-chip {
-		min-height: var(--size-tap-min);
-		appearance: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		color: var(--muted-foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		padding: 0.375rem 0.75rem;
-		cursor: pointer;
-		transition:
-			background-color 0.15s ease,
-			color 0.15s ease,
-			border-color 0.15s ease;
-	}
-	.stop-chip:hover {
-		color: var(--foreground);
-	}
-	.stop-chip--active {
-		color: var(--primary-foreground);
-		background-color: var(--primary);
-		border-color: var(--primary);
-	}
-	.stop-chip:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.stop-departures-count {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.stop-chip {
-			transition: none;
-		}
 	}
 
 	@media (max-width: 48rem) {

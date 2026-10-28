@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { DashboardGrid } from '$lib/components/layout';
+	import { DashboardGrid } from '@yesid/ui/layout';
 	import { Chart, type ChartSpec } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';

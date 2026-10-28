@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '@yesid/ui/badge';
 	import { onMount, tick } from 'svelte';
 	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
@@ -8,7 +9,7 @@
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import {
 		SectionLabel,
 		SectionHeading,
@@ -223,7 +224,7 @@
 							title={t.statRail.provenance.unavailable}
 							presentation="silo"
 							role="status"
-							ariaLive="polite"
+							aria-live="polite"
 						/>
 					{/if}
 				</div>
@@ -249,7 +250,7 @@
 				</p>
 				<ul class="metrics-stat__chips">
 					{#each Object.entries(t.confidence.levels) as [level, info] (level)}
-						<li><span class="metrics-chip">{info.chip}</span></li>
+						<li><Badge variant="tag">{info.chip}</Badge></li>
 					{/each}
 				</ul>
 			</div>
@@ -351,7 +352,7 @@
 							title={t.provenance.unavailable}
 							presentation="silo"
 							role="status"
-							ariaLive="polite"
+							aria-live="polite"
 						/>
 					{/if}
 
@@ -408,7 +409,7 @@
 						<ul class="metrics-legend__list">
 							{#each Object.entries(t.confidence.levels) as [level, info] (level)}
 								<li class="metrics-legend__item">
-									<span class="metrics-chip">{info.chip}</span>
+									<Badge variant="tag">{info.chip}</Badge>
 									<span class="metrics-legend__meaning">{info.meaning}</span>
 								</li>
 							{/each}
@@ -439,7 +440,7 @@
 								<div class="metric__body">
 									<p class="metric__meta">
 										<code class="metric__sci">{entry.sciName}</code>
-										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
+										<Badge variant="tag">{confidenceMeaning(entry)}</Badge>
 									</p>
 
 									<div class="metric__information-stack">
@@ -658,24 +659,6 @@
 		color: var(--muted-foreground);
 		font-size: var(--text-small);
 		line-height: 1.5;
-	}
-	.metrics-chip {
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		padding: 0.125rem 0.5rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--muted);
-		color: var(--muted-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		white-space: nowrap;
-	}
-	.metrics-chip--meta {
-		font-size: var(--text-micro);
 	}
 
 	.metrics-cluster {

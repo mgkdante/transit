@@ -28,7 +28,7 @@
 	import { onMount, type Snippet } from 'svelte';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import { Button } from '@yesid/ui/button';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';

@@ -1,35 +1,49 @@
-<script lang="ts">
-	import { onMount, tick, type Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { ChevronToggle } from '@yesid/ui/brand';
-	import { desktop } from '@yesid/ui/state';
-	import * as Sheet from '@yesid/ui/sheet';
-	import { scrollChain } from '@yesid/motion/actions';
+<!--
+  A page's controls rail. From 1024px it is a sticky complementary landmark under the site chrome;
+  below that it collapses to a floating pill that opens the same rail in a bottom sheet (the rail
+  element moves into the sheet, so its state survives). `rail` receives `closeSheet` and the current
+  `presentation`; a hash link inside the open sheet closes it. Pass it to `DetailFrame`'s `rail`.
+-->
+<script lang="ts" module>
+	import type { Snippet } from 'svelte';
 
 	export type SurfaceRailPresentation = 'desktop' | 'mobile';
+
 	export interface SurfaceRailContext {
 		closeSheet: () => void;
 		presentation: SurfaceRailPresentation;
 	}
 
-	interface Props {
+	export interface SurfaceRailProps {
 		rail: Snippet<[SurfaceRailContext]>;
 		label: string;
+		/** Current selection, shown in the pill after the label. */
 		summary?: string;
 		openAria: string;
 		closeAria: string;
-		class?: string;
+		/** Hides the pill (and closes the sheet) while false. */
 		mobileVisible?: boolean;
+		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { onMount, tick } from 'svelte';
+	import { scrollChain } from '@yesid/motion/actions';
+	import { cn } from '../cn/index.js';
+	import ChevronToggle from '../brand/ChevronToggle.svelte';
+	import * as Sheet from '../primitives/sheet/index.js';
+	import { desktop } from '../state/desktop.js';
+
 	let {
 		rail,
 		label,
 		summary,
 		openAria,
 		closeAria,
-		class: className,
 		mobileVisible = true,
-	}: Props = $props();
+		class: className,
+	}: SurfaceRailProps = $props();
 
 	let sheetOpen = $state(false);
 	let pillBtn = $state<HTMLButtonElement>();
@@ -54,6 +68,7 @@
 		sheetOpen = false;
 		if (restoreFocus) void tick().then(() => pillBtn?.focus());
 	}
+
 	$effect(() => {
 		if (!sheetOpen || !sheetEl || !desktopRailEl) return;
 
@@ -152,7 +167,7 @@
 	.surface-rail--mobile > :global(*) {
 		flex: none;
 	}
-	@media (--desktop-min) {
+	@media (min-width: 1024px) {
 		.surface-rail-mobile[data-open='false'] {
 			display: none;
 		}
@@ -161,9 +176,9 @@
 			flex-direction: column;
 			gap: 1rem;
 			position: sticky;
-			top: var(--chrome-offset);
+			top: var(--chrome-offset, 0px);
 			align-self: start;
-			max-height: calc(100dvh - var(--chrome-offset) - 1rem);
+			max-height: calc(100dvh - var(--chrome-offset, 0px) - 1rem);
 			overflow-y: auto;
 			overscroll-behavior: contain;
 			z-index: var(--z-rail);
@@ -218,7 +233,7 @@
 			70dvh,
 			32rem,
 			calc(
-				100dvh - var(--chrome-offset) - var(--surface-rail-bottom) -
+				100dvh - var(--chrome-offset, 0px) - var(--surface-rail-bottom) -
 					var(--surface-rail-sheet-bottom)
 			)
 		);

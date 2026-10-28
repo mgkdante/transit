@@ -1,8 +1,9 @@
-<script lang="ts">
+<!--
+  A surface masthead: station kicker, dotted heading, optional lede and meta row, then the body and
+  a hazard tape. `cornerMeta` renders inside the header (pair it with `CornerMeta`).
+-->
+<script lang="ts" module>
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
-	import { Separator } from '@yesid/ui/separator';
 
 	export interface MastheadProps {
 		kicker: string;
@@ -15,9 +16,17 @@
 		cornerMeta?: Snippet;
 		meta?: Snippet;
 		children?: Snippet;
+		/** Hazard tape under the masthead. */
 		tape?: boolean;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
+	import SectionHeading from '../brand/SectionHeading.svelte';
+	import SectionLabel from '../brand/SectionLabel.svelte';
+	import { Separator } from '../primitives/separator/index.js';
 
 	let {
 		kicker,
@@ -37,9 +46,7 @@
 
 <div class={cn('masthead', className)} data-slot="masthead">
 	<header class="masthead-head" class:masthead-head--cornered={cornerMeta}>
-		{#if cornerMeta}
-			{@render cornerMeta()}
-		{/if}
+		{@render cornerMeta?.()}
 		<SectionLabel text={kicker} variant="station" />
 		<SectionHeading {heading} {subheading} {level} id={headingId} dot {explainer} />
 		{#if lede}
@@ -55,7 +62,7 @@
 	{/if}
 
 	{#if tape}
-		<Separator variant="hazard" class="masthead-tape" />
+		<Separator variant="hazard" />
 	{/if}
 </div>
 
@@ -73,7 +80,7 @@
 	.masthead-head--cornered {
 		position: relative;
 	}
-	@media (--tablet-min) {
+	@media (min-width: 768px) {
 		.masthead-head--cornered {
 			padding-block: 1.75rem;
 		}

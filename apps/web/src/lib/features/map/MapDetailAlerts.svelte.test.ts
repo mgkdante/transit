@@ -96,9 +96,7 @@ describe('MapDetailAlerts', () => {
 			props: { alerts: [], locale: 'en', t: MAP_SELECTION_DETAIL_COPY.en },
 		});
 
-		const notice = screen
-			.getByText('No alerts attached')
-			.closest('[data-component="state-notice"]');
+		const notice = screen.getByText('No alerts attached').closest('[data-slot="state-notice"]');
 		expect(notice).toHaveAttribute('data-presentation', 'silo');
 		expect(notice).toHaveAttribute('data-tone', 'positive');
 		expect(notice).not.toHaveAttribute('role', 'status');
@@ -110,9 +108,7 @@ describe('MapDetailAlerts', () => {
 			props: { alerts: null, locale: 'en', t: MAP_SELECTION_DETAIL_COPY.en },
 		});
 
-		const notice = screen
-			.getByText('Alert data unavailable')
-			.closest('[data-component="state-notice"]');
+		const notice = screen.getByText('Alert data unavailable').closest('[data-slot="state-notice"]');
 		expect(notice).toHaveAttribute('data-presentation', 'silo');
 		expect(notice).toHaveAttribute('data-tone', 'neutral');
 		expect(notice).not.toHaveAttribute('role', 'status');

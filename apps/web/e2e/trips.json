@@ -1,0 +1,10 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"trips": {
+		"T1": {
+			"status": "on_time",
+			"route": "80",
+			"stops": []
+		}
+	}
+}

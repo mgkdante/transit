@@ -51,7 +51,7 @@ describe('RepeatOffenderEvidenceTable', () => {
 		const table = within(container).getByRole('table', {
 			name: COPY.fr.evidenceTable.caption,
 		});
-		expect(table).toHaveAttribute('data-slot', 'offender-evidence-table');
+		expect(table).toHaveAccessibleName(COPY.fr.evidenceTable.caption);
 		expect(table.parentElement).toHaveAttribute('data-responsive', 'stack');
 		expect(table.parentElement).toHaveAttribute('data-stack-at', 'tablet');
 

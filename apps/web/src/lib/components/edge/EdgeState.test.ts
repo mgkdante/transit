@@ -102,7 +102,7 @@ describe('EdgeState — card border treatment', () => {
 		const { container } = render(EdgeState, { props: { variant: 'error-v1', lang: 'en' } });
 		const root = container.querySelector('[data-slot="edge-state"]');
 
-		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-slot', 'edge-state');
 		expect(root).not.toHaveClass('edge-accent-bar');
 		expect((root as HTMLElement).style.getPropertyValue('--edge-rule')).toBe('');
 	});
@@ -117,7 +117,7 @@ describe('EdgeState — card border treatment', () => {
 		const { container } = render(EdgeState, { props: { variant, lang: 'en' } });
 		const root = container.querySelector('[data-slot="edge-state"]');
 
-		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-slot', 'edge-state');
 		expect(root).toHaveAttribute('data-tone', tone);
 		expect(root).toHaveAttribute('data-presentation', 'responsive');
 		expect(root).not.toHaveClass('edge-accent-bar');

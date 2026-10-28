@@ -557,7 +557,7 @@ describe('AccountabilityReceipt honesty', () => {
 		render(AccountabilityReceipt);
 		const message = await screen.findByText(/No receipts have been published yet/i);
 		expect(message).toBeInTheDocument();
-		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
+		expect(message.closest('[data-slot="receipt-empty-index"]')).toHaveAttribute(
 			'data-presentation',
 			'card',
 		);

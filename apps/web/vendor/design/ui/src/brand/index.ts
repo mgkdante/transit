@@ -10,6 +10,9 @@ export type { CollapsibleSectionProps } from './CollapsibleSection.svelte';
 export { default as CornerMarks } from './CornerMarks.svelte';
 export type { CornerMarksProps } from './CornerMarks.svelte';
 
+export { default as CornerMeta } from './CornerMeta.svelte';
+export type { CornerMetaProps } from './CornerMeta.svelte';
+
 export { default as ErrorIllustration } from './ErrorIllustration.svelte';
 export type { ErrorIllustrationProps } from './ErrorIllustration.svelte';
 
@@ -47,6 +50,9 @@ export type { SectionIconName } from './SectionIcon.svelte';
 export { default as SectionLabel } from './SectionLabel.svelte';
 export type { SectionLabelProps } from './SectionLabel.svelte';
 
+export { default as SegmentedChoice } from './SegmentedChoice.svelte';
+export type { SegmentedChoiceOption, SegmentedChoiceProps } from './SegmentedChoice.svelte';
+
 export { default as StatusDot } from './StatusDot.svelte';
 export type { StatusDotColor, StatusDotProps } from './StatusDot.svelte';
 
@@ -70,6 +76,9 @@ export type { TocNavProps } from './TocNav.svelte';
 
 export { default as TocPill } from './TocPill.svelte';
 export type { TocPillProps } from './TocPill.svelte';
+
+export { default as ToggleChip } from './ToggleChip.svelte';
+export type { ToggleChipProps } from './ToggleChip.svelte';
 
 export {
 	TOC_TARGET_SELECTOR,

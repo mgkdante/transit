@@ -36,10 +36,16 @@
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
-		DashboardGrid,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import {
+		DashboardGrid,
+		ArticleHeader,
+		DetailFrame,
+		SurfaceRail,
+		type SurfaceRailContext,
+		type SurfaceRailPresentation,
+	} from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
@@ -49,10 +55,6 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import SurfaceRail, {
-		type SurfaceRailContext,
-		type SurfaceRailPresentation,
-	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
 		ladderGrains,

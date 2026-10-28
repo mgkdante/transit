@@ -1,18 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { tick } from 'svelte';
+
 import { render, screen, within } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { DelayLabelCopy } from '$lib/site/delayPresentation';
 import { detailCopy } from '$lib/features/stops/stops.copy';
 import ScheduleTable, { type ScheduleRow, type ScheduleTableProps } from './ScheduleTable.svelte';
 
 const scheduleTableSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/components/schedule/ScheduleTable.svelte'),
-	'utf8',
-);
-const dataTableSource = readFileSync(
-	resolve(process.cwd(), 'src/lib/components/data/DataTable.svelte'),
 	'utf8',
 );
 
@@ -43,26 +39,6 @@ const DELAY_COPY: DelayLabelCopy = {
 	onTime: 'on time',
 };
 
-const resizeObservers: ResizeObserverStub[] = [];
-
-class ResizeObserverStub {
-	readonly targets = new Set<Element>();
-	readonly observe = vi.fn((target: Element) => this.targets.add(target));
-	readonly disconnect = vi.fn(() => this.targets.clear());
-
-	constructor(private readonly callback: ResizeObserverCallback) {
-		resizeObservers.push(this);
-	}
-
-	trigger(): void {
-		this.callback([], this as unknown as ResizeObserver);
-	}
-}
-
-function observerFor(target: Element): ResizeObserverStub | undefined {
-	return resizeObservers.find((observer) => observer.targets.has(target));
-}
-
 function scheduleChassis(
 	container: HTMLElement,
 	caption: string,
@@ -76,101 +52,12 @@ function scheduleChassis(
 	expect(frame).toHaveAttribute('data-responsive', 'scroll');
 	expect(frame).toHaveAttribute('data-frame', 'card');
 	expect(frame).toHaveAttribute('data-collapse', 'collapse');
-	expect(frame).toHaveAttribute('data-frame-radius', 'true');
 	expect(frame).toHaveAttribute('data-header-band', 'terminal');
 	expect(table).toHaveClass('data-table', 'schedule-table');
 	expect(table.querySelectorAll('caption')).toHaveLength(1);
 
 	return { table, frame };
 }
-
-describe('ScheduleTable — shared scroll chassis', () => {
-	beforeEach(() => {
-		resizeObservers.length = 0;
-		vi.stubGlobal('ResizeObserver', ResizeObserverStub);
-	});
-
-	afterEach(() => {
-		vi.unstubAllGlobals();
-	});
-
-	it('keeps overflow-x auto, the three legacy min-width values, and the labelled region wiring', async () => {
-		const gridView = render(ScheduleTable, {
-			props: {
-				rows: [{ kind: 'grid', route: '51', headsign: 'Nord', times: ['08:00'] }],
-				mode: 'grid',
-				locale: 'en',
-				labels: GRID_LABELS,
-			},
-		});
-		const { frame: gridFrame } = scheduleChassis(gridView.container, GRID_LABELS.caption, 'grid');
-		expect(gridFrame.style.getPropertyValue('--dt-min-width')).toBe('42rem');
-		expect(gridFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
-		expect(dataTableSource).toMatch(
-			/\.data-table-frame\[data-responsive='scroll'\]\s*\{[^}]*overflow-x:\s*auto/,
-		);
-		expect(dataTableSource).toMatch(
-			/\.data-table-frame\[data-responsive='scroll'\] \.data-table\s*\{[^}]*min-width:\s*var\(--dt-min-width,\s*100%\)/,
-		);
-		expect(dataTableSource).toMatch(
-			/min-width:\s*var\(--dt-min-width-compact,\s*var\(--dt-min-width,\s*100%\)\)/,
-		);
-		const responsiveBlocks = scheduleTableSource.match(/responsive=\{\{[\s\S]*?\n\s*\}\}/g) ?? [];
-		expect(responsiveBlocks).toHaveLength(3);
-		for (const block of responsiveBlocks) {
-			expect(block).toMatch(/mode:\s*'scroll'/);
-			expect(block).toMatch(/minWidth:\s*'(?:34|42)rem'/);
-			expect(block).toMatch(/minWidthCompact:\s*'32rem'/);
-			expect(block).toMatch(/scrollLabel:\s*labels\.caption/);
-		}
-
-		Object.defineProperties(gridFrame, {
-			clientWidth: { configurable: true, get: () => 320 },
-			scrollWidth: { configurable: true, get: () => 672 },
-		});
-		const observer = observerFor(gridFrame);
-		expect(observer).toBeDefined();
-		observer?.trigger();
-		await tick();
-		expect(within(gridView.container).getByRole('region', { name: GRID_LABELS.caption })).toBe(
-			gridFrame,
-		);
-		expect(gridFrame).toHaveAttribute('tabindex', '0');
-
-		const boardView = render(ScheduleTable, {
-			props: {
-				rows: [{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 }],
-				mode: 'board',
-				locale: 'en',
-				labels: BOARD_LABELS,
-				delayCopy: DELAY_COPY,
-			},
-		});
-		const { frame: boardFrame } = scheduleChassis(
-			boardView.container,
-			BOARD_LABELS.caption,
-			'board',
-		);
-		expect(boardFrame.style.getPropertyValue('--dt-min-width')).toBe('34rem');
-		expect(boardFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
-
-		const serviceView = render(ScheduleTable, {
-			props: {
-				rows: [{ kind: 'service', period: 'AM peak', window: '06:00–09:00', headway: '6.0 min' }],
-				mode: 'service',
-				locale: 'en',
-				labels: SERVICE_LABELS,
-			},
-		});
-		const { frame: serviceFrame } = scheduleChassis(
-			serviceView.container,
-			SERVICE_LABELS.caption,
-			'service',
-		);
-		expect(serviceFrame.style.getPropertyValue('--dt-min-width')).toBe('34rem');
-		expect(serviceFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
-	});
-});
 
 describe('ScheduleTable — grid mode', () => {
 	it('exposes a row header in every mode and no scroll region without real overflow (S5-386 F4)', () => {

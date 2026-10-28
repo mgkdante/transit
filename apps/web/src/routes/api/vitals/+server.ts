@@ -1,6 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { MAX_VITALS_BODY_BYTES, parseVitalsBeacon, type VitalsSample } from '$lib/vitals/schema';
+import {
+	MAX_VITALS_BODY_BYTES,
+	parseVitalsBeacon,
+	type VitalsSample,
+} from '@yesid/analytics/vitals';
 
 export const prerender = false;
 

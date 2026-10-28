@@ -1,6 +1,6 @@
 {
 	"name": "@yesid/analytics",
-	"version": "0.22.0",
+	"version": "0.23.0",
 	"private": true,
 	"type": "module",
 	"description": "Consumer-neutral, consent-aware analytics policy, client, sanitization, and injected Plausible transport primitives.",
@@ -29,6 +29,10 @@
 		"./policy": {
 			"types": "./src/policy.ts",
 			"default": "./src/policy.ts"
+		},
+		"./vitals": {
+			"types": "./src/vitals.ts",
+			"default": "./src/vitals.ts"
 		}
 	},
 	"scripts": {

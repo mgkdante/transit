@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -294,6 +294,17 @@ panel with the dashed rule. `FilterSummary` shows `countLabel.singular` or `coun
 (each with a `{count}` placeholder) by the plural rule of `locale`, plus a `clearLabel` button.
 `SearchInput` is the listing search field; `label` is its accessible name.
 
+### CornerMeta, SegmentedChoice, and ToggleChip
+
+`CornerMeta` puts decorative mono notes in the four corners of its positioned parent (snippets
+`topLeft` to `bottomRight`, `crosshair` adds `CornerMarks`); it is `aria-hidden` and hidden below
+768px. `SegmentedChoice` is a single choice with radio-group semantics: `label` names the group,
+arrow keys move and select, and disabled options are skipped. It is controlled: every pick,
+the current option included, calls `onSelect`, and the caller sets `value`. `compactLabel` shows
+a short label and keeps `label` as the name, and `variant="joined-grid"` lays options out two per
+row. `ToggleChip` is a controlled pill button:
+the caller sets `pressed` (rendered as `aria-pressed`) and changes it in `onclick`.
+
 ## Listing frame
 
 `@yesid/ui/layout` exports `ListingFrame`, the listing page template. From 1024px it adds a
@@ -383,6 +394,45 @@ screen.
 optional `detail`, `suggestions` in a navigation named `suggestionsLabel`, and a terminal line when
 `statusNote` is given. For 404 the scene's sign shows the code; other statuses announce the code
 with `role="alert"`. The app keeps its copy and `<svelte:head>`.
+
+## Data pages
+
+`@yesid/ui/layout` also exports the parts of a data page. `Surface` is the page column with the
+page gutter. `Masthead` heads a surface with a station `kicker`, a dotted `heading`, optional
+`lede`, `meta` and body, and a hazard tape (`tape={false}` drops it); its `cornerMeta` snippet
+takes a `CornerMeta`. `Breadcrumb` renders `items` (`{ name, href }`) as a navigation named
+`label`, with the last item as the current page, and nothing for fewer than two items; build the
+trail's JSON-LD with `buildBreadcrumbListJsonLd` from `@yesid/seo-kit/jsonld`. `ControlsRail` is
+a card that groups controls under `label`. `DashboardGrid` fits as many `minTile`-wide columns as
+the width allows; with `label` (and not `as="ul"` or `as="ol"`) it is a named region.
+`SurfaceRail` is a page's controls rail: a landmark that sticks below `--chrome-offset` from 1024px, and below that a pill
+(`label`, `summary`, `openAria`, `closeAria`) that opens the same rail in a bottom sheet. The
+`rail` snippet receives `closeSheet` and the current `presentation`; pass the rail to
+`DetailFrame`'s `rail`.
+
+`@yesid/ui/table` exports `DataTable`. Columns give a `header`, a `cell` snippet and optional
+`align`, `numeric` (right-aligned tabular figures), `width` and `rowHeader`. `caption` is
+required and names the table. `responsive` stacks each row into label and value pairs below 448px
+(`at: 'compact'`) or 1024px (`at: 'tablet'`), or scrolls sideways (`mode: 'scroll'`, with
+`minWidth` and `minWidthCompact`); a scrolling table that overflows becomes a focusable region
+named by its caption. `frame="card"` draws a rounded card, `headerBand="terminal"` tints the
+header, `tableClass` styles the table and other attributes go to the frame.
+
+`@yesid/ui/feedback` exports `StateNotice`, the quiet empty, error and status notice: `title`,
+optional `body`, a `glyph` tinted by `tone`, and `meta` and `action` snippets. `presentation` is
+`responsive` (default), `silo`, `card`, `pill` or `row`; a pill or row without snippets renders
+inline. Pass `role` and `aria-live` when the notice reports a change.
+
+## Analytics consent
+
+`@yesid/ui/feedback` exports `AnalyticsConsent`, the consent rail for an
+`@yesid/analytics/consent` store. It shows while `getAnalyticsPolicy(controls, state)` asks for a
+prompt and `canShow` allows it, or whenever preferences are open; then the current choice is
+pressed and every `store.openPreferences()` scrolls to and focuses the rail. The product passes
+the store, its `controls`, the `copy` (`title`, `description`, `accept`, `decline`, `settings`,
+`privacy`), `privacyHref` and optionally an `id`. The rail only exists while it shows, so a
+settings button that opens it should not point `aria-controls` at it. It calls `store.init()` on
+mount.
 
 ## Site root and shared state
 
@@ -506,5 +556,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.22.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.23.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

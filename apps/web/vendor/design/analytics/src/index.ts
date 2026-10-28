@@ -3,3 +3,4 @@ export * from './config';
 export * from './consent';
 export * from './plausible';
 export * from './policy';
+export * from './vitals';

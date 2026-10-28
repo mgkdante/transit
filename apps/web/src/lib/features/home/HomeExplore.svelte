@@ -3,7 +3,7 @@
 	import { routeFor } from '$lib/nav';
 	import { FilterGroup, FilterSummary } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { scrollChain } from '@yesid/motion/actions';
 	import {
 		HOME_FILTER_COUNT_LABEL,
@@ -183,7 +183,7 @@
 						glyph="○"
 						presentation="silo"
 						role="status"
-						ariaLive="polite"
+						aria-live="polite"
 					>
 						{#snippet action()}<button class="home-clear" type="button" onclick={clearFilters}
 								>{t.clearFilters}</button

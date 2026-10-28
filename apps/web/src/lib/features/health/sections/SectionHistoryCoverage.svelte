@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@yesid/ui/badge';
 	import type { Locale } from '$lib/i18n';
-	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
-	import { AbsentValue, StateNotice } from '$lib/components/edge';
+	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
+	import { AbsentValue } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { absenceShort, describeAbsence } from '$lib/site/absence';
 	import { formatDateKey } from '$lib/utils/time';
 	import type { HealthCopy } from '../health.copy';
@@ -72,7 +74,7 @@
 
 {#snippet selectionCell(row: HistoryCoverageFamilyView)}
 	{#if row.selectionMode}
-		<span class="selection-chip">{t.selection[row.selectionMode]}</span>
+		<Badge variant="tag">{t.selection[row.selectionMode]}</Badge>
 	{:else}
 		<AbsentValue variant="row" reason="not-published" {locale} />
 	{/if}
@@ -93,7 +95,7 @@
 							<li class="metric-row" data-metric={metric.key} data-aggregation={metric.aggregation}>
 								<div class="metric-head">
 									<span class="metric-name">{t.metrics[metric.key]}</span>
-									<span class="aggregation-chip">{t.aggregation[metric.aggregation]}</span>
+									<Badge variant="tag">{t.aggregation[metric.aggregation]}</Badge>
 								</div>
 								{#if metric.firstDate && metric.lastDate}
 									<span class="metric-window">{windowLabel(metric.firstDate, metric.lastDate)}</span
@@ -159,9 +161,8 @@
 		responsive={{ mode: 'stack', at: 'tablet' }}
 		frame="card"
 		borderCollapse="separate"
-		frameRadius={true}
 		headerBand="none"
-		tableAttrs={{ class: 'coverage-table', 'data-slot': 'history-coverage-table' }}
+		tableClass="coverage-table"
 	/>
 </div>
 
@@ -212,19 +213,6 @@
 		color: var(--muted-foreground);
 		font-size: var(--text-caption);
 		line-height: 1.45;
-	}
-	.selection-chip,
-	.aggregation-chip {
-		display: inline-flex;
-		max-width: 100%;
-		padding: 0.2rem 0.5rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--muted);
-		color: var(--foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		line-height: 1.35;
 	}
 	.coverage-details,
 	.detail-group,

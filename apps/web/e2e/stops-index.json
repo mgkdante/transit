@@ -1,0 +1,11 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"stops": [
+		{
+			"id": "S1",
+			"name": "Fixture stop",
+			"lat": 45.5,
+			"lon": -73.6
+		}
+	]
+}

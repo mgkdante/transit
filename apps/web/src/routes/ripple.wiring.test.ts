@@ -27,9 +27,6 @@ describe('global ripple wiring', () => {
 		expect(layout).toContain("import '@yesid/motion/ripple.css'");
 		expect(layout).toContain("import { initGlobalRipple } from '@yesid/motion/utils/globalRipple'");
 		expect(layout).toMatch(/initGlobalRipple\(\{ exclude: '\[data-ripple-exempt\]' \}\)/);
-		expect(layout).toMatch(
-			/const disposeRipple = initGlobalRipple[\s\S]*const disposeVitals = startVitals\(\)[\s\S]*return \(\) => \{[\s\S]*disposeRipple\(\)[\s\S]*disposeVitals\(\)/,
-		);
 
 		expect(mapStage).toMatch(
 			/<div(?=[^>]*\sdata-ripple-exempt(?=\s|=|>))(?=[^>]*\sdata-slot="map-stage"(?=\s|>))[^>]*>/,

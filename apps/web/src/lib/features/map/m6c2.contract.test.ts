@@ -114,7 +114,6 @@ describe('M6C-2 token and protected-surface contract', () => {
 			'lib/features/metrics/MetricInfo.svelte:HIT area is expanded to --size-tap-min via a centered transparent overlay.',
 			'lib/features/metrics/MetricInfo.svelte:min-block-size: var(--size-tap-min);',
 			'lib/features/metrics/MetricInfo.svelte:min-inline-size: var(--size-tap-min);',
-			'lib/features/stops/StopDetail.svelte:min-height: var(--size-tap-min);',
 			'lib/features/stops/StopsIndex.svelte:min-height: var(--size-tap-min);',
 			'lib/features/trips/TripDetail.svelte:min-height: var(--size-tap-min);',
 		]);

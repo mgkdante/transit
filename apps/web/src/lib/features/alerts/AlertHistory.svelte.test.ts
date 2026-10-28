@@ -883,7 +883,7 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 		const note = document.querySelector('[data-slot="alert-no-match"]');
 		expect(note).not.toBeNull();
 		expect(note).toHaveTextContent(copyEn.filters.noMatch);
-		expect(note).toHaveAttribute('data-component', 'state-notice');
+		expect(note).toHaveAttribute('data-slot', 'alert-no-match');
 		expect(note).toHaveAttribute('data-presentation', 'silo');
 		expect(note?.textContent).not.toContain('·');
 	});

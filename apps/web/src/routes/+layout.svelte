@@ -52,7 +52,8 @@
 	import { dataPulse } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
-	import { startVitals } from '$lib/vitals/collect';
+	import { startVitals } from '@yesid/analytics/vitals';
+	import { env } from '$env/dynamic/public';
 	import { viewTransition } from '@yesid/motion/utils/viewTransition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
@@ -272,7 +273,10 @@
 
 		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
 
-		const disposeVitals = startVitals();
+		const disposeVitals =
+			env.PUBLIC_VITALS_ENABLED === 'true'
+				? startVitals({ endpoint: '/api/vitals', load: () => import('web-vitals') })
+				: () => {};
 		return () => {
 			disposeRipple();
 			disposeVitals();

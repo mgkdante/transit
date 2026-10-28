@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+	import { ToggleChip } from '@yesid/ui/brand';
 	import { cn } from '$lib/utils';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
@@ -65,15 +66,9 @@
 					<span class="search-control__label" id={modeLabelId}>{modeLabel}</span>
 					<div class="search-mode-chips" role="group" aria-labelledby={modeLabelId}>
 						{#each TRANSIT_MODE_FILTERS as chip (chip.key)}
-							<button
-								type="button"
-								class="search-mode-chip"
-								data-on={modes.has(chip.key)}
-								aria-pressed={modes.has(chip.key)}
-								onclick={() => toggleMode(chip.key)}
-							>
+							<ToggleChip pressed={modes.has(chip.key)} onclick={() => toggleMode(chip.key)}>
 								{chip.tag}
-							</button>
+							</ToggleChip>
 						{/each}
 					</div>
 				</div>
@@ -128,39 +123,6 @@
 		gap: 0.375rem;
 	}
 
-	.search-mode-chip {
-		appearance: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		padding: 0.375rem 0.75rem;
-		color: var(--muted-foreground);
-		background: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		cursor: pointer;
-		transition:
-			color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default),
-			border-color var(--duration-fast) var(--ease-default);
-	}
-
-	.search-mode-chip:hover {
-		color: var(--foreground);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-
-	.search-mode-chip[data-on='true'] {
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border-color: var(--primary);
-	}
-
-	.search-mode-chip:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
 	.search-controls[data-variant='page'] {
 		margin-top: 0.875rem;
 	}
@@ -202,11 +164,5 @@
 	.search-controls[data-variant='panel'] .search-controls__notice + .search-controls__filters {
 		padding-top: 0.5rem;
 		border-top: 1px solid var(--border-subtle);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.search-mode-chip {
-			transition: none;
-		}
 	}
 </style>

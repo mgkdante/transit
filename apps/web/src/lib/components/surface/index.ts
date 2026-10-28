@@ -3,12 +3,9 @@ export { default as EntityRow } from './EntityRow.svelte';
 export { default as EntityResultRow } from './EntityResultRow.svelte';
 export { default as EntityList } from './EntityList.svelte';
 export { default as EntityDetail } from './EntityDetail.svelte';
-export { default as Breadcrumb } from './Breadcrumb.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
-export { default as SegmentedChoice } from './SegmentedChoice.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as ArticleControlStack } from './ArticleControlStack.svelte';
-export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
 export { default as HistoryNavigator } from './HistoryNavigator.svelte';
 export { createRetainedHistoryUi } from './createRetainedHistoryUi.svelte';
@@ -28,13 +25,7 @@ export {
 
 export type { EntityRowProps } from './EntityRow.svelte';
 export type { EntityResultRowProps } from './EntityResultRow.svelte';
-export type { BreadcrumbProps } from './Breadcrumb.svelte';
 export type { ReliabilityPaneProps } from './ReliabilityPane.svelte';
-export type {
-	SegmentedChoiceOption,
-	SegmentedChoiceProps,
-	SegmentedChoiceVariant,
-} from './SegmentedChoice.svelte';
 export type { GrainPickerProps } from './GrainPicker.svelte';
 export type { ArticleControlStackProps } from './ArticleControlStack.svelte';
 export type {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '@yesid/ui/badge';
 	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
@@ -73,7 +74,7 @@
 						</div>
 					{:else}
 						<div class="lane-na" data-slot="lane-not-applicable">
-							<span class="lane-na-chip">{t.notApplicable}</span>
+							<Badge variant="tag">{t.notApplicable}</Badge>
 							<p class="lane-na-reason">{row.notApplicableReason}</p>
 						</div>
 					{/if}
@@ -164,18 +165,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
-	}
-	.lane-na-chip {
-		align-self: flex-start;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		padding: 0.125rem 0.5rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--card);
-		color: var(--muted-foreground);
 	}
 	.lane-na-reason {
 		margin: 0;

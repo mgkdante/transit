@@ -1,0 +1,18 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"id": "S1",
+	"periods": [
+		{
+			"grain": "day",
+			"otp_pct": 90,
+			"avg_delay_min": 1,
+			"severe_pct": 10
+		},
+		{
+			"grain": "week",
+			"otp_pct": 80,
+			"avg_delay_min": 2,
+			"severe_pct": 20
+		}
+	]
+}

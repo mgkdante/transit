@@ -1,21 +1,18 @@
+<!--
+  A captioned data table built from column definitions and a cell snippet per column. Below a
+  breakpoint it either stacks each row into label/value pairs (`stack`) or scrolls sideways
+  (`scroll`); a scrolling table that overflows becomes a focusable region named by its caption.
+  Attributes go to the frame; `tableClass` styles the table itself.
+-->
 <script module lang="ts">
 	import type { Snippet } from 'svelte';
+	import type { HTMLAttributes } from 'svelte/elements';
 
-	export type DataTableAttributeValue = string | number | boolean | null;
-	export type DataTableAttributes = Readonly<Record<string, DataTableAttributeValue>>;
 	export type DataTableAlign = 'start' | 'end';
 	export type DataTableResponsive =
 		| { mode: 'none' }
 		| { mode: 'stack'; at: 'compact' | 'tablet' }
-		| {
-				mode: 'scroll';
-				minWidth?: string;
-				minWidthCompact?: string;
-				scrollLabel?: string;
-		  };
-	export type DataTableFrame = 'none' | 'card' | 'gridlines';
-	export type DataTableBorderCollapse = 'collapse' | 'separate';
-	export type DataTableHeaderBand = 'none' | 'terminal' | 'wash';
+		| { mode: 'scroll'; minWidth?: string; minWidthCompact?: string };
 
 	export interface DataTableColumn<T> {
 		readonly key: string;
@@ -27,24 +24,26 @@
 		readonly cell: Snippet<[T]>;
 	}
 
-	export interface DataTableProps<T> {
+	export interface DataTableProps<T> extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		readonly rows: readonly T[];
 		readonly columns: readonly DataTableColumn<T>[];
 		readonly key: (row: T, index: number) => string;
 		readonly caption: string;
 		readonly responsive?: DataTableResponsive;
-		readonly frame?: DataTableFrame;
-		readonly borderCollapse?: DataTableBorderCollapse;
-		readonly frameRadius?: boolean;
-		readonly headerBand?: DataTableHeaderBand;
-		readonly tableAttrs?: DataTableAttributes;
-		readonly frameAttrs?: DataTableAttributes;
+		/** `card` draws a rounded, bordered card around the table. */
+		readonly frame?: 'none' | 'card';
+		readonly borderCollapse?: 'collapse' | 'separate';
+		readonly headerBand?: 'none' | 'terminal';
+		readonly tableClass?: string;
+		readonly class?: string;
 	}
 
 	const DEFAULT_RESPONSIVE: DataTableResponsive = { mode: 'none' };
 </script>
 
 <script lang="ts" generics="T">
+	import { cn } from '../cn/index.js';
+
 	let {
 		rows,
 		columns,
@@ -53,10 +52,10 @@
 		responsive = DEFAULT_RESPONSIVE,
 		frame = 'none',
 		borderCollapse = 'collapse',
-		frameRadius = false,
 		headerBand = 'none',
-		tableAttrs,
-		frameAttrs,
+		tableClass,
+		class: className,
+		...restProps
 	}: DataTableProps<T> = $props();
 
 	let frameElement = $state<HTMLDivElement | null>(null);
@@ -74,25 +73,6 @@
 	const scrollMinWidthCompact = $derived(
 		responsive.mode === 'scroll' ? responsive.minWidthCompact : undefined,
 	);
-	const scrollRegionLabel = $derived(
-		responsive.mode === 'scroll'
-			? (responsive.scrollLabel ?? accessibleCaption)
-			: accessibleCaption,
-	);
-
-	function attributeText(attrs: DataTableAttributes | undefined, name: string): string | undefined {
-		const value = attrs?.[name];
-		return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
-	}
-
-	const frameClass = $derived(
-		['data-table-frame', attributeText(frameAttrs, 'class')].filter(Boolean).join(' '),
-	);
-	const tableClass = $derived(
-		['data-table', attributeText(tableAttrs, 'class')].filter(Boolean).join(' '),
-	);
-	const frameSlot = $derived(attributeText(frameAttrs, 'data-slot') ?? 'data-table-frame');
-	const tableSlot = $derived(attributeText(tableAttrs, 'data-slot') ?? 'data-table');
 
 	function columnAlignment(column: DataTableColumn<T>): DataTableAlign {
 		return column.numeric ? 'end' : (column.align ?? 'start');
@@ -119,35 +99,27 @@
 	});
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (an overflowing table must be keyboard-scrollable) -->
 <div
-	{...frameAttrs}
 	bind:this={frameElement}
-	class={frameClass}
-	data-slot={frameSlot}
+	class={cn('data-table-frame', className)}
+	data-slot="data-table-frame"
+	{...restProps}
 	data-responsive={responsive.mode}
 	data-stack-at={stackAt}
 	data-frame={frame}
 	data-collapse={borderCollapse}
-	data-frame-radius={frameRadius}
 	data-header-band={headerBand}
 	data-scrollable={scrollable}
 	style:--dt-min-width={scrollMinWidth}
 	style:--dt-min-width-compact={scrollMinWidthCompact}
 	role={scrollable ? 'region' : undefined}
-	aria-label={scrollable ? scrollRegionLabel : undefined}
+	aria-label={scrollable ? accessibleCaption : undefined}
 	tabindex={scrollable ? 0 : undefined}
 	onscroll={measure}
 >
-	<table
-		{...tableAttrs}
-		class={tableClass}
-		data-slot={tableSlot}
-		role={undefined}
-		aria-label={undefined}
-		aria-labelledby={undefined}
-	>
-		<caption class="sr-only">{accessibleCaption}</caption>
+	<table class={cn('data-table', tableClass)} data-slot="data-table">
+		<caption class="data-table-caption">{accessibleCaption}</caption>
 		<thead>
 			<tr>
 				{#each columns as column (column.key)}
@@ -220,17 +192,8 @@
 
 	.data-table-frame[data-frame='card'] {
 		border: 1px solid var(--border);
-		background: var(--card);
-	}
-
-	.data-table-frame[data-frame='gridlines'] .data-table,
-	.data-table-frame[data-frame='gridlines'] .data-table th,
-	.data-table-frame[data-frame='gridlines'] .data-table td {
-		border: 1px solid var(--border);
-	}
-
-	.data-table-frame[data-frame-radius='true'] {
 		border-radius: var(--radius-lg);
+		background: var(--card);
 	}
 
 	.data-table {
@@ -251,7 +214,7 @@
 		min-width: var(--dt-min-width, 100%);
 	}
 
-	.data-table caption.sr-only {
+	.data-table-caption {
 		position: absolute;
 		width: 1px;
 		height: 1px;
@@ -265,10 +228,6 @@
 
 	.data-table-frame[data-header-band='terminal'] .data-table thead {
 		background: var(--terminal-chrome);
-	}
-
-	.data-table-frame[data-header-band='wash'] .data-table thead {
-		background: color-mix(in srgb, var(--foreground) 4%, transparent);
 	}
 
 	.data-table th,
@@ -321,18 +280,14 @@
 	}
 
 	@media (max-width: 28rem) {
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table thead,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table tbody,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table tr,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table th,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table td {
+		.data-table-frame[data-stack-at='compact'] .data-table,
+		.data-table-frame[data-stack-at='compact'] .data-table :is(thead, tbody, tr, th, td) {
 			display: block;
 			text-align: left;
 			white-space: normal;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table thead {
+		.data-table-frame[data-stack-at='compact'] .data-table thead {
 			position: absolute;
 			width: 1px;
 			height: 1px;
@@ -344,13 +299,12 @@
 			border: 0;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table tbody tr {
+		.data-table-frame[data-stack-at='compact'] .data-table tbody tr {
 			padding: 0.5rem 0;
 			border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table tbody th,
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table tbody td {
+		.data-table-frame[data-stack-at='compact'] .data-table tbody :is(th, td) {
 			display: grid;
 			grid-template-columns: minmax(7rem, 0.45fr) minmax(0, 1fr);
 			gap: 1rem;
@@ -358,10 +312,7 @@
 			border: 0;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact']
-			.data-table
-			tbody
-			:is(th, td)::before {
+		.data-table-frame[data-stack-at='compact'] .data-table tbody :is(th, td)::before {
 			content: attr(data-col);
 			grid-column: 1;
 			font-family: var(--font-mono);
@@ -372,30 +323,24 @@
 			color: var(--muted-foreground);
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact'] .data-table-cell-content {
+		.data-table-frame[data-stack-at='compact'] .data-table-cell-content {
 			grid-column: 2;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='compact']
-			[data-align='end']
-			.data-table-cell-content {
+		.data-table-frame[data-stack-at='compact'] [data-align='end'] .data-table-cell-content {
 			text-align: right;
 		}
 	}
 
-	@media (--desktop-max) {
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table thead,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tbody,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tr,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table th,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table td {
+	@media (max-width: 1023px) {
+		.data-table-frame[data-stack-at='tablet'] .data-table,
+		.data-table-frame[data-stack-at='tablet'] .data-table :is(thead, tbody, tr, th, td) {
 			display: block;
 			text-align: left;
 			white-space: normal;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table thead {
+		.data-table-frame[data-stack-at='tablet'] .data-table thead {
 			position: absolute;
 			width: 1px;
 			height: 1px;
@@ -407,13 +352,12 @@
 			border: 0;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tbody tr {
+		.data-table-frame[data-stack-at='tablet'] .data-table tbody tr {
 			padding: 0.625rem 0;
 			border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tbody th,
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table tbody td {
+		.data-table-frame[data-stack-at='tablet'] .data-table tbody :is(th, td) {
 			display: grid;
 			grid-template-columns: minmax(7rem, 0.45fr) minmax(0, 1fr);
 			gap: 1rem;
@@ -421,10 +365,7 @@
 			border: 0;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
-			.data-table
-			tbody
-			:is(th, td)::before {
+		.data-table-frame[data-stack-at='tablet'] .data-table tbody :is(th, td)::before {
 			content: attr(data-col);
 			grid-column: 1;
 			font-family: var(--font-mono);
@@ -435,30 +376,28 @@
 			color: var(--muted-foreground);
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'] .data-table-cell-content {
+		.data-table-frame[data-stack-at='tablet'] .data-table-cell-content {
 			grid-column: 2;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
-			[data-align='end']
-			.data-table-cell-content {
+		.data-table-frame[data-stack-at='tablet'] [data-align='end'] .data-table-cell-content {
 			text-align: right;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'][data-frame='card'][data-collapse='separate'][data-frame-radius='true'] {
+		.data-table-frame[data-stack-at='tablet'][data-frame='card'][data-collapse='separate'] {
 			border: 0;
 			border-radius: 0;
 			background: transparent;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'][data-frame='card'][data-collapse='separate'][data-frame-radius='true']
+		.data-table-frame[data-stack-at='tablet'][data-frame='card'][data-collapse='separate']
 			.data-table
 			tbody {
 			display: grid;
 			gap: 0.75rem;
 		}
 
-		.data-table-frame[data-responsive='stack'][data-stack-at='tablet'][data-frame='card'][data-collapse='separate'][data-frame-radius='true']
+		.data-table-frame[data-stack-at='tablet'][data-frame='card'][data-collapse='separate']
 			.data-table
 			tbody
 			tr {

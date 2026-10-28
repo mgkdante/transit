@@ -1292,7 +1292,7 @@ describe('StopDetail live departures — status filter', () => {
 
 		const empty = screen.getByTestId('departures-filter-empty');
 		expect(empty).toBeInTheDocument();
-		expect(empty).toHaveAttribute('data-component', 'state-notice');
+		expect(empty).toHaveAttribute('data-slot', 'state-notice');
 		expect(empty).toHaveAttribute('data-presentation', 'silo');
 		expect(screen.getByText('Showing 0 of 3 departures')).toBeInTheDocument();
 	});

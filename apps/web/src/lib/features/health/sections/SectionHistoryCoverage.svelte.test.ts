@@ -33,7 +33,6 @@ describe('SectionHistoryCoverage empty values', () => {
 		expect(frame).toHaveAttribute('data-stack-at', 'tablet');
 		expect(frame).toHaveAttribute('data-frame', 'card');
 		expect(frame).toHaveAttribute('data-collapse', 'separate');
-		expect(frame).toHaveAttribute('data-frame-radius', 'true');
 		expect(frame).toHaveAttribute('data-header-band', 'none');
 
 		const columnHeaders = within(table).getAllByRole('columnheader');
@@ -75,7 +74,7 @@ describe('SectionHistoryCoverage empty values', () => {
 			props: { rows: [row], copy: copy.en, locale: 'en' },
 		});
 
-		const healthy = screen.getByText('No declared gaps').closest('[data-component="state-notice"]');
+		const healthy = screen.getByText('No declared gaps').closest('[data-slot="state-notice"]');
 		expect(healthy).toHaveAttribute('data-presentation', 'row');
 		expect(healthy).toHaveAttribute('data-tone', 'positive');
 		expect(healthy).toHaveTextContent('the history index reports no known gaps');
@@ -84,7 +83,7 @@ describe('SectionHistoryCoverage empty values', () => {
 			const matches = screen.getAllByText(message);
 			expect(matches.length).toBeGreaterThan(0);
 			for (const match of matches) {
-				const notice = match.closest('[data-component="state-notice"]');
+				const notice = match.closest('[data-slot="absent-value"]');
 				expect(notice).toHaveAttribute('data-presentation', 'row');
 				expect(notice?.querySelector('[data-slot="state-notice-body"]')).not.toBeEmptyDOMElement();
 			}
@@ -96,7 +95,7 @@ describe('SectionHistoryCoverage empty values', () => {
 			props: { rows: [{ ...row, gaps: null }], copy: copy.en, locale: 'en' },
 		});
 
-		const unknown = screen.getByText('No gap inventory').closest('[data-component="state-notice"]');
+		const unknown = screen.getByText('No gap inventory').closest('[data-slot="absent-value"]');
 		expect(unknown).toHaveAttribute('data-tone', 'unknown');
 		expect(unknown).toHaveTextContent('the history index does not publish gap details');
 		expect(screen.queryByText('No declared gaps')).not.toBeInTheDocument();

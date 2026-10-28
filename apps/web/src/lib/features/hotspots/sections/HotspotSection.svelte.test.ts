@@ -147,7 +147,7 @@ describe('HotspotSection evidence presentation', () => {
 		const table = within(container).getByRole('table', {
 			name: COPY.fr.tray.listLabel,
 		});
-		expect(table).toHaveAttribute('data-slot', 'hotspot-tray-table');
+		expect(table).toHaveAccessibleName(COPY.fr.tray.listLabel);
 		expect(table.parentElement).toHaveAttribute('data-responsive', 'stack');
 		expect(table.parentElement).toHaveAttribute('data-stack-at', 'compact');
 		const headers = within(table)
@@ -224,9 +224,11 @@ describe('HotspotSection evidence presentation', () => {
 		expect(viewport.firstElementChild).toHaveAttribute('data-slot', 'chart-canvas');
 		expect(output).toHaveAttribute('data-chart-layout', 'dense');
 		expect(output?.querySelector('[data-slot="hotspot-window"]')).toBeNull();
-		expect(output?.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
+		expect(
+			within(output as HTMLElement).queryByRole('table', { name: COPY.fr.tray.listLabel }),
+		).toBeNull();
 		expect(container.querySelector('[data-slot="hotspot-window"]')).not.toBeNull();
-		expect(container.querySelector('[data-slot="hotspot-tray-table"]')).not.toBeNull();
+		expect(within(container).queryByRole('table', { name: COPY.fr.tray.listLabel })).not.toBeNull();
 		expect(output).toHaveAttribute('data-more-end', 'false');
 		expect(container.querySelector('[data-slot="hotspot-chart-viewport"]')).toBeNull();
 	});

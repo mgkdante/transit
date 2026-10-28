@@ -7,10 +7,11 @@
 	import { describeAbsence, type AbsenceReason } from '$lib/site/absence';
 	import { Skeleton } from '@yesid/ui/skeleton';
 	import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
-	import StateNotice, {
+	import {
+		StateNotice,
 		type StateNoticePresentation,
 		type StateNoticeTone,
-	} from './StateNotice.svelte';
+	} from '@yesid/ui/feedback';
 
 	type EdgeVariant =
 		| 'stale-offline'
@@ -248,7 +249,7 @@
 		{tone}
 		{presentation}
 		role={liveRole}
-		ariaLive={variant === 'error-v1' ? 'assertive' : 'polite'}
+		aria-live={variant === 'error-v1' ? 'assertive' : 'polite'}
 		meta={staleDelta ? staleMeta : undefined}
 		action={variant === 'error-v1' && onRetry ? retryAction : undefined}
 		class={className}

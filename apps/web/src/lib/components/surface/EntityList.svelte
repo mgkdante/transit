@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils';
-	import { DashboardGrid } from '$lib/components/layout';
+	import { DashboardGrid } from '@yesid/ui/layout';
 	import { Card } from '@yesid/ui/card';
 
 	interface EntityListProps extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {

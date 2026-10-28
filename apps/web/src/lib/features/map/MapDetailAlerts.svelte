@@ -4,7 +4,7 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 	interface Props {

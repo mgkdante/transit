@@ -10,7 +10,6 @@ html {
 }
 
 :root {
-	--measure-absence: 34ch;
 	--text-stat-value: 1.75rem;
 	--dataviz-vehicle-on-time: var(--dataviz-status-on-time);
 	--dataviz-vehicle-delayed: var(--dataviz-status-late);

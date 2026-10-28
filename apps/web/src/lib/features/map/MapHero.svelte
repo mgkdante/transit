@@ -7,7 +7,7 @@
 	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { clock, desktop, theme } from '@yesid/ui/state';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
 	import { getV1Context } from '$lib/v1/boot';
 	import { getBasemap } from '$lib/v1/repositories/basemap';
@@ -810,7 +810,7 @@
 					tone="error"
 					presentation="card"
 					role="alert"
-					ariaLive="assertive"
+					aria-live="assertive"
 					action={mapRetry}
 				/>
 			</div>

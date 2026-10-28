@@ -1,17 +1,25 @@
-<script lang="ts">
+<!--
+  Decorative mono annotations in the four corners of the nearest positioned ancestor, with optional
+  crosshair marks. Hidden from assistive tech and below 768px; repeat anything essential in the
+  content.
+-->
+<script lang="ts" module>
 	import type { Snippet } from 'svelte';
-	import { CornerMarks } from '@yesid/ui/brand';
-	import { cn } from '$lib/utils';
+	import type { HTMLAttributes } from 'svelte/elements';
 
-	export interface CornerMetaProps {
+	export interface CornerMetaProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		topLeft?: Snippet;
 		topRight?: Snippet;
 		bottomLeft?: Snippet;
 		bottomRight?: Snippet;
 		crosshair?: boolean;
 		class?: string;
-		[key: string]: unknown;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
+	import CornerMarks from './CornerMarks.svelte';
 
 	let {
 		topLeft,
@@ -20,11 +28,11 @@
 		bottomRight,
 		crosshair = false,
 		class: className,
-		...rest
+		...restProps
 	}: CornerMetaProps = $props();
 </script>
 
-<div class={cn('corner-meta', className)} data-slot="corner-meta" aria-hidden="true" {...rest}>
+<div class={cn('corner-meta', className)} data-slot="corner-meta" aria-hidden="true" {...restProps}>
 	{#if crosshair}
 		<CornerMarks size="sm" />
 	{/if}
@@ -51,7 +59,7 @@
 		display: none;
 	}
 
-	@media (--tablet-min) {
+	@media (min-width: 768px) {
 		.corner-meta {
 			display: block;
 		}

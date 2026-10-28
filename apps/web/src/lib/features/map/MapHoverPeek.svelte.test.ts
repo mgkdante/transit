@@ -94,7 +94,7 @@ describe('MapHoverPeek', () => {
 			props: { peek: { ...vehicleFresh, delayMin: null }, locale: 'en' },
 		});
 		expect(
-			container.querySelectorAll("[data-slot='absent-value'] [data-part='surface']"),
+			container.querySelectorAll("[data-slot='absent-value'] .state-notice-surface"),
 		).toHaveLength(1);
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapHoverPeek.svelte'),

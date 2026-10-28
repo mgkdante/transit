@@ -96,11 +96,17 @@ describe('RepeatOffendersSection article-card body', () => {
 		expect(container.querySelectorAll('[data-slot="offender-tray"]')).toHaveLength(1);
 		expect(container.querySelector('[data-slot="offender-recurrence"]')).toBeNull();
 		const ladder = container.querySelector('[data-slot="offender-ladder"]');
-		const table = container.querySelector('[data-slot="offender-evidence-table"]');
+		const table = within(container).queryByRole('table', { name: COPY.en.evidenceTable.caption });
 		const tableFrame = ladder?.nextElementSibling;
-		expect(container.querySelectorAll('[data-slot="offender-evidence-table"]')).toHaveLength(1);
+		expect(
+			within(container).getAllByRole('table', { name: COPY.en.evidenceTable.caption }),
+		).toHaveLength(1);
 		expect(tableFrame).toHaveAttribute('data-slot', 'data-table-frame');
-		expect(tableFrame?.querySelector('[data-slot="offender-evidence-table"]')).toBe(table);
+		expect(
+			within(tableFrame as HTMLElement).queryByRole('table', {
+				name: COPY.en.evidenceTable.caption,
+			}),
+		).toBe(table);
 		expect(screen.getByText(evidence[0].recurrence)).toBeInTheDocument();
 		expect(
 			screen.getByRole('button', { name: `About ${COPY.en.ladder.severeRateLabel}` }),

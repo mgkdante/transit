@@ -1,31 +1,35 @@
+<!--
+  A segmented single choice with radio-group semantics: one tab stop, arrow keys move and select,
+  disabled options are skipped. It is controlled: every pick, including the current option, calls
+  `onSelect` and the caller sets `value`. `joined-grid` lays the options out two per row as one block.
+-->
 <script module lang="ts">
-	export type SegmentedChoiceVariant = 'default' | 'joined-grid';
+	import type { HTMLAttributes } from 'svelte/elements';
 
 	export interface SegmentedChoiceOption<K extends string = string> {
 		readonly key: K;
 		readonly label: string;
+		/** Shown instead of `label`, which then becomes the accessible name and tooltip. */
 		readonly compactLabel?: string;
 		readonly disabled?: boolean;
 		readonly describedById?: string;
 		readonly title?: string;
-		readonly testId?: string;
 	}
 
-	export interface SegmentedChoiceProps<K extends string = string> {
+	export interface SegmentedChoiceProps<K extends string = string>
+		extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'role' | 'aria-label'> {
 		readonly options: readonly SegmentedChoiceOption<K>[];
 		readonly value: K;
 		readonly label: string;
 		readonly onSelect: (key: K) => void;
-		readonly variant?: SegmentedChoiceVariant;
-		readonly dataVariant?: string;
-		readonly dataSlot?: string;
+		readonly variant?: 'default' | 'joined-grid';
 		readonly class?: string;
 	}
 </script>
 
 <script lang="ts" generics="K extends string = string">
-	import { cn } from '$lib/utils';
-	import { boop, pressBounce } from '@yesid/motion';
+	import { boop, pressBounce } from '@yesid/motion/actions';
+	import { cn } from '../cn/index.js';
 
 	let {
 		options,
@@ -33,9 +37,8 @@
 		label,
 		onSelect,
 		variant = 'default',
-		dataVariant = variant,
-		dataSlot = 'segmented-choice',
 		class: className,
+		...restProps
 	}: SegmentedChoiceProps<K> = $props();
 
 	const refs: (HTMLButtonElement | null)[] = $state([]);
@@ -49,19 +52,12 @@
 				),
 	);
 
-	function gridCell(index: number): string {
-		if (variant !== 'joined-grid') return '';
-		if (options.length === 3 && index === 2) return '2:1-2';
-		return `${Math.floor(index / 2) + 1}:${(index % 2) + 1}`;
-	}
-
 	function pointerTitle(option: SegmentedChoiceOption<K>): string | undefined {
 		return option.title ?? (option.compactLabel ? option.label : undefined);
 	}
 
 	function pick(option: SegmentedChoiceOption<K>): void {
-		if (option.disabled) return;
-		onSelect(option.key);
+		if (!option.disabled) onSelect(option.key);
 	}
 
 	function onkeydown(event: KeyboardEvent): void {
@@ -76,7 +72,7 @@
 		for (let step = 1; step <= options.length; step += 1) {
 			const next =
 				(((checkedIndex + direction * step) % options.length) + options.length) % options.length;
-			const option = options[next];
+			const option = options[next]!;
 			if (!option.disabled) {
 				event.preventDefault();
 				onSelect(option.key);
@@ -93,10 +89,11 @@
 		variant === 'joined-grid' && 'segmented-choice--joined-grid',
 		className,
 	)}
+	data-slot="segmented-choice"
+	data-variant={variant}
+	{...restProps}
 	role="radiogroup"
 	aria-label={label}
-	data-slot={dataSlot}
-	data-variant={dataVariant}
 	data-segment-count={options.length}
 >
 	{#each options as option, index (option.key)}
@@ -114,8 +111,6 @@
 			title={pointerTitle(option)}
 			disabled={option.disabled}
 			tabindex={index === checkedIndex ? 0 : -1}
-			data-grid-cell={gridCell(index) || undefined}
-			data-testid={option.testId}
 			onclick={() => pick(option)}
 			use:boop={{ scale: 1.04 }}
 			use:pressBounce
@@ -145,8 +140,6 @@
 		gap: 0;
 		padding: 0;
 		overflow: hidden;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--primary) 6%, var(--card));
 	}
 	.segmented-choice--joined-grid .segmented-choice-segment {

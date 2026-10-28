@@ -4,8 +4,7 @@
 	import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
 	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
-	import { FilterSummary } from '@yesid/ui/brand';
-	import SegmentedChoice from '$lib/components/surface/SegmentedChoice.svelte';
+	import { FilterSummary, SegmentedChoice } from '@yesid/ui/brand';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { foldSearchText } from '$lib/search/normalize';
 

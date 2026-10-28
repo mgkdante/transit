@@ -1,32 +1,32 @@
-<script lang="ts">
-	import { type Locale, getLocalizeHref } from '$lib/i18n';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
-
-	const localizeHref = getLocalizeHref();
-
-	export interface BreadcrumbProps {
-		trail: readonly BreadcrumbTrailItem[];
-		locale: Locale;
-		class?: string;
+<!--
+  A breadcrumb trail: a navigation named by `label` with one link per ancestor and the current page
+  last. It renders nothing for fewer than two items. The trail's JSON-LD comes from
+  `buildBreadcrumbListJsonLd` in `@yesid/seo-kit/jsonld`, with absolute URLs.
+-->
+<script lang="ts" module>
+	export interface BreadcrumbItem {
+		name: string;
+		href: string;
 	}
 
-	let { trail, locale, class: className }: BreadcrumbProps = $props();
-
-	const navAria = $derived(locale === 'fr' ? "Fil d'Ariane" : 'Breadcrumb');
-	const crumbs = $derived(
-		trail.map((crumb, i) => ({
-			name: crumb.name,
-			href: localizeHref(crumb.path, locale),
-			isLast: i === trail.length - 1,
-		})),
-	);
+	export interface BreadcrumbProps {
+		items: readonly BreadcrumbItem[];
+		label: string;
+		class?: string;
+	}
 </script>
 
-{#if crumbs.length > 1}
-	<nav class={['breadcrumb', className]} aria-label={navAria} data-slot="breadcrumb">
+<script lang="ts">
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import { cn } from '../cn/index.js';
+
+	let { items, label, class: className }: BreadcrumbProps = $props();
+</script>
+
+{#if items.length > 1}
+	<nav class={cn('breadcrumb', className)} aria-label={label} data-slot="breadcrumb">
 		<ol class="breadcrumb-list">
-			{#each crumbs as crumb, i (crumb.href)}
+			{#each items as item, i (item.href)}
 				<li class="breadcrumb-item">
 					{#if i > 0}
 						<ChevronRightIcon
@@ -36,10 +36,10 @@
 							aria-hidden="true"
 						/>
 					{/if}
-					{#if crumb.isLast}
-						<span class="breadcrumb-current" aria-current="page">{crumb.name}</span>
+					{#if i === items.length - 1}
+						<span class="breadcrumb-current" aria-current="page">{item.name}</span>
 					{:else}
-						<a class="breadcrumb-link" href={crumb.href}>{crumb.name}</a>
+						<a class="breadcrumb-link" href={item.href}>{item.name}</a>
 					{/if}
 				</li>
 			{/each}

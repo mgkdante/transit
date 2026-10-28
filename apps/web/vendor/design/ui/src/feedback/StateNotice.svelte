@@ -1,27 +1,29 @@
-<script lang="ts">
+<!--
+  A quiet empty, error or status notice: a glyph tinted by `tone`, a title and an optional body,
+  plus `meta` and `action` snippets. `row` and `pill` without snippets render inline, so they can
+  sit inside a sentence or a table cell. `role`, `aria-live` and `aria-label` pass through.
+-->
+<script lang="ts" module>
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { cn } from '$lib/utils';
 
 	export type StateNoticePresentation = 'row' | 'pill' | 'silo' | 'card' | 'responsive';
 	export type StateNoticeTone = 'neutral' | 'positive' | 'warning' | 'error';
 
-	export interface StateNoticeProps extends Omit<
-		HTMLAttributes<HTMLElement>,
-		'children' | 'title' | 'role' | 'aria-live' | 'aria-label'
-	> {
+	export interface StateNoticeProps extends Omit<HTMLAttributes<HTMLElement>, 'children' | 'title'> {
 		title: string;
 		body?: string;
 		glyph?: string;
 		presentation?: StateNoticePresentation;
 		tone?: StateNoticeTone;
-		role?: 'status' | 'alert';
-		ariaLive?: 'off' | 'polite' | 'assertive';
-		ariaLabel?: string;
 		meta?: Snippet;
 		action?: Snippet;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { cn } from '../cn/index.js';
 
 	let {
 		title,
@@ -29,9 +31,6 @@
 		glyph = '○',
 		presentation = 'responsive',
 		tone = 'neutral',
-		role,
-		ariaLive,
-		ariaLabel,
 		meta,
 		action,
 		class: className,
@@ -47,20 +46,14 @@
 	this={element}
 	class={cn('state-notice', `state-notice--${presentation}`, className)}
 	data-slot="state-notice"
-	data-component="state-notice"
 	data-presentation={presentation}
 	data-tone={tone}
-	{role}
-	aria-live={ariaLive}
-	aria-label={ariaLabel}
 	{...restProps}
 >
-	<svelte:element this={element} class="state-notice-surface" data-part="surface">
+	<svelte:element this={element} class="state-notice-surface">
 		<svelte:element this={element} class="state-notice-message">
 			{#if presentation !== 'row'}
-				<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">
-					{glyph}
-				</span>
+				<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">{glyph}</span>
 			{/if}
 
 			<span class="state-notice-copy">
@@ -68,26 +61,18 @@
 				{#if body}
 					{#if presentation === 'row' || presentation === 'pill'}<span
 							class="state-notice-separator"
-							aria-hidden="true"
-						>
-							·
-						</span>&nbsp;{/if}<span class="state-notice-body" data-slot="state-notice-body"
-						>{body}</span
-					>
+							aria-hidden="true">·</span
+						>&nbsp;{/if}<span class="state-notice-body" data-slot="state-notice-body">{body}</span>
 				{/if}
 			</span>
 		</svelte:element>
 
 		{#if meta}
-			<div class="state-notice-meta" data-slot="state-notice-meta">
-				{@render meta()}
-			</div>
+			<div class="state-notice-meta" data-slot="state-notice-meta">{@render meta()}</div>
 		{/if}
 
 		{#if action}
-			<div class="state-notice-action" data-slot="state-notice-action">
-				{@render action()}
-			</div>
+			<div class="state-notice-action" data-slot="state-notice-action">{@render action()}</div>
 		{/if}
 	</svelte:element>
 </svelte:element>
@@ -198,7 +183,7 @@
 		flex-direction: column;
 		gap: 0.125rem;
 		min-width: 0;
-		max-inline-size: var(--measure-absence);
+		max-inline-size: 34ch;
 	}
 
 	.state-notice--pill .state-notice-copy {
@@ -210,7 +195,7 @@
 	.state-notice--row .state-notice-copy {
 		display: inline-block;
 		max-width: 100%;
-		max-inline-size: var(--measure-absence);
+		max-inline-size: 34ch;
 		font-weight: 500;
 		vertical-align: top;
 	}

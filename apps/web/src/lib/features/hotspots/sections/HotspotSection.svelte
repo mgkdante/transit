@@ -2,7 +2,7 @@
 	import { intl } from '$lib/i18n';
 	import type { Locale } from '$lib/i18n';
 	import { SectionHeading } from '@yesid/ui/brand';
-	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
+	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -123,7 +123,7 @@
 				frame="none"
 				borderCollapse="collapse"
 				headerBand="none"
-				tableAttrs={{ class: 'hotspot-tray-table', 'data-slot': 'hotspot-tray-table' }}
+				tableClass="hotspot-tray-table"
 			/>
 		</div>
 	{/if}

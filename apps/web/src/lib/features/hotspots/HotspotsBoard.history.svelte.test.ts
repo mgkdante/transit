@@ -488,8 +488,16 @@ describe('HotspotsBoard retained date history', () => {
 			const output = section.querySelector('[data-slot="chart-output"]')!;
 			const viewport = output.querySelector('[data-slot="chart-viewport"]')!;
 			expect(viewport.querySelector('[data-slot="chart-canvas"]')).not.toBeNull();
-			expect(output.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
-			expect(section.querySelector('[data-slot="hotspot-tray-table"]')).not.toBeNull();
+			expect(
+				within(output as HTMLElement).queryByRole('table', {
+					name: hotspotsCopy.en.tray.listLabel,
+				}),
+			).toBeNull();
+			expect(
+				within(section as HTMLElement).queryByRole('table', {
+					name: hotspotsCopy.en.tray.listLabel,
+				}),
+			).not.toBeNull();
 			expect(output.closest(`[data-toc="${card}"]`)).toBe(section);
 		}
 	});

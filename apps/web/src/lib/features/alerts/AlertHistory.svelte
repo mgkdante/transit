@@ -27,13 +27,17 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import {
+		ArticleHeader,
+		DetailFrame,
+		SurfaceRail,
+		type SurfaceRailContext,
+	} from '@yesid/ui/layout';
 	import ManifestoCanvas from '$lib/components/brand/ManifestoCanvas.svelte';
-	import { StateNotice } from '$lib/components/edge';
+	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
@@ -679,7 +683,7 @@
 											title={t.filters.noMatch}
 											presentation="silo"
 											role="status"
-											ariaLive="polite"
+											aria-live="polite"
 											data-slot="alert-no-match"
 										/>
 									{:else}

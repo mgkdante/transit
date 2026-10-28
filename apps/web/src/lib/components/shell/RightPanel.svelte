@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { sheetCopy } from './sheet.copy';
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
@@ -49,14 +50,12 @@
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
-	const defaultTitle = $derived(locale === 'fr' ? 'Détails' : 'Details');
-	const emptyLabel = $derived(
-		locale === 'fr' ? 'Sélectionnez un élément' : 'Select something to inspect',
-	);
-	const backAria = $derived(locale === 'fr' ? 'Retour' : 'Back');
-	const closeAria = $derived(locale === 'fr' ? 'Fermer le volet' : 'Close panel');
-	const collapseAria = $derived(locale === 'fr' ? 'Réduire le volet' : 'Collapse panel');
-	const expandAria = $derived(locale === 'fr' ? 'Ouvrir le volet' : 'Expand panel');
+	const defaultTitle = $derived(sheetCopy[locale].title);
+	const emptyLabel = $derived(sheetCopy[locale].empty);
+	const backAria = $derived(sheetCopy[locale].back);
+	const closeAria = $derived(sheetCopy[locale].closePanel);
+	const collapseAria = $derived(sheetCopy[locale].collapsePanel);
+	const expandAria = $derived(sheetCopy[locale].expandPanel);
 	const panelHeadingId = $derived(headingId ?? `right-panel-${surfaceKey}-heading`);
 	const panelBodyId = $derived(`${panelHeadingId}-body`);
 	let firstSurfaceKey = $state<string>();

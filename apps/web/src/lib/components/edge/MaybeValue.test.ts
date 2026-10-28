@@ -71,7 +71,7 @@ describe('MaybeValue — absence rides the shared chassis and the shared resolve
 			props: { value: null, reason: 'no-observations', locale: 'en' },
 		});
 		const root = absence(container);
-		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-slot', 'absent-value');
 		expect(root).toHaveAttribute('data-tone', 'unknown');
 		expect(root).toHaveAttribute('aria-label', 'No data, not enough readings yet');
 	});

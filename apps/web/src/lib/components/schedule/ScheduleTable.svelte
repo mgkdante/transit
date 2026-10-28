@@ -8,7 +8,7 @@
 		rowColorVar,
 		type DelayLabelCopy,
 	} from '$lib/site/delayPresentation';
-	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
+	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
 	import { AbsentValue } from '$lib/components/edge';
 
 	export interface ScheduleGridRow {
@@ -182,14 +182,13 @@
 			mode: 'scroll',
 			minWidth: '42rem',
 			minWidthCompact: '32rem',
-			scrollLabel: labels.caption,
 		}}
 		frame="card"
 		borderCollapse="collapse"
-		frameRadius={true}
 		headerBand="terminal"
-		tableAttrs={{ class: 'schedule-table' }}
-		frameAttrs={{ class: 'schedule-table-frame', 'data-mode': mode }}
+		tableClass="schedule-table"
+		class="schedule-table-frame"
+		data-mode={mode}
 	/>
 {:else if mode === 'board'}
 	<DataTable
@@ -220,14 +219,13 @@
 			mode: 'scroll',
 			minWidth: '34rem',
 			minWidthCompact: '32rem',
-			scrollLabel: labels.caption,
 		}}
 		frame="card"
 		borderCollapse="collapse"
-		frameRadius={true}
 		headerBand="terminal"
-		tableAttrs={{ class: 'schedule-table' }}
-		frameAttrs={{ class: 'schedule-table-frame', 'data-mode': mode }}
+		tableClass="schedule-table"
+		class="schedule-table-frame"
+		data-mode={mode}
 	/>
 {:else}
 	<DataTable
@@ -258,14 +256,13 @@
 			mode: 'scroll',
 			minWidth: '34rem',
 			minWidthCompact: '32rem',
-			scrollLabel: labels.caption,
 		}}
 		frame="card"
 		borderCollapse="collapse"
-		frameRadius={true}
 		headerBand="terminal"
-		tableAttrs={{ class: 'schedule-table' }}
-		frameAttrs={{ class: 'schedule-table-frame', 'data-mode': mode }}
+		tableClass="schedule-table"
+		class="schedule-table-frame"
+		data-mode={mode}
 	/>
 {/if}
 
