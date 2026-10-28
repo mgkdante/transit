@@ -1179,7 +1179,7 @@
 
     "@transit/web/@yesid/tokens": ["@yesid/tokens@file:apps/web/vendor/design/tokens", { "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.5.0", "vitest": "^4.1.0" } }],
 
-    "@transit/web/@yesid/ui": ["@yesid/ui@file:apps/web/vendor/design/ui", { "dependencies": { "@lucide/svelte": "^1.18.0", "@yesid/motion": "file:../motion", "@yesid/seo-kit": "file:../seo-kit", "@yesid/tokens": "file:../tokens", "bits-ui": "^2.16.3", "clsx": "^2.1.1", "paneforge": "^1.0.2", "tailwind-merge": "^3.5.0", "tailwind-variants": "^3.2.2" }, "devDependencies": { "@sveltejs/vite-plugin-svelte": "^6.2.4", "@testing-library/svelte": "^5.3.1", "@types/node": "^22.0.0", "happy-dom": "^21.0.4", "svelte": "^5.54.0", "svelte-check": "^4.4.2", "tailwindcss": "^4.1.18", "typescript": "^5.9.3", "vite": "^7.3.1", "vitest": "^4.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }],
+    "@transit/web/@yesid/ui": ["@yesid/ui@file:apps/web/vendor/design/ui", { "dependencies": { "@lucide/svelte": "^1.18.0", "@yesid/analytics": "file:../analytics", "@yesid/motion": "file:../motion", "@yesid/seo-kit": "file:../seo-kit", "@yesid/tokens": "file:../tokens", "bits-ui": "^2.16.3", "clsx": "^2.1.1", "paneforge": "^1.0.2", "tailwind-merge": "^3.5.0", "tailwind-variants": "^3.2.2" }, "devDependencies": { "@sveltejs/vite-plugin-svelte": "^6.2.4", "@testing-library/svelte": "^5.3.1", "@types/node": "^22.0.0", "happy-dom": "^21.0.4", "svelte": "^5.54.0", "svelte-check": "^4.4.2", "tailwindcss": "^4.1.18", "typescript": "^5.9.3", "vite": "^7.3.1", "vitest": "^4.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 
@@ -1212,6 +1212,8 @@
     "wrap-ansi/ansi-styles": ["ansi-styles@6.2.3", "", {}, "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="],
 
     "@transit/web/@yesid/seo-kit/@yesid/tokens": ["@yesid/tokens@file:apps/web/vendor/design/tokens", {}],
+
+    "@transit/web/@yesid/ui/@yesid/analytics": ["@yesid/analytics@file:apps/web/vendor/design/analytics", {}],
 
     "@transit/web/@yesid/ui/@yesid/motion": ["@yesid/motion@file:./apps/web/vendor/design/motion", {}],
 

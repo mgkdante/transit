@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.22.0',
-	tagObject: 'c0956ce81b1912d4a8e5411ff8e0b7235ea76453',
-	peeledCommit: '3e817a15a5a1b40740ab7583a58e2b90b34f34ef',
-	assetName: 'yesid.dev-design-v0.22.0.tar',
-	assetSize: 2672640,
-	assetDigest: 'sha256:6d8c41f78f144e524e709d427f85e0482e5219e3fbddfb20d2548a866d5112ad',
+	tag: 'v0.23.0',
+	tagObject: '79a2c50260521cef4b356618322fea30e15955f8',
+	peeledCommit: '86796125a19788fd138b5d288d02df0b4cde2621',
+	assetName: 'yesid.dev-design-v0.23.0.tar',
+	assetSize: 2764800,
+	assetDigest: 'sha256:351bdb76195733db150beb878c1075e039248489b457cd338490d6169998b55a',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:0c9916631dcdcb506cbe860fddd087f6ea523fa06cfa62591161a990dc83c290',
-	manifestDigest: 'c26b746eb42b652fea1f3b6f937666b5076bdcec3e5f1bf6af26c0f31aeeca31',
+	treeHash: 'sha256:da5de7eafeff1061d7016e92bb6eb547c3790c77beedd470a4cb0a4c206b9726',
+	manifestDigest: 'e5f9bb327e5065ec7a9eb81f63169de35f7ad8c6dd32e7798093c24952e66588',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -192,7 +192,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.22.0');
+		expect(packageJson.version).toBe('0.23.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -261,7 +261,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.22.0',
+			version: '0.23.0',
 		});
 		expect(files).toEqual([
 			'README.md',
@@ -272,6 +272,7 @@ describe('vendor/design integrity', () => {
 			'src/index.ts',
 			'src/plausible.ts',
 			'src/policy.ts',
+			'src/vitals.ts',
 			'tsconfig.json',
 		]);
 	});

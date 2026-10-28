@@ -23,3 +23,25 @@ export type {
 	SiteHeaderMenuItem,
 	SiteHeaderProps,
 } from './SiteHeader.svelte';
+
+export { default as Breadcrumb } from './Breadcrumb.svelte';
+export type { BreadcrumbItem, BreadcrumbProps } from './Breadcrumb.svelte';
+
+export { default as ControlsRail } from './ControlsRail.svelte';
+export type { ControlsRailProps } from './ControlsRail.svelte';
+
+export { default as DashboardGrid } from './DashboardGrid.svelte';
+export type { DashboardGridProps } from './DashboardGrid.svelte';
+
+export { default as Masthead } from './Masthead.svelte';
+export type { MastheadProps } from './Masthead.svelte';
+
+export { default as Surface } from './Surface.svelte';
+export type { SurfaceProps } from './Surface.svelte';
+
+export { default as SurfaceRail } from './SurfaceRail.svelte';
+export type {
+	SurfaceRailContext,
+	SurfaceRailPresentation,
+	SurfaceRailProps,
+} from './SurfaceRail.svelte';
