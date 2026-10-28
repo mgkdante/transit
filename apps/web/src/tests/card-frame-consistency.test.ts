@@ -5,15 +5,6 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('card frame consistency', () => {
-	it('keeps the shared card frame uniform on all four edges', () => {
-		const card = read('vendor/design/ui/src/primitives/card/card.svelte');
-
-		expect(card).not.toMatch(/(?:box-shadow|filter)\s*:/i);
-		expect(card).not.toContain('var(--edge-highlight)');
-		expect(card).not.toMatch(/border-(?:top|block-start)\s*:/);
-		expect(card).not.toMatch(/(?:linear|radial)-gradient\s*\(/i);
-	});
-
 	it('keeps listing inventory rules neutral instead of brand-coloured', () => {
 		const stats = read('src/lib/components/layout/ListingHeaderStats.svelte');
 

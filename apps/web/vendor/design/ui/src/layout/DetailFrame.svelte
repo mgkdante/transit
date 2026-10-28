@@ -116,7 +116,7 @@
 >
 	{@render header?.()}
 
-	<Separator variant="hazard" maxWidth="none" class="detail-shell-tape" />
+	<Separator variant="hazard" class="detail-shell-tape" />
 
 	{#if toolbar}
 		<div class="detail-shell-toolbar" data-slot="detail-shell-toolbar">

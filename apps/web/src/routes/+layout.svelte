@@ -45,7 +45,7 @@
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
-	import { runViewTransition } from '$lib/motion/view-transition';
+	import { viewTransition } from '@yesid/motion/utils/viewTransition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
 	import { getLenis } from '@yesid/motion/utils/lenis';
@@ -244,7 +244,7 @@
 		};
 	});
 
-	onNavigate((navigation) => runViewTransition(navigation));
+	onNavigate(viewTransition);
 
 	afterNavigate(({ from, to, type }) => {
 		if (to) void transitAnalytics.trackPageview(to.url);

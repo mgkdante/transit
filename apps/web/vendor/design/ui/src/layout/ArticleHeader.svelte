@@ -181,6 +181,7 @@
 <style>
 	.article-header {
 		--article-deco-opacity: 0.25;
+		--article-meta-size: clamp(0.75rem, 0.6875rem + 0.3vw, 0.875rem);
 		position: relative;
 		margin-top: calc(-1 * var(--chrome-offset, 0px));
 		padding-top: var(--chrome-offset, 0px);
@@ -357,12 +358,17 @@
 		color: var(--article-accent);
 	}
 
+	.header__subtitle,
+	.header__meta {
+		font-family: var(--font-mono);
+		font-size: var(--article-meta-size);
+		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
+	}
+
 	.header__subtitle {
 		max-width: 720px;
 		margin: 0 auto 1.25rem;
-		font-size: 1rem;
-		line-height: 1.45;
-		color: color-mix(in srgb, var(--foreground) 76%, transparent);
+		line-height: 1.6;
 	}
 
 	.header__meta {
@@ -372,9 +378,6 @@
 		justify-content: center;
 		gap: 1rem;
 		min-height: 1rem;
-		font-family: var(--font-mono);
-		font-size: clamp(9px, 2.8vw, 11px);
-		color: color-mix(in srgb, var(--article-accent) 60%, var(--foreground));
 	}
 
 	.header__meta-item {
@@ -474,7 +477,6 @@
 
 		.header__subtitle {
 			margin-bottom: 1.5rem;
-			font-size: var(--text-detail-body-desktop);
 		}
 	}
 

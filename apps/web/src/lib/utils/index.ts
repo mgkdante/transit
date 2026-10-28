@@ -1,5 +1,10 @@
-export { cn, twMergeConfig } from './cn';
-export type { WithoutChild, WithoutChildren, WithoutChildrenOrChild, WithElementRef } from './cn';
+export { cn } from '$lib/ui/configure';
+export type {
+	WithoutChild,
+	WithoutChildren,
+	WithoutChildrenOrChild,
+	WithElementRef,
+} from '@yesid/ui/cn';
 
 export {
 	DISPLAY_TIME_ZONE,

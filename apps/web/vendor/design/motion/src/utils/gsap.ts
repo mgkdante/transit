@@ -1,16 +1,6 @@
-// GSAP plugin registration — ScrollTrigger + SplitText eager.
-//
-// DEVIATION MOTION-1 from yesid.dev @ 2bdb611d (dated 2026-07-02): the source
-// file also eagerly imported MorphSVGPlugin and shipped lazy loaders
-// (loadDrawSVG/loadMorphSVG/loadFlip/loadCustomEase). Their only consumers are
-// morphHover and app components that stay app-side, so this package ships only
-// what the shared vocabulary needs. Apps keep their own registration module for
-// those plugins. Everything kept below is byte-equivalent.
-//
-// Eager:
-//   - ScrollTrigger  — config applied via initScrollTriggerConfig().
-//   - SplitText      — wordmarkHover's action contract runs `new SplitText(...)`
-//                       synchronously, so it can't await a dynamic import.
+// GSAP registration. ScrollTrigger and SplitText load eagerly (wordmarkHover runs
+// `new SplitText(...)` synchronously at mount); every other plugin loads lazily
+// through its load*() function, so apps that never call one don't bundle it.
 
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -20,13 +10,9 @@ let configured = false;
 const loadedPlugins = new Set<string>();
 
 /**
- * Register ScrollTrigger and apply its site-wide config. The config
- * ignores viewport height changes < 25% (mobile address bar show/hide)
- * so ScrollTrigger doesn't recalculate pin positions when browser
- * chrome appears/disappears. Compatible with Lenis (unlike normalizeScroll).
- *
- * Idempotent — safe to call from any route/consumer mount. Every consumer
- * that creates a ScrollTrigger must call this first.
+ * Register ScrollTrigger and ignore viewport height changes under 25% (the mobile
+ * address bar), so pins don't recalculate when browser chrome shows or hides.
+ * Idempotent; call it before creating any ScrollTrigger.
  */
 export function initScrollTriggerConfig(): void {
 	if (configured) return;
@@ -35,20 +21,30 @@ export function initScrollTriggerConfig(): void {
 	configured = true;
 }
 
-/**
- * Sync SplitText registration — for wordmarkHover, whose action contract
- * requires `new SplitText(node, ...)` to run synchronously at mount.
- * Uses the eagerly-imported SplitText symbol (no dynamic import).
- * Idempotent.
- */
+/** Register SplitText synchronously, for actions that split text at mount. Idempotent. */
 export function ensureSplitTextRegistered(): void {
 	if (loadedPlugins.has('SplitText')) return;
 	gsap.registerPlugin(SplitText);
 	loadedPlugins.add('SplitText');
 }
 
-// Re-export for motion code that needs a direct symbol reference.
-// gsap       — every consumer
-// ScrollTrigger — sectionMagnet/lenis bridge
-// SplitText  — wordmarkHover
+const pendingPlugins = new Map<string, Promise<void>>();
+
+function loadPlugin(name: string, load: () => Promise<object>): Promise<void> {
+	let pending = pendingPlugins.get(name);
+	if (!pending) {
+		pending = load().then((plugin) => gsap.registerPlugin(plugin));
+		pending.catch(() => pendingPlugins.delete(name));
+		pendingPlugins.set(name, pending);
+	}
+	return pending;
+}
+
+export const loadDrawSVG = () =>
+	loadPlugin('DrawSVG', async () => (await import('gsap/DrawSVGPlugin')).DrawSVGPlugin);
+export const loadMorphSVG = () =>
+	loadPlugin('MorphSVG', async () => (await import('gsap/MorphSVGPlugin')).MorphSVGPlugin);
+export const loadCustomEase = () =>
+	loadPlugin('CustomEase', async () => (await import('gsap/CustomEase')).CustomEase);
+
 export { gsap, ScrollTrigger, SplitText };

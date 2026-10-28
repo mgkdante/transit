@@ -15,6 +15,16 @@ export interface TocEntry {
 /** Elements `observeActiveToc` tracks unless the page passes its own selector. */
 export const TOC_TARGET_SELECTOR = '[data-section-index], [data-toc]';
 
+/** TOC jumps land a section's top this far down the viewport, and the active-section tracker reads the same line. */
+const TOC_LINE = 0.25;
+
+function landOnTocLine(target: HTMLElement, behavior: ScrollBehavior): void {
+	const previous = target.style.scrollMarginTop;
+	target.style.scrollMarginTop = `${TOC_LINE * 100}vh`;
+	target.scrollIntoView({ behavior, block: 'start' });
+	target.style.scrollMarginTop = previous;
+}
+
 export function prefersReducedMotion(): boolean {
 	return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
@@ -103,14 +113,14 @@ export function tocElement(id: string): Element | null {
 	return document.getElementById(id);
 }
 
-/** Lands the readable heading, including a closed card's visible trigger. */
+/** Lands the readable heading, including a closed card's visible trigger, on the TOC line. */
 export function navigateToc(id: string): void {
 	const element = tocElement(id);
 	if (!element) return;
 	const closed = element.closest('[inert]');
 	const card = closed?.closest('.section-card') ?? element;
-	const target = card.querySelector<HTMLElement>('.section-header') ?? card;
-	target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+	const target = card.querySelector<HTMLElement>('.section-header') ?? (card as HTMLElement);
+	landOnTocLine(target, prefersReducedMotion() ? 'auto' : 'smooth');
 }
 
 /** For `afterNavigate`: lands new fragment requests and leaves history to the router. */
@@ -190,7 +200,8 @@ export async function revealTocTarget(
 	const target = tocElement(id);
 	await settleLayout(target);
 	if (!target || !isCurrent()) return false;
-	target.scrollIntoView({ behavior, block });
+	if (block === 'start') landOnTocLine(target as HTMLElement, behavior);
+	else target.scrollIntoView({ behavior, block });
 	return true;
 }
 
@@ -217,7 +228,7 @@ export function observeActiveToc(
 				else if (el.id) setActive(el.id);
 			}
 		},
-		{ rootMargin: '-20% 0px -70% 0px' },
+		{ rootMargin: `-${TOC_LINE * 100}% 0px -${100 - TOC_LINE * 100 - 1}% 0px` },
 	);
 	els.forEach((el) => observer.observe(el));
 	return () => observer.disconnect();

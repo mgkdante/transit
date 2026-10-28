@@ -559,7 +559,7 @@ describe('HotspotsBoard article', () => {
 		expect(toc).toHaveAttribute('aria-expanded', 'false');
 
 		await fireEvent.click(pill);
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
 		await fireEvent.click(pill);
 		sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		mobileControls = within(sheet).getByRole('button', { name: 'View controls' });

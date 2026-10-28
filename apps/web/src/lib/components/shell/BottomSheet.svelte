@@ -3,6 +3,7 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
+	import { Button } from '@yesid/ui/button';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import * as Sheet from '@yesid/ui/sheet';
 	import { SectionLabel } from '@yesid/ui/brand';
@@ -60,15 +61,17 @@
 			<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 pb-3 pt-3">
 				<div class="flex min-w-0 items-center gap-2">
 					{#if canGoBack}
-						<button
+						<Button
+							variant="ghost"
+							size="icon-tap"
 							type="button"
-							class="tap-press -ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							class="-ml-1 text-muted-foreground"
 							aria-label={backAria}
 							onclick={() => onback?.()}
 							data-slot="bottom-sheet-back"
 						>
 							<ArrowLeftIcon size={15} strokeWidth={2.3} aria-hidden="true" />
-						</button>
+						</Button>
 					{/if}
 					<Sheet.Title class="min-w-0 flex-1">
 						{#if identity}
@@ -77,15 +80,17 @@
 							<SectionLabel text={title ?? defaultTitle} variant="station" />
 						{/if}
 					</Sheet.Title>
-					<button
+					<Button
+						variant="ghost"
+						size="icon-tap"
 						type="button"
-						class="tap-press -mr-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="-mr-1 text-muted-foreground"
 						aria-label={closeAria}
 						onclick={() => (open = false)}
 						data-slot="bottom-sheet-close"
 					>
 						<XIcon size={18} strokeWidth={2.3} aria-hidden="true" />
-					</button>
+					</Button>
 				</div>
 			</Sheet.Header>
 

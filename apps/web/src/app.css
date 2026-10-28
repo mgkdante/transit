@@ -146,34 +146,6 @@ body {
 		-12px 0 28px -20px rgb(28 24 19 / 0.18), inset 1px 0 0 var(--edge-highlight);
 }
 
-@view-transition {
-	navigation: auto;
-}
-
-@keyframes vt-fade-in {
-	from {
-		opacity: 0;
-	}
-}
-@keyframes vt-fade-out {
-	to {
-		opacity: 0;
-	}
-}
-
-::view-transition-old(root) {
-	animation: vt-fade-out var(--duration-normal) var(--ease-out) both;
-}
-::view-transition-new(root) {
-	animation: vt-fade-in var(--duration-normal) var(--ease-out) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	::view-transition-old(root),
-	::view-transition-new(root) {
-		animation: none;
-	}
-}
 
 .brand-fade-line {
 	background: linear-gradient(90deg, var(--primary), transparent);

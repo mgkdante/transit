@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { scrollChain } from '@yesid/motion/actions';
 	import { cn, type WithElementRef } from '../cn/index.js';
 
 	export type StickyPanelProps = WithElementRef<HTMLAttributes<HTMLDivElement>, HTMLDivElement> & {
@@ -25,6 +26,7 @@
 	data-slot="sticky-panel"
 	style="top: {top};"
 	tabindex={0}
+	use:scrollChain
 	{...restProps}
 >
 	{@render children()}
@@ -35,8 +37,7 @@
 		position: sticky;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
-		background: var(--card);
-		box-shadow: var(--shadow-card);
+		background: var(--surface-3);
 		padding: 1.25rem;
 		overflow-y: auto;
 		max-height: calc(100dvh - 8rem);

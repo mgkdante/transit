@@ -50,7 +50,7 @@
 
 <section class="error-page" data-slot="error-page">
 	<div data-testid="hazard-tape">
-		<Separator variant="hazard" maxWidth="none" />
+		<Separator variant="hazard" />
 	</div>
 
 	<div class="error-page-content">

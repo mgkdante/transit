@@ -141,8 +141,29 @@ pre, code, table {
 	75%, 100% { transform: scale(2.5); opacity: 0; }
 }
 
+/* Route crossfade: full page loads opt in here; client navigations through viewTransition(). */
+@media (prefers-reduced-motion: no-preference) {
+	@view-transition {
+		navigation: auto;
+	}
+}
+@keyframes vt-fade-in {
+	from { opacity: 0; }
+}
+@keyframes vt-fade-out {
+	to { opacity: 0; }
+}
+::view-transition-old(root) {
+	animation: vt-fade-out var(--duration-normal) var(--ease-out) both;
+}
+::view-transition-new(root) {
+	animation: vt-fade-in var(--duration-normal) var(--ease-out) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.led-pulse { animation: none; }
+	::view-transition-old(root),
+	::view-transition-new(root) { animation: none; }
 }
 
 .divider-dashed {
