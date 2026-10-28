@@ -10,6 +10,7 @@ const destinations = [...SURFACE_NAV, ...AUDIT_NAV];
 // Transit prefixes every locale but the default.
 const localized = (href: string, locale: Locale) =>
 	locale === DEFAULT_LOCALE ? href : `/${locale}${href}`;
+const home = (locale: Locale) => (locale === DEFAULT_LOCALE ? '/' : `/${locale}`);
 const start = (locale: Locale) => localized(AUDIT_NAV[0].href, locale);
 const next = (locale: Locale) =>
 	PUBLISHED_LOCALES[(PUBLISHED_LOCALES.indexOf(locale) + 1) % PUBLISHED_LOCALES.length];
@@ -33,6 +34,30 @@ test.beforeEach(async ({ page }) => {
 
 for (const locale of PUBLISHED_LOCALES) {
 	const copy = navPillCopy[locale];
+
+	test(`${locale}: the language switch round-trips from home`, async ({ page }) => {
+		await page.goto(home(locale));
+		for (const from of [locale, next(locale)]) {
+			await page
+				.getByRole('link', { name: new RegExp(`^${literal(navPillCopy[from].language)}:`) })
+				.click();
+			await expect(page.locator('html')).toHaveAttribute('lang', next(from));
+			await expect(page).toHaveURL(samePath(home(next(from))));
+		}
+	});
+
+	test(`${locale}: every menu destination shows an icon and only the current one is lit`, async ({
+		page,
+	}) => {
+		await page.goto(start(locale));
+		const menu = await openMenu(page, locale);
+		for (const item of destinations) {
+			const icon = menu.getByRole('link', { name: item.label[locale], exact: true }).locator('svg');
+			await expect(icon).toBeVisible();
+			if (item === AUDIT_NAV[0]) await expect(icon).not.toHaveCSS('fill', 'none');
+			else await expect(icon).toHaveCSS('fill', 'none');
+		}
+	});
 
 	test(`${locale}: the menu lists every destination, holds focus and gives it back on Escape`, async ({
 		page,

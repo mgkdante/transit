@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
+import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { detailCopy } from '../src/lib/features/stops/stops.copy';
 
 const departures = JSON.parse(readFileSync(new URL('./departures.json', import.meta.url), 'utf8'));
 const stop = Object.keys(departures.stops)[0]!;
@@ -60,6 +62,40 @@ test("a stop page's header canvas is decorative and fills the header", async ({ 
 					Math.abs(actual[key] - expected[key]),
 				),
 			);
+		})
+		.toBeLessThanOrEqual(1);
+});
+
+test("a detail page's back link sits midway between the chrome and the next line", async ({
+	page,
+}) => {
+	await page.goto('/stop/' + stop);
+	const link = page.getByRole('link', { name: detailCopy.en.back, exact: true });
+	await expect(link).toBeVisible();
+	await page.evaluate(() => document.fonts.ready);
+	await expect
+		.poll(async () => {
+			const [above, below] = await page.evaluate(
+				({ back, network }) => {
+					const link = [...document.querySelectorAll('a')].find(
+						(a) => a.textContent?.trim() === back,
+					)!;
+					const range = document.createRange();
+					range.selectNodeContents(link);
+					const text = range.getBoundingClientRect();
+					const pill = document.querySelector('[data-testid="nav-pill"]')!.getBoundingClientRect();
+					const select = document
+						.querySelector(`select[aria-label="${network}"]`)!
+						.parentElement!.getBoundingClientRect();
+					const chrome = Math.max(pill.bottom, select.bottom);
+					return [
+						text.top - chrome,
+						link.nextElementSibling!.getBoundingClientRect().top - text.bottom,
+					];
+				},
+				{ back: detailCopy.en.back, network: navPillCopy.en.network },
+			);
+			return Math.abs(above - below);
 		})
 		.toBeLessThanOrEqual(1);
 });
