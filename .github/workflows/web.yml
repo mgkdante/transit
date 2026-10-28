@@ -231,6 +231,9 @@ jobs:
       - name: Header e2e
         run: bun run test:e2e
 
+      - name: Stress e2e (throwaway experiment, never merged)
+        run: bunx playwright test -c e2e/playwright.config.ts --repeat-each=2
+
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
