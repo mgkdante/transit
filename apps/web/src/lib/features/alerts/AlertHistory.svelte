@@ -21,11 +21,7 @@
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import {
-		ArticleControlDisclosure,
-		createRailDisclosureController,
-		ResourceBoundary,
-	} from '$lib/components/surface';
+	import { ResourceBoundary } from '$lib/components/surface';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
@@ -74,10 +70,6 @@
 		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),
 	);
 	const officialAlertsUrl = $derived(provider?.alert_links[locale]);
-	const railDisclosures = createRailDisclosureController({
-		filters: 'alerts-filters',
-		toc: 'alerts-toc',
-	});
 
 	const history = createResource((signal) => getAlertHistory({ signal }), {
 		enabled: () => alertsAvailable,
@@ -531,12 +523,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<ArticleControlDisclosure
-		title={t.filters.railLabel}
-		bind:open={
-			() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
-		}
-	>
+	<CollapsibleSection title={t.filters.railLabel} sectionKey="alerts-filters">
 		<AlertFilters
 			bind:affects
 			bind:severity
@@ -556,7 +543,7 @@
 			onWindowChange={selectHistoryWindow}
 			onClear={clearFilters}
 		/>
-	</ArticleControlDisclosure>
+	</CollapsibleSection>
 	{#if tocEntries.length > 0}
 		<div class="alert-history-rail-toc" data-slot="section-toc">
 			<TocNav
@@ -564,8 +551,7 @@
 				activeId={navigation.activeId}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				quiet={false}
-				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				sectionKey="alerts-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);

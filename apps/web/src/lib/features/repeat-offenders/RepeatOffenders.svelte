@@ -27,9 +27,7 @@
 	} from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
-		ArticleControlDisclosure,
 		ArticleControlStack,
-		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
@@ -77,10 +75,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railDisclosures = createRailDisclosureController({
-		controls: 'repeat-offenders-controls',
-		toc: 'repeat-offenders-toc',
-	});
 
 	const offenders = createHistoryDateResource<HistoricCollectionIndex, RepeatOffendersData>(
 		{
@@ -503,19 +497,14 @@
 	{/snippet}
 
 	{#if hasGrains || hasHistoryNavigator}
-		<ArticleControlDisclosure
-			title={t.rail.controls}
-			bind:open={
-				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-			}
-		>
+		<CollapsibleSection title={t.rail.controls} sectionKey="repeat-offenders-controls">
 			<ArticleControlStack
 				history={hasHistoryNavigator ? historyControls : undefined}
 				primary={hasGrains ? primaryControls : undefined}
 				secondary={hasGrains && showWorstN ? secondaryControls : undefined}
 				caption={hasGrains ? windowCaptionControl : undefined}
 			/>
-		</ArticleControlDisclosure>
+		</CollapsibleSection>
 	{/if}
 	{#if tocEntries.length > 0}
 		<div class="repeat-rail-toc" data-slot="section-toc">
@@ -524,8 +513,7 @@
 				activeId={navigation.activeId}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				quiet={false}
-				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				sectionKey="repeat-offenders-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);

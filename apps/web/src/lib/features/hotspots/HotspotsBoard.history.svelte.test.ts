@@ -219,13 +219,12 @@ describe('HotspotsBoard retained date history', () => {
 		expect(harness.getHotspotsHistoryDay).not.toHaveBeenCalled();
 		const rail = desktopRail(container);
 		expect(within(rail).getByLabelText('History date')).toHaveValue('2026-06-25');
-		const controlsBody = rail.querySelector('[data-slot="controls-body"]') as HTMLElement;
-		expect(controlsBody.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
-		expect(controlsBody.querySelector('[data-slot="grain-picker"]')).not.toBeNull();
+		expect(rail.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
+		expect(rail.querySelector('[data-slot="grain-picker"]')).not.toBeNull();
 		expect(
-			controlsBody
+			rail
 				.querySelector('[data-slot="history-navigator"]')
-				?.compareDocumentPosition(controlsBody.querySelector('[data-slot="grain-picker"]')!),
+				?.compareDocumentPosition(rail.querySelector('[data-slot="grain-picker"]')!),
 		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 		const grain = within(rail).getByRole('radiogroup', { name: 'Granularity' });
 		expect(grain).toHaveAttribute('data-variant', 'time-grid');

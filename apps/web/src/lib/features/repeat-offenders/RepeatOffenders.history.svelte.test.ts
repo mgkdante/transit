@@ -313,12 +313,11 @@ describe('RepeatOffenders retained date history', () => {
 		expect(harness.getRepeatOffendersHistoryDay).not.toHaveBeenCalled();
 		const rail = desktopRail(container);
 		expect(within(rail).getByLabelText('History date')).toHaveValue('2026-06-25');
-		const controls = rail.querySelector('[data-slot="controls-body"]')!;
-		expect(controls.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
+		expect(rail.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
 		expect(
-			controls
+			rail
 				.querySelector('[data-slot="history-navigator"]')
-				?.compareDocumentPosition(controls.querySelector('[data-slot="grain-picker"]')!),
+				?.compareDocumentPosition(rail.querySelector('[data-slot="grain-picker"]')!),
 		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 		expect(screen.getByTestId('quiet-mode-controls').querySelectorAll('button')).toHaveLength(2);
 		expect(screen.getAllByRole('link', { name: /Current trip/ })[0]).toHaveAttribute(

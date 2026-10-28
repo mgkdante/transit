@@ -31,9 +31,7 @@
 	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
-		ArticleControlDisclosure,
 		ArticleControlStack,
-		createRailDisclosureController,
 		createRetainedHistoryUi,
 		FreshnessStamp,
 		ConformanceBadge,
@@ -47,7 +45,7 @@
 		type SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import { revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
+	import { CollapsibleSection, revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
@@ -487,10 +485,6 @@
 		})),
 	);
 	let activeId = $state('');
-	const railDisclosures = createRailDisclosureController({
-		controls: 'network-controls',
-		toc: 'network-toc',
-	});
 	function navigate(id: string): void {
 		void revealTocTarget(id, {
 			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
@@ -640,26 +634,20 @@
 	{/snippet}
 
 	{#if hasViewControls}
-		<ArticleControlDisclosure
-			title={t.viewControlsLabel}
-			bind:open={
-				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-			}
-		>
+		<CollapsibleSection title={t.viewControlsLabel} sectionKey="network-controls">
 			<ArticleControlStack
 				history={history.index != null ? historyControls : undefined}
 				primary={showGrainPicker ? primaryControls : undefined}
 				secondary={showSecondaryControls ? windowControls : undefined}
 			/>
-		</ArticleControlDisclosure>
+		</CollapsibleSection>
 	{/if}
 
 	<div class="rail-toc" data-slot="section-toc">
 		<TocNav
 			entries={tocEntries}
 			{activeId}
-			quiet={false}
-			bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+			sectionKey="network-toc"
 			onNavigate={(id) => {
 				navigate(id);
 				closeSheet();

@@ -11,9 +11,7 @@
 	import type { StopReliability } from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
-		ArticleControlDisclosure,
 		ArticleControlStack,
-		createRailDisclosureController,
 		createRetainedHistoryUi,
 		ReliabilityPane,
 		GrainPicker,
@@ -87,10 +85,6 @@
 	const noObservationLabel = $derived(absenceShort('no-observations', locale));
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 	const retainedDataBody = $derived(`${retainedDataAbsence.why}. ${copy.history.currentOnly}`);
-	const railDisclosures = createRailDisclosureController({
-		controls: 'stop-reliability-controls',
-		toc: 'stop-reliability-toc',
-	});
 
 	const present = $derived(presentGrains(data.periods));
 	const dfltGrain = $derived(defaultStopGrain(present));
@@ -344,27 +338,19 @@
 				</p>
 			{/snippet}
 
-			<ArticleControlDisclosure
-				title={copy.controlsLabel}
-				bind:open={
-					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
-				}
-			>
+			<CollapsibleSection title={copy.controlsLabel} sectionKey="stop-reliability-controls">
 				<ArticleControlStack
 					history={availableHistoryDates.length > 0 ? historyControls : undefined}
 					primary={primaryControls}
 					caption={windowCaptionControl}
 				/>
-			</ArticleControlDisclosure>
+			</CollapsibleSection>
 
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
 					{activeId}
-					quiet={false}
-					bind:open={
-						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
-					}
+					sectionKey="stop-reliability-toc"
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

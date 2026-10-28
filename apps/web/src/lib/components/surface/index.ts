@@ -7,7 +7,6 @@ export { default as Breadcrumb } from './Breadcrumb.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as SegmentedChoice } from './SegmentedChoice.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
-export { default as ArticleControlDisclosure } from './ArticleControlDisclosure.svelte';
 export { default as ArticleControlStack } from './ArticleControlStack.svelte';
 export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
@@ -22,7 +21,6 @@ export { default as SearchControls } from './SearchControls.svelte';
 export type { SearchScopeKey } from './SearchControls.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 export { default as AffectedAlerts } from './AffectedAlerts.svelte';
-export { createRailDisclosureController } from './createRailDisclosureController.svelte';
 export {
 	createReliabilityListingController,
 	isReliabilitySnapshotPending,
@@ -38,7 +36,6 @@ export type {
 	SegmentedChoiceVariant,
 } from './SegmentedChoice.svelte';
 export type { GrainPickerProps } from './GrainPicker.svelte';
-export type { ArticleControlDisclosureProps } from './ArticleControlDisclosure.svelte';
 export type { ArticleControlStackProps } from './ArticleControlStack.svelte';
 export type {
 	DateRangePickerProps,
@@ -55,6 +52,5 @@ export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
 export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';
-export type { RailDisclosureController } from './createRailDisclosureController.svelte';
 export type { ReliabilityListingController } from './createReliabilityListingController.svelte';
 export type { SurfaceHeadCopy } from './copy';
