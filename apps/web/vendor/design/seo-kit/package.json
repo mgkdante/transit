@@ -1,6 +1,6 @@
 {
   "name": "@yesid/seo-kit",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "private": true,
   "type": "module",
   "description": "Framework-neutral JSON-LD, sitemap and robots, share-card, icon and security-header primitives with consumer-owned policy and rasterization.",

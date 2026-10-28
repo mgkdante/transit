@@ -25,23 +25,6 @@ html {
 	--layout-support-rail-width: clamp(16rem, 18vw, 20rem);
 	--layout-article-main-min: 40rem;
 	--layout-article-top-space: var(--space-card-gap);
-	--blueprint-ink-quiet: 0.14;
-	--blueprint-ink-mid: 0.22;
-	--blueprint-ink-accent: 0.3;
-}
-
-[data-slot='blueprint-listing-header']
-	.edge-details
-	[data-blueprint-part][data-blueprint-part].edge-detail {
-	opacity: var(--blueprint-part-ink) !important;
-}
-
-@media (--desktop-max) {
-	[data-slot='blueprint-listing-header']
-		.edge-details
-		[data-blueprint-part][data-blueprint-part].edge-detail {
-		opacity: var(--blueprint-ink-quiet) !important;
-	}
 }
 
 @import 'tw-animate-css';
@@ -138,9 +121,6 @@ body {
 [data-theme='light'],
 .theme-light {
 	--map-stop-fill: #E8540E;
-	--blueprint-ink-quiet: 0.28;
-	--blueprint-ink-mid: 0.42;
-	--blueprint-ink-accent: 0.56;
 	--shadow-detail-panel:
 		-12px 0 28px -20px rgb(28 24 19 / 0.18), inset 1px 0 0 var(--edge-highlight);
 }
