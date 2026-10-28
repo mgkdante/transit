@@ -138,17 +138,18 @@ docs/BUILD-A-YESID-PRODUCT.md.
 colors — orange signage, yellow hazard stripes (with black), reflective white, black tape and
 structure. Each holds a named role; every component usage maps to exactly one:
 
-- **ORANGE — interactive/signage** (\`primary\` \`#E07800\`, light \`#A05500\`): links, buttons,
-  CTAs, focus rings, active/hover states, signage accents. The clickable hue for everything
-  except conversion (below).
+- **ORANGE — interactive/signage** (\`primary\` \`#E07800\`, light \`#A05500\`): nav and component
+  links, buttons, CTAs, focus rings, active/hover states, signage accents. The clickable hue for
+  everything except conversion and text links (below).
 - **YELLOW — wayfinding & hazard & highlight** (\`accent\` \`#FFB627\` as surface/art;
   \`accent-text\` as AA text, light \`#815D00\`; \`line-amber\`; \`accent-surface\`): section
   labels/overlines (\`.label-station\`), departure-board and status readouts, metric/number
   callouts, data-viz/diagram amber, selected/highlight states, hazard tape. Round 5c —
-  THE YELLOW-CONVERSION RULE: yellow holds exactly ONE clickable job, "talk to Yesid"
+  THE YELLOW-CONVERSION RULE: the only clickable yellow surface is the "talk to Yesid"
   conversion buttons (contact submit, hero contact, about send, closer CTA) drawn as the
   theme-invariant signage pair (\`accent\` \`#FFB627\` ground / \`signage-bg\` \`#1C1814\` ink,
-  ~10:1, hover \`accent-hover\`), at most one per view. Every other yellow stays unclickable.
+  ~10:1, hover \`accent-hover\`), at most one per view. Text links (a link without a class)
+  are underlined in \`accent-text\` ink. Every other yellow stays unclickable.
 - **WHITE — reflective** (\`reflective\` \`#F5F5F0\`, theme-invariant; dark \`foreground\`):
   key headline words on dark, catch-lights (\`edge-highlight\`), white-core métro dots and
   reflective chips over guaranteed-dark grounds.

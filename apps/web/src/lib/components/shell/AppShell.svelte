@@ -85,7 +85,8 @@
 
 <style>
 	.app-shell-root {
-		--chrome-offset: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 0.5rem);
+		--chrome-gap: 0.5rem;
+		--chrome-offset: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--chrome-gap));
 		position: relative;
 	}
 

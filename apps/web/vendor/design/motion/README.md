@@ -8,7 +8,7 @@ scroll narratives, persisted state, and art direction.
 
 The root and `./actions` exports provide shared actions. Policy, generated tokens, reduced-motion,
 device, ticker, GSAP, Lenis, ripple, and section-magnet surfaces are available through explicit
-subpaths. See [`api-reports/motion.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/api-reports/motion.api.md) for the exact public
+subpaths. See [`api-reports/motion.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/api-reports/motion.api.md) for the exact public
 interface.
 
 ## Invariants
@@ -36,7 +36,7 @@ without the API and reduced motion. The crossfade CSS lives in `@yesid/ui/base.c
 
 `./utils/blueprintScrub` exports `blueprintScrub(band, trigger = band)`: it draws the blueprint art in
 `band` (`.blueprint-bg svg path`) as `trigger` scrolls through the viewport, counting scrolls of
-inner scrollers too, and returns its cleanup. It does nothing under reduced motion or at 1023px
+inner scrollers too, redraws when `trigger` resizes, and returns its cleanup. It does nothing under reduced motion or at 1023px
 and below, where the art stays fully drawn. `ListingFrame`'s `onHeaderMount={blueprintScrub}`
 passes the header and the frame.
 
@@ -57,13 +57,13 @@ the wheel back. Elements that own wheel and pinch input, such as maps, use Lenis
 direct `lenis/dist/lenis.css` import.
 
 GSAP remains third-party software under its own terms; it is not covered by this repository's MIT
-grant. See [`NOTICE`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/NOTICE) for the exact licence boundary.
+grant. See [`NOTICE`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/NOTICE) for the exact licence boundary.
 
 ## Consumers and compatibility
 
 Gallery exercises shared motion and optional global ripple behavior. `@yesid/ui` consumes
 `pressBounce`. External products pin immutable releases and keep page choreography local. Current
-receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/CONSUMERS.md).
+receipts live in [`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/CONSUMERS.md).
 
 ## Commands
 
@@ -80,6 +80,6 @@ fails package or Gallery coverage. Diagnose the smallest owning action/helper be
 consumer.
 
 Implementation, CSS, generated-token, public-interface, or README changes alter the coordinated
-release payload. Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/RELEASING.md); regenerate the API report only when
+release payload. Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/RELEASING.md); regenerate the API report only when
 the public interface changes. Product conflicts are demoted, never encoded as app switches; see
-[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.24.0/BOUNDARIES.md).
+[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.0/BOUNDARIES.md).

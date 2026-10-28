@@ -344,6 +344,7 @@
 		attempt: BootAttempt,
 		instance: MapLibreMap,
 		control: Parameters<MapLibreMap['addControl']>[0],
+		position?: Parameters<MapLibreMap['addControl']>[1],
 	): void {
 		let active = true;
 		const dispose = () => {
@@ -353,7 +354,7 @@
 		};
 		attempt.disposers.push(dispose);
 		try {
-			instance.addControl(control);
+			instance.addControl(control, position);
 		} catch (error) {
 			try {
 				dispose();
@@ -617,6 +618,7 @@
 					compact: true,
 					...(customAttribution ? { customAttribution } : {}),
 				}),
+				'top-right',
 			);
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
@@ -816,15 +818,15 @@
 		outline-offset: 2px;
 	}
 
-	.map-stage :global(.maplibregl-ctrl-bottom-right) {
+	.map-stage :global(.maplibregl-ctrl-top-right) {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		bottom: 1rem;
+		top: var(--chrome-offset);
 		max-width: calc(100% - var(--map-detail-offset, 0rem) - 2rem);
 		z-index: 12;
 		transition: right var(--duration-normal) var(--ease-out);
 	}
 
-	.map-stage :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
+	.map-stage :global(.maplibregl-ctrl-top-right .maplibregl-ctrl) {
 		margin: 0;
 	}
 
@@ -842,8 +844,15 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* Expanded credits open below the (i), not across the top row. */
+	.map-stage :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-attrib.maplibregl-compact-show) {
+		padding: 1.75rem 0.55rem 0.4rem;
+	}
+
 	.map-stage :global(.maplibregl-ctrl-attrib a) {
 		color: var(--accent-text);
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib-button)::after {
@@ -857,15 +866,14 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-stage :global(.maplibregl-ctrl-bottom-right) {
+		.map-stage :global(.maplibregl-ctrl-top-right) {
 			transition: none;
 		}
 	}
 
 	@media (--desktop-max) {
-		.map-stage :global(.maplibregl-ctrl-bottom-right) {
+		.map-stage :global(.maplibregl-ctrl-top-right) {
 			right: 0.75rem;
-			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 			max-width: calc(100% - 1.5rem);
 		}
 

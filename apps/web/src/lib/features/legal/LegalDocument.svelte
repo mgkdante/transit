@@ -136,14 +136,4 @@
 		list-style: none;
 		padding-inline-start: 0;
 	}
-
-	a {
-		color: var(--link);
-		text-decoration: underline;
-		text-underline-offset: 0.2em;
-	}
-
-	a:hover {
-		color: var(--link-hover);
-	}
 </style>

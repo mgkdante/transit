@@ -906,7 +906,7 @@
 		background: var(--background);
 		--app-right-detail-offset: var(--size-detail-panel);
 		--map-detail-offset: 0rem;
-		--map-mobile-control-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+		--map-mobile-control-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 		--z-map-behind: -1;
 		--z-map-canvas: 1;
 		--z-map-popover-behind: 2;

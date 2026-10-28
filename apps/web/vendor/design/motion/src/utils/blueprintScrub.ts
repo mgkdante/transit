@@ -3,7 +3,8 @@ import { isViewportAtMost } from './device.js';
 
 /**
  * Draws the blueprint art in `band` (`.blueprint-bg svg path`) as `trigger` scrolls through the
- * viewport: nothing while it is below the fold, everything once it has left the top. Fits
+ * viewport: nothing while it is below the fold, everything once it has left the top. Redraws when
+ * `trigger` resizes, so content rendered after mount can't leave a stale first draw. Fits
  * `ListingFrame`'s `onHeaderMount={blueprintScrub}`, which passes the header and the frame.
  * Scrolls of any inner scroller count. Off under reduced motion and at 1023px and below, where
  * the art stays fully drawn. Returns the cleanup.
@@ -42,6 +43,8 @@ export function blueprintScrub(band: HTMLElement, trigger: HTMLElement = band): 
 		});
 	}
 
+	const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(onScroll);
+	resize?.observe(trigger);
 	apply();
 	document.addEventListener('scroll', onScroll, { capture: true, passive: true });
 	window.addEventListener('resize', onScroll, { passive: true });
@@ -49,6 +52,7 @@ export function blueprintScrub(band: HTMLElement, trigger: HTMLElement = band): 
 	return () => {
 		document.removeEventListener('scroll', onScroll, { capture: true });
 		window.removeEventListener('resize', onScroll);
+		resize?.disconnect();
 		if (frame) cancelAnimationFrame(frame);
 	};
 }

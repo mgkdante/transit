@@ -2,7 +2,8 @@
   Article and project page header: circuit-grid band with decorative chrome, a back link, an
   optional category line, the title (one keyword accented), subtitle, meta row, and actions and
   controls snippets. It sits under the fixed site chrome: it cancels the page's top padding of
-  `--chrome-offset` and pads itself by the same amount.
+  `--chrome-offset` and pads itself by the same amount. An app whose offset leaves a gap under its
+  chrome sets `--chrome-gap` to it, so the back link sits midway between the chrome and the next line.
 -->
 <script lang="ts" module>
 	import type { Snippet } from 'svelte';
@@ -198,8 +199,6 @@
 	.header-section {
 		position: relative;
 		display: grid;
-		align-items: center;
-		min-height: 220px;
 	}
 
 	.header__circuit-grid {
@@ -304,7 +303,7 @@
 		align-items: center;
 		width: 100%;
 		margin-inline: auto;
-		padding: 1.5rem 1.25rem 1.5rem;
+		padding: max(0px, calc(0.5rem - var(--chrome-gap, 0px))) 1.25rem 1.5rem;
 		text-align: center;
 	}
 
@@ -312,7 +311,7 @@
 		display: inline-flex;
 		align-items: center;
 		min-height: 44px;
-		margin-bottom: 0.75rem;
+		margin-bottom: 0.5rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-back-link);
 		letter-spacing: 0;
@@ -350,7 +349,7 @@
 	.header__title {
 		margin: 0 0 0.75rem;
 		font-family: var(--font-heading);
-		font-size: clamp(2rem, 5vw, 2.5rem);
+		font-size: var(--text-title);
 		font-weight: 900;
 		text-transform: uppercase;
 		letter-spacing: -0.04em;
@@ -440,17 +439,7 @@
 		}
 	}
 
-	@media (min-width: 768px) and (max-width: 1023.98px) {
-		.header__title {
-			font-size: clamp(2.5rem, 4vw, 3rem);
-		}
-	}
-
 	@media (min-width: 1024px) {
-		.header-section {
-			min-height: 240px;
-		}
-
 		.header__chevrons {
 			display: flex;
 		}
@@ -460,11 +449,8 @@
 		}
 
 		.header__content {
-			padding: 1.75rem 2rem 2rem;
-		}
-
-		.header__back {
-			margin-bottom: 1rem;
+			padding-inline: 2rem;
+			padding-bottom: 2rem;
 		}
 
 		.header__cat-line {
@@ -472,26 +458,11 @@
 		}
 
 		.header__title {
-			font-size: clamp(3rem, 4vw, 3.5rem);
 			text-shadow: 0 0 80px color-mix(in srgb, var(--article-accent) 12%, transparent);
 		}
 
 		.header__subtitle {
 			margin-bottom: 1rem;
-		}
-	}
-
-	@media (max-height: 720px) {
-		.header-section {
-			min-height: 0;
-		}
-
-		.header__content {
-			padding-block: 1rem 1.5rem;
-		}
-
-		.header__back {
-			margin-bottom: 0.5rem;
 		}
 	}
 

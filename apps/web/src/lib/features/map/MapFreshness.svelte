@@ -56,7 +56,7 @@
 		position: absolute;
 		z-index: var(--z-map-overlay);
 		top: var(--chrome-offset);
-		right: calc(var(--map-detail-offset, 0rem) + 1rem);
+		right: calc(var(--map-detail-offset, 0rem) + 3rem);
 		display: inline-flex;
 		align-items: center;
 		padding: 0.375rem 0.75rem 0.375rem 0.75rem;

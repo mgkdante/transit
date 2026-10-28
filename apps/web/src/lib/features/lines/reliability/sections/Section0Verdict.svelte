@@ -229,10 +229,7 @@
 				{#if hasWilsonBand}
 					<p class="band-caption" data-slot="wilson-band-caption">
 						{copy.strip.wilsonBandCaption}
-						<a
-							href={localizeHref('/metrics#confidence-intervals', locale)}
-							data-card-interactive
-							class="underline underline-offset-2"
+						<a href={localizeHref('/metrics#confidence-intervals', locale)} data-card-interactive
 							>{metricInfoCopy.confidenceIntervalLink[locale]}</a
 						>
 					</p>

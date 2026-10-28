@@ -63,10 +63,13 @@ export function createLocaleRouting<Locale extends string>(
 
 	function localizeHref(href: string, locale: Locale): string {
 		if (!href.startsWith('/') || href.startsWith('//')) return href;
-		if (isPathExempt(href)) return href;
-		const base = delocalizePath(href);
-		if (locale === defaultLocale || !isPrefixLocale(locale)) return base;
-		return base === '/' ? `/${locale}` : `/${locale}${base}`;
+		const end = href.search(/[?#]/);
+		const path = end < 0 ? href : href.slice(0, end);
+		const suffix = end < 0 ? '' : href.slice(end);
+		if (isPathExempt(path)) return href;
+		const base = delocalizePath(path);
+		if (locale === defaultLocale || !isPrefixLocale(locale)) return base + suffix;
+		return (base === '/' ? `/${locale}` : `/${locale}${base}`) + suffix;
 	}
 
 	function localizeUrl(url: UrlParts, locale: Locale): string {

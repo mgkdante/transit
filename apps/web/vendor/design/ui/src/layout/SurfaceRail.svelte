@@ -223,10 +223,11 @@
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
+	/* translate, not transform: the sheet's slide-in keyframes animate transform. */
 	:global(.surface-rail-sheet) {
 		position: fixed;
 		left: 50%;
-		transform: translateX(-50%);
+		translate: -50% 0;
 		bottom: var(--surface-rail-sheet-bottom);
 		width: min(28rem, calc(100vw - 1.5rem));
 		max-height: min(

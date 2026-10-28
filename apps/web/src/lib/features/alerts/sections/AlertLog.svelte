@@ -230,22 +230,9 @@
 	}
 	.alert-history-link {
 		margin: 0.375rem 0 0;
-	}
-	.alert-history-link a {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: underline;
-		text-underline-offset: 0.2em;
 		word-break: break-all;
-	}
-	.alert-history-link a:hover {
-		text-decoration-thickness: 2px;
-	}
-	.alert-history-link a:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: var(--radius-sm);
 	}
 	.alert-history-more {
 		align-self: flex-start;

@@ -55,7 +55,7 @@
 	const showSuggestions = $derived(
 		open && suggestionsOpen && suggestions.length > 0 && shouldSuggestNearMeAddress(query),
 	);
-	const nearMeClearance = 'calc(5.1rem + 2.75rem + 0.75rem)';
+	const nearMeClearance = 'calc(1rem + 2.75rem + 0.75rem)';
 
 	$effect(() => {
 		const host = rootEl?.parentElement;
@@ -259,7 +259,7 @@
 		z-index: var(--z-map-overlay);
 		top: auto;
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		bottom: 5.1rem;
+		bottom: 1rem;
 		left: auto;
 		transform: none;
 		display: grid;

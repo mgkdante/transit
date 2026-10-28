@@ -1,4 +1,16 @@
 <script lang="ts">
+	import type { Component } from 'svelte';
+	import MapIcon from '@lucide/svelte/icons/map';
+	import RouteIcon from '@lucide/svelte/icons/route';
+	import MapPinIcon from '@lucide/svelte/icons/map-pin';
+	import WaypointsIcon from '@lucide/svelte/icons/waypoints';
+	import RulerIcon from '@lucide/svelte/icons/ruler';
+	import ActivityIcon from '@lucide/svelte/icons/activity';
+	import FlameIcon from '@lucide/svelte/icons/flame';
+	import ReceiptIcon from '@lucide/svelte/icons/receipt';
+	import RepeatIcon from '@lucide/svelte/icons/repeat';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import {
@@ -16,7 +28,14 @@
 	import SearchControls, {
 		type SearchScopeKey,
 	} from '$lib/components/surface/SearchControls.svelte';
-	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
+	import {
+		type SurfaceNavItem,
+		type AuditNavItem,
+		SURFACE_NAV,
+		AUDIT_NAV,
+		YESID_HOUSE_LINK,
+		isSurfaceActive,
+	} from '$lib/content/nav';
 	import { navPillCopy } from './navPill.copy';
 	import { SiteHeader } from '@yesid/ui/layout';
 	import RefreshButton from './RefreshButton.svelte';
@@ -76,14 +95,32 @@
 		label: item.label[locale],
 		current: isSurfaceActive(item, currentPath),
 	});
+	const MENU_ICONS: Record<
+		SurfaceNavItem['key'] | AuditNavItem['key'],
+		Component<{ class?: string }>
+	> = {
+		map: MapIcon,
+		lines: RouteIcon,
+		stops: MapPinIcon,
+		network: WaypointsIcon,
+		metrics: RulerIcon,
+		status: ActivityIcon,
+		hotspots: FlameIcon,
+		receipt: ReceiptIcon,
+		repeatOffenders: RepeatIcon,
+		alerts: TriangleAlertIcon,
+	};
 	const links = $derived(SURFACE_NAV.map((item) => ({ ...toItem(item), priority: 3 as const })));
 	const menuItems = $derived([
-		...SURFACE_NAV.map(toItem),
-		...AUDIT_NAV.map(toItem),
+		...[...SURFACE_NAV, ...AUDIT_NAV].map((item) => ({
+			...toItem(item),
+			icon: MENU_ICONS[item.key],
+		})),
 		{
 			href: YESID_HOUSE_LINK.href,
 			label: YESID_HOUSE_LINK.label[locale],
 			external: true,
+			icon: ExternalLinkIcon,
 			ariaLabel: `${YESID_HOUSE_LINK.label[locale]} ${navCopy.newTab}`,
 		},
 	]);
