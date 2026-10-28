@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { cleanup, render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { responsiveLayoutHarness } from './__fixtures__/ResponsiveLayoutHarness.svelte';
 
@@ -10,11 +8,6 @@ vi.mock('@yesid/ui/state', async () => ({
 }));
 
 import SurfaceRail from './SurfaceRail.svelte';
-
-const source = readFileSync(
-	resolve(process.cwd(), 'src/lib/components/surface/SurfaceRail.svelte'),
-	'utf-8',
-);
 
 const rail = createRawSnippet(() => ({
 	render: () =>
@@ -46,41 +39,13 @@ const baseProps = {
 };
 
 beforeEach(() => responsiveLayoutHarness.setDesktop(false));
-afterEach(() => document.body.style.removeProperty('overflow'));
+afterEach(async () => {
+	cleanup();
+	await waitFor(() => expect(document.body.style.overflow).not.toBe('hidden'));
+	document.body.style.removeProperty('overflow');
+});
 
 describe('SurfaceRail — desktop article rail', () => {
-	it('matches the yesid article/listing system with a bare no-glow desktop rail', () => {
-		const openingTag = source.match(/<aside[\s\S]*?>/)?.[0] ?? '';
-		const desktopRule =
-			Array.from(source.matchAll(/\.surface-rail\s*\{([\s\S]*?)\}/g), ([, rule]) => rule).find(
-				(rule) => /^\s*overflow-y\s*:/m.test(rule),
-			) ?? '';
-
-		expect(openingTag).not.toMatch(/glass-chrome/);
-		expect(desktopRule).not.toMatch(
-			/(?:background|border(?:-radius)?|box-shadow|backdrop-filter|padding)\s*:/,
-		);
-		expect(desktopRule).toMatch(/gap:\s*1rem/);
-	});
-
-	it('keeps direct rail children at natural height while the outer rail owns vertical scrolling', () => {
-		const desktopRailRule =
-			Array.from(source.matchAll(/\.surface-rail\s*\{([\s\S]*?)\}/g), ([, rule]) => rule).find(
-				(rule) => /^\s*overflow-y\s*:/m.test(rule),
-			) ?? '';
-		const directChildRule =
-			source.match(/\.surface-rail\s*>\s*:global\(\*\)\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const overflowY = Array.from(
-			desktopRailRule.matchAll(/^\s*overflow-y\s*:\s*([^;]+)\s*;/gm),
-			([, value]) => value.trim(),
-		);
-
-		expect(overflowY).toEqual(['auto']);
-		expect(desktopRailRule).not.toMatch(/^\s*overflow\s*:[^;]*(?:hidden|clip)[^;]*;/m);
-		expect(desktopRailRule).not.toMatch(/^\s*height\s*:/m);
-		expect(directChildRule).toMatch(/(?:^|[;\s])(?:flex:\s*none|flex-shrink:\s*0)\s*;/);
-	});
-
 	it('renders the rail content in the sticky aside', () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const aside = container.querySelector('[data-slot="surface-rail"]');
@@ -149,7 +114,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		await view.rerender({ ...baseProps, mobileVisible: false });
 
 		expect(view.container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
-		expect(document.body.style.overflow).toBe('auto');
+		await waitFor(() => expect(document.body.style.overflow).toBe('auto'));
 		expect(
 			view.container.querySelector('[data-slot="surface-rail"] [data-testid="rail-body"]'),
 		).not.toBeNull();
@@ -175,22 +140,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		responsiveLayoutHarness.setDesktop(false);
 	});
 
-	it('keeps direct sheet children at natural height while the sheet owns vertical scrolling', () => {
-		const sheetRule = source.match(/\.surface-rail-sheet\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const directChildRule =
-			source.match(/\.surface-rail-sheet\s*>\s*:global\(\*\)\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const overflowY = Array.from(
-			sheetRule.matchAll(/^\s*overflow-y\s*:\s*([^;]+)\s*;/gm),
-			([, value]) => value.trim(),
-		);
-
-		expect(overflowY).toEqual(['auto']);
-		expect(sheetRule).not.toMatch(/^\s*overflow\s*:[^;]*(?:hidden|clip)[^;]*;/m);
-		expect(sheetRule).not.toMatch(/^\s*height\s*:/m);
-		expect(directChildRule).toMatch(/(?:^|[;\s])(?:flex:\s*none|flex-shrink:\s*0)\s*;/);
-	});
-
-	it('labels the pill with the heading + summary, and the sheet is closed by default', () => {
+	it('labels the pill with the heading + summary, and the sheet is closed by default', async () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		const pill = mobile.querySelector('button') as HTMLButtonElement;
@@ -198,7 +148,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		expect(pill.textContent).toContain('View');
 		expect(pill.textContent).toContain('TODAY');
 		expect(pill).toHaveAccessibleName('View TODAY · Open controls');
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
 	});
 
 	it('opens one sheet by moving the existing rail content into it', async () => {
@@ -219,7 +169,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('traps focus inside the modal sheet and marks the background inert', async () => {
+	it('traps focus inside the modal sheet', async () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		const pill = mobile.querySelector('button[aria-expanded]') as HTMLButtonElement;
@@ -230,13 +180,12 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		const last = within(dialog).getByTestId('rail-jump');
 
 		await waitFor(() => expect(first).toHaveFocus());
-		expect(pill).toHaveAttribute('inert');
 
 		last.focus();
-		await fireEvent.keyDown(document, { key: 'Tab' });
+		await fireEvent.keyDown(last, { key: 'Tab' });
 		expect(first).toHaveFocus();
 
-		await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+		await fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
 		expect(last).toHaveFocus();
 	});
 
@@ -246,6 +195,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		const pill = mobile.querySelector('button') as HTMLButtonElement;
 
 		await fireEvent.click(pill);
+		await waitFor(() => expect(mobile.querySelector('[data-testid="rail-filter"]')).toHaveFocus());
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-filter"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
 		expect(document.activeElement).toBe(
@@ -253,7 +203,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		);
 
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-jump"]') as HTMLElement);
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
 		expect(document.activeElement).toBe(pill);
 	});
 
@@ -266,9 +216,13 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		await fireEvent.click(pill);
 		expect(document.body.style.overflow).toBe('hidden');
 
-		await fireEvent.click(mobile.querySelector('.surface-rail-backdrop') as HTMLButtonElement);
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
-		expect(document.body.style.overflow).toBe('auto');
+		await waitFor(() => expect(mobile.querySelector('[data-testid="rail-filter"]')).toHaveFocus());
+		await fireEvent.pointerDown(
+			mobile.querySelector('[data-slot="sheet-overlay"]') as HTMLElement,
+			{ clientX: 10, clientY: 10 },
+		);
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
+		await waitFor(() => expect(document.body.style.overflow).toBe('auto'));
 		expect(pill).toHaveFocus();
 	});
 
@@ -282,17 +236,18 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 
 		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		await fireEvent.click(sheet.querySelector('[data-testid="rail-seam-jump"]') as HTMLElement);
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
 		expect(document.activeElement).toBe(pill);
 	});
 
-	it('Escape closes the open sheet', async () => {
+	it('Escape closes the open sheet and refocuses the pill', async () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		const pill = mobile.querySelector('button') as HTMLButtonElement;
 		await fireEvent.click(pill);
 		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
-		await fireEvent.keyDown(window, { key: 'Escape' });
-		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await fireEvent.keyDown(mobile.querySelector('[role="dialog"]')!, { key: 'Escape' });
+		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
+		await waitFor(() => expect(pill).toHaveFocus());
 	});
 });

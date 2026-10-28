@@ -50,6 +50,8 @@ const ADOPTED_LOCAL_PATHS = [
 	'lib/components/layout/Footer.svelte',
 	'lib/components/shared/ErrorIllustration.svelte',
 	'lib/utils/create-cn.ts',
+	'lib/utils/cn.ts',
+	'lib/components/shared/modalSheet.ts',
 	'lib/components/shell/ThemeToggle.svelte',
 	'lib/nav/layout.svelte.ts',
 	'lib/stores/persisted.svelte.ts',
@@ -64,6 +66,8 @@ const RETIRED_LOCAL_MOTION_PATHS = [
 	'lib/motion/policy.ts',
 	'lib/motion/reduced-motion.svelte.ts',
 	'lib/motion/tokens.ts',
+	'lib/motion/view-transition.ts',
+	'lib/motion/view-transition.test.ts',
 	'lib/motion/utils/device.ts',
 	'lib/motion/utils/gsap.ts',
 ] as const;
@@ -80,10 +84,7 @@ function findRetiredMotionImports(): string[] {
 		const source = readFileSync(file, 'utf-8');
 		for (const match of source.matchAll(LOCAL_MOTION_IMPORT)) {
 			const specifier = match[1];
-			if (
-				specifier === '$lib/motion/view-transition' ||
-				specifier.startsWith('$lib/motion/scrubs/')
-			) {
+			if (specifier.startsWith('$lib/motion/scrubs/')) {
 				continue;
 			}
 
@@ -95,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.18.0',
-	tagObject: '4304ec3391772d523b31817f4980d805c118a89c',
-	peeledCommit: '9ab6cdffafd1cece9151f6ce67af1a9dee9ac56d',
-	assetName: 'yesid.dev-design-v0.18.0.tar',
-	assetSize: 1_433_600,
-	assetDigest: 'sha256:3a588067ff00702cd741bf4f8a070c4099354ac2e4fc377b8d3c8e17ae0994b3',
+	tag: 'v0.19.0',
+	tagObject: '3ad0965602ee4caaaa0ee601fd0433bd8c59aa69',
+	peeledCommit: '94fee01b139e3a6130d60061f8f84a7b15167c0d',
+	assetName: 'yesid.dev-design-v0.19.0.tar',
+	assetSize: 1_423_360,
+	assetDigest: 'sha256:56e3f61f11a6e2e4587279d0695ceb1c5a762c565b4d86f069edd50e13caee1e',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:b87d33d4a894161e2c9f4712d738f557d23f461684346854dd938da306ae5fd6',
-	manifestDigest: '77160cc9290e07ef84737b9c7c92005e391f1bd250ca5c8923994eb504527447',
+	treeHash: 'sha256:952a9dd13f891b0a15e950edd2efceadda414f354dd8e46a275390e7539c418a',
+	manifestDigest: '8070639cfbea2c7c4b4bb03a5a0f2ea2a2a3d39bf944d14074bb09758a5a1bf6',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -189,7 +190,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file).split(sep).join('/'));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.18.0');
+		expect(packageJson.version).toBe('0.19.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -258,7 +259,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.18.0',
+			version: '0.19.0',
 		});
 		expect(files).toEqual([
 			'README.md',

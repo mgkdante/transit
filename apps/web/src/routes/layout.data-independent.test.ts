@@ -135,7 +135,9 @@ vi.mock('$lib/pwa/appVersion', () => ({
 	decideFreshnessReload: () => ({ reload: false, href: null }),
 }));
 vi.mock('$lib/vitals/collect', () => ({ startVitals: () => vi.fn() }));
-vi.mock('$lib/motion/view-transition', () => ({ runViewTransition: harness.runViewTransition }));
+vi.mock('@yesid/motion/utils/viewTransition', () => ({
+	viewTransition: harness.runViewTransition,
+}));
 vi.mock('@yesid/motion/utils/globalRipple', () => ({ initGlobalRipple: () => vi.fn() }));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),

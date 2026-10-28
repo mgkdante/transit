@@ -55,7 +55,7 @@
 	{/if}
 
 	{#if tape}
-		<Separator variant="hazard" maxWidth="100%" class="masthead-tape" />
+		<Separator variant="hazard" class="masthead-tape" />
 	{/if}
 </div>
 

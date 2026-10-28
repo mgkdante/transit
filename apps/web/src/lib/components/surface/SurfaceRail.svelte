@@ -3,7 +3,7 @@
 	import { cn } from '$lib/utils';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
-	import { modalSheet } from '$lib/components/shared/modalSheet';
+	import * as Sheet from '@yesid/ui/sheet';
 	import { scrollChain } from '@yesid/motion/actions';
 
 	export type SurfaceRailPresentation = 'desktop' | 'mobile';
@@ -33,7 +33,7 @@
 
 	let sheetOpen = $state(false);
 	let pillBtn = $state<HTMLButtonElement>();
-	let sheetEl = $state<HTMLElement>();
+	let sheetEl = $state<HTMLDivElement | null>(null);
 	let desktopRailEl = $state<HTMLElement>();
 	let railHomeParent: Node | undefined;
 	let railHomeNextSibling: Node | null = null;
@@ -107,42 +107,34 @@
 
 {#if mobileVisible}
 	<div class="surface-rail-mobile" data-slot="surface-rail-mobile" data-open={sheetOpen}>
-		<button
-			bind:this={pillBtn}
-			class="tap-press surface-rail-pill glass-chrome"
-			onclick={() => (sheetOpen = !sheetOpen)}
-			aria-expanded={sheetOpen}
-			aria-label={`${label}${summary ? ` ${summary}` : ''} · ${sheetOpen ? closeAria : openAria}`}
-		>
-			<span class="surface-rail-pill-label">{label}</span>
-			{#if summary}<span class="surface-rail-pill-summary">{summary}</span>{/if}
-			<ChevronToggle open={sheetOpen} size="sm" direction="down" />
-		</button>
-
-		{#if sheetOpen}
+		<Sheet.Root bind:open={sheetOpen}>
 			<button
-				class="surface-rail-backdrop"
-				data-modal-sheet-exempt
-				tabindex="-1"
-				onclick={() => closeSheet(true)}
-				aria-label={closeAria}
-			></button>
-			<div
-				use:scrollChain
+				bind:this={pillBtn}
+				class="tap-press surface-rail-pill glass-chrome"
+				onclick={() => (sheetOpen = !sheetOpen)}
+				aria-expanded={sheetOpen}
+				aria-label={`${label}${summary ? ` ${summary}` : ''} · ${sheetOpen ? closeAria : openAria}`}
+			>
+				<span class="surface-rail-pill-label">{label}</span>
+				{#if summary}<span class="surface-rail-pill-summary">{summary}</span>{/if}
+				<ChevronToggle open={sheetOpen} size="sm" direction="down" />
+			</button>
+
+			<Sheet.Content
+				bind:ref={sheetEl}
 				class="surface-rail-sheet glass-chrome"
-				bind:this={sheetEl}
-				role="dialog"
-				aria-modal="true"
+				portalProps={{ disabled: true }}
+				showCloseButton={false}
+				side="bottom"
 				aria-label={label}
-				tabindex="-1"
-				use:modalSheet={{
-					active: presentation === 'mobile' && sheetOpen,
-					trigger: pillBtn,
-					exempt: desktopRailEl ? [desktopRailEl] : [],
-					onDismiss: () => closeSheet(),
+				onCloseAutoFocus={(event) => {
+					event.preventDefault();
+					if (!desktop.current) pillBtn?.focus();
 				}}
-			></div>
-		{/if}
+			>
+				{#snippet children()}{/snippet}
+			</Sheet.Content>
+		</Sheet.Root>
 	</div>
 {/if}
 
@@ -181,6 +173,7 @@
 	}
 
 	.surface-rail-mobile {
+		--scrim: transparent;
 		--surface-rail-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 		--surface-rail-sheet-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 		position: fixed;
@@ -214,14 +207,7 @@
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
-	.surface-rail-backdrop {
-		position: fixed;
-		inset: 0;
-		background: transparent;
-		z-index: -1;
-		border: none;
-	}
-	.surface-rail-sheet {
+	:global(.surface-rail-sheet) {
 		position: fixed;
 		left: 50%;
 		transform: translateX(-50%);
@@ -243,7 +229,7 @@
 		padding: 1rem;
 		border-radius: var(--radius-xl);
 	}
-	.surface-rail-sheet > :global(*) {
+	:global(.surface-rail-sheet > *) {
 		flex: none;
 	}
 </style>

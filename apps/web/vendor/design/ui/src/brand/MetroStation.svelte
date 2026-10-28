@@ -7,6 +7,7 @@
 		index: number;
 		showLine?: boolean;
 		pulseDelay?: number;
+		/** @deprecated since v0.19.0. The default roundel now matches every product. */
 		roundel?: Snippet<[stationNo: string]>;
 	};
 
@@ -97,9 +98,8 @@
 		color: var(--signage-text);
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		font-weight: 600;
+		font-weight: 700;
 		line-height: 1;
-		letter-spacing: 0.02em;
 		font-variant-numeric: tabular-nums;
 		user-select: none;
 	}

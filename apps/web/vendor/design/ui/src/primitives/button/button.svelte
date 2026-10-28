@@ -8,17 +8,15 @@
 	// utilities (text-body, text-small, ...) survive next to real color classes
 	// and dataviz color names aren't misread as font-sizes.
 	//
-	// Doctrine: orange --primary is INTERACTIVE-only. The `default` button is an
-	// interactive affordance, so --primary is correct here. The yellow
-	// `conversion` variant from the upstream marketing app is dropped entirely —
-	// transit has no "talk to sales" CTA and --accent must never read as data.
+	// `conversion` is the yellow "talk to us" signage action: at most one per view, never data.
 	export const buttonVariants = tv(
 		{
-			base: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 rounded-lg border border-transparent bg-clip-padding text-control font-medium focus-visible:ring-3 active:not-aria-[haspopup]:translate-y-px aria-invalid:ring-3 [&_svg:not([class*='size-'])]:size-4 group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all outline-none select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+			base: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 rounded-lg border border-transparent bg-clip-padding text-sm font-medium focus-visible:ring-3 active:not-aria-[haspopup]:translate-y-px aria-invalid:ring-3 [&_svg:not([class*='size-'])]:size-4 group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all outline-none select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
 			variants: {
 				variant: {
 					default:
 						'bg-primary text-primary-foreground hover:bg-primary-hover [a]:hover:bg-primary/80',
+					conversion: 'bg-accent text-signage-bg hover:bg-accent-hover [a]:hover:bg-accent-hover',
 					outline:
 						'border-border-subtle bg-transparent text-foreground hover:border-primary hover:text-primary aria-expanded:border-primary aria-expanded:text-primary',
 					secondary:
@@ -32,7 +30,7 @@
 				size: {
 					default:
 						'h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-					xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-caption in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+					xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
 					sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
 					lg: 'h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
 					icon: 'size-8',
@@ -41,7 +39,8 @@
 					'icon-sm':
 						'size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg',
 					'icon-lg': 'size-9',
-					'cta-sm': 'gap-2 px-5 py-2.5 text-control font-semibold',
+					'icon-tap': 'size-11',
+					'cta-sm': 'gap-2 px-5 py-2.5 text-small font-semibold',
 					cta: 'gap-2 px-6 py-3 text-body font-semibold',
 					'cta-lg': 'gap-2 px-8 py-4 text-subheading font-semibold',
 				},
@@ -51,6 +50,12 @@
 					variant: 'default',
 					size: ['cta-sm', 'cta', 'cta-lg'],
 					class: 'hover:-translate-y-px hover:shadow-glow-sm',
+				},
+				{
+					variant: 'conversion',
+					size: ['cta-sm', 'cta', 'cta-lg'],
+					class:
+						'hover:-translate-y-px hover:shadow-[0_0_6px_color-mix(in_srgb,var(--accent)_35%,transparent)]',
 				},
 			],
 			defaultVariants: {
@@ -87,11 +92,8 @@
 </script>
 
 <script lang="ts">
-	// F (motion wiring): pressBounce gives buttons a tactile <200ms scale bounce on
-	// touch (SAFE-ALWAYS tier — the action self-gates to touch devices and stays under
-	// PRM per the package policy). Pointer users already carry active:translate-y-px
-	// from the base variant, so no .tap-press CSS is layered here (that would double
-	// the press scale). Vendored action, never edited.
+	// pressBounce is touch-only; pointer presses use the base active:translate-y-px, so no
+	// .tap-press here (it would double the press).
 	import { pressBounce } from '@yesid/motion';
 
 	let {
@@ -106,9 +108,9 @@
 {#if elementProps.href != null}
 	{@const { href, disabled, children, ...anchorProps } = elementProps}
 	<a
+		data-slot="button"
 		{...anchorProps}
 		bind:this={ref}
-		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
 		href={disabled ? undefined : href}
 		aria-disabled={disabled || undefined}
@@ -121,9 +123,9 @@
 {:else}
 	{@const { href: _href, type = 'button', disabled, children, ...buttonProps } = elementProps}
 	<button
+		data-slot="button"
 		{...buttonProps}
 		bind:this={ref}
-		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
 		{type}
 		{disabled}

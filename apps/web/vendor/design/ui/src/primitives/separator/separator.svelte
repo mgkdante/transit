@@ -67,7 +67,7 @@
 			variant,
 			hazardSize = 'md',
 			hazardAngle = -45,
-			maxWidth = 'var(--width-content)',
+			maxWidth = 'none',
 			label,
 			orientation = 'horizontal',
 			child,

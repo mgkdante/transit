@@ -102,7 +102,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.18.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.19.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -158,6 +158,7 @@
         "apps/web/vendor/design/motion/src/utils/lenis.ts",
         "apps/web/vendor/design/motion/src/utils/sectionMagnet.ts",
         "apps/web/vendor/design/motion/src/utils/ticker.ts",
+        "apps/web/vendor/design/motion/src/utils/viewTransition.ts",
         "apps/web/vendor/design/motion/tap-feedback.css",
         "apps/web/vendor/design/motion/tsconfig.json",
         "apps/web/vendor/design/seo-kit/README.md",
@@ -294,23 +295,17 @@
         "apps/web/vendor/design/ui/svelte.config.js",
         "apps/web/vendor/design/ui/tsconfig.json"
       ],
-      "owners": [
-        "apps/web/vendor/design/manifest.json"
-      ],
+      "owners": ["apps/web/vendor/design/manifest.json"],
       "sha256": [
         "809f85810f11fb11f0ec4e258599fba437888877cb7cccfa97169d151f902c68"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.18.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.19.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
       "reason": "Bun resolved dependency lock",
-      "files": [
-        "bun.lock"
-      ],
-      "owners": [
-        "package.json"
-      ],
+      "files": ["bun.lock"],
+      "owners": ["package.json"],
       "sha256": [
         "872044cc3d77ebb7ebb04fb3c7158036e3ea68445350bb71e316bca1686138d0",
         "b4ce78ceeb622b3e53be797fa5bee0676d2ed88e55983130ec27b56ed4e755f9",
@@ -323,12 +318,8 @@
     {
       "category": "locks",
       "reason": "uv resolved Python dependency lock",
-      "files": [
-        "apps/db/uv.lock"
-      ],
-      "owners": [
-        "apps/db/pyproject.toml"
-      ],
+      "files": ["apps/db/uv.lock"],
+      "owners": ["apps/db/pyproject.toml"],
       "sha256": [
         "31a24c9613c69375a515026756c58b0cfca2c481f50644ed2a6f7a07e16cdfcf",
         "ed1448ff235074f0d7eaf80ebc170bb9df90512bec81e46a710d60af9bcf369a",
@@ -371,9 +362,7 @@
         "apps/web/scripts/og-fonts/Inter-Medium.ttf",
         "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf"
       ],
-      "owners": [
-        "apps/web/scripts/build-og.ts"
-      ],
+      "owners": ["apps/web/scripts/build-og.ts"],
       "sha256": [
         "2eb6e99fd558766044a7287d0216d9d2bf92502decd83177cb4600e01e9025f9",
         "46f7578c40b45891c49dcc59fb65208202a49135dd407be285478b484d96e494"

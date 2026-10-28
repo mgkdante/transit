@@ -122,7 +122,7 @@
 			</div>
 		</header>
 
-		<Separator variant="hazard" maxWidth="none" data-testid="listing-page-separator" />
+		<Separator variant="hazard" data-testid="listing-page-separator" />
 
 		<div class="listing-grid">
 			<aside class="listing-filter-column" data-slot="listing-filter-column">

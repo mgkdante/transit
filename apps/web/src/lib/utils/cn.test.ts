@@ -2,7 +2,7 @@ import type { ClassValue } from 'clsx';
 import { describe, expect, it, vi } from 'vitest';
 import { cn as uiCn, createCn } from '@yesid/ui/cn';
 import { configureTransitUi } from '$lib/ui/configure';
-import { cn } from './cn';
+import { cn } from '$lib/ui/configure';
 import { TRANSIT_VOCAB } from './cn-vocab';
 
 const LEGACY_OUTPUT_FIXTURES: Array<{
@@ -129,7 +129,7 @@ describe('configureTransitUi', () => {
 describe('app cn configuration ownership', () => {
 	async function freshMergers() {
 		vi.resetModules();
-		const app = await import('./cn');
+		const app = await import('$lib/ui/configure');
 		const ui = await import('@yesid/ui/cn');
 		const { configureTransitUi: configure } = await import('$lib/ui/configure');
 		return { app, ui, configure };
@@ -175,7 +175,6 @@ describe('app cn configuration ownership', () => {
 		expect(app.cn('px-2', 'px-4')).toBe('px-4');
 		expect(shared).toHaveBeenCalledTimes(2);
 		expect(ui.configureUi({ vocab: TRANSIT_VOCAB })).toBe('unchanged');
-		expect(app.twMergeConfig).toEqual(ui.createTwMergeConfig(TRANSIT_VOCAB));
 	});
 
 	it('reuses the public merger when bootstrap happens before the first app call', async () => {

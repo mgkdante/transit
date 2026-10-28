@@ -2,6 +2,7 @@
 	import { onMount, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ChevronToggle } from '@yesid/ui/brand';
+	import * as Collapsible from '@yesid/ui/collapsible';
 
 	let {
 		label,
@@ -16,23 +17,10 @@
 		class?: string;
 		children?: Snippet;
 	} = $props();
-	const contentId = $props.id();
 	let ready = $state(false);
 	onMount(() => {
 		ready = true;
 	});
-
-	function toggle(event: MouseEvent | KeyboardEvent): void {
-		if (!ready) return;
-		if ('key' in event) {
-			if (event.key !== 'Enter' && event.key !== ' ') return;
-			event.preventDefault();
-		} else if (event.button !== 0) {
-			event.preventDefault();
-			return;
-		}
-		open = !open;
-	}
 
 	let hasOpened = $state(false);
 	$effect(() => {
@@ -42,99 +30,18 @@
 	const currentLabel = $derived(open ? (labelOpen ?? label) : label);
 </script>
 
-<div class={cn('detail', className)} data-slot="detail">
-	<div data-slot="collapsible" data-state={open ? 'open' : 'closed'}>
-		<button
-			type="button"
-			class="detail__toggle"
-			data-slot="detail-toggle"
-			data-state={open ? 'open' : 'closed'}
-			aria-expanded={open}
-			aria-controls={contentId}
-			disabled={!ready}
-			onclick={toggle}
-			onkeydown={toggle}
-		>
-			<ChevronToggle {open} direction="down" size="sm" />
-			<span>{currentLabel}</span>
-		</button>
-		<div
-			id={contentId}
-			class="collapsible-content"
-			data-slot="collapsible-content"
-			data-state={open ? 'open' : 'closed'}
-			inert={!open}
-			aria-hidden={open ? undefined : 'true'}
-		>
-			<div class="collapsible-content__inner">
-				<div class="detail__body" data-slot="detail-body">
-					{#if open || hasOpened}{@render children?.()}{/if}
-				</div>
-			</div>
+<Collapsible.Root bind:open class={cn('detail', className)} data-slot="detail">
+	<Collapsible.Trigger
+		class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-0.5 py-1.5 font-mono text-small font-medium text-muted-foreground transition-colors duration-fast ease-default disabled:cursor-default disabled:opacity-50 hover:text-primary-hover hover:underline hover:underline-offset-[3px] focus-visible:rounded-sm focus-visible:text-primary-hover focus-visible:underline focus-visible:underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring motion-reduce:transition-none"
+		data-slot="detail-toggle"
+		disabled={!ready}
+	>
+		<ChevronToggle {open} direction="down" size="sm" />
+		<span>{currentLabel}</span>
+	</Collapsible.Trigger>
+	<Collapsible.Content>
+		<div class="flex flex-col gap-[clamp(1.75rem,4vw,2.75rem)] pt-6" data-slot="detail-body">
+			{#if open || hasOpened}{@render children?.()}{/if}
 		</div>
-	</div>
-</div>
-
-<style>
-	.detail__toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		min-height: 44px;
-		padding: 0.375rem 0.125rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		font-weight: 500;
-		color: var(--muted-foreground);
-		background: none;
-		border: none;
-		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-	.detail__toggle:disabled {
-		cursor: default;
-		opacity: 0.5;
-	}
-	.detail__toggle:hover {
-		color: var(--primary-hover);
-		text-decoration: underline;
-		text-underline-offset: 3px;
-	}
-	.detail__toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 3px;
-		border-radius: var(--radius-sm);
-		color: var(--primary-hover);
-		text-decoration: underline;
-		text-underline-offset: 3px;
-	}
-	.collapsible-content {
-		display: grid;
-		grid-template-rows: 0fr;
-		opacity: 0;
-		transition:
-			grid-template-rows var(--duration-slow) var(--ease-default),
-			opacity var(--duration-slow) var(--ease-default);
-	}
-	.collapsible-content[data-state='open'] {
-		grid-template-rows: 1fr;
-		opacity: 1;
-	}
-	.collapsible-content__inner {
-		min-height: 0;
-		overflow: hidden;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.detail__toggle,
-		.collapsible-content {
-			transition: none;
-		}
-	}
-
-	.detail__body {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
-		padding-top: 1.5rem;
-	}
-</style>
+	</Collapsible.Content>
+</Collapsible.Root>

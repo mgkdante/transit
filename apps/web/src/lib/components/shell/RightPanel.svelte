@@ -5,6 +5,7 @@
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
+	import { Button } from '@yesid/ui/button';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import { ScrollArea } from '@yesid/ui/scroll-area';
 	import { SectionLabel } from '@yesid/ui/brand';
@@ -88,9 +89,11 @@
 	data-surface-key={surfaceKey}
 >
 	<div class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
-		<button
+		<Button
+			variant="ghost"
+			size="icon-tap"
 			type="button"
-			class="tap-press -ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			class="-ml-1 text-muted-foreground"
 			aria-label={collapsed ? expandAria : collapseAria}
 			aria-expanded={!collapsed}
 			aria-controls={panelBodyId}
@@ -102,18 +105,20 @@
 			{:else}
 				<PanelRightCloseIcon size={15} strokeWidth={2.3} aria-hidden="true" />
 			{/if}
-		</button>
+		</Button>
 
 		{#if canGoBack && !collapsed}
-			<button
+			<Button
+				variant="ghost"
+				size="icon-tap"
 				type="button"
-				class="tap-press inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				class="text-muted-foreground"
 				aria-label={backAria}
 				onclick={() => onback?.()}
 				data-slot="right-panel-back"
 			>
 				<ArrowLeftIcon size={14} strokeWidth={2.3} aria-hidden="true" />
-			</button>
+			</Button>
 		{/if}
 
 		<h2
@@ -128,12 +133,11 @@
 		</h2>
 
 		{#if dismissible}
-			<button
+			<Button
+				variant="ghost"
+				size="icon-tap"
 				type="button"
-				class={cn(
-					'tap-press -mr-1 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-					collapsed && 'sr-only',
-				)}
+				class={cn('-mr-1 text-muted-foreground', collapsed && 'sr-only')}
 				aria-label={closeAria}
 				aria-hidden={collapsed ? 'true' : undefined}
 				tabindex={collapsed ? -1 : undefined}
@@ -141,7 +145,7 @@
 				data-slot="right-panel-close"
 			>
 				<XIcon size={14} strokeWidth={2.3} aria-hidden="true" />
-			</button>
+			</Button>
 		{/if}
 	</div>
 

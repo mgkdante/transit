@@ -72,10 +72,8 @@ wrapper-owned divs, accept native div attributes, and reject delegated-only prop
 variants consume `orientation` instead of leaking it to the DOM, apply `maxWidth`, forward the
 outer ref, and preserve or default `data-slot` on that outer element.
 
-The package gradient default uses `var(--width-content)` and its labels use the shared station
-label vocabulary. A product preserving `var(--container-content)` or its own mono label
-typography passes the width or keeps that typography locally. Consumer hazard-color and band-
-thickness guards remain product acceptance tests.
+The hazard tape is full width by default; the gradient rule defaults to `var(--width-content)`.
+Labels use the shared station label vocabulary.
 
 ### Sheet
 
@@ -118,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.18.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -146,22 +144,14 @@ general Badge token contract.
 
 ### Button
 
-The package owns the common variants, element split, disabled-link behavior, and `pressBounce`
-wiring. The yellow conversion CTA is product behavior, not a shared variant: yesid.dev retains
-its conversion signage colors and conversion-only lift/glow in a local wrapper or variant.
-The package baseline uses `text-control` for the base and `cta-sm` sizes and `text-caption` for
-`xs`. yesid.dev intentionally omits the shared `pressBounce` action and keeps `text-sm` for the
-base, `text-xs` for `xs`, and `text-small` for `cta-sm` in its local adapter. Adoption must
-preserve that motion absence, local typography, and the product tests rather than adding an
-app-specific package branch.
+The package owns the variants, the element split, disabled-link behavior and the touch
+`pressBounce`. `conversion` is the yellow signage CTA (at most one per view); the `cta` sizes
+lift on hover. `icon-tap` is the 44px touch target. A caller's `data-slot` replaces the default.
 
 ### Card
 
-The shared Card is a flat surface with no bevel or outer shadow; interaction may add a restrained
-one-pixel rise and reduced motion removes that transform. Transit tests require the no-shadow,
-no-edge-highlight contract. yesid.dev requires an inset `edge-highlight` bevel and hover
-`shadow-section`, so that product keeps those rules in a wrapper or local style. This is a hard
-consumer conflict, not a package variant.
+A solid panel with a lit top bevel (`edge-highlight`); hover firms the border and adds
+`shadow-section`. `interactive` adds a one-pixel rise, removed under reduced motion.
 
 ### Collapsible
 
@@ -173,9 +163,7 @@ animation directions.
 
 ### Resizable
 
-The package owns pane and group behavior plus the interactive handle baseline. A product that
-requires a neutral handle, larger grip radius, or its established marker hooks keeps that chrome
-locally. Marker classes with no selector are not by themselves a reason to fork package behavior.
+Panes, groups and a neutral handle (`withHandle` adds the rounded grip).
 
 ### Scroll Area
 
@@ -233,16 +221,13 @@ No product locale type or copy table enters the package.
 
 ### MetroStation
 
-`MetroStation` accepts an optional `roundel` snippet receiving the zero-padded station number.
-Omitting it renders the package roundel. A yesid.dev adapter supplies its local number Badge and
-preserves the established 2rem roundel and `0.8125rem` text without introducing an app switch.
+Renders the zero-padded station number in a 2rem signage roundel with a pulse. The `roundel`
+snippet is deprecated: the default now matches every product.
 
 ### StickyPanel
 
-The package owns the shared sticky panel and bindable element ref. yesid.dev's compatibility
-adapter keeps `surface-3`, removes the package shadow, and attaches the app-local `scrollChain`
-action through that ref with cleanup on unmount. `scrollChain`, Lenis policy, and product surface
-semantics do not enter `@yesid/ui`.
+A sticky, keyboard-scrollable `surface-3` panel below `top`. Wheel scrolling past its end chains
+to the page through `scrollChain`.
 
 ### TocBadge
 
@@ -252,10 +237,7 @@ token differs.
 
 ### TerminalCursor
 
-The package owns rem geometry, blink timing, and reduced-motion behavior. A product preserving
-fixed geometry keeps an adapter with 8px width, 14px height, and 4px left margin. yesid.dev also
-keeps its dark `accent` and light `accent-text` theme mapping locally; those semantics are not a
-package mode.
+A blinking block cursor in `accent` (`accent-text` in light); it stops blinking under reduced motion.
 
 ### QuietModeButton
 
@@ -346,7 +328,8 @@ the app. The root takes ordinary attributes such as `class`, `style` and `data-t
 `ArticleHeader` is the header those pages share: back link, optional `category`, the `title` with
 its `highlight` keyword in the accent, `subtitle`, `meta` (pending state included), and `actions`
 and `controls` snippets. `watermark`, `edgeLeft`, `edgeRight` and the `decorations` snippet draw
-decorative chrome; `--article-deco-opacity` sets how strongly it reads. The `canvas` snippet
+decorative chrome; `--article-deco-opacity` sets how strongly it reads. The subtitle and the meta
+row share one mono type, `--article-meta-size`. The `canvas` snippet
 receives the header element once bound (undefined before and during SSR), for a background canvas.
 Like `ListingFrame`, it expects the page to pad its top by `--chrome-offset` and pulls itself under
 the chrome.
@@ -401,7 +384,9 @@ text. During SSR it returns the seed.
 ## Base stylesheet
 
 `@yesid/ui/base.css` is the base layer both products share: resets, the dark variant, selection,
-focus ring, scrollbar, circuit grid, shared keyframes, label styles and `.glass-chrome`. It imports
+focus ring, scrollbar, circuit grid, shared keyframes, label styles, `.glass-chrome` and the
+View Transitions route crossfade (off under reduced motion; pair it with `onNavigate(viewTransition)`
+from `@yesid/motion/utils/viewTransition`). It imports
 `@yesid/tokens/theme.css`, which provides the Tailwind theme and the semantic color utilities
 (`bg-primary`, `text-muted-foreground` and the rest). It uses Tailwind v4 directives, so import it
 from the app stylesheet after Tailwind:
@@ -419,16 +404,9 @@ Package behavior, installed-payload integrity, and product acceptance are separa
 For every exact-tag adoption:
 
 1. Run the vendored `tools/adopt.ts --check` against the schema-2 receipt.
-2. Retarget direct-source assertions to the durable package source or the product adapter that now
-   owns the behavior. Do not delete a product-specific assertion merely because its old local
-   primitive path disappeared.
-3. Preserve yesid.dev's conversion Button, Card bevel, Separator, BlueprintShell, MetroStation,
-   StickyPanel, TerminalCursor, locale-prefix, and `scrollChain` tests where those seams apply.
-4. Preserve Transit's flat Card, no-glow, Collapsible animation, and other consumer-owned guards.
-5. Regenerate consumer-owned token outputs and run the consumer's vendor checks, tests, typecheck,
-   gates, and production build.
-6. Compare affected behavior in the browser across relevant themes, responsive sizes,
-   accessibility states, and reduced motion.
+2. Run the consumer's vendor checks, tests, typecheck, gates and production build.
+3. Compare affected behavior in the browser across themes, sizes, accessibility states and reduced
+   motion.
 
 Package tests and Gallery browser checks remain required upstream, but neither proves that an
 external consumer retained its product-specific behavior. This installed guide is the durable
@@ -448,5 +426,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.18.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.19.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

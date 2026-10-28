@@ -252,14 +252,8 @@
 </Card>
 
 <style>
-	/* The section card lifts off the board: a lit top bevel and, on hover, the section shadow.
-	   The generic Card stays flat. */
 	:global([data-slot='card'].section-card) {
 		border-width: 3px;
-		box-shadow: inset 0 1px 0 var(--edge-highlight);
-		transition:
-			border-color var(--duration-normal) var(--ease-default),
-			box-shadow var(--duration-normal) var(--ease-default);
 	}
 
 	:global([data-slot='card'].section-card.section-card--article-summary) {
@@ -268,9 +262,6 @@
 
 	:global([data-slot='card'].section-card:hover) {
 		border-color: var(--accent);
-		box-shadow:
-			var(--shadow-section),
-			inset 0 1px 0 var(--edge-highlight);
 	}
 
 	.section-header {
