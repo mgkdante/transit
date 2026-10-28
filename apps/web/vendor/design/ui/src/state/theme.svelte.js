@@ -1,5 +1,8 @@
+import { brandMarkSvg } from '@yesid/seo-kit/icons';
+
 const STORAGE_KEY = 'theme';
 const SURFACE_META = 'meta[name="theme-color"]:not([media])';
+const ICON = 'link[rel="icon"]';
 
 /** @returns {import('./theme.svelte.js').Theme} */
 function readDocumentTheme() {
@@ -9,14 +12,20 @@ function readDocumentTheme() {
 
 let current = $state(readDocumentTheme());
 /** @type {number | null} */
-let surfaceFrame = null;
+let headFrame = null;
 
-function updateSurfaceMeta() {
-	if (surfaceFrame !== null || !document.querySelector(SURFACE_META)) return;
-	surfaceFrame = requestAnimationFrame(() => {
-		surfaceFrame = null;
-		const surface = getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
+// The browser chrome takes the surface color and the tab icon takes the interactive orange.
+function updateHeadColors() {
+	if (headFrame !== null || !document.querySelector(`${SURFACE_META}, ${ICON}`)) return;
+	headFrame = requestAnimationFrame(() => {
+		headFrame = null;
+		const style = getComputedStyle(document.documentElement);
+		const surface = style.getPropertyValue('--background').trim();
 		document.querySelector(SURFACE_META)?.setAttribute('content', surface);
+		const primary = style.getPropertyValue('--primary').trim();
+		if (!primary) return;
+		const icon = `data:image/svg+xml,${encodeURIComponent(brandMarkSvg(primary))}`;
+		for (const link of document.querySelectorAll(ICON)) link.setAttribute('href', icon);
 	});
 }
 
@@ -30,7 +39,7 @@ function apply(next, persist) {
 	if (document.documentElement.dataset.theme !== next) {
 		document.documentElement.dataset.theme = next;
 	}
-	updateSurfaceMeta();
+	updateHeadColors();
 	if (persist) {
 		try {
 			localStorage.setItem(STORAGE_KEY, next);

@@ -73,9 +73,6 @@ vi.mock('$env/dynamic/public', () => ({ env: {} }));
 vi.mock('$lib/analytics/runtime', () => ({
 	transitAnalytics: { trackPageview: vi.fn() },
 }));
-vi.mock('$lib/components/SeoHead.svelte', async () => ({
-	default: (await import('./__fixtures__/RootLayoutEmptyStub.svelte')).default,
-}));
 vi.mock('$lib/components/edge', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
@@ -86,6 +83,7 @@ vi.mock('$lib/seo/routeSeo', () => ({
 	resolveDatasetSeo: () => ({ name: 'Dataset', description: 'Dataset description.' }),
 }));
 vi.mock('$lib/seo/jsonld', () => ({
+	websiteJsonLd: () => ({}),
 	breadcrumbJsonLd: () => null,
 	organizationJsonLd: () => ({}),
 	datasetJsonLd: () => ({}),

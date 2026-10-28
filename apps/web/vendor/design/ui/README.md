@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -211,7 +211,8 @@ guards compare numeric CSS meaning rather than lexical forms such as `0.30` vers
 ### ChevronToggle and SectionLabel
 
 These components own their shared SVG/classes and label styles. Both Chevron directions retain
-the established 90-degree open rotation. Equivalent class ordering is not a consumer seam.
+the established 90-degree open rotation, keyed on `data-state="open"`. Equivalent class ordering is
+not a consumer seam.
 
 ### StopLabel
 
@@ -386,7 +387,7 @@ with `role="alert"`. The app keeps its copy and `<svelte:head>`.
 ## Site root and shared state
 
 `@yesid/ui/layout` exports `SiteRoot`, the app root. On mount it adopts the theme applied by the
-app's pre-paint script, restores quiet mode, and starts Lenis through `@yesid/motion`; it cleans
+head boot script (see [Head](#head)), restores quiet mode, and starts Lenis through `@yesid/motion`; it cleans
 up on unmount and renders no element of its own. Props:
 
 - `smoothScroll` (default `true`): `false` leaves native scrolling.
@@ -395,14 +396,14 @@ up on unmount and renders no element of its own. Props:
 - `quietModeKey`: the localStorage key for the remembered quiet-mode default, `quiet-mode` by
   default.
 
-The app keeps its pre-paint script, which reads the `theme` key and sets `data-theme` before
-first paint, and its own navigation, scroll-restoration, and analytics handling.
+The app keeps its own navigation, scroll-restoration, and analytics handling.
 
 `@yesid/ui/state` exports the stores that `SiteRoot` initializes:
 
 - `theme`: `current`, `isDark`, `set`, `toggle`, `init`. Dark is the default, system preference
   is ignored, the choice persists under `theme`, `data-theme` is set on `<html>`, `meta[name=
-  "theme-color"]` follows `--background`, and a `themechange` event fires on `document`.
+  "theme-color"]` follows `--background`, every `link[rel="icon"]` becomes the brand mark in
+  `--primary`, and a `themechange` event fires on `document`.
 - `quietMode`: `enabled`, `remembered`, `closeSignal`, `openSignal`, `set`, `toggle`,
   `rememberCurrent`, `forgetDefault`, `init`. Sections close on `closeSignal` and reopen on
   `openSignal`. `init` closes them when a default is remembered and never issues an open.
@@ -414,6 +415,29 @@ first paint, and its own navigation, scroll-restoration, and analytics handling.
 resets in a new tab. `bind:value={state.value}` works directly. Values must be `LocaleFree`
 (strings, numbers, booleans, null, and arrays of those), so store ids and flags, never translated
 text. During SSR it returns the seed.
+
+A persisted boolean that opens and closes something can paint right on reload: mark each element
+that mirrors the state with `data-persisted-key="<key>"` (it gets `data-state` and, if present,
+`aria-expanded`) and each body that hides with `data-persisted-body="<key>"` (it also gets `inert`
+and `aria-hidden`). `CollapsibleSection`, `FilterGroup` and `ListingFrame` already do.
+
+## Head
+
+`@yesid/ui/head` exports `SeoHead` and `injectThemeBoot`.
+
+`SeoHead` writes a page's head tags from resolved values: `title`, `description`, `siteName`,
+`canonical`, `alternates` (`{ hreflang, href }`, x-default included when the app wants one),
+`ogLocale` and `ogLocaleAlternates`, `image` (`{ url, alt, width = 1200, height = 630 }`), `type`
+(`website`), `noIndex`, `twitter` (`{ site, creator }`), `author`, `themeColor` (the dark
+`background` token) and `jsonLd` (one `@graph` script). Without `canonical` it writes no canonical,
+`og:url` or hreflang, which suits error pages. The app keeps its locale, URL and copy policy.
+
+`injectThemeBoot(html)` replaces `%yesid.themeBoot%` with the boot script. Put the placeholder in
+`app.html` before `%sveltekit.head%` and call it from `transformPageChunk`. Before first paint the
+script sets `data-theme` from the `theme` key (dark otherwise) and applies stored `persisted:`
+booleans to marked elements as the parser adds them. A hash-based CSP allows it with the source in
+`@yesid/ui/boot.json` (`{ "hash": "sha256-…" }`), which Node config files can import. A CSP that
+relies on `'unsafe-inline'` must not add the hash, because any hash switches `'unsafe-inline'` off.
 
 ## Base stylesheet
 
@@ -461,5 +485,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.20.0/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.21.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

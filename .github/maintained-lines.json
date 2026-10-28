@@ -103,7 +103,7 @@
     },
     {
       "category": "vendor",
-      "reason": "Immutable yesid.dev-design v0.20.0 release verified against its manifest",
+      "reason": "Immutable yesid.dev-design v0.21.0 release verified against its manifest",
       "files": [
         "apps/web/vendor/design/LICENSE",
         "apps/web/vendor/design/NOTICE",
@@ -163,9 +163,20 @@
         "apps/web/vendor/design/motion/tap-feedback.css",
         "apps/web/vendor/design/motion/tsconfig.json",
         "apps/web/vendor/design/seo-kit/README.md",
+        "apps/web/vendor/design/seo-kit/fonts/Inter-Black.ttf",
+        "apps/web/vendor/design/seo-kit/fonts/Inter-Medium.ttf",
+        "apps/web/vendor/design/seo-kit/fonts/JetBrainsMono-Medium.ttf",
+        "apps/web/vendor/design/seo-kit/fonts/LICENSE-Inter.txt",
+        "apps/web/vendor/design/seo-kit/fonts/LICENSE-JetBrains-Mono.txt",
         "apps/web/vendor/design/seo-kit/package.json",
+        "apps/web/vendor/design/seo-kit/src/headers.ts",
+        "apps/web/vendor/design/seo-kit/src/icons.ts",
         "apps/web/vendor/design/seo-kit/src/index.ts",
+        "apps/web/vendor/design/seo-kit/src/inline-assets.d.ts",
         "apps/web/vendor/design/seo-kit/src/jsonld.ts",
+        "apps/web/vendor/design/seo-kit/src/og-files.ts",
+        "apps/web/vendor/design/seo-kit/src/og-fonts.ts",
+        "apps/web/vendor/design/seo-kit/src/og.ts",
         "apps/web/vendor/design/seo-kit/src/satori.ts",
         "apps/web/vendor/design/seo-kit/src/sitemap.ts",
         "apps/web/vendor/design/seo-kit/tsconfig.json",
@@ -232,6 +243,10 @@
         "apps/web/vendor/design/ui/src/brand/toc.ts",
         "apps/web/vendor/design/ui/src/cn/create-cn.ts",
         "apps/web/vendor/design/ui/src/cn/index.ts",
+        "apps/web/vendor/design/ui/src/head/SeoHead.svelte",
+        "apps/web/vendor/design/ui/src/head/boot.json",
+        "apps/web/vendor/design/ui/src/head/boot.ts",
+        "apps/web/vendor/design/ui/src/head/index.ts",
         "apps/web/vendor/design/ui/src/index.ts",
         "apps/web/vendor/design/ui/src/layout/ArticleHeader.svelte",
         "apps/web/vendor/design/ui/src/layout/DetailFrame.svelte",
@@ -303,9 +318,10 @@
       "owners": ["apps/web/vendor/design/manifest.json"],
       "sha256": [
         "fd1e77adccb9a8720c6b6e26fb3f74d34f807742e27a0fea2ddf8c7a692db0d7",
-        "af5ebf160a88e61b8ef0f476c48bd505c17b905e05af2b73dd9e54cad771cadf"
+        "af5ebf160a88e61b8ef0f476c48bd505c17b905e05af2b73dd9e54cad771cadf",
+        "8b452e63c103311f05a300e07d9589103c600110b6eb25bc283217a7d38c928c"
       ],
-      "origin": "github.com/mgkdante/yesid.dev-design v0.20.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
+      "origin": "github.com/mgkdante/yesid.dev-design v0.21.0; manifest provenance and canonical framed treeHash independently verified before binding the exact files. New paths remain authored by default."
     },
     {
       "category": "locks",
@@ -318,7 +334,9 @@
         "39e0cb77449628d2b69414d53dd69c9436bdceee032192c2dbdbae9be922205e",
         "2a7dff5e1c16f5a3b2fb5215486938ffb363e19d6d1b66876bc261f07a345c55",
         "ff6abac0aab463e8fab31d9386051dbe1d2449df6ff415cbd1b2e01a08a97e73",
-        "a217af022ca3d29c9d0d01dc47a684ffd54699489b4f3a43f29d2211a675148b"
+        "a217af022ca3d29c9d0d01dc47a684ffd54699489b4f3a43f29d2211a675148b",
+        "79a9277b6995e3555bea5d128e8d5bf75f448aee564fb07db0ae8bd991fee1cd",
+        "80919893ea3c11c6c6d5786d7fe5b3e03d7ba07440bd17f5a0cfda969991ab6f"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -362,25 +380,11 @@
       "origin": "apps/web/scripts/build-map-posters.ts; receipt render-input and image hashes independently verified for all accepted snapshots."
     },
     {
-      "category": "assets",
-      "reason": "Binary font inputs for the Open Graph generator",
-      "files": [
-        "apps/web/scripts/og-fonts/Inter-Black.ttf",
-        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
-        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf"
-      ],
-      "owners": ["apps/web/scripts/build-og.ts"],
-      "sha256": [
-        "2eb6e99fd558766044a7287d0216d9d2bf92502decd83177cb4600e01e9025f9",
-        "46f7578c40b45891c49dcc59fb65208202a49135dd407be285478b484d96e494"
-      ],
-      "origin": "Explicit Inter and JetBrains Mono font payloads consumed by build-og.ts; no extension-wide exclusion."
-    },
-    {
       "category": "generated",
       "reason": "Generated PNG social images and touch icon",
       "files": [
         "apps/web/static/apple-touch-icon-180.png",
+        "apps/web/static/favicon.svg",
         "apps/web/static/og/en.png",
         "apps/web/static/og/fr.png"
       ],
@@ -388,9 +392,6 @@
         "apps/web/package.json",
         "apps/web/scripts/build-icons.ts",
         "apps/web/scripts/build-og.ts",
-        "apps/web/scripts/og-fonts/Inter-Black.ttf",
-        "apps/web/scripts/og-fonts/Inter-Medium.ttf",
-        "apps/web/scripts/og-fonts/JetBrainsMono-Medium.ttf",
         "apps/web/src/lib/site/deployment.ts",
         "apps/web/vendor/design/manifest.json",
         "bun.lock"
@@ -410,7 +411,9 @@
         "7df925a89bbc9cce6b01369c27b4d355dff796beb4e92ee6d2bc1838017b95a7",
         "e23451f3efe06bd48e7e64a6e813bef3cabdc50152e557917f2fea5b87873243",
         "8328e9d978969e1af98b02e941a1b8109c9b28572cf445cf2499523d9f7accfc",
-        "befdf309729500ed612e5a5c1233d2253ca471d683c0a086cf38291b384154df"
+        "befdf309729500ed612e5a5c1233d2253ca471d683c0a086cf38291b384154df",
+        "82e9d05a6ac9e339ca9967e0d5c50e7f46c8d165dec6aed3e0efb62de6bff466",
+        "32567f8208b018f40044432c16342c084d1abdf14a03bfc01dec92079fc8969e"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },

@@ -3,21 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<script>
-			(function () {
-				var d = document.documentElement,
-					t = null;
-				try {
-					t = localStorage.getItem('theme');
-				} catch (e) {}
-				if (t !== 'light' && t !== 'dark') {
-					t = 'dark';
-				}
-				d.dataset.theme = t;
-			})();
-		</script>
-		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414" />
-		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6FB" />
+		%yesid.themeBoot%
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 		<link
 			rel="apple-touch-icon"

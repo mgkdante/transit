@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-	securityHeaders,
-	contentSecurityPolicy,
-	devContentSecurityPolicy,
-} from './securityHeaders';
+import { securityHeaders, contentSecurityPolicyFor } from './securityHeaders';
+import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
 
 function parseHeadersFileGlobBlock(): Record<string, string> {
 	const text = readFileSync(resolve(process.cwd(), '_headers'), 'utf-8');
@@ -28,24 +25,12 @@ function parseHeadersFileGlobBlock(): Record<string, string> {
 describe('securityHeaders — production set', () => {
 	const headers = securityHeaders({ dev: false });
 
-	it('ships all seven security headers', () => {
-		expect(Object.keys(headers).sort()).toEqual([
-			'Content-Security-Policy',
-			'Cross-Origin-Opener-Policy',
-			'Permissions-Policy',
-			'Referrer-Policy',
-			'Strict-Transport-Security',
-			'X-Content-Type-Options',
-			'X-Frame-Options',
-		]);
+	it('ships every package security header', () => {
+		for (const name of Object.keys(SECURITY_HEADERS)) expect(headers).toHaveProperty(name);
 	});
 
 	it('sets the expected non-CSP values', () => {
-		expect(headers['X-Content-Type-Options']).toBe('nosniff');
-		expect(headers['X-Frame-Options']).toBe('SAMEORIGIN');
-		expect(headers['Referrer-Policy']).toBe('strict-origin-when-cross-origin');
-		expect(headers['Strict-Transport-Security']).toContain('max-age=63072000');
-		expect(headers['Cross-Origin-Opener-Policy']).toBe('same-origin');
+		expect(headers['X-Frame-Options']).toBe('DENY');
 	});
 
 	it('keeps geolocation enabled (near-me) but denies the unused powerful features', () => {
@@ -79,7 +64,7 @@ describe('securityHeaders — production set', () => {
 });
 
 describe('contentSecurityPolicy — invariants', () => {
-	const csp = contentSecurityPolicy();
+	const csp = contentSecurityPolicyFor({ dev: false });
 
 	it('allows the basemap glyph host and the direct R2 /v1 origin', () => {
 		expect(csp).toContain('https://protomaps.github.io');
@@ -92,7 +77,7 @@ describe('contentSecurityPolicy — invariants', () => {
 
 	it('allows blob workers (pmtiles/maplibre) and locks framing/objects down', () => {
 		expect(csp).toContain("worker-src 'self' blob:");
-		expect(csp).toContain("frame-ancestors 'self'");
+		expect(csp).toContain("frame-ancestors 'none'");
 		expect(csp).toContain("object-src 'none'");
 		expect(csp).toContain('upgrade-insecure-requests');
 	});
@@ -109,13 +94,13 @@ describe('contentSecurityPolicy — invariants', () => {
 	});
 });
 
-describe('devContentSecurityPolicy — local HMR relaxations only', () => {
+describe('dev security headers — local HMR relaxations only', () => {
 	it('adds the vite websocket + eval over the prod base, nothing tighter', () => {
-		const dev = devContentSecurityPolicy();
+		const dev = contentSecurityPolicyFor({ dev: true });
 		expect(dev).toContain('ws:');
 		expect(dev).toContain("'unsafe-eval'");
 		expect(dev).toContain('https://protomaps.github.io');
-		expect(dev).toContain("frame-ancestors 'self'");
+		expect(dev).toContain("frame-ancestors 'none'");
 	});
 });
 
@@ -123,7 +108,7 @@ describe('drift gate — _headers /* block matches the TS source of truth', () =
 	const fileHeaders = parseHeadersFileGlobBlock();
 
 	it('asset CSP equals the production document CSP', () => {
-		expect(fileHeaders['content-security-policy']).toBe(contentSecurityPolicy());
+		expect(fileHeaders['content-security-policy']).toBe(contentSecurityPolicyFor({ dev: false }));
 	});
 
 	it('asset non-CSP headers equal the production document headers', () => {

@@ -5,6 +5,7 @@ import { readPublicSiteConfig } from '$lib/site/config';
 import { securityHeaders } from '$lib/site/securityHeaders';
 import { configureTransitUi } from '$lib/ui/configure';
 import { preloadFont } from '@yesid/tokens/fonts';
+import { injectThemeBoot } from '@yesid/ui/head';
 
 export const init: ServerInit = configureTransitUi;
 
@@ -101,7 +102,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const resolved = await resolve(event, {
-		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
+		transformPageChunk: ({ html }) => injectThemeBoot(html.replace('%lang%', lang)),
 		preload: ({ type, path }) => type !== 'font' || preloadFont(path),
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');

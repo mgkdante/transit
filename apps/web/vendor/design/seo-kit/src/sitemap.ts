@@ -67,3 +67,21 @@ export function emitSitemapDocument(
 		'\n</urlset>';
 	return options.trailingNewline ? `${document}\n` : document;
 }
+
+export interface RobotsTxtInput {
+	/** False keeps the host out of search: every path is disallowed. */
+	indexing: boolean;
+	/** Absolute sitemap URL. */
+	sitemap?: string;
+	disallow?: readonly string[];
+	/** Comment lines after the sitemap, without the leading `#`. */
+	notes?: readonly string[];
+}
+
+export function robotsTxt(input: RobotsTxtInput): string {
+	if (!input.indexing) return 'User-agent: *\nDisallow: /\n';
+	const lines = ['User-agent: *', 'Allow: /', ...(input.disallow ?? []).map((path) => `Disallow: ${path}`)];
+	if (input.sitemap) lines.push('', `Sitemap: ${input.sitemap}`);
+	if (input.notes?.length) lines.push('', ...input.notes.map((note) => `# ${note}`));
+	return `${lines.join('\n')}\n`;
+}

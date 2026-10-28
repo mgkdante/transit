@@ -19,6 +19,11 @@ function context(context: boolean | undefined) {
 	return context ? { '@context': SCHEMA_ORG_CONTEXT } : {};
 }
 
+/** One `@graph` body for `<script type="application/ld+json">`; `<` is escaped so it can't end the element. */
+export function serializeJsonLd(nodes: readonly object[]): string {
+	return JSON.stringify({ '@context': SCHEMA_ORG_CONTEXT, '@graph': nodes }).replace(/</g, '\\u003c');
+}
+
 export interface WebSiteJsonLdInput extends ContextOption {
 	id?: string;
 	name: string;

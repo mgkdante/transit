@@ -1,5 +1,9 @@
 import type { PublicSiteConfig } from './config';
-import { emitAlternateSitemapEntries, emitSitemapDocument } from '@yesid/seo-kit/sitemap';
+import {
+	emitAlternateSitemapEntries,
+	emitSitemapDocument,
+	robotsTxt,
+} from '@yesid/seo-kit/sitemap';
 
 export { toW3CDate } from '@yesid/seo-kit/sitemap';
 
@@ -37,20 +41,11 @@ export interface SitemapEntities {
 }
 
 export function buildRobotsTxt(config: PublicSiteConfig): string {
-	if (!config.indexing) {
-		return `User-agent: *
-Disallow: /
-`;
-	}
-
-	return `User-agent: *
-Allow: /
-Disallow: /_kit
-Disallow: /fr/_kit
-Disallow: /api/
-
-Sitemap: ${config.siteOrigin}/sitemap.xml
-`;
+	return robotsTxt({
+		indexing: config.indexing,
+		sitemap: `${config.siteOrigin}/sitemap.xml`,
+		disallow: ['/_kit', '/fr/_kit', '/api/'],
+	});
 }
 
 function localizedEntries(siteOrigin: string, path: string, lastmod: string | null): string[] {
