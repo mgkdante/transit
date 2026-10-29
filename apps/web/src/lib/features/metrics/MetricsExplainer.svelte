@@ -389,11 +389,7 @@
 									)}
 								</p>
 							{:else}
-								<p
-									class="metric__prose"
-									role="status"
-									data-testid="metrics-doctrine-absent"
-								>
+								<p class="metric__prose" role="status" data-testid="metrics-doctrine-absent">
 									{t.provenance.howWeMeasure.constants.absent}
 								</p>
 							{/if}
