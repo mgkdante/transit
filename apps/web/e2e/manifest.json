@@ -1,7 +1,7 @@
 {
 	"provider": "stm",
 	"display_name": "STM",
-	"bbox": [],
+	"bbox": [-73.9757, 45.4022, -73.4764, 45.7028],
 	"attribution": "© OpenStreetMap contributors, © Protomaps",
 	"dataset_version": "",
 	"labels": {},
