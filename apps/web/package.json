@@ -22,8 +22,7 @@
 		"test": "node scripts/gen-contract.mjs && vitest run --maxWorkers=4",
 		"test:e2e": "bun run build && playwright test -c e2e/playwright.config.ts",
 		"test:b9-display": "node scripts/b9-displayed-values.mjs",
-		"test:unit": "node scripts/gen-contract.mjs && vitest",
-		"test:mobile-geometry": "bun scripts/test-mobile-geometry.ts"
+		"test:unit": "node scripts/gen-contract.mjs && vitest"
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "4.12.1",

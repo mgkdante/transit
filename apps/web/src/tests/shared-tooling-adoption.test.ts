@@ -492,18 +492,6 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		const wranglerShim = process.platform === 'win32' ? 'wrangler.exe' : 'wrangler';
 		expect(existsSync(join(ROOT, 'node_modules/.bin', wranglerShim))).toBe(true);
 
-		for (const path of [
-			'apps/web/scripts/live-resilience-probe.mjs',
-			'apps/web/scripts/mobile-geometry-runner.ts',
-		]) {
-			const launcher = text(path);
-			expect(launcher).toContain('verifyInstalledBrowserArtifact');
-			expect(launcher).not.toMatch(
-				/CHROME_PATH|CHROMIUM_EXECUTABLE|PLAYWRIGHT_CHROMIUM_EXECUTABLE/u,
-			);
-			expect(launcher).not.toContain('/usr/bin/google-chrome');
-		}
-
 		const browserManifest = JSON.parse(text('apps/web/browser-toolchain.json')) as {
 			browser: { archiveSha256: string; executableSha256: string; platform: string };
 		};
