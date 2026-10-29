@@ -12,7 +12,7 @@ Live at [transit.yesid.dev](https://transit.yesid.dev).
 
 | Path | What it does | Built with |
 | --- | --- | --- |
-| `apps/db` | Captures feeds, normalizes them, computes daily rollups and publishes snapshots | Python 3.12, PostgreSQL with PostGIS, SQLAlchemy, Alembic, uv |
+| `apps/db` | Captures feeds, normalizes them, computes daily rollups and publishes snapshots | Python, PostgreSQL, SQLAlchemy, Alembic, uv |
 | `apps/data-proxy` | Serves the published snapshots from R2 | Cloudflare Workers |
 | `apps/web` | The public dashboard; it reads snapshots and never touches the database | SvelteKit 2, Svelte 5, Tailwind CSS 4, MapLibre GL, LayerChart, Cloudflare Workers |
 
@@ -22,7 +22,7 @@ shared UI come from pinned
 
 ## Quickstart
 
-You need Node 22 ([.nvmrc](.nvmrc)) and Bun 1.3.11 ([.bun-version](.bun-version)).
+Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), then:
 
 ```sh
 git clone https://github.com/mgkdante/transit.git
