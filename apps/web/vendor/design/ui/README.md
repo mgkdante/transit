@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -259,6 +259,8 @@ the code shows as a plain, focusable `<pre>`.
 The circuit-node backdrop of brand headers. It fills `containerEl` (which must be positioned) and
 listens there: nodes glow and link up near the pointer, and a click sends out a ripple. Under
 reduced motion the nodes are static. It is decorative and pauses while off screen.
+The shared base stylesheet owns `--manifesto-background-strength` (0.75), applied once to
+nodes/traces, warm glow and ripple ink. Companion product grids use the same property.
 
 ### Blueprint drawings
 
@@ -590,5 +592,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.2/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

@@ -34,8 +34,9 @@ select {
 	}
 }
 
-/* SiteHeader geometry, shared with page offsets and body-portaled dialogs. */
+/* Shared brand-background strength and SiteHeader geometry. */
 :root {
+	--manifesto-background-strength: 0.75;
 	--nav-top: calc(1rem + env(safe-area-inset-top, 0px));
 	--nav-control: 44px;
 	--nav-padding-y: 12px;

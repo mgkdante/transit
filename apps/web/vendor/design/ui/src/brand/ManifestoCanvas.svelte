@@ -252,6 +252,7 @@
 
 <style>
 	.manifesto__canvas {
+		opacity: var(--manifesto-background-strength);
 		position: absolute;
 		inset: 0;
 		z-index: var(--z-content);
@@ -259,6 +260,7 @@
 	}
 
 	.manifesto__warm-glow {
+		opacity: var(--manifesto-background-strength);
 		position: absolute;
 		width: 800px;
 		height: 500px;
@@ -295,11 +297,11 @@
 		z-index: calc(var(--z-content) + 3);
 	}
 	:global(.manifesto__ripple) {
-		border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) calc(40% * var(--manifesto-background-strength)), transparent);
 		animation: ripple-expand 1.2s ease-out forwards;
 	}
 	:global(.manifesto__ripple-inner) {
-		border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent) calc(30% * var(--manifesto-background-strength)), transparent);
 		animation: ripple-inner 0.8s ease-out forwards;
 	}
 	@keyframes ripple-expand {
