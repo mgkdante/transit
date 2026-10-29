@@ -1,5 +1,5 @@
 diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
-index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d38841256c52b 100644
+index 924869bdb3eedccf57345314adb7c1a9b2a12b20..35fb5acd7dab29c499c52298e74f3ee0ddf0c2dc 100644
 --- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
 +++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
 @@ -24,6 +24,7 @@ export class DismissibleLayerState {
@@ -10,7 +10,13 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d3884
      constructor(opts) {
          this.opts = opts;
          this.#behaviorType = opts.interactOutsideBehavior;
-@@ -37,6 +38,7 @@ export class DismissibleLayerState {
+@@ -33,16 +34,19 @@ export class DismissibleLayerState {
+             this.#documentObj = getOwnerDocument(this.opts.ref.current);
+         });
+         let unsubEvents = noop;
++        let listenTimer;
+         const cleanup = () => {
++            clearTimeout(listenTimer);
              this.#resetState();
              globalThis.bitsDismissableLayers.delete(this);
              this.#handleInteractOutside.destroy();
@@ -18,7 +24,14 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d3884
              unsubEvents();
          };
          watch([() => this.opts.enabled.current, () => this.opts.ref.current], () => {
-@@ -55,7 +57,7 @@ export class DismissibleLayerState {
+             if (!this.opts.enabled.current || !this.opts.ref.current)
+                 return;
+-            afterSleep(1, () => {
++            listenTimer = afterSleep(1, () => {
+                 if (!this.opts.ref.current)
+                     return;
+                 globalThis.bitsDismissableLayers.set(this, this.#behaviorType);
+@@ -55,7 +59,7 @@ export class DismissibleLayerState {
              this.#resetState.destroy();
              globalThis.bitsDismissableLayers.delete(this);
              this.#handleInteractOutside.destroy();
@@ -27,7 +40,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d3884
              unsubEvents();
          });
      }
-@@ -87,12 +89,50 @@ export class DismissibleLayerState {
+@@ -87,12 +91,50 @@ export class DismissibleLayerState {
           * Mark interaction-start event as non-intercepted. Debounce `onInteractOutsideStart`
           * to avoid prematurely checking if other events were intercepted.
           */
@@ -79,7 +92,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d3884
      #handleDismiss = (e) => {
          let event = e;
          if (event.defaultPrevented) {
-@@ -102,13 +142,13 @@ export class DismissibleLayerState {
+@@ -102,13 +144,13 @@ export class DismissibleLayerState {
      };
      #handleInteractOutside = debounce((e) => {
          if (!this.opts.ref.current) {
@@ -95,7 +108,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..d3f0315e90802ad42c91ddbf808d3884
              return;
          }
          let event = e;
-@@ -117,20 +157,25 @@ export class DismissibleLayerState {
+@@ -117,20 +159,25 @@ export class DismissibleLayerState {
          }
          if (this.#behaviorType.current !== "close" &&
              this.#behaviorType.current !== "defer-otherwise-close") {

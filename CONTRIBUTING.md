@@ -14,7 +14,6 @@ Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), th
 git clone https://github.com/mgkdante/transit.git
 cd transit
 bun install --frozen-lockfile
-node .github/scripts/materialize-shared-config.mjs # needed by the web unit tests
 bun run setup:hooks
 bun run dev
 ```
