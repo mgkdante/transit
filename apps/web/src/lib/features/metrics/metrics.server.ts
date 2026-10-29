@@ -1,17 +1,16 @@
-import { render } from 'svelte/server';
-import type { Locale } from '$lib/i18n';
+import { highlight } from '@yesid/seo-kit/highlight';
 import { METRICS } from './metrics.content';
-import MetricBody, { type MetricBodies } from './MetricBody.svelte';
+import type { MetricSqlHtml } from './MetricBody.svelte';
 
-const bodiesByLocale = new Map<Locale, MetricBodies>();
+let sqlHtml: Promise<MetricSqlHtml> | undefined;
 
-export function getMetricBodies(locale: Locale): MetricBodies {
-	let bodies = bodiesByLocale.get(locale);
-	if (!bodies) {
-		bodies = Object.fromEntries(
-			METRICS.map((entry) => [entry.key, render(MetricBody, { props: { entry, locale } }).body]),
-		) as MetricBodies;
-		bodiesByLocale.set(locale, bodies);
-	}
-	return bodies;
+/** Each metric's highlighted source, once per isolate: the sources are static. */
+export function getMetricSqlHtml(): Promise<MetricSqlHtml> {
+	sqlHtml ??= Promise.all(
+		METRICS.map(
+			async (entry) =>
+				[entry.key, await highlight(entry.sql, entry.codeLanguage ?? 'sql')] as const,
+		),
+	).then((entries) => Object.fromEntries(entries) as MetricSqlHtml);
+	return sqlHtml;
 }

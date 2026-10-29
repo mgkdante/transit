@@ -193,6 +193,12 @@ test("a metric's defining SQL is a named, keyboard-reachable region", async ({ p
 	await region.focus();
 	await expect(region).toBeFocused();
 	await expect(region).toContainText(/SELECT/i);
+	const colors = await region.evaluate(
+		(pre) =>
+			new Set(Array.from(pre.querySelectorAll('span'), (span) => getComputedStyle(span).color))
+				.size,
+	);
+	expect(colors, 'the SQL is syntax-colored').toBeGreaterThan(1);
 	const { violations } = await new AxeBuilder({ page }).include(sqlCards).analyze();
 	expect(violations).toEqual([]);
 });

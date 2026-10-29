@@ -5,4 +5,4 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<MetricsExplainer metricBodies={data.metricBodies} />
+<MetricsExplainer sqlHtml={data.sqlHtml} />

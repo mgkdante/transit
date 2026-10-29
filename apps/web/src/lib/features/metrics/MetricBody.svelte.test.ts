@@ -3,17 +3,18 @@ import { fireEvent, render } from '@testing-library/svelte';
 import type { ViteDevServer } from 'vite';
 import type { Locale } from '$lib/i18n';
 import { quietMode } from '@yesid/ui/state';
+import { highlight } from '@yesid/seo-kit/highlight';
 import { METRICS, type MetricEntry } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
-import MetricBody, { type MetricBodies } from './MetricBody.svelte';
+import MetricBody, { type MetricSqlHtml } from './MetricBody.svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 
 const state = vi.hoisted(() => ({
-	word: vi.fn(),
-	disposers: [] as ReturnType<typeof vi.fn>[],
 	provenance: null as { methodology: Record<string, string> } | null,
 }));
-vi.mock('./easterWordHover', () => ({ easterWordHover: state.word }));
+vi.mock('./easterWordHover', () => ({
+	easterWordHover: () => ({ destroy() {} }),
+}));
 vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
@@ -28,9 +29,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 let server: ViteDevServer;
-let getBodies: (locale: Locale) => MetricBodies;
-let renderBody: (entry: MetricEntry, locale: Locale, serverHtml?: string) => string;
-let loadPage: (event: { locals: { locale?: Locale } }) => { metricBodies: MetricBodies };
+let renderBody: (entry: MetricEntry, locale: Locale, sqlHtml?: string) => string;
+let loadPage: () => Promise<{ sqlHtml: MetricSqlHtml }>;
 
 beforeAll(async () => {
 	const { createServer } = await import('vite');
@@ -45,28 +45,18 @@ beforeAll(async () => {
 	const { default: ServerBody } = await server.ssrLoadModule(
 		'/src/lib/features/metrics/MetricBody.svelte',
 	);
-	({ getMetricBodies: getBodies } = await server.ssrLoadModule(
-		'/src/lib/features/metrics/metrics.server.ts',
-	));
 	({ load: loadPage } = await server.ssrLoadModule(
 		'/src/routes/[[lang=locale]]/metrics/+page.server.ts',
 	));
-	renderBody = (entry, locale, serverHtml) =>
-		renderSsr(ServerBody, { props: { entry, locale, serverHtml } }).body;
+	renderBody = (entry, locale, sqlHtml) =>
+		renderSsr(ServerBody, { props: { entry, locale, sqlHtml } }).body;
 }, 20_000);
 
 afterAll(async () => {
 	await server?.close();
 });
 beforeEach(() => {
-	state.disposers = [];
 	state.provenance = null;
-	state.word.mockReset();
-	state.word.mockImplementation(() => {
-		const destroy = vi.fn();
-		state.disposers.push(destroy);
-		return { destroy };
-	});
 	quietMode.resetForTest();
 });
 afterEach(() => {
@@ -103,28 +93,21 @@ function expectContent(element: HTMLElement, entry: MetricEntry, locale: Locale)
 
 describe('server-rendered methodology bodies', () => {
 	it.each(['en', 'fr'] as const)(
-		'retains every exact %s definition and source block before JavaScript',
-		(locale) => {
-			const bodies = loadPage({ locals: { locale } }).metricBodies;
-			expect(Object.keys(bodies)).toEqual(METRICS.map((entry) => entry.key));
+		'retains every exact %s definition and highlighted source before JavaScript',
+		async (locale) => {
+			const { sqlHtml } = await loadPage();
+			expect(Object.keys(sqlHtml)).toEqual(METRICS.map((entry) => entry.key));
 			for (const entry of METRICS) {
-				const html = bodies[entry.key]!;
-				expectContent(documentBody(html), entry, locale);
-				expectContent(documentBody(renderBody(entry, locale, html)), entry, locale);
+				expectContent(documentBody(renderBody(entry, locale, sqlHtml[entry.key])), entry, locale);
 			}
 		},
 	);
 
-	it('uses English for an unprefixed request and keeps the locale cache distinct', () => {
-		const english = loadPage({ locals: {} }).metricBodies;
-		const french = getBodies('fr');
-		expect(english).toBe(getBodies('en'));
-		expect(french).not.toBe(english);
-		expectContent(documentBody(english.otp!), METRICS[0], 'en');
-		expectContent(documentBody(french.otp!), METRICS[0], 'fr');
+	it('highlights the sources once per isolate', async () => {
+		expect((await loadPage()).sqlHtml).toBe((await loadPage()).sqlHtml);
 	});
 
-	it('keeps adversarial prose and SQL as text through SSR and the opaque browser branch', () => {
+	it('keeps adversarial prose and SQL as text through SSR and the browser', async () => {
 		const adversarial =
 			'<script>window.injected = true</script><img src=x onerror="alert(1)"> & "é"';
 		const entry: MetricEntry = {
@@ -135,47 +118,22 @@ describe('server-rendered methodology bodies', () => {
 			caveats: { en: [adversarial], fr: [adversarial] },
 			sql: `${adversarial}\nSELECT '<&>';`,
 		};
-		const serverHtml = renderBody(entry, 'en');
-		const view = render(MetricBody, { props: { entry, locale: 'en', serverHtml } });
+		const sqlHtml = await highlight(entry.sql, 'sql');
+		expectContent(documentBody(renderBody(entry, 'en', sqlHtml)), entry, 'en');
+		const view = render(MetricBody, { props: { entry, locale: 'en', sqlHtml } });
 		expectContent(view.container, entry, 'en');
 		expect(view.container.querySelector('script, img, [onerror]')).toBeNull();
 	});
 
-	it('restores word actions and their seeds once, cleans old actions on replacement and on teardown', async () => {
-		const entry = METRICS.find((entry) => entry.key === 'occupancy')!;
-		const view = render(MetricBody, {
-			props: { entry, locale: 'en', serverHtml: getBodies('en')[entry.key] },
-		});
-		const firstWords = Array.from(
-			view.container.querySelectorAll<HTMLElement>('[data-easter-effect]'),
-		);
-		expect(firstWords.length).toBeGreaterThan(0);
-		for (const node of firstWords) {
-			expect(state.word).toHaveBeenCalledWith(node, {
-				startEffect: Number(node.dataset.easterEffect),
-			});
-		}
-		expect(state.word).toHaveBeenCalledTimes(firstWords.length);
-		const firstDisposers = [...state.disposers];
-		await view.rerender({ locale: 'fr', serverHtml: getBodies('fr')[entry.key] });
-		for (const dispose of firstDisposers) expect(dispose).toHaveBeenCalledOnce();
-		const newWords = Array.from(
-			view.container.querySelectorAll<HTMLElement>('[data-easter-effect]'),
-		);
-		expect(state.word).toHaveBeenCalledTimes(firstWords.length + newWords.length);
-		expect(firstWords.every((node) => !view.container.contains(node))).toBe(true);
-		expectContent(view.container, entry, 'fr');
-		await view.unmount();
-		for (const dispose of state.disposers) expect(dispose).toHaveBeenCalledOnce();
-	});
-
 	it('keeps published notes and disclosure state outside the static body', async () => {
 		state.provenance = { methodology: { otp_definition: 'Published current-run note' } };
-		const view = render(MetricsExplainer, { props: { metricBodies: getBodies('en') } });
+		const view = render(MetricsExplainer, { props: { sqlHtml: (await loadPage()).sqlHtml } });
 		const block = view.container.querySelector('#otp') as HTMLElement;
 		const body = block.querySelector('.section-body') as HTMLElement;
 		const trigger = block.querySelector('[data-section-trigger]') as HTMLButtonElement;
-		const staticBody = block.querySelector('[data-slot="metric-static-host"]') as HTMLElement;
+		const staticBody = block.querySelector(
+			'[data-slot="metric-static-information"]',
+		) as HTMLElement;
 		const note = block.querySelector('[data-slot="pipeline-note"]') as HTMLElement;
 		expect(note.textContent).toBe('Published current-run note');
 		expect(staticBody.contains(note)).toBe(false);

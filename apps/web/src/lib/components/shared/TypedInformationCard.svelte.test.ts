@@ -16,6 +16,7 @@ interface TypedInformationCardProps {
 	kind: InformationKind;
 	label: string;
 	code?: string;
+	codeHtml?: string;
 	codeAriaLabel?: string;
 	children?: Snippet;
 	class?: string;
@@ -88,6 +89,7 @@ describe('TypedInformationCard', () => {
 				kind: 'sql',
 				label: 'Defining SQL',
 				code: 'SELECT 1;',
+				codeHtml: '<span class="syn-keyword">SELECT</span> 1;',
 				codeAriaLabel: 'Defining SQL source',
 			},
 		});
