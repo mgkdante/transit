@@ -277,5 +277,3 @@ export const metricsCopy = defineCopy({
 		info: metricInfoCopy.en,
 	},
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
-
-export type MetricsCopy = (typeof metricsCopy)[Locale];

@@ -1,7 +1,7 @@
 <script module lang="ts">
 	import type { MetricKey } from './metrics.content';
 
-	export type MetricBodies = Readonly<Record<MetricKey, string>>;
+	export type MetricSqlHtml = Readonly<Record<MetricKey, string>>;
 </script>
 
 <script lang="ts">
@@ -10,66 +10,50 @@
 	import type { MetricEntry } from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
 	import EasterProse from './EasterProse.svelte';
-	import { easterWordHover } from './easterWordHover';
 
 	let {
 		entry,
 		locale,
-		serverHtml,
+		sqlHtml,
 	}: {
 		entry: MetricEntry;
 		locale: Locale;
-		serverHtml?: string;
+		sqlHtml?: string;
 	} = $props();
 	const t = $derived(metricsCopy[locale]);
-	let host = $state<HTMLDivElement>();
-
-	$effect(() => {
-		if (serverHtml === undefined || !host) return;
-		const actions = Array.from(host.querySelectorAll<HTMLElement>('[data-easter-effect]'), (node) =>
-			easterWordHover(node, { startEffect: Number(node.dataset.easterEffect) }),
-		);
-		return () => actions.forEach((action) => action.destroy());
-	});
 </script>
 
-{#if serverHtml !== undefined}
-	<div class="metric__static-information" data-slot="metric-static-host" bind:this={host}>
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -- Only Svelte-rendered repository content from metrics.server.ts enters this prop. -->
-		{@html serverHtml}
-	</div>
-{:else}
-	<div class="metric__static-information" data-slot="metric-static-information">
-		<TypedInformationCard kind="definition" label={t.sections.definition}>
-			<EasterProse text={entry.definition[locale]} class="metric__prose" />
+<div class="metric__static-information" data-slot="metric-static-information">
+	<TypedInformationCard kind="definition" label={t.sections.definition}>
+		<EasterProse text={entry.definition[locale]} class="metric__prose" />
+	</TypedInformationCard>
+
+	<TypedInformationCard kind="math" label={t.sections.math}>
+		<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+	</TypedInformationCard>
+
+	<TypedInformationCard
+		kind="sql"
+		label={t.sections.sql}
+		code={entry.sql}
+		codeHtml={sqlHtml}
+		codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
+	/>
+
+	<div class="metric__paired-information">
+		<TypedInformationCard kind="not-really" label={t.sections.notReally}>
+			<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
 		</TypedInformationCard>
 
-		<TypedInformationCard kind="math" label={t.sections.math}>
-			<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+		<TypedInformationCard kind="caveat" label={t.sections.caveats}>
+			<ul class="metric__caveats">
+				{#each entry.caveats[locale] as caveat, i (i)}
+					<li>{caveat}</li>
+				{/each}
+			</ul>
 		</TypedInformationCard>
-
-		<TypedInformationCard
-			kind="sql"
-			label={t.sections.sql}
-			code={entry.sql}
-			codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
-		/>
-
-		<div class="metric__paired-information">
-			<TypedInformationCard kind="not-really" label={t.sections.notReally}>
-				<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
-			</TypedInformationCard>
-
-			<TypedInformationCard kind="caveat" label={t.sections.caveats}>
-				<ul class="metric__caveats">
-					{#each entry.caveats[locale] as caveat, i (i)}
-						<li>{caveat}</li>
-					{/each}
-				</ul>
-			</TypedInformationCard>
-		</div>
 	</div>
-{/if}
+</div>
 
 <style>
 	.metric__static-information {

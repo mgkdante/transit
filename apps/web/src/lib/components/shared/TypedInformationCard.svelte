@@ -7,7 +7,6 @@
 	import WorkflowIcon from '@lucide/svelte/icons/workflow';
 	import NotebookTextIcon from '@lucide/svelte/icons/notebook-text';
 	import { CodeBlock } from '@yesid/ui/brand';
-	import { tokenizeSql } from '$lib/components/sql-highlight';
 
 	export type InformationKind =
 		| 'definition'
@@ -22,6 +21,8 @@
 		kind: InformationKind;
 		label: string;
 		code?: string;
+		/** `@yesid/seo-kit/highlight` markup for `code`; without it the code shows as plain text. */
+		codeHtml?: string;
 		codeAriaLabel?: string;
 		children?: Snippet;
 		class?: string;
@@ -31,6 +32,7 @@
 		kind,
 		label,
 		code,
+		codeHtml,
 		codeAriaLabel,
 		children,
 		class: className,
@@ -44,13 +46,12 @@
 		data-kind={kind}
 	>
 		<CodeBlock title={label} language="SQL" code={code ?? ''}>
+			<!-- eslint-disable svelte/no-at-html-tags -- codeHtml is escaped token markup from @yesid/seo-kit/highlight. -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<pre tabindex="0" role="region" aria-label={codeAriaLabel ?? 'SQL source'}><code
-					>{#each tokenizeSql(code ?? '') as token, i (i)}<span
-							class:italic={token.type === 'comment'}
-							style:color="var(--syntax-{token.type})">{token.value}</span
-						>{/each}</code
+					>{#if codeHtml}{@html codeHtml}{:else}{code}{/if}</code
 				></pre>
+			<!-- eslint-enable svelte/no-at-html-tags -->
 		</CodeBlock>
 	</div>
 {:else}

@@ -31,11 +31,11 @@
 		type MetricEntry,
 	} from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
-	import MetricBody, { type MetricBodies } from './MetricBody.svelte';
+	import MetricBody, { type MetricSqlHtml } from './MetricBody.svelte';
 
 	const localizeHref = getLocalizeHref();
 
-	let { metricBodies }: { metricBodies?: MetricBodies } = $props();
+	let { sqlHtml }: { sqlHtml?: MetricSqlHtml } = $props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
@@ -440,7 +440,7 @@
 									</p>
 
 									<div class="metric__information-stack">
-										<MetricBody {entry} {locale} serverHtml={metricBodies?.[entry.key]} />
+										<MetricBody {entry} {locale} sqlHtml={sqlHtml?.[entry.key]} />
 
 										{#if note}
 											<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>

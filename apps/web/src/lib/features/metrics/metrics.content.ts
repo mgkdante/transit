@@ -1,6 +1,6 @@
 import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import { METRIC_SUMMARIES, type MetricKey } from '$lib/metrics';
-export { metricInfoFor, metricName, SUPPLEMENTAL_METRIC_TIPS } from '$lib/metrics';
+export { metricInfoFor } from '$lib/metrics';
 export type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 
 export type Confidence = 'proxy' | 'medium';
@@ -33,6 +33,8 @@ export interface MetricEntry {
 	readonly definition: BilingualText;
 	readonly math: BilingualText;
 	readonly sql: string;
+	/** The source's language when it isn't SQL. */
+	readonly codeLanguage?: 'python';
 	readonly notReally: BilingualText;
 	readonly caveats: BilingualList;
 }
@@ -324,6 +326,7 @@ mean_seconds = total_delay_seconds / observations
 			fr: 'Pour les fenêtres de 1, 7 et 30 jours : n = nombre d’écarts, S = somme des écarts en minutes, Q = somme de leurs carrés. CV = sqrt(max((Q − S²/n)/(n−1), 0)) / (S/n), arrondi à 4 décimales; valeur indisponible si n < 2 ou S ≤ 0. Cette formule utilise les moments conservés, pas l’histogramme. La part rapprochée est estimée dans l’histogramme regroupé sous T = 0,5 × médiane publiée, avec répartition uniforme dans le seau coupé par T, puis arrondie à une décimale.',
 			en: 'For the 1-, 7- and 30-day windows: n is the gap count, S the sum of gap minutes, and Q the sum of squared gap minutes. CoV = sqrt(max((Q − S²/n)/(n−1), 0)) / (S/n), rounded to 4 decimals; unavailable if n < 2 or S ≤ 0. This uses the retained moments, not the histogram. The closely spaced share estimates pooled histogram mass below T = 0.5 × published median, assuming uniform values inside the bin crossed by T, then rounds to one decimal place.',
 		},
+		codeLanguage: 'python',
 		sql: `# Pool daily count and moments over the selected direction, shift and window.
 mean = sum_gap / n if n else None
 variance = max((sum_gap_sq - sum_gap**2 / n) / (n - 1), 0) if n >= 2 else None
@@ -368,6 +371,7 @@ bunched_pct_value = round_half_away(bunched, 1) if bunched is not None else None
 			fr: 'Vue par fenêtre : observed_min = médiane estimée par interpolation du cumul des histogrammes d’écarts, arrondie à une décimale. Les fenêtres de 1, 7 et 30 jours se terminent au dernier jour clos de cette série et ne contiennent que les écarts admissibles de semaine. La direction retenue maximise le nombre de trajets observés dans chaque fenêtre. Le résumé sans fenêtre utilise la médiane continue sur la fenêtre de conservation configurée des faits bruts, de 14 jours par défaut. scheduled_min = médiane des écarts entre minutes de départ distinctes au premier arrêt, par période, dans la direction avec le plus de départs du GTFS actuel.',
 			en: 'Windowed view: observed_min is estimated by interpolating the pooled gap-histogram CDF and rounding to one decimal place. The 1-, 7- and 30-day windows end on this series’ newest closed day and include only eligible weekday gaps. The selected direction has the most observed trips in each window. The non-windowed summary uses a continuous median over the configured raw-fact retention window, 14 days by default. scheduled_min is the median gap between distinct first-stop departure minutes, per shift, in the direction with the most departures in the current timetable.',
 		},
+		codeLanguage: 'python',
 		sql: `# Windowed observations: pool histogram counts, then estimate one median.
 observed_min = round_half_away(cdf_percentile(pooled_gap_histogram, 0.5, gap_edges), 1)
 

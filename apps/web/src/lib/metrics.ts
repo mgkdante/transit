@@ -173,9 +173,7 @@ interface SupplementalMetricEntry {
 	readonly oneLiner: BilingualText;
 }
 
-export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
-	Record<SupplementalMetricKey, SupplementalMetricEntry>
-> = {
+const SUPPLEMENTAL_METRIC_TIPS: Readonly<Record<SupplementalMetricKey, SupplementalMetricEntry>> = {
 	serviceComparison: {
 		anchor: 'cancellation',
 		oneLiner: { en: serviceComparisonCopy.en.tip, fr: serviceComparisonCopy.fr.tip },
