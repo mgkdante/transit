@@ -3,35 +3,28 @@
 Transit software source is distributed under the root [MIT License](LICENSE).
 This file is a factual attribution index, not an additional license or policy.
 
-## Vendored yesid.dev-design snapshot
+## yesid.dev-design packages
 
-The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.26.0`:
-
-- annotated tag object `2285d8c0eb7ee19203f79db398d1c9305fa5e2d2`;
-- peeled commit `aeee85dc5f919d2c84c9f0f47dc9ebbba0fdcfcd`.
-
-The snapshot retains its license at
-[`apps/web/vendor/design/LICENSE`](apps/web/vendor/design/LICENSE).
-
-`apps/web/vendor/design/motion/lenis.css` is copied from Lenis 1.3, Copyright
-(c) 2024 darkroom.engineering, and is used under the MIT License. Its text
-matches that LICENSE apart from the copyright line.
+The `@yesid/*` packages come from yesid.dev-design `v0.28.0` release tarballs, installed under
+`node_modules/@yesid/` and pinned by integrity in `bun.lock`. They are MIT licensed; each tarball
+carries its `LICENSE` and `NOTICE`. `@yesid/motion/lenis.css` is copied from Lenis 1.3, Copyright
+(c) 2024 darkroom.engineering, and is used under the MIT License.
 
 ## GSAP
 
 The web runtime resolves GSAP `3.15.0`, including the plugins used by the
-vendored motion package. GSAP is licensed separately under the
+`@yesid/motion` package. GSAP is licensed separately under the
 [Standard "No Charge" GSAP License](https://gsap.com/community/standard-license/)
 and is not covered by Transit’s MIT License. The linked GSAP license controls
 its permitted uses and restrictions.
 
 ## Fonts
 
-Inter and JetBrains Mono files under `apps/web/vendor/design/tokens/fonts` and
-`apps/web/vendor/design/seo-kit/fonts` are distributed with the SIL Open Font License 1.1
+Inter and JetBrains Mono files under `node_modules/@yesid/tokens/fonts` and
+`node_modules/@yesid/seo-kit/fonts` are distributed with the SIL Open Font License 1.1
 texts at
-[`LICENSE-Inter.txt`](apps/web/vendor/design/seo-kit/fonts/LICENSE-Inter.txt) and
-[`LICENSE-JetBrains-Mono.txt`](apps/web/vendor/design/seo-kit/fonts/LICENSE-JetBrains-Mono.txt).
+`node_modules/@yesid/seo-kit/fonts/LICENSE-Inter.txt` and
+`node_modules/@yesid/seo-kit/fonts/LICENSE-JetBrains-Mono.txt`.
 
 The three Satori-compatible TTF files are byte-identical to the documented
 official artifacts used by yesid.dev:

@@ -7,12 +7,11 @@ node_modules
 .vitest
 pnpm-lock.yaml
 
-# GENERATED — owned by the token pipeline / contract vendoring; do not reformat
+# GENERATED — owned by the token pipeline; do not reformat
 src/app.css
 src/lib/v1/schemas/json
 src/lib/v1/schemas/generated
 .scratch-s1
-vendor/design
 
 # static assets + docs
 static

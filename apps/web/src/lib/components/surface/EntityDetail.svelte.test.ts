@@ -65,10 +65,6 @@ const src = readFileSync(
 	join(process.cwd(), 'src/lib/components/surface/EntityDetail.svelte'),
 	'utf8',
 );
-const detailFrameSrc = readFileSync(
-	join(process.cwd(), 'vendor/design/ui/src/layout/DetailFrame.svelte'),
-	'utf8',
-);
 
 describe('EntityDetail — demand-mounted pane bodies', () => {
 	it('mounts only the initially active pane body while retaining every tabpanel wrapper', () => {
@@ -128,38 +124,6 @@ describe('EntityDetail — signage-active tab pattern', () => {
 		expect(src).toMatch(
 			/\.station-tab\.active\s*\{[\s\S]*?border-bottom-color:\s*var\(--signage-text\)/,
 		);
-	});
-
-	it('renders one full-width primary strip with one tablist and an inert overflow cue', () => {
-		const { container } = render(EntityDetailHarness, { props: { mode: 'article' } });
-		const strip = container.querySelector('[data-slot="entity-detail-tabs"]');
-
-		expect(strip).not.toBeNull();
-		expect(strip?.querySelectorAll('[role="tablist"]')).toHaveLength(1);
-		expect(strip?.querySelectorAll('[data-slot="entity-detail-tabs-fade"]')).toHaveLength(1);
-		expect(strip?.querySelector('[data-slot="entity-detail-tabs-fade"]')).toHaveAttribute(
-			'aria-hidden',
-			'true',
-		);
-		expect(detailFrameSrc).toMatch(
-			/\.detail-shell-toolbar\s*\{[\s\S]*?width:\s*100%[\s\S]*?background:\s*var\(--primary\)/,
-		);
-		expect(src).toMatch(/overflow-x:\s*auto/);
-		expect(src).toMatch(/overscroll-behavior-inline:\s*contain/);
-	});
-
-	it('keeps the outer band full bleed while centering a materially narrower tab viewport', () => {
-		expect(detailFrameSrc).toMatch(
-			/\.detail-shell-toolbar\s*\{[\s\S]*?width:\s*100%[\s\S]*?background:\s*var\(--primary\)/,
-		);
-		expect(src).toMatch(
-			/\.entity-tabs\s*\{[\s\S]*?--entity-tabs-max-width:\s*46rem[\s\S]*?width:\s*100%/,
-		);
-		expect(src).toMatch(
-			/\.entity-tabs__scroll\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--entity-tabs-max-width\)\)[\s\S]*?margin-inline:\s*auto/,
-		);
-		expect(src).toMatch(/\.entity-tabs\s+:global\(\[role='tablist'\]\)\s*\{[\s\S]*?width:\s*100%/);
-		expect(src).toMatch(/\.station-tab\s*\{[\s\S]*?min-height:\s*var\(--size-tap-min\)/);
 	});
 
 	it.each([

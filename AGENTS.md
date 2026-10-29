@@ -105,8 +105,8 @@ uses canonical to mean normalized transport data.
 
 - apps/db owns ingestion, normalization and publication; apps/data-proxy serves
   versioned snapshots; apps/web consumes that contract, never Postgres directly.
-- Vendored design is immutable. Adopt an exact external release with its manifest;
-  propose shared design fixes in its owner repository, not the vendor directory.
+- The `@yesid/*` packages come from one exact yesid.dev-design release; propose shared design fixes
+  in that repository, never patch them under `node_modules`.
 - Preserve private configuration and unrelated files. Stage only named changes;
   never use git add -A, blanket resets, cleans or historical branch merges.
   Verify Windows deletion/move targets before destructive filesystem operations.

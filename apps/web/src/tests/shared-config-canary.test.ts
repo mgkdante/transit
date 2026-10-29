@@ -9,9 +9,8 @@ import webConfig from '../../svelte.config.js';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const CONFIG_URL =
-	'https://github.com/mgkdante/yesid.dev-design/releases/download/config-v0.2.0/yesid-config-v0.2.0.tgz';
-const CONFIG_LOCK_INTEGRITY =
-	'sha512-UOP1BG2JaV88/EqrA2mmtlymrLV3OTOIeDqMAdZysySycERKE3OUK0oApKK1udQhGEZcMHd2xnuxNFY7gO5OnA==';
+	'https://github.com/mgkdante/yesid.dev-design/releases/download/v0.28.0/yesid-config-0.28.0.tgz';
+const CONFIG_LOCK_INTEGRITY = 'TO_FILL';
 const CONFIG_BASE_DIGEST = '588a4acf72f44593561112fc945d410548b56cf556bbbc9bc745c1f7b218424f';
 const MATERIALIZED_BASE = 'node_modules/.yesid-shared-tooling/turbo/base.json';
 const TRANSIT_TURBO_SEMANTIC_DIGEST =
@@ -175,12 +174,7 @@ describe('Transit shared-config canary', () => {
 		const receipt = JSON.parse(result.stdout) as JsonObject;
 		expect(receipt).toEqual({
 			schema: 1,
-			package: { name: '@yesid/config', version: '0.2.0' },
-			tag: {
-				name: 'config-v0.2.0',
-				object: '4146d5b3e35d1ddefd3db003a630e14c9b3fbef9',
-				peeledCommit: 'b88a519ade384c1e007aa7330638071bba2f6135',
-			},
+			package: { name: '@yesid/config', version: '0.28.0' },
 			destination: MATERIALIZED_BASE,
 			digest: `sha256:${CONFIG_BASE_DIGEST}`,
 		});

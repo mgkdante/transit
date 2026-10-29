@@ -1,5 +1,24 @@
+import { readFileSync } from 'node:fs';
+import { registerHooks, stripTypeScriptTypes } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 import { verifyInstalledBrowserArtifact } from '../scripts/browser-toolchain.mjs';
+
+// The @yesid packages ship TypeScript source; Playwright never transforms node_modules.
+const yesidSource = /\/node_modules\/(?:\.bun\/[^/]+\/node_modules\/)?@yesid\/[^/]+\/src\//;
+registerHooks({
+	resolve(specifier, context, nextResolve) {
+		const relativeJs = specifier.startsWith('.') && specifier.endsWith('.js');
+		return relativeJs && yesidSource.test(context.parentURL ?? '')
+			? nextResolve(specifier.replace(/\.js$/, '.ts'), context)
+			: nextResolve(specifier, context);
+	},
+	load(url, context, nextLoad) {
+		if (!yesidSource.test(url) || !url.endsWith('.ts')) return nextLoad(url, context);
+		const source = stripTypeScriptTypes(readFileSync(fileURLToPath(url), 'utf8'));
+		return { format: 'module', source, shortCircuit: true };
+	},
+});
 
 // Lives in e2e/ so Playwright resolves this folder's tsconfig, not the app's (its extends is hoisted).
 // CI runs the pinned Chromium from the browser toolchain; locally Playwright's own.
