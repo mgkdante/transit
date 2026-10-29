@@ -63,8 +63,8 @@ const documents = {
 						"Plausible uses no cookies, no browser storage and no persistent identifier, and does not follow you across sites, devices or apps. It has no function that identifies, locates or profiles you within the meaning of section 8.1 of the Act respecting the protection of personal information in the private sector, so there is nothing to switch on and no banner. For visitors covered by the EU General Data Protection Regulation, the basis is Transit's legitimate interest in understanding how the site is used (Article 6(1)(f)). Plausible keeps aggregate statistics while the account is active and no record of individual visitors. You can object by writing to contact@yesid.dev or block plausible.io in your browser.",
 					],
 					links: [
-						{"href":"https://plausible.io/data-policy","label":"Plausible data policy"},
-						{"href":"https://plausible.io/dpa","label":"Plausible data processing agreement"},
+						{ href: 'https://plausible.io/data-policy', label: 'Plausible data policy' },
+						{ href: 'https://plausible.io/dpa', label: 'Plausible data processing agreement' },
 					],
 				},
 				{
@@ -112,7 +112,7 @@ const documents = {
 							href: 'https://www.cloudflare.com/privacypolicy/',
 							label: 'Cloudflare Privacy Policy',
 						},
-						{"href":"https://plausible.io/privacy","label":"Plausible privacy policy"},
+						{ href: 'https://plausible.io/privacy', label: 'Plausible privacy policy' },
 					],
 				},
 				{
@@ -272,8 +272,14 @@ const documents = {
 						"Plausible n'utilise ni témoins, ni stockage du navigateur, ni identifiant persistant, et ne vous suit pas d'un site, d'un appareil ou d'une application à l'autre. Il ne comporte aucune fonction permettant de vous identifier, de vous localiser ou d'effectuer votre profilage au sens de l'article 8.1 de la Loi sur la protection des renseignements personnels dans le secteur privé; il n'y a donc rien à activer et aucune bannière. Pour les personnes visées par le Règlement général sur la protection des données de l'Union européenne, le fondement est l'intérêt légitime de Transit à comprendre l'utilisation du site (article 6(1)(f)). Plausible conserve des statistiques agrégées tant que le compte est actif et aucun dossier sur les visiteurs individuels. Vous pouvez vous y opposer en écrivant à contact@yesid.dev ou bloquer plausible.io dans votre navigateur.",
 					],
 					links: [
-						{"href":"https://plausible.io/data-policy","label":"Politique de données de Plausible"},
-						{"href":"https://plausible.io/dpa","label":"Entente de traitement des données de Plausible"},
+						{
+							href: 'https://plausible.io/data-policy',
+							label: 'Politique de données de Plausible',
+						},
+						{
+							href: 'https://plausible.io/dpa',
+							label: 'Entente de traitement des données de Plausible',
+						},
 					],
 				},
 				{
@@ -321,7 +327,10 @@ const documents = {
 							href: 'https://www.cloudflare.com/fr-fr/privacypolicy/',
 							label: 'Politique de confidentialité de Cloudflare',
 						},
-						{"href":"https://plausible.io/privacy","label":"Politique de confidentialité de Plausible"},
+						{
+							href: 'https://plausible.io/privacy',
+							label: 'Politique de confidentialité de Plausible',
+						},
 					],
 				},
 				{

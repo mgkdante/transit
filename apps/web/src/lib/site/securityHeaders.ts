@@ -21,12 +21,14 @@ function cspDirectives(dev: boolean): Record<string, string[]> {
 		'font-src': ["'self'"],
 		'style-src': ["'self'", "'unsafe-inline'"],
 		// 'unsafe-inline' covers SvelteKit's start script and the theme boot; adding any hash would switch it off.
-		'script-src': [
+		'script-src': ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
+		'connect-src': [
 			"'self'",
-			"'unsafe-inline'",
-			...(dev ? ["'unsafe-eval'"] : []),
+			SNAPSHOT_ORIGIN,
+			PLAUSIBLE_ORIGIN,
+			BASEMAP_IMG_HOST,
+			...(dev ? ['ws:', 'wss:'] : []),
 		],
-		'connect-src': ["'self'", SNAPSHOT_ORIGIN, PLAUSIBLE_ORIGIN, BASEMAP_IMG_HOST, ...(dev ? ['ws:', 'wss:'] : [])],
 		'worker-src': ["'self'", 'blob:'],
 		'manifest-src': ["'self'"],
 		'upgrade-insecure-requests': [],

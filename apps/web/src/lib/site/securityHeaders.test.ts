@@ -73,7 +73,9 @@ describe('contentSecurityPolicy — invariants', () => {
 
 	it('allows Plausible in connect-src without the retired analytics script host', () => {
 		expect(csp).toMatch(/connect-src[^;]*https:\/\/plausible\.io/);
-		expect(csp.match(/(?:^|; )script-src[^;]*/)?.[0]).not.toContain('static.cloudflareinsights.com');
+		expect(csp.match(/(?:^|; )script-src[^;]*/)?.[0]).not.toContain(
+			'static.cloudflareinsights.com',
+		);
 	});
 
 	it('allows blob workers (pmtiles/maplibre) and locks framing/objects down', () => {

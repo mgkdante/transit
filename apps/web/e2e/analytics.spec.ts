@@ -5,6 +5,9 @@ import { SURFACE_NAV } from '../src/lib/content/nav';
 const ENDPOINT = 'https://plausible.io/api/event';
 type Payload = { n: string; d: string; u: string };
 
+// The production CSP upgrades this synthetic HTTP hostname's assets to HTTPS.
+test.use({ bypassCSP: true });
+
 async function capturePlausible(page: Page): Promise<Payload[]> {
 	const payloads: Payload[] = [];
 	await page.route('**/api/event', async (route) => {
@@ -36,7 +39,12 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 			await page.getByRole('button', { name: navPillCopy.en.openMenu }).click();
 		await expect(menu).toBeVisible({ timeout: 1000 });
 	}).toPass();
-	await menu.getByRole('link', { name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en, exact: true }).click();
+	await menu
+		.getByRole('link', {
+			name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en,
+			exact: true,
+		})
+		.click();
 	await expect(page).toHaveURL((url) => url.pathname === '/lines');
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(2);
 	for (const payload of payloads) {
@@ -46,7 +54,13 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 		expect(url.hash).toBe('');
 	}
 	expect(await page.evaluate(() => document.cookie)).toBe('');
-	expect(await page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /plausible|analytics/i.test(key)))).toEqual([]);
+	expect(
+		await page.evaluate(() =>
+			[...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) =>
+				/plausible|analytics/i.test(key),
+			),
+		),
+	).toEqual([]);
 });
 
 test('the local host sends nothing', async ({ page }) => {
@@ -58,9 +72,20 @@ test('the local host sends nothing', async ({ page }) => {
 			await page.getByRole('button', { name: navPillCopy.en.openMenu }).click();
 		await expect(menu).toBeVisible({ timeout: 1000 });
 	}).toPass();
-	await menu.getByRole('link', { name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en, exact: true }).click();
+	await menu
+		.getByRole('link', {
+			name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en,
+			exact: true,
+		})
+		.click();
 	await expect(page).toHaveURL((url) => url.pathname === '/lines');
-	await page.evaluate((endpoint) => fetch(endpoint, { method: 'POST', body: JSON.stringify({ n: '__e2e-drain__' }) }).catch(() => undefined), ENDPOINT);
+	await page.evaluate(
+		(endpoint) =>
+			fetch(endpoint, { method: 'POST', body: JSON.stringify({ n: '__e2e-drain__' }) }).catch(
+				() => undefined,
+			),
+		ENDPOINT,
+	);
 	await expect.poll(() => payloads.some(({ n }) => n === '__e2e-drain__')).toBe(true);
 	expect(payloads.filter(({ n }) => n !== '__e2e-drain__')).toEqual([]);
 });
