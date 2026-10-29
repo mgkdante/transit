@@ -18,8 +18,8 @@ bun run setup:hooks
 bun run dev
 ```
 
-The materialize step writes the shared Turbo config that `turbo.json` extends;
-the root `build`, `test`, `check` and `lint` scripts need it. `setup:hooks` turns
+The materialize step writes the verified shared Turbo base that the web unit
+tests' shared-tooling check compares `turbo.json` against. `setup:hooks` turns
 on the pre-commit guards for generated social cards and icons and for the
 vendored design release. `bun run dev` reads public snapshots through the
 [Vite proxy](apps/web/vite.config.ts): it needs internet access but no database,
@@ -45,9 +45,9 @@ bun run --cwd apps/web test
 bun run --cwd apps/web build
 ```
 
-Browser tests build the app and drive it with Playwright. Locally, install
-Playwright's Chromium once from `apps/web` with `bunx playwright install chromium`,
-then run `bun run --cwd apps/web test:e2e`. CI installs a pinned Chromium from
+Browser tests build the app and drive it with Playwright. Locally, from
+`apps/web`, install Playwright's Chromium once with `bunx playwright install chromium`,
+then run `bun run test:e2e`. CI installs a pinned Chromium from
 the browser toolchain manifests, which cover linux-x64 and win32-x64 only.
 
 The [web workflow](.github/workflows/web.yml) also checks vendored design,
