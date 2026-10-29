@@ -46,7 +46,7 @@
   Cache-Control: public, max-age=0, must-revalidate
 
 # Offline fallback — content-stable shell page; modest TTL.
-/offline.html
+/offline
   Cache-Control: public, max-age=3600
 
 # Baseline security headers for static ASSET responses (favicon, fonts,

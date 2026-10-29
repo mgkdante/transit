@@ -18,16 +18,18 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 const ORIGIN = sw.location.origin;
 const CACHE = cacheNameFor(version);
 
-const OFFLINE_PATH = '/offline.html';
+// The asset host serves offline.html at /offline and redirects the .html path to it.
+const OFFLINE_PATH = '/offline';
 
 const MAP_POSTER_PATH_PREFIX = '/map/basemap-';
-const NON_MAP_STATIC_FILES = files.filter(
-	(file) => !new URL(file, ORIGIN).pathname.startsWith(MAP_POSTER_PATH_PREFIX),
-);
+const STATIC_FILES = files.filter((file) => {
+	const path = new URL(file, ORIGIN).pathname;
+	return path !== '/offline.html' && !path.startsWith(MAP_POSTER_PATH_PREFIX);
+});
 
 const FONT_FILES = build.filter((path) => path.endsWith('.woff2'));
 
-const PRECACHE = precachePathnames([...NON_MAP_STATIC_FILES, ...FONT_FILES], ORIGIN, OFFLINE_PATH);
+const PRECACHE = precachePathnames([...STATIC_FILES, ...FONT_FILES], ORIGIN, OFFLINE_PATH);
 
 const KILL_CHECK_THROTTLE_MS = 5 * 60 * 1000;
 let lastKillCheck = 0;

@@ -7,7 +7,8 @@ import { copy as healthCopy } from '../src/lib/features/health/health.copy';
 import { stopReliabilityCopy } from '../src/lib/features/stops/reliability/stops-reliability.copy';
 import { detailCopy } from '../src/lib/features/stops/stops.copy';
 import { tripCopy } from '../src/lib/features/trips/trips.copy';
-import { DEFAULT_LOCALE as locale } from '../src/lib/i18n/config';
+import { DEFAULT_LOCALE as locale, PUBLISHED_LOCALES } from '../src/lib/i18n/config';
+import { localizeHref } from '../src/lib/i18n/routing';
 import { STATUS_LABELS } from '../src/lib/v1/enumLabels';
 
 const fixture = (name: string) =>
@@ -30,6 +31,15 @@ test.beforeEach(async ({ page }) => {
 
 // SurfaceRail is a pill and sheet below 1024px.
 const railIsSheet = (page: Page) => page.viewportSize()!.width < 1024;
+
+// Every element a CSS animation or transition starts on, recorded from page load.
+const recordMotion = () => {
+	const started: Element[] = [];
+	Object.assign(window, { started });
+	for (const type of ['animationstart', 'transitionrun'])
+		addEventListener(type, (event) => started.push(event.target as Element), true);
+};
+
 const r = stopReliabilityCopy[locale];
 const railPill = (page: Page) =>
 	page.getByRole('button', { name: new RegExp(`^${r.controlsLabel}\\b`) });
@@ -102,12 +112,63 @@ test('the roll-up period is a radio group the arrow keys move through', async ({
 	await expect(checked).toBeFocused();
 });
 
+for (const lang of PUBLISHED_LOCALES) {
+	test(`${lang}: the stop tabs keep the open tab in the URL without adding history`, async ({
+		page,
+	}) => {
+		await page.goto(localizeHref(`/stop/${stop}`, lang));
+		const entries = await page.evaluate(() => history.length);
+		// Detail last, so the loop ends where the page started.
+		for (const [key, name] of Object.entries(detailCopy[lang].tabs).reverse()) {
+			const tab = page.getByRole('tab', { name, exact: true });
+			// Server markup shows the tabs before hydration wires them; retry until one responds.
+			await expect(async () => {
+				if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+				await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 1_000 });
+			}).toPass();
+			await expect(page).toHaveURL(
+				(url) => url.searchParams.get('tab') === (key === 'detail' ? null : key),
+			);
+			expect(await page.evaluate(() => history.length)).toBe(entries);
+			if (key === 'detail') continue;
+			await page.reload();
+			await expect(tab).toHaveAttribute('aria-selected', 'true');
+		}
+	});
+}
+
+test('on desktop the stop tabs sit centred in their toolbar', async ({ page }, testInfo) => {
+	test.skip(
+		testInfo.project.name !== 'desktop',
+		'the tab list fills the toolbar below desktop widths',
+	);
+	await page.goto(`/stop/${stop}`);
+	// The toolbar is the tab list's first wider ancestor.
+	const [list, bar] = await page.getByRole('tablist').evaluate((element) => {
+		let bar = element.parentElement!;
+		while (bar.getBoundingClientRect().width <= element.getBoundingClientRect().width + 1)
+			bar = bar.parentElement!;
+		return [element, bar].map((node) => node.getBoundingClientRect().toJSON());
+	});
+	expect(list.width).toBeLessThan(bar.width);
+	expect(Math.abs(list.x + list.width / 2 - (bar.x + bar.width / 2))).toBeLessThanOrEqual(1);
+});
+
 test('below 1024px the view rail opens as a dialog and Escape returns to its pill', async ({
 	page,
 }) => {
 	test.skip(!railIsSheet(page), 'the rail is a sheet only below 1024px');
+	await page.addInitScript(recordMotion);
 	await page.goto(`/stop/${stop}?tab=reliability`);
 	const sheet = await openRail(page);
+	// Reduced motion (the suite's default): nothing on the sheet animated in; the click ripple is not part of it.
+	expect(
+		await sheet.evaluate((surface) =>
+			(window as unknown as { started: Element[] }).started
+				.filter((target) => target.contains(surface) || surface.contains(target))
+				.map((target) => target.getAttribute('class')),
+		),
+	).toEqual([]);
 
 	await expect(sheet.getByRole('radiogroup', { name: r.grain.label })).toBeVisible();
 	await page.keyboard.press('Escape');
