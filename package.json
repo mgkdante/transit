@@ -20,7 +20,7 @@
     "smoke": "bash apps/data-proxy/smoke.sh"
   },
   "devDependencies": {
-    "@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/v0.28.1/yesid-config-0.28.1.tgz",
+    "@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/v0.29.0/yesid-config-0.29.0.tgz",
     "turbo": "^2.5.0",
     "wrangler": "4.154.0"
   },
