@@ -1,21 +1,14 @@
-# Security Policy
+# Security policy
 
-## Supported version
+Do not report suspected vulnerabilities through a public issue.
 
-Only the current `main` branch is supported. Security fixes land on `main` and
-are deployed from there.
+Report them privately through GitHub's
+[private vulnerability reporting](https://github.com/mgkdante/transit/security/advisories/new),
+or email `contact@yesid.dev` with the subject `[security]`. Include the affected
+URL or component, reproduction steps, likely impact, and whether the details
+have been disclosed elsewhere.
 
-## Report a vulnerability
-
-Do not disclose suspected vulnerabilities in a public issue. Use GitHub's
-private vulnerability reporting flow for this repository. If that flow is not
-available, email [contact@yesid.dev](mailto:contact@yesid.dev) with:
-
-- the affected surface and expected impact;
-- reproducible steps or a minimal proof;
-- any known mitigation; and
-- a safe way to coordinate follow-up.
-
-Do not test against production in a way that disrupts service, accesses data
-that is not yours, or increases infrastructure cost. Reports about upstream
-services or STM source data should go to their respective operators.
+Do not access or alter another person's data, disrupt the service, run up its
+hosting costs, or publish vulnerability details before coordinated disclosure.
+Only `main` and the live service at transit.yesid.dev are supported. Problems
+with an agency's own feeds or data belong with that agency.
