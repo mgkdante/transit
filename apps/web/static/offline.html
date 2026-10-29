@@ -85,17 +85,16 @@
 			.actions {
 				margin-top: 1.5rem;
 			}
-			button {
-				font: inherit;
+			.actions a {
+				display: inline-block;
 				font-weight: 600;
 				color: #141414;
 				background: var(--primary);
-				border: none;
 				border-radius: 0.5rem;
 				padding: 0.65rem 1.1rem;
-				cursor: pointer;
+				text-decoration: none;
 			}
-			button:hover {
+			.actions a:hover {
 				background: #c96a00;
 			}
 		</style>
@@ -112,8 +111,9 @@
 				Vous etes hors ligne. Les donnees de transit en temps reel necessitent une connexion. Nous
 				n'inventons jamais de donnees.
 			</p>
+			<!-- An empty href is this page's own URL, query included, so Retry needs no script. -->
 			<div class="actions">
-				<button type="button" onclick="location.reload()">Retry / Reessayer</button>
+				<a href="">Retry / Reessayer</a>
 			</div>
 		</main>
 	</body>

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 import { SECURITY_HEADERS } from '../vendor/design/seo-kit/src/headers';
@@ -98,3 +99,25 @@ for (const colorScheme of ['dark', 'light'] as const) {
 		await expect(html).toHaveAttribute('data-theme', 'light');
 	});
 }
+
+// The fixture server stands in for https://data.yesid.dev on another origin, which connect-src blocks.
+const fixtureData = new URL(
+	JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars.PUBLIC_V1_BASE,
+).origin;
+
+test('every destination runs under the real policy without a violation', async ({ page }) => {
+	const violations: string[] = [];
+	await page.exposeFunction('reportViolation', (directive: string, blocked: string) => {
+		if (!blocked.startsWith(fixtureData)) violations.push(`${directive} ${blocked}`);
+	});
+	await page.addInitScript(() =>
+		addEventListener('securitypolicyviolation', (event) =>
+			(
+				window as unknown as { reportViolation(directive: string, blocked: string): void }
+			).reportViolation(event.effectiveDirective, event.blockedURI),
+		),
+	);
+	// networkidle: hydration and the map's lazy imports are requests, so their violations land first.
+	for (const { href } of destinations) await page.goto(href, { waitUntil: 'networkidle' });
+	expect(violations).toEqual([]);
+});

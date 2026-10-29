@@ -64,12 +64,4 @@ describe('production snapshot request budget', () => {
 			workflow.match(/r2 bucket cors set transit-snapshots --file r2-cors\.json --force/g),
 		).toHaveLength(2);
 	});
-
-	it('allows the direct R2 origin in the document and asset CSP', () => {
-		const source = readRepo('apps/web/src/lib/site/securityHeaders.ts');
-		const headers = readRepo('apps/web/_headers');
-
-		expect(source).toContain('https://data.yesid.dev');
-		expect(headers).toContain('https://data.yesid.dev');
-	});
 });

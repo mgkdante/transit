@@ -1,8 +1,7 @@
 import type { Handle, ServerInit } from '@sveltejs/kit';
-import { dev } from '$app/environment';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
-import { securityHeaders } from '$lib/site/securityHeaders';
+import { DOCUMENT_SECURITY_HEADERS } from '$lib/site/securityHeaders';
 import { configureTransitUi } from '$lib/ui/configure';
 import { preloadFont } from '@yesid/tokens/fonts';
 import { injectThemeBoot } from '@yesid/ui/head';
@@ -66,7 +65,7 @@ function mutableResponse(response: Response, head = false): Response {
 }
 
 function applyDocumentHeaders(response: Response): void {
-	for (const [name, value] of Object.entries(securityHeaders({ dev }))) {
+	for (const [name, value] of Object.entries(DOCUMENT_SECURITY_HEADERS)) {
 		response.headers.set(name, value);
 	}
 

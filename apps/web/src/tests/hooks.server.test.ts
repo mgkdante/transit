@@ -69,6 +69,8 @@ function html(body = 'fresh', init: ResponseInit = {}): Response {
 	return new Response(body, { ...init, headers });
 }
 
+const KIT_CSP = "script-src 'self' 'sha256-kit'";
+
 describe('server request locale', () => {
 	it('sets the non-indexing header only when public indexing is off', async () => {
 		for (const indexing of [false, true]) {
@@ -116,8 +118,8 @@ describe('server request locale', () => {
 });
 
 describe('server HTML edge cache', () => {
-	it('serves an exact-URL cache hit without invoking SvelteKit and reapplies security headers', async () => {
-		const cache = cacheHarness(html('cached'));
+	it('serves an exact-URL cache hit without invoking SvelteKit, keeping its CSP and reapplying security headers', async () => {
+		const cache = cacheHarness(html('cached', { headers: { 'content-security-policy': KIT_CSP } }));
 		const request = event('https://transit.yesid.dev/fr/metrics?grain=week', { cache });
 		const resolve = vi.fn(async () => html('fresh'));
 
@@ -134,7 +136,8 @@ describe('server HTML edge cache', () => {
 		expect(key.url).toBe('https://transit.yesid.dev/fr/metrics?grain=week');
 		expect(response.headers.get('x-transit-edge-cache')).toBe('HIT');
 		expect(response.headers.get('cache-control')).toBe('no-store');
-		expect(response.headers.get('content-security-policy')).toBeTruthy();
+		expect(response.headers.get('content-security-policy')).toBe(KIT_CSP);
+		expect(response.headers.get('x-content-type-options')).toBeTruthy();
 		expect(cache.put).not.toHaveBeenCalled();
 	});
 
@@ -157,7 +160,6 @@ describe('server HTML edge cache', () => {
 		expect(request.locals.locale).toBe('fr');
 		expect(response.headers.get('x-transit-edge-cache')).toBe('BYPASS');
 		expect(response.headers.get('content-type')).toBe('application/json');
-		expect(response.headers.get('content-security-policy')).toBeTruthy();
 		expect(response.headers.get('link')).toBeNull();
 		expect(await response.json()).toEqual(payload);
 	});
@@ -165,7 +167,9 @@ describe('server HTML edge cache', () => {
 	it('stores a safe anonymous HTML miss for 30 seconds without exposing that TTL publicly', async () => {
 		const cache = cacheHarness();
 		const request = event('https://transit.yesid.dev/lines/24?tab=detail', { cache });
-		const resolve = vi.fn(async () => html('fresh'));
+		const resolve = vi.fn(async () =>
+			html('fresh', { headers: { 'content-security-policy': KIT_CSP } }),
+		);
 
 		const response = await handle({ event: request, resolve });
 		await Promise.all(cache.writes);
@@ -178,7 +182,7 @@ describe('server HTML edge cache', () => {
 		const [key, stored] = cache.put.mock.calls[0] as [Request, Response];
 		expect(key.url).toBe('https://transit.yesid.dev/lines/24?tab=detail');
 		expect(key.method).toBe('GET');
-		expect(stored.headers.get('content-security-policy')).toBeTruthy();
+		expect(stored.headers.get('content-security-policy')).toBe(KIT_CSP);
 		expect(stored.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=30');
 		expect(stored.headers.get('x-transit-edge-cache')).toBeNull();
 	});
