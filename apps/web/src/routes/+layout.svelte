@@ -485,7 +485,6 @@
 		height: calc(240px * var(--ground-progress, 1));
 		flex-shrink: 0;
 		overflow: clip;
-		background: var(--background);
 	}
 	.construction-anchor {
 		height: 0;

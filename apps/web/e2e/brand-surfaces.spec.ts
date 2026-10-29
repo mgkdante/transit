@@ -68,6 +68,20 @@ test('homepage ground follows its own scroller and reverses without moving the t
 	expect(samples[2].height).toBeGreaterThan(samples[1].height);
 	expect(samples[1].height).toBeGreaterThan(samples[0].height);
 	expect(Math.abs(samples[4].height - samples[0].height)).toBeLessThanOrEqual(1);
+	expect(
+		await page.locator('.home-construction-floor').evaluate((floor) => {
+			for (let element: Element | null = floor; element; element = element.parentElement) {
+				const { backgroundImage, backgroundColor } = getComputedStyle(element);
+				if (
+					backgroundImage !== 'none' ||
+					(backgroundColor !== 'transparent' && backgroundColor !== 'rgba(0, 0, 0, 0)')
+				) {
+					return backgroundImage;
+				}
+			}
+			return 'none';
+		}),
+	).toContain('repeating-linear-gradient');
 	const root = page.locator('#main');
 	await root.focus();
 	await root.press('End');
