@@ -3,7 +3,6 @@ import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
 import { quietMode } from '@yesid/ui/state';
-import { transitAnalytics } from '$lib/analytics/runtime';
 import type { V1Context } from '$lib/v1/boot';
 import type { IsoUtc } from '$lib/v1/schemas';
 
@@ -70,9 +69,6 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$app/environment', () => ({ browser: false }));
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
-vi.mock('$lib/analytics/runtime', () => ({
-	transitAnalytics: { trackPageview: vi.fn() },
-}));
 vi.mock('$lib/components/edge', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
@@ -224,17 +220,6 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
-	it('tracks exactly one pageview per navigation', () => {
-		vi.mocked(transitAnalytics.trackPageview).mockClear();
-		renderWithoutV1('/privacy', 'en');
-		const to = { url: new URL('https://transit.yesid.dev/terms') };
-		for (const callback of harness.afterNavigateCallbacks) {
-			callback({ from: { url: new URL('https://transit.yesid.dev/privacy') }, to, type: 'link' });
-		}
-		expect(transitAnalytics.trackPageview).toHaveBeenCalledTimes(1);
-		expect(transitAnalytics.trackPageview).toHaveBeenCalledWith(to.url);
-	});
-
 	it('returns #main to the top on a new path and keeps it on a query change', () => {
 		const { container } = renderWithoutV1('/privacy', 'en');
 		const main = container.querySelector<HTMLElement>('#main')!;

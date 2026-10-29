@@ -18,7 +18,7 @@
 	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
 
-	import { transitAnalytics } from '$lib/analytics/runtime';
+	import { createAnalytics } from '@yesid/analytics/client';
 	import {
 		setLocaleContext,
 		DEFAULT_LOCALE,
@@ -275,6 +275,7 @@
 		}
 		void registerServiceWorker({ browser, production: import.meta.env.PROD });
 
+		createAnalytics({ events: [] }, { domain: env.PUBLIC_PLAUSIBLE_DOMAIN });
 		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
 
 		const disposeVitals =
@@ -290,7 +291,6 @@
 	onNavigate(viewTransition);
 
 	afterNavigate(({ from, to, type }) => {
-		if (to) void transitAnalytics.trackPageview(to.url);
 		if (!to || type === 'enter' || type === 'popstate') return;
 		if (from?.url.pathname !== to.url.pathname || from.url.hash !== to.url.hash) {
 			resetMainScroll(to.url.hash);
@@ -485,7 +485,6 @@
 		height: calc(240px * var(--ground-progress, 1));
 		flex-shrink: 0;
 		overflow: clip;
-		background: var(--background);
 	}
 	.construction-anchor {
 		height: 0;

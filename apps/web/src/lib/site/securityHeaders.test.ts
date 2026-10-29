@@ -71,8 +71,11 @@ describe('contentSecurityPolicy — invariants', () => {
 		expect(csp).toContain('https://data.yesid.dev');
 	});
 
-	it('allows Cloudflare Web Analytics beacon in script-src', () => {
-		expect(csp).toMatch(/script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
+	it('allows Plausible in connect-src without the retired analytics script host', () => {
+		expect(csp).toMatch(/connect-src[^;]*https:\/\/plausible\.io/);
+		expect(csp.match(/(?:^|; )script-src[^;]*/)?.[0]).not.toContain(
+			'static.cloudflareinsights.com',
+		);
 	});
 
 	it('allows blob workers (pmtiles/maplibre) and locks framing/objects down', () => {

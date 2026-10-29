@@ -317,6 +317,8 @@
 
     "@maplibre/vt-pbf": ["@maplibre/vt-pbf@4.3.2", "", { "dependencies": { "@mapbox/point-geometry": "^1.1.0", "@types/geojson": "^7946.0.16", "pbf": "^5.1.0" } }, "sha512-j6p0AdjvAR19Z3XaCysle7A4ZSo08tYOzxD0Y9NQylwPAkwJJeYub5b2eVucdeDh7erhv69DahoLOevDRERRUw=="],
 
+    "@plausible-analytics/tracker": ["@plausible-analytics/tracker@0.4.7", "", {}, "sha512-majmq1uion4uLo88Tr0eMCMfi7TY00okp3I0Vql9egFaAz6DYCW4bJaV3t5LB3BfcvW5exJpmqzROU0a1b6nAA=="],
+
     "@playwright/test": ["@playwright/test@1.62.0", "", { "dependencies": { "playwright": "1.62.0" }, "bin": { "playwright": "cli.js" } }, "sha512-9zOJ6ZQRAena31MpOH9VSzIz8Ou3YJ/wtY/eQm5T2uhfhG7/U3COrMS8xOtUrZrp9OgdmzEnIYODye3nY1VqzA=="],
 
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
@@ -1167,7 +1169,7 @@
 
     "@testing-library/dom/dom-accessibility-api": ["dom-accessibility-api@0.5.16", "", {}, "sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg=="],
 
-    "@transit/web/@yesid/analytics": ["@yesid/analytics@file:apps/web/vendor/design/analytics", { "devDependencies": { "@types/node": "^22.0.0", "svelte": "^5.54.0", "typescript": "^5.5.0", "vitest": "^4.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }],
+    "@transit/web/@yesid/analytics": ["@yesid/analytics@file:apps/web/vendor/design/analytics", { "dependencies": { "@plausible-analytics/tracker": "^0.4.7" }, "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.5.0", "vitest": "^4.1.0" } }],
 
     "@transit/web/@yesid/gates": ["@yesid/gates@file:apps/web/vendor/design/gates", { "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.5.0", "vitest": "^4.1.0" } }],
 
@@ -1179,7 +1181,7 @@
 
     "@transit/web/@yesid/tokens": ["@yesid/tokens@file:apps/web/vendor/design/tokens", { "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.5.0", "vitest": "^4.1.0" } }],
 
-    "@transit/web/@yesid/ui": ["@yesid/ui@file:apps/web/vendor/design/ui", { "dependencies": { "@lucide/svelte": "^1.18.0", "@yesid/analytics": "file:../analytics", "@yesid/motion": "file:../motion", "@yesid/seo-kit": "file:../seo-kit", "@yesid/tokens": "file:../tokens", "bits-ui": "^2.16.3", "clsx": "^2.1.1", "paneforge": "^1.0.2", "tailwind-merge": "^3.5.0", "tailwind-variants": "^3.2.2" }, "devDependencies": { "@sveltejs/vite-plugin-svelte": "^6.2.4", "@testing-library/svelte": "^5.3.1", "@types/node": "^22.0.0", "happy-dom": "^21.0.4", "svelte": "^5.54.0", "svelte-check": "^4.4.2", "tailwindcss": "^4.1.18", "typescript": "^5.9.3", "vite": "^7.3.1", "vitest": "^4.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }],
+    "@transit/web/@yesid/ui": ["@yesid/ui@file:apps/web/vendor/design/ui", { "dependencies": { "@lucide/svelte": "^1.18.0", "@yesid/motion": "file:../motion", "@yesid/seo-kit": "file:../seo-kit", "@yesid/tokens": "file:../tokens", "bits-ui": "^2.16.3", "clsx": "^2.1.1", "paneforge": "^1.0.2", "tailwind-merge": "^3.5.0", "tailwind-variants": "^3.2.2" }, "devDependencies": { "@sveltejs/vite-plugin-svelte": "^6.2.4", "@testing-library/svelte": "^5.3.1", "@types/node": "^22.0.0", "happy-dom": "^21.0.4", "svelte": "^5.54.0", "svelte-check": "^4.4.2", "tailwindcss": "^4.1.18", "typescript": "^5.9.3", "vite": "^7.3.1", "vitest": "^4.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 
@@ -1212,8 +1214,6 @@
     "wrap-ansi/ansi-styles": ["ansi-styles@6.2.3", "", {}, "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="],
 
     "@transit/web/@yesid/seo-kit/@yesid/tokens": ["@yesid/tokens@file:apps/web/vendor/design/tokens", {}],
-
-    "@transit/web/@yesid/ui/@yesid/analytics": ["@yesid/analytics@file:apps/web/vendor/design/analytics", {}],
 
     "@transit/web/@yesid/ui/@yesid/motion": ["@yesid/motion@file:./apps/web/vendor/design/motion", {}],
 

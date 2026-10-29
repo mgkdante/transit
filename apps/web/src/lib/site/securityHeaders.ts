@@ -3,7 +3,7 @@ import { SECURITY_HEADERS, contentSecurityPolicy } from '@yesid/seo-kit/headers'
 const BASEMAP_IMG_HOST = 'https://protomaps.github.io';
 const OG_IMAGE_ORIGIN = 'https://transit.yesid.dev';
 const SNAPSHOT_ORIGIN = 'https://data.yesid.dev';
-const CF_INSIGHTS_HOST = 'https://static.cloudflareinsights.com';
+const PLAUSIBLE_ORIGIN = 'https://plausible.io';
 
 // The map's locate-me control needs geolocation; everything else stays denied.
 export const PERMISSIONS_POLICY = SECURITY_HEADERS['Permissions-Policy']!.replace(
@@ -21,13 +21,14 @@ function cspDirectives(dev: boolean): Record<string, string[]> {
 		'font-src': ["'self'"],
 		'style-src': ["'self'", "'unsafe-inline'"],
 		// 'unsafe-inline' covers SvelteKit's start script and the theme boot; adding any hash would switch it off.
-		'script-src': [
+		'script-src': ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
+		'connect-src': [
 			"'self'",
-			"'unsafe-inline'",
-			CF_INSIGHTS_HOST,
-			...(dev ? ["'unsafe-eval'"] : []),
+			SNAPSHOT_ORIGIN,
+			PLAUSIBLE_ORIGIN,
+			BASEMAP_IMG_HOST,
+			...(dev ? ['ws:', 'wss:'] : []),
 		],
-		'connect-src': ["'self'", SNAPSHOT_ORIGIN, BASEMAP_IMG_HOST, ...(dev ? ['ws:', 'wss:'] : [])],
 		'worker-src': ["'self'", 'blob:'],
 		'manifest-src': ["'self'"],
 		'upgrade-insecure-requests': [],
