@@ -10,11 +10,11 @@ import MetricBody, { type MetricSqlHtml } from './MetricBody.svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 
 const state = vi.hoisted(() => ({
-	word: vi.fn(),
-	disposers: [] as ReturnType<typeof vi.fn>[],
 	provenance: null as { methodology: Record<string, string> } | null,
 }));
-vi.mock('./easterWordHover', () => ({ easterWordHover: state.word }));
+vi.mock('./easterWordHover', () => ({
+	easterWordHover: () => ({ destroy() {} }),
+}));
 vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
@@ -56,14 +56,7 @@ afterAll(async () => {
 	await server?.close();
 });
 beforeEach(() => {
-	state.disposers = [];
 	state.provenance = null;
-	state.word.mockReset();
-	state.word.mockImplementation(() => {
-		const destroy = vi.fn();
-		state.disposers.push(destroy);
-		return { destroy };
-	});
 	quietMode.resetForTest();
 });
 afterEach(() => {

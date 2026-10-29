@@ -29,7 +29,7 @@
 	</TypedInformationCard>
 
 	<TypedInformationCard kind="math" label={t.sections.math}>
-		<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+		<p class="metric__prose">{entry.math[locale]}</p>
 	</TypedInformationCard>
 
 	<TypedInformationCard
@@ -42,7 +42,7 @@
 
 	<div class="metric__paired-information">
 		<TypedInformationCard kind="not-really" label={t.sections.notReally}>
-			<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
+			<EasterProse text={entry.notReally[locale]} class="metric__prose" />
 		</TypedInformationCard>
 
 		<TypedInformationCard kind="caveat" label={t.sections.caveats}>

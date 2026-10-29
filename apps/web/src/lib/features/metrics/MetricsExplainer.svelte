@@ -390,7 +390,7 @@
 								</p>
 							{:else}
 								<p
-									class="metric__prose metric__not"
+									class="metric__prose"
 									role="status"
 									data-testid="metrics-doctrine-absent"
 								>
