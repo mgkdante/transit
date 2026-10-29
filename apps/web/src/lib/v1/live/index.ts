@@ -67,7 +67,3 @@ export function buildLiveIndex(snapshot: LiveSnapshot): LiveIndex {
 		vehiclesByStop,
 	};
 }
-
-export function emptyLiveIndex(): LiveIndex {
-	return buildLiveIndex({});
-}

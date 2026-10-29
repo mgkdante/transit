@@ -46,15 +46,11 @@ export const BUS_HALO_FALLBACK = '#141414';
 export const STOP_FILL_TOKEN = 'var(--map-stop-fill)';
 export const STOP_FILL_FALLBACK = 'rgb(255, 182, 39)';
 export const STOP_HALO_TOKEN = BUS_HALO_TOKEN;
-export const STOP_HALO_FALLBACK = BUS_HALO_FALLBACK;
 export const HEADING_FILL_TOKEN = 'var(--foreground)';
-export const HEADING_FILL_FALLBACK = '#f5f5f5';
 export const HEADING_HALO_TOKEN = BUS_HALO_TOKEN;
-export const HEADING_HALO_FALLBACK = BUS_HALO_FALLBACK;
 export const SILENT_FILL_TOKEN = 'var(--foreground)';
 export const SILENT_FILL_FALLBACK = '#f5f5f5';
 export const SILENT_HALO_TOKEN = 'var(--background)';
-export const SILENT_HALO_FALLBACK = '#141414';
 
 export function resolveColor(varExpr: string, fallback: string): string {
 	if (typeof document === 'undefined') return fallback;

@@ -37,22 +37,3 @@ export const OCCUPANCY_NODATA_GLYPH = '◌';
 export function occupancyGlyph(code: OccupancyCode | null | undefined): string {
 	return code == null ? OCCUPANCY_NODATA_GLYPH : OCCUPANCY_GLYPH[code];
 }
-
-export const STOP_GLYPH = '■';
-
-export const HEATMAP_RAMP = [
-	'var(--dataviz-heatmap-0)',
-	'var(--dataviz-heatmap-1)',
-	'var(--dataviz-heatmap-2)',
-	'var(--dataviz-heatmap-3)',
-	'var(--dataviz-heatmap-4)',
-] as const;
-
-export const HEATMAP_NODATA = 'var(--dataviz-heatmap-nodata)';
-
-export function heatmapColor(norm: number | null | undefined): string {
-	if (norm == null || Number.isNaN(norm)) return HEATMAP_NODATA;
-	const clamped = Math.min(1, Math.max(0, norm));
-	const idx = Math.min(HEATMAP_RAMP.length - 1, Math.floor(clamped * HEATMAP_RAMP.length));
-	return HEATMAP_RAMP[idx];
-}

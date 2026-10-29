@@ -6,15 +6,12 @@ import { pathToFileURL } from 'node:url';
 const DEPLOYABLE_PATHS = new Set([
 	'.nvmrc',
 	'.bun-version',
-	'.github/scripts/materialize-shared-config.mjs',
-	'.github/shared-tooling.json',
 	'bun.lock',
 	'package.json',
 	'turbo.json',
 ]);
 const DEPLOYABLE_PREFIXES = [
 	'.github/actions/',
-	'.github/shared-tooling/',
 	'apps/data-proxy/',
 	'apps/web/',
 ];
@@ -23,7 +20,6 @@ const NON_DEPLOYABLE_PATHS = new Set([
 	'.github/scripts/deploy-scope.test.mjs',
 	'.github/workflows/web.yml',
 	'apps/web/src/lib/features/lines/RouteDetail.svelte.test.ts',
-	'apps/web/src/tests/shared-tooling-adoption.test.ts',
 ]);
 
 function matches(path, exact, prefixes) {

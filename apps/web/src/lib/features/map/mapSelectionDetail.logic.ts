@@ -6,14 +6,12 @@ import {
 	type AbsenceReasonKey,
 	type Maybe,
 } from '$lib/site/absence';
-import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 import { delayLabel } from '$lib/site/delayPresentation';
 import { formatUtc } from '$lib/utils/time';
 import { localizeHref, type Locale } from '$lib/i18n';
 import { routeFor } from '$lib/nav';
 
 export { delayTone } from '$lib/site/delayPresentation';
-import type { StopDeparture, Vehicle } from '$lib/v1/schemas';
 import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelection';
 import { MAP_SELECTION_DETAIL_COPY, type MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
@@ -62,14 +60,6 @@ export function detailActions(detail: MapSelectionDetail, locale: Locale): Detai
 		: null;
 }
 
-export function isDetailMetro(detail: MapSelectionDetail | null): boolean {
-	return detail?.kind === 'vehicle'
-		? detail.routeType === ROUTE_TYPE_METRO
-		: detail?.kind === 'route'
-			? (detail.route.type ?? null) === ROUTE_TYPE_METRO
-			: false;
-}
-
 export function vehicleFieldAbsence(
 	ctx: { stale?: boolean; metro?: boolean } = {},
 ): AbsenceReasonKey {
@@ -104,15 +94,6 @@ export function formatAge(seconds: number): string {
 
 export function stopDisplayName(ref: MapStopRef, locale: Locale): string {
 	return ref.nameAbsent ? stopNameFallback(ref.id, locale) : ref.name;
-}
-
-export function vehicleForDeparture(
-	vehicles: readonly Vehicle[],
-	departure: StopDeparture,
-): Vehicle | null {
-	return departure.trip
-		? (vehicles.find((vehicle) => vehicle.trip === departure.trip) ?? null)
-		: null;
 }
 
 export function directionLabel(item: RouteMapDetail, locale: Locale): string {

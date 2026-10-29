@@ -15,10 +15,6 @@ export function availableGrains(tier: DataTier): Grain[] {
 	return grains ? grains.slice() : GRAINS.slice();
 }
 
-export function defaultGrain(tier: DataTier): Grain {
-	return availableGrains(tier)[0];
-}
-
 export function isGrainAvailable(tier: DataTier, grain: string): grain is Grain {
 	return isGrain(grain) && availableGrains(tier).includes(grain);
 }

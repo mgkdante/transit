@@ -189,17 +189,6 @@ export function cloneFilterState(s: FilterState): FilterState {
 
 export type IdSetKey = 'routes' | 'stops' | 'trips' | 'vehicles';
 
-export function addToSet(s: FilterState, key: IdSetKey, value: string): FilterState {
-	const v = value.trim();
-	const next = cloneFilterState(s);
-	if (v) next[key].add(v);
-	return next;
-}
-
-export function clear(_s?: FilterState): FilterState {
-	return emptyFilterState();
-}
-
 export function isEmptyFilterState(s: FilterState): boolean {
 	return (
 		s.routes.size === 0 &&
