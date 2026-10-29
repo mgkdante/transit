@@ -618,7 +618,7 @@
 					compact: true,
 					...(customAttribution ? { customAttribution } : {}),
 				}),
-				'top-right',
+				'bottom-right',
 			);
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
@@ -818,15 +818,16 @@
 		outline-offset: 2px;
 	}
 
-	.map-stage :global(.maplibregl-ctrl-top-right) {
+	.map-stage :global(.maplibregl-ctrl-bottom-right) {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		top: var(--chrome-offset);
+		top: auto;
+		bottom: calc(var(--map-mobile-control-bottom, 1rem) + 2.75rem + 0.75rem);
 		max-width: calc(100% - var(--map-detail-offset, 0rem) - 2rem);
 		z-index: 12;
 		transition: right var(--duration-normal) var(--ease-out);
 	}
 
-	.map-stage :global(.maplibregl-ctrl-top-right .maplibregl-ctrl) {
+	.map-stage :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
 		margin: 0;
 	}
 
@@ -844,9 +845,10 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* Expanded credits open below the (i), not across the top row. */
-	.map-stage :global(.maplibregl-ctrl-top-right .maplibregl-ctrl-attrib.maplibregl-compact-show) {
-		padding: 1.75rem 0.55rem 0.4rem;
+	/* Credits expand above the location control and stay clear of its touch target. */
+	.map-stage
+		:global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib.maplibregl-compact-show) {
+		padding: 0.4rem 1.85rem 0.4rem 0.55rem;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib a) {
@@ -866,13 +868,13 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-stage :global(.maplibregl-ctrl-top-right) {
+		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			transition: none;
 		}
 	}
 
 	@media (--desktop-max) {
-		.map-stage :global(.maplibregl-ctrl-top-right) {
+		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;
 			max-width: calc(100% - 1.5rem);
 		}

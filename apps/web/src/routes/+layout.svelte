@@ -63,6 +63,7 @@
 	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { EdgeState } from '$lib/components/edge';
 	import { SiteFooter, SiteRoot } from '@yesid/ui/layout';
+	import { ConstructionProps } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
 	import { AUDIT_NAV, mainLandmarkLabel, SURFACE_NAV } from '$lib/content/nav';
 	import { legalCopy } from '$lib/features/legal/legal.copy';
@@ -88,6 +89,9 @@
 
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
+	let constructionEdge = $state<HTMLElement>();
+	let constructionProgress = $state(1);
+	let mainScroller = $state<HTMLElement>();
 
 	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath($page.url.pathname));
 
@@ -398,11 +402,13 @@
 		{#snippet main()}
 			<div
 				id="main"
+				bind:this={mainScroller}
 				class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
 				tabindex="-1"
 			>
 				<div
 					id="main-flow"
+					style:overflow-anchor={seoPath === '/' ? 'none' : undefined}
 					class="flex flex-col {isFullBleed ? 'h-full' : 'min-h-full shrink-0'}"
 					data-lenis-prevent={isFullBleed || undefined}
 				>
@@ -429,6 +435,27 @@
 						{/if}
 					</div>
 					{#if !isFullBleed}
+						{#if seoPath === '/'}
+							{#key $page.url.pathname}
+								<div
+									bind:this={constructionEdge}
+									class="construction-anchor"
+									aria-hidden="true"
+								></div>
+								<div
+									class="home-construction-floor"
+									style="--ground-progress:{constructionProgress}"
+								>
+									<ConstructionProps
+										layout="spread"
+										floodlight
+										revealAt={constructionEdge}
+										revealRoot={mainScroller}
+										bind:progress={constructionProgress}
+									/>
+								</div>
+							{/key}
+						{/if}
 						<SiteFooter
 							tagline={footer.tagline(footerAgency)}
 							groups={footerGroups}
@@ -453,6 +480,24 @@
 </SiteRoot>
 
 <style>
+	.home-construction-floor {
+		position: relative;
+		height: calc(240px * var(--ground-progress, 1));
+		flex-shrink: 0;
+		overflow: clip;
+		background: var(--background);
+	}
+	.construction-anchor {
+		height: 0;
+		width: 1px;
+		flex-shrink: 0;
+		pointer-events: none;
+	}
+	@media (--tablet-max) {
+		.home-construction-floor {
+			height: calc(100px * var(--ground-progress, 1));
+		}
+	}
 	.footer-honesty {
 		display: flex;
 		flex-direction: column;

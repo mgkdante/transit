@@ -793,6 +793,11 @@ describe('MapStage boot lifecycle', () => {
 	});
 
 	// licence line is a RUNTIME manifest value, so the only thing that can be
+	it('places attribution at the bottom-right with the location controls', async () => {
+		const { map } = await bootStage({ customAttribution: 'Fixture licence' });
+		expect(map.addControl).toHaveBeenCalledWith(map.controls[0], 'bottom-right');
+	});
+
 	it('carries the provider licence into the attribution control byte-for-byte', async () => {
 		const licence = 'Contains STM data made available under CC BY 4.0.';
 		const { map } = await bootStage({ customAttribution: licence });
