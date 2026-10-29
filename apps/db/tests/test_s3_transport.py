@@ -34,7 +34,7 @@ def test_snapshot_client_requires_its_own_bucket_only(monkeypatch, bronze_bucket
     config = options["config"]
     assert config.max_pool_connections == 23
     assert (config.connect_timeout, config.read_timeout) == (10, 60)
-    assert config.retries == {"max_attempts": 3, "mode": "standard"}
+    assert config.retries == {"max_attempts": 6, "mode": "standard"}
 
 
 @pytest.mark.parametrize("bucket", [" ", "snapshots/path"])
