@@ -94,7 +94,7 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
     root_pkg = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
     proxy_pkg = json.loads((PROXY_DIR / "package.json").read_text(encoding="utf-8"))
-    assert root_pkg["devDependencies"]["wrangler"] == "4.115.0"
+    assert root_pkg["devDependencies"]["wrangler"] == "4.154.0"
     assert "wrangler" not in proxy_pkg.get("devDependencies", {})
     assert any(step.get("uses") == "./.github/actions/setup" for step in deploy_steps)
     assert wrangler_step["run"] == "../../node_modules/.bin/wrangler deploy"
