@@ -9,7 +9,7 @@ filesystem writes, rasterization and HTTP responses. The Svelte head component l
 ## Interface
 
 Consumers can use the root export (JSON-LD, sitemap and robots, Satori) or the subpaths. See
-[`api-reports/seo-kit.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/api-reports/seo-kit.api.md) for exact types and exports.
+[`api-reports/seo-kit.api.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/api-reports/seo-kit.api.md) for exact types and exports.
 
 - `./jsonld`: node builders and `serializeJsonLd(nodes)`, one `@graph` body with `<` escaped.
 - `./sitemap`: alternate-locale entries, the sitemap document and `robotsTxt`.
@@ -41,8 +41,8 @@ Consumers can use the root export (JSON-LD, sitemap and robots, Satori) or the s
 
 Consumers supply content and adapters at their own framework seam. `satori` is a peer dependency
 within the supported manifest range. Current adoption receipts live in
-[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/CONSUMERS.md); product SEO policy stays in
-[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/BOUNDARIES.md).
+[`CONSUMERS.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/CONSUMERS.md); product SEO policy stays in
+[`BOUNDARIES.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/BOUNDARIES.md).
 
 ## Commands
 
@@ -58,5 +58,5 @@ mechanics; Satori or rasterizer failures reject to the caller. Consumers decide 
 build, retry, or provide another asset.
 
 Builder behavior, output bytes, exports, or README changes alter the coordinated release payload.
-Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/RELEASING.md); update the API report only for public-interface
+Follow [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/RELEASING.md); update the API report only for public-interface
 changes. Do not promote one product's route/content policy into this package.

@@ -116,7 +116,7 @@ The first `cn` use, including a primitive's first class merge, locks the zero-co
 default. Products with custom vocabulary must initialize before any primitive renders. Use one
 shared initializer imported by both SvelteKit `hooks.client.ts` (`ClientInit`) and
 `hooks.server.ts` (`ServerInit`), not a root layout instance script. See the
-[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+[`v0.13.3 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph. Browser and SSR bundles, separately bundled
@@ -253,6 +253,25 @@ clipboard refuses. Highlighting stays in the app: render the highlighter's `<pre
 `children`, colored through the `--syntax-*` tokens and focusable (`tabindex="0"`) so the keyboard
 can scroll it; give it `role="region"` and an `aria-label` if it needs a name. Without `children`
 the code shows as a plain, focusable `<pre>`.
+
+### ConstructionProps
+
+The four original yesid.dev construction artworks: crossing sign, helmet, barricade and Montréal
+balise, with their original responsive ground positions. The caller owns the positioned scene
+above its footer. Optional `lighting` preserves the warm scene treatment. Pass a stable marker
+before the growing ground as `revealAt` and, for nested scrolling, its viewport as `revealRoot`.
+Reveal starts when that collapsed footer edge enters 5% of the active viewport and completes
+over the next 25vh of scrolling, reversing proportionally on return. There is no timed transition,
+timeout, stagger or delay. Bind `progress` to unfold the caller-owned background below the marker;
+keeping the marker before the changing height avoids scroll feedback. Reduced motion switches
+instantly and SSR without JavaScript remains plain and visible. No fetch, parser or HTML injection.
+`layout="spread"` distributes artwork evenly; `layout="around-fixture"` balances mobile side
+clusters around a separate light. `floodlight` includes an unlit fixture in the moving group.
+Omit `revealAt` for always-visible artwork. Stationary lit fixtures remain outside the group.
+Spread layout honors `--construction-end-inset` for a caller's stationary fixture/wordmark area.
+
+`ConstructionFloodlight` is the original stationary fixture, unlit by default; `lit` enables its
+original lens and halo. The caller owns positioning and any beam. Keep it outside the moving props.
 
 ### ManifestoCanvas
 
@@ -592,5 +611,5 @@ a product-only visual or policy failure stays in that product. Do not cure one l
 its policy into another.
 
 Source, public-interface, compatibility-documentation, or README changes alter the coordinated
-release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.25.3/RELEASING.md), regenerate the API report only for
+release payload. Use [`RELEASING.md`](https://github.com/mgkdante/yesid.dev-design/blob/v0.26.0/RELEASING.md), regenerate the API report only for
 public-interface changes, and preserve consumer seams through separate adoption verification.

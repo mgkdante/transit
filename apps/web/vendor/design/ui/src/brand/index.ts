@@ -16,6 +16,12 @@ export type { CornerMarksProps } from './CornerMarks.svelte';
 export { default as CornerMeta } from './CornerMeta.svelte';
 export type { CornerMetaProps } from './CornerMeta.svelte';
 
+export { default as ConstructionFloodlight } from './ConstructionFloodlight.svelte';
+export type { ConstructionFloodlightProps } from './ConstructionFloodlight.svelte';
+
+export { default as ConstructionProps } from './ConstructionProps.svelte';
+export type { ConstructionPropsProps } from './ConstructionProps.svelte';
+
 export { default as ErrorIllustration } from './ErrorIllustration.svelte';
 export type { ErrorIllustrationProps } from './ErrorIllustration.svelte';
 

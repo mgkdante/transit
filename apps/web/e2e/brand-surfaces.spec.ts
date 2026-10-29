@@ -4,6 +4,28 @@ import { expect, test } from '@playwright/test';
 import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
 import { SURFACE_NAV } from '../src/lib/content/nav';
 import { detailCopy } from '../src/lib/features/stops/stops.copy';
+import { copy as mapCopy } from '../src/lib/features/map/map.copy';
+import { DEFAULT_LOCALE, PUBLISHED_LOCALES } from '../src/lib/i18n/config';
+
+for (const locale of PUBLISHED_LOCALES)
+	test(`${locale}: map credits stay immediately above the location control`, async ({ page }) => {
+		await page.goto((locale === DEFAULT_LOCALE ? '' : `/${locale}`) + '/map');
+		const attribution = page.getByLabel(mapCopy[locale].attributionToggle, { exact: true });
+		const location = page.getByRole('button', { name: mapCopy[locale].nearMe, exact: true });
+		await expect(attribution).toBeVisible();
+		await expect(location).toBeVisible();
+		for (const expanded of [false, true]) {
+			if (expanded) await attribution.click();
+			const credit = (await attribution.locator('..').boundingBox())!,
+				fab = (await location.boundingBox())!;
+			expect(credit.y + credit.height).toBeLessThanOrEqual(fab.y);
+			expect(Math.abs(credit.x + credit.width - fab.x - fab.width)).toBeLessThanOrEqual(1);
+			expect(credit.x).toBeGreaterThanOrEqual(0);
+		}
+		await attribution.focus();
+		await attribution.press('Enter');
+		await expect(attribution).toBeFocused();
+	});
 
 const departures = JSON.parse(readFileSync(new URL('./departures.json', import.meta.url), 'utf8'));
 const stop = Object.keys(departures.stops)[0]!;
@@ -12,6 +34,119 @@ test.use({ bypassCSP: true });
 
 test.beforeEach(async ({ page }) => {
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+});
+
+test('homepage ground follows its own scroller and reverses without moving the trigger', async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto('/');
+	const props = page.locator('[data-slot="construction-props"]');
+	await expect(props).toHaveAttribute('data-state', 'hidden');
+	const samples = [];
+	for (const fraction of [0.98, 0.825, 0.7, 0.825, 0.98, 0.7]) {
+		const requested = await page.locator('.construction-anchor').evaluate((anchor, fraction) => {
+			const root = document.querySelector<HTMLElement>('#main')!;
+			root.scrollTop +=
+				anchor.getBoundingClientRect().top -
+				root.getBoundingClientRect().top -
+				root.clientHeight * fraction;
+			return { scroll: root.scrollTop, top: anchor.getBoundingClientRect().top };
+		}, fraction);
+		await expect
+			.poll(async () => Number(await props.getAttribute('data-progress')))
+			.toBeCloseTo(Math.max(0, Math.min(1, (0.95 - fraction) / 0.25)), 2);
+		const sample = await page.locator('.construction-anchor').evaluate((anchor) => ({
+			top: anchor.getBoundingClientRect().top,
+			scroll: document.querySelector('#main')!.scrollTop,
+			height: document.querySelector('.home-construction-floor')!.getBoundingClientRect().height,
+		}));
+		expect(Math.abs(sample.top - requested.top)).toBeLessThanOrEqual(1);
+		expect(Math.abs(sample.scroll - requested.scroll)).toBeLessThanOrEqual(1);
+		samples.push(sample);
+	}
+	expect(samples[2].height).toBeGreaterThan(samples[1].height);
+	expect(samples[1].height).toBeGreaterThan(samples[0].height);
+	expect(Math.abs(samples[4].height - samples[0].height)).toBeLessThanOrEqual(1);
+	const root = page.locator('#main');
+	await root.focus();
+	await root.press('End');
+	await expect(props).toHaveAttribute('data-state', 'visible');
+	await expect
+		.poll(() =>
+			root.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+		)
+		.toBeLessThanOrEqual(1);
+	const art = await props
+		.locator('[data-construction-prop] > svg, [data-construction-fixture] > svg')
+		.evaluateAll((elements) =>
+			elements
+				.map((element) => element.getBoundingClientRect().toJSON())
+				.sort((a, b) => a.left - b.left),
+		);
+	expect(art).toHaveLength(5);
+	for (let i = 0; i < art.length; i++) {
+		expect(art[i].left).toBeGreaterThanOrEqual(0);
+		expect(art[i].right).toBeLessThanOrEqual(page.viewportSize()!.width);
+		if (i) expect(art[i].left).toBeGreaterThanOrEqual(art[i - 1].right);
+	}
+	await expect(props.locator('[data-slot="construction-floodlight"]')).toHaveAttribute(
+		'data-lit',
+		'false',
+	);
+	await expect(
+		page.locator('[data-slot="closer-floodlight"], [data-testid="hero-dot-annotation"]'),
+	).toHaveCount(0);
+	await page.goto('/lines');
+	await expect(props).toHaveCount(0);
+	await page.goto('/fr');
+	await expect(props).toHaveCount(1);
+});
+
+test('homepage props remain static without JavaScript and switch instantly with reduced motion', async ({
+	browser,
+	baseURL,
+	page,
+}) => {
+	const context = await browser.newContext({
+		baseURL,
+		viewport: page.viewportSize()!,
+		javaScriptEnabled: false,
+	});
+	try {
+		const fallback = await context.newPage();
+		await fallback.goto('/');
+		await expect(fallback.locator('[data-slot="construction-props"]')).toHaveAttribute(
+			'data-state',
+			'static',
+		);
+		await expect(fallback.locator('[data-construction-prop]')).toHaveCount(4);
+		expect(
+			await fallback
+				.locator('.home-construction-floor')
+				.evaluate((element) => element.getBoundingClientRect().height),
+		).toBeGreaterThan(0);
+	} finally {
+		await context.close();
+	}
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.goto('/');
+	const props = page.locator('[data-slot="construction-props"]');
+	await expect(props).toHaveAttribute('data-state', 'hidden');
+	await page.locator('#main').focus();
+	await page.locator('#main').press('End');
+	await expect(props).toHaveAttribute('data-state', 'visible');
+	expect(
+		await props
+			.locator('svg')
+			.evaluateAll((elements) =>
+				elements.every(
+					(element) =>
+						getComputedStyle(element).animationName === 'none' &&
+						getComputedStyle(element).transitionDuration === '0s',
+				),
+			),
+	).toBe(true);
 });
 
 test('the stops listing header draws in as the page scrolls', async ({ page }) => {

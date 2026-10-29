@@ -2,7 +2,7 @@
 	"provider": "stm",
 	"display_name": "STM",
 	"bbox": [],
-	"attribution": "",
+	"attribution": "© OpenStreetMap contributors, © Protomaps",
 	"dataset_version": "",
 	"labels": {},
 	"files": {

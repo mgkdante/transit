@@ -96,16 +96,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.25.3',
-	tagObject: 'b903c68b4f753141511ef0c46562121e9d589125',
-	peeledCommit: '4e3469e0dad23c22879015c879b17da7aa615d1b',
-	assetName: 'yesid.dev-design-v0.25.3.tar',
-	assetSize: 3133440,
-	assetDigest: 'sha256:9c5c49605035a8c92b18628293178af82c5fd19e4567c4978e83a64445739565',
+	tag: 'v0.26.0',
+	tagObject: '2285d8c0eb7ee19203f79db398d1c9305fa5e2d2',
+	peeledCommit: 'aeee85dc5f919d2c84c9f0f47dc9ebbba0fdcfcd',
+	assetName: 'yesid.dev-design-v0.26.0.tar',
+	assetSize: 3153920,
+	assetDigest: 'sha256:d014ad49520c49dd47a4d6ae58e1474b03d9d9eb4ffb1fe839230ebf67630f0b',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:3d688b437650357ca30a5c3e37e64885a2fb4a9b76f37baf5ee554f5f98956f6',
-	treeHash: 'sha256:5144e0550a445a7014dda1123569e4e6017a8e385cd6a0c5720dd7f520f29a99',
-	manifestDigest: '4d98bab3efc815d56ea5eff43e7392f0dab19285c39f96ddf984ec616a8c4cd3',
+	treeHash: 'sha256:de07d03bc88c1cd8e3a0c5cc1b6a0bd2e1be63b0ea5872251c28b952b968711c',
+	manifestDigest: '252a907d31ecd4733c49ca752ab8f08bc2ecd517f4f3148dfecb6b2a4586697c',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
