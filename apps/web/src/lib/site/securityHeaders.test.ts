@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { securityHeaders, contentSecurityPolicyFor } from './securityHeaders';
+import boot from '@yesid/ui/boot.json';
 import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
+import config, { cspDirectives } from '../../../svelte.config.js';
+import { DOCUMENT_SECURITY_HEADERS } from './securityHeaders';
 
 function parseHeadersFileGlobBlock(): Record<string, string> {
 	const text = readFileSync(resolve(process.cwd(), '_headers'), 'utf-8');
@@ -22,105 +24,65 @@ function parseHeadersFileGlobBlock(): Record<string, string> {
 	return out;
 }
 
-describe('securityHeaders — production set', () => {
-	const headers = securityHeaders({ dev: false });
+// SvelteKit's serialization: keywords are quoted, hosts and schemes are not.
+function serialize(directives: object): string {
+	return Object.entries(directives)
+		.map(([name, sources]) =>
+			[
+				name,
+				...(Array.isArray(sources)
+					? sources.map((source: string) => (/^[a-z-]+$/.test(source) ? `'${source}'` : source))
+					: []),
+			].join(' '),
+		)
+		.join('; ');
+}
 
-	it('ships every package security header', () => {
-		for (const name of Object.keys(SECURITY_HEADERS)) expect(headers).toHaveProperty(name);
-	});
-
-	it('sets the expected non-CSP values', () => {
-		expect(headers['X-Frame-Options']).toBe('DENY');
-	});
-
-	it('keeps geolocation enabled (near-me) but denies the unused powerful features', () => {
-		const pp = headers['Permissions-Policy'];
-		expect(pp).toContain('geolocation=(self)');
-		for (const feature of [
-			'accelerometer',
-			'bluetooth',
-			'camera',
-			'gyroscope',
-			'hid',
-			'magnetometer',
-			'microphone',
-			'payment',
-			'serial',
-			'usb',
-		]) {
-			expect(pp).toContain(`${feature}=()`);
+describe('document security headers', () => {
+	it('sends every package header, with geolocation allowed for the map', () => {
+		for (const name of Object.keys(SECURITY_HEADERS)) {
+			expect(DOCUMENT_SECURITY_HEADERS).toHaveProperty(name);
 		}
-	});
-
-	it('drops browsing-topics + interest-cohort (browsers log them as unrecognised)', () => {
-		const pp = headers['Permissions-Policy'];
-		expect(pp).not.toContain('browsing-topics');
-		expect(pp).not.toContain('interest-cohort');
+		expect(DOCUMENT_SECURITY_HEADERS['Permissions-Policy']).toContain('geolocation=(self)');
 	});
 
 	it('omits Cross-Origin-Resource-Policy (it would break social OG scrapes)', () => {
-		expect(headers['Cross-Origin-Resource-Policy']).toBeUndefined();
+		expect(DOCUMENT_SECURITY_HEADERS['Cross-Origin-Resource-Policy']).toBeUndefined();
 	});
 });
 
-describe('contentSecurityPolicy — invariants', () => {
-	const csp = contentSecurityPolicyFor({ dev: false });
-
-	it('allows the basemap glyph host and the direct R2 /v1 origin', () => {
-		expect(csp).toContain('https://protomaps.github.io');
-		expect(csp).toContain('https://data.yesid.dev');
-	});
-
-	it('allows Plausible in connect-src without the retired analytics script host', () => {
-		expect(csp).toMatch(/connect-src[^;]*https:\/\/plausible\.io/);
-		expect(csp.match(/(?:^|; )script-src[^;]*/)?.[0]).not.toContain(
-			'static.cloudflareinsights.com',
-		);
-	});
-
-	it('allows blob workers (pmtiles/maplibre) and locks framing/objects down', () => {
-		expect(csp).toContain("worker-src 'self' blob:");
-		expect(csp).toContain("frame-ancestors 'none'");
-		expect(csp).toContain("object-src 'none'");
-		expect(csp).toContain('upgrade-insecure-requests');
-	});
-
-	it('keeps the quota-bearing transit data proxy out of connect-src', () => {
-		expect(csp).not.toMatch(/connect-src[^;]*https:\/\/transit\.yesid\.dev/);
-	});
-
-	it('narrows img-src off the broad https: wildcard, keeping the basemap + OG hosts', () => {
-		expect(csp).toContain(
-			"img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev",
-		);
-		expect(csp).not.toMatch(/img-src[^;]*\bhttps:(?!\/\/)/);
+describe('content security policy', () => {
+	it('allows inline scripts only by hash and lists the data, map and analytics origins', () => {
+		const csp = config.kit?.csp;
+		expect(csp?.mode).toBe('hash');
+		expect(csp?.directives?.['script-src']).toEqual(['self', boot.hash]);
+		expect(csp?.directives?.['connect-src']).toEqual([
+			'self',
+			'https://data.yesid.dev',
+			'https://plausible.io',
+			'https://protomaps.github.io',
+		]);
+		expect(csp?.directives?.['img-src']).toEqual([
+			'self',
+			'data:',
+			'blob:',
+			'https://protomaps.github.io',
+			'https://transit.yesid.dev',
+		]);
+		expect(csp?.directives?.['worker-src']).toEqual(['self', 'blob:']);
 	});
 });
 
-describe('dev security headers — local HMR relaxations only', () => {
-	it('adds the vite websocket + eval over the prod base, nothing tighter', () => {
-		const dev = contentSecurityPolicyFor({ dev: true });
-		expect(dev).toContain('ws:');
-		expect(dev).toContain("'unsafe-eval'");
-		expect(dev).toContain('https://protomaps.github.io');
-		expect(dev).toContain("frame-ancestors 'none'");
-	});
-});
-
-describe('drift gate — _headers /* block matches the TS source of truth', () => {
+describe('drift gate — _headers /* block matches svelte.config.js and the document headers', () => {
 	const fileHeaders = parseHeadersFileGlobBlock();
 
-	it('asset CSP equals the production document CSP', () => {
-		expect(fileHeaders['content-security-policy']).toBe(contentSecurityPolicyFor({ dev: false }));
+	it('asset CSP is the document policy without inline-script hashes', () => {
+		expect(fileHeaders['content-security-policy']).toBe(serialize(cspDirectives()));
 	});
 
-	it('asset non-CSP headers equal the production document headers', () => {
-		const prod = securityHeaders({ dev: false });
-		expect(fileHeaders['x-content-type-options']).toBe(prod['X-Content-Type-Options']);
-		expect(fileHeaders['x-frame-options']).toBe(prod['X-Frame-Options']);
-		expect(fileHeaders['referrer-policy']).toBe(prod['Referrer-Policy']);
-		expect(fileHeaders['strict-transport-security']).toBe(prod['Strict-Transport-Security']);
-		expect(fileHeaders['permissions-policy']).toBe(prod['Permissions-Policy']);
-		expect(fileHeaders['cross-origin-opener-policy']).toBe(prod['Cross-Origin-Opener-Policy']);
+	it('asset non-CSP headers equal the document headers', () => {
+		for (const [name, value] of Object.entries(DOCUMENT_SECURITY_HEADERS)) {
+			expect(fileHeaders[name.toLowerCase()], name).toBe(value);
+		}
 	});
 });
