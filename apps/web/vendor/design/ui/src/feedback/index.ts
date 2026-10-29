@@ -4,6 +4,3 @@ export type {
 	StateNoticeProps,
 	StateNoticeTone,
 } from './StateNotice.svelte';
-
-export { default as AnalyticsConsent } from './AnalyticsConsent.svelte';
-export type { AnalyticsConsentCopy, AnalyticsConsentProps } from './AnalyticsConsent.svelte';
