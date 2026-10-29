@@ -408,7 +408,7 @@
         "80919893ea3c11c6c6d5786d7fe5b3e03d7ba07440bd17f5a0cfda969991ab6f",
         "326f17832faa5d8570a89091bb09219cd04231bb85568b14ee725a5d4ced569d",
         "42f85154475b79d8931ffbe849642aa192e3635d8e65a21924082f4a1bbc620b",
-        "3449b3f831b1a3ec7c67b00cbb3712ca01f6b8793d2cc24dea8dec3ea651fc37"
+        "072e1ed720d8aba5f23e7a335cc306502de216680fed21c314e0b3c5c8e3510f"
       ],
       "origin": "Bun workspace dependency resolution; exact lock path and executable package owner."
     },
@@ -495,7 +495,7 @@
         "c35a1c50a584bced43ccdcc2e6fc8266ea8215edef26c293b596416be5eb2ffe",
         "886593cbde4e08f3bd28f28109ff4efbd7015d06901bbc62f52516a15d1d71ba",
         "16f72644af65e0d3ef5be8e7c0deee370202e0e52ef9a5e67804110e53a29916",
-        "bfb308502722bba46c29235fef5e610d4aa983f470707a4069de071ff995de6e"
+        "ba4f60823bc0984db5a0e15e94067133918f747c899050123400d521eb542883"
       ],
       "origin": "Exact binary outputs of build-og.ts and build-icons.ts, bound to generators, deployment identity, font inputs and dependency owners; colors are authored in the generators."
     },
