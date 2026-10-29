@@ -22,56 +22,16 @@ live and historic snapshots form the public contract. Repeated source bytes can
 still represent a new observation, so content identity and capture time remain
 distinct. Corrections and explicit recovery can revisit affected history.
 
-## Start the web app
+## Contribute
 
-Install the supported Node and Bun pins from [.nvmrc](.nvmrc) and
-[.bun-version](.bun-version). [package.json](package.json) owns workspace commands;
-[bun.lock](bun.lock) owns the resolved JavaScript dependencies.
-
-```sh
-git clone https://github.com/mgkdante/transit.git
-cd transit
-bun install --frozen-lockfile
-node .github/scripts/materialize-shared-config.mjs
-bun run dev
-```
-
-Open the local URL printed by Vite. These commands work with native Windows or
-Linux tooling. The default development preview reads public snapshots through
-the [Vite proxy](apps/web/vite.config.ts). It needs internet access but no
-database, agency API key, storage credentials or Cloudflare account. Previewing
-does not publish data. Upstream freshness, feed coverage and basemap availability
-remain properties of the public data service.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, checks and browser tests. The
+development preview reads public snapshots and needs no database, credentials or
+Cloudflare account.
 
 **Analytics:** Transit measures visits with cookieless Plausible.
 Measurement is off unless `PUBLIC_PLAUSIBLE_DOMAIN` is set.
 Production receives it from the repository variable at deploy, never from `wrangler.toml`.
 Forks and local runs send nothing.
-
-## Check a change
-
-Run these commands from the repository root after installing dependencies:
-
-```sh
-bun run test:setup
-bun run test:commands
-bun run --cwd apps/data-proxy check
-bun run --cwd apps/data-proxy test
-bun run --cwd apps/web check
-bun run --cwd apps/web lint
-bun run --cwd apps/web format:check
-bun run --cwd apps/web test
-bun run --cwd apps/web build
-```
-
-The [web workflow](.github/workflows/web.yml) also checks vendored design,
-generated tokens, social cards, icons, map posters, browser behavior and deployment
-dry runs. Run the affected gate before changing those assets. The
-[design manifest](apps/web/vendor/design/manifest.json) identifies the immutable
-release: shared design changes belong in its source repository, followed by
-release adoption. Browser checks use the pinned platform manifests and
-[installer](apps/web/scripts/install-browser-toolchain.mjs); its required argument
-is an absolute installation directory.
 
 ## Work on the Python pipeline
 
@@ -109,15 +69,11 @@ its own disposable PostGIS service on the hosted Linux runner.
 Operational Bash scripts and container verification belong on the supported Linux
 host; local Docker is not part of the Windows/WSL contributor workflow.
 
-## Contribute and operate
+## Operate
 
-Keep changes within their domain, preserve snapshot contracts and unknown values,
-and run the relevant checks. Do not commit dotenv files, credentials or raw
-operational artifacts. The [public-tree guard](.github/scripts/check_public_tree.py)
-checks staged source for private residue; the
-[security workflow](.github/workflows/secret-scan.yml) adds secret scanning.
 Deployment requires the configured accounts, explicit targets and protected
 workflow checks. A local build or dry run does not establish production adoption.
+The [security workflow](.github/workflows/secret-scan.yml) scans for secrets.
 
 Operators use the supported Linux host with its configured database, object
 storage and account access. These are the executable owners of the operating

@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "setup:hooks": "git config core.hooksPath .githooks",
+    "clean:vendor-links": "node -e \"const fs=require('fs');const d='node_modules/.bun';if(fs.existsSync(d))for(const e of fs.readdirSync(d))if(e.startsWith('@yesid+'))fs.rmSync(d+'/'+e,{recursive:true,force:true})\"",
     "test:setup": "node --test .github/scripts/workspace-install.test.mjs",
     "test:commands": "node --test .github/scripts/deploy-commands.test.mjs",
     "dev": "cd apps/web && bun run dev",

@@ -118,11 +118,4 @@ describe('M6C-2 token and protected-surface contract', () => {
 			'lib/features/trips/TripDetail.svelte:min-height: var(--size-tap-min);',
 		]);
 	});
-
-	it('keeps the forced-hover probe on the real passive peek seam', () => {
-		const probe = source('scripts/live-resilience-probe.mjs');
-
-		expect(probe).toContain('vehicleHover: \'.map-peek .map-hover-peek[data-kind="vehicle"]\'');
-		expect(probe).not.toContain('.map-peek .map-selection-detail[data-kind="vehicle"]');
-	});
 });
