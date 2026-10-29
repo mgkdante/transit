@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { STATUS_LABELS } from '$lib/v1/enumLabels';
@@ -87,23 +85,6 @@ describe('MapHoverPeek', () => {
 	])('keeps the %s branch inert and non-live', (_name, peek) => {
 		const { container } = render(MapHoverPeek, { props: { peek, locale: 'en' } });
 		expectInert(container);
-	});
-
-	it('lets the shared absence chassis own presentation inside the narrow peek grid', () => {
-		const { container } = render(MapHoverPeek, {
-			props: { peek: { ...vehicleFresh, delayMin: null }, locale: 'en' },
-		});
-		expect(
-			container.querySelectorAll("[data-slot='absent-value'] .state-notice-surface"),
-		).toHaveLength(1);
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapHoverPeek.svelte'),
-			'utf8',
-		);
-		expect(source).not.toMatch(/\[data-slot='absent-value'\] \[data-part='surface'\]/u);
-		expect(source).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/u);
-		expect(source).toMatch(/dd \{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/u);
-		expect(source).toMatch(/dl \{[^}]*gap: 0\.625rem 0\.875rem;[^}]*\}/u);
 	});
 
 	it('renders useful trip and alert truth without turning the peek into an interactive panel', () => {

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { tick } from 'svelte';
 import { fireEvent, render, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -271,20 +269,5 @@ describe('HotspotSection evidence presentation', () => {
 
 		await view.unmount();
 		expect(observer?.disconnect).toHaveBeenCalledTimes(1);
-	});
-
-	it('contains no feature-local viewport measurement or overflow CSS', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/hotspots/sections/HotspotSection.svelte'),
-			'utf-8',
-		);
-		expect(source).not.toContain('measureChartOverflow');
-		expect(source).not.toContain('ResizeObserver');
-		expect(source).not.toContain('hotspot-chart-viewport');
-		expect(source).not.toContain('hotspot-chart-canvas');
-		expect(source).not.toMatch(/min-width:\s*48rem/);
-		expect(source).toMatch(
-			/<Chart\s+spec=\{ladder\.spec\}\s+scrollLabel=\{chartScrollLabel\}\s*\/>/,
-		);
 	});
 });

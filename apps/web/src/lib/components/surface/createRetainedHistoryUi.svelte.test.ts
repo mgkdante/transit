@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import RetainedHistoryUiHarness from './__fixtures__/RetainedHistoryUiHarness.svelte';
@@ -49,24 +47,5 @@ describe('retained-history UI controller', () => {
 		await fireEvent.click(screen.getByTestId('fallback'));
 		expect(harness()).toHaveAttribute('data-fallback-from', '2026-01-10');
 		expect(harness()).toHaveAttribute('data-corrections', '1');
-	});
-
-	it('is the single request, correction, announcement, and canonical-wire owner for all three surfaces', () => {
-		for (const file of [
-			'src/lib/features/network/reliability/sections/NetworkSurface.svelte',
-			'src/lib/features/lines/reliability/RouteReliabilityClusters.svelte',
-			'src/lib/features/stops/reliability/sections/StopReliabilitySurface.svelte',
-		]) {
-			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
-			expect(source, file).toContain('createRetainedHistoryUi');
-			expect(source, file).toContain('historyUi');
-			for (const duplicate of [
-				'emptyHistoryRequest',
-				'handledHistoryCorrection',
-				'let historyAnnouncement = $state',
-			]) {
-				expect(source, file).not.toContain(duplicate);
-			}
-		}
 	});
 });

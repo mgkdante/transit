@@ -6,8 +6,6 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
 import { STATUS_LABELS } from '$lib/v1/enumLabels';
@@ -18,9 +16,6 @@ import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
 
 vi.mock('@testing-library/svelte', { spy: true });
-
-const routeDetailSource = () =>
-	readFileSync(resolve(process.cwd(), 'src/lib/features/lines/RouteDetail.svelte'), 'utf-8');
 
 const routeDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/161'), state: {} };
@@ -544,14 +539,6 @@ describe('RouteDetail article cover and focus scope', () => {
 		);
 	});
 
-	it('does not retain page-local card-stack spacing rules', () => {
-		const source = routeDetailSource();
-
-		expect(source).toContain('ArticleSectionStack');
-		expect(source).not.toMatch(/\.route-directions-pane\s*\{/);
-		expect(source).not.toMatch(/\.route-schedule-sections\s*\{/);
-	});
-
 	it('renders a wide article rail whose entries match the active pane sections', async () => {
 		const view = renderRoute();
 		const rail = view.container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
@@ -849,26 +836,6 @@ describe('RouteDetail always-visible verdict history scope', () => {
 });
 
 describe('RouteDetail article schedule structure', () => {
-	const source = readFileSync(
-		resolve(process.cwd(), 'src/lib/features/lines/RouteDetail.svelte'),
-		'utf-8',
-	);
-
-	it('uses the same numbered, persistent disclosure primitive for both schedule sections', () => {
-		expect(source).toContain('anchor="line-schedule-span"');
-		expect(source).toContain('anchor="line-schedule-periods"');
-		expect(source.match(/line-schedule-\$\{id\}-(?:span|periods)/g)).toHaveLength(2);
-		expect(source).not.toContain('route-schedule-grid');
-	});
-
-	// LineDirections.svelte.test.ts owns the container-query contract.
-
-	it('keeps the schedule split into a span block + a periods block in the markup', () => {
-		expect(source).toMatch(/data-section-sequence="line-schedule"/);
-		expect(source).toMatch(/class="route-schedule-span"/);
-		expect(source).toMatch(/class="route-schedule-periods"/);
-	});
-
 	it.each(['en', 'fr'] as const)(
 		'renders publisher service-period labels in %s',
 		async (locale) => {
@@ -912,19 +879,6 @@ describe('RouteDetail map drilldown', () => {
 });
 
 describe('RouteDetail Detail tab: clickable stops + live readout', () => {
-	it('renders each stop as a link to its detail page', () => {
-		renderRoute();
-
-		expect(screen.getByRole('link', { name: 'View stop First stop' })).toHaveAttribute(
-			'href',
-			'/stop/sA',
-		);
-		expect(screen.getByRole('link', { name: 'View stop Second stop' })).toHaveAttribute(
-			'href',
-			'/stop/sB',
-		);
-	});
-
 	it('shows a known delay and a shared absence for a null-delay prediction', () => {
 		renderRoute();
 

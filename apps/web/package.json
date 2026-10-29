@@ -17,6 +17,7 @@
 		"map-posters:build": "bun scripts/build-map-posters.ts",
 		"map-posters:check": "bun scripts/build-map-posters.ts --check",
 		"lint": "eslint .",
+		"lint:design": "bun tools/lint-design.ts",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "node scripts/gen-contract.mjs && vitest run --maxWorkers=4",

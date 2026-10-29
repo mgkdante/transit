@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -200,17 +198,6 @@ describe('map focus inset arithmetic', () => {
 });
 
 describe('map focus inset deferral', () => {
-	it('pins the exact tick then one-rAF implementation shape', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/mapFocusInset.ts'),
-			'utf8',
-		);
-
-		expect(source).toMatch(
-			/const container = map\.getContainer\(\);\s*void \(async \(\) => \{\s*await tick\(\);\s*await new Promise<void>\(\(resolve\) => adapter\.requestFrame\(\(\) => resolve\(\)\)\);/u,
-		);
-	});
-
 	it('waits for tick and exactly one frame so a same-turn mobile sheet is measured', async () => {
 		const { map } = mountedMap();
 		const setup = measurementAdapter({ detailOffset: '0rem', sheetHeight: null });

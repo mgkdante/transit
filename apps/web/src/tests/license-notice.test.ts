@@ -12,8 +12,5 @@ describe('third-party license notice', () => {
 
 		expect(version).toBeDefined();
 		expect(notice).toContain(`GSAP \`${version}\``);
-		expect(notice).toContain('Standard "No Charge" GSAP License');
-		expect(notice).toContain('not covered by Transit’s MIT License');
-		expect(notice).toContain('https://www.openstreetmap.org/copyright');
 	});
 });

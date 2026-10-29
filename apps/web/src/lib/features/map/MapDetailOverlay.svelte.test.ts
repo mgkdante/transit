@@ -1,7 +1,5 @@
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	DETAIL_PANEL_WIDTH_STORAGE_KEY,
@@ -16,29 +14,6 @@ interface LiveState {
 	widthPx: number;
 	collapsed: boolean;
 	dragging: boolean;
-}
-
-function cssBlock(source: string, marker: string): string {
-	const markerIndex = source.indexOf(marker);
-	if (markerIndex < 0) return '';
-	const open = source.indexOf('{', markerIndex + marker.length);
-	if (open < 0) return '';
-	let depth = 1;
-	let cursor = open + 1;
-	while (depth > 0 && cursor < source.length) {
-		if (source[cursor] === '{') depth += 1;
-		if (source[cursor] === '}') depth -= 1;
-		cursor += 1;
-	}
-	return source.slice(open + 1, cursor - 1);
-}
-
-function compactCss(value: string): string {
-	return value
-		.replace(/\/\*[^]*?\*\//g, '')
-		.replace(/\s+/g, ' ')
-		.replace(/\s*([{},:;])\s*/g, '$1')
-		.trim();
 }
 
 const detailPanel = createRawSnippet(() => ({
@@ -112,28 +87,6 @@ describe('MapDetailOverlay', () => {
 			detailPanel,
 		});
 		expect(container.querySelector('.map-detail-handle')).not.toBeInTheDocument();
-	});
-
-	it('keeps the APG separator as the named full-height 10px/20px target exception', () => {
-		const componentSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapDetailOverlay.svelte'),
-			'utf8',
-		);
-		const handleRule =
-			componentSource.match(
-				/\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-handle\s*\{[^}]*\}/,
-			)?.[0] ?? '';
-		const coarseRule =
-			componentSource.match(
-				/@media \(pointer: coarse\)\s*\{[\s\S]*?\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-handle\s*\{[^}]*\}/,
-			)?.[0] ?? '';
-
-		expect(handleRule).toMatch(/inset-block:\s*0;/);
-		expect(handleRule).toMatch(/width:\s*10px;/);
-		expect(coarseRule).toMatch(/width:\s*20px;/);
-		expect(handleRule).not.toMatch(
-			/(?:min-(?:block-size|height|inline-size|width)|--size-tap-min)/,
-		);
 	});
 
 	it('reflects the collapsed-to-the-right state via a data attribute', async () => {
@@ -431,66 +384,6 @@ describe('MapDetailOverlay', () => {
 		);
 	});
 
-	it.each([61, 239, 240, 299])(
-		'keeps the 300px content frame right-anchored through the %spx dead-zone sample',
-		async (dragWidth) => {
-			const source = readFileSync(
-				resolve(process.cwd(), 'src/lib/features/map/MapDetailOverlay.svelte'),
-				'utf-8',
-			);
-			const overlayRule = source.match(/\.map-detail-overlay\s*\{[\s\S]*?\}/)?.[0] ?? '';
-			const frameRule =
-				source.match(
-					/\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-content-frame\s*\{[\s\S]*?\}/,
-				)?.[0] ?? '';
-			const { container } = render(MapDetailOverlay, {
-				props: {
-					widthPx: 400,
-					collapsed: false,
-					dragging: false,
-					resizeAria: 'Resize detail panel',
-					detailPanel: detailPanelFor('vehicle:123'),
-				},
-			});
-			const overlay = container.querySelector<HTMLElement>('.map-detail-overlay')!;
-			const frame = container.querySelector<HTMLElement>('.map-detail-content-frame')!;
-			const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-			const anchorStyle = document.createElement('style');
-			anchorStyle.textContent = `${overlayRule}\n${frameRule}`;
-			container.prepend(anchorStyle);
-			const screenRight = 900;
-			vi.spyOn(overlay, 'getBoundingClientRect').mockImplementation(() => {
-				const width = Number.parseFloat(overlay.style.width);
-				return DOMRect.fromRect({ x: screenRight - width, width, height: 720 });
-			});
-			vi.spyOn(frame, 'getBoundingClientRect').mockImplementation(() => {
-				const overlayRect = overlay.getBoundingClientRect();
-				const width = Math.max(overlayRect.width, MIN_DETAIL_PANEL_WIDTH);
-				const anchoredRight = getComputedStyle(overlay).justifyContent === 'flex-end';
-				return DOMRect.fromRect({
-					x: anchoredRight ? overlayRect.right - width : overlayRect.left,
-					width,
-					height: 720,
-				});
-			});
-			handle.setPointerCapture = vi.fn();
-
-			await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-			await fireEvent.pointerMove(handle, { clientX: 900 - dragWidth, pointerId: 1 });
-
-			expect(overlay).toHaveStyle({ width: `${dragWidth}px` });
-			const overlayRect = overlay.getBoundingClientRect();
-			const frameRect = frame.getBoundingClientRect();
-			expect(frameRect.width).toBe(MIN_DETAIL_PANEL_WIDTH);
-			expect(frameRect.right).toBeCloseTo(overlayRect.right, 4);
-			expect(frameRect.left).toBeLessThan(overlayRect.left);
-			expect(getComputedStyle(overlay).justifyContent).toBe('flex-end');
-			expect(overlayRule).toContain('justify-content: flex-end');
-			expect(frameRule).not.toContain('margin-left: auto');
-			expect(frameRule).toContain('width: max(100%, 300px)');
-		},
-	);
-
 	it('collapses on double-click and expands when any part of the rail is clicked', async () => {
 		const { container } = render(MapDetailOverlay, {
 			props: {
@@ -782,85 +675,5 @@ describe('MapDetailOverlay', () => {
 		unmount();
 
 		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
-	});
-
-	it('evolves the snapping PRM pin to collapsed=false + snapping=true and kills every overlay layer', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapDetailOverlay.svelte'),
-			'utf-8',
-		);
-		expect(source).toContain("data-detail-collapsed={collapsed ? 'true' : 'false'}");
-		expect(source).toMatch(
-			/\.map-detail-overlay\[data-detail-collapsed='false'\]\s*\{[^}]*transition-property:\s*width;/,
-		);
-		expect(source).toMatch(
-			/\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-content-frame\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?var\(--duration-fast\)[\s\S]*?calc\(var\(--duration-normal\) \/ 2\)/,
-		);
-		expect(source).toMatch(
-			/@starting-style\s*\{\s*\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-content-frame\s*\{\s*opacity:\s*0;/,
-		);
-		expect(source).toMatch(
-			/\.map-detail-overlay\[data-detail-collapsed='false'\] \.map-detail-handle::after\s*\{[\s\S]*?calc\(var\(--duration-normal\) \/ 2\)/,
-		);
-		const reducedMotion = cssBlock(source, '@media (prefers-reduced-motion: reduce)');
-		const ruleOpen = reducedMotion.indexOf('{');
-		const selectors = reducedMotion
-			.slice(0, ruleOpen)
-			.split(',')
-			.map((selector) => selector.trim());
-		const declarations = reducedMotion.slice(ruleOpen + 1, reducedMotion.lastIndexOf('}'));
-		expect(selectors).toEqual([
-			".map-detail-overlay[data-detail-collapsed='false']",
-			".map-detail-overlay[data-detail-collapsed='true']",
-			".map-detail-overlay[data-detail-collapsed='false'][data-detail-snapping='true']",
-			".map-detail-overlay[data-detail-dragging='true']",
-			".map-detail-overlay[data-detail-collapsed='false'] .map-detail-content-frame",
-			":global(.map-detail-overlay[data-detail-collapsed='true'] [data-slot='right-panel-toggle'])",
-			".map-detail-overlay[data-detail-collapsed='false'] .map-detail-handle::after",
-			".map-detail-overlay[data-detail-dragging='true'] .map-detail-handle::after",
-		]);
-		expect(compactCss(declarations)).toBe('animation:none;transition:none;');
-	});
-
-	it('pins width-only 300ms open and 200ms closed shell motion', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapDetailOverlay.svelte'),
-			'utf-8',
-		);
-		const shellRule =
-			source.match(/\.map-detail-overlay\[data-detail-collapsed='false'\]\s*\{[\s\S]*?\}/)?.[0] ??
-			'';
-		const closedRule =
-			source.match(/\.map-detail-overlay\[data-detail-collapsed='true'\]\s*\{[\s\S]*?\}/)?.[0] ??
-			'';
-		const snapBackRule =
-			source.match(
-				/\.map-detail-overlay\[data-detail-collapsed='false'\]\[data-detail-snapping='true'\]\s*\{[\s\S]*?\}/,
-			)?.[0] ?? '';
-
-		expect(shellRule).toContain('transition-property: width');
-		expect(shellRule).toContain('transition-duration: var(--duration-slow)');
-		expect(closedRule).toContain('transition-duration: var(--duration-normal)');
-		expect(snapBackRule).toContain('transition-duration: var(--duration-normal)');
-		expect(snapBackRule).not.toContain('var(--duration-slow)');
-	});
-
-	it('uses the M6b 300ms transform-opacity vocabulary only on overlay insertion', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapDetailOverlay.svelte'),
-			'utf-8',
-		);
-		const overlayRule = source.match(/\.map-detail-overlay\s*\{[\s\S]*?\n\t\}/)?.[0] ?? '';
-		const entrance = cssBlock(source, '@keyframes map-detail-overlay-in');
-
-		expect(overlayRule).toContain(
-			'animation: map-detail-overlay-in var(--duration-slow) var(--ease-out) both',
-		);
-		expect(overlayRule).not.toMatch(/animation[^;]*(?:width|inline-size)/);
-		expect(compactCss(entrance)).toBe(
-			'from{opacity:0;transform:translateY(0.75rem) scale(0.985);}to{opacity:1;transform:translateY(0) scale(1);}',
-		);
-		expect(overlayRule).not.toMatch(/transition\s*:/);
-		expect(source).not.toContain('{#key surfaceKey}');
 	});
 });

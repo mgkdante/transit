@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas';
-import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+import { occupancyVar, statusVar } from '$lib/components/dataviz';
 
 import {
 	BUS_FILL_TOKEN,
@@ -368,34 +366,6 @@ describe('vehicle sprite palette contract', () => {
 		expect(BUS_ICON).toBe('veh-bus');
 		expect(STOP_ICON).toBe('veh-stop');
 		expect(HEADING_ICON).toBe('veh-heading');
-	});
-});
-
-describe('vehicle sprite glyph vocabulary boundary', () => {
-	it('imports and uses only the dataviz owner helpers without quoted glyph copies', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/map/vehicleSprites.ts'),
-			'utf8',
-		);
-		const datavizImport = source.match(
-			/import\s*\{([^}]+)\}\s*from ['"]\$lib\/components\/dataviz\/tokens['"];/u,
-		);
-		expect(datavizImport?.[1]).toMatch(/\bSTATUS_GLYPH\b/u);
-		expect(datavizImport?.[1]).toMatch(/\boccupancyGlyph\b/u);
-		expect(source).not.toMatch(/\bOCCUPANCY_GLYPH\b/u);
-
-		const productionBody = source.replace(datavizImport?.[0] ?? '', '');
-		expect(productionBody).toMatch(/\bSTATUS_GLYPH\b/u);
-		expect(productionBody).toMatch(/\boccupancyGlyph\b/u);
-
-		const ownerGlyphs = [
-			...Object.values(STATUS_GLYPH),
-			...OCCUPANCY_CODES.map((code) => occupancyGlyph(code)),
-		];
-		for (const glyph of new Set(ownerGlyphs)) {
-			const escaped = glyph.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-			expect(source).not.toMatch(new RegExp(`(['"])${escaped}\\1`, 'u'));
-		}
 	});
 });
 

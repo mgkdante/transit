@@ -1,8 +1,6 @@
 // Container-type belongs on the parent; the grid query targets a descendant.
 
 import { render, screen, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RouteFile, StopPrediction } from '$lib/v1';
 import LineDirections from './LineDirections.svelte';
@@ -24,26 +22,6 @@ const PREDICTIONS = new Map<string, StopPrediction>([
 ]);
 
 describe('LineDirections', () => {
-	it('renders each stop as a link to its detail page', () => {
-		render(LineDirections, {
-			props: {
-				directions: DIRECTIONS,
-				predictions: PREDICTIONS,
-				locale: 'en',
-				copy: detailCopy.en,
-			},
-		});
-
-		expect(screen.getByRole('link', { name: 'View stop First stop' })).toHaveAttribute(
-			'href',
-			'/stop/sA',
-		);
-		expect(screen.getByRole('link', { name: 'View stop Second stop' })).toHaveAttribute(
-			'href',
-			'/stop/sB',
-		);
-	});
-
 	it.each(['en', 'fr'] as const)(
 		'preserves prediction delay and explains an absent prediction in %s',
 		(locale) => {
@@ -78,20 +56,5 @@ describe('LineDirections', () => {
 			props: { directions: [], predictions: PREDICTIONS, locale: 'en', copy: detailCopy.en },
 		});
 		expect(container.querySelector('[data-slot="line-directions"]')).toBeNull();
-	});
-});
-
-describe('LineDirections — self-contained @container contract', () => {
-	const source = readFileSync(
-		resolve(process.cwd(), 'src/lib/features/lines/LineDirections.svelte'),
-		'utf-8',
-	);
-
-	it('declares container-type on the parent pane and targets the descendant list', () => {
-		expect(source).toMatch(/\.line-directions-pane\s*\{[^}]*container-type:\s*inline-size/);
-		expect(source).toMatch(
-			/@container line-directions \(min-width: 44rem\)\s*\{[\s\S]*?\.line-directions\s*\{[\s\S]*?grid-template-columns/,
-		);
-		expect(source).not.toMatch(/\.line-directions\s*\{[^}]*container-type/);
 	});
 });

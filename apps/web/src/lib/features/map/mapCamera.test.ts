@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
@@ -247,15 +245,5 @@ describe('fitRouteBounds', () => {
 	it('returns false without a map', async () => {
 		const { fitRouteBounds } = await loadModule();
 		expect(fitRouteBounds(null, routeWithShape())).toBe(false);
-	});
-});
-
-describe('MapLibre camera vendor fact pin', () => {
-	it('pins 6.4.1: duration-0 sync, eventData threading, fit padding deletion, and PRM offset omission', () => {
-		const packageJson = JSON.parse(
-			readFileSync(resolve(process.cwd(), 'node_modules/maplibre-gl/package.json'), 'utf8'),
-		) as { version: string };
-
-		expect(packageJson.version).toBe('6.4.1');
 	});
 });

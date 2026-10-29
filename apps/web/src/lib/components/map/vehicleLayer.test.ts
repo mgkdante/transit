@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
@@ -103,15 +101,6 @@ describe('toVehicleFeatures entity filtering', () => {
 		}
 		const gap = silentBadge.pairedOffset[0] - stateBadge.pairedOffset[0];
 		expect(gap).toBeGreaterThan(halfPlate * (stateBadge.scale + silentBadge.scale));
-	});
-
-	it('does not restore the retired per-vehicle silence opacity expression', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/map/vehicleLayer.ts'),
-			'utf8',
-		);
-
-		expect(source).not.toContain('SILENCE_OPACITY');
 	});
 
 	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {

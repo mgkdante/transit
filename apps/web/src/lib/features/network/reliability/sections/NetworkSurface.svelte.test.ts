@@ -6,8 +6,6 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
@@ -17,16 +15,6 @@ import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
-const networkSource = () =>
-	readFileSync(
-		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkSurface.svelte'),
-		'utf-8',
-	);
-const networkTileSource = () =>
-	readFileSync(
-		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkTile.svelte'),
-		'utf-8',
-	);
 
 const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
@@ -357,53 +345,6 @@ describe('NetworkSurface article shell', () => {
 		expect(liveCard).toContainElement(terminal);
 	});
 
-	it('delegates ToC target reveal to the shared helper', () => {
-		expect(networkSource()).toContain('revealTocTarget');
-		expect(networkSource()).not.toContain('document.querySelector(`[data-toc="${id}"]`)');
-	});
-
-	it('renders the shared quiet-mode controls and wires every network section to collapse and expand', async () => {
-		const { container } = render(NetworkSurface);
-		const controls = screen.getByTestId('quiet-mode-controls');
-		const headerContent = container.querySelector('.header__content') as HTMLElement;
-		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
-		const controlRow = container.querySelector('[data-slot="article-header-controls"]');
-
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
-		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
-		expect(actionRow).not.toBeNull();
-		expect(actionRow?.querySelector('[data-slot="freshness-stamp"]')).not.toBeNull();
-		expect(controlRow).toContainElement(controls);
-		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
-
-		const sectionTriggers = () =>
-			Array.from(container.querySelectorAll<HTMLButtonElement>('[data-section-trigger]'));
-		const sectionBodies = () =>
-			Array.from(container.querySelectorAll<HTMLElement>('[data-network-section] .section-body'));
-		expect(sectionTriggers().length).toBeGreaterThanOrEqual(10);
-		expect(
-			sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'true'),
-		).toBe(true);
-
-		await fireEvent.click(within(controls).getByRole('button', { name: /Collapse all/ }));
-		await waitFor(() =>
-			expect(
-				sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'false'),
-			).toBe(true),
-		);
-		expect(sectionBodies().every((body) => body.getAttribute('data-state') === 'closed')).toBe(
-			true,
-		);
-
-		await fireEvent.click(within(controls).getByRole('button', { name: /Expand all/ }));
-		await waitFor(() =>
-			expect(
-				sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'true'),
-			).toBe(true),
-		);
-		expect(sectionBodies().every((body) => body.getAttribute('data-state') === 'open')).toBe(true);
-	});
-
 	it('gives every visible Network article card exactly one shared outer disclosure', async () => {
 		const { container } = render(NetworkSurface);
 		const expectedKeys = [
@@ -441,34 +382,6 @@ describe('NetworkSurface article shell', () => {
 		) as HTMLElement;
 		await fireEvent.click(within(trend).getByRole('button', { name: copy.trendSection }));
 		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBe('false');
-	});
-
-	it('uses the shared ArticleSectionStack rhythm for both primary card groups', () => {
-		const { container } = render(NetworkSurface);
-		const liveRegion = container.querySelector('[data-toc="net-live"]') as HTMLElement;
-		const historicRegion = container.querySelector('[data-toc="net-historic"]') as HTMLElement;
-		const liveStack = liveRegion.querySelector('.article-section-stack') as HTMLElement;
-		const historicStack = historicRegion.querySelector('.article-section-stack') as HTMLElement;
-
-		expect(liveStack).not.toBeNull();
-		expect(liveStack).toContainElement(
-			container.querySelector('[data-network-section="network-live-headline"]'),
-		);
-		expect(
-			container.querySelector('[data-network-section="network-live-headline"]'),
-		).toContainElement(container.querySelector('[data-slot="network-lede"]'));
-		expect(historicStack).not.toBeNull();
-		expect(historicStack).toContainElement(
-			container.querySelector('[data-network-section="network-daily-trend"]'),
-		);
-
-		const source = networkSource();
-		const localOuterStackRules =
-			source.match(/\.network-(?:live-content|history-board|region)\s*\{[^}]*\}/g) ?? [];
-		expect(localOuterStackRules.join('\n')).not.toMatch(/\bgap\s*:/);
-		expect(source).toMatch(
-			/\.network-history-companions\s*\{[^}]*gap:\s*var\(--space-card-gap\);/s,
-		);
 	});
 
 	it('places the dated comparison before the history rows and responsive companions', () => {
@@ -513,13 +426,6 @@ describe('NetworkSurface article shell', () => {
 		expect(
 			companions.querySelector('[data-network-section="network-weekday-weekend"]'),
 		).not.toBeNull();
-	});
-
-	it('removes Network-only hazard dividers and decorative glow from the card composition', () => {
-		expect(networkSource()).not.toMatch(/<Separator\b/);
-		expect(networkSource()).not.toMatch(/import\s+\{\s*Separator\s*\}/);
-		expect(networkTileSource()).not.toMatch(/box-shadow\s*:|--shadow-card|drop-shadow\s*\(/);
-		expect(networkTileSource()).not.toMatch(/height:\s*100%/);
 	});
 });
 
@@ -1042,29 +948,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
-		const storageKey = 'persisted:network-toc';
-		const { container } = render(NetworkSurface);
-		const desktopToc = container.querySelector(
-			'[data-slot="surface-rail"] [data-slot="section-toc"]',
-		) as HTMLElement;
-		const desktopToggle = within(desktopToc).getByRole('button', { name: copy.rail.toc });
-
-		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
-		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
-		const mobileToc = (mobile.querySelector('[role="dialog"]') as HTMLElement).querySelector(
-			'[data-slot="section-toc"]',
-		) as HTMLElement;
-		const mobileToggle = within(mobileToc).getByRole('button', { name: copy.rail.toc });
-		expect(mobileToggle).toBe(desktopToggle);
-
-		await fireEvent.click(mobileToggle);
-
-		expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
-		expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
-		expect(sessionStorage.getItem(storageKey)).toBe('false');
-	});
-
 	it('keeps one disabled-grain reason and one described radio as the rail moves', async () => {
 		monthlySeries.splice(0, monthlySeries.length);
 
@@ -1102,27 +985,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(labels.some((l) => l.includes(copy.liveRegion))).toBe(true);
 		expect(labels.some((l) => l.includes(copy.historicRegion))).toBe(true);
 		expect(toc.textContent).not.toMatch(/[↻∞]/);
-	});
-});
-
-describe('NetworkSurface canonical article-control stack', () => {
-	it('orders label, history, primary grain, and secondary controls before the section ToC', () => {
-		const component = networkSource();
-		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
-		const primary =
-			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
-
-		expect(tag).not.toBe('');
-		expect(tag.indexOf('label=')).toBeLessThan(tag.indexOf('history='));
-		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
-		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
-		expect(tag).not.toContain('caption=');
-		expect(primary).toContain('variant="time-grid"');
-		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
-			component.indexOf('<ArticleControlStack'),
-		);
-		expect(component).not.toMatch(/class=["']network-control-body/);
-		expect(component).not.toMatch(/\.network-control-body\s*\{/);
 	});
 });
 

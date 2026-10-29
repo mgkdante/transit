@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { LiveIndex } from '$lib/v1/live';
 import {
@@ -272,14 +270,5 @@ describe('resolveMapHoverPeek', () => {
 
 		expect(unavailable).toMatchObject({ departureCount: null });
 		expect(empty).toMatchObject({ departureCount: 0 });
-	});
-
-	it('keeps trip detail unavailable while admitting the opaque departure count board', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/mapHoverPeek.ts'),
-			'utf8',
-		);
-		expect(source).toContain("Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>");
-		expect(source).not.toContain('byTripId');
 	});
 });

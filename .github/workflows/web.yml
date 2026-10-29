@@ -76,6 +76,9 @@ jobs:
           bun run lint
           bun run format:check
 
+      - name: Brand gates
+        run: bun run lint:design
+
       - name: Type-check
         run: bun run check
 

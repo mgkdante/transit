@@ -1,6 +1,4 @@
 import { render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 
@@ -56,18 +54,5 @@ describe('MapFeedStallBanner', () => {
 		});
 
 		expect(screen.getByRole('status').textContent?.trim()).toBe('');
-	});
-
-	it('stacks above the shared narrow control row instead of occupying its anchor', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFeedStallBanner.svelte'),
-			'utf-8',
-		);
-
-		expect(source).not.toMatch(
-			/\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\);/s,
-		);
-		expect(source).not.toContain('calc(0.75rem + 44px + 10px)');
-		expect(source).toMatch(/\.map-live-edge\s*\{[^}]*pointer-events:\s*none/s);
 	});
 });

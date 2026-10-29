@@ -1,17 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import MetricDisplay from './MetricDisplay.svelte';
 
 const valueEl = (c: HTMLElement) => c.querySelector('.metric-value') as HTMLElement | null;
-it('does not expose a feature-copy bypass around the shared absence vocabulary', () => {
-	const source = readFileSync(
-		resolve(process.cwd(), 'src/lib/components/brand/MetricDisplay.svelte'),
-		'utf8',
-	);
-	expect(source).not.toMatch(/\bemptyLabel\b/);
-});
 
 describe('MetricDisplay — absent value (honest no-data, never "·")', () => {
 	for (const empty of [null, undefined, ''] as const) {

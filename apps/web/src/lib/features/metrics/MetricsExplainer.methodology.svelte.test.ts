@@ -2,15 +2,8 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { quietMode } from '@yesid/ui/state';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { metricsCopy } from './metrics.copy';
-
-const source = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-	'utf-8',
-);
 
 const { provState } = vi.hoisted(() => ({
 	provState: {
@@ -81,13 +74,6 @@ const richProvenance = {
 };
 
 describe('MetricsExplainer — live pipeline note', () => {
-	it('uses the long-form detail tokens and article line heights for narrative prose', () => {
-		expect(source).toContain('var(--text-detail-body-mobile)');
-		expect(source).toContain('var(--text-detail-body-desktop)');
-		expect(source).toMatch(/line-height:\s*1\.8/);
-		expect(source).toMatch(/line-height:\s*1\.9/);
-	});
-
 	it('renders the matched methodology string verbatim inside a pipeline-note card', () => {
 		provState.data = { conformance: null, methodology: liveMethodology };
 		render(MetricsExplainer);

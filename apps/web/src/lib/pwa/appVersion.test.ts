@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { decideFreshnessReload, VERSION_POLL_INTERVAL_MS } from './appVersion';
 
@@ -49,12 +47,8 @@ describe('version poll cadence contract', () => {
 		expect(VERSION_POLL_INTERVAL_MS).toBeGreaterThan(0);
 	});
 
-	it('matches kit.version.pollInterval declared in svelte.config.js', () => {
-		const configPath = fileURLToPath(new URL('../../../svelte.config.js', import.meta.url));
-		const source = readFileSync(configPath, 'utf8');
-		const match = source.match(/pollInterval:\s*([0-9_]+)/);
-		expect(match, 'svelte.config.js must declare kit.version.pollInterval').not.toBeNull();
-		const declared = Number(match![1].replaceAll('_', ''));
-		expect(declared).toBe(VERSION_POLL_INTERVAL_MS);
+	it('matches kit.version.pollInterval in svelte.config.js', async () => {
+		const { default: config } = await import('../../../svelte.config.js');
+		expect(config.kit?.version?.pollInterval).toBe(VERSION_POLL_INTERVAL_MS);
 	});
 });

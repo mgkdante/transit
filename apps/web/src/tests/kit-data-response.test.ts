@@ -10,7 +10,6 @@ const appRequire = createRequire(import.meta.url);
 const kitManifest = appRequire.resolve('@sveltejs/kit/package.json');
 const kitRoot = dirname(kitManifest);
 const kitRequire = createRequire(kitManifest);
-const kitVersion = (JSON.parse(readFileSync(kitManifest, 'utf8')) as { version: string }).version;
 const clientSource = readFileSync(join(kitRoot, 'src/runtime/client/client.js'), 'utf8');
 const internalSource = readFileSync(join(kitRoot, 'src/exports/internal/index.js'), 'utf8');
 const acorn = kitRequire('acorn') as {
@@ -179,10 +178,6 @@ async function promptly<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('Kit page-data response consumption', () => {
-	it('is pinned to the installed Kit version', () => {
-		expect(kitVersion).toBe('2.70.3');
-	});
-
 	it('waits for whole successful JSON before exposing fixed data', async () => {
 		const payload = { type: 'data', nodes: [{ type: 'skip' }] };
 		const held = heldResponse(`${JSON.stringify(payload)}\n`, 'application/json; charset=utf-8');

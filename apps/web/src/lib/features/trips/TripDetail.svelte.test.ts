@@ -30,7 +30,6 @@ const TRIPS_FILE = {
 	},
 } as unknown as TripsFile;
 let tripsData: TripsFile | null = TRIPS_FILE;
-vi.mock('$lib/v1/repositories/live', () => ({ getTrips: vi.fn() }));
 let reportStale = false;
 let reportFailures = 0;
 vi.mock('$lib/v1/live/store.svelte', () => ({

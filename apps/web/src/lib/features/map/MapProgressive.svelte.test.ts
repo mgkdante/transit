@@ -1,13 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-const source = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/map/MapProgressive.svelte'),
-	'utf8',
-);
 
 const harness = vi.hoisted(() => {
 	let reduced = false;
@@ -77,12 +70,6 @@ afterEach(() => {
 });
 
 describe('MapProgressive automatic live boot', () => {
-	it('gives the attribution and no-JS note one shared box', () => {
-		expect(source).toMatch(
-			/\.map-progressive-attribution,\s*\.map-progressive-noscript\s*\{[^}]*bottom:\s*0\.55rem;[^}]*padding:\s*0\.28rem 0\.42rem;[^}]*font-size:\s*0\.68rem;[^}]*line-height:\s*1\.35;/u,
-		);
-	});
-
 	it.each(['en', 'fr'] as const)(
 		'uses only the selected poster and source date in %s',
 		async (locale) => {

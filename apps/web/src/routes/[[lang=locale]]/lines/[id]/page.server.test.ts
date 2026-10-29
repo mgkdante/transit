@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -322,18 +320,5 @@ describe('/lines/[id] server identity seed', () => {
 			reliabilitySeed: null,
 			lineHistorySeed: null,
 		});
-	});
-
-	it('forwards the seed through the thin route mount', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/routes/[[lang=locale]]/lines/[id]/+page.svelte'),
-			'utf8',
-		);
-
-		expect(source).toContain('id={data.seed.id}');
-		expect(source).toContain('seed={data.seed}');
-		expect(source).toContain('routeSeed={data.routeSeed ?? undefined}');
-		expect(source).toContain('reliabilitySeed={data.reliabilitySeed ?? undefined}');
-		expect(source).not.toContain('id={data.id}');
 	});
 });

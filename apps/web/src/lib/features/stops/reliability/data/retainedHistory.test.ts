@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { DateWindow } from '$lib/filters';
 import { encodeHistoryEntityId } from '$lib/v1/history/entity';
@@ -135,25 +133,6 @@ function crossMonthFixture(): {
 }
 
 describe('buildRetainedStopHistory', () => {
-	it('uses narrow v1 runtime leaves without crossing feature domains', () => {
-		const files = [
-			'src/lib/features/stops/reliability/data/retainedHistory.ts',
-			'src/lib/features/stops/reliability/data/stopHistoryResource.svelte.ts',
-		];
-		for (const file of files) {
-			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
-			expect(source).not.toMatch(
-				/import\s+(?!type\b)[^;]+from '\$lib\/v1(?:\/(?:schemas|history))?';/,
-			);
-		}
-
-		const retained = readFileSync(resolve(process.cwd(), files[0]), 'utf8');
-		const resource = readFileSync(resolve(process.cwd(), files[1]), 'utf8');
-		expect(retained).toContain("from '$lib/v1/history/families'");
-		expect(resource).toContain("from '$lib/v1/history/retainedHistoryResource.svelte'");
-		expect(resource).toContain("from '$lib/v1/repositories/historic'");
-	});
-
 	it('pools the exact cross-month severe-delay proxy and average ingredients', () => {
 		const { index, partitions } = crossMonthFixture();
 		const result = buildRetainedStopHistory(ENTITY_ID, index, partitions, WINDOW);

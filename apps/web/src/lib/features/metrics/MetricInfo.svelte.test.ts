@@ -1,8 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import MetricInfo from './MetricInfo.svelte';
 import { metricInfoFor } from '$lib/metrics';
 
@@ -12,11 +10,6 @@ const base = {
 	label: 'About on-time %',
 	linkLabel: 'How this is measured',
 };
-
-const source = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/metrics/MetricInfo.svelte'),
-	'utf-8',
-);
 
 describe('MetricInfo trigger', () => {
 	it('resolves definitions and follows metric, locale and name changes while open', async () => {
@@ -53,15 +46,6 @@ describe('MetricInfo trigger', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 		expect(document.activeElement).toBe(trigger);
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
-	});
-
-	it('keeps the shared dashboard and network information popover free of colored glow', () => {
-		const popoverRule = source.match(/\.metric-info__pop\s*\{([\s\S]*?)\n\t\}/)?.[1] ?? '';
-
-		expect(popoverRule).not.toMatch(
-			/box-shadow:[^;]*(?:--shadow-(?:card|section|glow)|--(?:primary|accent|glow))[^;]*;/,
-		);
-		expect(popoverRule).toMatch(/box-shadow:[^;]*rgb\(0 0 0 \/[^;]*;/);
 	});
 
 	it('is a button with an accessible name and starts collapsed', () => {

@@ -1,16 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import type { DelayLabelCopy } from '$lib/site/delayPresentation';
 import { detailCopy } from '$lib/features/stops/stops.copy';
 import ScheduleTable, { type ScheduleRow, type ScheduleTableProps } from './ScheduleTable.svelte';
-
-const scheduleTableSource = readFileSync(
-	resolve(process.cwd(), 'src/lib/components/schedule/ScheduleTable.svelte'),
-	'utf8',
-);
 
 const GRID_LABELS = {
 	caption: 'Scheduled service by line',
@@ -97,32 +89,31 @@ describe('ScheduleTable — grid mode', () => {
 				times: ['08:00', '08:10', '08:20', '08:30', '08:40', '08:50'],
 			},
 		];
-		const { container } = render(ScheduleTable, {
+		render(ScheduleTable, {
 			props: {
 				rows,
 				mode: 'grid',
 				locale: 'en',
-				labels: GRID_LABELS,
-				moreLabel: (n) => `+${n} more times`,
+				labels: detailCopy.en.schedule.table,
+				moreLabel: detailCopy.en.schedule.moreTimes,
 			},
 		});
-		const table = screen.getByRole('table', { name: GRID_LABELS.caption });
+		const table = screen.getByRole('table', { name: detailCopy.en.schedule.table.caption });
 		expect(table).toBeInTheDocument();
-		expect(within(table).getByRole('columnheader', { name: GRID_LABELS.route })).toHaveAttribute(
-			'scope',
-			'col',
-		);
 		expect(
-			within(table).getByRole('columnheader', { name: GRID_LABELS.destination }),
+			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.route }),
 		).toHaveAttribute('scope', 'col');
 		expect(
-			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
+			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.destination }),
 		).toHaveAttribute('scope', 'col');
 		expect(
-			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
+			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
+		).toHaveAttribute('scope', 'col');
+		expect(
+			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
 		).toHaveAttribute('data-align', 'end');
 		expect(
-			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
+			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
 		).toHaveAttribute('data-numeric', 'true');
 		expect(table.querySelector('tbody [data-column="departures"]')).toHaveAttribute(
 			'data-align',
@@ -132,13 +123,11 @@ describe('ScheduleTable — grid mode', () => {
 			'data-numeric',
 			'true',
 		);
-		expect(scheduleTableSource).toMatch(
-			/\.stop-schedule-times\s*\{[^}]*justify-content:\s*flex-end/,
-		);
-		expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
+
 		expect(screen.getByText('51')).toBeInTheDocument();
 		expect(screen.getByText('Nord')).toBeInTheDocument();
-		expect(container.querySelectorAll('time')).toHaveLength(6);
+		for (const time of rows[0].kind === 'grid' ? rows[0].times : [])
+			expect(within(table).getByText(time)).toBeInTheDocument();
 	});
 
 	it('keeps every departure associated with its route row instead of a detached time grid', () => {
