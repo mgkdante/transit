@@ -122,9 +122,6 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/refresh-basemap-r2.test.mjs
 
-      - name: Design adoption integrity
-        run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
-
       - name: OG drift gate
         run: bun run og:check
 

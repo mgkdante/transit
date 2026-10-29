@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-import { SECURITY_HEADERS } from '../vendor/design/seo-kit/src/headers';
+import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
 import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
 import { AUDIT_NAV, SURFACE_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';

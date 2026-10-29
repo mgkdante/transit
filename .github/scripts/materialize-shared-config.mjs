@@ -13,20 +13,11 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CONFIG_URL =
-	'https://github.com/mgkdante/yesid.dev-design/releases/download/config-v0.2.0/yesid-config-v0.2.0.tgz';
+	'https://github.com/mgkdante/yesid.dev-design/releases/download/v0.28.0/yesid-config-0.28.0.tgz';
 const CONFIG_LOCK_INTEGRITY =
-	'sha512-UOP1BG2JaV88/EqrA2mmtlymrLV3OTOIeDqMAdZysySycERKE3OUK0oApKK1udQhGEZcMHd2xnuxNFY7gO5OnA==';
+	'sha512-5LcE8HMve1Ja5VqJLN9MpWgoLkVzWx31SVLdmbLY8Pm8ZnaAvzdx8uauUnYq5ZUKZe1pVUt6XwdHRhk18ILROg==';
 const CONFIG_DIGEST = '588a4acf72f44593561112fc945d410548b56cf556bbbc9bc745c1f7b218424f';
-const EXPECTED_RECEIPT = {
-	schema: 1,
-	repository: 'github.com/mgkdante/yesid.dev-design',
-	package: { name: '@yesid/config', version: '0.2.0' },
-	tag: {
-		name: 'config-v0.2.0',
-		object: '4146d5b3e35d1ddefd3db003a630e14c9b3fbef9',
-		peeledCommit: 'b88a519ade384c1e007aa7330638071bba2f6135',
-	},
-};
+const CONFIG_PACKAGE = { name: '@yesid/config', version: '0.28.0' };
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const DESTINATION = 'node_modules/.yesid-shared-tooling/turbo/base.json';
 
@@ -44,10 +35,6 @@ function json(path, label) {
 	} catch {
 		fail(`${label} must be readable JSON`);
 	}
-}
-
-function assertExact(actual, expected, label) {
-	if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(`${label} does not match`);
 }
 
 function ensureRegularDirectory(root, path) {
@@ -71,11 +58,11 @@ export function materializeSharedConfig(repositoryRoot = REPOSITORY_ROOT) {
 	const root = resolve(repositoryRoot);
 	const rootManifest = json(join(root, 'package.json'), 'workspace package.json');
 	if (rootManifest.devDependencies?.['@yesid/config'] !== CONFIG_URL) {
-		fail('workspace must pin the immutable config-v0.2.0 Release asset');
+		fail('workspace must pin the immutable v0.28.0 Release asset');
 	}
 	const lockfile = readFileSync(join(root, 'bun.lock'), 'utf8');
 	if (!lockfile.includes(CONFIG_URL) || !lockfile.includes(CONFIG_LOCK_INTEGRITY)) {
-		fail('bun.lock must resolve the immutable config-v0.2.0 Release asset');
+		fail('bun.lock must resolve the immutable v0.28.0 Release asset');
 	}
 
 	const require = createRequire(join(root, 'package.json'));
@@ -87,14 +74,12 @@ export function materializeSharedConfig(repositoryRoot = REPOSITORY_ROOT) {
 	}
 	const configRoot = dirname(packageManifestPath);
 	const packageManifest = json(packageManifestPath, '@yesid/config package.json');
-	if (packageManifest.name !== '@yesid/config' || packageManifest.version !== '0.2.0') {
-		fail('installed package identity does not match @yesid/config@0.2.0');
+	if (
+		packageManifest.name !== CONFIG_PACKAGE.name ||
+		packageManifest.version !== CONFIG_PACKAGE.version
+	) {
+		fail('installed package identity does not match @yesid/config@0.28.0');
 	}
-	assertExact(
-		json(join(configRoot, '.yesid-config-release.json'), 'config Release receipt'),
-		EXPECTED_RECEIPT,
-		'config Release receipt',
-	);
 
 	const source = join(configRoot, 'turbo/base.json');
 	if (!lstatSync(source).isFile()) fail('shared Turbo base must be a regular file');
@@ -122,8 +107,7 @@ export function materializeSharedConfig(repositoryRoot = REPOSITORY_ROOT) {
 
 	return {
 		schema: 1,
-		package: EXPECTED_RECEIPT.package,
-		tag: EXPECTED_RECEIPT.tag,
+		package: CONFIG_PACKAGE,
 		destination: DESTINATION,
 		digest: `sha256:${CONFIG_DIGEST}`,
 	};

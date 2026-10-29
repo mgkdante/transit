@@ -313,6 +313,7 @@
 			toHref: navigation.to?.url.href ?? null,
 		});
 		if (decision.reload && decision.href) {
+			navigation.cancel();
 			location.href = decision.href;
 		}
 	});

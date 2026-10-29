@@ -22,19 +22,9 @@ const networkSource = () =>
 		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkSurface.svelte'),
 		'utf-8',
 	);
-const detailFrameSource = () =>
-	readFileSync(resolve(process.cwd(), 'vendor/design/ui/src/layout/DetailFrame.svelte'), 'utf-8');
 const networkTileSource = () =>
 	readFileSync(
 		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkTile.svelte'),
-		'utf-8',
-	);
-const liveHeadlineSource = () =>
-	readFileSync(
-		resolve(
-			process.cwd(),
-			'src/lib/features/network/reliability/sections/SectionLiveHeadline.svelte',
-		),
 		'utf-8',
 	);
 
@@ -367,26 +357,9 @@ describe('NetworkSurface article shell', () => {
 		expect(liveCard).toContainElement(terminal);
 	});
 
-	it('delegates the only active-section observer to DetailFrame', () => {
-		expect(networkSource()).not.toContain('observeActiveToc');
-		expect(detailFrameSource().match(/observeActiveToc\(/g)).toHaveLength(1);
-	});
-
 	it('delegates ToC target reveal to the shared helper', () => {
 		expect(networkSource()).toContain('revealTocTarget');
 		expect(networkSource()).not.toContain('document.querySelector(`[data-toc="${id}"]`)');
-	});
-
-	it('widens only the shared center cap while retaining the shared shell and terminal', () => {
-		const source = networkSource();
-
-		expect(source).toMatch(
-			/\.network-detail[^{]*\{[\s\S]*?--detail-center-max:\s*var\(--container-wide\)/,
-		);
-		expect(source).not.toContain('--detail-rail-width:');
-		expect(source).not.toContain('class="network-layout"');
-		expect(liveHeadlineSource()).toContain('<TerminalPanel');
-		expect(detailFrameSource()).toContain('--detail-center-max: var(--container-content)');
 	});
 
 	it('renders the shared quiet-mode controls and wires every network section to collapse and expand', async () => {

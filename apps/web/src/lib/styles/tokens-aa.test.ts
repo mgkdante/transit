@@ -1,5 +1,3 @@
-// The neutral WCAG math lives in @yesid/gates. Transit owns the product-specific
-
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -11,10 +9,10 @@ import {
 } from '../../../tools/design-gates';
 
 const tokens = JSON.parse(
-	readFileSync(resolve(process.cwd(), 'vendor/design/tokens/tokens.json'), 'utf-8'),
+	readFileSync(resolve(process.cwd(), 'node_modules/@yesid/tokens/tokens.json'), 'utf-8'),
 ) as Record<string, unknown>;
 
-describe('tokens AA — computed contrast from the vendored tokens.json', () => {
+describe('tokens AA — computed contrast from tokens.json', () => {
 	describe('semantic text + interactive/wayfinding pairs >= 4.5:1', () => {
 		for (const result of runContrastPairs(tokens, TRANSIT_TEXT_PAIRS)) {
 			it(`${result.label} >= ${result.floor}:1`, () => {

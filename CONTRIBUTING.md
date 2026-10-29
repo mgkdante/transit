@@ -20,21 +20,18 @@ bun run dev
 
 The materialize step writes the verified shared Turbo base that the web unit
 tests' shared-tooling check compares `turbo.json` against. `setup:hooks` turns
-on the pre-commit guards for generated social cards and icons and for the
-vendored design release. `bun run dev` reads public snapshots through the
+on the pre-commit guard for generated social cards and icons.
+`bun run dev` reads public snapshots through the
 [Vite proxy](apps/web/vite.config.ts): it needs internet access but no database,
 agency API key, storage credentials or Cloudflare account.
 
-On Windows, Bun writes the vendored `file:` paths in `bun.lock` with
-backslashes, so `--frozen-lockfile` fails: run `bun install` and keep that
-`bun.lock` change out of your commits. If an install fails with `EEXIST`, run
-`bun run clean:vendor-links` and install again. A dependency change needs a
-lock resolved by Bun on Linux, which is what CI installs from.
+On Windows, `bun install --frozen-lockfile` can resolve differently from Linux; if
+it fails, run `bun install` and keep that `bun.lock` change out of your commits. A dependency
+change needs a lock resolved by Bun on Linux, which is what CI installs from.
 
 ## Check a change
 
 ```sh
-bun run test:setup
 bun run test:commands
 bun run --cwd apps/data-proxy check
 bun run --cwd apps/data-proxy test
@@ -50,10 +47,10 @@ Browser tests build the app and drive it with Playwright. Locally, from
 then run `bun run test:e2e`. CI installs a pinned Chromium from
 the browser toolchain manifests, which cover linux-x64 and win32-x64 only.
 
-The [web workflow](.github/workflows/web.yml) also checks vendored design,
-social cards, icons, map posters and deployment dry runs. Shared design changes
-belong in [yesid.dev-design](https://github.com/mgkdante/yesid.dev-design); the
-[design manifest](apps/web/vendor/design/manifest.json) names the release in use.
+The [web workflow](.github/workflows/web.yml) also checks
+social cards, icons, map posters and deployment dry runs. Shared design changes belong in
+[yesid.dev-design](https://github.com/mgkdante/yesid.dev-design); the `@yesid/*` URLs in
+`apps/web/package.json` name the release in use.
 
 ## Python pipeline
 

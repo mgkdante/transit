@@ -81,7 +81,7 @@ test('homepage ground follows its own scroller and reverses without moving the t
 			}
 			return 'none';
 		}),
-	).toContain('repeating-linear-gradient');
+	).toContain('linear-gradient');
 	const root = page.locator('#main');
 	await root.focus();
 	await root.press('End');

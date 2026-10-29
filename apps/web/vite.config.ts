@@ -12,9 +12,7 @@ export const ISLAND_CENTERED_BASEMAP_BBOX = [-74.176, 45.237, -73.276, 45.867] a
 export const DEV_MANIFEST_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/manifest.json';
 export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 
-const designTokensCss = fileURLToPath(
-	new URL('./vendor/design/tokens/tokens.css', import.meta.url),
-);
+const designTokensCss = fileURLToPath(import.meta.resolve('@yesid/tokens/tokens.css'));
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
 const ssrDataTests = [
 	'src/lib/v1/history/rangeResource.ssr.test.ts',
