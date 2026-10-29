@@ -588,14 +588,9 @@
 			--pill-h: 64px;
 		}
 	}
-	@media (max-width: 479px) {
-		:root {
-			--pill-h: 60px;
-		}
-	}
 	@media (max-width: 599px) {
 		:root {
-			--pill-h: 116px;
+			--pill-h: 110px;
 		}
 	}
 
