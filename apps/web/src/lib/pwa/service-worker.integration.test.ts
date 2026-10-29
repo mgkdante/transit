@@ -75,7 +75,6 @@ describe('service-worker install wiring', () => {
 
 		const requests = add.mock.calls.map(([request]) => request as Request);
 		expect(requests.map((request) => request.url)).toEqual([
-			'https://transit.yesid.dev/offline.html',
 			'https://transit.yesid.dev/favicon.svg',
 			'https://transit.yesid.dev/_app/immutable/assets/inter-latin-wght-normal.mno345.woff2',
 			'https://transit.yesid.dev/offline',

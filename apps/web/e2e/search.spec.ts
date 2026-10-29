@@ -66,11 +66,11 @@ for (const locale of PUBLISHED_LOCALES) {
 			await expect(result).toBeVisible({ timeout: 1_000 });
 		}).toPass();
 		await result.click();
-		await expect(page).toHaveURL(
-			(url) =>
-				url.pathname === localizeHref(map, locale) &&
-				url.searchParams.get('nearLabel') === address.label,
-		);
+		await expect(page).toHaveURL((url) => url.pathname === localizeHref(map, locale));
+		// The map takes the address as its near-me origin and lists the stop beside it.
+		await expect(
+			page.getByRole('button', { name: new RegExp(`^${literal(stop.name)}`) }),
+		).toBeVisible();
 	});
 
 	test(`${locale}: below 1024px the header search opens the search page`, async ({ page }, {

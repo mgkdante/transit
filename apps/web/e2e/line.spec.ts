@@ -38,7 +38,6 @@ for (const locale of PUBLISHED_LOCALES) {
 				(url) => url.searchParams.get('tab') === (key === 'detail' ? null : key),
 			);
 		}
-		// The reliability view loads on demand, then shows every section.
 		for (const section of Object.values(reliabilityCopy[locale].sections)) {
 			if (typeof section !== 'object') continue;
 			await expect(page.getByRole('region', { name: section.label, exact: true })).toBeVisible();

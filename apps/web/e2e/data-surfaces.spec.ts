@@ -31,6 +31,14 @@ test.beforeEach(async ({ page }) => {
 
 // SurfaceRail is a pill and sheet below 1024px.
 const railIsSheet = (page: Page) => page.viewportSize()!.width < 1024;
+
+// Every element a CSS animation or transition starts on, recorded from page load.
+const recordMotion = () => {
+	const started: Element[] = [];
+	Object.assign(window, { started });
+	for (const type of ['animationstart', 'transitionrun'])
+		addEventListener(type, (event) => started.push(event.target as Element), true);
+};
 const r = stopReliabilityCopy[locale];
 const railPill = (page: Page) =>
 	page.getByRole('button', { name: new RegExp(`^${r.controlsLabel}\\b`) });
@@ -149,14 +157,13 @@ test('below 1024px the view rail opens as a dialog and Escape returns to its pil
 	page,
 }) => {
 	test.skip(!railIsSheet(page), 'the rail is a sheet only below 1024px');
+	await page.addInitScript(recordMotion);
 	await page.goto(`/stop/${stop}?tab=reliability`);
 	const sheet = await openRail(page);
-	// Reduced motion (the suite's default): the sheet itself doesn't animate in; the click ripple doesn't count.
+	// Reduced motion (the suite's default): nothing on the sheet animated in; the click ripple is not part of it.
 	expect(
 		await sheet.evaluate((surface) =>
-			document
-				.getAnimations()
-				.map((animation) => (animation.effect as KeyframeEffect).target as Element)
+			(window as unknown as { started: Element[] }).started
 				.filter((target) => target.contains(surface) || surface.contains(target))
 				.map((target) => target.getAttribute('class')),
 		),

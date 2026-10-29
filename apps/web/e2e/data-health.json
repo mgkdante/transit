@@ -1,19 +1,4 @@
 {
 	"generated_utc": "2026-06-15T12:00:00Z",
-	"lanes": [
-		{
-			"lane": "live",
-			"last_publish_utc": "2026-06-15T12:00:00Z",
-			"age_s": 30,
-			"files_written": 5,
-			"files_total": 5,
-			"gate": {
-				"checks_run": 12,
-				"errors": 0,
-				"warnings": 0,
-				"verdict": "pass",
-				"generated_utc": "2026-06-15T12:00:00Z"
-			}
-		}
-	]
+	"lanes": [{ "lane": "live", "gate": { "verdict": "pass" } }]
 }

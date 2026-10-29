@@ -21,6 +21,14 @@ const address = {
 	precision: 'address',
 };
 
+// Every element a CSS animation or transition starts on, recorded from page load.
+const recordMotion = () => {
+	const started: Element[] = [];
+	Object.assign(window, { started });
+	for (const type of ['animationstart', 'transitionrun'])
+		addEventListener(type, (event) => started.push(event.target as Element), true);
+};
+
 test.use({ bypassCSP: true });
 
 test.beforeEach(async ({ page }) => {
@@ -45,6 +53,7 @@ for (const locale of PUBLISHED_LOCALES) {
 	test(`${locale}: an address lists the stop beside it, which opens its details without motion`, async ({
 		page,
 	}) => {
+		await page.addInitScript(recordMotion);
 		await page.goto(localizeHref(map, locale));
 		await openNearMe(page, t.nearMe);
 		await page.getByRole('combobox', { name: t.nearMeSearchPlaceholder }).fill(address.label);
@@ -56,13 +65,11 @@ for (const locale of PUBLISHED_LOCALES) {
 			.getByRole('complementary', { name: stop.name })
 			.or(page.getByRole('dialog', { name: stop.name }));
 		await expect(detail).toBeVisible();
-		// Reduced motion (the suite's default): the surface itself doesn't animate in.
-		// The click ripple stays on by design (@yesid/motion globalRipple), so it doesn't count.
+		// Reduced motion (the suite's default): nothing on the surface animated in. The click
+		// ripple stays on by design (@yesid/motion globalRipple) and is not part of the surface.
 		expect(
 			await detail.evaluate((surface) =>
-				document
-					.getAnimations()
-					.map((animation) => (animation.effect as KeyframeEffect).target as Element)
+				(window as unknown as { started: Element[] }).started
 					.filter((target) => target.contains(surface) || surface.contains(target))
 					.map((target) => target.getAttribute('class')),
 			),

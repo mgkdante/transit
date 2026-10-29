@@ -31,11 +31,16 @@ for (const locale of PUBLISHED_LOCALES) {
 			page,
 		}) => {
 			// networkidle: the client-side data lands before the page is measured.
-			await page.goto(localizeHref(path, locale), { waitUntil: 'networkidle' });
+			const response = await page.goto(localizeHref(path, locale), { waitUntil: 'networkidle' });
+			expect(response?.ok()).toBe(true);
 			await page.evaluate(() => document.fonts.ready);
-			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-				page.viewportSize()!.width,
-			);
+			// The app shell clips the document, so pages scroll inside #main.
+			for (const scroller of ['html', '#main']) {
+				const overflow = await page
+					.locator(scroller)
+					.evaluate((element) => element.scrollWidth - element.clientWidth);
+				expect(overflow, scroller).toBeLessThanOrEqual(0);
+			}
 		});
 	}
 }
