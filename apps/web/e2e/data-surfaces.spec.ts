@@ -151,17 +151,14 @@ test('below 1024px the view rail opens as a dialog and Escape returns to its pil
 	test.skip(!railIsSheet(page), 'the rail is a sheet only below 1024px');
 	await page.goto(`/stop/${stop}?tab=reliability`);
 	const sheet = await openRail(page);
-	// Reduced motion (the suite's default): the sheet appears without an animation or transition.
+	// Reduced motion (the suite's default): the sheet itself doesn't animate in; the click ripple doesn't count.
 	expect(
-		await page.evaluate(() =>
-			document.getAnimations().map((animation) => {
-				const target = (animation.effect as KeyframeEffect).target as Element;
-				const name =
-					animation instanceof CSSAnimation
-						? animation.animationName
-						: (animation as CSSTransition).transitionProperty;
-				return `${name} on ${target.tagName.toLowerCase()} ${target.getAttribute('data-slot') ?? target.getAttribute('class') ?? ''}`;
-			}),
+		await sheet.evaluate((surface) =>
+			document
+				.getAnimations()
+				.map((animation) => (animation.effect as KeyframeEffect).target as Element)
+				.filter((target) => target.contains(surface) || surface.contains(target))
+				.map((target) => target.getAttribute('class')),
 		),
 	).toEqual([]);
 

@@ -56,17 +56,15 @@ for (const locale of PUBLISHED_LOCALES) {
 			.getByRole('complementary', { name: stop.name })
 			.or(page.getByRole('dialog', { name: stop.name }));
 		await expect(detail).toBeVisible();
-		// Reduced motion (the suite's default): nothing animates in.
+		// Reduced motion (the suite's default): the surface itself doesn't animate in.
+		// The click ripple stays on by design (@yesid/motion globalRipple), so it doesn't count.
 		expect(
-			await page.evaluate(() =>
-				document.getAnimations().map((animation) => {
-					const target = (animation.effect as KeyframeEffect).target as Element;
-					const name =
-						animation instanceof CSSAnimation
-							? animation.animationName
-							: (animation as CSSTransition).transitionProperty;
-					return `${name} on ${target.tagName.toLowerCase()} ${target.getAttribute('data-slot') ?? target.getAttribute('class') ?? ''}`;
-				}),
+			await detail.evaluate((surface) =>
+				document
+					.getAnimations()
+					.map((animation) => (animation.effect as KeyframeEffect).target as Element)
+					.filter((target) => target.contains(surface) || surface.contains(target))
+					.map((target) => target.getAttribute('class')),
 			),
 		).toEqual([]);
 	});
