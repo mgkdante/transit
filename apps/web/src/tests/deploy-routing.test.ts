@@ -25,7 +25,7 @@ describe('shared production route deployment', () => {
 		);
 
 		const deployIndex = productionJob.indexOf(
-			'run: ../../node_modules/.bin/wrangler deploy --env=""',
+			'run: ../../node_modules/.bin/wrangler deploy --env="" ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}',
 		);
 		const smokeIndex = productionJob.indexOf('run: bash smoke.sh');
 		expect(deployIndex).toBeGreaterThanOrEqual(0);

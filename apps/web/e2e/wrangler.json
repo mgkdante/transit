@@ -4,5 +4,5 @@
 	"assets": { "directory": "../.svelte-kit/cloudflare", "binding": "ASSETS" },
 	"compatibility_date": "2025-01-01",
 	"compatibility_flags": ["nodejs_compat"],
-	"vars": { "PUBLIC_V1_BASE": "http://127.0.0.1:4318/v1", "PUBLIC_V1_PROVIDER": "stm" }
+	"vars": { "PUBLIC_V1_BASE": "http://127.0.0.1:4318/v1", "PUBLIC_V1_PROVIDER": "stm", "PUBLIC_PLAUSIBLE_DOMAIN": "transit.yesid.dev" }
 }

@@ -43,6 +43,11 @@ database, agency API key, storage credentials or Cloudflare account. Previewing
 does not publish data. Upstream freshness, feed coverage and basemap availability
 remain properties of the public data service.
 
+**Analytics:** Transit measures visits with cookieless Plausible.
+Measurement is off unless `PUBLIC_PLAUSIBLE_DOMAIN` is set.
+Production receives it from the repository variable at deploy, never from `wrangler.toml`.
+Forks and local runs send nothing.
+
 ## Check a change
 
 Run these commands from the repository root after installing dependencies:
