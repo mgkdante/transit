@@ -24,7 +24,6 @@ test('tooling-only and workflow-only pushes preserve the deployed Worker', () =>
 				'.github/scripts/deploy-scope.mjs',
 				'.github/scripts/deploy-scope.test.mjs',
 				'.github/workflows/web.yml',
-				'apps/web/src/tests/shared-tooling-adoption.test.ts',
 				'apps/web/src/lib/features/lines/RouteDetail.svelte.test.ts',
 			],
 		}),
@@ -43,7 +42,6 @@ test('deployable changes and manual dispatch remain eligible', () => {
 		'.bun-version',
 		'turbo.json',
 		'.github/actions/setup/action.yml',
-		'.github/shared-tooling/turbo.overlay.json',
 	]) {
 		assert.equal(
 			deploymentEligible({ eventName: 'push', diffResolved: true, paths: [path] }),
