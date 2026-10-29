@@ -39,6 +39,7 @@ const recordMotion = () => {
 	for (const type of ['animationstart', 'transitionrun'])
 		addEventListener(type, (event) => started.push(event.target as Element), true);
 };
+
 const r = stopReliabilityCopy[locale];
 const railPill = (page: Page) =>
 	page.getByRole('button', { name: new RegExp(`^${r.controlsLabel}\\b`) });
