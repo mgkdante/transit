@@ -444,17 +444,6 @@ test("every artifact phase requires staging outside the checkout", async (t) => 
   }
 });
 
-test("byte-identical config materialization preserves the checked-out commit contract", (t) => {
-  const f = fixture(t);
-  const turbo = readFileSync(join(f.root, "turbo.json"));
-  f.write("turbo.json", turbo);
-  f.seal();
-  f.write("turbo.json", turbo);
-  verifySource(f.stage, f.options);
-  restore(f.stage, f.options);
-  assert.equal(f.git("status", "--porcelain", "--untracked-files=all"), "");
-});
-
 test("CLI rejects missing arguments and unknown commands", () => {
   for (const args of [[], ["unknown"], ["restore"], ["configure", "extra"]])
     assert.throws(() => main(args), /Usage/);

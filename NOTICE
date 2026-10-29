@@ -5,7 +5,7 @@ This file is a factual attribution index, not an additional license or policy.
 
 ## yesid.dev-design packages
 
-The `@yesid/*` packages come from yesid.dev-design `v0.28.0` release tarballs, installed under
+The `@yesid/*` packages come from yesid.dev-design release tarballs, installed under
 `node_modules/@yesid/` and pinned by integrity in `bun.lock`. They are MIT licensed; each tarball
 carries its `LICENSE` and `NOTICE`. `@yesid/motion/lenis.css` is copied from Lenis 1.3, Copyright
 (c) 2024 darkroom.engineering, and is used under the MIT License.
