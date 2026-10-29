@@ -63,8 +63,8 @@ const HOME: BilingualSeo = {
 };
 
 const PRIVACY_DESCRIPTION: BilingualText = {
-	en: 'How Transit handles Cloudflare request analytics, address searches, device location, browser storage, retention and privacy requests.',
-	fr: 'Comment Transit traite l’analyse Cloudflare, la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
+	en: 'How Transit handles address searches, device location, browser storage, retention and privacy requests.',
+	fr: 'Comment Transit traite la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
 };
 
 const TERMS_DESCRIPTION: BilingualText = {
