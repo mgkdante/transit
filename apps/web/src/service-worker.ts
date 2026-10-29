@@ -18,7 +18,8 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 const ORIGIN = sw.location.origin;
 const CACHE = cacheNameFor(version);
 
-const OFFLINE_PATH = '/offline.html';
+// The asset host serves offline.html at /offline and redirects the .html path to it.
+const OFFLINE_PATH = '/offline';
 
 const MAP_POSTER_PATH_PREFIX = '/map/basemap-';
 const NON_MAP_STATIC_FILES = files.filter(
@@ -102,8 +103,7 @@ async function handleNavigation(event: FetchEvent): Promise<Response> {
 	} catch (err) {
 		const cache = await caches.open(CACHE);
 		const offline = await cache.match(OFFLINE_PATH);
-		// The host redirects /offline.html, and a redirected response cannot answer a navigation.
-		if (offline) return new Response(offline.body, offline);
+		if (offline) return offline;
 		throw err;
 	}
 }
