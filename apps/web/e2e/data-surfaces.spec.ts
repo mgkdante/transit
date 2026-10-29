@@ -152,7 +152,18 @@ test('below 1024px the view rail opens as a dialog and Escape returns to its pil
 	await page.goto(`/stop/${stop}?tab=reliability`);
 	const sheet = await openRail(page);
 	// Reduced motion (the suite's default): the sheet appears without an animation or transition.
-	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+	expect(
+		await page.evaluate(() =>
+			document.getAnimations().map((animation) => {
+				const target = (animation.effect as KeyframeEffect).target as Element;
+				const name =
+					animation instanceof CSSAnimation
+						? animation.animationName
+						: (animation as CSSTransition).transitionProperty;
+				return `${name} on ${target.tagName.toLowerCase()} ${target.getAttribute('data-slot') ?? target.getAttribute('class') ?? ''}`;
+			}),
+		),
+	).toEqual([]);
 
 	await expect(sheet.getByRole('radiogroup', { name: r.grain.label })).toBeVisible();
 	await page.keyboard.press('Escape');

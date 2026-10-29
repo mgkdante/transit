@@ -57,7 +57,18 @@ for (const locale of PUBLISHED_LOCALES) {
 			.or(page.getByRole('dialog', { name: stop.name }));
 		await expect(detail).toBeVisible();
 		// Reduced motion (the suite's default): nothing animates in.
-		expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+		expect(
+			await page.evaluate(() =>
+				document.getAnimations().map((animation) => {
+					const target = (animation.effect as KeyframeEffect).target as Element;
+					const name =
+						animation instanceof CSSAnimation
+							? animation.animationName
+							: (animation as CSSTransition).transitionProperty;
+					return `${name} on ${target.tagName.toLowerCase()} ${target.getAttribute('data-slot') ?? target.getAttribute('class') ?? ''}`;
+				}),
+			),
+		).toEqual([]);
 	});
 
 	test(`${locale}: a stalled feed says so while the map controls stay apart and usable`, async ({

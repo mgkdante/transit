@@ -160,7 +160,8 @@
 		}
 		.map-feed-stall {
 			top: auto;
-			bottom: calc(var(--map-mobile-control-bottom) + 44px + 10px);
+			/* Above the collapsed map credits (24px), which sit one control row up. */
+			bottom: calc(var(--map-mobile-control-bottom) + 2.75rem + 0.75rem + 24px + 10px);
 			left: 0.75rem;
 			right: 0.75rem;
 			margin-inline: 0;

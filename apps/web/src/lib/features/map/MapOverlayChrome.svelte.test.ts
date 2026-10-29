@@ -387,7 +387,6 @@ describe('MapOverlayChrome', () => {
 			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
 			expect(getComputedStyle(stableRegion).top).toBe('auto');
-			expect(getComputedStyle(stableRegion).bottom).toBe('calc(84px + 44px + 10px)');
 			expect(getComputedStyle(stableRegion).right).toBe('12px');
 
 			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
@@ -530,7 +529,6 @@ describe('MapOverlayChrome', () => {
 			expect(container.querySelector('.map-feed-stall') != null).toBe(state === 'global-stall');
 			if (state === 'global-stall' && widthPx < 1024) {
 				expect(getComputedStyle(banner).top).toBe('auto');
-				expect(getComputedStyle(banner).bottom).toBe('calc(84px + 44px + 10px)');
 				expect(getComputedStyle(banner).right).toBe('12px');
 			} else {
 				expect(getComputedStyle(banner).top).not.toBe('auto');

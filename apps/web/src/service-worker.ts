@@ -102,7 +102,8 @@ async function handleNavigation(event: FetchEvent): Promise<Response> {
 	} catch (err) {
 		const cache = await caches.open(CACHE);
 		const offline = await cache.match(OFFLINE_PATH);
-		if (offline) return offline;
+		// The host redirects /offline.html, and a redirected response cannot answer a navigation.
+		if (offline) return new Response(offline.body, offline);
 		throw err;
 	}
 }
