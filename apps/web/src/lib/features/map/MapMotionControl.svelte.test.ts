@@ -36,24 +36,21 @@ describe('MapMotionControl', () => {
 		expect(screen.getByText(copy.en.motion.hintSmooth)).toBeInTheDocument();
 	});
 
-	it('keeps the switch name stable while aria-checked carries state in both locales', async () => {
+	it('includes the visible state in the switch name in both locales', async () => {
 		const { rerender } = render(MapMotionControl, { locale: 'en', copy: copy.en });
-		expect(screen.getByRole('switch', { name: copy.en.motion.toSmooth })).toHaveAttribute(
-			'aria-checked',
-			'false',
-		);
+		expect(
+			screen.getByRole('switch', { name: `${copy.en.motion.raw} ${copy.en.motion.toSmooth}` }),
+		).toHaveAttribute('aria-checked', 'false');
 		motionMode.set('smooth');
 		await rerender({ locale: 'en', copy: copy.en });
-		expect(screen.getByRole('switch', { name: copy.en.motion.toSmooth })).toHaveAttribute(
-			'aria-checked',
-			'true',
-		);
+		expect(
+			screen.getByRole('switch', { name: `${copy.en.motion.smooth} ${copy.en.motion.toSmooth}` }),
+		).toHaveAttribute('aria-checked', 'true');
 
 		await rerender({ locale: 'fr', copy: copy.fr });
-		expect(screen.getByRole('switch', { name: copy.fr.motion.toSmooth })).toHaveAttribute(
-			'aria-checked',
-			'true',
-		);
+		expect(
+			screen.getByRole('switch', { name: `${copy.fr.motion.smooth} ${copy.fr.motion.toSmooth}` }),
+		).toHaveAttribute('aria-checked', 'true');
 	});
 
 	it('deep-links the method to the /metrics live-positions explainer (locale-aware)', () => {

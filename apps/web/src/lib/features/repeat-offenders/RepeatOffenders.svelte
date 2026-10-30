@@ -480,7 +480,7 @@
 			{#if segment.describedById}
 				<span
 					id={segment.describedById}
-					class="repeat-grain-reason visually-hidden"
+					class="repeat-grain-reason sr-only"
 					data-slot="controls-reason"
 				>
 					{disabledReason}
@@ -561,7 +561,7 @@
 	{/snippet}
 
 	<p
-		class="repeat-history-live visually-hidden"
+		class="repeat-history-live sr-only"
 		data-slot="history-page-announcement"
 		role="status"
 		aria-live="polite"

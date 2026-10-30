@@ -138,7 +138,6 @@
 							<MapDrilldownLink
 								href={localizeHref(mapHrefFor({ trip: id }, locale), locale)}
 								label={t.viewOnMap}
-								ariaLabel={t.viewTripOnMap(id)}
 							/>
 						</div>
 					{/snippet}
@@ -295,6 +294,7 @@
 	}
 	.trip-route-link {
 		display: inline-flex;
+		min-inline-size: var(--size-tap-min);
 		align-items: center;
 		gap: 0.375rem;
 

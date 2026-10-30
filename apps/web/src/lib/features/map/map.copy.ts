@@ -45,6 +45,7 @@ export const copy = defineCopy({
 		nearMeUseLocation: 'Use my location',
 		nearMeSearchPlaceholder: 'Address, postal code, or coordinates',
 		nearMeSearchSubmit: 'Find',
+		nearMeSuggestions: 'Address suggestions',
 		nearMeCollectionNotice:
 			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		nearMeClear: 'Clear location',
@@ -154,6 +155,7 @@ export const copy = defineCopy({
 		nearMeUseLocation: 'Utiliser ma position',
 		nearMeSearchPlaceholder: 'Adresse, code postal ou coordonnées',
 		nearMeSearchSubmit: 'Trouver',
+		nearMeSuggestions: 'Suggestions d’adresses',
 		nearMeCollectionNotice:
 			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		nearMeClear: 'Effacer le lieu',

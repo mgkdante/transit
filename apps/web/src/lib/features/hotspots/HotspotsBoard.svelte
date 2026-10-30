@@ -403,7 +403,7 @@
 			{#if segment.describedById}
 				<span
 					id={segment.describedById}
-					class="hotspots-reason visually-hidden"
+					class="hotspots-reason sr-only"
 					data-slot="controls-reason"
 				>
 					{disabledReason}
@@ -482,7 +482,7 @@
 	{/snippet}
 
 	<p
-		class="hotspots-history-live visually-hidden"
+		class="hotspots-history-live sr-only"
 		data-slot="history-page-announcement"
 		role="status"
 		aria-live="polite"

@@ -362,7 +362,7 @@
 
 		{#snippet reliabilityContent()}
 			<p
-				class="stop-history-announcement visually-hidden"
+				class="stop-history-announcement sr-only"
 				data-slot="history-page-announcement"
 				role="status"
 				aria-live="polite"

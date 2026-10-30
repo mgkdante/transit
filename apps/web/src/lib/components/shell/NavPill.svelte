@@ -376,8 +376,11 @@
 		pointer-events: none;
 	}
 	.nav-provider-select {
+		min-block-size: var(--size-tap-min);
 		position: absolute;
-		inset: 0;
+		inset-inline: 0;
+		inset-block-start: 50%;
+		transform: translateY(-50%);
 		width: 100%;
 		opacity: 0;
 		font: inherit;
@@ -459,7 +462,7 @@
 	.nav-search-input {
 		width: clamp(11rem, 22cqi, 20rem);
 		min-width: 0;
-		height: 36px;
+		height: var(--size-tap-min);
 		padding: 0 0.75rem 0 1.9rem;
 		font-size: var(--text-small);
 		color: var(--foreground);

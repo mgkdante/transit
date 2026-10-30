@@ -324,7 +324,7 @@
 					{#if seg.describedById}
 						<span
 							id={seg.describedById}
-							class="reliability-reason visually-hidden"
+							class="reliability-reason sr-only"
 							data-slot="controls-reason">{disabledReason}</span
 						>
 					{/if}
@@ -360,7 +360,7 @@
 
 		{#snippet reliabilityContent()}
 			<p
-				class="reliability-history-announcement visually-hidden"
+				class="reliability-history-announcement sr-only"
 				data-slot="history-page-announcement"
 				role="status"
 				aria-live="polite"

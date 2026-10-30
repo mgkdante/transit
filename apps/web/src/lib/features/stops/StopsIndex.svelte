@@ -430,7 +430,6 @@
 			<MapDrilldownLink
 				href={localizeHref(mapHrefFor({ stop: stop.id }, locale), locale)}
 				label={t.mapAction}
-				ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
 			/>
 		{/snippet}
 		<EntityResultRow

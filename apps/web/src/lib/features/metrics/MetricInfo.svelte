@@ -267,10 +267,11 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		inline-size: 1.05rem;
-		block-size: 1.05rem;
+		inline-size: var(--size-tap-min);
+		block-size: var(--size-tap-min);
+		margin: calc((1.05rem - var(--size-tap-min)) / 2);
 		padding: 0;
-		border: 1px solid var(--border);
+		border: 0;
 		border-radius: var(--radius-pill);
 		background: transparent;
 		color: var(--muted-foreground);
@@ -280,21 +281,12 @@
 			color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default);
 	}
-	/* Touch target floor (P5.3d §C4 P10): the glyph stays a 17px dot but the
-	   HIT area is expanded to --size-tap-min via a centered transparent overlay.
-	   Absolutely positioned → zero layout shift on the inline label row. */
-	.metric-info__trigger::after {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		translate: -50% -50%;
-		min-inline-size: var(--size-tap-min);
-		min-block-size: var(--size-tap-min);
-	}
 	.metric-info__trigger:hover,
 	.metric-info__trigger[aria-expanded='true'] {
 		color: var(--primary);
+	}
+	.metric-info__trigger:hover .metric-info__glyph,
+	.metric-info__trigger[aria-expanded='true'] .metric-info__glyph {
 		border-color: var(--primary);
 	}
 	.metric-info__trigger:focus-visible {
@@ -302,6 +294,13 @@
 		outline-offset: 2px;
 	}
 	.metric-info__glyph {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		inline-size: 1.05rem;
+		block-size: 1.05rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-style: italic;

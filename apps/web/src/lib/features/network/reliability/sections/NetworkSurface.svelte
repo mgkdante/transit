@@ -626,10 +626,8 @@
 		/>
 		{#each presentedGrainSegments as seg (seg.key)}
 			{#if seg.describedById}
-				<span
-					id={seg.describedById}
-					class="network-reason visually-hidden"
-					data-slot="controls-reason">{grainDisabledReason}</span
+				<span id={seg.describedById} class="network-reason sr-only" data-slot="controls-reason"
+					>{grainDisabledReason}</span
 				>
 			{/if}
 		{/each}

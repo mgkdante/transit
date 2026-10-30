@@ -40,7 +40,6 @@
 				class="map-motion-switch"
 				role="switch"
 				aria-checked={smooth}
-				aria-label={t.motion.toSmooth}
 				data-testid="map-motion-switch"
 				onclick={() => motionMode.toggle()}
 			>
@@ -48,6 +47,7 @@
 					><span class="map-motion-thumb"></span></span
 				>
 				<span class="map-motion-state">{smooth ? t.motion.smooth : t.motion.raw}</span>
+				<span class="sr-only"> {t.motion.toSmooth}</span>
 			</button>
 		</div>
 		<div class="map-motion-caption">
