@@ -17,8 +17,6 @@ const pages = [
 ];
 const localized = (href: string, locale: Locale) =>
 	locale === DEFAULT_LOCALE ? href : `/${locale}${href === '/' ? '' : href}`;
-// Failing today; C10 fixes each one and deletes it here.
-const KNOWN: string[] = [];
 
 test.use({ bypassCSP: true });
 
@@ -35,7 +33,7 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 			test(`${url} has no serious or critical axe violations`, async ({ page }) => {
 				await page.goto(url);
 				await expect(page.getByRole('main')).toBeVisible();
-				await expectAccessible(page, { exclude: KNOWN });
+				await expectAccessible(page);
 			});
 		}
 
@@ -48,7 +46,7 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 					await page.getByRole('button', { name: copy.openMenu }).click();
 				await expect(menu).toBeVisible({ timeout: 1000 });
 			}).toPass();
-			await expectAccessible(page, { exclude: KNOWN });
+			await expectAccessible(page);
 		});
 	}
 });
