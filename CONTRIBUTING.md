@@ -79,6 +79,24 @@ CI, covers them.
 
 ## Deploys and operations
 
+When investigating a metric, trace its source population and clock before
+changing a predicate. Route on-time rates count known predicted-delay readings
+in `[-60, 300)` seconds, not punctual trips or passengers. Historic severe-delay
+counts require `delay > 300` within the one-hour clamp; the two shares are not
+complements. See the public
+[metric definitions](apps/web/src/lib/features/metrics/metrics.content.ts).
+
+Route `day` periods read the hourly reporting view in the
+[route builder](apps/db/src/transit_ops/snapshots/builders/historic/route_reliability.py)
+and can include a partial current local day. The
+[spine rollups](apps/db/src/transit_ops/gold/rollups.py) select closed provider-local
+capture days instead. The historic publisher's
+[date stamp](apps/db/src/transit_ops/snapshots/historic_tier.py) is a UTC date label,
+not the actual build time or a guarantee that every payload ends on that day.
+Compare the payload's own dates, counts and source window before treating two
+views as the same population. A metric correction needs review of any affected
+retained derivatives and operational proof; changing a label does not rebuild data.
+
 Deploys and the scheduled pipeline run from [GitHub Actions](.github/workflows)
 with the maintainer's Cloudflare, storage and database access. Never point tests
 or migrations at production. Pull requests from branches of this repository get
