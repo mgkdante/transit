@@ -757,7 +757,7 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "HEALTH_RUNTIME_CACHE_SECONDS=30",
         "SILVER_REALTIME_RETENTION_DAYS=1",
         "GOLD_FACT_RETENTION_DAYS=14",
-        "BRONZE_REALTIME_RETENTION_DAYS=90",
+        "BRONZE_REALTIME_RETENTION_DAYS=30",
         "GOLD_WARM_ROLLUP_RETENTION_DAYS=730",
         "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH=5000",
         "BRONZE_PRUNE_MAX_BATCHES=2",
@@ -778,13 +778,13 @@ def test_gold_fact_retention_default_matches_compose_and_env_template() -> None:
     assert "keep 7 days" not in env_example
 
 
-def test_compose_bronze_realtime_default_matches_the_ninety_day_runtime_contract() -> None:
+def test_compose_bronze_realtime_default_matches_the_thirty_day_runtime_contract() -> None:
     compose_text = (DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert (
-        compose_text.count("BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-90}")
+        compose_text.count("BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-30}")
         == 2
     )
-    assert "BRONZE_REALTIME_RETENTION_DAYS:-30" not in compose_text
+    assert "BRONZE_REALTIME_RETENTION_DAYS:-90" not in compose_text
 
 
 def test_local_1password_env_files_stay_ignored() -> None:
