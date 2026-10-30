@@ -3,9 +3,9 @@ name: CI
 # Replays migrations and real-DB tests on disposable PostgreSQL.
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - ".env.example"
       - ".gitleaks.toml"

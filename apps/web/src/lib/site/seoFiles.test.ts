@@ -52,7 +52,7 @@ describe('SEO static files', () => {
 
 	it('blocks crawlers and emits an empty sitemap when indexing is disabled', () => {
 		const config = {
-			siteOrigin: 'https://dev.transit.yesid.dev',
+			siteOrigin: 'https://preview.example.com',
 			indexing: false,
 		};
 
@@ -65,13 +65,13 @@ describe('SEO static files', () => {
 
 	it('uses the configured origin for localized sitemap entries', () => {
 		const sitemap = buildSitemapXml({
-			siteOrigin: 'https://dev.transit.yesid.dev',
+			siteOrigin: 'https://preview.example.com',
 			indexing: true,
 		});
 
-		expect(sitemap).toContain('<loc>https://dev.transit.yesid.dev/</loc>');
-		expect(sitemap).toContain('<loc>https://dev.transit.yesid.dev/fr</loc>');
-		expect(sitemap).toContain('hreflang="x-default" href="https://dev.transit.yesid.dev/"');
+		expect(sitemap).toContain('<loc>https://preview.example.com/</loc>');
+		expect(sitemap).toContain('<loc>https://preview.example.com/fr</loc>');
+		expect(sitemap).toContain('hreflang="x-default" href="https://preview.example.com/"');
 	});
 
 	it('enumerates every static surface', () => {

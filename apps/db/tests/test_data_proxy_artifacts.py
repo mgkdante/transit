@@ -59,7 +59,7 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
     triggers = _workflow_triggers(workflow)
     assert "workflow_dispatch" not in triggers
-    assert triggers["push"]["branches"] == ["main", "develop"]
+    assert triggers["push"]["branches"] == ["main"]
     assert "apps/data-proxy/**" in triggers["push"]["paths"]
     assert ".github/workflows/deploy-data-proxy.yml" in triggers["push"]["paths"]
     assert workflow["permissions"] == {"contents": "read"}

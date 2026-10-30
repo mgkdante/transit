@@ -50,32 +50,19 @@ const required = (env, name, pattern) => {
 };
 
 function publicEnvironment(target) {
-  if (!["dev", "production"].includes(target))
-    throw new Error("Invalid TRANSIT_BUILD_TARGET");
+  if (target !== "production") throw new Error("Invalid TRANSIT_BUILD_TARGET");
   return {
-    PUBLIC_SITE_ORIGIN:
-      target === "production"
-        ? "https://transit.yesid.dev"
-        : "https://dev.transit.yesid.dev",
+    PUBLIC_SITE_ORIGIN: "https://transit.yesid.dev",
     PUBLIC_V1_BASE: "https://data.yesid.dev/v1",
-    PUBLIC_INDEXING: target === "production" ? "true" : "false",
+    PUBLIC_INDEXING: "true",
   };
 }
 
 function targetFor(env) {
-  if (env.GITHUB_EVENT_NAME === "push") {
-    if (env.GITHUB_REF === "refs/heads/main") return "production";
-    if (env.GITHUB_REF === "refs/heads/develop") return "dev";
-  }
-  if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
-    if (env.TRANSIT_DEPLOY_TARGET === "dev") return "dev";
-    if (
-      env.TRANSIT_DEPLOY_TARGET === "production" &&
-      env.GITHUB_REF === "refs/heads/main"
-    )
-      return "production";
-  }
-  return "verification";
+  return ["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME) &&
+    env.GITHUB_REF === "refs/heads/main"
+    ? "production"
+    : "verification";
 }
 
 function emit(path, values) {

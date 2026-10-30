@@ -14,8 +14,8 @@ describe('public site config', () => {
 	});
 
 	it('normalizes configured origins to origin-only values', () => {
-		expect(normalizeSiteOrigin('https://dev.transit.yesid.dev/path/')).toBe(
-			'https://dev.transit.yesid.dev',
+		expect(normalizeSiteOrigin('https://preview.example.com/path/')).toBe(
+			'https://preview.example.com',
 		);
 	});
 
