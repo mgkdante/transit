@@ -3,7 +3,8 @@ name: Daily Warm Rollups
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 7 * * *"
+    - cron: "0 7 * * 0,1,2,4,5,6"
+    - cron: "0 7 * * 3"
 
 permissions:
   contents: read
@@ -24,6 +25,8 @@ jobs:
     outputs:
       providers: ${{ steps.discover.outputs.providers }}
       prepare_artifact_id: ${{ steps.upload-prepare-evidence.outputs.artifact-id }}
+      # Historic publishes weekly; prepare, rollups and retention stay daily.
+      historic_publish: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 7 * * 3' }}
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
@@ -300,7 +303,7 @@ jobs:
 
   publish:
     needs: [prepare, rollups]
-    if: ${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}
+    if: ${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' && needs.prepare.outputs.historic_publish == 'true' }}
     runs-on: ubuntu-24.04
     # Up to three concurrent providers, each with its own unchanged 90m bound.
     timeout-minutes: 285
@@ -586,8 +589,12 @@ jobs:
           if-no-files-found: warn
 
   retention:
-    needs: [prepare, proof]
-    if: needs.proof.result == 'success'
+    needs: [prepare, rollups, proof]
+    # Bronze inflow outpaces one day's prune budget, so non-publish days still prune.
+    if: >-
+      ${{ !cancelled() && needs.prepare.result == 'success' && needs.rollups.result == 'success'
+      && (needs.proof.result == 'success'
+      || (needs.proof.result == 'skipped' && needs.prepare.outputs.historic_publish == 'false')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     defaults:
@@ -727,14 +734,22 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           PROOF_RESULT: ${{ needs.proof.result }}
           RETENTION_RESULT: ${{ needs.retention.result }}
+          HISTORIC_PUBLISH: ${{ needs.prepare.outputs.historic_publish }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          results="prepare=${PREPARE_RESULT}, rollups=${ROLLUPS_RESULT}, publish=${PUBLISH_RESULT}, proof=${PROOF_RESULT}, retention=${RETENTION_RESULT}"
+          results="prepare=${PREPARE_RESULT}, rollups=${ROLLUPS_RESULT}, publish=${PUBLISH_RESULT}, proof=${PROOF_RESULT}, retention=${RETENTION_RESULT}, historic_publish=${HISTORIC_PUBLISH}"
+          historic_ok=false
+          if [[ "$PUBLISH_RESULT" == "success" && "$PROOF_RESULT" == "success" ]]; then
+            historic_ok=true
+          elif [[ "$HISTORIC_PUBLISH" == "false" \
+            && "$PUBLISH_RESULT" == "skipped" \
+            && "$PROOF_RESULT" == "skipped" ]]; then
+            historic_ok=true
+          fi
           if [[ "$PREPARE_RESULT" == "success" \
             && "$ROLLUPS_RESULT" == "success" \
-            && "$PUBLISH_RESULT" == "success" \
-            && "$PROOF_RESULT" == "success" \
+            && "$historic_ok" == "true" \
             && "$RETENTION_RESULT" == "success" ]]; then
             .github/scripts/alert-issue.sh resolve daily-warm-rollups \
               "recovered in run ${{ github.run_id }} (${results})"

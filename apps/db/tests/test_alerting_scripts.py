@@ -382,13 +382,13 @@ def test_freshness_probe_fires_above_historic_heartbeat_boundary(tmp_path) -> No
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
-        PSQL_OUTPUTS=_psql_outputs(historic_heartbeat_age=129601),
+        PSQL_OUTPUTS=_psql_outputs(historic_heartbeat_age=734401),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
 
     assert result.returncode != 0
-    assert "historic_heartbeat: latest successful publish age 129601s > 129600s" in result.stderr
+    assert "historic_heartbeat: latest successful publish age 734401s > 734400s" in result.stderr
     lines = _read_log(log)
     assert len([ln for ln in lines if ln.startswith("alert-issue|fire freshness")]) == 1
     command_log = log.read_text(encoding="utf-8")
@@ -397,13 +397,13 @@ def test_freshness_probe_fires_above_historic_heartbeat_boundary(tmp_path) -> No
     assert "tier = 'historic'" in command_log
 
 
-def test_freshness_probe_allows_daily_heartbeats_at_36_hour_boundary(tmp_path) -> None:
+def test_freshness_probe_allows_static_and_weekly_historic_heartbeats_at_boundary(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
         PSQL_OUTPUTS=_psql_outputs(
             static_heartbeat_age=129600,
-            historic_heartbeat_age=129600,
+            historic_heartbeat_age=734400,
         ),
     )
 

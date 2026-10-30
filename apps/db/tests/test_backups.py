@@ -413,11 +413,11 @@ def test_run_database_backup_prunes_to_retention_after_success() -> None:
         now=FIXED_NOW,
     )
 
-    assert result.pruned_keys == old_keys[:2]
-    assert result.retained_count == 14
+    assert result.pruned_keys == old_keys[:9]
+    assert result.retained_count == 7
     assert EXPECTED_KEY in client.objects
-    assert all(key not in client.objects for key in old_keys[:2])
-    assert all(key in client.objects for key in old_keys[2:])
+    assert all(key not in client.objects for key in old_keys[:9])
+    assert all(key in client.objects for key in old_keys[9:])
 
 
 def test_prune_old_backups_keeps_newest_n() -> None:

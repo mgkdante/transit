@@ -280,7 +280,7 @@ def test_legacy_neon_database_url_file_secret_input_fails_explicitly(
 
 EXPECTED_BACKUP_DEFAULTS = {
     "BACKUP_S3_PREFIX": "backups/postgres",
-    "BACKUP_RETENTION_COUNT": 14,
+    "BACKUP_RETENTION_COUNT": 7,
     "BACKUP_EXCLUDE_TABLE_DATA": "silver.rt_trip_update_stop_times",
     "BACKUP_COMPRESSION": "zstd:3",
 }
@@ -296,7 +296,7 @@ def test_settings_backup_defaults(clean_backup_settings_env: None) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.BACKUP_S3_PREFIX == "backups/postgres"
-    assert settings.BACKUP_RETENTION_COUNT == 14
+    assert settings.BACKUP_RETENTION_COUNT == 7
     assert settings.BACKUP_EXCLUDE_TABLE_DATA == "silver.rt_trip_update_stop_times"
     assert settings.BACKUP_COMPRESSION == "zstd:3"
 
