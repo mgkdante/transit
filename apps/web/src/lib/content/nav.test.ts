@@ -67,8 +67,9 @@ describe('SURFACE_NAV manifest', () => {
 		expect(legal).toEqual([
 			{ href: '/privacy', label: { en: 'Privacy', fr: 'Confidentialité' } },
 			{ href: '/terms', label: { en: 'Terms', fr: 'Conditions d’utilisation' } },
+			{ href: '/accessibility', label: { en: 'Accessibility', fr: 'Accessibilité' } },
 		]);
-		expect(SECONDARY_NAV.slice(-2)).toEqual(legal);
+		expect(SECONDARY_NAV.slice(-legal.length)).toEqual(legal);
 	});
 });
 

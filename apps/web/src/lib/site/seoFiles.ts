@@ -22,6 +22,7 @@ export const PATHS = [
 	'/alerts',
 	'/privacy',
 	'/terms',
+	'/accessibility',
 ] as const;
 
 export const SITEMAP_URL_CAP = 50_000;

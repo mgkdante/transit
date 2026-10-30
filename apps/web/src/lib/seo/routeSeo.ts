@@ -67,6 +67,11 @@ const PRIVACY_DESCRIPTION: BilingualText = {
 	fr: 'Comment Transit traite la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
 };
 
+const ACCESSIBILITY_DESCRIPTION: BilingualText = {
+	en: 'Transit’s accessibility statement: the WCAG 2.2 AA target, what works today, known limitations and how to report a problem.',
+	fr: 'Déclaration d’accessibilité de Transit : la cible WCAG 2.2 AA, ce qui fonctionne aujourd’hui, les limites connues et comment signaler un problème.',
+};
+
 const TERMS_DESCRIPTION: BilingualText = {
 	en: 'Terms for using the hosted Transit site and public data endpoints, including attribution, acceptable use, service limits and separately licensed source.',
 	fr: 'Conditions d’utilisation du site Transit hébergé et de ses données publiques : attribution, usage acceptable, limites du service et code sous licence distincte.',
@@ -203,6 +208,11 @@ const SURFACES: Record<string, BilingualSeo> = {
 		title: { en: 'Terms', fr: 'Conditions d’utilisation' },
 		description: () => TERMS_DESCRIPTION,
 		neutralDescription: TERMS_DESCRIPTION,
+	},
+	'/accessibility': {
+		title: { en: 'Accessibility', fr: 'Accessibilité' },
+		description: () => ACCESSIBILITY_DESCRIPTION,
+		neutralDescription: ACCESSIBILITY_DESCRIPTION,
 	},
 };
 

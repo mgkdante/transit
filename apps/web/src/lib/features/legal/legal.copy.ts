@@ -1,6 +1,6 @@
 import { defineCopy, type Locale } from '$lib/i18n';
 
-export type LegalPageKind = 'privacy' | 'terms';
+export type LegalPageKind = 'privacy' | 'terms' | 'accessibility';
 export const LEGAL_EFFECTIVE_DATE = '2026-10-29';
 
 export interface LegalLinkCopy {
@@ -245,6 +245,47 @@ const documents = {
 				},
 			],
 		},
+		accessibility: {
+			kicker: 'LEGAL',
+			title: 'Accessibility',
+			effectiveLabel: 'Last updated',
+			effectiveDate: 'October 29, 2026',
+			summary:
+				'Transit aims to meet the Web Content Accessibility Guidelines (WCAG) 2.2, level AA. It is built on the yesid design standard, the same shared packages as yesid.dev, so the header, menu, footer, colors, focus and motion are checked on every release.',
+			sections: [
+				{
+					id: 'works',
+					title: 'What works today',
+					paragraphs: [],
+					bullets: [
+						'A skip link to the main content, then the same landmarks on every page: header, main content, footer.',
+						'Keyboard navigation with a visible focus indicator, including in Windows High Contrast.',
+						'Charts come with a data table that screen readers can read.',
+						'Search, the lines and stops lists, and each stop page give a keyboard path to what the map shows.',
+						'Reduced motion is respected.',
+						'The site is available in English and French.',
+					],
+				},
+				{
+					id: 'limitations',
+					title: 'Known limitations',
+					paragraphs: [],
+					bullets: [
+						'The map is pointer-first: its markers cannot be reached by keyboard. Search, the lists and the stop pages carry the same information.',
+						"Data comes from the transit agencies' public feeds. When a feed is late or missing, the page says so instead of showing zeros.",
+						'Transit has not been formally audited by a third party. This statement is based on automated checks and my own keyboard testing.',
+					],
+				},
+				{
+					id: 'report',
+					title: 'Tell me what is not working',
+					paragraphs: [
+						'If something is hard or impossible to use, write to contact@yesid.dev with the page, what you were trying to do and, if you can, your browser and assistive technology. You can write in English or French.',
+					],
+					links: [{ href: 'mailto:contact@yesid.dev', label: 'Email contact@yesid.dev' }],
+				},
+			],
+		},
 	},
 	fr: {
 		privacy: {
@@ -460,6 +501,47 @@ const documents = {
 							label: 'Communiquer avec l’exploitant',
 						},
 					],
+				},
+			],
+		},
+		accessibility: {
+			kicker: 'JURIDIQUE',
+			title: 'Accessibilité',
+			effectiveLabel: 'Dernière mise à jour',
+			effectiveDate: '29 octobre 2026',
+			summary:
+				'Transit vise les Règles pour l’accessibilité des contenus Web (WCAG) 2.2, niveau AA. Le site repose sur la norme de design yesid, les mêmes paquets partagés que yesid.dev : l’en-tête, le menu, le pied de page, les couleurs, le focus et les animations sont vérifiés à chaque version.',
+			sections: [
+				{
+					id: 'works',
+					title: 'Ce qui fonctionne aujourd’hui',
+					paragraphs: [],
+					bullets: [
+						'Un lien d’évitement vers le contenu principal, puis les mêmes repères sur chaque page : en-tête, contenu principal, pied de page.',
+						'La navigation au clavier, avec un indicateur de focus visible, y compris en mode Contraste élevé de Windows.',
+						'Les graphiques sont accompagnés d’un tableau de données que les lecteurs d’écran peuvent lire.',
+						'La recherche, les listes de lignes et d’arrêts et chaque page d’arrêt donnent accès au clavier à ce que montre la carte.',
+						'Le réglage de réduction des animations est respecté.',
+						'Le site est offert en français et en anglais.',
+					],
+				},
+				{
+					id: 'limitations',
+					title: 'Limites connues',
+					paragraphs: [],
+					bullets: [
+						'La carte est d’abord pensée pour le pointeur : ses marqueurs ne sont pas accessibles au clavier. La recherche, les listes et les pages d’arrêt donnent la même information.',
+						'Les données proviennent des flux publics des sociétés de transport. Quand un flux est en retard ou absent, la page l’indique au lieu d’afficher des zéros.',
+						'Transit n’a pas fait l’objet d’un audit externe. Cette déclaration repose sur des vérifications automatisées et sur mes propres essais au clavier.',
+					],
+				},
+				{
+					id: 'report',
+					title: 'Signalez-moi ce qui ne fonctionne pas',
+					paragraphs: [
+						'Si quelque chose est difficile ou impossible à utiliser, écrivez à contact@yesid.dev en précisant la page, ce que vous tentiez de faire et, si possible, votre navigateur et votre technologie d’aide. Vous pouvez écrire en français ou en anglais.',
+					],
+					links: [{ href: 'mailto:contact@yesid.dev', label: 'Écrire à contact@yesid.dev' }],
 				},
 			],
 		},
