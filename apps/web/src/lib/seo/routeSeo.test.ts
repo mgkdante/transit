@@ -46,7 +46,50 @@ const SURFACE_PATHS = [
 	'/terms',
 ];
 
-const STM_IDENTITY = { shortName: 'STM', city: 'Montréal' } as const;
+const STM_IDENTITY = { id: 'stm', shortName: 'STM', city: 'Montréal' } as const;
+
+describe('URL-scoped home sharing', () => {
+	const ottawa = { id: 'octranspo', shortName: 'OC Transpo', city: 'Ottawa' };
+
+	it.each(['/', '/map', '/network?provider=octranspo', '/fr/lines/55?provider=octranspo'])(
+		'keeps %s neutral despite the selected provider',
+		(path) => {
+			const head = resolveRouteSeo(path, 'en', ottawa);
+			expect(head.siteName).toBe('Transit');
+			expect(head.title + head.description).not.toMatch(/OC Transpo|Ottawa/);
+		},
+	);
+
+	it('uses validated provider wording only on an explicitly scoped home URL', () => {
+		expect(resolveRouteSeo('/?provider=octranspo', 'en', ottawa)).toMatchObject({
+			title: 'OC Transpo network overview',
+			siteName: 'Transit',
+			providerId: 'octranspo',
+		});
+		expect(resolveRouteSeo('/fr?provider=stm', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
+		expect(resolveRouteSeo('/fr?provider=octranspo', 'fr', ottawa).imagePath).toMatch(
+			/^\/og\/home\/octranspo\.fr\.png\?v=[a-f0-9]{16}$/,
+		);
+		expect(resolveRouteSeo('/?provider=octranspo', 'en', ottawa).description).not.toMatch(
+			/alerts/i,
+		);
+		expect(resolveRouteSeo('/map?provider=octranspo', 'en', ottawa).imagePath).toMatch(
+			/^\/og\/en\.png\?v=[a-f0-9]{16}$/,
+		);
+	});
+
+	it.each([
+		'/?provider=unknown',
+		'/?provider=',
+		'/?provider=stm',
+		'/?provider=octranspo&provider=octranspo',
+	])('rejects unvalidated or ambiguous home sharing at %s', (path) => {
+		const head = resolveRouteSeo(path, 'en', ottawa);
+		expect(head.siteName).toBe('Transit');
+		expect(head.providerId).toBeUndefined();
+		expect(head.description).not.toContain('Ottawa');
+	});
+});
 
 describe('resolveRouteSeo', () => {
 	it('returns a distinct title per surface (no more single global title)', () => {
@@ -54,7 +97,7 @@ describe('resolveRouteSeo', () => {
 		expect(new Set(titles).size).toBe(titles.length);
 	});
 
-	it('keeps surface titles distinct on the keyworded identity path too', () => {
+	it('keeps surface titles distinct when an unscoped URL has provider data', () => {
 		const titles = SURFACE_PATHS.map((p) => resolveRouteSeo(p, 'en', STM_IDENTITY).title);
 		expect(new Set(titles).size).toBe(titles.length);
 	});
@@ -79,7 +122,7 @@ describe('resolveRouteSeo', () => {
 		}
 	});
 
-	it('keeps provider descriptions nonempty and concise', () => {
+	it('keeps descriptions nonempty and concise when provider data is available', () => {
 		for (const p of PATHS) {
 			for (const l of ['en', 'fr'] as const) {
 				const len = resolveRouteSeo(p, l, STM_IDENTITY).description.length;
@@ -89,17 +132,20 @@ describe('resolveRouteSeo', () => {
 		}
 	});
 
-	it('injects the provider tokens into the keyworded copy', () => {
+	it('uses provider copy only for the explicitly scoped home page', () => {
 		for (const l of ['en', 'fr'] as const) {
-			const home = resolveRouteSeo('/', l, STM_IDENTITY).description;
+			const home = resolveRouteSeo('/?provider=stm', l, STM_IDENTITY).description;
 			expect(home).toContain('STM');
 			expect(home).toContain('Montréal');
-			const network = resolveRouteSeo('/network', l, STM_IDENTITY).description;
-			expect(network).toContain('STM');
-			expect(network).toContain('Montréal');
+			const network = resolveRouteSeo('/network?provider=stm', l, STM_IDENTITY);
+			expect(network.description).not.toContain('STM');
+			expect(network.description).not.toContain('Montréal');
+			expect(network.providerId).toBe('stm');
 		}
-		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('STM network overview');
-		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
+		expect(resolveRouteSeo('/?provider=stm', 'en', STM_IDENTITY).title).toBe(
+			'STM network overview',
+		);
+		expect(resolveRouteSeo('/fr?provider=stm', 'fr', STM_IDENTITY).title).toBe('Vue du réseau STM');
 	});
 
 	it('keeps legal SEO provider-neutral even when an identity is available', () => {
@@ -168,6 +214,18 @@ describe('resolveBreadcrumbTrail', () => {
 });
 
 describe('breadcrumbItemsForHead', () => {
+	it('keeps an OC entity identity while its French metadata stays neutral', () => {
+		const head = resolveRouteSeo('/fr/lines/5?provider=octranspo', 'fr', {
+			id: 'octranspo',
+			shortName: 'OC Transpo',
+			city: 'Ottawa',
+		});
+		expect(head.title + head.description).not.toMatch(/OC Transpo|Ottawa/);
+		expect(breadcrumbItemsForHead('/fr/lines/5', 'fr', ORIGIN, head.providerId).at(-1)?.url).toBe(
+			`${ORIGIN}/fr/lines/5?provider=octranspo`,
+		);
+	});
+
 	it('localizes crumb paths against the origin (fr gets the /fr prefix)', () => {
 		const items = breadcrumbItemsForHead('/fr/lines/165', 'fr', ORIGIN);
 		expect(items.map((i) => i.url)).toEqual([

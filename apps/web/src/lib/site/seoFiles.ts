@@ -1,4 +1,5 @@
 import type { PublicSiteConfig } from './config';
+import { localizeHref } from '$lib/i18n';
 import {
 	emitAlternateSitemapEntries,
 	emitSitemapDocument,
@@ -39,6 +40,7 @@ export interface SitemapEntities {
 	readonly stopIds?: readonly string[];
 	readonly entityLastmod?: string | null;
 	readonly staticLastmod?: string | null;
+	readonly providerId?: string;
 }
 
 export function buildRobotsTxt(config: PublicSiteConfig): string {
@@ -49,9 +51,14 @@ export function buildRobotsTxt(config: PublicSiteConfig): string {
 	});
 }
 
-function localizedEntries(siteOrigin: string, path: string, lastmod: string | null): string[] {
-	const en = `${siteOrigin}${path === '/' ? '/' : path}`;
-	const fr = `${siteOrigin}/fr${path === '/' ? '' : path}`;
+function localizedEntries(
+	siteOrigin: string,
+	path: string,
+	lastmod: string | null,
+	providerId?: string,
+): string[] {
+	const en = `${siteOrigin}${localizeHref(path, 'en', providerId)}`;
+	const fr = `${siteOrigin}${localizeHref(path, 'fr', providerId)}`;
 	return emitAlternateSitemapEntries({
 		variants: [
 			{ hreflang: 'en', href: en },
@@ -63,8 +70,12 @@ function localizedEntries(siteOrigin: string, path: string, lastmod: string | nu
 	});
 }
 
-export function _sitemapEntries(siteOrigin: string, staticLastmod: string | null = null): string[] {
-	return PATHS.flatMap((path) => localizedEntries(siteOrigin, path, staticLastmod));
+export function _sitemapEntries(
+	siteOrigin: string,
+	staticLastmod: string | null = null,
+	providerId?: string,
+): string[] {
+	return PATHS.flatMap((path) => localizedEntries(siteOrigin, path, staticLastmod, providerId));
 }
 
 export function _entitySitemapEntries(
@@ -72,8 +83,11 @@ export function _entitySitemapEntries(
 	prefix: string,
 	ids: readonly string[],
 	entityLastmod: string | null = null,
+	providerId?: string,
 ): string[] {
-	return ids.flatMap((id) => localizedEntries(siteOrigin, entityPath(prefix, id), entityLastmod));
+	return ids.flatMap((id) =>
+		localizedEntries(siteOrigin, entityPath(prefix, id), entityLastmod, providerId),
+	);
 }
 
 export function buildSitemapXml(config: PublicSiteConfig, entities: SitemapEntities = {}): string {
@@ -83,18 +97,24 @@ export function buildSitemapXml(config: PublicSiteConfig, entities: SitemapEntit
 }
 
 function collectUrlBlocks(siteOrigin: string, entities: SitemapEntities): string[] {
-	const staticBlocks = _sitemapEntries(siteOrigin, entities.staticLastmod ?? null);
+	const staticBlocks = _sitemapEntries(
+		siteOrigin,
+		entities.staticLastmod ?? null,
+		entities.providerId,
+	);
 	const routeBlocks = _entitySitemapEntries(
 		siteOrigin,
 		ROUTE_PREFIX,
 		entities.routeIds ?? [],
 		entities.entityLastmod ?? null,
+		entities.providerId,
 	);
 	const stopBlocks = _entitySitemapEntries(
 		siteOrigin,
 		STOP_PREFIX,
 		entities.stopIds ?? [],
 		entities.entityLastmod ?? null,
+		entities.providerId,
 	);
 
 	const all = [...staticBlocks, ...routeBlocks, ...stopBlocks];

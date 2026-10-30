@@ -73,7 +73,13 @@ vi.mock('$lib/components/edge', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
 vi.mock('$lib/seo/routeSeo', () => ({
-	resolveRouteSeo: () => ({ title: 'Legal', description: 'Legal document description.' }),
+	resolveRouteSeo: () => ({
+		title: 'Legal',
+		description: 'Legal document description.',
+		siteName: 'Transit',
+		imagePath: '/og/en.png',
+		imageAlt: 'Transit',
+	}),
 	isEphemeralPath: () => false,
 	breadcrumbItemsForHead: () => [],
 	resolveDatasetSeo: () => ({ name: 'Dataset', description: 'Dataset description.' }),

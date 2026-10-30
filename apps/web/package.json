@@ -52,7 +52,7 @@
 		"prettier": "^3.8.4",
 		"prettier-plugin-svelte": "^4.1.0",
 		"rollup-plugin-visualizer": "^7.0.1",
-		"satori": "^0.28.0",
+		"satori": "^0.33.5",
 		"sharp": "^0.35.3",
 		"svelte": "^5.54.0",
 		"svelte-check": "^4.4.2",

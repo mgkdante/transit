@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import catalog from '../../../e2e/providers.json';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
 const getRoutesIndex = vi.fn();
 const getStopsIndex = vi.fn();
+const loadProviderCatalog = vi.fn();
+
+vi.mock('$lib/v1/providers', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/v1/providers')>()),
+	loadProviderCatalog: (...args: unknown[]) => loadProviderCatalog(...args),
+}));
 
 vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
@@ -20,7 +27,7 @@ type Handler = typeof GET;
 
 const ORIGIN = 'https://transit.yesid.dev';
 
-function event(opts: { binding?: unknown; snapshots?: unknown } = {}) {
+function event(opts: { binding?: unknown; snapshots?: unknown; search?: string } = {}) {
 	const env = {
 		...(opts.binding === undefined ? {} : { DATA: opts.binding }),
 		...(opts.snapshots === undefined ? {} : { SNAPSHOTS: opts.snapshots }),
@@ -28,7 +35,7 @@ function event(opts: { binding?: unknown; snapshots?: unknown } = {}) {
 	return {
 		fetch: vi.fn(),
 		locals: {},
-		url: new URL(`${ORIGIN}/sitemap.xml`),
+		url: new URL(`${ORIGIN}/sitemap.xml${opts.search ?? ''}`),
 		platform: Object.keys(env).length === 0 ? undefined : { env },
 	} as unknown as Parameters<Handler>[0];
 }
@@ -40,9 +47,30 @@ async function bodyOf(response: Response): Promise<string> {
 beforeEach(() => {
 	getRoutesIndex.mockReset();
 	getStopsIndex.mockReset();
+	loadProviderCatalog.mockReset();
+	loadProviderCatalog.mockResolvedValue(catalog);
 });
 
 describe('sitemap.xml handler', () => {
+	it('carries validated OC identity into every entity and alternate URL', async () => {
+		getRoutesIndex.mockResolvedValue({ routes: [{ id: '5' }] });
+		getStopsIndex.mockResolvedValue({ stops: [{ id: 'OC1' }] });
+		const response = await GET(
+			event({ snapshots: { get: vi.fn() }, search: '?provider=octranspo' }),
+		);
+		const xml = await response.text();
+		expect(xml).toContain(`<loc>${ORIGIN}/lines/5?provider=octranspo</loc>`);
+		expect(xml).toContain(`hreflang="fr" href="${ORIGIN}/fr/lines/5?provider=octranspo"`);
+		expect(getRoutesIndex.mock.calls[0]?.[0]).toMatchObject({ providerId: 'octranspo' });
+	});
+
+	it('normalizes an invalid provider before reading that namespace', async () => {
+		const response = await GET(event({ snapshots: { get: vi.fn() }, search: '?provider=unknown' }));
+		expect(response.status).toBe(307);
+		expect(response.headers.get('location')).toBe('/sitemap.xml?provider=stm');
+		expect(getRoutesIndex).not.toHaveBeenCalled();
+	});
+
 	it('(a) direct R2 snapshot binding + indexing on: enumerates entity URLs', async () => {
 		getRoutesIndex.mockResolvedValue({
 			generated_utc: '2026-06-20T07:00:00Z',

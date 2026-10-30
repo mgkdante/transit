@@ -6,7 +6,7 @@ import {
 	buildWebSiteJsonLd,
 	type JsonLdNode as SeoKitJsonLdNode,
 } from '@yesid/seo-kit/jsonld';
-import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+import { DEFAULT_LOCALE, localizeHref, type Locale } from '$lib/i18n';
 
 export type JsonLdNode = SeoKitJsonLdNode & { '@context': typeof SCHEMA_ORG_CONTEXT };
 
@@ -27,20 +27,23 @@ interface WebSiteJsonLdInput {
 	siteOrigin: string;
 	siteName: string;
 	locale?: Locale;
+	providerId?: string;
 }
 
 export function websiteJsonLd({
 	siteOrigin,
 	siteName,
 	locale = DEFAULT_LOCALE,
+	providerId,
 }: WebSiteJsonLdInput): JsonLdNode {
+	const search = new URL(localizeHref('/search', locale, providerId), siteOrigin);
 	return contextual(
 		buildWebSiteJsonLd({
 			context: true,
 			name: siteName,
 			url: siteOrigin,
 			inLanguage: locale,
-			searchUrlTemplate: `${siteOrigin}/search?q={query}`,
+			searchUrlTemplate: `${search.href}${search.search ? '&' : '?'}q={query}`,
 		}),
 	);
 }

@@ -1,8 +1,13 @@
 import { delocalizePath, localizeHref, type Locale } from '$lib/i18n';
+import cards from '../../../static/og/manifest.json';
 
 export interface RouteSeo {
 	title: string;
 	description: string;
+	siteName: string;
+	providerId?: string;
+	imagePath: string;
+	imageAlt: string;
 }
 
 export interface BreadcrumbTrailItem {
@@ -25,6 +30,7 @@ const DATASET_COPY = {
 } satisfies Record<'name' | 'description', BilingualText>;
 
 export interface ProviderSeoIdentity {
+	id?: string | null;
 	shortName?: string | null;
 	city?: string | null;
 }
@@ -53,8 +59,8 @@ const HOME: BilingualSeo = {
 		fr: `Vue du réseau ${id.shortName}`,
 	}),
 	description: (id) => ({
-		en: `Explore ${id.shortName} transit in ${id.city}: live bus reports, route and stop information, service alerts and reliability trends.`,
-		fr: `Explorez le réseau ${id.shortName} à ${id.city} : données des bus, lignes, arrêts, avis de service et tendances de fiabilité.`,
+		en: `Explore ${id.shortName} transit in ${id.city}: available vehicle reports, lines, stops and reliability trends.`,
+		fr: `Explorez le réseau ${id.shortName} à ${id.city} : données disponibles sur les véhicules, les lignes, les arrêts et la fiabilité.`,
 	}),
 	neutralDescription: {
 		en: 'Explore transit reports, route and stop information, service alerts and reliability trends across the network.',
@@ -273,17 +279,56 @@ function resolveIdentity(identity?: ProviderSeoIdentity): ResolvedIdentity | nul
 }
 
 export function resolveRouteSeo(
-	pathname: string,
+	url: string | URL,
 	locale: Locale,
 	identity?: ProviderSeoIdentity,
 ): RouteSeo {
-	const entry = entryFor(delocalizePath(pathname));
+	const request = typeof url === 'string' ? new URL(url, 'https://transit.local') : url;
+	const path = delocalizePath(request.pathname);
+	const entry = entryFor(path);
+	const requested = request.searchParams.getAll('provider');
+	// The caller supplies identity only from successful provider discovery.
+	const providerId =
+		requested.length === 1 && requested[0] === identity?.id
+			? (identity?.id ?? undefined)
+			: undefined;
 	const resolved = resolveIdentity(identity);
-	if (resolved) {
+	const homeProvider =
+		path === '/' && providerId && resolved
+			? cards.providers.find(
+					(provider) =>
+						provider.id === providerId &&
+						provider.labels[locale].operator === resolved.shortName &&
+						provider.labels[locale].city === resolved.city,
+				)
+			: undefined;
+	const defaultImage = `/og/${locale}.png`;
+	const variant = homeProvider ? `/og/home/${homeProvider.id}.${locale}.png` : defaultImage;
+	const image = Object.hasOwn(cards.outputs, variant) ? variant : defaultImage;
+	const fingerprint = cards.outputs[image as keyof typeof cards.outputs];
+	const imagePath = `${image}?v=${fingerprint.slice(0, 16)}`;
+	const imageAlt = homeProvider
+		? `${homeProvider.labels[locale].operator} · ${homeProvider.labels[locale].city} · Transit`
+		: HOME.title[locale];
+	if (path === '/' && providerId && resolved) {
 		const title = (entry.keywordTitle ?? (() => entry.title))(resolved);
-		return { title: title[locale], description: entry.description(resolved)[locale] };
+		return {
+			title: title[locale],
+			description: entry.description(resolved)[locale],
+			siteName: 'Transit',
+			providerId,
+			imagePath,
+			imageAlt,
+		};
 	}
-	return { title: entry.title[locale], description: entry.neutralDescription[locale] };
+	return {
+		title: entry.title[locale],
+		description: entry.neutralDescription[locale],
+		siteName: 'Transit',
+		providerId,
+		imagePath,
+		imageAlt,
+	};
 }
 
 export function resolveBreadcrumbTrail(pathname: string, locale: Locale): BreadcrumbTrailItem[] {

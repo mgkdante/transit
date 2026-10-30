@@ -10,11 +10,6 @@ unknown instead of estimating it.
 
 Live at [transit.yesid.dev](https://transit.yesid.dev).
 
-## Documentation
-
-The [Documentation wiki](https://app.notion.com/p/3663e8630690815b927dea4888252234)
-covers architecture, metric definitions, snapshot contracts and developer guides.
-
 ## Stack
 
 | Path | What it does | Built with |
