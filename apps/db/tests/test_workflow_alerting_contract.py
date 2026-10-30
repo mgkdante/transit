@@ -82,6 +82,7 @@ def test_freshness_probe_pins_daily_heartbeat_age_contract() -> None:
     flat_script = " ".join(script.split())
 
     assert "DAILY_TIER_MAX_AGE_SECONDS=129600" in script
+    assert "HISTORIC_TIER_MAX_AGE_SECONDS=734400" in script
     assert "max(last_seen_at_utc)" in script
     assert (
         "FROM core.dataset_versions "
@@ -96,7 +97,7 @@ def test_freshness_probe_pins_daily_heartbeat_age_contract() -> None:
         "AND tier = 'historic'"
     ) in flat_script
     assert "static_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS" in script
-    assert "historic_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS" in script
+    assert "historic_heartbeat_age > HISTORIC_TIER_MAX_AGE_SECONDS" in script
     assert 'check_manifest_age static "$DAILY_TIER_MAX_AGE_SECONDS"' not in script
     assert 'check_manifest_age historic "$DAILY_TIER_MAX_AGE_SECONDS"' not in script
     assert ".files.static.generated_utc" not in script
@@ -168,7 +169,9 @@ def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
         result_expressions = {
             value
             for value in alert_step["env"].values()
-            if isinstance(value, str) and value.startswith("${{ needs")
+            if isinstance(value, str)
+            and value.startswith("${{ needs")
+            and value.endswith(".result }}")
         }
         expected_result_expressions = set()
         for job in expected_needs:

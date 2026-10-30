@@ -9,7 +9,7 @@
 #   B. Static ingestion heartbeat — the current static schedule's latest
 #      observation must be no older than the 36-hour daily-tier SLA.
 #   C. Historic publish heartbeat — the last successful historic-publish
-#      transaction must be no older than the same daily-tier SLA.
+#      transaction must be no older than the weekly-tier SLA (7 days + 36h).
 #   D. DB capture age — the worst (oldest) of the enabled realtime endpoints'
 #      latest captured_at_utc must be younger than DB_MAX_AGE_SECONDS.
 #   E. Failed-run burst — fewer than FAILED_RUNS_ALERT_THRESHOLD failed
@@ -38,6 +38,7 @@ set -euo pipefail
 
 LIVE_MAX_AGE_SECONDS="${LIVE_MAX_AGE_SECONDS:-300}"
 DAILY_TIER_MAX_AGE_SECONDS=129600
+HISTORIC_TIER_MAX_AGE_SECONDS=734400
 DB_MAX_AGE_SECONDS="${DB_MAX_AGE_SECONDS:-900}"
 FAILED_RUNS_WINDOW_MINUTES="${FAILED_RUNS_WINDOW_MINUTES:-30}"
 FAILED_RUNS_ALERT_THRESHOLD="${FAILED_RUNS_ALERT_THRESHOLD:-10}"
@@ -142,8 +143,8 @@ historic_heartbeat_age="$(
 )"
 historic_heartbeat_age="${historic_heartbeat_age//[[:space:]]/}"
 [[ "$historic_heartbeat_age" =~ ^[0-9]+$ ]] || historic_heartbeat_age=999999
-if (( historic_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS )); then
-  failures+=("historic_heartbeat: latest successful publish age ${historic_heartbeat_age}s > ${DAILY_TIER_MAX_AGE_SECONDS}s")
+if (( historic_heartbeat_age > HISTORIC_TIER_MAX_AGE_SECONDS )); then
+  failures+=("historic_heartbeat: latest successful publish age ${historic_heartbeat_age}s > ${HISTORIC_TIER_MAX_AGE_SECONDS}s")
 fi
 
 # --- Check D: worst-endpoint DB capture age ---------------------------------

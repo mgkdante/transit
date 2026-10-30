@@ -87,7 +87,7 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
 
     assert _on_block(document) == {
         "workflow_dispatch": None,
-        "schedule": [{"cron": "0 7 * * *"}],
+        "schedule": [{"cron": "0 7 * * 0,1,2,4,5,6"}, {"cron": "0 7 * * 3"}],
     }
     assert document["permissions"] == {"contents": "read", "issues": "write"}
     assert document["concurrency"] == {
@@ -147,6 +147,10 @@ def test_publish_uses_prepare_artifact_id_when_only_failed_jobs_and_dependents_r
     assert jobs["prepare"]["outputs"] == {
         "providers": "${{ steps.discover.outputs.providers }}",
         "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
+        "historic_publish": (
+            "${{ github.event_name == 'workflow_dispatch' "
+            "|| github.event.schedule == '0 7 * * 3' }}"
+        ),
     }
     assert "prepare" in jobs["proof"]["needs"]
     assert prepare_download == {
@@ -171,6 +175,10 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
     assert prepare["outputs"] == {
         "providers": "${{ steps.discover.outputs.providers }}",
         "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
+        "historic_publish": (
+            "${{ github.event_name == 'workflow_dispatch' "
+            "|| github.event.schedule == '0 7 * * 3' }}"
+        ),
     }
 
     run_bodies = "\n".join(str(step["run"]) for step in prepare["steps"] if "run" in step)
@@ -852,7 +860,8 @@ def test_publish_requires_prepare_and_rollups_success() -> None:
         "${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}"
     )
     assert publish["if"] == (
-        "${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' }}"
+        "${{ always() && needs.prepare.result == 'success' && needs.rollups.result == 'success' "
+        "&& needs.prepare.outputs.historic_publish == 'true' }}"
     )
     assert 3 * 90 + 10 <= publish["timeout-minutes"] <= 360
     publish_step = _step(publish, "Publish gated historic snapshot")
@@ -1163,7 +1172,11 @@ def test_publish_proof_rejects_multiple_sync_documents_before_verification(
 def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> None:
     retention = _load(DAILY_WORKFLOW)["jobs"]["retention"]
 
-    assert retention["if"] == "needs.proof.result == 'success'"
+    assert retention["if"] == (
+        "${{ !cancelled() && needs.prepare.result == 'success' "
+        "&& (needs.proof.result == 'success' || (needs.proof.result == 'skipped' "
+        "&& needs.prepare.outputs.historic_publish == 'false')) }}"
+    )
     assert retention["timeout-minutes"] == 150
     assert retention["env"]["PROVIDER_PLAN"] == "${{ needs.prepare.outputs.providers }}"
     stage = _step(retention, "Prune retained storage and write proofs")
@@ -1420,23 +1433,29 @@ def test_notify_always_fires_or_resolves_one_existing_issue_from_all_results() -
         "PUBLISH_RESULT": "${{ needs.publish.result }}",
         "PROOF_RESULT": "${{ needs.proof.result }}",
         "RETENTION_RESULT": "${{ needs.retention.result }}",
+        "HISTORIC_PUBLISH": "${{ needs.prepare.outputs.historic_publish }}",
         "GH_TOKEN": "${{ github.token }}",
         "GH_REPO": "${{ github.repository }}",
     }
 
 
 @pytest.mark.parametrize(
-    ("results", "expected_action"),
+    ("results", "historic_publish", "expected_action"),
     [
-        (("success", "success", "success", "success", "success"), "resolve"),
-        (("success", "failure", "success", "skipped", "skipped"), "fire"),
-        *(( ("success", "success", "success", result, "success"), "fire")
+        (("success", "success", "success", "success", "success"), "true", "resolve"),
+        (("success", "failure", "success", "skipped", "skipped"), "true", "fire"),
+        *(( ("success", "success", "success", result, "success"), "true", "fire")
           for result in ("failure", "cancelled", "skipped")),
+        (("success", "success", "skipped", "skipped", "success"), "true", "fire"),
+        (("success", "success", "skipped", "skipped", "success"), "false", "resolve"),
+        (("success", "success", "skipped", "skipped", "failure"), "false", "fire"),
+        (("success", "failure", "skipped", "skipped", "success"), "false", "fire"),
     ],
 )
 def test_notify_shell_selects_action_from_all_job_results(
     tmp_path: Path,
     results: tuple[str, str, str, str, str],
+    historic_publish: str,
     expected_action: str,
 ) -> None:
     script_dir = tmp_path / ".github" / "scripts"
@@ -1456,6 +1475,7 @@ def test_notify_shell_selects_action_from_all_job_results(
             "PUBLISH_RESULT": results[2],
             "PROOF_RESULT": results[3],
             "RETENTION_RESULT": results[4],
+            "HISTORIC_PUBLISH": historic_publish,
             "GH_TOKEN": "test-token",
             "GH_REPO": "owner/repo",
             "ALERT_CALLS": str(calls),

@@ -148,7 +148,7 @@ export const copy = defineCopy({
 			cadence: {
 				live: '30-second operating target; delivery may take longer',
 				static: 'daily, 06:00 UTC',
-				rollup: 'daily, 07:00 UTC',
+				rollup: 'weekly, Wednesday 07:00 UTC',
 			},
 			cadenceLabel: 'Cadence',
 			filesLabel: 'Files',
@@ -349,7 +349,7 @@ export const copy = defineCopy({
 			cadence: {
 				live: 'cible d’exploitation de 30 secondes; l’affichage peut prendre plus de temps',
 				static: 'chaque jour, 06:00 UTC',
-				rollup: 'chaque jour, 07:00 UTC',
+				rollup: 'chaque mercredi, 07:00 UTC',
 			} as Readonly<Record<string, string>>,
 			cadenceLabel: 'Cadence',
 			filesLabel: 'Fichiers',
