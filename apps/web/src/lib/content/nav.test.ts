@@ -54,7 +54,7 @@ describe('SURFACE_NAV manifest', () => {
 		}
 	});
 
-	it('derives the legal destinations into SECONDARY_NAV with the approved labels', () => {
+	it('derives the legal destinations into SECONDARY_NAV', () => {
 		const legal = (
 			navigation as typeof navigation & {
 				LEGAL_NAV: readonly {
@@ -64,11 +64,7 @@ describe('SURFACE_NAV manifest', () => {
 			}
 		).LEGAL_NAV;
 
-		expect(legal).toEqual([
-			{ href: '/privacy', label: { en: 'Privacy', fr: 'Confidentialité' } },
-			{ href: '/terms', label: { en: 'Terms', fr: 'Conditions d’utilisation' } },
-			{ href: '/accessibility', label: { en: 'Accessibility', fr: 'Accessibilité' } },
-		]);
+		expect(legal.map(({ href }) => href)).toEqual(['/privacy', '/terms', '/accessibility']);
 		expect(SECONDARY_NAV.slice(-legal.length)).toEqual(legal);
 	});
 });

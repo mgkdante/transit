@@ -871,7 +871,7 @@ describe('RouteDetail map drilldown', () => {
 	it('links directly to the live map filtered to this route', () => {
 		renderRoute();
 
-		expect(screen.getByRole('link', { name: 'View on map' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /View route 161 on map/ })).toHaveAttribute(
 			'href',
 			'/map?route=161&focus=route%3A161',
 		);

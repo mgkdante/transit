@@ -2,13 +2,15 @@
 	export interface MapDrilldownLinkProps {
 		href: string;
 		label: string;
+		/** Read after the visible label, so a link listed out of context still names its destination. */
+		context: string;
 	}
 
-	let { href, label }: MapDrilldownLinkProps = $props();
+	let { href, label, context }: MapDrilldownLinkProps = $props();
 </script>
 
 <a {href} class="map-drilldown-link" data-sveltekit-preload-data="hover">
-	{label}
+	{label}<span class="sr-only">, {context}</span>
 </a>
 
 <style>
