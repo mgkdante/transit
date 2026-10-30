@@ -222,7 +222,7 @@
 	}
 	.home-intro h1 span {
 		display: block;
-		color: var(--accent-text);
+		color: var(--primary);
 	}
 	.home-lede {
 		max-width: var(--measure-body);
