@@ -249,7 +249,7 @@
 	// is registered. Upstream registers it itself from the next design release.
 	if (browser) initScrollTriggerConfig();
 
-	// The page scrolls inside #main, which SvelteKit's own scroll reset does not reach.
+	// The page scrolls inside #page-scroller, which SvelteKit's own scroll reset does not reach.
 	function resetMainScroll(hash: string): void {
 		const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
 		const lenis = getLenis();
@@ -259,7 +259,7 @@
 		} else if (target) {
 			target.scrollIntoView();
 		} else {
-			document.getElementById('main')?.scrollTo({ top: 0 });
+			document.getElementById('page-scroller')?.scrollTo({ top: 0 });
 		}
 	}
 
@@ -382,10 +382,8 @@
 	}
 </script>
 
-<SiteRoot scroller={{ wrapper: '#main', content: '#main-flow' }} lang={locale}>
+<SiteRoot scroller={{ wrapper: '#page-scroller', content: '#main-flow' }} lang={locale}>
 	<SeoHead {...head} />
-
-	<a class="skip-link" href="#main">{navPillCopy[locale].skipToContent}</a>
 
 	<AppShell
 		{locale}
@@ -398,11 +396,10 @@
 		{searchModes}
 		onsearch={submitSearch}
 		onresultselect={selectSearchResult}
-		{mainLabel}
 	>
 		{#snippet main()}
 			<div
-				id="main"
+				id="page-scroller"
 				bind:this={mainScroller}
 				class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
 				tabindex="-1"
@@ -413,7 +410,9 @@
 					class="flex flex-col {isFullBleed ? 'h-full' : 'min-h-full shrink-0'}"
 					data-lenis-prevent={isFullBleed || undefined}
 				>
-					<div
+					<main
+						id="main"
+						aria-label={mainLabel?.[locale] ?? navPillCopy[locale].mapLabel}
 						class={isFullBleed
 							? 'min-h-0 grow'
 							: 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
@@ -434,7 +433,7 @@
 						{:else}
 							{@render children?.()}
 						{/if}
-					</div>
+					</main>
 					{#if !isFullBleed}
 						{#if seoPath === '/'}
 							{#key $page.url.pathname}

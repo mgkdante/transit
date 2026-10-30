@@ -322,13 +322,13 @@
 								type="button"
 								class="mf-chip mf-alert-chip"
 								data-on={store.alerts.includes(item.kind)}
-								aria-label={item.aria}
 								aria-pressed={store.alerts.includes(item.kind)}
 								style="--chip:var(--dataviz-severity-high)"
 								onclick={() => toggleAlert(item.kind)}
 							>
 								<span class="mf-swatch"></span>
 								<span class="mf-chip-text">{item.label}</span>
+								<span class="sr-only"> {item.aria}</span>
 							</button>
 						{/each}
 					</div>
@@ -694,7 +694,7 @@
 		align-items: center;
 		justify-content: flex-start;
 		width: 100%;
-		min-height: 2rem;
+		min-block-size: var(--size-tap-min);
 		gap: 0.5rem;
 		padding: 0.375rem 0.75rem 0.375rem 0.5rem;
 		overflow: hidden;

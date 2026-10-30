@@ -1,4 +1,4 @@
-import { fireEvent, render, within } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import type { GeocodeSuggestion } from '$lib/geocode/types';
@@ -30,9 +30,9 @@ describe('near-me address search', () => {
 		const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results }) });
 		vi.stubGlobal('fetch', fetch);
 		const props = { locale: 'en' as const, copy: copy.en, ...handlers() };
-		const { getByRole, queryByRole, rerender } = render(MapNearMeControl, { props });
+		const { getByRole, getAllByRole, queryByRole, rerender } = render(MapNearMeControl, { props });
 		await fireEvent.click(getByRole('button', { name: copy.en.nearMe }));
-		const input = getByRole('combobox');
+		const input = getByRole('searchbox', { name: copy.en.nearMeSearchPlaceholder });
 		expect(queryByRole('button', { name: copy.en.nearMeClear })).not.toBeInTheDocument();
 
 		await fireEvent.input(input, { target: { value: results[0].label } });
@@ -43,24 +43,24 @@ describe('near-me address search', () => {
 		const url = new URL(fetch.mock.calls[0][0], 'https://example.test');
 		expect(url.searchParams.get('suggest')).toBe('1');
 		expect(url.searchParams.get('limit')).toBe('4');
-		const options = within(getByRole('listbox')).getAllByRole('option');
+		const options = getAllByRole('button', { name: /Sherbrooke/ });
 		expect(options).toHaveLength(results.length);
 		options.forEach((option, index) =>
 			expect(option).toHaveAccessibleName(new RegExp(results[index].label)),
 		);
 
 		await fireEvent.keyDown(input, { key: 'Escape' });
-		expect(queryByRole('listbox')).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: /123 Sherbrooke/ })).not.toBeInTheDocument();
 		await fireEvent.focus(input);
-		expect(getByRole('listbox')).toBeInTheDocument();
+		expect(getByRole('button', { name: /123 Sherbrooke/ })).toBeInTheDocument();
 		await fireEvent.pointerDown(document.body);
-		expect(queryByRole('listbox')).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: /123 Sherbrooke/ })).not.toBeInTheDocument();
 
 		await fireEvent.input(input, { target: { value: '' } });
 		await fireEvent.input(input, { target: { value: results[0].label } });
 		await vi.advanceTimersByTimeAsync(121);
 		expect(fetch).toHaveBeenCalledTimes(1);
-		await fireEvent.click(within(getByRole('listbox')).getAllByRole('option')[1]);
+		await fireEvent.click(getByRole('button', { name: /125 Sherbrooke/ }));
 		expect(props.onsuggestion).toHaveBeenCalledExactlyOnceWith(results[1]);
 		await rerender({ origin: results[1] });
 		expect(getByRole('button', { name: copy.en.nearMeClear })).toBeInTheDocument();
@@ -77,6 +77,8 @@ it.each(['en', 'fr'] as const)(
 		await fireEvent.click(getByRole('button', { name: copy[locale].nearMe }));
 
 		expect(getByText(copy[locale].nearMeCollectionNotice)).toBeVisible();
-		expect(getByRole('combobox')).toHaveAccessibleDescription(copy[locale].nearMeCollectionNotice);
+		expect(
+			getByRole('searchbox', { name: copy[locale].nearMeSearchPlaceholder }),
+		).toHaveAccessibleDescription(copy[locale].nearMeCollectionNotice);
 	},
 );

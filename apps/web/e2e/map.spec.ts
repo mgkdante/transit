@@ -56,8 +56,16 @@ for (const locale of PUBLISHED_LOCALES) {
 		await page.addInitScript(recordMotion);
 		await page.goto(localizeHref(map, locale));
 		await openNearMe(page, t.nearMe);
-		await page.getByRole('combobox', { name: t.nearMeSearchPlaceholder }).fill(address.label);
-		await page.getByRole('option', { name: new RegExp(literal(address.label)) }).click();
+		await page.getByRole('searchbox', { name: t.nearMeSearchPlaceholder }).fill(address.label);
+		const suggestion = page
+			.getByRole('group', { name: t.nearMeSuggestions })
+			.getByRole('button', { name: new RegExp(literal(address.label)) });
+		await expect(suggestion).toBeVisible();
+		await page.keyboard.press('Tab');
+		await expect(page.getByRole('button', { name: t.nearMeSearchSubmit })).toBeFocused();
+		await page.keyboard.press('Tab');
+		await expect(suggestion).toBeFocused();
+		await page.keyboard.press('Enter');
 		await page.getByRole('button', { name: new RegExp(`^${literal(stop.name)}`) }).click();
 
 		// A side panel on desktop, a sheet below.

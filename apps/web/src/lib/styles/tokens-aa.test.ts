@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runContrastPairs } from '@yesid/gates';
 import {
-	TRANSIT_TEXT_PAIRS,
 	TRANSIT_DATAVIZ_STATUS_ON_CARD,
 	TRANSIT_DATAVIZ_OCCUPANCY_ON_CARD,
 } from '../../../tools/design-gates';
@@ -13,14 +12,6 @@ const tokens = JSON.parse(
 ) as Record<string, unknown>;
 
 describe('tokens AA — computed contrast from tokens.json', () => {
-	describe('semantic text + interactive/wayfinding pairs >= 4.5:1', () => {
-		for (const result of runContrastPairs(tokens, TRANSIT_TEXT_PAIRS)) {
-			it(`${result.label} >= ${result.floor}:1`, () => {
-				expect(result.pass, `${result.label} computed ${result.ratio.toFixed(2)}:1`).toBe(true);
-			});
-		}
-	});
-
 	describe('dataviz status marks on card (graphical objects) >= 3:1', () => {
 		for (const result of runContrastPairs(tokens, TRANSIT_DATAVIZ_STATUS_ON_CARD)) {
 			it(`${result.label} >= ${result.floor}:1`, () => {

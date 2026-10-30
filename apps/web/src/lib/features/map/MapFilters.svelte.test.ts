@@ -98,7 +98,7 @@ describe('MapFilters', () => {
 		expect(getByText('Crowding')).toBeTruthy();
 		expect(getByText('Markers')).toBeTruthy();
 		expect(getAllByText('Alerts').length).toBeGreaterThan(0);
-		expect(getByRole('button', { name: 'Show markers with alerts' })).not.toBeDisabled();
+		expect(getByRole('button', { name: 'Has alert Show markers with alerts' })).not.toBeDisabled();
 		expect(container.querySelectorAll('.mf-group-badge[data-icon]').length).toBeGreaterThanOrEqual(
 			4,
 		);

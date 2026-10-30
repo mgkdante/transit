@@ -1395,7 +1395,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				}
 
 				await commitLines(exitUrl);
-				const main = document.querySelector<HTMLElement>('#main');
+				const main = document.querySelector<HTMLElement>('#page-scroller');
 				expect(pageErrors.values).toEqual([]);
 				expect(main).toHaveClass('overflow-y-auto');
 				expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
@@ -1574,7 +1574,9 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				}
 				await commitLines(before.currentUrl);
 				expect(pageErrors.values).toEqual([]);
-				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+				expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass(
+					'overflow-y-auto',
+				);
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 				expect(
@@ -1625,7 +1627,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			await commitLines(before.currentUrl);
 
 			expect(pageErrors.values).toEqual([]);
-			expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+			expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass('overflow-y-auto');
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
@@ -1686,7 +1688,9 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 				expect(harness.activeLeaseCount()).toBe(0);
-				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+				expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass(
+					'overflow-y-auto',
+				);
 			}
 			expect(pageErrors.values).toEqual([]);
 			expect(harness.liveStore.start).toHaveBeenCalledTimes(3);

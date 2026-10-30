@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { navPillCopy } from './navPill.copy';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import type { TransitModeKey } from '$lib/search/stopMode';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import type { BilingualLabel } from '$lib/content/nav';
 	import NavPill from './NavPill.svelte';
 	import type { PublicProvider } from '$lib/v1/providers';
 
@@ -21,8 +19,6 @@
 		onresultselect?: (result: ChromeSearchResult) => void;
 		searchScope?: ChromeSearchScope;
 		searchModes?: SvelteSet<TransitModeKey>;
-
-		mainLabel?: BilingualLabel;
 
 		main?: Snippet;
 
@@ -40,14 +36,12 @@
 		onresultselect,
 		searchScope = 'all',
 		searchModes,
-		mainLabel,
 		main,
 		class: className,
 	}: AppShellProps = $props();
 
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
-	const mainAriaLabel = $derived(mainLabel?.[locale] ?? navPillCopy[locale].mapLabel);
 </script>
 
 <div
@@ -73,13 +67,12 @@
 	</div>
 
 	<div class="app-shell-row min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
-		<main
+		<div
 			class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-transparent"
-			aria-label={mainAriaLabel}
 			data-slot="map-stage"
 		>
 			{#if main}{@render main()}{/if}
-		</main>
+		</div>
 	</div>
 </div>
 

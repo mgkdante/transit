@@ -112,6 +112,10 @@ export const LEGAL_NAV: readonly SecondaryNavLink[] = [
 		href: '/terms',
 		label: { en: 'Terms', fr: 'Conditions d’utilisation' },
 	},
+	{
+		href: '/accessibility',
+		label: { en: 'Accessibility', fr: 'Accessibilité' },
+	},
 ] as const;
 
 export const SECONDARY_NAV: readonly SecondaryNavLink[] = [...AUDIT_NAV, ...LEGAL_NAV].map(

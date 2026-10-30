@@ -6,7 +6,7 @@
 	const isMap = $derived(/^\/(?:fr\/)?map\/?$/u.test($page.url.pathname));
 </script>
 
-<main id="main" class:overflow-hidden={isMap} class:overflow-y-auto={!isMap}>
+<main id="page-scroller" class:overflow-hidden={isMap} class:overflow-y-auto={!isMap}>
 	{#if isMap}
 		<MapHero />
 	{:else}

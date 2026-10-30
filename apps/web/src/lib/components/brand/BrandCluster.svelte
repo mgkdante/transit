@@ -26,6 +26,9 @@
 		flex-shrink: 0;
 	}
 	.footer-product {
+		display: inline-flex;
+		align-items: center;
+		min-block-size: var(--size-tap-min);
 		white-space: nowrap;
 		letter-spacing: -0.01em;
 		border-radius: var(--radius-sm);

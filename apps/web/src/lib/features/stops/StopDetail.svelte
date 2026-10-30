@@ -495,7 +495,6 @@
 				<MapDrilldownLink
 					href={localizeHref(mapHrefFor({ stop: id }, locale), locale)}
 					label={t.viewOnMap}
-					ariaLabel={t.viewStopOnMap(id)}
 				/>
 			{/snippet}
 		</ArticleHeader>

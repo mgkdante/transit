@@ -2,13 +2,12 @@
 	export interface MapDrilldownLinkProps {
 		href: string;
 		label: string;
-		ariaLabel: string;
 	}
 
-	let { href, label, ariaLabel }: MapDrilldownLinkProps = $props();
+	let { href, label }: MapDrilldownLinkProps = $props();
 </script>
 
-<a {href} class="map-drilldown-link" aria-label={ariaLabel} data-sveltekit-preload-data="hover">
+<a {href} class="map-drilldown-link" data-sveltekit-preload-data="hover">
 	{label}
 </a>
 

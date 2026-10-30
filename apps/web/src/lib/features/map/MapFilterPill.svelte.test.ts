@@ -33,7 +33,7 @@ describe('MapFilterPill', () => {
 		expect(dialog).toHaveAttribute('aria-modal', 'true');
 		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
 
-		for (const name of ['Stop', 'Show markers with alerts', 'Late', 'Standing']) {
+		for (const name of ['Stop', 'Has alert Show markers with alerts', 'Late', 'Standing']) {
 			await fireEvent.click(within(dialog).getByRole('button', { name }));
 			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 		}
@@ -130,7 +130,7 @@ describe('MapFilterPill', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		const dialog = screen.getByRole('dialog', { name: 'Controls' });
 		const motionSwitch = within(dialog).getByRole('switch', {
-			name: 'Animate estimated positions between reports',
+			name: 'Reported Animate estimated positions between reports',
 		});
 		expect(motionSwitch).toHaveAttribute('aria-checked', 'false');
 

@@ -220,9 +220,9 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
-	it('returns #main to the top on a new path and keeps it on a query change', () => {
+	it('returns #page-scroller to the top on a new path and keeps it on a query change', () => {
 		const { container } = renderWithoutV1('/privacy', 'en');
-		const main = container.querySelector<HTMLElement>('#main')!;
+		const main = container.querySelector<HTMLElement>('#page-scroller')!;
 		const navigate = (from: string, to: string) => {
 			for (const callback of harness.afterNavigateCallbacks) {
 				callback({ from: { url: new URL(from) }, to: { url: new URL(to) }, type: 'link' });
@@ -287,19 +287,6 @@ describe('root layout data-independent legal routes', () => {
 		expect(assign).toHaveBeenCalledWith(href);
 		assign.mockRestore();
 	});
-	it.each([
-		['/privacy', 'en', 'Skip to content', 'Aller au contenu'],
-		['/fr/privacy', 'fr', 'Aller au contenu', 'Skip to content'],
-	] as const)(
-		'renders the first-focus skip link in the active locale on %s',
-		(pathname, lang, expected, wrongLocale) => {
-			const { getByRole, queryByRole } = renderWithoutV1(pathname, lang);
-
-			expect(getByRole('link', { name: expected })).toHaveAttribute('href', '#main');
-			expect(queryByRole('link', { name: wrongLocale })).not.toBeInTheDocument();
-		},
-	);
-
 	it.each([
 		['/privacy', 'en', 'Open-source and third-party rights are identified'],
 		['/fr/terms', 'fr', 'Les droits liés au code ouvert et au contenu tiers sont indiqués'],
@@ -465,9 +452,9 @@ describe('root layout data-independent legal routes', () => {
 		},
 	);
 
-	it('commits the actual root #main from a locked map to a scrollable rendered document', async () => {
+	it('commits the actual root #page-scroller from a locked map to a scrollable rendered document', async () => {
 		const view = renderWithoutV1('/map', 'en');
-		const main = view.container.querySelector<HTMLElement>('#main');
+		const main = view.container.querySelector<HTMLElement>('#page-scroller');
 		expect(main).toHaveClass('overflow-hidden');
 		expect(main).not.toHaveClass('overflow-y-auto');
 		const simulator = new KitNavigationSimulator({
@@ -488,7 +475,7 @@ describe('root layout data-independent legal routes', () => {
 		await simulator.commitNavigation('https://transit.yesid.dev/privacy');
 		await expect(accepted.navigation.complete).resolves.toBeUndefined();
 
-		expect(view.container.querySelector('#main')).toBe(main);
+		expect(view.container.querySelector('#page-scroller')).toBe(main);
 		expect(main).toHaveClass('overflow-y-auto');
 		expect(main).not.toHaveClass('overflow-hidden');
 		expect(view.getByTestId('legal-child')).toBeInTheDocument();

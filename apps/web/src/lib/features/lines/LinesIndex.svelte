@@ -225,7 +225,6 @@
 						<MapDrilldownLink
 							href={localizeHref(mapHrefFor({ route: r.id }, locale), locale)}
 							label={t.mapAction}
-							ariaLabel={t.viewRouteOnMap(r.short)}
 						/>
 					{/snippet}
 					<EntityResultRow

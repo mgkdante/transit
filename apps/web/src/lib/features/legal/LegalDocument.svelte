@@ -136,4 +136,10 @@
 		list-style: none;
 		padding-inline-start: 0;
 	}
+
+	.legal-document__links :global(li > a) {
+		display: inline-block;
+		min-block-size: 24px;
+		align-content: center;
+	}
 </style>

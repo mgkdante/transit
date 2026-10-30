@@ -729,6 +729,9 @@
 	}
 
 	.metric__top {
+		display: inline-flex;
+		min-block-size: var(--size-tap-min);
+		align-items: center;
 		align-self: flex-start;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);

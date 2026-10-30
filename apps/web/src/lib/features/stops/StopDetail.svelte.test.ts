@@ -943,7 +943,7 @@ describe('StopDetail map drilldown', () => {
 	it('links directly to the live map filtered to this stop', () => {
 		render(StopDetail, { props: { id: '57191' } });
 
-		expect(screen.getByRole('link', { name: 'View stop 57191 on map' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: 'View on map' })).toHaveAttribute(
 			'href',
 			'/map?stop=57191&focus=stop%3A57191',
 		);
