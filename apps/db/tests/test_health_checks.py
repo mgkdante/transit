@@ -474,7 +474,7 @@ def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
     assert result.details["memory_used_percent"] == 61.2
     assert result.details["python_version"] == "3.12.9"
     assert result.details["retention_days"] == {
-			"bronze_realtime": 90,
+			"bronze_realtime": 30,
 			"bronze_static": 30,
 			"silver_realtime": 1,
 			"gold_fact": 14,

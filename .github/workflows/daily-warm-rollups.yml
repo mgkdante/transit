@@ -2,6 +2,11 @@ name: Daily Warm Rollups
 
 on:
   workflow_dispatch:
+    inputs:
+      bronze_catch_up_batches:
+        description: "One-off bronze backlog drain: up to this many 5,000-object batches per provider, without a historic publish. 0 runs the normal pipeline."
+        type: number
+        default: 0
   schedule:
     - cron: "0 7 * * 0,1,2,4,5,6"
     - cron: "0 7 * * 3"
@@ -26,7 +31,7 @@ jobs:
       providers: ${{ steps.discover.outputs.providers }}
       prepare_artifact_id: ${{ steps.upload-prepare-evidence.outputs.artifact-id }}
       # Historic publishes weekly; prepare, rollups and retention stay daily.
-      historic_publish: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 7 * * 3' }}
+      historic_publish: ${{ (github.event_name == 'workflow_dispatch' && inputs.bronze_catch_up_batches == 0) || github.event.schedule == '0 7 * * 3' }}
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
@@ -596,7 +601,7 @@ jobs:
       && (needs.proof.result == 'success'
       || (needs.proof.result == 'skipped' && needs.prepare.outputs.historic_publish == 'false')) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: ${{ inputs.bronze_catch_up_batches > 0 && 350 || 150 }}
     defaults:
       run:
         working-directory: apps/db
@@ -614,6 +619,7 @@ jobs:
       BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
       BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
       PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
+      BRONZE_CATCH_UP_BATCHES: ${{ inputs.bronze_catch_up_batches || 0 }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -622,10 +628,21 @@ jobs:
         uses: ./.github/actions/setup-py
 
       - name: Prune retained storage and write proofs
-        timeout-minutes: 130
+        timeout-minutes: ${{ inputs.bronze_catch_up_batches > 0 && 340 || 130 }}
         run: |
           artifact_dir="artifacts/daily-warm-rollups/retention"
           mkdir -p "$artifact_dir"
+          bronze_catch_up_batches="${BRONZE_CATCH_UP_BATCHES:-0}"
+          if [[ ! "$bronze_catch_up_batches" =~ ^[0-9]{1,3}$ ]]; then
+            echo "bronze_catch_up_batches must be an integer from 0 to 999" >&2
+            exit 1
+          fi
+          bronze_batches=4
+          bronze_timeout=31m
+          if (( bronze_catch_up_batches > 0 )); then
+            bronze_batches="$bronze_catch_up_batches"
+            bronze_timeout=300m
+          fi
           provider_plan="$(
             jq -cers '
               def valid_provider_id:
@@ -687,8 +704,8 @@ jobs:
             prune_status="$?"
             if [[ "$prune_status" -eq 0 ]]; then
               PGAPPNAME="$bronze_app_name" \
-                timeout --signal=TERM --kill-after=1m "31m" \
-                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
+                timeout --signal=TERM --kill-after=1m "$bronze_timeout" \
+                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches "$bronze_batches" --require-exhausted
               prune_status="$?"
             fi
             set -e

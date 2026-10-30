@@ -86,7 +86,18 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
     jobs = document["jobs"]
 
     assert _on_block(document) == {
-        "workflow_dispatch": None,
+        "workflow_dispatch": {
+            "inputs": {
+                "bronze_catch_up_batches": {
+                    "description": (
+                        "One-off bronze backlog drain: up to this many 5,000-object batches "
+                        "per provider, without a historic publish. 0 runs the normal pipeline."
+                    ),
+                    "type": "number",
+                    "default": 0,
+                }
+            }
+        },
         "schedule": [{"cron": "0 7 * * 0,1,2,4,5,6"}, {"cron": "0 7 * * 3"}],
     }
     assert document["permissions"] == {"contents": "read", "issues": "write"}
@@ -148,7 +159,8 @@ def test_publish_uses_prepare_artifact_id_when_only_failed_jobs_and_dependents_r
         "providers": "${{ steps.discover.outputs.providers }}",
         "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
         "historic_publish": (
-            "${{ github.event_name == 'workflow_dispatch' "
+            "${{ (github.event_name == 'workflow_dispatch' "
+            "&& inputs.bronze_catch_up_batches == 0) "
             "|| github.event.schedule == '0 7 * * 3' }}"
         ),
     }
@@ -176,7 +188,8 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
         "providers": "${{ steps.discover.outputs.providers }}",
         "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
         "historic_publish": (
-            "${{ github.event_name == 'workflow_dispatch' "
+            "${{ (github.event_name == 'workflow_dispatch' "
+            "&& inputs.bronze_catch_up_batches == 0) "
             "|| github.event.schedule == '0 7 * * 3' }}"
         ),
     }
@@ -1178,13 +1191,21 @@ def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> Non
         "&& (needs.proof.result == 'success' || (needs.proof.result == 'skipped' "
         "&& needs.prepare.outputs.historic_publish == 'false')) }}"
     )
-    assert retention["timeout-minutes"] == 150
+    assert retention["timeout-minutes"] == (
+        "${{ inputs.bronze_catch_up_batches > 0 && 350 || 150 }}"
+    )
     assert retention["env"]["PROVIDER_PLAN"] == "${{ needs.prepare.outputs.providers }}"
+    assert retention["env"]["BRONZE_CATCH_UP_BATCHES"] == (
+        "${{ inputs.bronze_catch_up_batches || 0 }}"
+    )
     stage = _step(retention, "Prune retained storage and write proofs")
-    assert stage["timeout-minutes"] == 130
+    assert stage["timeout-minutes"] == "${{ inputs.bronze_catch_up_batches > 0 && 340 || 130 }}"
     prune = stage["run"]
+    assert "bronze_batches=4\n" in prune
+    assert "bronze_timeout=31m\n" in prune
+    assert "bronze_timeout=300m\n" in prune
     bounded_wrapper = 'timeout --signal=TERM --kill-after=1m "5m"'
-    bronze_wrapper = 'timeout --signal=TERM --kill-after=1m "31m"'
+    bronze_wrapper = 'timeout --signal=TERM --kill-after=1m "$bronze_timeout"'
     assert prune.count(bounded_wrapper) == 2
     assert prune.count(bronze_wrapper) == 1
     bounded_offsets = []
@@ -1195,7 +1216,9 @@ def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> Non
         offset += len(bounded_wrapper)
     i3 = prune.index('prune-i3-storage "$provider"')
     warm = prune.index('prune-warm-rollup-storage "$provider"')
-    bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
+    bronze_command = (
+        'prune-bronze-storage "$provider" --max-batches "$bronze_batches" --require-exhausted'
+    )
     bronze = prune.index(bronze_command)
     bronze_success_guard = prune.index('if [[ "$prune_status" -eq 0 ]]; then')
     proof = prune.index('retention-proof-report "$provider" --report-path')
@@ -1211,11 +1234,66 @@ def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> Non
     cleanup_budget_minutes = 4
     assert provider_count == 3
     assert provider_count * worst_case_provider_minutes == 123
-    assert (
-        provider_count * worst_case_provider_minutes + cleanup_budget_minutes
-        <= stage["timeout-minutes"]
-        < retention["timeout-minutes"]
+    assert provider_count * worst_case_provider_minutes + cleanup_budget_minutes <= 130
+
+
+@pytest.mark.parametrize(
+    ("catch_up", "batches", "budget"),
+    [(None, "4", "31m"), ("0", "4", "31m"), ("90", "90", "300m")],
+)
+def test_retention_bronze_catch_up_sets_batches_and_budget(
+    tmp_path: Path, catch_up: str | None, batches: str, budget: str
+) -> None:
+    calls = tmp_path / "calls.txt"
+    environment = _fake_uv_environment(tmp_path, 'printf "uv %s\\n" "$*" >> "$CALLS"\n')
+    fake_timeout = tmp_path / "bin" / "timeout"
+    fake_timeout.write_text(
+        '#!/usr/bin/env bash\nprintf "timeout %s\\n" "$3" >> "$CALLS"\nshift 3\nexec "$@"\n',
+        encoding="utf-8",
     )
+    fake_timeout.chmod(0o755)
+    environment.update({"PROVIDER_PLAN": '["stm"]', "CALLS": str(calls)})
+    if catch_up is not None:
+        environment["BRONZE_CATCH_UP_BATCHES"] = catch_up
+    retention = _load(DAILY_WORKFLOW)["jobs"]["retention"]
+
+    result = _run_step(
+        retention,
+        "Prune retained storage and write proofs",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = calls.read_text(encoding="utf-8").splitlines()
+    bronze = lines.index(
+        f"uv run python -m transit_ops.cli prune-bronze-storage stm "
+        f"--max-batches {batches} --require-exhausted"
+    )
+    assert lines[bronze - 1] == f"timeout {budget}"
+
+
+@pytest.mark.parametrize("catch_up", ["-1", "1000", "4.5", "abc"])
+def test_retention_rejects_invalid_bronze_catch_up_before_commands(
+    tmp_path: Path, catch_up: str
+) -> None:
+    calls = tmp_path / "calls.txt"
+    environment = _fake_uv_environment(tmp_path, 'printf "%s\\n" "$*" >> "$CALLS"\n')
+    environment.update(
+        {"PROVIDER_PLAN": '["stm"]', "CALLS": str(calls), "BRONZE_CATCH_UP_BATCHES": catch_up}
+    )
+    retention = _load(DAILY_WORKFLOW)["jobs"]["retention"]
+
+    result = _run_step(
+        retention,
+        "Prune retained storage and write proofs",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == 1
+    assert "bronze_catch_up_batches must be an integer" in result.stderr
+    assert not calls.exists()
 
 
 def test_retention_commands_expose_traceable_database_identity(tmp_path: Path) -> None:
