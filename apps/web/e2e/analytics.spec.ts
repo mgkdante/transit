@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
 import { SURFACE_NAV } from '../src/lib/content/nav';
+
+const domain = JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars
+	.PUBLIC_PLAUSIBLE_DOMAIN;
 
 const ENDPOINT = 'https://plausible.io/api/event';
 type Payload = { n: string; d: string; u: string };
@@ -19,7 +23,7 @@ async function capturePlausible(page: Page): Promise<Payload[]> {
 }
 
 test.beforeEach(async ({ page }) => {
-	await page.route('http://transit.yesid.dev:4317/**', async (route) => {
+	await page.route(`http://${domain}:4317/**`, async (route) => {
 		const url = new URL(route.request().url());
 		url.hostname = '127.0.0.1';
 		await route.continue({ url: url.toString() });
@@ -31,7 +35,7 @@ test.beforeEach(async ({ page }) => {
 
 test('pageviews carry the configured domain and only the path', async ({ page }) => {
 	const payloads = await capturePlausible(page);
-	await page.goto('http://transit.yesid.dev:4317/?utm_source=e2e&q=12+Main+St');
+	await page.goto(`http://${domain}:4317/?utm_source=e2e&q=12+Main+St`);
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
 	const menu = page.getByRole('navigation', { name: navPillCopy.en.menu });
 	await expect(async () => {
@@ -48,7 +52,7 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 	await expect(page).toHaveURL((url) => url.pathname === '/lines');
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(2);
 	for (const payload of payloads) {
-		expect(payload.d).toBe('transit.yesid.dev');
+		expect(payload.d).toBe(domain);
 		const url = new URL(payload.u);
 		expect(['', '?utm_source=e2e']).toContain(url.search);
 		expect(url.hash).toBe('');

@@ -1,19 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { fireEvent, render, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { alertHistoryCopy } from '../alerts.copy';
 import AlertFilters from './AlertFilters.svelte';
-
-const source = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/alerts/sections/AlertFilters.svelte'),
-	'utf8',
-);
-
-const executableSource = source
-	.replace(/<!--[\s\S]*?-->/g, '')
-	.replace(/\/\*[\s\S]*?\*\//g, '')
-	.replace(/\/\/.*$/gm, '');
 
 function props(overrides: Record<string, unknown> = {}) {
 	return {
@@ -106,15 +94,6 @@ describe('AlertFilters history composition', () => {
 		);
 	});
 
-	it('delegates outer control order and spacing without page-local stack geometry', () => {
-		expect(executableSource).toMatch(
-			/import\s*\{[^}]*\bArticleControlStack(?:\s+as\s+\w+)?[^}]*\}\s*from\s*['"]\$lib\/components\/surface['"]/,
-		);
-		const localBodyRule = source.match(/\.alert-filters-body\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		expect(localBodyRule).not.toMatch(/display\s*:\s*(?:flex|grid)/);
-		expect(localBodyRule).not.toMatch(/gap\s*:/);
-	});
-
 	it('uses one controlled HistoryNavigator and forwards a normalized complete range', async () => {
 		const onWindowChange = vi.fn();
 		const view = render(AlertFilters, {
@@ -146,22 +125,5 @@ describe('AlertFilters history composition', () => {
 			from: '2026-05-01',
 			to: '2026-05-31',
 		});
-	});
-
-	it('owns no URL, resource, rail, disclosure, or duplicate date-picker state', () => {
-		expect(executableSource).toMatch(
-			/import\s*\{[^}]*\bHistoryNavigator(?:\s+as\s+\w+)?[^}]*\}\s*from\s*['"]\$lib\/components\/surface['"]/,
-		);
-		expect(executableSource).not.toMatch(
-			/import\s*\{[^}]*\bDateRangePicker(?:\s+as\s+\w+)?[^}]*\}\s*from\s*['"]\$lib\/components\/surface['"]/,
-		);
-		expect(executableSource).not.toMatch(/from\s+['"]\$app\/(?:state|navigation)['"]/);
-		expect(executableSource).not.toMatch(/from\s+['"]\$lib\/v1\/resource\.svelte['"]/);
-		expect(executableSource).not.toMatch(/\bmirrorSearchParams\s*\(/);
-		expect(executableSource).not.toMatch(
-			/import\s*\{[^}]*\bSurfaceRail(?:\s+as\s+\w+)?[^}]*\}\s*from/,
-		);
-		expect(executableSource).not.toMatch(/\bCollapsibleSection\b/);
-		expect(executableSource).not.toMatch(/\$state(?:\.|\s*\()/);
 	});
 });

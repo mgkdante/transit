@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import SectionEnvelope from './SectionEnvelope.svelte';
 import { copy } from '../health.copy';
 
@@ -27,17 +25,6 @@ describe('SectionEnvelope', () => {
 		expect(explanation).toHaveTextContent(copy.en.envelope.generationIdExplain);
 		expect(id.compareDocumentPosition(explanation) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 		expect(container.querySelector('[data-slot="explained-metric-card"]')).toBeNull();
-	});
-
-	it('makes long publish IDs break-safe', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/health/sections/SectionEnvelope.svelte'),
-			'utf8',
-		);
-
-		expect(source).toMatch(
-			/\.publish-run-id\s*\{[^}]*font-family:\s*var\(--font-mono\);[^}]*overflow-wrap:\s*anywhere;/,
-		);
 	});
 
 	it('preserves the exact French Publish run label and explanation', () => {

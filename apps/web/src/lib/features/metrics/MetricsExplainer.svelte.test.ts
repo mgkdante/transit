@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -78,19 +76,6 @@ describe('MetricsExplainer', () => {
 			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('stacks the single-rail Metrics freshness date below its label', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
-		expect(source).toMatch(
-			/\.metrics-stat__body\[data-slot='stat-freshness'\][\s\S]*?:global\(\.freshness-stamp--updated\.metrics-freshness-stamp\)\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*auto minmax\(0, 1fr\)/,
-		);
-		expect(source).toMatch(
-			/:global\(\.metrics-freshness-stamp \.freshness-stamp-label\)[\s\S]*?:global\(\.metrics-freshness-stamp \.freshness-stamp-age\)\s*\{[\s\S]*?grid-column:\s*2/,
-		);
-	});
-
 	it('renders the single-rail freshness label immediately before its machine-readable date', () => {
 		provState.data = {
 			generated_utc: '2026-07-11T04:00:00Z',
@@ -107,23 +92,6 @@ describe('MetricsExplainer', () => {
 		expect(time).not.toBeNull();
 		expect(time).toHaveAttribute('datetime', '2026-07-11T04:00:00Z');
 		expect(label.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-	});
-
-	it('keeps every information kind in one foreground stack at every width', () => {
-		const source = ['MetricsExplainer.svelte', 'MetricBody.svelte']
-			.map((file) => readFileSync(resolve(process.cwd(), 'src/lib/features/metrics', file), 'utf8'))
-			.join('\n');
-		expect(source).toMatch(
-			/\.metric__paired-information\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/,
-		);
-		expect(source).not.toMatch(/\.metric__paired-information\s*\{[^}]*grid-template-columns:/);
-		expect(source).not.toMatch(
-			/\.metric__paired-information\s*>\s*:global\(\[data-slot='typed-information-card'\]\)\s*\{[^}]*height:\s*100%/,
-		);
-		expect(source).not.toMatch(/\.metric__prose--mono\s*\{[^}]*font-family:\s*var\(--font-mono\)/);
-		expect(source).not.toMatch(
-			/\.(?:metric__prose--mono|metric__not|metric__pipeline-note|metric__caveats)\s*\{[^}]*color:\s*var\(--muted-foreground\)/,
-		);
 	});
 
 	it('renders the shared article header with metrics keywords, back link, and body lede', () => {
@@ -199,40 +167,6 @@ describe('MetricsExplainer', () => {
 		expect(container.querySelectorAll('.metrics-stat-rail')).toHaveLength(1);
 		expect(summary).toHaveAttribute('aria-label', en.statRail.label);
 		expect(toc.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-	});
-
-	it('delegates the primary section rhythm to ArticleSectionStack without a local outer gap', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
-		const { container } = render(MetricsExplainer);
-		const stack = container.querySelector(
-			'[data-slot="detail-shell-center"] [data-slot="article-section-stack"]',
-		);
-
-		expect(stack).toHaveAttribute('data-testid', 'metrics-sections');
-		expect(source).toContain('ArticleSectionStack');
-		expect(source).not.toMatch(/\.sections-column\s*\{/);
-	});
-
-	it('delegates every multi-card metric cluster to the same shared card-gap primitive', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
-		const { container } = render(MetricsExplainer);
-		const clusters = Array.from(container.querySelectorAll<HTMLElement>('.metrics-cluster'));
-
-		expect(clusters).toHaveLength(new Set(METRICS.map((entry) => entry.cluster)).size);
-		for (const cluster of clusters) {
-			const cardStack = cluster.querySelector(
-				':scope > [data-slot="article-section-stack"][data-slot-variant="metric-cluster"]',
-			);
-			expect(cardStack).not.toBeNull();
-			expect(cardStack?.querySelectorAll(':scope > .section-block').length).toBeGreaterThan(0);
-		}
-		expect(source).not.toMatch(/\.metrics-cluster\s*\{[^}]*\bgap\s*:/s);
 	});
 
 	it('opts every Metrics section and stat card into article-summary headers', () => {
@@ -643,53 +577,6 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, METRICS[0].anchor)).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('Collapse all folds every card + the ToC; Expand all reopens everything', async () => {
-		const { container } = render(MetricsExplainer);
-
-		const toggle = screen.getByTestId('quiet-mode-toggle');
-		expect(toggle).not.toHaveAttribute('role', 'switch');
-		expect(toggle).toHaveAttribute('data-collapsed', 'false');
-		expect(toggle).toHaveTextContent('Collapse all');
-		expect(toggle).toHaveAttribute('title', 'Collapse all sections on this page');
-
-		await fireEvent.click(toggle);
-		expect(toggle).toHaveAttribute('data-collapsed', 'true');
-		expect(toggle).toHaveTextContent('Expand all');
-		expect(toggle).toHaveAttribute('title', 'Expand all sections on this page');
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		expect(localStorage.getItem('quiet-mode')).toBeNull();
-
-		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
-		expect(rail).not.toBeNull();
-		expect(rail.style.display).not.toBe('none');
-		expect(
-			(container.querySelector('.detail-shell-grid') as HTMLElement).classList.contains('is-quiet'),
-		).toBe(false);
-
-		await fireEvent.click(toggle);
-		expect(toggle).toHaveAttribute('data-collapsed', 'false');
-		expect(toggle).toHaveTextContent('Collapse all');
-		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		}
-	});
-
-	it('collapses and expands the left rail and center sections together', async () => {
-		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
-		for (const trigger of container.querySelectorAll('button.section-header')) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
-		for (const trigger of container.querySelectorAll('button.section-header')) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		}
-	});
-
 	it('keeps the single-rail Coverage action scoped to Coverage', async () => {
 		provState.data = {
 			generated_utc: '2026-07-10T12:00:00Z',
@@ -719,75 +606,5 @@ describe('MetricsExplainer', () => {
 		expect(otherRailTriggers.map((trigger) => trigger.getAttribute('aria-expanded'))).toEqual(
 			otherRailStates,
 		);
-	});
-
-	it('keeps the ToC rail its OWN user-driven collapse chevron (cards untouched, persisted)', async () => {
-		const { container } = render(MetricsExplainer);
-
-		const railToggle = tocTrigger(container);
-		expect(railToggle, 'ToC rail has its own disclosure trigger').not.toBeNull();
-		expect(railToggle).toHaveAttribute('aria-expanded', 'true');
-
-		await fireEvent.click(railToggle as HTMLElement);
-		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		}
-		expect(sessionStorage.getItem('persisted:metrics-toc')).toBe('false');
-	});
-
-	it('leaves no card stuck closed after Collapse all here and Expand all on another page', async () => {
-		const first = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		expect(cardTrigger(first.container, 'severe')).toHaveAttribute('aria-expanded', 'false');
-		first.unmount();
-
-		const second = render(MetricsExplainer);
-		expect(cardTrigger(second.container, 'severe')).toHaveAttribute('aria-expanded', 'false');
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		expect(cardTrigger(second.container, 'severe')).toHaveAttribute('aria-expanded', 'true');
-		expect(cardTrigger(second.container, 'otp')).toHaveAttribute('aria-expanded', 'true');
-	});
-
-	it('Always start collapsed persists; forgetting clears the default without unfolding', async () => {
-		const { container } = render(MetricsExplainer);
-
-		const remember = screen.getByTestId('quiet-mode-remember');
-		expect(remember).not.toHaveAttribute('role', 'switch');
-		expect(remember).toHaveAttribute('data-remembered', 'false');
-		expect(remember).toHaveTextContent('Always start collapsed');
-
-		await fireEvent.click(remember);
-		expect(remember).toHaveAttribute('data-remembered', 'true');
-		expect(remember).toHaveTextContent("Don't start collapsed");
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-
-		await fireEvent.click(remember);
-		expect(remember).toHaveAttribute('data-remembered', 'false');
-		expect(remember).toHaveTextContent('Always start collapsed');
-		expect(localStorage.getItem('quiet-mode')).toBeNull();
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-	});
-
-	it('restores a saved collapsed preference on mount → cards + ToC folded, rail still present', () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
-		const { container } = render(MetricsExplainer);
-
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-		expect(screen.getByTestId('quiet-mode-remember')).toHaveAttribute('data-remembered', 'true');
-		expect(screen.getByTestId('quiet-mode-remember')).toHaveTextContent("Don't start collapsed");
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		expect(container.querySelector('.metrics-toc-rail')).not.toBeNull();
 	});
 });

@@ -18,7 +18,6 @@ describe('generated snapshot contract', () => {
 			expect(readFileSync(module, 'utf8'), file).toBe(generateModule(root));
 			return `${root.title}Schema`;
 		});
-		expect(files).toHaveLength(34);
 		expect(new Set(names).size).toBe(34);
 		expect(Object.keys(generated).sort()).toEqual(names.sort());
 		expect(

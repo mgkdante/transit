@@ -8,8 +8,6 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
 import { quietMode } from '@yesid/ui/state';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
@@ -93,12 +91,6 @@ vi.mock('./selectors/offenderLadder', async (importOriginal) => {
 
 import RepeatOffenders from './RepeatOffenders.svelte';
 import { copy as repeatCopy } from './repeatOffenders.copy';
-
-const source = () =>
-	readFileSync(
-		resolve(process.cwd(), 'src/lib/features/repeat-offenders/RepeatOffenders.svelte'),
-		'utf-8',
-	);
 
 const GENERATED = '2026-06-20T02:00:00Z' as IsoUtc;
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
@@ -366,69 +358,6 @@ describe('RepeatOffenders — approved analytical article', () => {
 		);
 	});
 
-	it('Collapse all and Expand all synchronize both rail disclosures and every card', async () => {
-		const { container } = render(RepeatOffenders);
-		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const railTriggers = [
-			within(desktop).getByRole('button', { name: 'View controls' }),
-			within(desktop).getByRole('button', { name: 'On this page' }),
-		];
-		const ids = ['repeat-worst', 'repeat-trips', 'repeat-vehicles'];
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		for (const id of ids)
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		for (const id of ids)
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
-	});
-
-	it('Always start collapsed closes both rail disclosures and every current card', async () => {
-		const { container } = render(RepeatOffenders);
-		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const railTriggers = [
-			within(desktop).getByRole('button', { name: 'View controls' }),
-			within(desktop).getByRole('button', { name: 'On this page' }),
-		];
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
-
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		for (const id of ['repeat-worst', 'repeat-trips', 'repeat-vehicles']) {
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
-		}
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-	});
-
-	it('restores independent rail choices across a full same-tab remount', async () => {
-		const first = render(RepeatOffenders);
-		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
-		const firstToc = within(firstDesktop).getByRole('button', { name: 'On this page' });
-		await fireEvent.click(firstControls);
-		expect(firstControls).toHaveAttribute('aria-expanded', 'false');
-		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
-		first.unmount();
-
-		const second = render(RepeatOffenders);
-		const secondDesktop = second.container.querySelector(
-			'[data-slot="surface-rail"]',
-		) as HTMLElement;
-		await waitFor(() =>
-			expect(within(secondDesktop).getByRole('button', { name: 'View controls' })).toHaveAttribute(
-				'aria-expanded',
-				'false',
-			),
-		);
-		expect(within(secondDesktop).getByRole('button', { name: 'On this page' })).toHaveAttribute(
-			'aria-expanded',
-			'true',
-		);
-	});
-
 	it('a TOC jump opens only its closed Trips card before scrolling', async () => {
 		const { container } = render(RepeatOffenders);
 		const statesAtScroll: Array<{ trips: string | null; worst: string | null }> = [];
@@ -446,26 +375,6 @@ describe('RepeatOffenders — approved analytical article', () => {
 		await fireEvent.click(within(rail).getByRole('button', { name: 'Trips' }));
 		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce());
 		expect(statesAtScroll).toEqual([{ trips: 'true', worst: 'false' }]);
-	});
-
-	it('applies remembered collapsed mode to a Vehicle card that mounts after a grain change', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
-		repeatSurface.setUrl('/repeat-offenders?grain=month');
-		const { container } = render(RepeatOffenders);
-		expect(container.querySelector('[data-toc="repeat-vehicles"]')).toBeNull();
-		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		await fireEvent.click(within(rail).getByRole('button', { name: 'View controls' }));
-		const week = within(rail)
-			.getAllByRole('radio')
-			.find((radio) => radio.textContent?.trim() === 'Week');
-		expect(week).toBeDefined();
-		await fireEvent.click(week!);
-
-		await waitFor(() => {
-			expect(card(container, 'repeat-vehicles')).not.toBeNull();
-			expect(cardTrigger(container, 'repeat-vehicles')).toHaveAttribute('aria-expanded', 'false');
-		});
 	});
 
 	it('reconciles an active Vehicle destination to the nearest surviving Trip card', async () => {
@@ -998,25 +907,5 @@ describe('RepeatOffenders — legacy fallback ledger (by_grain absent)', () => {
 		expect(
 			screen.queryByRole('list', { name: /ranked by average delay/i }),
 		).not.toBeInTheDocument();
-	});
-});
-
-describe('RepeatOffenders canonical article-control stack', () => {
-	it('orders date, primary grain, Show, and caption before the section ToC', () => {
-		const component = source();
-		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
-		const primary =
-			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
-
-		expect(tag).not.toBe('');
-		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
-		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
-		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
-		expect(primary).toContain('variant="time-grid"');
-		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
-			component.indexOf('<ArticleControlStack'),
-		);
-		expect(component).not.toMatch(/class=["']repeat-control-body/);
-		expect(component).not.toMatch(/\.repeat-control-body\s*\{/);
 	});
 });

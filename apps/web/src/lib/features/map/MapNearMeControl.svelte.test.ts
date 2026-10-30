@@ -1,142 +1,82 @@
-import { fireEvent, render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, within } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
+import type { GeocodeSuggestion } from '$lib/geocode/types';
 import MapNearMeControl from './MapNearMeControl.svelte';
 import { copy } from './map.copy';
 
 vi.mock('$lib/v1/boot', () => ({ getV1Context: () => ({ manifest: { provider: 'stm' } }) }));
 
-describe('MapNearMeControl', () => {
-	const source = () => {
-		try {
-			return readFileSync(
-				resolve(process.cwd(), 'src/lib/features/map/MapNearMeControl.svelte'),
-				'utf-8',
-			);
-		} catch {
-			return '';
-		}
-	};
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
 
-	it('fetches debounced Montreal address suggestions while typing', () => {
-		const s = source();
+const handlers = () => ({
+	onuselocation: vi.fn(),
+	onsearch: vi.fn(),
+	onsuggestion: vi.fn(),
+	onstopselect: vi.fn(),
+	onclear: vi.fn(),
+});
 
-		expect(s).toContain('AbortController');
-		expect(s).toContain('setTimeout');
-		expect(s).toContain('&suggest=1&limit=4');
-		expect(s).toContain('shouldSuggestNearMeAddress');
-	});
+describe('near-me address search', () => {
+	it('debounces, caches, selects and dismisses address suggestions', async () => {
+		vi.useFakeTimers();
+		const results: GeocodeSuggestion[] = [
+			{ label: '123 Sherbrooke', lat: 45.5, lon: -73.6, source: 'geo_ca', precision: 'address' },
+			{ label: '125 Sherbrooke', lat: 45.51, lon: -73.61, source: 'geo_ca', precision: 'address' },
+		];
+		const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results }) });
+		vi.stubGlobal('fetch', fetch);
+		const props = { locale: 'en' as const, copy: copy.en, ...handlers() };
+		const { getByRole, queryByRole, rerender } = render(MapNearMeControl, { props });
+		await fireEvent.click(getByRole('button', { name: copy.en.nearMe }));
+		const input = getByRole('combobox');
+		expect(queryByRole('button', { name: copy.en.nearMeClear })).not.toBeInTheDocument();
 
-	it('keeps near-me suggestions responsive with a short debounce and local cache', () => {
-		const s = source();
-
-		expect(s).toContain('const suggestionCache = new SvelteMap');
-		expect(s).toContain('}, 120);');
-		expect(s).toContain('suggestionCache.set(cacheKey, results)');
-	});
-
-	it('starts address suggestions for numeric street-address prefixes', () => {
-		const s = source();
-
-		expect(s).toContain('function isCoordinateQuery');
-		expect(s).not.toContain('!/[A-Za-zÀ-ÿ]/.test(trimmed)');
-	});
-
-	it('renders address suggestions as selectable combobox options', () => {
-		const s = source();
-
-		expect(s).toContain('role="combobox"');
-		expect(s).toContain('aria-autocomplete="list"');
-		expect(s).toContain('role="listbox"');
-		expect(s).toContain('role="option"');
-		expect(s).toContain('class="map-near-suggestion"');
-		expect(s).toContain('onsuggestion(result)');
-		expect(s).not.toMatch(/suggestionSessionToken|Place-Details/u);
-	});
-
-	it('closes address suggestions like a standard autocomplete popover', () => {
-		const s = source();
-
-		expect(s).toContain('let suggestionsOpen = $state(false)');
-		expect(s).toContain(
-			'<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />',
+		await fireEvent.input(input, { target: { value: results[0].label } });
+		expect(fetch).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(121);
+		await tick();
+		expect(fetch).toHaveBeenCalledTimes(1);
+		const url = new URL(fetch.mock.calls[0][0], 'https://example.test');
+		expect(url.searchParams.get('suggest')).toBe('1');
+		expect(url.searchParams.get('limit')).toBe('4');
+		const options = within(getByRole('listbox')).getAllByRole('option');
+		expect(options).toHaveLength(results.length);
+		options.forEach((option, index) =>
+			expect(option).toHaveAccessibleName(new RegExp(results[index].label)),
 		);
-		expect(s).toContain('function closeSuggestions()');
-		expect(s).toContain('function handleWindowPointerDown');
-		expect(s).toContain('function handleWindowKeydown');
-		expect(s).toContain('lastSelectedSuggestionLabel = result.label');
-		expect(s).toContain('inputEl?.blur()');
-	});
 
-	it('gives long address suggestions room to wrap on desktop and mobile', () => {
-		const s = source();
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(queryByRole('listbox')).not.toBeInTheDocument();
+		await fireEvent.focus(input);
+		expect(getByRole('listbox')).toBeInTheDocument();
+		await fireEvent.pointerDown(document.body);
+		expect(queryByRole('listbox')).not.toBeInTheDocument();
 
-		expect(s).toMatch(/\.map-near-panel\s*\{[\s\S]*width:\s*min\(28rem/);
-		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
-		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*max-height:\s*min\(18rem/);
-		expect(s).toMatch(/\.map-near-suggestion span\s*\{[\s\S]*white-space:\s*normal/);
-	});
-
-	it('contains no inactive Google provider session or attribution surface', () => {
-		const s = source();
-
-		expect(s).not.toMatch(/Google|sessionToken|placeId/u);
-	});
-
-	it.each([
-		[
-			'en',
-			'Stops near me',
-			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
-		],
-		[
-			'fr',
-			'Arrêts près de moi',
-			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
-		],
-	] as const)(
-		'renders the %s collection notice directly below the near-me search form',
-		async (locale, toggleLabel, expectedNotice) => {
-			const { getByRole, getByText } = render(MapNearMeControl, {
-				props: {
-					locale,
-					copy: copy[locale],
-					onuselocation: () => {},
-					onsearch: () => {},
-					onsuggestion: () => {},
-					onstopselect: () => {},
-					onclear: () => {},
-				},
-			});
-
-			await fireEvent.click(getByRole('button', { name: toggleLabel }));
-
-			const notice = getByText(expectedNotice);
-			expect(notice).toHaveClass('map-near-collection-notice');
-			expect(notice.previousElementSibling).toHaveClass('map-near-form');
-			expect(notice).toHaveAttribute('id', 'map-near-collection-notice');
-			expect(getByRole('combobox')).toHaveAttribute(
-				'aria-describedby',
-				'map-near-collection-notice',
-			);
-		},
-	);
-
-	it('keeps nearby stop rows wired to the map stop picker', () => {
-		const s = source();
-
-		expect(s).toContain('onstopselect(stop)');
-		expect(s).toContain('formatDistance(stop.distanceM)');
-		expect(s).toContain('class="map-near-stop"');
-	});
-
-	it('renders a clear-location action only when a near-me origin is selected', () => {
-		const s = source();
-
-		expect(s).toContain('onclear: () => void');
-		expect(s).toContain('{t.nearMeClear}');
-		expect(s).toContain('onclick={onclear}');
-		expect(s).toContain('class="map-near-origin-row"');
+		await fireEvent.input(input, { target: { value: '' } });
+		await fireEvent.input(input, { target: { value: results[0].label } });
+		await vi.advanceTimersByTimeAsync(121);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		await fireEvent.click(within(getByRole('listbox')).getAllByRole('option')[1]);
+		expect(props.onsuggestion).toHaveBeenCalledExactlyOnceWith(results[1]);
+		await rerender({ origin: results[1] });
+		expect(getByRole('button', { name: copy.en.nearMeClear })).toBeInTheDocument();
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'describes the %s address search with its collection notice',
+	async (locale) => {
+		const { getByRole, getByText } = render(MapNearMeControl, {
+			props: { locale, copy: copy[locale], ...handlers() },
+		});
+
+		await fireEvent.click(getByRole('button', { name: copy[locale].nearMe }));
+
+		expect(getByText(copy[locale].nearMeCollectionNotice)).toBeVisible();
+		expect(getByRole('combobox')).toHaveAccessibleDescription(copy[locale].nearMeCollectionNotice);
+	},
+);

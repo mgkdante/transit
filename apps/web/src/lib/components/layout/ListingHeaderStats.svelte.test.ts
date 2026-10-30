@@ -1,6 +1,4 @@
 import { render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import ListingHeaderStats from './ListingHeaderStats.svelte';
 
@@ -38,15 +36,5 @@ describe('ListingHeaderStats', () => {
 		expect(definitions[2]?.querySelector('.sr-only')).toHaveTextContent('Not available');
 		expect(definitions[2]?.querySelector('[aria-hidden="true"]')).toHaveTextContent('—');
 		expect(definitions[3]).not.toHaveAttribute('data-unknown');
-	});
-
-	it('uses the codified stat-value type token', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/layout/ListingHeaderStats.svelte'),
-			'utf-8',
-		);
-		expect(source).toContain('font-size: var(--text-stat-value)');
-		expect(source).toContain('repeat(auto-fit, minmax(min(8rem, 100%), 1fr))');
-		expect(source).toContain('overflow-wrap: anywhere');
 	});
 });

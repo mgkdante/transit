@@ -1,7 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { tick } from 'svelte';
 import EntityDetailHarness from './__fixtures__/EntityDetailHarness.svelte';
 
@@ -61,11 +59,6 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-const src = readFileSync(
-	join(process.cwd(), 'src/lib/components/surface/EntityDetail.svelte'),
-	'utf8',
-);
-
 describe('EntityDetail — demand-mounted pane bodies', () => {
 	it('mounts only the initially active pane body while retaining every tabpanel wrapper', () => {
 		const { container } = render(EntityDetailHarness, {
@@ -113,19 +106,6 @@ describe('EntityDetail — demand-mounted pane bodies', () => {
 });
 
 describe('EntityDetail — signage-active tab pattern', () => {
-	it('renders each trigger through a bits-ui child snippet (behavior stays on bits-ui)', () => {
-		expect(src).toMatch(/\{#snippet child\(\{ props \}\)\}/);
-		expect(src).toContain('class:active={t.key === active}');
-	});
-
-	it('paints the active tab with the theme-invariant signage chip', () => {
-		expect(src).toContain('--signage-bg');
-		expect(src).toContain('--signage-text');
-		expect(src).toMatch(
-			/\.station-tab\.active\s*\{[\s\S]*?border-bottom-color:\s*var\(--signage-text\)/,
-		);
-	});
-
 	it.each([
 		{ reduced: false, behavior: 'smooth' },
 		{ reduced: true, behavior: 'auto' },
@@ -389,12 +369,6 @@ describe('EntityDetail — optional article cover', () => {
 		expect(screen.getAllByText('Service banner')).toHaveLength(1);
 	});
 
-	it('hands the outer summary lane to non-rail panes and stands it down for pane-owned rails', () => {
-		expect(src).toContain('summary={paneOwnsRail || !banner ? undefined : articleSummary}');
-		const articleCenter = src.match(/\{#snippet articleCenter\(\)\}([\s\S]*?)\{\/snippet\}/)?.[1];
-		expect(articleCenter).not.toContain('{#if banner}');
-	});
-
 	it('moves the first card to the shared top edge when optional verdict data is absent', async () => {
 		const { container } = render(EntityDetailHarness, {
 			props: { mode: 'article', withBanner: false },
@@ -407,31 +381,6 @@ describe('EntityDetail — optional article cover', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		expect(container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
 		expect(container.querySelector('[data-toc="reliability-section"]')).not.toBeNull();
-	});
-
-	it('removes the legacy pane inset only in article mode so the rail and first card align', () => {
-		const { container } = render(EntityDetailHarness, {
-			props: { mode: 'article', withBanner: false },
-		});
-		const activePane = container.querySelector('.surface-pane[data-state="active"]');
-
-		expect(activePane).toHaveClass('surface-pane--article');
-		expect(src).toMatch(/\.surface-pane--article\)\s*\{[^}]*padding-top:\s*0/s);
-	});
-
-	it('lets the shared summary lane own verdict-to-card spacing without a second margin', () => {
-		const { container } = render(EntityDetailHarness, { props: { mode: 'article' } });
-		const articleBanner = container.querySelector(
-			'[data-slot="detail-shell-summary"] [data-slot="entity-detail-banner"]',
-		);
-
-		expect(articleBanner).toHaveClass('surface-banner--article');
-		expect(src).toMatch(/\.surface-banner--article\s*\{[^}]*margin:\s*0/s);
-	});
-
-	it('defines the shared tab body once', () => {
-		expect(src.match(/<Tabs bind:value=\{active\}>/g)).toHaveLength(1);
-		expect(src.match(/<TabsContent value=\{t\.key\}/g)).toHaveLength(1);
 	});
 
 	it('rebinds persisted ToC disclosure state when client navigation changes entity keys', async () => {

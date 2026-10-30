@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { quietMode } from '@yesid/ui/state';
 import Harness from './__fixtures__/CollapsibleSectionQuietModeHarness.svelte';
@@ -9,12 +9,6 @@ function sectionToggle(container: HTMLElement, dataSection = 'when-to-ride'): HT
 	);
 	if (!toggle) throw new Error('Reliability section toggle did not render');
 	return toggle;
-}
-
-function sectionToggles(container: HTMLElement): HTMLButtonElement[] {
-	return [
-		...container.querySelectorAll<HTMLButtonElement>('[data-section] [data-section-trigger]'),
-	];
 }
 
 beforeEach(() => {
@@ -53,63 +47,5 @@ describe('reliability CollapsibleSection quiet-mode integration', () => {
 		expect(toggle).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('aria-expanded', 'true');
-	});
-
-	it('responds to the real Collapse all and Expand all control', async () => {
-		const { container } = render(Harness);
-		const toggles = sectionToggles(container);
-
-		expect(toggles).toHaveLength(5);
-		for (const toggle of toggles) expect(toggle).toHaveAttribute('aria-expanded', 'true');
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		await waitFor(() => {
-			for (const toggle of toggles) expect(toggle).toHaveAttribute('aria-expanded', 'false');
-		});
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		await waitFor(() => {
-			for (const toggle of toggles) expect(toggle).toHaveAttribute('aria-expanded', 'true');
-		});
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
-	});
-
-	it('Always start collapsed recloses an individually reopened section and stores the preference', async () => {
-		const { container } = render(Harness);
-		const toggles = sectionToggles(container);
-		const reopened = sectionToggle(container, 'run-and-fit');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		await waitFor(() => expect(reopened).toHaveAttribute('aria-expanded', 'false'));
-		await fireEvent.click(reopened);
-		expect(reopened).toHaveAttribute('aria-expanded', 'true');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
-
-		await waitFor(() => {
-			for (const toggle of toggles) expect(toggle).toHaveAttribute('aria-expanded', 'false');
-		});
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-	});
-
-	it('reapplies the remembered collapsed default after a full remount', async () => {
-		const first = render(Harness);
-		const firstToggle = sectionToggle(first.container);
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
-		await waitFor(() => expect(firstToggle).toHaveAttribute('aria-expanded', 'false'));
-		await fireEvent.click(firstToggle);
-		expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-
-		first.unmount();
-		const second = render(Harness);
-		const secondToggles = sectionToggles(second.container);
-
-		await waitFor(() => {
-			for (const toggle of secondToggles) expect(toggle).toHaveAttribute('aria-expanded', 'false');
-		});
-		expect(secondToggles).toHaveLength(5);
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 	});
 });

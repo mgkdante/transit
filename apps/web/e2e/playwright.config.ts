@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks, stripTypeScriptTypes } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+import { yesidProjects } from '@yesid/config/playwright';
 import { verifyInstalledBrowserArtifact } from '../scripts/browser-toolchain.mjs';
 
 // The @yesid packages ship TypeScript source; Playwright never transforms node_modules.
@@ -26,6 +27,8 @@ const executablePath = process.env.TRANSIT_BROWSER_ROOT
 	? (await verifyInstalledBrowserArtifact()).paths.executablePath
 	: undefined;
 
+const baseURL = 'http://127.0.0.1:4317';
+
 export default defineConfig({
 	testDir: '.',
 	// One tsconfig for every file the specs import, including app modules under src/.
@@ -36,17 +39,13 @@ export default defineConfig({
 		? [['line'], ['html', { open: 'never', outputFolder: '../playwright-report' }]]
 		: 'list',
 	use: {
-		baseURL: 'http://127.0.0.1:4317',
+		baseURL,
 		contextOptions: { reducedMotion: 'reduce' },
 		serviceWorkers: 'block',
 		trace: 'retain-on-failure',
 		launchOptions: { executablePath },
 	},
-	projects: [
-		{ name: 'phone', use: { viewport: { width: 390, height: 844 } } },
-		{ name: 'tablet', use: { viewport: { width: 768, height: 1024 } } },
-		{ name: 'desktop', use: { viewport: { width: 1280, height: 800 } } },
-	],
+	projects: yesidProjects(baseURL),
 	webServer: [
 		{
 			command: 'node data.mjs',
@@ -56,7 +55,7 @@ export default defineConfig({
 		// The built worker without bindings, so server-side data comes from the fixture server.
 		{
 			command: 'bun x wrangler dev --config wrangler.json --ip 127.0.0.1 --port 4317',
-			url: 'http://127.0.0.1:4317',
+			url: baseURL,
 			reuseExistingServer: !process.env.CI,
 		},
 	],

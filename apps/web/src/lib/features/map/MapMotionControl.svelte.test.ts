@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 import MapMotionControl from './MapMotionControl.svelte';
@@ -111,17 +109,5 @@ describe('MapMotionControl', () => {
 		expect(motionMode.current).toBe('smooth');
 		await rerender({ locale: 'en', copy: copy.en, collapsed: true });
 		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute('aria-checked', 'true');
-	});
-
-	it('keeps both switch forms and the method link in the 44px touch-target inventory', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapMotionControl.svelte'),
-			'utf8',
-		);
-		expect(source).toMatch(/\.map-motion-switch\s*\{[^}]*min-height:\s*44px/s);
-		expect(source).toMatch(/\.map-motion-round\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
-		expect(source).toMatch(
-			/\.map-motion-explain\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/s,
-		);
 	});
 });

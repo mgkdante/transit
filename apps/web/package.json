@@ -17,6 +17,7 @@
 		"map-posters:build": "bun scripts/build-map-posters.ts",
 		"map-posters:check": "bun scripts/build-map-posters.ts --check",
 		"lint": "eslint .",
+		"lint:design": "bun tools/lint-design.ts",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "node scripts/gen-contract.mjs && vitest run --maxWorkers=4",
@@ -25,10 +26,8 @@
 		"test:unit": "node scripts/gen-contract.mjs && vitest"
 	},
 	"devDependencies": {
-		"@axe-core/playwright": "4.12.1",
 		"@csstools/postcss-global-data": "4.0.0",
 		"@eslint/js": "^10.0.1",
-		"@playwright/test": "1.62.0",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"@sveltejs/kit": "^2.70.3",

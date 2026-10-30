@@ -1,5 +1,7 @@
 # Transit
 
+[![web](https://github.com/mgkdante/transit/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/mgkdante/transit/actions/workflows/web.yml)
+
 Transit is an independent dashboard for bus and metro service in Montréal (STM)
 and Ottawa (OC Transpo). It captures GTFS and GTFS-Realtime feeds, normalizes
 them in PostgreSQL and publishes versioned JSON snapshots that the web app

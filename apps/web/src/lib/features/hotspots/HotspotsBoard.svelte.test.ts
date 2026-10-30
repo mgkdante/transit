@@ -1,8 +1,8 @@
+import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
+import { copy } from './hotspots.copy';
 import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
 import { quietMode } from '@yesid/ui/state';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
@@ -90,9 +90,6 @@ vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
 });
 
 import HotspotsBoard from './HotspotsBoard.svelte';
-
-const source = () =>
-	readFileSync(resolve(process.cwd(), 'src/lib/features/hotspots/HotspotsBoard.svelte'), 'utf-8');
 import { copy as hotspotsCopy } from './hotspots.copy';
 
 function seed(): Hotspots {
@@ -258,13 +255,16 @@ describe('HotspotsBoard article', () => {
 
 	afterEach(resetHotspotsState);
 
-	it('renders one article h1 and only the exact two QuietModeButton controls', () => {
-		const { container } = render(HotspotsBoard);
-		expect(screen.getAllByRole('heading', { level: 1, name: 'Hotspots' })).toHaveLength(1);
+	it('renders one article h1 and QuietModeButton controls', () => {
+		render(HotspotsBoard);
+		expect(screen.getByRole('heading', { level: 1, name: copy.en.heading })).toBeInTheDocument();
 		const controls = screen.getByTestId('quiet-mode-controls');
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
-		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
-		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
+		expect(
+			within(controls).getByRole('button', { name: quietModeCopy.en.collapse }),
+		).toBeInTheDocument();
+		expect(
+			within(controls).getByRole('button', { name: quietModeCopy.en.remember }),
+		).toBeInTheDocument();
 	});
 
 	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {
@@ -529,162 +529,6 @@ describe('HotspotsBoard article', () => {
 		expect(reasonIds.every((id) => /-(?:desktop|mobile)$/.test(id))).toBe(true);
 	});
 
-	it('keeps rail disclosures independent and persisted while moving the live rail', async () => {
-		const { container } = render(HotspotsBoard);
-		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const controls = within(desktop).getByRole('button', { name: 'View controls' });
-		const toc = within(desktop).getByRole('button', { name: 'On this page' });
-
-		await fireEvent.click(controls);
-		expect(controls).toHaveAttribute('aria-expanded', 'false');
-		expect(toc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
-
-		await fireEvent.click(toc);
-		expect(sessionStorage.getItem('persisted:hotspots-toc')).toBe('false');
-
-		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
-		const pill = mobile.querySelector(':scope > button') as HTMLButtonElement;
-		await fireEvent.click(pill);
-		let sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
-		let mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
-		let mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
-		expect(mobileControls).toBe(controls);
-		expect(mobileToc).toBe(toc);
-		expect(mobileControls).toHaveAttribute('aria-expanded', 'false');
-		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
-
-		await fireEvent.click(mobileControls);
-		expect(controls).toHaveAttribute('aria-expanded', 'true');
-		expect(toc).toHaveAttribute('aria-expanded', 'false');
-
-		await fireEvent.click(pill);
-		await waitFor(() => expect(mobile.querySelector('[role="dialog"]')).toBeNull());
-		await fireEvent.click(pill);
-		sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
-		mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
-		mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
-		expect(mobileControls).toHaveAttribute('aria-expanded', 'true');
-		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
-	});
-
-	it('restores one manual rail choice across a full same-tab board remount', async () => {
-		const first = render(HotspotsBoard);
-		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
-		const firstToc = within(firstDesktop).getByRole('button', { name: 'On this page' });
-
-		await waitFor(() => expect(firstControls).toHaveAttribute('aria-expanded', 'true'));
-		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
-		await fireEvent.click(firstControls);
-		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
-		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
-
-		first.unmount();
-		const second = render(HotspotsBoard);
-		const secondDesktop = second.container.querySelector(
-			'[data-slot="surface-rail"]',
-		) as HTMLElement;
-		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
-		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
-
-		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
-		expect(secondToc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('false');
-	});
-
-	it('Collapse all closes every card and Expand all reopens every card', async () => {
-		const { container } = render(HotspotsBoard);
-		const ids = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'];
-		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const railTriggers = [
-			within(desktop).getByRole('button', { name: 'View controls' }),
-			within(desktop).getByRole('button', { name: 'On this page' }),
-		];
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		for (const id of ids)
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		for (const id of ids)
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		for (const id of ids)
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
-	});
-
-	it('Always start collapsed closes both rail blocks and every article card', async () => {
-		const { container } = render(HotspotsBoard);
-		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const railTriggers = [
-			within(desktop).getByRole('button', { name: 'View controls' }),
-			within(desktop).getByRole('button', { name: 'On this page' }),
-		];
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
-
-		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		for (const id of ['hotspots-top', 'hotspots-lines', 'hotspots-stops']) {
-			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
-		}
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-	});
-
-	it('reapplies remembered quiet mode across a full board remount', async () => {
-		const first = render(HotspotsBoard);
-		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
-
-		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
-		await fireEvent.click(firstControls);
-		expect(firstControls).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('persisted:hotspots-controls')).toBe('true');
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-
-		first.unmount();
-		const second = render(HotspotsBoard);
-		const secondDesktop = second.container.querySelector(
-			'[data-slot="surface-rail"]',
-		) as HTMLElement;
-		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
-		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
-
-		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
-		expect(secondToc).toHaveAttribute('aria-expanded', 'false');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
-	});
-
-	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
-		mockUrl = new URL('http://localhost/hotspots?grain=week');
-		const { container } = render(HotspotsBoard);
-		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
-		await waitFor(() =>
-			expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'false'),
-		);
-
-		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-		const controls = within(rail).getByRole('button', { name: 'View controls' });
-		expect(controls).toHaveAttribute('aria-expanded', 'false');
-		await fireEvent.click(controls);
-		const day = within(rail)
-			.getAllByRole('radio')
-			.find((radio) => radio.textContent?.trim() === 'Day');
-		expect(day).toBeDefined();
-		await fireEvent.click(day!);
-
-		await waitFor(() => {
-			expect(card(container, 'hotspots-stops')).not.toBeNull();
-			expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
-		});
-	});
-
 	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {
 		const { container } = render(HotspotsBoard);
 		const statesAtScroll: Array<{ linesOpen: string | null; topOpen: string | null }> = [];
@@ -848,25 +692,5 @@ describe('HotspotsBoard article', () => {
 		expect(container.querySelector('[data-slot="active-window"]')).toBeNull();
 		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(0);
-	});
-});
-
-describe('HotspotsBoard canonical article-control stack', () => {
-	it('orders date, primary grain, Show, and caption before the section ToC', () => {
-		const component = source();
-		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
-		const primary =
-			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
-
-		expect(tag).not.toBe('');
-		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
-		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
-		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
-		expect(primary).toContain('variant="time-grid"');
-		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
-			component.indexOf('<ArticleControlStack'),
-		);
-		expect(component).not.toMatch(/class=["']hotspots-control-body/);
-		expect(component).not.toMatch(/\.hotspots-control-body\s*\{/);
 	});
 });

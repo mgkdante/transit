@@ -121,3 +121,11 @@ test('every destination runs under the real policy without a violation', async (
 	for (const { href } of destinations) await page.goto(href, { waitUntil: 'networkidle' });
 	expect(violations).toEqual([]);
 });
+
+for (const path of ['/', '/offline.html'])
+	test(`${path} keeps browser zoom available`, async ({ page }) => {
+		await page.goto(path);
+		const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+		expect(viewport).toContain('width=device-width');
+		expect(viewport).not.toMatch(/user-scalable\s*=\s*no|maximum-scale\s*=/i);
+	});

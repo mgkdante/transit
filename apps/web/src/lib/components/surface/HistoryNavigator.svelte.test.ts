@@ -253,32 +253,6 @@ describe('HistoryNavigator — duplicate mount and narrow-rail safety', () => {
 		).toBe('2026-06-03');
 	});
 
-	it('contains no local async/state/rail/sheet/pill/URL machinery', () => {
-		expect(source).not.toContain('$state');
-		expect(source).not.toContain('$effect');
-		expect(source).not.toContain('createResource');
-		expect(source).not.toContain('SurfaceRail');
-		expect(source).not.toContain('CollapsibleSection');
-		expect(source).not.toContain('TocNav');
-		expect(source).not.toContain('URLSearchParams');
-		expect(source).not.toContain('overflow-x: auto');
-	});
-
-	it('pins full-width/min-width safety, equal cells, 44px targets, focus, and reduced motion', () => {
-		const rootRule = source.match(/\.history-navigator\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const neighborRule = source.match(/\.history-navigator__neighbors\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		const buttonRule = source.match(/\.history-navigator__step\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-
-		expect(rootRule).toContain('width: 100%');
-		expect(rootRule).toContain('max-width: 100%');
-		expect(rootRule).toContain('min-width: 0');
-		expect(neighborRule).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-		expect(buttonRule).toContain('min-height: 44px');
-		expect(source).toContain('.history-navigator__step:focus-visible');
-		expect(source).toContain('outline: 2px solid var(--ring)');
-		expect(source).toContain('@media (prefers-reduced-motion: reduce)');
-	});
-
 	it('renders no overflow scroller, sheet, pill, or separate disclosure DOM', () => {
 		const { container } = render(HistoryNavigator, {
 			props: {

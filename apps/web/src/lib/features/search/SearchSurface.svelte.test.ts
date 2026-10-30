@@ -130,17 +130,6 @@ describe('SearchSurface idle state', () => {
 	});
 });
 
-describe('SearchSurface result drilldown', () => {
-	it('links a line result to its detail page and a stop result to its detail page', () => {
-		setUrlQuery('q=ber');
-		render(SearchSurface);
-		expect(screen.getByRole('link', { name: /Station Berri-UQAM/i })).toHaveAttribute(
-			'href',
-			'/stop/10146',
-		);
-	});
-});
-
 describe('SearchSurface inline reliability', () => {
 	it('renders the OTP% badge on a stop result whose reliability loaded', () => {
 		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'late' }));

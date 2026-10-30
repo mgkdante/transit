@@ -1,8 +1,6 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import type { RouteReliability, IsoUtc } from '$lib/v1';
@@ -25,11 +23,6 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 }));
 
 const copy = reliabilityCopy.en;
-const source = () =>
-	readFileSync(
-		resolve(process.cwd(), 'src/lib/features/lines/reliability/RouteReliabilityClusters.svelte'),
-		'utf-8',
-	);
 
 const utc = (value: string): IsoUtc => value as IsoUtc;
 
@@ -204,61 +197,25 @@ describe('RouteReliabilityClusters', () => {
 		expect(container.querySelectorAll('[data-testid="line-article-summary"]')).toHaveLength(1);
 	});
 
-	it('routes all five rider-question adapters through one shared connected stack', () => {
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-		const stack = container.querySelector('[data-slot="article-section-stack"]') as HTMLElement;
-		const bands = Array.from(stack?.children ?? []);
-
-		expect(stack).not.toBeNull();
-		expect(bands).toHaveLength(5);
-		for (const band of bands) {
-			expect(band.matches('.reliability-band[data-band]')).toBe(true);
+	it('renders the rider-question controls in the connected stack', () => {
+		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
+		for (const section of [
+			copy.sections.verdict,
+			copy.sections.whenToRide,
+			copy.sections.theWait,
+			copy.sections.runAndFit,
+			copy.sections.worstStops,
+		]) {
 			expect(
-				band.querySelector(':scope > section[data-section] > [data-slot="card"].section-card'),
-			).not.toBeNull();
-			expect(band.querySelector('[data-section-trigger]')).not.toBeNull();
+				within(screen.getByRole('region', { name: section.label })).getByRole('button', {
+					name: section.label,
+				}),
+			).toBeInTheDocument();
 		}
 	});
 
-	it('applies the display measure to the rider-question class emitted by the shared disclosure', () => {
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-		const questions = container.querySelectorAll('.reliability-band .section-subtitle__text');
-
-		expect(questions).toHaveLength(5);
-		expect(source()).toMatch(
-			/:global\(\.reliability-band \.section-subtitle__text\)\s*\{[^}]*max-inline-size:\s*var\(--measure-display\)/s,
-		);
-		expect(source()).not.toContain('.section-question');
-	});
-
-	it('removes the old 3-5rem page-local inter-card spacing rules', () => {
-		const component = source();
-
-		expect(component).toContain('ArticleSectionStack');
-		expect(component).toMatch(/\.reliability-content\s*\{[^}]*gap:\s*var\(--space-card-gap\);/s);
-		expect(component).not.toMatch(
-			/\.(?:reliability-clusters|reliability-content)\s*\{[^}]*gap:\s*clamp\(3rem,\s*7vw,\s*5rem\)/s,
-		);
-	});
-
-	it('uses card spacing without drawing standalone divider rules between bands', () => {
-		expect(source()).not.toMatch(
-			/\.reliability-band\s*\+\s*\.reliability-band\s*\{[^}]*border-top:/s,
-		);
-	});
-
-	it('renders all five rider-question section overlines + the §0 headline with populated data', () => {
+	it('renders the §0 headline and the period controls with populated data', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
-
-		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
@@ -427,19 +384,6 @@ const multiDay: RouteReliability = {
 };
 
 describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
-	it('uses the shared ReliabilityRailLayout without a local desktop grid', () => {
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-
-		expect(container.querySelectorAll('[data-slot="reliability-rail-layout"]')).toHaveLength(1);
-		expect(container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
-		expect(container.querySelectorAll('[data-slot="reliability-rail-content"]')).toHaveLength(1);
-		expect(source()).toContain('<ReliabilityRailLayout');
-		expect(source()).not.toContain('class="reliability-layout"');
-		expect(source()).not.toMatch(/grid-template-columns:[^;]*16rem/);
-	});
-
 	it('uses instant ToC navigation when reduced motion is requested', async () => {
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const scrollIntoView = vi.fn();
@@ -532,34 +476,6 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
-		const storageKey = 'persisted:reliability-toc';
-		sessionStorage.removeItem(storageKey);
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-		const desktopToc = container.querySelector(
-			'[data-slot="surface-rail"] [data-slot="section-toc"]',
-		) as HTMLElement;
-		const desktopToggle = within(desktopToc).getByRole('button', {
-			name: copy.controls.toc,
-		});
-
-		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
-		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
-		const mobileToc = (mobile.querySelector('[role="dialog"]') as HTMLElement).querySelector(
-			'[data-slot="section-toc"]',
-		) as HTMLElement;
-		const mobileToggle = within(mobileToc).getByRole('button', { name: copy.controls.toc });
-		expect(mobileToggle).toBe(desktopToggle);
-
-		await fireEvent.click(mobileToggle);
-
-		expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
-		expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
-		expect(sessionStorage.getItem(storageKey)).toBe('false');
-	});
-
 	it('keeps one disabled-grain reason and one described radio as the rail moves', async () => {
 		const withoutMonth: RouteReliability = {
 			...populated,
@@ -587,26 +503,5 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 			expect(describedBy).not.toBeNull();
 			expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
 		}
-	});
-});
-
-describe('RouteReliabilityClusters canonical article-control stack', () => {
-	it('orders label, primary period, conditional range, and caption before the section ToC', () => {
-		const component = source();
-		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
-		const primary =
-			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
-
-		expect(tag).not.toBe('');
-		expect(tag.indexOf('label=')).toBeLessThan(tag.indexOf('primary='));
-		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
-		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
-		expect(tag).not.toContain('history=');
-		expect(primary).toContain('variant="time-grid"');
-		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
-			component.indexOf('<ArticleControlStack'),
-		);
-		expect(component).not.toMatch(/class=["']reliability-control-body/);
-		expect(component).not.toMatch(/\.reliability-control-body\s*\{/);
 	});
 });

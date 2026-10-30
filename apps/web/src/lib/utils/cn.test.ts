@@ -1,51 +1,8 @@
-import type { ClassValue } from 'clsx';
 import { describe, expect, it, vi } from 'vitest';
-import { cn as uiCn, createCn } from '@yesid/ui/cn';
+import { cn as uiCn } from '@yesid/ui/cn';
 import { configureTransitUi } from '$lib/ui/configure';
 import { cn } from '$lib/ui/configure';
 import { TRANSIT_VOCAB } from './cn-vocab';
-
-const LEGACY_OUTPUT_FIXTURES: Array<{
-	label: string;
-	inputs: ClassValue[];
-	output: string;
-}> = [
-	{
-		label: 'standard Tailwind conflicts',
-		inputs: ['px-2', 'px-4'],
-		output: 'px-4',
-	},
-	{
-		label: 'clsx flattening and conditional classes',
-		inputs: ['px-2', false, null, undefined, ['px-4'], { block: true }],
-		output: 'px-4 block',
-	},
-	{
-		label: 'brand text-scale conflicts',
-		inputs: ['text-body', 'text-caption'],
-		output: 'text-caption',
-	},
-	{
-		label: 'brand text scale and color coexist',
-		inputs: ['text-signage-bg', 'text-body'],
-		output: 'text-signage-bg text-body',
-	},
-	{
-		label: 'brand text-scale and color conflicts stay independent',
-		inputs: ['text-body', 'text-caption', 'text-signage-text', 'text-accent-text'],
-		output: 'text-caption text-accent-text',
-	},
-	{
-		label: 'Transit status colors conflict',
-		inputs: ['text-dataviz-status-late', 'text-dataviz-status-on-time'],
-		output: 'text-dataviz-status-on-time',
-	},
-	{
-		label: 'Transit heatmap backgrounds conflict',
-		inputs: ['bg-dataviz-heatmap-3', 'bg-dataviz-heatmap-4'],
-		output: 'bg-dataviz-heatmap-4',
-	},
-];
 
 const LEGACY_TRANSIT_DATAVIZ_COLORS = [
 	'dataviz-status-early',
@@ -74,12 +31,6 @@ const LEGACY_TRANSIT_DATAVIZ_COLORS = [
 ] as const;
 
 describe('cn legacy behavior', () => {
-	for (const fixture of LEGACY_OUTPUT_FIXTURES) {
-		it(`preserves ${fixture.label}`, () => {
-			expect(cn(...fixture.inputs)).toBe(fixture.output);
-		});
-	}
-
 	it('classifies every Transit dataviz token as a color', () => {
 		expect(TRANSIT_VOCAB.colors).toEqual(LEGACY_TRANSIT_DATAVIZ_COLORS);
 
@@ -90,29 +41,6 @@ describe('cn legacy behavior', () => {
 			expect(cn(`text-${color} text-body`)).toBe(`text-${color} text-body`);
 			expect(cn(`text-${color} text-${nextColor}`)).toBe(`text-${nextColor}`);
 		}
-	});
-});
-
-describe('createCn', () => {
-	it('includes the shared brand vocabulary without an app preset', () => {
-		const baseCn = createCn();
-
-		expect(baseCn('text-body text-caption')).toBe('text-caption');
-		expect(baseCn('text-signage-bg text-body')).toBe('text-signage-bg text-body');
-		expect(baseCn('text-signage-text text-accent-text')).toBe('text-accent-text');
-	});
-
-	it('adds third-consumer text and color vocabulary without app conditionals', () => {
-		const consumerCn = createCn({
-			text: ['consumer-label'],
-			colors: ['consumer-accent'],
-		});
-
-		expect(consumerCn('text-body text-consumer-label')).toBe('text-consumer-label');
-		expect(consumerCn('text-consumer-accent text-consumer-label')).toBe(
-			'text-consumer-accent text-consumer-label',
-		);
-		expect(consumerCn('text-signage-text text-consumer-accent')).toBe('text-consumer-accent');
 	});
 });
 

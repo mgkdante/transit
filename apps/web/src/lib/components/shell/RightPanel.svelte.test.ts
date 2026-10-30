@@ -1,7 +1,5 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import RightPanel from './RightPanel.svelte';
 
@@ -36,42 +34,6 @@ describe('RightPanel', () => {
 
 		expect(queryByText('Route 161')).toBeInTheDocument();
 		expect(queryByText('Select something to inspect')).toBeInTheDocument();
-	});
-
-	it('uses the same width-only collapse model as the filter rail', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/shell/RightPanel.svelte'),
-			'utf-8',
-		);
-
-		expect(source).not.toMatch(/\.right-panel\[data-open='false'\]\s*\{[^}]*padding:/);
-		expect(source).not.toMatch(/transition:\s*[^;{}]*padding/);
-		expect(source).toMatch(
-			/\.right-panel\[data-open='false'\]\s*\{\s*width:\s*var\(--size-detail-rail\);\s*\}/,
-		);
-		expect(source).not.toMatch(/transition(?:-property)?\s*:\s*[^;{}]*(?:width|box-shadow)/);
-		expect(source).toContain('box-shadow: var(--shadow-detail-panel)');
-		expect(source).not.toContain('rgba(0, 0, 0, 0.45)');
-		expect(source).not.toContain('@container right-panel (max-width: 18rem)');
-	});
-
-	it('shrinks the collapsed resizable panel to the icon-strip rem floor (B1)', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/shell/RightPanel.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toMatch(/\.right-panel\[data-resizable='true'\]\s*\{\s*width:\s*100%;/);
-		const collapsedResizable =
-			source.match(
-				/\.right-panel\[data-resizable='true'\]\[data-open='false'\]\s*\{[\s\S]*?\}/,
-			)?.[0] ?? '';
-		expect(collapsedResizable).toContain('width: var(--size-detail-rail)');
-		expect(collapsedResizable).toContain('min-width: var(--size-detail-rail)');
-		expect(collapsedResizable).not.toContain('width: 100%');
-		expect(source).not.toMatch(
-			/\.right-panel\[data-resizable='true'\],\s*\.right-panel\[data-resizable='true'\]\[data-open='false'\]/,
-		);
 	});
 
 	it('shows a back action only when the detail stack has history', async () => {
@@ -153,24 +115,6 @@ describe('RightPanel', () => {
 		expect(heading).toHaveAttribute('id', 'detail-identity');
 		expect(heading).toHaveClass('right-panel-identity');
 		expect(queryByRole('heading', { level: 2, name: 'Details' })).not.toBeInTheDocument();
-	});
-
-	it('styles the shell-owned identity with the SectionLabel mono-caption recipe and tick', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/shell/RightPanel.svelte'),
-			'utf-8',
-		);
-		const identityRule = source.match(/\.right-panel-identity\s*\{[\s\S]*?\}/)?.[0] ?? '';
-		const tickRule = source.match(/\.right-panel-identity::before\s*\{[\s\S]*?\}/)?.[0] ?? '';
-
-		expect(identityRule).toContain('font-family: var(--font-mono)');
-		expect(identityRule).toContain('font-size: var(--text-caption)');
-		expect(identityRule).toContain('letter-spacing: var(--tracking-eyebrow');
-		expect(identityRule).toContain('text-transform: uppercase');
-		expect(identityRule).toContain('color: var(--muted-foreground)');
-		expect(tickRule).toContain("content: ''");
-		expect(tickRule).toContain('background: var(--primary)');
-		expect(source).not.toContain('--accent');
 	});
 
 	it('keeps stable control relationships and 44px header affordances', async () => {

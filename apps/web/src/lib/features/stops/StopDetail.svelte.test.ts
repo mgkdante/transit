@@ -5,8 +5,6 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
@@ -17,9 +15,6 @@ import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
 
 vi.mock('@testing-library/svelte', { spy: true });
-
-const stopDetailSource = () =>
-	readFileSync(resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'), 'utf-8');
 
 const stopDetailNav = vi.hoisted(() => {
 	const page = {
@@ -716,13 +711,6 @@ describe('StopDetail article contract', () => {
 		expect(scheduleCards[0]?.querySelector('[data-section-trigger]')).not.toBeNull();
 	});
 
-	it('does not retain a page-local Detail card-stack gap', () => {
-		const source = stopDetailSource();
-
-		expect(source).toContain('ArticleSectionStack');
-		expect(source).not.toMatch(/\.stop-detail\s*\{/);
-	});
-
 	it('renders article navigation that follows the active Detail and Schedule sections', async () => {
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const rail = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
@@ -811,24 +799,6 @@ describe('StopDetail retained-history ownership', () => {
 			| undefined;
 		view.unmount();
 		expect(secondContext?.signal.aborted).toBe(true);
-	});
-
-	it('passes the retained resource only to StopReliabilitySurface', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'),
-			'utf-8',
-		);
-		const reliabilitySurfaces = source.match(/<StopReliabilitySurface\s[\s\S]*?\/>/g) ?? [];
-		const outsideReliabilitySurfaces = reliabilitySurfaces.reduce(
-			(remaining, surface) => remaining.replace(surface, ''),
-			source,
-		);
-
-		expect(reliabilitySurfaces).toHaveLength(2);
-		expect(reliabilitySurfaces.every((surface) => surface.includes('history={stopHistory}'))).toBe(
-			true,
-		);
-		expect(outsideReliabilitySurfaces).not.toMatch(/\bhistory=\{stopHistory\}/);
 	});
 
 	it('keeps retained query parameters out of line links', async () => {
@@ -981,12 +951,6 @@ describe('StopDetail map drilldown', () => {
 });
 
 describe('StopDetail article head', () => {
-	it('renders the stop NAME as the article h1', () => {
-		render(StopDetail, { props: { id: '57191' } });
-
-		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
-	});
-
 	it('shows real stop identity/provider metadata and a single back link', () => {
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 

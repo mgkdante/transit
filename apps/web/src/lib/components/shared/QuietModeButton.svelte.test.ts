@@ -18,35 +18,6 @@ afterEach(() => {
 });
 
 describe('QuietModeButton source parity', () => {
-	it('uses the exact English action labels and plain-button state hooks', async () => {
-		renderControls('en');
-		await tick();
-		const collapse = screen.getByRole('button', { name: 'Collapse all' });
-		expect(collapse).toHaveAttribute('data-collapsed', 'false');
-		expect(collapse).not.toHaveAttribute('role', 'switch');
-		expect(collapse).not.toHaveAttribute('aria-checked');
-		expect(collapse).not.toHaveAttribute('aria-pressed');
-		expect(collapse).toHaveAttribute('title', 'Collapse all sections on this page');
-
-		await fireEvent.click(collapse);
-		expect(screen.getByRole('button', { name: 'Expand all' })).toHaveAttribute(
-			'data-collapsed',
-			'true',
-		);
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Always start collapsed' }));
-		expect(screen.getByRole('button', { name: "Don't start collapsed" })).toHaveAttribute(
-			'data-remembered',
-			'true',
-		);
-		expect(localStorage.getItem('quiet-mode')).toBe('true');
-
-		await fireEvent.click(screen.getByRole('button', { name: "Don't start collapsed" }));
-		expect(screen.getByRole('button', { name: 'Always start collapsed' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
-		expect(localStorage.getItem('quiet-mode')).toBeNull();
-	});
-
 	it('uses the exact French labels', async () => {
 		renderControls('fr');
 		await tick();

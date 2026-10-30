@@ -5,6 +5,8 @@
     "": {
       "name": "transit",
       "devDependencies": {
+        "@axe-core/playwright": "4.12.1",
+        "@playwright/test": "1.62.0",
         "@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/v0.29.0/yesid-config-0.29.0.tgz",
         "turbo": "^2.5.0",
         "wrangler": "4.154.0",
@@ -32,14 +34,13 @@
         "layerchart": "2.4.0",
         "maplibre-gl": "6.4.1",
         "pmtiles": "^4.4.1",
+        "shiki": "^4.5.0",
         "web-vitals": "^5.3.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@axe-core/playwright": "4.12.1",
         "@csstools/postcss-global-data": "4.0.0",
         "@eslint/js": "^10.0.1",
-        "@playwright/test": "1.62.0",
         "@resvg/resvg-js": "^2.6.2",
         "@sveltejs/adapter-cloudflare": "^7.2.8",
         "@sveltejs/kit": "^2.70.3",
@@ -66,7 +67,6 @@
         "rollup-plugin-visualizer": "^7.0.1",
         "satori": "^0.28.0",
         "sharp": "^0.35.3",
-        "shiki": "^4.5.0",
         "svelte": "^5.54.0",
         "svelte-check": "^4.4.2",
         "tailwindcss": "^4.1.18",

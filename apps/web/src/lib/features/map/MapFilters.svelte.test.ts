@@ -1,11 +1,9 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
-import { OCCUPANCY_CODES, type OccupancyCode, type StatusCode } from '$lib/v1/schemas';
+import { type OccupancyCode, type StatusCode } from '$lib/v1/schemas';
 import MapFilters from './MapFilters.svelte';
 
 describe('MapFilters', () => {
@@ -179,35 +177,6 @@ describe('MapFilters', () => {
 			expectGlyphMappings(container, 'crowding', occupancyMappings, locale);
 		},
 	);
-
-	it('keeps every E-4 DOM consumer on the dataviz occupancy helper', () => {
-		for (const relative of [
-			'src/lib/features/map/MapFilters.svelte',
-			'src/lib/features/map/MapSelectionDetail.svelte',
-			'src/lib/features/search/VehicleResultRow.svelte',
-		]) {
-			const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
-			expect(source, relative).toMatch(/import\s*\{[^}]*occupancyGlyph[^}]*\}/s);
-			expect(source.match(/occupancyGlyph\(/g), relative).toHaveLength(1);
-			expect(source, relative).not.toContain('OCCUPANCY_GLYPH');
-			expect(source, relative).not.toMatch(/['"](?:▼|●|▲|◆|○)['"]/);
-			for (const glyph of [
-				...OCCUPANCY_CODES.map((code) => occupancyGlyph(code)),
-				occupancyGlyph(null),
-				String.fromCodePoint(0x2588),
-			]) {
-				expect(source, relative).not.toContain(`'${glyph}'`);
-				expect(source, relative).not.toContain(`"${glyph}"`);
-			}
-		}
-		for (const relative of [
-			'src/lib/features/map/MapFilters.svelte',
-			'src/lib/features/map/MapSelectionDetail.svelte',
-		]) {
-			const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
-			expect(source.match(/STATUS_GLYPH\[/g), relative).toHaveLength(1);
-		}
-	});
 
 	it('renders active route, stop, and bus picks as removable filter sections', async () => {
 		let pushed = '';
@@ -392,78 +361,6 @@ describe('MapFilters', () => {
 		expect(container.querySelector('[data-testid="map-filter-header"]')).not.toBeInTheDocument();
 	});
 
-	it('keeps expanded content width stable while the collapsed rail owns its height', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{[^}]*width:\s*5\.75rem/);
-		expect(source).toMatch(/\.mf-expanded\s*\{[^}]*width:\s*16rem[^}]*flex:\s*none/s);
-		expect(source).not.toMatch(/\.mf-expanded\s*\{[^}]*max-width:\s*100%/s);
-		expect(source).toMatch(
-			/\.map-filters\s*\{[^}]*transition-property:\s*width[^}]*transition-duration:\s*var\(--duration-slow\)/s,
-		);
-		expect(source).toMatch(
-			/\.map-filters\[data-open='false'\]\s*\{[^}]*transition-duration:\s*var\(--duration-normal\)/s,
-		);
-		const shellRule = source.match(/\.map-filters\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-		expect(shellRule).not.toMatch(/transition-(?:property|duration):[^;]*(?:background|border)/);
-		expect(source).toContain("const STORAGE_KEY = 'transit:controls-rail'");
-	});
-
-	it('keeps desktop scrolling inside the filter card instead of the overlay wrapper', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toMatch(
-			/\.map-filters\s*\{[\s\S]*max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/,
-		);
-		expect(source).toMatch(/\.map-filters\s*\{[\s\S]*overflow:\s*hidden/);
-		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*min-height:\s*0/);
-		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*overflow-y:\s*auto/);
-		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*padding-right:\s*0\.5rem/);
-		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*stable/);
-		expect(source).toMatch(
-			/\.map-filters\[data-presentation='drawer'\][\s\S]*\.mf-body\s*\{[^}]*overflow:\s*visible/s,
-		);
-		expect(source).toMatch(
-			/\.map-filters\[data-presentation='drawer'\] \.mf-head\s*\{[^}]*position:\s*sticky/s,
-		);
-		expect(source).not.toMatch(
-			/\.map-filters\[data-presentation='drawer'\] \.mf-controls\s*\{[^}]*position:\s*sticky/s,
-		);
-	});
-
-	it('removes the onselect API and delegates presentation markup to the named stateless split', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
-			'utf-8',
-		);
-		const lineCount = source.split('\n').length - 1;
-
-		expect(source).not.toContain('onselect');
-		expect(source).toContain("import MapFilterGroup from './MapFilterGroup.svelte'");
-		expect(source).toContain("import MapFilterRail from './MapFilterRail.svelte'");
-		expect(lineCount).toBeLessThan(1_000);
-	});
-
-	it('removes onselect from the complete Controls snippet death graph', () => {
-		for (const relative of [
-			'src/lib/features/map/MapFilters.svelte',
-			'src/lib/features/map/MapFilterPill.svelte',
-			'src/lib/features/map/MapOverlayChrome.svelte',
-			'src/lib/features/map/__fixtures__/MapFilterPillHarness.svelte',
-			'src/lib/features/map/__fixtures__/MapOverlayChromeHarness.svelte',
-		]) {
-			expect(readFileSync(resolve(process.cwd(), relative), 'utf-8'), relative).not.toContain(
-				'onselect',
-			);
-		}
-	});
-
 	it('restores the persisted desktop rail state with a browser-safe localStorage key', async () => {
 		localStorage.setItem('transit:controls-rail', 'true');
 		const store = createFilterStore(emptyFilterState());
@@ -503,29 +400,5 @@ describe('MapFilters', () => {
 
 		await fireEvent.click(getByRole('button', { name: 'Expand controls' }));
 		await waitFor(() => expect(getByRole('button', { name: 'Collapse controls' })).toHaveFocus());
-	});
-
-	it('keeps the frozen filter controls in the hard-44 inventory while desktop chips stay compact', () => {
-		const filtersSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
-			'utf-8',
-		);
-		const groupPath = resolve(process.cwd(), 'src/lib/features/map/MapFilterGroup.svelte');
-		const railPath = resolve(process.cwd(), 'src/lib/features/map/MapFilterRail.svelte');
-
-		expect(existsSync(groupPath)).toBe(true);
-		expect(existsSync(railPath)).toBe(true);
-		if (!existsSync(groupPath) || !existsSync(railPath)) return;
-
-		const groupSource = readFileSync(groupPath, 'utf-8');
-		const railSource = readFileSync(railPath, 'utf-8');
-		expect(filtersSource).toMatch(/\.mf-toggle\s*\{[^}]*min-height:\s*44px/s);
-		expect(filtersSource).toMatch(/\.mf-clear\s*\{[^}]*min-height:\s*44px/s);
-		expect(filtersSource).toMatch(
-			/data-presentation='drawer'[\s\S]*\.mf-chip\s*\{[^}]*min-height:\s*44px/s,
-		);
-		expect(filtersSource).toMatch(/\.mf-chip\s*\{[^}]*min-height:\s*2rem/s);
-		expect(groupSource).toMatch(/\.mf-group-trigger\s*\{[^}]*min-height:\s*44px/s);
-		expect(railSource).toMatch(/\.mf-rail-glyph\s*\{[^}]*min-height:\s*44px/s);
 	});
 });

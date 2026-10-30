@@ -1,19 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ChartDatumPopoverHarness from './__fixtures__/ChartDatumPopoverHarness.svelte';
 import { chartDatumPopoverBoundary, createChartDatumPopover } from './useChartDatumPopover.svelte';
 
 const LINKED_HEADING = 'Route 24 · Sherbrooke';
 const INFORMATION_HEADING = 'Route 55 · Saint-Laurent';
-
-function source(): string {
-	return readFileSync(
-		resolve(process.cwd(), 'src/lib/components/dataviz/chart/ChartDatumPopover.svelte'),
-		'utf8',
-	);
-}
 
 async function activate(
 	testId: 'linked-trigger' | 'information-trigger',
@@ -271,12 +262,9 @@ describe('ChartDatumPopover viewport placement', () => {
 		await activate('linked-trigger', 'touch', 380, 12);
 		const dialog = await screen.findByRole('dialog', { name: LINKED_HEADING });
 		await waitFor(() => {
-			expect(dialog.style.left).toBe('162px');
-			expect(dialog.style.top).toBe('20px');
 			expect(dialog).toHaveAttribute('data-placed', 'true');
 		});
 
-		expect(source()).toMatch(/\.chart-datum-popover\s*\{[\s\S]*?position:\s*fixed;/);
 		const left = Number.parseFloat(dialog.style.left);
 		const top = Number.parseFloat(dialog.style.top);
 		expect(left).toBeGreaterThanOrEqual(8);
@@ -421,17 +409,5 @@ describe('ChartDatumPopover dismissal and cleanup', () => {
 		for (const call of windowListeners) {
 			expect(windowRemove).toHaveBeenCalledWith(...call);
 		}
-	});
-});
-
-describe('ChartDatumPopover styling contracts', () => {
-	it('uses the interaction token for action focus-visible and removes entrance motion when reduced', () => {
-		const css = source();
-		expect(css).toMatch(
-			/\.chart-datum-popover__action:focus-visible\s*\{[\s\S]*?outline:\s*2px solid var\(--ring\);[\s\S]*?\}/,
-		);
-		expect(css).toMatch(
-			/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.chart-datum-popover--placed\s*\{[\s\S]*?animation:\s*none;[\s\S]*?\}/,
-		);
 	});
 });

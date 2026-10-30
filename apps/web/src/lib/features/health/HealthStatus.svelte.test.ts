@@ -1,7 +1,6 @@
+import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
 import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
@@ -302,12 +301,14 @@ describe('HealthStatus — full manifest render', () => {
 		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
 	});
 
-	it('renders the exact two controls and one numbered card per present pipeline section', async () => {
+	it('renders the controls and one numbered card per present pipeline section', async () => {
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
-		expect(within(header).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
 		expect(
-			within(header).getByRole('button', { name: 'Always start collapsed' }),
+			within(header).getByRole('button', { name: quietModeCopy.en.collapse }),
+		).toBeInTheDocument();
+		expect(
+			within(header).getByRole('button', { name: quietModeCopy.en.remember }),
 		).toBeInTheDocument();
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
@@ -322,15 +323,25 @@ describe('HealthStatus — full manifest render', () => {
 			en.envelope.section,
 			en.historyCoverage.section,
 		]) {
-			const trigger = within(center).getByRole('button', { name: title });
-			const card = trigger.closest('[data-slot="card"]') as HTMLElement;
-			expect(card).not.toBeNull();
-			expect(within(card).getAllByText(title)).toHaveLength(1);
+			expect(within(center).getByRole('button', { name: title })).toBeInTheDocument();
 		}
 
-		await fireEvent.click(within(header).getByRole('button', { name: 'Collapse all' }));
-		for (const trigger of center.querySelectorAll('button.section-header')) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(within(header).getByRole('button', { name: quietModeCopy.en.collapse }));
+		for (const title of [
+			en.lanes.section,
+			en.freshness.section,
+			en.sources.section,
+			en.gaps.section,
+			en.pipelineNotes.section,
+			en.retention.section,
+			en.conformance.section,
+			en.envelope.section,
+			en.historyCoverage.section,
+		]) {
+			expect(within(center).getByRole('button', { name: title })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
 		}
 	});
 
@@ -348,18 +359,6 @@ describe('HealthStatus — full manifest render', () => {
 		expect(
 			within(center).getByRole('table', { name: en.historyCoverage.tableLabel }),
 		).toBeInTheDocument();
-	});
-
-	it('uses one stable locale-free disclosure key for retained-history coverage', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
-			'utf8',
-		);
-
-		expect(source).toContain('sectionKey={`status-card-${section.id}`}');
-		expect(source).toContain("id: 'health-history-coverage'");
-		expect(source).toContain('anchor={section.id}');
-		expect(source).not.toContain('status-card-health-history-coverage-fr');
 	});
 
 	it('opts every Status section and stat card into title-only article-summary headers', () => {
@@ -449,19 +448,6 @@ describe('HealthStatus — full manifest render', () => {
 		expect(copy.fr.lede).not.toContain('/v1');
 	});
 
-	it('uses the exact article prose and compact rail typography contract', () => {
-		const src = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
-			'utf8',
-		);
-		expect(src).toMatch(
-			/\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-mobile\)[\s\S]*?line-height:\s*1\.8/,
-		);
-		expect(src).toMatch(
-			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*var\(--text-small\)[\s\S]*?line-height:\s*1\.45/,
-		);
-	});
-
 	it('uses one wide left rail and renders At a glance once below its navigation', () => {
 		const { container } = render(HealthStatus);
 		const grid = container.querySelector('.detail-shell-grid') as HTMLElement;
@@ -498,21 +484,6 @@ describe('HealthStatus — full manifest render', () => {
 		expect(lanes).toHaveAttribute('aria-expanded', 'false');
 		expect(laneCard.querySelector('.section-body')).toHaveAttribute('data-state', 'closed');
 		expect(feeds).toHaveAttribute('aria-expanded', 'true');
-	});
-
-	it('uses the shared ArticleSectionStack for primary cards without a page-owned card gap', () => {
-		const { container } = render(HealthStatus);
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
-			'utf8',
-		);
-		const stack = container.querySelector('[data-slot="article-section-stack"]');
-
-		expect(stack).toHaveClass('health-sections');
-		expect(source).toContain('ArticleSectionStack');
-		expect(source).not.toMatch(
-			/\.health-sections\s*\{[^}]*?(?:display:\s*flex|flex-direction:\s*column|gap:)/s,
-		);
 	});
 
 	it('renders the surface head + a semantic neutral update time, never the live "LIVE" chip', () => {

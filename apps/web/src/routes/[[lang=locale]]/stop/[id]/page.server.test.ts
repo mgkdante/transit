@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -101,17 +99,5 @@ describe('/stop/[id] server identity seed', () => {
 			seed: { id: '5678', name: '5678' },
 			stopSeed: null,
 		});
-	});
-
-	it('forwards the seed through the thin stop mount', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/routes/[[lang=locale]]/stop/[id]/+page.svelte'),
-			'utf8',
-		);
-
-		expect(source).toContain('id={data.seed.id}');
-		expect(source).toContain('seed={data.seed}');
-		expect(source).toContain('stopSeed={data.stopSeed ?? undefined}');
-		expect(source).not.toContain('id={data.id}');
 	});
 });

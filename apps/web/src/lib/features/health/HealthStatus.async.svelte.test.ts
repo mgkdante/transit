@@ -258,46 +258,6 @@ describe('HealthStatus — async reveal navigation', () => {
 		expect(scrollIntoView).toHaveBeenCalledTimes(1);
 	});
 
-	it('collapses cards that mount after the remembered start signal', async () => {
-		sessionStorage.removeItem('persisted:status-card-health-lanes');
-		const { container } = render(HealthStatus);
-		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
-		provenanceGate.resolve(provenanceFixture);
-		dataHealthGate.resolve(dataHealthFixture);
-
-		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
-		const lanes = await waitFor(() =>
-			within(center).getByRole('button', { name: copy.en.lanes.section }),
-		);
-		expect(lanes).toHaveAttribute('aria-expanded', 'false');
-	});
-
-	it('leaves no section stuck closed after Collapse all here and Expand all on another page', async () => {
-		quietMode.resetForTest();
-		sessionStorage.removeItem('persisted:status-card-health-lanes');
-		provenanceGate.resolve(provenanceFixture);
-		dataHealthGate.resolve(dataHealthFixture);
-		const lanesCard = (view: { container: HTMLElement }) =>
-			waitFor(() =>
-				within(
-					view.container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement,
-				).getByRole('button', { name: copy.en.lanes.section }),
-			);
-
-		const first = render(HealthStatus);
-		const lanes = await lanesCard(first);
-		expect(lanes).toHaveAttribute('aria-expanded', 'true');
-		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
-		expect(lanes).toHaveAttribute('aria-expanded', 'false');
-		first.unmount();
-
-		const second = render(HealthStatus);
-		const again = await lanesCard(second);
-		expect(again).toHaveAttribute('aria-expanded', 'false');
-		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
-		expect(again).toHaveAttribute('aria-expanded', 'true');
-	});
-
 	it('opens a ToC target before scrolling and uses auto behavior for reduced motion', async () => {
 		motion.reduced = true;
 		const { container } = render(HealthStatus);

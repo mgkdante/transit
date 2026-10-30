@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import SectionAffected from './SectionAffected.svelte';
@@ -199,27 +197,5 @@ describe('Daily Receipt presenter refinements', () => {
 			list!.compareDocumentPosition(card as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
 		expect(container.querySelector('.receipt-tod-caveat')).toBeNull();
-	});
-
-	it('keeps headline metrics one column in a narrow mobile article card', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/receipt/sections/SectionHeadline.svelte'),
-			'utf8',
-		);
-		const twoColumnStart = source.indexOf('@container receipt (min-width: 24rem)');
-		const threeColumnStart = source.indexOf('@container receipt (min-width: 46rem)');
-		expect(twoColumnStart).toBeGreaterThan(-1);
-		expect(threeColumnStart).toBeGreaterThan(twoColumnStart);
-		const base = source.slice(0, twoColumnStart);
-		const wider = source.slice(twoColumnStart, threeColumnStart);
-		const widest = source.slice(threeColumnStart);
-		expect(base).toMatch(/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/);
-		expect(base).not.toMatch(/repeat\(2/);
-		expect(wider).toMatch(
-			/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
-		);
-		expect(widest).toMatch(
-			/\.receipt-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
-		);
 	});
 });

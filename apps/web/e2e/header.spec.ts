@@ -1,4 +1,3 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
@@ -119,21 +118,4 @@ for (const locale of PUBLISHED_LOCALES) {
 		expect(Math.abs(box.x + box.width / 2 - (label.x + label.width / 2))).toBeLessThanOrEqual(1);
 		expect(Math.abs(box.y + box.height / 2 - (label.y + label.height / 2))).toBeLessThanOrEqual(1);
 	});
-}
-
-// One test per page, so each page gets its own budget and its own report line.
-for (const locale of PUBLISHED_LOCALES) {
-	for (const item of destinations) {
-		test(`${locale} ${item.href}: axe finds no serious issues with the menu open`, async ({
-			page,
-		}, testInfo) => {
-			test.skip(testInfo.project.name !== 'desktop', 'axe results do not depend on the viewport');
-			await page.goto(localized(item.href, locale));
-			await openMenu(page, locale);
-			const { violations } = await new AxeBuilder({ page }).analyze();
-			expect(
-				violations.filter(({ impact }) => impact === 'serious' || impact === 'critical'),
-			).toEqual([]);
-		});
-	}
 }
