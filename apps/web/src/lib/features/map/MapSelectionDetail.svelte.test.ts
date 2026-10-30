@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { compile } from 'svelte/compiler';
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
@@ -158,6 +161,81 @@ const index = buildLiveIndex({
 		},
 	},
 });
+
+function compiledCss(file: string): string {
+	return (
+		compile(readFileSync(resolve(process.cwd(), file), 'utf8'), {
+			filename: file,
+			generate: 'client',
+			css: 'external',
+		}).css?.code ?? ''
+	);
+}
+
+function splitContainerRules(css: string): {
+	base: string;
+	rules: { condition: string; body: string }[];
+} {
+	const marker = '@container right-panel';
+	const rules: { condition: string; body: string }[] = [];
+	let base = '';
+	let cursor = 0;
+	for (;;) {
+		const start = css.indexOf(marker, cursor);
+		if (start < 0) {
+			base += css.slice(cursor);
+			break;
+		}
+		base += css.slice(cursor, start);
+		const open = css.indexOf('{', start + marker.length);
+		if (open < 0) throw new Error('unclosed right-panel container query');
+		let depth = 1;
+		let end = open + 1;
+		while (depth > 0 && end < css.length) {
+			if (css[end] === '{') depth += 1;
+			if (css[end] === '}') depth -= 1;
+			end += 1;
+		}
+		if (depth !== 0) throw new Error('unclosed right-panel container rule');
+		rules.push({
+			condition: css.slice(start + marker.length, open).trim(),
+			body: css.slice(open + 1, end - 1),
+		});
+		cursor = end;
+	}
+	return { base, rules };
+}
+
+const RIGHT_PANEL_INLINE_BORDER_PX = 1;
+
+function containerConditionMatches(condition: string, outerWidthPx: number): boolean {
+	const contentWidthPx = outerWidthPx - RIGHT_PANEL_INLINE_BORDER_PX;
+	const range = condition.match(/\(width\s*([<>])\s*([\d.]+)rem\)/);
+	if (range) {
+		const contentBoundaryPx = Number(range[2]) * 16;
+		return range[1] === '<'
+			? contentWidthPx < contentBoundaryPx
+			: contentWidthPx > contentBoundaryPx;
+	}
+	const legacy = condition.match(/\((min|max)-width:\s*([\d.]+)rem\)/);
+	if (!legacy) throw new Error(`unsupported container condition: ${condition}`);
+	const contentBoundaryPx = Number(legacy[2]) * 16;
+	return legacy[1] === 'min'
+		? contentWidthPx >= contentBoundaryPx
+		: contentWidthPx <= contentBoundaryPx;
+}
+
+function installLeafContainerSizeSeam(file: string, outerWidthPx: number): HTMLStyleElement {
+	const css = splitContainerRules(compiledCss(file));
+	const activeQueries = css.rules
+		.filter(({ condition }) => containerConditionMatches(condition, outerWidthPx))
+		.map(({ body }) => body)
+		.join('\n');
+	const style = document.createElement('style');
+	style.textContent = [css.base, activeQueries].join('\n');
+	document.head.append(style);
+	return style;
+}
 
 describe('MapSelectionDetail', () => {
 	it.each([
@@ -635,6 +713,26 @@ describe('MapSelectionDetail', () => {
 		const busRow = stopRender.getByRole('button', { name: /^Select vehicle veh-1,/ });
 		await checkPreview(busRow, { kind: 'vehicle', id: 'veh-1' });
 		expect(selected).not.toHaveBeenCalled();
+	});
+
+	it('reflows a bus row into two columns in a 320px panel container', () => {
+		const style = installLeafContainerSizeSeam(
+			'src/lib/features/map/detail/DetailBusRow.svelte',
+			320,
+		);
+		try {
+			const { getByRole } = render(DetailBusRow, {
+				props: {
+					vehicle: vehicles[0],
+					locale: 'en',
+					t: MAP_SELECTION_DETAIL_COPY.en,
+					onselect: () => {},
+				},
+			});
+			expect(getComputedStyle(getByRole('button')).gridTemplateColumns).toBe('minmax(0, 1fr) auto');
+		} finally {
+			style.remove();
+		}
 	});
 
 	it('preserves a focused stop row through a same-entity refeed and reorder', async () => {

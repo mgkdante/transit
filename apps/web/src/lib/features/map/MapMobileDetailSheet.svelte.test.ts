@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { compile } from 'svelte/compiler';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +89,22 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
+function compiledCss(path: string): string {
+	return (
+		compile(readFileSync(resolve(process.cwd(), path), 'utf8'), {
+			filename: path,
+			generate: 'client',
+			css: 'external',
+		}).css?.code ?? ''
+	);
+}
+
+function cssFloorPx(value: string): number {
+	if (value.endsWith('rem')) return Number.parseFloat(value) * 16;
+	if (value.endsWith('px')) return Number.parseFloat(value);
+	return 0;
+}
+
 describe('MapMobileDetailSheet', () => {
 	it('forwards one supplied identity and a real footer action into the BottomSheet slots', async () => {
 		const identity = createRawSnippet(() => ({ render: () => '<span>Bus veh-mobile</span>' }));
@@ -147,6 +166,66 @@ describe('MapMobileDetailSheet', () => {
 		const body = document.querySelector('[data-slot="bottom-sheet-body"]')!;
 		expect(body).toBeInTheDocument();
 		expect(document.querySelector('[data-slot="sheet-title"]')).toHaveTextContent(stop.name);
+	});
+
+	it('reserves action space only for definition rows with an action and keeps values wrapping', async () => {
+		const style = document.createElement('style');
+		let unmount: (() => void) | undefined;
+		style.textContent = [
+			compiledCss('src/lib/features/map/MapMobileDetailSheet.svelte'),
+			compiledCss('src/lib/features/map/MapSelectionDetail.svelte'),
+			compiledCss('src/lib/features/map/detail/DetailAttributeGrid.svelte'),
+		].join('\n');
+		document.head.append(style);
+		try {
+			const vehicleDetail: VehicleMapDetail = {
+				...noTargetVehicle,
+				id: 'veh-tablet',
+				title: 'Bus veh-tablet',
+				vehicle: {
+					...noTargetVehicle.vehicle,
+					id: 'veh-tablet',
+					status: 'late',
+					route: '24',
+					trip: 'trip-with-an-intentionally-long-identifier-that-must-wrap',
+					next_stop: 'stop-1',
+					delay_min: 4,
+					occupancy: 'standing',
+				},
+				nextStop: stop,
+				nextStopAbsence: 'not-in-schedule',
+				routeType: 3,
+			};
+			({ unmount } = render(MapMobileDetailSheet, {
+				props: baseProps({ selectedDetail: vehicleDetail }),
+			}));
+			const row = await waitFor(() => {
+				const element = document.querySelector<HTMLElement>(
+					'[data-mobile-detail-body] .detail-attribute-grid > div',
+				);
+				expect(element).toBeInTheDocument();
+				return element!;
+			});
+			const value = row.querySelector<HTMLElement>('dd')!;
+			const action = row.querySelector<HTMLElement>('button')!;
+
+			expect(getComputedStyle(row).gridTemplateColumns).toBe('5.75rem minmax(0, 1fr) auto');
+			const etaRow = [
+				...document.querySelectorAll<HTMLElement>('.detail-attribute-grid > div'),
+			].find((candidate) => candidate.querySelector('dt')?.textContent === 'ETA')!;
+			expect(etaRow.querySelector('button')).toBeNull();
+			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe('5.75rem minmax(0, 1fr)');
+			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');
+			expect(
+				Math.max(
+					cssFloorPx(getComputedStyle(action).minHeight),
+					cssFloorPx(getComputedStyle(action).minBlockSize),
+				),
+			).toBeGreaterThanOrEqual(44);
+		} finally {
+			unmount?.();
+			style.remove();
+		}
 	});
 
 	it('owns the localized identity and forwards retained-detail retry state to the body', async () => {

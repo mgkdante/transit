@@ -20,6 +20,8 @@
     "smoke": "bash apps/data-proxy/smoke.sh"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.0",
     "@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/v0.29.0/yesid-config-0.29.0.tgz",
     "turbo": "^2.5.0",
     "wrangler": "4.154.0"

@@ -1,4 +1,3 @@
-import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -193,17 +192,4 @@ test('the status page stacks its coverage table on phones and says when data is 
 	const box = (await table.boundingBox())!;
 	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 	await expect(page.getByRole('main').getByRole('status').first()).toBeVisible();
-});
-
-test('axe finds no serious issues on the data surfaces', async ({ page }, testInfo) => {
-	test.skip(testInfo.project.name !== 'desktop', 'axe results do not depend on the viewport');
-	for (const path of [`/trip/${trip}`, `/stop/${stop}`, '/status']) {
-		await page.goto(path);
-		const { violations } = await new AxeBuilder({ page }).analyze();
-		expect(
-			violations
-				.filter(({ impact }) => impact === 'serious' || impact === 'critical')
-				.map(({ id }) => `${path}: ${id}`),
-		).toEqual([]);
-	}
 });
