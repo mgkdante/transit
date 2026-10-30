@@ -72,6 +72,10 @@ for (const locale of PUBLISHED_LOCALES) {
 			await page.keyboard.press('Tab');
 			await expect(page.locator(':focus')).toHaveAttribute('href', '#main');
 			await expect(page.locator(':focus')).toHaveAccessibleName(navPillCopy[locale].skipToContent);
+			await page.keyboard.press('Enter');
+			await expect(page.getByRole('main')).toBeFocused();
+			await page.keyboard.press('Tab');
+			await expect(page.getByRole('main').locator(':focus')).toHaveCount(1);
 			await expect(page.getByRole('banner')).toHaveCount(1);
 			await expect(page.getByRole('main')).toHaveAttribute('id', 'main');
 			// The map is full-bleed and has no footer.

@@ -412,6 +412,7 @@
 				>
 					<main
 						id="main"
+						tabindex="-1"
 						aria-label={mainLabel?.[locale] ?? navPillCopy[locale].mapLabel}
 						class={isFullBleed
 							? 'min-h-0 grow'

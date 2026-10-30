@@ -342,6 +342,7 @@
 			{#snippet actions()}
 				<MapDrilldownLink
 					href={localizeHref(mapHrefFor({ route: id }, locale), locale)}
+					context={t.viewRouteOnMap(id)}
 					label={t.viewOnMap}
 				/>
 			{/snippet}

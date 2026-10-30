@@ -137,6 +137,7 @@
 							{/if}
 							<MapDrilldownLink
 								href={localizeHref(mapHrefFor({ trip: id }, locale), locale)}
+								context={t.viewTripOnMap(id)}
 								label={t.viewOnMap}
 							/>
 						</div>
