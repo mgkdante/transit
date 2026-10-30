@@ -99,7 +99,7 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
     assert jobs["rollups"]["needs"] == "prepare"
     assert set(jobs["publish"]["needs"]) == {"prepare", "rollups"}
     assert set(jobs["proof"]["needs"]) == {"prepare", "publish"}
-    assert set(jobs["retention"]["needs"]) == {"prepare", "proof"}
+    assert set(jobs["retention"]["needs"]) == {"prepare", "rollups", "proof"}
     assert set(jobs["notify"]["needs"]) == {
         "prepare",
         "rollups",
@@ -1174,6 +1174,7 @@ def test_retention_is_serial_after_proof_and_requires_bronze_exhaustion() -> Non
 
     assert retention["if"] == (
         "${{ !cancelled() && needs.prepare.result == 'success' "
+        "&& needs.rollups.result == 'success' "
         "&& (needs.proof.result == 'success' || (needs.proof.result == 'skipped' "
         "&& needs.prepare.outputs.historic_publish == 'false')) }}"
     )
