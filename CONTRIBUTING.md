@@ -81,7 +81,9 @@ CI, covers them.
 
 Deploys and the scheduled pipeline run from [GitHub Actions](.github/workflows)
 with the maintainer's Cloudflare, storage and database access. Never point tests
-or migrations at production.
+or migrations at production. Pull requests from branches of this repository get
+a noindex web preview at `pr-<number>-transit-web.<subdomain>.workers.dev`,
+linked from the PR's `preview` deployment; fork pull requests skip it.
 
 ## Questions and reports
 

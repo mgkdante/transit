@@ -2,19 +2,10 @@ name: web
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   push:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      deploy_target:
-        description: "Deploy to the selected target"
-        required: true
-        default: "dev"
-        type: choice
-        options:
-          - dev
-          - production
 
 permissions:
   contents: read
@@ -89,8 +80,6 @@ jobs:
       - name: Select build target
         id: build_target
         working-directory: ${{ github.workspace }}
-        env:
-          TRANSIT_DEPLOY_TARGET: ${{ inputs.deploy_target }}
         run: node .github/scripts/web-build-artifact.mjs configure
 
       - name: Build (adapter-cloudflare)
@@ -105,9 +94,7 @@ jobs:
         run: node .github/scripts/web-build-artifact.mjs prepare "$RUNNER_TEMP/transit-web-build"
 
       - name: Web Wrangler dry run
-        env:
-          TRANSIT_WRANGLER_ENV: ${{ steps.build_target.outputs.target == 'dev' && 'dev' || '' }}
-        run: ../../node_modules/.bin/wrangler deploy --dry-run --env="$TRANSIT_WRANGLER_ENV"
+        run: ../../node_modules/.bin/wrangler deploy --dry-run
 
       - name: Browser toolchain contract
         run: node --test scripts/install-browser-toolchain.test.mjs
@@ -228,21 +215,14 @@ jobs:
           TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
         run: node .github/scripts/deploy-scope.mjs >> "$GITHUB_OUTPUT"
 
-  deploy-dev:
-    name: deploy dev
+  preview:
+    name: preview
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [ci, deploy_scope, ci-work]
-    if: >-
-      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
-          ((github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')) }}
-    environment: development
-    env:
-      TRANSIT_BUILD_TARGET: dev
-      PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
-      PUBLIC_V1_BASE: https://data.yesid.dev/v1
-      PUBLIC_INDEXING: "false"
+    environment:
+      name: preview
+      url: ${{ steps.upload.outputs.url }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -250,77 +230,26 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
-      - name: Require the producer artifact
+      - name: Build (adapter-cloudflare)
+        run: bun run build
+
+      # Uploads a version without deploying it; production traffic is untouched.
+      - name: Upload preview version
+        id: upload
         env:
-          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
-          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
         run: |
-          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
-          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
-          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
-
-      - name: Download the producer artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
-          path: ${{ runner.temp }}/transit-web-build
-          merge-multiple: true
-          digest-mismatch: error
-
-      - name: Restore the verified deployment build
-        working-directory: ${{ github.workspace }}
-        env:
-          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
-
-      - name: Apply public snapshot CORS
-        working-directory: apps/data-proxy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Remove legacy dev DNS route host
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
-        run: |
-          set -euo pipefail
-          record_name="dev.transit.yesid.dev"
-          legacy_comment="develop lane: Workers-route-only hostname for transit-web-dev"
-          api="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records"
-          records_json="$(curl -fsS \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${api}?type=AAAA&name=${record_name}")"
-          existing_id="$(jq -r '.result[0].id // empty' <<<"${records_json}")"
-          if [ -z "${existing_id}" ]; then
-            echo "No legacy DNS route host found for ${record_name}."
-            exit 0
+          ../../node_modules/.bin/wrangler versions upload --preview-alias "pr-$PR_NUMBER" \
+            --message "Preview of PR #$PR_NUMBER, never deploy" --var PUBLIC_INDEXING:false
+          url="$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
+          if [ -z "$url" ]; then
+            echo "::error::No preview URL: Version URLs are off for transit-web until a production deploy applies preview_urls = true."
+            exit 1
           fi
-
-          content="$(jq -r '.result[0].content' <<<"${records_json}")"
-          proxied="$(jq -r '.result[0].proxied' <<<"${records_json}")"
-          comment="$(jq -r '.result[0].comment // ""' <<<"${records_json}")"
-          if [ "${content}" != "100::" ] || [ "${proxied}" != "true" ] || [ "${comment}" != "${legacy_comment}" ]; then
-            echo "Existing ${record_name} DNS record is not the legacy route host; leaving it in place."
-            exit 0
-          fi
-
-          curl -fsS -X DELETE \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${api}/${existing_id}" | jq -e '.success == true' >/dev/null
-          echo "Legacy DNS route host removed for ${record_name}; Wrangler will attach it as a custom domain."
-
-      - name: Deploy dev Worker
-        working-directory: apps/web
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: ../../node_modules/.bin/wrangler deploy --env dev
+          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          printf 'Preview for PR #%s: %s\n' "$PR_NUMBER" "$url" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-production:
     name: deploy production
@@ -329,8 +258,8 @@ jobs:
     needs: [ci, deploy_scope, ci-work]
     if: >-
       ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
-          ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')) }}
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' || needs.deploy_scope.outputs.deploy_web == 'true') }}
     environment: production
     env:
       TRANSIT_BUILD_TARGET: production
@@ -382,7 +311,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.PUBLIC_PLAUSIBLE_DOMAIN }}
-        run: ../../node_modules/.bin/wrangler deploy --env="" ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
+        run: ../../node_modules/.bin/wrangler deploy ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
 
       - name: Verify shared production routes
         working-directory: apps/data-proxy

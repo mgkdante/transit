@@ -2,7 +2,7 @@ name: Deploy Data Proxy Worker
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "apps/data-proxy/**"
       - ".bun-version"
@@ -12,7 +12,7 @@ on:
       - "bun.lock"
       - "package.json"
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "apps/data-proxy/**"
       - ".bun-version"

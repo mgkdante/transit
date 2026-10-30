@@ -461,7 +461,7 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
         ".bun-version",
     }
 
-    assert on["pull_request"]["branches"] == ["main", "develop"]
+    assert on["pull_request"]["branches"] == ["main"]
     assert "paths" not in on["pull_request"]
     assert set(on["push"]["paths"]) == expected_paths
 

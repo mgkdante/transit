@@ -109,25 +109,18 @@ function fixture(t) {
 test("configure binds each eligible event to the deployment environment", (t) => {
   const f = fixture(t);
   const cases = [
-    ["push", "refs/heads/main", "", "production"],
-    ["push", "refs/heads/develop", "", "dev"],
-    ["workflow_dispatch", "refs/heads/topic", "dev", "dev"],
-    ["workflow_dispatch", "refs/heads/main", "production", "production"],
-    ["workflow_dispatch", "refs/heads/topic", "production", "verification"],
-    ["pull_request", "refs/heads/main", "production", "verification"],
-    ["push", "refs/heads/topic", "", "verification"],
+    ["push", "refs/heads/main", "production"],
+    ["workflow_dispatch", "refs/heads/main", "production"],
+    ["workflow_dispatch", "refs/heads/topic", "verification"],
+    ["pull_request", "refs/heads/main", "verification"],
+    ["push", "refs/heads/topic", "verification"],
   ];
-  for (const [event, ref, requested, target] of cases) {
+  for (const [event, ref, target] of cases) {
     rmSync(f.env.GITHUB_ENV, { force: true });
     writeFileSync(f.env.GITHUB_OUTPUT, "");
     assert.equal(
       configure({
-        env: {
-          ...f.env,
-          GITHUB_EVENT_NAME: event,
-          GITHUB_REF: ref,
-          TRANSIT_DEPLOY_TARGET: requested,
-        },
+        env: { ...f.env, GITHUB_EVENT_NAME: event, GITHUB_REF: ref },
       }),
       target,
     );
@@ -137,16 +130,11 @@ test("configure binds each eligible event to the deployment environment", (t) =>
     );
     if (target === "verification")
       assert.equal(existsSync(f.env.GITHUB_ENV), false);
-    else {
-      const origin =
-        target === "dev"
-          ? "https://dev.transit.yesid.dev"
-          : "https://transit.yesid.dev";
+    else
       assert.equal(
         readFileSync(f.env.GITHUB_ENV, "utf8"),
-        `PUBLIC_SITE_ORIGIN=${origin}\nPUBLIC_V1_BASE=https://data.yesid.dev/v1\nPUBLIC_INDEXING=${target === "production"}\n`,
+        "PUBLIC_SITE_ORIGIN=https://transit.yesid.dev\nPUBLIC_V1_BASE=https://data.yesid.dev/v1\nPUBLIC_INDEXING=true\n",
       );
-    }
   }
 });
 
@@ -218,7 +206,7 @@ test("restore rejects changed identity, producer attempt, public environment, an
     ["GITHUB_RUN_ID", "456"],
     ["TRANSIT_PRODUCER_ATTEMPT", "2"],
     ["TRANSIT_PRODUCER_ATTEMPT", ""],
-    ["TRANSIT_BUILD_TARGET", "dev"],
+    ["TRANSIT_BUILD_TARGET", "verification"],
     ["PUBLIC_SITE_ORIGIN", "https://other.invalid"],
     ["PUBLIC_V1_BASE", "https://other.invalid/v1"],
     ["PUBLIC_INDEXING", "false"],

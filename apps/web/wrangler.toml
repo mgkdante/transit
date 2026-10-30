@@ -17,6 +17,8 @@ compatibility_flags = ["nodejs_compat"]
 account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
 # transit.yesid.dev is the target; no public workers.dev fallback URL.
 workers_dev = false
+# PR previews only: pr-<number>-transit-web.<subdomain>.workers.dev (web.yml).
+preview_urls = true
 
 # Bind the app to the apex transit host. Routes are evaluated by specificity,
 # so the data-proxy's transit.yesid.dev/data/* route takes precedence here.
@@ -54,28 +56,3 @@ PUBLIC_PROVIDER_CITY = "Montréal"
 PUBLIC_SITE_AUTHOR = "Yesid"
 PUBLIC_TWITTER_SITE = ""
 PUBLIC_TWITTER_CREATOR = ""
-
-[env.dev]
-name = "transit-web-dev"
-workers_dev = false
-routes = [
-  { pattern = "dev.transit.yesid.dev", custom_domain = true },
-]
-
-[env.dev.vars]
-PUBLIC_SITE_ORIGIN = "https://dev.transit.yesid.dev"
-PUBLIC_V1_BASE = "https://data.yesid.dev/v1"
-PUBLIC_INDEXING = "false"
-PUBLIC_PROVIDER_SHORT_NAME = "STM"
-PUBLIC_PROVIDER_CITY = "Montréal"
-PUBLIC_SITE_AUTHOR = "Yesid"
-PUBLIC_TWITTER_SITE = ""
-PUBLIC_TWITTER_CREATOR = ""
-
-[[env.dev.services]]
-binding = "DATA"
-service = "transit-data-proxy"
-
-[[env.dev.r2_buckets]]
-binding = "SNAPSHOTS"
-bucket_name = "transit-snapshots"
