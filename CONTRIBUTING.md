@@ -6,6 +6,10 @@ preserve the snapshot contracts, and leave missing values unknown rather than
 filling them in. Never commit dotenv files, credentials or raw operational
 artifacts.
 
+The [Documentation wiki](https://app.notion.com/p/3663e8630690815b927dea4888252234)
+explains the architecture and app-specific contracts. This file owns repository
+setup and check commands.
+
 ## Set up
 
 Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), then:
