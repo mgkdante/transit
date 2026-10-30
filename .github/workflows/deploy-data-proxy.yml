@@ -1,16 +1,6 @@
 name: Deploy Data Proxy Worker
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/data-proxy/**"
-      - ".bun-version"
-      - ".nvmrc"
-      - ".github/actions/setup/action.yml"
-      - ".github/workflows/deploy-data-proxy.yml"
-      - "bun.lock"
-      - "package.json"
   push:
     branches: [main]
     paths:
@@ -26,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'deploy-data-proxy' || format('deploy-data-proxy-{0}', github.event.pull_request.number || github.ref) }}
+  group: deploy-data-proxy
   cancel-in-progress: false
 
 jobs:
