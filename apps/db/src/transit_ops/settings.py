@@ -159,7 +159,7 @@ class Settings(BaseSettings):
     BRONZE_PRUNE_MAX_BATCHES: int = 2
 
     BACKUP_S3_PREFIX: str = "backups/postgres"
-    BACKUP_RETENTION_COUNT: int = 14
+    BACKUP_RETENTION_COUNT: int = 7
     BACKUP_EXCLUDE_TABLE_DATA: str = "silver.rt_trip_update_stop_times"
     BACKUP_COMPRESSION: str = "zstd:3"
 
