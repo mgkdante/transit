@@ -83,6 +83,14 @@ describe('server request locale', () => {
 		}
 	});
 
+	it('never lets a workers.dev version or preview URL be indexed', async () => {
+		const response = await handle({
+			event: event('https://pr-7-transit-web.example.workers.dev/'),
+			resolve: vi.fn(async () => html()),
+		});
+		expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+	});
+
 	it('stores the path locale for error layouts that have no route params', async () => {
 		const request = event('https://transit.yesid.dev/fr/missing-route');
 		const resolve = vi.fn(async () => new Response('ok'));

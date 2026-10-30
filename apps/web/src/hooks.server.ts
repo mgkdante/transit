@@ -64,12 +64,13 @@ function mutableResponse(response: Response, head = false): Response {
 	});
 }
 
-function applyDocumentHeaders(response: Response): void {
+function applyDocumentHeaders(response: Response, url: URL): void {
 	for (const [name, value] of Object.entries(DOCUMENT_SECURITY_HEADERS)) {
 		response.headers.set(name, value);
 	}
 
-	if (!readPublicSiteConfig().indexing) {
+	// Version and preview URLs live on workers.dev and must never be indexed.
+	if (!readPublicSiteConfig().indexing || url.hostname.endsWith('.workers.dev')) {
 		response.headers.set('x-robots-tag', 'noindex, nofollow');
 	}
 }
@@ -93,7 +94,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 		if (hit != null && responseCanEnterHtmlCache(hit)) {
 			const response = mutableResponse(hit, event.request.method === 'HEAD');
-			applyDocumentHeaders(response);
+			applyDocumentHeaders(response, event.url);
 			response.headers.set('cache-control', HTML_PUBLIC_CACHE_CONTROL);
 			response.headers.set(EDGE_CACHE_STATUS, 'HIT');
 			return response;
@@ -106,7 +107,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 
-	applyDocumentHeaders(response);
+	applyDocumentHeaders(response, event.url);
 
 	if (cache != null) {
 		if (key != null && event.request.method === 'GET' && responseCanEnterHtmlCache(response)) {

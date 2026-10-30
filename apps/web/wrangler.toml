@@ -17,7 +17,8 @@ compatibility_flags = ["nodejs_compat"]
 account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
 # transit.yesid.dev is the target; no public workers.dev fallback URL.
 workers_dev = false
-# PR previews only: pr-<number>-transit-web.<subdomain>.workers.dev (web.yml).
+# Version URLs, including pr-<number>-transit-web.<subdomain>.workers.dev from
+# web.yml. Every workers.dev host is served noindex (hooks.server.ts).
 preview_urls = true
 
 # Bind the app to the apex transit host. Routes are evaluated by specificity,
