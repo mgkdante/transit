@@ -248,7 +248,7 @@ describe('Chart shared viewport', () => {
 		async (insideMain) => {
 			vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
 			const main = document.createElement('main');
-			main.id = 'main';
+			main.id = 'page-scroller';
 			main.style.overflowY = 'auto';
 			const terminal = document.createElement('div');
 			terminal.style.overflowY = 'auto';

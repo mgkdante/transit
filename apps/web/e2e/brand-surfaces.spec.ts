@@ -47,7 +47,7 @@ test('homepage ground follows its own scroller and reverses without moving the t
 	let previousScroll = 0;
 	for (const fraction of [0.98, 0.825, 0.7, 0.825, 0.98, 0.7]) {
 		const requested = await page.locator('.construction-anchor').evaluate((anchor, fraction) => {
-			const root = document.querySelector<HTMLElement>('#main')!;
+			const root = document.querySelector<HTMLElement>('#page-scroller')!;
 			root.scrollTop +=
 				anchor.getBoundingClientRect().top -
 				root.getBoundingClientRect().top -
@@ -67,7 +67,7 @@ test('homepage ground follows its own scroller and reverses without moving the t
 		previousScroll = requested.scroll;
 		const sample = await page.locator('.construction-anchor').evaluate((anchor) => ({
 			top: anchor.getBoundingClientRect().top,
-			scroll: document.querySelector('#main')!.scrollTop,
+			scroll: document.querySelector('#page-scroller')!.scrollTop,
 			height: document.querySelector('.home-construction-floor')!.getBoundingClientRect().height,
 		}));
 		expect(Math.abs(sample.top - requested.top)).toBeLessThanOrEqual(1);
@@ -91,7 +91,7 @@ test('homepage ground follows its own scroller and reverses without moving the t
 			return 'none';
 		}),
 	).toContain('linear-gradient');
-	const root = page.locator('#main');
+	const root = page.locator('#page-scroller');
 	await root.focus();
 	await root.press('End');
 	await expect(props).toHaveAttribute('data-state', 'visible');
@@ -161,8 +161,8 @@ test('homepage props remain static without JavaScript and switch instantly with 
 	await page.goto('/');
 	const props = page.locator('[data-slot="construction-props"]');
 	await expect(props).toHaveAttribute('data-state', 'hidden');
-	await page.locator('#main').focus();
-	await page.locator('#main').press('End');
+	await page.locator('#page-scroller').focus();
+	await page.locator('#page-scroller').press('End');
 	await expect(props).toHaveAttribute('data-state', 'visible');
 	expect(
 		await props

@@ -35,7 +35,7 @@
 					io = null;
 				},
 				{
-					root: node.closest('#main'),
+					root: node.closest('#page-scroller'),
 					rootMargin: '200px 0px',
 					threshold: 0,
 				},
