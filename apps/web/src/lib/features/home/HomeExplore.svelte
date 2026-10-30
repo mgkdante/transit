@@ -214,15 +214,15 @@
 	.home-intro h1 {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: clamp(2.5rem, 5.6vw, 5.5rem);
-		font-weight: 800;
-		line-height: 1.05;
-		letter-spacing: var(--tracking-tight);
+		font-size: clamp(2.5rem, 8vw, 7rem);
+		font-weight: 900;
+		line-height: 0.88;
+		letter-spacing: -0.04em;
 		text-wrap: balance;
 	}
 	.home-intro h1 span {
 		display: block;
-		color: var(--accent-text);
+		color: var(--primary);
 	}
 	.home-lede {
 		max-width: var(--measure-body);
