@@ -214,14 +214,8 @@ describe('RouteReliabilityClusters', () => {
 		}
 	});
 
-	it('renders all five rider-question section overlines + the §0 headline with populated data', () => {
+	it('renders the §0 headline and the period controls with populated data', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
-
-		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
-		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 

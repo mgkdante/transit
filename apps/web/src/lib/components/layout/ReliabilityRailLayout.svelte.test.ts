@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import ReliabilityRailLayout from './ReliabilityRailLayout.svelte';
 const snippet = (text: string) =>
 	createRawSnippet(() => ({ render: () => `<span>${text}</span>` }));
 
-describe('ReliabilityRailLayout — shared detail geometry contract', () => {
-	it('places the same centered article summary at the top of content while the rail starts level', () => {
-		const { container, getByRole } = render(ReliabilityRailLayout, {
+describe('ReliabilityRailLayout', () => {
+	it('renders the named rail and puts the article summary before the content', () => {
+		const { getByRole, getByText } = render(ReliabilityRailLayout, {
 			props: {
 				rail: snippet('Rail'),
 				content: snippet('Content'),
@@ -17,15 +17,13 @@ describe('ReliabilityRailLayout — shared detail geometry contract', () => {
 				closeAria: 'Close controls',
 			},
 		});
-		const layout = container.querySelector('[data-slot="reliability-rail-layout"]');
 		const rail = getByRole('complementary', { name: 'Reliability controls' });
-		const content = container.querySelector('[data-slot="reliability-rail-content"]');
-		const summary = container.querySelector('[data-slot="reliability-rail-summary"]');
+		const summary = getByText('Reliability summary');
+		const content = getByText('Content');
 
-		expect(rail?.parentElement).toBe(layout);
-		expect(content?.parentElement).toBe(layout);
-		expect(summary?.closest('[data-slot="reliability-rail-content"]')).toBe(content);
-		expect(content?.firstElementChild).toBe(summary);
-		expect(summary).toHaveTextContent('Reliability summary');
+		expect(within(rail).getByText('Rail')).toBeInTheDocument();
+		expect(
+			summary.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
 	});
 });

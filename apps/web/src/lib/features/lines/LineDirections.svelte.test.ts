@@ -1,5 +1,3 @@
-// Container-type belongs on the parent; the grid query targets a descendant.
-
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import type { RouteFile, StopPrediction } from '$lib/v1';

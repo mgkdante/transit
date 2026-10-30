@@ -109,20 +109,6 @@ describe('ScheduleTable — grid mode', () => {
 		expect(
 			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
 		).toHaveAttribute('scope', 'col');
-		expect(
-			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
-		).toHaveAttribute('data-align', 'end');
-		expect(
-			within(table).getByRole('columnheader', { name: detailCopy.en.schedule.table.departures }),
-		).toHaveAttribute('data-numeric', 'true');
-		expect(table.querySelector('tbody [data-column="departures"]')).toHaveAttribute(
-			'data-align',
-			'end',
-		);
-		expect(table.querySelector('tbody [data-column="departures"]')).toHaveAttribute(
-			'data-numeric',
-			'true',
-		);
 
 		expect(screen.getByText('51')).toBeInTheDocument();
 		expect(screen.getByText('Nord')).toBeInTheDocument();

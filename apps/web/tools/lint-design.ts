@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -29,14 +29,25 @@ const doctrine = {
 	allowMarkers: TRANSIT_ALLOW_MARKERS,
 	markerWindow: 8,
 };
-for (const file of walk(join(src, 'lib/components/dataviz'), ['.svelte', '.ts'])) {
+const datavizFiles = walk(join(src, 'lib/components/dataviz'), ['.svelte', '.ts']);
+if (datavizFiles.length === 0) failures.push('No dataviz files scanned.');
+for (const file of datavizFiles) {
 	for (const hit of datavizViolations(readFileSync(file, 'utf8'), doctrine)) {
 		failures.push(`Affordance token as a data mark in ${relative(src, file)}: ${hit}`);
 	}
 }
 
 const tv = tvOnlyInUiViolations({ root: src, uiRoots: [join(src, 'lib/components/ui')] });
+if (tv.fileCount === 0) failures.push('No files scanned for tv() imports.');
 for (const violation of tv.violations) failures.push(`tv() outside ui/: ${violation}`);
+
+for (const exemption of TRANSIT_STYLE_EXEMPTIONS.proseMeasure) {
+	if (
+		!TRANSIT_STYLE_ROOTS.some((root) => exemption.startsWith(root)) ||
+		!existsSync(join(src, '..', exemption))
+	)
+		failures.push(`Stale prose-measure exemption: ${exemption}`);
+}
 
 for (const { pattern, reason, hits } of styleRegressionViolations({
 	root: src,
