@@ -77,7 +77,7 @@
 	}
 	.receipt-not-reported-caveat {
 		font-family: var(--font-body);
-		font-size: var(--text-reading-caption, 1rem);
+		font-size: var(--text-reading-caption);
 		line-height: 1.6;
 	}
 	.receipt-not-reported-list {

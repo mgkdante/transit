@@ -74,7 +74,7 @@
 
 	.legal-document__sections {
 		gap: 2.5rem;
-		font-size: var(--text-reading, 1.1875rem);
+		font-size: var(--text-reading);
 	}
 
 	.legal-document__kicker,
@@ -113,7 +113,7 @@
 	}
 
 	h2 {
-		font-size: var(--text-reading-heading, 1.25rem);
+		font-size: var(--text-reading-heading);
 	}
 
 	p,
@@ -124,7 +124,7 @@
 	}
 
 	.legal-document__summary {
-		font-size: var(--text-reading-support, 1.125rem);
+		font-size: var(--text-reading-support);
 	}
 
 	ul {
@@ -146,10 +146,10 @@
 
 	@media (--desktop-min) {
 		.legal-document__sections {
-			font-size: var(--text-reading-desktop, 1.25rem);
+			font-size: var(--text-reading-desktop);
 		}
 		h2 {
-			font-size: var(--text-reading-heading-desktop, 1.375rem);
+			font-size: var(--text-reading-heading-desktop);
 		}
 	}
 </style>

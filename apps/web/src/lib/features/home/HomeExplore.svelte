@@ -227,7 +227,7 @@
 	.home-lede {
 		max-width: var(--measure-body);
 		margin: 1.25rem 0 0;
-		font-size: var(--text-reading-support, 1.125rem);
+		font-size: var(--text-reading-support);
 		line-height: 1.7;
 		color: var(--secondary-foreground);
 	}

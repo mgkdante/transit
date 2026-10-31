@@ -143,7 +143,7 @@
 
 	.typed-information-body {
 		color: var(--foreground);
-		font-size: var(--text-reading, 1.1875rem);
+		font-size: var(--text-reading);
 		line-height: 1.7;
 		overflow-wrap: anywhere;
 	}
@@ -154,16 +154,16 @@
 		margin-block-end: 0;
 	}
 	.typed-information-card--sql pre {
-		font-size: var(--text-reading-code, 1rem);
+		font-size: var(--text-reading-code);
 		line-height: 1.6;
 	}
 
 	@media (--desktop-min) {
 		.typed-information-body {
-			font-size: var(--text-reading-desktop, 1.25rem);
+			font-size: var(--text-reading-desktop);
 		}
 		.typed-information-card--sql pre {
-			font-size: var(--text-reading-code-desktop, 1.0625rem);
+			font-size: var(--text-reading-code-desktop);
 		}
 	}
 </style>

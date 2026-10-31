@@ -626,7 +626,7 @@
 	.metrics-live__heading {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: var(--text-reading-heading, 1.25rem);
+		font-size: var(--text-reading-heading);
 		font-weight: 600;
 		line-height: 1.4;
 		color: var(--foreground);
@@ -651,7 +651,7 @@
 	}
 	.metrics-legend__meaning {
 		color: var(--muted-foreground);
-		font-size: var(--text-reading-support, 1.125rem);
+		font-size: var(--text-reading-support);
 		line-height: 1.7;
 	}
 
@@ -748,7 +748,7 @@
 	.metrics-live__point p,
 	.metrics-lacunes__lede,
 	.metrics-lacunes__gap p {
-		font-size: var(--text-reading, 1.1875rem);
+		font-size: var(--text-reading);
 		line-height: 1.7;
 	}
 
@@ -758,12 +758,12 @@
 		.metrics-live__point p,
 		.metrics-lacunes__lede,
 		.metrics-lacunes__gap p {
-			font-size: var(--text-reading-desktop, 1.25rem);
+			font-size: var(--text-reading-desktop);
 		}
 		.metrics-measure__heading,
 		.metrics-lacunes__heading,
 		.metrics-live__heading {
-			font-size: var(--text-reading-heading-desktop, 1.375rem);
+			font-size: var(--text-reading-heading-desktop);
 		}
 	}
 

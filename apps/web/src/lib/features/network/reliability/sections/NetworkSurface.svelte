@@ -819,7 +819,7 @@
 	:global(.network-detail .network-reporting-caveat) {
 		margin: 0;
 		font-family: var(--font-body);
-		font-size: var(--text-reading-caption, 1rem);
+		font-size: var(--text-reading-caption);
 		line-height: 1.6;
 		color: var(--muted-foreground);
 		max-width: 100%;
