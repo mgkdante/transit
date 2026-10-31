@@ -29,7 +29,9 @@ Start page: https://app.notion.com/p/4083e863069080df9e63d165128a1522
 This project's guide: https://app.notion.com/p/4083e863069081f7b6edf66237f17f35
 Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/p/4003e8630690809b8045d8ad3a439995
 
-- You MUST start every session by fetching my enabled Notion Skills via `notion-get-enabled-skills`.
+- At the start of each agentic coding or delegation session, fetch the current [model-selection Skill](https://app.notion.com/p/4083e86306908179b442da1e1a9a8156) once and follow it for every model, effort, reviewer, provider and fallback choice. It is the same for every project; this repo picks no models. Saved Notion pages are not loaded context; updates do not change active sessions.
+- Discover enabled Notion Skills through native host tooling when exposed. Otherwise fetch applicable procedures directly and report the discovery limitation. Do not reload the full personal archive.
+- Pass applicable routing constraints and each source revision or read timestamp in child briefs.
 - When Notion is connected, read the project guide before planning; re-read live records before relying on any status.
 - Save durable facts about me as Notion Memories (parent "memory"), not in this file.
 - Repository instructions own local commands and constraints; Notion owns plans, decisions and handoffs.
@@ -66,17 +68,13 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
   goal per owner, no token budget unless explicitly requested. Complete it only
   after its outcome and canonical readback are verified, then start the next
   executable packet. Report unavailable goal tooling rather than inventing state.
-- For this maintainer's Codex continuation workflow, primary and successor owners
-  use gpt-6-astra with ultra reasoning. This allocation preference does not require
-  other contributors to adopt Codex or change their personal LLM setup.
-  Verify through supported APIs or exposed runtime metadata; distinguish live
-  execution evidence from persisted settings. If unavailable, state the limitation
-  instead of claiming verification or silently substituting an owner model.
-- In that workflow, select worker model and effort explicitly: gpt-6-luna
-  low/medium for routine extraction, gpt-6.1-sol medium/high for implementation,
-  debugging and review, and Astra for demonstrated uncertainty. Give each worker
-  a narrow brief and file ownership. Verify its findings and code before accepting
-  them. Avoid full-history duplication when a bounded brief is sufficient.
+- Owner, successor and worker models and effort come from the model-selection
+  Skill linked above, not from this file. This does not require other
+  contributors to change their personal LLM setup. Never silently substitute a
+  required model; state the limitation instead.
+- Give each worker a narrow brief and file ownership. Verify its findings and code
+  before accepting them. Avoid full-history duplication when a bounded brief is
+  sufficient.
 - Keep one canonical writer and at most one prepared successor. A child may
   research read-only while the owner works; concurrent code writers require
   disjoint assigned files. Before succession, persist and read back the exact
