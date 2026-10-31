@@ -227,8 +227,8 @@
 	.home-lede {
 		max-width: var(--measure-body);
 		margin: 1.25rem 0 0;
-		font-size: var(--text-body);
-		line-height: 1.6;
+		font-size: var(--text-reading-support, 1.125rem);
+		line-height: 1.7;
 		color: var(--secondary-foreground);
 	}
 	.home-primary,
@@ -282,8 +282,8 @@
 	}
 	.home-entry-description {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-reading-support, 1.125rem);
+		line-height: 1.7;
 		max-width: var(--measure-lede);
 	}
 	.home-entry-arrow {

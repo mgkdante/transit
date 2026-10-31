@@ -561,8 +561,8 @@
 	}
 	.health-lede {
 		margin: 0;
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
+		font-size: var(--text-reading, 1.1875rem);
+		line-height: 1.7;
 		color: var(--secondary-foreground);
 	}
 	.health-resource-state {
@@ -640,8 +640,7 @@
 
 	@media (--desktop-min) {
 		.health-lede {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
+			font-size: var(--text-reading-desktop, 1.25rem);
 		}
 	}
 </style>

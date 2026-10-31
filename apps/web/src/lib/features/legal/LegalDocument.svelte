@@ -112,18 +112,22 @@
 	}
 
 	h2 {
-		font-size: var(--text-title);
+		font-size: var(--text-reading-heading, 1.25rem);
 	}
 
 	p,
 	li {
 		max-width: var(--measure-lede);
 		color: var(--secondary-foreground);
-		line-height: var(--leading-relaxed);
+		line-height: 1.7;
 	}
 
 	.legal-document__summary {
-		font-size: var(--text-lede);
+		font-size: var(--text-reading-support, 1.125rem);
+	}
+
+	.legal-document__sections {
+		font-size: var(--text-reading, 1.1875rem);
 	}
 
 	ul {
@@ -141,5 +145,14 @@
 		display: inline-block;
 		min-block-size: 24px;
 		align-content: center;
+	}
+
+	@media (--desktop-min) {
+		.legal-document__sections {
+			font-size: var(--text-reading-desktop, 1.25rem);
+		}
+		h2 {
+			font-size: var(--text-reading-heading-desktop, 1.375rem);
+		}
 	}
 </style>

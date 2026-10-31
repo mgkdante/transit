@@ -46,7 +46,7 @@
 	.network-live-lede {
 		margin: 0 0 var(--space-card-gap);
 		color: var(--muted-foreground);
-		font-size: var(--text-subheading);
-		line-height: 1.65;
+		font-size: var(--text-reading-support, 1.125rem);
+		line-height: 1.7;
 	}
 </style>

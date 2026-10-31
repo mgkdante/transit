@@ -143,8 +143,8 @@
 
 	.typed-information-body {
 		color: var(--foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
+		font-size: var(--text-reading, 1.1875rem);
+		line-height: 1.7;
 		overflow-wrap: anywhere;
 	}
 	.typed-information-body :global(:first-child) {
@@ -153,11 +153,17 @@
 	.typed-information-body :global(:last-child) {
 		margin-block-end: 0;
 	}
+	.typed-information-card--sql pre {
+		font-size: var(--text-reading-code, 1rem);
+		line-height: 1.6;
+	}
 
 	@media (--desktop-min) {
 		.typed-information-body {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
+			font-size: var(--text-reading-desktop, 1.25rem);
+		}
+		.typed-information-card--sql pre {
+			font-size: var(--text-reading-code-desktop, 1.0625rem);
 		}
 	}
 </style>

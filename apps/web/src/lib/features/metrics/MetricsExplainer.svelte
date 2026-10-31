@@ -624,7 +624,7 @@
 	.metrics-measure__heading {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: var(--text-small);
+		font-size: var(--text-reading-heading, 1.25rem);
 		font-weight: 600;
 		line-height: 1.4;
 		color: var(--foreground);
@@ -649,8 +649,8 @@
 	}
 	.metrics-legend__meaning {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
+		font-size: var(--text-reading-support, 1.125rem);
+		line-height: 1.7;
 	}
 
 	.metrics-cluster {
@@ -722,7 +722,7 @@
 	.metrics-live__heading {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: var(--text-small);
+		font-size: var(--text-reading-heading, 1.25rem);
 		font-weight: 600;
 		line-height: 1.4;
 		color: var(--foreground);
@@ -756,8 +756,8 @@
 	.metrics-live__point p,
 	.metrics-lacunes__lede,
 	.metrics-lacunes__gap p {
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
+		font-size: var(--text-reading, 1.1875rem);
+		line-height: 1.7;
 	}
 
 	@media (--desktop-min) {
@@ -766,8 +766,12 @@
 		.metrics-live__point p,
 		.metrics-lacunes__lede,
 		.metrics-lacunes__gap p {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
+			font-size: var(--text-reading-desktop, 1.25rem);
+		}
+		.metrics-measure__heading,
+		.metrics-lacunes__heading,
+		.metrics-live__heading {
+			font-size: var(--text-reading-heading-desktop, 1.375rem);
 		}
 	}
 
