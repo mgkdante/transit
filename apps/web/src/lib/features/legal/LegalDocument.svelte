@@ -105,7 +105,7 @@
 	h1,
 	h2 {
 		font-family: var(--font-heading);
-		line-height: var(--leading-tight);
+		line-height: 1.25;
 	}
 
 	h1 {
