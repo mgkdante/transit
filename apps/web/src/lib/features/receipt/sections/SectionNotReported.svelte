@@ -75,6 +75,11 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	.receipt-not-reported-caveat {
+		font-family: var(--font-body);
+		font-size: var(--text-reading-caption);
+		line-height: 1.6;
+	}
 	.receipt-not-reported-list {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);

@@ -47,6 +47,18 @@ describe('websiteJsonLd', () => {
 		const node = websiteJsonLd({ siteOrigin: ORIGIN, siteName: NAME });
 		expect(JSON.parse(JSON.stringify(node))).toEqual(node);
 	});
+
+	it('keeps French and explicit provider context in the real search destination', () => {
+		const node = websiteJsonLd({
+			siteOrigin: ORIGIN,
+			siteName: 'Transit',
+			locale: 'fr',
+			providerId: 'octranspo',
+		});
+		const action = node.potentialAction as { target: { urlTemplate: string } };
+		expect(action.target.urlTemplate).toBe(`${ORIGIN}/fr/search?provider=octranspo&q={query}`);
+		expect(node.name).toBe('Transit');
+	});
 });
 
 describe('breadcrumbJsonLd', () => {

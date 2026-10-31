@@ -119,6 +119,17 @@ describe('SEO static files', () => {
 describe('sitemap entity enumeration', () => {
 	const origin = 'https://transit.yesid.dev';
 
+	it('preserves the validated provider in entity and locale destinations', () => {
+		const xml = buildSitemapXml(
+			{ siteOrigin: origin, indexing: true },
+			{ providerId: 'octranspo', routeIds: ['5'], stopIds: ['OC1'] },
+		);
+		expect(xml).toContain(`<loc>${origin}/lines/5?provider=octranspo</loc>`);
+		expect(xml).toContain(`<loc>${origin}/fr/stop/OC1?provider=octranspo</loc>`);
+		expect(xml).toContain(`hreflang="fr" href="${origin}/fr/lines/5?provider=octranspo"`);
+		expect(xml).not.toContain(`<loc>${origin}/lines/5</loc>`);
+	});
+
 	it('emits /lines/<id> and /fr/lines/<id> for every route id, both locales', () => {
 		const sitemap = buildSitemapXml(
 			{ siteOrigin: origin, indexing: true },

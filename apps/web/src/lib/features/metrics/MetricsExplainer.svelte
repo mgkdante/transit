@@ -621,10 +621,12 @@
 		flex-direction: column;
 		gap: 0.375rem;
 	}
-	.metrics-measure__heading {
+	.metrics-measure__heading,
+	.metrics-lacunes__heading,
+	.metrics-live__heading {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: var(--text-small);
+		font-size: var(--text-reading-heading);
 		font-weight: 600;
 		line-height: 1.4;
 		color: var(--foreground);
@@ -649,8 +651,8 @@
 	}
 	.metrics-legend__meaning {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
+		font-size: var(--text-reading-support);
+		line-height: 1.7;
 	}
 
 	.metrics-cluster {
@@ -718,16 +720,6 @@
 		padding-block-start: 0;
 		border-block-start: none;
 	}
-	.metrics-lacunes__heading,
-	.metrics-live__heading {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-small);
-		font-weight: 600;
-		line-height: 1.4;
-		color: var(--foreground);
-	}
-
 	.metric__top {
 		display: inline-flex;
 		min-block-size: var(--size-tap-min);
@@ -756,8 +748,8 @@
 	.metrics-live__point p,
 	.metrics-lacunes__lede,
 	.metrics-lacunes__gap p {
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
+		font-size: var(--text-reading);
+		line-height: 1.7;
 	}
 
 	@media (--desktop-min) {
@@ -766,8 +758,12 @@
 		.metrics-live__point p,
 		.metrics-lacunes__lede,
 		.metrics-lacunes__gap p {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
+			font-size: var(--text-reading-desktop);
+		}
+		.metrics-measure__heading,
+		.metrics-lacunes__heading,
+		.metrics-live__heading {
+			font-size: var(--text-reading-heading-desktop);
 		}
 	}
 
