@@ -1,0 +1,38 @@
+{
+  "providers": [
+    {
+      "id": "octranspo",
+      "labels": {
+        "en": {
+          "city": "Ottawa",
+          "operator": "OC Transpo"
+        },
+        "fr": {
+          "city": "Ottawa",
+          "operator": "OC Transpo"
+        }
+      }
+    },
+    {
+      "id": "stm",
+      "labels": {
+        "en": {
+          "city": "Montréal",
+          "operator": "STM"
+        },
+        "fr": {
+          "city": "Montréal",
+          "operator": "STM"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "/og/en.png": "4ea722f4c1a63ff689cb863f14732380933dc66dadea92df818f13830d6bdfcc",
+    "/og/home/octranspo.en.png": "0d21d47b2a58e4739f9da1cf1d6d653f91205bf615cf3b8af007413ed651977e",
+    "/og/home/stm.en.png": "02329db671d6b6ccd79251a00084654f80979f99abed46ad17467c9737a5102e",
+    "/og/fr.png": "bdd7dae994871905011ad4cdd0f609d34eec6fc80e61ccb0d2eab07a6b5cd6d3",
+    "/og/home/octranspo.fr.png": "0af3405553e27e43b594c18c2d22377e6c72e6f406892e8cd0b2128f949596c0",
+    "/og/home/stm.fr.png": "cecbd56f8471c5e5ab92acd588a8296e37b3fd82e0f2f6757cc627598a092518"
+  }
+}

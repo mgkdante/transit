@@ -124,18 +124,20 @@
 		})),
 	);
 
-	const providerShortName = $derived(data.provider?.labels[locale].operator ?? data.providerId);
-	const providerCity = $derived(data.provider?.labels[locale].city);
-
 	const seo = $derived(
-		resolveRouteSeo($page.url.pathname, locale, {
-			shortName: providerShortName,
-			city: providerCity,
-		}),
+		resolveRouteSeo(
+			$page.url,
+			locale,
+			!data.discoveryError && data.provider
+				? {
+						id: data.provider.id,
+						shortName: data.provider.labels[locale].operator,
+						city: data.provider.labels[locale].city,
+					}
+				: undefined,
+		),
 	);
-	const seoSiteName = $derived(
-		providerShortName ? `${providerShortName} Analytics` : 'Transit Analytics',
-	);
+	const seoSiteName = $derived(seo.siteName);
 
 	const isErrorStatus = $derived(($page.status ?? 200) >= 400);
 	const errorHead = $derived(errorDocumentHead($page.status ?? 500, locale));
@@ -147,23 +149,23 @@
 	const jsonLd = $derived.by(() => {
 		if (isErrorStatus) return [];
 		const nodes: JsonLdNode[] = [
-			organizationJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: seoSiteName }),
+			organizationJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: 'Transit' }),
 			datasetJsonLd({
 				siteOrigin: siteConfig.siteOrigin,
-				siteName: seoSiteName,
+				siteName: 'Transit',
 				name: datasetCopy.name,
 				description: datasetCopy.description,
 				locale,
 			}),
 		];
 		const breadcrumb = breadcrumbJsonLd(
-			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin, data.providerId),
+			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin, seo.providerId),
 		);
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
 	});
 	const headHref = (lang: Locale) =>
-		`${siteConfig.siteOrigin}${localizeHref(seoPath, lang, data.providerId)}`;
+		`${siteConfig.siteOrigin}${localizeHref(seoPath, lang, seo.providerId)}`;
 	const head = $derived({
 		title: headTitle === headSiteName ? headTitle : `${headTitle} · ${headSiteName}`,
 		description: headDescription,
@@ -178,14 +180,19 @@
 			(lang) => `${lang}_CA`,
 		),
 		image: {
-			url: `${siteConfig.siteOrigin}/og/${locale}.png`,
-			alt: `${headSiteName}: ${headTitle}`,
+			url: `${siteConfig.siteOrigin}${seo.imagePath}`,
+			alt: seo.imageAlt,
 		},
 		noIndex: noIndex || isErrorStatus,
 		twitter: { site: siteConfig.twitterSite, creator: siteConfig.twitterCreator },
 		author: siteConfig.author,
 		jsonLd: [
-			websiteJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: headSiteName, locale }),
+			websiteJsonLd({
+				siteOrigin: siteConfig.siteOrigin,
+				siteName: 'Transit',
+				locale,
+				providerId: seo.providerId,
+			}),
 			...jsonLd,
 		],
 	});
