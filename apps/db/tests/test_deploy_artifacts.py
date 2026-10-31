@@ -123,7 +123,15 @@ def _active_lines(text: str) -> list[str]:
 
 def test_compose_defines_oracle_ready_runtime_services() -> None:
     services = _compose()["services"]
-    assert set(services) == {"postgres", "worker", "pruner", "health", "caddy"}
+    assert set(services) == {
+        "postgres",
+        "worker",
+        "pruner",
+        "octranspo-worker",
+        "octranspo-pruner",
+        "health",
+        "caddy",
+    }
     assert services["postgres"]["build"]["dockerfile"] == "Dockerfile.postgis"
     assert services["postgres"]["image"] == "transit-postgres-postgis:16"
     assert services["worker"]["build"]["dockerfile"] == "Dockerfile"
@@ -161,6 +169,28 @@ def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
         "PIPELINE_PAUSED",
     } <= pruner_keys
     assert pruner_keys <= _environment_keys(services["worker"])
+
+
+def test_compose_runs_octranspo_worker_and_pruner_with_its_own_key() -> None:
+    services = _compose()["services"]
+    worker = services["octranspo-worker"]
+    pruner = services["octranspo-pruner"]
+    assert worker["extends"] == "worker"
+    assert worker["command"] == ["run-realtime-worker", "octranspo"]
+    assert worker["environment"] == {
+        "PGAPPNAME": "transit-octranspo-worker",
+        "STM_PROVIDER_ID": "octranspo",
+        "STM_API_KEY": "",
+        "OCTRANSPO_API_KEY": "${OCTRANSPO_API_KEY:-}",
+    }
+    assert pruner["extends"] == "pruner"
+    assert pruner["command"] == ["run-pruner-loop", "octranspo"]
+    assert pruner["environment"] == {
+        "PGAPPNAME": "transit-octranspo-pruner",
+        "STM_PROVIDER_ID": "octranspo",
+    }
+    for service in (worker, pruner):
+        assert service["depends_on"] == {"postgres": {"condition": "service_healthy"}}
 
 
 def test_compose_waits_for_postgres_health_before_app_services() -> None:

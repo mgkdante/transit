@@ -129,6 +129,31 @@ services:
       postgres:
         condition: service_healthy
 
+  # OC Transpo runs as its own worker and pruner from the same image. Each keeps
+  # the STM service's scoped env, swaps the provider id, and the worker gets only
+  # the OC Transpo key: the STM key is blanked so neither provider sees the other's.
+  octranspo-worker:
+    extends: worker
+    command: ["run-realtime-worker", "octranspo"]
+    environment:
+      PGAPPNAME: transit-octranspo-worker
+      STM_PROVIDER_ID: octranspo
+      STM_API_KEY: ""
+      OCTRANSPO_API_KEY: ${OCTRANSPO_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  octranspo-pruner:
+    extends: pruner
+    command: ["run-pruner-loop", "octranspo"]
+    environment:
+      PGAPPNAME: transit-octranspo-pruner
+      STM_PROVIDER_ID: octranspo
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   health:
     build:
       context: .

@@ -17,11 +17,11 @@ compose() {
 case "$ACTION:$TARGET" in
   pause:worker)
     echo "[2/3] Pausing Compose worker service..."
-    compose stop worker
+    compose stop worker octranspo-worker
     ;;
   resume:worker)
     echo "[2/3] Resuming Compose worker service..."
-    compose up -d worker
+    compose up -d worker octranspo-worker
     ;;
   *)
     usage

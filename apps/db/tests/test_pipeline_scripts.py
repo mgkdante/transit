@@ -123,7 +123,7 @@ def test_pause_pipeline_leaves_oracle_postgres_running_without_external_compute_
     assert log_lines == [
         "gh|workflow disable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow disable Daily Warm Rollups --repo mgkdante/transit",
-        "docker|compose --env-file .env -f docker-compose.yml stop worker",
+        "docker|compose --env-file .env -f docker-compose.yml stop worker octranspo-worker",
     ]
     assert not any(line.startswith("curl|") for line in log_lines)
 
@@ -146,7 +146,7 @@ def test_resume_pipeline_leaves_oracle_postgres_running_without_external_compute
     assert log_lines == [
         "gh|workflow enable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow enable Daily Warm Rollups --repo mgkdante/transit",
-        "docker|compose --env-file .env -f docker-compose.yml up -d worker",
+        "docker|compose --env-file .env -f docker-compose.yml up -d worker octranspo-worker",
     ]
     assert not any(line.startswith("curl|") for line in log_lines)
 
@@ -202,7 +202,7 @@ def test_pipeline_control_pauses_worker_with_compose_stop(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     assert "Pausing Compose worker service" in result.stdout
     assert _read_log(log_path) == [
-        "docker|compose --env-file .env -f docker-compose.yml stop worker"
+        "docker|compose --env-file .env -f docker-compose.yml stop worker octranspo-worker"
     ]
 
 
@@ -217,7 +217,7 @@ def test_pipeline_control_resumes_worker_with_compose_up_detached(tmp_path: Path
     assert result.returncode == 0, result.stderr
     assert "Resuming Compose worker service" in result.stdout
     assert _read_log(log_path) == [
-        "docker|compose --env-file .env -f docker-compose.yml up -d worker"
+        "docker|compose --env-file .env -f docker-compose.yml up -d worker octranspo-worker"
     ]
 
 
