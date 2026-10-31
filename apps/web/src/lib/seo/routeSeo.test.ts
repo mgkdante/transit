@@ -51,14 +51,19 @@ const STM_IDENTITY = { id: 'stm', shortName: 'STM', city: 'Montréal' } as const
 describe('URL-scoped home sharing', () => {
 	const ottawa = { id: 'octranspo', shortName: 'OC Transpo', city: 'Ottawa' };
 
-	it.each(['/', '/map', '/network?provider=octranspo', '/fr/lines/55?provider=octranspo'])(
-		'keeps %s neutral despite the selected provider',
-		(path) => {
-			const head = resolveRouteSeo(path, 'en', ottawa);
-			expect(head.siteName).toBe('Transit');
-			expect(head.title + head.description).not.toMatch(/OC Transpo|Ottawa/);
-		},
-	);
+	it.each([
+		'/',
+		'/map?provider=octranspo',
+		'/network?provider=octranspo',
+		'/fr/lines/55?provider=octranspo',
+		'/stop/5?provider=octranspo',
+	])('keeps %s neutral despite the selected provider', (path) => {
+		const head = resolveRouteSeo(path, 'en', ottawa);
+		expect(head.siteName).toBe('Transit');
+		expect(head.title + head.description).not.toMatch(/OC Transpo|Ottawa/);
+		expect(head.description).not.toMatch(/service alerts/i);
+		expect(resolveRouteSeo(path, 'fr', ottawa).description).not.toMatch(/\bavis\b/i);
+	});
 
 	it('uses validated provider wording only on an explicitly scoped home URL', () => {
 		expect(resolveRouteSeo('/?provider=octranspo', 'en', ottawa)).toMatchObject({

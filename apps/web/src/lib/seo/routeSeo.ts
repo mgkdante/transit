@@ -47,12 +47,13 @@ interface BilingualText {
 
 interface BilingualSeo {
 	readonly title: BilingualText;
-	readonly description: (id: ResolvedIdentity) => BilingualText;
 	readonly neutralDescription: BilingualText;
-	readonly keywordTitle?: (id: ResolvedIdentity) => BilingualText;
 }
 
-const HOME: BilingualSeo = {
+const HOME: BilingualSeo & {
+	readonly description: (id: ResolvedIdentity) => BilingualText;
+	readonly keywordTitle: (id: ResolvedIdentity) => BilingualText;
+} = {
 	title: { en: 'Transit network overview', fr: 'Vue d’ensemble du réseau' },
 	keywordTitle: (id) => ({
 		en: `${id.shortName} network overview`,
@@ -63,8 +64,8 @@ const HOME: BilingualSeo = {
 		fr: `Explorez le réseau ${id.shortName} à ${id.city} : données disponibles sur les véhicules, les lignes, les arrêts et la fiabilité.`,
 	}),
 	neutralDescription: {
-		en: 'Explore transit reports, route and stop information, service alerts and reliability trends across the network.',
-		fr: 'Explorez les données du réseau : bus, lignes, arrêts, avis de service et tendances de fiabilité.',
+		en: 'Explore transit reports, route and stop information, and reliability trends across the network.',
+		fr: 'Explorez les données du réseau : bus, lignes, arrêts et tendances de fiabilité.',
 	},
 };
 
@@ -86,21 +87,13 @@ const TERMS_DESCRIPTION: BilingualText = {
 const SURFACES: Record<string, BilingualSeo> = {
 	'/map': {
 		title: { en: 'Live map', fr: 'Carte en direct' },
-		description: (id) => ({
-			en: `View reported ${id.shortName} vehicle positions and stops in ${id.city}, with available crowding data and service alerts.`,
-			fr: `Consultez les positions signalées des véhicules ${id.shortName} et les arrêts à ${id.city}, avec les avis et les données d’occupation disponibles.`,
-		}),
 		neutralDescription: {
-			en: 'View reported vehicle positions and stops, with available crowding data and service alerts. Reports may be delayed or missing.',
-			fr: 'Consultez les positions signalées, les arrêts, les avis et les données d’occupation disponibles. Certaines données peuvent manquer ou dater.',
+			en: 'View reported vehicle positions and stops, with available crowding data. Reports may be delayed or missing.',
+			fr: 'Consultez les positions signalées, les arrêts et les données d’occupation disponibles. Certaines données peuvent manquer ou dater.',
 		},
 	},
 	'/lines': {
 		title: { en: 'Lines', fr: 'Lignes' },
-		description: (id) => ({
-			en: `Browse ${id.shortName} lines in ${id.city} by mode and available reliability. Open a line for its route, directions and schedule.`,
-			fr: `Parcourez les lignes ${id.shortName} à ${id.city}, leurs modes et leur fiabilité disponible. Consultez le parcours et l’horaire d’une ligne.`,
-		}),
 		neutralDescription: {
 			en: 'Browse transit lines by mode and available reliability. Open a line for its route, directions and schedule.',
 			fr: 'Parcourez les lignes par mode et selon la fiabilité disponible, puis consultez leurs parcours, directions et horaires.',
@@ -108,10 +101,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/stops': {
 		title: { en: 'Stops', fr: 'Arrêts' },
-		description: (id) => ({
-			en: `Find ${id.shortName} stops in ${id.city} by name, code or line, then view predicted departures and available reliability history.`,
-			fr: `Trouvez un arrêt ${id.shortName} à ${id.city} par nom, code ou ligne, puis consultez les passages prévus et l’historique disponible.`,
-		}),
 		neutralDescription: {
 			en: 'Find stops by name, code or line, then view predicted departures and available reliability history.',
 			fr: 'Trouvez un arrêt par nom, code ou ligne, puis consultez les passages prévus et l’historique de fiabilité disponible.',
@@ -119,10 +108,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/network': {
 		title: { en: 'Network health', fr: 'Santé du réseau' },
-		description: (id) => ({
-			en: `View the latest ${id.shortName} reports and historical trends in ${id.city}: punctuality, delays, crowding and reported service.`,
-			fr: `Consultez les données récentes ${id.shortName} à ${id.city} et les tendances de ponctualité, retards, occupation et service signalé.`,
-		}),
 		neutralDescription: {
 			en: 'View the latest network reports and historical trends in punctuality, delays, crowding and reported service.',
 			fr: 'Consultez les données récentes du réseau et les tendances de ponctualité, retards, occupation et service signalé.',
@@ -130,10 +115,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/search': {
 		title: { en: 'Search', fr: 'Recherche' },
-		description: (id) => ({
-			en: `Find ${id.shortName} lines, stops and reported buses in ${id.city} by name, number, stop code or vehicle ID.`,
-			fr: `Recherchez les lignes, arrêts et bus signalés ${id.shortName} à ${id.city} par nom, numéro, code d’arrêt ou identifiant.`,
-		}),
 		neutralDescription: {
 			en: 'Find a line, stop or reported bus by name, number, stop code or vehicle ID, with links to its details.',
 			fr: 'Recherchez une ligne, un arrêt ou un bus signalé par nom, numéro, code d’arrêt ou identifiant, puis ouvrez sa fiche.',
@@ -141,10 +122,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/metrics': {
 		title: { en: 'How we measure', fr: 'Comment on mesure' },
-		description: (id) => ({
-			en: `Read definitions, calculations and limits for ${id.shortName} reliability in ${id.city}. Indicators use predictions, not certified arrival times.`,
-			fr: `Définitions, calculs et limites des indicateurs ${id.shortName} à ${id.city}, issus des prévisions et non d’arrivées certifiées.`,
-		}),
 		neutralDescription: {
 			en: 'Read metric definitions, calculations and limitations. Reliability indicators use predictions, not certified arrival measurements.',
 			fr: 'Consultez les définitions, calculs et limites des indicateurs de fiabilité issus des prévisions, et non d’arrivées certifiées.',
@@ -152,10 +129,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/status': {
 		title: { en: 'Data health', fr: 'Santé des données' },
-		description: (id) => ({
-			en: `Check ${id.shortName} data for ${id.city}: feed freshness, sources, known gaps, retention, published history and schedule conformance.`,
-			fr: `Consultez l’âge des données ${id.shortName} à ${id.city}, leurs sources, les lacunes, l’historique publié et la conformité des horaires.`,
-		}),
 		neutralDescription: {
 			en: 'Check feed freshness, sources, known gaps, retention, published history coverage and schedule conformance.',
 			fr: 'Consultez l’âge des données, leurs sources, les lacunes, la conservation, l’historique publié et la conformité des horaires.',
@@ -163,10 +136,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/hotspots': {
 		title: { en: 'Hotspots', fr: 'Points chauds' },
-		description: (id) => ({
-			en: `Compare severe ${id.shortName} delays in ${id.city} across lines and stops, with observation counts and confidence intervals for the rankings.`,
-			fr: `Comparez les retards graves ${id.shortName} à ${id.city} par ligne et arrêt, avec le nombre d’observations et les intervalles de confiance.`,
-		}),
 		neutralDescription: {
 			en: 'Compare severe delays across lines and stops, with observation counts and confidence intervals for the published rankings.',
 			fr: 'Comparez les retards graves par ligne et arrêt, avec le nombre d’observations et les intervalles de confiance du classement.',
@@ -174,10 +143,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/receipt': {
 		title: { en: 'Daily receipt', fr: 'Reçu quotidien' },
-		description: (id) => ({
-			en: `Browse published ${id.shortName} daily reports for ${id.city}: punctuality, delays, reported service and affected lines and stops where available.`,
-			fr: `Consultez les bilans quotidiens ${id.shortName} à ${id.city} : ponctualité, retards, service signalé et, selon les données, lignes et arrêts touchés.`,
-		}),
 		neutralDescription: {
 			en: 'Browse published daily summaries of punctuality, delays and reported service, with affected lines and stops where available.',
 			fr: 'Consultez les bilans quotidiens publiés : ponctualité, retards, service signalé et, selon les données, lignes et arrêts touchés.',
@@ -185,10 +150,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/repeat-offenders': {
 		title: { en: 'Repeat offenders', fr: 'Récidivistes' },
-		description: (id) => ({
-			en: `Explore recurring ${id.shortName} delays in ${id.city} by trip and vehicle, with severe-delay rates, observed days and confidence intervals.`,
-			fr: `Explorez les retards graves récurrents ${id.shortName} à ${id.city} par trajet et véhicule, avec les jours observés et les intervalles de confiance.`,
-		}),
 		neutralDescription: {
 			en: 'Explore recurring severe delays by trip and vehicle, with observed days, delay rates and confidence intervals.',
 			fr: 'Explorez les retards graves récurrents par trajet et véhicule, avec les jours observés, les taux et les intervalles de confiance.',
@@ -196,10 +157,6 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/alerts': {
 		title: { en: 'Alerts', fr: 'Avis' },
-		description: (id) => ({
-			en: `Browse past ${id.shortName} service alerts for ${id.city} by date, line, stop or severity, with reported duration, cause and affected services.`,
-			fr: `Parcourez les avis ${id.shortName} passés à ${id.city} par date, ligne, arrêt ou gravité, avec leur durée, cause et services touchés lorsqu’ils sont connus.`,
-		}),
 		neutralDescription: {
 			en: 'Browse past service alerts by date, line, stop or severity, with reported duration, cause, effect and affected services.',
 			fr: 'Parcourez les avis passés par date, ligne, arrêt ou gravité, avec leur durée, cause, effet et services touchés lorsqu’ils sont connus.',
@@ -207,51 +164,36 @@ const SURFACES: Record<string, BilingualSeo> = {
 	},
 	'/privacy': {
 		title: { en: 'Privacy', fr: 'Confidentialité' },
-		description: () => PRIVACY_DESCRIPTION,
 		neutralDescription: PRIVACY_DESCRIPTION,
 	},
 	'/terms': {
 		title: { en: 'Terms', fr: 'Conditions d’utilisation' },
-		description: () => TERMS_DESCRIPTION,
 		neutralDescription: TERMS_DESCRIPTION,
 	},
 	'/accessibility': {
 		title: { en: 'Accessibility', fr: 'Accessibilité' },
-		description: () => ACCESSIBILITY_DESCRIPTION,
 		neutralDescription: ACCESSIBILITY_DESCRIPTION,
 	},
 };
 
 const LINE_DETAIL: BilingualSeo = {
 	title: { en: 'Line detail', fr: 'Détail de la ligne' },
-	description: (id) => ({
-		en: `View this ${id.shortName} line in ${id.city}: route, directions, schedule, reported vehicles, alerts and available reliability history.`,
-		fr: `Consultez cette ligne ${id.shortName} à ${id.city} : parcours, directions, horaire, véhicules signalés, avis et historique de fiabilité disponible.`,
-	}),
 	neutralDescription: {
-		en: 'View the line’s route, directions and schedule, with reported vehicles, service alerts and available reliability history.',
-		fr: 'Consultez le parcours, les directions et l’horaire de la ligne, les véhicules signalés, les avis et l’historique de fiabilité disponible.',
+		en: 'View the line’s route, directions and schedule, with reported vehicles and available reliability history.',
+		fr: 'Consultez le parcours, les directions et l’horaire de la ligne, les véhicules signalés et l’historique de fiabilité disponible.',
 	},
 };
 
 const STOP_DETAIL: BilingualSeo = {
 	title: { en: 'Stop detail', fr: "Détail de l'arrêt" },
-	description: (id) => ({
-		en: `View this ${id.shortName} stop in ${id.city}: predicted departures, alerts, a sample weekday schedule and available reliability history.`,
-		fr: `Consultez cet arrêt ${id.shortName} à ${id.city} : passages prévus, avis, exemple d’horaire en semaine et historique de fiabilité disponible.`,
-	}),
 	neutralDescription: {
-		en: 'View predicted departures, service alerts, a sample weekday schedule and available reliability history for this stop.',
-		fr: 'Consultez les passages prévus, les avis, un exemple d’horaire en semaine et l’historique de fiabilité disponible à cet arrêt.',
+		en: 'View predicted departures, a sample weekday schedule and available reliability history for this stop.',
+		fr: 'Consultez les passages prévus, un exemple d’horaire en semaine et l’historique de fiabilité disponible à cet arrêt.',
 	},
 };
 
 const TRIP_DETAIL: BilingualSeo = {
 	title: { en: 'Trip detail', fr: 'Détail du trajet' },
-	description: (id) => ({
-		en: `View reported ${id.shortName} trip status, delay and stop predictions for up to the next hour in ${id.city}. Predictions may change or be unavailable.`,
-		fr: `Consultez un trajet ${id.shortName} à ${id.city} : statut, retard et passages prévus pour une heure au plus. Les prévisions peuvent changer ou manquer.`,
-	}),
 	neutralDescription: {
 		en: 'View reported trip status, delay and stop predictions for up to the next hour. Predictions may change or be unavailable.',
 		fr: 'Consultez le statut, le retard et les passages prévus du trajet pour une heure au plus. Les prévisions peuvent changer ou manquer.',
@@ -311,10 +253,10 @@ export function resolveRouteSeo(
 		? `${homeProvider.labels[locale].operator} · ${homeProvider.labels[locale].city} · Transit`
 		: HOME.title[locale];
 	if (path === '/' && providerId && resolved) {
-		const title = (entry.keywordTitle ?? (() => entry.title))(resolved);
+		const title = HOME.keywordTitle(resolved);
 		return {
 			title: title[locale],
-			description: entry.description(resolved)[locale],
+			description: HOME.description(resolved)[locale],
 			siteName: 'Transit',
 			providerId,
 			imagePath,

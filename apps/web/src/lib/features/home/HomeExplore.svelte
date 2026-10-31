@@ -282,8 +282,8 @@
 	}
 	.home-entry-description {
 		color: var(--muted-foreground);
-		font-size: var(--text-reading-support, 1.125rem);
-		line-height: 1.7;
+		font-size: var(--text-small);
+		line-height: 1.6;
 		max-width: var(--measure-lede);
 	}
 	.home-entry-arrow {

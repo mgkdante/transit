@@ -621,7 +621,9 @@
 		flex-direction: column;
 		gap: 0.375rem;
 	}
-	.metrics-measure__heading {
+	.metrics-measure__heading,
+	.metrics-lacunes__heading,
+	.metrics-live__heading {
 		margin: 0;
 		font-family: var(--font-heading);
 		font-size: var(--text-reading-heading, 1.25rem);
@@ -718,16 +720,6 @@
 		padding-block-start: 0;
 		border-block-start: none;
 	}
-	.metrics-lacunes__heading,
-	.metrics-live__heading {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-reading-heading, 1.25rem);
-		font-weight: 600;
-		line-height: 1.4;
-		color: var(--foreground);
-	}
-
 	.metric__top {
 		display: inline-flex;
 		min-block-size: var(--size-tap-min);

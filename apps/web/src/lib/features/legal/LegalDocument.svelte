@@ -74,6 +74,7 @@
 
 	.legal-document__sections {
 		gap: 2.5rem;
+		font-size: var(--text-reading, 1.1875rem);
 	}
 
 	.legal-document__kicker,
@@ -124,10 +125,6 @@
 
 	.legal-document__summary {
 		font-size: var(--text-reading-support, 1.125rem);
-	}
-
-	.legal-document__sections {
-		font-size: var(--text-reading, 1.1875rem);
 	}
 
 	ul {
