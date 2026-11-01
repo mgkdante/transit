@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { Button } from '@yesid/ui/button';
 	import type { Locale } from '$lib/i18n';
+	import { trackEvent } from '$lib/site/analytics';
 	import { copy } from './receipt.copy';
 
 	let { text, locale }: { text: string; locale: Locale } = $props();
@@ -12,6 +13,7 @@
 
 	async function copyObservation(): Promise<void> {
 		copyState = 'copying';
+		trackEvent('Receipt Copy');
 		try {
 			await navigator.clipboard.writeText(text);
 			copyState = 'copied';

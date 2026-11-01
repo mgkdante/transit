@@ -55,11 +55,16 @@ describe('content security policy', () => {
 	it('allows inline scripts only by hash and lists the data, map and analytics origins', () => {
 		const csp = config.kit?.csp;
 		expect(csp?.mode).toBe('hash');
-		expect(csp?.directives?.['script-src']).toEqual(['self', boot.hash]);
+		expect(csp?.directives?.['script-src']).toEqual([
+			'self',
+			boot.hash,
+			'https://static.cloudflareinsights.com',
+		]);
 		expect(csp?.directives?.['connect-src']).toEqual([
 			'self',
 			'https://data.yesid.dev',
 			'https://plausible.io',
+			'https://cloudflareinsights.com',
 			'https://protomaps.github.io',
 		]);
 		expect(csp?.directives?.['img-src']).toEqual([

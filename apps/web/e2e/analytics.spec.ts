@@ -3,11 +3,12 @@ import { expect, test, type Page } from '@playwright/test';
 import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
 import { SURFACE_NAV } from '../src/lib/content/nav';
 
-const domain = JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars
-	.PUBLIC_PLAUSIBLE_DOMAIN;
+const { PUBLIC_PLAUSIBLE_DOMAIN: domain, PUBLIC_CF_BEACON_TOKEN: beaconToken } = JSON.parse(
+	readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8'),
+).vars;
 
 const ENDPOINT = 'https://plausible.io/api/event';
-type Payload = { n: string; d: string; u: string };
+type Payload = { n: string; d: string; u: string; p?: Record<string, string> };
 
 // The production CSP upgrades this synthetic HTTP hostname's assets to HTTPS.
 test.use({ bypassCSP: true });
@@ -20,6 +21,25 @@ async function capturePlausible(page: Page): Promise<Payload[]> {
 		await route.fulfill({ status: 202, contentType: 'text/plain', body: '' });
 	});
 	return payloads;
+}
+
+async function captureBeacon(page: Page): Promise<URL[]> {
+	const requests: URL[] = [];
+	await page.route('https://static.cloudflareinsights.com/**', async (route) => {
+		requests.push(new URL(route.request().url()));
+		await route.fulfill({ status: 200, contentType: 'text/javascript', body: '' });
+	});
+	return requests;
+}
+
+async function openMenu(page: Page) {
+	const menu = page.getByRole('navigation', { name: navPillCopy.en.menu });
+	await expect(async () => {
+		if (!(await menu.isVisible()))
+			await page.getByRole('button', { name: navPillCopy.en.openMenu }).click();
+		await expect(menu).toBeVisible({ timeout: 1000 });
+	}).toPass();
+	return menu;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -35,14 +55,13 @@ test.beforeEach(async ({ page }) => {
 
 test('pageviews carry the configured domain and only the path', async ({ page }) => {
 	const payloads = await capturePlausible(page);
+	const beacon = await captureBeacon(page);
 	await page.goto(`http://${domain}:4317/?utm_source=e2e&q=12+Main+St`);
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
-	const menu = page.getByRole('navigation', { name: navPillCopy.en.menu });
-	await expect(async () => {
-		if (!(await menu.isVisible()))
-			await page.getByRole('button', { name: navPillCopy.en.openMenu }).click();
-		await expect(menu).toBeVisible({ timeout: 1000 });
-	}).toPass();
+	await expect
+		.poll(() => beacon.map((url) => url.searchParams.get('token')))
+		.toEqual([beaconToken]);
+	const menu = await openMenu(page);
 	await menu
 		.getByRole('link', {
 			name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en,
@@ -53,6 +72,7 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(2);
 	for (const payload of payloads) {
 		expect(payload.d).toBe(domain);
+		expect(payload.p).toEqual({ locale: 'en', provider: 'stm' });
 		const url = new URL(payload.u);
 		expect(['', '?utm_source=e2e']).toContain(url.search);
 		expect(url.hash).toBe('');
@@ -67,15 +87,28 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 	).toEqual([]);
 });
 
+test('a portfolio link click is a custom event', async ({ page, context }) => {
+	const payloads = await capturePlausible(page);
+	await captureBeacon(page);
+	await context.route('https://yesid.dev/**', (route) =>
+		route.fulfill({ status: 200, contentType: 'text/html', body: '' }),
+	);
+	await page.goto(`http://${domain}:4317/`);
+	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
+	const menu = await openMenu(page);
+	const popup = context.waitForEvent('page');
+	await menu.getByRole('link', { name: /^Yesid/ }).click();
+	await popup;
+	await expect
+		.poll(() => payloads.find(({ n }) => n === 'Portfolio Click')?.p)
+		.toEqual({ locale: 'en', provider: 'stm', placement: 'menu' });
+});
+
 test('the local host sends nothing', async ({ page }) => {
 	const payloads = await capturePlausible(page);
+	const beacon = await captureBeacon(page);
 	await page.goto('http://127.0.0.1:4317/?utm_source=e2e&q=12+Main+St');
-	const menu = page.getByRole('navigation', { name: navPillCopy.en.menu });
-	await expect(async () => {
-		if (!(await menu.isVisible()))
-			await page.getByRole('button', { name: navPillCopy.en.openMenu }).click();
-		await expect(menu).toBeVisible({ timeout: 1000 });
-	}).toPass();
+	const menu = await openMenu(page);
 	await menu
 		.getByRole('link', {
 			name: SURFACE_NAV.find(({ href }) => href === '/lines')!.label.en,
@@ -92,4 +125,5 @@ test('the local host sends nothing', async ({ page }) => {
 	);
 	await expect.poll(() => payloads.some(({ n }) => n === '__e2e-drain__')).toBe(true);
 	expect(payloads.filter(({ n }) => n !== '__e2e-drain__')).toEqual([]);
+	expect(beacon).toEqual([]);
 });

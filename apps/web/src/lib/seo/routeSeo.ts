@@ -70,8 +70,8 @@ const HOME: BilingualSeo & {
 };
 
 const PRIVACY_DESCRIPTION: BilingualText = {
-	en: 'How Transit handles address searches, device location, browser storage, retention and privacy requests.',
-	fr: 'Comment Transit traite la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
+	en: 'How Transit handles visit measurement, address searches, device location, browser storage, retention and privacy requests.',
+	fr: 'Comment Transit traite la mesure des visites, la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
 };
 
 const ACCESSIBILITY_DESCRIPTION: BilingualText = {

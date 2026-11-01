@@ -18,7 +18,7 @@
 	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
 
-	import { createAnalytics } from '@yesid/analytics/client';
+	import { startAnalytics } from '$lib/site/analytics';
 	import {
 		setLocaleContext,
 		DEFAULT_LOCALE,
@@ -282,7 +282,11 @@
 		}
 		void registerServiceWorker({ browser, production: import.meta.env.PROD });
 
-		createAnalytics({ events: [] }, { domain: env.PUBLIC_PLAUSIBLE_DOMAIN });
+		startAnalytics({
+			domain: env.PUBLIC_PLAUSIBLE_DOMAIN,
+			beaconToken: env.PUBLIC_CF_BEACON_TOKEN,
+			context: () => ({ locale, provider: data.providerId }),
+		});
 		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
 
 		const disposeVitals =
