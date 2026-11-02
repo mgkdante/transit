@@ -1,7 +1,11 @@
 import { defineCopy, type Locale } from '$lib/i18n';
 
 export type LegalPageKind = 'privacy' | 'terms' | 'accessibility';
-export const LEGAL_EFFECTIVE_DATE = '2026-10-29';
+export const LEGAL_EFFECTIVE_DATES: Readonly<Record<LegalPageKind, string>> = {
+	privacy: '2026-11-01',
+	terms: '2026-10-29',
+	accessibility: '2026-10-29',
+};
 
 export interface LegalLinkCopy {
 	readonly href: string;
@@ -42,7 +46,7 @@ const documents = {
 			kicker: 'LEGAL',
 			title: 'Privacy Policy',
 			effectiveLabel: 'Effective and last updated',
-			effectiveDate: 'October 29, 2026',
+			effectiveDate: 'November 1, 2026',
 			summary:
 				'This policy explains the limited personal information processing involved when you use Transit. Transit has no user accounts, payments, advertising, newsletter or direct marketing.',
 			sections: [
@@ -59,12 +63,17 @@ const documents = {
 					title: 'Information processed when you visit',
 					paragraphs: [
 						'Cloudflare delivers and protects the site. It processes ordinary network request information, such as an IP address, request path, headers and security signals, to route requests, prevent abuse and operate the service.',
-						"Transit counts visits with Plausible Analytics Cloud, operated by Plausible Insights OÜ in Estonia, to see which pages and sources are used so the service can improve. Measurement is always on. When a page loads, your browser sends Plausible the page path, the referring site (its address without the path), campaign tags in the link, and your browser, operating-system and device category; the rest of the page address, including searches and selected map locations, is removed in your browser before anything is sent. Each request carries your IP address and User-Agent: Plausible derives an approximate country, region and city from the IP address, combines both values with a salt that changes every day to count that day's visitors, then discards them. They are never stored. Visitor data is processed and stored in the European Union.",
+						"Transit counts visits with Plausible Analytics Cloud, operated by Plausible Insights OÜ in Estonia, to see which pages and sources are used so the service can improve. Measurement is always on. When a page loads, your browser sends Plausible the page path, the referring site (its address without the path), campaign tags in the link, and your browser, operating-system and device category; the rest of the page address, including searches and selected map locations, is removed in your browser before anything is sent. Transit also sends Plausible the name of a few interactions: choosing a search result, using “Use my location”, picking an address suggestion or a nearby stop, copying a daily receipt, and following a link to yesid.dev or Transit’s GitHub repository. Every page view and event also carries the interface language (English or French) and the transit network shown; a search result adds its type (line, stop, vehicle or address) and a link adds where it sat on the page (menu, footer or page body). Nothing else is attached, never the search text, address, coordinates or stop. Each request carries your IP address and User-Agent: Plausible derives an approximate country, region and city from the IP address, combines both values with a salt that changes every day to count that day's visitors, then discards them. They are never stored. Visitor data is processed and stored in the European Union.",
 						"Plausible uses no cookies, no browser storage and no persistent identifier, and does not follow you across sites, devices or apps. It has no function that identifies, locates or profiles you within the meaning of section 8.1 of the Act respecting the protection of personal information in the private sector, so there is nothing to switch on and no banner. For visitors covered by the EU General Data Protection Regulation, the basis is Transit's legitimate interest in understanding how the site is used (Article 6(1)(f)). Plausible keeps aggregate statistics while the account is active and no record of individual visitors. You can object by writing to contact@yesid.dev or block plausible.io in your browser.",
+						'Transit also uses Cloudflare Web Analytics, a free feature of the Cloudflare service that already delivers the site, to measure page speed and visits. When a page loads and when you move between pages, a Cloudflare script in your browser sends Cloudflare the full page address, the previous page address, browser and device information, and timing measurements such as load time and Core Web Vitals. Unlike Plausible, the address is not shortened first, so it can include a selected map location written in the URL as described below. Cloudflare receives your IP address with the request, may use it for an approximate country, and states that it discards it at the receiving data centre without storing it. The script sets no cookies, uses no browser storage and keeps no identifier between visits. Like Plausible, it has no function that identifies, locates or profiles you, and the same legitimate-interest basis applies. You can block static.cloudflareinsights.com in your browser.',
 					],
 					links: [
 						{ href: 'https://plausible.io/data-policy', label: 'Plausible data policy' },
 						{ href: 'https://plausible.io/dpa', label: 'Plausible data processing agreement' },
+						{
+							href: 'https://developers.cloudflare.com/speed/observatory/rum-beacon/',
+							label: 'Cloudflare Web Analytics data collection',
+						},
 					],
 				},
 				{
@@ -95,7 +104,7 @@ const documents = {
 					id: 'choices',
 					title: 'Your choices and consent',
 					paragraphs: [
-						'Where consent is the basis for processing, you may withdraw it for future processing. You can deny or revoke device-location permission in your browser, clear a selected map location and clear browser storage. Those choices may disable the related convenience feature.',
+						'Where consent is the basis for processing, you may withdraw it for future processing. You can deny or revoke device-location permission in your browser, clear a selected map location and clear browser storage. Those choices may disable the related convenience feature. You can stop visit measurement by blocking plausible.io and static.cloudflareinsights.com in your browser or with a content blocker.',
 						'Essential request delivery, security and abuse prevention are necessary to provide the public website and cannot be disabled through Transit settings.',
 					],
 				},
@@ -119,7 +128,7 @@ const documents = {
 					id: 'retention-security',
 					title: 'Retention and safeguards',
 					paragraphs: [
-						'Transit keeps no account profile or payment record because those features do not exist. The in-memory geocode rate limit is short-lived as described above. Browser preferences remain under your browser’s control. Cloudflare controls the retention of its network records under its own policies; Plausible keeps aggregate statistics while the Transit account is active and never stores IP addresses or User-Agent values.',
+						'Transit keeps no account profile or payment record because those features do not exist. The in-memory geocode rate limit is short-lived as described above. Browser preferences remain under your browser’s control. Cloudflare controls the retention of its network records under its own policies and keeps Web Analytics measurements in full for seven days, then as sampled aggregate statistics; Plausible keeps aggregate statistics while the Transit account is active and never stores IP addresses or User-Agent values.',
 						'Code-visible safeguards include same-origin checks on geocode requests, bounded input validation and rate limiting, private no-store geocode responses, and Cloudflare delivery and security controls. No Internet service or transmission method is completely secure.',
 					],
 				},
@@ -292,7 +301,7 @@ const documents = {
 			kicker: 'JURIDIQUE',
 			title: 'Politique de confidentialité',
 			effectiveLabel: 'Entrée en vigueur et dernière mise à jour',
-			effectiveDate: '29 octobre 2026',
+			effectiveDate: '1er novembre 2026',
 			summary:
 				'La présente politique explique le traitement limité de renseignements personnels lié à l’utilisation de Transit. Transit ne propose aucun compte, paiement, publicité, infolettre ni marketing direct.',
 			sections: [
@@ -309,8 +318,9 @@ const documents = {
 					title: 'Renseignements traités lors d’une visite',
 					paragraphs: [
 						'Cloudflare livre et protège le site. L’entreprise traite des renseignements ordinaires liés aux requêtes réseau, comme l’adresse IP, le chemin demandé, les en-têtes et les signaux de sécurité, afin d’acheminer les requêtes, de prévenir les abus et d’exploiter le service.',
-						"Transit compte les visites avec Plausible Analytics Cloud, exploité par Plausible Insights OÜ en Estonie, pour voir quelles pages et quelles sources sont utilisées et améliorer le service. La mesure est toujours active. Au chargement d'une page, votre navigateur envoie à Plausible le chemin de la page, le site d'origine (son adresse sans le chemin), les balises de campagne du lien et les catégories de navigateur, de système d'exploitation et d'appareil; le reste de l'adresse de la page, y compris les recherches et les lieux sélectionnés sur la carte, est retiré dans votre navigateur avant tout envoi. Chaque requête contient votre adresse IP et votre agent utilisateur : Plausible déduit de l'adresse IP un pays, une région et une ville approximatifs, combine les deux valeurs à un sel renouvelé chaque jour pour compter les visiteurs de la journée, puis les élimine. Elles ne sont jamais conservées. Les données de visite sont traitées et conservées dans l'Union européenne.",
+						"Transit compte les visites avec Plausible Analytics Cloud, exploité par Plausible Insights OÜ en Estonie, pour voir quelles pages et quelles sources sont utilisées et améliorer le service. La mesure est toujours active. Au chargement d'une page, votre navigateur envoie à Plausible le chemin de la page, le site d'origine (son adresse sans le chemin), les balises de campagne du lien et les catégories de navigateur, de système d'exploitation et d'appareil; le reste de l'adresse de la page, y compris les recherches et les lieux sélectionnés sur la carte, est retiré dans votre navigateur avant tout envoi. Transit envoie aussi à Plausible le nom de quelques interactions : le choix d'un résultat de recherche, l'utilisation de « Utiliser ma position », le choix d'une adresse suggérée ou d'un arrêt à proximité, la copie d'un reçu quotidien et le suivi d'un lien vers yesid.dev ou le dépôt GitHub de Transit. Chaque page vue et chaque événement indiquent aussi la langue de l'interface (anglais ou français) et le réseau affiché; un résultat de recherche ajoute son type (ligne, arrêt, véhicule ou adresse) et un lien ajoute son emplacement dans la page (menu, pied de page ou corps de la page). Rien d'autre n'est joint, jamais le texte recherché, l'adresse, les coordonnées ni l'arrêt. Chaque requête contient votre adresse IP et votre agent utilisateur : Plausible déduit de l'adresse IP un pays, une région et une ville approximatifs, combine les deux valeurs à un sel renouvelé chaque jour pour compter les visiteurs de la journée, puis les élimine. Elles ne sont jamais conservées. Les données de visite sont traitées et conservées dans l'Union européenne.",
 						"Plausible n'utilise ni témoins, ni stockage du navigateur, ni identifiant persistant, et ne vous suit pas d'un site, d'un appareil ou d'une application à l'autre. Il ne comporte aucune fonction permettant de vous identifier, de vous localiser ou d'effectuer votre profilage au sens de l'article 8.1 de la Loi sur la protection des renseignements personnels dans le secteur privé; il n'y a donc rien à activer et aucune bannière. Pour les personnes visées par le Règlement général sur la protection des données de l'Union européenne, le fondement est l'intérêt légitime de Transit à comprendre l'utilisation du site (article 6(1)(f)). Plausible conserve des statistiques agrégées tant que le compte est actif et aucun dossier sur les visiteurs individuels. Vous pouvez vous y opposer en écrivant à contact@yesid.dev ou bloquer plausible.io dans votre navigateur.",
+						"Transit utilise aussi Cloudflare Web Analytics, une fonction gratuite du service Cloudflare qui livre déjà le site, pour mesurer la vitesse des pages et les visites. Au chargement d'une page et lors du passage d'une page à l'autre, un script Cloudflare dans votre navigateur envoie à Cloudflare l'adresse complète de la page, l'adresse de la page précédente, des renseignements sur le navigateur et l'appareil, ainsi que des mesures de temps comme le temps de chargement et les signaux Web essentiels. Contrairement à Plausible, l'adresse n'est pas raccourcie avant l'envoi; elle peut donc contenir un lieu sélectionné sur la carte et inscrit dans l'adresse, comme décrit ci-dessous. Cloudflare reçoit votre adresse IP avec la requête, peut en déduire un pays approximatif et indique l'éliminer au centre de données qui la reçoit, sans la conserver. Le script ne crée aucun témoin, n'utilise pas le stockage du navigateur et ne conserve aucun identifiant d'une visite à l'autre. Comme Plausible, il ne comporte aucune fonction permettant de vous identifier, de vous localiser ou d'effectuer votre profilage, et le même fondement d'intérêt légitime s'applique. Vous pouvez bloquer static.cloudflareinsights.com dans votre navigateur.",
 					],
 					links: [
 						{
@@ -320,6 +330,10 @@ const documents = {
 						{
 							href: 'https://plausible.io/dpa',
 							label: 'Entente de traitement des données de Plausible',
+						},
+						{
+							href: 'https://developers.cloudflare.com/speed/observatory/rum-beacon/',
+							label: 'Données recueillies par Cloudflare Web Analytics (en anglais)',
 						},
 					],
 				},
@@ -351,7 +365,7 @@ const documents = {
 					id: 'choices',
 					title: 'Vos choix et votre consentement',
 					paragraphs: [
-						'Lorsque le consentement fonde un traitement, vous pouvez le retirer pour l’avenir. Vous pouvez refuser ou révoquer la permission de localisation dans votre navigateur, effacer un lieu sélectionné et supprimer les données du navigateur. Ces choix peuvent désactiver la fonction pratique concernée.',
+						'Lorsque le consentement fonde un traitement, vous pouvez le retirer pour l’avenir. Vous pouvez refuser ou révoquer la permission de localisation dans votre navigateur, effacer un lieu sélectionné et supprimer les données du navigateur. Ces choix peuvent désactiver la fonction pratique concernée. Vous pouvez arrêter la mesure des visites en bloquant plausible.io et static.cloudflareinsights.com dans votre navigateur ou avec un bloqueur de contenu.',
 						'La livraison essentielle des requêtes, la sécurité et la prévention des abus sont nécessaires pour fournir le site public et ne peuvent pas être désactivées dans les réglages de Transit.',
 					],
 				},
@@ -378,7 +392,7 @@ const documents = {
 					id: 'retention-security',
 					title: 'Conservation et mesures de protection',
 					paragraphs: [
-						"Transit ne conserve aucun profil de compte ni dossier de paiement, puisque ces fonctions n’existent pas. La limite de recherche en mémoire est de courte durée, comme décrit ci-dessus. Les préférences du navigateur restent sous votre contrôle. Cloudflare contrôle la conservation de ses registres réseau selon ses propres politiques; Plausible conserve des statistiques agrégées tant que le compte de Transit est actif et ne conserve jamais d'adresse IP ni d'agent utilisateur.",
+						"Transit ne conserve aucun profil de compte ni dossier de paiement, puisque ces fonctions n’existent pas. La limite de recherche en mémoire est de courte durée, comme décrit ci-dessus. Les préférences du navigateur restent sous votre contrôle. Cloudflare contrôle la conservation de ses registres réseau selon ses propres politiques et conserve les mesures de Web Analytics au complet pendant sept jours, puis sous forme de statistiques agrégées échantillonnées; Plausible conserve des statistiques agrégées tant que le compte de Transit est actif et ne conserve jamais d'adresse IP ni d'agent utilisateur.",
 						'Les mesures visibles dans le code comprennent des contrôles de même origine sur les requêtes de géocodage, une validation et une limitation bornées des entrées, des réponses de géocodage privées sans mise en cache et les contrôles de livraison et de sécurité de Cloudflare. Aucun service Internet ni mode de transmission n’est entièrement sûr.',
 					],
 				},

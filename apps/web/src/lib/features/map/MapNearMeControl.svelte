@@ -8,6 +8,7 @@
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
 	import { getV1Context } from '$lib/v1/boot';
+	import { trackEvent } from '$lib/site/analytics';
 	const { manifest } = getV1Context();
 
 	interface Props {
@@ -83,6 +84,7 @@
 		suggestionsOpen = false;
 		lastSelectedSuggestionLabel = result.label;
 		inputEl?.blur();
+		trackEvent('Address Pick');
 		void onsuggestion(result);
 	}
 
@@ -182,7 +184,14 @@
 	</button>
 	{#if open}
 		<div class="map-near-panel">
-			<button type="button" class="map-near-action" onclick={onuselocation}>
+			<button
+				type="button"
+				class="map-near-action"
+				onclick={() => {
+					trackEvent('Locate Me');
+					onuselocation();
+				}}
+			>
 				{t.nearMeUseLocation}
 			</button>
 			<form class="map-near-form" onsubmit={onsearch}>
@@ -232,7 +241,14 @@
 				{#if stops.length > 0}
 					<div class="map-near-results">
 						{#each stops as stop (stop.id)}
-							<button type="button" class="map-near-stop" onclick={() => onstopselect(stop)}>
+							<button
+								type="button"
+								class="map-near-stop"
+								onclick={() => {
+									trackEvent('Nearby Stop');
+									onstopselect(stop);
+								}}
+							>
 								<span>{stop.name}</span>
 								<small>{formatDistance(stop.distanceM)}</small>
 							</button>

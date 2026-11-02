@@ -1,7 +1,7 @@
 import { render, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import LegalDocument from './LegalDocument.svelte';
-import { LEGAL_EFFECTIVE_DATE, legalCopy, legalDocument } from './legal.copy';
+import { LEGAL_EFFECTIVE_DATES, legalCopy, legalDocument } from './legal.copy';
 
 const cases = [
 	{ locale: 'fr' as const, kind: 'privacy' as const, title: 'Politique de confidentialité' },
@@ -29,7 +29,7 @@ describe('LegalDocument', () => {
 			expect(within(page).getAllByRole('heading', { level: 2 })).toHaveLength(copy.sections.length);
 			expect(within(page).getByText(copy.effectiveDate)).toHaveAttribute(
 				'datetime',
-				LEGAL_EFFECTIVE_DATE,
+				LEGAL_EFFECTIVE_DATES[kind],
 			);
 			expect(within(page).queryByRole('button')).not.toBeInTheDocument();
 		},
@@ -41,6 +41,8 @@ describe('LegalDocument', () => {
 			const terms = JSON.stringify(legalDocument(locale, 'terms'));
 
 			expect(privacy).toContain('Cloudflare');
+			expect(privacy).toContain('Cloudflare Web Analytics');
+			expect(privacy).toContain('static.cloudflareinsights.com');
 			expect(privacy).toContain('Geo.ca');
 			expect(privacy).toContain('contact@yesid.dev');
 			expect(terms).toContain('MIT');
@@ -83,10 +85,14 @@ describe('LegalDocument', () => {
 	});
 
 	it('binds both localized documents to the actual publication date', () => {
-		expect(LEGAL_EFFECTIVE_DATE).toBe('2026-10-29');
-		expect(legalDocument('en', 'privacy').effectiveDate).toBe('October 29, 2026');
+		expect(LEGAL_EFFECTIVE_DATES).toEqual({
+			privacy: '2026-11-01',
+			terms: '2026-10-29',
+			accessibility: '2026-10-29',
+		});
+		expect(legalDocument('en', 'privacy').effectiveDate).toBe('November 1, 2026');
 		expect(legalDocument('en', 'terms').effectiveDate).toBe('October 29, 2026');
-		expect(legalDocument('fr', 'privacy').effectiveDate).toBe('29 octobre 2026');
+		expect(legalDocument('fr', 'privacy').effectiveDate).toBe('1er novembre 2026');
 		expect(legalDocument('fr', 'terms').effectiveDate).toBe('29 octobre 2026');
 	});
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { LEGAL_EFFECTIVE_DATE, legalDocument, type LegalPageKind } from './legal.copy';
+	import { LEGAL_EFFECTIVE_DATES, legalDocument, type LegalPageKind } from './legal.copy';
 
 	interface Props {
 		kind: LegalPageKind;
@@ -19,7 +19,7 @@
 		<h1 id="legal-title">{document.title}</h1>
 		<p class="legal-document__effective">
 			{document.effectiveLabel}:
-			<time datetime={LEGAL_EFFECTIVE_DATE}>{document.effectiveDate}</time>
+			<time datetime={LEGAL_EFFECTIVE_DATES[kind]}>{document.effectiveDate}</time>
 		</p>
 		<p class="legal-document__summary">{document.summary}</p>
 	</header>

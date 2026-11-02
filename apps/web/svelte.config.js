@@ -26,11 +26,17 @@ export function cspDirectives(...scriptHashes) {
 		],
 		'font-src': ['self'],
 		'style-src': ['self', 'unsafe-inline'],
-		'script-src': ['self', ...scriptHashes, ...(dev ? /** @type {const} */ (['unsafe-eval']) : [])],
+		'script-src': [
+			'self',
+			...scriptHashes,
+			'https://static.cloudflareinsights.com',
+			...(dev ? /** @type {const} */ (['unsafe-eval']) : []),
+		],
 		'connect-src': [
 			'self',
 			'https://data.yesid.dev',
 			'https://plausible.io',
+			'https://cloudflareinsights.com',
 			'https://protomaps.github.io',
 			...(dev ? /** @type {const} */ (['ws:', 'wss:']) : []),
 		],

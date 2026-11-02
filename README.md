@@ -44,8 +44,11 @@ documents how the system is built, tested, deployed and operated.
 
 ## Analytics
 
-The production site counts visits with cookieless Plausible. Local runs and
-forks send nothing unless `PUBLIC_PLAUSIBLE_DOMAIN` is set.
+The production site counts visits and a few named interactions with cookieless
+Plausible (the event list is in `apps/web/src/lib/site/analytics.ts`), and loads
+the Cloudflare Web Analytics beacon when `PUBLIC_CF_BEACON_TOKEN` is also set.
+Local runs and forks send nothing unless `PUBLIC_PLAUSIBLE_DOMAIN` is set and
+the page is served from that host.
 
 ## License
 

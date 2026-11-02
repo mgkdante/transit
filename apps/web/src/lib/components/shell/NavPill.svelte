@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Component } from 'svelte';
+	import { trackEvent } from '$lib/site/analytics';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
@@ -208,6 +209,7 @@
 	}
 
 	function selectResult(result: ChromeSearchResult): void {
+		trackEvent('Search Result', { kind: result.kind });
 		onresultselect?.(result);
 		searchResultsOpen = false;
 	}

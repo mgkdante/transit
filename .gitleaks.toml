@@ -12,4 +12,5 @@ regexes = [
   '''https://eccfb9bedd87d413eaf4cac6ae2285d3\.r2\.cloudflarestorage\.com''',
   '''^route-55-midday$''',
   '''^vehicle-vehicle-normal-55$''',
+  '''0123456789abcdef0123456789abcdef''',
 ]
