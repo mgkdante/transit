@@ -33,6 +33,7 @@
 </script>
 
 <script lang="ts">
+	import { SliderButton } from '@yesid/ui/brand';
 	import DateRangePicker from './DateRangePicker.svelte';
 
 	let {
@@ -77,24 +78,18 @@
 
 	{#if mode === 'date'}
 		<div class="history-navigator__neighbors" data-slot="history-neighbors">
-			<button
-				type="button"
-				class="history-navigator__step"
+			<SliderButton
+				direction="previous"
 				disabled={previousDate == null || onDateChange == null}
 				aria-label={labels.previous}
 				onclick={() => onDateChange?.(previousDate ?? undefined)}
-			>
-				{labels.previous}
-			</button>
-			<button
-				type="button"
-				class="history-navigator__step"
+			/>
+			<SliderButton
+				direction="next"
 				disabled={nextDate == null || onDateChange == null}
 				aria-label={labels.next}
 				onclick={() => onDateChange?.(nextDate ?? undefined)}
-			>
-				{labels.next}
-			</button>
+			/>
 		</div>
 	{/if}
 
@@ -138,48 +133,11 @@
 		min-width: 0;
 	}
 	.history-navigator__neighbors {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		display: flex;
+		justify-content: space-between;
 		gap: 0.5rem;
 		width: 100%;
-		max-width: 100%;
 		min-width: 0;
-	}
-	.history-navigator__step {
-		appearance: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 100%;
-		max-width: 100%;
-		min-width: 0;
-		min-height: 44px;
-		padding: 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		text-align: center;
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		cursor: pointer;
-		transition:
-			color var(--duration-fast) var(--ease-default),
-			border-color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default);
-	}
-	.history-navigator__step:hover:not(:disabled) {
-		border-color: var(--primary);
-		background-color: var(--accent);
-	}
-	.history-navigator__step:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.history-navigator__step:disabled {
-		opacity: 0.45;
-		cursor: not-allowed;
 	}
 	.history-navigator__captions {
 		display: flex;
@@ -197,10 +155,5 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 		overflow-wrap: anywhere;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.history-navigator__step {
-			transition: none;
-		}
 	}
 </style>
