@@ -104,6 +104,19 @@ test('a portfolio link click is a custom event', async ({ page, context }) => {
 		.toEqual({ locale: 'en', provider: 'stm', placement: 'menu' });
 });
 
+test('a missing page sends a 404 event with only its path', async ({ page }) => {
+	const payloads = await capturePlausible(page);
+	await captureBeacon(page);
+	await page.goto(`http://${domain}:4317/no-such-page?q=12+Main+St`);
+	await expect
+		.poll(() => payloads.map(({ n }) => n))
+		.toEqual(expect.arrayContaining(['pageview', '404']));
+	const event = payloads.find(({ n }) => n === '404')!;
+	expect(new URL(event.u).pathname).toBe('/no-such-page');
+	expect(new URL(event.u).search).toBe('');
+	expect(payloads.filter(({ n }) => n === '404')).toHaveLength(1);
+});
+
 test('the local host sends nothing', async ({ page }) => {
 	const payloads = await capturePlausible(page);
 	const beacon = await captureBeacon(page);

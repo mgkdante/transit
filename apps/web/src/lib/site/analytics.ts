@@ -14,6 +14,7 @@ const preset = defineAnalyticsPreset({
 		'Receipt Copy',
 		'Portfolio Click',
 		'Repo Click',
+		'404',
 	],
 	props: {
 		locale: ['en', 'fr'],
@@ -35,10 +36,13 @@ export interface AnalyticsContext {
 
 const BEACON_TOKEN = /^[0-9a-f]{32}$/i;
 
-let analytics: Analytics<AnalyticsEvent, Props> = { trackEvent() {} };
+let analytics: Analytics<AnalyticsEvent, Props> | undefined;
+// Child components mount before the root layout starts analytics, so early events wait here.
+let pending: [AnalyticsEvent, AnalyticsEventProps | undefined][] = [];
 
 export function trackEvent(name: AnalyticsEvent, props?: AnalyticsEventProps): void {
-	analytics.trackEvent(name, props);
+	if (analytics) analytics.trackEvent(name, props);
+	else pending = [...pending, [name, props]];
 }
 
 export function outboundEvent({
@@ -89,10 +93,13 @@ export function startAnalytics({
 	beaconToken: string | undefined;
 	context: () => AnalyticsContext;
 }): void {
-	analytics = createAnalytics(preset, {
+	const started = createAnalytics(preset, {
 		domain,
 		context: () => context() as AnalyticsPropValues<Props>,
 	});
+	analytics = started;
+	for (const [name, props] of pending) started.trackEvent(name, props);
+	pending = [];
 	if (!servedFrom(domain)) return;
 	document.addEventListener('click', onOutboundClick, { capture: true });
 	document.addEventListener('auxclick', onOutboundClick, { capture: true });
