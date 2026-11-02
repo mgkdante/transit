@@ -3,6 +3,7 @@
 	import { ErrorPage } from '@yesid/ui/layout';
 	import { getLocalizeHref, pathLocale, type Locale } from '$lib/i18n';
 	import { errorDocumentHead, errorPageCopy } from '$lib/site/errorPage';
+	import { trackEvent } from '$lib/site/analytics';
 
 	const localizeHref = getLocalizeHref();
 
@@ -33,6 +34,15 @@
 				},
 	);
 	const documentHead = $derived(errorDocumentHead(status, locale));
+
+	let tracked404: string | undefined;
+	$effect(() => {
+		const path = $page.url.pathname;
+		if (is404 && path !== tracked404) {
+			tracked404 = path;
+			trackEvent('404');
+		}
+	});
 </script>
 
 <svelte:head>
