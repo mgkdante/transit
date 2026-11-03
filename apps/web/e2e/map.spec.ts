@@ -88,6 +88,11 @@ for (const locale of PUBLISHED_LOCALES) {
 		page,
 	}) => {
 		await page.clock.install({ time: generated });
+		// Exercise a known-age stall for both active families. The shared fixture server
+		// intentionally has no vehicle snapshot, which is an unknown-age failure instead.
+		await page.route('**/live/vehicles.json', (route) =>
+			route.fulfill({ json: { generated_utc: new Date(generated).toISOString(), vehicles: [] } }),
+		);
 		const alerts = page.waitForResponse((response) =>
 			new URL(response.url()).pathname.endsWith('/live/alerts.json'),
 		);
@@ -96,6 +101,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		const banner = page.getByRole('status').filter({ hasText: stall });
 		const nearMe = page.getByRole('button', { name: t.nearMe, exact: true });
 		await expect(nearMe).toBeVisible();
+		await expect(page.getByRole('status').filter({ hasText: t.liveNoVehicles })).toBeVisible();
 		await expect(banner).toHaveCount(0);
 		// Well past the stale threshold of three live TTLs.
 		await page.clock.fastForward('05:00');

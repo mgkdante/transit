@@ -9,15 +9,19 @@
 	export function deriveMapFeedBannerState({
 		selectedFamilyFailureMessage,
 		isStale,
+		ageSeconds,
 		liveEdgeState,
 		liveEdgeMessage,
 	}: {
 		selectedFamilyFailureMessage: string | null;
 		isStale: boolean;
+		ageSeconds?: number | null;
 		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage: string | null;
 	}): MapFeedBannerState {
 		if (selectedFamilyFailureMessage) return 'selected-family-failure';
+		if (ageSeconds === null && liveEdgeState === 'unavailable' && liveEdgeMessage)
+			return 'unavailable';
 		if (isStale) return 'global-stall';
 		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
 		return 'idle';
@@ -27,7 +31,8 @@
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
 	import type { Locale } from '$lib/i18n';
-	import { ageSeconds as ageFromUtc, formatRelativeSeconds } from '$lib/utils/time';
+	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { freshnessAgeSeconds } from '$lib/v1/freshness';
 
 	import { copy as MAP_COPY } from './map.copy';
 
@@ -58,24 +63,20 @@
 	$effect(() => clock.subscribe());
 
 	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined
-			? ageSeconds
-			: generatedUtc
-				? (() => {
-						const age = ageFromUtc(generatedUtc, clock.serverNow);
-						return Number.isNaN(age) ? null : Math.max(0, age);
-					})()
-				: null,
+		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc, clock.serverNow),
 	);
 	const relative = $derived(
 		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),
 	);
-	const stallMessage = $derived(t.feedNotResponding(relative));
+	const stallMessage = $derived(
+		effectiveAge == null ? t.feedAgeUnknown : t.feedNotResponding(relative),
+	);
 	const resolvedState = $derived(
 		state ??
 			deriveMapFeedBannerState({
 				selectedFamilyFailureMessage,
 				isStale,
+				ageSeconds: effectiveAge,
 				liveEdgeState,
 				liveEdgeMessage,
 			}),

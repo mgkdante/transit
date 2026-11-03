@@ -141,7 +141,8 @@
 	const feedAge = $derived.by<string | null>(() => {
 		const s = live.network?.feed_freshness_s ?? null;
 		if (s == null) return null;
-		return formatRelativeSeconds(s + (live.ageSeconds ?? 0), locale);
+		const snapshotAge = live.familyStates.network.health.ageSeconds;
+		return snapshotAge == null ? null : formatRelativeSeconds(s + snapshotAge, locale);
 	});
 
 	const kpis = $derived.by(() =>

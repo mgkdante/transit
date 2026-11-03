@@ -98,6 +98,7 @@ export const copy = defineCopy({
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
 				: `Live data for ${family} is unavailable right now.`,
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
+		feedAgeUnknown: 'Data may be out of date.',
 		feedNotRespondingShort: 'not responding',
 		motion: {
 			label: 'Positions',
@@ -210,6 +211,7 @@ export const copy = defineCopy({
 				: `Les données en direct pour ${family} sont indisponibles pour l’instant.`,
 		feedNotResponding: (age: string) =>
 			`Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
+		feedAgeUnknown: 'Les données peuvent ne plus être à jour.',
 		feedNotRespondingShort: 'ne répond pas',
 		motion: {
 			label: 'Positions',

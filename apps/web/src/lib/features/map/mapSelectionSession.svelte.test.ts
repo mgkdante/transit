@@ -43,7 +43,13 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 				active: name === 'vehicles' || name === 'alerts',
 				lastGoodAt: null,
 				retainedGeneration: name === 'vehicles' || name === 'alerts' ? generation : null,
-				consecutiveFailures: 0,
+				health: {
+					state: name === 'vehicles' || name === 'alerts' ? 'live' : 'never-loaded',
+					ageSeconds: name === 'vehicles' || name === 'alerts' ? 0 : null,
+					isStale: false,
+					retained: name === 'vehicles' || name === 'alerts',
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -119,7 +125,11 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 			familyStates.vehicles = {
 				...familyStates.vehicles,
 				phase: 'failed',
-				consecutiveFailures: 1,
+				health: {
+					...familyStates.vehicles.health,
+					state: 'retained-stale',
+					notice: 'refresh-unavailable',
+				},
 				error: new Error('offline'),
 			};
 			flushSync();
@@ -129,7 +139,7 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 			familyStates.vehicles = {
 				...familyStates.vehicles,
 				phase: 'ready',
-				consecutiveFailures: 0,
+				health: { state: 'live', ageSeconds: 0, isStale: false, retained: true, notice: null },
 				error: null,
 				successRevision: familyStates.vehicles.successRevision + 1,
 			};
