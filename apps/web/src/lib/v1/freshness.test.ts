@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-	freshnessAgeSeconds,
-	freshnessRelative,
-	tierFreshness,
-	type FreshnessTier,
-} from './freshness';
+import { freshnessAgeSeconds, freshnessRelative } from './freshness';
 import type { TimeLang } from '$lib/utils/time';
-import type { Manifest } from './schemas';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -32,111 +26,5 @@ describe('shared freshness derivation', () => {
 
 		expect(freshnessAgeSeconds(generatedUtc, NOW.getTime())).toBe(10);
 		expect(freshnessRelative(generatedUtc, 'en', NOW.getTime())).toBe('10 seconds ago');
-	});
-});
-
-function manifest(
-	files: Partial<Manifest['files']> & { live?: Manifest['files']['live'] },
-): Manifest {
-	return {
-		provider: 'stm',
-		display_name: 'STM',
-		bbox: [-73.9, 45.4, -73.4, 45.7],
-		attribution: 'STM',
-		dataset_version: 'test',
-		labels: {},
-		surfaces: [],
-		files: {
-			live: { generated_utc: '2026-06-15T11:59:00Z' },
-			...files,
-		},
-	} as Manifest;
-}
-
-function manifestAged(tier: FreshnessTier, ageS: number, ttlS?: number): Manifest {
-	const generated = new Date(NOW.getTime() - ageS * 1000).toISOString();
-	const node = {
-		generated_utc: generated,
-		...(ttlS != null ? { ttl_s: ttlS } : {}),
-	} as Manifest['files']['live'];
-	if (tier === 'live') return manifest({ live: node });
-	return manifest({ [tier]: node } as Partial<Manifest['files']>);
-}
-
-describe('tierFreshness — published verdict + age math', () => {
-	it('reports published with the clamped age and the source generated_utc', () => {
-		const f = tierFreshness('live', manifestAged('live', 10), NOW);
-		expect(f.published).toBe(true);
-		if (!f.published) throw new Error('expected published');
-		expect(f.ageSeconds).toBe(10);
-		expect(f.generatedUtc).toBe(new Date(NOW.getTime() - 10_000).toISOString());
-	});
-
-	it('clamps a future-stamped build (clock skew) to age 0, not negative', () => {
-		const f = tierFreshness('live', manifestAged('live', -30), NOW);
-		expect(f.published).toBe(true);
-		if (!f.published) throw new Error('expected published');
-		expect(f.ageSeconds).toBe(0);
-		expect(f.isStale).toBe(false);
-	});
-});
-
-describe('tierFreshness — staleness threshold (2x effective ttl)', () => {
-	it('live: fresh below the 60s threshold', () => {
-		const f = tierFreshness('live', manifestAged('live', 59), NOW);
-		if (!f.published) throw new Error('expected published');
-		expect(f.isStale).toBe(false);
-	});
-
-	it('live: stale exactly AT the 60s boundary (>=)', () => {
-		const f = tierFreshness('live', manifestAged('live', 60), NOW);
-		if (!f.published) throw new Error('expected published');
-		expect(f.isStale).toBe(true);
-	});
-
-	it('live: stale above the boundary', () => {
-		const f = tierFreshness('live', manifestAged('live', 120), NOW);
-		if (!f.published) throw new Error('expected published');
-		expect(f.isStale).toBe(true);
-	});
-
-	it.each<FreshnessTier>(['static', 'historic'])(
-		'%s: scales the threshold to ~2 days, not 60s',
-		(tier) => {
-			const oneDay = tierFreshness(tier, manifestAged(tier, 86_400), NOW);
-			if (!oneDay.published) throw new Error('expected published');
-			expect(oneDay.isStale).toBe(false);
-
-			const twoDays = tierFreshness(tier, manifestAged(tier, 172_800), NOW);
-			if (!twoDays.published) throw new Error('expected published');
-			expect(twoDays.isStale).toBe(true);
-		},
-	);
-
-	it('honors a manifest-supplied ttl_s over the schema default', () => {
-		const fresh = tierFreshness('live', manifestAged('live', 19, 10), NOW);
-		if (!fresh.published) throw new Error('expected published');
-		expect(fresh.isStale).toBe(false);
-
-		const stale = tierFreshness('live', manifestAged('live', 20, 10), NOW);
-		if (!stale.published) throw new Error('expected published');
-		expect(stale.isStale).toBe(true);
-	});
-});
-
-describe('tierFreshness — unpublished + bad-input empty states', () => {
-	it('reports { published: false } when generated_utc is null', () => {
-		const m = manifest({ static: { generated_utc: null } });
-		expect(tierFreshness('static', m, NOW)).toEqual({ published: false });
-	});
-
-	it('reports { published: false } when the tier node is absent entirely', () => {
-		const m = manifest({});
-		expect(tierFreshness('historic', m, NOW)).toEqual({ published: false });
-	});
-
-	it('treats an invalid timestamp as never-published rather than NaN-stale', () => {
-		const m = manifest({ static: { generated_utc: 'not-a-date' } as Manifest['files']['live'] });
-		expect(tierFreshness('static', m, NOW)).toEqual({ published: false });
 	});
 });

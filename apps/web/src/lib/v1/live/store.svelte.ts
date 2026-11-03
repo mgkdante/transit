@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { ageSeconds } from '$lib/utils/time';
+import { freshnessAgeSeconds } from '$lib/v1/freshness';
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import { getV1Runtime } from '$lib/v1/runtime';
 import { untrack } from 'svelte';
@@ -24,7 +24,23 @@ export type LiveFamily = (typeof LIVE_FAMILIES)[number];
 
 export type LiveFamilyPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
-export interface LiveFamilyState {
+export type FeedHealthState =
+	| 'never-loaded'
+	| 'live'
+	| 'retained-stale'
+	| 'retrying'
+	| 'failed-no-data';
+
+export interface FeedHealth {
+	readonly state: FeedHealthState;
+	readonly ageSeconds: number | null;
+	/** Snapshot age alone; a failed refresh may retain a recent report. */
+	readonly isStale: boolean;
+	readonly retained: boolean;
+	readonly notice: 'stale' | 'refresh-unavailable' | null;
+}
+
+interface FamilyState {
 	readonly phase: LiveFamilyPhase;
 	readonly active: boolean;
 	readonly lastGoodAt: number | null;
@@ -32,6 +48,10 @@ export interface LiveFamilyState {
 	readonly consecutiveFailures: number;
 	readonly error: Error | null;
 	readonly successRevision: number;
+}
+
+export interface LiveFamilyState extends Omit<FamilyState, 'consecutiveFailures'> {
+	readonly health: FeedHealth;
 }
 
 export interface LiveStoreOptions {
@@ -96,7 +116,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		alerts: 0,
 		network: 0,
 	};
-	const familyStatesValue = $state<Record<LiveFamily, LiveFamilyState>>({
+	const familyStatesValue = $state<Record<LiveFamily, FamilyState>>({
 		vehicles: initialFamilyState(familyRefCounts.vehicles > 0),
 		trips: initialFamilyState(familyRefCounts.trips > 0),
 		departures: initialFamilyState(familyRefCounts.departures > 0),
@@ -113,6 +133,37 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	let started = false;
 
 	const index = $derived(buildLiveIndex({ vehicles, trips, stopDepartures: departures }));
+	const familyStates = $derived.by(() => {
+		const result = {} as Record<LiveFamily, LiveFamilyState>;
+		for (const family of LIVE_FAMILIES) {
+			const { consecutiveFailures, ...state } = familyStatesValue[family];
+			const payload = currentFamilyPayload(family);
+			const age = freshnessAgeSeconds(payload?.generated_utc, runtime.clock.serverNow);
+			const isStale = age == null || age >= staleThresholdS;
+			const retained = payload != null;
+			const retrying = state.phase === 'loading' && consecutiveFailures > 0;
+			const failed = state.phase === 'failed' || consecutiveFailures > 0;
+			const unknownAge = retained && age == null;
+			let verdict: FeedHealthState;
+			if (!retained) verdict = retrying ? 'retrying' : failed ? 'failed-no-data' : 'never-loaded';
+			else if (unknownAge) verdict = 'retained-stale';
+			else if (retrying) verdict = 'retrying';
+			else verdict = failed || isStale ? 'retained-stale' : 'live';
+			let notice: FeedHealth['notice'] = null;
+			if (unknownAge) notice = 'stale';
+			else if (failed) notice = 'refresh-unavailable';
+			else if (retained && isStale) notice = 'stale';
+			const health: FeedHealth = {
+				state: verdict,
+				ageSeconds: age,
+				isStale,
+				retained,
+				notice,
+			};
+			result[family] = { ...state, health };
+		}
+		return result;
+	});
 
 	const generatedUtc = $derived.by<string | null>(() => {
 		let oldest: string | null = null;
@@ -129,20 +180,23 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return oldest;
 	});
 	const ageSecondsValue = $derived.by<number | null>(() => {
-		if (!generatedUtc) return null;
-		const age = ageSeconds(generatedUtc, runtime.clock.serverNow);
-		return Number.isNaN(age) ? null : Math.max(0, age);
+		const active = activeFamilies();
+		if (active.length === 0) return null;
+		let oldestAge = 0;
+		for (const family of active) {
+			const age = familyStates[family].health.ageSeconds;
+			if (age == null) return null;
+			oldestAge = Math.max(oldestAge, age);
+		}
+		return oldestAge;
 	});
-	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
-	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
-	const vehiclesAgeSecondsValue = $derived.by<number | null>(() => {
-		if (!vehiclesGeneratedUtc) return null;
-		const age = ageSeconds(vehiclesGeneratedUtc, runtime.clock.serverNow);
-		return Number.isNaN(age) ? null : Math.max(0, age);
-	});
-	const vehiclesIsStale = $derived(
-		vehiclesAgeSecondsValue == null ? false : vehiclesAgeSecondsValue >= staleThresholdS,
+	const isStale = $derived(
+		activeFamilies().length === 0 ||
+			activeFamilies().some((family) => familyStates[family].health.isStale),
 	);
+	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
+	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);
+	const vehiclesIsStale = $derived(familyStates.vehicles.health.isStale);
 	const loading = $derived(
 		LIVE_FAMILIES.some(
 			(family) => familyStatesValue[family].active && familyStatesValue[family].phase === 'loading',
@@ -170,7 +224,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	function initialFamilyState(
 		active: boolean,
 		retainedGeneration: string | null = null,
-	): LiveFamilyState {
+	): FamilyState {
 		const hasSeed = active && retainedGeneration != null;
 		return {
 			phase: hasSeed ? 'ready' : 'idle',
@@ -183,10 +237,10 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		};
 	}
 
-	function inactiveOrSettledPhase(state: LiveFamilyState): LiveFamilyPhase {
+	function inactiveOrSettledPhase(state: FamilyState): LiveFamilyPhase {
 		if (!state.active) return 'idle';
 		if (state.error != null) return 'failed';
-		return state.retainedGeneration == null ? 'idle' : 'ready';
+		return state.successRevision === 0 ? 'idle' : 'ready';
 	}
 
 	function activeFamilies(): LiveFamily[] {
@@ -306,7 +360,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 				...state,
 				phase: 'ready',
 				lastGoodAt: runtime.clock.serverNow,
-				retainedGeneration: payloadGeneration ?? state.retainedGeneration,
+				retainedGeneration: payloadGeneration,
 				consecutiveFailures: 0,
 				error: null,
 				successRevision: changed ? state.successRevision + 1 : state.successRevision,
@@ -545,7 +599,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			return index;
 		},
 		get familyStates() {
-			return familyStatesValue;
+			return familyStates;
 		},
 		get generatedUtc() {
 			return generatedUtc;

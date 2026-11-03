@@ -1,11 +1,11 @@
+import type { FeedHealth, LiveFamilyPhase } from '$lib/v1/live/store.svelte';
+
 export type SelectionPresence = 'loading' | 'present' | 'missing-grace' | 'gone';
 export type SelectionSourceHealth = 'ok' | 'retrying' | 'failed';
 
 export interface VehiclesFamilyTruth {
-	readonly phase: 'idle' | 'loading' | 'ready' | 'failed';
-	readonly retainedGeneration: string | null;
-	readonly consecutiveFailures: number;
-	readonly error: Error | null;
+	readonly phase: LiveFamilyPhase;
+	readonly health: FeedHealth;
 	readonly successRevision: number;
 }
 
@@ -40,9 +40,8 @@ const EMPTY_STATE: SelectionGraceState<never> = {
 };
 
 function sourceHealth(vehicles: VehiclesFamilyTruth): SelectionSourceHealth {
-	if (vehicles.phase === 'failed') return 'failed';
-	if (vehicles.phase === 'loading' && vehicles.consecutiveFailures > 0) return 'retrying';
-	return 'ok';
+	if (vehicles.health.notice !== 'refresh-unavailable') return 'ok';
+	return vehicles.health.state === 'retrying' ? 'retrying' : 'failed';
 }
 
 export function createSelectionGrace<T>(): SelectionGrace<T> {

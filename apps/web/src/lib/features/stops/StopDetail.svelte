@@ -288,20 +288,21 @@
 </script>
 
 {#snippet liveStatus(source: LiveStore, family: LiveFamily, label: string)}
+	{@const health = source.familyStates[family].health}
 	<div class="stop-report" data-source={family}>
 		<FreshnessStamp
 			variant="live"
-			generatedUtc={source.generatedUtc}
-			ageSeconds={source.ageSeconds}
-			isStale={source.isStale}
-			degraded={source.familyStates[family].consecutiveFailures > 0}
+			generatedUtc={source.familyStates[family].retainedGeneration}
+			ageSeconds={health.ageSeconds}
+			isStale={health.isStale}
+			degraded={health.notice === 'refresh-unavailable'}
 			{label}
 			{locale}
 			class="stop-report-stamp"
 		/>
-		{#if source.familyStates[family].consecutiveFailures > 0 || source.isStale}
+		{#if health.notice}
 			<StateNotice
-				title={source.familyStates[family].consecutiveFailures > 0
+				title={health.notice === 'refresh-unavailable'
 					? t.report.refreshUnavailable
 					: t.report.behind}
 				body={t.report.retained}

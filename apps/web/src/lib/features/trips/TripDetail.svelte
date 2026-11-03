@@ -39,8 +39,8 @@
 	]);
 	const manifest = getV1Context().manifest;
 	const { live, resource: trips } = createLiveResource(manifest, 'trips');
-	const reportState = $derived(live.familyStates.trips);
-	const reportFailed = $derived(reportState.consecutiveFailures > 0);
+	const reportHealth = $derived(live.familyStates.trips.health);
+	const reportFailed = $derived(reportHealth.notice === 'refresh-unavailable');
 
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
 	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
@@ -83,8 +83,8 @@
 	<FreshnessStamp
 		variant="live"
 		{generatedUtc}
-		ageSeconds={live.ageSeconds}
-		isStale={live.isStale}
+		ageSeconds={reportHealth.ageSeconds}
+		isStale={reportHealth.isStale}
 		degraded={reportFailed}
 		class="trip-report-stamp"
 		label={t.latestReport}
@@ -99,7 +99,7 @@
 				items={trail.map((crumb) => ({ name: crumb.name, href: localizeHref(crumb.path, locale) }))}
 				label={breadcrumbCopy[locale].label}
 			/>
-			{#if reportFailed || live.isStale}
+			{#if reportHealth.notice}
 				<StateNotice
 					title={reportFailed ? t.refreshUnavailable : t.reportBehind}
 					body={t.retainedReport}

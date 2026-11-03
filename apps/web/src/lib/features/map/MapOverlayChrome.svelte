@@ -85,7 +85,9 @@
 			liveEdgeMessage,
 		}),
 	);
-	const ageLabel = $derived(feedBannerState === 'global-stall' ? t.feedNotRespondingShort : null);
+	const ageLabel = $derived(
+		feedBannerState === 'global-stall' && ageSeconds != null ? t.feedNotRespondingShort : null,
+	);
 </script>
 
 <div

@@ -1,18 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSelectionGrace, type VehiclesFamilyTruth } from './selectionGrace.svelte';
+import type { FeedHealth } from '$lib/v1/live/store.svelte';
 
 type Detail = { id: string; label: string };
 
 const selection = { kind: 'vehicle' as const, id: 'bus-1' };
 const detail: Detail = { id: 'bus-1', label: 'Bus 1' };
 
+function health(overrides: Partial<FeedHealth> = {}): FeedHealth {
+	return {
+		state: 'live',
+		ageSeconds: 0,
+		isStale: false,
+		retained: true,
+		notice: null,
+		...overrides,
+	};
+}
+
 function vehicles(overrides: Partial<VehiclesFamilyTruth> = {}): VehiclesFamilyTruth {
 	return {
 		phase: 'ready',
-		retainedGeneration: '2026-07-30T12:00:00Z',
-		consecutiveFailures: 0,
-		error: null,
+		health: health(),
 		successRevision: 1,
 		...overrides,
 	};
@@ -71,8 +81,7 @@ describe('selection grace', () => {
 			resolvedDetail: null,
 			vehicles: vehicles({
 				phase: 'failed',
-				consecutiveFailures: 1,
-				error: new Error('500'),
+				health: health({ state: 'retained-stale', notice: 'refresh-unavailable' }),
 				successRevision: 2,
 			}),
 		});
@@ -84,7 +93,7 @@ describe('selection grace', () => {
 		grace.update({
 			selection,
 			resolvedDetail: null,
-			vehicles: vehicles({ retainedGeneration: '2026-07-30T12:00:30Z' }),
+			vehicles: vehicles({ health: health({ ageSeconds: 30 }) }),
 		});
 
 		expect(grace.state).toMatchObject({ presence: 'present', detail, omissionCount: 0 });
@@ -101,14 +110,20 @@ describe('selection grace', () => {
 		grace.update({
 			selection,
 			resolvedDetail: null,
-			vehicles: vehicles({ phase: 'loading', consecutiveFailures: 1, error: new Error('retry') }),
+			vehicles: vehicles({
+				phase: 'loading',
+				health: health({ state: 'retrying', notice: 'refresh-unavailable' }),
+			}),
 		});
 		expect(grace.state).toMatchObject({ presence: 'present', detail, sourceHealth: 'retrying' });
 
 		grace.update({
 			selection,
 			resolvedDetail: null,
-			vehicles: vehicles({ phase: 'failed', consecutiveFailures: 2, error: new Error('failed') }),
+			vehicles: vehicles({
+				phase: 'failed',
+				health: health({ state: 'retained-stale', notice: 'refresh-unavailable' }),
+			}),
 		});
 		expect(grace.state).toMatchObject({ presence: 'present', detail, sourceHealth: 'failed' });
 	});

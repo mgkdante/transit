@@ -203,6 +203,240 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		return instance;
 	}
 
+	it('exposes feed health without making an unknown age fresh', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
+		mocks.offsetMs = 0;
+		const { store } = setup(30, ['vehicles']);
+		expect(store.familyStates.vehicles.health).toMatchObject({
+			state: 'never-loaded',
+			ageSeconds: null,
+			isStale: true,
+			retained: false,
+			notice: null,
+		});
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health).toMatchObject({
+			state: 'live',
+			ageSeconds: 10,
+			isStale: false,
+			retained: true,
+			notice: null,
+		});
+		expect(store.familyStates.vehicles).not.toHaveProperty('consecutiveFailures');
+	});
+
+	it.each([
+		{ ttl: 30, age: 59, stale: false },
+		{ ttl: 30, age: 60, stale: false },
+		{ ttl: 30, age: 89, stale: false },
+		{ ttl: 30, age: 90, stale: true },
+		{ ttl: 10, age: 29, stale: false },
+		{ ttl: 10, age: 30, stale: true },
+	])('uses one inclusive three-TTL rule at ttl=$ttl, age=$age', async ({ ttl, age, stale }) => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:00Z') + age * 1000;
+		mocks.offsetMs = 0;
+		const { store } = setup(ttl, ['vehicles']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health).toEqual({
+			state: stale ? 'retained-stale' : 'live',
+			ageSeconds: age,
+			isStale: stale,
+			retained: true,
+			notice: stale ? 'stale' : null,
+		});
+		expect(store.isStale).toBe(stale);
+		expect(store.vehiclesIsStale).toBe(stale);
+	});
+
+	it.each([null, undefined, 'not-a-date'])(
+		'keeps a retained snapshot with unknown age (%s) stale',
+		async (generatedUtc) => {
+			mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
+			mocks.offsetMs = 0;
+			const { store } = setup(30, ['vehicles']);
+			await store.refresh();
+			mocks.vehicles.mockResolvedValueOnce({ generated_utc: generatedUtc, vehicles: [] });
+			await store.refresh();
+			flushSync();
+			expect(store.familyStates.vehicles.health).toEqual({
+				state: 'retained-stale',
+				ageSeconds: null,
+				isStale: true,
+				retained: true,
+				notice: 'stale',
+			});
+			expect(store.ageSeconds).toBeNull();
+			expect(store.isStale).toBe(true);
+			expect(store.vehiclesIsStale).toBe(true);
+		},
+	);
+
+	it('keeps a recent retained report through failed refresh and retry, then clears the notice on recovery', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
+		mocks.offsetMs = 0;
+		const { store } = setup(30, ['trips']);
+		await store.refresh();
+		const retained = store.trips;
+		mocks.trips.mockRejectedValueOnce(new Error('offline'));
+		await store.refresh();
+		flushSync();
+		expect(store.trips).toBe(retained);
+		expect(store.familyStates.trips.health).toEqual({
+			state: 'retained-stale',
+			ageSeconds: 10,
+			isStale: false,
+			retained: true,
+			notice: 'refresh-unavailable',
+		});
+		let finish!: () => void;
+		mocks.trips.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = () => resolve({ generated_utc: mocks.generatedUtc, trips: {} });
+				}),
+		);
+		const pending = store.refresh();
+		await settleLivePoll();
+		expect(store.familyStates.trips.health).toMatchObject({
+			state: 'retrying',
+			retained: true,
+			notice: 'refresh-unavailable',
+		});
+		finish();
+		await pending;
+		flushSync();
+		expect(store.familyStates.trips.health).toMatchObject({ state: 'live', notice: null });
+	});
+
+	it('distinguishes failure without data from a retry without data', async () => {
+		mocks.alerts.mockRejectedValueOnce(new Error('offline'));
+		const { store } = setup(30, ['alerts']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.alerts.health).toEqual({
+			state: 'failed-no-data',
+			ageSeconds: null,
+			isStale: true,
+			retained: false,
+			notice: 'refresh-unavailable',
+		});
+		let finish!: () => void;
+		mocks.alerts.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = () => resolve({ generated_utc: mocks.generatedUtc, alerts: [] });
+				}),
+		);
+		const pending = store.refresh();
+		await settleLivePoll();
+		expect(store.familyStates.alerts.health).toMatchObject({ state: 'retrying', retained: false });
+		finish();
+		await pending;
+	});
+
+	it('updates age and the stale notice on clock ticks without polling again', async () => {
+		let now = $state(Date.parse('2026-06-21T12:01:29Z'));
+		const restoreRuntime = configureV1Runtime({
+			clock: {
+				get serverNow() {
+					return now;
+				},
+				noteServerEpochMs: () => {},
+				subscribe: () => () => {},
+			},
+		});
+		try {
+			const { store } = setup(30, ['vehicles']);
+			await store.refresh();
+			flushSync();
+			expect(store.familyStates.vehicles.health.state).toBe('live');
+			now += 1000;
+			flushSync();
+			expect(store.familyStates.vehicles.health).toMatchObject({
+				state: 'retained-stale',
+				ageSeconds: 90,
+				notice: 'stale',
+			});
+			expect(store.vehiclesIsStale).toBe(true);
+			expect(store.isStale).toBe(true);
+			expect(mocks.vehicles).toHaveBeenCalledOnce();
+		} finally {
+			restoreRuntime();
+		}
+	});
+
+	it('clamps a future generation to age zero', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T11:59:30Z');
+		mocks.offsetMs = 0;
+		const { store } = setup(30, ['vehicles']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health).toMatchObject({
+			state: 'live',
+			ageSeconds: 0,
+			isStale: false,
+		});
+	});
+
+	it('keeps aggregate age unknown without making a fresh vehicle family stale', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
+		mocks.offsetMs = 0;
+		mocks.alerts.mockResolvedValueOnce({ generated_utc: null, alerts: [] });
+		const { store } = setup(30, ['vehicles', 'alerts']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.alerts.health).toMatchObject({
+			state: 'retained-stale',
+			ageSeconds: null,
+			notice: 'stale',
+		});
+		expect(store.familyStates.vehicles.health).toMatchObject({ state: 'live', ageSeconds: 10 });
+		expect(store.vehiclesIsStale).toBe(false);
+		expect(store.ageSeconds).toBeNull();
+		expect(store.isStale).toBe(true);
+	});
+
+	it('treats an unknown server clock as retained-stale even with a valid generation', async () => {
+		mocks.nowMs = Number.NaN;
+		mocks.offsetMs = 0;
+		const { store } = setup(30, ['vehicles']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health).toMatchObject({
+			state: 'retained-stale',
+			ageSeconds: null,
+			isStale: true,
+			notice: 'stale',
+		});
+	});
+
+	it('keeps an unknown-age retained snapshot settled when an in-flight refresh is stopped', async () => {
+		mocks.vehicles.mockResolvedValueOnce({ generated_utc: null, vehicles: [] });
+		const { store } = setup(30, ['vehicles']);
+		await store.refresh();
+		let finish!: () => void;
+		mocks.vehicles.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = () => resolve({ generated_utc: mocks.generatedUtc, vehicles: [] });
+				}),
+		);
+		const pending = store.refresh();
+		await settleLivePoll();
+		store.stop();
+		finish();
+		await pending;
+		flushSync();
+		expect(store.familyStates.vehicles.phase).toBe('ready');
+		expect(store.familyStates.vehicles.health).toMatchObject({
+			state: 'retained-stale',
+			ageSeconds: null,
+			notice: 'stale',
+		});
+	});
+
 	it('keeps the 30-second cadence while the page is visible and online', async () => {
 		const { store } = setup();
 		store.start();
@@ -311,12 +545,12 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			expect(store.generatedUtc).toBe(seed.generated_utc);
 			expect(store.loading).toBe(false);
 			expect(store.error).toBeNull();
-			expect(store.familyStates.network).toEqual({
+			expect(store.familyStates.network).toMatchObject({
 				phase: 'ready',
 				active: true,
 				lastGoodAt: null,
 				retainedGeneration: seed.generated_utc,
-				consecutiveFailures: 0,
+
 				error: null,
 				successRevision: 1,
 			});
@@ -328,12 +562,12 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			expect(store.network).toBe(retainedSeed);
 			expect(store.generatedUtc).toBe(seed.generated_utc);
 			expect(store.error).toBe(failure);
-			expect(store.familyStates.network).toEqual({
+			expect(store.familyStates.network).toMatchObject({
 				phase: 'failed',
 				active: true,
 				lastGoodAt: null,
 				retainedGeneration: seed.generated_utc,
-				consecutiveFailures: 1,
+
 				error: failure,
 				successRevision: 1,
 			});
@@ -433,23 +667,23 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			await store.refresh();
 			flushSync();
 
-			expect(store.familyStates[family]).toEqual({
+			expect(store.familyStates[family]).toMatchObject({
 				phase: 'failed',
 				active: true,
 				lastGoodAt: null,
 				retainedGeneration: null,
-				consecutiveFailures: 1,
+
 				error: failure,
 				successRevision: 0,
 			});
 			for (const otherFamily of ['vehicles', 'trips', 'departures', 'alerts', 'network'] as const) {
 				if (otherFamily === family) continue;
-				expect(store.familyStates[otherFamily]).toEqual({
+				expect(store.familyStates[otherFamily]).toMatchObject({
 					phase: 'idle',
 					active: false,
 					lastGoodAt: null,
 					retainedGeneration: null,
-					consecutiveFailures: 0,
+
 					error: null,
 					successRevision: 0,
 				});
@@ -524,7 +758,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.phase).toBe('failed');
-		expect(store.familyStates.vehicles.consecutiveFailures).toBe(1);
+		expect(store.familyStates.vehicles.health.notice).toBe('refresh-unavailable');
 		expect(store.familyStates.vehicles.error).toBe(failure);
 
 		mocks.nowMs = Date.parse(generatedUtc) + 40_000;
@@ -532,12 +766,12 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		flushSync();
 
 		expect(store.vehicles).toBe(retainedVehicles);
-		expect(store.familyStates.vehicles).toEqual({
+		expect(store.familyStates.vehicles).toMatchObject({
 			phase: 'ready',
 			active: true,
 			lastGoodAt: Date.parse(generatedUtc) + 40_000,
 			retainedGeneration: generatedUtc,
-			consecutiveFailures: 0,
+
 			error: null,
 			successRevision: 1,
 		});
@@ -570,10 +804,10 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:00Z');
 		expect(store.familyStates.vehicles.phase).toBe('ready');
-		expect(store.familyStates.vehicles.consecutiveFailures).toBe(0);
+		expect(store.familyStates.vehicles.health.notice).not.toBe('refresh-unavailable');
 		expect(store.familyStates.network.phase).toBe('failed');
 		expect(store.familyStates.network.error?.name).toBe('TimeoutError');
-		expect(store.familyStates.network.consecutiveFailures).toBe(1);
+		expect(store.familyStates.network.health.notice).toBe('refresh-unavailable');
 
 		releaseNetwork();
 		await settleLivePoll();
@@ -695,12 +929,12 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.trips.phase).toBe('loading');
 
 		disposeTrips();
-		expect(store.familyStates.trips).toEqual({
+		expect(store.familyStates.trips).toMatchObject({
 			phase: 'idle',
 			active: false,
 			lastGoodAt: null,
 			retainedGeneration: null,
-			consecutiveFailures: 0,
+
 			error: null,
 			successRevision: 0,
 		});

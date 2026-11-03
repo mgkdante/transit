@@ -212,8 +212,16 @@ const ALERTS_BY_CODE = [
 
 const liveStore = {
 	familyStates: {
-		departures: { phase: 'ready', consecutiveFailures: 0 },
-		alerts: { phase: 'ready', consecutiveFailures: 0 },
+		departures: {
+			phase: 'ready',
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', ageSeconds: 12, isStale: false, retained: true, notice: null },
+		},
+		alerts: {
+			phase: 'ready',
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', ageSeconds: 12, isStale: false, retained: true, notice: null },
+		},
 	},
 	vehicles: null,
 	trips: null,
@@ -241,8 +249,28 @@ const liveStore = {
 const emptyLiveStore = {
 	...liveStore,
 	familyStates: {
-		departures: { phase: 'idle', consecutiveFailures: 0 },
-		alerts: { phase: 'idle', consecutiveFailures: 0 },
+		departures: {
+			phase: 'idle',
+			retainedGeneration: null,
+			health: {
+				state: 'never-loaded',
+				ageSeconds: null,
+				isStale: true,
+				retained: false,
+				notice: null,
+			},
+		},
+		alerts: {
+			phase: 'idle',
+			retainedGeneration: null,
+			health: {
+				state: 'never-loaded',
+				ageSeconds: null,
+				isStale: true,
+				retained: false,
+				notice: null,
+			},
+		},
 	},
 	departures: null,
 	alerts: null,

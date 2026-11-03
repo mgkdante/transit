@@ -31,7 +31,7 @@ const TRIPS_FILE = {
 } as unknown as TripsFile;
 let tripsData: TripsFile | null = TRIPS_FILE;
 let reportStale = false;
-let reportFailures = 0;
+let reportNotice: 'stale' | 'refresh-unavailable' | null = null;
 vi.mock('$lib/v1/live/store.svelte', () => ({
 	createLiveStore: () => ({
 		get trips() {
@@ -45,7 +45,18 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			return reportStale;
 		},
 		get familyStates() {
-			return { trips: { phase: 'ready', consecutiveFailures: reportFailures } };
+			return {
+				trips: {
+					phase: 'ready',
+					health: {
+						state: reportNotice ? 'retained-stale' : 'live',
+						ageSeconds: 300,
+						isStale: reportStale,
+						retained: true,
+						notice: reportNotice,
+					},
+				},
+			};
 		},
 		error: null,
 		loading: false,
@@ -88,7 +99,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
 	reportStale = false;
-	reportFailures = 0;
+	reportNotice = null;
 });
 
 describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
@@ -267,6 +278,7 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 	});
 	it.each([false, true])('retains report-specific absence and timestamp when stale=%s', (stale) => {
 		reportStale = stale;
+		reportNotice = stale ? 'stale' : null;
 		render(TripDetail, { props: { id: 'tGhost' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
 		expect(stamp).toHaveAttribute('data-stale', String(stale));
@@ -274,7 +286,7 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		expect(screen.queryByTestId('trip-report-notice') !== null).toBe(stale);
 	});
 	it('warns on failed refresh without classifying a recent retained report as stale', () => {
-		reportFailures = 1;
+		reportNotice = 'refresh-unavailable';
 		render(TripDetail, { props: { id: 't161' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
 		expect(stamp).toHaveAttribute('data-degraded', 'true');

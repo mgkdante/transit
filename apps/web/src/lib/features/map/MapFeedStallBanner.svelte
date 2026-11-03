@@ -18,6 +18,7 @@
 		liveEdgeMessage: string | null;
 	}): MapFeedBannerState {
 		if (selectedFamilyFailureMessage) return 'selected-family-failure';
+		if (liveEdgeState === 'unavailable' && liveEdgeMessage) return 'unavailable';
 		if (isStale) return 'global-stall';
 		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
 		return 'idle';
@@ -70,7 +71,9 @@
 	const relative = $derived(
 		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),
 	);
-	const stallMessage = $derived(t.feedNotResponding(relative));
+	const stallMessage = $derived(
+		effectiveAge == null ? t.feedAgeUnknown : t.feedNotResponding(relative),
+	);
 	const resolvedState = $derived(
 		state ??
 			deriveMapFeedBannerState({

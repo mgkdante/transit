@@ -157,10 +157,10 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 	const contextStopFiles = $derived(focusedStop.data ? [focusedStop.data] : []);
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
 		const vehicles = live.familyStates.vehicles;
-		if (vehicles.phase === 'failed' && vehicles.retainedGeneration == null) return 'unavailable';
+		if (vehicles.health.state === 'failed-no-data') return 'unavailable';
 		if (
 			live.vehicles != null &&
-			!live.vehiclesIsStale &&
+			!vehicles.health.isStale &&
 			(live.vehicles.vehicles?.length ?? 0) === 0
 		) {
 			return 'no-vehicles';
@@ -202,7 +202,7 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 					}
 				: null,
 	);
-	const departuresAvailable = $derived(live.familyStates.departures.retainedGeneration != null);
+	const departuresAvailable = $derived(live.familyStates.departures.health.retained);
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			locale,
@@ -255,7 +255,7 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 	);
 	const liveDegraded = $derived(
 		Object.values(live.familyStates).some(
-			(family) => family.active && (family.phase === 'failed' || family.consecutiveFailures > 0),
+			(family) => family.active && family.health.notice === 'refresh-unavailable',
 		),
 	);
 	const selectedFamilyFailureMessage = $derived.by<string | null>(() => {
@@ -279,8 +279,8 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 						] as const);
 		for (const [family, label] of candidates) {
 			const truth = live.familyStates[family];
-			if (truth.active && (truth.phase === 'failed' || truth.consecutiveFailures > 0)) {
-				return t.selectedFamilyFailure(label, truth.retainedGeneration != null);
+			if (truth.active && truth.health.notice === 'refresh-unavailable') {
+				return t.selectedFamilyFailure(label, truth.health.retained);
 			}
 		}
 		return null;
