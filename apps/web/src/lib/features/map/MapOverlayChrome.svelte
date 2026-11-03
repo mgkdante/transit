@@ -81,6 +81,7 @@
 		deriveMapFeedBannerState({
 			selectedFamilyFailureMessage,
 			isStale,
+			ageSeconds,
 			liveEdgeState,
 			liveEdgeMessage,
 		}),

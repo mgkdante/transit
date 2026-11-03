@@ -9,16 +9,19 @@
 	export function deriveMapFeedBannerState({
 		selectedFamilyFailureMessage,
 		isStale,
+		ageSeconds,
 		liveEdgeState,
 		liveEdgeMessage,
 	}: {
 		selectedFamilyFailureMessage: string | null;
 		isStale: boolean;
+		ageSeconds?: number | null;
 		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage: string | null;
 	}): MapFeedBannerState {
 		if (selectedFamilyFailureMessage) return 'selected-family-failure';
-		if (liveEdgeState === 'unavailable' && liveEdgeMessage) return 'unavailable';
+		if (ageSeconds === null && liveEdgeState === 'unavailable' && liveEdgeMessage)
+			return 'unavailable';
 		if (isStale) return 'global-stall';
 		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
 		return 'idle';
@@ -79,6 +82,7 @@
 			deriveMapFeedBannerState({
 				selectedFamilyFailureMessage,
 				isStale,
+				ageSeconds: effectiveAge,
 				liveEdgeState,
 				liveEdgeMessage,
 			}),
