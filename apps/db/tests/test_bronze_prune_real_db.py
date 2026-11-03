@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -8,7 +7,7 @@ import real_db_seed as db_seed
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from transit_ops.maintenance import (
+from transit_ops.maintenance.bronze import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     prune_bronze_realtime_objects,
@@ -136,7 +135,6 @@ OLD_COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
 
 
 class FakeBronzeStorage:
-
     def __init__(self) -> None:
         self.deleted: list[str] = []
         self.fail_on: set[str] = set()
@@ -185,7 +183,9 @@ def _seed(connection, seed_provider) -> None:
                 "kind": feed_kind,
                 "fmt": source_format,
             },
-            endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
+            endpoint_key=":key",
+            feed_kind=":kind",
+            source_format=":fmt",
         )
     for run_id, object_id, snapshot_id, endpoint_id, captured_at, storage_path in REALTIME_ROWS:
         run_kind = "trip_updates" if endpoint_id == TU_ENDPOINT_ID else "vehicle_positions"
@@ -198,10 +198,12 @@ def _seed(connection, seed_provider) -> None:
                 "kind": run_kind,
                 "started": captured_at,
             },
-            run_kind=':kind', started_at_utc=':started',
+            run_kind=":kind",
+            started_at_utc=":started",
         )
         db_seed.ingestion_objects(
-            connection, {'o': object_id, 'r': run_id, 'p': PROVIDER, 'path': storage_path},
+            connection,
+            {"o": object_id, "r": run_id, "p": PROVIDER, "path": storage_path},
         )
         db_seed.realtime_snapshot_index(
             connection,
@@ -213,8 +215,10 @@ def _seed(connection, seed_provider) -> None:
                 "e": endpoint_id,
                 "captured": captured_at,
             },
-            ingestion_object_id=':o', feed_timestamp_utc=':captured', entity_count=None,
-            captured_at_utc=':captured',
+            ingestion_object_id=":o",
+            feed_timestamp_utc=":captured",
+            entity_count=None,
+            captured_at_utc=":captured",
         )
 
 
@@ -229,8 +233,9 @@ def _seed_realtime_row(
     captured_at: datetime,
 ) -> None:
     db_seed.ingestion_runs(
-        connection, {'r': run_id, 'p': provider_id, 'e': endpoint_id, 'captured': captured_at},
-        started_at_utc=':captured',
+        connection,
+        {"r": run_id, "p": provider_id, "e": endpoint_id, "captured": captured_at},
+        started_at_utc=":captured",
     )
     db_seed.ingestion_objects(
         connection,
@@ -251,8 +256,10 @@ def _seed_realtime_row(
             "e": endpoint_id,
             "captured": captured_at,
         },
-        ingestion_object_id=':o', feed_timestamp_utc=':captured', entity_count=None,
-        captured_at_utc=':captured',
+        ingestion_object_id=":o",
+        feed_timestamp_utc=":captured",
+        entity_count=None,
+        captured_at_utc=":captured",
     )
 
 
@@ -271,11 +278,13 @@ def _seed_static_runs(connection) -> None:
     ):
         db_seed.ingestion_runs(
             connection,
-            {'r': run_id, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID, 'started': STATIC_STARTED_AT},
-            run_kind="'static_schedule'", started_at_utc=':started',
+            {"r": run_id, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "started": STATIC_STARTED_AT},
+            run_kind="'static_schedule'",
+            started_at_utc=":started",
         )
         db_seed.ingestion_objects(
-            connection, {'o': object_id, 'r': run_id, 'p': PROVIDER, 'path': storage_path},
+            connection,
+            {"o": object_id, "r": run_id, "p": PROVIDER, "path": storage_path},
             object_kind="'gtfs_schedule_zip'",
         )
     db_seed.dataset_versions(
@@ -286,15 +295,18 @@ def _seed_static_runs(connection) -> None:
             "e": STATIC_ENDPOINT_ID,
             "r": STATIC_RUN_REFERENCED,
         },
-        dataset_version_id=':dv', content_hash="'bronze-prune-test-hash'", is_current='false',
+        dataset_version_id=":dv",
+        content_hash="'bronze-prune-test-hash'",
+        is_current="false",
     )
 
 
 def _seed_objectless_run(connection, run_id: int, started_at: datetime, status: str) -> None:
     db_seed.ingestion_runs(
         connection,
-        {'r': run_id, 'p': PROVIDER, 'e': TU_ENDPOINT_ID, 'status': status, 'started': started_at},
-        status=':status', started_at_utc=':started',
+        {"r": run_id, "p": PROVIDER, "e": TU_ENDPOINT_ID, "status": status, "started": started_at},
+        status=":status",
+        started_at_utc=":started",
     )
 
 
@@ -611,8 +623,9 @@ def test_static_prune_excludes_dataset_version_referenced_runs(conn) -> None:
     assert meta_counts["raw.ingestion_objects"] == 1
 
 
-def test_realtime_prune_spares_in_flight_capture_run(conn) -> None:
-    _seed_objectless_run(conn, IN_FLIGHT_RUN_ID, NOW, "running")
+@pytest.mark.parametrize("recent_status", ["running", "failed"])
+def test_realtime_prune_spares_in_flight_capture_run(conn, recent_status) -> None:
+    _seed_objectless_run(conn, IN_FLIGHT_RUN_ID, NOW, recent_status)
     _seed_objectless_run(conn, AGED_ORPHAN_RUN_ID, NOW - timedelta(days=40), "failed")
     storage = FakeBronzeStorage()
 
@@ -629,3 +642,55 @@ def test_realtime_prune_spares_in_flight_capture_run(conn) -> None:
     assert meta_counts["raw.ingestion_runs"] == 4
     assert _run_exists(conn, IN_FLIGHT_RUN_ID)
     assert not _run_exists(conn, AGED_ORPHAN_RUN_ID)
+
+
+@pytest.mark.parametrize("exclude_first", [False, True])
+def test_static_prune_preserves_cutoff_oldest_first_limit_and_exclusions(conn, exclude_first):
+    _seed_static_runs(conn)
+    cutoff = NOW - timedelta(days=365)
+    for run_id, object_id, started in (
+        (990113, 990213, cutoff - timedelta(days=2)),
+        (990114, 990214, cutoff),
+        (990115, 990215, cutoff - timedelta(microseconds=1)),
+    ):
+        db_seed.ingestion_runs(
+            conn,
+            {"r": run_id, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "started": started},
+            run_kind="'static_schedule'",
+            started_at_utc=":started",
+        )
+        db_seed.ingestion_objects(
+            conn,
+            {"o": object_id, "r": run_id, "p": PROVIDER, "path": f"static/{object_id}.zip"},
+            object_kind="'gtfs_schedule_zip'",
+        )
+    storage = FakeBronzeStorage()
+    _, dry_counts, _, _ = prune_bronze_static_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=365,
+        bronze_storage=storage,
+        dry_run=True,
+        now_utc=NOW,
+        max_objects=1,
+    )
+    assert dry_counts == {"static": 3}
+    assert storage.deleted == []
+    _, counts, _, failed = prune_bronze_static_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=365,
+        bronze_storage=storage,
+        now_utc=NOW,
+        max_objects=2,
+        excluded_object_ids=[STATIC_OBJECT_UNREFERENCED] if exclude_first else [],
+    )
+    assert counts == {"static": 2}
+    assert failed == set()
+    assert storage.deleted == (
+        ["static/990213.zip", "static/990215.zip"]
+        if exclude_first
+        else ["bronze-prune-test/static/unreferenced.zip", "static/990213.zip"]
+    )
+    assert _object_exists(conn, 990214)
+    assert _object_exists(conn, STATIC_OBJECT_REFERENCED)

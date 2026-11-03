@@ -7,7 +7,9 @@ import pytest
 import real_db_seed as db_seed
 from sqlalchemy import text
 
-from transit_ops.maintenance import prune_static_silver_datasets
+from transit_ops.maintenance.static import (
+    prune_static_silver_datasets,
+)
 
 PROVIDER = "stm_dvprune_test"
 ENDPOINT_ID = 991014

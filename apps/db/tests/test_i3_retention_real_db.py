@@ -7,7 +7,7 @@ import real_db_seed as db_seed
 from sqlalchemy import text
 
 import transit_ops.maintenance.i3 as i3_maintenance_module
-from transit_ops.maintenance import (
+from transit_ops.maintenance.i3 import (
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
 )
@@ -77,13 +77,18 @@ def _seed(connection) -> None:
         {"p": PROVIDER},
     )
     db_seed.feed_endpoints(
-        connection, {'e': ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'i3_alerts'",
-        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
+        connection,
+        {"e": ENDPOINT_ID, "p": PROVIDER},
+        endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'",
+        source_format="'api_i3_json'",
     )
     for run_id, snap_id, obj_id in zip(RUN_IDS, SNAP_IDS, OBJ_IDS, strict=True):
         db_seed.ingestion_runs(
-            connection, {'r': run_id, 'p': PROVIDER, 'e': ENDPOINT_ID, 't': SNAP_TIMES[snap_id]},
-            run_kind="'i3_alerts'", started_at_utc=':t',
+            connection,
+            {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "t": SNAP_TIMES[snap_id]},
+            run_kind="'i3_alerts'",
+            started_at_utc=":t",
         )
         db_seed.ingestion_objects(
             connection,
@@ -151,7 +156,12 @@ def _silver_rows(connection) -> list[dict]:
     ]
 
 
-def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None:
+@pytest.mark.parametrize("run_kind", ["i3_alerts", "service_alerts"])
+def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn, run_kind) -> None:
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET run_kind=:kind WHERE ingestion_run_id=:id"),
+        {"kind": run_kind, "id": RUN_IDS[1]},
+    )
     conn.execute(
         text(
             """
@@ -195,6 +205,12 @@ def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None
         ).scalars()
     )
     assert surviving_objects == {OBJ_IDS[0], OBJ_IDS[2]}
+    assert set(
+        conn.execute(
+            text("SELECT ingestion_run_id FROM raw.ingestion_runs WHERE provider_id=:p"),
+            {"p": PROVIDER},
+        ).scalars()
+    ) == {RUN_IDS[0], RUN_IDS[2]}
 
 
 @pytest.mark.parametrize("equal_time", [False, True])
@@ -294,7 +310,10 @@ def test_prune_i3_silver_closed_rows_respects_30d_floor_and_cascade(conn) -> Non
     assert remaining_entities == 0
 
 
-def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, monkeypatch) -> None:
+@pytest.mark.parametrize("combined", [False, True])
+def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(
+    conn, monkeypatch, combined
+) -> None:
     captured = datetime(2025, 10, 1, 13, 0, tzinfo=UTC)
     closed = datetime(2026, 3, 1, 13, 0, tzinfo=UTC)
     conn.execute(
@@ -345,10 +364,14 @@ def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, mo
         {"snapshot_id": SNAP_IDS[0], "captured": captured, "closed": closed},
     )
 
-    class Settings:
-        GOLD_WARM_ROLLUP_RETENTION_DAYS = 730
-        SILVER_I3_CLOSED_RETENTION_DAYS = 90
-        BRONZE_I3_RETENTION_DAYS = 30
+    from transit_ops.settings import Settings
+
+    settings = Settings(
+        _env_file=None,
+        GOLD_WARM_ROLLUP_RETENTION_DAYS=730,
+        SILVER_I3_CLOSED_RETENTION_DAYS=90,
+        BRONZE_I3_RETENTION_DAYS=30,
+    )
 
     monkeypatch.setattr(
         i3_maintenance_module,
@@ -361,11 +384,23 @@ def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, mo
         lambda self, backend: FakeBronze(),
     )
 
-    result = i3_maintenance_module.prune_i3_storage(
-        PROVIDER,
-        settings=Settings(),  # type: ignore[arg-type]
-        engine=_ExistingTransactionEngine(conn),  # type: ignore[arg-type]
-    )
+    if combined:
+        from transit_ops.maintenance import RetentionPolicy, RetentionTier, prune
+
+        receipt = prune(
+            PROVIDER,
+            RetentionPolicy(settings, prove=False),
+            engine=_ExistingTransactionEngine(conn),
+        )
+        assert receipt.is_complete
+        assert list(receipt.results) == list(RetentionTier)
+        result = receipt.results[RetentionTier.I3]
+    else:
+        result = i3_maintenance_module.prune_i3_storage(
+            PROVIDER,
+            settings=settings,
+            engine=_ExistingTransactionEngine(conn),
+        )
 
     assert result.alert_archive_sync is not None
     assert result.alert_archive_sync.inserted_count == 1
@@ -467,3 +502,45 @@ def test_i3_pruner_defers_while_silver_loader_owns_the_provider(conn, real_db_en
         loading.rollback()
     _, retried, _, _ = prune_i3_raw_snapshots(conn, **kwargs)
     assert retried == {"i3_raw": 2}
+
+
+def test_combined_prune_stops_after_i3_archive_failure(conn, tmp_path, monkeypatch):
+    from transit_ops.maintenance import RetentionPolicy, RetentionTier, prune
+    from transit_ops.settings import Settings
+
+    failed_path = tmp_path / f"{PROVIDER}/i3_alerts/captured_at_utc={SNAP_IDS[0]}/payload.json"
+    failed_path.mkdir(parents=True)
+    conn.execute(
+        text("UPDATE raw.ingestion_objects SET storage_backend='local' WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    )
+    monkeypatch.setattr(
+        i3_maintenance_module,
+        "_provider_alert_archive_bounds",
+        lambda *args: (
+            date(2024, 1, 1),
+            date(2026, 12, 1),
+        ),
+    )
+    receipt = prune(
+        PROVIDER,
+        RetentionPolicy(
+            Settings(
+                _env_file=None,
+                BRONZE_STORAGE_BACKEND="local",
+                BRONZE_LOCAL_ROOT=str(tmp_path),
+            ),
+            prove=False,
+        ),
+        engine=_ExistingTransactionEngine(conn),
+    )
+    assert not receipt.is_complete
+    assert list(receipt.results) == [RetentionTier.SILVER, RetentionTier.GOLD, RetentionTier.I3]
+    assert receipt.results[RetentionTier.I3].failed_object_counts == {"i3_raw": 1}
+    assert failed_path.is_dir()
+    assert set(
+        conn.execute(
+            text("SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots WHERE provider_id=:p"),
+            {"p": PROVIDER},
+        ).scalars()
+    ) == {SNAP_IDS[0], SNAP_IDS[2]}

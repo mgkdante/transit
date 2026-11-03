@@ -19,6 +19,69 @@ LEGACY_BETA_REBUILD_COMMAND = "rebuild-" + "beta-static"
 RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND = "backfill-" + "alert-archive"
 
 
+@pytest.mark.parametrize("complete,exit_code", [(True, 0), (False, 1)])
+def test_prune_storage_uses_one_policy_budget_and_emits_receipt(
+    monkeypatch, tmp_path, complete, exit_code
+):
+    from transit_ops.maintenance import RetentionTier
+
+    recorded = {}
+    settings = cli_module.Settings(_env_file=None)
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=lambda provider: None),
+    )
+
+    def fake_prune(provider_id, policy, budget):
+        recorded.update(provider=provider_id, policy=policy, budget=budget)
+        return SimpleNamespace(
+            is_complete=complete,
+            display_dict=lambda: {"provider_id": provider_id, "is_complete": complete},
+        )
+
+    monkeypatch.setattr(cli_module, "prune", fake_prune, raising=False)
+    report = tmp_path / "receipt.json"
+    result = runner.invoke(
+        app,
+        [
+            "prune-storage",
+            "stm",
+            "--dry-run",
+            "--tier",
+            "bronze",
+            "--tier",
+            "silver",
+            "--max-objects",
+            "7",
+            "--max-batches",
+            "3",
+            "--require-exhausted",
+            "--report-path",
+            str(report),
+        ],
+    )
+    assert result.exit_code == exit_code, result.output
+    assert (
+        json.loads(result.stdout)
+        == json.loads(report.read_text())
+        == {
+            "provider_id": "stm",
+            "is_complete": complete,
+        }
+    )
+    assert recorded["provider"] == "stm"
+    assert recorded["policy"].settings is settings
+    assert recorded["policy"].tiers == {RetentionTier.SILVER, RetentionTier.BRONZE}
+    assert recorded["policy"].dry_run is True
+    assert recorded["policy"].prove is True
+    assert recorded["policy"].require_exhausted is True
+    assert recorded["budget"].max_objects == 7
+    assert recorded["budget"].max_batches == 3
+
+
 def test_cli_help() -> None:
     result = runner.invoke(app, ["--help"])
 
@@ -56,9 +119,15 @@ def test_cli_help() -> None:
 @pytest.mark.parametrize(
     "command",
     [
-        "ingest-static", "ingest-gis", "capture-i3", "load-static-silver",
-        "load-gis-silver", "load-i3-silver", "refresh-gold-static",
-        "backfill-dim-history", "rebuild-source-factory",
+        "ingest-static",
+        "ingest-gis",
+        "capture-i3",
+        "load-static-silver",
+        "load-gis-silver",
+        "load-i3-silver",
+        "refresh-gold-static",
+        "backfill-dim-history",
+        "rebuild-source-factory",
     ],
 )
 def test_forwarding_commands_are_removed(command: str) -> None:
@@ -240,7 +309,11 @@ def test_retention_proof_report_help() -> None:
         ("ok", {"status": "unavailable", "error_type": "OSError"}, 1),
     ],
     ids=[
-        "complete", "prune-unavailable", "download-unavailable", "invalid-feed", "validator-error"
+        "complete",
+        "prune-unavailable",
+        "download-unavailable",
+        "invalid-feed",
+        "validator-error",
     ],
 )
 def test_retention_proof_report_writes_complete_report_before_exit(
@@ -1700,7 +1773,8 @@ def test_publish_all_rejects_missing_report_dir_parent_before_publishing(monkeyp
 
 def test_publish_all_rejects_unconfigured_provider_before_database_access(monkeypatch) -> None:
     monkeypatch.setattr(
-        cli_module, "_provider_registry",
+        cli_module,
+        "_provider_registry",
         lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["oc", "stm"]),
     )
     monkeypatch.setattr(
