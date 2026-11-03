@@ -3,7 +3,7 @@
 	import type { Locale } from '$lib/i18n';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { stopDisplayName, timeLabel } from '../mapSelectionDetail.logic';
-	import type { MapStopRef } from '../mapSelection';
+	import type { MapStopRef } from '../mapSelectionSession.svelte';
 	import DetailEntityName from './DetailEntityName.svelte';
 
 	interface Props {

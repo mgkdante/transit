@@ -16,15 +16,15 @@ import {
 } from './mapLayerModules';
 import * as ownerCleanup from './mapOwnerCleanup';
 import { pickMapSelection } from './mapPicking';
-import type { MapSelection } from './mapSelection';
-import type { MapSelectionController } from './mapSelectionController.svelte';
+import type { MapSelection } from './mapSelectionSession.svelte';
+import type { MapSelectionSession } from './mapSelectionSession.svelte';
 
 export type MapRuntimeFeed = Omit<MapLayerFeedContext, 'vehicles'> & {
 	readonly vehicles: Omit<MapLayerFeedContext['vehicles'], 'motion'>;
 };
 
 export function createMapRuntime(options: {
-	selection: Pick<MapSelectionController, 'selected' | 'hovered' | 'setHovered'>;
+	selection: Pick<MapSelectionSession, 'selected' | 'hovered' | 'setHovered'>;
 	readFeed: () => MapRuntimeFeed;
 	onpick: (selection: MapSelection) => void;
 }) {
