@@ -77,25 +77,31 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 		search ? fromSearchParams(new URLSearchParams(search)) : emptyFilterState(),
 	);
 	let session!: ReturnType<typeof createMapSelectionSession>;
-	disposers.push(
-		$effect.root(() => {
-			session = createMapSelectionSession({
-				live,
-				repositories,
-				filters,
-				locale: 'en',
-				timeZone: 'America/Toronto',
-				serverNow: () => now,
-			});
-			flushSync();
-		}),
-	);
+	const disposeRoot = $effect.root(() => {
+		session = createMapSelectionSession({
+			live,
+			repositories,
+			filters,
+			locale: 'en',
+			timeZone: 'America/Toronto',
+			serverNow: () => now,
+		});
+		flushSync();
+	});
+	let disposed = false;
+	function destroy() {
+		if (disposed) return;
+		disposeRoot();
+		disposed = true;
+	}
+	disposers.push(destroy);
 	return {
 		session,
 		live,
 		repositories,
 		filters,
 		release,
+		destroy,
 		advance(seconds: number) {
 			now += seconds * 1000;
 			flushSync();
@@ -133,6 +139,64 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 }
 
 describe('map selection session', () => {
+	it.each(['stop', 'route'] as const)(
+		'aborts an in-flight %s detail fetch when selection changes',
+		async (kind) => {
+			const h = setup();
+			await settled();
+			let finish!: () => void;
+			if (kind === 'stop') {
+				h.repositories.getStop.mockImplementation(
+					() =>
+						new Promise((resolve) => {
+							finish = () => resolve(stop);
+						}),
+				);
+			} else {
+				h.repositories.getRoute.mockImplementation(
+					() =>
+						new Promise((resolve) => {
+							finish = () => resolve(route);
+						}),
+				);
+			}
+			h.session.select({ kind, id: kind === 'stop' ? 'stop-1' : 'pending' }, 'detail');
+			flushSync();
+			const signal = (kind === 'stop' ? h.repositories.getStop : h.repositories.getRoute).mock
+				.lastCall?.[1]?.signal;
+			expect(signal?.aborted).toBe(false);
+			const next =
+				kind === 'stop'
+					? ({ kind: 'route', id: '24' } as const)
+					: ({ kind: 'stop', id: 'stop-1' } as const);
+			h.session.select(next, 'detail');
+			flushSync();
+			expect(signal?.aborted).toBe(true);
+			finish();
+			await settled();
+			expect(h.session.detail?.kind).toBe(next.kind);
+			expect(h.session.detail?.id).toBe(next.id);
+		},
+	);
+
+	it.each([
+		{ kind: 'vehicle', id: 'bus-1', family: 'trips' },
+		{ kind: 'stop', id: 'stop-1', family: 'departures' },
+	] as const)(
+		'releases the $family lease when MapHero destroys its session owner with detail still open',
+		async ({ kind, id, family }) => {
+			const h = setup();
+			await settled();
+			h.session.select({ kind, id }, 'detail');
+			await settled();
+			expect(h.session.detailOpen).toBe(true);
+			expect(h.live.subscribeFamilies).toHaveBeenCalledExactlyOnceWith([family]);
+			expect(h.release).not.toHaveBeenCalled();
+			h.destroy();
+			expect(h.release).toHaveBeenCalledOnce();
+		},
+	);
+
 	it('keeps a vehicle for two successful omissions, then auto-closes and clears only selection-owned filters', async () => {
 		const h = setup('route=pinned');
 		await settled();
