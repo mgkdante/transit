@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectVerdict, wilsonInterval } from './verdict';
+import { selectVerdict, wilsonInterval, reliabilityVerdict, isProblemVerdict } from './verdict';
 import { routeVerdictCopy } from '$lib/features/lines/reliability/routeVerdict.copy';
 
 const en = routeVerdictCopy.en.verdict;
@@ -65,9 +65,9 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 });
 
 describe('selectVerdict — n-aware confidence pipeline', () => {
-	it('n<30 suppresses the verdict → absent, no BAN', () => {
+	it('n<30 is tentative with a hedge and no percentage badge', () => {
 		const v = selectVerdict(h(90, 12, 11), 'day', 'en', en);
-		expect(v.status).toBe('absent');
+		expect(v.status).toBe('tentative');
 		expect(v.ban).toBeNull();
 		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).toContain('12');
@@ -85,11 +85,11 @@ describe('selectVerdict — n-aware confidence pipeline', () => {
 });
 
 describe('selectVerdict — graceful pre-republish degradation (no denominator)', () => {
-	it('shows the band sentence WITHOUT a CI hedge or n when observationCount is null', () => {
+	it('hedges when the denominator is unknown', () => {
 		const v = selectVerdict(h(82, null, null), 'month', 'en', en);
-		expect(v.status).toBe('reliable');
-		expect(v.ban).toBe('82%');
-		expect(v.sentence).toContain('(82%)');
+		expect(v.status).toBe('tentative');
+		expect(v.ban).toBeNull();
+		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).not.toContain('95% sure');
 	});
 	it('derives the numerator from otp×n when on_time is null but n is present', () => {
@@ -116,50 +116,105 @@ describe('selectVerdict — FR canonical voice', () => {
 });
 
 describe('selectVerdict — natural-frequency boundaries', () => {
-	it.each([
-		[0, 0, 0, 10],
-		[1, 0.02, '<1', '>9'],
-		[499, 9.98, '<1', '>9'],
-		[500, 10, 1, 9],
-		[2500, 50, 5, 5],
-		[4500, 90, 9, 1],
-		[4501, 90.02, '>9', '<1'],
-		[4999, 99.98, '>9', '<1'],
-		[5000, 100, 10, 0],
-	] as const)('preserves both sides for %s of 5000 observations', (on, otp, onTen, lateTen) => {
-		const english = selectVerdict(h(otp, 5000, on), 'week', 'en', en);
-		const french = selectVerdict(h(otp, 5000, on), 'week', 'fr', fr);
-		expect(english.sentence).toContain(`${onTen} in 10 delay observations in the on-time band`);
-		expect(english.sentence).toContain(`${lateTen} in 10 outside that band`);
-		expect(french.sentence).toContain(
-			`${onTen} relevés de retard sur 10 dans la plage de ponctualité`,
-		);
-		expect(french.sentence).toContain(`${lateTen} sur 10 hors de cette plage`);
-	});
-
-	it.each([
-		[0, '<1', '>9'],
-		[4, '<1', '>9'],
-		[10, 1, 9],
-		[85, 9, 1],
-		[90, 9, 1],
-		[96, '>9', '<1'],
-		[100, '>9', '<1'],
-	] as const)('uses reported OTP %s without inventing a zero count', (otp, onTen, lateTen) => {
-		const english = selectVerdict(h(otp), 'month', 'en', en);
-		const french = selectVerdict(h(otp), 'month', 'fr', fr);
-		expect(english.sentence).toContain(`${onTen} in 10 delay observations in the on-time band`);
-		expect(english.sentence).toContain(`${lateTen} in 10 outside that band`);
-		expect(french.sentence).toContain(
-			`${onTen} relevés de retard sur 10 dans la plage de ponctualité`,
-		);
-		expect(french.sentence).toContain(`${lateTen} sur 10 hors de cette plage`);
-		expect(english.sentence).not.toContain('95% CI:');
-		expect(french.sentence).not.toContain('IC 95 % :');
-	});
-
 	it('uses real counts when the published percentage rounds to an endpoint', () => {
 		expect(selectVerdict(h(100, 5000, 4999), 'week', 'en', en).sentence).toContain('<1 in 10');
 		expect(selectVerdict(h(0, 5000, 1), 'week', 'en', en).sentence).toContain('<1 in 10');
+	});
+});
+
+describe('one reliability verdict', () => {
+	it('returns a hedge sentence with the observation count for a tentative day', () => {
+		const result = reliabilityVerdict({
+			periods: [{ grain: 'day', otp_pct: 85, observation_count: 12 }],
+		});
+		expect(result.hedge).toEqual(expect.any(String));
+		expect(result.hedge).toContain('12');
+	});
+	it('uses the latest qualifying window at the finest grain, then the latest day when none qualifies', () => {
+		const day = { grain: 'day', date: '2026-11-02', otp_pct: 20, observation_count: 12 };
+		const week = { grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 4000 };
+		const month = { grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 };
+		expect(reliabilityVerdict({ periods: [day, week, month] })).toMatchObject({
+			grain: 'week',
+			otpPct: 85,
+			observationCount: 4000,
+			status: 'reliable',
+		});
+		expect(
+			reliabilityVerdict({ periods: [day, { ...week, observation_count: 29 }, month] }),
+		).toMatchObject({ grain: 'month', otpPct: 72, observationCount: 4000, status: 'patchy' });
+		expect(
+			reliabilityVerdict({ periods: [day, { ...week, observation_count: 29 }] }),
+		).toMatchObject({ grain: 'day', otpPct: 20, observationCount: 12, status: 'tentative' });
+		expect(
+			reliabilityVerdict({
+				periods: [{ ...day, date: '2026-11-01', observation_count: 4000 }, day, week],
+			}),
+		).toMatchObject({ grain: 'week', otpPct: 85 });
+	});
+	it.each([
+		[85, 4000, 'reliable'],
+		[72, 4000, 'patchy'],
+		[48, 4000, 'unreliable'],
+		[85, 29, 'tentative'],
+		[85, null, 'tentative'],
+		[80, 1000, 'tentative'],
+	] as const)(
+		'classifies %s at n=%s identically for route, stop and network files',
+		(otp, n, status) => {
+			const period = {
+				date: '2026-11-02',
+				otp_pct: otp,
+				observation_count: n,
+				on_time: n == null ? null : Math.round((n * otp) / 100),
+			};
+			for (const file of [{ periods: [{ ...period, grain: 'day' }] }, { series: [period] }]) {
+				const result = reliabilityVerdict(file);
+				expect(result.status).toBe(status);
+				expect(result.otpPct).toBe(otp);
+				expect(result.observationCount).toBe(n);
+				expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
+			}
+		},
+	);
+	it('skips an unqualified latest day and uses the qualifying week', () => {
+		expect(
+			reliabilityVerdict({
+				periods: [
+					{ grain: 'month', otp_pct: 99 },
+					{ grain: 'week', otp_pct: 72, observation_count: 4000 },
+					{ grain: 'day', date: '2026-11-02', otp_pct: null },
+					{ grain: 'day', date: '2026-11-01', otp_pct: 85 },
+				],
+			}).otpPct,
+		).toBe(72);
+		expect(
+			reliabilityVerdict({
+				periods: [
+					{ grain: 'month', otp_pct: 99 },
+					{ grain: 'week', otp_pct: 72, observation_count: 4000 },
+				],
+			}).otpPct,
+		).toBe(72);
+	});
+	it('pools a selected range by counts and never averages percentages', () => {
+		const result = reliabilityVerdict(
+			{
+				periods: [
+					{ grain: 'day', date: '2026-11-01', otp_pct: 100, observation_count: 10, on_time: 10 },
+					{ grain: 'day', date: '2026-11-02', otp_pct: 50, observation_count: 90, on_time: 45 },
+				],
+			},
+			{ from: '2026-11-01', to: '2026-11-02' },
+		);
+		expect(result.otpPct).toBe(55);
+		expect(result.observationCount).toBe(100);
+		expect(result.grain).toBe('day');
+	});
+	it('filters only confident patchy or unreliable verdicts as problems', () => {
+		expect(isProblemVerdict('patchy')).toBe(true);
+		expect(isProblemVerdict('unreliable')).toBe(true);
+		for (const status of ['reliable', 'tentative', 'absent', null] as const)
+			expect(isProblemVerdict(status)).toBe(false);
 	});
 });

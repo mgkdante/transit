@@ -30,7 +30,7 @@
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
+	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
@@ -197,16 +197,23 @@
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	const gradedPeriodRaw = $derived.by(() => {
-		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
-		return rows.length > 0 ? rows[rows.length - 1] : null;
-	});
-	const stopVerdictHeadline = $derived<VerdictHeadline>({
-		otpPct: gradedPeriodRaw?.otp_pct ?? null,
-		observationCount: gradedPeriodRaw?.observation_count ?? null,
-		onTime: null,
-	});
-	const stopVerdict = $derived(selectVerdict(stopVerdictHeadline, grain, locale, copy.verdict));
+	const stopVerdictHeadline = $derived(
+		reliabilityVerdict(explicitHistory ? null : selectedData, {
+			grain:
+				effectiveWindow || seed.grain === 'week' || seed.grain === 'month' || grain !== dfltGrain
+					? grain
+					: undefined,
+			...(effectiveWindow ? { from: effectiveWindow.from, to: effectiveWindow.to } : {}),
+		}),
+	);
+	const stopVerdict = $derived(
+		selectVerdict(
+			stopVerdictHeadline,
+			effectiveWindow ? 'range' : stopVerdictHeadline.grain,
+			locale,
+			copy.verdict,
+		),
+	);
 
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });

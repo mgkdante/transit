@@ -41,7 +41,7 @@ vi.mock('$lib/v1/repositories/static', () => ({
 vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
 	const { SvelteMap } = await import('svelte/reactivity');
 	function reliabilityVerdict(pct: number): string {
-		return pct >= 80 ? 'on_time' : pct >= 60 ? 'late' : 'severe';
+		return pct >= 80 ? 'reliable' : pct >= 60 ? 'patchy' : 'unreliable';
 	}
 	function createReliabilityLoader() {
 		const cache = new SvelteMap<

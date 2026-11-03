@@ -15,7 +15,7 @@ import type {
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 import { roundHalfAwayFromZero } from '$lib/utils';
 import type { RetainedLineHistory } from './data/retainedHistory';
-import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
+import { selectVerdictWindow, reliabilityVerdict } from '$lib/v1/verdict';
 
 export interface SnapshotStripVM {
 	readonly grain: string;
@@ -58,6 +58,7 @@ export interface PeakOffPeakVM {
 
 export interface PunctualityVM {
 	readonly headline: {
+		readonly grain?: string;
 		readonly otpPct: number | null;
 		readonly avgDelayMin: number | null;
 		readonly p50Min: number | null;
@@ -466,31 +467,16 @@ export function toReliabilityClusters(
 			: roundHalfAwayFromZero(exactSkippedStops.skippedStopRatePct, 1);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
-	let otpPct: number | null;
 	let avgDelayMin: number | null;
 	let p50Min: number | null;
 	let p90Min: number | null;
 	let severePct: number | null;
 	let delayHistogram: RouteDelayHistogramBin[] | null = null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
-	let observationCount: number | null;
-	let onTime: number | null;
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
-		observationCount = rangeDays.reduce<number | null>(
-			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
-			null,
-		);
-		onTime = rangeDays.reduce<number | null>(
-			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
-			null,
-		);
-		otpPct = singleDay
-			? num(rangeDays[0].otp_pct)
-			: observationCount != null && observationCount > 0 && onTime != null
-				? Math.round((onTime / observationCount) * 100)
-				: meanOf(rangeDays, (p) => p.otp_pct, 0);
+
 		avgDelayMin = singleDay
 			? num(rangeDays[0].avg_delay_min)
 			: weightedMean(
@@ -518,9 +504,6 @@ export function toReliabilityClusters(
 				};
 		const exactDelay = retained?.aggregate.delay.value;
 		if (exactDelay != null) {
-			observationCount = exactDelay.observationCount;
-			onTime = exactDelay.onTimeCount;
-			otpPct = roundHalfAwayFromZero(exactDelay.otpPct, 0);
 			avgDelayMin =
 				exactDelay.averageDelaySeconds == null
 					? null
@@ -538,16 +521,34 @@ export function toReliabilityClusters(
 						};
 		}
 	} else {
-		const stripPeriod = selectHeadlinePeriod(calendarPeriods, grain, selectedDate);
-		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
+		const stripPeriod = selectVerdictWindow(
+			calendarPeriods,
+			selectedDate || grain !== 'day' ? grain : undefined,
+			selectedDate,
+		);
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
 		severePct = stripPeriod ? num(stripPeriod.severe_pct) : null;
 		delayHistogram = stripPeriod?.delay_histogram ?? null;
-		observationCount = stripPeriod ? num(stripPeriod.observation_count) : null;
-		onTime = stripPeriod ? num(stripPeriod.on_time) : null;
 	}
+
+	const exactDelay = retained?.aggregate.delay.value;
+	const verdict = reliabilityVerdict(data, {
+		grain: dateRange || selectedDate || grain !== 'day' ? grain : undefined,
+		selectedDate,
+		...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),
+		...(dateRange && exactDelay
+			? {
+					aggregate: {
+						otpPct: roundHalfAwayFromZero(exactDelay.otpPct, 0),
+						observationCount: exactDelay.observationCount,
+						onTime: exactDelay.onTimeCount,
+					},
+				}
+			: {}),
+	});
+	const { otpPct, observationCount, onTime } = verdict;
 
 	const strip: SnapshotStripVM = {
 		grain,
@@ -594,6 +595,7 @@ export function toReliabilityClusters(
 	);
 	const punctuality: PunctualityVM = {
 		headline: {
+			grain: verdict.grain,
 			otpPct,
 			avgDelayMin,
 			p50Min,

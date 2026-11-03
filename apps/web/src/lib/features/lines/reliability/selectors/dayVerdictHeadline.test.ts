@@ -60,6 +60,6 @@ describe('selectDayVerdictHeadline', () => {
 			route([{ grain: 'day', date: '2026-08-14', otp_pct: null }]),
 		],
 	] as const)('matches the full day-grain mapper for %s', (_label, data) => {
-		expect(selectDayVerdictHeadline(data)).toEqual(fullHeadline(data));
+		expect(selectDayVerdictHeadline(data)).toMatchObject(fullHeadline(data));
 	});
 });

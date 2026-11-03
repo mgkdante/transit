@@ -54,7 +54,7 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
+	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey } from '$lib/metrics';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
@@ -160,12 +160,7 @@
 				})
 			: null,
 	);
-	const networkHeadline = $derived<VerdictHeadline>({
-		otpPct: live.network?.on_time_pct ?? null,
-		observationCount: null,
-		onTime: null,
-	});
-	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
+
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -231,6 +226,7 @@
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
+
 	const dailyChange = $derived.by(() => {
 		const series = selectedTrend?.series ?? [];
 		const latest = series.at(-1);
@@ -267,13 +263,26 @@
 	);
 	const historyAnnouncement = $derived(historyUi.announcement);
 
+	const grainSeed = fromSearchParams(page.url.searchParams).grain;
 	let grainKey = $state<NetworkGrain>(
-		(() => {
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
-		})(),
+		grainSeed === 'week' || grainSeed === 'month' ? grainSeed : 'day',
 	);
 	const grain = $derived<NetworkGrain>(grainKey);
+	const networkHeadline = $derived(
+		reliabilityVerdict(selectedTrend, {
+			grain:
+				explicitHistory ||
+				grainSeed === 'week' ||
+				grainSeed === 'month' ||
+				grain !== defaultNetworkGrain(present)
+					? grain
+					: undefined,
+		}),
+	);
+	const networkVerdict = $derived(
+		selectVerdict(networkHeadline, networkHeadline.grain, locale, t.verdict),
+	);
+
 	const isDailyGrain = $derived(grain === 'day');
 
 	const grainLabels: Partial<Record<NetworkGrain, string>> = $derived({

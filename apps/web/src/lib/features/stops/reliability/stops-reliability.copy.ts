@@ -78,10 +78,11 @@ export const stopReliabilityCopy = defineCopy({
 			unreliable: predictionShare.fr,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`Dans ce résumé ${window}, ${otp} % de ${n} prévisions connues sont sans retard grave. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les relevés peuvent être dépendants.`,
+			unknownCount: () =>
+				'Relevés insuffisants pour juger la fiabilité : nombre d’observations inconnu.',
 			tooFew: (window: string, n: number) =>
 				`Ce résumé ${window} contient seulement ${n} prévisions connues admissibles.`,
 			absent: 'Aucune prévision de retard admissible dans ce résumé.',
-			hedgeSimple: (otp: number) => ` (${otp} %)`,
 			hedgeCI: (otp: number, lo: number, hi: number) =>
 				` (${otp} %; Wilson nominal à 95 % : ${lo}–${hi} %, relevés potentiellement dépendants)`,
 		} satisfies VerdictCopy,
@@ -230,9 +231,10 @@ export const stopReliabilityCopy = defineCopy({
 			unreliable: predictionShare.en,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`In this ${window}, ${otp}% of ${n} known predictions are not severely late. Nominal 95% Wilson bounds: ${lo}–${hi}%; readings may be dependent.`,
+			unknownCount: () =>
+				'Not enough delay observations to judge reliability: observation count unknown.',
 			tooFew: (window, n) => `This ${window} contains only ${n} eligible known predictions.`,
 			absent: 'No eligible predicted-delay readings in this summary.',
-			hedgeSimple: (otp) => ` (${otp}%)`,
 			hedgeCI: (otp, lo, hi) =>
 				` (${otp}%; nominal 95% Wilson: ${lo}–${hi}%, potentially dependent readings)`,
 		} satisfies VerdictCopy,

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { verdictCopy } from '$lib/v1/verdict.copy';
+	import { stopReliabilityCopy } from '$lib/features/stops/reliability/stops-reliability.copy';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { intl, getLocale, type Locale } from '$lib/i18n';
@@ -58,8 +60,8 @@
 		return () => live.stop();
 	});
 
-	const routeReliability = createReliabilityLoader('route');
-	const stopReliability = createReliabilityLoader('stop');
+	const routeReliability = createReliabilityLoader('route', verdictCopy[locale]);
+	const stopReliability = createReliabilityLoader('stop', stopReliabilityCopy[locale].verdict);
 	const observeRouteReliability = routeReliability.reliability;
 	const observeStopReliability = stopReliability.reliability;
 
