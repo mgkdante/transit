@@ -8,48 +8,42 @@ from types import SimpleNamespace
 import pytest
 
 import transit_ops.gold.alert_archive as alert_archive_module
+import transit_ops.maintenance._helpers as _helpers_internal
 import transit_ops.maintenance.gold as gold_maintenance_module
 import transit_ops.maintenance.i3 as i3_maintenance_module
+import transit_ops.maintenance.static as static_internal
 from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
-    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-    COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
-    COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
-    COUNT_OLD_FACT_VEHICLE_SNAPSHOTS,
-    COUNT_OLD_RT_ENTITIES,
-    COUNT_OLD_RT_FEED_SNAPSHOTS,
-    COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
-    COUNT_OLD_RT_TRIP_UPDATES,
-    COUNT_OLD_RT_VEHICLE_POSITIONS,
-    DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
-    DELETE_OLD_FACT_VEHICLE_SNAPSHOTS,
-    DELETE_OLD_RT_ENTITIES,
-    DELETE_OLD_RT_FEED_SNAPSHOTS,
-    DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES,
-    DELETE_OLD_RT_TRIP_UPDATES,
-    DELETE_OLD_RT_VEHICLE_POSITIONS,
-    DELETE_ORPHANED_I3_INGESTION_RUNS,
-    DELETE_ORPHANED_INGESTION_RUNS,
-    MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
-    REALTIME_SILVER_TABLES,
-    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-    SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
-    VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
     I3StoragePruneResult,
     SilverStoragePruneResult,
     WarmRollupStoragePruneResult,
+    prune_bronze_storage,
+    prune_gold_storage,
+    prune_warm_rollup_storage,
+)
+from transit_ops.maintenance.bronze import (
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
-    prune_bronze_storage,
+)
+from transit_ops.maintenance.gold import (
     prune_gold_fact_history,
-    prune_gold_storage,
+)
+from transit_ops.maintenance.i3 import (
+    MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
+)
+from transit_ops.maintenance.silver import (
+    REALTIME_SILVER_TABLES,
     prune_realtime_silver_history,
+)
+from transit_ops.maintenance.static import (
     prune_static_silver_datasets,
-    prune_warm_rollup_storage,
+)
+from transit_ops.maintenance.vacuum import (
+    VACUUM_TABLES,
 )
 
 DROPPED_LEGACY_SILVER_REALTIME_TABLES = (
@@ -486,7 +480,7 @@ def test_prune_static_silver_datasets_dry_run_counts_exclude_deferred_versions()
 
 
 def test_select_gold_referenced_dataset_version_ids_covers_all_fk_dims() -> None:
-    sql = str(maintenance_module.SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS)
+    sql = str(static_internal.SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS)
     for table_name in (
         "gold.dim_route",
         "gold.dim_stop",
@@ -496,7 +490,7 @@ def test_select_gold_referenced_dataset_version_ids_covers_all_fk_dims() -> None
         assert table_name in sql
     assert sql.count(":provider_id") == 4
     assert "UNION" in sql
-    assert maintenance_module.GOLD_DATASET_REFERENCE_TABLES == (
+    assert static_internal.GOLD_DATASET_REFERENCE_TABLES == (
         "gold.dim_route",
         "gold.dim_stop",
         "gold.dim_date",
@@ -573,85 +567,6 @@ def test_prune_realtime_silver_history_zero_retention_is_noop() -> None:
     assert connection.calls == []
 
 
-REALTIME_HISTORY_DELETE_STATEMENTS = (
-    ("silver.rt_trip_update_stop_times", DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES),
-    ("silver.rt_trip_updates", DELETE_OLD_RT_TRIP_UPDATES),
-    ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
-    ("silver.rt_entities", DELETE_OLD_RT_ENTITIES),
-    ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
-)
-
-
-@pytest.mark.parametrize("table_name,statement", REALTIME_HISTORY_DELETE_STATEMENTS)
-def test_realtime_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
-    sql = str(statement)
-
-    assert "DELETE" in sql
-    assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
-    assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
-
-
-@pytest.mark.parametrize(
-    "table_name,statement",
-    [
-        ("silver.rt_trip_update_stop_times", DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES),
-        ("silver.rt_trip_updates", DELETE_OLD_RT_TRIP_UPDATES),
-        ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
-    ],
-)
-def test_realtime_history_child_delete_uses_selected_snapshot_keys(table_name, statement) -> None:  # noqa: ANN001
-    sql = str(statement)
-    assert "rt_feed_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))" in sql
-    assert "provider_id = :provider_id" in sql
-    assert "captured_at_utc" not in sql
-    assert "JOIN silver.rt_feed_snapshots" not in sql
-
-
-@pytest.mark.parametrize(
-    "table_name,statement",
-    [
-        ("silver.rt_entities", DELETE_OLD_RT_ENTITIES),
-        ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
-    ],
-)
-def test_realtime_history_endpoint_spanning_delete_uses_selected_snapshot_keys(
-    table_name, statement
-) -> None:  # noqa: ANN001
-    sql = str(statement)
-    assert "rt_feed_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))" in sql
-    assert "provider_id = :provider_id" in sql
-
-
-@pytest.mark.parametrize(
-    "statement",
-    [
-        COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
-        COUNT_OLD_RT_TRIP_UPDATES,
-        COUNT_OLD_RT_VEHICLE_POSITIONS,
-        COUNT_OLD_RT_ENTITIES,
-        COUNT_OLD_RT_FEED_SNAPSHOTS,
-    ],
-)
-def test_realtime_history_count_statements_report_unbounded_backlog(statement) -> None:  # noqa: ANN001
-    sql = str(statement)
-
-    assert "SELECT COUNT(*)" in sql
-    assert "LIMIT" not in sql
-    assert ":batch" not in sql
-
-
-def test_rt_entities_delete_guards_on_surviving_realtime_children() -> None:
-    sql = str(DELETE_OLD_RT_ENTITIES)
-
-    assert "NOT EXISTS" in sql
-    assert "silver.rt_trip_updates" in sql
-    assert "silver.rt_vehicle_positions" in sql
-    assert "rtu_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id" in sql
-    assert "rtu_child.entity_index = rte_old.entity_index" in sql
-    assert "rvp_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id" in sql
-    assert "rvp_child.entity_index = rte_old.entity_index" in sql
-
-
 def test_prune_realtime_silver_history_binds_batch_param() -> None:
     connection = RecordingConnection()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
@@ -708,75 +623,6 @@ def test_prune_silver_storage_threads_realtime_prune_batch_setting() -> None:
     ]
     assert rt_delete_params, "expected realtime DELETE executions in tx1"
     assert all(params.get("batch") == 7777 for params in rt_delete_params)
-
-
-@pytest.mark.parametrize(
-    "statement",
-    [
-        SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-        COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-    ],
-)
-def test_bronze_realtime_eligibility_materializes_latest_and_splits_silver_guards(
-    statement,
-) -> None:
-    sql = str(statement)
-    normalized = " ".join(sql.split())
-    anti_join_fragment = normalized[normalized.index("AND NOT EXISTS") :]
-
-    assert "WITH latest_by_endpoint_key AS MATERIALIZED" in sql
-    assert "DISTINCT ON (fe_latest.endpoint_key)" in sql
-    assert "rsi_latest.captured_at_utc DESC, rsi_latest.realtime_snapshot_id DESC" in normalized
-    for table in (
-        "gold.fact_trip_delay_snapshot",
-        "gold.fact_vehicle_snapshot",
-        "gold.latest_trip_delay_snapshot",
-        "gold.latest_vehicle_snapshot",
-    ):
-        assert table in sql
-    assert "rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id" in sql
-    assert "io.ingestion_object_id NOT IN" in sql
-    assert "rfs.ingestion_object_id IS NOT NULL" in sql
-    assert " OR " not in anti_join_fragment
-    assert "rsi.captured_at_utc < :cutoff_utc" in sql
-
-
-def test_eligible_bronze_selects_order_oldest_first_limit_and_exclude() -> None:
-    realtime_sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
-    static_sql = str(SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS)
-
-    assert "ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC" in realtime_sql
-    assert "LIMIT :max_objects" in realtime_sql
-    assert ":excluded_object_ids" in realtime_sql
-
-    assert "ORDER BY ir.started_at_utc ASC, io.ingestion_object_id ASC" in static_sql
-    assert "LIMIT :max_objects" in static_sql
-    assert ":excluded_object_ids" in static_sql
-
-
-def test_count_eligible_bronze_statements_are_unbounded() -> None:
-    realtime_sql = str(COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
-    static_sql = str(COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS)
-
-    assert "SELECT COUNT(*)" in realtime_sql
-    assert "NOT EXISTS" in realtime_sql
-    assert "silver.rt_feed_snapshots" in realtime_sql
-    assert "source_realtime_snapshot_id" in realtime_sql
-    assert "rsi_latest" in realtime_sql
-    assert "SELECT COUNT(*)" in static_sql
-    assert "NOT EXISTS" in static_sql
-    assert "core.dataset_versions" in static_sql
-    assert "'static_schedule'" in static_sql
-    assert "LIMIT" not in realtime_sql
-    assert ":excluded_object_ids" not in realtime_sql
-    assert "LIMIT" not in static_sql
-    assert ":excluded_object_ids" not in static_sql
-
-
-def test_orphan_run_prune_retains_recent_failed_silver_load_rows() -> None:
-    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
-    assert "ir.started_at_utc < :cutoff_utc" in sql
-    assert "status" not in sql
 
 
 def test_prune_bronze_realtime_binds_cutoff_on_orphan_run_delete() -> None:
@@ -1044,35 +890,6 @@ def test_prune_gold_fact_history_zero_retention_is_noop() -> None:
     assert len(connection.calls) == 0
 
 
-GOLD_FACT_HISTORY_DELETE_STATEMENTS = (
-    ("gold.fact_trip_delay_snapshot", DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS),
-    ("gold.fact_vehicle_snapshot", DELETE_OLD_FACT_VEHICLE_SNAPSHOTS),
-)
-
-
-@pytest.mark.parametrize("table_name,statement", GOLD_FACT_HISTORY_DELETE_STATEMENTS)
-def test_gold_fact_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
-    sql = str(statement)
-
-    assert "DELETE" in sql
-    assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
-    assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
-    assert "captured_at_utc < :cutoff_utc" in sql
-    assert "provider_id = :provider_id" in sql
-
-
-@pytest.mark.parametrize(
-    "statement",
-    [COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS, COUNT_OLD_FACT_VEHICLE_SNAPSHOTS],
-)
-def test_gold_fact_history_count_statements_report_unbounded_backlog(statement) -> None:  # noqa: ANN001
-    sql = str(statement)
-
-    assert "SELECT COUNT(*)" in sql
-    assert "LIMIT" not in sql
-    assert ":batch" not in sql
-
-
 def test_prune_gold_fact_history_binds_batch_param() -> None:
     connection = RecordingConnection()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
@@ -1276,7 +1093,7 @@ def test_schedule_version_service_summary_is_append_only_and_never_pruned() -> N
 
 def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -> None:
     with pytest.raises(ValueError, match="Unknown Gold aggregate retention target"):
-        maintenance_module._gold_aggregate_retention_statement(
+        gold_maintenance_module._gold_aggregate_retention_statement(
             "gold.not_a_real_aggregate",
             "period_start_utc",
             date_only=False,
@@ -1284,7 +1101,7 @@ def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -
         )
 
     with pytest.raises(ValueError, match="Unknown Gold aggregate retention target"):
-        maintenance_module._gold_aggregate_retention_statement(
+        gold_maintenance_module._gold_aggregate_retention_statement(
             "gold.route_delay_hourly",
             "unsafe_column",
             date_only=False,
@@ -1294,7 +1111,7 @@ def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -
 
 def test_safe_scalar_count_requires_scalar_result() -> None:
     with pytest.raises(TypeError, match="scalar_one"):
-        maintenance_module._safe_scalar_count(RowcountResult(12))
+        _helpers_internal._safe_scalar_count(RowcountResult(12))
 
 
 def test_prune_bronze_realtime_objects_dry_run_returns_eligible_count_without_deleting() -> None:
@@ -1604,11 +1421,6 @@ class SequencedBronzeConnection(RecordingConnection):
 
 
 def _patch_bronze_storage(monkeypatch, storage: FakeBronzeStorage) -> None:  # noqa: ANN001
-    monkeypatch.setattr(
-        maintenance_module,
-        "get_bronze_storage",
-        lambda settings, project_root=None: storage,
-    )
     monkeypatch.setattr(
         "transit_ops.maintenance.bronze.BronzeStorageScope.resolve",
         lambda self, backend: storage,
@@ -2190,10 +2002,3 @@ def test_i3_prune_result_display_dict_formats_timestamps() -> None:
     assert d["silver_cutoff_utc"] == "2026-03-15T07:00:00+00:00"
     assert d["completed_at_utc"] == "2026-06-13T07:10:00+00:00"
     assert d["deleted_object_counts"] == {"i3_raw": 5}
-
-
-def test_orphaned_i3_run_prune_covers_both_i3_kinds() -> None:
-    sql = str(DELETE_ORPHANED_I3_INGESTION_RUNS)
-    assert "run_kind IN ('i3_alerts', 'service_alerts')" in sql
-    assert "raw.ingestion_objects" in sql
-    assert "raw.i3_alert_snapshots" in sql

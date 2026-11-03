@@ -7,7 +7,9 @@ import pytest
 import real_db_seed as db_seed
 from sqlalchemy import text
 
-from transit_ops.maintenance import DELETE_ORPHANED_INGESTION_RUNS
+from transit_ops.maintenance.bronze import (
+    DELETE_ORPHANED_INGESTION_RUNS,
+)
 
 PROVIDER = "stm_orphanrun_i3_test"
 ENDPOINT_ID = 993014

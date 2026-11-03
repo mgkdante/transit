@@ -88,6 +88,7 @@ files = [
     "src/transit_ops/maintenance/silver.py",
     "src/transit_ops/maintenance/bronze.py",
     "src/transit_ops/maintenance/i3.py",
+    "src/transit_ops/maintenance/retention.py",
 ]
 follow_imports = "silent"
 strict = true

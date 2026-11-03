@@ -8,7 +8,9 @@ import real_db_seed as db_seed
 from sqlalchemy import text
 
 from transit_ops.ingestion.common import insert_failed_ingestion_run
-from transit_ops.maintenance import prune_bronze_realtime_objects
+from transit_ops.maintenance.bronze import (
+    prune_bronze_realtime_objects,
+)
 
 PROVIDER = "stm_silver_load_test"
 TU_ENDPOINT_ID = 990031

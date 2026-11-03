@@ -10,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
-from transit_ops.maintenance import (
+from transit_ops.maintenance.bronze import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
 )

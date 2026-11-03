@@ -43,6 +43,10 @@ from transit_ops.gold.realtime import initialize_realtime_serving, refresh_gold_
 from transit_ops.ingestion import capture_realtime_feed
 from transit_ops.logging import configure_logging
 from transit_ops.maintenance import (
+    PruneBudget,
+    RetentionPolicy,
+    RetentionTier,
+    prune,
     prune_bronze_storage,
     prune_gold_storage,
     prune_i3_storage,
@@ -898,6 +902,71 @@ def refresh_gold_realtime_command(
     payload = result.display_dict()
     payload["status"] = "refreshed" if snapshots else "no-archived-snapshots"
     typer.echo(json.dumps(payload, indent=2))
+
+
+@app.command("prune-storage")
+def prune_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Count without deleting rows or archives."
+    ),
+    tier: list[RetentionTier] = typer.Option(  # noqa: B008
+        [],
+        "--tier",
+        help="Restrict to these tiers (repeatable); defaults to all tiers.",
+    ),
+    max_objects: int | None = typer.Option(  # noqa: B008
+        None,
+        "--max-objects",
+        min=1,
+        help="Bronze objects per batch; defaults to settings.",
+    ),
+    max_batches: int | None = typer.Option(  # noqa: B008
+        None,
+        "--max-batches",
+        min=1,
+        help="Bronze batches per phase; defaults to settings.",
+    ),
+    require_exhausted: bool = typer.Option(
+        False,
+        "--require-exhausted",
+        help="Fail when a live Bronze pass leaves eligible backlog.",
+    ),
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Also write the combined JSON receipt to this path.",
+    ),
+) -> None:
+    """Prune in dependency order and include the non-destructive retention proof."""
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="prune-storage"):
+        return
+    _preflight_report_path(report_path)
+    try:
+        receipt = prune(
+            provider_id,
+            RetentionPolicy(
+                settings,
+                tiers=frozenset(tier) if tier else frozenset(RetentionTier),
+                dry_run=dry_run,
+                require_exhausted=require_exhausted,
+            ),
+            PruneBudget(max_objects=max_objects, max_batches=max_batches),
+        )
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    report = json.dumps(receipt.display_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
+    if not receipt.is_complete:
+        raise typer.Exit(code=1)
 
 
 @app.command("prune-silver-storage")

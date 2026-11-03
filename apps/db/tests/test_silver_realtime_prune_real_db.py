@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -38,8 +37,10 @@ def _seed_refs(connection, seed_provider) -> None:
     ):
         db_seed.feed_endpoints(
             connection,
-            {'e': endpoint_id, 'p': PROVIDER, 'k': endpoint_key, 'fmt': f'gtfs_rt_{endpoint_key}'},
-            endpoint_key=':k', feed_kind=':k', source_format=':fmt',
+            {"e": endpoint_id, "p": PROVIDER, "k": endpoint_key, "fmt": f"gtfs_rt_{endpoint_key}"},
+            endpoint_key=":k",
+            feed_kind=":k",
+            source_format=":fmt",
         )
 
 
@@ -47,8 +48,11 @@ def _insert_snapshot(connection, *, snapshot_id: int, endpoint_key: str, capture
     endpoint_id = TU_ENDPOINT_ID if endpoint_key == "trip_updates" else VP_ENDPOINT_ID
     run_id = RUN_BASE + snapshot_id
     db_seed.ingestion_runs(
-        connection, {'r': run_id, 'p': PROVIDER, 'e': endpoint_id, 'k': endpoint_key},
-        ingestion_run_id='CAST(:r AS bigint)', feed_endpoint_id='CAST(:e AS bigint)', run_kind=':k',
+        connection,
+        {"r": run_id, "p": PROVIDER, "e": endpoint_id, "k": endpoint_key},
+        ingestion_run_id="CAST(:r AS bigint)",
+        feed_endpoint_id="CAST(:e AS bigint)",
+        run_kind=":k",
     )
     connection.execute(
         text(
@@ -213,24 +217,67 @@ def _live_counts(connection) -> dict[str, int]:
     return counts
 
 
-def test_dry_run_count_matches_capture_time_retention(conn) -> None:
+def _live_identities(connection) -> dict[str, set[tuple]]:
+    keys = {
+        "silver.rt_trip_update_stop_times": (
+            "rt_feed_snapshot_id, entity_index, stop_time_update_index"
+        ),
+        "silver.rt_trip_updates": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_vehicle_positions": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_entities": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_feed_snapshots": "rt_feed_snapshot_id",
+    }
+    return {
+        table: set(
+            connection.execute(
+                text(f"SELECT {columns} FROM {table} WHERE provider_id = :p"),
+                {"p": PROVIDER},
+            ).tuples()
+        )
+        for table, columns in keys.items()
+    }
+
+
+def test_dry_run_reports_full_backlog_for_every_table_without_deleting(conn) -> None:
     _seed_monotonic_history(conn)
-    expected = _expected_old_predicate_counts(conn)
+    before = _live_identities(conn)
 
     _cutoff, counts = prune_realtime_silver_history(
         conn,
         provider_id=PROVIDER,
         retention_days=RETENTION_DAYS,
-        batch_size=10000,
+        batch_size=1,
         dry_run=True,
         now_utc=NOW,
     )
 
-    assert counts == expected
-    assert expected["silver.rt_trip_update_stop_times"] == 3
-    assert expected["silver.rt_vehicle_positions"] == 3
-    assert expected["silver.rt_entities"] == 6
-    assert expected["silver.rt_feed_snapshots"] == 6
+    assert counts == {
+        "silver.rt_trip_update_stop_times": 3,
+        "silver.rt_trip_updates": 3,
+        "silver.rt_vehicle_positions": 3,
+        "silver.rt_entities": 6,
+        "silver.rt_feed_snapshots": 6,
+    }
+    assert _live_identities(conn) == before
+
+
+@pytest.mark.parametrize("batch_size", [0, 1, 2])
+def test_each_silver_table_honors_the_row_budget_and_floor(conn, batch_size):
+    _seed_monotonic_history(conn)
+    before = _live_counts(conn)
+    _, counts = prune_realtime_silver_history(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=RETENTION_DAYS,
+        batch_size=batch_size,
+        now_utc=NOW,
+    )
+    limit = max(batch_size, 1)
+    assert counts["silver.rt_trip_update_stop_times"] == limit
+    assert counts["silver.rt_vehicle_positions"] == limit
+    assert all(0 <= count <= limit for count in counts.values())
+    after = _live_counts(conn)
+    assert after == {table: count - counts[table] for table, count in before.items()}
 
 
 def test_delete_drains_exactly_the_expired_capture_set(conn) -> None:
