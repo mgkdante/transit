@@ -92,7 +92,7 @@ const round = (value, digits = 1) => {
 const pct = (numerator, denominator, digits = 1) =>
 	numerator != null && denominator > 0 ? round((100 * numerator) / denominator, digits) : null;
 const verdictCount = (otp, n, onTime) => {
-	if (!(n > 0)) return null;
+	if (otp == null || n == null || n < 0) return null;
 	if (n < 30) return n;
 	const successes = onTime ?? Math.round((otp / 100) * n);
 	const z2 = 1.959963984540054 ** 2;
@@ -101,11 +101,7 @@ const verdictCount = (otp, n, onTime) => {
 		(1.959963984540054 *
 			Math.sqrt(((successes / n) * (1 - successes / n)) / n + z2 / (4 * n * n))) /
 		(1 + z2 / n);
-	const band = (value) => (value >= 80 ? 2 : value >= 60 ? 1 : 0);
-	return margin * 2 >= 0.3 ||
-		band(Math.round(100 * (center - margin))) !== band(Math.round(100 * (center + margin)))
-		? n
-		: null;
+	return center - margin < 0.8 && center + margin >= 0.8 ? n : null;
 };
 const latestDated = (rows) =>
 	rows
@@ -529,6 +525,18 @@ function routeFile(fixture) {
 	return rawFile(fixture, 'historic/route_reliability/24.json');
 }
 
+export function expectedDefaultLineHeadline(fixture) {
+	const windows = ['day', 'week', 'month'].map(
+		(grain) =>
+			(routeFile(fixture).periods ?? [])
+				.filter((window) => window.grain === grain)
+				.slice()
+				.sort((left, right) => String(left.date ?? '').localeCompare(String(right.date ?? '')))
+				.at(-1) ?? null,
+	);
+	return windows.find((window) => finite(window?.observation_count) >= 30) ?? windows[0];
+}
+
 export function expectedScheduleTruth(fixture) {
 	const route = routeFile(fixture);
 	const date = latestDated((route.periods ?? []).filter((row) => row.grain === 'day'))?.date;
@@ -624,7 +632,7 @@ function lineOracle(fixture, locale, view) {
 				severe_pct: pct(sumField(retained, 'delay', 'severe_count'), delayN),
 				observation_count: sumField(retained, 'delay', 'observation_count'),
 			}
-		: latestDated((raw.periods ?? []).filter((row) => row.grain === 'day'));
+		: expectedDefaultLineHeadline(fixture);
 	const cancellation = retained.length
 		? Object.fromEntries(
 				[
@@ -1471,6 +1479,42 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	for (const [otp, n, onTime, expected] of [
+		[50, 30, 15, null],
+		[55, 200, 110, null],
+		[85, 100, 85, 100],
+		[80, 1000, 800, 1000],
+	]) {
+		expectLiteral(verdictCount(otp, n, onTime), expected, `${otp}% at n=${n} hedge count`);
+	}
+	for (const [fixture, expected] of [
+		[FIXTURES.rich, ['day', 80, 100]],
+		[FIXTURES.sparse, ['day', 0, 0]],
+	]) {
+		const window = expectedDefaultLineHeadline(fixture);
+		expectLiteral(
+			[window?.grain, window?.otp_pct, window?.observation_count],
+			expected,
+			`${fixture.name} independent current headline`,
+		);
+	}
+	const thinCurrentDay = structuredClone(FIXTURES.rich);
+	routeFile(thinCurrentDay).periods.find(
+		(window) => window.grain === 'day' && window.date === '2026-08-29',
+	).observation_count = 29;
+	const fallbackWindow = expectedDefaultLineHeadline(thinCurrentDay);
+	expectLiteral(
+		[fallbackWindow?.grain, fallbackWindow?.otp_pct, fallbackWindow?.observation_count],
+		['week', 76, 290],
+		'thin current day uses qualifying week',
+	);
+	expectLiteral(
+		expectedDomainObservations('sparse', 'line').find(
+			(row) => row.id === 'line.day.observation_count',
+		)?.value,
+		0,
+		'thin-sample hedge preserves the reported zero observation count',
+	);
 	for (const [iso, locale, expected] of [
 		['2026-11-01T05:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-4'],
 		['2026-11-01T06:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-5'],

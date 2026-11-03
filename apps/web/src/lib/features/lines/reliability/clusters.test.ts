@@ -355,12 +355,12 @@ describe('toReliabilityClusters — date range', () => {
 		expect(c.strip.rangeAggregate).toEqual({ days: 3, start: '2026-06-16', end: '2026-06-18' });
 	});
 
-	it('falls back to the most-recent day when no day falls inside the range', () => {
+	it('keeps the verdict absent when no day falls inside the selected window', () => {
 		const c = toReliabilityClusters(granular, {
 			grain: 'day',
 			dateRange: { start: '2026-01-01', end: '2026-01-31' },
 		});
-		expect(c.strip.otpPct).toBe(84);
+		expect(c.strip.otpPct).toBeNull();
 		expect(c.strip.rangeAggregate).toBeNull();
 		expect(c.punctuality.trend).toHaveLength(3);
 	});
@@ -966,4 +966,34 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
 	});
+});
+
+describe('shared confidence for service metric tones', () => {
+	it.each([
+		{ otp_pct: 95, observation_count: 29, on_time: 28 },
+		{ otp_pct: 80, observation_count: 1000, on_time: 800 },
+	])(
+		'carries the tentative verdict to the service presentation at n=$observation_count',
+		(window) => {
+			const result = toReliabilityClusters(
+				{
+					id: '24',
+					generated_utc: utc('2026-11-02T00:00:00Z'),
+					periods: [{ grain: 'day', ...window }],
+					cancellations: [
+						{
+							grain: 'day',
+							canceled_trip_days: 0,
+							total_trip_days: 100,
+							scheduled_trip_days: 100,
+							delivered_trip_days: 100,
+						},
+					],
+				},
+				{ grain: 'day', automaticHeadline: false },
+			);
+			expect(result.serviceDelivered.serviceCompletenessPct).toBe(100);
+			expect(result.serviceDelivered.verdictStatus).toBe('tentative');
+		},
+	);
 });

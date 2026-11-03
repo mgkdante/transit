@@ -1,16 +1,10 @@
+import type { VerdictCopy } from '$lib/v1/verdict';
+import { routeVerdictCopy } from '$lib/features/lines/reliability/routeVerdict.copy';
 import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { articleCopy } from '$lib/components/layout/articleCopy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
-import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
-
-const positionShare = {
-	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-		`Parmi les positions actuelles de véhicules au statut connu, environ ${onTen} sur 10 sont dans la plage de ponctualité ${window}${hedge}; environ ${lateTen} sur 10 sont hors de cette plage, en avance ou en retard.`,
-	en: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-		`Among current known-status vehicle positions, about ${onTen} in 10 are in the on-time band ${window}${hedge}; about ${lateTen} in 10 are outside that band, early or late.`,
-};
 
 export const networkReliabilityCopy = defineCopy({
 	en: {
@@ -142,24 +136,7 @@ export const networkReliabilityCopy = defineCopy({
 				'Slowest-10% delay and vehicles are exact daily readings; they are not pooled into week or month.',
 		},
 		units: { pct: '%', min: ' min' },
-		verdict: {
-			windowPhrase: {
-				day: 'right now',
-				week: 'right now',
-				month: 'right now',
-				range: 'right now',
-			},
-			reliable: positionShare.en,
-			patchy: positionShare.en,
-			unreliable: positionShare.en,
-			tentative: ({ window, otp, n, lo, hi }) =>
-				`${otp}% of ${n} current known-status vehicle positions are in the on-time band ${window}. Nominal 95% Wilson bounds: ${lo}–${hi}%; positions may be dependent.`,
-			tooFew: (window, n) => `Only ${n} current known-status vehicle positions ${window}.`,
-			absent: 'No current vehicle positions with a known delay status.',
-			hedgeSimple: (otp) => ` (${otp}%)`,
-			hedgeCI: (otp, lo, hi) =>
-				` (${otp}%; nominal 95% Wilson: ${lo}–${hi}%, potentially dependent positions)`,
-		} satisfies VerdictCopy,
+		verdict: routeVerdictCopy.en.verdict,
 		verdictDelta: {
 			label: 'Network verdict',
 			chip: (signedPts: string, singular: boolean) =>
@@ -304,25 +281,7 @@ export const networkReliabilityCopy = defineCopy({
 				'Le retard des 10 % les plus lents et les véhicules sont des lectures quotidiennes exactes; ils ne sont pas regroupés par semaine ou par mois.',
 		},
 		units: { pct: '%', min: ' min' },
-		verdict: {
-			windowPhrase: {
-				day: 'en ce moment',
-				week: 'en ce moment',
-				month: 'en ce moment',
-				range: 'en ce moment',
-			},
-			reliable: positionShare.fr,
-			patchy: positionShare.fr,
-			unreliable: positionShare.fr,
-			tentative: ({ window, otp, n, lo, hi }) =>
-				`${otp} % de ${n} positions actuelles de véhicules au statut connu sont dans la plage de ponctualité ${window}. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les positions peuvent être dépendantes.`,
-			tooFew: (window: string, n: number) =>
-				`Seulement ${n} positions actuelles de véhicules au statut connu ${window}.`,
-			absent: 'Aucune position actuelle de véhicule avec un statut de retard connu.',
-			hedgeSimple: (otp: number) => ` (${otp} %)`,
-			hedgeCI: (otp: number, lo: number, hi: number) =>
-				` (${otp} %; Wilson nominal à 95 % : ${lo}–${hi} %, positions potentiellement dépendantes)`,
-		} satisfies VerdictCopy,
+		verdict: routeVerdictCopy.fr.verdict,
 		verdictDelta: {
 			label: 'Verdict du réseau',
 			chip: (signedPts: string, singular: boolean) =>

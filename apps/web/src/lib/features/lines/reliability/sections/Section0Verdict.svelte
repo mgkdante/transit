@@ -20,8 +20,8 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict } from '$lib/v1/verdict';
-	import { selectBullet, otpTone } from '../selectors/bullet';
+	import { selectVerdict, VERDICT_RELIABLE_FLOOR } from '$lib/v1/verdict';
+	import { selectBullet, verdictTone } from '../selectors/bullet';
 	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -38,9 +38,18 @@
 	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
 	const grain = $derived(mode);
-	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
-	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
+	const estimatedPercentiles = $derived(
+		(headline.grain ?? mode) === 'week' || (headline.grain ?? mode) === 'month',
+	);
+	const verdict = $derived(
+		selectVerdict(
+			headline,
+			mode === 'range' ? mode : (headline.grain ?? mode),
+			locale,
+			copy.verdict,
+		),
+	);
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
@@ -54,9 +63,9 @@
 			xLabel: copy.strip.otpPct,
 			unit: copy.units.pct,
 			domain: OTP_DOMAIN,
-			target: 80,
+			target: VERDICT_RELIABLE_FLOOR,
 			targetLabel: copy.strip.target,
-			tone: otpTone(headline.otpPct),
+			tone: verdictTone(verdict.status),
 			n: headline.observationCount,
 		}),
 	);
@@ -276,7 +285,7 @@
 						{dailyPercentileCaption(dailyPercentiles, locale)}
 					</p>
 				{/if}
-				{#if isDayGrain && !hasDist}
+				{#if isDayGrain && !estimatedPercentiles && !hasDist}
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}
 				{#if distSpec.kind === 'histogram'}

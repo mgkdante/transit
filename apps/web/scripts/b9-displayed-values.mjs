@@ -20,6 +20,7 @@ import {
 	OBSERVATION_IDS,
 	compareObservations,
 	expectedDomainObservationsFromFixture,
+	expectedDefaultLineHeadline,
 	expectedScheduleTruth,
 	normalizeObservation,
 	runOracleSelfCheck,
@@ -970,6 +971,14 @@ async function verifySsr(page, cell, fixture, html) {
 					main
 						.querySelector('[data-slot="article-header"] .header__meta time')
 						?.getAttribute('datetime') ?? null,
+				headerPresent: main.querySelector('.route-verdict-banner [data-slot="verdict"]') != null,
+				headerStatus:
+					main
+						.querySelector('.route-verdict-banner [data-slot="verdict"]')
+						?.getAttribute('data-status') ?? null,
+				headerHedge:
+					main.querySelector('.route-verdict-banner .verdict__sentence')?.textContent?.trim() ??
+					null,
 				headerBan:
 					main.querySelector('.route-verdict-banner .verdict__ban')?.textContent?.trim() ?? null,
 				currentOnly:
@@ -1020,18 +1029,34 @@ async function verifySsr(page, cell, fixture, html) {
 				date && ssr.window.includes(date),
 				`${cell.path} SSR omitted selected/current date ${date}`,
 			);
+		const current = expectedDefaultLineHeadline(fixture);
+		const hasCurrentPercentage =
+			typeof current?.otp_pct === 'number' && Number.isFinite(current.otp_pct);
 		invariant(
-			ssr.headerBan != null,
-			`${cell.path} SSR omitted its independent current header verdict`,
+			ssr.headerPresent === hasCurrentPercentage,
+			`${cell.path} SSR current-header presence disagrees with published data`,
 		);
-		if (ssr.headerBan != null) {
-			const current = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale).find(
-				(row) => row.id === 'line.day.otp_pct',
-			);
+		if (hasCurrentPercentage) {
 			invariant(
-				parseNumber(ssr.headerBan) === current.value,
-				`${cell.path} SSR header borrowed the selected historical percentage`,
+				typeof ssr.headerHedge === 'string' && ssr.headerHedge.length > 0,
+				`${cell.path} SSR current header omitted its hedge`,
 			);
+			if (!(current.observation_count >= 30)) {
+				invariant(
+					ssr.headerBan == null && ssr.headerStatus === 'tentative',
+					`${cell.path} SSR thin current header must hedge without a confident percentage`,
+				);
+				if (typeof current.observation_count === 'number')
+					invariant(
+						ssr.headerHedge.includes(`(${current.observation_count})`),
+						`${cell.path} SSR current hedge omitted the observation count`,
+					);
+			} else {
+				invariant(
+					parseNumber(ssr.headerBan) === Math.round(current.otp_pct),
+					`${cell.path} SSR header borrowed the selected historical percentage`,
+				);
+			}
 			invariant(
 				selected
 					? ssr.currentOnly ===
@@ -1040,6 +1065,11 @@ async function verifySsr(page, cell, fixture, html) {
 								: 'Header verdict: current snapshot')
 					: ssr.currentOnly == null,
 				`${cell.path} SSR current-header scope changed`,
+			);
+		} else {
+			invariant(
+				ssr.headerBan == null,
+				`${cell.path} SSR absent current header fabricated a percentage`,
 			);
 		}
 	} else if (cell.surface === 'stop') {

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
+	import { verdictRank } from '$lib/v1/verdict';
 	import { page } from '$app/state';
 	import { intl, getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
@@ -46,7 +48,7 @@
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
 
-	const reliability = createReliabilityLoader('stop');
+	const reliability = createReliabilityLoader('stop', stopReliabilityCopy[locale].verdict);
 	const observeReliability = reliability.reliability;
 
 	const PAGE_SIZE = 50;
@@ -149,7 +151,6 @@
 
 	type SortKey = 'default' | 'worst';
 	let sort = $state<SortKey>('default');
-	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityCandidates = $derived.by<readonly StopIndexEntry[]>(() =>
 		lineActive ? lineStopGroups.flatMap((group) => narrowByText(group.stops)) : matches,
 	);
@@ -159,7 +160,7 @@
 		id: (stop) => stop.id,
 		requestWhen: () => sort === 'worst',
 		rankWhen: () => sort === 'worst',
-		rank: (snapshot) => (snapshot.verdict == null ? 99 : (VERDICT_RANK[snapshot.verdict] ?? 99)),
+		rank: (snapshot) => verdictRank(snapshot.verdict),
 	});
 	const visibleGroups = $derived.by<LineStopGroup[]>(() =>
 		lineStopGroups

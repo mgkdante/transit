@@ -411,6 +411,10 @@ describe('NetworkSurface retained-history integration', () => {
 		const view = render(NetworkSurface);
 
 		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%', '90%']));
+		const verdict = view.container.querySelector('.network-verdict [data-slot="verdict"]');
+		expect(verdict).toHaveAttribute('data-status', 'tentative');
+		expect(verdict).toHaveTextContent('83%');
+		expect(verdict).toHaveTextContent('100');
 		const change = view.container.querySelector('[data-slot="verdict-delta"]')!;
 		expect(view.container.querySelector('[data-toc="net-historic"]')).toContainElement(
 			change as HTMLElement,

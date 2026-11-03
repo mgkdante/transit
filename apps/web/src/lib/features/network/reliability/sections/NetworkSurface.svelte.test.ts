@@ -999,30 +999,20 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 	});
 });
 
-describe('NetworkSurface current-position verdict', () => {
+describe('NetworkSurface historic verdict', () => {
 	it.each(['en', 'fr'] as const)(
-		'names the vehicle population and both outside-band directions in %s',
+		'hedges a historic percentage with no denominator in %s',
 		(locale) => {
 			network.on_time_pct = 80;
-			network.status_dist = { early: 1, on_time: 8, late: 0, severe: 1, unknown: 0 };
 			const { container } = render(NetworkSurface, {
 				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
 			const banner = container.querySelector('.network-verdict [data-slot="verdict"]');
-			expect(banner).toHaveAttribute('data-status', 'reliable');
-			const sentence = banner?.querySelector('p')?.textContent ?? '';
-			expect(sentence).toContain('80');
-			expect
-				.soft(sentence)
-				.toMatch(
-					locale === 'en'
-						? /current known-status vehicle positions/
-						: /positions actuelles de véhicules au statut connu/,
-				);
-			expect
-				.soft(sentence)
-				.toMatch(locale === 'en' ? /outside.*early or late/ : /hors.*avance ou.*retard/);
-			expect.soft(sentence).not.toMatch(/trips|trajets|ran late|95% sure|sûr à 95/);
+			expect(banner).toHaveAttribute('data-status', 'tentative');
+			expect(banner?.querySelector('.verdict__ban')).toBeNull();
+			expect(banner).toHaveTextContent(
+				locale === 'en' ? 'observation count unknown' : 'nombre d’observations inconnu',
+			);
 		},
 	);
 });
@@ -1047,7 +1037,10 @@ describe('NetworkSurface daily comparison scope', () => {
 				change as HTMLElement,
 			);
 			expect(container.querySelector('.network-verdict [data-slot="verdict-delta"]')).toBeNull();
-			expect(container.querySelector('.network-verdict')).toHaveTextContent(/50\s*%/);
+			expect(container.querySelector('.network-verdict [data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			);
 			expect(change).toHaveTextContent(
 				locale === 'en'
 					? 'Daily on-time change: +70 percentage points'
@@ -1087,6 +1080,9 @@ describe('NetworkSurface daily comparison scope', () => {
 		trendSeries[1].otp_pct = null;
 		const { container } = render(NetworkSurface);
 		expect(container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
-		expect(container.querySelector('.network-verdict')).toHaveTextContent(/80\s*%/);
+		expect(container.querySelector('.network-verdict [data-slot="verdict"]')).toHaveAttribute(
+			'data-status',
+			'absent',
+		);
 	});
 });

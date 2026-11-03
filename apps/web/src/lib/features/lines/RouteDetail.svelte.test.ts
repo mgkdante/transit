@@ -743,7 +743,19 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 });
 
 describe('RouteDetail always-visible verdict history scope', () => {
-	it('reserves no summary gap when the archive cannot publish a percentage verdict', async () => {
+	it('keeps no summary gap for an absent verdict', () => {
+		reliabilityResourceState = {
+			data: { ...CURRENT_RELIABILITY, periods: [] },
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const view = renderRoute();
+		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
+		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+	});
+
+	it('shows a hedge in the header and reliability rail for a thin sample', async () => {
 		reliabilityResourceState = {
 			data: SMALL_SAMPLE_RELIABILITY,
 			error: null,
@@ -752,15 +764,23 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		};
 		const view = renderRoute();
 
-		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
-		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+		expect(
+			view.container.querySelector('.route-verdict-banner [data-slot="verdict"]'),
+		).toHaveAttribute('data-status', 'tentative');
+		expect(view.container.querySelector('.verdict__ban')).toBeNull();
+		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).not.toBeNull();
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
-		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
 		await import('./reliability/RouteReliabilityClusters.svelte');
 		await tick();
-		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
+		);
+		expect(
+			view.container.querySelector('.route-verdict-banner [data-slot="verdict"]'),
+		).toHaveAttribute('data-status', 'tentative');
+		expect(view.container.querySelector('.verdict__ban')).toBeNull();
+		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).not.toBeNull();
 	});
 
 	it('keeps one centered line reliability banner aligned with the active tab rail', async () => {

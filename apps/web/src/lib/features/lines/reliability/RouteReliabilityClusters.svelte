@@ -2,7 +2,7 @@
 	import { cn } from '$lib/utils';
 	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { formatDateKey } from '$lib/utils/time';
-	import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
+	import { selectVerdictWindow } from '$lib/v1/verdict';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -64,6 +64,9 @@
 
 	type GrainMode = 'day' | 'week' | 'month' | 'range';
 	const seed = fromSearchParams(page.url.searchParams);
+	let grainSelected = $state(
+		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
+	);
 	const explicitRangeToken = page.url.searchParams.get('grain') === 'range';
 	const initialHistoryRequest = historyRangeRequestFromSearchParams(page.url.searchParams);
 	const seededRange =
@@ -95,7 +98,10 @@
 		formatDate: (date) => formatDateKey(date, locale),
 		isCompleteRequest: ({ rawFrom, rawTo }) => Boolean(rawFrom && rawTo),
 		onCorrection: () => {
-			if (!explicitRangeToken) viewKey = 'day';
+			if (!explicitRangeToken) {
+				viewKey = 'day';
+				grainSelected = false;
+			}
 		},
 	});
 	const availableDates = $derived(historyUi.availableDates);
@@ -119,7 +125,11 @@
 			if (window) viewKey = 'range';
 			else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
 		}
-		if ((viewKey === 'week' || viewKey === 'month') && !availableGrains.has(viewKey))
+		if (
+			!grainSelected &&
+			(viewKey === 'week' || viewKey === 'month') &&
+			!availableGrains.has(viewKey)
+		)
 			viewKey = 'day';
 		else if (viewKey === 'range' && !hasDatedPeriods && history == null) viewKey = 'day';
 	});
@@ -171,7 +181,14 @@
 			}
 			const sp = toSearchParams(state);
 			return {
-				grain: mode === 'range' && !normalizedRange ? 'range' : sp.get('grain'),
+				grain:
+					mode === 'range'
+						? !normalizedRange
+							? 'range'
+							: sp.get('grain')
+						: grainSelected
+							? mode
+							: null,
 				from: sp.get('from'),
 				to: sp.get('to'),
 			};
@@ -193,7 +210,7 @@
 					dateRange: normalizedRange,
 					...(retainedReady && history?.value != null ? { retained: history.value } : {}),
 				}
-			: { grain: mode },
+			: { grain: mode, automaticHeadline: !grainSelected },
 	);
 
 	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
@@ -250,7 +267,7 @@
 		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
-		const latest = selectHeadlinePeriod(selectedData.periods ?? [], 'day');
+		const latest = selectVerdictWindow(selectedData.periods ?? [], 'day');
 		return aw.day(latest?.grain === 'day' ? (latest.date ?? null) : null);
 	});
 
@@ -317,6 +334,7 @@
 				<GrainPicker
 					segments={presentedSegments}
 					bind:value={viewKey}
+					onSelect={(key) => (grainSelected = key !== 'range')}
 					label={copy.controls.grainLabel}
 					variant="time-grid"
 				/>

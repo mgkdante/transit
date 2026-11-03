@@ -10,7 +10,7 @@
 	} from '$lib/site/absence';
 	import { routeFor } from '$lib/nav';
 	import { desktop } from '@yesid/ui/state';
-	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
+	import { mapSearchFor, fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
@@ -54,7 +54,7 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
+	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey } from '$lib/metrics';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
@@ -160,12 +160,7 @@
 				})
 			: null,
 	);
-	const networkHeadline = $derived<VerdictHeadline>({
-		otpPct: live.network?.on_time_pct ?? null,
-		observationCount: null,
-		onTime: null,
-	});
-	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
+
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -231,6 +226,7 @@
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
+
 	const dailyChange = $derived.by(() => {
 		const series = selectedTrend?.series ?? [];
 		const latest = series.at(-1);
@@ -267,13 +263,30 @@
 	);
 	const historyAnnouncement = $derived(historyUi.announcement);
 
+	const grainSeed = fromSearchParams(page.url.searchParams).grain;
+	let grainSelected = $state(
+		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
+	);
 	let grainKey = $state<NetworkGrain>(
-		(() => {
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
-		})(),
+		grainSeed === 'week' || grainSeed === 'month' ? grainSeed : 'day',
 	);
 	const grain = $derived<NetworkGrain>(grainKey);
+	const networkHeadline = $derived(
+		reliabilityVerdict(selectedTrend, {
+			grain: grainSelected ? grain : undefined,
+			...(explicitHistory && historyUi.resolvedWindow ? historyUi.resolvedWindow : {}),
+			...(explicitHistory && history.value?.headline ? { aggregate: history.value.headline } : {}),
+		}),
+	);
+	const networkVerdict = $derived(
+		selectVerdict(
+			networkHeadline,
+			explicitHistory ? 'range' : networkHeadline.grain,
+			locale,
+			t.verdict,
+		),
+	);
+
 	const isDailyGrain = $derived(grain === 'day');
 
 	const grainLabels: Partial<Record<NetworkGrain, string>> = $derived({
@@ -307,7 +320,8 @@
 	}
 
 	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultNetworkGrain(present);
+		if (!grainSelected && present.size > 0 && !present.has(grainKey))
+			grainKey = defaultNetworkGrain(present);
 	});
 
 	const historyWire = $derived.by<{
@@ -315,11 +329,9 @@
 		from: string | null;
 		to: string | null;
 	}>(() => {
-		const state = emptyFilterState();
-		if (grainKey !== 'day') state.grain = grainKey;
 		const windowWire = historyUi.wireWindow();
 		return {
-			grain: toSearchParams(state).get('grain'),
+			grain: grainSelected ? grainKey : null,
 			...windowWire,
 		};
 	});
@@ -622,6 +634,7 @@
 		<GrainPicker
 			segments={presentedGrainSegments}
 			bind:value={grainKey}
+			onSelect={() => (grainSelected = true)}
 			label={t.grain.label}
 			variant="time-grid"
 		/>

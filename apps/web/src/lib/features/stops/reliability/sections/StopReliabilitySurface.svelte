@@ -30,7 +30,7 @@
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
+	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
@@ -90,6 +90,9 @@
 	const dfltGrain = $derived(defaultStopGrain(present));
 
 	const seed = fromSearchParams(page.url.searchParams);
+	let grainSelected = $state(
+		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
+	);
 	let grain = $state<StopGrain>(
 		seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
 	);
@@ -98,10 +101,10 @@
 	$effect(() => {
 		if (settled) return;
 		settled = true;
-		if (!present.has(grain)) grain = dfltGrain;
+		if (!grainSelected && !present.has(grain)) grain = dfltGrain;
 	});
 	$effect(() => {
-		if (settled && !present.has(grain)) grain = dfltGrain;
+		if (settled && !grainSelected && !present.has(grain)) grain = dfltGrain;
 	});
 
 	const currentHistoryDates = $derived(
@@ -144,7 +147,7 @@
 	const historyAnnouncement = $derived(historyUi.announcement);
 	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
 	const historyWire = $derived.by<Record<string, string | null>>(() => {
-		const grainValue = grain === 'day' ? null : grain;
+		const grainValue = grainSelected ? grain : null;
 		if (history == null || windowOverride !== undefined)
 			return { grain: grainValue } as Record<string, string | null>;
 		return { grain: grainValue, ...historyUi.wireWindow(currentHistoryWindow) };
@@ -197,16 +200,20 @@
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	const gradedPeriodRaw = $derived.by(() => {
-		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
-		return rows.length > 0 ? rows[rows.length - 1] : null;
-	});
-	const stopVerdictHeadline = $derived<VerdictHeadline>({
-		otpPct: gradedPeriodRaw?.otp_pct ?? null,
-		observationCount: gradedPeriodRaw?.observation_count ?? null,
-		onTime: null,
-	});
-	const stopVerdict = $derived(selectVerdict(stopVerdictHeadline, grain, locale, copy.verdict));
+	const stopVerdictHeadline = $derived(
+		reliabilityVerdict(selectedData, {
+			grain: grainSelected ? grain : undefined,
+			...(effectiveWindow ? { from: effectiveWindow.from, to: effectiveWindow.to } : {}),
+		}),
+	);
+	const stopVerdict = $derived(
+		selectVerdict(
+			stopVerdictHeadline,
+			effectiveWindow ? 'range' : stopVerdictHeadline.grain,
+			locale,
+			copy.verdict,
+		),
+	);
 
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });
@@ -328,6 +335,7 @@
 				<GrainPicker
 					segments={grainSegments}
 					bind:value={grain}
+					onSelect={() => (grainSelected = true)}
 					label={copy.grain.label}
 					variant="time-grid"
 				/>

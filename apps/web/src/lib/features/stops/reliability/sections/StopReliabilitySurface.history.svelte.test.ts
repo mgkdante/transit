@@ -416,6 +416,12 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		expect(verdict).toHaveTextContent('1.1 min');
 		expect(verdict).toHaveTextContent('100');
 		expect(verdict).not.toHaveTextContent('1.0 min');
+		expect(
+			view.container.querySelector('[data-slot="stop-reliability-pane"] [data-slot="verdict"]'),
+		).toHaveTextContent('91%');
+		expect(view.container.querySelector('[data-slot="prediction-scope"]')).toHaveTextContent(
+			/verdict.*selected/i,
+		);
 		expect(harness.page.url.searchParams.get('grain')).toBe('week');
 		expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
 		expect(harness.page.url.searchParams.get('focus')).toBe('keep');

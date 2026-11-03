@@ -144,9 +144,11 @@
 		reliability.data ? selectDayVerdictHeadline(reliability.data) : null,
 	);
 	const routeVerdict = $derived(
-		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
+		verdictHeadline
+			? selectVerdict(verdictHeadline, verdictHeadline.grain, locale, relCopy.verdict)
+			: null,
 	);
-	const hasHeaderVerdict = $derived(routeVerdict?.ban != null);
+	const hasHeaderVerdict = $derived(routeVerdict != null && routeVerdict.status !== 'absent');
 	const headerVerdictCurrentOnly = $derived(
 		(lineHistory.request.hasFrom || lineHistory.request.hasTo) && lineHistory.state !== 'current',
 	);

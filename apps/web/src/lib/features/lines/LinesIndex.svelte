@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { verdictCopy } from '$lib/v1/verdict.copy';
 	import { intl, getLocalizeHref, getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1/repositories/static';
 	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
-	import { isProblemVerdict } from '$lib/v1/reliabilityVerdict';
+	import { isProblemVerdict, verdictRank } from '$lib/v1/verdict';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
@@ -31,7 +32,7 @@
 
 	const routes = createResource(() => getRoutesIndex());
 
-	const reliability = createReliabilityLoader('route');
+	const reliability = createReliabilityLoader('route', verdictCopy[locale]);
 	const observeReliability = reliability.reliability;
 
 	let query = $state('');
@@ -89,14 +90,13 @@
 		return sorted.filter((r) => tokenMatchScore([r.id, r.short, r.long], q) != null);
 	});
 
-	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityListing = createReliabilityListingController({
 		loader: reliability,
 		candidates: () => filtered,
 		id: (route) => route.id,
 		requestWhen: () => sort === 'worst' || status === 'problem',
 		rankWhen: () => sort === 'worst',
-		rank: (snapshot) => (snapshot.verdict == null ? 99 : (VERDICT_RANK[snapshot.verdict] ?? 99)),
+		rank: (snapshot) => verdictRank(snapshot.verdict),
 	});
 	const worstPending = $derived(reliabilityListing.rankingPending);
 	const sorted = $derived(reliabilityListing.order(filtered));

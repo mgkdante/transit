@@ -132,7 +132,7 @@ describe('SearchSurface idle state', () => {
 
 describe('SearchSurface inline reliability', () => {
 	it('renders the OTP% badge on a stop result whose reliability loaded', () => {
-		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'late' }));
+		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'reliable' }));
 		render(SearchSurface);
 		expect(screen.getByText('88%')).toBeInTheDocument();
 	});

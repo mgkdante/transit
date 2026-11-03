@@ -1,5 +1,6 @@
+import { reliabilityVerdict } from '$lib/v1/verdict';
 import { describe, it, expect } from 'vitest';
-import { selectBullet, otpTone } from './bullet';
+import { selectBullet, verdictTone } from './bullet';
 
 describe('selectBullet', () => {
 	it('builds a zero-based bullet spec with the value, target + tone', () => {
@@ -28,13 +29,30 @@ describe('selectBullet', () => {
 	});
 });
 
-describe('otpTone', () => {
-	it('maps on-time % to a band tone vs the 80/60 cuts (matching the verdict bands)', () => {
-		expect(otpTone(85)).toBe('good');
-		expect(otpTone(80)).toBe('good');
-		expect(otpTone(72)).toBe('warn');
-		expect(otpTone(60)).toBe('warn');
-		expect(otpTone(48)).toBe('bad');
-		expect(otpTone(null)).toBe('neutral');
+describe('verdictTone', () => {
+	it.each([
+		['reliable', 'good'],
+		['patchy', 'warn'],
+		['unreliable', 'bad'],
+		['tentative', 'neutral'],
+		['absent', 'neutral'],
+		[null, 'neutral'],
+		[undefined, 'neutral'],
+	] as const)('maps %s to %s', (status, tone) => {
+		expect(verdictTone(status)).toBe(tone);
+	});
+	it.each([
+		{ label: '29 observations', grain: 'day', otp_pct: 95, observation_count: 29, on_time: 28 },
+		{
+			label: 'Wilson-straddling window',
+			grain: 'week',
+			otp_pct: 80,
+			observation_count: 1000,
+			on_time: 800,
+		},
+	])('keeps $label neutral even with a strong percentage', (window) => {
+		const result = reliabilityVerdict({ periods: [window] }, { grain: window.grain });
+		expect(result.status).toBe('tentative');
+		expect(verdictTone(result.status)).toBe('neutral');
 	});
 });
