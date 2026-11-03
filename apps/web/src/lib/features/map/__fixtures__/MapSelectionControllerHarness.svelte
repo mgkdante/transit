@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { MapSelectionController } from '../mapSelectionController.svelte';
+	import type { MapSelectionController } from '../selectionSession/mapSelectionController.svelte';
 
 	interface Props {
 		controller: MapSelectionController;

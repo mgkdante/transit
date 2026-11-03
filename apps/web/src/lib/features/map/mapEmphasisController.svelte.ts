@@ -1,13 +1,13 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { STOPS_SOURCE } from '$lib/components/map';
-import type { MapSelection } from './mapSelection';
-import type { MapSelectionController } from './mapSelectionController.svelte';
+import type { MapSelection } from './mapSelectionSession.svelte';
+import type { MapSelectionSession } from './mapSelectionSession.svelte';
 
 export type MapEmphasisTarget =
 	| { readonly kind: 'vehicle'; readonly id: string }
 	| { readonly kind: 'stop'; readonly id: string };
 
-type ReadonlySelectionController = Pick<MapSelectionController, 'hovered' | 'selected'>;
+type ReadonlySelectionController = Pick<MapSelectionSession, 'hovered' | 'selected'>;
 
 export interface MapEmphasisController {
 	get hoveredTarget(): MapEmphasisTarget | null;
