@@ -6,6 +6,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryBatchLoader,
     HistoryDateMask,
@@ -52,11 +53,7 @@ _group_rows = group_history_entity_date_rows
 
 
 STOP_HISTORY_ENTITY_BATCH_SIZE = 100
-STOP_HISTORY_METRICS = (
-    ("delay", "additive"),
-    ("delay_percentiles", "daily_only"),
-    ("occupancy", "additive"),
-)
+STOP_HISTORY_METRICS = historic_tree.STOP_HISTORY_METRICS
 
 _STOP_HISTORY_IDS_SQL = named_query(
     "history.stops.ids.inner",
@@ -271,7 +268,9 @@ class StopHistoryPointerSummary:
             HistoricEntityIndexRef(
                 entity_id=entity_id,
                 encoded_id=encoded_id,
-                index_path=index_path or f"historic/history/stops/{encoded_id}/index.json",
+                index_path=(
+                    index_path or historic_tree.FAMILIES["stops"].entity_index_path(encoded_id)
+                ),
                 collection_generation_id=index.collection_generation_id or "",
                 first_available_date=index.first_available_date,
                 last_available_date=index.last_available_date,
@@ -325,7 +324,7 @@ class StopHistoryPointerSummary:
         self,
         directory: HistoricEntityDirectoryIndex,
         *,
-        index_path: str = "historic/history/stops/index.json",
+        index_path: str = historic_tree.FAMILIES["stops"].index_path,
     ) -> HistoricFamilyAvailability:
         first, last, gaps = history_coverage(self.available_dates)
         return HistoricFamilyAvailability(

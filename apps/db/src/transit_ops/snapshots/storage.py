@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 from transit_ops.s3 import build_s3_client, validate_s3_bucket_name
 from transit_ops.settings import Settings
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.protocols import (
     HistoricObjectStore,
     SnapshotObjectStore,
@@ -41,7 +42,7 @@ CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
     "historic": "public, max-age=3600, stale-while-revalidate=86400",
-    "historic_immutable": "public, max-age=31536000, immutable",
+    historic_tree.WRITE_ONCE_TIER: "public, max-age=31536000, immutable",
     "internal": "private, no-store",
 }
 
@@ -518,7 +519,7 @@ class SnapshotStorage:
                         Key=key,
                         Body=body,
                         ContentType="application/json",
-                        CacheControl=CACHE_CONTROL["historic_immutable"],
+                        CacheControl=CACHE_CONTROL[historic_tree.WRITE_ONCE_TIER],
                         Metadata={"sha256": digest},
                         IfNoneMatch="*",
                     )

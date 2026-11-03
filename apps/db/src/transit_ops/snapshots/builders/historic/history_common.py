@@ -12,17 +12,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.contract import (
     HistoricCollectionIndex,
     HistoricCoverageGap,
     HistoricDelayMetric,
     HistoricDelayPercentiles,
     HistoricEntityDirectoryIndex,
-    HistoricHotspotsDay,
     HistoricMetricCoverage,
     HistoricOccupancyMetric,
     HistoricPartitionRef,
-    HistoricRepeatOffendersDay,
     HistoryMetricAggregation,
     HistoryMetricName,
 )
@@ -226,7 +225,7 @@ def history_entity_directory_generation_id(
 
 def history_pointer_path(prefix: str, payload: BaseModel | Mapping[str, Any]) -> str:
 
-    return f"{prefix.rstrip('/')}/generations/{snapshot_sha256(payload)}/index.json"
+    return historic_tree.pointer_path(prefix, payload)
 
 
 def readdress_history_directory(
@@ -648,7 +647,9 @@ class HistoryEntityMetricPlan:
         if len(metric_names) != len(self.metrics):
             raise ValueError("history metric names and sources must have equal lengths")
         metric_sources = tuple(zip(metric_names, self.metrics, strict=True))
-        path_prefix = f"historic/history/{family}/{encode_history_entity_id(self.entity_id)}"
+        path_prefix = historic_tree.FAMILIES[family].entity_root(
+            encode_history_entity_id(self.entity_id)
+        )
         for month, dates in iter_history_month_groups(self.available_dates):
             yield history_month_partition_ref(
                 lambda local_date: day_model(
@@ -818,10 +819,7 @@ def _history_partition_ref(
     )
 
 
-_POINT_HISTORY_MODELS = {
-    "hotspots": HistoricHotspotsDay,
-    "repeat_offenders": HistoricRepeatOffendersDay,
-}
+_POINT_HISTORY_MODELS = historic_tree.POINT_MODELS
 
 
 def history_point_ref(family: str, payload: BaseModel) -> HistoricPartitionRef:
@@ -839,7 +837,7 @@ def history_point_ref(family: str, payload: BaseModel) -> HistoricPartitionRef:
     body = snapshot_json_bytes(payload)
     digest = hashlib.sha256(body).hexdigest()
     return HistoricPartitionRef(
-        path=f"historic/history/{family}/generations/{digest}/{local_date}.json",
+        path=historic_tree.FAMILIES[family].leaf_path(digest, local_date),
         coverage_start=local_date,
         coverage_end=local_date,
         count=1,

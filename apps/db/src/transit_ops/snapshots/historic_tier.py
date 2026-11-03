@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings
-from transit_ops.snapshots import builders, gate, historic_compatibility, uploads
+from transit_ops.snapshots import builders, gate, historic_compatibility, historic_tree, uploads
 from transit_ops.snapshots import historic_run as _historic
 from transit_ops.snapshots.builders.historic.history_common import (
     history_pointer_path,
@@ -239,11 +239,11 @@ def publish(
         repeat_offenders_index_path, repeat_offenders_index = parents.point_index(
             repeat_offenders_summary
         )
-        hotspot_index_item = (hotspot_index_path, hotspots_index, "historic_immutable")
+        hotspot_index_item = (hotspot_index_path, hotspots_index, historic_tree.WRITE_ONCE_TIER)
         repeat_offenders_index_item = (
             repeat_offenders_index_path,
             repeat_offenders_index,
-            "historic_immutable",
+            historic_tree.WRITE_ONCE_TIER,
         )
 
         _historic._activate_historic_phase(_historic_run, "other")
@@ -252,9 +252,9 @@ def publish(
             # The child window already schedules this work on the provider pool.
             return uploads.put_batch(
                 storage,
-                [(path, payload, "historic_immutable") for path, payload in batch],
+                [(path, payload, historic_tree.WRITE_ONCE_TIER) for path, payload in batch],
                 concurrency=1,
-                write_mode="immutable",
+                write_mode="historic",
             )
 
         logger.info("historic_publish_stage provider=%s stage=history_children", provider_id)
@@ -327,7 +327,7 @@ def publish(
             storage,
             [hotspot_index_item, repeat_offenders_index_item],
             concurrency=concurrency,
-            write_mode="immutable",
+            write_mode="historic",
         )
         compatibility_keys = uploads.put_stages(
             storage,
@@ -339,41 +339,41 @@ def publish(
         root_family_index_keys = uploads.put_batch(
             storage,
             [
-                (alert_index_path, root_alert_index, "historic_immutable"),
-                (receipt_index_path, receipts_index, "historic_immutable"),
-                (network_index_path, network_index, "historic_immutable"),
+                (alert_index_path, root_alert_index, historic_tree.WRITE_ONCE_TIER),
+                (receipt_index_path, receipts_index, historic_tree.WRITE_ONCE_TIER),
+                (network_index_path, network_index, historic_tree.WRITE_ONCE_TIER),
             ],
             concurrency=concurrency,
-            write_mode="immutable",
+            write_mode="historic",
         )
         line_index_keys = uploads.put_batch(
             storage,
-            [(path, index, "historic_immutable") for path, index in line_parents.items],
+            [(path, index, historic_tree.WRITE_ONCE_TIER) for path, index in line_parents.items],
             concurrency=concurrency,
-            write_mode="immutable",
+            write_mode="historic",
         )
         stop_index_keys = uploads.put_batches(
             storage,
             (
-                (stop_index_paths[index.entity_id], index, "historic_immutable")
+                (stop_index_paths[index.entity_id], index, historic_tree.WRITE_ONCE_TIER)
                 for index in stop_indexes
                 if index.entity_id
             ),
             concurrency=concurrency,
             batch_size=STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE,
-            write_mode="immutable",
+            write_mode="historic",
         )
         line_directory_keys = uploads.put_batch(
             storage,
-            [(line_directory_path, line_directory, "historic_immutable")],
+            [(line_directory_path, line_directory, historic_tree.WRITE_ONCE_TIER)],
             concurrency=concurrency,
-            write_mode="immutable",
+            write_mode="historic",
         )
         stop_directory_keys = uploads.put_batch(
             storage,
-            [(stop_directory_path, stop_directory, "historic_immutable")],
+            [(stop_directory_path, stop_directory, historic_tree.WRITE_ONCE_TIER)],
             concurrency=concurrency,
-            write_mode="immutable",
+            write_mode="historic",
         )
         logger.info("historic_publish_stage provider=%s stage=gc_mark_clear", provider_id)
         _clear_referenced_historic_gc_marks(
@@ -596,7 +596,7 @@ def validate(
             hotspots=(
                 hotspots_index_path
                 or history_pointer_path(
-                    "historic/history/hotspots",
+                    historic_tree.FAMILIES["hotspots"].root,
                     hotspots_index,
                 ),
                 hotspots_index,
@@ -604,7 +604,7 @@ def validate(
             repeat_offenders=(
                 repeat_offenders_index_path
                 or history_pointer_path(
-                    "historic/history/repeat_offenders",
+                    historic_tree.FAMILIES["repeat_offenders"].root,
                     repeat_offenders_index,
                 ),
                 repeat_offenders_index,

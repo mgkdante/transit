@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypeVar, cast
 
-from transit_ops.snapshots import builders, envelope, gate, historic_run, uploads
+from transit_ops.snapshots import builders, envelope, gate, historic_run, historic_tree, uploads
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
     history_pointer_path,
@@ -46,7 +46,8 @@ def consume_point_days(
     def flush() -> None:
         if storage is not None and batch:
             written.extend(uploads.put_batch(
-                storage, batch, concurrency=concurrency, write_mode="immutable",
+                storage, batch, concurrency=concurrency,
+                write_mode=historic_tree.upload_mode(batch),
             ))
             batch.clear()
 
@@ -66,7 +67,7 @@ def consume_point_days(
             report.checks_run += 2
         if storage is not None:
             gate.enforce(report, force=force)
-            batch.append((ref.path, payload, "historic_immutable"))
+            batch.append((ref.path, payload, historic_tree.WRITE_ONCE_TIER))
             if len(batch) == limit:
                 flush()
     flush()
@@ -257,7 +258,7 @@ class HistoricParentComposer:
         envelope.stamp_envelope(
             [("unused", index, "historic")], provider_id=self.provider_id, stamp=self.stamp,
         )
-        path = history_pointer_path(f"historic/history/{summary.family}", index)
+        path = history_pointer_path(historic_tree.FAMILIES[summary.family].root, index)
 
         def check() -> list[gate.CheckResult]:
             return gate.check_point_history_index(
@@ -283,7 +284,9 @@ class HistoricParentComposer:
     def network_index(
         self, plan: builders.NetworkHistoryPlan, summary: gate.NetworkHistoryStreamSummary,
     ) -> HistoryParent[HistoricCollectionIndex]:
-        item = self._stamp("historic/history/network", plan.build_index(summary.detached_refs()))
+        item = self._stamp(
+            historic_tree.FAMILIES["network"].root, plan.build_index(summary.detached_refs())
+        )
         self._check([item], gate.check_network_history_index, lambda: (
             gate.check_network_history_stream_index(
                 item[1], summary, fallback_generated_utc=self.stamp,
@@ -296,13 +299,14 @@ class HistoricParentComposer:
     ) -> LineParentIndexes:
         indexes = build.build_indexes(fallback_generated_utc=self.stamp)
         envelope.stamp_envelope(
-            [(f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}/index.json",
+            [(historic_tree.FAMILIES["lines"].entity_index_path(index.entity_id.encode("utf-8").hex()),
               index, "historic") for index in indexes if index.entity_id],
             provider_id=self.provider_id, stamp=self.stamp,
         )
         paths = {
             index.entity_id: history_pointer_path(
-                f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}", index,
+                historic_tree.FAMILIES["lines"].entity_root(index.entity_id.encode("utf-8").hex()),
+                index,
             ) for index in indexes if index.entity_id
         }
         parents = LineParentIndexes(indexes, paths, [
@@ -326,7 +330,8 @@ class HistoricParentComposer:
                 if not index.entity_id:
                     continue
                 item = self._stamp(
-                    f"historic/history/stops/{index.entity_id.encode('utf-8').hex()}", index,
+                    historic_tree.FAMILIES["stops"].entity_root(index.entity_id.encode("utf-8").hex()),
+                    index,
                 )
                 parent = StopParentIndex(
                     item[0], index, index.entity_id,
@@ -364,7 +369,7 @@ class HistoricParentComposer:
             if self.force is None else indexes,
             fallback_generated_utc=self.stamp,
         ), parents.paths)
-        item = self._stamp("historic/history/lines", directory)
+        item = self._stamp(historic_tree.FAMILIES["lines"].root, directory)
         self._check([item], gate.check_line_history_directory, lambda: (
             gate.check_line_history_stream_directory(
                 directory, summary, fallback_generated_utc=self.stamp,
@@ -376,7 +381,7 @@ class HistoricParentComposer:
         self, parents: StopParentIndexes,
     ) -> HistoryParent[HistoricEntityDirectoryIndex]:
         directory = parents.pointers.build_directory(fallback_generated_utc=self.stamp)
-        item = self._stamp("historic/history/stops", directory)
+        item = self._stamp(historic_tree.FAMILIES["stops"].root, directory)
         self._check([item], gate.check_stop_history_directory, lambda: (
             gate.check_stop_history_stream_directory(
                 directory, parents.summary, fallback_generated_utc=self.stamp,

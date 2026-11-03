@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryPhaseContext,
     HistorySourceScopes,
@@ -211,7 +212,7 @@ class NetworkHistoryPlan:
                     days=days,
                 ),
                 lambda digest, partition_month: (
-                    f"historic/history/network/generations/{digest}/{partition_month}.json"
+                    historic_tree.FAMILIES["network"].leaf_path(digest, partition_month)
                 ),
                 month=month,
                 dates=dates,
