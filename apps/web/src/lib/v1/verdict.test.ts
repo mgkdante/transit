@@ -123,6 +123,58 @@ describe('selectVerdict — natural-frequency boundaries', () => {
 });
 
 describe('one reliability verdict', () => {
+	it('uses the same whole-percent precision for published and exact selected-window figures', () => {
+		const published = reliabilityVerdict({
+			periods: [{ grain: 'day', otp_pct: 80, observation_count: 1_000_000, on_time: 796_000 }],
+		});
+		const selected = reliabilityVerdict(
+			{},
+			{
+				from: '2026-10-01',
+				to: '2026-10-31',
+				aggregate: { otpPct: 79.6, observationCount: 1_000_000, onTime: 796_000 },
+			},
+		);
+		expect(published).toMatchObject({ otpPct: 80, status: 'reliable' });
+		expect(selected).toMatchObject({ otpPct: 80, status: 'reliable' });
+	});
+	it('keeps an explicitly selected grain and never borrows an unavailable window', () => {
+		const file = {
+			periods: [
+				{ grain: 'day', date: '2026-11-02', otp_pct: 85, observation_count: 4000 },
+				{ grain: 'week', date: '2026-10-27', otp_pct: 40, observation_count: 29 },
+			],
+		};
+		expect(reliabilityVerdict(file, { grain: 'week' })).toMatchObject({
+			status: 'tentative',
+			otpPct: 40,
+			observationCount: 29,
+			grain: 'week',
+		});
+		expect(reliabilityVerdict(file, { grain: 'month' })).toMatchObject({
+			status: 'absent',
+			otpPct: null,
+		});
+		expect(reliabilityVerdict(file, { from: '2026-01-01', to: '2026-01-02' })).toMatchObject({
+			status: 'absent',
+			otpPct: null,
+		});
+	});
+	it('judges an explicit stop window from its additive prediction counts', () => {
+		const file = {
+			periods: [{ grain: 'day', date: '2026-11-02', otp_pct: 99, observation_count: 4000 }],
+			daily: [
+				{ date: '2026-10-01', observation_count: 100, severe_count: 0 },
+				{ date: '2026-10-02', observation_count: 900, severe_count: 450 },
+			],
+		};
+		expect(reliabilityVerdict(file, { from: '2026-10-01', to: '2026-10-02' })).toMatchObject({
+			otpPct: 55,
+			observationCount: 1000,
+			onTime: 550,
+			status: 'unreliable',
+		});
+	});
 	it('returns a hedge sentence with the observation count for a tentative day', () => {
 		const result = reliabilityVerdict({
 			periods: [{ grain: 'day', otp_pct: 85, observation_count: 12 }],

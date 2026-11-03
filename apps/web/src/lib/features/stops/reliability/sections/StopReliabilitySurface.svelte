@@ -90,6 +90,9 @@
 	const dfltGrain = $derived(defaultStopGrain(present));
 
 	const seed = fromSearchParams(page.url.searchParams);
+	let grainSelected = $state(
+		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
+	);
 	let grain = $state<StopGrain>(
 		seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
 	);
@@ -98,10 +101,10 @@
 	$effect(() => {
 		if (settled) return;
 		settled = true;
-		if (!present.has(grain)) grain = dfltGrain;
+		if (!grainSelected && !present.has(grain)) grain = dfltGrain;
 	});
 	$effect(() => {
-		if (settled && !present.has(grain)) grain = dfltGrain;
+		if (settled && !grainSelected && !present.has(grain)) grain = dfltGrain;
 	});
 
 	const currentHistoryDates = $derived(
@@ -144,7 +147,7 @@
 	const historyAnnouncement = $derived(historyUi.announcement);
 	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
 	const historyWire = $derived.by<Record<string, string | null>>(() => {
-		const grainValue = grain === 'day' ? null : grain;
+		const grainValue = grainSelected ? grain : null;
 		if (history == null || windowOverride !== undefined)
 			return { grain: grainValue } as Record<string, string | null>;
 		return { grain: grainValue, ...historyUi.wireWindow(currentHistoryWindow) };
@@ -198,11 +201,8 @@
 	);
 
 	const stopVerdictHeadline = $derived(
-		reliabilityVerdict(explicitHistory ? null : selectedData, {
-			grain:
-				effectiveWindow || seed.grain === 'week' || seed.grain === 'month' || grain !== dfltGrain
-					? grain
-					: undefined,
+		reliabilityVerdict(selectedData, {
+			grain: grainSelected ? grain : undefined,
 			...(effectiveWindow ? { from: effectiveWindow.from, to: effectiveWindow.to } : {}),
 		}),
 	);
@@ -335,6 +335,7 @@
 				<GrainPicker
 					segments={grainSegments}
 					bind:value={grain}
+					onSelect={() => (grainSelected = true)}
 					label={copy.grain.label}
 					variant="time-grid"
 				/>

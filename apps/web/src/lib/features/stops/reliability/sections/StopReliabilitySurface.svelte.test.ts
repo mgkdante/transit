@@ -131,11 +131,13 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 		expect(week).toHaveAttribute('aria-checked', 'true');
 	});
 
-	it('clamps an UNAVAILABLE seeded grain (month) back to day', () => {
+	it('keeps an unavailable explicitly selected month absent', () => {
 		mockUrl = new URL('http://localhost/stop/57191?grain=month');
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
-		const day = within(desktopGroup(container)).getByRole('radio', { name: 'Day' });
-		expect(day).toHaveAttribute('aria-checked', 'true');
+		const month = within(desktopGroup(container)).getByRole('radio', { name: 'Month' });
+		expect(month).toHaveAttribute('aria-checked', 'true');
+		expect(month).toBeDisabled();
+		expect(container.querySelector('[data-slot="stop-reliability-pane"]')).toBeNull();
 	});
 
 	it('falls back to day for an unknown ?grain (enum-guard, never a cast)', () => {
@@ -158,7 +160,7 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 		expect(container.querySelector('[data-slot="stop-percentiles"]')).toBeNull();
 	});
 
-	it('mirrors a grain change to ?grain and OMITS the day default (clean URL)', async () => {
+	it('mirrors an explicit grain choice including day', async () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		expect(replaceState).not.toHaveBeenCalled();
 
@@ -168,7 +170,7 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 
 		const day = within(desktopGroup(container)).getByRole('radio', { name: 'Day' });
 		await fireEvent.click(day);
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
+		expect(mockUrl.searchParams.get('grain')).toBe('day');
 	});
 
 	it('preserves an existing ?tab when mirroring grain (mirror merges, single-key)', async () => {

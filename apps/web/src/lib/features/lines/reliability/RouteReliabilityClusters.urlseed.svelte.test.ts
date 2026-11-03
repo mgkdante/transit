@@ -60,14 +60,15 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(weekCaption.length).toBeGreaterThan(0);
 	});
 
-	it('clamps an UNAVAILABLE seeded grain to day (the URL is a hint, not a data source)', () => {
+	it('keeps an unavailable explicitly selected month absent', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=month');
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
-		const clamped = caption(container);
-
-		mockUrl = new URL('http://localhost/lines/51');
-		const { container: dflt } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
-		expect(clamped).toBe(caption(dflt));
+		expect(caption(container)).toMatch(/month/i);
+		expect(container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+			'data-status',
+			'absent',
+		);
+		expect(mockUrl.searchParams.get('grain')).toBe('month');
 	});
 
 	it('falls back to day for an unknown ?grain value (readGrain enum-validates the hint)', () => {
@@ -81,7 +82,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(checked[0].textContent?.toLowerCase()).toContain('latest day');
 	});
 
-	it('mirrors a grain change to ?grain AND OMITS the day default (clean canonical URL)', async () => {
+	it('mirrors explicit grain choices including day', async () => {
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		expect(replaceState).not.toHaveBeenCalled();
 
@@ -93,7 +94,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		const day = radioByText(container, 'today') ?? radioByText(container, 'day');
 		expect(day).toBeDefined();
 		await fireEvent.click(day!);
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
+		expect(mockUrl.searchParams.get('grain')).toBe('day');
 	});
 });
 
@@ -179,7 +180,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		await fireEvent.click(day!);
 		expect(mockUrl.searchParams.get('from')).toBeNull();
 		expect(mockUrl.searchParams.get('to')).toBeNull();
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
+		expect(mockUrl.searchParams.get('grain')).toBe('day');
 	});
 
 	it('does NOT leak a half-picked bound: a lone ?from is dropped from the URL', () => {

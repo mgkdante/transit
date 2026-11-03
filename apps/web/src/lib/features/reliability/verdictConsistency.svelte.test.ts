@@ -1,20 +1,35 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RouteReliability, StopReliability, NetworkTrend } from '$lib/v1';
+import { isoUtc } from '$lib/v1/schemas/types';
 import LinesIndex from '../lines/LinesIndex.svelte';
 import RouteDetail from '../lines/RouteDetail.svelte';
 import RouteReliabilityClusters from '../lines/reliability/RouteReliabilityClusters.svelte';
 import StopReliabilitySurface from '../stops/reliability/sections/StopReliabilitySurface.svelte';
 import NetworkSurface from '../network/reliability/sections/NetworkSurface.svelte';
 
-const harness = vi.hoisted(() => ({
-	page: { url: new URL('http://localhost/lines/24'), state: {} },
-	route: null as RouteReliability | null,
-	stop: null as StopReliability | null,
-	network: null as NetworkTrend | null,
-}));
+const harness = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/lines/24'), state: {} };
+	return {
+		page,
+		route: null as RouteReliability | null,
+		stop: null as StopReliability | null,
+		network: null as NetworkTrend | null,
+		mirrorSearchParams: vi.fn((values: Record<string, string | null>) => {
+			const next = new URL(page.url);
+			for (const [key, value] of Object.entries(values)) {
+				if (value == null) next.searchParams.delete(key);
+				else next.searchParams.set(key, value);
+			}
+			page.url = next;
+		}),
+	};
+});
 vi.mock('$app/state', () => ({ page: harness.page }));
-vi.mock('$lib/site/urlMirror', () => ({ mirrorSearchParams: vi.fn(), mirrorSearchParam: vi.fn() }));
+vi.mock('$lib/site/urlMirror', () => ({
+	mirrorSearchParams: harness.mirrorSearchParams,
+	mirrorSearchParam: vi.fn(),
+}));
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getRouteReliability: async () => harness.route,
 	getStopReliability: async () => harness.stop,
@@ -68,7 +83,10 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 	}),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	harness.page.url = new URL('http://localhost/lines/24');
+});
 
 describe('the same reliability evidence across every surface', () => {
 	it.each([
@@ -138,6 +156,7 @@ describe('the same reliability evidence across every surface', () => {
 					expect(view.container.querySelector('.verdict__ban')).toHaveTextContent(
 						`${headlinePct}%`,
 					);
+				expect(harness.page.url.searchParams.get('grain')).toBeNull();
 				cleanup();
 			}
 			const listing = render(LinesIndex);
@@ -166,3 +185,70 @@ describe('the same reliability evidence across every surface', () => {
 		},
 	);
 });
+
+function selectedSurface(entity: 'line' | 'stop' | 'network') {
+	if (entity === 'line')
+		return render(RouteReliabilityClusters, { props: { data: harness.route!, locale: 'en' } });
+	if (entity === 'stop')
+		return render(StopReliabilitySurface, { props: { data: harness.stop!, locale: 'en' } });
+	return render(NetworkSurface);
+}
+it.each(['line', 'stop', 'network'] as const)(
+	'%s keeps explicit windows through grain changes and URL reloads',
+	async (entity) => {
+		const generated_utc = isoUtc().parse('2026-11-02T00:00:00Z');
+		const day = { date: '2026-11-02', grain: 'day', otp_pct: 20, observation_count: 12 };
+		const week = { date: '2026-10-27', grain: 'week', otp_pct: 85, observation_count: 4000 };
+		const month = { date: '2026-10-01', grain: 'month', otp_pct: 40, observation_count: 12 };
+		harness.route = { id: '24', generated_utc, periods: [day, week, month] } as RouteReliability;
+		harness.stop = { ...harness.route } as StopReliability;
+		harness.network = {
+			generated_utc,
+			series: [day],
+			weekly: [week],
+			monthly: [month],
+		} as NetworkTrend;
+		harness.page.url = new URL('http://localhost/lines/24?grain=week');
+		let view = selectedSurface(entity);
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'reliable',
+			),
+		);
+		await fireEvent.click(view.getAllByRole('radio', { name: /month/i })[0]);
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			),
+		);
+		expect(harness.page.url.searchParams.get('grain')).toBe('month');
+		cleanup();
+		view = selectedSurface(entity);
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			),
+		);
+		await fireEvent.click(view.getAllByRole('radio', { name: /day|daily/i })[0]);
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			),
+		);
+		expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent('12');
+		expect(harness.page.url.searchParams.get('grain')).toBe('day');
+		cleanup();
+		view = selectedSurface(entity);
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			),
+		);
+		expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent('12');
+	},
+);

@@ -20,6 +20,7 @@
 		readonly label: string;
 		readonly variant?: GrainPickerVariant;
 		readonly class?: string;
+		readonly onSelect?: (key: K) => void;
 	}
 
 	let {
@@ -28,6 +29,7 @@
 		label,
 		variant = 'default',
 		class: className,
+		onSelect,
 	}: GrainPickerProps = $props();
 
 	function pointerTitle(segment: GrainSegment): string | undefined {
@@ -53,6 +55,7 @@
 
 	function select(key: string): void {
 		value = key;
+		onSelect?.(key);
 	}
 </script>
 

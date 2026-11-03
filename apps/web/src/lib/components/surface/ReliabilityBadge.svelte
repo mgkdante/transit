@@ -52,7 +52,7 @@
 <style>
 	.reliability-hedge {
 		display: block;
-		max-inline-size: 20ch;
+		max-inline-size: var(--measure-display);
 		font-size: var(--text-small);
 		white-space: normal;
 		overflow-wrap: anywhere;

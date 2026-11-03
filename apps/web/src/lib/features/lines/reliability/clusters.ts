@@ -134,6 +134,7 @@ export interface ReliabilityClusters {
 
 export interface ToReliabilityClustersOpts {
 	readonly grain?: string;
+	readonly automaticHeadline?: boolean;
 	readonly selectedDate?: string;
 	readonly dateRange?: { readonly start: string; readonly end: string };
 	readonly retained?: Pick<RetainedLineHistory, 'aggregate' | 'retainedDayCount'>;
@@ -412,6 +413,16 @@ export function toReliabilityClusters(
 	const selectedDate = opts?.selectedDate;
 	const dateRange = opts?.dateRange;
 	const retained = opts?.retained;
+	const headlineGrain =
+		dateRange || selectedDate
+			? grain
+			: opts?.automaticHeadline === undefined
+				? grain === 'day'
+					? undefined
+					: grain
+				: opts.automaticHeadline
+					? undefined
+					: grain;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -521,11 +532,7 @@ export function toReliabilityClusters(
 						};
 		}
 	} else {
-		const stripPeriod = selectVerdictWindow(
-			calendarPeriods,
-			selectedDate || grain !== 'day' ? grain : undefined,
-			selectedDate,
-		);
+		const stripPeriod = selectVerdictWindow(calendarPeriods, headlineGrain, selectedDate);
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
@@ -535,13 +542,13 @@ export function toReliabilityClusters(
 
 	const exactDelay = retained?.aggregate.delay.value;
 	const verdict = reliabilityVerdict(data, {
-		grain: dateRange || selectedDate || grain !== 'day' ? grain : undefined,
+		grain: headlineGrain,
 		selectedDate,
 		...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),
 		...(dateRange && exactDelay
 			? {
 					aggregate: {
-						otpPct: roundHalfAwayFromZero(exactDelay.otpPct, 0),
+						otpPct: exactDelay.otpPct,
 						observationCount: exactDelay.observationCount,
 						onTime: exactDelay.onTimeCount,
 					},

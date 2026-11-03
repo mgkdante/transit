@@ -355,12 +355,12 @@ describe('toReliabilityClusters — date range', () => {
 		expect(c.strip.rangeAggregate).toEqual({ days: 3, start: '2026-06-16', end: '2026-06-18' });
 	});
 
-	it('falls back to the most-recent day when no day falls inside the range', () => {
+	it('keeps the verdict absent when no day falls inside the selected window', () => {
 		const c = toReliabilityClusters(granular, {
 			grain: 'day',
 			dateRange: { start: '2026-01-01', end: '2026-01-31' },
 		});
-		expect(c.strip.otpPct).toBe(84);
+		expect(c.strip.otpPct).toBeNull();
 		expect(c.strip.rangeAggregate).toBeNull();
 		expect(c.punctuality.trend).toHaveLength(3);
 	});

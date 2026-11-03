@@ -29,6 +29,11 @@ export interface ReliabilityVerdictFile {
 	readonly series?: readonly ReliabilityWindow[];
 	readonly weekly?: readonly ReliabilityWindow[];
 	readonly monthly?: readonly ReliabilityWindow[];
+	readonly daily?: readonly {
+		readonly date: string;
+		readonly observation_count: number;
+		readonly severe_count: number;
+	}[];
 }
 
 export interface VerdictWindow {
@@ -69,7 +74,12 @@ export function selectVerdictWindow<T extends ReliabilityWindow>(
 	grain?: string,
 	selectedDate?: string,
 ): T | null {
-	if (grain != null) return selectHeadlinePeriod(windows, grain, selectedDate);
+	if (grain === 'day' || grain === 'week' || grain === 'month') {
+		const matches = windows.filter((window) => window.grain === grain);
+		return selectedDate
+			? (matches.find((window) => window.date === selectedDate) ?? null)
+			: selectHeadlinePeriod(matches, grain);
+	}
 	for (const candidate of ['day', 'week', 'month']) {
 		const latest = selectHeadlinePeriod(
 			windows.filter((window) => window.grain === candidate),
@@ -101,11 +111,24 @@ export function reliabilityVerdict(
 		onTime: headlineWindow?.on_time ?? null,
 	};
 	if (window.from && window.to) {
+		headline = { otpPct: null, observationCount: null, onTime: null };
 		const from = window.from < window.to ? window.from : window.to;
 		const to = window.from < window.to ? window.to : window.from;
+		const dailyWindows =
+			file?.daily == null
+				? windows
+				: file.daily.map((day) => ({
+						...day,
+						grain: 'day',
+						on_time: day.observation_count - day.severe_count,
+						otp_pct:
+							day.observation_count > 0
+								? (100 * (day.observation_count - day.severe_count)) / day.observation_count
+								: null,
+					}));
 		const days = [
 			...new Map(
-				windows
+				dailyWindows
 					.filter((p) => p.grain === 'day' && p.date != null && p.date >= from && p.date <= to)
 					.map((p) => [p.date, p]),
 			).values(),
@@ -135,6 +158,8 @@ export function reliabilityVerdict(
 						};
 	}
 	headline = window.aggregate ?? headline;
+	// Published snapshots and visible percentages use whole-percent precision.
+	headline = { ...headline, otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct) };
 	const grain = window.from && window.to ? 'day' : (headlineWindow?.grain ?? 'day');
 	return {
 		...headline,

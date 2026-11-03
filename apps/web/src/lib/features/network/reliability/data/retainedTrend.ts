@@ -9,8 +9,10 @@ import {
 import { addIsoDays } from '$lib/v1/history/selection';
 import type { HistoricCollectionIndex, NetworkHistoryPartition, TrendPoint } from '$lib/v1/schemas';
 import { wilsonBounds } from '$lib/v1/stats';
+import type { VerdictHeadline } from '$lib/v1/verdict';
 
 export interface RetainedNetworkTrend {
+	readonly headline: VerdictHeadline;
 	readonly series: readonly TrendPoint[];
 	readonly weekly: readonly TrendPoint[];
 	readonly monthly: readonly TrendPoint[];
@@ -168,6 +170,11 @@ export function buildRetainedNetworkTrend(
 	if (series.length === 0) return { value: null, status: 'no_data' };
 
 	const value: RetainedNetworkTrend = {
+		headline: {
+			otpPct: fullRange.delay.value?.otpPct ?? null,
+			observationCount: fullRange.delay.value?.observationCount ?? null,
+			onTime: fullRange.delay.value?.onTimeCount ?? null,
+		},
 		series,
 		weekly: coarsePoints('week', dates, index, partitions, window),
 		monthly: coarsePoints('month', dates, index, partitions, window),
