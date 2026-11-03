@@ -46,7 +46,7 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 				health: {
 					state: name === 'vehicles' || name === 'alerts' ? 'live' : 'never-loaded',
 					ageSeconds: name === 'vehicles' || name === 'alerts' ? 0 : null,
-					isStale: name !== 'vehicles' && name !== 'alerts',
+					isStale: false,
 					retained: name === 'vehicles' || name === 'alerts',
 					notice: null,
 				},

@@ -255,7 +255,7 @@ const emptyLiveStore = {
 			health: {
 				state: 'never-loaded',
 				ageSeconds: null,
-				isStale: true,
+				isStale: false,
 				retained: false,
 				notice: null,
 			},
@@ -266,7 +266,7 @@ const emptyLiveStore = {
 			health: {
 				state: 'never-loaded',
 				ageSeconds: null,
-				isStale: true,
+				isStale: false,
 				retained: false,
 				notice: null,
 			},

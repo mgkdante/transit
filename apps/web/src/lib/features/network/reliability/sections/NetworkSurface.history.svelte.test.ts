@@ -241,6 +241,9 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return harness.liveClock.ageSeconds;
 			},
+			get familyStates() {
+				return { network: { health: { ageSeconds: harness.liveClock.ageSeconds } } };
+			},
 			isStale: false,
 			loading: false,
 			error: null,

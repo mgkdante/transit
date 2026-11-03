@@ -210,10 +210,12 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.vehicles.health).toMatchObject({
 			state: 'never-loaded',
 			ageSeconds: null,
-			isStale: true,
+			isStale: false,
 			retained: false,
 			notice: null,
 		});
+		expect(store.isStale).toBe(false);
+		expect(store.ageSeconds).toBeNull();
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health).toMatchObject({
@@ -224,6 +226,45 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			notice: null,
 		});
 		expect(store.familyStates.vehicles).not.toHaveProperty('consecutiveFailures');
+	});
+
+	it('keeps the aggregate quiet while first loads are pending and uses only loaded family ages', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
+		mocks.offsetMs = 0;
+		let finishVehicles!: () => void;
+		let finishAlerts!: () => void;
+		mocks.vehicles.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishVehicles = () => resolve({ generated_utc: mocks.generatedUtc, vehicles: [] });
+				}),
+		);
+		mocks.alerts.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishAlerts = () => resolve({ generated_utc: mocks.generatedUtc, alerts: [] });
+				}),
+		);
+		const { store } = setup(30, ['vehicles', 'alerts']);
+		const pending = store.refresh();
+		await settleLivePoll();
+		expect(store.familyStates.vehicles.health.state).toBe('never-loaded');
+		expect(store.familyStates.alerts.health.state).toBe('never-loaded');
+		expect(store.isStale).toBe(false);
+		finishVehicles();
+		await settleLivePoll();
+		expect(store.vehicles).not.toBeNull();
+		expect(store.familyStates.alerts.phase).toBe('loading');
+		expect(store.isStale).toBe(false);
+		expect(store.ageSeconds).toBe(10);
+		finishAlerts();
+		await pending;
+	});
+
+	it('does not raise a stale warning when no feed family is active', () => {
+		const { store } = setup(30, []);
+		expect(store.isStale).toBe(false);
+		expect(store.ageSeconds).toBeNull();
 	});
 
 	it.each([
@@ -310,6 +351,26 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.trips.health).toMatchObject({ state: 'live', notice: null });
 	});
 
+	it('preserves the refresh failure notice for a retained snapshot with unknown age', async () => {
+		mocks.vehicles.mockResolvedValueOnce({ generated_utc: null, vehicles: [] });
+		const { store } = setup(30, ['vehicles']);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health.notice).toBe('stale');
+		const failure = new Error('refresh unavailable');
+		mocks.vehicles.mockRejectedValueOnce(failure);
+		await store.refresh();
+		flushSync();
+		expect(store.familyStates.vehicles.health).toEqual({
+			state: 'retained-stale',
+			ageSeconds: null,
+			isStale: true,
+			retained: true,
+			notice: 'refresh-unavailable',
+		});
+		expect(store.familyStates.vehicles.error).toBe(failure);
+	});
+
 	it('distinguishes failure without data from a retry without data', async () => {
 		mocks.alerts.mockRejectedValueOnce(new Error('offline'));
 		const { store } = setup(30, ['alerts']);
@@ -332,6 +393,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		const pending = store.refresh();
 		await settleLivePoll();
 		expect(store.familyStates.alerts.health).toMatchObject({ state: 'retrying', retained: false });
+		expect(store.familyStates.alerts.health.isStale).toBe(false);
+		expect(store.isStale).toBe(false);
 		finish();
 		await pending;
 	});
@@ -367,17 +430,44 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		}
 	});
 
-	it('clamps a future generation to age zero', async () => {
-		mocks.nowMs = Date.parse('2026-06-21T11:59:30Z');
+	it.each([
+		{ ttl: 30, ahead: 29, unknown: false },
+		{ ttl: 30, ahead: 30, unknown: false },
+		{ ttl: 30, ahead: 31, unknown: true },
+		{ ttl: 10, ahead: 10, unknown: false },
+		{ ttl: 10, ahead: 11, unknown: true },
+	])(
+		'bounds future generations at one TTL: ttl=$ttl, ahead=$ahead',
+		async ({ ttl, ahead, unknown }) => {
+			mocks.nowMs = Date.parse('2026-06-21T12:00:00Z') - ahead * 1000;
+			mocks.offsetMs = 0;
+			const { store } = setup(ttl, ['vehicles']);
+			await store.refresh();
+			flushSync();
+			expect(store.familyStates.vehicles.health).toMatchObject({
+				state: unknown ? 'retained-stale' : 'live',
+				ageSeconds: unknown ? null : 0,
+				isStale: unknown,
+				notice: unknown ? 'stale' : null,
+			});
+		},
+	);
+
+	it('never describes a year-2099 snapshot as live', async () => {
+		mocks.nowMs = Date.parse('2026-06-21T12:00:00Z');
 		mocks.offsetMs = 0;
+		mocks.vehicles.mockResolvedValueOnce({ generated_utc: '2099-01-01T00:00:00Z', vehicles: [] });
 		const { store } = setup(30, ['vehicles']);
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health).toMatchObject({
-			state: 'live',
-			ageSeconds: 0,
-			isStale: false,
+			state: 'retained-stale',
+			ageSeconds: null,
+			isStale: true,
+			notice: 'stale',
 		});
+		expect(store.ageSeconds).toBeNull();
+		expect(store.isStale).toBe(true);
 	});
 
 	it('keeps aggregate age unknown without making a fresh vehicle family stale', async () => {

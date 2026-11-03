@@ -191,6 +191,9 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return live.ageSeconds;
 			},
+			get familyStates() {
+				return { network: { health: { ageSeconds: live.ageSeconds } } };
+			},
 			get isStale() {
 				return live.isStale;
 			},
@@ -549,6 +552,14 @@ describe('NetworkSurface live cards (S9C)', () => {
 		network.feed_freshness_s = null;
 		render(NetworkSurface);
 		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
+	});
+
+	it('does not understate worker feed age when the retained snapshot age is unknown', () => {
+		live.ageSeconds = null;
+		live.isStale = true;
+		render(NetworkSurface);
+		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
+		expect(document.querySelector('[data-slot="freshness-stamp"]')).toHaveTextContent('unknown');
 	});
 });
 

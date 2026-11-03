@@ -48,6 +48,14 @@ describe('MapFeedStallBanner', () => {
 		expect(screen.getByRole('status')).toHaveTextContent(message);
 	});
 
+	it('uses the unknown-age copy for an implausibly future timestamp when age is not supplied', () => {
+		render(MapFeedStallBanner, {
+			props: { generatedUtc: '2099-01-01T00:00:00Z', isStale: true, locale: 'en' },
+		});
+		expect(screen.getByRole('status')).toHaveTextContent('Data may be out of date.');
+		expect(screen.getByRole('status')).not.toHaveTextContent('Last update');
+	});
+
 	it('shows a polite top banner when the whole live feed has stalled (FR)', () => {
 		render(MapFeedStallBanner, {
 			props: { generatedUtc: staleUtc, ageSeconds: 300, isStale: true, locale: 'fr' },

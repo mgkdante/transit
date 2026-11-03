@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { freshnessAgeSeconds } from '$lib/v1/freshness';
+import { DEFAULT_LIVE_TTL_S, freshnessAgeSeconds } from '$lib/v1/freshness';
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import { getV1Runtime } from '$lib/v1/runtime';
 import { untrack } from 'svelte';
@@ -13,8 +13,6 @@ import type {
 	VehiclesFile,
 } from '$lib/v1/schemas';
 import { buildLiveIndex, type LiveIndex } from './index';
-
-const DEFAULT_LIVE_TTL_S = 30;
 
 const STALE_TTL_MULTIPLIER = 3;
 
@@ -34,7 +32,7 @@ export type FeedHealthState =
 export interface FeedHealth {
 	readonly state: FeedHealthState;
 	readonly ageSeconds: number | null;
-	/** Snapshot age alone; a failed refresh may retain a recent report. */
+	/** Retained snapshot age or a failed first load; an initial pending load is not stale. */
 	readonly isStale: boolean;
 	readonly retained: boolean;
 	readonly notice: 'stale' | 'refresh-unavailable' | null;
@@ -138,8 +136,12 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		for (const family of LIVE_FAMILIES) {
 			const { consecutiveFailures, ...state } = familyStatesValue[family];
 			const payload = currentFamilyPayload(family);
-			const age = freshnessAgeSeconds(payload?.generated_utc, runtime.clock.serverNow);
-			const isStale = age == null || age >= staleThresholdS;
+			const age = freshnessAgeSeconds(
+				payload?.generated_utc,
+				runtime.clock.serverNow,
+				ttlMs / 1000,
+			);
+			const ageIsStale = age == null || age >= staleThresholdS;
 			const retained = payload != null;
 			const retrying = state.phase === 'loading' && consecutiveFailures > 0;
 			const failed = state.phase === 'failed' || consecutiveFailures > 0;
@@ -148,10 +150,11 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			if (!retained) verdict = retrying ? 'retrying' : failed ? 'failed-no-data' : 'never-loaded';
 			else if (unknownAge) verdict = 'retained-stale';
 			else if (retrying) verdict = 'retrying';
-			else verdict = failed || isStale ? 'retained-stale' : 'live';
+			else verdict = failed || ageIsStale ? 'retained-stale' : 'live';
+			const isStale = retained ? ageIsStale : verdict === 'failed-no-data';
 			let notice: FeedHealth['notice'] = null;
-			if (unknownAge) notice = 'stale';
-			else if (failed) notice = 'refresh-unavailable';
+			if (failed) notice = 'refresh-unavailable';
+			else if (unknownAge) notice = 'stale';
 			else if (retained && isStale) notice = 'stale';
 			const health: FeedHealth = {
 				state: verdict,
@@ -180,7 +183,10 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return oldest;
 	});
 	const ageSecondsValue = $derived.by<number | null>(() => {
-		const active = activeFamilies();
+		const active = activeFamilies().filter((family) => {
+			const health = familyStates[family].health;
+			return health.retained || health.state === 'failed-no-data';
+		});
 		if (active.length === 0) return null;
 		let oldestAge = 0;
 		for (const family of active) {
@@ -190,10 +196,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 		return oldestAge;
 	});
-	const isStale = $derived(
-		activeFamilies().length === 0 ||
-			activeFamilies().some((family) => familyStates[family].health.isStale),
-	);
+	const isStale = $derived(activeFamilies().some((family) => familyStates[family].health.isStale));
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);
 	const vehiclesIsStale = $derived(familyStates.vehicles.health.isStale);

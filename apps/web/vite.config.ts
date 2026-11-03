@@ -15,6 +15,7 @@ export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/
 const designTokensCss = fileURLToPath(import.meta.resolve('@yesid/tokens/tokens.css'));
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
 const ssrDataTests = [
+	'src/lib/v1/live/healthPresentation.ssr.test.ts',
 	'src/lib/v1/history/rangeResource.ssr.test.ts',
 	'src/lib/v1/history/dateResource.ssr.test.ts',
 ];

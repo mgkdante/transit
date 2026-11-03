@@ -31,7 +31,8 @@
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
 	import type { Locale } from '$lib/i18n';
-	import { ageSeconds as ageFromUtc, formatRelativeSeconds } from '$lib/utils/time';
+	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { freshnessAgeSeconds } from '$lib/v1/freshness';
 
 	import { copy as MAP_COPY } from './map.copy';
 
@@ -62,14 +63,7 @@
 	$effect(() => clock.subscribe());
 
 	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined
-			? ageSeconds
-			: generatedUtc
-				? (() => {
-						const age = ageFromUtc(generatedUtc, clock.serverNow);
-						return Number.isNaN(age) ? null : Math.max(0, age);
-					})()
-				: null,
+		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc, clock.serverNow),
 	);
 	const relative = $derived(
 		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),

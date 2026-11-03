@@ -8,7 +8,11 @@ type Expect<T extends true> = T;
 type _FreshnessAgeSignature = Expect<
 	Equal<
 		typeof freshnessAgeSeconds,
-		(generatedUtc: string | null | undefined, nowMs: number) => number | null
+		(
+			generatedUtc: string | null | undefined,
+			nowMs: number,
+			futureToleranceS?: number,
+		) => number | null
 	>
 >;
 type _FreshnessRelativeSignature = Expect<
@@ -26,5 +30,24 @@ describe('shared freshness derivation', () => {
 
 		expect(freshnessAgeSeconds(generatedUtc, NOW.getTime())).toBe(10);
 		expect(freshnessRelative(generatedUtc, 'en', NOW.getTime())).toBe('10 seconds ago');
+	});
+
+	it.each([
+		{ aheadMs: 29_999, age: 0 },
+		{ aheadMs: 30_000, age: 0 },
+		{ aheadMs: 30_001, age: null },
+	])('bounds default publisher skew at $aheadMs milliseconds', ({ aheadMs, age }) => {
+		const generatedUtc = new Date(NOW.getTime() + aheadMs).toISOString();
+		expect(freshnessAgeSeconds(generatedUtc, NOW.getTime())).toBe(age);
+	});
+
+	it('treats a far-future publisher clock as unknown for both age and copy', () => {
+		expect(freshnessAgeSeconds('2099-01-01T00:00:00Z', NOW.getTime())).toBeNull();
+		expect(freshnessRelative('2099-01-01T00:00:00Z', 'en', NOW.getTime())).toBeNull();
+	});
+
+	it('uses the feed-specific skew tolerance when supplied', () => {
+		expect(freshnessAgeSeconds('2026-06-15T12:00:10Z', NOW.getTime(), 10)).toBe(0);
+		expect(freshnessAgeSeconds('2026-06-15T12:00:10.001Z', NOW.getTime(), 10)).toBeNull();
 	});
 });

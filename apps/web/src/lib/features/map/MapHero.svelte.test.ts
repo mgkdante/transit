@@ -247,7 +247,7 @@ const harness = vi.hoisted(() => {
 				health: {
 					state: 'never-loaded',
 					ageSeconds: null,
-					isStale: true,
+					isStale: false,
 					retained: false,
 					notice: null,
 				},
@@ -262,7 +262,7 @@ const harness = vi.hoisted(() => {
 				health: {
 					state: 'never-loaded',
 					ageSeconds: null,
-					isStale: true,
+					isStale: false,
 					retained: false,
 					notice: null,
 				},
@@ -286,7 +286,7 @@ const harness = vi.hoisted(() => {
 				health: {
 					state: 'never-loaded',
 					ageSeconds: null,
-					isStale: true,
+					isStale: false,
 					retained: false,
 					notice: null,
 				},
