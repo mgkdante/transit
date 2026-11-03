@@ -217,24 +217,48 @@ def _live_counts(connection) -> dict[str, int]:
     return counts
 
 
-def test_dry_run_count_matches_capture_time_retention(conn) -> None:
+def _live_identities(connection) -> dict[str, set[tuple]]:
+    keys = {
+        "silver.rt_trip_update_stop_times": (
+            "rt_feed_snapshot_id, entity_index, stop_time_update_index"
+        ),
+        "silver.rt_trip_updates": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_vehicle_positions": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_entities": "rt_feed_snapshot_id, entity_index",
+        "silver.rt_feed_snapshots": "rt_feed_snapshot_id",
+    }
+    return {
+        table: set(
+            connection.execute(
+                text(f"SELECT {columns} FROM {table} WHERE provider_id = :p"),
+                {"p": PROVIDER},
+            ).tuples()
+        )
+        for table, columns in keys.items()
+    }
+
+
+def test_dry_run_reports_full_backlog_for_every_table_without_deleting(conn) -> None:
     _seed_monotonic_history(conn)
-    expected = _expected_old_predicate_counts(conn)
+    before = _live_identities(conn)
 
     _cutoff, counts = prune_realtime_silver_history(
         conn,
         provider_id=PROVIDER,
         retention_days=RETENTION_DAYS,
-        batch_size=10000,
+        batch_size=1,
         dry_run=True,
         now_utc=NOW,
     )
 
-    assert counts == expected
-    assert expected["silver.rt_trip_update_stop_times"] == 3
-    assert expected["silver.rt_vehicle_positions"] == 3
-    assert expected["silver.rt_entities"] == 6
-    assert expected["silver.rt_feed_snapshots"] == 6
+    assert counts == {
+        "silver.rt_trip_update_stop_times": 3,
+        "silver.rt_trip_updates": 3,
+        "silver.rt_vehicle_positions": 3,
+        "silver.rt_entities": 6,
+        "silver.rt_feed_snapshots": 6,
+    }
+    assert _live_identities(conn) == before
 
 
 @pytest.mark.parametrize("batch_size", [0, 1, 2])
