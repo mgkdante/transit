@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy import Connection
 
 from transit_ops.settings import Settings
-from transit_ops.snapshots import builders, envelope
+from transit_ops.snapshots import builders, envelope, historic_tree
 from transit_ops.snapshots.contract import (
     PayloadEnvelope,
     ReceiptAvailability,
@@ -178,7 +178,7 @@ def _build_items(
         generated_utc=stamp,
     )
     alert_page_items: list[PutItem] = [
-        (path, page, "historic_immutable") for path, page in alert_archive.page_items
+        (path, page, historic_tree.WRITE_ONCE_TIER) for path, page in alert_archive.page_items
     ]
     alert_index_item = (
         "historic/alerts/index.json",

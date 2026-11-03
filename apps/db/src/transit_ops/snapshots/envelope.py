@@ -1,15 +1,10 @@
 from collections.abc import Sequence
 
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
-    AlertArchivePage,
-    HistoricHotspotsDay,
-    HistoricRepeatOffendersDay,
-    LineHistoryPartition,
-    NetworkHistoryPartition,
     PayloadEnvelope,
-    StopHistoryPartition,
 )
 from transit_ops.snapshots.protocols import PutItem
 
@@ -29,15 +24,7 @@ def stamp_envelope(items: Sequence[PutItem], *, provider_id: str, stamp: str) ->
     for _rel_key, payload, _tier in items:
         if isinstance(payload, PayloadEnvelope):
             # Run generation IDs would invalidate immutable content-addressed hashes and paths.
-            if isinstance(
-                payload,
-                AlertArchivePage
-                | NetworkHistoryPartition
-                | LineHistoryPartition
-                | StopHistoryPartition
-                | HistoricHotspotsDay
-                | HistoricRepeatOffendersDay,
-            ):
+            if historic_tree.preserve_leaf_envelope(payload):
                 continue
             payload.publish_generation_id = generation_id
             payload.methodology_version = _METHODOLOGY_BY_MODEL.get(type(payload))

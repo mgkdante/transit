@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 from transit_ops.settings import Settings
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.protocols import (
     ImmutablePayloadSink,
     PayloadSink,
@@ -102,18 +103,23 @@ def put_batch(
 ) -> list[str]:
     if not items:
         return []
-    if write_mode not in {"normal", "immutable"}:
+    if write_mode not in {"normal", "immutable", "historic"}:
         raise ValueError(f"unknown snapshot write mode {write_mode!r}")
 
     immutable_sink = None
-    if write_mode == "immutable":
+    if write_mode == "immutable" or (
+        write_mode == "historic"
+        and any(historic_tree.write_once(key, tier) for key, _, tier in items)
+    ):
         if not isinstance(storage, ImmutablePayloadSink):
             raise TypeError("immutable upload requires an immutable payload sink")
         immutable_sink = storage
 
     def put(item: PutItem) -> str:
         rel_key, payload, tier = item
-        if immutable_sink is not None:
+        if immutable_sink is not None and (
+            write_mode == "immutable" or historic_tree.write_once(rel_key, tier)
+        ):
             return immutable_sink.put_immutable_json(rel_key, payload)
         return storage.put_json(rel_key, payload, tier=tier)
 
@@ -160,7 +166,7 @@ def stable_item_total(items: Sequence[PutItem]) -> int:
 
 def is_immutable_item(rel_key: str, tier: str | None = None) -> bool:
 
-    return tier == "historic_immutable" or "/generations/" in rel_key
+    return historic_tree.write_once(rel_key, tier)
 
 
 def stable_outcome_total(storage: SnapshotOutcomeWriter) -> int:

@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoricPartitionError,
     HistorySourceScopes,
@@ -43,7 +44,7 @@ _HISTORIC_EXCLUSIVE_PHASES = (
     "transaction_commit",
     "other",
 )
-_HISTORIC_FAMILIES = ("network", "lines", "stops")
+_HISTORIC_FAMILIES = historic_tree.RANGE_FAMILIES
 _HISTORIC_SCOPE_CLASSES = ("retention_edge", "mutable_edge", "settled_candidate")
 _HISTORIC_SCOPE_METRICS = ("partition_materialize", "child_gate")
 
@@ -496,9 +497,12 @@ def _validate_historic_partition(
     ):
         raise HistoricPartitionError("historic partition ref does not match partition days")
     prefix = (
-        "historic/history/network/generations/"
+        f"{historic_tree.FAMILIES[family].root}/generations/"
         if family == "network"
-        else f"historic/history/{family}/{encode_history_entity_id(entity_key)}/generations/"
+        else (
+            f"{historic_tree.FAMILIES[family].entity_root(encode_history_entity_id(entity_key))}"
+            "/generations/"
+        )
     )
     path = reference.get("path")
     if not isinstance(path, str) or not path.startswith(prefix):

@@ -1078,8 +1078,10 @@ class HistoricEntityDirectoryIndex(PayloadEnvelope):
 
     @model_validator(mode="after")
     def validate_entity_paths(self) -> Self:
+        from transit_ops.snapshots import historic_tree
+
         for entity in self.entities:
-            prefix = f"historic/history/{self.family}/{entity.encoded_id}"
+            prefix = historic_tree.FAMILIES[self.family].entity_root(entity.encoded_id)
             legacy = f"{prefix}/index.json"
             versioned = re.fullmatch(
                 rf"{re.escape(prefix)}/generations/[0-9a-f]{{64}}/index\.json",

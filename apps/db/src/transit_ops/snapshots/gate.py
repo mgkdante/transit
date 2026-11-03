@@ -10,10 +10,10 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from enum import Enum, StrEnum
 from functools import partial
-from types import MappingProxyType
 
 from pydantic import BaseModel, ValidationError
 
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic import line_history, stop_history
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryDateMask,
@@ -33,15 +33,22 @@ from transit_ops.snapshots.contract import (
     HistoricAvailabilityIndex,
     HistoricCollectionIndex,
     HistoricEntityDirectoryIndex,
-    HistoricHotspotsDay,
     HistoricMetricCoverage,
     HistoricPartitionRef,
-    HistoricRepeatOffendersDay,
-    LineHistoryPartition,
-    NetworkHistoryPartition,
-    StopHistoryPartition,
+)
+from transit_ops.snapshots.historic_tree import (
+    _LINE_SPEC,
+    _NETWORK_HISTORY_INDEX_PATH,
+    _NETWORK_HISTORY_METRICS,
+    _NETWORK_SPEC,
+    _STOP_HISTORY_DIRECTORY_PATH,
+    _STOP_HISTORY_ROOT_PATH,
+    _STOP_SPEC,
+    HistoryFamilySpec,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+
+_HISTORY_FAMILY_SPECS = historic_tree._HISTORY_FAMILY_SPECS
 
 logger = logging.getLogger(__name__)
 
@@ -903,9 +910,7 @@ def _check_alert_entry(emit: _Emitter, alert: dict, *, prefix: str) -> None:  # 
 
 
 _ARCHIVE_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
-_ARCHIVE_PAGE_PATH_RE = re.compile(
-    r"^historic/alerts/generations/([0-9a-f]{64})/(\d{4}-\d{2})/page-(\d{4})\.json$"
-)
+_ARCHIVE_PAGE_PATH_RE = historic_tree.ARCHIVE_PAGE_PATH_RE
 
 
 def _serialized_body(payload: object) -> bytes | None:
@@ -1106,7 +1111,7 @@ def check_alert_archive_index(payload: object, *, rel_key: str) -> list[CheckRes
     _check_versioned_pointer_digest(
         emit,
         payload,
-        re.fullmatch(r"historic/alerts/generations/([0-9a-f]{64})/index\.json", rel_key),
+        historic_tree.index_path_pattern("alerts").fullmatch(rel_key),
     )
     return emit.out
 
@@ -1196,132 +1201,6 @@ def check_alert_archive_bundle(
         emit.err("unreferenced_page", "path", path, "built archive page is not referenced")
         findings.extend(emit.out)
     return findings
-
-
-_HISTORY_MONTH = r"\d{4}-(?:0[1-9]|1[0-2])"
-_NETWORK_HISTORY_ROOT = "historic/history/network"
-_NETWORK_HISTORY_PARTITION_PATH_RE = re.compile(
-    rf"{_NETWORK_HISTORY_ROOT}/generations/([0-9a-f]{{64}})/({_HISTORY_MONTH})\.json")
-_NETWORK_HISTORY_INDEX_PATH = f"{_NETWORK_HISTORY_ROOT}/index.json"
-_NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE = re.compile(
-    rf"{_NETWORK_HISTORY_ROOT}/generations/([0-9a-f]{{64}})/index\.json")
-
-
-def _entity_history_paths(
-    family: str,
-) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
-    root = rf"historic/history/{family}"
-    encoded = r"((?:[0-9a-f]{2})+)"
-    return (
-        re.compile(rf"{root}/{encoded}/generations/([0-9a-f]{{64}})/({_HISTORY_MONTH})\.json"),
-        re.compile(rf"{root}/{encoded}/index\.json"),
-        re.compile(rf"{root}/{encoded}/generations/([0-9a-f]{{64}})/index\.json"),
-        re.compile(rf"{root}/generations/([0-9a-f]{{64}})/index\.json"),
-    )
-
-
-(
-    _LINE_HISTORY_PARTITION_PATH_RE,
-    _LINE_HISTORY_ENTITY_INDEX_PATH_RE,
-    _LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE,
-    _LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE,
-) = _entity_history_paths("lines")
-_LINE_HISTORY_DIRECTORY_PATH = "historic/history/lines/index.json"
-(
-    _STOP_HISTORY_PARTITION_PATH_RE,
-    _STOP_HISTORY_ENTITY_INDEX_PATH_RE,
-    _STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE,
-    _STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE,
-) = _entity_history_paths("stops")
-_STOP_HISTORY_DIRECTORY_PATH = "historic/history/stops/index.json"
-_STOP_HISTORY_ROOT_PATH = "historic/history/index.json"
-_NETWORK_HISTORY_METRICS = (
-    ("delay", "additive"), ("delay_percentiles", "daily_only"), ("vehicles", "daily_only"),
-    ("cancellation", "additive"), ("occupancy", "additive"),
-)
-
-
-@dataclass(frozen=True, slots=True)
-class HistoryFamilySpec:
-    key: str
-    family: str
-    label: str
-    partition_model: type[BaseModel]
-    metrics: tuple[tuple[str, str], ...]
-    partition_path_re: re.Pattern[str]
-    entity_index_path_re: re.Pattern[str] | None
-    versioned_index_path_re: re.Pattern[str]
-    index_path: str
-    versioned_directory_path_re: re.Pattern[str] | None
-    day_fields: frozenset[str]
-    kinds: Mapping[str, str]
-    checks: Mapping[str, str]
-
-    @property
-    def entity_scoped(self) -> bool:
-        return self.entity_index_path_re is not None
-
-
-_COMMON_HISTORY_CHECK_NAMES = tuple(
-    """contract pointer_sha256 metric_range delay_in_clamp_count delay_in_clamp_partition
-    delay_sum_bound vehicle_observation_bound cancellation_universe cancellation_invariant
-    partition_path partition_entity partition_month partition_sha256 partition_envelope
-    generated_utc duplicate_date date_order index_path index_identity available_dates
-    duplicate_ref_path ref_path ref_entity ref_month duplicate_month partition_order
-    metric_vocabulary collection_generation_id ref_sha256 ref_byte_size ref_count ref_coverage
-    empty_entity directory_path directory_identity entity_order entity_identity
-    entity_generation directory_coverage""".split()
-)
-
-
-def _history_spec(
-    key: str, label: str,
-    model: type[BaseModel],
-    metrics: tuple[tuple[str, str], ...],
-    paths: tuple[
-        re.Pattern[str], re.Pattern[str] | None, re.Pattern[str], str, re.Pattern[str] | None
-    ],
-    day_fields: str, specific_checks: str,
-) -> HistoryFamilySpec:
-    stem = key.removesuffix("s")
-    kinds = {role: f"historic_{stem}_history_{role}" for role in (
-        "partition", "partition_ref", "stream", "index"
-    )}
-    terminal = "bundle" if key == "network" else "directory"
-    kinds[terminal] = f"historic_{stem}_history_{terminal}"
-    return HistoryFamilySpec(
-        key, key, label, model, metrics, *paths, frozenset(day_fields.split()),
-        MappingProxyType(kinds), MappingProxyType({
-            name: name for name in (*_COMMON_HISTORY_CHECK_NAMES, *specific_checks.split())}),)
-
-
-_HISTORY_FAMILY_SPECS = {
-    "network": _history_spec(
-        "network", "Network", NetworkHistoryPartition, _NETWORK_HISTORY_METRICS,
-        (_NETWORK_HISTORY_PARTITION_PATH_RE, None, _NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE,
-         _NETWORK_HISTORY_INDEX_PATH, None), "",
-        """stream_partitions stream_available_dates stream_coverage stream_metrics
-        stream_generated_utc duplicate_built_path missing_partition unreferenced_partition
-        metric_coverage"""),
-    "lines": _history_spec(
-        "lines", "Line", LineHistoryPartition, line_history.LINE_HISTORY_METRICS,
-        (_LINE_HISTORY_PARTITION_PATH_RE, _LINE_HISTORY_ENTITY_INDEX_PATH_RE,
-         _LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE, _LINE_HISTORY_DIRECTORY_PATH,
-         _LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE),
-        "date delay delay_percentiles cancellation occupancy service_span skipped_stops",
-        """service_span_timestamp service_span_order line_metric_vocabulary line_stream_indexes
-        line_stream_directory duplicate_entity_id duplicate_encoded_id duplicate_index_path"""),
-    "stops": _history_spec(
-        "stops", "Stop", StopHistoryPartition, stop_history.STOP_HISTORY_METRICS,
-        (_STOP_HISTORY_PARTITION_PATH_RE, _STOP_HISTORY_ENTITY_INDEX_PATH_RE,
-         _STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE, _STOP_HISTORY_DIRECTORY_PATH,
-         _STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE),
-        "date delay delay_percentiles occupancy",
-        "stop_metric_vocabulary stop_delay_semantics stop_stream_indexes stop_stream_directory"),
-}
-_NETWORK_SPEC = _HISTORY_FAMILY_SPECS["network"]
-_LINE_SPEC = _HISTORY_FAMILY_SPECS["lines"]
-_STOP_SPEC = _HISTORY_FAMILY_SPECS["stops"]
 
 
 def _history_model_error(emit: _Emitter, exc: ValidationError) -> None:
@@ -1832,7 +1711,9 @@ def _check_entity_stream_index(
     entity_id = value.get("entity_id") if isinstance(value, dict) else None
     rel_key = spec.index_path
     if spec.key == "stops" and isinstance(entity_id, str) and entity_id:
-        rel_key = f"historic/history/{spec.family}/{encode_history_entity_id(entity_id)}/index.json"
+        rel_key = historic_tree.FAMILIES[spec.family].entity_index_path(
+            encode_history_entity_id(entity_id)
+        )
     emit = _Emitter(spec.kinds["stream"], rel_key)
     check = "line_stream_indexes" if spec.key == "lines" else "stop_stream_indexes"
     if not isinstance(value, dict) or not isinstance(entity_id, str):
@@ -1943,7 +1824,7 @@ class _HistoryDirectorySummary(stop_history.StopHistoryPointerSummary):
                 continue
             encoded_id = encode_history_entity_id(index.entity_id)
             path = (index_paths or {}).get(index.entity_id)
-            path = path or f"historic/history/{summary.spec.family}/{encoded_id}/index.json"
+            path = path or historic_tree.FAMILIES[summary.spec.family].entity_index_path(encoded_id)
             summary.observe(index, index_path=path)
         summary.entities.sort(key=lambda item: item.entity_id)
         return summary
@@ -1961,7 +1842,7 @@ class StopHistoryDirectorySummary(_HistoryDirectorySummary):
     spec = _STOP_SPEC
 
     def family_dict(
-        self, directory: object, *, index_path: str = "historic/history/stops/index.json"
+        self, directory: object, *, index_path: str = historic_tree.FAMILIES["stops"].index_path
     ) -> dict:  # type: ignore[type-arg]
         pointer = HistoricEntityDirectoryIndex.model_validate(_coverage_dict(directory))
         family = self.build_family(pointer, index_path=index_path)
@@ -2235,7 +2116,9 @@ def _check_history_directory(
             encoded = encode_history_entity_id(entity_id)
         except (AttributeError, TypeError, ValueError):
             encoded = None
-        legacy = f"historic/history/{spec.family}/{encoded}/index.json" if encoded else None
+        legacy = (
+            historic_tree.FAMILIES[spec.family].entity_index_path(encoded) if encoded else None
+        )
         versioned_path = spec.versioned_index_path_re.fullmatch(str(item.get("index_path") or ""))
         versioned_ok = versioned_path is not None and versioned_path.group(1) == encoded
         if item.get("encoded_id") != encoded or (
@@ -2298,18 +2181,16 @@ def check_network_history_bundle(
         if path in built:
             error(path, "duplicate_built_path", "path", path, "partition path was built twice")
         built[path] = partition
-    refs = data.get("partitions") or []
     referenced: set[str] = set()
     all_dates: list[str] = []
     summary = NetworkHistoryStreamSummary()
-    for ref in refs:
-        if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
-            continue
-        path = ref["path"]
+    reader = historic_tree.MemoryTreeReader(built)
+    for edge, partition in historic_tree.FAMILIES["network"].walk(reader, data):
+        ref = edge.reference
+        path = edge.path
         if path in referenced:
             error(path, "duplicate_ref_path", "path", path, "partition ref path occurs twice")
         referenced.add(path)
-        partition = built.get(path)
         if partition is None:
             error(path, "missing_partition", "path", path, "referenced partition was not built")
             continue
@@ -2393,21 +2274,8 @@ check_stop_history_directory = _stop(_check_history_directory, "directory")
 del _line, _network, _stop
 
 
-_POINT_HISTORY_MODELS = {
-    "hotspots": HistoricHotspotsDay,
-    "repeat_offenders": HistoricRepeatOffendersDay,
-}
-
-
-def _point_history_family_from_path(rel_key: str, *, index: bool) -> str | None:
-    suffix = r"index\.json" if index else r"\d{4}-\d{2}-\d{2}\.json"
-    for family in _POINT_HISTORY_MODELS:
-        if re.fullmatch(
-            rf"historic/history/{family}/generations/[0-9a-f]{{64}}/{suffix}",
-            rel_key,
-        ):
-            return family
-    return None
+_POINT_HISTORY_MODELS = historic_tree.POINT_MODELS
+_point_history_family_from_path = historic_tree.point_family_from_path
 
 
 def check_point_history_day_ref(
@@ -2455,10 +2323,7 @@ def check_point_history_day(payload: object, *, rel_key: str) -> list[CheckResul
     if family is None:
         emit.err("point_path", "", rel_key, "point history day path is malformed")
         return emit.out
-    match = re.fullmatch(
-        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/(\d{{4}}-\d{{2}}-\d{{2}})\.json",
-        rel_key,
-    )
+    match = historic_tree.point_leaf_match(family, rel_key)
     assert match is not None
     digest, local_date = match.groups()
     body = snapshot_json_bytes(payload) if isinstance(payload, BaseModel | dict) else b""
@@ -2504,10 +2369,7 @@ def check_point_history_index(
     if family not in _POINT_HISTORY_MODELS:
         emit.err("point_family", "family", family, "unknown point history family")
         return emit.out
-    path_match = re.fullmatch(
-        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/index\.json",
-        rel_key,
-    )
+    path_match = historic_tree.point_index_match(family, rel_key)
     if path_match is None:
         emit.err("index_path", "", rel_key, "point family index must use an exact-byte path")
     _check_versioned_pointer_digest(emit, payload, path_match)
@@ -2583,10 +2445,7 @@ def check_point_history_index(
             continue
         path = ref.get("path")
         match = (
-            re.fullmatch(
-                rf"historic/history/{family}/generations/([0-9a-f]{{64}})/(\d{{4}}-\d{{2}}-\d{{2}})\.json",
-                path,
-            )
+            historic_tree.point_leaf_match(family, path)
             if isinstance(path, str)
             else None
         )
@@ -2668,45 +2527,18 @@ def check_history_availability_index(payload: object, *, rel_key: str) -> list[C
         emit.err("root_path", "", rel_key, "history availability root uses the wrong path")
     families = root.get("families") if isinstance(root.get("families"), list) else []
     names = [item.get("family") for item in families if isinstance(item, dict)]
-    expected_names = [
-        "alerts",
-        "hotspots",
-        "lines",
-        "network",
-        "receipts",
-        "repeat_offenders",
-        "stops",
-    ]
+    expected_names = sorted(historic_tree.FAMILIES)
     if names != expected_names:
         emit.err("family_order", "families", names, "history families must be exact and sorted")
     expected_paths = {
-        "alerts": "historic/alerts/index.json",
-        "hotspots": None,
-        "lines": "historic/history/lines/index.json",
-        "network": "historic/history/network/index.json",
-        "receipts": "historic/receipts/index.json",
-        "repeat_offenders": None,
-        "stops": "historic/history/stops/index.json",
+        name: None if name in historic_tree.POINT_MODELS else definition.index_path
+        for name, definition in historic_tree.FAMILIES.items()
     }
     versioned_paths = {
-        "alerts": re.compile(r"historic/alerts/generations/[0-9a-f]{64}/index\.json"),
-        "hotspots": re.compile(r"historic/history/hotspots/generations/[0-9a-f]{64}/index\.json"),
-        "lines": re.compile(r"historic/history/lines/generations/[0-9a-f]{64}/index\.json"),
-        "network": re.compile(r"historic/history/network/generations/[0-9a-f]{64}/index\.json"),
-        "receipts": re.compile(r"historic/receipts/generations/[0-9a-f]{64}/index\.json"),
-        "repeat_offenders": re.compile(
-            r"historic/history/repeat_offenders/generations/[0-9a-f]{64}/index\.json"
-        ),
-        "stops": re.compile(r"historic/history/stops/generations/[0-9a-f]{64}/index\.json"),
+        name: historic_tree.index_path_pattern(name) for name in historic_tree.FAMILIES
     }
     expected_modes = {
-        "alerts": "range",
-        "hotspots": "date",
-        "lines": "range",
-        "network": "range",
-        "receipts": "date",
-        "repeat_offenders": "date",
-        "stops": "range",
+        name: definition.selection_mode for name, definition in historic_tree.FAMILIES.items()
     }
     for position, item in enumerate(families):
         if not isinstance(item, dict):
@@ -2818,7 +2650,7 @@ def _history_family_from_entity_children(
         {
             "family": family,
             "selection_mode": "range",
-            "index_path": index_path or f"historic/history/{family}/index.json",
+            "index_path": index_path or historic_tree.FAMILIES[family].index_path,
             "collection_generation_id": (
                 directory_dict.get("collection_generation_id")
                 if isinstance(directory_dict, dict)
@@ -2878,9 +2710,9 @@ def check_history_availability_graph(
     stop_summary: StopHistoryDirectorySummary | None = None,
     alert_index_path: str = "historic/alerts/index.json",
     receipt_index_path: str = "historic/receipts/index.json",
-    network_index_path: str = "historic/history/network/index.json",
-    line_directory_path: str = "historic/history/lines/index.json",
-    stop_directory_path: str = "historic/history/stops/index.json",
+    network_index_path: str = historic_tree.FAMILIES["network"].index_path,
+    line_directory_path: str = historic_tree.FAMILIES["lines"].index_path,
+    stop_directory_path: str = historic_tree.FAMILIES["stops"].index_path,
     hotspots_index_path: str | None = None,
     repeat_offenders_index_path: str | None = None,
 ) -> list[CheckResult]:
@@ -2922,11 +2754,11 @@ def check_history_availability_graph(
     assert isinstance(hotspots, dict)
     assert isinstance(repeat_offenders, dict)
     hotspots_index_path = hotspots_index_path or history_pointer_path(
-        "historic/history/hotspots",
+        historic_tree.FAMILIES["hotspots"].root,
         hotspots_index,
     )
     repeat_offenders_index_path = repeat_offenders_index_path or history_pointer_path(
-        "historic/history/repeat_offenders",
+        historic_tree.FAMILIES["repeat_offenders"].root,
         repeat_offenders_index,
     )
     emit.out.extend(
@@ -3211,7 +3043,7 @@ def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
     _check_versioned_pointer_digest(
         emit,
         payload,
-        re.fullmatch(r"historic/receipts/generations/([0-9a-f]{64})/index\.json", rel_key),
+        historic_tree.index_path_pattern("receipts").fullmatch(rel_key),
     )
     return emit.out
 
@@ -3376,51 +3208,16 @@ _EXACT_CHECKERS = {
     "historic/hotspots.json": (check_hotspots, "historic_hotspots"),
     "historic/repeat_offenders.json": (check_repeat_offenders, "historic_repeat_offenders"),
     "historic/alert_history.json": (check_alert_history, "historic_alert_history"),
-    "historic/alerts/index.json": (
-        check_alert_archive_index,
-        "historic_alert_archive_index",
-    ),
+
 }
 
 # Match exact discovery keys before their broader per-entity prefixes.
 _INDEX_KINDS = {
     "historic/route_reliability/index.json": "historic_route_reliability_index",
-    "historic/receipts/index.json": "historic_receipts_index",
-    "historic/history/network/index.json": "historic_network_history_index",
-    "historic/history/lines/index.json": "historic_line_history_directory",
-    "historic/history/stops/index.json": "historic_stop_history_directory",
-    "historic/history/index.json": "historic_availability_index",
 }
 
-_INDEX_CHECKERS = {
-    "historic/receipts/index.json": check_receipts_index,
-    "historic/history/network/index.json": check_network_history_index,
-    "historic/history/lines/index.json": check_line_history_directory,
-    "historic/history/stops/index.json": check_stop_history_directory,
-    "historic/history/index.json": check_history_availability_index,
-}
 
 _PREFIX_CHECKERS = (
-    (
-        "historic/history/network/generations/",
-        check_network_history_partition,
-        "historic_network_history_partition",
-    ),
-    (
-        "historic/history/lines/",
-        check_line_history_partition,
-        "historic_line_history_partition",
-    ),
-    (
-        "historic/history/stops/",
-        check_stop_history_partition,
-        "historic_stop_history_partition",
-    ),
-    (
-        "historic/alerts/generations/",
-        check_alert_archive_page,
-        "historic_alert_archive_page",
-    ),
     ("historic/route_reliability/", check_route_reliability, "historic_route_reliability"),
     ("historic/stop_reliability/", check_stop_reliability, "historic_stop_reliability"),
     ("historic/receipts/", check_receipt, "historic_receipt"),
@@ -3431,38 +3228,11 @@ def _route_checker(rel_key: str):  # noqa: ANN202
     if rel_key in _EXACT_CHECKERS:
         return _EXACT_CHECKERS[rel_key]
     if rel_key in _INDEX_KINDS:
-        return (_INDEX_CHECKERS.get(rel_key), _INDEX_KINDS[rel_key])
-    if _NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE.fullmatch(rel_key):
-        return (check_network_history_index, "historic_network_history_index")
-    if _LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key):
-        return (check_line_history_directory, "historic_line_history_directory")
-    if _STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key):
-        return (check_stop_history_directory, "historic_stop_history_directory")
-    if _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(
-        rel_key
-    ) or _LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
-        return (check_line_history_index, "historic_line_history_index")
-    if _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(
-        rel_key
-    ) or _STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
-        return (check_stop_history_index, "historic_stop_history_index")
-    if re.fullmatch(r"historic/alerts/generations/[0-9a-f]{64}/index\.json", rel_key):
-        return (check_alert_archive_index, "historic_alert_archive_index")
-    if re.fullmatch(r"historic/receipts/generations/[0-9a-f]{64}/index\.json", rel_key):
-        return (check_receipts_index, "historic_receipts_index")
-    if _point_history_family_from_path(rel_key, index=True) is not None:
-        return (check_point_history_index, "historic_point_history_index")
-    if _point_history_family_from_path(rel_key, index=False) is not None:
-        return (check_point_history_day, "historic_point_history_day")
+        return (None, _INDEX_KINDS[rel_key])
+    tree_route = historic_tree.route_payload(rel_key)
+    if tree_route is not None:
+        return tree_route
     for prefix, checker, kind in _PREFIX_CHECKERS:
-        if prefix == "historic/history/lines/" and not _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(
-            rel_key
-        ):
-            continue
-        if prefix == "historic/history/stops/" and not _STOP_HISTORY_PARTITION_PATH_RE.fullmatch(
-            rel_key
-        ):
-            continue
         if rel_key.startswith(prefix):
             return (checker, kind)
     return (None, "unknown")
