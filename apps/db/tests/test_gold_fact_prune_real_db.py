@@ -134,10 +134,19 @@ def test_gold_strict_cutoff_preserves_equal_row_identities_and_exhausts(conn, ta
         table=table,
     )
     _insert_fact_rows(conn, snapshot_id=992002, count=2, captured_at=cutoff, table=table)
+    _insert_fact_rows(
+        conn,
+        snapshot_id=992003,
+        count=1,
+        captured_at=cutoff + timedelta(microseconds=1),
+        table=table,
+    )
     expired_ids = {(992001, 0), (992001, 1), (992001, 2)}
     cutoff_equal_ids = {(992002, 0), (992002, 1)}
+    recent_ids = {(992003, 0)}
+    retained_ids = cutoff_equal_ids | recent_ids
     before = _fact_identities(conn, table)
-    assert before == expired_ids | cutoff_equal_ids
+    assert before == expired_ids | retained_ids
 
     _, counts = prune_gold_fact_history(
         conn,
@@ -148,7 +157,7 @@ def test_gold_strict_cutoff_preserves_equal_row_identities_and_exhausts(conn, ta
     )
     remaining = _fact_identities(conn, table)
     assert before - remaining == expired_ids
-    assert remaining == cutoff_equal_ids
+    assert remaining == retained_ids
     assert counts[f"gold.{table}"] == 3
 
     _, second_counts = prune_gold_fact_history(
@@ -159,7 +168,7 @@ def test_gold_strict_cutoff_preserves_equal_row_identities_and_exhausts(conn, ta
         now_utc=NOW,
     )
     assert second_counts == {"gold.fact_trip_delay_snapshot": 0, "gold.fact_vehicle_snapshot": 0}
-    assert _fact_identities(conn, table) == cutoff_equal_ids
+    assert _fact_identities(conn, table) == retained_ids
 
 
 def test_gold_fact_prune_caps_deletes_at_batch_per_cycle(conn) -> None:
