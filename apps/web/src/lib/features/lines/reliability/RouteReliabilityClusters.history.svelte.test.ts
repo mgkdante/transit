@@ -1,3 +1,4 @@
+import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteReliability } from '$lib/v1';
@@ -408,19 +409,6 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		}
 	});
 
-	it('keeps the current default untouched, discovers only this entity, and loads no partition', async () => {
-		const history = createHistory();
-		const view = render(RouteReliabilityClusters, {
-			props: { data: current, locale: 'en', history },
-		});
-
-		await waitFor(() => expect(harness.getLineHistoryIndex).toHaveBeenCalledTimes(1));
-		expect(harness.getLineHistoryIndex).toHaveBeenCalledWith(entityId, expect.any(Object));
-		expect(harness.loadLineHistoryRange).not.toHaveBeenCalled();
-		expect(view.container.querySelector('[data-band="verdict"]')).toHaveTextContent('12%');
-		history.destroy();
-	});
-
 	it('keeps the default no-range service structure unchanged', async () => {
 		const history = createHistory();
 		const view = render(RouteReliabilityClusters, {
@@ -453,45 +441,6 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		expect(within(rail).getAllByRole('region', { name: /history/i })).toHaveLength(1);
 		expect(rail.querySelectorAll<HTMLInputElement>('input[type="date"]')).toHaveLength(2);
 		history.destroy();
-	});
-
-	it('does not flash current owned metrics, then renders exact cross-month retained values', async () => {
-		const pending = deferred<LineHistoryPartition[]>();
-		harness.page.url = new URL(
-			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-02-01&focus=keep',
-		);
-		harness.loadLineHistoryRange.mockReturnValue(pending.promise);
-		const history = createHistory();
-		const view = render(RouteReliabilityClusters, {
-			props: { data: current, locale: 'en', history },
-		});
-
-		try {
-			await waitFor(() => expect(harness.loadLineHistoryRange).toHaveBeenCalledTimes(1));
-			expect(view.container.querySelector('[data-band="verdict"]')).not.toHaveTextContent('12%');
-			expect(
-				view.container.querySelector('[data-slot="cancellations"]')?.textContent ?? '',
-			).not.toContain('99');
-			expectMultiDayCaption(view.container);
-			expectAnnounced(view.container, reliabilityCopy.en.history.loading);
-
-			pending.resolve(retainedPartitions);
-			await waitFor(() =>
-				expect(view.container.querySelector('[data-band="verdict"]')).toHaveTextContent('83%'),
-			);
-			expectAnnounced(view.container, 'Retained range loaded.');
-			expect(view.container.querySelector('[data-slot="cancellations"]')).toHaveTextContent(
-				'10.0%',
-			);
-			expect(view.container.querySelector('[data-slot="skipped-stops"]')).toHaveTextContent('2.0%');
-			expect(view.container.querySelector('[data-slot="service-completeness"]')).toHaveTextContent(
-				'75.0%',
-			);
-			expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
-			expect(harness.page.url.searchParams.get('focus')).toBe('keep');
-		} finally {
-			history.destroy();
-		}
 	});
 
 	it('keeps a corrected-range message visibly mounted after returning to the current view', async () => {
@@ -747,4 +696,40 @@ describe('RouteReliabilityClusters retained Line history', () => {
 			'1 jour,',
 		);
 	});
+});
+
+historyViewContract('line', {
+	page: harness.page,
+	index: harness.getLineHistoryIndex,
+	range: harness.loadLineHistoryRange,
+	entityId,
+	partitions: retainedPartitions,
+	mount: () => {
+		const history = createHistory();
+		const view = render(RouteReliabilityClusters, {
+			props: { data: current, locale: 'en', history },
+		});
+		return { container: view.container, destroy: () => history.destroy() };
+	},
+	owned: {
+		read: (container) => container.querySelector('[data-band="verdict"]')?.textContent ?? '',
+		current: '12%',
+		retained: '83%',
+	},
+	pending: (container) => {
+		expect(container.querySelector('[data-slot="cancellations"]')?.textContent ?? '').not.toContain(
+			'99',
+		);
+		expectMultiDayCaption(container);
+		expectAnnounced(container, reliabilityCopy.en.history.loading);
+	},
+	loaded: (container) => {
+		expectAnnounced(container, 'Retained range loaded.');
+		expect(container.querySelector('[data-slot="cancellations"]')).toHaveTextContent('10.0%');
+		expect(container.querySelector('[data-slot="skipped-stops"]')).toHaveTextContent('2.0%');
+		expect(container.querySelector('[data-slot="service-completeness"]')).toHaveTextContent(
+			'75.0%',
+		);
+		expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
+	},
 });

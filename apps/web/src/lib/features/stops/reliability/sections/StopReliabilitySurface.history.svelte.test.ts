@@ -1,3 +1,4 @@
+import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Locale } from '$lib/i18n';
@@ -288,14 +289,6 @@ function explicitUrl(extra = ''): URL {
 	);
 }
 
-function deferred<T>() {
-	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((done) => {
-		resolve = done;
-	});
-	return { promise, resolve };
-}
-
 const resources: StopHistoryResource[] = [];
 
 function createHistory(): StopHistoryResource {
@@ -358,20 +351,6 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		},
 	);
 
-	it('keeps the current default untouched, discovers only the raw stop, and loads no partition', async () => {
-		const history = createHistory();
-		const view = renderSurface(history);
-
-		await waitFor(() => expect(harness.getStopHistoryIndex).toHaveBeenCalledTimes(1));
-		expect(harness.getStopHistoryIndex).toHaveBeenCalledWith(ENTITY_ID, expect.any(Object));
-		expect(harness.loadStopHistoryRange).not.toHaveBeenCalled();
-		expect(view.container.querySelector('[data-slot="daily-range-verdict"]')).toHaveTextContent(
-			'99.0%',
-		);
-		expect(view.container.querySelector('[data-slot="stop-crowding"]')).toHaveTextContent('100%');
-		expect(view.container.querySelector('[data-slot="prediction-scope"]')).toBeNull();
-	});
-
 	it('uses one controlled navigator in the existing rail, keeps three grains, and removes the local picker', async () => {
 		harness.page.url = explicitUrl();
 		const history = createHistory();
@@ -390,43 +369,6 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		expect(bounds[1]).toHaveValue(WINDOW.to);
 		expect(view.container.querySelector('[data-slot="daily-range-controls"]')).toBeNull();
 		expect(view.container.querySelectorAll('[data-slot="date-range"]')).toHaveLength(1);
-	});
-
-	it('hides current-owned daily and crowding while loading, then uses exact aggregate sums', async () => {
-		const pending = deferred<StopHistoryPartition[]>();
-		harness.page.url = explicitUrl();
-		harness.loadStopHistoryRange.mockReturnValue(pending.promise);
-		const history = createHistory();
-		const view = renderSurface(history);
-
-		await waitFor(() => expect(harness.loadStopHistoryRange).toHaveBeenCalledTimes(1));
-		expect(
-			view.container.querySelector('[data-slot="daily-range-verdict"]')?.textContent ?? '',
-		).not.toContain('99.0%');
-		expect(view.container.querySelector('[data-slot="stop-crowding"]')).toBeNull();
-		expectAnnounced(view.container, /loading retained range/i);
-
-		pending.resolve(retainedPartitions);
-		await waitFor(() =>
-			expect(view.container.querySelector('[data-slot="daily-range-verdict"]')).toHaveTextContent(
-				'9.0%',
-			),
-		);
-		const verdict = view.container.querySelector('[data-slot="daily-range-verdict"]');
-		expect(verdict).toHaveTextContent('1.1 min');
-		expect(verdict).toHaveTextContent('100');
-		expect(verdict).not.toHaveTextContent('1.0 min');
-		expect(
-			view.container.querySelector('[data-slot="stop-reliability-pane"] [data-slot="verdict"]'),
-		).toHaveTextContent('91%');
-		expect(view.container.querySelector('[data-slot="prediction-scope"]')).toHaveTextContent(
-			/verdict.*selected/i,
-		);
-		expect(harness.page.url.searchParams.get('grain')).toBe('week');
-		expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
-		expect(harness.page.url.searchParams.get('focus')).toBe('keep');
-		expect(harness.page.url.searchParams.get('from')).toBe(WINDOW.from);
-		expect(harness.page.url.searchParams.get('to')).toBe(WINDOW.to);
 	});
 
 	it('announces partial occupancy while rendering the retained mix', async () => {
@@ -595,4 +537,42 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			expect.soft(historyCopy?.correction?.['outside-coverage']).toBeTruthy();
 		}
 	});
+});
+
+historyViewContract('stop', {
+	page: harness.page,
+	index: harness.getStopHistoryIndex,
+	range: harness.loadStopHistoryRange,
+	entityId: ENTITY_ID,
+	partitions: retainedPartitions,
+	grain: 'week',
+	mount: () => renderSurface(createHistory()),
+	owned: {
+		read: (container) =>
+			container.querySelector('[data-slot="daily-range-verdict"]')?.textContent ?? '',
+		current: '99.0%',
+		retained: '9.0%',
+	},
+	current: (container) => {
+		expect(container.querySelector('[data-slot="stop-crowding"]')).toHaveTextContent('100%');
+		expect(container.querySelector('[data-slot="prediction-scope"]')).toBeNull();
+	},
+	pending: (container) => {
+		expect(container.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+		expectAnnounced(container, /loading retained range/i);
+	},
+	loaded: (container) => {
+		const verdict = container.querySelector('[data-slot="daily-range-verdict"]');
+		expect(verdict).toHaveTextContent('1.1 min');
+		expect(verdict).toHaveTextContent('100');
+		expect(verdict).not.toHaveTextContent('1.0 min');
+		expect(
+			container.querySelector('[data-slot="stop-reliability-pane"] [data-slot="verdict"]'),
+		).toHaveTextContent('91%');
+		expect(container.querySelector('[data-slot="prediction-scope"]')).toHaveTextContent(
+			/verdict.*selected/i,
+		);
+		expect(harness.page.url.searchParams.get('grain')).toBe('week');
+		expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
+	},
 });

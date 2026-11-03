@@ -1,12 +1,11 @@
 <script lang="ts">
+	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
 	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { absenceSentence } from '$lib/site/absence';
 	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
 	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
 	import {
@@ -37,7 +36,6 @@
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 	} from '@yesid/ui/layout';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
@@ -111,73 +109,32 @@
 		});
 	}
 
-	let grainKey = $state<HotspotGrainKey>(
-		(() => {
-			const raw = page.url.searchParams.get('grain');
-			if (raw === 'shift') return 'shift';
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
-		})(),
-	);
-
-	const grainLabels = $derived<Partial<Record<HotspotGrainKey, string>>>({
+	const grainLabels = $derived({
 		day: t.grain.day,
 		week: t.grain.week,
 		month: t.grain.month,
-		shift: t.grain.shift,
+		shift: { label: t.grain.shift, compactLabel: t.grain.shiftCompact },
 	});
+	const view = createReliabilityViewState({
+		snapshot: () => hotspots.data,
+		grains: { keys: HOTSPOT_GRAINS, labels: () => grainLabels, present: () => present },
+		locale: () => locale,
+		url: () => {
+			const state = emptyFilterState();
+			if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
+			const date =
+				hotspots.request.hasDate && hotspots.resolved == null
+					? hotspots.request.rawDate
+					: hotspots.canonicalDate;
+			return { date, n: toSearchParams(state).get('n') };
+		},
+	});
+	const grainKey = $derived<HotspotGrainKey>(view.grain);
 	const showGrainPicker = $derived(present.size > 1);
-	const uid = $props.id();
-	const disabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<HotspotGrainKey>[]>(
-		HOTSPOT_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				...(key === 'shift' ? { compactLabel: t.grain.shiftCompact } : {}),
-				available,
-				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
-			};
-		}),
-	);
-	function grainSegmentsFor(
-		presentation: SurfaceRailPresentation,
-	): GrainSegment<HotspotGrainKey>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
-	});
 
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
-
-	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
-		const state = emptyFilterState();
-		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
-		const grainParam =
-			grainKey === 'day'
-				? null
-				: grainKey === 'shift'
-					? 'shift'
-					: ((): string | null => {
-							state.grain = grainKey;
-							return toSearchParams(state).get('grain');
-						})();
-		const dateParam =
-			hotspots.request.hasDate && hotspots.resolved == null
-				? hotspots.request.rawDate
-				: hotspots.canonicalDate;
-		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
-	});
-	$effect(() => mirrorSearchParams(wire));
 
 	function navKindFor(type: string): SurfaceKind | null {
 		const kind = type.toLowerCase();
@@ -317,7 +274,9 @@
 			? t.history.retainedWindow(formatDateKey(hotspots.selectedDate, locale))
 			: t.window[grainKey],
 	);
-	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
+	const controlsSummary = $derived(
+		view.segments.find((segment) => segment.key === grainKey)?.label ?? '',
+	);
 	const isEmpty = $derived(present.size === 0);
 	const showCombinedRail = $derived(
 		(hotspots.data != null && present.size > 0) ||
@@ -372,8 +331,7 @@
 	});
 </script>
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
 		{#key historyCorrection.revision}
 			<HistoryNavigator
@@ -394,22 +352,12 @@
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as segment (segment.key)}
-			{#if segment.describedById}
-				<span
-					id={segment.describedById}
-					class="hotspots-reason sr-only"
-					data-slot="controls-reason"
-				>
-					{disabledReason}
-				</span>
-			{/if}
-		{/each}
 	{/snippet}
 	{#snippet secondaryControls()}
 		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />

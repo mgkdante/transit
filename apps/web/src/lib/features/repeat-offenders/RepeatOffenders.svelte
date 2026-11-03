@@ -1,12 +1,11 @@
 <script lang="ts">
+	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
 	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { absenceSentence } from '$lib/site/absence';
 	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
@@ -44,7 +43,6 @@
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 	} from '@yesid/ui/layout';
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
@@ -122,65 +120,26 @@
 	const ladders = $derived(grains.ladders);
 	const present = $derived(grains.present);
 
-	let grainKey = $state<OffenderGrainKey>(
-		(() => {
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'month' ? 'month' : 'week';
-		})(),
-	);
-
-	const grainLabels = $derived<Partial<Record<OffenderGrainKey, string>>>({
-		week: t.grain.week,
-		month: t.grain.month,
+	const grainLabels = $derived({ week: t.grain.week, month: t.grain.month });
+	const view = createReliabilityViewState({
+		snapshot: () => offenders.data,
+		grains: { keys: OFFENDER_GRAINS, labels: () => grainLabels, present: () => present },
+		locale: () => locale,
+		url: () => {
+			const state = emptyFilterState();
+			if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
+			const date =
+				offenders.request.hasDate && offenders.resolved == null
+					? offenders.request.rawDate
+					: offenders.canonicalDate;
+			return { date, n: toSearchParams(state).get('n') };
+		},
 	});
-	const uid = $props.id();
-	const disabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<OffenderGrainKey>[]>(
-		OFFENDER_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				available,
-				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
-			};
-		}),
-	);
-	function grainSegmentsFor(
-		presentation: SurfaceRailPresentation,
-	): GrainSegment<OffenderGrainKey>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
-	});
+	const grainKey = $derived<OffenderGrainKey>(view.grain);
 
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
-
-	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
-		const state = emptyFilterState();
-		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
-		const grainParam =
-			grainKey === 'week'
-				? null
-				: ((): string | null => {
-						state.grain = grainKey;
-						return toSearchParams(state).get('grain');
-					})();
-		const dateParam =
-			offenders.request.hasDate && offenders.resolved == null
-				? offenders.request.rawDate
-				: offenders.canonicalDate;
-		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
-	});
-	$effect(() => mirrorSearchParams(wire));
 
 	function hrefFor(e: RepeatOffenderEntry): string | null {
 		const route = e.route?.trim();
@@ -449,8 +408,7 @@
 	});
 </script>
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
 		{#key historyCorrection.revision}
 			<HistoryNavigator
@@ -471,22 +429,12 @@
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as segment (segment.key)}
-			{#if segment.describedById}
-				<span
-					id={segment.describedById}
-					class="repeat-grain-reason sr-only"
-					data-slot="controls-reason"
-				>
-					{disabledReason}
-				</span>
-			{/if}
-		{/each}
 	{/snippet}
 	{#snippet secondaryControls()}
 		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />

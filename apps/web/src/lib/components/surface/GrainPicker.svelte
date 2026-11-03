@@ -31,6 +31,14 @@
 		class: className,
 		onSelect,
 	}: GrainPickerProps = $props();
+	const uid = $props.id();
+	const describedSegments = $derived(
+		segments.map((segment) =>
+			segment.available === false && segment.title && !segment.describedById
+				? { ...segment, describedById: `${uid}-reason-${segment.key}` }
+				: segment,
+		),
+	);
 
 	function pointerTitle(segment: GrainSegment): string | undefined {
 		if (segment.available !== false) {
@@ -41,7 +49,7 @@
 	}
 
 	const options = $derived(
-		segments.map(
+		describedSegments.map(
 			(segment): SegmentedChoiceOption => ({
 				key: segment.key,
 				label: segment.label,
@@ -69,3 +77,11 @@
 	data-slot="grain-picker"
 	class={cn('grain-picker', variant === 'time-grid' && 'grain-picker--time-grid', className)}
 />
+
+{#each describedSegments as segment (segment.key)}
+	{#if segment.describedById === `${uid}-reason-${segment.key}`}
+		<span id={segment.describedById} class="sr-only" data-slot="controls-reason"
+			>{segment.title}</span
+		>
+	{/if}
+{/each}

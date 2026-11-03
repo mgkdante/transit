@@ -10,8 +10,7 @@
 	} from '$lib/site/absence';
 	import { routeFor } from '$lib/nav';
 	import { desktop } from '@yesid/ui/state';
-	import { mapSearchFor, fromSearchParams } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { mapSearchFor } from '$lib/filters';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
@@ -32,7 +31,6 @@
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
 		ArticleControlStack,
-		createRetainedHistoryUi,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
@@ -43,7 +41,6 @@
 	import {
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 		ArticleHeader,
 		DetailFrame,
 	} from '@yesid/ui/layout';
@@ -54,16 +51,15 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
+	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
 	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey } from '$lib/metrics';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
 	import {
-		presentGrains,
-		defaultNetworkGrain,
-		NETWORK_GRAINS,
-		type NetworkGrain,
-	} from '../data/presentGrains';
+		RELIABILITY_GRAINS as NETWORK_GRAINS,
+		type ReliabilityGrain as NetworkGrain,
+	} from '$lib/reliability/grains';
 	import { WINDOWS, bestFitWindow, windowedSeries, type WindowDays } from '../data/trendWindow';
 	import { createNetworkHistoryResource } from '../data/networkHistoryResource.svelte';
 	import { selectHeadlineKpis } from '../selectors/headlineKpis';
@@ -213,19 +209,20 @@
 		}),
 	);
 
-	const historyUi = createRetainedHistoryUi({
-		resource: () => history,
-		copy: () => ({
-			...t.history,
-			noData: absenceSentence('no-retained-data', locale),
-		}),
-		formatDate: (date) => formatDateKey(date, locale),
+	const grainLabels = $derived({ day: t.grain.day, week: t.grain.week, month: t.grain.month });
+	const view = createReliabilityViewState({
+		snapshot: () => trend.data,
+		retained: {
+			resource: () => history,
+			copy: () => ({ ...t.history, noData: absenceSentence('no-retained-data', locale) }),
+		},
+		grains: { keys: NETWORK_GRAINS, labels: () => grainLabels },
+		apply: (_current, retained) => retained,
+		locale: () => locale,
 	});
-	const explicitHistory = $derived(historyUi.explicit);
-	const retainedReady = $derived(historyUi.ready);
-	const selectedTrend = $derived(
-		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
-	);
+	const explicitHistory = $derived(view.history.active);
+	const retainedReady = $derived(view.history.ready);
+	const selectedTrend = $derived(view.data);
 
 	const dailyChange = $derived.by(() => {
 		const series = selectedTrend?.series ?? [];
@@ -253,29 +250,15 @@
 	const weeklySeries = $derived<readonly TrendPoint[]>(selectedTrend?.weekly ?? []);
 	const monthlySeries = $derived<readonly TrendPoint[]>(selectedTrend?.monthly ?? []);
 	const allSeries = $derived({ daily: dailySeries, weekly: weeklySeries, monthly: monthlySeries });
-	const present = $derived(presentGrains(allSeries));
-
-	const historyDates = $derived(historyUi.availableDates);
-	const historyWindow = $derived(explicitHistory ? historyUi.resolvedWindow : undefined);
-	const historyCoverageText = $derived(historyUi.coverageText);
-	const historySelectionText = $derived(
-		explicitHistory ? historyUi.selectionText(historyUi.resolvedWindow) : null,
-	);
-	const historyAnnouncement = $derived(historyUi.announcement);
-
-	const grainSeed = fromSearchParams(page.url.searchParams).grain;
-	let grainSelected = $state(
-		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
-	);
-	let grainKey = $state<NetworkGrain>(
-		grainSeed === 'week' || grainSeed === 'month' ? grainSeed : 'day',
-	);
-	const grain = $derived<NetworkGrain>(grainKey);
+	const grain = $derived<NetworkGrain>(view.grain);
+	const grainKey = $derived(view.grain);
+	const historyAnnouncement = $derived(view.announcements.correction);
 	const networkHeadline = $derived(
 		reliabilityVerdict(selectedTrend, {
-			grain: grainSelected ? grain : undefined,
-			...(explicitHistory && historyUi.resolvedWindow ? historyUi.resolvedWindow : {}),
-			...(explicitHistory && history.value?.headline ? { aggregate: history.value.headline } : {}),
+			...view.verdictWindow,
+			...(explicitHistory && view.history.value?.headline
+				? { aggregate: view.history.value.headline }
+				: {}),
 		}),
 	);
 	const networkVerdict = $derived(
@@ -286,58 +269,11 @@
 			t.verdict,
 		),
 	);
-
 	const isDailyGrain = $derived(grain === 'day');
-
-	const grainLabels: Partial<Record<NetworkGrain, string>> = $derived({
-		day: t.grain.day,
-		week: t.grain.week,
-		month: t.grain.month,
-	});
-	const showGrainPicker = $derived(present.size > 1);
-
-	const uid = $props.id();
-	const grainDisabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<NetworkGrain>[]>(
-		NETWORK_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				available,
-				...(available
-					? {}
-					: { describedById: `${uid}-grain-reason-${key}`, title: grainDisabledReason }),
-			};
-		}),
-	);
-	function grainSegmentsFor(presentation: SurfaceRailPresentation): GrainSegment<NetworkGrain>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (!grainSelected && present.size > 0 && !present.has(grainKey))
-			grainKey = defaultNetworkGrain(present);
-	});
-
-	const historyWire = $derived.by<{
-		grain: string | null;
-		from: string | null;
-		to: string | null;
-	}>(() => {
-		const windowWire = historyUi.wireWindow();
-		return {
-			grain: grainSelected ? grainKey : null,
-			...windowWire,
-		};
-	});
-	$effect(() => mirrorSearchParams(historyWire));
+	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
 
 	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
+	// This trailing-day chart window is independent of the retained-history selection.
 	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
 
 	let windowKey = $state('7');
@@ -384,7 +320,9 @@
 	let retardKey = $state('p90');
 	const delayAvailabilityKnown = $derived(
 		explicitHistory &&
-			(history.state === 'ready' || history.state === 'partial' || history.state === 'no-data'),
+			(view.history.state === 'ready' ||
+				view.history.state === 'partial' ||
+				view.history.state === 'no-data'),
 	);
 	const p90Available = $derived(
 		isDailyGrain && (!delayAvailabilityKnown || windowed.some((point) => point.p90_min != null)),
@@ -395,7 +333,7 @@
 	const showRetardPicker = $derived(!delayAvailabilityKnown || p90Available || avgAvailable);
 	const showSecondaryControls = $derived((isDailyGrain && !explicitHistory) || showRetardPicker);
 	const hasViewControls = $derived(
-		history.index != null || showGrainPicker || showSecondaryControls,
+		view.history.discovered || showGrainPicker || showSecondaryControls,
 	);
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
 		{ key: 'p90', label: t.trend.retardP90, available: p90Available },
@@ -614,43 +552,24 @@
 	</ArticleSectionStack>
 {/snippet}
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
-		<HistoryNavigator
-			mode="range"
-			{locale}
-			labels={t.history.navigator}
-			value={historyWindow}
-			availableDates={historyDates}
-			coverageText={historyCoverageText}
-			selectionText={historySelectionText}
-			announcement={historyAnnouncement}
-			liveAnnouncement={false}
-			onRangeChange={historyUi.selectRange}
-		/>
+		<HistoryNavigator {...view.navigator!} announcement={historyAnnouncement} />
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
-			onSelect={() => (grainSelected = true)}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as seg (seg.key)}
-			{#if seg.describedById}
-				<span id={seg.describedById} class="network-reason sr-only" data-slot="controls-reason"
-					>{grainDisabledReason}</span
-				>
-			{/if}
-		{/each}
 	{/snippet}
 
 	{#if hasViewControls}
 		<CollapsibleSection title={t.viewControlsLabel} sectionKey="network-controls">
 			<ArticleControlStack
-				history={history.index != null ? historyControls : undefined}
+				history={view.history.discovered ? historyControls : undefined}
 				primary={showGrainPicker ? primaryControls : undefined}
 				secondary={showSecondaryControls ? windowControls : undefined}
 			/>
@@ -782,9 +701,9 @@
 			aria-label={t.historicRegion}
 		>
 			{#if explicitHistory}
-				{#if retainedReady && history.value != null}
+				{#if retainedReady && view.history.value != null}
 					<div class="network-history-notes" data-slot="history-scope-notes">
-						{#if history.state === 'partial'}
+						{#if view.history.state === 'partial'}
 							<p data-slot="history-partial">{t.history.partial}</p>
 						{/if}
 						<p data-slot="history-daily-only">{t.history.dailyOnly}</p>
@@ -793,7 +712,7 @@
 						{/if}
 					</div>
 					{@render historicBoard()}
-				{:else if history.state === 'no-data'}
+				{:else if view.history.state === 'no-data'}
 					<StateNotice
 						title={retainedDataAbsence.label}
 						body={retainedDataAbsence.why}
@@ -802,12 +721,12 @@
 						aria-live="polite"
 						data-slot="history-no-data"
 					/>
-				{:else if history.state === 'error'}
+				{:else if view.history.state === 'error'}
 					<EdgeState
 						variant="error-v1"
 						lang={locale}
 						layout={edgeLayout}
-						onRetry={() => history.retry()}
+						onRetry={() => view.history.retry()}
 					/>
 				{:else}
 					<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />

@@ -17,15 +17,15 @@ describe.each([{ known: HOTSPOT_GRAINS }, { known: OFFENDER_GRAINS }])(
 			);
 			expect([...result.ladders.keys()]).toEqual([known[0], known[1]]);
 			expect([...result.present]).toEqual([known[0], known[1]]);
-			expect(result.defaultGrain).toBe(known[0]);
 		});
 
-		it('defaults to the finest populated grain and uses the first vocabulary item when empty', () => {
-			expect(ladderGrains([row(known[0]), row(known[1], 1)], known).defaultGrain).toBe(known[1]);
+		it('keeps empty ladders distinct from populated grains', () => {
+			expect([...ladderGrains([row(known[0]), row(known[1], 1)], known).present]).toEqual([
+				known[1],
+			]);
 			const empty = ladderGrains(undefined, known);
 			expect(empty.ladders.size).toBe(0);
 			expect(empty.present.size).toBe(0);
-			expect(empty.defaultGrain).toBe(known[0]);
 		});
 
 		it('uses the last duplicate, even when that ladder is empty', () => {

@@ -1,27 +1,16 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
-	import { formatDateKey } from '$lib/utils/time';
+	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
 	import { selectVerdictWindow } from '$lib/v1/verdict';
-	import { page } from '$app/state';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { fromSearchParams, toSearchParams, emptyFilterState, resolveWindow } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { absenceSentence, describeAbsence } from '$lib/site/absence';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import type { RouteReliability } from '$lib/v1';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, type Snippet } from 'svelte';
-	import {
-		ArticleControlStack,
-		createRetainedHistoryUi,
-		GrainPicker,
-		HistoryNavigator,
-		type GrainSegment,
-	} from '$lib/components/surface';
+	import { ArticleControlStack, GrainPicker, HistoryNavigator } from '$lib/components/surface';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
-	import { type SurfaceRailContext, type SurfaceRailPresentation } from '@yesid/ui/layout';
+	import { type SurfaceRailContext } from '@yesid/ui/layout';
 	import {
 		CollapsibleSection,
 		observeActiveToc,
@@ -62,199 +51,53 @@
 
 	const copy = $derived(reliabilityCopy[locale]);
 
-	type GrainMode = 'day' | 'week' | 'month' | 'range';
-	const seed = fromSearchParams(page.url.searchParams);
-	let grainSelected = $state(
-		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
-	);
-	const explicitRangeToken = page.url.searchParams.get('grain') === 'range';
-	const initialHistoryRequest = historyRangeRequestFromSearchParams(page.url.searchParams);
-	const seededRange =
-		seed.window != null ||
-		explicitRangeToken ||
-		initialHistoryRequest.hasFrom ||
-		initialHistoryRequest.hasTo;
-	let viewKey = $state<GrainMode>(
-		seededRange ? 'range' : seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
-	);
-	const mode = $derived<GrainMode>(viewKey);
-
-	const datedPeriods = $derived(
-		(data.periods ?? [])
-			.filter((p): p is typeof p & { date: string } => p.grain === 'day' && !!p.date)
-			.filter((p, i, arr) => arr.findIndex((q) => q.date === p.date) === i)
-			.slice()
-			.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
-	);
-	const currentAvailableDates = $derived(datedPeriods.map((period) => period.date));
-	const historyUi = createRetainedHistoryUi({
-		resource: () => history,
-		initialRequest: initialHistoryRequest,
-		currentDates: () => currentAvailableDates,
-		copy: () => ({
-			...copy.history,
-			noData: absenceSentence('no-retained-data', locale),
-		}),
-		formatDate: (date) => formatDateKey(date, locale),
-		isCompleteRequest: ({ rawFrom, rawTo }) => Boolean(rawFrom && rawTo),
-		onCorrection: () => {
-			if (!explicitRangeToken) {
-				viewKey = 'day';
-				grainSelected = false;
-			}
+	const view = createReliabilityViewState({
+		snapshot: () => data,
+		retained: {
+			resource: () => history,
+			copy: () => ({ ...copy.history, noData: absenceSentence('no-retained-data', locale) }),
 		},
-	});
-	const availableDates = $derived(historyUi.availableDates);
-	const hasDatedPeriods = $derived(availableDates.length > 0);
-
-	const availableGrains = $derived.by<Set<string>>(() => {
-		const set = new SvelteSet<string>();
-		for (const p of data.periods ?? []) {
-			if (p.grain === 'day' || p.grain === 'week' || p.grain === 'month') set.add(p.grain);
-		}
-		return set;
-	});
-
-	let settled = false;
-	$effect(() => {
-		if (settled) return;
-		settled = true;
-		if (history == null) {
-			const window = resolveWindow(seed.window, new Set(currentAvailableDates));
-			historyUi.selectRange(window ?? undefined);
-			if (window) viewKey = 'range';
-			else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
-		}
-		if (
-			!grainSelected &&
-			(viewKey === 'week' || viewKey === 'month') &&
-			!availableGrains.has(viewKey)
-		)
-			viewKey = 'day';
-		else if (viewKey === 'range' && !hasDatedPeriods && history == null) viewKey = 'day';
-	});
-
-	const rangeWindow = $derived(historyUi.requestWindow);
-	const hasRangePick = $derived(mode === 'range' && rangeWindow != null);
-	const normalizedRange = $derived<{ start: string; end: string } | undefined>(
-		hasRangePick && rangeWindow ? { start: rangeWindow.from, end: rangeWindow.to } : undefined,
-	);
-	const historyRequested = $derived(historyUi.requested);
-	const explicitHistory = $derived(historyUi.explicit);
-	const retainedReady = $derived(historyUi.ready);
-	const historyAnnouncement = $derived(historyUi.announcement);
-	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
-
-	$effect(() => {
-		if (mode === 'range' || !historyRequested) return;
-		historyUi.clearRequest();
-	});
-
-	$effect(() => {
-		if (
-			history == null ||
-			!historyRequested ||
-			history.state !== 'current' ||
-			history.index != null
-		)
-			return;
-		if (resolveWindow(rangeWindow, new Set(currentAvailableDates)) != null) return;
-		historyUi.clearRequest();
-		if (!explicitRangeToken) viewKey = 'day';
-	});
-
-	const historyCoverageText = $derived(historyUi.coverageText);
-	const historySelectionText = $derived(
-		normalizedRange == null
-			? null
-			: historyUi.selectionText({ from: normalizedRange.start, to: normalizedRange.end }),
-	);
-
-	const wireParams = $derived.by<{ grain: string | null; from: string | null; to: string | null }>(
-		() => {
-			const state = emptyFilterState();
-			if (mode === 'range') {
-				if (normalizedRange)
-					state.window = { from: normalizedRange.start, to: normalizedRange.end };
-			} else if (mode !== 'day') {
-				state.grain = mode;
-			}
-			const sp = toSearchParams(state);
-			return {
-				grain:
-					mode === 'range'
-						? !normalizedRange
-							? 'range'
-							: sp.get('grain')
-						: grainSelected
-							? mode
-							: null,
-				from: sp.get('from'),
-				to: sp.get('to'),
-			};
+		grains: {
+			keys: ['day', 'week', 'month', 'range'] as const,
+			labels: () => ({
+				day: copy.controls.latestDay,
+				week: copy.controls.thisWeek,
+				month: copy.controls.thisMonth,
+				range: copy.controls.dateRange,
+			}),
 		},
-	);
-	$effect(() => mirrorSearchParams(wireParams));
-
-	const selectedData = $derived.by<RouteReliability>(() => {
-		if (!explicitHistory) return data;
-		if (retainedReady && history?.value != null) {
-			return applyRetainedLineHistory(data, history.value);
-		}
-		return clearRetainedLineHistory(data);
+		apply: (current, retained) =>
+			retained ? applyRetainedLineHistory(current, retained) : clearRetainedLineHistory(current),
+		locale: () => locale,
 	});
+	const mode = $derived(view.grain);
+	const rangeWindow = $derived(view.navigator?.value);
+	const normalizedRange = $derived(
+		mode === 'range' && rangeWindow ? { start: rangeWindow.from, end: rangeWindow.to } : undefined,
+	);
+	const explicitHistory = $derived(view.history.active);
+	const retainedReady = $derived(view.history.ready);
+	const historyAnnouncement = $derived(view.announcements.correction);
+	const historyLiveAnnouncement = $derived(view.announcements.live);
+	const selectedData = $derived(view.data);
 	const mapperOpts = $derived(
 		mode === 'range'
 			? {
 					grain: 'day',
 					dateRange: normalizedRange,
-					...(retainedReady && history?.value != null ? { retained: history.value } : {}),
+					...(retainedReady && view.history.value != null ? { retained: view.history.value } : {}),
 				}
-			: { grain: mode, automaticHeadline: !grainSelected },
+			: { grain: mode, automaticHeadline: view.verdictWindow.grain == null },
 	);
 
 	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
 	const dailyPercentiles = $derived(
 		explicitHistory && retainedReady && mode === 'range'
-			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			? selectDailyPercentiles(view.history.value?.aggregate ?? null)
 			: null,
 	);
 
-	const uid = $props.id();
-	const segmentAvailable = $derived<Record<GrainMode, boolean>>({
-		day: availableGrains.has('day'),
-		week: availableGrains.has('week'),
-		month: availableGrains.has('month'),
-		range: hasDatedPeriods,
-	});
-	const disabledReason = $derived(absenceSentence('no-observations', locale));
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
-	const segments = $derived<GrainSegment<GrainMode>[]>(
-		(['day', 'week', 'month', 'range'] as const).map((key) => {
-			const label =
-				key === 'day'
-					? copy.controls.latestDay
-					: key === 'week'
-						? copy.controls.thisWeek
-						: key === 'month'
-							? copy.controls.thisMonth
-							: copy.controls.dateRange;
-			const available = segmentAvailable[key];
-			return {
-				key,
-				label,
-				available,
-				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
-			};
-		}),
-	);
-	function segmentsFor(presentation: SurfaceRailPresentation): GrainSegment<GrainMode>[] {
-		return segments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
 
 	const activeWindowCaption = $derived.by<string>(() => {
 		const aw = copy.controls.activeWindow;
@@ -314,39 +157,19 @@
 	<div data-slot="reliability-sections">
 		{#snippet rangeControls()}
 			{#if mode === 'range'}
-				<HistoryNavigator
-					mode="range"
-					{availableDates}
-					{locale}
-					labels={copy.history.navigator}
-					value={rangeWindow}
-					coverageText={historyCoverageText}
-					selectionText={historySelectionText}
-					liveAnnouncement={false}
-					onRangeChange={historyUi.selectRange}
-				/>
+				<HistoryNavigator {...view.navigator!} />
 			{/if}
 		{/snippet}
 
-		{#snippet railContent({ closeSheet, presentation }: SurfaceRailContext)}
-			{@const presentedSegments = segmentsFor(presentation)}
+		{#snippet railContent({ closeSheet }: SurfaceRailContext)}
 			{#snippet primaryControls()}
 				<GrainPicker
-					segments={presentedSegments}
-					bind:value={viewKey}
-					onSelect={(key) => (grainSelected = key !== 'range')}
+					segments={view.segments}
+					value={view.grain}
+					onSelect={view.selectGrain}
 					label={copy.controls.grainLabel}
 					variant="time-grid"
 				/>
-				{#each presentedSegments as seg (seg.key)}
-					{#if seg.describedById}
-						<span
-							id={seg.describedById}
-							class="reliability-reason sr-only"
-							data-slot="controls-reason">{disabledReason}</span
-						>
-					{/if}
-				{/each}
 			{/snippet}
 			{#snippet activeWindowCaptionControl()}
 				<p class="reliability-window" data-slot="active-window" aria-live="polite">
@@ -394,7 +217,7 @@
 					</p>
 				{/if}
 				{#if explicitHistory}
-					{#if history?.state === 'no-data'}
+					{#if view.history.state === 'no-data'}
 						<StateNotice
 							title={retainedDataAbsence.label}
 							body={`${retainedDataAbsence.why}. ${copy.history.currentOnly}`}
@@ -404,13 +227,13 @@
 					{:else}
 						<div class="reliability-history-state" data-slot="history-state">
 							<div class="reliability-history-status">
-								{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+								{#if view.history.state === 'loading-index' || view.history.state === 'loading-range'}
 									<p data-slot="history-loading">{copy.history.loading}</p>
-								{:else if history?.state === 'partial'}
+								{:else if view.history.state === 'partial'}
 									<p data-slot="history-partial">{copy.history.partial}</p>
-								{:else if history?.state === 'error'}
+								{:else if view.history.state === 'error'}
 									<p data-slot="history-error">{copy.history.error}</p>
-									<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+									<Button variant="outline" size="sm" onclick={() => view.history.retry()}>
 										{copy.history.retry}
 									</Button>
 								{/if}
