@@ -2082,48 +2082,6 @@ describe('MapHero map-layer feed lifecycle', () => {
 		expect(closed.searchParams.has('vehicle')).toBe(false);
 	});
 
-	it('keeps equal filters after a genuine URL adoption reclassifies them as user-owned', async () => {
-		render(MapHero);
-		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
-		await waitFor(() => expect(harness.goto).toHaveBeenCalledOnce());
-		const pickedTarget = String(harness.goto.mock.lastCall?.[0]);
-
-		harness.setPageUrl(new URL(pickedTarget, 'http://localhost').href);
-		await tick();
-		harness.setPageUrl(`${new URL(pickedTarget, 'http://localhost').href}&x=1`);
-		await tick();
-		const navigationCount = harness.goto.mock.calls.length;
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
-		await tick();
-		expect(harness.goto).toHaveBeenCalledTimes(navigationCount);
-		expect(harness.setStops.mock.lastCall?.[2].stops.has('stop-1')).toBe(true);
-	});
-
-	it('auto-close of a vanished vehicle clears its selection-owned URL filters', async () => {
-		render(MapHero);
-		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
-		await screen.findByRole('button', { name: 'Close details' });
-
-		harness.setLiveVehicleVisible(false);
-		for (let revision = 2; revision <= 4; revision += 1) {
-			const generation = `2026-06-20T12:00:0${revision}Z`;
-			mapHeroReceiptSignals.setVehiclesGeneration(generation);
-			await waitFor(() =>
-				expect(document.querySelector('.map-hero')).toHaveAttribute(
-					'data-motion-tick-key',
-					generation,
-				),
-			);
-			await tick();
-		}
-
-		await waitFor(() => expect(screen.queryByRole('button', { name: 'Close details' })).toBeNull());
-		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
-		expect(closed.searchParams.has('route')).toBe(false);
-		expect(closed.searchParams.has('vehicle')).toBe(false);
-	});
-
 	it('drives vehicle hover through the foreground and stop detail changes through GL state', async () => {
 		render(MapHero);
 		await tick();

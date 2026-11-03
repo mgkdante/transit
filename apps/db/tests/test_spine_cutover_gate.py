@@ -13,7 +13,7 @@ import pytest
 import real_db_seed as db_seed
 from sqlalchemy import text
 
-from transit_ops.gold import rollups
+from transit_ops.gold import delay_periods, rollups
 from transit_ops.settings import Settings
 from transit_ops.snapshots.builders.historic import (
     build_hotspots,
@@ -29,6 +29,7 @@ ROUTE2 = "99H"
 _SEED_ROUTES = (ROUTE, ROUTE2)
 TORONTO = ZoneInfo("America/Toronto")
 GENERATED_UTC = "2026-06-25T00:00:00Z"
+FIXTURE_NOW = datetime(2026, 6, 25, 16, tzinfo=UTC)
 
 GOLDEN_PATH = (
     Path(__file__).parent
@@ -90,7 +91,29 @@ _PER_DAY_OCCUPANCY = [1, 1, 2, 3, 5]
 _SEED_DAYS = 7
 
 
+def _pin_sql_clock(connection) -> None:  # noqa: ANN001
+    # Shared seed callers need the same SQL clock as the frozen dates.
+    # The private schema and search_path roll back with the caller's transaction.
+    connection.execute(text("CREATE SCHEMA spine_cutover_clock"))
+    for clock, volatility in (("now", "STABLE"), ("clock_timestamp", "VOLATILE")):
+        connection.execute(text(f"""
+            CREATE FUNCTION spine_cutover_clock.{clock}() RETURNS timestamptz
+            LANGUAGE sql {volatility} AS $$
+                SELECT current_setting('spine_cutover.now')::timestamptz
+            $$
+        """))
+    connection.execute(
+        text("SELECT set_config('spine_cutover.now', :now, true)"),
+        {"now": FIXTURE_NOW.isoformat()},
+    )
+    connection.execute(
+        text("SET LOCAL search_path = spine_cutover_clock, pg_catalog, public")
+    )
+    assert connection.execute(text("SELECT now()")).scalar_one() == FIXTURE_NOW
+
+
 def _seed(connection) -> None:  # noqa: ANN001
+    _pin_sql_clock(connection)
     connection.execute(
         text(
             "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
@@ -108,7 +131,7 @@ def _seed(connection) -> None:  # noqa: ANN001
         )
 
     ids = _Counter(995100)
-    today = datetime.now(TORONTO).date()
+    today = FIXTURE_NOW.astimezone(TORONTO).date()
     for offset in range(1, _SEED_DAYS + 1):
         local_date = today - timedelta(days=offset)
         by_hour: dict[int, list[tuple[int, object, object]]] = {}
@@ -178,11 +201,14 @@ def _snapshot_header(connection, sid, run_id, eid, captured_at, n) -> None:  # n
 
 
 def _build(connection) -> None:  # noqa: ANN001
-    rollups.build_warm_rollups(
-        PROVIDER,
-        settings=Settings.model_construct(DATABASE_URL=None),
-        engine=_NoCommitEngine(connection),
-    )
+    with pytest.MonkeyPatch.context() as clock:
+        clock.setattr(rollups, "utc_now", lambda: FIXTURE_NOW)
+        clock.setattr(delay_periods, "utc_now", lambda: FIXTURE_NOW)
+        rollups.build_warm_rollups(
+            PROVIDER,
+            settings=Settings.model_construct(DATABASE_URL=None),
+            engine=_NoCommitEngine(connection),
+        )
 
 
 def _anchor_today(connection) -> date:  # noqa: ANN001

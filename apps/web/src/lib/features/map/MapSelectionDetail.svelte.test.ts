@@ -11,7 +11,7 @@ import MapSelectionDetail from './MapSelectionDetail.svelte';
 import DetailBusRow from './detail/DetailBusRow.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 import { detailActions } from './mapSelectionDetail.logic';
-import { resolveMapSelection } from './mapSelection';
+import { resolveMapSelection } from './selectionSession/mapSelection';
 
 const utc = (value: string) => value as IsoUtc;
 
