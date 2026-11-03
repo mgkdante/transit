@@ -53,7 +53,7 @@ class DailyRunError(ValueError):
 
 
 def _json(raw: str, *, document_count_exit: int = 5) -> object:
-    # jq -s distinguishes malformed JSON (4) from zero/multiple documents (5).
+    # jq 1.7.1 uses 5 for parse errors; document-count failures depend on the filter.
     def reject_constant(value: str) -> None:
         raise ValueError(f"Invalid JSON constant: {value}")
 
@@ -66,7 +66,7 @@ def _json(raw: str, *, document_count_exit: int = 5) -> object:
             documents.append(document)
             remaining = remaining[end:].lstrip()
     except ValueError as exc:
-        raise DailyRunError("Malformed JSON document", 4) from exc
+        raise DailyRunError("Malformed JSON document", 5) from exc
     if len(documents) != 1:
         raise DailyRunError("Expected exactly one JSON document", document_count_exit)
     return documents[0]
@@ -113,7 +113,6 @@ class DailyRun:
                 "check-handoff": self.check_handoff,
                 "proof": self.proof,
                 "retention": self.retention,
-                "notify": self.notify,
             }
             return jobs[job]()
         except DailyRunError as exc:
@@ -289,41 +288,6 @@ class DailyRun:
                 aggregate_status = aggregate_status or status
         return aggregate_status
 
-    def notify(self) -> int:
-        names = ("prepare", "rollups", "publish", "proof", "retention")
-        results = {name: self.env.get(f"{name.upper()}_RESULT", "") for name in names}
-        historic = self.env.get("HISTORIC_PUBLISH", "")
-        historic_ok = results["publish"] == results["proof"] == "success" or (
-            historic == "false" and results["publish"] == results["proof"] == "skipped"
-        )
-        success = historic_ok and all(
-            results[n] == "success" for n in ("prepare", "rollups", "retention")
-        )
-        summary = ", ".join(f"{name}={value}" for name, value in results.items())
-        summary += f", historic_publish={historic}"
-        script = Path(__file__).resolve().parents[4] / ".github/scripts/alert-issue.sh"
-        args: tuple[str, ...]
-        if success:
-            args = (
-                "resolve",
-                "daily-warm-rollups",
-                f"recovered in run {self.env.get('GITHUB_RUN_ID', '')} ({summary})",
-            )
-        else:
-            url = (
-                f"{self.env.get('GITHUB_SERVER_URL', '')}/"
-                f"{self.env.get('GITHUB_REPOSITORY', '')}/actions/runs/"
-                f"{self.env.get('GITHUB_RUN_ID', '')}"
-            )
-            args = (
-                "fire",
-                "daily-warm-rollups",
-                "[alert] Daily Warm Rollups failed",
-                f"failed run {url} ({summary})",
-            )
-        # Existing alert script remains an intentionally Linux-hosted operational tool.
-        return self.runner(Stage(("bash", str(script), *args))).exit_code
-
     def rollups(self) -> int:
         directory = self._directory("rollups")
         providers = _providers(_json(self.env.get("PROVIDER_PLAN", "")))
@@ -361,11 +325,17 @@ class DailyRun:
         def record(provider: str, status: int) -> None:
             receipt = receipts[provider]
             receipt["attempt_exit_codes"].append(status)
-            receipt["status"] = "success" if status == 0 else "failure"
-            receipt["completed_utc"] = self._stamp()
-            receipt["exit_code"] = status
-            receipt["attempt_count"] = len(receipt["attempt_exit_codes"])
-            receipt["recovered_after_timeout"] = receipt["attempt_exit_codes"] == [124, 0]
+            receipt = {
+                "provider_id": provider,
+                "status": "success" if status == 0 else "failure",
+                "started_utc": receipt["started_utc"],
+                "completed_utc": self._stamp(),
+                "exit_code": status,
+                "attempt_exit_codes": receipt["attempt_exit_codes"],
+                "attempt_count": len(receipt["attempt_exit_codes"]),
+                "recovered_after_timeout": receipt["attempt_exit_codes"] == [124, 0],
+            }
+            receipts[provider] = receipt
             _write_json(directory / f"rollup-stage-{provider}.json", receipt)
 
         effective = {}

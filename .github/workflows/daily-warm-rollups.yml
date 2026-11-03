@@ -274,9 +274,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Set up Python workspace
-        uses: ./.github/actions/setup-py
-
       - name: Update daily warm rollups issue
         env:
           PREPARE_RESULT: ${{ needs.prepare.result }}
@@ -287,5 +284,4 @@ jobs:
           HISTORIC_PUBLISH: ${{ needs.prepare.outputs.historic_publish }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        working-directory: apps/db
-        run: uv run python -m transit_ops.cli daily-run notify
+        run: python3 .github/scripts/daily-warm-notify.py

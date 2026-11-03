@@ -131,6 +131,14 @@ def test_jobs_delegate_policy_and_preserve_proof_handoff_and_retention_gates() -
     jobs = _load(DAILY_WORKFLOW)["jobs"]
     for name, job in jobs.items():
         runs = [step for step in job["steps"] if "run" in step]
+        if name == "notify":
+            assert [step["run"] for step in runs] == [
+                "python3 .github/scripts/daily-warm-notify.py"
+            ]
+            assert len(job["steps"]) == 2
+            assert "working-directory" not in runs[0]
+            assert all(step.get("uses") != "./.github/actions/setup-py" for step in job["steps"])
+            continue
         expected = ["check-handoff", "proof"] if name == "proof" else [name]
         assert [step["run"] for step in runs] == [
             f"uv run python -m transit_ops.cli daily-run {command}" for command in expected

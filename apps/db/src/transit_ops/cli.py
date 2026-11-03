@@ -24,7 +24,7 @@ from transit_ops.backups import (
 )
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.daily_run import DailyRun
-from transit_ops.daily_run_process import run_stage
+from transit_ops.daily_run_process import SubprocessRunner
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.gold import (
@@ -97,13 +97,14 @@ class DailyJob(StrEnum):
     check_handoff = "check-handoff"
     proof = "proof"
     retention = "retention"
-    notify = "notify"
 
 
 @app.command("daily-run")
 def daily_run(job: DailyJob) -> None:
     """Run one Daily Warm job using its environment and attempt-scoped artifacts."""
-    raise typer.Exit(DailyRun(run_stage, environ=os.environ).run(job.value))
+    with SubprocessRunner() as runner:
+        status = DailyRun(runner, environ=os.environ).run(job.value)
+    raise typer.Exit(runner.cancel_exit_code or status)
 
 
 def _project_root() -> Path:

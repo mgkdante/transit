@@ -2,6 +2,9 @@
 
 import json
 import os
+import runpy
+import shutil
+import subprocess
 import sys
 import threading
 from datetime import UTC, datetime
@@ -10,6 +13,12 @@ from pathlib import Path
 import pytest
 
 from transit_ops.daily_run import DailyRun, Stage, StageResult
+
+NOTIFY_SCRIPT = Path(__file__).resolve().parents[3] / ".github/scripts/daily-warm-notify.py"
+
+
+def notify(environ, runner):
+    return runpy.run_path(str(NOTIFY_SCRIPT))["notify"](environ, runner=runner)
 
 
 def read(path: Path):
@@ -63,6 +72,16 @@ def test_rollups_defer_one_timeout_retry_and_preserve_actual_receipt(tmp_path, r
     assert len(calls) == 4
     for provider, attempts in (("stm", [124, retry]), ("oc", [43]), ("sto", [124])):
         receipt = read(tmp_path / "rollups" / f"rollup-stage-{provider}.json")
+        assert list(receipt) == [
+            "provider_id",
+            "status",
+            "started_utc",
+            "completed_utc",
+            "exit_code",
+            "attempt_exit_codes",
+            "attempt_count",
+            "recovered_after_timeout",
+        ]
         assert receipt == {
             "provider_id": provider,
             "status": "success" if attempts[-1] == 0 else "failure",
@@ -88,7 +107,7 @@ def test_invalid_plans_fail_before_any_stage(tmp_path, job, plan):
     daily = DailyRun(
         lambda stage: calls.append(stage), artifact_root=tmp_path, environ={"PROVIDER_PLAN": plan}
     )
-    assert daily.run(job) in {4, 5}
+    assert daily.run(job) == 5
     assert calls == []
 
 
@@ -132,23 +151,27 @@ def test_publish_refuses_four_providers(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "result",
+    ("result", "expected"),
     [
-        "{}",
-        '[{"provider_id":"wrong","tier":"historic"}]',
-        '[{"provider_id":"stm","tier":"live"}]',
-        "[] []",
-        "",
+        ("{}", 1),
+        ('[{"provider_id":"wrong","tier":"historic"}]', 1),
+        ('[{"provider_id":"stm","tier":"live"}]', 1),
+        ("[] []", 1),
+        ("", 1),
+        ("{", 5),
     ],
 )
-def test_publish_rejects_invalid_success_output(tmp_path, result):
+def test_publish_rejects_invalid_success_output(tmp_path, result, expected):
     def runner(stage):
         stage.output.write_text(result)
         return StageResult(0)
 
-    assert DailyRun(runner, artifact_root=tmp_path, environ={"PROVIDER_PLAN": '["stm"]'}).run(
-        "publish"
-    ) in {1, 4}
+    assert (
+        DailyRun(runner, artifact_root=tmp_path, environ={"PROVIDER_PLAN": '["stm"]'}).run(
+            "publish"
+        )
+        == expected
+    )
     assert read(tmp_path / "publish/historic-publish.json") == []
 
 
@@ -387,13 +410,9 @@ def test_notify_uses_all_results(tmp_path, publish, proof, historic, action):
         "GITHUB_SERVER_URL": "https://github.com",
         "GITHUB_REPOSITORY": "mgkdante/transit",
     }
-    assert (
-        DailyRun(
-            lambda s: calls.append(s) or StageResult(0), artifact_root=tmp_path, environ=env
-        ).run("notify")
-        == 0
-    )
-    assert calls[0].argv[2:4] == (action, "daily-warm-rollups")
+    assert notify(env, lambda argv: calls.append(argv) or 0) == 0
+    assert calls[0][2:4] == (action, "daily-warm-rollups")
+    assert Path(calls[0][1]) == NOTIFY_SCRIPT.with_name("alert-issue.sh")
 
 
 def test_subprocess_runner_captures_discovery_and_streams_append_logs(tmp_path, capsys):
@@ -546,13 +565,8 @@ def test_notify_fires_when_any_required_daily_job_fails(tmp_path, failed_job):
         for job in ["PREPARE", "ROLLUPS", "PUBLISH", "PROOF", "RETENTION"]
     }
     env[failed_job + "_RESULT"] = "cancelled"
-    assert (
-        DailyRun(
-            lambda s: calls.append(s) or StageResult(23), artifact_root=tmp_path, environ=env
-        ).run("notify")
-        == 23
-    )
-    assert calls[0].argv[2:4] == ("fire", "daily-warm-rollups")
+    assert notify(env, lambda argv: calls.append(argv) or 23) == 23
+    assert calls[0][2:4] == ("fire", "daily-warm-rollups")
 
 
 def test_cli_forwards_environment_and_job_exit_code(tmp_path, monkeypatch):
@@ -562,7 +576,7 @@ def test_cli_forwards_environment_and_job_exit_code(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PROVIDER_PLAN", '["stm"]')
-    monkeypatch.setattr(cli, "run_stage", lambda s: StageResult(41))
+    monkeypatch.setattr(cli.SubprocessRunner, "__call__", lambda self, s: StageResult(41))
     result = CliRunner().invoke(cli.app, ["daily-run", "rollups"])
     assert result.exit_code == 41
     receipt = read(tmp_path / "artifacts/daily-warm-rollups/rollups/rollup-stage-stm.json")
@@ -588,4 +602,75 @@ def test_posix_timeout_kills_a_child_ignoring_term_even_after_its_parent_exits(t
             kill_after_seconds=1,
         )
     )
+    assert result.exit_code == 124
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX TERM/grace/KILL process-group behavior")
+def test_posix_timeout_returns_137_when_direct_child_requires_kill():
+    from transit_ops.daily_run_process import run_stage
+
+    program = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(30)"
+    result = run_stage(
+        Stage((sys.executable, "-c", program), timeout_seconds=0.5, kill_after_seconds=1)
+    )
     assert result.exit_code == 137
+
+
+def test_notify_uses_only_stdlib_without_site_packages(tmp_path):
+    harness = (
+        "import os,runpy,subprocess,sys,types; "
+        "os.environ.update(PREPARE_RESULT='success',ROLLUPS_RESULT='success',"
+        "PUBLISH_RESULT='skipped',PROOF_RESULT='skipped',RETENTION_RESULT='success',"
+        "HISTORIC_PUBLISH='false'); "
+        "subprocess.run=lambda argv,**kw: types.SimpleNamespace(returncode="
+        "0 if argv[2:4]==('resolve','daily-warm-rollups') else 9); "
+        "runpy.run_path(sys.argv[1],run_name='__main__')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", harness, str(NOTIFY_SCRIPT)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_missing_discovery_file_returns_jq_system_error(tmp_path):
+    assert DailyRun(lambda s: None, artifact_root=tmp_path, environ={}).run("proof") == 2
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Ubuntu CI jq parity")
+def test_installed_jq_malformed_json_and_missing_file_statuses(tmp_path):
+    jq = shutil.which("jq")
+    assert jq is not None, "Ubuntu runner must provide jq for legacy parity verification"
+    malformed = subprocess.run(
+        [jq, "-es", "."], input="{\n", capture_output=True, text=True, check=False
+    )
+    missing = subprocess.run(
+        [jq, "-es", ".", str(tmp_path / "missing.json")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert malformed.returncode == 5, malformed.stderr
+    assert missing.returncode == 2, missing.stderr
+
+
+def test_capture_replaces_invalid_utf8():
+    from transit_ops.daily_run_process import run_stage
+
+    result = run_stage(
+        Stage((sys.executable, "-c", "import os; os.write(1,b'bad\\xff')"), capture=True)
+    )
+    assert result == StageResult(0, "bad\ufffd")
+
+
+def test_tee_decodes_utf8_across_read_boundaries(tmp_path, capsys):
+    from transit_ops.daily_run_process import run_stage
+
+    program = "import os,time; os.write(1,b'caf\\xc3'); time.sleep(.15); os.write(1,b'\\xa9')"
+    result = run_stage(Stage((sys.executable, "-c", program), output=tmp_path / "log", tee=True))
+    assert result.exit_code == 0
+    assert capsys.readouterr().out == "caf\u00e9"
+    assert (tmp_path / "log").read_bytes() == b"caf\xc3\xa9"

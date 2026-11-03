@@ -151,13 +151,13 @@ def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
             step
             for step in notify["steps"]
             if "alert-issue.sh" in str(step.get("run", ""))
-            or "transit_ops.cli daily-run notify" in str(step.get("run", ""))
+            or "daily-warm-notify.py" in str(step.get("run", ""))
         ]
         assert len(alert_steps) == 1
         alert_step = alert_steps[0]
         if filename == "daily-warm-rollups.yml":
             # Decision behavior is exercised through DailyRun with a fake stage runner.
-            assert alert_step["run"] == "uv run python -m transit_ops.cli daily-run notify"
+            assert alert_step["run"] == "python3 .github/scripts/daily-warm-notify.py"
         else:
             assert f"fire {slug}" in alert_step["run"]
             assert f"resolve {slug}" in alert_step["run"]
