@@ -13,8 +13,8 @@
 	import { delayMeasurement } from '$lib/site/delayPresentation';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-	import type { MapSelection, MapSelectionDetail } from './mapSelection';
-	import type { SelectionPresence, SelectionSourceHealth } from './selectionGrace.svelte';
+	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
+	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import {
 		detailActions,

@@ -4,8 +4,11 @@
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { BottomSheet } from '$lib/components/shell';
-	import type { MapSelection, MapSelectionDetail as MapSelectionDetailModel } from './mapSelection';
-	import type { SelectionPresence, SelectionSourceHealth } from './selectionGrace.svelte';
+	import type {
+		MapSelection,
+		MapSelectionDetail as MapSelectionDetailModel,
+	} from './mapSelectionSession.svelte';
+	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { detailActions, detailIdentity } from './mapSelectionDetail.logic';
 

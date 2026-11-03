@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { IsoUtc, StopFile, StopIndexEntry } from '$lib/v1/schemas';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
-import { resolveMapSelection } from './mapSelection';
+import { resolveMapSelection } from './selectionSession/mapSelection';
 
 const utc = (value: string) => value as IsoUtc;
 

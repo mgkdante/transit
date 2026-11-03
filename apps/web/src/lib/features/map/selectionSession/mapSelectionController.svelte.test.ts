@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import MapSelectionControllerHarness from './__fixtures__/MapSelectionControllerHarness.svelte';
+import MapSelectionControllerHarness from '../__fixtures__/MapSelectionControllerHarness.svelte';
 import { createMapSelectionController } from './mapSelectionController.svelte';
 
 afterEach(() => cleanup());
