@@ -91,6 +91,8 @@ afterEach(() => {
 describe('the same reliability evidence across every surface', () => {
 	it.each([
 		[85, 4000, 'reliable', [], 85],
+		[79.6, 1_000_000, 'reliable', [], 80],
+		[59.6, 1_000_000, 'patchy', [], 60],
 		[72, 4000, 'patchy', [], 72],
 		[48, 4000, 'unreliable', [], 48],
 		[85, 29, 'tentative', [], 85],
@@ -130,9 +132,30 @@ describe('the same reliability evidence across every surface', () => {
 			harness.route = {
 				id: '24',
 				generated_utc: '2026-11-02T00:00:00Z',
-				periods: [...(otp_pct == null ? [] : [{ ...point, grain: 'day' }]), ...otherWindows],
+				periods: [
+					...(otp_pct == null
+						? []
+						: [
+								{
+									...point,
+									grain: 'day',
+									on_time:
+										observation_count == null
+											? null
+											: Math.round((otp_pct / 100) * observation_count),
+								},
+							]),
+					...otherWindows,
+				],
 			} as RouteReliability;
-			harness.stop = { ...harness.route } as StopReliability;
+			harness.stop = {
+				...harness.route,
+				periods: harness.route.periods?.map((window) => ({
+					grain: window.grain,
+					otp_pct: window.otp_pct,
+					observation_count: window.observation_count,
+				})),
+			} as StopReliability;
 			harness.network = {
 				generated_utc: harness.route.generated_utc,
 				series: otp_pct == null ? [] : [point],

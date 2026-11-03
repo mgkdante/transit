@@ -20,8 +20,8 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict } from '$lib/v1/verdict';
-	import { selectBullet, otpTone } from '../selectors/bullet';
+	import { selectVerdict, VERDICT_RELIABLE_FLOOR } from '$lib/v1/verdict';
+	import { selectBullet, verdictTone } from '../selectors/bullet';
 	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -63,9 +63,9 @@
 			xLabel: copy.strip.otpPct,
 			unit: copy.units.pct,
 			domain: OTP_DOMAIN,
-			target: 80,
+			target: VERDICT_RELIABLE_FLOOR,
 			targetLabel: copy.strip.target,
-			tone: otpTone(headline.otpPct),
+			tone: verdictTone(verdict.status),
 			n: headline.observationCount,
 		}),
 	);

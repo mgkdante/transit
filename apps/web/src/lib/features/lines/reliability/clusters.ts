@@ -15,7 +15,7 @@ import type {
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 import { roundHalfAwayFromZero } from '$lib/utils';
 import type { RetainedLineHistory } from './data/retainedHistory';
-import { selectVerdictWindow, reliabilityVerdict } from '$lib/v1/verdict';
+import { selectVerdictWindow, reliabilityVerdict, type VerdictStatus } from '$lib/v1/verdict';
 
 export interface SnapshotStripVM {
 	readonly grain: string;
@@ -85,6 +85,7 @@ export interface WaitRegularityVM {
 }
 
 export interface ServiceDeliveredVM {
+	readonly verdictStatus?: VerdictStatus;
 	readonly serviceSpans: ServiceSpanPeriod[];
 	readonly cancellations: CancellationPeriod[];
 	readonly skippedStops: SkippedStopPeriod[];
@@ -664,6 +665,7 @@ export function toReliabilityClusters(
 				? null
 				: roundHalfAwayFromZero((100 * scheduledService.delivered) / scheduledService.scheduled, 1);
 	const serviceDelivered: ServiceDeliveredVM = {
+		verdictStatus: verdict.status,
 		serviceSpans,
 		cancellations,
 		skippedStops,

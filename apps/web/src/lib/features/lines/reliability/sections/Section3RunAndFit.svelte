@@ -17,7 +17,7 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
-	import { otpTone, selectBullet } from '../selectors/bullet';
+	import { verdictTone, selectBullet } from '../selectors/bullet';
 	import { selectOccupancyShare } from '../selectors/occupancyShare';
 	import { detailCopy } from '../../lines.copy';
 	import type { ServiceDeliveredVM, CrowdingVM } from '../clusters';
@@ -177,7 +177,7 @@
 			xLabel: t.serviceCompletenessPct,
 			unit: copy.units.pct,
 			domain: SHARE_DOMAIN,
-			tone: otpTone(serviceCompletenessPct),
+			tone: verdictTone(service.verdictStatus),
 		}),
 	);
 	const dominantBullet = $derived(

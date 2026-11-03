@@ -967,3 +967,33 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.waitRegularity.windowed).toBe(false);
 	});
 });
+
+describe('shared confidence for service metric tones', () => {
+	it.each([
+		{ otp_pct: 95, observation_count: 29, on_time: 28 },
+		{ otp_pct: 80, observation_count: 1000, on_time: 800 },
+	])(
+		'carries the tentative verdict to the service presentation at n=$observation_count',
+		(window) => {
+			const result = toReliabilityClusters(
+				{
+					id: '24',
+					generated_utc: utc('2026-11-02T00:00:00Z'),
+					periods: [{ grain: 'day', ...window }],
+					cancellations: [
+						{
+							grain: 'day',
+							canceled_trip_days: 0,
+							total_trip_days: 100,
+							scheduled_trip_days: 100,
+							delivered_trip_days: 100,
+						},
+					],
+				},
+				{ grain: 'day', automaticHeadline: false },
+			);
+			expect(result.serviceDelivered.serviceCompletenessPct).toBe(100);
+			expect(result.serviceDelivered.verdictStatus).toBe('tentative');
+		},
+	);
+});

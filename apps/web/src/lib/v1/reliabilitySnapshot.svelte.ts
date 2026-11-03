@@ -86,6 +86,7 @@ export function createReliabilityLoader(
 	kind: ReliabilityKind,
 	copy?: VerdictCopy,
 ): ReliabilityLoader {
+	// NavPill's language links reload the document, recreating this route-scoped locale copy.
 	const cache = new SvelteMap<string, ReliabilitySnapshot>();
 	let inFlight = $state(0);
 	const queue: string[] = [];
