@@ -2,7 +2,7 @@ from collections.abc import Sequence, Set
 from dataclasses import dataclass
 from typing import cast
 
-from transit_ops.snapshots import builders, envelope, gate
+from transit_ops.snapshots import builders, envelope, gate, historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
     history_coverage,
     history_date,
@@ -26,7 +26,7 @@ from transit_ops.snapshots.historic_streams import (
     LineParentIndexes,
 )
 
-HISTORY_ROOT_PATH = "historic/history/index.json"
+HISTORY_ROOT_PATH = historic_tree.HISTORY_ROOT_PATH
 
 
 def _valid_history_dates(values: Sequence[object]) -> list[str]:
@@ -77,7 +77,7 @@ def _entity_family_availability(
     return HistoricFamilyAvailability(
         family=family,
         selection_mode=HistorySelectionMode.range,
-        index_path=index_path or f"historic/history/{family}/index.json",
+        index_path=index_path or historic_tree.FAMILIES[family].index_path,
         collection_generation_id=directory.collection_generation_id,
         first_available_date=first,
         last_available_date=last,

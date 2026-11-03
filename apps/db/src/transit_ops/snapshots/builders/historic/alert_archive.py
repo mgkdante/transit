@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from transit_ops.gold.reader import round_half_away
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders._helpers import (
     _alert_active_periods,
     _iso,
@@ -192,7 +193,7 @@ def _finalize_page(
     )
     body = snapshot_json_bytes(page)
     digest = hashlib.sha256(body).hexdigest()
-    path = f"historic/alerts/generations/{digest}/{month}/page-{page_number:04d}.json"
+    path = historic_tree.FAMILIES["alerts"].leaf_path(digest, f"{month}/page-{page_number:04d}")
     coverage_start, coverage_end = _page_coverage(page, provider_timezone)
     ref = AlertArchivePageRef(
         path=path,

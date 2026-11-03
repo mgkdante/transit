@@ -30,27 +30,24 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
-from transit_ops.snapshots import builders
+from transit_ops.snapshots import builders, historic_tree
 from transit_ops.snapshots.contract import (
     AlertArchiveIndex,
     AlertArchivePage,
+    AlertArchivePageRef,
     AlertHistory,
     HistoricAvailabilityIndex,
     HistoricCollectionIndex,
     HistoricEntityDirectoryIndex,
+    HistoricEntityIndexRef,
     HistoricFamilyAvailability,
-    HistoricHotspotsDay,
     HistoricPartitionRef,
-    HistoricRepeatOffendersDay,
-    LineHistoryPartition,
     Manifest,
     ManifestHistoricFiles,
-    NetworkHistoryPartition,
     Receipt,
     ReceiptsIndex,
     RouteReliability,
     RouteReliabilityIndex,
-    StopHistoryPartition,
 )
 from transit_ops.snapshots.gate import (
     CheckResult,
@@ -58,19 +55,9 @@ from transit_ops.snapshots.gate import (
     check_alert_archive_index,
     check_history_availability_graph,
     check_history_availability_index,
-    check_line_history_directory,
-    check_line_history_index,
-    check_line_history_partition,
-    check_line_history_partition_ref,
     check_network_history_index,
-    check_network_history_partition,
-    check_network_history_partition_ref,
     check_point_history_day,
     check_point_history_index,
-    check_stop_history_directory,
-    check_stop_history_index,
-    check_stop_history_partition,
-    check_stop_history_partition_ref,
 )
 from transit_ops.snapshots.paths import safe_public_path as _safe_public_path
 
@@ -300,13 +287,6 @@ class HistoricPublishProofReport:
 OperationalErrorTypes = (OSError, ValueError, SQLAlchemyError)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PointFamily = Literal["hotspots", "repeat_offenders"]
-_POINT_DAY_MODELS: dict[
-    PointFamily,
-    type[HistoricHotspotsDay] | type[HistoricRepeatOffendersDay],
-] = {
-    "hotspots": HistoricHotspotsDay,
-    "repeat_offenders": HistoricRepeatOffendersDay,
-}
 
 
 def _has_source_text(alert: object) -> bool:
@@ -1072,10 +1052,7 @@ def _verify_point_history_family(
         return [], None
     indexes[family] = _index_evidence(edge.index_path, index)
 
-    path_match = re.fullmatch(
-        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/index\.json",
-        edge.index_path,
-    )
+    path_match = historic_tree.point_index_match(family, edge.index_path)
     raw_sha256 = hashlib.sha256(raw).hexdigest() if raw is not None else None
     advertised_path_sha256 = path_match.group(1) if path_match is not None else None
     path_sha256_matches = (
@@ -1132,7 +1109,8 @@ def _verify_point_history_family(
     if not index_is_valid or not path_sha256_matches:
         return [], index
 
-    refs = index.partitions
+    refs = [HistoricPartitionRef.model_validate(edge.reference)
+            for edge in historic_tree.FAMILIES[family].edges(index)]
     partition_gate_binding = _bind_partition_refs_to_gate(
         refs,
         gate_digests=gate_digests,
@@ -1144,7 +1122,8 @@ def _verify_point_history_family(
         family_index_evidence["partition_gate_binding"] = partition_gate_binding
     boundary_refs = [] if not refs else [refs[0], *([] if len(refs) == 1 else [refs[-1]])]
     boundary_dates = [ref.coverage_start for ref in boundary_refs]
-    model_type = _POINT_DAY_MODELS[family]
+    model_type = historic_tree.FAMILIES[family].leaf_model
+    assert model_type is not None
     for ref in boundary_refs:
         payload, day_raw, day_artifact = _fetch_model(
             ref.path,
@@ -1479,17 +1458,17 @@ def _verify_network_history_family(
     return index, tuple(
         _RangePartitionCandidate(
             family="network",
-            ref=ref,
-            model_type=NetworkHistoryPartition,
-            payload_checker=check_network_history_partition,
-            ref_checker=check_network_history_partition_ref,
+            ref=HistoricPartitionRef.model_validate(tree_edge.reference),
+            model_type=tree_edge.model,
+            payload_checker=tree_edge.checker,
+            ref_checker=historic_tree.FAMILIES["network"].checker("ref"),
             parent_index_path=edge.index_path,
             parent_index_gate_bound=artifact.get("gate_sha256_matches") is True,
             parent_index_gate_mismatch=(
                 "public_gate_digest_mismatch" in artifact.get("failures", [])
             ),
         )
-        for ref in index.partitions
+        for tree_edge in historic_tree.FAMILIES["network"].edges(index)
     )
 
 
@@ -1511,18 +1490,13 @@ def _verify_entity_history_family(
     tuple[HistoricCollectionIndex, ...],
     tuple[_RangePartitionCandidate, ...],
 ]:
-    if family == "lines":
-        directory_checker = check_line_history_directory
-        index_checker = check_line_history_index
-        partition_model = LineHistoryPartition
-        partition_checker = check_line_history_partition
-        ref_checker = check_line_history_partition_ref
-    else:
-        directory_checker = check_stop_history_directory
-        index_checker = check_stop_history_index
-        partition_model = StopHistoryPartition
-        partition_checker = check_stop_history_partition
-        ref_checker = check_stop_history_partition_ref
+    definition = historic_tree.FAMILIES[family]
+    directory_checker = definition.checker("index")
+    index_checker = definition.checker("entity")
+    partition_model = definition.leaf_model
+    partition_checker = definition.checker("leaf")
+    ref_checker = definition.checker("ref")
+    assert partition_model is not None
 
     directory = cast(HistoricEntityDirectoryIndex | None, loaded_directory[0])
     directory_artifact = loaded_directory[2]
@@ -1552,16 +1526,17 @@ def _verify_entity_history_family(
 
     children: list[HistoricCollectionIndex] = []
     candidates: list[_RangePartitionCandidate] = []
-    child_fetches = _fetch_models_bounded(
-        [(child_edge.index_path, HistoricCollectionIndex) for child_edge in directory.entities],
+    reader = historic_tree.PublicHttpTreeReader(lambda requests: _fetch_models_bounded(
+        requests,
         public_root=public_root,
         fetch_bytes=fetch_bytes,
         artifacts=artifacts,
         failures=failures,
         query=query,
         gate_digests=gate_digests,
-    )
-    for child_edge, loaded_child in zip(directory.entities, child_fetches, strict=True):
+    ))
+    for tree_edge, loaded_child in definition.walk(reader, directory):
+        child_edge = HistoricEntityIndexRef.model_validate(tree_edge.reference)
         child = cast(HistoricCollectionIndex | None, loaded_child[0])
         child_artifact = loaded_child[2]
         if child is None:
@@ -1585,7 +1560,8 @@ def _verify_entity_history_family(
             and child.publish_generation_id != expected_publish_generation_id
         ):
             _add_failure(failures, f"public_{family}_history_generation_mismatch", child_artifact)
-        for ref in child.partitions:
+        for child_tree_edge in definition.edges(child):
+            ref = HistoricPartitionRef.model_validate(child_tree_edge.reference)
             candidates.append(
                 _RangePartitionCandidate(
                     family=family,
@@ -2081,7 +2057,8 @@ def _build_historic_publish_proof(
                     alerts_index_artifact,
                 )
 
-            refs = [ref for month in alerts_index.months for ref in month.pages]
+            refs = [AlertArchivePageRef.model_validate(edge.reference[1])
+                    for edge in historic_tree.FAMILIES["alerts"].edges(alerts_index)]
             if expectations is not None:
                 if alerts_index.collection_generation_id != expectations.collection_generation_id:
                     _add_failure(

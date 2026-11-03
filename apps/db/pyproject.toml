@@ -69,6 +69,7 @@ files = [
     "src/transit_ops/snapshots/publication_lane.py",
     "src/transit_ops/snapshots/historic_streams.py",
     "src/transit_ops/snapshots/historic_graph.py",
+    "src/transit_ops/snapshots/historic_tree.py",
     "src/transit_ops/snapshots/historic_tier.py",
     "src/transit_ops/snapshots/historic_compatibility.py",
     "src/transit_ops/snapshots/envelope.py",

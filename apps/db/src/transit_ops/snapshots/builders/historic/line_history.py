@@ -6,6 +6,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
+from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryBatchLoader,
     HistoryEntityMetricPlan,
@@ -55,14 +56,7 @@ _group_rows = group_history_entity_date_rows
 
 
 LINE_HISTORY_ENTITY_BATCH_SIZE = 25
-LINE_HISTORY_METRICS = (
-    ("delay", "additive"),
-    ("delay_percentiles", "daily_only"),
-    ("cancellation", "additive"),
-    ("occupancy", "additive"),
-    ("service_span", "daily_only"),
-    ("skipped_stops", "additive"),
-)
+LINE_HISTORY_METRICS = historic_tree.LINE_HISTORY_METRICS
 
 _LINE_HISTORY_IDS_SQL = named_query(
     "history.lines.ids.inner",
@@ -548,7 +542,7 @@ class LineHistoryStreamSummary:
                     entity_id=index.entity_id or "",
                     encoded_id=encode_history_entity_id(index.entity_id or ""),
                     index_path=(
-                        f"historic/history/lines/"
+                        f"{historic_tree.FAMILIES['lines'].root}/"
                         f"{encode_history_entity_id(index.entity_id or '')}/index.json"
                     ),
                     collection_generation_id=index.collection_generation_id or "",
