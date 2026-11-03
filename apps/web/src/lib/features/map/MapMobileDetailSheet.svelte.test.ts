@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Alert, IsoUtc, StopIndexEntry } from '$lib/v1/schemas';
-import type { StopMapDetail, VehicleMapDetail } from './mapSelection';
+import type { StopMapDetail, VehicleMapDetail } from './selectionSession/mapSelection';
 import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));

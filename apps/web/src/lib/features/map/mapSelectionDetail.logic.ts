@@ -12,7 +12,7 @@ import { localizeHref, type Locale } from '$lib/i18n';
 import { routeFor } from '$lib/nav';
 
 export { delayTone } from '$lib/site/delayPresentation';
-import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelection';
+import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelectionSession.svelte';
 import { MAP_SELECTION_DETAIL_COPY, type MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 export type DetailAction = { readonly href: string; readonly label: string };

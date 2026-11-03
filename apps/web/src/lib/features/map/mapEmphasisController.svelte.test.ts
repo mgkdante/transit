@@ -2,7 +2,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
 import { STOPS_SOURCE } from '$lib/components/map';
 import { createMapEmphasisController } from './mapEmphasisController.svelte';
-import { createMapSelectionController } from './mapSelectionController.svelte';
+import { createMapSelectionController } from './selectionSession/mapSelectionController.svelte';
 
 type FeatureState = Record<string, boolean>;
 

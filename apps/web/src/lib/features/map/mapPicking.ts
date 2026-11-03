@@ -1,6 +1,6 @@
 import { ROUTE_LINE_HIT_LAYER, STOPS_LAYER, VEHICLE_BODY_LAYER } from '$lib/components/map';
 import { PICKABLE_MAP_LAYERS } from './mapLayerModules';
-import type { MapSelection } from './mapSelection';
+import type { MapSelection } from './mapSelectionSession.svelte';
 
 export interface PickableMapFeature {
 	readonly layer?: { readonly id?: string };
