@@ -83,6 +83,11 @@ export function createReliabilityViewState<
 	// A line's range is a separate view choice; stop/network keep grain and dates independent.
 	const rangeChoice = options.grains.keys.find((key) => key === 'range');
 	const firstGrain = options.grains.keys[0];
+	// Hotspots' exact shift token is an extension to the shared calendar parser.
+	const seededGrain =
+		options.grains.keys.some((key) => key === 'shift') && params.get('grain') === 'shift'
+			? 'shift'
+			: seed.grain;
 	const explicitRangeToken = rangeChoice != null && params.get('grain') === rangeChoice;
 	const initialRequest =
 		rangeChoice == null ? emptyRequest() : historyRangeRequestFromSearchParams(params);
@@ -94,7 +99,7 @@ export function createReliabilityViewState<
 	let grain = $state<K>(
 		rangeChoice != null && (explicitRangeToken || initialRequest.hasFrom || initialRequest.hasTo)
 			? rangeChoice
-			: (options.grains.keys.find((key) => key === params.get('grain')) ?? firstGrain),
+			: (options.grains.keys.find((key) => key === seededGrain) ?? firstGrain),
 	);
 	let correctionText = $state<string | null>(null);
 	let handledCorrection = '';
@@ -216,6 +221,13 @@ export function createReliabilityViewState<
 				else if (grain === rangeChoice && !explicitRangeToken) grain = firstGrain;
 				if (grain === rangeChoice && availableDates.length === 0) grain = firstGrain;
 			}
+			if (
+				rangeChoice != null &&
+				!selected &&
+				(grain === 'week' || grain === 'month') &&
+				!available.has(grain)
+			)
+				grain = firstGrain;
 		}
 		if (
 			rangeChoice == null &&
