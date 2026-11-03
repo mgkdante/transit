@@ -526,7 +526,8 @@ describe('HotspotsBoard article', () => {
 		).map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(2);
 		expect(new Set(reasonIds)).toHaveLength(2);
-		expect(reasonIds.every((id) => /-(?:desktop|mobile)$/.test(id))).toBe(true);
+		for (const id of reasonIds)
+			expect(container.querySelectorAll(`[aria-describedby="${id}"]`)).toHaveLength(1);
 	});
 
 	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {

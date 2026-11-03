@@ -41,6 +41,23 @@ function renderPicker(
 }
 
 describe('GrainPicker — variants', () => {
+	it('owns a distinct disabled-grain explanation in each presentation', () => {
+		const segments = [
+			{ key: 'day', label: 'Day', available: true },
+			{ key: 'week', label: 'Week', available: false, title: 'No observations for this grain.' },
+		];
+		const ids = ['Rail grains', 'Sheet grains'].map((label) => {
+			const view = render(GrainPicker, { props: { segments, value: 'day', label } });
+			const radio = within(view.getByRole('radiogroup', { name: label })).getByRole('radio', {
+				name: 'Week',
+			});
+			const id = radio.getAttribute('aria-describedby');
+			expect(id).toBeTruthy();
+			expect(document.getElementById(id!)).toHaveTextContent('No observations for this grain.');
+			return id;
+		});
+		expect(new Set(ids).size).toBe(2);
+	});
 	it('renders the opt-in time grid as four row-major compact segments', () => {
 		const { getByRole } = render(GrainPicker, {
 			props: {

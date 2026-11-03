@@ -3,20 +3,16 @@
 	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { fmtDelayMin } from '$lib/utils';
-	import { formatDateKey } from '$lib/utils/time';
-	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import type { DateWindow } from '$lib/filters';
 	import { absenceSentence, absenceShort, describeAbsence } from '$lib/site/absence';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { StopReliability } from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
 		ArticleControlStack,
-		createRetainedHistoryUi,
 		ReliabilityPane,
 		GrainPicker,
 		HistoryNavigator,
-		type GrainSegment,
 	} from '$lib/components/surface';
 	import {
 		CollapsibleSection,
@@ -30,6 +26,7 @@
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '$lib/components/brand';
+	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
 	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -37,11 +34,9 @@
 	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
 
 	import {
-		presentGrains,
-		defaultStopGrain,
-		STOP_GRAINS,
-		type StopGrain,
-	} from '../data/presentGrains';
+		RELIABILITY_GRAINS as STOP_GRAINS,
+		type ReliabilityGrain as StopGrain,
+	} from '$lib/reliability/grains';
 	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
@@ -86,100 +81,43 @@
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 	const retainedDataBody = $derived(`${retainedDataAbsence.why}. ${copy.history.currentOnly}`);
 
-	const present = $derived(presentGrains(data.periods));
-	const dfltGrain = $derived(defaultStopGrain(present));
-
-	const seed = fromSearchParams(page.url.searchParams);
-	let grainSelected = $state(
-		['day', 'week', 'month'].includes(page.url.searchParams.get('grain') ?? ''),
-	);
-	let grain = $state<StopGrain>(
-		seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
-	);
-
-	let settled = $state(false);
-	$effect(() => {
-		if (settled) return;
-		settled = true;
-		if (!grainSelected && !present.has(grain)) grain = dfltGrain;
-	});
-	$effect(() => {
-		if (settled && !grainSelected && !present.has(grain)) grain = dfltGrain;
-	});
-
-	const currentHistoryDates = $derived(
-		[...new Set((data.daily ?? []).map((point) => point.date))].sort(),
-	);
-	const historyUi = createRetainedHistoryUi({
-		resource: () => history,
-		currentDates: () => currentHistoryDates,
-		copy: () => ({
-			...copy.history,
-			noData: absenceSentence('no-retained-data', locale),
-		}),
-		formatDate: (date) => formatDateKey(date, locale),
-	});
-	const historyRequested = $derived(historyUi.requested);
-	const explicitHistory = $derived(historyUi.explicit);
-	const retainedReady = $derived(historyUi.ready);
-	const availableHistoryDates = $derived(historyUi.availableDates);
-	const currentHistoryWindow = $derived.by<DateWindow | undefined>(() => {
-		if (
-			history == null ||
-			!historyRequested ||
-			history.state !== 'current' ||
-			history.index != null ||
-			historyUi.requestWindow == null
-		)
-			return undefined;
-		return resolveWindow(historyUi.requestWindow, new Set(currentHistoryDates));
-	});
-	const historyWindow = $derived<DateWindow | undefined>(
-		explicitHistory ? historyUi.resolvedWindow : currentHistoryWindow,
-	);
-	const effectiveWindow = $derived<DateWindow | null>(
-		windowOverride !== undefined ? windowOverride : (historyWindow ?? null),
-	);
-	const historyCoverageText = $derived(historyUi.coverageText);
-	const historySelectionText = $derived(
-		historyRequested ? historyUi.selectionText(historyWindow) : null,
-	);
-	const historyAnnouncement = $derived(historyUi.announcement);
-	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
-	const historyWire = $derived.by<Record<string, string | null>>(() => {
-		const grainValue = grainSelected ? grain : null;
-		if (history == null || windowOverride !== undefined)
-			return { grain: grainValue } as Record<string, string | null>;
-		return { grain: grainValue, ...historyUi.wireWindow(currentHistoryWindow) };
-	});
-	$effect(() => {
-		if (syncUrl) mirrorSearchParams(historyWire);
-	});
-
-	const grainLabels = $derived<Partial<Record<StopGrain, string>>>({
+	const grainLabels = $derived({
 		day: copy.grain.day,
 		week: copy.grain.week,
 		month: copy.grain.month,
 	});
-	const grainSegments = $derived<GrainSegment<StopGrain>[]>(
-		STOP_GRAINS.map((g) => ({ key: g, label: grainLabels[g] ?? g, available: present.has(g) })),
-	);
+	const view = createReliabilityViewState({
+		snapshot: () => data,
+		retained: {
+			resource: () => history,
+			copy: () => ({ ...copy.history, noData: absenceSentence('no-retained-data', locale) }),
+			window: () => windowOverride,
+		},
+		grains: { keys: STOP_GRAINS, labels: () => grainLabels },
+		apply: (current, retained) =>
+			retained ? applyRetainedStopHistory(current, retained) : clearRetainedStopHistory(current),
+		locale: () => locale,
+		url: () => (syncUrl ? {} : false),
+	});
+	const grain = $derived<StopGrain>(view.grain);
+	const grainSegments = $derived(view.segments);
+	const explicitHistory = $derived(view.history.active);
+	const retainedReady = $derived(view.history.ready);
+	const availableHistoryDates = $derived(view.navigator?.availableDates ?? []);
+	const historyWindow = $derived(view.navigator?.value);
+	const historySelectionText = $derived(view.navigator?.selectionText ?? null);
+	const effectiveWindow = $derived(view.window ?? null);
+	const historyAnnouncement = $derived(view.announcements.correction);
+	const historyLiveAnnouncement = $derived(view.announcements.live);
 	const windowCaption = $derived(copy.grain.window(grain));
 	const grainSummary = $derived(grainLabels[grain] ?? grain);
-
-	const selectedData = $derived.by<StopReliability>(() => {
-		if (!explicitHistory) return data;
-		if (retainedReady && history?.value != null) {
-			return applyRetainedStopHistory(data, history.value);
-		}
-		return clearRetainedStopHistory(data);
-	});
+	const selectedData = $derived(view.data);
 	const exactDailyRange = $derived.by<ExactDailyRangeIngredients | null>(() => {
-		if (!retainedReady || history?.value == null || historyWindow == null) return null;
-		const delay = history.value.aggregate.delay.value;
+		if (!retainedReady || view.history.value == null || historyWindow == null) return null;
+		const delay = view.history.value.aggregate.delay.value;
 		if (delay == null) return null;
 		return {
-			daysWithData: history.value.retainedDayCount,
+			daysWithData: view.history.value.retainedDayCount,
 			from: historyWindow.from,
 			to: historyWindow.to,
 			observationCount: delay.observationCount,
@@ -193,19 +131,14 @@
 	);
 	const retainedPercentiles = $derived(
 		explicitHistory && retainedReady
-			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			? selectDailyPercentiles(view.history.value?.aggregate ?? null)
 			: null,
 	);
 	const dayPercentiles = $derived(
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	const stopVerdictHeadline = $derived(
-		reliabilityVerdict(selectedData, {
-			grain: grainSelected ? grain : undefined,
-			...(effectiveWindow ? { from: effectiveWindow.from, to: effectiveWindow.to } : {}),
-		}),
-	);
+	const stopVerdictHeadline = $derived(reliabilityVerdict(selectedData, view.verdictWindow));
 	const stopVerdict = $derived(
 		selectVerdict(
 			stopVerdictHeadline,
@@ -319,23 +252,13 @@
 	<div data-slot="stop-reliability-sections">
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			{#snippet historyControls()}
-				<HistoryNavigator
-					mode="range"
-					{locale}
-					labels={copy.history.navigator}
-					value={historyWindow}
-					availableDates={availableHistoryDates}
-					coverageText={historyCoverageText}
-					selectionText={historySelectionText}
-					liveAnnouncement={false}
-					onRangeChange={historyUi.selectRange}
-				/>
+				<HistoryNavigator {...view.navigator!} />
 			{/snippet}
 			{#snippet primaryControls()}
 				<GrainPicker
 					segments={grainSegments}
-					bind:value={grain}
-					onSelect={() => (grainSelected = true)}
+					value={view.grain}
+					onSelect={view.selectGrain}
 					label={copy.grain.label}
 					variant="time-grid"
 				/>
@@ -386,7 +309,7 @@
 					</p>
 				{/if}
 				{#if explicitHistory}
-					{#if history?.state === 'no-data'}
+					{#if view.history.state === 'no-data'}
 						<StateNotice
 							title={retainedDataAbsence.label}
 							body={retainedDataBody}
@@ -395,13 +318,13 @@
 						/>
 					{:else}
 						<div class="stop-history-state" data-slot="history-state">
-							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+							{#if view.history.state === 'loading-index' || view.history.state === 'loading-range'}
 								<p data-slot="history-loading">{copy.history.loading}</p>
-							{:else if history?.state === 'partial'}
+							{:else if view.history.state === 'partial'}
 								<p data-slot="history-partial">{copy.history.partial}</p>
-							{:else if history?.state === 'error'}
+							{:else if view.history.state === 'error'}
 								<p data-slot="history-error">{copy.history.error}</p>
-								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+								<Button variant="outline" size="sm" onclick={() => view.history.retry()}>
 									{copy.history.retry}
 								</Button>
 							{/if}
