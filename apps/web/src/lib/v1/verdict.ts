@@ -158,11 +158,10 @@ export function reliabilityVerdict(
 						};
 	}
 	headline = window.aggregate ?? headline;
-	// Published snapshots and visible percentages use whole-percent precision.
-	headline = { ...headline, otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct) };
 	const grain = window.from && window.to ? 'day' : (headlineWindow?.grain ?? 'day');
 	return {
 		...headline,
+		otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct),
 		...classify(headline),
 		grain,
 		hedge: selectVerdict(headline, window.from && window.to ? 'range' : grain, 'en', copy).sentence,
@@ -210,7 +209,6 @@ export interface VerdictCopy {
 export const VERDICT_MIN_N = 30;
 export const VERDICT_RELIABLE_FLOOR = 80;
 export const VERDICT_PATCHY_FLOOR = 60;
-const VERDICT_WIDE_CI = 0.3;
 
 export function wilsonInterval(onTime: number, n: number): { lo: number; hi: number } {
 	const b = wilsonBoundsProportion(onTime, n);
@@ -220,13 +218,6 @@ export function wilsonInterval(onTime: number, n: number): { lo: number; hi: num
 type Mode = 'day' | 'week' | 'month' | 'range';
 const asMode = (m: string): Mode => (m === 'week' || m === 'month' || m === 'range' ? m : 'day');
 
-const bandOf = (otp: number): 'reliable' | 'patchy' | 'unreliable' =>
-	otp >= VERDICT_RELIABLE_FLOOR
-		? 'reliable'
-		: otp >= VERDICT_PATCHY_FLOOR
-			? 'patchy'
-			: 'unreliable';
-
 function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' | 'interval'> {
 	const otp = headline.otpPct;
 	const n = headline.observationCount;
@@ -234,17 +225,22 @@ function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' 
 	if (n == null || !Number.isFinite(n) || n < VERDICT_MIN_N)
 		return { status: 'tentative', interval: null };
 	const { lo, hi } = wilsonInterval(headline.onTime ?? Math.round((otp / 100) * n), n);
+	const shownPct = Math.round(otp);
 	return {
 		status:
-			hi - lo >= VERDICT_WIDE_CI || bandOf(Math.round(lo * 100)) !== bandOf(Math.round(hi * 100))
-				? 'tentative'
-				: bandOf(otp),
+			lo * 100 >= VERDICT_RELIABLE_FLOOR && shownPct >= VERDICT_RELIABLE_FLOOR
+				? 'reliable'
+				: hi * 100 < VERDICT_RELIABLE_FLOOR
+					? shownPct >= VERDICT_PATCHY_FLOOR
+						? 'patchy'
+						: 'unreliable'
+					: 'tentative',
 		interval: { lo: Math.round(lo * 100), hi: Math.round(hi * 100) },
 	};
 }
 
 export function selectVerdict(
-	headline: VerdictHeadline,
+	headline: VerdictHeadline | ReliabilityVerdict,
 	mode: string,
 	_locale: Locale,
 	verdict: VerdictCopy,
@@ -278,8 +274,6 @@ export function selectVerdict(
 		onTen = hasCounts ? 10 - Math.round(((n - headline.onTime) / n) * 10) : Math.round(otp / 10);
 		lateTen = 10 - onTen;
 	}
-	const band = bandOf(otp);
-
 	if (n == null || !Number.isFinite(n) || n < VERDICT_MIN_N) {
 		return {
 			status: 'tentative',
@@ -287,7 +281,9 @@ export function selectVerdict(
 			sentence: n == null ? v.unknownCount(window) : v.tooFew(window, n),
 		};
 	}
-	const result = classify(headline);
+	// Keep the source interval when a shared verdict already rounded the displayed percentage.
+	const result = 'status' in headline ? headline : classify(headline);
+	if (result.status === 'absent') return { status: 'absent', ban: null, sentence: v.absent };
 	const { lo: loPct, hi: hiPct } = result.interval!;
 
 	if (result.status === 'tentative') {
@@ -297,6 +293,7 @@ export function selectVerdict(
 			sentence: v.tentative({ window, otp: otpInt, n, lo: loPct, hi: hiPct }),
 		};
 	}
+	const band = result.status;
 	return {
 		status: band,
 		ban: `${otpInt}%`,

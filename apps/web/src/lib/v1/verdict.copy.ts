@@ -15,7 +15,7 @@ export const verdictCopy = defineCopy({
 		unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 			`Service peu fiable ${window}, seulement ${onTen} relevés de retard sur 10 dans la plage de ponctualité${hedge}; ${lateTen} sur 10 hors de cette plage.`,
 		tentative: ({ window, otp, n, lo, hi }) =>
-			`Données limitées ${window} : ${otp} % de ${n} relevés de retard dans la plage de ponctualité (IC 95 % : ${lo}–${hi} %).`,
+			`Fiabilité incertaine ${window} : ${otp} % de ${n} relevés de retard dans la plage de ponctualité (IC 95 % : ${lo}–${hi} %).`,
 		unknownCount: () =>
 			'Relevés insuffisants pour juger la fiabilité : nombre d’observations inconnu.',
 		tooFew: (window: string, n: number) =>
@@ -37,7 +37,7 @@ export const verdictCopy = defineCopy({
 		unreliable: ({ window, onTen, lateTen, hedge }) =>
 			`Ran unreliably ${window}, only about ${onTen} in 10 delay observations in the on-time band${hedge}; ${lateTen} in 10 outside that band.`,
 		tentative: ({ window, otp, n, lo, hi }) =>
-			`Limited data ${window}: ${otp}% of ${n} delay observations in the on-time band (95% CI: ${lo}–${hi}%).`,
+			`Reliability is uncertain ${window}: ${otp}% of ${n} delay observations in the on-time band (95% CI: ${lo}–${hi}%).`,
 		unknownCount: () =>
 			'Not enough delay observations to judge reliability: observation count unknown.',
 		tooFew: (window, n) => `Not enough delay observations ${window} (${n}) to judge reliability.`,

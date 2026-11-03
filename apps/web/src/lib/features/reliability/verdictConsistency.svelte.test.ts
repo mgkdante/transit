@@ -91,8 +91,16 @@ afterEach(() => {
 describe('the same reliability evidence across every surface', () => {
 	it.each([
 		[85, 4000, 'reliable', [], 85],
-		[79.6, 1_000_000, 'reliable', [], 80],
+		[79.6, 1_000_000, 'patchy', [], 80],
 		[59.6, 1_000_000, 'patchy', [], 60],
+		[85, 100, 'tentative', [], 85],
+		[55, 200, 'unreliable', [], 55],
+		[65, 40, 'patchy', [], 65],
+		[70, 40, 'tentative', [], 70],
+		[79, 5000, 'tentative', [], 79],
+		[81, 5000, 'tentative', [], 81],
+		[79, 10000, 'patchy', [], 79],
+		[81, 10000, 'reliable', [], 81],
 		[72, 4000, 'patchy', [], 72],
 		[48, 4000, 'unreliable', [], 48],
 		[85, 29, 'tentative', [], 85],
@@ -205,6 +213,14 @@ describe('the same reliability evidence across every surface', () => {
 				expect(
 					listing.container.querySelector('[data-slot="reliability-badge"]'),
 				).toHaveTextContent(`${headlinePct}%`);
+			if (status === 'reliable') expect(headlinePct).toBeGreaterThanOrEqual(80);
+			await fireEvent.click(listing.getByTestId('lines-status-problem'));
+			await waitFor(() => {
+				const badge = listing.container.querySelector('[data-slot="reliability-badge"]');
+				if (status === 'patchy' || status === 'unreliable')
+					expect(badge).toHaveAttribute('data-status', status);
+				else expect(badge).toBeNull();
+			});
 		},
 	);
 });

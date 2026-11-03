@@ -15,7 +15,13 @@ import type {
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 import { roundHalfAwayFromZero } from '$lib/utils';
 import type { RetainedLineHistory } from './data/retainedHistory';
-import { selectVerdictWindow, reliabilityVerdict, type VerdictStatus } from '$lib/v1/verdict';
+import {
+	selectVerdictWindow,
+	reliabilityVerdict,
+	type VerdictStatus,
+	type VerdictHeadline,
+	type ReliabilityVerdict,
+} from '$lib/v1/verdict';
 
 export interface SnapshotStripVM {
 	readonly grain: string;
@@ -57,7 +63,7 @@ export interface PeakOffPeakVM {
 }
 
 export interface PunctualityVM {
-	readonly headline: {
+	readonly headline: (VerdictHeadline | ReliabilityVerdict) & {
 		readonly grain?: string;
 		readonly otpPct: number | null;
 		readonly avgDelayMin: number | null;
@@ -556,7 +562,7 @@ export function toReliabilityClusters(
 				}
 			: {}),
 	});
-	const { otpPct, observationCount, onTime } = verdict;
+	const { otpPct } = verdict;
 
 	const strip: SnapshotStripVM = {
 		grain,
@@ -603,15 +609,12 @@ export function toReliabilityClusters(
 	);
 	const punctuality: PunctualityVM = {
 		headline: {
-			grain: verdict.grain,
-			otpPct,
+			...verdict,
 			avgDelayMin,
 			p50Min,
 			p90Min,
 			severePct,
 			delayHistogram,
-			observationCount,
-			onTime,
 		},
 		trend,
 		dayOfWeek,

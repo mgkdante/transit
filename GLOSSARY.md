@@ -8,7 +8,7 @@ The one-word answer to "how reliable is this line, stop or network over this win
 _Avoid_: status, badge, OTP status
 
 **Tentative**:
-A verdict given when there are too few observations (under 30) or the uncertainty is too wide to call it. Shown with a hedge.
+A verdict given when there are too few observations (under 30) or the uncertainty leaves open whether the service is reliable. Shown with a hedge.
 _Avoid_: too few, low confidence
 
 **Hedge**:

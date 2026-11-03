@@ -72,10 +72,11 @@ describe('selectVerdict — n-aware confidence pipeline', () => {
 		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).toContain('12');
 	});
-	it('a wide Wilson interval (n≥30 but imprecise) → tentative', () => {
+	it('a wide interval entirely below 80 remains a problem and keeps its hedge', () => {
 		const v = selectVerdict(h(50, 30, 15), 'week', 'en', en);
-		expect(v.status).toBe('tentative');
-		expect(v.sentence).toContain('Limited data');
+		expect(v.status).toBe('unreliable');
+		expect(isProblemVerdict(v.status)).toBe(true);
+		expect(v.sentence).toContain('95% CI:');
 	});
 	it('no percentage at all → absent', () => {
 		const v = selectVerdict(h(null), 'day', 'en', en);
@@ -97,7 +98,7 @@ describe('selectVerdict — graceful pre-republish degradation (no denominator)'
 		expect(v.status).toBe('reliable');
 		expect(v.sentence).toContain('95% CI:');
 	});
-	it('reads tentative when the Wilson CI straddles a band boundary (80% at n=1000)', () => {
+	it('reads tentative when the Wilson interval crosses 80 (80% at n=1000)', () => {
 		const v = selectVerdict(h(80, 1000, 800), 'week', 'en', en);
 		expect(v.status).toBe('tentative');
 	});
@@ -123,7 +124,7 @@ describe('selectVerdict — natural-frequency boundaries', () => {
 });
 
 describe('one reliability verdict', () => {
-	it('uses the same whole-percent precision for published and exact selected-window figures', () => {
+	it('uses exact intervals before choosing the shown whole-percent problem band', () => {
 		const published = reliabilityVerdict({
 			periods: [{ grain: 'day', otp_pct: 80, observation_count: 1_000_000, on_time: 796_000 }],
 		});
@@ -135,8 +136,46 @@ describe('one reliability verdict', () => {
 				aggregate: { otpPct: 79.6, observationCount: 1_000_000, onTime: 796_000 },
 			},
 		);
-		expect(published).toMatchObject({ otpPct: 80, status: 'reliable' });
-		expect(selected).toMatchObject({ otpPct: 80, status: 'reliable' });
+		expect(published).toMatchObject({ otpPct: 80, status: 'patchy' });
+		expect(selected).toMatchObject({ otpPct: 80, status: 'patchy' });
+		expect(selectVerdict(selected, 'month', 'en', en).status).toBe('patchy');
+	});
+	it('never calls a shown percentage below 80 reliable, even if published counts disagree', () => {
+		const result = reliabilityVerdict({
+			periods: [{ grain: 'day', otp_pct: 79, observation_count: 5000, on_time: 4100 }],
+		});
+		expect(result).toMatchObject({ otpPct: 79, status: 'tentative' });
+		expect(selectVerdict(result, 'day', 'en', en).status).toBe('tentative');
+	});
+	it.each([
+		[85, 100, 'tentative', false],
+		[55, 200, 'unreliable', true],
+		[65, 40, 'patchy', true],
+		[70, 40, 'tentative', false],
+		[79, 5000, 'tentative', false],
+		[81, 5000, 'tentative', false],
+		[79, 10000, 'patchy', true],
+		[81, 10000, 'reliable', false],
+		[80, 1000, 'tentative', false],
+	] as const)('judges percentage %s at n=%s as %s, problem=%s', (otp, n, status, problem) => {
+		const result = reliabilityVerdict({
+			periods: [
+				{ grain: 'day', otp_pct: otp, observation_count: n, on_time: Math.round((otp * n) / 100) },
+			],
+		});
+		expect(result.status).toBe(status);
+		expect(isProblemVerdict(result.status)).toBe(problem);
+		expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
+		expect(result.hedge).toContain('95% CI:');
+	});
+	it('keeps an interval crossing 60 in the hedge of a flagged verdict', () => {
+		const result = reliabilityVerdict({
+			periods: [{ grain: 'day', otp_pct: 55, observation_count: 200, on_time: 110 }],
+		});
+		expect(result.status).toBe('unreliable');
+		expect(result.interval).toEqual({ lo: 48, hi: 62 });
+		expect(result.hedge).toContain('48–62%');
+		expect(selectVerdict(result, 'day', 'fr', fr).sentence).toContain('48–62 %');
 	});
 	it('keeps an explicitly selected grain and never borrows an unavailable window', () => {
 		const file = {
