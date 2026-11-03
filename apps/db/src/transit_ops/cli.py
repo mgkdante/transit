@@ -6,6 +6,7 @@ import os
 import time
 from dataclasses import asdict
 from datetime import UTC, date, datetime
+from enum import StrEnum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated
@@ -22,6 +23,8 @@ from transit_ops.backups import (
     run_database_backup,
 )
 from transit_ops.core.models import FeedKind, ProviderManifest
+from transit_ops.daily_run import DailyRun
+from transit_ops.daily_run_process import SubprocessRunner
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.gold import (
@@ -89,6 +92,23 @@ app = typer.Typer(
         "Bronze ingestion, Silver loading, Gold marts, and database foundation."
     )
 )
+
+
+class DailyJob(StrEnum):
+    prepare = "prepare"
+    rollups = "rollups"
+    publish = "publish"
+    check_handoff = "check-handoff"
+    proof = "proof"
+    retention = "retention"
+
+
+@app.command("daily-run")
+def daily_run(job: DailyJob) -> None:
+    """Run one Daily Warm job using its environment and attempt-scoped artifacts."""
+    with SubprocessRunner() as runner:
+        status = DailyRun(runner, environ=os.environ).run(job.value)
+    raise typer.Exit(runner.cancel_exit_code or status)
 
 
 def _project_root() -> Path:

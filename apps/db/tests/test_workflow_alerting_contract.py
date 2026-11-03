@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -152,13 +151,18 @@ def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
             step
             for step in notify["steps"]
             if "alert-issue.sh" in str(step.get("run", ""))
+            or "daily-warm-notify.py" in str(step.get("run", ""))
         ]
         assert len(alert_steps) == 1
         alert_step = alert_steps[0]
-        assert f"fire {slug}" in alert_step["run"]
-        assert f"resolve {slug}" in alert_step["run"]
-        assert '== "success"' in alert_step["run"]
-        assert "else" in alert_step["run"]
+        if filename == "daily-warm-rollups.yml":
+            # Decision behavior is exercised through DailyRun with a fake stage runner.
+            assert alert_step["run"] == "python3 .github/scripts/daily-warm-notify.py"
+        else:
+            assert f"fire {slug}" in alert_step["run"]
+            assert f"resolve {slug}" in alert_step["run"]
+            assert '== "success"' in alert_step["run"]
+            assert "else" in alert_step["run"]
         assert "GH_TOKEN" in alert_step["env"]
         assert "GH_REPO" in alert_step["env"]
 
@@ -181,7 +185,7 @@ def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
                 expected_result_expressions.add(f"${{{{ needs.{job}.result }}}}")
         assert result_expressions == expected_result_expressions
         for variable in alert_step["env"]:
-            if variable.endswith("_RESULT"):
+            if variable.endswith("_RESULT") and filename != "daily-warm-rollups.yml":
                 assert f'"${variable}"' in alert_step["run"]
 
 
