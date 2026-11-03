@@ -3,7 +3,7 @@ import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFilterState } from '$lib/filters';
 import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
-import { createMapSelectionController } from './mapSelectionController.svelte';
+import { createMapSelectionController } from './selectionSession/mapSelectionController.svelte';
 
 const rendering = vi.hoisted(() => ({
 	retint: vi.fn(),

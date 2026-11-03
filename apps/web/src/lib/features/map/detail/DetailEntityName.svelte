@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { stopNameFallback } from '$lib/site/absence';
-	import type { MapStopRef } from '../mapSelection';
+	import type { MapStopRef } from '../mapSelectionSession.svelte';
 
 	interface Props {
 		ref: MapStopRef;

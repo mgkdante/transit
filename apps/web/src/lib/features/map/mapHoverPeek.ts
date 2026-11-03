@@ -11,7 +11,7 @@ import {
 	alertMatchesStop,
 	alertMatchesVehicle,
 	type MapSelection,
-} from './mapSelection';
+} from './selectionSession/mapSelection';
 
 type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>;
 
