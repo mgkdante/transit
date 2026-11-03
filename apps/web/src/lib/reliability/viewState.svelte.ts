@@ -1,4 +1,5 @@
 import { untrack } from 'svelte';
+import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 import { page } from '$app/state';
 import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 import type { Locale } from '$lib/i18n';
@@ -77,21 +78,22 @@ export function createReliabilityViewState<
 	K extends string = 'day' | 'week' | 'month',
 	D extends Snapshot | null | undefined = S,
 >(options: ViewOptions<S, R, K, D>) {
-	const params = new URLSearchParams(untrack(() => page.url.searchParams));
+	const params = new SvelteURLSearchParams(untrack(() => page.url.searchParams));
 	const seed = fromSearchParams(params);
-	const rangeGrain = options.grains.keys.find((key) => key === 'range');
+	// A line's range is a separate view choice; stop/network keep grain and dates independent.
+	const rangeChoice = options.grains.keys.find((key) => key === 'range');
 	const firstGrain = options.grains.keys[0];
-	const explicitRangeToken = rangeGrain != null && params.get('grain') === rangeGrain;
+	const explicitRangeToken = rangeChoice != null && params.get('grain') === rangeChoice;
 	const initialRequest =
-		rangeGrain == null ? emptyRequest() : historyRangeRequestFromSearchParams(params);
+		rangeChoice == null ? emptyRequest() : historyRangeRequestFromSearchParams(params);
 	let localRequest = $state.raw(initialRequest);
 	let selected = $state(
 		options.retained != null &&
 			options.grains.keys.some((key) => key !== 'range' && key === params.get('grain')),
 	);
 	let grain = $state<K>(
-		rangeGrain != null && (explicitRangeToken || initialRequest.hasFrom || initialRequest.hasTo)
-			? rangeGrain
+		rangeChoice != null && (explicitRangeToken || initialRequest.hasFrom || initialRequest.hasTo)
+			? rangeChoice
 			: (options.grains.keys.find((key) => key === params.get('grain')) ?? firstGrain),
 	);
 	let correctionText = $state<string | null>(null);
@@ -108,9 +110,11 @@ export function createReliabilityViewState<
 	const data = $derived(
 		active && options.apply ? options.apply(snapshot, retainedValue) : snapshot,
 	);
+	// Local fallback uses stop daily rows or dated line windows. Network's rolling chart
+	// series is deliberately not a current-snapshot date navigator.
 	const currentDates = $derived(
 		[
-			...new Set(
+			...new SvelteSet(
 				snapshot?.daily?.map((day) => day.date) ??
 					snapshot?.periods?.flatMap((window) =>
 						window.grain === 'day' && window.date ? [window.date] : [],
@@ -133,18 +137,18 @@ export function createReliabilityViewState<
 			!hasTo ||
 			rawFrom == null ||
 			rawTo == null ||
-			(rangeGrain != null && (!rawFrom || !rawTo))
+			(rangeChoice != null && (!rawFrom || !rawTo))
 		)
 			return undefined;
 		return rawFrom <= rawTo ? { from: rawFrom, to: rawTo } : { from: rawTo, to: rawFrom };
 	});
 	const currentWindow = $derived(
 		resource != null && requested && resource.state === 'current' && resource.index == null
-			? (resolveWindow(requestWindow, new Set(currentDates)) ?? undefined)
+			? (resolveWindow(requestWindow, new SvelteSet(currentDates)) ?? undefined)
 			: undefined,
 	);
 	const selectedWindow = $derived(
-		rangeGrain != null
+		rangeChoice != null
 			? requestWindow
 			: active
 				? (resource?.resolved?.selection ?? undefined)
@@ -152,14 +156,15 @@ export function createReliabilityViewState<
 	);
 	const windowOverride = $derived(options.retained?.window?.());
 	const window = $derived(windowOverride !== undefined ? windowOverride : selectedWindow);
+	// Leaving a line range switches back to its snapshot, so its choices use that snapshot.
 	const available = $derived<ReadonlySet<string>>(
-		options.grains.present?.() ?? presentGrains(rangeGrain == null ? data : snapshot),
+		options.grains.present?.() ?? presentGrains(rangeChoice == null ? data : snapshot),
 	);
 	const segments = $derived<GrainSegment<K>[]>(
 		options.grains.keys.map((key) => {
 			const text: string | { label: string; compactLabel: string } =
 				options.grains.labels()[key] ?? key;
-			const enabled = key === rangeGrain ? availableDates.length > 0 : available.has(key);
+			const enabled = key === rangeChoice ? availableDates.length > 0 : available.has(key);
 			return {
 				key,
 				...(typeof text === 'string' ? { label: text } : text),
@@ -177,8 +182,8 @@ export function createReliabilityViewState<
 		const next = options.grains.keys.find((candidate) => candidate === key);
 		if (next === undefined) return;
 		grain = next;
-		selected = options.retained != null && next !== rangeGrain;
-		if (rangeGrain != null && next !== rangeGrain) setRequest(emptyRequest());
+		selected = options.retained != null && next !== rangeChoice;
+		if (rangeChoice != null && next !== rangeChoice) setRequest(emptyRequest());
 	}
 	function selectWindow(value: DateWindow | undefined): void {
 		correctionText = null;
@@ -196,7 +201,7 @@ export function createReliabilityViewState<
 		handledCorrection = correction.key;
 		correctionText = copy?.correction[correction.reason] ?? null;
 		setRequest(emptyRequest());
-		if (rangeGrain != null && !explicitRangeToken) {
+		if (rangeChoice != null && !explicitRangeToken) {
 			grain = firstGrain;
 			selected = false;
 		}
@@ -204,16 +209,16 @@ export function createReliabilityViewState<
 	$effect(() => {
 		if (!initialized) {
 			initialized = true;
-			if (rangeGrain != null && resource == null) {
-				const local = resolveWindow(seed.window, new Set(currentDates));
+			if (rangeChoice != null && resource == null) {
+				const local = resolveWindow(seed.window, new SvelteSet(currentDates));
 				selectWindow(local ?? undefined);
-				if (local) grain = rangeGrain;
-				else if (grain === rangeGrain && !explicitRangeToken) grain = firstGrain;
-				if (grain === rangeGrain && availableDates.length === 0) grain = firstGrain;
+				if (local) grain = rangeChoice;
+				else if (grain === rangeChoice && !explicitRangeToken) grain = firstGrain;
+				if (grain === rangeChoice && availableDates.length === 0) grain = firstGrain;
 			}
 		}
 		if (
-			rangeGrain == null &&
+			rangeChoice == null &&
 			(!selected || options.retained == null) &&
 			available.size > 0 &&
 			!available.has(grain)
@@ -221,8 +226,8 @@ export function createReliabilityViewState<
 			grain = options.grains.keys.find((key) => available.has(key)) ?? firstGrain;
 	});
 	$effect(() => {
-		if (rangeGrain == null || !requested) return;
-		if (grain !== rangeGrain) {
+		if (rangeChoice == null || !requested) return;
+		if (grain !== rangeChoice) {
 			setRequest(emptyRequest());
 			return;
 		}
@@ -230,7 +235,7 @@ export function createReliabilityViewState<
 			resource != null &&
 			resource.state === 'current' &&
 			resource.index == null &&
-			resolveWindow(requestWindow, new Set(currentDates)) == null
+			resolveWindow(requestWindow, new SvelteSet(currentDates)) == null
 		) {
 			setRequest(emptyRequest());
 			if (!explicitRangeToken) grain = firstGrain;
@@ -244,23 +249,23 @@ export function createReliabilityViewState<
 				? grain === firstGrain
 					? null
 					: grain
-				: grain === rangeGrain
+				: grain === rangeChoice
 					? requestWindow == null
-						? rangeGrain
+						? rangeChoice
 						: null
 					: selected
 						? grain
 						: null;
 		if (
 			options.retained == null ||
-			(rangeGrain == null && (resource == null || windowOverride !== undefined))
+			(rangeChoice == null && (resource == null || windowOverride !== undefined))
 		) {
 			mirrorSearchParams({ grain: grainParam, ...extra });
 			return;
 		}
 		const canonical =
-			rangeGrain != null ? requestWindow : (resource?.resolved?.canonicalWindow ?? currentWindow);
-		const pending = rangeGrain == null && active && resource?.resolved == null;
+			rangeChoice != null ? requestWindow : (resource?.resolved?.canonicalWindow ?? currentWindow);
+		const pending = rangeChoice == null && active && resource?.resolved == null;
 		mirrorSearchParams({
 			grain: grainParam,
 			from: canonical?.from ?? (pending && request.hasFrom ? request.rawFrom : null),
@@ -329,13 +334,11 @@ export function createReliabilityViewState<
 		},
 		get history() {
 			return {
-				requested,
 				active,
 				ready,
 				value: retainedValue,
 				state: resource?.state ?? 'current',
 				discovered: resource?.index != null,
-				error: resource?.error ?? null,
 				retry: () => resource?.retry(),
 			};
 		},

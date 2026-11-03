@@ -274,7 +274,9 @@
 			? t.history.retainedWindow(formatDateKey(hotspots.selectedDate, locale))
 			: t.window[grainKey],
 	);
-	const controlsSummary = $derived(view.segments.find(segment => segment.key === grainKey)?.label ?? '');
+	const controlsSummary = $derived(
+		view.segments.find((segment) => segment.key === grainKey)?.label ?? '',
+	);
 	const isEmpty = $derived(present.size === 0);
 	const showCombinedRail = $derived(
 		(hotspots.data != null && present.size > 0) ||

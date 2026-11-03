@@ -273,6 +273,7 @@
 	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
 
 	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
+	// This trailing-day chart window is independent of the retained-history selection.
 	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
 
 	let windowKey = $state('7');

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { getLocalizeHref, type Locale } from '$lib/i18n';
 	import { routeFor } from '$lib/nav';
 	import { fmtDelayMin } from '$lib/utils';

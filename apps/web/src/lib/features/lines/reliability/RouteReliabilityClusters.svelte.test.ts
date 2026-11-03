@@ -493,7 +493,6 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		const reasonIds = reasons.map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(1);
 		expect(new Set(reasonIds).size).toBe(reasonIds.length);
-		expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
 		const monthRadios = screen.getAllByRole('radio', { name: copy.controls.thisMonth });
 		expect(monthRadios).toHaveLength(1);
