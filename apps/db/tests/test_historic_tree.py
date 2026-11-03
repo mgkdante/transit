@@ -3,11 +3,94 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from test_historic_snapshot_gc import _build_graph
+from pydantic import model_validator
+from test_historic_snapshot_gc import (
+    PUBLISH_ID,
+    STAMP,
+    MemorySnapshotStorage,
+    _archive_page,
+    _build_graph,
+)
 
 from transit_ops.snapshots import historic_tree, uploads
+from transit_ops.snapshots.builders.historic.alert_archive import _collection_generation_id
+from transit_ops.snapshots.contract import AlertArchiveIndex, AlertArchiveMonth, AlertArchivePageRef
 from transit_ops.snapshots.protocols import SnapshotPayload
-from transit_ops.snapshots.serialization import snapshot_json_bytes
+from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+
+
+@pytest.mark.parametrize("page_count", [2, 16, 64])
+def test_alert_walk_page_reference_validation_work_is_linear(
+    monkeypatch: pytest.MonkeyPatch,
+    page_count: int,
+) -> None:
+    storage = MemorySnapshotStorage()
+    _path, template, template_ref = _archive_page()
+    refs = []
+    for number in range(1, page_count + 1):
+        page = template.model_copy(deep=True, update={"page": number})
+        page.alerts[0].id = f"alert-{number:04d}"
+        digest = snapshot_sha256(page)
+        path = historic_tree.FAMILIES["alerts"].leaf_path(
+            digest,
+            f"{page.month}/page-{number:04d}",
+        )
+        refs.append(
+            template_ref.model_copy(
+                update={
+                    "path": path,
+                    "page": number,
+                    "sha256": digest,
+                    "byte_size": len(snapshot_json_bytes(page)),
+                }
+            )
+        )
+        storage.put(path, page)
+    month = AlertArchiveMonth(month=template.month, total_alerts=page_count, pages=refs)
+    index = AlertArchiveIndex(
+        generated_utc=STAMP,
+        methodology_version="alerts-1",
+        publish_generation_id=PUBLISH_ID,
+        collection_generation_id=_collection_generation_id(
+            [month],
+            template_ref.coverage_start,
+            template_ref.coverage_end,
+        ),
+        first_available_date=template_ref.coverage_start,
+        last_available_date=template_ref.coverage_end,
+        total_alerts=page_count,
+        months=[month],
+    )
+    index_path = storage.put("historic/alerts/index.json", index)
+    validations = 0
+
+    class CountedRef(AlertArchivePageRef):
+        @model_validator(mode="before")
+        @classmethod
+        def count_validation(cls, value: object) -> object:
+            nonlocal validations
+            validations += 1
+            return value
+
+    class CountedMonth(AlertArchiveMonth):
+        pages: list[CountedRef]
+
+    class CountedIndex(AlertArchiveIndex):
+        months: list[CountedMonth]
+
+    # Count nested Pydantic validation too, not just Python model_validate calls.
+    # Keep the month alias instrumented even when traversal no longer needs it.
+    monkeypatch.setattr(historic_tree, "AlertArchiveIndex", CountedIndex)
+    monkeypatch.setattr(historic_tree, "AlertArchiveMonth", CountedMonth, raising=False)
+    monkeypatch.setattr(historic_tree, "AlertArchivePageRef", CountedRef)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reader = historic_tree.StoredVersionReader(storage, storage.versions, executor, {})
+        loaded = reader.walk_alerts(index_path)
+    assert loaded.total_alerts == page_count
+    assert len(storage.conditional_read_calls) == page_count + 1
+    # Counted validation must run, but work is bounded by a constant per page.
+    # One root decode and at most two explicit reference checks, no N-by-N month decode.
+    assert page_count <= validations <= 3 * page_count
 
 
 @pytest.mark.parametrize("name", tuple(historic_tree.FAMILIES))

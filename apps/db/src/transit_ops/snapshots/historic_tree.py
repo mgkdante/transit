@@ -23,7 +23,6 @@ from pydantic import BaseModel, ValidationError
 
 from transit_ops.snapshots.contract import (
     AlertArchiveIndex,
-    AlertArchiveMonth,
     AlertArchivePage,
     AlertArchivePageRef,
     HistoricAvailabilityIndex,
@@ -847,14 +846,14 @@ class StoredVersionReader:
         assert index is not None
         for edge, loaded in FAMILIES["alerts"].walk(self, index):
             month_data, ref_data = edge.reference
-            month = AlertArchiveMonth.model_validate(month_data)
+            month_name = month_data["month"]
             ref = AlertArchivePageRef.model_validate(ref_data)
             page = cast(AlertArchivePage, loaded.payload)
             if (
                 loaded.digest != ref.sha256
                 or loaded.byte_size != ref.byte_size
                 or len(page.alerts) != ref.count
-                or page.month != month.month
+                or page.month != month_name
                 or page.page != ref.page
             ):
                 raise HistoricGcBlockedError(f"alert_page_ref_mismatch:{ref.path}")
