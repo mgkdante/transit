@@ -54,6 +54,16 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/site-probe.test.mjs .github/scripts/site-probe-weekly.test.mjs .github/scripts/site-probe-non-sending.test.mjs
 
+      - name: Install pinned Linux lychee
+        working-directory: ${{ github.workspace }}
+        run: bash .github/scripts/install-lychee.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify pinned lychee version and real argument parsing
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/verify-lychee.mjs
+
       - name: Basemap replacement transaction contract
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/refresh-basemap-r2.test.mjs

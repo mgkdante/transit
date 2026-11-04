@@ -97,11 +97,60 @@ export function linkFailures(stdout) {
   }
 }
 
-/** @param {{fetchFn?: typeof fetch, run?: (file: string, args: string[], options: {timeout: number, maxBuffer: number, windowsHide: boolean}) => Promise<{stdout: string | Buffer}>, alert: Alert}} options */
+/** @param {unknown} error */
+function lycheeFailureReason(error) {
+  if (!error || typeof error !== "object")
+    return "lychee failed without process status";
+  const reasons = [];
+  if ("code" in error) {
+    if (typeof error.code === "number" && Number.isInteger(error.code))
+      reasons.push(`exit ${error.code}`);
+    else if (
+      typeof error.code === "string" &&
+      /^[A-Z][A-Z0-9_]{0,31}$/.test(error.code)
+    )
+      reasons.push(error.code);
+  }
+  if (
+    "signal" in error &&
+    typeof error.signal === "string" &&
+    /^SIG[A-Z0-9]{1,20}$/.test(error.signal)
+  )
+    reasons.push(`signal ${error.signal}`);
+  // Only extract parser metadata, never arbitrary stderr, command text or page bodies.
+  if (
+    "code" in error &&
+    error.code === 2 &&
+    "stderr" in error &&
+    (typeof error.stderr === "string" || Buffer.isBuffer(error.stderr))
+  ) {
+    const line =
+      error.stderr
+        .toString()
+        .slice(0, 8192)
+        .split(/\r?\n/)
+        .find((value) => value.startsWith("error:")) ?? "";
+    const option = line.match(/--[a-z][a-z0-9-]*/)?.[0];
+    if (line.includes("unexpected argument"))
+      reasons.push(`unexpected argument${option ? ` ${option}` : ""}`);
+    else if (/invalid value|value is required|requires a value/.test(line))
+      reasons.push(`invalid argument value${option ? ` for ${option}` : ""}`);
+  }
+  if (error instanceof SyntaxError) reasons.push("invalid lychee JSON report");
+  if (error instanceof Error && error.name === "NoCrossSiteLinksError")
+    reasons.push("no cross-site links found");
+  return (reasons.join("; ") || "lychee failed without process status").slice(
+    0,
+    240,
+  );
+}
+
+/** @param {{fetchFn?: typeof fetch, run?: (file: string, args: string[], options: {timeout: number, maxBuffer: number, windowsHide: boolean}) => Promise<{stdout: string | Buffer}>, alert: Alert, log?: (value: unknown) => void}} options */
 export async function probeLinks({
   fetchFn = fetch,
   run = promisify(execFile),
   alert,
+  log = (value) => console.log(JSON.stringify(value)),
 }) {
   const failures = [];
   /** @type {string[]} */
@@ -130,15 +179,16 @@ export async function probeLinks({
           windowsHide: true,
         });
         const report = JSON.parse(stdout.toString());
-        if (!(report.successful > 0))
-          throw new Error("no cross-site links checked");
-        console.log(
-          JSON.stringify({
-            linksTo: target,
-            sources: sources.length,
-            successful: report.successful,
-          }),
-        );
+        if (!(report.successful > 0)) {
+          const error = new Error("no cross-site links checked");
+          error.name = "NoCrossSiteLinksError";
+          throw error;
+        }
+        log({
+          linksTo: target,
+          sources: sources.length,
+          successful: report.successful,
+        });
       } catch (error) {
         const stdout =
           error &&
@@ -148,8 +198,10 @@ export async function probeLinks({
             ? error.stdout
             : undefined;
         const details = linkFailures(stdout);
+        const reason = lycheeFailureReason(error);
+        log({ linkCheckFailure: { linksTo: target, reason } });
         failures.push(
-          `links to ${target} failed${details.length ? `:\n${details.join("\n")}` : "; source unavailable, tool failed, or no cross-site links found"}`,
+          `links to ${target} failed (${reason})${details.length ? `:\n${details.join("\n")}` : ""}`,
         );
       }
     }
