@@ -3,8 +3,6 @@ import test from "node:test";
 import {
   sitemapPages,
   linkArguments,
-  contactPolicy,
-  TEST_LABEL,
   weeklyAllowed,
   probeLinks,
   linkFailures,
@@ -56,39 +54,11 @@ test("probe host boundaries reject lookalike hosts, userinfo and URLs embedded i
       assert.throws(() =>
         sitemapPages(`<urlset><loc>${deceptive}</loc></urlset>`),
       );
-      assert.equal(contactPolicy(deceptive, "GET"), "block");
     }
   }
 });
 
-test("analytics and unexpected egress fail closed while static assets and a normal browser submission work", () => {
-  for (const url of [
-    "https://plausible.io/api/event",
-    "https://yesid.dev/api/event",
-    "https://yesid.dev/_vercel/insights/script.js",
-    "https://yesid.dev/analytics.js",
-    "https://other.example/",
-  ]) {
-    assert.equal(contactPolicy(url, "GET"), "block");
-  }
-  assert.equal(contactPolicy("https://yesid.dev/contact", "GET"), "read");
-  assert.equal(
-    contactPolicy("https://yesid.dev/_app/immutable/app.js", "GET"),
-    "read",
-  );
-  assert.equal(
-    contactPolicy("https://api.web3forms.com/submit", "POST"),
-    "submit",
-  );
-  assert.equal(
-    contactPolicy("https://api.web3forms.com/submit", "GET"),
-    "block",
-  );
-  assert.equal(contactPolicy("https://yesid.dev/contact", "POST"), "block");
-  assert.match(TEST_LABEL, /AUTOMATED TEST.*NOT A LEAD/);
-});
-
-test("only the weekly schedule or an explicit manual send can send, and reruns never do", () => {
+test("only the weekly schedule or explicit manual link check can run, and reruns never do", () => {
   const schedule = { GITHUB_EVENT_NAME: "schedule", GITHUB_RUN_ATTEMPT: "1" };
   assert.equal(weeklyAllowed(schedule, "37 10 * * 1"), true);
   assert.equal(weeklyAllowed(schedule, "4,19,34,49 * * * *"), false);
@@ -104,7 +74,7 @@ test("only the weekly schedule or an explicit manual send can send, and reruns n
     weeklyAllowed({
       GITHUB_EVENT_NAME: "workflow_dispatch",
       GITHUB_RUN_ATTEMPT: "1",
-      CONTACT_TEST: "true",
+      LINK_CHECK: "true",
     }),
     true,
   );

@@ -52,7 +52,7 @@ jobs:
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/site-probe.test.mjs .github/scripts/site-probe-weekly.test.mjs
+        run: node --test .github/scripts/site-probe.test.mjs .github/scripts/site-probe-weekly.test.mjs .github/scripts/site-probe-non-sending.test.mjs
 
       - name: Basemap replacement transaction contract
         working-directory: ${{ github.workspace }}
@@ -111,10 +111,6 @@ jobs:
           mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
           node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
-
-      - name: Contact probe browser contract (synthetic provider, no mail)
-        working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/site-probe-contact.browser.test.mjs
 
       - name: B9 displayed-value correctness
         env:

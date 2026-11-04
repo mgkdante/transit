@@ -3,13 +3,13 @@ name: Public Site Probe
 on:
   workflow_dispatch:
     inputs:
-      contact_test:
-        description: "Send ONE real labelled contact test and check cross-site links (no reruns)"
+      check_links:
+        description: "Check weekly cross-site links (read-only)"
         type: boolean
         default: false
   schedule:
     - cron: "4,19,34,49 * * * *"
-    # First send: next Monday 10:37 UTC after merge, never on merge/push/PR.
+    # Weekly read-only link check, no contact submission.
     - cron: "37 10 * * 1"
 
 permissions:
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   sites:
-    if: ${{ github.event.schedule != '37 10 * * 1' && inputs.contact_test != true }}
+    if: ${{ github.event.schedule != '37 10 * * 1' && inputs.check_links != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
@@ -40,18 +40,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
 
   weekly:
-    if: ${{ github.run_attempt == 1 && (github.event.schedule == '37 10 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.contact_test == true)) }}
+    if: ${{ github.run_attempt == 1 && (github.event.schedule == '37 10 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.check_links == true)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Set up pinned JS workspace
-        uses: ./.github/actions/setup
-      - name: Install authenticated Chromium
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.cache/transit-browser"
-          node apps/web/scripts/install-browser-toolchain.mjs "$GITHUB_WORKSPACE/.cache/transit-browser"
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
       - name: Install pinned lychee
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,10 +61,10 @@ jobs:
           echo '1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a  lychee-x86_64-unknown-linux-gnu.tar.gz' | sha256sum --check
           tar -xzf lychee-x86_64-unknown-linux-gnu.tar.gz
           echo "$RUNNER_TEMP/lychee" >> "$GITHUB_PATH"
-      - name: Weekly contact and cross-site link checks
+      - name: Weekly cross-site link checks
         run: node .github/scripts/site-probe.mjs --weekly
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PROBE_SCHEDULE: ${{ github.event.schedule }}
-          CONTACT_TEST: ${{ inputs.contact_test }}
+          LINK_CHECK: ${{ inputs.check_links }}

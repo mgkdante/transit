@@ -144,26 +144,11 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   if (process.argv[2] === "--weekly") {
-    const { weeklyAllowed, probeContact, probeLinks } =
+    const { weeklyAllowed, probeLinks } =
       await import("./site-probe-weekly.mjs");
     if (!weeklyAllowed(process.env, process.env.PROBE_SCHEDULE))
       throw new Error("Weekly probe is not authorized for this event or rerun");
-    const { chromium } = await import("@playwright/test");
-    const { verifyInstalledBrowserArtifact } =
-      await import("../../apps/web/scripts/browser-toolchain.mjs");
-    const { paths } = await verifyInstalledBrowserArtifact();
-    const browser = await chromium.launch({
-      executablePath: paths.executablePath,
-    });
-    let contact;
-    try {
-      contact = await probeContact({ browser, alert: issueAlert });
-    } finally {
-      await browser.close();
-    }
-    // A rejected send is an owner decision. Never retry or work around it.
-    process.exitCode =
-      contact.code || (await probeLinks({ alert: issueAlert }));
+    process.exitCode = await probeLinks({ alert: issueAlert });
   } else {
     process.exitCode = await probeSites({ alert: issueAlert });
   }
