@@ -12,3 +12,16 @@ routes = [
 [[r2_buckets]]
 binding = "SNAPSHOTS"
 bucket_name = "transit-snapshots"
+
+[observability]
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false
+
+[observability.issues]
+enabled = false

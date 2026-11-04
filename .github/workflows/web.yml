@@ -50,6 +50,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/deploy-scope.test.mjs
 
+      - name: Public site probe contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/site-probe.test.mjs
+
       - name: Basemap replacement transaction contract
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/refresh-basemap-r2.test.mjs
@@ -243,10 +247,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # checkout builds the PR merge ref, not the feature-branch head.
+          TRANSIT_COMMIT_SHA: ${{ github.sha }}
+          TRANSIT_BRANCH: ${{ github.head_ref }}
           WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
         run: |
           ../../node_modules/.bin/wrangler versions upload --preview-alias "pr-$PR_NUMBER" \
-            --message "Preview of PR #$PR_NUMBER, never deploy" --var PUBLIC_INDEXING:false
+            --message "Preview of PR #$PR_NUMBER, never deploy" --var PUBLIC_INDEXING:false \
+            --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA" --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
           url="$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
           if [ -z "$url" ]; then
             echo "::error::No preview URL: Version URLs are off for transit-web until a production deploy applies preview_urls = true."
@@ -316,8 +324,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.PUBLIC_PLAUSIBLE_DOMAIN }}
           PUBLIC_CF_BEACON_TOKEN: ${{ vars.PUBLIC_CF_BEACON_TOKEN }}
+          TRANSIT_COMMIT_SHA: ${{ github.sha }}
+          TRANSIT_BRANCH: ${{ github.ref_name }}
         run: >-
           ../../node_modules/.bin/wrangler deploy
+          --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA"
+          --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
           ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
           ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
 
