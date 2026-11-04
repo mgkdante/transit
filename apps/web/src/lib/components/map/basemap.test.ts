@@ -8,7 +8,7 @@ import {
 	toPmtilesUrl,
 	BASEMAP_SOURCE_ID,
 } from './basemap';
-import { BasemapFileSchema } from '$lib/v1/schemas';
+import { BasemapFileSchema } from '#lib/v1/schemas/index.ts';
 import { PUBLISHED_BASEMAP_ATTRIBUTION } from './basemap.published.fixture';
 
 const PUBLISHED_BASEMAP_ATTRIBUTION_SHA256 =

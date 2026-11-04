@@ -4,7 +4,7 @@ import type {
 	HistoricCollectionIndex,
 	HistoricCoverageGap,
 	ReceiptsIndex,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 
 export type HistoryAvailability =
 	| { readonly kind: 'empty' }

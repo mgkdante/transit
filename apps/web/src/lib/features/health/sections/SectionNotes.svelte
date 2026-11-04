@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { TypedInformationCard } from '$lib/components/shared';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
 	import type { PipelineNote } from '../selectors/provenanceViews';
 	import type { HealthCopy } from '../health.copy';
 

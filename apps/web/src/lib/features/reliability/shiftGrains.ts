@@ -1,5 +1,5 @@
-import type { Locale } from '$lib/i18n';
-import type { SeverityCode } from '$lib/v1/schemas';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 const SEVERE_CRITICAL_PCT = 10;
 const SEVERE_HIGH_PCT = 5;

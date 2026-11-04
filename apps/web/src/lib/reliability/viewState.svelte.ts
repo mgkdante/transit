@@ -1,27 +1,27 @@
 import { untrack } from 'svelte';
 import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 import { page } from '$app/state';
-import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
-import type { Locale } from '$lib/i18n';
-import { absenceSentence } from '$lib/site/absence';
-import { mirrorSearchParams } from '$lib/site/urlMirror';
-import { formatDateKey } from '$lib/utils/time';
-import type { GrainSegment } from '$lib/components/surface/GrainPicker.svelte';
+import { fromSearchParams, resolveWindow, type DateWindow } from '#lib/filters/index.ts';
+import type { Locale } from '#lib/i18n/index.ts';
+import { absenceSentence } from '#lib/site/absence.ts';
+import { mirrorSearchParams } from '#lib/site/urlMirror.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
+import type { GrainSegment } from '#lib/components/surface/GrainPicker.svelte';
 import type {
 	HistoryNavigatorLabels,
 	HistoryNavigatorProps,
-} from '$lib/components/surface/HistoryNavigator.svelte';
-import type { HistoricCollectionIndex } from '$lib/v1/schemas/history';
+} from '#lib/components/surface/HistoryNavigator.svelte';
+import type { HistoricCollectionIndex } from '#lib/v1/schemas/history.ts';
 import {
 	availabilityFromCollectionIndex,
 	datesForAvailability,
 	type HistoryCorrection,
-} from '$lib/v1/history/selection';
+} from '#lib/v1/history/selection.ts';
 import {
 	historyRangeRequestFromSearchParams,
 	type HistoryRangeResource,
 	type RawHistoryRangeRequest,
-} from '$lib/v1/history/rangeResource.svelte';
+} from '#lib/v1/history/rangeResource.svelte.ts';
 import { presentGrains, type ReliabilityGrainSnapshot } from './grains';
 
 interface Snapshot extends ReliabilityGrainSnapshot {
@@ -78,7 +78,7 @@ export function createReliabilityViewState<
 	K extends string = 'day' | 'week' | 'month',
 	D extends Snapshot | null | undefined = S,
 >(options: ViewOptions<S, R, K, D>) {
-	const params = new SvelteURLSearchParams(untrack(() => page.url.searchParams));
+	const params = new SvelteURLSearchParams(untrack(() => page.url.search));
 	const seed = fromSearchParams(params);
 	// A line's range is a separate view choice; stop/network keep grain and dates independent.
 	const rangeChoice = options.grains.keys.find((key) => key === 'range');

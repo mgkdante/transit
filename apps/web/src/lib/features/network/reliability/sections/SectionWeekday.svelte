@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { RankedRow } from '$lib/components/dataviz';
-	import { SEVERE_DOMAIN } from '$lib/features/reliability/shiftGrains';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
+	import { SEVERE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { ShiftRow } from '../selectors/shiftRank';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';

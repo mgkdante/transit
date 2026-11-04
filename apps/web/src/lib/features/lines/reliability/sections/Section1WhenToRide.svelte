@@ -1,15 +1,15 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { absenceShort } from '$lib/site/absence';
-	import { fmtPct } from '$lib/utils';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
+	import { fmtPct } from '#lib/utils/index.ts';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { ChartLegend, DeltaStat } from '$lib/components/dataviz';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue } from '$lib/components/edge';
-	import Detail from '$lib/components/shared/Detail.svelte';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { ChartLegend, DeltaStat } from '#lib/components/dataviz/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import Detail from '#lib/components/shared/Detail.svelte';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -17,12 +17,12 @@
 		DAY_TYPE_GRAIN_ORDER,
 		SHIFT_GRAIN_ORDER,
 		SEVERE_DOMAIN,
-	} from '$lib/features/reliability/shiftGrains';
+	} from '#lib/features/reliability/shiftGrains.ts';
 	import { selectPunctualityTimeOfDay } from '../selectors/punctualityTimeOfDay';
 	import { priorDelta } from '../selectors/priorDelta';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
-	import { buildHabitsHeatmap } from '$lib/reliability/habitsHeatmap';
+	import { buildHabitsHeatmap } from '#lib/reliability/habitsHeatmap.ts';
 	import { selectRelativeScorePeak } from '../selectors/relativeScorePeak';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';

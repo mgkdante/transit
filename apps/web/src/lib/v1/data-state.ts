@@ -1,5 +1,5 @@
 import type { Resource } from './resource.svelte';
-import type { AbsenceReason } from '$lib/site/serviceWindow';
+import type { AbsenceReason } from '#lib/site/serviceWindow.ts';
 
 export type { AbsenceReason };
 

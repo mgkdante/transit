@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { serverV1Context } from './serverContext';
+import { serverV1Context as createContext } from './serverContext';
+const workers = vi.hoisted(() => ({ env: {} }));
+vi.mock('cloudflare:workers', () => workers);
+function serverV1Context(
+	event: Parameters<typeof createContext>[0] & { platform?: { env?: Record<string, unknown> } },
+) {
+	workers.env = event.platform?.env ?? {};
+	return createContext(event);
+}
 
 function fetchSpy(): typeof fetch {
 	return vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;

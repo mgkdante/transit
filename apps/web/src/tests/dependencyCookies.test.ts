@@ -16,7 +16,9 @@ const { Youch } = await import(pathToFileURL(miniflareRequire.resolve('youch')).
 
 describe('cookie override compatibility', () => {
 	it('preserves SvelteKit cookie types, decoding and response serialization', () => {
-		expectTypeOf<Parameters<Cookies['set']>[2]['maxAge']>().toEqualTypeOf<number | undefined>();
+		expectTypeOf<NonNullable<Parameters<Cookies['set']>[2]>['maxAge']>().toEqualTypeOf<
+			number | undefined
+		>();
 		const url = new URL('https://transit.example/lines/24');
 		const request = new Request(url, { headers: { cookie: 'locale=fr; note=hello%20world' } });
 		const state = kitCookies.get_cookies(request, url);
@@ -31,6 +33,10 @@ describe('cookie override compatibility', () => {
 		cookies.set('view', 'map', { path: '/', maxAge: 60 });
 		expect(cookies.get('view')).toBe('map');
 		expect(cookies.serialize('note', 'hello world', { path: '/' })).toBe(
+			'note=hello%20world; Path=/; HttpOnly; SameSite=Lax',
+		);
+		// Kit 3 disables Secure by default in dev; an explicit production policy still serializes it.
+		expect(cookies.serialize('note', 'hello world', { path: '/', secure: true })).toBe(
 			'note=hello%20world; Path=/; HttpOnly; Secure; SameSite=Lax',
 		);
 		cookies.delete('view', { path: '/' });

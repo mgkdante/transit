@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 export const DETAIL_PANEL_WIDTH_STORAGE_KEY = 'transit:detail-panel-width';
 
@@ -23,7 +23,9 @@ export function publishRailOffset(
 	dragging: boolean,
 ): () => void {
 	const detailWidth = `${detailWidthPx}px`;
+
 	const effectiveOffset = open ? (collapsed ? 'var(--size-detail-rail)' : detailWidth) : '0px';
+
 	const root = element.ownerDocument.documentElement;
 
 	element.style.setProperty('--app-right-detail-offset', detailWidth);

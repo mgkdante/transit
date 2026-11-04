@@ -1,12 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '#lib/stores/index.ts';
 import type {
 	HistoricCollectionIndex,
 	HistoricHotspotsDay,
 	Hotspots,
 	IsoUtc,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 
 const harness = vi.hoisted(() => {
 	const state = {
@@ -49,14 +49,14 @@ vi.mock('$app/navigation', () => ({
 	replaceState: harness.replaceState,
 	goto: harness.goto,
 }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => harness.locale.value };
 });
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHotspots: harness.getHotspots,
 	getHotspotsHistoryIndex: harness.getHotspotsHistoryIndex,
 	getHotspotsHistoryDay: harness.getHotspotsHistoryDay,

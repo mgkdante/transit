@@ -1,4 +1,4 @@
-export { cn } from '$lib/ui/configure';
+export { cn } from '#lib/ui/configure.ts';
 export type { WithElementRef } from '@yesid/ui/cn';
 
 export { fmtNumber, fmtCount, fmtDelayMin, fmtPct } from './format';

@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	import type { RouteFile, StopPrediction } from '$lib/v1';
-	import type { Locale } from '$lib/i18n';
+	import type { RouteFile, StopPrediction } from '#lib/v1/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { RouteDetailCopy } from './lines.copy';
 
 	export interface LineDirectionsProps {
@@ -12,12 +12,12 @@
 </script>
 
 <script lang="ts">
-	import { getLocalizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { stopNameFallback } from '$lib/site/absence';
-	import { formatUtc } from '$lib/utils/time';
-	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
-	import { AbsentValue } from '$lib/components/edge';
+	import { getLocalizeHref } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import { stopNameFallback } from '#lib/site/absence.ts';
+	import { formatUtc } from '#lib/utils/time.ts';
+	import { delayLabel, delayTone } from '#lib/site/delayPresentation.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	const localizeHref = getLocalizeHref();

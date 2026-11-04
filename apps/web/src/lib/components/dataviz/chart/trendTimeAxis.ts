@@ -1,5 +1,5 @@
-import type { Locale } from '$lib/i18n';
-import { formatDateKey } from '$lib/utils/time';
+import type { Locale } from '#lib/i18n/index.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import type { TrendDatum } from './ChartSpec';
 
 export function trendTimeAxis(points: readonly TrendDatum[], locale: Locale) {

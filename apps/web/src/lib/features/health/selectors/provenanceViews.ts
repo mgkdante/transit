@@ -1,4 +1,4 @@
-import type { Provenance } from '$lib/v1/schemas';
+import type { Provenance } from '#lib/v1/schemas/index.ts';
 
 export type FreshnessAspect = 'on_time' | 'late' | 'unknown';
 

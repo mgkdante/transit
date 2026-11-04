@@ -1,8 +1,13 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
-import { sectionsToggleCopy } from '$lib/components/shared/sectionsToggle.copy';
+import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
-import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
+import type {
+	DataHealth,
+	HistoricAvailabilityIndex,
+	IsoUtc,
+	Provenance,
+} from '#lib/v1/schemas/index.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -203,7 +208,7 @@ let dataHealthState: ResourceState<DataHealth> = ready(richDataHealth);
 let historyState: ResourceState<HistoricAvailabilityIndex> = ready(richHistory);
 const historyReload = vi.fn();
 
-vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
+vi.mock('#lib/nav/index.ts', async () => ({ layout: { isDesktop: true } }));
 
 const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(
 	() => ({
@@ -213,17 +218,17 @@ const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions }
 		resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
 	}),
 );
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance,
 }));
-vi.mock('$lib/v1/repositories/dataHealth', () => ({
+vi.mock('#lib/v1/repositories/dataHealth.ts', () => ({
 	getDataHealth,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHistoricAvailability,
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (fetcher: () => unknown, options: Record<string, unknown> = {}) => {
 		getProvenance.mockClear();
 		getDataHealth.mockClear();

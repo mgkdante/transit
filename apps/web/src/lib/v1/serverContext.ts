@@ -1,3 +1,4 @@
+import { env as cloudflareEnv } from 'cloudflare:workers';
 import type { AdapterCtx } from './adapter';
 import { bindingFetch, r2BucketFetch } from './binding';
 import { v1Provider } from './config';
@@ -12,7 +13,6 @@ export interface IdentitySeed {
 interface ServerV1Event {
 	fetch: typeof fetch;
 	locals: { v1Cache?: Map<string, unknown> };
-	platform?: App.Platform;
 	url: URL;
 }
 
@@ -70,8 +70,8 @@ async function withServerV1Deadline(
 }
 
 export function serverV1Context(event: ServerV1Event): AdapterCtx {
-	const snapshots = event.platform?.env?.SNAPSHOTS;
-	const binding = event.platform?.env?.DATA;
+	const snapshots = cloudflareEnv.SNAPSHOTS;
+	const binding = cloudflareEnv.DATA;
 	const compatibilityFetch = binding ? bindingFetch(binding, event.url.origin) : null;
 	const directFetch = snapshots ? r2BucketFetch(snapshots, event.url.origin) : null;
 	const snapshotFetch: typeof fetch = async (input, init) =>

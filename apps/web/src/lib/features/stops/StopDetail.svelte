@@ -3,42 +3,47 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import type { DetailTab } from '$lib/site/detailTabs';
-	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getStop } from '$lib/v1/repositories/static';
-	import { getStopReliability } from '$lib/v1/repositories/historic';
-	import type { LiveStore, LiveFamily } from '$lib/v1/live/store.svelte';
-	import { createLiveResource } from '$lib/v1/live/resource';
-	import { getV1Context } from '$lib/v1/boot';
-	import { alertsForStop } from '$lib/v1/affectedAlerts';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import { delayTone, toneColorVar, TONE_GLYPH, type ChipTone } from '$lib/site/delayPresentation';
-	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
-	import { STATUS_LABELS } from '$lib/v1/enumLabels';
-	import type { StatusCode } from '$lib/v1/schemas';
+	import { intl, getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import type { DetailTab } from '#lib/site/detailTabs.ts';
+	import { createDetailTabController } from '#lib/site/detailTabController.svelte.ts';
+	import { getStop } from '#lib/v1/repositories/static.ts';
+	import { getStopReliability } from '#lib/v1/repositories/historic.ts';
+	import type { LiveStore, LiveFamily } from '#lib/v1/live/store.svelte.ts';
+	import { createLiveResource } from '#lib/v1/live/resource.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { alertsForStop } from '#lib/v1/affectedAlerts.ts';
+	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+	import type { StopFile, StopReliability, StopDeparture } from '#lib/v1/index.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import {
+		delayTone,
+		toneColorVar,
+		TONE_GLYPH,
+		type ChipTone,
+	} from '#lib/site/delayPresentation.ts';
+	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
+	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+	import type { StatusCode } from '#lib/v1/schemas/index.ts';
 	import {
 		EntityDetail,
 		ResourceBoundary,
 		FreshnessStamp,
 		MapDrilldownLink,
 		AffectedAlerts,
-	} from '$lib/components/surface';
-	import { EdgeState } from '$lib/components/edge';
+	} from '#lib/components/surface/index.ts';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
-	import { articleNavigationCopy } from '$lib/components/shared';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { Separator } from '@yesid/ui/separator';
 	import { desktop } from '@yesid/ui/state';
-	import type { IdentitySeed } from '$lib/v1/serverContext';
-	import { mapHrefFor } from '$lib/nav';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import type { IdentitySeed } from '#lib/v1/serverContext.ts';
+	import { mapHrefFor } from '#lib/nav/index.ts';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
-	import { formatUtc, formatDateKey } from '$lib/utils/time';
+	import { formatUtc, formatDateKey } from '#lib/utils/time.ts';
 	import { StopReliabilitySurface } from './reliability';
 	import {
 		createStopHistoryResource,
@@ -46,7 +51,7 @@
 	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
-	import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
+	import { alertUnavailableCopy } from '#lib/components/surface/alertAvailabilityCopy.ts';
 
 	const localizeHref = getLocalizeHref();
 
@@ -110,8 +115,8 @@
 		closeAria: articleNav.closeAria,
 	});
 
-	const detailTabController = createDetailTabController(page.url);
-	$effect(() => detailTabController.syncFromUrl(page.url));
+	const detailTabController = createDetailTabController(new URL(page.url.href));
+	$effect(() => detailTabController.syncFromUrl(new URL(page.url.href)));
 
 	const manifest = getV1Context().manifest;
 	const { live, resource: departureReport } = createLiveResource(manifest, 'departures');
@@ -201,7 +206,7 @@
 	function historyFor(stopId: string): StopHistoryResource {
 		return createStopHistoryResource(
 			stopId,
-			historyRangeRequestFromSearchParams(page.url.searchParams),
+			historyRangeRequestFromSearchParams(new URLSearchParams(page.url.search)),
 		);
 	}
 	const initialHistoryEntityId = untrack(() => id);

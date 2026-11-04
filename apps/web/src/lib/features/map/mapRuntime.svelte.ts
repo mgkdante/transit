@@ -5,7 +5,7 @@ import {
 	createVehicleOverlay,
 	type VehicleMotionController,
 	type VehicleOverlay,
-} from '$lib/components/map';
+} from '#lib/components/map/index.ts';
 import { createMapEmphasisController } from './mapEmphasisController.svelte';
 import {
 	createMapLayerFeedController,

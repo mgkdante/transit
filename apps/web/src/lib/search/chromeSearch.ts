@@ -1,15 +1,20 @@
-import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
-import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '$lib/filters';
-import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-import { routeFor } from '$lib/nav';
-import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-import { routeModeKey, stopGroupKey, stopModeKey, type TransitModeKey } from '$lib/search/stopMode';
-import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
+import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '#lib/v1/schemas/index.ts';
+import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '#lib/filters/index.ts';
+import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
+import { routeFor } from '#lib/nav/index.ts';
+import { dedupeBy, foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
+import {
+	routeModeKey,
+	stopGroupKey,
+	stopModeKey,
+	type TransitModeKey,
+} from '#lib/search/stopMode.ts';
+import { setMapFocusSearchParams, type MapFocusKind } from '#lib/search/mapFocus.ts';
 import {
 	copyNearTargetSearchParams,
 	mapNearId,
 	setNearTargetSearchParams,
-} from '$lib/search/mapNear';
+} from '#lib/search/mapNear.ts';
 
 export type ChromeSearchKind = 'route' | 'stop' | 'vehicle' | 'address';
 

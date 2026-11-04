@@ -1,7 +1,7 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import type { OccupancyCode } from '$lib/v1/schemas';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '#lib/components/surface/index.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import type { OccupancyCode } from '#lib/v1/schemas/index.ts';
 
 export const indexCopy = defineCopy({
 	fr: {

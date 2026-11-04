@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
-import { readPublicSiteConfig } from '$lib/site/config';
-import { DEPLOYMENT_IDENTITY } from '$lib/site/deployment';
+import { readPublicSiteConfig } from '#lib/site/config.ts';
+import { DEPLOYMENT_IDENTITY } from '#lib/site/deployment.ts';
 
 export const prerender = true;
 

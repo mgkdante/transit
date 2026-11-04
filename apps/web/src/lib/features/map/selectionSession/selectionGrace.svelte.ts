@@ -1,4 +1,4 @@
-import type { FeedHealth, LiveFamilyPhase } from '$lib/v1/live/store.svelte';
+import type { FeedHealth, LiveFamilyPhase } from '#lib/v1/live/store.svelte.ts';
 
 export type SelectionPresence = 'loading' | 'present' | 'missing-grace' | 'gone';
 export type SelectionSourceHealth = 'ok' | 'retrying' | 'failed';

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createFilterStore, emptyFilterState } from '$lib/filters';
-import { motionMode } from '$lib/stores';
+import { createFilterStore, emptyFilterState } from '#lib/filters/index.ts';
+import { motionMode } from '#lib/stores/index.ts';
 import MapFilterPillHarness from './__fixtures__/MapFilterPillHarness.svelte';
 
 beforeEach(() => {

@@ -1,9 +1,13 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
-import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
+import { historyViewContract } from '#lib/features/reliability/__fixtures__/historyViewContract.ts';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
-import type { HistoricCollectionIndex, IsoUtc, NetworkHistoryPartition } from '$lib/v1/schemas';
+import type { NetworkFile, NetworkShift, TrendPoint } from '#lib/v1/index.ts';
+import type {
+	HistoricCollectionIndex,
+	IsoUtc,
+	NetworkHistoryPartition,
+} from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 
@@ -202,12 +206,12 @@ const retainedPartitions = [
 
 vi.mock('$app/state', () => ({ page: harness.page }));
 
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
 
-vi.mock('$lib/nav', () => ({
+vi.mock('#lib/nav/index.ts', () => ({
 	layout: { isDesktop: true },
 	openSurface: vi.fn(),
 	routeFor: (target: { kind: string; id?: string; search?: string }) => {
@@ -219,10 +223,10 @@ vi.mock('$lib/nav', () => ({
 	},
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
@@ -255,14 +259,14 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
 	getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
 	loadNetworkHistoryRange: harness.loadNetworkHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: vi.fn() }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const source = loader.toString();
 		const isProvenance = /Provenance|provenance/.test(source);

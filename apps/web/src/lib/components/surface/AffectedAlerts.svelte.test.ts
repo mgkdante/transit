@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import type { Alert } from '$lib/v1/schemas';
+import type { Alert } from '#lib/v1/schemas/index.ts';
 import AffectedAlerts, { type AffectedAlertsCopy } from './AffectedAlerts.svelte';
 
 const EN_COPY: AffectedAlertsCopy = {

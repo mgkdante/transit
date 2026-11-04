@@ -1,0 +1,153 @@
+diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+index be8dcdee0e6e2d6bbbc8557ed53627cbe984d358..3a63541f0723c6057a22fbde3f26392262bdb6ca 100644
+--- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
++++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+@@ -26,6 +26,7 @@ export class DismissibleLayerState {
+     #documentObj = undefined;
+     #onFocusOutside;
+     #unsubClickListener = noop;
++    #pendingTouch = null;
+     /**
+      * Set once the layer is torn down. Deferred work scheduled before teardown can
+      * still run afterwards, so every such callback must short-circuit on this
+@@ -46,7 +47,7 @@ export class DismissibleLayerState {
+             this.#resetState();
+             globalThis.bitsDismissableLayers.delete(this);
+             this.#handleInteractOutside.destroy();
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             unsubEvents();
+         };
+         watch([() => this.opts.enabled.current, () => this.opts.ref.current], ([enabled, node]) => {
+@@ -102,15 +103,7 @@ export class DismissibleLayerState {
+             if (event.cancelBubble || event !== this.#capturedPointerDown)
+                 return;
+             this.#markNonInterceptedEvent(event);
+-            if (event.pointerType === "touch") {
+-                // a tap's click can follow its pointerdown within a millisecond (WebKit), so
+-                // arm the click listener now rather than after the debounce flushes
+-                this.#handleInteractOutside.destroy();
+-                this.#interactOutside(event);
+-            }
+-            else {
+-                this.#handleInteractOutside(event);
+-            }
++            this.#startInteractOutside(event);
+         };
+         // `svelte/events.on` defers pointer listener attachment to a microtask, leaving
+         // a gap even without a registration timer. Document is already connected, so
+@@ -118,8 +111,50 @@ export class DismissibleLayerState {
+         // a layer opened by its target/bubble handlers must not dismiss itself.
+         document.addEventListener("pointerdown", onPointerDownCapture, true);
+         document.addEventListener("pointerdown", onPointerDown);
+-        return executeCallbacks(() => document.removeEventListener("pointerdown", onPointerDownCapture, true), () => document.removeEventListener("pointerdown", onPointerDown), on(document, "focusin", this.#handleFocus));
++        return executeCallbacks(() => document.removeEventListener("pointerdown", onPointerDownCapture, true), () => document.removeEventListener("pointerdown", onPointerDown), on(document, "pointercancel", this.#clearTouch, { capture: true }), on(document, "focusin", this.#handleFocus));
+     }
++    #clearTouch = () => {
++        this.#pendingTouch = null;
++        this.#unsubClickListener();
++        this.#unsubClickListener = noop;
++    };
++    #finishTouch = () => {
++        const pending = this.#pendingTouch;
++        if (!pending?.validated || !pending.click) return;
++        if (this.#destroyed || !this.opts.enabled.current || this.opts.ref.current !== pending.node) {
++            this.#clearTouch();
++            return;
++        }
++        this.#clearTouch();
++        this.#handleDismiss(pending.click);
++    };
++    #startInteractOutside = (event) => {
++        if (event.pointerType === "touch" && this.opts.ref.current) {
++            const pending = { event, node: this.opts.ref.current, path: event.composedPath(), click: null, validated: false };
++            this.#pendingTouch = pending;
++            let backup = null;
++            const capture = (click) => {
++                captureEventPath(click);
++                const path = click.composedPath();
++                const sameGesture = path.includes(event.target) || pending.path.includes(click.target);
++                if (this.#pendingTouch !== pending || click.detail === 0 || !sameGesture ||
++                    (path.includes(pending.node) && !pending.path.includes(pending.node))) {
++                    this.#clearTouch();
++                    return;
++                }
++                pending.click = click;
++            };
++            this.#unsubClickListener = executeCallbacks(
++                on(this.#documentObj, "click", () => this.#finishTouch(), { once: true }),
++                on(this.#documentObj, "click", (click) => {
++                    capture(click);
++                    if (this.#pendingTouch === pending) backup = setTimeout(this.#finishTouch, 0);
++                }, { once: true, capture: true }),
++                () => { if (backup !== null) clearTimeout(backup); }
++            );
++        }
++        this.#handleInteractOutside(event);
++    };
+     #handleDismiss = (e) => {
+         let event = e;
+         if (event.defaultPrevented) {
+@@ -129,13 +164,13 @@ export class DismissibleLayerState {
+     };
+     #interactOutside = (e) => {
+         if (!this.opts.ref.current) {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         const isEventValid = this.opts.isValidEvent.current(e, this.opts.ref.current) ||
+             isValidEvent(e, this.opts.ref.current);
+         if (!this.#isResponsibleLayer || this.#isAnyEventIntercepted() || !isEventValid) {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         let event = e;
+@@ -144,30 +179,14 @@ export class DismissibleLayerState {
+         }
+         if (this.#behaviorType.current !== "close" &&
+             this.#behaviorType.current !== "defer-otherwise-close") {
+-            this.#unsubClickListener();
++            this.#clearTouch();
+             return;
+         }
+         if (e.pointerType === "touch") {
+-            this.#unsubClickListener();
+-            // the tap's click dismisses from the bubble phase, as before. A capture-phase
+-            // listener backs it up with a task, so a target that stops propagation cannot
+-            // hide the click, while a target that closes this layer still tears it down
+-            // (and the backup with it) before the task runs.
+-            let backup = null;
+-            let unsubClick = noop;
+-            const dismiss = (event) => {
+-                unsubClick();
+-                this.#handleDismiss(event);
+-            };
+-            unsubClick = executeCallbacks(on(this.#documentObj, "click", dismiss, { once: true }), on(this.#documentObj, "click", (event) => {
+-                captureEventPath(event);
+-                backup = setTimeout(() => dismiss(event), 0);
+-            }, { once: true, capture: true }), () => {
+-                if (backup !== null)
+-                    clearTimeout(backup);
+-                backup = null;
+-            });
+-            this.#unsubClickListener = unsubClick;
++            const pending = this.#pendingTouch;
++            if (!pending || pending.event !== e || pending.node !== this.opts.ref.current) return;
++            pending.validated = true;
++            this.#finishTouch();
+         }
+         else {
+             this.#interactOutsideProp.current(event);
+@@ -175,6 +194,10 @@ export class DismissibleLayerState {
+     };
+     #handleInteractOutside = debounce(this.#interactOutside, 10);
+     #markInterceptedEvent = (e) => {
++        if (this.#pendingTouch) {
++            this.#handleInteractOutside.destroy();
++            this.#clearTouch();
++        }
+         this.#interceptedEvents[e.type] = true;
+     };
+     #markNonInterceptedEvent = (e) => {

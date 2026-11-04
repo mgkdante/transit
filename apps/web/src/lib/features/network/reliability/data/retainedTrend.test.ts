@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DateWindow } from '$lib/filters';
-import { wilsonBounds } from '$lib/v1/stats';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
 import {
 	HistoricCollectionIndexSchema,
 	NetworkHistoryPartitionSchema,
@@ -8,7 +8,7 @@ import {
 	type HistoricMetricCoverage,
 	type HistoricPartitionRef,
 	type NetworkHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { buildRetainedNetworkTrend } from './retainedTrend';
 
 const GENERATED = '2026-07-13T12:00:00Z';

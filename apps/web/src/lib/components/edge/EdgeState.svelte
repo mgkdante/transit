@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
-	import { cn } from '$lib/utils';
-	import { formatRelative } from '$lib/utils/time';
+	import { cn } from '#lib/utils/index.ts';
+	import { formatRelative } from '#lib/utils/time.ts';
 
-	import type { Locale } from '$lib/i18n';
-	import { describeAbsence, type AbsenceReason } from '$lib/site/absence';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { describeAbsence, type AbsenceReason } from '#lib/site/absence.ts';
 	import { Skeleton } from '@yesid/ui/skeleton';
 	import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 	import {

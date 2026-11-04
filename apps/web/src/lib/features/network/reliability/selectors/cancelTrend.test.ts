@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectCancelTrend } from './cancelTrend';
-import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { TrendPoint } from '$lib/v1';
+import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 const opts = {
 	locale: 'en',

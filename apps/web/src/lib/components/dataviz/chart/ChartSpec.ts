@@ -1,6 +1,6 @@
-import type { AbsenceReasonKey } from '$lib/site/absence';
-import type { Locale } from '$lib/i18n/config';
-import type { OccupancyCode, SeverityCode, StatusCode } from '$lib/v1/schemas';
+import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+import type { Locale } from '#lib/i18n/config.ts';
+import type { OccupancyCode, SeverityCode, StatusCode } from '#lib/v1/schemas/index.ts';
 import type { ChartDatumPopoverModel } from './useChartDatumPopover.svelte';
 
 export type AbsoluteDomain = readonly [number, number];

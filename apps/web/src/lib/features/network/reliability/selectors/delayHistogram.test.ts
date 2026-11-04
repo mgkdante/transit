@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectDelayHistogram } from './delayHistogram';
-import { NETWORK_DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
-import type { DelayBucket } from '$lib/v1/schemas';
+import { NETWORK_DELAY_HISTOGRAM_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { DelayBucket } from '#lib/v1/schemas/index.ts';
 
 const labels = {
 	title: 'Delay distribution',

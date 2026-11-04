@@ -1,5 +1,5 @@
-import type { FetchFn } from '$lib/v1/http';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { FetchFn } from '#lib/v1/http.ts';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 
 export interface AdapterCtx {
 	readonly providerId?: string;

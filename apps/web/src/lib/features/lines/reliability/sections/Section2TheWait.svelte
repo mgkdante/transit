@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { absenceShort } from '$lib/site/absence';
-	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { DeltaStat } from '$lib/components/dataviz';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
+	import { fmtCount, fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
+	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '#lib/v1/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { DeltaStat } from '#lib/components/dataviz/index.ts';
 	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
 	import { priorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
@@ -12,13 +12,13 @@
 	import { selectDirectionAsymmetry } from '../selectors/directionAsymmetry';
 	import { selectBullet } from '../selectors/bullet';
 	import { selectServiceSpan } from '../selectors/serviceSpan';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { AbsentValue } from '$lib/components/edge';
-	import Detail from '$lib/components/shared/Detail.svelte';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import Detail from '#lib/components/shared/Detail.svelte';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import type { WaitRegularityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 	import {
@@ -28,7 +28,7 @@
 		HEADWAY_DOMAIN,
 		COV_DOMAIN,
 		BUNCHED_DOMAIN,
-	} from '$lib/features/reliability/shiftGrains';
+	} from '#lib/features/reliability/shiftGrains.ts';
 
 	interface Section2TheWaitProps {
 		wait: WaitRegularityVM;

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
 	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {

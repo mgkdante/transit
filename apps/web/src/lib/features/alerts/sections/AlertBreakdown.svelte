@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { BreakdownRow } from '../selectors/alertLog';
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
 	import { DashboardGrid } from '@yesid/ui/layout';
-	import { RankedRow } from '$lib/components/dataviz';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
 	import { SectionHeading } from '@yesid/ui/brand';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 
 	interface Props {
 		causeRows: readonly BreakdownRow[];

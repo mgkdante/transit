@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { stopDisplayName, timeLabel } from '../mapSelectionDetail.logic';
 	import type { MapStopRef } from '../mapSelectionSession.svelte';

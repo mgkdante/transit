@@ -1,4 +1,4 @@
-import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
+import { ProvenanceSchema } from '#lib/v1/schemas/provenance.ts';
 import type { AdapterCtx } from './types';
 import { R2_DEFAULTS as DEFAULTS, MUTABLE_CACHE, loadManifest, readWhole } from './r2.core';
 

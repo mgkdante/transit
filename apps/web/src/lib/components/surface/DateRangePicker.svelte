@@ -1,7 +1,7 @@
 <script module lang="ts">
-	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import type { Locale } from '$lib/i18n';
-	import type { DateWindow } from '$lib/filters';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { DateWindow } from '#lib/filters/index.ts';
 
 	export interface DateRangePickerLabels {
 		readonly group: string;
@@ -33,8 +33,8 @@
 </script>
 
 <script lang="ts">
-	import { normalizeWindow } from '$lib/filters';
-	import { AbsentValue } from '$lib/components/edge';
+	import { normalizeWindow } from '#lib/filters/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 
 	let {
 		value = $bindable(),

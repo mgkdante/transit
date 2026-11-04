@@ -2,25 +2,25 @@
 	import { clock } from '@yesid/ui/state';
 	import './sections/health-sections.css';
 
-	import { useAvailableSectionJump } from '$lib/site/availableSectionJump.svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { freshnessRelative } from '$lib/v1/freshness';
-	import { getDataHealth } from '$lib/v1/repositories/dataHealth';
-	import { getHistoricAvailability } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import type { DataHealth } from '$lib/v1/schemas/data_health';
-	import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
-	import type { Provenance } from '$lib/v1/schemas/provenance';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
-	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
+	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { freshnessRelative } from '#lib/v1/freshness.ts';
+	import { getDataHealth } from '#lib/v1/repositories/dataHealth.ts';
+	import { getHistoricAvailability } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import type { DataHealth } from '#lib/v1/schemas/data_health.ts';
+	import type { HistoricAvailabilityIndex } from '#lib/v1/schemas/history.ts';
+	import type { Provenance } from '#lib/v1/schemas/provenance.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import { formatRelativeSeconds, formatUtc } from '#lib/utils/time.ts';
+	import { METHODOLOGY_METRIC_KEY } from '#lib/features/metrics/metrics.content.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
-	import { ResourceBoundary } from '$lib/components/surface';
+	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		TerminalPanel,
 		SectionLabel,
@@ -29,7 +29,7 @@
 		TocNav,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 
 	import { copy as COPY } from './health.copy';
 	import {

@@ -1,7 +1,7 @@
 import { tick } from 'svelte';
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptyFilterState } from '$lib/filters';
+import { emptyFilterState } from '#lib/filters/index.ts';
 import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
 import { createMapSelectionController } from './selectionSession/mapSelectionController.svelte';
 
@@ -12,8 +12,10 @@ const rendering = vi.hoisted(() => ({
 	createOverlay: vi.fn(),
 }));
 
-vi.mock('$lib/components/map', async () => ({
-	...(await vi.importActual<typeof import('$lib/components/map')>('$lib/components/map')),
+vi.mock('#lib/components/map/index.ts', async () => ({
+	...(await vi.importActual<typeof import('#lib/components/map/index.ts')>(
+		'#lib/components/map/index.ts',
+	)),
 	createVehicleMotionController: rendering.createMotion,
 	createVehicleOverlay: rendering.createOverlay,
 }));

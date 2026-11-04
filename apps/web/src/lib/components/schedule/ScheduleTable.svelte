@@ -1,15 +1,15 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { formatUtc } from '$lib/utils/time';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { formatUtc } from '#lib/utils/time.ts';
 	import {
 		delayLabel,
 		delayTone,
 		rowGlyph,
 		rowColorVar,
 		type DelayLabelCopy,
-	} from '$lib/site/delayPresentation';
+	} from '#lib/site/delayPresentation.ts';
 	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 
 	export interface ScheduleGridRow {
 		readonly kind: 'grid';

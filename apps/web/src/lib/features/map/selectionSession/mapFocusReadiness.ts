@@ -1,4 +1,4 @@
-import type { MapFocus } from '$lib/search/mapFocus';
+import type { MapFocus } from '#lib/search/mapFocus.ts';
 
 export interface MapFocusReadinessSources {
 	readonly stopsSettled: boolean;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildLiveIndex, type LiveSnapshot } from './index';
 import { deriveRouteStopPredictions } from './routeStopPredictions';
-import type { Trip, Vehicle } from '$lib/v1/schemas';
+import type { Trip, Vehicle } from '#lib/v1/schemas/index.ts';
 
 const ISO = '2026-06-15T12:00:00Z';
 

@@ -1,7 +1,11 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, DumbbellSpec, DumbbellDatum } from '$lib/components/dataviz/chart';
-import { HEADWAY_DOMAIN } from '$lib/features/reliability/domains';
-import type { SeverityCode } from '$lib/v1/schemas';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	DumbbellSpec,
+	DumbbellDatum,
+} from '#lib/components/dataviz/chart/index.ts';
+import { HEADWAY_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 export interface DumbbellInputRow {
 	key: string;

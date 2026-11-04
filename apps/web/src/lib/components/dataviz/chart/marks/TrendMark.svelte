@@ -13,8 +13,8 @@
 	} from 'layerchart';
 	import { scaleLinear, scalePoint, scaleTime } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
-	import { cn, fmtCount, fmtNumber } from '$lib/utils';
-	import { absenceShort } from '$lib/site/absence';
+	import { cn, fmtCount, fmtNumber } from '#lib/utils/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { trendTimeAxis } from '../trendTimeAxis';
 	import ChartFrame from '../ChartFrame.svelte';

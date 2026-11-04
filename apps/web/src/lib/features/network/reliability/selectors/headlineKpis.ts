@@ -1,6 +1,6 @@
-import type { AbsenceReasonKey } from '$lib/site/absence';
-import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
-import type { NetworkFile } from '$lib/v1';
+import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+import type { MetricKey, SupplementalMetricKey } from '#lib/features/metrics/metrics.content.ts';
+import type { NetworkFile } from '#lib/v1/index.ts';
 
 export interface KpiCardVM {
 	readonly value: string | null;

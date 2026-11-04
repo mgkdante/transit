@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
 	bumpRefreshEpoch: () => {},
 	resetRefreshEpoch: () => {},
 }));
-vi.mock('$lib/stores/refresh.svelte', async () => {
+vi.mock('#lib/stores/refresh.svelte.ts', async () => {
 	const { createSubscriber } = await import('svelte/reactivity');
 	let refreshEpoch = 0;
 	const subscribe = createSubscriber((update) => {
@@ -28,7 +28,7 @@ vi.mock('$lib/stores/refresh.svelte', async () => {
 	};
 });
 
-import { dataRefresh } from '$lib/stores/refresh.svelte';
+import { dataRefresh } from '#lib/stores/refresh.svelte.ts';
 import { configureV1Runtime } from './runtime';
 import { createResource } from './resource.svelte';
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { LiveIndex } from '$lib/v1/live';
+import type { LiveIndex } from '#lib/v1/live/index.ts';
 import {
 	VehicleSchema,
 	type Alert,
 	type IsoUtc,
 	type RouteFile,
 	type RouteIndexEntry,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { resolveMapHoverPeek, type MapHoverPeekContext } from './mapHoverPeek';
 
 const now = Date.parse('2026-07-31T12:00:00Z');

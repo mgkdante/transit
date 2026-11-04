@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas';
-import type { AlertArchivePageRef } from '$lib/v1/schemas';
-import type { DateWindow } from '$lib/v1/history';
+import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '#lib/v1/schemas/index.ts';
+import type { AlertArchivePageRef } from '#lib/v1/schemas/index.ts';
+import type { DateWindow } from '#lib/v1/history/index.ts';
 import {
 	HISTORY_PARTITION_CONCURRENCY,
 	HistoryArtifactContractError,

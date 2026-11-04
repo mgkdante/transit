@@ -1,13 +1,13 @@
-import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
+import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '#lib/stores/index.ts';
 import type {
 	HistoricCollectionIndex,
 	HistoricRepeatOffendersDay,
 	IsoUtc,
 	RepeatOffenders,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
 const harness = vi.hoisted(() => {
@@ -49,14 +49,14 @@ vi.mock('$app/navigation', () => ({
 	replaceState: harness.replaceState,
 	goto: harness.goto,
 }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => harness.locale.value };
 });
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRepeatOffenders: harness.getRepeatOffenders,
 	getRepeatOffendersHistoryIndex: harness.getRepeatOffendersHistoryIndex,
 	getRepeatOffendersHistoryDay: harness.getRepeatOffendersHistoryDay,

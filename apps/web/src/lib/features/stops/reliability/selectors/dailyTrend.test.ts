@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectDailyTrend } from './dailyTrend';
-import { SEVERE_DOMAIN, DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { StopDailyPoint } from '$lib/v1';
+import { SEVERE_DOMAIN, DELAY_POS_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { StopDailyPoint } from '#lib/v1/index.ts';
 
 const labels = {
 	title: 'Severe-delay share · by day',

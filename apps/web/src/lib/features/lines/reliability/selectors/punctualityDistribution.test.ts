@@ -3,7 +3,7 @@ import {
 	selectPunctualityDistribution,
 	type PunctualityDistributionLabels,
 } from './punctualityDistribution';
-import { DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
+import { DELAY_HISTOGRAM_DOMAIN } from '#lib/features/reliability/domains.ts';
 import type { PunctualityVM } from '../clusters';
 
 const labels: PunctualityDistributionLabels = { title: 'Delay distribution', unit: ' s' };

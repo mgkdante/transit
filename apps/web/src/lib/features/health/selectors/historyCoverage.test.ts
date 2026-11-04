@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { HistoricAvailabilityIndex, IsoUtc } from '$lib/v1/schemas';
+import type { HistoricAvailabilityIndex, IsoUtc } from '#lib/v1/schemas/index.ts';
 import {
 	LINE_CURRENT_ONLY_SECTIONS,
 	NETWORK_CURRENT_ONLY_SECTIONS,
 	STOP_CURRENT_ONLY_SECTIONS,
-} from '$lib/v1/history/families';
+} from '#lib/v1/history/families.ts';
 import { selectHistoryCoverage } from './historyCoverage';
 
 const iso = (value: string) => value as unknown as IsoUtc;

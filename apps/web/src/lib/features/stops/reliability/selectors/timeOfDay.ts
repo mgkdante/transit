@@ -5,8 +5,8 @@ import {
 	isDayTypeGrain,
 	severeShareToSeverity,
 	SEVERE_DOMAIN,
-} from '$lib/features/reliability/shiftGrains';
-import type { SeverityCode, StopReliabilityPeriod } from '$lib/v1/schemas';
+} from '#lib/features/reliability/shiftGrains.ts';
+import type { SeverityCode, StopReliabilityPeriod } from '#lib/v1/schemas/index.ts';
 
 export interface TimeOfDayRow {
 	readonly key: string;

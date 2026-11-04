@@ -1,5 +1,5 @@
 import type { PublicSiteConfig } from './config';
-import { localizeHref } from '$lib/i18n';
+import { localizeHref } from '#lib/i18n/index.ts';
 import {
 	emitAlternateSitemapEntries,
 	emitSitemapDocument,

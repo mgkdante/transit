@@ -5,13 +5,13 @@ import {
 	stopNameFallback,
 	type AbsenceReasonKey,
 	type Maybe,
-} from '$lib/site/absence';
-import { delayLabel } from '$lib/site/delayPresentation';
-import { formatUtc } from '$lib/utils/time';
-import { localizeHref, type Locale } from '$lib/i18n';
-import { routeFor } from '$lib/nav';
+} from '#lib/site/absence.ts';
+import { delayLabel } from '#lib/site/delayPresentation.ts';
+import { formatUtc } from '#lib/utils/time.ts';
+import { localizeHref, type Locale } from '#lib/i18n/index.ts';
+import { routeFor } from '#lib/nav/index.ts';
 
-export { delayTone } from '$lib/site/delayPresentation';
+export { delayTone } from '#lib/site/delayPresentation.ts';
 import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelectionSession.svelte';
 import { MAP_SELECTION_DETAIL_COPY, type MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 

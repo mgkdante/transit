@@ -1,14 +1,14 @@
-import type { AlertBreakdownBucket, AlertHistoryEntry } from '$lib/v1/schemas/alert_history';
-import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
-import type { DateWindow, AlertAffects } from '$lib/filters';
-import { providerLocalDateKey } from '$lib/utils/time';
+import type { AlertBreakdownBucket, AlertHistoryEntry } from '#lib/v1/schemas/alert_history.ts';
+import { SEVERITY_CODES, type SeverityCode } from '#lib/v1/schemas/types.ts';
+import type { DateWindow, AlertAffects } from '#lib/filters/index.ts';
+import { providerLocalDateKey } from '#lib/utils/time.ts';
 import {
 	alertDisplayUrl,
 	type AlertDisplayResult,
 	type AlertDisplayUrlResult,
-} from '$lib/v1/alertDisplay';
-import type { Locale } from '$lib/i18n';
-export { safeAlertUrl } from '$lib/v1/alertDisplay';
+} from '#lib/v1/alertDisplay.ts';
+import type { Locale } from '#lib/i18n/index.ts';
+export { safeAlertUrl } from '#lib/v1/alertDisplay.ts';
 
 const SEVERITY_SET = new Set<string>(SEVERITY_CODES);
 

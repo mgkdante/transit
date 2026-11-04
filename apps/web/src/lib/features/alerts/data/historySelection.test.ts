@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AlertHistory, IsoUtc } from '$lib/v1/schemas';
-import { AlertArchiveIndexSchema } from '$lib/v1/schemas';
-import { datesForAvailability } from '$lib/v1/history/selection';
+import type { AlertHistory, IsoUtc } from '#lib/v1/schemas/index.ts';
+import { AlertArchiveIndexSchema } from '#lib/v1/schemas/index.ts';
+import { datesForAvailability } from '#lib/v1/history/selection.ts';
 import { filterAlertLog } from '../selectors/alertLog';
 import {
 	currentAlertWindow,

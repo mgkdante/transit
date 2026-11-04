@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import { STATUS_LABELS } from '$lib/v1/enumLabels';
-import { occupancyGlyph } from '$lib/components/dataviz';
-import type { Vehicle } from '$lib/v1/schemas';
+import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import { occupancyGlyph } from '#lib/components/dataviz/index.ts';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import { copy } from './search.copy';
 import VehicleResultRow from './VehicleResultRow.svelte';
 

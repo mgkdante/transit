@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { freshnessAgeSeconds, freshnessRelative } from './freshness';
-import type { TimeLang } from '$lib/utils/time';
+import type { TimeLang } from '#lib/utils/time.ts';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

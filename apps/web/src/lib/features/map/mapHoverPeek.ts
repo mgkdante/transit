@@ -1,11 +1,17 @@
 import type { clock } from '@yesid/ui/state';
-import type { Locale } from '$lib/i18n';
-import type { LiveIndex } from '$lib/v1/live';
-import type { Alert, OccupancyCode, RouteFile, RouteIndexEntry, StatusCode } from '$lib/v1/schemas';
-import type { SlimStopEntry } from '$lib/v1';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { LiveIndex } from '#lib/v1/live/index.ts';
+import type {
+	Alert,
+	OccupancyCode,
+	RouteFile,
+	RouteIndexEntry,
+	StatusCode,
+} from '#lib/v1/schemas/index.ts';
+import type { SlimStopEntry } from '#lib/v1/index.ts';
 
-import { fixAgeS, isVehicleStale, routeDirectionVariants } from '$lib/components/map';
-import type { AbsenceReasonKey } from '$lib/site/absence';
+import { fixAgeS, isVehicleStale, routeDirectionVariants } from '#lib/components/map/index.ts';
+import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 import {
 	alertMatchesRoute,
 	alertMatchesStop,

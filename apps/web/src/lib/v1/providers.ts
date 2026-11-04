@@ -1,4 +1,4 @@
-import { delocalizePath, localizeHref, pathLocale } from '$lib/i18n';
+import { delocalizePath, localizeHref, pathLocale } from '#lib/i18n/index.ts';
 import { v1BaseUrl } from './config';
 import { PublicProviderCatalogSchema, type PublicProviderCatalog } from './schemas/providers';
 export { PublicProviderSchema, PublicProviderCatalogSchema } from './schemas/providers';

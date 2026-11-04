@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 const network = vi.hoisted(() => vi.fn());
 
-vi.mock('$lib/v1/adapter', () => ({
+vi.mock('#lib/v1/adapter/index.ts', () => ({
 	adapter: { live: { network } },
 }));
 

@@ -1,4 +1,4 @@
-import type { RouteFile } from '$lib/v1/schemas';
+import type { RouteFile } from '#lib/v1/schemas/index.ts';
 import { routeDirectionVariants } from './routeDirection';
 import { projectToPolyline, type Coord } from './polyline';
 

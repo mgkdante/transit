@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RouteReliability, StopReliability, NetworkTrend } from '$lib/v1';
-import { isoUtc } from '$lib/v1/schemas/types';
+import type { RouteReliability, StopReliability, NetworkTrend } from '#lib/v1/index.ts';
+import { isoUtc } from '#lib/v1/schemas/types.ts';
 import LinesIndex from '../lines/LinesIndex.svelte';
 import RouteDetail from '../lines/RouteDetail.svelte';
 import RouteReliabilityClusters from '../lines/reliability/RouteReliabilityClusters.svelte';
@@ -26,11 +26,11 @@ const harness = vi.hoisted(() => {
 	};
 });
 vi.mock('$app/state', () => ({ page: harness.page }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRouteReliability: async () => harness.route,
 	getStopReliability: async () => harness.stop,
 	getRouteReliabilityIndex: async () => new Set(['24']),
@@ -40,24 +40,24 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	loadLineHistoryRange: vi.fn(),
 	loadNetworkHistoryRange: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoutesIndex: async () => ({
 		generated_utc: '2026-11-02T00:00:00Z',
 		routes: [{ id: '24', short: '24', type: 3 }],
 	}),
 	getRoute: async () => ({ id: '24', generated_utc: '2026-11-02T00:00:00Z', directions: [] }),
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: async () => ({ conformance: null }),
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'Test', display_name: 'Test', files: { live: { ttl_s: 30 } } },
 		lang: 'en',
 		labels: {},
 	}),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: () => ({
 		vehicles: null,
 		trips: null,

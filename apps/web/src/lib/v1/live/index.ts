@@ -7,7 +7,7 @@ import type {
 	TripsFile,
 	Vehicle,
 	VehiclesFile,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 
 export interface LiveSnapshot {
 	readonly vehicles?: VehiclesFile | null;

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import { r2Adapter } from './r2';
 
-vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('$env/dynamic/public', () => ({
-	env: {
+vi.mock('$app/env', () => ({ browser: true }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{
 		PUBLIC_V1_BASE: 'https://r2.example.test/v1',
 		PUBLIC_V1_PROVIDER: 'stm',
 	},

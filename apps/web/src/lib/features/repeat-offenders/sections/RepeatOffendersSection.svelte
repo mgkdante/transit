@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { SectionHeading } from '@yesid/ui/brand';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import type { OffenderEvidenceRow } from '../selectors/offenderEvidence';
 	import type { OffenderLadderResult } from '../selectors/offenderLadder';
 	import type { RepeatOffendersCopy } from '../repeatOffenders.copy';

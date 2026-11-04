@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { AbsentValue } from '$lib/components/edge';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { delayKnownLabel, delayMaybe, delayTone } from './mapSelectionDetail.logic';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 

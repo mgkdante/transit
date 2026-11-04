@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	const SECTIONS = [

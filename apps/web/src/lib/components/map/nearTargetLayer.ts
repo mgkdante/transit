@@ -1,4 +1,4 @@
-import type { GeocodePrecision } from '$lib/geocode/types';
+import type { GeocodePrecision } from '#lib/geocode/types.ts';
 import { resolveColor } from './vehicleSprites';
 
 export interface NearTarget {

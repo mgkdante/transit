@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectCrowdingMix } from './crowdingMix';
-import type { OccupancyCode, OccupancyMix } from '$lib/v1/schemas';
+import type { OccupancyCode, OccupancyMix } from '#lib/v1/schemas/index.ts';
 
 const label = (c: OccupancyCode) => `L:${c}`;
 const opts = { title: 'Crowding at this stop', locale: 'en' } as const;

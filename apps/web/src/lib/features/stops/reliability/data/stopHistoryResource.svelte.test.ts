@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import type { HistoricCollectionIndex, IsoUtc, StopHistoryPartition } from '$lib/v1/schemas';
-import type { RawHistoryRangeRequest } from '$lib/v1/history/rangeResource.svelte';
+import type {
+	HistoricCollectionIndex,
+	IsoUtc,
+	StopHistoryPartition,
+} from '#lib/v1/schemas/index.ts';
+import type { RawHistoryRangeRequest } from '#lib/v1/history/rangeResource.svelte.ts';
 import { createStopHistoryResource, type StopHistoryResource } from './stopHistoryResource.svelte';
 
 type Equal<A, B> =
@@ -9,7 +13,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T;
 type _StopSignature = Expect<
 	Equal<
-		typeof import('$lib/features/stops/reliability/data/stopHistoryResource.svelte').createStopHistoryResource,
+		typeof import('#lib/features/stops/reliability/data/stopHistoryResource.svelte.ts').createStopHistoryResource,
 		(entityId: string, request: RawHistoryRangeRequest) => StopHistoryResource
 	>
 >;
@@ -23,7 +27,7 @@ const builders = vi.hoisted(() => ({
 	buildRetainedStopHistory: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => repositories);
+vi.mock('#lib/v1/repositories/historic.ts', () => repositories);
 
 vi.mock('./retainedHistory', () => builders);
 

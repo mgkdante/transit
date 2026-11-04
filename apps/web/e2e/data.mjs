@@ -43,7 +43,7 @@ createServer((request, response) => {
 	const body = files[request.url];
 	response.writeHead(body ? 200 : 404, {
 		'content-type': 'application/json',
-		'access-control-allow-origin': 'http://127.0.0.1:4317',
+		'access-control-allow-origin': process.env.TRANSIT_E2E_ORIGIN ?? 'http://127.0.0.1:4317',
 	});
 	response.end(body ?? '{}');
-}).listen(4318, '127.0.0.1');
+}).listen(Number(process.env.TRANSIT_E2E_DATA_PORT ?? 4318), '127.0.0.1');

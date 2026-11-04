@@ -1,6 +1,6 @@
 import type { GeocodedLocation, GeocodePrecision, GeocodeArea } from './types';
 import { isInsideBounds } from './types';
-import { foldDiacritics } from '$lib/search/normalize';
+import { foldDiacritics } from '#lib/search/normalize.ts';
 
 export type { GeocodedLocation, GeocodePrecision } from './types';
 

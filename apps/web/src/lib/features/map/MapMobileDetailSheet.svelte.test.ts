@@ -4,11 +4,14 @@ import { compile } from 'svelte/compiler';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Alert, IsoUtc, StopIndexEntry } from '$lib/v1/schemas';
+import type { Alert, IsoUtc, StopIndexEntry } from '#lib/v1/schemas/index.ts';
 import type { StopMapDetail, VehicleMapDetail } from './selectionSession/mapSelection';
 import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 const stop: StopIndexEntry = {
 	id: 'stop-1',

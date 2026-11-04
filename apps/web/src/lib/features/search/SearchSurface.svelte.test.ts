@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
-import type { Vehicle } from '$lib/v1/schemas';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import SearchSurface from './SearchSurface.svelte';
 
 const ROUTES = [
@@ -55,26 +55,25 @@ function setUrlQuery(q: string) {
 	urlBox.query = q;
 }
 
-vi.mock('$app/stores', () => ({
+vi.mock('$app/state', () => ({
 	page: {
-		subscribe: (run: (value: { url: URL }) => void) => {
-			run({ url: new URL(`http://localhost/search?${urlBox.query}`) });
-			return () => {};
+		get url() {
+			return new URL(`http://localhost/search?${urlBox.query}`);
 		},
 	},
 }));
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoutesIndex: vi.fn(),
 	getStopsIndex: vi.fn(),
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: liveHarness.createLiveStore,
 }));
-vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
+vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', () => ({
 	createReliabilityLoader: (kind: 'route' | 'stop') => {
 		const store = kind === 'route' ? routeSnaps : stopSnaps;
 		return {
@@ -88,7 +87,7 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 	},
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (fetcher: () => unknown) => {
 		const data = nextResource();
 		void fetcher;

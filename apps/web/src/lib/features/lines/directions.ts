@@ -1,4 +1,4 @@
-import type { RouteFile } from '$lib/v1';
+import type { RouteFile } from '#lib/v1/index.ts';
 
 export function directionHeadsigns(
 	directions: RouteFile['directions'] | undefined | null,

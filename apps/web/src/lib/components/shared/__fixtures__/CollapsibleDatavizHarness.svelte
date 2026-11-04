@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { ChartLegend, SeverityBar, type ChartLegendItem } from '$lib/components/dataviz';
-	import { Chart, ScrollFrame, type StackedShareSpec } from '$lib/components/dataviz/chart';
+	import { ChartLegend, SeverityBar, type ChartLegendItem } from '#lib/components/dataviz/index.ts';
+	import {
+		Chart,
+		ScrollFrame,
+		type StackedShareSpec,
+	} from '#lib/components/dataviz/chart/index.ts';
 	import { CollapsibleSection } from '@yesid/ui/brand';
 
 	const shareSpec: StackedShareSpec = {

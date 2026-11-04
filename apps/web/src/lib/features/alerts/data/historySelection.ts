@@ -1,13 +1,13 @@
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '#lib/filters/index.ts';
 import {
 	availabilityFromAlertIndex,
 	resolveHistoryRange,
 	strictIsoDate,
 	type HistoryAvailability,
 	type ResolvedHistoryRange,
-} from '$lib/v1/history/selection';
-import type { AlertArchiveIndex } from '$lib/v1/schemas/alert_archive';
-import type { AlertHistory } from '$lib/v1/schemas/alert_history';
+} from '#lib/v1/history/selection.ts';
+import type { AlertArchiveIndex } from '#lib/v1/schemas/alert_archive.ts';
+import type { AlertHistory } from '#lib/v1/schemas/alert_history.ts';
 import { deriveSpan } from '../selectors/alertLog';
 
 function realDate(value: string | null | undefined): string | null {

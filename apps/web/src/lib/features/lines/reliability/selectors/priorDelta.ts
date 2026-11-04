@@ -1,4 +1,4 @@
-import { roundHalfAwayFromZero } from '$lib/utils/rounding';
+import { roundHalfAwayFromZero } from '#lib/utils/rounding.ts';
 
 export function priorDelta(
 	value: number | null | undefined,

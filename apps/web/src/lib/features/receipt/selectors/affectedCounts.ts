@@ -1,4 +1,4 @@
-import type { Receipt } from '$lib/v1/schemas';
+import type { Receipt } from '#lib/v1/schemas/index.ts';
 
 export interface AffectedCountVM {
 	readonly key: 'routes' | 'stops' | 'alerts' | 'vehicles';

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import { MetricDisplay } from '$lib/components/brand';
-	import { AbsentValue } from '$lib/components/edge';
+	import { MetricDisplay } from '#lib/components/brand/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import WorkflowIcon from '@lucide/svelte/icons/workflow';
 	import type { EnvelopeView } from '../selectors/envelope';
 	import type { HealthCopy } from '../health.copy';

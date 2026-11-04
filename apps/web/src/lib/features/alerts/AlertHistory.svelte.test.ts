@@ -6,8 +6,8 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
-import type { PublicProvider } from '$lib/v1/providers';
+import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '#lib/v1/schemas/index.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
@@ -66,7 +66,7 @@ const archiveState = vi.hoisted(() => ({
 	entries: [] as AlertArchiveEntry[],
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getAlertHistory: ports.getAlertHistory,
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,
 	getAlertArchiveRange: ports.getAlertArchiveRange,
@@ -79,7 +79,7 @@ const nav = vi.hoisted(() => {
 		data: {} as { provider?: PublicProvider },
 	};
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -93,12 +93,12 @@ vi.mock('$app/state', () => ({
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState: nav.replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: <T>(
 		fetcher: (signal: AbortSignal) => Promise<T> | T,
 		options?: { enabled?: () => boolean },

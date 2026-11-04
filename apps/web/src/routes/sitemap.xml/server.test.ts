@@ -1,23 +1,28 @@
+const workers = vi.hoisted(() => ({ env: {} as Record<string, unknown> }));
+vi.mock('cloudflare:workers', () => workers);
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import catalog from '../../../e2e/providers.json';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 const getRoutesIndex = vi.fn();
 const getStopsIndex = vi.fn();
 const loadProviderCatalog = vi.fn();
 
-vi.mock('$lib/v1/providers', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/v1/providers')>()),
+vi.mock('#lib/v1/providers.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/v1/providers.ts')>()),
 	loadProviderCatalog: (...args: unknown[]) => loadProviderCatalog(...args),
 }));
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
 	getStopsIndex: (...args: unknown[]) => getStopsIndex(...args),
 }));
 
-vi.mock('$lib/site/config', () => ({
+vi.mock('#lib/site/config.ts', () => ({
 	readPublicSiteConfig: () => ({ siteOrigin: 'https://transit.yesid.dev', indexing: true }),
 }));
 
@@ -32,11 +37,11 @@ function event(opts: { binding?: unknown; snapshots?: unknown; search?: string }
 		...(opts.binding === undefined ? {} : { DATA: opts.binding }),
 		...(opts.snapshots === undefined ? {} : { SNAPSHOTS: opts.snapshots }),
 	};
+	workers.env = env;
 	return {
 		fetch: vi.fn(),
 		locals: {},
 		url: new URL(`${ORIGIN}/sitemap.xml${opts.search ?? ''}`),
-		platform: Object.keys(env).length === 0 ? undefined : { env },
 	} as unknown as Parameters<Handler>[0];
 }
 

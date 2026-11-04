@@ -1,5 +1,5 @@
 import type { LiveIndex } from './index';
-import type { StopEta } from '$lib/v1/schemas';
+import type { StopEta } from '#lib/v1/schemas/index.ts';
 
 export interface StopPrediction {
 	readonly etaUtc: string | null;

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 import LinesIndex from './LinesIndex.svelte';
 
 const snapshots = new SvelteMap<string, ReliabilitySnapshot>();
@@ -23,8 +23,8 @@ const ROUTES = [
 	{ id: '99', short: '99', long: 'Villeray', type: 3 },
 ];
 
-vi.mock('$lib/v1/repositories/static', () => ({ getRoutesIndex: vi.fn() }));
-vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getRoutesIndex: vi.fn() }));
+vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', () => ({
 	createReliabilityLoader: () => {
 		const record = (target: string | { id: string; known?: boolean }) => {
 			const id = typeof target === 'string' ? target : target.id;
@@ -43,9 +43,9 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => historyCalls);
+vi.mock('#lib/v1/repositories/historic.ts', () => historyCalls);
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		data: { generated_utc: '2026-06-16T02:00:00Z', routes: ROUTES },
 		error: null,

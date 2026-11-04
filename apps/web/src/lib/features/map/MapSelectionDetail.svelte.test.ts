@@ -3,10 +3,17 @@ import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-import { occupancyGlyph } from '$lib/components/dataviz';
-import { buildLiveIndex } from '$lib/v1/live';
-import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
+import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import { occupancyGlyph } from '#lib/components/dataviz/index.ts';
+import { buildLiveIndex } from '#lib/v1/live/index.ts';
+import type {
+	Alert,
+	IsoUtc,
+	RouteFile,
+	StopFile,
+	StopIndexEntry,
+	Vehicle,
+} from '#lib/v1/schemas/index.ts';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
 import DetailBusRow from './detail/DetailBusRow.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';

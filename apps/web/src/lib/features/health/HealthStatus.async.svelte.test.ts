@@ -1,7 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
+import type {
+	DataHealth,
+	HistoricAvailabilityIndex,
+	IsoUtc,
+	Provenance,
+} from '#lib/v1/schemas/index.ts';
 
 const ports = vi.hoisted(() => ({
 	getProvenance: vi.fn(),
@@ -12,7 +17,7 @@ const motion = vi.hoisted(() => ({ reduced: false }));
 const navigation = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/status'), state: {} };
 	const replaceState = vi.fn((url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 		window.location.hash = page.url.hash;
 	});
 	return { page, replaceState };
@@ -24,17 +29,17 @@ vi.mock('$app/navigation', () => ({
 	replaceState: navigation.replaceState,
 }));
 
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: ports.getProvenance,
 }));
-vi.mock('$lib/v1/repositories/dataHealth', () => ({
+vi.mock('#lib/v1/repositories/dataHealth.ts', () => ({
 	getDataHealth: ports.getDataHealth,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHistoricAvailability: ports.getHistoricAvailability,
 }));
 
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
+vi.mock('#lib/nav/index.ts', () => ({ layout: { isDesktop: true } }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
@@ -46,7 +51,7 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '#lib/stores/index.ts';
 import { replaceState } from '$app/navigation';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';

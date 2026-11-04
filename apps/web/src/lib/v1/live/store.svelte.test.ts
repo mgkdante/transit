@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => {
 	};
 });
 
-vi.mock('$app/environment', () => ({
+vi.mock('$app/env', () => ({
 	get browser() {
 		return mocks.browser;
 	},
@@ -41,7 +41,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 		subscribe: mocks.clockSubscribe,
 	},
 }));
-vi.mock('$lib/stores', async () => {
+vi.mock('#lib/stores/index.ts', async () => {
 	const { createSubscriber } = await import('svelte/reactivity');
 	let refreshEpoch = 0;
 	const subscribe = createSubscriber((update) => {
@@ -63,7 +63,7 @@ vi.mock('$lib/stores', async () => {
 		},
 	};
 });
-vi.mock('$lib/v1/adapter', () => ({
+vi.mock('#lib/v1/adapter/index.ts', () => ({
 	adapter: {
 		live: {
 			vehicles: mocks.vehicles,
@@ -76,9 +76,9 @@ vi.mock('$lib/v1/adapter', () => ({
 }));
 
 import { createLiveStore, type LiveFamily } from './store.svelte';
-import { dataRefresh } from '$lib/stores';
-import { configureV1Runtime } from '$lib/v1/runtime';
-import type { NetworkFile } from '$lib/v1/schemas';
+import { dataRefresh } from '#lib/stores/index.ts';
+import { configureV1Runtime } from '#lib/v1/runtime.ts';
+import type { NetworkFile } from '#lib/v1/schemas/index.ts';
 
 configureV1Runtime({ clock, refresh: dataRefresh });
 

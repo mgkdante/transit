@@ -10,12 +10,9 @@ const pageState = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe(run: (value: typeof pageState.value) => void) {
-			run(pageState.value);
-			return () => {};
-		},
+vi.mock('$app/state', () => ({
+	get page() {
+		return pageState.value;
 	},
 }));
 

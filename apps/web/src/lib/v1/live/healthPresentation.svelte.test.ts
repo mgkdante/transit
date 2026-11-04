@@ -1,11 +1,14 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
-import { adapter } from '$lib/v1/adapter';
-import { AlertsFileSchema, VehiclesFileSchema } from '$lib/v1/schemas';
-import type { AlertsFile, VehiclesFile } from '$lib/v1/schemas';
+import { adapter } from '#lib/v1/adapter/index.ts';
+import { AlertsFileSchema, VehiclesFileSchema } from '#lib/v1/schemas/index.ts';
+import type { AlertsFile, VehiclesFile } from '#lib/v1/schemas/index.ts';
 import HealthPresentation from './__fixtures__/HealthPresentation.svelte';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 afterEach(() => {
 	cleanup();

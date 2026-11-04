@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import MaybeValue from './MaybeValue.svelte';
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 
 const absence = (container: HTMLElement) => container.querySelector('[data-slot="absent-value"]');
 const absenceCopy = (container: HTMLElement) =>

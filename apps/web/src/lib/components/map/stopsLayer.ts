@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
-import type { StopIndexEntry } from '$lib/v1/schemas';
-import type { FilterState } from '$lib/filters';
+import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
+import type { FilterState } from '#lib/filters/index.ts';
 import { resolveColor, STOP_ICON } from './vehicleSprites';
 
 export const STOPS_SOURCE = 'stops';

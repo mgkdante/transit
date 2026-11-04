@@ -14,7 +14,7 @@
 		BlueprintTurnoutCrossoverPlan,
 		BlueprintDetailBogie,
 	} from '@yesid/ui/blueprints';
-	import { getLocale } from '$lib/i18n';
+	import { getLocale } from '#lib/i18n/index.ts';
 
 	const locale = getLocale();
 	const operator = $derived(page.data?.provider?.labels[locale].operator ?? 'STM');

@@ -1,7 +1,7 @@
-import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { METRIC_SUMMARIES, type MetricKey } from '$lib/metrics';
-export { metricInfoFor } from '$lib/metrics';
-export type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
+import { serviceComparisonCopy } from '#lib/v1/serviceComparison.ts';
+import { METRIC_SUMMARIES, type MetricKey } from '#lib/metrics.ts';
+export { metricInfoFor } from '#lib/metrics.ts';
+export type { MetricKey, SupplementalMetricKey } from '#lib/metrics.ts';
 
 export type Confidence = 'proxy' | 'medium';
 

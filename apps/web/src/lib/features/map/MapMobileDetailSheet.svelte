@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
-	import type { Chip } from '$lib/filters';
-	import type { Alert } from '$lib/v1/schemas';
-	import { BottomSheet } from '$lib/components/shell';
+	import type { Chip } from '#lib/filters/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { BottomSheet } from '#lib/components/shell/index.ts';
 	import type {
 		MapSelection,
 		MapSelectionDetail as MapSelectionDetailModel,

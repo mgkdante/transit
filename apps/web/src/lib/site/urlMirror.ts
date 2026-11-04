@@ -1,7 +1,7 @@
 import { page } from '$app/state';
 import { replaceState } from '$app/navigation';
 
-export function currentMirrorUrl(stateUrl = page.url): URL {
+export function currentMirrorUrl(stateUrl = new URL(page.url.href)): URL {
 	// Shallow navigation changes page.state while page.url can stay unchanged.
 	void page.state;
 	if (typeof window === 'undefined') return new URL(stateUrl);

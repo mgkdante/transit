@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { selectPunctualityTrend, type PunctualityTrendLabels } from './punctualityTrend';
-import { DELAY_POS_DOMAIN, OTP_DOMAIN } from '$lib/features/reliability/domains';
+import { DELAY_POS_DOMAIN, OTP_DOMAIN } from '#lib/features/reliability/domains.ts';
 import type { PunctualityVM } from '../clusters';
 
 const labels: PunctualityTrendLabels = {

@@ -4,9 +4,9 @@ import {
 	MIN_TRUSTED_OBS,
 	type CrosstabLabels,
 } from './punctualityCrosstab';
-import { OTP_DOMAIN } from '$lib/features/reliability/domains';
-import { SHIFT_GRAIN_ORDER } from '$lib/features/reliability/shiftGrains';
-import type { CrosstabCell } from '$lib/v1';
+import { OTP_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { SHIFT_GRAIN_ORDER } from '#lib/features/reliability/shiftGrains.ts';
+import type { CrosstabCell } from '#lib/v1/index.ts';
 
 const labels: CrosstabLabels = {
 	title: 'Shift × day-type OTP',

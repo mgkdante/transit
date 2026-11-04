@@ -1,5 +1,5 @@
-import type { Locale } from '$lib/i18n/config';
-import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
+import type { Locale } from '#lib/i18n/config.ts';
+import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/index.ts';
 import type { ShareSegment, StackedShareSpec } from './ChartSpec';
 
 export interface ShareInput {

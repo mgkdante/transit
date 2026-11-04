@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { setV1Context, type V1Context } from '$lib/v1/boot';
+	import { setV1Context, type V1Context } from '#lib/v1/boot.ts';
 
 	let { context }: { context?: V1Context } = $props();
 	setV1Context(() => context);

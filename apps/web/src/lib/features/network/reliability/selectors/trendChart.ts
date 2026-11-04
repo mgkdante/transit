@@ -2,11 +2,11 @@ import {
 	DELAY_DIST_DOMAIN,
 	OTP_TREND_REFERENCE,
 	otpTrendDomain,
-} from '$lib/features/reliability/shiftGrains';
-import type { ChartSpec, SparklineSpec, TrendDatum } from '$lib/components/dataviz/chart';
-import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
-import type { Locale } from '$lib/i18n/config';
-import type { TrendPoint } from '$lib/v1';
+} from '#lib/features/reliability/shiftGrains.ts';
+import type { ChartSpec, SparklineSpec, TrendDatum } from '#lib/components/dataviz/chart/index.ts';
+import { sparkZoomDomain } from '#lib/components/dataviz/chart/sparkDomain.ts';
+import type { Locale } from '#lib/i18n/config.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 export interface TrendChartOptions {
 	readonly locale: Locale;

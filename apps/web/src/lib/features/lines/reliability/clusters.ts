@@ -11,9 +11,9 @@ import type {
 	CrowdingDelayCell,
 	CrosstabCell,
 	RouteDelayHistogramBin,
-} from '$lib/v1';
-import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
-import { roundHalfAwayFromZero } from '$lib/utils';
+} from '#lib/v1/index.ts';
+import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '#lib/features/reliability/shiftGrains.ts';
+import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
 import type { RetainedLineHistory } from './data/retainedHistory';
 import {
 	selectVerdictWindow,
@@ -21,7 +21,7 @@ import {
 	type VerdictStatus,
 	type VerdictHeadline,
 	type ReliabilityVerdict,
-} from '$lib/v1/verdict';
+} from '#lib/v1/verdict.ts';
 
 export interface SnapshotStripVM {
 	readonly grain: string;

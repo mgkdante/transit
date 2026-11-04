@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Locale } from '$lib/i18n';
-	import type { Alert } from '$lib/v1/schemas';
-	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
-	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
+	import { causeLabel, effectLabel } from '#lib/v1/gtfsAlertLabels.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DateWindow } from '$lib/v1/history';
+import type { DateWindow } from '#lib/v1/history/index.ts';
 import {
 	HistoricCollectionIndexSchema,
 	LineHistoryPartitionSchema,
@@ -11,7 +11,7 @@ import {
 	type LineHistoryPartition,
 	type NetworkHistoryPartition,
 	type StopHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { HistoryArtifactContractError } from './partitions';
 import {
 	LINE_CURRENT_ONLY_SECTIONS,

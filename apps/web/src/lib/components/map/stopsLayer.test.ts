@@ -1,6 +1,6 @@
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
-import type { FilterState } from '$lib/filters';
+import type { FilterState } from '#lib/filters/index.ts';
 import {
 	addStopsLayer,
 	STOP_HIGHLIGHT_LAYER,

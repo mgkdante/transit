@@ -6,7 +6,7 @@ import {
 	buildWebSiteJsonLd,
 	type JsonLdNode as SeoKitJsonLdNode,
 } from '@yesid/seo-kit/jsonld';
-import { DEFAULT_LOCALE, localizeHref, type Locale } from '$lib/i18n';
+import { DEFAULT_LOCALE, localizeHref, type Locale } from '#lib/i18n/index.ts';
 
 export type JsonLdNode = SeoKitJsonLdNode & { '@context': typeof SCHEMA_ORG_CONTEXT };
 

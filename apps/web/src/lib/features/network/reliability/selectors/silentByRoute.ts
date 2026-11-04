@@ -1,4 +1,4 @@
-import type { SeverityCode, NonRespondingRoute } from '$lib/v1/schemas';
+import type { SeverityCode, NonRespondingRoute } from '#lib/v1/schemas/index.ts';
 
 export const NON_RESPONDING_DOMAIN: readonly [number, number] = [0, 10];
 

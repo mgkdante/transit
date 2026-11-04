@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { worstNCap, worstNSegments, SMALLEST_WORST_N, DEFAULT_WORST_N } from './ladderCap';
-import { WORST_N_LADDER } from '$lib/filters';
+import { WORST_N_LADDER } from '#lib/filters/index.ts';
 
 describe('worstNCap', () => {
 	it('maps a numeric rung to its integer', () => {

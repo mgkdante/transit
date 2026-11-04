@@ -9,22 +9,22 @@ const harness = vi.hoisted(() => ({
 	Clusters: () => undefined,
 }));
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: (...args: unknown[]) => harness.getRoute(...args),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRouteReliability: (...args: unknown[]) => harness.getRouteReliability(...args),
 }));
 
-vi.mock('$lib/v1/serverContext', () => ({
+vi.mock('#lib/v1/serverContext.ts', () => ({
 	serverV1Context: (...args: unknown[]) => harness.serverV1Context(...args),
 }));
 
-vi.mock('$lib/features/lines/reliability/data/lineHistoryResource.svelte', () => ({
+vi.mock('#lib/features/lines/reliability/data/lineHistoryResource.svelte.ts', () => ({
 	loadLineHistorySeed: (...args: unknown[]) => harness.loadLineHistorySeed(...args),
 }));
-vi.mock('$lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
+vi.mock('#lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
 	default: harness.Clusters,
 }));
 
@@ -103,7 +103,7 @@ describe('/lines/[id] server identity seed', () => {
 
 	it('returns an explicit universal import failure for the pane retry owner', async () => {
 		vi.resetModules();
-		vi.doMock('$lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => {
+		vi.doMock('#lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => {
 			throw new Error('module unavailable');
 		});
 		try {
@@ -120,7 +120,7 @@ describe('/lines/[id] server identity seed', () => {
 			expect(result?.initialClusters).toBeUndefined();
 			expect(result?.initialImportFailed).toBe(true);
 		} finally {
-			vi.doMock('$lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
+			vi.doMock('#lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
 				default: harness.Clusters,
 			}));
 			vi.resetModules();
@@ -129,9 +129,11 @@ describe('/lines/[id] server identity seed', () => {
 
 	it('loads only explicitly selected reliability history through the same request context', async () => {
 		const request = event('A/B');
-		request.url = new URL(
-			'https://transit.yesid.dev/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-02-01',
-		);
+		Object.assign(request, {
+			url: new URL(
+				'https://transit.yesid.dev/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-02-01',
+			),
+		});
 		const history = {
 			entityId: 'A/B',
 			request: { hasFrom: true, hasTo: true, rawFrom: '2026-01-31', rawTo: '2026-02-01' },
@@ -152,9 +154,11 @@ describe('/lines/[id] server identity seed', () => {
 		'forwards an accepted selected %s result without changing its provenance',
 		async (status) => {
 			const request = event();
-			request.url = new URL(
-				'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-10&to=2026-01-20',
-			);
+			Object.assign(request, {
+				url: new URL(
+					'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-10&to=2026-01-20',
+				),
+			});
 			const history = {
 				entityId: '24',
 				request: { hasFrom: true, hasTo: true, rawFrom: '2026-01-10', rawTo: '2026-01-20' },
@@ -180,7 +184,7 @@ describe('/lines/[id] server identity seed', () => {
 		'does not add server range reads to %s',
 		async (query) => {
 			const request = event();
-			request.url = new URL('https://transit.yesid.dev/lines/24' + query);
+			Object.assign(request, { url: new URL('https://transit.yesid.dev/lines/24' + query) });
 			await load(request);
 			expect(harness.loadLineHistorySeed).not.toHaveBeenCalled();
 		},
@@ -188,9 +192,11 @@ describe('/lines/[id] server identity seed', () => {
 
 	it('keeps current resource seeds when server history fails instead of inventing a successful empty range', async () => {
 		const request = event();
-		request.url = new URL(
-			'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-31&to=2026-02-01',
-		);
+		Object.assign(request, {
+			url: new URL(
+				'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-31&to=2026-02-01',
+			),
+		});
 		const reliability = { id: '24', generated_utc: '2026-02-02T12:00:00Z' };
 		harness.getRouteReliability.mockResolvedValue(reliability);
 		harness.loadLineHistorySeed.mockRejectedValue(new Error('retained artifact unavailable'));
@@ -224,9 +230,9 @@ describe('/lines/[id] server identity seed', () => {
 		'redirects the noncanonical %s tab before fetching data and preserves unrelated params',
 		async (tab) => {
 			const request = event();
-			request.url = new URL(
-				`https://transit.yesid.dev/lines/24?tab=${tab}&from=2026-01-31&to=2026-02-01`,
-			);
+			Object.assign(request, {
+				url: new URL(`https://transit.yesid.dev/lines/24?tab=${tab}&from=2026-01-31&to=2026-02-01`),
+			});
 
 			await expect(load(request)).rejects.toMatchObject({
 				status: 308,

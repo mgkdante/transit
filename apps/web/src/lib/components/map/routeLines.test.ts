@@ -1,6 +1,6 @@
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
-import type { IsoUtc, RouteFile } from '$lib/v1/schemas';
+import type { IsoUtc, RouteFile } from '#lib/v1/schemas/index.ts';
 import {
 	addRouteLineLayers,
 	ROUTE_LINE_CASING_LAYER,

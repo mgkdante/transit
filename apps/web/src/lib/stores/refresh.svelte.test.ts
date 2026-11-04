@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
 	invalidateAll: vi.fn<() => Promise<void>>(),
 }));
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({
 	invalidateAll: mocks.invalidateAll,
 }));

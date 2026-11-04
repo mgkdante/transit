@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Badge } from '@yesid/ui/badge';
-	import { useAvailableSectionJump } from '$lib/site/availableSectionJump.svelte';
-	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import { createResource } from '$lib/v1/resource.svelte';
-	import ConformanceBadge from '$lib/components/surface/ConformanceBadge.svelte';
-	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
-	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
+	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';
+	import { intl, getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
+	import ConformanceBadge from '#lib/components/surface/ConformanceBadge.svelte';
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
+	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import {
@@ -17,10 +17,10 @@
 		TocNav,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { desktop } from '@yesid/ui/state';
-	import { formatUtc } from '$lib/utils/time';
-	import { TypedInformationCard } from '$lib/components/shared';
+	import { formatUtc } from '#lib/utils/time.ts';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
 	import {
 		METRICS,
 		METRIC_CLUSTER_ORDER,

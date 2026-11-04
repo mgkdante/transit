@@ -47,8 +47,9 @@ describe('version poll cadence contract', () => {
 		expect(VERSION_POLL_INTERVAL_MS).toBeGreaterThan(0);
 	});
 
-	it('matches kit.version.pollInterval in svelte.config.js', async () => {
-		const { default: config } = await import('../../../svelte.config.js');
-		expect(config.kit?.version?.pollInterval).toBe(VERSION_POLL_INTERVAL_MS);
+	it('matches kit.version.pollInterval in kit.config.js', async () => {
+		const { default: config } = await import('../../../kit.config.js');
+
+		expect(config.version?.pollInterval).toBe(VERSION_POLL_INTERVAL_MS);
 	});
 });

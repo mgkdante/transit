@@ -2,46 +2,52 @@
 	import { clock } from '@yesid/ui/state';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import type { DetailTab } from '$lib/site/detailTabs';
-	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
-	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { deriveRouteStopPredictions } from '$lib/v1/live/routeStopPredictions';
-	import { getRoute } from '$lib/v1/repositories/static';
-	import { getRouteReliability } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import { getV1Context } from '$lib/v1/boot';
-	import { alertsForRoute } from '$lib/v1/affectedAlerts';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import type { IdentitySeed } from '$lib/v1/serverContext';
-	import { minutesSinceMidnight } from '$lib/utils/time';
+	import type { DetailTab } from '#lib/site/detailTabs.ts';
+	import { createDetailTabController } from '#lib/site/detailTabController.svelte.ts';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { fmtDelayMin as sharedFmtDelayMin } from '#lib/utils/index.ts';
+	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { deriveRouteStopPredictions } from '#lib/v1/live/routeStopPredictions.ts';
+	import { getRoute } from '#lib/v1/repositories/static.ts';
+	import { getRouteReliability } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { alertsForRoute } from '#lib/v1/affectedAlerts.ts';
+	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+	import type {
+		RouteFile,
+		RouteReliability,
+		Provenance,
+		StopPrediction,
+		Vehicle,
+	} from '#lib/v1/index.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import type { IdentitySeed } from '#lib/v1/serverContext.ts';
+	import { minutesSinceMidnight } from '#lib/utils/time.ts';
 
-	import { inferAbsenceReason } from '$lib/site/serviceWindow';
-	import { EdgeState, MaybeValue } from '$lib/components/edge';
+	import { inferAbsenceReason } from '#lib/site/serviceWindow.ts';
+	import { EdgeState, MaybeValue } from '#lib/components/edge/index.ts';
 	import {
 		EntityDetail,
 		ResourceBoundary,
 		MapDrilldownLink,
 		FreshnessStamp,
 		AffectedAlerts,
-	} from '$lib/components/surface';
-	import { StatusBadge } from '$lib/components/dataviz';
-	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { StatusBadge } from '#lib/components/dataviz/index.ts';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import { ArticleHeader } from '@yesid/ui/layout';
-	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
+	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
-	import { articleNavigationCopy } from '$lib/components/shared';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { formatUtc } from '$lib/utils/time';
+	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
+	import { formatUtc } from '#lib/utils/time.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict } from '$lib/v1/verdict';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
+	import { selectVerdict } from '#lib/v1/verdict.ts';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
 	import LazyRouteReliabilityPane, {
@@ -53,14 +59,14 @@
 		type LineHistorySeed,
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/metrics';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import type { MetricKey } from '#lib/metrics.ts';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { absenceSentence } from '$lib/site/absence';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { STATUS_LABELS } from '$lib/v1/enumLabels';
-	import { dayTypeLabel, shiftLabel } from '$lib/features/reliability/shiftGrains';
+	import { absenceSentence } from '#lib/site/absence.ts';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+	import { dayTypeLabel, shiftLabel } from '#lib/features/reliability/shiftGrains.ts';
 
 	const localizeHref = getLocalizeHref();
 
@@ -94,8 +100,8 @@
 		{ key: 'schedule', label: t.tabs.schedule },
 		{ key: 'reliability', label: t.tabs.reliability },
 	]);
-	const detailTabController = createDetailTabController(page.url);
-	$effect(() => detailTabController.syncFromUrl(page.url));
+	const detailTabController = createDetailTabController(new URL(page.url.href));
+	$effect(() => detailTabController.syncFromUrl(new URL(page.url.href)));
 
 	const route = createResource<RouteFile | null>(() => getRoute(id), {
 		key: () => id,
@@ -116,7 +122,7 @@
 	function historyFor(routeId: string): LineHistoryResource {
 		return createLineHistoryResource(
 			routeId,
-			historyRangeRequestFromSearchParams(page.url.searchParams),
+			historyRangeRequestFromSearchParams(new URLSearchParams(page.url.search)),
 			() => lineHistorySeed,
 		);
 	}

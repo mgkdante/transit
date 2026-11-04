@@ -1,4 +1,4 @@
-import type { Alert, Vehicle } from '$lib/v1/schemas';
+import type { Alert, Vehicle } from '#lib/v1/schemas/index.ts';
 
 export interface AlertEntitySets {
 	readonly routes: ReadonlySet<string>;

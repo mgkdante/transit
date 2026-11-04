@@ -1,23 +1,23 @@
 <script lang="ts">
-	import { intl } from '$lib/i18n';
+	import { intl } from '#lib/i18n/index.ts';
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
 	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import TicketIcon from '@lucide/svelte/icons/ticket';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { onMount, tick, type Snippet } from 'svelte';
-	import { browser } from '$app/environment';
-	import type { AlertEntityKind, EntityKind, FilterStore } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
-	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas/types';
-	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
+	import { browser } from '$app/env';
+	import type { AlertEntityKind, EntityKind, FilterStore } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { RouteIndexEntry, StopIndexEntry } from '#lib/v1/index.ts';
+	import { OCCUPANCY_CODES, STATUS_CODES } from '#lib/v1/schemas/types.ts';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import {
 		STATUS_GLYPH,
 		occupancyGlyph,
 		occupancyVar,
 		statusVar,
-	} from '$lib/components/dataviz/tokens';
+	} from '#lib/components/dataviz/tokens.ts';
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';

@@ -1,5 +1,5 @@
-import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
-import { setMapFocusSearchParams } from '$lib/search/mapFocus';
+import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/index.ts';
+import { setMapFocusSearchParams } from '#lib/search/mapFocus.ts';
 import { emptyFilterState } from './state';
 import { toSearchString } from './url';
 

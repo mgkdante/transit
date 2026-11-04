@@ -1,4 +1,4 @@
-import { delocalizePath, localizeHref, type Locale } from '$lib/i18n';
+import { delocalizePath, localizeHref, type Locale } from '#lib/i18n/index.ts';
 import cards from '../../../static/og/manifest.json';
 
 export interface RouteSeo {

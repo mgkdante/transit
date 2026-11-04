@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { FilterState } from '$lib/filters';
-import { VehicleSchema } from '$lib/v1/schemas';
+import type { FilterState } from '#lib/filters/index.ts';
+import { VehicleSchema } from '#lib/v1/schemas/index.ts';
 import type { VehicleSilenceContext } from './vehicleLayer';
 import { toVehicleFeatures } from './vehicleLayer';
 import { BUS_ICON, stateBadgeIconId, VEHICLE_MARKER_GEOMETRY } from './vehicleSprites';

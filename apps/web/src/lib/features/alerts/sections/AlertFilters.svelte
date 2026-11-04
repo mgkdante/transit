@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
-	import type { Locale } from '$lib/i18n';
-	import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
-	import type { AlertAffects, DateWindow } from '$lib/filters';
-	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { SEVERITY_CODES, type SeverityCode } from '#lib/v1/schemas/types.ts';
+	import type { AlertAffects, DateWindow } from '#lib/filters/index.ts';
+	import { ArticleControlStack, HistoryNavigator } from '#lib/components/surface/index.ts';
 	import { FilterSummary, SegmentedChoice } from '@yesid/ui/brand';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
-	import { foldSearchText } from '$lib/search/normalize';
+	import { foldSearchText } from '#lib/search/normalize.ts';
 
 	interface Props {
 		affects: 'all' | AlertAffects;

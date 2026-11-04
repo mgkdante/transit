@@ -5,7 +5,7 @@ import {
 	retentionOf,
 	type StatusVerdictLabels,
 } from './provenanceViews';
-import type { Provenance, IsoUtc } from '$lib/v1/schemas';
+import type { Provenance, IsoUtc } from '#lib/v1/schemas/index.ts';
 
 const iso = (s: string) => s as unknown as IsoUtc;
 

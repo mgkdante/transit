@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RouteFile, StopFile, RouteReliability, StopReliability } from '$lib/v1';
+import type { RouteFile, StopFile, RouteReliability, StopReliability } from '#lib/v1/index.ts';
 import rich from '../../../scripts/__fixtures__/b9/rich.json';
 import RouteDetail from './lines/RouteDetail.svelte';
 import StopDetail from './stops/StopDetail.svelte';
@@ -43,11 +43,11 @@ vi.mock('$app/navigation', () => ({
 	afterNavigate: () => {},
 	replaceState: (url: string | URL) => navigation.setPath(String(url)),
 }));
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: ports.getRoute,
 	getStop: ports.getStop,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRouteReliability: ports.getRouteReliability,
 	getStopReliability: ports.getStopReliability,
 	getLineHistoryIndex: async () => null,
@@ -55,14 +55,16 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 	loadLineHistoryRange: vi.fn(),
 	loadStopHistoryRange: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: async () => ({ gaps: [] }) }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
+	getProvenance: async () => ({ gaps: [] }),
+}));
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: { provider: 'stm', short_name: 'STM', display_name: 'STM' } }),
 }));
-vi.mock('$lib/v1/live/routeStopPredictions', () => ({
+vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => new Map(),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: () => ({
 		departures: { generated_utc: '2026-08-30T16:00:00Z' },
 		alerts: { alerts: [] },

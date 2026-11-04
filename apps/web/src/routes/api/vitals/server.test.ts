@@ -1,3 +1,5 @@
+const workers = vi.hoisted(() => ({ env: {} as Record<string, unknown> }));
+vi.mock('cloudflare:workers', () => workers);
 import { describe, expect, it, vi } from 'vitest';
 import { POST } from './+server';
 
@@ -20,13 +22,13 @@ function event(opts: {
 }): Parameters<Handler>[0] {
 	const headers = new Map<string, string>([['content-type', 'application/json']]);
 	if (opts.contentLength !== undefined) headers.set('content-length', opts.contentLength);
+	workers.env = opts.binding === undefined ? {} : { WEB_VITALS: opts.binding };
 	const request = {
 		headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
 		text: async () => opts.body ?? '',
 	};
 	return {
 		request,
-		platform: opts.binding === undefined ? undefined : { env: { WEB_VITALS: opts.binding } },
 	} as unknown as Parameters<Handler>[0];
 }
 

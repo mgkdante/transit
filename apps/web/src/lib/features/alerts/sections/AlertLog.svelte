@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { alertLanguageNotice } from '$lib/v1/alertDisplay';
+	import { alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
-	import type { SeverityCode } from '$lib/v1/schemas';
-	import type { Locale } from '$lib/i18n';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	interface Props {
 		rows: readonly AlertRowVM[];

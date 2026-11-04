@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AdapterCtx } from '$lib/v1/adapter';
-import { adapter } from '$lib/v1/adapter';
-import { HistoryArtifactContractError, HistoryTransientPublicationError } from '$lib/v1/history';
-import { sha256Hex } from '$lib/v1/http';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
+import { adapter } from '#lib/v1/adapter/index.ts';
+import {
+	HistoryArtifactContractError,
+	HistoryTransientPublicationError,
+} from '#lib/v1/history/index.ts';
+import { sha256Hex } from '#lib/v1/http.ts';
 import {
 	AlertArchiveIndexSchema,
 	AlertArchivePageSchema,
@@ -19,7 +22,7 @@ import {
 	ReceiptSchema,
 	ReceiptsIndexSchema,
 	StopHistoryPartitionSchema,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	getAdvertisedReceipt,
 	getAlertArchiveIndex,

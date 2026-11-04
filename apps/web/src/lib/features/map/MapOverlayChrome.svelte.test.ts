@@ -3,16 +3,19 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFilterStore, emptyFilterState } from '$lib/filters';
-import { motionMode } from '$lib/stores';
-import type { StopIndexEntry } from '$lib/v1/schemas';
-import { formatRelativeSeconds } from '$lib/utils/time';
-import type { WithDistance } from '$lib/components/map';
+import { createFilterStore, emptyFilterState } from '#lib/filters/index.ts';
+import { motionMode } from '#lib/stores/index.ts';
+import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
+import { formatRelativeSeconds } from '#lib/utils/time.ts';
+import type { WithDistance } from '#lib/components/map/index.ts';
 import type { MapHoverPeek } from './mapHoverPeek';
 import { copy as MAP_COPY } from './map.copy';
 import MapOverlayChromeHarness from './__fixtures__/MapOverlayChromeHarness.svelte';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 const stop: StopIndexEntry = {
 	id: 'stop-1',

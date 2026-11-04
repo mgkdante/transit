@@ -1,4 +1,4 @@
-import type { DataHealth, LaneHealth } from '$lib/v1/schemas';
+import type { DataHealth, LaneHealth } from '#lib/v1/schemas/index.ts';
 
 export type GateAspect = 'on_time' | 'late' | 'unknown';
 

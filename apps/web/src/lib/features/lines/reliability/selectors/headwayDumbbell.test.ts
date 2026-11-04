@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectHeadwayDumbbell, type HeadwayDumbbellLabels } from './headwayDumbbell';
-import { HEADWAY_DOMAIN } from '$lib/features/reliability/domains';
+import { HEADWAY_DOMAIN } from '#lib/features/reliability/domains.ts';
 
 const labels: HeadwayDumbbellLabels = {
 	title: 'Headway by shift',

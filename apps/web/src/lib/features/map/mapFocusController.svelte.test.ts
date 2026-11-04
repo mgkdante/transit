@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseMapFocus } from '$lib/search/mapFocus';
+import { parseMapFocus } from '#lib/search/mapFocus.ts';
 import { createMapFocusController } from './mapFocusController.svelte';
 
 function setup() {

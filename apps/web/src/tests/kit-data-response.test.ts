@@ -5,28 +5,16 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'acorn';
+import { pageDataFetch } from '#lib/site/pageDataFetch.ts';
 
 const appRequire = createRequire(import.meta.url);
 const kitManifest = appRequire.resolve('@sveltejs/kit/package.json');
 const kitRoot = dirname(kitManifest);
 const kitRequire = createRequire(kitManifest);
 const clientSource = readFileSync(join(kitRoot, 'src/runtime/client/client.js'), 'utf8');
-const internalSource = readFileSync(join(kitRoot, 'src/exports/internal/index.js'), 'utf8');
-const acorn = kitRequire('acorn') as {
-	parse(
-		source: string,
-		options: { ecmaVersion: 'latest'; sourceType: 'module' },
-	): {
-		body: Array<{
-			type: string;
-			id?: { name: string };
-			start: number;
-			end: number;
-			declaration?: { type: string; id?: { name: string }; start: number; end: number };
-		}>;
-	};
-};
 const moduleAt = async (path: string) => import(pathToFileURL(path).href);
+const { HandledHttpError } = await moduleAt(join(kitRoot, 'src/exports/internal/shared.js'));
 const devalue = (await moduleAt(kitRequire.resolve('devalue'))) as {
 	stringify(value: unknown, reducers?: Record<string, (value: unknown) => unknown>): string;
 	unflatten(value: unknown, revivers: Record<string, (value: unknown) => unknown>): unknown;
@@ -57,12 +45,7 @@ type DataNode = {
 	};
 };
 
-const ast = acorn.parse(clientSource, { ecmaVersion: 'latest', sourceType: 'module' });
-const internalAst = acorn.parse(internalSource, { ecmaVersion: 'latest', sourceType: 'module' });
-const httpErrorClass = internalAst.body
-	.map((node) => node.declaration ?? node)
-	.filter((node) => node.type === 'ClassDeclaration' && node.id?.name === 'HttpError');
-if (httpErrorClass.length !== 1) throw new Error('Expected one actual Kit HttpError class');
+const ast = parse(clientSource, { ecmaVersion: 'latest', sourceType: 'module' });
 const functions = ['load_data', 'process_stream', 'deserialize_uses'];
 const extracted = functions.map((name) => {
 	const matches = ast.body.filter(
@@ -71,7 +54,7 @@ const extracted = functions.map((name) => {
 	if (matches.length !== 1) throw new Error(`Expected one Kit ${name} declaration`);
 	return clientSource.slice(matches[0].start, matches[0].end);
 });
-const kitFunctions = `${internalSource.slice(httpErrorClass[0].start, httpErrorClass[0].end)}\n${extracted.join('\n')}\n({ load_data, process_stream, deserialize_uses })`;
+const kitFunctions = `${extracted.join('\n')}\n({ load_data, process_stream, deserialize_uses })`;
 
 function loadResponse(
 	response: Response,
@@ -82,6 +65,8 @@ function loadResponse(
 		kitFunctions,
 		{
 			URL,
+			HandledHttpError,
+			notify_version() {},
 			Promise,
 			Set,
 			devalue,
@@ -92,10 +77,10 @@ function loadResponse(
 			DEV: false,
 			app: { decoders },
 			window: {
-				fetch(input: string, init: RequestInit) {
-					requests.push({ input, init });
-					return Promise.resolve(response);
-				},
+				fetch: pageDataFetch(async (input, init) => {
+					requests.push({ input: String(input), init: init ?? {} });
+					return response;
+				}, 'https://transit.test'),
 			},
 		},
 		{ filename: join(kitRoot, 'src/runtime/client/client.js') },
@@ -178,6 +163,41 @@ async function promptly<T>(promise: Promise<T>): Promise<T> {
 }
 
 describe('Kit page-data response consumption', () => {
+	it('rejects malformed fixed JSON before exposing its first valid line', async () => {
+		const response = new Response('{"type":"data","nodes":[]}\ntruncated', {
+			headers: { 'content-type': 'application/json' },
+		});
+		await expect(loadResponse(response)).rejects.toThrow(SyntaxError);
+	});
+
+	it.each(['/api/example', 'https://other.test/map/__data.json'])(
+		'leaves %s unbuffered, preserving its original response',
+		async (target) => {
+			const held = heldResponse('{"ok":true}\n', 'application/json');
+			try {
+				const fetcher = pageDataFetch(async () => held.response, 'https://transit.test');
+				expect(await promptly(fetcher(target))).toBe(held.response);
+				expect(held.response.bodyUsed).toBe(false);
+			} finally {
+				held.close();
+			}
+		},
+	);
+
+	it('preserves Request input, cancellation options, response headers and identity', async () => {
+		const response = jsonResponse({ type: 'data', nodes: [] }, 'Application/JSON; charset=utf-8');
+		const request = new Request('https://transit.test/map/__data.json');
+		const init = { signal: new AbortController().signal, cache: 'reload' as const };
+		const fetcher = pageDataFetch(async (input, options) => {
+			expect(input).toBe(request);
+			expect(options).toBe(init);
+			return response;
+		}, 'https://transit.test');
+		expect(await fetcher(request, init)).toBe(response);
+		expect(response.headers.get('content-type')).toBe('Application/JSON; charset=utf-8');
+		expect(response.bodyUsed).toBe(false);
+	});
+
 	it('waits for whole successful JSON before exposing fixed data', async () => {
 		const payload = { type: 'data', nodes: [{ type: 'skip' }] };
 		const held = heldResponse(`${JSON.stringify(payload)}\n`, 'application/json; charset=utf-8');
@@ -264,7 +284,10 @@ describe('Kit page-data response consumption', () => {
 
 	it('keeps non-OK JSON and HTML error behavior', async () => {
 		const json = loadResponse(
-			new Response('"Missing"', { status: 404, headers: { 'content-type': 'application/json' } }),
+			new Response(JSON.stringify({ message: 'Missing' }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' },
+			}),
 		);
 		await expect(json).rejects.toMatchObject({ status: 404, body: { message: 'Missing' } });
 		const html = loadResponse(

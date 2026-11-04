@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { VerdictResult } from '$lib/v1/verdict';
+	import type { VerdictResult } from '#lib/v1/verdict.ts';
 
 	let { result }: { result: VerdictResult } = $props();
 

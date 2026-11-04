@@ -1,16 +1,16 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
-import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
+import { historyViewContract } from '#lib/features/reliability/__fixtures__/historyViewContract.ts';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RouteReliability } from '$lib/v1';
+import type { RouteReliability } from '#lib/v1/index.ts';
 import {
 	HistoricCollectionIndexSchema,
 	LineHistoryPartitionSchema,
 	type HistoricCollectionIndex,
 	type IsoUtc,
 	type LineHistoryPartition,
-} from '$lib/v1/schemas';
-import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
+} from '#lib/v1/schemas/index.ts';
+import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
 import {
 	createLineHistoryResource,
 	loadLineHistorySeed,
@@ -18,7 +18,7 @@ import {
 } from './data/lineHistoryResource.svelte';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
-import { describeAbsence } from '$lib/site/absence';
+import { describeAbsence } from '#lib/site/absence.ts';
 
 const harness = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/A%2FB?tab=reliability'), state: {} };
@@ -39,12 +39,12 @@ const harness = vi.hoisted(() => {
 });
 
 vi.mock('$app/state', () => ({ page: harness.page }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/nav/index.ts', () => ({ layout: { isDesktop: true } }));
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getLineHistoryIndex: harness.getLineHistoryIndex,
 	loadLineHistoryRange: harness.loadLineHistoryRange,
 }));

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn, type WithElementRef } from '$lib/utils';
+	import { cn, type WithElementRef } from '#lib/utils/index.ts';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { StatusCode } from '$lib/v1/schemas';
+	import type { StatusCode } from '#lib/v1/schemas/index.ts';
 	import { STATUS_GLYPH, statusVar } from './tokens';
 
 	export interface StatusBadgeProps extends WithElementRef<HTMLAttributes<HTMLSpanElement>> {

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import type { Vehicle } from '$lib/v1/schemas';
-	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { absenceSentence } from '$lib/site/absence';
-	import { MaybeValue } from '$lib/components/edge';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import type { Vehicle } from '#lib/v1/schemas/index.ts';
+	import { StatusBadge, occupancyGlyph, occupancyVar } from '#lib/components/dataviz/index.ts';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { absenceSentence } from '#lib/site/absence.ts';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import type { VehicleResultCopy } from './search.copy';
 
 	const localizeHref = getLocalizeHref();

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { Surface } from '@yesid/ui/layout';
-	import HomeExplore from '$lib/features/home/HomeExplore.svelte';
-	import { homeCopy } from '$lib/features/home/home.copy';
+	import HomeExplore from '#lib/features/home/HomeExplore.svelte';
+	import { homeCopy } from '#lib/features/home/home.copy.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: Pick<PageData, 'provider' | 'v1'> } = $props();

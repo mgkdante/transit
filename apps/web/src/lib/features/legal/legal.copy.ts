@@ -1,4 +1,4 @@
-import { defineCopy, type Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '#lib/i18n/index.ts';
 
 export type LegalPageKind = 'privacy' | 'terms' | 'accessibility';
 export const LEGAL_EFFECTIVE_DATES: Readonly<Record<LegalPageKind, string>> = {

@@ -3,7 +3,7 @@ import { render, waitFor, cleanup } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ServiceSpanMark from './ServiceSpanMark.svelte';
 import type { ServiceSpanSpec } from '../ChartSpec';
-import { reliabilityCopy } from '$lib/features/lines/reliability/reliability.copy';
+import { reliabilityCopy } from '#lib/features/lines/reliability/reliability.copy.ts';
 
 function example(locale: 'en' | 'fr'): ServiceSpanSpec {
 	const copy = reliabilityCopy[locale].serviceSpanTimeline;

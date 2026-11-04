@@ -1,8 +1,8 @@
-import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '$lib/v1/schemas/types';
-import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '$lib/v1/schemas/types';
-import type { DateWindow } from '$lib/v1/history/window';
+import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '#lib/v1/schemas/types.ts';
+import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '#lib/v1/schemas/types.ts';
+import type { DateWindow } from '#lib/v1/history/window.ts';
 
-export type { DateWindow } from '$lib/v1/history/window';
+export type { DateWindow } from '#lib/v1/history/window.ts';
 
 export const ENTITY_KINDS = ['bus', 'stop'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];

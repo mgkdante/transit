@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bestShapeForPoint, routeShapes, type RouteShapes } from './vehicleShapes';
 import type { Coord } from './polyline';
-import type { RouteFile } from '$lib/v1/schemas';
+import type { RouteFile } from '#lib/v1/schemas/index.ts';
 
 function route(directions: RouteFile['directions']): RouteFile {
 	return {

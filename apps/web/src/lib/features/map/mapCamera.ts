@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { shouldAnimate } from '@yesid/motion/policy';
 import { duration } from '@yesid/motion/tokens';
-import type { RouteFile } from '$lib/v1';
+import type { RouteFile } from '#lib/v1/index.ts';
 import { routeBoundsFromFile } from './mapGeo';
 import { deferMapFocusInset } from './mapFocusInset';
 

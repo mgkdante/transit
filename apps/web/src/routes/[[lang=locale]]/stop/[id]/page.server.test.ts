@@ -6,11 +6,11 @@ const harness = vi.hoisted(() => ({
 	serverV1Context: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getStop: (...args: unknown[]) => harness.getStop(...args),
 }));
 
-vi.mock('$lib/v1/serverContext', () => ({
+vi.mock('#lib/v1/serverContext.ts', () => ({
 	serverV1Context: (...args: unknown[]) => harness.serverV1Context(...args),
 }));
 
@@ -37,9 +37,11 @@ describe('/stop/[id] server identity seed', () => {
 		'redirects the noncanonical %s tab before fetching data and preserves unrelated params',
 		async (tab) => {
 			const request = event();
-			request.url = new URL(
-				`https://transit.yesid.dev/stop/1234?tab=${tab}&from=2026-01-31&to=2026-02-01&line=51`,
-			);
+			Object.assign(request, {
+				url: new URL(
+					`https://transit.yesid.dev/stop/1234?tab=${tab}&from=2026-01-31&to=2026-02-01&line=51`,
+				),
+			});
 
 			await expect(load(request)).rejects.toMatchObject({
 				status: 308,

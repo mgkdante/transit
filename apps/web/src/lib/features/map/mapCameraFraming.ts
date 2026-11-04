@@ -1,6 +1,6 @@
 import { centerFromProviderBbox, type MapFitPadding } from '../../components/map/viewport';
-import type { Manifest } from '$lib/v1/schemas';
-import type { PublicProvider } from '$lib/v1/providers';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
 
 export function mapCameraFraming({
 	manifest,

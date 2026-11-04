@@ -1,5 +1,5 @@
 import type { DateWindow } from './window';
-import type { HistoricCollectionIndex } from '$lib/v1/schemas';
+import type { HistoricCollectionIndex } from '#lib/v1/schemas/index.ts';
 import { availabilityFromCollectionIndex, defaultWindowFromCollectionIndex } from './selection';
 import {
 	createHistoryRangeResource,

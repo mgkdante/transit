@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectRankedRoutes } from './rankedRoutes';
-import { DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { StopByRoute } from '$lib/v1/schemas';
+import { DELAY_POS_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { StopByRoute } from '#lib/v1/schemas/index.ts';
 
 const fmt = (v: number | null) => (v == null ? 'No data' : `${v.toFixed(1)} min`);
 const links = {

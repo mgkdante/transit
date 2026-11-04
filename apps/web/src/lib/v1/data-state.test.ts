@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { asDataState } from './data-state';
 import type { Resource } from './resource.svelte';
-import type { AbsenceReason } from '$lib/site/serviceWindow';
+import type { AbsenceReason } from '#lib/site/serviceWindow.ts';
 
 function res<T>(p: Partial<Resource<T>>): Resource<T> {
 	return { data: null, error: null, loading: false, settled: true, reload: () => {}, ...p };

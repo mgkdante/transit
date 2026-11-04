@@ -1,5 +1,5 @@
-import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/domains';
-import type { ReceiptServiceStates, SeverityCode } from '$lib/v1/schemas';
+import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { ReceiptServiceStates, SeverityCode } from '#lib/v1/schemas/index.ts';
 
 export type ServiceStateKind = 'delivered' | 'cancelled' | 'silent';
 

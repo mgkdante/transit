@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { AlertHistoryEntry } from '$lib/v1/schemas';
+import type { AlertHistoryEntry } from '#lib/v1/schemas/index.ts';
 import { buildLineOptions, buildStopOptions } from './entityOptions';
 
 const fold = (s: string) => s.toLowerCase();

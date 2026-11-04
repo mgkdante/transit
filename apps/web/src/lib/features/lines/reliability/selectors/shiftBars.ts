@@ -1,6 +1,10 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, MagnitudeBarsSpec, MagnitudeDatum } from '$lib/components/dataviz/chart';
-import type { SeverityCode } from '$lib/v1/schemas';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	MagnitudeBarsSpec,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
+import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 export interface ShiftBarDatum {
 	readonly key: string;

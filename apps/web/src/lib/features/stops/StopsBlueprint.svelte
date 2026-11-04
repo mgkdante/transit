@@ -13,7 +13,7 @@
 		BlueprintSignal,
 		BlueprintStationSection,
 	} from '@yesid/ui/blueprints';
-	import { getLocale } from '$lib/i18n';
+	import { getLocale } from '#lib/i18n/index.ts';
 	import { page } from '$app/state';
 
 	const locale = getLocale();

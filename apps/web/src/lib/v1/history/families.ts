@@ -14,7 +14,7 @@ import type {
 	NetworkHistoryPartition,
 	StopHistoryDay,
 	StopHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { encodeHistoryEntityId } from './entity';
 import { HistoryArtifactContractError } from './partitions';
 import { strictIsoDate } from './selection';

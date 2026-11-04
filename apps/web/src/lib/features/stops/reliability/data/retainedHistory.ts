@@ -1,7 +1,7 @@
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '#lib/filters/index.ts';
 
-import { roundHalfAwayFromZero } from '$lib/utils';
-import { mergeStopHistory, selectStopHistoryPartitionRefs } from '$lib/v1/history/families';
+import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
+import { mergeStopHistory, selectStopHistoryPartitionRefs } from '#lib/v1/history/families.ts';
 import type {
 	HistoricCollectionIndex,
 	HistoryRangeLoadResult,
@@ -10,7 +10,7 @@ import type {
 	StopHistoryPartition,
 	StopHistoryRange,
 	StopReliability,
-} from '$lib/v1';
+} from '#lib/v1/index.ts';
 
 export interface RetainedStopHistory {
 	readonly aggregate: StopHistoryRange;

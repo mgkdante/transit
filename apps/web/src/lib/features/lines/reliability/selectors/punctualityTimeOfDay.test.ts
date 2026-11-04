@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { selectPunctualityTimeOfDay, type TimeOfDayLabels } from './punctualityTimeOfDay';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
 import type { PunctualityVM } from '../clusters';
 
 const labels: TimeOfDayLabels = {

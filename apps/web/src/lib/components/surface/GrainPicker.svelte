@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { SegmentedChoice, type SegmentedChoiceOption } from '@yesid/ui/brand';
 
 	export type GrainPickerVariant = 'default' | 'time-grid';

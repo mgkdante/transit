@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSelectionGrace, type VehiclesFamilyTruth } from './selectionGrace.svelte';
-import type { FeedHealth } from '$lib/v1/live/store.svelte';
+import type { FeedHealth } from '#lib/v1/live/store.svelte.ts';
 
 type Detail = { id: string; label: string };
 

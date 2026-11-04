@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { FilterStore } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
-	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import { setV1Context } from '$lib/v1/boot';
-	import { ManifestSchema } from '$lib/v1/schemas';
-	import type { LatLon, WithDistance } from '$lib/components/map';
-	import type { GeocodePrecision } from '$lib/geocode/types';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { RouteIndexEntry, StopIndexEntry } from '#lib/v1/index.ts';
+	import { setV1Context } from '#lib/v1/boot.ts';
+	import { ManifestSchema } from '#lib/v1/schemas/index.ts';
+	import type { LatLon, WithDistance } from '#lib/components/map/index.ts';
+	import type { GeocodePrecision } from '#lib/geocode/types.ts';
 	import type { MapHoverPeek } from '../mapHoverPeek';
 	import MapFilters from '../MapFilters.svelte';
 	import MapMotionControl from '../MapMotionControl.svelte';

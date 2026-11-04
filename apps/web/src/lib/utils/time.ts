@@ -1,4 +1,4 @@
-import { intl } from '$lib/i18n';
+import { intl } from '#lib/i18n/index.ts';
 export type TimeLang = 'en' | 'fr';
 
 export const DISPLAY_TIME_ZONE = 'America/Toronto' as const;

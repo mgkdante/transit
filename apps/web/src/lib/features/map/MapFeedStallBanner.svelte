@@ -30,9 +30,9 @@
 
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
-	import type { Locale } from '$lib/i18n';
-	import { formatRelativeSeconds } from '$lib/utils/time';
-	import { freshnessAgeSeconds } from '$lib/v1/freshness';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { freshnessAgeSeconds } from '#lib/v1/freshness.ts';
 
 	import { copy as MAP_COPY } from './map.copy';
 

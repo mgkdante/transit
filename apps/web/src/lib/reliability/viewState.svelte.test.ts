@@ -4,21 +4,21 @@ import { createReliabilityViewState } from './viewState.svelte';
 import { reactiveRoot, stateCell } from './__fixtures__/reactiveRoot.svelte';
 import { RELIABILITY_GRAINS } from './grains';
 import { HOTSPOT_GRAINS, OFFENDER_GRAINS } from './ladderGrains';
-import { reliabilityCopy } from '$lib/features/lines/reliability/reliability.copy';
-import { windowedSeries } from '$lib/features/network/reliability/data/trendWindow';
-import { HistoricCollectionIndexSchema } from '$lib/v1/schemas/history';
-import type { HistoricCollectionIndex } from '$lib/v1/schemas/history';
-import type { TrendPoint } from '$lib/v1';
+import { reliabilityCopy } from '#lib/features/lines/reliability/reliability.copy.ts';
+import { windowedSeries } from '#lib/features/network/reliability/data/trendWindow.ts';
+import { HistoricCollectionIndexSchema } from '#lib/v1/schemas/history.ts';
+import type { HistoricCollectionIndex } from '#lib/v1/schemas/history.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
 import {
 	historyRangeRequestFromSearchParams,
 	type HistoryRangeResource,
-} from '$lib/v1/history/rangeResource.svelte';
+} from '#lib/v1/history/rangeResource.svelte.ts';
 
 const harness = vi.hoisted(() => ({
 	page: { url: new URL('http://localhost/network'), state: {} },
 }));
 vi.mock('$app/state', () => ({ page: harness.page }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: vi.fn((values: Record<string, string | null>) => {
 		const next = new URL(harness.page.url);
 		for (const [key, value] of Object.entries(values)) {

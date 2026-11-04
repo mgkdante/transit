@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { Button } from '@yesid/ui/button';
-	import type { Locale } from '$lib/i18n';
-	import { trackEvent } from '$lib/site/analytics';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { trackEvent } from '#lib/site/analytics.ts';
 	import { copy } from './receipt.copy';
 
 	let { text, locale }: { text: string; locale: Locale } = $props();

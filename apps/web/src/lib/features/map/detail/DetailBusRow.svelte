@@ -1,14 +1,14 @@
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Locale } from '$lib/i18n';
-	import type { Vehicle } from '$lib/v1/schemas';
-	import { absenceSentence } from '$lib/site/absence';
-	import { STATUS_LABELS } from '$lib/v1/enumLabels';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Vehicle } from '#lib/v1/schemas/index.ts';
+	import { absenceSentence } from '#lib/site/absence.ts';
+	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { timeLabel } from '../mapSelectionDetail.logic';
-	import { MaybeValue } from '$lib/components/edge';
-	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
+	import StatusBadge from '#lib/components/dataviz/StatusBadge.svelte';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
 
 	interface Props {
 		vehicle: Vehicle;

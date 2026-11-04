@@ -7,9 +7,9 @@ import {
 } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
-import { STATUS_LABELS } from '$lib/v1/enumLabels';
-import type { IdentitySeed } from '$lib/v1/serverContext';
+import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '#lib/v1/index.ts';
+import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import type { IdentitySeed } from '#lib/v1/serverContext.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
@@ -19,7 +19,7 @@ vi.mock('@testing-library/svelte', { spy: true });
 const routeDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/161'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -295,30 +295,30 @@ const routeSurface = createSurfaceHarness({
 const renderRoute = (id = '161', name?: string) =>
 	routeSurface.mount(RouteDetail, { props: { id, seed: routeSeed(id, name) } });
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: () => routeFileData,
 	getRoutesIndex: async () => routesIndexData,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
 	getLineHistoryIndex: lineHistoryHarness.getLineHistoryIndex,
 	loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => provenanceData }));
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return liveStore;
 	},
 }));
-vi.mock('$lib/v1/live/routeStopPredictions', () => ({
+vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => PREDICTIONS,
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: routeManifest, labels: {}, lang: 'en' }),
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const value = loader();
 		if (value instanceof Promise) {
@@ -584,7 +584,7 @@ describe('RouteDetail article cover and focus scope', () => {
 
 describe('RouteDetail reliability fetch — the route page trusts the FILE', () => {
 	async function routePageReliability(id: string): Promise<unknown> {
-		const historic = (await import('$lib/v1/repositories/historic')) as unknown as {
+		const historic = (await import('#lib/v1/repositories/historic.ts')) as unknown as {
 			getRouteReliability: (id: string) => Promise<unknown>;
 		};
 		return historic.getRouteReliability(id);

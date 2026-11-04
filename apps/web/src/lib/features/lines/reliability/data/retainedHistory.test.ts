@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DateWindow } from '$lib/filters';
-import { encodeHistoryEntityId } from '$lib/v1/history/entity';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { encodeHistoryEntityId } from '#lib/v1/history/entity.ts';
 import {
 	HistoricCollectionIndexSchema,
 	LineHistoryPartitionSchema,
@@ -8,13 +8,13 @@ import {
 	type HistoricMetricCoverage,
 	type HistoricPartitionRef,
 	type LineHistoryPartition,
-} from '$lib/v1/schemas';
-import { wilsonBounds } from '$lib/v1/stats';
+} from '#lib/v1/schemas/index.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
 import { buildRetainedLineHistory } from './retainedHistory';
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history/families')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/families.ts')),
+	wilsonBounds: (await import('#lib/v1/stats.ts')).wilsonBounds,
 }));
 
 const GENERATED = '2026-07-13T12:00:00Z';

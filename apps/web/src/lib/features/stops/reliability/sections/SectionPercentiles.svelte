@@ -1,8 +1,11 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
-	import { fmtDelayMin } from '$lib/utils';
-	import { MetricDisplay } from '$lib/components/brand';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import {
+		dailyPercentileCaption,
+		type selectDailyPercentiles,
+	} from '#lib/site/dailyPercentiles.ts';
+	import { fmtDelayMin } from '#lib/utils/index.ts';
+	import { MetricDisplay } from '#lib/components/brand/index.ts';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 

@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import boot from '@yesid/ui/boot.json' with { type: 'json' };
 
 test.beforeEach(async ({ page }) => {
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
@@ -18,7 +20,14 @@ test('boot CSP, responsive header and reload language redirect', async ({ page }
 		{ width: 390, height: 844 },
 	]) {
 		await page.setViewportSize(viewport);
-		await page.goto('/privacy');
+		const response = await page.goto('/privacy');
+		expect(response?.headers()['content-security-policy']).toContain(`'${boot.hash}'`);
+		const inlineScripts = await page.locator('script:not([src])').allTextContents();
+		expect(
+			inlineScripts.some(
+				(script) => `sha256-${createHash('sha256').update(script).digest('base64')}` === boot.hash,
+			),
+		).toBe(true);
 		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
 		await expect(page.getByTestId('sections-toggle')).toHaveCount(0);
 		await expect(page.getByTestId('language-toggle')).toHaveAttribute(

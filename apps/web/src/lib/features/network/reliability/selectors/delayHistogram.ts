@@ -1,12 +1,12 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import type {
 	AbsenceSpec,
 	AbsoluteDomain,
 	HistogramBin,
 	HistogramSpec,
-} from '$lib/components/dataviz/chart';
-import { NETWORK_DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
-import type { DelayBucket } from '$lib/v1/schemas';
+} from '#lib/components/dataviz/chart/index.ts';
+import { NETWORK_DELAY_HISTOGRAM_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { DelayBucket } from '#lib/v1/schemas/index.ts';
 
 export interface DelayHistogramLabels {
 	title: string;

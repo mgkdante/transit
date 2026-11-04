@@ -1,11 +1,14 @@
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HistoryArtifactContractError } from '$lib/v1/history';
-import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { dataRefresh } from '$lib/stores';
+import { HistoryArtifactContractError } from '#lib/v1/history/index.ts';
+import type { IsoUtc, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
+import { dataRefresh } from '#lib/stores/index.ts';
 import { copy as receiptCopy } from './receipt.copy';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
@@ -20,13 +23,13 @@ const nav = vi.hoisted(() => ({
 }));
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
 	}),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
@@ -39,8 +42,8 @@ vi.mock('$app/state', () => ({
 	},
 }));
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState: nav.replaceState }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 

@@ -7,6 +7,7 @@ const { PUBLIC_PLAUSIBLE_DOMAIN: domain, PUBLIC_CF_BEACON_TOKEN: beaconToken } =
 	readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8'),
 ).vars;
 
+const port = process.env.TRANSIT_E2E_PORT ?? '4317';
 const ENDPOINT = 'https://plausible.io/api/event';
 type Payload = { n: string; d: string; u: string; p?: Record<string, string> };
 
@@ -43,7 +44,7 @@ async function openMenu(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-	await page.route(`http://${domain}:4317/**`, async (route) => {
+	await page.route(`http://${domain}:${port}/**`, async (route) => {
 		const url = new URL(route.request().url());
 		url.hostname = '127.0.0.1';
 		await route.continue({ url: url.toString() });
@@ -56,7 +57,7 @@ test.beforeEach(async ({ page }) => {
 test('pageviews carry the configured domain and only the path', async ({ page }) => {
 	const payloads = await capturePlausible(page);
 	const beacon = await captureBeacon(page);
-	await page.goto(`http://${domain}:4317/?utm_source=e2e&q=12+Main+St`);
+	await page.goto(`http://${domain}:${port}/?utm_source=e2e&q=12+Main+St`);
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
 	await expect
 		.poll(() => beacon.map((url) => url.searchParams.get('token')))
@@ -93,7 +94,7 @@ test('a portfolio link click is a custom event', async ({ page, context }) => {
 	await context.route('https://yesid.dev/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/html', body: '' }),
 	);
-	await page.goto(`http://${domain}:4317/`);
+	await page.goto(`http://${domain}:${port}/`);
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
 	const menu = await openMenu(page);
 	const popup = context.waitForEvent('page');
@@ -107,7 +108,7 @@ test('a portfolio link click is a custom event', async ({ page, context }) => {
 test('a missing page sends a 404 event with only its path', async ({ page }) => {
 	const payloads = await capturePlausible(page);
 	await captureBeacon(page);
-	await page.goto(`http://${domain}:4317/no-such-page?q=12+Main+St`);
+	await page.goto(`http://${domain}:${port}/no-such-page?q=12+Main+St`);
 	await expect
 		.poll(() => payloads.map(({ n }) => n))
 		.toEqual(expect.arrayContaining(['pageview', '404']));
@@ -120,7 +121,7 @@ test('a missing page sends a 404 event with only its path', async ({ page }) => 
 test('the local host sends nothing', async ({ page }) => {
 	const payloads = await capturePlausible(page);
 	const beacon = await captureBeacon(page);
-	await page.goto('http://127.0.0.1:4317/?utm_source=e2e&q=12+Main+St');
+	await page.goto(`http://127.0.0.1:${port}/?utm_source=e2e&q=12+Main+St`);
 	const menu = await openMenu(page);
 	await menu
 		.getByRole('link', {

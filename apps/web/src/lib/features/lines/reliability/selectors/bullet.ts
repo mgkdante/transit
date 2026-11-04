@@ -1,6 +1,6 @@
-import type { Locale } from '$lib/i18n';
-import type { BulletSpec } from '$lib/components/dataviz/chart/ChartSpec';
-import type { VerdictStatus } from '$lib/v1/verdict';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { BulletSpec } from '#lib/components/dataviz/chart/ChartSpec.ts';
+import type { VerdictStatus } from '#lib/v1/verdict.ts';
 
 export interface BulletOpts {
 	readonly title: string;

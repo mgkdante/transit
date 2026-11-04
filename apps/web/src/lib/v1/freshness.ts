@@ -1,4 +1,4 @@
-import { ageSeconds, formatRelativeSeconds, type TimeLang } from '$lib/utils/time';
+import { ageSeconds, formatRelativeSeconds, type TimeLang } from '#lib/utils/time.ts';
 
 export const DEFAULT_LIVE_TTL_S = 30;
 

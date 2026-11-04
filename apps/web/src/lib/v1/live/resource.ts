@@ -1,6 +1,6 @@
 import { onMount } from 'svelte';
-import type { Manifest } from '$lib/v1/schemas';
-import type { Resource } from '$lib/v1/resource.svelte';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
+import type { Resource } from '#lib/v1/resource.svelte.ts';
 import { createLiveStore, type LiveFamily, type LiveStore } from './store.svelte';
 
 export function createLiveResource<Family extends LiveFamily>(manifest: Manifest, family: Family) {

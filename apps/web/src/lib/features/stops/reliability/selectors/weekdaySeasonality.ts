@@ -1,5 +1,5 @@
-import { DELAY_DOW_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { SeverityCode, RouteDayOfWeek } from '$lib/v1/schemas';
+import { DELAY_DOW_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { SeverityCode, RouteDayOfWeek } from '#lib/v1/schemas/index.ts';
 
 export const MIN_WEEKDAY_SEVERE_OBSERVATIONS = 5;
 

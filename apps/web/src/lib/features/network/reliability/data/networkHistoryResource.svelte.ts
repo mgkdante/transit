@@ -1,10 +1,10 @@
-import { createRetainedHistoryResource } from '$lib/v1/history/retainedHistoryResource.svelte';
+import { createRetainedHistoryResource } from '#lib/v1/history/retainedHistoryResource.svelte.ts';
 import type {
 	HistoryRangeResource,
 	RawHistoryRangeRequest,
-} from '$lib/v1/history/rangeResource.svelte';
-import { getNetworkHistoryIndex, loadNetworkHistoryRange } from '$lib/v1/repositories/historic';
-import type { HistoricCollectionIndex } from '$lib/v1/schemas/history';
+} from '#lib/v1/history/rangeResource.svelte.ts';
+import { getNetworkHistoryIndex, loadNetworkHistoryRange } from '#lib/v1/repositories/historic.ts';
+import type { HistoricCollectionIndex } from '#lib/v1/schemas/history.ts';
 import { buildRetainedNetworkTrend, type RetainedNetworkTrend } from './retainedTrend';
 
 export type NetworkHistoryResource = HistoryRangeResource<

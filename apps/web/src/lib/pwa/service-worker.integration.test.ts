@@ -4,24 +4,25 @@ const runtime = vi.hoisted(() => ({
 	listeners: new Map<string, (event: unknown) => void>(),
 }));
 
-vi.mock('$service-worker', () => ({
-	build: [
-		'/_app/immutable/entry/start.abc123.js',
-		'/_app/immutable/chunks/MapHero.def456.js',
-		'/_app/immutable/chunks/vendor-maplibre.ghi789.js',
-		'/_app/immutable/assets/maplibre.jkl012.css',
-		'/_app/immutable/assets/inter-latin-wght-normal.mno345.woff2',
+vi.mock('$app/manifest', () => ({
+	immutable: [
+		{ path: '_app/immutable/entry/start.abc123.js' },
+		{ path: '_app/immutable/chunks/MapHero.def456.js' },
+		{ path: '_app/immutable/chunks/vendor-maplibre.ghi789.js' },
+		{ path: '_app/immutable/assets/maplibre.jkl012.css' },
+		{ path: '_app/immutable/assets/inter-latin-wght-normal.mno345.woff2' },
 	],
-	files: [
-		'/offline.html',
-		'/favicon.svg',
-		'/map/basemap-montreal-dark-mobile-20260812.avif',
-		'/map/basemap-montreal-light-mobile-20260812.avif',
-		'/map/basemap-montreal-dark-desktop-20260812.avif',
-		'/map/basemap-montreal-light-desktop-20260812.avif',
+	assets: [
+		{ path: 'offline.html' },
+		{ path: 'favicon.svg' },
+		{ path: 'map/basemap-montreal-dark-mobile-20260812.avif' },
+		{ path: 'map/basemap-montreal-light-mobile-20260812.avif' },
+		{ path: 'map/basemap-montreal-dark-desktop-20260812.avif' },
+		{ path: 'map/basemap-montreal-light-desktop-20260812.avif' },
 	],
-	version: 'integration-test',
 }));
+
+vi.mock('$app/env', () => ({ version: 'integration-test' }));
 
 beforeAll(async () => {
 	const worker = {
@@ -42,7 +43,7 @@ beforeAll(async () => {
 			delete: vi.fn(),
 		},
 	});
-	await import('../../service-worker');
+	await import('../../service-worker/index.ts');
 });
 
 beforeEach(() => {

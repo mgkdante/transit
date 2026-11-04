@@ -3,8 +3,8 @@ import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ResourceBoundary from './ResourceBoundary.svelte';
 import SiblingResourcesHarness from './__fixtures__/SiblingResourcesHarness.svelte';
-import { DEFAULT_LOADING_SKELETON_DELAY_MS } from '$lib/components/edge';
-import type { Resource } from '$lib/v1/resource.svelte';
+import { DEFAULT_LOADING_SKELETON_DELAY_MS } from '#lib/components/edge/index.ts';
+import type { Resource } from '#lib/v1/resource.svelte.ts';
 
 function res<T>(p: Partial<Resource<T>>): Resource<T> {
 	return { data: null, error: null, loading: false, settled: true, reload: () => {}, ...p };

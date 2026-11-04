@@ -1,6 +1,6 @@
-import { adapter, type AdapterCtx } from '$lib/v1/adapter';
-import { providerOf } from '$lib/v1/adapter/r2.core';
-import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '$lib/v1/schemas';
+import { adapter, type AdapterCtx } from '#lib/v1/adapter/index.ts';
+import { providerOf } from '#lib/v1/adapter/r2.core.ts';
+import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '#lib/v1/schemas/index.ts';
 import { isSlimStopsIndex, toSlimStopsIndex, type SlimStopsIndex } from './stopsSlim';
 
 export const getRoutesIndex: (ctx?: AdapterCtx) => Promise<RoutesIndex> = (ctx) =>

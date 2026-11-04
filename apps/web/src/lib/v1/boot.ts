@@ -1,12 +1,12 @@
 import { getContext, setContext } from 'svelte';
-import { browser } from '$app/environment';
-import type { Locale } from '$lib/i18n';
-import { DEFAULT_LOCALE } from '$lib/i18n';
-import type { AdapterCtx } from '$lib/v1/adapter';
-import type { Manifest } from '$lib/v1/schemas/manifest';
-import { getLabels } from '$lib/v1/repositories/labels';
-import { getManifest } from '$lib/v1/repositories/manifest';
-import { installBrowserAdapterManifest } from '$lib/v1/adapter/browserManifest';
+import { browser } from '$app/env';
+import type { Locale } from '#lib/i18n/index.ts';
+import { DEFAULT_LOCALE } from '#lib/i18n/index.ts';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
+import { getLabels } from '#lib/v1/repositories/labels.ts';
+import { getManifest } from '#lib/v1/repositories/manifest.ts';
+import { installBrowserAdapterManifest } from '#lib/v1/adapter/browserManifest.ts';
 import { loadProviderCatalog, resolveProvider, type PublicProvider } from './providers';
 import { v1Provider } from './config';
 

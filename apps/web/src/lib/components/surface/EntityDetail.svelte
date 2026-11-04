@@ -4,14 +4,14 @@
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
 	import { SectionLabel, TocNav, useSectionJump, type TocEntry } from '@yesid/ui/brand';
-	import { ArticleSummaryLane } from '$lib/components/layout';
+	import { ArticleSummaryLane } from '#lib/components/layout/index.ts';
 	import { Surface, DetailFrame, Breadcrumb } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { breadcrumbCopy } from './breadcrumb.copy';
-	import { getLocale, getLocalizeHref } from '$lib/i18n';
-	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
-	import { cn } from '$lib/utils';
+	import { getLocale, getLocalizeHref } from '#lib/i18n/index.ts';
+	import { resolveBreadcrumbTrail } from '#lib/seo/routeSeo.ts';
+	import { cn } from '#lib/utils/index.ts';
 
 	interface EntityDetailSharedProps {
 		lede?: string;

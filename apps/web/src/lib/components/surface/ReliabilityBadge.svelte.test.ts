@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import { intl } from '$lib/i18n';
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
+import { intl } from '#lib/i18n/index.ts';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 import ReliabilityBadge from './ReliabilityBadge.svelte';
 
 function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {

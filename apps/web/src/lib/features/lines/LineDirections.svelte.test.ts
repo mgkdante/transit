@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import type { RouteFile, StopPrediction } from '$lib/v1';
+import type { RouteFile, StopPrediction } from '#lib/v1/index.ts';
 import LineDirections from './LineDirections.svelte';
 import { detailCopy } from './lines.copy';
 

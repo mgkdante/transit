@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { NetworkSurface } from '$lib/features/network/reliability';
+	import { NetworkSurface } from '#lib/features/network/reliability/index.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

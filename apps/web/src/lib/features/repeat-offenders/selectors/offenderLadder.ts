@@ -1,11 +1,11 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import {
 	encodeSevereLadder,
 	type SevereLadderLabels,
 	type SevereLadderEvidence as OffenderPopoverEvidence,
 	type SevereLadderResult as OffenderLadderResult,
-} from '$lib/reliability/severeLadder';
-import type { RepeatOffenderEntry } from '$lib/v1/schemas';
+} from '#lib/reliability/severeLadder.ts';
+import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
 
 export type { OffenderPopoverEvidence, OffenderLadderResult };
 

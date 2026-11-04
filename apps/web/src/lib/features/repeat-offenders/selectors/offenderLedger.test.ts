@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildOffenderLedger, publishedSeverity } from './offenderLedger';
-import type { Offender } from '$lib/v1/schemas';
+import type { Offender } from '#lib/v1/schemas/index.ts';
 
 const labels = {
 	typeLabel: (type: string) => (type === 'route' ? 'Line' : type === 'stop' ? 'Stop' : 'Entity'),

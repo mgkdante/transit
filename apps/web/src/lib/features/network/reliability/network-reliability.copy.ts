@@ -1,10 +1,10 @@
-import type { VerdictCopy } from '$lib/v1/verdict';
-import { routeVerdictCopy } from '$lib/features/lines/reliability/routeVerdict.copy';
-import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import { historyCopy } from '$lib/components/surface/historyCopy';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { VerdictCopy } from '#lib/v1/verdict.ts';
+import { routeVerdictCopy } from '#lib/features/lines/reliability/routeVerdict.copy.ts';
+import { serviceComparisonCopy } from '#lib/v1/serviceComparison.ts';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import { historyCopy } from '#lib/components/surface/historyCopy.ts';
+import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const networkReliabilityCopy = defineCopy({
 	en: {
