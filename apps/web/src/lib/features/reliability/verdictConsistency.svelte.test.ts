@@ -90,6 +90,8 @@ afterEach(() => {
 
 describe('the same reliability evidence across every surface', () => {
 	it.each([
+		[85, 230, 'tentative', [], 85, { on_time: 195, wilson_lo: 79.6, wilson_hi: 88.9 }],
+		[80, 1_000_000, 'patchy', [], 80, { on_time: 797_000, wilson_lo: 79.6, wilson_hi: 79.8 }],
 		[85, 4000, 'reliable', [], 85],
 		[79.6, 1_000_000, 'patchy', [], 80],
 		[59.6, 1_000_000, 'patchy', [], 60],
@@ -135,8 +137,14 @@ describe('the same reliability evidence across every surface', () => {
 		],
 	] as const)(
 		'%s percent with n=%s produces %s everywhere',
-		async (otp_pct, observation_count, status, otherWindows, headlinePct) => {
-			const point = { date: '2026-11-02', otp_pct, observation_count };
+		async (otp_pct, observation_count, status, otherWindows, headlinePct, published = undefined) => {
+			const point = {
+				date: '2026-11-02',
+				otp_pct,
+				observation_count,
+				wilson_lo: published?.wilson_lo,
+				wilson_hi: published?.wilson_hi,
+			};
 			harness.route = {
 				id: '24',
 				generated_utc: '2026-11-02T00:00:00Z',
@@ -148,9 +156,10 @@ describe('the same reliability evidence across every surface', () => {
 									...point,
 									grain: 'day',
 									on_time:
-										observation_count == null
+										published?.on_time ??
+										(observation_count == null
 											? null
-											: Math.round((otp_pct / 100) * observation_count),
+											: Math.round((otp_pct / 100) * observation_count)),
 								},
 							]),
 					...otherWindows,
@@ -162,6 +171,8 @@ describe('the same reliability evidence across every surface', () => {
 					grain: window.grain,
 					otp_pct: window.otp_pct,
 					observation_count: window.observation_count,
+					wilson_lo: window.wilson_lo,
+					wilson_hi: window.wilson_hi,
 				})),
 			} as StopReliability;
 			harness.network = {

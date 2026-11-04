@@ -124,6 +124,89 @@ describe('selectVerdict — natural-frequency boundaries', () => {
 });
 
 describe('one reliability verdict', () => {
+	it.each([
+		[81, 2000, 79.2, 82.6, 'tentative'],
+		[80, 1_000_000, 79.6, 79.8, 'patchy'],
+		[79, 5000, 77.5, 79.9, 'patchy'],
+		[81, 5000, 80, 82.2, 'reliable'],
+		[81, 5000, 79.9, 82.2, 'tentative'],
+		[81, 5000, 80, 80, 'reliable'],
+	] as const)(
+		'%s percent at n=%s with published bounds %s to %s is %s',
+		(otp_pct, observation_count, wilson_lo, wilson_hi, status) => {
+			const point = { date: '2026-11-02', otp_pct, observation_count, wilson_lo, wilson_hi };
+			for (const file of [{ periods: [{ ...point, grain: 'day' }] }, { series: [point] }]) {
+				const result = reliabilityVerdict(file);
+				expect(result.status).toBe(status);
+				expect(result.interval).toEqual({ lo: Math.round(wilson_lo), hi: Math.round(wilson_hi) });
+				expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
+				expect(selectVerdict(result, 'day', 'fr', fr).status).toBe(status);
+			}
+		},
+	);
+	it('carries published bounds through an explicit single-day selection', () => {
+		const result = reliabilityVerdict(
+			{
+				series: [
+					{
+						date: '2026-11-02',
+						otp_pct: 80,
+						observation_count: 1_000_000,
+						wilson_lo: 79.6,
+						wilson_hi: 79.8,
+					},
+				],
+			},
+			{ from: '2026-11-02', to: '2026-11-02' },
+		);
+		expect(result.status).toBe('patchy');
+	});
+	it('keeps the observation floor and absent verdict ahead of published bounds', () => {
+		const point = {
+			grain: 'day',
+			otp_pct: 90,
+			observation_count: 29,
+			wilson_lo: 85,
+			wilson_hi: 95,
+		};
+		expect(reliabilityVerdict({ periods: [point] })).toMatchObject({
+			status: 'tentative',
+			interval: null,
+		});
+		expect(reliabilityVerdict({ periods: [{ ...point, observation_count: null }] }).status).toBe(
+			'tentative',
+		);
+		expect(
+			reliabilityVerdict({ periods: [{ ...point, otp_pct: null, observation_count: 1000 }] })
+				.status,
+		).toBe('absent');
+	});
+	it('prefers exact counts and never borrows a selected period interval for an aggregate', () => {
+		const point = {
+			grain: 'day',
+			otp_pct: 81,
+			observation_count: 5000,
+			on_time: 4100,
+			wilson_lo: 79.9,
+			wilson_hi: 83,
+		};
+		expect(reliabilityVerdict({ periods: [point] }).status).toBe('reliable');
+		expect(reliabilityVerdict({ periods: [point] }, { aggregate: h(81, 5000) }).status).toBe(
+			'tentative',
+		);
+	});
+	it.each([
+		{},
+		{ wilson_lo: 79.9 },
+		{ wilson_hi: 83 },
+		{ wilson_lo: null, wilson_hi: null },
+	] as const)('retains inference when no complete published interval exists: %j', (bounds) => {
+		expect(
+			reliabilityVerdict({
+				periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
+			}).status,
+		).toBe('reliable');
+	});
 	it('uses exact intervals before choosing the shown whole-percent problem band', () => {
 		const published = reliabilityVerdict({
 			periods: [{ grain: 'day', otp_pct: 80, observation_count: 1_000_000, on_time: 796_000 }],
