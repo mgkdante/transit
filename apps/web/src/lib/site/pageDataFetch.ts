@@ -9,7 +9,7 @@ export function pageDataFetch(fetcher: typeof fetch, origin: string): typeof fet
 		const url = new URL(input instanceof Request ? input.url : input, origin);
 		if (
 			url.origin === origin &&
-			url.pathname.endsWith('/__data.json') &&
+			(url.pathname.endsWith('/__data.json') || url.pathname.endsWith('.html__data.json')) &&
 			response.ok &&
 			response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ===
 				'application/json'
