@@ -91,9 +91,12 @@ const round = (value, digits = 1) => {
 };
 const pct = (numerator, denominator, digits = 1) =>
 	numerator != null && denominator > 0 ? round((100 * numerator) / denominator, digits) : null;
-const verdictCount = (otp, n, onTime) => {
+const verdictCount = (otp, n, onTime, wilsonLo, wilsonHi) => {
 	if (otp == null || n == null || n < 0) return null;
 	if (n < 30) return n;
+	if (onTime == null && wilsonLo != null && wilsonHi != null) {
+		return (wilsonLo >= 80 && Math.round(otp) >= 80) || wilsonHi < 80 ? null : n;
+	}
 	const successes = onTime ?? Math.round((otp / 100) * n);
 	const z2 = 1.959963984540054 ** 2;
 	const center = (successes / n + z2 / (2 * n)) / (1 + z2 / n);
@@ -907,7 +910,13 @@ function lineOracle(fixture, locale, view) {
 		observation('line.day.severe_pct', finite(day?.severe_pct)),
 		observation(
 			'line.day.observation_count',
-			verdictCount(finite(day?.otp_pct), finite(day?.observation_count), finite(day?.on_time)),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				finite(day?.on_time),
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation('line.day.cancellation_pct', cancellationPct),
 		observation('line.day.skipped_pct', skippedPct),
@@ -1141,7 +1150,13 @@ function stopOracle(fixture, locale, view) {
 		),
 		observation(
 			'stop.day.observation_count',
-			finite(day?.otp_pct) == null ? null : finite(day?.observation_count),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				null,
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation(
 			'stop.daily.rows',
@@ -1479,6 +1494,34 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	expectLiteral(
+		verdictCount(87, 120, null, 80, 92),
+		null,
+		'published reliable stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, null, 79.6, 88.9),
+		230,
+		'published tentative stop retains hedge count',
+	);
+	expectLiteral(
+		verdictCount(80, 1_000_000, null, 79.6, 79.8),
+		null,
+		'published patchy stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, 195, 80.1, 88.9),
+		230,
+		'exact counts precede published bounds',
+	);
+	expectLiteral(verdictCount(87, 120, null, 80, null), 120, 'incomplete bounds retain inference');
+	expectLiteral(
+		expectedDomainObservationsFromFixture(FIXTURES.rich, 'stop', 'en').find(
+			(row) => row.id === 'stop.day.observation_count',
+		)?.value,
+		null,
+		'rich stop reliable verdict omits observation count',
+	);
 	for (const [otp, n, onTime, expected] of [
 		[50, 30, 15, null],
 		[55, 200, 110, null],

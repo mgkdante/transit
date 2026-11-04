@@ -524,6 +524,16 @@ async function collectLine(page, cell) {
 	];
 }
 
+function stopVerdictObservationCount(text) {
+	const observedN =
+		text.match(/\bn=(\d+)/u)?.[1] ??
+		text.match(/\b(?:of|de)\s+(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1] ??
+		text.match(
+			/\b(?:only|seulement)\s+(\d+)\s+(?:eligible known predictions|prévisions connues admissibles)/iu,
+		)?.[1];
+	return parseNumber(observedN);
+}
+
 async function collectStop(page) {
 	const periodMetrics = await page
 		.locator('[data-slot="stop-reliability-pane"] [data-slot="metric-display"]')
@@ -542,9 +552,6 @@ async function collectStop(page) {
 		.locator('[data-slot="stop-reliability-sections"] [data-slot="verdict"]')
 		.first()
 		.innerText();
-	const observedN =
-		verdictText.match(/\bn=(\d+)/u)?.[1] ??
-		verdictText.match(/(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1];
 	const summaryText = await readValues(
 		page,
 		'[data-slot="stop-reliability-summary"] [data-slot="metric-display"]',
@@ -619,7 +626,7 @@ async function collectStop(page) {
 		observation('stop.day.p50_min', percentiles[0] ?? null),
 		observation('stop.day.p90_min', percentiles[1] ?? null),
 		observation('stop.day.severe_pct', summary[0] ?? null),
-		observation('stop.day.observation_count', parseNumber(observedN)),
+		observation('stop.day.observation_count', stopVerdictObservationCount(verdictText)),
 		observation('stop.daily.rows', dailyRows),
 		observation('stop.range.severe_pct', rangeValues[0] ?? null),
 		observation('stop.range.observations', rangeValues[2] ?? null),
@@ -2090,6 +2097,19 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 }
 
 function runRunnerSelfCheck() {
+	for (const [text, expected] of [
+		['In this daily summary, 85% of 120 known predictions are not severely late.', 120],
+		['Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.', 120],
+		['This daily summary contains only 29 eligible known predictions.', 29],
+		['Ce résumé quotidien contient seulement 29 prévisions connues admissibles.', 29],
+		['In this daily summary, about 9 in 10 known predictions are not severely late.', null],
+		['Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.', null],
+	]) {
+		invariant(
+			stopVerdictObservationCount(text) === expected,
+			`stop verdict observation count: ${text}`,
+		);
+	}
 	// Preserve the existing fixture-mode report shape after retiring live readiness.
 	return { ...runOracleSelfCheck(), representativeDate: '2026-09-02' };
 }
