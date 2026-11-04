@@ -215,7 +215,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	});
 	const isStale = $derived(activeFamilies().some((family) => familyStates[family].health.isStale));
 	const isPartialStale = $derived(
-		isStale && activeFamilies().some((family) => familyStates[family].health.state === 'live'),
+		// A family that has never loaded cannot certify a whole-feed outage either.
+		isStale && activeFamilies().some((family) => !familyStates[family].health.isStale),
 	);
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);

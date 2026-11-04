@@ -59,6 +59,33 @@ it.each(['en', 'fr'] as const)(
 	},
 );
 
+it('does not call the whole feed unresponsive while another family has never loaded', async () => {
+	const now = new Date();
+	let finishVehicles!: (value: VehiclesFile) => void;
+	const pending = new Promise<VehiclesFile>((resolve) => {
+		finishVehicles = resolve;
+	});
+	const vehicles = VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] });
+	vi.spyOn(adapter.live, 'vehicles').mockReturnValue(pending);
+	vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
+		AlertsFileSchema.parse({
+			generated_utc: now.toISOString(),
+			feed_captured_utc: new Date(+now - 901_000).toISOString(),
+			alerts: [],
+		}),
+	);
+	try {
+		render(HealthPresentation);
+		await waitFor(() =>
+			expect(screen.getByRole('status')).toHaveTextContent('Data may be out of date.'),
+		);
+		expect(screen.getByRole('status')).not.toHaveTextContent('not responding');
+	} finally {
+		finishVehicles(vehicles);
+		await pending;
+	}
+});
+
 it('keeps the real banner idle before first loads resolve and while alerts are still never-loaded', async () => {
 	const generatedUtc = new Date().toISOString();
 	let finishVehicles!: () => void;

@@ -138,8 +138,12 @@ def test_failed_load_after_successful_download_keeps_loaded_alert_capture(conn, 
     # Raw success persists; the Silver transaction, including its empty-feed receipt, fails.
     conn.execute(text('UPDATE raw.ingestion_runs SET completed_at_utc=:at, started_at_utc=:at '
                       'WHERE ingestion_run_id=:id'), {'at': T2, 'id': RUN_IDS[1]})
+    broken = [{**ALERT_A, 'publishedAt': 'invalid-date'}]
+    conn.execute(text('UPDATE raw.i3_alert_snapshots SET raw_payload_json=CAST(:body AS jsonb) '
+                      'WHERE i3_alert_snapshot_id=:id'),
+                 {'body': json.dumps(broken), 'id': SNAP_IDS[1]})
     with pytest.raises(ValueError), conn.begin_nested():
-        _load(conn, SNAP_IDS[1], [{**ALERT_A, 'publishedAt': 'invalid-date'}])
+        _load(conn, SNAP_IDS[1], broken)
     payload = build_alerts(conn, provider_id=PROVIDER, generated_utc=T2.isoformat())
     assert payload.feed_captured_utc == T1.strftime('%Y-%m-%dT%H:%M:%SZ')
     assert bool(payload.alerts) == bool(initial)
