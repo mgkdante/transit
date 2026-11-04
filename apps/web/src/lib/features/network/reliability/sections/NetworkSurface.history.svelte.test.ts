@@ -525,24 +525,29 @@ describe('NetworkSurface retained-history integration', () => {
 		expect(view.queryByRole('radiogroup', { name: 'Delay series' })).toBeNull();
 	});
 
-	it('restores the richest current window after clearing a short retained deep link', async () => {
-		currentDaily.splice(0, currentDaily.length, ...currentDays(90));
-		harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-01-31');
-		harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
-		const view = render(NetworkSurface);
+	it.each([7, 30, 90])(
+		'offers the %id chart choice after clearing a short retained deep link',
+		async (days) => {
+			currentDaily.splice(0, currentDaily.length, ...currentDays(90));
+			harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-01-31');
+			harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+			const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
-		const navigator = view.container.querySelector(
-			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
-		) as HTMLElement;
-		await fireEvent.click(
-			within(navigator).getByRole('button', { name: 'Return to current snapshot' }),
-		);
+			await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
+			const navigator = view.container.querySelector(
+				'[data-slot="surface-rail"] [data-slot="history-navigator"]',
+			) as HTMLElement;
+			await fireEvent.click(
+				within(navigator).getByRole('button', { name: 'Return to current snapshot' }),
+			);
 
-		const windowGroup = await view.findByRole('radiogroup', { name: 'Trend window' });
-		expect(within(windowGroup).getByRole('radio', { name: '90d' })).toBeChecked();
-		await waitFor(() => expect(trendRows(view.container)).toHaveLength(90));
-	});
+			const windowGroup = await view.findByRole('radiogroup', { name: 'Trend window' });
+			expect(within(windowGroup).getByRole('radio', { name: '90d' })).toBeChecked();
+			await fireEvent.click(within(windowGroup).getByRole('radio', { name: `${days}d` }));
+			expect(within(windowGroup).getByRole('radio', { name: `${days}d` })).toBeChecked();
+			await waitFor(() => expect(trendRows(view.container)).toHaveLength(days));
+		},
+	);
 
 	it('does not let an interactive retained range clamp the seeded current window', async () => {
 		currentDaily.splice(0, currentDaily.length, ...currentDays(90));

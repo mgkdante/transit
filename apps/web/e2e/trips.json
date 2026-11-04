@@ -5,6 +5,12 @@
 			"status": "on_time",
 			"route": "80",
 			"stops": [{ "stop": "S1", "eta_utc": "2026-06-15T12:05:00Z", "delay_min": 0 }]
+		},
+		"TEmpty": {
+			"status": "unknown",
+			"route": null,
+			"delay_min": null,
+			"stops": []
 		}
 	}
 }

@@ -10,6 +10,7 @@ const read = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta
 const b9 = read('../scripts/__fixtures__/b9/rich.json');
 const line = read('./routes-index.json').routes[0];
 const route = b9.files[`static/routes/${line.id}.json`];
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test.use({ bypassCSP: true });
 
@@ -48,7 +49,9 @@ for (const locale of PUBLISHED_LOCALES) {
 		const [first] = route.directions[0].stops;
 		await page.goto(localizeHref(`/lines/${line.id}`, locale));
 		await page
-			.getByRole('link', { name: new RegExp(`^${t.viewStop} ${first.seq} ${first.name} `) })
+			.getByRole('link', {
+				name: new RegExp(`^${escapeRegExp(`${t.viewStop} ${first.seq} ${first.name} `)}`),
+			})
 			.first()
 			.click();
 

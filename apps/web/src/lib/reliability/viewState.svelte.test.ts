@@ -255,7 +255,24 @@ describe('reliability view-state public contract', () => {
 		expect(view.data).toBe(snapshot);
 		expect(view.history.active).toBe(false);
 	});
-	it('network restores all 7/30/90 chart choices independently of its retained window', () => {
+	it('network does not offer its rolling series as current navigator dates', () => {
+		const snapshot: Dataset = {
+			id: 'network',
+			series: [{ date: '2026-07-12', otp_pct: 85 }],
+		};
+		const resource = history();
+		const view = mount(() =>
+			createReliabilityViewState({
+				snapshot: () => snapshot,
+				retained: { resource: () => resource.value, copy: () => copy },
+				grains: { keys: RELIABILITY_GRAINS, labels },
+				locale: () => 'en',
+			}),
+		);
+		expect(view.navigator?.availableDates).toEqual([]);
+		expect(view.data).toBe(snapshot);
+	});
+	it('network restores its current dataset independently of its retained window', () => {
 		const current: Dataset = {
 			id: 'network',
 			series: Array.from({ length: 90 }, (_, i) => ({
