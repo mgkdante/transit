@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "name": "live",
+      "status": 200,
+      "headers": {},
+      "body": {
+        "snapshotAt": "2026-11-04T12:00:00Z",
+        "freshnessS": 5,
+        "vehicles": 10,
+        "avgDelayS": 120,
+        "coverage": 0.97,
+        "routesLive": 5,
+        "routesTotal": 6,
+        "topRoutes": [
+          { "route": "10", "vehicles": 3, "avgDelayS": 180 },
+          { "route": "20", "vehicles": 2, "avgDelayS": 0 },
+          { "route": "30", "vehicles": 2, "avgDelayS": -60 },
+          { "route": "40", "vehicles": 1, "avgDelayS": 300 },
+          { "route": "50", "vehicles": 1, "avgDelayS": 60 }
+        ]
+      },
+      "hero": { "mode": "live", "routes": ["10", "20", "30", "40", "50"] }
+    },
+    {
+      "name": "one-route-without-delay",
+      "status": 200,
+      "headers": {},
+      "body": {
+        "snapshotAt": "2026-11-04T12:00:00Z",
+        "freshnessS": 5,
+        "vehicles": 10,
+        "avgDelayS": 120,
+        "coverage": 0.97,
+        "routesLive": 5,
+        "routesTotal": 6,
+        "topRoutes": [
+          { "route": "10", "vehicles": 3, "avgDelayS": 180 },
+          { "route": "20", "vehicles": 2, "avgDelayS": 0 },
+          { "route": "30", "vehicles": 2, "avgDelayS": -60 },
+          { "route": "40", "vehicles": 1, "avgDelayS": 300 },
+          { "route": "50", "vehicles": 1, "avgDelayS": null }
+        ]
+      },
+      "hero": { "mode": "live", "routes": ["10", "20", "30", "40"] }
+    },
+    {
+      "name": "no-route-with-delay",
+      "status": 200,
+      "headers": {},
+      "body": {
+        "snapshotAt": "2026-11-04T12:00:00Z",
+        "freshnessS": 5,
+        "vehicles": 10,
+        "avgDelayS": 120,
+        "coverage": 0.97,
+        "routesLive": 5,
+        "routesTotal": 6,
+        "topRoutes": [
+          { "route": "10", "vehicles": 3, "avgDelayS": null },
+          { "route": "20", "vehicles": 2, "avgDelayS": null },
+          { "route": "30", "vehicles": 2, "avgDelayS": null },
+          { "route": "40", "vehicles": 1, "avgDelayS": null },
+          { "route": "50", "vehicles": 1, "avgDelayS": null }
+        ]
+      },
+      "hero": { "mode": "demo", "routes": [] }
+    },
+    {
+      "name": "nullable-lanes",
+      "status": 200,
+      "headers": {},
+      "body": {
+        "snapshotAt": "2026-11-04T12:00:00Z",
+        "freshnessS": 5,
+        "vehicles": 10,
+        "avgDelayS": null,
+        "coverage": null,
+        "routesLive": 5,
+        "routesTotal": null,
+        "topRoutes": [
+          { "route": "10", "vehicles": 3, "avgDelayS": null },
+          { "route": "20", "vehicles": 2, "avgDelayS": null },
+          { "route": "30", "vehicles": 2, "avgDelayS": null },
+          { "route": "40", "vehicles": 1, "avgDelayS": null },
+          { "route": "50", "vehicles": 1, "avgDelayS": null }
+        ]
+      },
+      "hero": { "mode": "demo", "routes": [] }
+    },
+    {
+      "name": "empty-network",
+      "status": 200,
+      "headers": {},
+      "body": {
+        "snapshotAt": "2026-11-04T12:00:00Z",
+        "freshnessS": 5,
+        "vehicles": 0,
+        "avgDelayS": null,
+        "coverage": 0.97,
+        "routesLive": 0,
+        "routesTotal": 6,
+        "topRoutes": []
+      },
+      "hero": { "mode": "demo", "routes": [] }
+    },
+    {
+      "name": "pipeline-cold",
+      "status": 503,
+      "headers": { "retry-after": "30" },
+      "body": {
+        "error": "pipeline_cold",
+        "detail": "live snapshot missing or older than 90s"
+      },
+      "hero": { "mode": "demo", "routes": [] }
+    }
+  ]
+}
