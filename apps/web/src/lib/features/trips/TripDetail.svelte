@@ -206,11 +206,8 @@
 							<ol class="trip-stops" aria-label={t.stopsListLabel}>
 								{#each reportedPredictions as stop, si (stop.stop + '-' + si)}
 									<li class="trip-stop">
-										<a
-											class="trip-stop-link"
-											href={stopHref(stop.stop)}
-											aria-label={t.viewStop(stopNameFor(stop.stop))}
-										>
+										<a class="trip-stop-link" href={stopHref(stop.stop)}>
+											<span class="sr-only">{t.viewStop} </span>
 											<span class="trip-stop-name">{stopNameFor(stop.stop)}</span>
 											<span class="trip-stop-meta">
 												<time class="trip-stop-eta" datetime={stop.eta_utc}>

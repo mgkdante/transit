@@ -49,11 +49,8 @@
 							{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
 								{@const prediction = predictions.get(stop.id) ?? null}
 								<li class="line-stop">
-									<a
-										class="line-stop-link"
-										href={stopHref(stop.id)}
-										aria-label={copy.viewStop(stop.name ?? stopNameFallback(stop.id, locale))}
-									>
+									<a class="line-stop-link" href={stopHref(stop.id)}>
+										<span class="sr-only">{copy.viewStop} </span>
 										<span class="line-stop-seq">{stop.seq}</span>
 										<span class="line-stop-name"
 											>{stop.name ?? stopNameFallback(stop.id, locale)}</span

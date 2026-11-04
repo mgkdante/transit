@@ -205,7 +205,7 @@ describe('TripDetail: a broadcasting trip', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
 		const stops = screen.getByRole('list', { name: 'Reported predictions for this trip' });
-		expect(within(stops).getByRole('link', { name: 'View stop sA' })).toHaveAttribute(
+		expect(within(stops).getByRole('link', { name: /^View stop sA / })).toHaveAttribute(
 			'href',
 			'/stop/sA',
 		);
@@ -267,6 +267,10 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 	it('counts prediction rows and names the last reported stop without inferring a terminal', () => {
 		const { container } = render(TripDetail, { props: { id: 't161' }, context });
+		const stop = screen.getByRole('link', { name: /sA/ });
+		expect(stop).toHaveAccessibleName(
+			`${locale === 'en' ? 'View stop' : 'Voir l’arrêt'} sA ${stop.querySelector('time')!.textContent} ${tripCopy[locale].predictionLabel} ${locale === 'en' ? '4 min late' : '4 min en retard'}`,
+		);
 		expect(container.querySelector('.trip-last-stop-name')).toHaveTextContent('sB');
 		expect(container.querySelector('.trip-prediction-count')).toHaveTextContent(
 			locale === 'fr' ? '2 prédictions communiquées' : '2 predictions reported',

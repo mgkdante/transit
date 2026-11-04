@@ -13,13 +13,21 @@ import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/
 const fixture = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
 const departures = fixture('departures.json');
+const trips = fixture('trips.json').trips;
+const tripId = Object.keys(trips)[0];
+const lineId = fixture('routes-index.json').routes[0].id;
+const line = fixture('../scripts/__fixtures__/b9/rich.json').files[`static/routes/${lineId}.json`];
+const lineStopCount = line.directions.reduce(
+	(count: number, direction: { stops: unknown[] }) => count + direction.stops.length,
+	0,
+);
 const pages = [
 	'/',
 	...[...SURFACE_NAV, ...AUDIT_NAV].map(({ href }) => href),
 	...LEGAL_NAV.map(({ href }) => href),
 	`/stop/${Object.keys(departures.stops)[0]}`,
-	`/lines/${fixture('routes-index.json').routes[0].id}`,
-	`/trip/${Object.keys(fixture('trips.json').trips)[0]}`,
+	`/lines/${lineId}`,
+	`/trip/${tripId}`,
 	`/search?q=${encodeURIComponent(fixture('stops-index.json').stops[0].name)}`,
 ];
 const localized = (href: string, locale: Locale) =>
@@ -38,8 +46,18 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 		for (const path of pages) {
 			const url = localized(path, locale);
 			test(`${url} has no serious or critical axe violations`, async ({ page }) => {
-				await page.goto(url);
+				// As in the layout audit below, scan after client-side fixture data settles.
+				await page.goto(url, { waitUntil: 'networkidle' });
 				await expect(page.getByRole('main')).toBeVisible();
+				if (path === `/lines/${line.id}`) {
+					await expect(page.locator('.line-stop-link')).toHaveCount(lineStopCount);
+					// Axe's label-in-name check needs the text on screen, not merely in the DOM.
+					await page.locator('.line-stop-link').first().scrollIntoViewIfNeeded();
+				}
+				if (path === `/trip/${tripId}`) {
+					await expect(page.locator('.trip-stop-link')).toHaveCount(trips[tripId].stops.length);
+					await page.locator('.trip-stop-link').first().scrollIntoViewIfNeeded();
+				}
 				await expectAccessible(page);
 			});
 		}
@@ -47,7 +65,7 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 		test(`${locale}: the open menu has no serious or critical axe violations`, async ({ page }) => {
 			const copy = navPillCopy[locale];
 			const menu = page.getByRole('navigation', { name: copy.menu });
-			await page.goto(localized(AUDIT_NAV[0].href, locale));
+			await page.goto(localized(AUDIT_NAV[0].href, locale), { waitUntil: 'networkidle' });
 			await expect(async () => {
 				if (!(await menu.isVisible()))
 					await page.getByRole('button', { name: copy.openMenu }).click();

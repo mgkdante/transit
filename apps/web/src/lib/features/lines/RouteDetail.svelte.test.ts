@@ -896,7 +896,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 
 		expect(screen.getByText('2 min late')).toBeInTheDocument();
 
-		const stop = screen.getByRole('link', { name: 'View stop Second stop' });
+		const stop = screen.getByRole('link', { name: /^View stop 2 Second stop / });
 		const absence = stop.querySelector('[data-slot="absent-value"]');
 		expect(absence).not.toBeNull();
 		expect(absence).toHaveAttribute('data-density', 'row');
@@ -906,7 +906,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 	it('states no prediction without inferring whether a live bus exists', () => {
 		renderRoute();
 
-		const stop = screen.getByRole('link', { name: 'View stop Third stop' });
+		const stop = screen.getByRole('link', { name: /^View stop 3 Third stop / });
 		const absence = stop.querySelector('[data-slot="absent-value"]');
 		expect(absence).toHaveAttribute('data-density', 'row');
 		expect(absence).toHaveTextContent('No estimate · no prediction available');

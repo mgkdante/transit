@@ -48,7 +48,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		const [first] = route.directions[0].stops;
 		await page.goto(localizeHref(`/lines/${line.id}`, locale));
 		await page
-			.getByRole('link', { name: t.viewStop(first.name), exact: true })
+			.getByRole('link', { name: new RegExp(`^${t.viewStop} ${first.seq} ${first.name} `) })
 			.first()
 			.click();
 
