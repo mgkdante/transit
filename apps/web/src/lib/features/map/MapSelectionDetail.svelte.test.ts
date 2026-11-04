@@ -860,7 +860,8 @@ describe('MapSelectionDetail', () => {
 		expect(getByText('Live detail is unavailable')).toBeInTheDocument();
 		expect(queryByRole('status')).not.toBeInTheDocument();
 		const retry = getByRole('button', { name: 'Retry' });
-		expect(retry).toHaveClass('detail-retry');
+		expect(retry).toHaveAttribute('data-slot', 'button');
+		expect(retry).toHaveClass('min-h-11');
 		await fireEvent.click(retry);
 		expect(onrefresh).toHaveBeenCalledTimes(1);
 		expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();

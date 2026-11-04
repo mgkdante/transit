@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { Button } from '@yesid/ui/button';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import type { Chip } from '#lib/filters/index.ts';
 	import type { Alert } from '#lib/v1/schemas/index.ts';
@@ -118,8 +119,12 @@
 							? t.detailFailed
 							: t.detailStale}
 					{#if selectionSourceHealth === 'retrying' || selectionSourceHealth === 'failed'}
-						<button class="detail-retry" type="button" onclick={() => onrefresh?.()}
-							>{t.retry}</button
+						<Button
+							variant="ghost"
+							size="sm"
+							class="ml-2 min-h-11"
+							type="button"
+							onclick={() => onrefresh?.()}>{t.retry}</Button
 						>
 					{/if}
 				</p>
@@ -484,15 +489,6 @@
 	.detail-source-state[data-source-health] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
-	}
-	.detail-retry {
-		display: inline-flex;
-		min-height: 2.75rem;
-		align-items: center;
-		margin-left: 0.5rem;
-		padding-inline: 0.75rem;
-		border-radius: var(--radius-md);
-		color: var(--foreground);
 	}
 	.map-selection-detail ol {
 		display: grid;

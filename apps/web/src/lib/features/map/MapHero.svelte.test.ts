@@ -949,6 +949,8 @@ describe('MapHero stage lifecycle', () => {
 		);
 		expect(focusable).toHaveLength(1);
 		expect(focusable[0]).toBe(screen.getByRole('button', { name: 'Retry map' }));
+		expect(focusable[0]).toHaveAttribute('data-slot', 'button');
+		expect(focusable[0]).toHaveClass('min-h-11');
 		await fireEvent.click(screen.getByRole('button', { name: 'Retry map' }));
 
 		await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());

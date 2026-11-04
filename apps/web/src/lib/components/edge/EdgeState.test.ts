@@ -142,6 +142,7 @@ describe('EdgeState — error-v1 retry affordance', () => {
 		});
 		const btn = getByText('Réessayer');
 		expect(btn).toBeInTheDocument();
+		expect(btn).toHaveClass('min-h-11');
 		await fireEvent.click(btn);
 		expect(onRetry).toHaveBeenCalledOnce();
 	});
