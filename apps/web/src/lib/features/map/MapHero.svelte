@@ -542,6 +542,7 @@
 				generatedUtc={live.generatedUtc}
 				ageSeconds={live.ageSeconds}
 				isStale={live.isStale}
+				isPartialStale={live.isPartialStale}
 				degraded={liveDegraded}
 				{selectedFamilyFailureMessage}
 				bind:nearMeOpen={nearMeController.open}

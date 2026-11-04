@@ -117,7 +117,7 @@ class Trip(BaseModel):
 
 class TripsFile(PayloadEnvelope):
     generated_utc: str
-    # Last successful source capture. Absent in pre-rollout snapshots; null means unknown.
+    # Source capture accepted into serving data. Legacy absence differs from explicit unknown.
     feed_captured_utc: str | None = None
     trips: dict[str, Trip]
 

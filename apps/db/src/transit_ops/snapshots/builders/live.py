@@ -59,17 +59,20 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from transit_ops.settings import Settings
 
 
-# Failed requests have a completion time too. They must never renew capture health.
+# Only committed serving provenance certifies the payload, never download success.
+# GTFS serving state survives empty feeds and source pruning. Alert observations
+# commit in the Silver load transaction, including successful empty alert loads.
 _FEED_CAPTURE_SQL = named_query(
     "live.feed_capture",
     """
-    SELECT ir.completed_at_utc AS captured_utc
-    FROM raw.ingestion_runs ir
-    JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
-    WHERE ir.provider_id = :provider_id AND fe.endpoint_key = :endpoint_key
-      AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
-    ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
-    LIMIT 1
+    SELECT captured_at_utc AS captured_utc
+    FROM gold.realtime_serving_state
+    WHERE provider_id = :provider_id AND endpoint_key = :endpoint_key
+    UNION ALL
+    SELECT MAX(observed_at_utc) AS captured_utc
+    FROM raw.alert_feed_observations
+    WHERE provider_id = :provider_id AND :endpoint_key IN ('i3_alerts', 'service_alerts')
+    GROUP BY provider_id
     """,
 )
 
@@ -391,19 +394,12 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
 _NETWORK_FRESHNESS_SQL = named_query(
     "network.live.freshness",
     """
-    SELECT CASE WHEN count(*) FILTER (WHERE last_capture IS NULL) > 0 THEN NULL
-                ELSE MAX(EXTRACT(EPOCH FROM (now() - last_capture)))::integer
+    SELECT CASE WHEN count(*) FILTER (WHERE capture.captured_at_utc IS NULL) > 0 THEN NULL
+                ELSE MAX(EXTRACT(EPOCH FROM (now() - capture.captured_at_utc)))::integer
            END AS feed_freshness_s
     FROM core.feed_endpoints fe
-    LEFT JOIN LATERAL (
-        SELECT ir.completed_at_utc AS last_capture
-        FROM raw.ingestion_runs ir
-        WHERE ir.feed_endpoint_id = fe.feed_endpoint_id
-          AND ir.provider_id = :provider_id
-          AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
-        ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
-        LIMIT 1
-    ) capture ON true
+    LEFT JOIN gold.realtime_serving_state capture
+      ON capture.provider_id = fe.provider_id AND capture.endpoint_key = fe.endpoint_key
     WHERE fe.provider_id = :provider_id AND fe.is_enabled
       AND fe.endpoint_key IN ('vehicle_positions', 'trip_updates')
     """
@@ -639,14 +635,30 @@ _DATA_HEALTH_LANES_SQL = named_query(
 _DATA_HEALTH_FEEDS_SQL = named_query(
     "data_health.feeds",
     """
+    WITH alert_capture AS (
+        SELECT MAX(observed_at_utc) AS captured_at_utc
+        FROM raw.alert_feed_observations WHERE provider_id = :provider_id
+    )
     SELECT f.endpoint_key, f.status,
-           EXTRACT(EPOCH FROM (now() - capture.last_capture))::integer AS completed_age_seconds
+           EXTRACT(EPOCH FROM (now() - CASE
+               WHEN f.endpoint_key IN ('trip_updates', 'vehicle_positions')
+                   THEN serving.captured_at_utc
+               WHEN f.endpoint_key IN ('i3_alerts', 'service_alerts')
+                   THEN alert_capture.captured_at_utc
+               ELSE capture.last_capture
+           END))::integer AS completed_age_seconds
     FROM gold.feed_freshness_current f
+    LEFT JOIN gold.realtime_serving_state serving
+      ON serving.provider_id = f.provider_id AND serving.endpoint_key = f.endpoint_key
+    CROSS JOIN alert_capture
     LEFT JOIN LATERAL (
         SELECT ir.completed_at_utc AS last_capture
         FROM raw.ingestion_runs ir
         JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
         WHERE ir.provider_id = f.provider_id AND fe.endpoint_key = f.endpoint_key
+          AND f.endpoint_key NOT IN (
+              'trip_updates', 'vehicle_positions', 'i3_alerts', 'service_alerts'
+          )
           AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
         ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
         LIMIT 1

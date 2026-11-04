@@ -2,6 +2,7 @@
 	export type MapFeedBannerState =
 		| 'selected-family-failure'
 		| 'global-stall'
+		| 'partial-stall'
 		| 'unavailable'
 		| 'no-vehicles'
 		| 'idle';
@@ -9,12 +10,14 @@
 	export function deriveMapFeedBannerState({
 		selectedFamilyFailureMessage,
 		isStale,
+		isPartialStale = false,
 		ageSeconds,
 		liveEdgeState,
 		liveEdgeMessage,
 	}: {
 		selectedFamilyFailureMessage: string | null;
 		isStale: boolean;
+		isPartialStale?: boolean;
 		ageSeconds?: number | null;
 		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage: string | null;
@@ -22,7 +25,7 @@
 		if (selectedFamilyFailureMessage) return 'selected-family-failure';
 		if (ageSeconds === null && liveEdgeState === 'unavailable' && liveEdgeMessage)
 			return 'unavailable';
-		if (isStale) return 'global-stall';
+		if (isStale) return isPartialStale ? 'partial-stall' : 'global-stall';
 		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
 		return 'idle';
 	}
@@ -40,6 +43,7 @@
 		generatedUtc: string | null;
 		ageSeconds?: number | null;
 		isStale: boolean;
+		isPartialStale?: boolean;
 		locale: Locale;
 		selectedFamilyFailureMessage?: string | null;
 		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
@@ -51,6 +55,7 @@
 		generatedUtc,
 		ageSeconds = undefined,
 		isStale,
+		isPartialStale = false,
 		locale,
 		selectedFamilyFailureMessage = null,
 		liveEdgeState = null,
@@ -76,6 +81,7 @@
 			deriveMapFeedBannerState({
 				selectedFamilyFailureMessage,
 				isStale,
+				isPartialStale,
 				ageSeconds: effectiveAge,
 				liveEdgeState,
 				liveEdgeMessage,
@@ -84,18 +90,22 @@
 	const message = $derived(
 		resolvedState === 'selected-family-failure'
 			? (selectedFamilyFailureMessage ?? '')
-			: resolvedState === 'global-stall'
-				? stallMessage
-				: resolvedState === 'idle'
-					? ''
-					: (liveEdgeMessage ?? ''),
+			: resolvedState === 'partial-stall'
+				? t.feedAgeUnknown
+				: resolvedState === 'global-stall'
+					? stallMessage
+					: resolvedState === 'idle'
+						? ''
+						: (liveEdgeMessage ?? ''),
 	);
 </script>
 
 <div
 	class="map-overlay map-live-edge"
-	class:map-feed-stall={resolvedState === 'global-stall'}
-	data-slot={resolvedState === 'global-stall' ? 'map-feed-stall' : undefined}
+	class:map-feed-stall={resolvedState === 'global-stall' || resolvedState === 'partial-stall'}
+	data-slot={resolvedState === 'global-stall' || resolvedState === 'partial-stall'
+		? 'map-feed-stall'
+		: undefined}
 	data-state={resolvedState}
 	role="status"
 	aria-live="polite"

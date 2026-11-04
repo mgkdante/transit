@@ -94,6 +94,11 @@ def _seed(connection, seed_provider) -> None:
         connection, {'r': CAPTURE_RUN_ID, 'p': PROVIDER, 'e': TU_ENDPOINT_ID, 'at': CAPTURE_AT},
         started_at_utc=':at', completed_at_utc=':at',
     )
+    connection.execute(text('INSERT INTO gold.realtime_serving_state '
+                            '(provider_id, endpoint_key, realtime_snapshot_id, captured_at_utc) '
+                            'VALUES (:p, :key, :id, :at)'),
+                       {'p': PROVIDER, 'key': 'trip_updates', 'id': CAPTURE_SNAPSHOT_ID,
+                        'at': CAPTURE_AT})
     db_seed.ingestion_objects(
         connection, {'o': CAPTURE_OBJECT_ID, 'r': CAPTURE_RUN_ID, 'p': PROVIDER},
         storage_path="'silver-load-test/tu/capture.pb'",

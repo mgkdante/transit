@@ -71,6 +71,7 @@ export interface LiveStore {
 	readonly generatedUtc: string | null;
 	readonly ageSeconds: number | null;
 	readonly isStale: boolean;
+	readonly isPartialStale: boolean;
 	readonly vehiclesGeneratedUtc: string | null;
 	readonly vehiclesAgeSeconds: number | null;
 	readonly vehiclesIsStale: boolean;
@@ -213,6 +214,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return oldestAge;
 	});
 	const isStale = $derived(activeFamilies().some((family) => familyStates[family].health.isStale));
+	const isPartialStale = $derived(
+		isStale && activeFamilies().some((family) => familyStates[family].health.state === 'live'),
+	);
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);
 	const vehiclesIsStale = $derived(familyStates.vehicles.health.isStale);
@@ -632,6 +636,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		},
 		get isStale() {
 			return isStale;
+		},
+		get isPartialStale() {
+			return isPartialStale;
 		},
 		get vehiclesGeneratedUtc() {
 			return vehiclesGeneratedUtc;
