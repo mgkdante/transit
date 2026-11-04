@@ -165,8 +165,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			const unknownAge = retained && age == null;
 			let verdict: FeedHealthState;
 			if (!retained) verdict = retrying ? 'retrying' : failed ? 'failed-no-data' : 'never-loaded';
-			else if (unknownAge) verdict = 'retained-stale';
 			else if (retrying) verdict = 'retrying';
+			else if (unknownAge) verdict = 'retained-stale';
 			else verdict = failed || ageIsStale ? 'retained-stale' : 'live';
 			const isStale = retained ? ageIsStale : verdict === 'failed-no-data';
 			let notice: FeedHealth['notice'] = null;

@@ -79,6 +79,7 @@ import { createLiveStore, type LiveFamily } from './store.svelte';
 import { dataRefresh } from '#lib/stores/index.ts';
 import { configureV1Runtime } from '#lib/v1/runtime.ts';
 import type { NetworkFile } from '#lib/v1/schemas/index.ts';
+import { createSelectionGrace } from '#lib/features/map/selectionSession/selectionGrace.svelte.ts';
 
 configureV1Runtime({ clock, refresh: dataRefresh });
 
@@ -401,12 +402,18 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.trips.health).toMatchObject({ state: 'live', notice: null });
 	});
 
-	it('preserves the refresh failure notice for a retained snapshot with unknown age', async () => {
+	it('reports an unknown-age retained snapshot as retrying only while its retry is in flight', async () => {
 		mocks.vehicles.mockResolvedValueOnce({ generated_utc: null, vehicles: [] });
 		const { store } = setup(30, ['vehicles']);
+		const grace = createSelectionGrace<{ id: string }>();
+		const selection = { kind: 'vehicle', id: 'bus-1' } as const;
+		const detail = { id: selection.id };
+		const updateSelection = () =>
+			grace.update({ selection, resolvedDetail: detail, vehicles: store.familyStates.vehicles });
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health.notice).toBe('stale');
+		expect(updateSelection().sourceHealth).toBe('ok');
 		const failure = new Error('refresh unavailable');
 		mocks.vehicles.mockRejectedValueOnce(failure);
 		await store.refresh();
@@ -419,6 +426,39 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			notice: 'refresh-unavailable',
 		});
 		expect(store.familyStates.vehicles.error).toBe(failure);
+		expect(updateSelection().sourceHealth).toBe('failed');
+		let failRetry!: (error: Error) => void;
+		mocks.vehicles.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					failRetry = reject;
+				}),
+		);
+		const pending = store.refresh();
+		await settleLivePoll();
+		expect(store.familyStates.vehicles.phase).toBe('loading');
+		expect.soft(store.familyStates.vehicles.health).toEqual({
+			state: 'retrying',
+			ageSeconds: null,
+			isStale: true,
+			retained: true,
+			notice: 'refresh-unavailable',
+		});
+		expect.soft(updateSelection().sourceHealth).toBe('retrying');
+		const retryFailure = new Error('retry unavailable');
+		failRetry(retryFailure);
+		await pending;
+		flushSync();
+		expect(store.familyStates.vehicles.phase).toBe('failed');
+		expect(store.familyStates.vehicles.health).toEqual({
+			state: 'retained-stale',
+			ageSeconds: null,
+			isStale: true,
+			retained: true,
+			notice: 'refresh-unavailable',
+		});
+		expect(store.familyStates.vehicles.error).toBe(retryFailure);
+		expect(updateSelection().sourceHealth).toBe('failed');
 	});
 
 	it('distinguishes failure without data from a retry without data', async () => {
