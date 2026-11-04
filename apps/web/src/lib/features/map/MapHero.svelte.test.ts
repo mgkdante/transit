@@ -795,6 +795,26 @@ function peekText(container: HTMLElement): string {
 }
 
 describe('MapHero stage lifecycle', () => {
+	it.each(['stale', 'refresh-unavailable'] as const)(
+		'neutralizes the empty selected alerts notice for %s health',
+		async (notice) => {
+			const previousAlerts = harness.liveStore.alerts.alerts;
+			const previousHealth = harness.liveStore.familyStates.alerts.health;
+			harness.liveStore.alerts.alerts = [];
+			Object.assign(harness.liveStore.familyStates.alerts, {
+				health: { ...previousHealth, notice, isStale: true },
+			});
+			try {
+				render(MapHero);
+				await fireEvent.click(await screen.findByTestId('map-stage-stub-pick-vehicle'));
+				const label = await screen.findByText('No alerts attached');
+				expect(label.closest('[data-slot="state-notice"]')).toHaveAttribute('data-tone', 'neutral');
+			} finally {
+				harness.liveStore.alerts.alerts = previousAlerts;
+				harness.liveStore.familyStates.alerts.health = previousHealth;
+			}
+		},
+	);
 	it('keeps a provider without an alert feed unavailable even when a snapshot contains alerts', async () => {
 		providerContext.value = {
 			id: 'octranspo',
@@ -821,6 +841,9 @@ describe('MapHero stage lifecycle', () => {
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			expect(await screen.findByText('Alert data unavailable')).toBeVisible();
 			expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();
+			expect(harness.createLiveStore).toHaveBeenCalledWith(expect.anything(), {
+				families: ['vehicles'],
+			});
 		} finally {
 			providerContext.value = undefined;
 		}

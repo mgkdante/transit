@@ -59,6 +59,28 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from transit_ops.settings import Settings
 
 
+# Failed requests have a completion time too. They must never renew capture health.
+_FEED_CAPTURE_SQL = named_query(
+    "live.feed_capture",
+    """
+    SELECT ir.completed_at_utc AS captured_utc
+    FROM raw.ingestion_runs ir
+    JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
+    WHERE ir.provider_id = :provider_id AND fe.endpoint_key = :endpoint_key
+      AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
+    ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
+    LIMIT 1
+    """,
+)
+
+
+def _feed_captured_utc(conn: Connection, provider_id: str, endpoint_key: str) -> str | None:
+    row = conn.execute(
+        _FEED_CAPTURE_SQL, {"provider_id": provider_id, "endpoint_key": endpoint_key}
+    ).mappings().fetchone()
+    return _opt_iso(row["captured_utc"]) if row else None
+
+
 _VEHICLES_SQL = named_query(
     "live.vehicles",
     """
@@ -164,7 +186,10 @@ def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: st
             )
         )
 
-    return TripsFile(generated_utc=generated_utc, trips=trips)
+    return TripsFile(
+        generated_utc=generated_utc, trips=trips,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 # Cap departures per route so frequent routes cannot crowd out corridor neighbors.
@@ -220,7 +245,10 @@ def build_stop_departures(
                 delay_min=_delay_min(r["avg_delay_seconds"]),
             )
         )
-    return StopDeparturesFile(generated_utc=generated_utc, stops=stops)
+    return StopDeparturesFile(
+        generated_utc=generated_utc, stops=stops,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 _ALERTS_SQL = named_query(
@@ -290,7 +318,10 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 ),
             )
         )
-    return AlertsFile(generated_utc=generated_utc, alerts=alerts)
+    return AlertsFile(
+        generated_utc=generated_utc, alerts=alerts,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "i3_alerts"),
+    )
 
 
 _NETWORK_VEHICLES_SQL = named_query(
@@ -360,10 +391,21 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
 _NETWORK_FRESHNESS_SQL = named_query(
     "network.live.freshness",
     """
-    SELECT MAX(completed_age_seconds) AS feed_freshness_s
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-      AND endpoint_key IN ('vehicle_positions', 'trip_updates')
+    SELECT CASE WHEN count(*) FILTER (WHERE last_capture IS NULL) > 0 THEN NULL
+                ELSE MAX(EXTRACT(EPOCH FROM (now() - last_capture)))::integer
+           END AS feed_freshness_s
+    FROM core.feed_endpoints fe
+    LEFT JOIN LATERAL (
+        SELECT ir.completed_at_utc AS last_capture
+        FROM raw.ingestion_runs ir
+        WHERE ir.feed_endpoint_id = fe.feed_endpoint_id
+          AND ir.provider_id = :provider_id
+          AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
+        ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
+        LIMIT 1
+    ) capture ON true
+    WHERE fe.provider_id = :provider_id AND fe.is_enabled
+      AND fe.endpoint_key IN ('vehicle_positions', 'trip_updates')
     """
 )
 
@@ -597,10 +639,20 @@ _DATA_HEALTH_LANES_SQL = named_query(
 _DATA_HEALTH_FEEDS_SQL = named_query(
     "data_health.feeds",
     """
-    SELECT endpoint_key, status, completed_age_seconds
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-    ORDER BY endpoint_key
+    SELECT f.endpoint_key, f.status,
+           EXTRACT(EPOCH FROM (now() - capture.last_capture))::integer AS completed_age_seconds
+    FROM gold.feed_freshness_current f
+    LEFT JOIN LATERAL (
+        SELECT ir.completed_at_utc AS last_capture
+        FROM raw.ingestion_runs ir
+        JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
+        WHERE ir.provider_id = f.provider_id AND fe.endpoint_key = f.endpoint_key
+          AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
+        ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
+        LIMIT 1
+    ) capture ON true
+    WHERE f.provider_id = :provider_id
+    ORDER BY f.endpoint_key
     """
 )
 

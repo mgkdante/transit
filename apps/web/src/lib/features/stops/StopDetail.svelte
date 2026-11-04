@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { ToggleChip, SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -67,9 +68,7 @@
 	const t = $derived(detailCopy[locale]);
 	const unavailableAlerts = $derived(alertUnavailableCopy[locale]);
 	const provider = $derived(page.data?.provider);
-	const alertsAvailable = $derived(
-		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),
-	);
+	const alertsAvailable = $derived(providerHasAlerts(provider));
 	const reliabilityT = $derived(stopReliabilityCopy[locale]);
 	const articleNav = $derived(articleNavigationCopy[locale]);
 	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');

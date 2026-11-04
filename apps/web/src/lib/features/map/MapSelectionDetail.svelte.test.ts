@@ -978,18 +978,23 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it.each([
-		{ alertState: null, message: 'Alert data unavailable' },
-		{ alertState: [] as Alert[], message: 'No alerts attached' },
-	])('distinguishes $message in the detail surface', ({ alertState, message }) => {
+		{ alertState: null, message: 'Alert data unavailable', alertsStale: false },
+		{ alertState: [] as Alert[], message: 'No alerts attached', alertsStale: false },
+		{ alertState: [] as Alert[], message: 'No alerts attached', alertsStale: true },
+	])('distinguishes $message in the detail surface', ({ alertState, message, alertsStale }) => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
 		);
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		const { getByText } = render(MapSelectionDetail, {
-			props: { detail: { ...detail, alerts: alertState }, locale: 'en' },
+			props: { detail: { ...detail, alerts: alertState }, alertsStale, locale: 'en' },
 		});
 		expect(getByText(message)).toBeInTheDocument();
+		expect(getByText(message).closest('[data-slot="state-notice"]')).toHaveAttribute(
+			'data-tone',
+			alertState == null || alertsStale ? 'neutral' : 'positive',
+		);
 	});
 
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -71,9 +72,7 @@
 	const manifest = v1.manifest;
 	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
 	const framing = mapCameraFraming(v1);
-	const alertsAvailable = !(
-		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
-	);
+	const alertsAvailable = providerHasAlerts(v1.provider);
 	function readMapFilters(params: URLSearchParams) {
 		const state = fromSearchParams(params);
 		return alertsAvailable ? state : { ...state, alerts: [] };
@@ -149,7 +148,7 @@
 	});
 
 	const live = createLiveStore(manifest, {
-		families: ['vehicles', 'alerts'],
+		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
 	function reportMapCleanupFailure(error: unknown): void {
 		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
@@ -457,6 +456,7 @@
 		{#if selectedDetail}
 			<MapSelectionDetail
 				detail={selectedDetail}
+				alertsStale={live.familyStates.alerts.health.notice !== null}
 				locale={locale}
 				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}

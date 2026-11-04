@@ -11,6 +11,11 @@ from transit_ops.ingestion.common import insert_failed_ingestion_run
 from transit_ops.maintenance.bronze import (
     prune_bronze_realtime_objects,
 )
+from transit_ops.snapshots.builders.live import (
+    _NETWORK_FRESHNESS_SQL,
+    _feed_captured_utc,
+    build_data_health,
+)
 
 PROVIDER = "stm_silver_load_test"
 TU_ENDPOINT_ID = 990031
@@ -22,6 +27,22 @@ CAPTURE_RUN_ID = 990141
 CAPTURE_OBJECT_ID = 990241
 CAPTURE_SNAPSHOT_ID = 990341
 CAPTURE_AT = NOW - timedelta(minutes=1)
+
+
+def test_failed_capture_does_not_reset_rider_feed_age(conn):
+    insert_failed_ingestion_run(
+        conn, provider_id=PROVIDER, feed_endpoint_id=TU_ENDPOINT_ID,
+        run_kind='trip_updates', started_at_utc=NOW, completed_at_utc=NOW,
+        error_message='capture failed',
+    )
+    captured = _feed_captured_utc(conn, PROVIDER, 'trip_updates')
+    assert captured == CAPTURE_AT.strftime('%Y-%m-%dT%H:%M:%SZ')
+    assert _feed_captured_utc(conn, PROVIDER, 'i3_alerts') is None
+    health = build_data_health(conn, PROVIDER, generated_utc=NOW.isoformat())
+    trip = next(feed for feed in health.feeds if feed.feed == 'trip_updates')
+    assert trip.status == 'failed'
+    assert trip.age_s >= 60
+    assert conn.execute(_NETWORK_FRESHNESS_SQL, {"provider_id": PROVIDER}).scalar_one() >= 60
 
 FRESH_FAILED_RUN_ID = 990142
 AGED_FAILED_RUN_ID = 990143

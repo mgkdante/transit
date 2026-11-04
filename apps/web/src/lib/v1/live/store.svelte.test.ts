@@ -82,6 +82,56 @@ import type { NetworkFile } from '#lib/v1/schemas/index.ts';
 
 configureV1Runtime({ clock, refresh: dataRefresh });
 
+describe('partial feed capture health', () => {
+	it.each([
+		['alerts', 900, mocks.alerts, { alerts: [] }],
+		['trips', 300, mocks.trips, { trips: {} }],
+		['departures', 300, mocks.stopDepartures, { stops: {} }],
+	] as const)(
+		'ages %s capture independently from publication and other families',
+		async (family, limit, fetcher, body) => {
+			mocks.browser = true;
+			mocks.generatedUtc = '2026-06-21T12:00:00Z';
+			mocks.nowMs = Date.parse(mocks.generatedUtc);
+			mocks.offsetMs = 0;
+			resetLiveFetches();
+			const mounted = mountLiveStore(30, [family, 'vehicles']);
+			try {
+				// Legacy publisher: absence keeps publication-age health.
+				await mounted.store.refresh();
+				expect(mounted.store.familyStates[family].health.state).toBe('live');
+				for (const [capture, stale] of [
+					[new Date(mocks.nowMs - (limit - 1) * 1000).toISOString(), false],
+					[new Date(mocks.nowMs - limit * 1000).toISOString(), true],
+					[null, true],
+					['invalid', true],
+					[new Date(mocks.nowMs + 31_000).toISOString(), true],
+				] as const) {
+					fetcher.mockResolvedValueOnce({
+						generated_utc: mocks.generatedUtc,
+						...body,
+						feed_captured_utc: capture,
+					});
+					await mounted.store.refresh();
+					expect(mounted.store.familyStates[family].health.isStale).toBe(stale);
+					expect(mounted.store.familyStates[family].health.notice).toBe(stale ? 'stale' : null);
+					expect(mounted.store.familyStates.vehicles.health.state).toBe('live');
+				}
+				// A new capture also cannot hide an old publication.
+				fetcher.mockResolvedValueOnce({
+					generated_utc: new Date(mocks.nowMs - 90_000).toISOString(),
+					...body,
+					feed_captured_utc: mocks.generatedUtc,
+				});
+				await mounted.store.refresh();
+				expect(mounted.store.familyStates[family].health.isStale).toBe(true);
+			} finally {
+				mounted.dispose();
+			}
+		},
+	);
+});
+
 function resetLiveFetches(): void {
 	mocks.resetRefreshEpoch();
 	mocks.vehicles

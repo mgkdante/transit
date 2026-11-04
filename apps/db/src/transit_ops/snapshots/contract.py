@@ -117,6 +117,8 @@ class Trip(BaseModel):
 
 class TripsFile(PayloadEnvelope):
     generated_utc: str
+    # Last successful source capture. Absent in pre-rollout snapshots; null means unknown.
+    feed_captured_utc: str | None = None
     trips: dict[str, Trip]
 
 
@@ -130,6 +132,7 @@ class StopDeparture(BaseModel):
 class StopDeparturesFile(PayloadEnvelope):
     # Absent stops have no live predictions; departures are chronological, capped per route.
     generated_utc: str
+    feed_captured_utc: str | None = None
     stops: dict[str, list[StopDeparture]] = Field(default_factory=dict)
 
 
@@ -174,6 +177,7 @@ class Alert(BaseModel):
 
 class AlertsFile(PayloadEnvelope):
     generated_utc: str
+    feed_captured_utc: str | None = None
     alerts: list[Alert]
 
 

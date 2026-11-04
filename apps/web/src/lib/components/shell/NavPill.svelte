@@ -49,6 +49,7 @@
 		url?: URL;
 		providerId?: string;
 		providers?: PublicProvider[];
+		discoveryError?: boolean;
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
@@ -64,6 +65,7 @@
 		url = new URL('https://transit.local/'),
 		providerId = v1Provider(url),
 		providers = [],
+		discoveryError = false,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
@@ -323,6 +325,9 @@
 				{#if providerId !== v1Provider()}
 					<option value={v1Provider()}>{navCopy.defaultNetwork}</option>
 				{/if}
+			{/if}
+			{#if discoveryError}
+				<option value="" disabled>{navCopy.otherNetworksUnavailable}</option>
 			{/if}
 		</select>
 	</label>

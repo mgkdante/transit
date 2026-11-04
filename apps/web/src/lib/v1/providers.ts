@@ -4,6 +4,12 @@ import { PublicProviderCatalogSchema, type PublicProviderCatalog } from './schem
 export { PublicProviderSchema, PublicProviderCatalogSchema } from './schemas/providers';
 export type { PublicProvider, PublicProviderCatalog } from './schemas/providers';
 
+export function providerHasAlerts(
+	provider: import('./schemas/providers').PublicProvider | null | undefined,
+): boolean {
+	return !(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false);
+}
+
 export function providerHref(url: URL, provider: string, lang = pathLocale(url.pathname)): string {
 	let path = delocalizePath(url.pathname);
 	if (path.startsWith('/lines/')) path = '/lines';

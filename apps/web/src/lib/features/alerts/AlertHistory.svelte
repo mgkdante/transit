@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
@@ -69,9 +70,7 @@
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
 	const provider = $derived(page.data?.provider);
-	const alertsAvailable = $derived(
-		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),
-	);
+	const alertsAvailable = $derived(providerHasAlerts(provider));
 	const officialAlertsUrl = $derived(provider?.alert_links[locale]);
 
 	const history = createResource((signal) => getAlertHistory({ signal }), {

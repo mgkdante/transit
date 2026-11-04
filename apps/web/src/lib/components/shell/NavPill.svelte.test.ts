@@ -20,6 +20,19 @@ vi.mock('$app/navigation', () => ({
 
 afterEach(() => vi.restoreAllMocks());
 
+it.each([
+	['en', 'Other networks unavailable'],
+	['fr', 'Autres réseaux indisponibles'],
+] as const)('explains discovery failure in the %s picker', (locale, label) => {
+	const view = render(NavPill, { props: { locale, discoveryError: true } });
+	expect(view.getByRole('option', { name: label })).toBeDisabled();
+});
+
+it('does not suggest an outage when discovery succeeded', () => {
+	const view = render(NavPill, { props: { locale: 'en' } });
+	expect(view.queryByRole('option', { name: 'Other networks unavailable' })).toBeNull();
+});
+
 describe('NavPill navigation lifecycle integration', () => {
 	it.each([false, true])('uses the Kit 3 fallback with redirect=%s', async (redirected) => {
 		const adapter = createNavigationRouter();
