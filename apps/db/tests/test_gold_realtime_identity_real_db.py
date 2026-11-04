@@ -155,6 +155,41 @@ def test_mixed_endpoint_receipts_advance_independently(capture, engine, settings
     assert _rows(engine, "latest_vehicle_snapshot") == before
 
 
+def test_failed_trip_load_cannot_renew_predictions_while_vehicles_publish(
+    capture, engine, settings, bronze_root,
+):
+    from transit_ops.snapshots.builders.live import build_stop_departures, build_trips
+
+    trip = capture(0)
+    _live(engine, settings, trip)
+    failed = (994603, 994703, 994903, trip.captured_at_utc + timedelta(minutes=20), 0)
+    with engine.begin() as conn:
+        _seed_raw_realtime_snapshots(conn, (failed,))
+        conn.execute(text('UPDATE raw.ingestion_runs SET completed_at_utc=:at '
+                          'WHERE ingestion_run_id=:id'), {'at': failed[3], 'id': failed[1]})
+    import hashlib
+
+    broken = b'not a protobuf'
+    (bronze_root / _storage_path(failed[0])).write_bytes(broken)
+    with engine.begin() as conn:
+        conn.execute(text('UPDATE raw.ingestion_objects SET checksum_sha256=:hash, '
+                          'byte_size=:size WHERE ingestion_object_id=:id'),
+                     {'hash': hashlib.sha256(broken).hexdigest(), 'size': len(broken),
+                      'id': failed[2]})
+    with pytest.raises(ValueError, match='Failed to parse GTFS-RT Bronze snapshot'):
+        load_realtime_to_silver(PROVIDER, 'trip_updates', snapshot_id=failed[0],
+                                settings=settings, registry=_StubRegistry(), engine=engine)
+    vehicle = capture(1, endpoint='vehicle_positions')
+    for _ in range(2):
+        _live(engine, settings, vehicle)
+        assert _ids(engine, 'latest_trip_delay_snapshot') == [trip.realtime_snapshot_id]
+        with engine.connect() as conn:
+            for build in (build_trips, build_stop_departures):
+                payload = build(conn, provider_id=PROVIDER, generated_utc=failed[3].isoformat())
+                expected = trip.captured_at_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+                assert payload.feed_captured_utc == expected
+
+
 def test_every_endpoint_receipt_is_validated_before_any_projection(capture, engine, settings):
     trip = capture(0)
     vehicle = capture(1, endpoint="vehicle_positions")
@@ -218,6 +253,12 @@ def test_known_empty_survives_late_cycle_and_source_retention(capture, engine, s
     _live(engine, settings, first)
     result = _live(engine, settings, empty)
     assert result.latest_trip_updates_snapshot_id == empty.realtime_snapshot_id
+    from transit_ops.snapshots.builders.live import build_stop_departures, build_trips
+
+    with engine.connect() as conn:
+        for build in (build_trips, build_stop_departures):
+            payload = build(conn, provider_id=PROVIDER, generated_utc='2026-11-04T12:00:00Z')
+            assert payload.feed_captured_utc == empty.captured_at_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
     assert not _rows(engine, "latest_trip_delay_snapshot")
     with engine.begin() as conn:
         _prune_silver(conn, empty.realtime_snapshot_id)

@@ -13,6 +13,13 @@ import type { IdentitySeed } from '#lib/v1/serverContext.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
+import { adapter } from '#lib/v1/adapter/index.ts';
+import {
+	AlertsFileSchema,
+	VehiclesFileSchema,
+	TripsFileSchema,
+	NetworkFileSchema,
+} from '#lib/v1/schemas/index.ts';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
@@ -29,6 +36,10 @@ const routeDetailNav = vi.hoisted(() => {
 });
 const routeManifest = vi.hoisted(() => ({}));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
+const routeProvider = vi.hoisted(() => ({
+	value: undefined as import('#lib/v1/providers.ts').PublicProvider | undefined,
+	realLive: false,
+}));
 
 vi.mock('$app/state', () => ({ page: routeDetailNav.page }));
 vi.mock('$app/navigation', () => ({
@@ -262,6 +273,8 @@ let routesIndexData: { generated_utc: string; routes: { id: string; reliability?
 };
 
 function resetRouteSurfaceState(): void {
+	routeProvider.value = undefined;
+	routeProvider.realLive = false;
 	routeDetailNav.replaceState.mockReset().mockImplementation(routeDetailNav.defaultReplaceState);
 	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	liveIndex = buildIndex(VEHICLES);
@@ -305,17 +318,29 @@ vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
 }));
 vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => provenanceData }));
-vi.mock('#lib/v1/live/store.svelte.ts', () => ({
-	createLiveStore: (manifest: unknown, options?: unknown) => {
-		createLiveStoreSpy(manifest, options);
-		return liveStore;
-	},
-}));
+vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
+	return {
+		createLiveStore: (
+			manifest: Parameters<typeof actual.createLiveStore>[0],
+			options?: Parameters<typeof actual.createLiveStore>[1],
+		) => {
+			createLiveStoreSpy(manifest, options);
+			if (routeProvider.realLive) return actual.createLiveStore(manifest, options);
+			return liveStore;
+		},
+	};
+});
 vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => PREDICTIONS,
 }));
 vi.mock('#lib/v1/boot.ts', () => ({
-	getV1Context: () => ({ manifest: routeManifest, labels: {}, lang: 'en' }),
+	getV1Context: () => ({
+		manifest: routeManifest,
+		provider: routeProvider.value,
+		labels: {},
+		lang: 'en',
+	}),
 }));
 
 vi.mock('#lib/v1/resource.svelte.ts', () => ({
@@ -351,10 +376,67 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 beforeEach(() => routeSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(52);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(53);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
+	it('keeps a fresh OC Transpo line live with explicit-null unsupported alerts', async () => {
+		routeProvider.realLive = true;
+		routeProvider.value = {
+			id: 'octranspo',
+			labels: {
+				en: { city: 'Ottawa', operator: 'OC Transpo' },
+				fr: { city: 'Ottawa', operator: 'OC Transpo' },
+			},
+			inputs: { i3_alerts: false, service_alerts: false },
+			alert_links: {},
+		};
+		const generated_utc = new Date().toISOString();
+		const spies = [
+			vi
+				.spyOn(adapter.live, 'vehicles')
+				.mockResolvedValue(VehiclesFileSchema.parse({ generated_utc, vehicles: [] })),
+			vi
+				.spyOn(adapter.live, 'trips')
+				.mockResolvedValue(
+					TripsFileSchema.parse({ generated_utc, feed_captured_utc: generated_utc, trips: {} }),
+				),
+			vi
+				.spyOn(adapter.live, 'alerts')
+				.mockResolvedValue(
+					AlertsFileSchema.parse({ generated_utc, feed_captured_utc: null, alerts: [] }),
+				),
+			vi.spyOn(adapter.live, 'network').mockResolvedValue(
+				NetworkFileSchema.parse({
+					generated_utc,
+					vehicles_in_service: 0,
+					on_time_pct: null,
+					status_dist: {},
+					delay_p50_min: null,
+					delay_p90_min: null,
+					non_responding: 0,
+					feed_freshness_s: 0,
+					coverage_pct: null,
+				}),
+			),
+		];
+		try {
+			const view = renderRoute();
+			await waitFor(() => expect(spies[0]).toHaveBeenCalled());
+			await waitFor(() =>
+				expect(view.container.querySelector('[data-slot="freshness-stamp"]')).toHaveAttribute(
+					'data-stale',
+					'false',
+				),
+			);
+			expect(spies[2]).not.toHaveBeenCalled();
+			expect(createLiveStoreSpy).toHaveBeenCalledWith(routeManifest, {
+				families: ['vehicles', 'trips', 'network'],
+			});
+		} finally {
+			spies.forEach((spy) => spy.mockRestore());
+		}
+	});
 	it('requests only the live families used by route detail', () => {
 		renderRoute('161', '161 Van Horne');
 

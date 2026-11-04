@@ -8,6 +8,7 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '#lib/utils/index.ts';
 	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
 	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { deriveRouteStopPredictions } from '#lib/v1/live/routeStopPredictions.ts';
 	import { getRoute } from '#lib/v1/repositories/static.ts';
 	import { getRouteReliability } from '#lib/v1/repositories/historic.ts';
@@ -159,9 +160,12 @@
 		(lineHistory.request.hasFrom || lineHistory.request.hasTo) && lineHistory.state !== 'current',
 	);
 
-	const manifest = getV1Context().manifest;
+	const v1 = getV1Context();
+	const manifest = v1.manifest;
 	const live = createLiveStore(manifest, {
-		families: ['vehicles', 'trips', 'alerts', 'network'],
+		families: providerHasAlerts(v1.provider)
+			? ['vehicles', 'trips', 'alerts', 'network']
+			: ['vehicles', 'trips', 'network'],
 	});
 	onMount(() => {
 		live.start();

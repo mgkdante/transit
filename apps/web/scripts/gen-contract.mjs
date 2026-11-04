@@ -31,7 +31,7 @@ const webDefaultObjects = new Set([
 	'RouteDelayHistogramBin',
 ]);
 const webIsoUtcFields =
-	/^(generated|updated|reported|captured|start|end|first_seen|last_seen|last_publish|last_loaded|eta)_utc$/;
+	/^(generated|updated|reported|captured|feed_captured|start|end|first_seen|last_seen|last_publish|last_loaded|eta)_utc$/;
 const quote = JSON.stringify;
 
 export function generateModule(root) {

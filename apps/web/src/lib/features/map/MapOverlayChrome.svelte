@@ -22,6 +22,7 @@
 		generatedUtc: string | null;
 		ageSeconds: number | null;
 		isStale: boolean;
+		isPartialStale?: boolean;
 		degraded?: boolean;
 		selectedFamilyFailureMessage?: string | null;
 		nearMeOpen: boolean;
@@ -50,6 +51,7 @@
 		generatedUtc,
 		ageSeconds,
 		isStale,
+		isPartialStale = false,
 		degraded = false,
 		selectedFamilyFailureMessage = null,
 		nearMeOpen = $bindable(),
@@ -81,6 +83,7 @@
 		deriveMapFeedBannerState({
 			selectedFamilyFailureMessage,
 			isStale,
+			isPartialStale,
 			ageSeconds,
 			liveEdgeState,
 			liveEdgeMessage,
@@ -146,6 +149,7 @@
 	{ageSeconds}
 	{isStale}
 	{locale}
+	{isPartialStale}
 	{selectedFamilyFailureMessage}
 	{liveEdgeState}
 	{liveEdgeMessage}
