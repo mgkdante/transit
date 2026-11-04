@@ -2,8 +2,15 @@ name: Public Site Probe
 
 on:
   workflow_dispatch:
+    inputs:
+      contact_test:
+        description: "Send ONE real labelled contact test and check cross-site links (no reruns)"
+        type: boolean
+        default: false
   schedule:
     - cron: "4,19,34,49 * * * *"
+    # First send: next Monday 10:37 UTC after merge, never on merge/push/PR.
+    - cron: "37 10 * * 1"
 
 permissions:
   contents: read
@@ -15,6 +22,7 @@ concurrency:
 
 jobs:
   sites:
+    if: ${{ github.event.schedule != '37 10 * * 1' && inputs.contact_test != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
@@ -30,3 +38,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+
+  weekly:
+    if: ${{ github.run_attempt == 1 && (github.event.schedule == '37 10 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.contact_test == true)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up pinned JS workspace
+        uses: ./.github/actions/setup
+      - name: Install authenticated Chromium
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.cache/transit-browser"
+          node apps/web/scripts/install-browser-toolchain.mjs "$GITHUB_WORKSPACE/.cache/transit-browser"
+      - name: Install pinned lychee
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/lychee"
+          gh release download lychee-v0.24.2 --repo lycheeverse/lychee --pattern lychee-x86_64-unknown-linux-gnu.tar.gz --dir "$RUNNER_TEMP/lychee"
+          cd "$RUNNER_TEMP/lychee"
+          echo '1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a  lychee-x86_64-unknown-linux-gnu.tar.gz' | sha256sum --check
+          tar -xzf lychee-x86_64-unknown-linux-gnu.tar.gz
+          echo "$RUNNER_TEMP/lychee" >> "$GITHUB_PATH"
+      - name: Weekly contact and cross-site link checks
+        run: node .github/scripts/site-probe.mjs --weekly
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROBE_SCHEDULE: ${{ github.event.schedule }}
+          CONTACT_TEST: ${{ inputs.contact_test }}
