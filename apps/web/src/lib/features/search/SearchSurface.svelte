@@ -21,12 +21,12 @@
 		ResourceBoundary,
 		EntityList,
 		EntityRow,
-		SearchInput,
 		ReliabilityBadge,
 		SearchControls,
 		type SearchScopeKey,
 	} from '#lib/components/surface/index.ts';
 	import { Masthead, Surface } from '@yesid/ui/layout';
+	import { SearchInput } from '@yesid/ui/brand';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { FreshnessStamp } from '#lib/components/surface/index.ts';
@@ -157,12 +157,7 @@
 
 <Surface class="surface">
 	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<SearchInput
-			id="surface-search-input"
-			label={t.inputLabel}
-			placeholder={t.inputPlaceholder}
-			bind:value={query}
-		/>
+		<SearchInput label={t.inputLabel} placeholder={t.inputPlaceholder} bind:value={query} />
 
 		<SearchControls
 			notice={t.collectionNotice}

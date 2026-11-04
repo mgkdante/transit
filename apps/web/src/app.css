@@ -20,7 +20,6 @@ html {
 	--size-detail-rail: 3.7rem;
 	--shadow-detail-panel:
 		-12px 0 28px -20px rgb(0 0 0 / 0.45), inset 1px 0 0 var(--edge-highlight);
-	--strip-h: 68px;
 	--layout-control-rail-width: clamp(16rem, 24vw, 22rem);
 	--layout-support-rail-width: clamp(16rem, 18vw, 20rem);
 	--layout-article-main-min: 40rem;
@@ -124,4 +123,25 @@ body {
 	flex-direction: column;
 	gap: 0.75rem;
 	min-width: 0;
+}
+
+@keyframes transit-sheet-in {
+	from {
+		opacity: 0;
+		transform: translateY(0.75rem) scale(0.985);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+@keyframes transit-sheet-out {
+	from {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(0.5rem) scale(0.99);
+	}
 }

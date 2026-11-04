@@ -60,7 +60,6 @@
 
 	import { viewTransition } from '@yesid/motion/utils/viewTransition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
-	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
 	import { getLenis } from '@yesid/motion/utils/lenis';
 	import { AppShell } from '#lib/components/shell/index.ts';
 	import BrandCluster from '#lib/components/brand/BrandCluster.svelte';
@@ -263,10 +262,6 @@
 			controller.abort();
 		};
 	});
-
-	// SiteRoot's initLenis reads ScrollTrigger.isTouch, which is only set once the plugin
-	// is registered. Upstream registers it itself from the next design release.
-	if (browser) initScrollTriggerConfig();
 
 	// The page scrolls inside #page-scroller, which SvelteKit's own scroll reset does not reach.
 	function resetMainScroll(hash: string): void {
