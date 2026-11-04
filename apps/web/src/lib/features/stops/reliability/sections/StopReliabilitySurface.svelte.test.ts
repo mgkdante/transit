@@ -401,12 +401,44 @@ describe('StopReliabilitySurface — daily trend + range verdict (S8A)', () => {
 
 describe('StopReliabilitySurface prediction-share verdict', () => {
 	it.each(['en', 'fr'] as const)(
+		'keeps the known count without fabricating bounds in %s',
+		(locale) => {
+			const { container } = render(StopReliabilitySurface, {
+				props: {
+					locale,
+					data: { ...data, periods: [{ grain: 'day', otp_pct: 87, observation_count: 120 }] },
+				},
+			});
+			const banner = container.querySelector(
+				'[data-slot="stop-reliability-pane"] [data-slot="verdict"]',
+			);
+			expect(banner).toHaveAttribute('data-status', 'tentative');
+			const sentence = banner?.querySelector('p')?.textContent ?? '';
+			expect(sentence).toContain('120');
+			expect(sentence).toContain(
+				locale === 'en' ? 'no usable uncertainty range' : 'aucune plage d’incertitude exploitable',
+			);
+			expect(sentence).not.toMatch(/Wilson|95/);
+		},
+	);
+	it.each(['en', 'fr'] as const)(
 		'describes the stop proxy and nominal bounds in %s',
 		async (locale) => {
 			const { container } = render(StopReliabilitySurface, {
 				props: {
 					locale,
-					data: { ...data, periods: [{ grain: 'day', otp_pct: 87, observation_count: 120 }] },
+					data: {
+						...data,
+						periods: [
+							{
+								grain: 'day',
+								otp_pct: 87,
+								observation_count: 120,
+								wilson_lo: 79.4,
+								wilson_hi: 91.6,
+							},
+						],
+					},
 				},
 			});
 			const banner = container.querySelector(
