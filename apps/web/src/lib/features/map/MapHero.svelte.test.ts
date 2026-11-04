@@ -795,9 +795,15 @@ function peekText(container: HTMLElement): string {
 }
 
 describe('MapHero stage lifecycle', () => {
-	it.each(['stale', 'refresh-unavailable'] as const)(
-		'neutralizes the empty selected alerts notice for %s health',
-		async (notice) => {
+	it.each([
+		{ notice: 'stale', desktop: false },
+		{ notice: 'refresh-unavailable', desktop: false },
+		{ notice: 'stale', desktop: true },
+		{ notice: 'refresh-unavailable', desktop: true },
+	] as const)(
+		'neutralizes the empty selected alerts notice for $notice health, desktop=$desktop',
+		async ({ notice, desktop }) => {
+			harness.isDesktop = desktop;
 			const previousAlerts = harness.liveStore.alerts.alerts;
 			const previousHealth = harness.liveStore.familyStates.alerts.health;
 			harness.liveStore.alerts.alerts = [];

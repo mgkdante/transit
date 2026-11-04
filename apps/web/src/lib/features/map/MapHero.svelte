@@ -605,6 +605,7 @@
 			canGoBack={selectionStack.length > 0}
 			onback={goBackDetail}
 			{selectedDetail}
+			alertsStale={live.familyStates.alerts.health.notice !== null}
 			notReporting={selectedVehicleAbsence}
 			{selectionPresence}
 			{selectionSourceHealth}
