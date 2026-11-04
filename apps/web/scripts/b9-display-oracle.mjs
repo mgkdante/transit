@@ -91,17 +91,29 @@ const round = (value, digits = 1) => {
 };
 const pct = (numerator, denominator, digits = 1) =>
 	numerator != null && denominator > 0 ? round((100 * numerator) / denominator, digits) : null;
-const verdictCount = (otp, n, onTime) => {
+const verdictCount = (otp, n, onTime, wilsonLo, wilsonHi) => {
 	if (otp == null || n == null || n < 0) return null;
 	if (n < 30) return n;
-	const successes = onTime ?? Math.round((otp / 100) * n);
-	const z2 = 1.959963984540054 ** 2;
+	if (onTime == null) {
+		if (
+			wilsonLo == null ||
+			wilsonHi == null ||
+			!Number.isFinite(wilsonLo) ||
+			!Number.isFinite(wilsonHi) ||
+			wilsonLo < 0 ||
+			wilsonLo > wilsonHi ||
+			wilsonHi > 100
+		)
+			return n;
+		return (wilsonLo >= 80 && Math.round(otp) >= 80) || wilsonHi < 80 ? null : n;
+	}
+	const successes = onTime;
+	const z2 = 1.96 ** 2;
 	const center = (successes / n + z2 / (2 * n)) / (1 + z2 / n);
 	const margin =
-		(1.959963984540054 *
-			Math.sqrt(((successes / n) * (1 - successes / n)) / n + z2 / (4 * n * n))) /
+		(1.96 * Math.sqrt(((successes / n) * (1 - successes / n)) / n + z2 / (4 * n * n))) /
 		(1 + z2 / n);
-	return center - margin < 0.8 && center + margin >= 0.8 ? n : null;
+	return (center - margin >= 0.8 && Math.round(otp) >= 80) || center + margin < 0.8 ? null : n;
 };
 const latestDated = (rows) =>
 	rows
@@ -907,7 +919,13 @@ function lineOracle(fixture, locale, view) {
 		observation('line.day.severe_pct', finite(day?.severe_pct)),
 		observation(
 			'line.day.observation_count',
-			verdictCount(finite(day?.otp_pct), finite(day?.observation_count), finite(day?.on_time)),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				finite(day?.on_time),
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation('line.day.cancellation_pct', cancellationPct),
 		observation('line.day.skipped_pct', skippedPct),
@@ -1141,7 +1159,13 @@ function stopOracle(fixture, locale, view) {
 		),
 		observation(
 			'stop.day.observation_count',
-			finite(day?.otp_pct) == null ? null : finite(day?.observation_count),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				null,
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation(
 			'stop.daily.rows',
@@ -1479,6 +1503,53 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	expectLiteral(
+		verdictCount(87, 120, null, 80, 92),
+		null,
+		'published reliable stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, null, 79.6, 88.9),
+		230,
+		'published tentative stop retains hedge count',
+	);
+	expectLiteral(
+		verdictCount(80, 1_000_000, null, 79.6, 79.8),
+		null,
+		'published patchy stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, 195, 80.1, 88.9),
+		230,
+		'exact counts precede published bounds',
+	);
+	for (const [lo, hi] of [
+		[undefined, undefined],
+		[null, null],
+		[80, null],
+		[90, 70],
+		[-1, 90],
+		[70, 101],
+		[NaN, 90],
+	]) {
+		expectLiteral(
+			verdictCount(87, 120, null, lo, hi),
+			120,
+			'missing or invalid bounds stay uncertain',
+		);
+	}
+	expectLiteral(
+		verdictCount(80, 120, null, 79.9, 80),
+		120,
+		'upper bound exactly 80 stays uncertain',
+	);
+	expectLiteral(
+		expectedDomainObservationsFromFixture(FIXTURES.rich, 'stop', 'en').find(
+			(row) => row.id === 'stop.day.observation_count',
+		)?.value,
+		null,
+		'rich stop reliable verdict omits observation count',
+	);
 	for (const [otp, n, onTime, expected] of [
 		[50, 30, 15, null],
 		[55, 200, 110, null],

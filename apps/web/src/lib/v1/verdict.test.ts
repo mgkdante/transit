@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { selectVerdict, wilsonInterval, reliabilityVerdict, isProblemVerdict } from './verdict';
 import { routeVerdictCopy } from '#lib/features/lines/reliability/routeVerdict.copy.ts';
+import { StopReliabilitySchema } from './schemas/stop_reliability';
+import { NetworkTrendSchema } from './schemas/network_trend';
 
 const en = routeVerdictCopy.en.verdict;
 const fr = routeVerdictCopy.fr.verdict;
@@ -93,10 +95,11 @@ describe('selectVerdict — graceful pre-republish degradation (no denominator)'
 		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).not.toContain('95% sure');
 	});
-	it('derives the numerator from otp×n when on_time is null but n is present', () => {
+	it('stays tentative without an exact numerator or a published interval', () => {
 		const v = selectVerdict(h(85, 1000, null), 'week', 'en', en);
-		expect(v.status).toBe('reliable');
-		expect(v.sentence).toContain('95% CI:');
+		expect(v.status).toBe('tentative');
+		expect(v.sentence).toContain('1000');
+		expect(v.sentence).not.toContain('95% CI:');
 	});
 	it('reads tentative when the Wilson interval crosses 80 (80% at n=1000)', () => {
 		const v = selectVerdict(h(80, 1000, 800), 'week', 'en', en);
@@ -200,12 +203,94 @@ describe('one reliability verdict', () => {
 		{ wilson_lo: 79.9 },
 		{ wilson_hi: 83 },
 		{ wilson_lo: null, wilson_hi: null },
-	] as const)('retains inference when no complete published interval exists: %j', (bounds) => {
+	] as const)('stays tentative when no complete published interval exists: %j', (bounds) => {
+		const result = reliabilityVerdict({
+			periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
+		});
+		expect(result).toMatchObject({ status: 'tentative', interval: null });
+		for (const [locale, copy] of [
+			['en', en],
+			['fr', fr],
+		] as const) {
+			const sentence = selectVerdict(result, 'day', locale, copy);
+			expect(sentence.status).toBe('tentative');
+			expect(sentence.sentence).toContain('1000');
+			expect(sentence.sentence).not.toMatch(/95/);
+		}
+	});
+	it.each([
+		[90, 70],
+		[-1, 90],
+		[70, 101],
+	] as const)(
+		'rejects schema-accepted unusable published bounds %s to %s',
+		(wilson_lo, wilson_hi) => {
+			const point = {
+				grain: 'day',
+				date: '2026-11-02',
+				otp_pct: 85,
+				observation_count: 1000,
+				wilson_lo,
+				wilson_hi,
+			};
+			const generated_utc = '2026-11-02T00:00:00Z';
+			for (const file of [
+				StopReliabilitySchema.parse({ id: 'probe', generated_utc, periods: [point] }),
+				NetworkTrendSchema.parse({ generated_utc, series: [point] }),
+			]) {
+				const result = reliabilityVerdict(file);
+				expect(result).toMatchObject({ status: 'tentative', interval: null });
+				expect(selectVerdict(result, 'day', 'en', en).sentence).not.toContain('95% CI:');
+			}
+		},
+	);
+	it.each([NaN, Infinity, -Infinity])('never uses non-finite published bounds: %s', (invalid) => {
+		for (const bounds of [
+			{ wilson_lo: invalid, wilson_hi: 90 },
+			{ wilson_lo: 80, wilson_hi: invalid },
+		]) {
+			expect(
+				reliabilityVerdict({
+					periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
+				}),
+			).toMatchObject({ status: 'tentative', interval: null });
+		}
+	});
+	it('keeps an upper bound exactly 80 tentative when the lower bound is below it', () => {
+		const point = {
+			grain: 'day',
+			date: '2026-11-02',
+			otp_pct: 80,
+			observation_count: 1000,
+			wilson_lo: 79.9,
+			wilson_hi: 80,
+		};
+		const generated_utc = '2026-11-02T00:00:00Z';
+		for (const file of [
+			StopReliabilitySchema.parse({ id: 'probe', generated_utc, periods: [point] }),
+			NetworkTrendSchema.parse({ generated_utc, series: [point] }),
+		]) {
+			expect(reliabilityVerdict(file)).toMatchObject({
+				status: 'tentative',
+				interval: { lo: 80, hi: 80 },
+			});
+		}
+	});
+	it('keeps exact counts authoritative even when published bounds are invalid', () => {
 		expect(
 			reliabilityVerdict({
-				periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
-			}).status,
-		).toBe('reliable');
+				periods: [
+					{
+						grain: 'day',
+						otp_pct: 85,
+						observation_count: 1000,
+						on_time: 850,
+						wilson_lo: 90,
+						wilson_hi: 70,
+					},
+				],
+			}),
+		).toMatchObject({ status: 'reliable', interval: { lo: 83, hi: 87 } });
 	});
 	it('uses exact intervals before choosing the shown whole-percent problem band', () => {
 		const published = reliabilityVerdict({
@@ -306,8 +391,20 @@ describe('one reliability verdict', () => {
 	});
 	it('uses the latest qualifying window at the finest grain, then the latest day when none qualifies', () => {
 		const day = { grain: 'day', date: '2026-11-02', otp_pct: 20, observation_count: 12 };
-		const week = { grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 4000 };
-		const month = { grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 };
+		const week = {
+			grain: 'week',
+			date: '2026-10-27',
+			otp_pct: 85,
+			observation_count: 4000,
+			on_time: 3400,
+		};
+		const month = {
+			grain: 'month',
+			date: '2026-10-01',
+			otp_pct: 72,
+			observation_count: 4000,
+			on_time: 2880,
+		};
 		expect(reliabilityVerdict({ periods: [day, week, month] })).toMatchObject({
 			grain: 'week',
 			otpPct: 85,

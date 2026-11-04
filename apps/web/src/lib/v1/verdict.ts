@@ -210,6 +210,7 @@ export interface VerdictCopy {
 	}) => string;
 	readonly tooFew: (window: string, n: number) => string;
 	readonly unknownCount: (window: string) => string;
+	readonly unavailableInterval: (window: string, n: number) => string;
 	readonly absent: string;
 	readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
 }
@@ -236,10 +237,20 @@ function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' 
 	// an 80.0 lower bound qualifies, even when its unrounded value could be 79.95.
 	let lo = headline.wilsonLo;
 	let hi = headline.wilsonHi;
-	if (headline.onTime != null || lo == null || hi == null) {
-		const bounds = wilsonInterval(headline.onTime ?? Math.round((otp / 100) * n), n);
+	if (headline.onTime != null) {
+		const bounds = wilsonInterval(headline.onTime, n);
 		lo = bounds.lo * 100;
 		hi = bounds.hi * 100;
+	} else if (
+		lo == null ||
+		hi == null ||
+		!Number.isFinite(lo) ||
+		!Number.isFinite(hi) ||
+		lo < 0 ||
+		lo > hi ||
+		hi > 100
+	) {
+		return { status: 'tentative', interval: null };
 	}
 	const shownPct = Math.round(otp);
 	return {
@@ -300,7 +311,14 @@ export function selectVerdict(
 	// Keep the source interval when a shared verdict already rounded the displayed percentage.
 	const result = 'status' in headline ? headline : classify(headline);
 	if (result.status === 'absent') return { status: 'absent', ban: null, sentence: v.absent };
-	const { lo: loPct, hi: hiPct } = result.interval!;
+	if (result.interval == null) {
+		return {
+			status: 'tentative',
+			ban: `${otpInt}%`,
+			sentence: v.unavailableInterval(window, n),
+		};
+	}
+	const { lo: loPct, hi: hiPct } = result.interval;
 
 	if (result.status === 'tentative') {
 		return {

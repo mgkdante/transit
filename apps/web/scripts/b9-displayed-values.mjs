@@ -270,6 +270,14 @@ async function readMetricValue(page, root) {
 	return text == null ? { value: null, text: '' } : displayCell(text);
 }
 
+function lineVerdictObservationCount(text) {
+	const count =
+		text.match(/\b(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		text.match(/:\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		text.match(/\((\d+)\)/u)?.[1];
+	return parseNumber(count);
+}
+
 async function collectLine(page, cell) {
 	const headlineText = await readValues(
 		page,
@@ -281,10 +289,6 @@ async function collectLine(page, cell) {
 		.locator('[data-section="verdict"] [data-slot="verdict"]')
 		.first()
 		.innerText();
-	const observedN =
-		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
-		verdictText.match(/\((\d+)\)/u)?.[1] ??
-		null;
 	const runBulletText = async (slot) =>
 		(await readValues(page, `[data-slot="${slot}"]`, '.metric-bullet__value'))[0] ?? null;
 	const completenessValue = await runBulletText('service-completeness');
@@ -469,7 +473,7 @@ async function collectLine(page, cell) {
 		observation('line.day.p50_min', headline[2] ?? null),
 		observation('line.day.p90_min', headline[3] ?? null),
 		observation('line.day.severe_pct', severe),
-		observation('line.day.observation_count', parseNumber(observedN)),
+		observation('line.day.observation_count', lineVerdictObservationCount(verdictText)),
 		observation('line.day.cancellation_pct', cancellation),
 		observation('line.day.skipped_pct', skipped),
 		observation('line.day.completeness_pct', completeness),
@@ -524,6 +528,18 @@ async function collectLine(page, cell) {
 	];
 }
 
+function stopVerdictObservationCount(text) {
+	const observedN =
+		text.match(/\bn=(\d+)/u)?.[1] ??
+		text.match(
+			/\b(?:of|de|contains|contient)\s+(\d+)\s+(?:known predictions|prévisions connues)/iu,
+		)?.[1] ??
+		text.match(
+			/\b(?:only|seulement)\s+(\d+)\s+(?:eligible known predictions|prévisions connues admissibles)/iu,
+		)?.[1];
+	return parseNumber(observedN);
+}
+
 async function collectStop(page) {
 	const periodMetrics = await page
 		.locator('[data-slot="stop-reliability-pane"] [data-slot="metric-display"]')
@@ -542,9 +558,6 @@ async function collectStop(page) {
 		.locator('[data-slot="stop-reliability-sections"] [data-slot="verdict"]')
 		.first()
 		.innerText();
-	const observedN =
-		verdictText.match(/\bn=(\d+)/u)?.[1] ??
-		verdictText.match(/(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1];
 	const summaryText = await readValues(
 		page,
 		'[data-slot="stop-reliability-summary"] [data-slot="metric-display"]',
@@ -619,7 +632,7 @@ async function collectStop(page) {
 		observation('stop.day.p50_min', percentiles[0] ?? null),
 		observation('stop.day.p90_min', percentiles[1] ?? null),
 		observation('stop.day.severe_pct', summary[0] ?? null),
-		observation('stop.day.observation_count', parseNumber(observedN)),
+		observation('stop.day.observation_count', stopVerdictObservationCount(verdictText)),
 		observation('stop.daily.rows', dailyRows),
 		observation('stop.range.severe_pct', rangeValues[0] ?? null),
 		observation('stop.range.observations', rangeValues[2] ?? null),
@@ -2090,6 +2103,47 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 }
 
 function runRunnerSelfCheck() {
+	for (const [text, expected] of [
+		['Reliability is uncertain: 80% of 100 delay observations in the on-time band.', 100],
+		['Fiabilité incertaine : 80 % de 100 relevés de retard dans la plage de ponctualité.', 100],
+		['Reliability is uncertain: 1000 delay observations, but no usable uncertainty range.', 1000],
+		[
+			'Fiabilité incertaine : 1000 relevés de retard, mais aucune plage d’incertitude exploitable.',
+			1000,
+		],
+		['Not enough delay observations (12) to judge reliability.', 12],
+		[
+			'Ran reliably, about 9 in 10 delay observations in the on-time band (87%, 95% CI: 80–92%).',
+			null,
+		],
+		[
+			'Service fiable, environ 9 relevés de retard sur 10 dans la plage de ponctualité (87 %, IC 95 % : 80–92 %).',
+			null,
+		],
+	]) {
+		invariant(
+			lineVerdictObservationCount(text) === expected,
+			`line verdict observation count: ${text}`,
+		);
+	}
+	for (const [text, expected] of [
+		['In this daily summary, 85% of 120 known predictions are not severely late.', 120],
+		['Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.', 120],
+		['This daily summary contains only 29 eligible known predictions.', 29],
+		['Ce résumé quotidien contient seulement 29 prévisions connues admissibles.', 29],
+		['This daily summary contains 1000 known predictions, but no usable uncertainty range.', 1000],
+		[
+			'Ce résumé quotidien contient 1000 prévisions connues, mais aucune plage d’incertitude exploitable.',
+			1000,
+		],
+		['In this daily summary, about 9 in 10 known predictions are not severely late.', null],
+		['Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.', null],
+	]) {
+		invariant(
+			stopVerdictObservationCount(text) === expected,
+			`stop verdict observation count: ${text}`,
+		);
+	}
 	// Preserve the existing fixture-mode report shape after retiring live readiness.
 	return { ...runOracleSelfCheck(), representativeDate: '2026-09-02' };
 }

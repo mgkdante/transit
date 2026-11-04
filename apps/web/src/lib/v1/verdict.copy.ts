@@ -18,6 +18,8 @@ export const verdictCopy = defineCopy({
 			`Fiabilité incertaine ${window} : ${otp} % de ${n} relevés de retard dans la plage de ponctualité (IC 95 % : ${lo}–${hi} %).`,
 		unknownCount: () =>
 			'Relevés insuffisants pour juger la fiabilité : nombre d’observations inconnu.',
+		unavailableInterval: (window, n) =>
+			`Fiabilité incertaine ${window} : ${n} relevés de retard, mais aucune plage d’incertitude exploitable.`,
 		tooFew: (window: string, n: number) =>
 			`Relevés insuffisants ${window} (${n}) pour juger la fiabilité.`,
 		absent: 'Aucun relevé de retard disponible pour juger la fiabilité.',
@@ -40,6 +42,8 @@ export const verdictCopy = defineCopy({
 			`Reliability is uncertain ${window}: ${otp}% of ${n} delay observations in the on-time band (95% CI: ${lo}–${hi}%).`,
 		unknownCount: () =>
 			'Not enough delay observations to judge reliability: observation count unknown.',
+		unavailableInterval: (window, n) =>
+			`Reliability is uncertain ${window}: ${n} delay observations, but no usable uncertainty range.`,
 		tooFew: (window, n) => `Not enough delay observations ${window} (${n}) to judge reliability.`,
 		absent: 'No delay observations available to judge reliability.',
 		hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% CI: ${lo}–${hi}%)`,
