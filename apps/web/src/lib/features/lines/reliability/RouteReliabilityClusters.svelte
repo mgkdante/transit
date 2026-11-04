@@ -7,18 +7,12 @@
 	import type { Locale } from '$lib/i18n';
 	import { absenceSentence, describeAbsence } from '$lib/site/absence';
 	import type { RouteReliability } from '$lib/v1';
-	import { onMount, type Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { ArticleControlStack, GrainPicker, HistoryNavigator } from '$lib/components/surface';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import { type SurfaceRailContext } from '@yesid/ui/layout';
-	import {
-		CollapsibleSection,
-		observeActiveToc,
-		openCollapsedTocTarget,
-		revealTocTarget,
-		TocNav,
-		type TocEntry,
-	} from '@yesid/ui/brand';
+	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { toReliabilityClusters } from './clusters';
@@ -142,18 +136,21 @@
 		})),
 	);
 
-	let activeId = $state('');
-	onMount(() => observeActiveToc((id) => (activeId = id)));
-
-	async function navigate(id: string): Promise<void> {
-		await revealTocTarget(id, {
-			beforeReveal: openCollapsedTocTarget,
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
+	const navigation = useSectionJump(afterNavigate);
+	let sectionRoot = $state<HTMLElement>();
+	$effect(() => {
+		if (sectionRoot)
+			return navigation.register(tocEntries, { root: sectionRoot, landFragments: true });
+	});
+	const navigate = (id: string) =>
+		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 </script>
 
-<div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
+<div
+	bind:this={sectionRoot}
+	class={cn('reliability-clusters', className)}
+	data-slot="reliability-clusters"
+>
 	<div data-slot="reliability-sections">
 		{#snippet rangeControls()}
 			{#if mode === 'range'}
@@ -177,7 +174,7 @@
 				</p>
 			{/snippet}
 
-			<CollapsibleSection title={copy.controls.viewLabel} sectionKey="reliability-controls">
+			<CollapsibleSection title={copy.controls.viewLabel}>
 				<ArticleControlStack
 					primary={primaryControls}
 					secondary={mode === 'range' ? rangeControls : undefined}
@@ -188,8 +185,7 @@
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
-					{activeId}
-					sectionKey="reliability-toc"
+					{navigation}
 					onNavigate={(id) => {
 						void navigate(id);
 						closeSheet();

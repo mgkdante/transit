@@ -1,10 +1,10 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { METRICS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
-import { quietMode } from '@yesid/ui/state';
 
 const { provState } = vi.hoisted(() => ({
 	provState: {
@@ -48,16 +48,13 @@ function resetMetricsStorage(): void {
 		sessionStorage.removeItem(`persisted:metrics-rail-${rail}`);
 	}
 	sessionStorage.removeItem('persisted:metrics-toc');
-	quietMode.resetForTest();
 	if (window.location.hash) window.location.hash = '';
 }
 beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
-	it('reveals interval assumptions through a saved collapse without live provenance', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
+	it('reveals interval assumptions on a fresh visit without live provenance', async () => {
 		window.location.hash = '#confidence-intervals';
 		const { container } = render(MetricsExplainer);
 		await tick();
@@ -73,7 +70,7 @@ describe('MetricsExplainer', () => {
 			within(section).getByRole('link', { name: 'Wilson interval: NIST reference' }),
 		).toHaveAttribute('href', 'https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm');
 		for (const entry of METRICS)
-			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('renders the single-rail freshness label immediately before its machine-readable date', () => {
@@ -117,13 +114,11 @@ describe('MetricsExplainer', () => {
 		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
 	});
 
-	it('renders exactly the two source controls and no metrics-only third control', async () => {
+	it('renders one page action and no metrics-only extra control', async () => {
 		const { container } = render(MetricsExplainer);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 		expect(within(header).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
-		expect(
-			within(header).getByRole('button', { name: 'Always start collapsed' }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 		expect(within(header).queryByTestId('metrics-expand-all')).toBeNull();
 	});
 
@@ -302,7 +297,7 @@ describe('MetricsExplainer', () => {
 
 	it('mobile pill navigation OPENS the target card through a folded page (review F1)', async () => {
 		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		const target = METRICS[0];
 		const card = container
 			.querySelector(`#${CSS.escape(target.anchor)}`)
@@ -316,13 +311,12 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('a malformed hash fragment never throws during mount (review F2)', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
 		window.location.hash = '#%';
 		expect(() => render(MetricsExplainer)).not.toThrow();
 		await tick();
 		await tick();
-		expect(document.querySelectorAll('.section-block [data-state="open"]')).toHaveLength(0);
+		for (const trigger of metricTriggers(document.body))
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('keeps the TOC entries and the section cards in lock-step (same anchors)', () => {
@@ -435,20 +429,18 @@ describe('MetricsExplainer', () => {
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('opens the hash-named card on mount even when a saved collapse default folded the page', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
+	it('opens the hash-named card on mount even when a declared defaults leave the page open', async () => {
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
 		await tick();
 		await tick();
 
-		const quietToggle = screen.getByTestId('quiet-mode-toggle');
-		expect(quietToggle).toHaveAttribute('data-collapsed', 'true');
-		expect(quietToggle).toHaveTextContent('Expand all');
+		const sectionsToggle = screen.getByTestId('sections-toggle');
+		expect(sectionsToggle).toHaveAttribute('data-collapsed', 'false');
+		expect(sectionsToggle).toHaveTextContent('Collapse all');
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 		for (const entry of METRICS.filter((m) => m.anchor !== 'otp')) {
-			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'true');
 		}
 	});
 
@@ -456,8 +448,6 @@ describe('MetricsExplainer', () => {
 		const scrollCalls: Array<{ expanded: string | null; args: unknown }> = [];
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const { container } = await (async () => {
-			localStorage.setItem('quiet-mode', 'true');
-			quietMode.init();
 			window.location.hash = '#otp';
 			return render(MetricsExplainer);
 		})();
@@ -482,7 +472,7 @@ describe('MetricsExplainer', () => {
 
 	it('scrolls the newly hash-named card after a same-page hashchange', async () => {
 		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 
 		const scrollCalls: Array<string | null> = [];
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
@@ -532,7 +522,7 @@ describe('MetricsExplainer', () => {
 
 	it('opens another card on a later hashchange without closing the first (folded page)', async () => {
 		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
@@ -547,9 +537,7 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('opens the provenance card on mount when a saved collapse default folded the page', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
+	it('opens the provenance card on mount when a declared defaults leave the page open', async () => {
 		window.location.hash = '#metrics-provenance';
 		const { container } = render(MetricsExplainer);
 		await tick();
@@ -557,20 +545,19 @@ describe('MetricsExplainer', () => {
 
 		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true');
 		for (const entry of METRICS) {
-			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'true');
 		}
 	});
 
 	it('ToC navigation opens the target card through a folded page (siblings unaffected)', async () => {
 		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 
 		const target = METRICS[3];
 		expect(cardTrigger(container, target.anchor)).toHaveAttribute('aria-expanded', 'false');
 		const toc = tocTrigger(container);
-		expect(toc).toHaveAttribute('aria-expanded', 'false');
-		await fireEvent.click(toc!);
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(within(rail).getByRole('button', { name: target.name.en }));
 
 		expect(cardTrigger(container, target.anchor)).toHaveAttribute('aria-expanded', 'true');

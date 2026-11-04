@@ -1,3 +1,4 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { tick } from 'svelte';
@@ -383,7 +384,7 @@ describe('EntityDetail — optional article cover', () => {
 		expect(container.querySelector('[data-toc="reliability-section"]')).not.toBeNull();
 	});
 
-	it('rebinds persisted ToC disclosure state when client navigation changes entity keys', async () => {
+	it('resets the independent ToC to its declared default when the entity key changes', async () => {
 		const firstKey = 'entity-route-24-toc-test';
 		const secondKey = 'entity-route-51-toc-test';
 		sessionStorage.removeItem(`persisted:${firstKey}`);
@@ -395,14 +396,16 @@ describe('EntityDetail — optional article cover', () => {
 		const firstToggle = screen.getByRole('button', { name: 'On this page' });
 		expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(firstToggle);
-		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBe('false');
+		expect(firstToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBeNull();
 
 		await view.rerender({ mode: 'article', sectionKey: secondKey });
 		const secondToggle = screen.getByRole('button', { name: 'On this page' });
 		expect(secondToggle).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(secondToggle);
-		expect(sessionStorage.getItem(`persisted:${secondKey}`)).toBe('false');
-		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBe('false');
+		expect(secondToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(sessionStorage.getItem(`persisted:${secondKey}`)).toBeNull();
+		expect(sessionStorage.getItem(`persisted:${firstKey}`)).toBeNull();
 
 		sessionStorage.removeItem(`persisted:${firstKey}`);
 		sessionStorage.removeItem(`persisted:${secondKey}`);

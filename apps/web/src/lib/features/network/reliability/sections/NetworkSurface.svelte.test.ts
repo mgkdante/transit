@@ -1,3 +1,4 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -10,7 +11,6 @@ import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
-import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
 
 const copy = networkReliabilityCopy.en;
@@ -126,7 +126,6 @@ function resetNetworkSurfaceState(): void {
 	openSurface.mockClear();
 	createLiveStoreSpy.mockClear();
 	createResourceSpy.mockClear();
-	quietMode.resetForTest();
 }
 
 const networkSurface = createSurfaceHarness({
@@ -239,9 +238,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 beforeEach(() => networkSurface.reset());
 
-afterEach(() => {
-	quietMode.resetForTest();
-});
+afterEach(() => {});
 
 describe('NetworkSurface article shell', () => {
 	it('requests only the network live family', () => {
@@ -384,7 +381,7 @@ describe('NetworkSurface article shell', () => {
 			'[data-network-section="network-daily-trend"] > [data-slot="card"]',
 		) as HTMLElement;
 		await fireEvent.click(within(trend).getByRole('button', { name: copy.trendSection }));
-		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBe('false');
+		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBeNull();
 	});
 
 	it('places the dated comparison before the history rows and responsive companions', () => {

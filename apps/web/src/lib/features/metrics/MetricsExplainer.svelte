@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '@yesid/ui/badge';
-	import { onMount, tick } from 'svelte';
+	import { useAvailableSectionJump } from '$lib/site/availableSectionJump.svelte';
 	import { intl, getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -15,15 +15,12 @@
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
-		tocElement,
-		settleLayout,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { formatUtc } from '$lib/utils/time';
 	import { TypedInformationCard } from '$lib/components/shared';
-	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import {
 		METRICS,
 		METRIC_CLUSTER_ORDER,
@@ -136,82 +133,16 @@
 		},
 	]);
 
-	const cardKey = (anchor: string): string => `metrics-card-${anchor}`;
-
-	let cardOpenSignals = $state<Record<string, number>>({});
-	const cardOpenSignal = (anchor: string): number => cardOpenSignals[anchor] ?? 0;
-
-	function openCard(anchor: string): void {
-		cardOpenSignals = { ...cardOpenSignals, [anchor]: (cardOpenSignals[anchor] ?? 0) + 1 };
-	}
-
-	const openableAnchors = $derived(
-		new Set<string>([
-			PROVENANCE_ANCHOR,
-			...orderedMetrics.map((m) => m.anchor),
-			LIVE_POSITIONS_ANCHOR,
-			LACUNES_ANCHOR,
-		]),
+	const { navigation, navigate } = useAvailableSectionJump(
+		() => tocEntries,
+		(id) => id === CONFIDENCE_INTERVALS_ANCHOR,
 	);
-
-	let requestedHash: string | null = null;
-	let navigationGeneration = 0;
-
-	function openFromHash(): void {
-		const raw = window.location.hash.replace(/^#/, '');
-		let anchor: string | null = null;
-		if (raw) {
-			try {
-				anchor = decodeURIComponent(raw);
-			} catch {
-				anchor = null;
-			}
-		}
-		if (anchor === requestedHash) return;
-		requestedHash = anchor;
-		const generation = ++navigationGeneration;
-		if (anchor && (openableAnchors.has(anchor) || anchor === CONFIDENCE_INTERVALS_ANCHOR))
-			void navigate(anchor, generation);
-	}
-
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (!cancelled) openFromHash();
-		})();
-		window.addEventListener('hashchange', openFromHash);
-		return () => {
-			cancelled = true;
-			navigationGeneration += 1;
-			window.removeEventListener('hashchange', openFromHash);
-		};
-	});
-
-	let activeId = $state('');
-
-	async function navigate(id: string, generation = ++navigationGeneration): Promise<void> {
-		const card = id === CONFIDENCE_INTERVALS_ANCHOR ? PROVENANCE_ANCHOR : id;
-		if (openableAnchors.has(card)) openCard(card);
-		await tick();
-		const target = tocElement(id);
-		await settleLayout(target);
-		if (generation !== navigationGeneration) return;
-		target?.scrollIntoView({
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-			block: 'start',
-		});
-	}
 </script>
 
 {#snippet statCards()}
 	<div class="metrics-stat-rail">
 		{#if desktopRailVisited && (provenance.data?.conformance || provenanceUnavailable)}
-			<CollapsibleSection
-				title={t.statRail.provenance.title}
-				headerVariant="article-summary"
-				sectionKey="metrics-rail-provenance"
-			>
+			<CollapsibleSection title={t.statRail.provenance.title} headerVariant="article-summary">
 				{#snippet icon()}
 					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
 				{/snippet}
@@ -230,11 +161,7 @@
 			</CollapsibleSection>
 		{/if}
 
-		<CollapsibleSection
-			title={t.statRail.coverage.title}
-			headerVariant="article-summary"
-			sectionKey="metrics-rail-coverage"
-		>
+		<CollapsibleSection title={t.statRail.coverage.title} headerVariant="article-summary">
 			{#snippet icon()}
 				<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
 			{/snippet}
@@ -256,11 +183,7 @@
 		</CollapsibleSection>
 
 		{#if desktopRailVisited && provenance.data?.generated_utc}
-			<CollapsibleSection
-				title={t.statRail.freshness.title}
-				headerVariant="article-summary"
-				sectionKey="metrics-rail-freshness"
-			>
+			<CollapsibleSection title={t.statRail.freshness.title} headerVariant="article-summary">
 				{#snippet icon()}
 					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
 				{/snippet}
@@ -280,12 +203,15 @@
 <DetailFrame
 	class="metrics-detail"
 	railScroll
-	bind:activeId
 	toc={{
 		entries: tocEntries,
+		navigation,
+		landFragments: true,
+		onNavigate: (id) => {
+			void navigate(id);
+		},
 		openAria: t.tocPill.open,
 		closeAria: t.tocPill.close,
-		onNavigate: navigate,
 	}}
 >
 	{#snippet header()}
@@ -300,7 +226,7 @@
 			titleId="metrics-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -309,11 +235,12 @@
 		<div class="metrics-toc-rail">
 			<TocNav
 				entries={tocEntries}
-				{activeId}
-				onNavigate={navigate}
+				{navigation}
+				onNavigate={(id) => {
+					void navigate(id);
+				}}
 				heading={t.tocLabel}
 				counterPrefix={t.tocCounterPrefix}
-				sectionKey="metrics-toc"
 			/>
 
 			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
@@ -329,9 +256,7 @@
 				title={t.provenance.label}
 				headerVariant="article-summary"
 				anchor={PROVENANCE_ANCHOR}
-				sectionKey={cardKey(PROVENANCE_ANCHOR)}
 				open={true}
-				openSignal={cardOpenSignal(PROVENANCE_ANCHOR)}
 			>
 				{#snippet icon()}
 					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
@@ -425,9 +350,7 @@
 								headerVariant="article-summary"
 								anchor={entry.anchor}
 								index={metricIndex}
-								sectionKey={cardKey(entry.anchor)}
 								open={true}
-								openSignal={cardOpenSignal(entry.anchor)}
 							>
 								<div class="metric__body">
 									<p class="metric__meta">
@@ -461,9 +384,7 @@
 				title={t.livePositions.title}
 				headerVariant="article-summary"
 				anchor={LIVE_POSITIONS_ANCHOR}
-				sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
 				open={true}
-				openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
 			>
 				{#snippet icon()}
 					<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -488,9 +409,7 @@
 				title={t.lacunes.title}
 				headerVariant="article-summary"
 				anchor={LACUNES_ANCHOR}
-				sectionKey={cardKey(LACUNES_ANCHOR)}
 				open={true}
-				openSignal={cardOpenSignal(LACUNES_ANCHOR)}
 			>
 				{#snippet icon()}
 					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />

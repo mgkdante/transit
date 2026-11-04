@@ -25,6 +25,7 @@
 <section class="section" data-section={dataSection} aria-label={eyebrow}>
 	<SharedCollapsibleSection
 		title={eyebrow}
+		anchor={`rel-${dataSection}`}
 		subtitle={question}
 		headerVariant="article-summary"
 		index={number == null ? null : number - 1}

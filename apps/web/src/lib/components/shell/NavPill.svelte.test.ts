@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chromeSearchResults } from '$lib/search/chromeSearch';
 import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
 import type { RouteIndexEntry } from '$lib/v1/schemas';
-import NavPill from './NavPill.svelte';
+import NavPill from './__fixtures__/NavPillHarness.svelte';
+import { createNavigationRouter } from './__fixtures__/navigationRouter';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 vi.mock('$app/navigation', () => ({
@@ -15,6 +16,32 @@ vi.mock('$app/navigation', () => ({
 }));
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('NavPill navigation lifecycle integration', () => {
+	it.each([true, false])('handles a locale redirect with subscription=%s', async (subscription) => {
+		const adapter = createNavigationRouter();
+		const view = render(NavPill, { props: { adapter, subscription, locale: 'en' } });
+		await fireEvent.click(view.getByRole('button', { name: 'Open menu' }));
+		const language = view.getByTestId('language-toggle');
+		expect(language).toHaveAttribute('data-sveltekit-reload', 'true');
+		// Model a router-accepted native start. Real reload links depart the document instead.
+		const event = new MouseEvent('click', { bubbles: true });
+		Object.defineProperty(event, 'target', { value: language });
+		await adapter.navigate(
+			{ type: 'link', to: { url: new URL('https://transit.local/fr/old') }, event },
+			{ type: 'link', to: { url: new URL('https://transit.local/fr/metrics') } },
+		);
+		await tick();
+		if (subscription) {
+			expect(view.getByRole('dialog')).toBeInTheDocument();
+			expect(language).toHaveFocus();
+			await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+		} else {
+			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+		}
+	});
+});
 
 describe('NavPill — search', () => {
 	it.each([

@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { StopReliability, IsoUtc } from '$lib/v1';
-import { quietMode } from '@yesid/ui/state';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -21,7 +20,7 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
 vi.mock('$lib/v1', async () => ({
 	...(await import('$lib/v1/history')),
 	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
@@ -101,7 +100,6 @@ const disclosureTrigger = (container: HTMLElement, id: string, name: string): HT
 	within(disclosure(container, id)).getByRole('button', { name });
 
 beforeEach(() => {
-	quietMode.resetForTest();
 	sessionStorage.clear();
 	motion.reduced = false;
 });
@@ -197,6 +195,11 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 			value: scrollIntoView,
 		});
 		motion.reduced = true;
+		vi.stubGlobal('matchMedia', () => ({
+			matches: true,
+			addEventListener() {},
+			removeEventListener() {},
+		}));
 
 		try {
 			const { container } = render(StopReliabilitySurface, {
@@ -209,6 +212,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 			);
 		} finally {
 			motion.reduced = false;
+			vi.unstubAllGlobals();
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
 			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
 		}
@@ -326,17 +330,16 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			value: scrollIntoView,
 		});
 		motion.reduced = true;
-		quietMode.toggle();
 
 		try {
 			const { container } = render(StopReliabilitySurface, {
 				props: { data, locale: 'en' },
 			});
 			trigger = disclosureTrigger(container, 'stop-rel-trend', 'Daily trend');
+			await fireEvent.click(trigger);
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
 			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-			await fireEvent.click(within(rail).getByRole('button', { name: 'Jump to a section' }));
 			await fireEvent.click(within(rail).getByRole('button', { name: 'Daily trend' }));
 
 			await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));

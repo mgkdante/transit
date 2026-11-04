@@ -16,7 +16,7 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
 vi.mock('$lib/v1', async () => ({
 	...(await import('$lib/v1/history')),
 	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,

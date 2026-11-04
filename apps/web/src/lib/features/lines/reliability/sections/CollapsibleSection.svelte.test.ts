@@ -1,7 +1,6 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { quietMode } from '@yesid/ui/state';
-import Harness from './__fixtures__/CollapsibleSectionQuietModeHarness.svelte';
+import Harness from './__fixtures__/CollapsibleSectionSectionsHarness.svelte';
 
 function sectionToggle(container: HTMLElement, dataSection = 'when-to-ride'): HTMLButtonElement {
 	const toggle = container.querySelector<HTMLButtonElement>(
@@ -11,15 +10,11 @@ function sectionToggle(container: HTMLElement, dataSection = 'when-to-ride'): HT
 	return toggle;
 }
 
-beforeEach(() => {
-	quietMode.resetForTest();
-});
+beforeEach(() => {});
 
-afterEach(() => {
-	quietMode.resetForTest();
-});
+afterEach(() => {});
 
-describe('reliability CollapsibleSection quiet-mode integration', () => {
+describe('reliability CollapsibleSection section controls integration', () => {
 	it('renders every rider question through the shared article-summary card', async () => {
 		const { container } = render(Harness);
 		const section = container.querySelector('[data-section="when-to-ride"]');

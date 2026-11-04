@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navPillCopy } from './navPill.copy';
+	import { navPillCopy } from '$lib/i18n/messages';
 	import { cn } from '$lib/utils';
 	import { dataRefresh } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';

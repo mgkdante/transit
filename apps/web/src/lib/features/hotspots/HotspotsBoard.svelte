@@ -40,7 +40,7 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
@@ -289,7 +289,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'hotspots-top',
-			sectionKey: 'hotspots-card-top',
 			number: 1,
 			title: t.cards.top.title,
 			subtitle: hotspots.mode === 'history' ? t.history.retainedTopSubtitle : t.cards.top.subtitle,
@@ -297,7 +296,6 @@
 		},
 		{
 			id: 'hotspots-lines',
-			sectionKey: 'hotspots-card-lines',
 			number: 2,
 			title: t.cards.lines.title,
 			subtitle: t.cards.lines.subtitle,
@@ -305,7 +303,6 @@
 		},
 		{
 			id: 'hotspots-stops',
-			sectionKey: 'hotspots-card-stops',
 			number: 3,
 			title: t.cards.stops.title,
 			subtitle: t.cards.stops.subtitle,
@@ -316,7 +313,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -368,7 +365,7 @@
 		</p>
 	{/snippet}
 
-	<CollapsibleSection title={t.rail.controls} sectionKey="hotspots-controls">
+	<CollapsibleSection title={t.rail.controls}>
 		<ArticleControlStack
 			history={hasHistoryNavigator ? historyControls : undefined}
 			primary={showGrainPicker ? primaryControls : undefined}
@@ -380,10 +377,9 @@
 		<div class="hotspots-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="hotspots-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -407,9 +403,15 @@
 <DetailFrame
 	class="hotspots-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={showCombinedRail ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+		pillEntries: [],
+		openAria: '',
+		closeAria: '',
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -424,7 +426,7 @@
 			titleId="hotspots-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -452,10 +454,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'hotspots-top'}
 								<div class="hotspots-article-prose">

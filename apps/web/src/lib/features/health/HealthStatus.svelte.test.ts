@@ -1,8 +1,8 @@
-import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
+import { sectionsToggleCopy } from '$lib/components/shared/sectionsToggle.copy';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
 import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -256,7 +256,6 @@ function resetHealthSurfaceState(): void {
 	getDataHealth.mockReset();
 	getHistoricAvailability.mockReset();
 	resourceOptions.length = 0;
-	quietMode.resetForTest();
 }
 
 const healthSurface = createSurfaceHarness({
@@ -305,11 +304,9 @@ describe('HealthStatus — full manifest render', () => {
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 		expect(
-			within(header).getByRole('button', { name: quietModeCopy.en.collapse }),
+			within(header).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
 		).toBeInTheDocument();
-		expect(
-			within(header).getByRole('button', { name: quietModeCopy.en.remember }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		for (const title of [
@@ -326,7 +323,9 @@ describe('HealthStatus — full manifest render', () => {
 			expect(within(center).getByRole('button', { name: title })).toBeInTheDocument();
 		}
 
-		await fireEvent.click(within(header).getByRole('button', { name: quietModeCopy.en.collapse }));
+		await fireEvent.click(
+			within(header).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
+		);
 		for (const title of [
 			en.lanes.section,
 			en.freshness.section,

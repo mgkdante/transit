@@ -281,7 +281,6 @@
 			allLabel={t.sortDefault}
 			allowDeselect={false}
 			collapsible
-			persistKey="stops-filter-sort-group"
 			testIdPrefix="stops-sort"
 			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'default')}
 		/>
@@ -296,7 +295,6 @@
 	aside={listingStats}
 	onHeaderMount={blueprintScrub}
 	filterLabel={t.controlsLabel}
-	filterPersistKey="stops-listing-filters"
 	search={listingSearch}
 	filters={listingFilters}
 >

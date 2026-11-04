@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-import { quietModeCopy } from '../src/lib/components/shared/quietMode.copy';
+import { sectionsToggleCopy } from '../src/lib/components/shared/sectionsToggle.copy';
 import { AUDIT_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, INTL_TAGS, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
 
@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const locale of PUBLISHED_LOCALES) {
-	const copy = quietModeCopy[locale];
+	const copy = sectionsToggleCopy[locale];
 
 	test(`${locale}: the metrics freshness stamp reads its age in the locale and moves with the clock`, async ({
 		page,
@@ -40,64 +40,29 @@ for (const locale of PUBLISHED_LOCALES) {
 		await expect(page.getByText(ago(5))).toBeVisible();
 	});
 
-	test(`${locale}: a remembered quiet mode keeps the metrics sections closed from first paint`, async ({
+	test(`${locale}: page actions affect content only and reload restores declared defaults`, async ({
 		page,
 	}) => {
 		const main = page.getByRole('main');
 		await page.goto(localized(metrics, locale));
-		// Server markup shows the controls before hydration wires them; retry until they respond.
-		await expect(async () => {
-			if (await main.getByRole('button', { name: copy.forget }).isHidden())
-				await main.getByRole('button', { name: copy.remember }).click();
-			await expect(main.getByRole('button', { name: copy.forget })).toBeVisible({ timeout: 1000 });
-		}).toPass();
-		const closed = await main
-			.getByRole('button', { expanded: false })
-			.evaluateAll((buttons) =>
-				buttons.map((button) => button.getAttribute('aria-controls')).filter(Boolean),
-			);
-
-		// Only the sections in the server markup can paint before the app runs.
-		await page.route('**/_app/**/*.js', (route) => route.abort());
+		const toggle = main.getByTestId('sections-toggle');
+		await expect(toggle).toHaveText(copy.collapse);
+		await expect(main.getByTestId('sections-controls').locator('button')).toHaveCount(1);
+		const triggers = main.locator('[data-testid="metrics-sections"] [data-section-trigger]');
+		await expect(triggers.first()).toHaveAttribute('aria-expanded', 'true');
+		const count = await triggers.count();
+		expect(count).toBeGreaterThanOrEqual(2);
+		await toggle.click();
+		for (let i = 0; i < count; i++)
+			await expect(triggers.nth(i)).toHaveAttribute('aria-expanded', 'false');
+		await expect(toggle).toHaveText(copy.expand);
+		await triggers.first().click();
+		await expect(toggle).toHaveText(copy.collapse);
+		await toggle.click();
+		await expect(triggers.first()).toHaveAttribute('aria-expanded', 'false');
 		await page.reload();
-		let painted = 0;
-		for (const id of closed) {
-			const trigger = main.locator(`[aria-controls="${id}"]`);
-			if ((await trigger.count()) === 0) continue;
-			painted += 1;
-			await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-		expect(painted).toBeGreaterThan(0);
-
-		// Every value each control's aria-expanded holds from the first parse through hydration.
-		await page.unroute('**/_app/**/*.js');
-		await page.addInitScript(() => {
-			const states: Record<string, (string | null)[]> = {};
-			Object.assign(window, { states });
-			new MutationObserver((records) => {
-				for (const { target, oldValue } of records)
-					(states[(target as Element).getAttribute('aria-controls') ?? ''] ??= []).push(oldValue);
-			}).observe(document, {
-				subtree: true,
-				attributeFilter: ['aria-expanded'],
-				attributeOldValue: true,
-			});
-		});
-		await page.reload();
-		await expect(main.getByRole('button', { name: copy.forget })).toBeVisible();
-		const states = await page.evaluate(
-			() => (window as unknown as { states: Record<string, (string | null)[]> }).states,
-		);
-		for (const id of closed) {
-			const trigger = main.locator(`[aria-controls="${id}"]`);
-			if ((await trigger.count()) === 0) continue;
-			// The first value is the server markup's; nothing after it may be expanded.
-			expect(
-				[...(states[id] ?? []).slice(1), await trigger.getAttribute('aria-expanded')],
-				id,
-			).not.toContain('true');
-		}
-		await main.getByRole('button', { name: copy.expand }).click();
-		await expect(main.getByRole('button', { expanded: true }).first()).toBeVisible();
+		for (let i = 0; i < count; i++)
+			await expect(triggers.nth(i)).toHaveAttribute('aria-expanded', 'true');
+		await expect(toggle).toHaveText(copy.collapse);
 	});
 }

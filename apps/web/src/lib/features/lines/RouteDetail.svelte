@@ -35,7 +35,7 @@
 	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -339,7 +339,7 @@
 			titleId="line-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 			{#snippet actions()}
 				<MapDrilldownLink
@@ -363,7 +363,6 @@
 								headerVariant="article-summary"
 								index={0}
 								anchor="line-detail-profile"
-								sectionKey={`line-detail-${id}-profile`}
 							>
 								<div class="route-profile-grid">
 									<MetricDisplay
@@ -403,7 +402,6 @@
 								headerVariant="article-summary"
 								index={1}
 								anchor="line-detail-directions"
-								sectionKey={`line-detail-${id}-directions`}
 							>
 								<div class="route-section">
 									{#if live.generatedUtc != null || live.ageSeconds != null}
@@ -437,7 +435,6 @@
 									headerVariant="article-summary"
 									index={2}
 									anchor="line-detail-live"
-									sectionKey={`line-detail-${id}-live`}
 								>
 									<div class="route-aside">
 										<AffectedAlerts
@@ -529,7 +526,6 @@
 								headerVariant="article-summary"
 								index={0}
 								anchor="line-schedule-span"
-								sectionKey={`line-schedule-${id}-span`}
 							>
 								<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
 								<div class="route-schedule-span">
@@ -562,7 +558,6 @@
 								headerVariant="article-summary"
 								index={1}
 								anchor="line-schedule-periods"
-								sectionKey={`line-schedule-${id}-periods`}
 							>
 								{#snippet headerActions()}
 									{@render scheduleInfo('headway', t.servicePeriods)}

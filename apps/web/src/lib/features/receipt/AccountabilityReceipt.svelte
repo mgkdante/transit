@@ -41,7 +41,7 @@
 	} from '@yesid/ui/layout';
 	import { TerminalPanel, CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { EdgeState } from '$lib/components/edge';
@@ -240,7 +240,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'receipt-main',
-			sectionKey: 'receipt-card-main',
 			number: 1,
 			title: t.cards.main.title,
 			subtitle: t.cards.main.subtitle,
@@ -248,7 +247,6 @@
 		},
 		{
 			id: 'receipt-time',
-			sectionKey: 'receipt-card-time',
 			number: 2,
 			title: t.cards.time.title,
 			subtitle: t.cards.time.subtitle,
@@ -256,7 +254,6 @@
 		},
 		{
 			id: 'receipt-delivered',
-			sectionKey: 'receipt-card-delivered',
 			number: 3,
 			title: t.cards.delivered.title,
 			subtitle: t.cards.delivered.subtitle,
@@ -264,7 +261,6 @@
 		},
 		{
 			id: 'receipt-silent',
-			sectionKey: 'receipt-card-silent',
 			number: 4,
 			title: t.cards.silent.title,
 			subtitle: t.cards.silent.subtitle,
@@ -283,7 +279,7 @@
 		reconcileEmpty: () => settledEmpty,
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const railSummary = $derived(selectedDate ? formatDateKey(selectedDate, locale) : '');
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
@@ -318,7 +314,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.rail.controls} sectionKey="receipt-controls">
+	<CollapsibleSection title={t.rail.controls}>
 		<div class="receipt-controls" data-slot="receipt-controls">
 			{#key navigatorRevision}
 				<HistoryNavigator
@@ -356,10 +352,9 @@
 		<div class="receipt-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="receipt-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -383,9 +378,15 @@
 <DetailFrame
 	class="receipt-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={hasDates ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+		pillEntries: [],
+		openAria: '',
+		closeAria: '',
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -400,7 +401,7 @@
 			titleId="receipt-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -441,10 +442,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'receipt-main'}
 								<div class="receipt-main-body">

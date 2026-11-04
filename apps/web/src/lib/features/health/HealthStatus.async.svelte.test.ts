@@ -19,7 +19,10 @@ const navigation = vi.hoisted(() => {
 });
 
 vi.mock('$app/state', () => ({ page: navigation.page }));
-vi.mock('$app/navigation', () => ({ replaceState: navigation.replaceState }));
+vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
+	replaceState: navigation.replaceState,
+}));
 
 vi.mock('$lib/v1/repositories/provenance', () => ({
 	getProvenance: ports.getProvenance,
@@ -43,13 +46,7 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('@yesid/ui/brand', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@yesid/ui/brand')>();
-	return { ...actual, observeActiveToc: () => () => {} };
-});
-
 import { dataRefresh } from '$lib/stores';
-import { quietMode } from '@yesid/ui/state';
 import { replaceState } from '$app/navigation';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -137,15 +134,17 @@ async function replaceHash(hash: string): Promise<void> {
 
 beforeEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 	resetStatusStorage();
-	localStorage.setItem('quiet-mode', 'true');
-	quietMode.init();
 	sessionStorage.setItem('persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
 	navigation.page.url = new URL('http://localhost/status');
 	navigation.replaceState.mockClear();
 	motion.reduced = false;
+	vi.stubGlobal('matchMedia', (query: string) => ({
+		matches: query === '(prefers-reduced-motion: reduce)' && motion.reduced,
+		addEventListener() {},
+		removeEventListener() {},
+	}));
 	scrollIntoView.mockReset();
 	Object.defineProperty(Element.prototype, 'scrollIntoView', {
 		configurable: true,
@@ -171,7 +170,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 	resetStatusStorage();
 	window.location.hash = '';
 });
@@ -185,7 +183,7 @@ afterAll(() => {
 });
 
 describe('HealthStatus — async reveal navigation', () => {
-	it('mounts the history card and ToC together after discovery, honoring quiet mode and Expand all', async () => {
+	it('mounts the history card and ToC together after discovery, with declared defaults and an independent ToC', async () => {
 		sessionStorage.removeItem('persisted:status-card-health-history-coverage');
 		const { container } = render(HealthStatus);
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
@@ -204,8 +202,11 @@ describe('HealthStatus — async reveal navigation', () => {
 			within(center).getByRole('button', { name: copy.en.historyCoverage.section }),
 		);
 		const toc = await waitFor(() => within(left).getByRole('button', { name: copy.en.toc.label }));
+		expect(card).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
 		expect(card).toHaveAttribute('aria-expanded', 'false');
-		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 		expect(card).toHaveAttribute('aria-expanded', 'true');
@@ -270,6 +271,7 @@ describe('HealthStatus — async reveal navigation', () => {
 		const target = await waitFor(() =>
 			within(center).getByRole('button', { name: copy.en.lanes.section }),
 		);
+		await fireEvent.click(target);
 		expect(target).toHaveAttribute('aria-expanded', 'false');
 		const expandedAtScroll: Array<string | null> = [];
 		scrollIntoView.mockImplementation(() => {

@@ -45,6 +45,7 @@ const harness = vi.hoisted(() => {
 
 vi.mock('$app/state', () => ({ page: harness.page }));
 vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
 	replaceState: harness.replaceState,
 	goto: harness.goto,
 }));
@@ -233,7 +234,7 @@ describe('HotspotsBoard retained date history', () => {
 				.getAllByRole('radio')
 				.map((radio) => radio.textContent?.trim()),
 		).toEqual(['Day', 'Week', 'Month', 'Peak hours']);
-		expect(screen.getByTestId('quiet-mode-controls').querySelectorAll('button')).toHaveLength(2);
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 		expect(screen.getAllByRole('link', { name: /Current line/ })[0]).toHaveAttribute(
 			'href',
 			'/lines/51',

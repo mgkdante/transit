@@ -10,7 +10,6 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
 import { STATUS_LABELS } from '$lib/v1/enumLabels';
 import type { IdentitySeed } from '$lib/v1/serverContext';
-import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
@@ -32,7 +31,10 @@ const routeManifest = vi.hoisted(() => ({}));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/state', () => ({ page: routeDetailNav.page }));
-vi.mock('$app/navigation', () => ({ replaceState: routeDetailNav.replaceState }));
+vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
+	replaceState: routeDetailNav.replaceState,
+}));
 
 const ROUTE_FILE = {
 	generated_utc: '2026-06-15T12:00:00Z',
@@ -274,7 +276,6 @@ function resetRouteSurfaceState(): void {
 	createLiveStoreSpy.mockReset();
 	liveStore.start.mockReset();
 	liveStore.stop.mockReset();
-	quietMode.resetForTest();
 }
 
 const routeSurface = createSurfaceHarness({
@@ -462,7 +463,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(routeDetailNav.page.url.searchParams.get('window')).toBe('am');
 	});
 
-	it('keeps the tabs fixed above a cohesive disclosure sequence and carries bulk state across panes', async () => {
+	it('keeps the tabs fixed above a cohesive disclosure sequence and preserves mounted panes while new panes start at declared defaults', async () => {
 		const view = renderRoute();
 		const toolbar = view.container.querySelector('[data-slot="detail-shell-toolbar"]');
 		const tabs = view.container.querySelector<HTMLElement>('[data-slot="entity-detail-tabs"]');
@@ -475,7 +476,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		for (const card of detailCards) {
 			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
 		}
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => {
 			for (const card of detailCards) {
 				expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
@@ -494,10 +495,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		);
 		expect(scheduleCards).toHaveLength(2);
 		for (const card of scheduleCards) {
-			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
-				'aria-expanded',
-				'false',
-			);
+			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
 		}
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -577,15 +575,15 @@ describe('RouteDetail article cover and focus scope', () => {
 
 		expect(actionRow).not.toBeNull();
 		expect(actionRow?.querySelector('a')).not.toBeNull();
-		expect(controlRow).toContainElement(screen.getByTestId('quiet-mode-controls'));
+		expect(controlRow).toContainElement(screen.getByTestId('sections-controls'));
 		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		expect(screen.getByTestId('quiet-mode-toggle')).toBeVisible();
+		expect(screen.getByTestId('sections-toggle')).toBeVisible();
 		expect(profile).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => expect(profile).toHaveAttribute('aria-expanded', 'false'));
 	});
 });

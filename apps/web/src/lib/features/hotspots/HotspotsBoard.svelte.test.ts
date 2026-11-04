@@ -1,10 +1,9 @@
-import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
+import { sectionsToggleCopy } from '$lib/components/shared/sectionsToggle.copy';
 import { copy } from './hotspots.copy';
 import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
@@ -23,7 +22,7 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ goto: navigate, replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, goto: navigate, replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 vi.mock('$lib/i18n', async (importOriginal) => {
@@ -222,7 +221,6 @@ function resetHotspotsState(): void {
 	}
 	sessionStorage.removeItem('persisted:hotspots-controls');
 	sessionStorage.removeItem('persisted:hotspots-toc');
-	quietMode.resetForTest();
 }
 
 type CapturedMagnitudeDatum = MagnitudeDatum & {
@@ -255,16 +253,14 @@ describe('HotspotsBoard article', () => {
 
 	afterEach(resetHotspotsState);
 
-	it('renders one article h1 and QuietModeButton controls', () => {
+	it('renders one article h1 and SectionsToggle controls', () => {
 		render(HotspotsBoard);
 		expect(screen.getByRole('heading', { level: 1, name: copy.en.heading })).toBeInTheDocument();
-		const controls = screen.getByTestId('quiet-mode-controls');
+		const controls = screen.getByTestId('sections-controls');
 		expect(
-			within(controls).getByRole('button', { name: quietModeCopy.en.collapse }),
+			within(controls).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
 		).toBeInTheDocument();
-		expect(
-			within(controls).getByRole('button', { name: quietModeCopy.en.remember }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 	});
 
 	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {
