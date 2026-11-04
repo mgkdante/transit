@@ -119,6 +119,50 @@ test("an unreadable sitemap alerts rather than reporting an empty successful cra
   assert.equal(alerts[0][0], "fire");
 });
 
+test("a missing lychee executable explains ENOENT in both the log and issue without tool output", async () => {
+  const alerts = [],
+    logs = [];
+  await probeLinks({
+    fetchFn: async () =>
+      new Response("<urlset><loc>https://yesid.dev/</loc></urlset>"),
+    run: async () => {
+      throw Object.assign(new Error("private command text"), {
+        code: "ENOENT",
+        stderr: "private page body",
+      });
+    },
+    alert: (...args) => alerts.push(args),
+    log: (entry) => logs.push(entry),
+  });
+  assert.match(alerts[0].at(-1), /ENOENT/);
+  assert.match(JSON.stringify(logs), /ENOENT/);
+  assert.doesNotMatch(JSON.stringify({ alerts, logs }), /private/);
+});
+
+test("lychee argument errors retain the exit code and option, never raw stderr or page content", async () => {
+  const alerts = [],
+    logs = [];
+  await probeLinks({
+    fetchFn: async () =>
+      new Response("<urlset><loc>https://yesid.dev/</loc></urlset>"),
+    run: async () => {
+      throw Object.assign(new Error("private command"), {
+        code: 2,
+        stderr:
+          "error: unexpected argument '--bad-option' found\nprivate page body",
+      });
+    },
+    alert: (...args) => alerts.push(args),
+    log: (entry) => logs.push(entry),
+  });
+  assert.match(alerts[0].at(-1), /exit 2.*unexpected argument --bad-option/);
+  assert.match(
+    JSON.stringify(logs),
+    /exit 2.*unexpected argument --bad-option/,
+  );
+  assert.doesNotMatch(JSON.stringify({ alerts, logs }), /private/);
+});
+
 test("link reports give actionable public source and target URLs without copying tool text or query data", () => {
   assert.deepEqual(
     linkFailures(

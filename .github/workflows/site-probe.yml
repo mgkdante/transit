@@ -54,13 +54,7 @@ jobs:
       - name: Install pinned lychee
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir "$RUNNER_TEMP/lychee"
-          gh release download lychee-v0.24.2 --repo lycheeverse/lychee --pattern lychee-x86_64-unknown-linux-gnu.tar.gz --dir "$RUNNER_TEMP/lychee"
-          cd "$RUNNER_TEMP/lychee"
-          echo '1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a  lychee-x86_64-unknown-linux-gnu.tar.gz' | sha256sum --check
-          tar -xzf lychee-x86_64-unknown-linux-gnu.tar.gz
-          echo "$RUNNER_TEMP/lychee" >> "$GITHUB_PATH"
+        run: bash .github/scripts/install-lychee.sh
       - name: Weekly cross-site link checks
         run: node .github/scripts/site-probe.mjs --weekly
         env:
