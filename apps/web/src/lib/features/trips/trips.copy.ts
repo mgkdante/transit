@@ -24,7 +24,7 @@ export const tripCopy = defineCopy({
 		onTime: "À l'heure",
 		reportedPredictions: 'Prédictions sur une heure',
 		stopsListLabel: 'Prédictions communiquées pour ce trajet',
-		viewStop: (stop: string) => `Voir l’arrêt ${stop}`,
+		viewStop: 'Voir l’arrêt',
 		predictionLabel: 'Prédiction',
 		predictionCaveat:
 			'Les prédictions couvrent jusqu’à une heure au moment de la préparation du rapport. Elles peuvent changer.',
@@ -62,7 +62,7 @@ export const tripCopy = defineCopy({
 		onTime: 'On time',
 		reportedPredictions: 'Next-hour predictions',
 		stopsListLabel: 'Reported predictions for this trip',
-		viewStop: (stop) => `View stop ${stop}`,
+		viewStop: 'View stop',
 		predictionLabel: 'Prediction',
 		predictionCaveat:
 			'Predictions cover up to one hour when the report is prepared. They may change.',

@@ -4,7 +4,7 @@
 		"T1": {
 			"status": "on_time",
 			"route": "80",
-			"stops": []
+			"stops": [{ "stop": "S1", "eta_utc": "2026-06-15T12:05:00Z", "delay_min": 0 }]
 		}
 	}
 }
