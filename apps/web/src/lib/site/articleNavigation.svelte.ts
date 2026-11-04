@@ -1,4 +1,5 @@
-import { reconcileActiveToc, revealTocTarget, type TocEntry } from '@yesid/ui/brand';
+import { afterNavigate } from '$app/navigation';
+import { useSectionJump, type TocEntry } from '@yesid/ui/brand';
 
 interface ArticleSection {
 	id: string;
@@ -6,7 +7,6 @@ interface ArticleSection {
 	number: number;
 	present: boolean;
 }
-
 interface ArticleNavigationOptions {
 	behavior: () => ScrollBehavior;
 	reconcileEmpty?: () => boolean;
@@ -16,6 +16,7 @@ export function createArticleNavigation(
 	sections: () => readonly ArticleSection[],
 	options: ArticleNavigationOptions,
 ) {
+	const navigation = useSectionJump(afterNavigate);
 	const entries = $derived<TocEntry[]>(
 		sections()
 			.filter((section) => section.present)
@@ -27,42 +28,19 @@ export function createArticleNavigation(
 				children: [],
 			})),
 	);
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	let navigationGeneration = 0;
-	let previousTocIds: string[] = [];
-
-	function openCard(id: string): void {
-		cardOpenSignals = { ...cardOpenSignals, [id]: (cardOpenSignals[id] ?? 0) + 1 };
-	}
-
+	// Keep the previous registration while an asynchronous section list is temporarily empty.
+	let registeredEntries = $state<TocEntry[]>([]);
 	$effect(() => {
-		const next = entries.map((entry) => entry.id);
-		if (next.length === 0 && options.reconcileEmpty?.() === false) return;
-		activeId = reconcileActiveToc(activeId, previousTocIds, next);
-		previousTocIds = next;
+		if (entries.length || options.reconcileEmpty?.() !== false) registeredEntries = entries;
 	});
-
 	return {
+		navigation,
 		get entries() {
 			return entries;
 		},
-		get activeId() {
-			return activeId;
+		get registeredEntries() {
+			return registeredEntries;
 		},
-		set activeId(id: string) {
-			activeId = id;
-		},
-		cardOpenSignal(id: string): number {
-			return cardOpenSignals[id] ?? 0;
-		},
-		async navigate(id: string): Promise<void> {
-			const generation = ++navigationGeneration;
-			await revealTocTarget(id, {
-				beforeReveal: entries.some((entry) => entry.id === id) ? openCard : undefined,
-				isCurrent: () => generation === navigationGeneration,
-				behavior: options.behavior(),
-			});
-		},
+		navigate: (id: string) => navigation.jump(id, { behavior: options.behavior() }),
 	};
 }

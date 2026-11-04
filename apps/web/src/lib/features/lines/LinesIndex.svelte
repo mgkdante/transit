@@ -142,7 +142,6 @@
 			allLabel={t.sortAlpha}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-sort-group"
 			testIdPrefix="lines-sort"
 			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'alpha')}
 		/>
@@ -156,7 +155,6 @@
 			allLabel={t.statusAll}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-status-group"
 			testIdPrefix="lines-status"
 			onSelect={(key) => (status = key === 'problem' ? 'problem' : 'all')}
 		/>
@@ -170,7 +168,6 @@
 			allLabel={t.modeAll}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-mode-group"
 			testIdPrefix="lines-mode"
 			onSelect={(key) => (mode = key ?? 'all')}
 		/>
@@ -185,7 +182,6 @@
 	aside={listingStats}
 	onHeaderMount={blueprintScrub}
 	filterLabel={t.controlsLabel}
-	filterPersistKey="lines-listing-filters"
 	search={listingSearch}
 	filters={listingFilters}
 >

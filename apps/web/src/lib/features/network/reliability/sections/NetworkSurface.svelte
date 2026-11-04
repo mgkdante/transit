@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
 	import {
@@ -45,8 +46,8 @@
 		DetailFrame,
 	} from '@yesid/ui/layout';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import { CollapsibleSection, revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
 	import { StateNotice } from '@yesid/ui/feedback';
@@ -437,12 +438,9 @@
 			children: [],
 		})),
 	);
-	let activeId = $state('');
-	function navigate(id: string): void {
-		void revealTocTarget(id, {
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
+	const navigation = useSectionJump(afterNavigate);
+	const navigate = (id: string) =>
+		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
 </script>
@@ -567,7 +565,7 @@
 	{/snippet}
 
 	{#if hasViewControls}
-		<CollapsibleSection title={t.viewControlsLabel} sectionKey="network-controls">
+		<CollapsibleSection independent title={t.viewControlsLabel}>
 			<ArticleControlStack
 				history={view.history.discovered ? historyControls : undefined}
 				primary={showGrainPicker ? primaryControls : undefined}
@@ -579,8 +577,7 @@
 	<div class="rail-toc" data-slot="section-toc">
 		<TocNav
 			entries={tocEntries}
-			{activeId}
-			sectionKey="network-toc"
+			{navigation}
 			onNavigate={(id) => {
 				navigate(id);
 				closeSheet();
@@ -604,9 +601,15 @@
 <DetailFrame
 	class="network-detail"
 	railScroll
-	bind:activeId
 	rail={railCell}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation,
+		landFragments: true,
+		entries: tocEntries,
+		pillEntries: [],
+		openAria: '',
+		closeAria: '',
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -620,7 +623,7 @@
 			titleId="network-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 			{#snippet actions()}
 				<div class="network-feed-health">

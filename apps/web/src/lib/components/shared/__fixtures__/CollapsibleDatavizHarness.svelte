@@ -29,7 +29,7 @@
 	<span>Hourly cells</span>
 {/snippet}
 
-<CollapsibleSection title="Reliability" open={true} quiet={false}>
+<CollapsibleSection title="Reliability" open={true}>
 	<p data-testid="plain-card-prose">Plain card prose</p>
 	<Chart spec={shareSpec} />
 	<ChartLegend items={standaloneLegendItems} data-testid="standalone-chart-legend" />

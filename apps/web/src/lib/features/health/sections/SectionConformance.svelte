@@ -23,11 +23,7 @@
 	</div>
 	{#if conformance.unknown_members && conformance.unknown_members.length > 0}
 		<div class="section-block">
-			<CollapsibleSection
-				title={t.detailsTitle}
-				sectionKey="health-conformance-members"
-				open={true}
-			>
+			<CollapsibleSection title={t.detailsTitle} open={true}>
 				<div class="health-conformance-detail">
 					<MetricDisplay
 						value={typeof conformance.extra_row_count === 'number'

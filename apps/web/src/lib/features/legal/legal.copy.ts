@@ -96,7 +96,7 @@ const documents = {
 					id: 'device-storage',
 					title: 'Storage on your device',
 					paragraphs: [
-						'Transit uses localStorage and sessionStorage for interface preferences such as theme, quiet mode and open or closed detail panels. Local preferences remain until you change them or clear site data; session values end with the browser session.',
+						'Transit uses localStorage to remember your theme, motion setting, and the size and open or closed state of map panels. These preferences remain until you change them or clear site data. Navigation scroll positions are kept in sessionStorage for the browser session.',
 						'A service worker may cache application-shell and static files for speed and offline-safe loading until an update, removal or browser-data clearing. It excludes live /data and /v1 transit snapshots and does not retain them as a personal history.',
 					],
 				},
@@ -357,7 +357,7 @@ const documents = {
 					id: 'device-storage',
 					title: 'Stockage sur votre appareil',
 					paragraphs: [
-						'Transit utilise localStorage et sessionStorage pour des préférences d’interface, comme le thème, le mode discret et l’ouverture de certains panneaux. Les préférences locales restent jusqu’à leur modification ou l’effacement des données du site; les valeurs de session prennent fin avec la session du navigateur.',
+						'Transit utilise localStorage pour mémoriser le thème, le réglage des animations ainsi que la taille et l’état ouvert ou fermé des panneaux de la carte. Ces préférences restent jusqu’à leur modification ou l’effacement des données du site. Les positions de défilement utilisées pour la navigation sont conservées dans sessionStorage pendant la session du navigateur.',
 						'Un service worker peut mettre en cache l’enveloppe de l’application et des fichiers statiques afin d’accélérer le chargement et de fournir un repli hors ligne, jusqu’à une mise à jour, son retrait ou l’effacement des données du navigateur. Il exclut les instantanés de transport en direct sous /data et /v1 et ne les conserve pas comme historique personnel.',
 					],
 				},

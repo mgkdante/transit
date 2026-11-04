@@ -7,13 +7,14 @@
 </script>
 
 <script lang="ts">
-	import { navPillCopy } from '$lib/components/shell/navPill.copy';
+	import { navPillCopy } from '$lib/i18n/messages';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
 
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
+	import { createNavigationLifecycle } from '@yesid/ui/brand';
 	import { updated } from '$app/state';
 	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -78,6 +79,13 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { GeocodeSuggestion } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
+
+	const navigation = createNavigationLifecycle({
+		beforeNavigate,
+		onNavigate,
+		afterNavigate,
+		subscribeNavigation: navigating.subscribe,
+	});
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
@@ -397,6 +405,7 @@
 	<SeoHead {...head} />
 
 	<AppShell
+		{navigation}
 		{locale}
 		url={currentMirrorUrl($page.url)}
 		providerId={data.providerId}

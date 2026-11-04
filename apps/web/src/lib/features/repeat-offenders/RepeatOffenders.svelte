@@ -47,7 +47,7 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
@@ -365,7 +365,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'repeat-worst',
-			sectionKey: 'repeat-card-worst',
 			number: 1,
 			title: t.cards.worst.title,
 			subtitle:
@@ -374,7 +373,6 @@
 		},
 		{
 			id: 'repeat-trips',
-			sectionKey: 'repeat-card-trips',
 			number: 2,
 			title: t.cards.trips.title,
 			subtitle: t.cards.trips.subtitle,
@@ -382,7 +380,6 @@
 		},
 		{
 			id: 'repeat-vehicles',
-			sectionKey: 'repeat-card-vehicles',
 			number: 3,
 			title: t.cards.vehicles.title,
 			subtitle: t.cards.vehicles.subtitle,
@@ -393,7 +390,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -446,7 +443,7 @@
 	{/snippet}
 
 	{#if hasGrains || hasHistoryNavigator}
-		<CollapsibleSection title={t.rail.controls} sectionKey="repeat-offenders-controls">
+		<CollapsibleSection independent title={t.rail.controls}>
 			<ArticleControlStack
 				history={hasHistoryNavigator ? historyControls : undefined}
 				primary={hasGrains ? primaryControls : undefined}
@@ -459,10 +456,9 @@
 		<div class="repeat-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="repeat-offenders-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -486,9 +482,15 @@
 <DetailFrame
 	class="repeat-offenders-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={showCombinedRail ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+		pillEntries: [],
+		openAria: '',
+		closeAria: '',
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -503,7 +505,7 @@
 			titleId="repeat-offenders-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -531,10 +533,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'repeat-worst' && hasGrains}
 								<div class="repeat-offenders-article-prose">

@@ -13,14 +13,9 @@
 		GrainPicker,
 		HistoryNavigator,
 	} from '$lib/components/surface';
-	import {
-		CollapsibleSection,
-		observeActiveToc,
-		revealTocTarget,
-		TocNav,
-		type TocEntry,
-	} from '@yesid/ui/brand';
-	import { onMount, type Snippet } from 'svelte';
+	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
+	import type { Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
@@ -214,40 +209,23 @@
 			children: [],
 		})),
 	);
-	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
 	const sectionIndex = (id: string): number => sectionNav.findIndex((section) => section.id === id);
-	const sectionKey = (id: string): string => `stop-reliability-card-${id}`;
 
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	let navigationGeneration = 0;
-	onMount(() => observeActiveToc((id) => (activeId = id)));
-
-	function openCard(id: string): void {
-		cardOpenSignals = {
-			...cardOpenSignals,
-			[id]: (cardOpenSignals[id] ?? 0) + 1,
-		};
-	}
-	function cardOpenSignal(id: string): number {
-		return cardOpenSignals[id] ?? 0;
-	}
-
-	async function navigate(id: string): Promise<void> {
-		const generation = ++navigationGeneration;
-		await revealTocTarget(id, {
-			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
-			isCurrent: () => generation === navigationGeneration,
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
+	const navigation = useSectionJump(afterNavigate);
+	let sectionRoot = $state<HTMLElement>();
+	$effect(() => {
+		if (sectionRoot)
+			return navigation.register(tocEntries, { root: sectionRoot, landFragments: true });
+	});
+	const navigate = (id: string) =>
+		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 </script>
 
 {#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	<MetricInfo class="stop-metric-info" metricKey={key} {locale} {name} side="bottom" />
 {/snippet}
 
-<div class="stop-reliability">
+<div bind:this={sectionRoot} class="stop-reliability">
 	<div data-slot="stop-reliability-sections">
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			{#snippet historyControls()}
@@ -268,7 +246,7 @@
 				</p>
 			{/snippet}
 
-			<CollapsibleSection title={copy.controlsLabel} sectionKey="stop-reliability-controls">
+			<CollapsibleSection independent title={copy.controlsLabel}>
 				<ArticleControlStack
 					history={availableHistoryDates.length > 0 ? historyControls : undefined}
 					primary={primaryControls}
@@ -279,8 +257,7 @@
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
-					{activeId}
-					sectionKey="stop-reliability-toc"
+					{navigation}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -338,9 +315,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-trend"
 							index={sectionIndex('stop-rel-trend')}
-							sectionKey={sectionKey('stop-rel-trend')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-trend')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -369,9 +344,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-percentiles"
 								index={sectionIndex('stop-rel-percentiles')}
-								sectionKey={sectionKey('stop-rel-percentiles')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-percentiles')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -400,9 +373,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-pane"
 								index={sectionIndex('stop-rel-pane')}
-								sectionKey={sectionKey('stop-rel-pane')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-pane')}
 							>
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
 									{#if explicitHistory}
@@ -424,9 +395,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-habits"
 								index={sectionIndex('stop-rel-habits')}
-								sectionKey={sectionKey('stop-rel-habits')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-habits')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -449,9 +418,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-weekday"
 								index={sectionIndex('stop-rel-weekday')}
-								sectionKey={sectionKey('stop-rel-weekday')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-weekday')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -473,9 +440,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-time"
 								index={sectionIndex('stop-rel-time')}
-								sectionKey={sectionKey('stop-rel-time')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-time')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -503,9 +468,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-crowding"
 							index={sectionIndex('stop-rel-crowding')}
-							sectionKey={sectionKey('stop-rel-crowding')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-crowding')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -532,9 +495,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-by-route"
 							index={sectionIndex('stop-rel-by-route')}
-							sectionKey={sectionKey('stop-rel-by-route')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-by-route')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Component } from 'svelte';
 	import { trackEvent } from '$lib/site/analytics';
 	import MapIcon from '@lucide/svelte/icons/map';
@@ -13,7 +14,6 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import {
 		type Locale,
 		DEFAULT_LOCALE,
@@ -37,13 +37,14 @@
 		YESID_HOUSE_LINK,
 		isSurfaceActive,
 	} from '$lib/content/nav';
-	import { navPillCopy } from './navPill.copy';
+	import { navPillCopy } from '$lib/i18n/messages';
 	import { SiteHeader } from '@yesid/ui/layout';
 	import RefreshButton from './RefreshButton.svelte';
 	import { providerHref, type PublicProvider } from '$lib/v1/providers';
 	import { v1Provider } from '$lib/v1/config';
 
 	interface NavPillProps {
+		navigation: NavigationLifecycle;
 		locale?: Locale;
 		url?: URL;
 		providerId?: string;
@@ -58,6 +59,7 @@
 	}
 
 	let {
+		navigation,
 		locale: localeProp,
 		url = new URL('https://transit.local/'),
 		providerId = v1Provider(url),
@@ -336,7 +338,7 @@
 {/snippet}
 
 <SiteHeader
-	navigation={{ beforeNavigate, onNavigate, afterNavigate }}
+	{navigation}
 	home={localizeHref('/', locale, providerId)}
 	wordmark="Transit"
 	{links}
@@ -347,6 +349,7 @@
 		locales: availableLocales,
 		href: (next) => localizeUrl(selectedUrl, next as Locale),
 		label: navCopy.language,
+		names: navCopy.names,
 		reload: true,
 	}}
 	search={searchField}

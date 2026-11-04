@@ -1,7 +1,7 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
 
@@ -94,8 +94,6 @@ function resetReceiptState(): void {
 	}
 	sessionStorage.removeItem('persisted:receipt-controls');
 	sessionStorage.removeItem('persisted:receipt-toc');
-	localStorage.removeItem('quiet-mode');
-	quietMode.resetForTest();
 }
 
 const ports = vi.hoisted(() => ({
@@ -177,14 +175,14 @@ beforeEach(async () => {
 afterEach(resetReceiptState);
 
 describe('AccountabilityReceipt article shell', () => {
-	it('renders one article heading and only the exact two shared reading controls', async () => {
+	it('renders one article heading and hides the bulk action for a single content section', async () => {
 		const { container } = render(AccountabilityReceipt);
 		expect(
 			await screen.findAllByRole('heading', { level: 1, name: 'Accountability receipt' }),
 		).toHaveLength(1);
-		const controls = screen.getByTestId('quiet-mode-controls');
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
-		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
+		expect(container.querySelectorAll('[data-toc^="receipt-"]')).toHaveLength(1);
+		expect(screen.queryByTestId('sections-controls')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 	});
 
@@ -194,6 +192,8 @@ describe('AccountabilityReceipt article shell', () => {
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
 		await screen.findByText('82%');
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
+		expect(screen.getByTestId('sections-toggle')).toHaveTextContent('Collapse all');
 
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(rail).not.toBeNull();

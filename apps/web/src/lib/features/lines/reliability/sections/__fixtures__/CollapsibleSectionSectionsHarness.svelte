@@ -1,5 +1,5 @@
 <script lang="ts">
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	const SECTIONS = [
@@ -15,7 +15,7 @@
 	] as const;
 </script>
 
-<QuietModeButton />
+<SectionsToggle />
 {#each SECTIONS as section, index (section.dataSection)}
 	<CollapsibleSection {...section} number={index + 1}>
 		<p data-testid={`reliability-section-body-${section.dataSection}`}>Rider answer</p>

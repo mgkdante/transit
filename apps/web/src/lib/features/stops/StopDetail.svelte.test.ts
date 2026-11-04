@@ -10,7 +10,6 @@ import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import type { PublicProvider } from '$lib/v1/providers';
 import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
-import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
 
@@ -34,6 +33,7 @@ const stopDetailNav = vi.hoisted(() => {
 
 vi.mock('$app/state', () => ({ page: stopDetailNav.page }));
 vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
 	replaceState: stopDetailNav.replaceState,
 }));
 
@@ -420,7 +420,6 @@ function resetStopSurfaceState() {
 	liveStore.index.byStopId.clear();
 	liveStore.index.byStopId.set('57191', DEPARTURES);
 	liveStore.index.byStopId.set('99999', DEPARTURES_B);
-	quietMode.resetForTest();
 }
 
 beforeEach(() => stopSurface.reset());
@@ -653,7 +652,7 @@ describe('StopDetail article contract', () => {
 		}
 	});
 
-	it('keeps the default Detail URL clean and carries one bulk disclosure state across article panes', async () => {
+	it('keeps the default Detail URL clean and preserves mounted panes while new panes use declared defaults', async () => {
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -672,7 +671,7 @@ describe('StopDetail article contract', () => {
 		for (const card of detailCards) {
 			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
 		}
-		const focus = screen.getByTestId('quiet-mode-toggle');
+		const focus = screen.getByTestId('sections-toggle');
 		await fireEvent.click(focus);
 		await waitFor(() => {
 			for (const card of detailCards) {
@@ -690,7 +689,7 @@ describe('StopDetail article contract', () => {
 		) as HTMLElement;
 		expect(scheduleCard.querySelector('[data-section-trigger]')).toHaveAttribute(
 			'aria-expanded',
-			'false',
+			'true',
 		);
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
@@ -763,13 +762,13 @@ describe('StopDetail article contract', () => {
 
 		expect(actionRow).not.toBeNull();
 		expect(actionRow?.querySelector('a')).not.toBeNull();
-		expect(controlRow).toContainElement(screen.getByTestId('quiet-mode-controls'));
+		expect(controlRow).toContainElement(screen.getByTestId('sections-controls'));
 		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
 
 		await fireEvent.click(trigger);
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		expect(screen.getByTestId('quiet-mode-toggle')).toBeVisible();
+		expect(screen.getByTestId('sections-toggle')).toBeVisible();
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});

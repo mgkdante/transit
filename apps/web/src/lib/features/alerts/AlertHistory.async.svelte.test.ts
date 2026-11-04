@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
 
 const ports = vi.hoisted(() => ({
 	getAlertHistory: vi.fn(),
@@ -28,7 +27,7 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
 	return { ...actual, getLocale: () => 'en' as const };
@@ -86,7 +85,6 @@ let rangeCalls: RangeCall[];
 
 beforeEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 	nav.url = new URL('http://localhost/alerts');
 	replaceState.mockClear();
 	rangeCalls = [];
@@ -115,7 +113,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 });
 
 describe('AlertHistory asynchronous catalog and range transitions', () => {

@@ -43,7 +43,7 @@
 		{title}
 		{subtitle}
 		headerVariant="article-summary"
-		{sectionKey}
+		anchor={sectionKey}
 		{index}
 		{headerActions}
 	>

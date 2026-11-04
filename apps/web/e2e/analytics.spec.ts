@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { navPillCopy } from '../src/lib/i18n/messages';
 import { SURFACE_NAV } from '../src/lib/content/nav';
 
 const { PUBLIC_PLAUSIBLE_DOMAIN: domain, PUBLIC_CF_BEACON_TOKEN: beaconToken } = JSON.parse(

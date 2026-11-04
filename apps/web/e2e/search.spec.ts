@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { navPillCopy } from '../src/lib/i18n/messages';
 import { SURFACE_NAV } from '../src/lib/content/nav';
 import { copy as searchCopy } from '../src/lib/features/search/search.copy';
 import { PUBLISHED_LOCALES } from '../src/lib/i18n/config';

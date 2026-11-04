@@ -1,15 +1,9 @@
 <script lang="ts" generics="K extends string">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
-	import {
-		SectionLabel,
-		TocNav,
-		openCollapsedTocTarget,
-		reconcileActiveToc,
-		revealTocTarget,
-		type TocEntry,
-	} from '@yesid/ui/brand';
+	import { SectionLabel, TocNav, useSectionJump, type TocEntry } from '@yesid/ui/brand';
 	import { ArticleSummaryLane } from '$lib/components/layout';
 	import { Surface, DetailFrame, Breadcrumb } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
@@ -77,11 +71,10 @@
 	let mountedPanes = $state<{ pathname: string; keys: K[] }>(
 		untrack(() => ({ pathname: page.url.pathname, keys: [active] })),
 	);
-	let activeTocId = $state('');
+	const navigation = useSectionJump(afterNavigate);
 	let tabViewport = $state<HTMLElement>();
 	let tabsMoreEnd = $state(false);
 	let observedTabViewport: HTMLElement | undefined;
-	let previousTocIds: string[] = [];
 	$effect.pre(() => {
 		const pathname = page.url.pathname;
 		if (mountedPanes.pathname !== pathname) {
@@ -95,21 +88,6 @@
 		return (
 			key === active || (mountedPanes.pathname === pathname && mountedPanes.keys.includes(key))
 		);
-	}
-	$effect(() => {
-		const nextIds = articleTocEntries.map((entry) => entry.id);
-		const currentId = untrack(() => activeTocId);
-		const nextActiveId = reconcileActiveToc(currentId, previousTocIds, nextIds);
-		if (nextActiveId !== currentId) activeTocId = nextActiveId;
-		previousTocIds = nextIds;
-	});
-	function navigateArticleToc(id: string): void {
-		const reduced =
-			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-		void revealTocTarget(id, {
-			beforeReveal: openCollapsedTocTarget,
-			behavior: reduced ? 'auto' : 'smooth',
-		});
 	}
 
 	function measureTabOverflow(viewport = tabViewport): void {
@@ -292,12 +270,9 @@
 		{#key articleToc.sectionKey}
 			<TocNav
 				entries={articleTocEntries}
-				activeId={activeTocId}
-				onNavigate={navigateArticleToc}
+				{navigation}
 				heading={articleToc.heading}
-				sectionKey={articleToc.sectionKey}
 				counterPrefix={articleToc.counterPrefix}
-				quiet={false}
 			/>
 		{/key}
 	{/if}
@@ -328,11 +303,11 @@
 			railScroll
 			toc={{
 				entries: articleTocEntries,
+				navigation,
+				landFragments: true,
 				openAria: articleToc?.openAria ?? '',
 				closeAria: articleToc?.closeAria ?? '',
-				onNavigate: articleToc ? navigateArticleToc : undefined,
 			}}
-			bind:activeId={activeTocId}
 			class={cn('entity-detail-article', className)}
 		>
 			{@render articleCenter()}

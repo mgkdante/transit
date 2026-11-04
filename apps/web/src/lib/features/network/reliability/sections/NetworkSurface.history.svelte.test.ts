@@ -1,3 +1,4 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

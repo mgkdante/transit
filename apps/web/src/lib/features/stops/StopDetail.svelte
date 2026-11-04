@@ -31,7 +31,7 @@
 	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
 	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
 	import { articleNavigationCopy } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { Separator } from '@yesid/ui/separator';
 	import { desktop } from '@yesid/ui/state';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
@@ -490,7 +490,7 @@
 			titleId="stop-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 			{#snippet actions()}
 				<MapDrilldownLink
@@ -511,7 +511,6 @@
 						headerVariant="article-summary"
 						index={0}
 						anchor="stop-detail-departures"
-						sectionKey={`stop-detail-${id}-departures`}
 					>
 						<ResourceBoundary resource={departureReport} lang={locale}>
 							{#snippet children(_report)}
@@ -617,7 +616,6 @@
 						headerVariant="article-summary"
 						index={1}
 						anchor="stop-detail-facts"
-						sectionKey={`stop-detail-${id}-facts`}
 					>
 						{@render stopInformation()}
 					</CollapsibleSection>
@@ -631,7 +629,6 @@
 						headerVariant="article-summary"
 						index={0}
 						anchor="stop-schedule-service"
-						sectionKey={`stop-schedule-${id}-service`}
 					>
 						<ResourceBoundary resource={stop} lang={locale}>
 							{#snippet children(s: StopFile | null)}

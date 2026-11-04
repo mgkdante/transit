@@ -35,7 +35,7 @@
 	} from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -450,7 +450,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'alerts-window',
-			sectionKey: 'alerts-card-window',
 			number: 1,
 			title: t.cards.window.title,
 			subtitle: t.cards.window.subtitle,
@@ -458,7 +457,6 @@
 		},
 		{
 			id: 'alerts-breakdown',
-			sectionKey: 'alerts-card-breakdown',
 			number: 2,
 			title: t.cards.breakdown.title,
 			subtitle: t.cards.breakdown.subtitle,
@@ -466,7 +464,6 @@
 		},
 		{
 			id: 'alerts-log',
-			sectionKey: 'alerts-card-log',
 			number: 3,
 			title: t.cards.log.title,
 			subtitle: t.cards.log.subtitle,
@@ -477,7 +474,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const meta: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -526,7 +523,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.filters.railLabel} sectionKey="alerts-filters">
+	<CollapsibleSection independent title={t.filters.railLabel}>
 		<AlertFilters
 			bind:affects
 			bind:severity
@@ -551,10 +548,9 @@
 		<div class="alert-history-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="alerts-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -578,9 +574,15 @@
 <DetailFrame
 	class="alert-history-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={controlsReady ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+		pillEntries: [],
+		openAria: '',
+		closeAria: '',
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -595,7 +597,7 @@
 			titleId="alerts-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -631,10 +633,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'alerts-window'}
 								<div class="alert-history-headline" data-slot="alert-headline">

@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
-import { quietMode } from '@yesid/ui/state';
 import type { V1Context } from '$lib/v1/boot';
 import type { IsoUtc } from '$lib/v1/schemas';
 
@@ -49,7 +48,7 @@ vi.mock('$app/stores', async () => {
 		window.history.replaceState({}, '', pathname);
 		page.update((current) => ({ ...current }));
 	};
-	return { page };
+	return { page, navigating: writable(null) };
 });
 
 vi.mock('$app/state', () => ({ updated: { current: false }, page: { state: {} } }));
@@ -220,7 +219,6 @@ function expectLegalDestinationsAbsent(
 
 afterEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 	document.body.style.removeProperty('overflow');
 	document.body.style.removeProperty('pointer-events');
 });
@@ -241,12 +239,6 @@ describe('root layout data-independent legal routes', () => {
 
 		navigate('https://transit.yesid.dev/privacy', 'https://transit.yesid.dev/terms');
 		expect(main.scrollTop).toBe(0);
-	});
-
-	it('restores the remembered quiet mode from the Transit storage key', () => {
-		localStorage.setItem('quiet-mode', 'true');
-		renderWithoutV1('/privacy', 'en');
-		expect(document.documentElement.dataset.quietMode).toBe('true');
 	});
 
 	it.each(['en', 'fr'] as const)(
@@ -284,7 +276,7 @@ describe('root layout data-independent legal routes', () => {
 		const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
 		const cancel = vi.fn();
 		const href = 'https://transit.yesid.dev/network?provider=octranspo';
-		harness.beforeNavigateCallbacks[0]?.({
+		harness.beforeNavigateCallbacks.at(-1)?.({
 			willUnload: false,
 			to: { url: new URL(href) },
 			cancel,
@@ -450,7 +442,7 @@ describe('root layout data-independent legal routes', () => {
 				complete: Promise.resolve(),
 			};
 
-			const blocker = harness.onNavigateCallbacks[0]?.(navigation);
+			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
 
 			expect(harness.runViewTransition).toHaveBeenCalledOnce();
 			expect(harness.runViewTransition).toHaveBeenCalledWith(navigation);

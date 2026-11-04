@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
@@ -9,6 +10,7 @@
 	import type { PublicProvider } from '$lib/v1/providers';
 
 	interface AppShellProps {
+		navigation: NavigationLifecycle;
 		locale?: Locale;
 		url?: URL;
 		providerId?: string;
@@ -26,6 +28,7 @@
 	}
 
 	let {
+		navigation,
 		locale: localeProp,
 		url,
 		providerId,
@@ -53,6 +56,7 @@
 >
 	<div class="app-shell-chrome" data-slot="app-shell-chrome">
 		<NavPill
+			{navigation}
 			{locale}
 			{url}
 			{providerId}

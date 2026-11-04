@@ -24,6 +24,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$app/state', () => ({ page: fixture.page }));
 vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
 	replaceState: (url: string | URL) => {
 		fixture.page.url = new URL(url, 'http://localhost');
 	},

@@ -2,7 +2,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { fireEvent, render } from '@testing-library/svelte';
 import type { ViteDevServer } from 'vite';
 import type { Locale } from '$lib/i18n';
-import { quietMode } from '@yesid/ui/state';
 import { highlight } from '@yesid/seo-kit/highlight';
 import { METRICS, type MetricEntry } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
@@ -57,11 +56,9 @@ afterAll(async () => {
 });
 beforeEach(() => {
 	state.provenance = null;
-	quietMode.resetForTest();
 });
 afterEach(() => {
 	sessionStorage.clear();
-	quietMode.resetForTest();
 });
 
 function documentBody(html: string): HTMLDivElement {

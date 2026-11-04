@@ -1,3 +1,4 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
