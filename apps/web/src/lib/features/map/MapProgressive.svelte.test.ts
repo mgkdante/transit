@@ -242,6 +242,8 @@ describe('MapProgressive automatic live boot', () => {
 				.mockImplementationOnce(() => secondImport.promise);
 			const view = render(MapProgressive, { props: { importHero: importer } });
 			const retry = await view.findByRole('button', { name: 'Try live map again' });
+			expect(retry).toHaveAttribute('data-slot', 'button');
+			expect(retry).toHaveClass('min-h-11');
 
 			expect(view.getByRole('alert')).toHaveTextContent('Live map could not start');
 			expect(view.container.querySelector('[data-map-wake]')).toBeNull();

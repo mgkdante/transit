@@ -22,10 +22,12 @@ bun run dev
 icons. `bun run dev` serves http://localhost:5173 from the public snapshots; it
 needs internet access but no database, API keys or Cloudflare account.
 
-On Windows, `bun install --frozen-lockfile` can resolve differently from Linux.
-If it fails, run `bun install` and keep the `bun.lock` change out of your
-commit. A dependency change needs a lockfile resolved by Bun on Linux, which is
-what CI installs from.
+For a dependency change, run `bun install` on your machine and commit the intended
+`bun.lock` change. CI's `bun install --frozen-lockfile` on Linux decides whether
+it works. If that install fails, regenerate the lockfile with the pinned Bun on
+a Linux host or in CI, then rerun the checks. Windows work stays on native tools.
+For an unchanged checkout, a local frozen-install failure is a setup problem;
+keep incidental lockfile changes out of your commit.
 
 ## Check a change
 

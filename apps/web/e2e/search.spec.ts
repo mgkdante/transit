@@ -79,9 +79,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		test.skip(project.name === 'desktop', 'desktop headers carry the search box');
 		await page.goto(localizeHref('/', locale));
 		await page.getByRole('link', { name: nav.searchAria.all, exact: true }).click();
-		await expect(
-			page.getByRole('searchbox', { name: searchCopy[locale].inputLabel }),
-		).toBeVisible();
+		await expect(page.getByRole('textbox', { name: searchCopy[locale].inputLabel })).toBeVisible();
 	});
 
 	test(`${locale}: the search page finds a line and a stop by name`, async ({ page }) => {
