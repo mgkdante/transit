@@ -143,5 +143,13 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  process.exitCode = await probeSites({ alert: issueAlert });
+  if (process.argv[2] === "--weekly") {
+    const { weeklyAllowed, probeLinks } =
+      await import("./site-probe-weekly.mjs");
+    if (!weeklyAllowed(process.env, process.env.PROBE_SCHEDULE))
+      throw new Error("Weekly probe is not authorized for this event or rerun");
+    process.exitCode = await probeLinks({ alert: issueAlert });
+  } else {
+    process.exitCode = await probeSites({ alert: issueAlert });
+  }
 }
