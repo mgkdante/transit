@@ -35,7 +35,15 @@ describe('LineDirections', () => {
 			expect(
 				screen.getByText(locale === 'en' ? '2 min late' : '2 min en retard'),
 			).toBeInTheDocument();
-			const stop = screen.getByRole('link', { name: detailCopy[locale].viewStop('Second stop') });
+			const action = locale === 'en' ? 'View stop' : 'Voir l’arrêt';
+			const predicted = screen.getByRole('link', { name: /First stop/ });
+			expect(predicted).toHaveAccessibleName(
+				`${action} 1 First stop ${predicted.querySelector('time')!.textContent} ${locale === 'en' ? '2 min late' : '2 min en retard'}`,
+			);
+			const stop = screen.getByRole('link', { name: /Second stop/ });
+			expect(stop).toHaveAccessibleName(
+				`${action} 2 Second stop ${locale === 'en' ? 'No estimate, no prediction available' : 'Aucune estimation, aucune prévision disponible'}`,
+			);
 			const empty = stop.querySelector('[data-slot="absent-value"]');
 			expect(empty).toHaveAttribute('data-presentation', 'row');
 			expect(empty).toHaveAttribute(
