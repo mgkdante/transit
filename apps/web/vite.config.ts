@@ -41,11 +41,10 @@ function canonicalDataUrl(value: unknown): URL | null {
 	}
 }
 
-function mapRuntimeManualChunks(id: string): string | undefined {
-	if (id.endsWith('.css')) return undefined;
-	if (id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)) {
-		return 'vendor-maplibre';
-	}
+function isMapRuntimeModule(id: string): boolean {
+	return (
+		!id.endsWith('.css') && id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)
+	);
 }
 
 export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
@@ -186,7 +185,7 @@ export default defineConfig(({ command }) => ({
 										groups: [
 											{
 												name: 'vendor-maplibre',
-												test: (id) => mapRuntimeManualChunks(id) === 'vendor-maplibre',
+												test: isMapRuntimeModule,
 											},
 										],
 									},
@@ -242,7 +241,7 @@ export default defineConfig(({ command }) => ({
 				extends: true,
 				test: {
 					name: 'data',
-					include: ['src/lib/**/*.test.ts', 'src/params/**/*.test.ts', 'src/tests/**/*.test.ts'],
+					include: ['src/lib/**/*.test.ts', 'src/params.test.ts', 'src/tests/**/*.test.ts'],
 					exclude: [
 						'src/lib/components/**',
 						'src/lib/stores/**',

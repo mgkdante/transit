@@ -6,6 +6,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
+const uiRequire = createRequire(require.resolve('@yesid/ui/brand'));
 const kitDirectory = dirname(require.resolve('@sveltejs/kit/package.json'));
 const kitCookies = await import(
 	pathToFileURL(join(kitDirectory, 'src/runtime/server/cookie.js')).href
@@ -15,6 +16,9 @@ const miniflareRequire = createRequire(wranglerRequire.resolve('miniflare'));
 const { Youch } = await import(pathToFileURL(miniflareRequire.resolve('youch')).href);
 
 describe('cookie override compatibility', () => {
+	it('resolves production UI primitives to the app bits-ui copy that carries the touch patch', () => {
+		expect(uiRequire.resolve('bits-ui')).toBe(require.resolve('bits-ui'));
+	});
 	it('preserves SvelteKit cookie types, decoding and response serialization', () => {
 		expectTypeOf<NonNullable<Parameters<Cookies['set']>[2]>['maxAge']>().toEqualTypeOf<
 			number | undefined

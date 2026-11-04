@@ -84,21 +84,21 @@ describe('vite production chunk contract', () => {
 		const mapGroup = groups?.find(
 			(group: Rolldown.CodeSplittingGroup) => group.name === 'vendor-maplibre',
 		);
-		const manualChunks = (id: string) =>
+		const chunkNameFor = (id: string) =>
 			typeof mapGroup?.test === 'function' && mapGroup.test(id) ? mapGroup.name : undefined;
 
 		expect(build?.chunkSizeWarningLimit).toBe(1100);
 		expect(typeof mapGroup?.test).toBe('function');
 		expect(firstOutput?.codeSplitting).toBeUndefined();
 		expect(firstClientOutput?.codeSplitting).toMatchObject({ minSize: 1_500 });
-		if (typeof manualChunks !== 'function') return;
+		if (typeof chunkNameFor !== 'function') return;
 
-		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.mjs')).toBe(
+		expect(chunkNameFor('/repo/node_modules/maplibre-gl/dist/maplibre-gl.mjs')).toBe(
 			'vendor-maplibre',
 		);
-		expect(manualChunks('/repo/node_modules/pmtiles/dist/index.js')).toBe('vendor-maplibre');
-		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.css')).toBeUndefined();
-		expect(manualChunks('/repo/src/lib/features/map/MapHero.svelte')).toBeUndefined();
+		expect(chunkNameFor('/repo/node_modules/pmtiles/dist/index.js')).toBe('vendor-maplibre');
+		expect(chunkNameFor('/repo/node_modules/maplibre-gl/dist/maplibre-gl.css')).toBeUndefined();
+		expect(chunkNameFor('/repo/src/lib/features/map/MapHero.svelte')).toBeUndefined();
 	});
 
 	it('does not emit the map vendor chunk for the SSR build', async () => {

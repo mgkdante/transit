@@ -79,7 +79,7 @@ describe('content security policy', () => {
 	});
 });
 
-describe('drift gate — _headers /* block matches kit.config.js and the document headers', () => {
+describe('drift gate / _headers /* block matches kit.config.js and the document headers', () => {
 	const fileHeaders = parseHeadersFileGlobBlock();
 
 	it('asset CSP is the document policy without inline-script hashes', () => {
