@@ -119,6 +119,14 @@ beforeEach(() => {
 });
 
 describe('SearchSurface idle state', () => {
+	it('uses the shared listing search with an accessible name and magnifier', () => {
+		const { container } = render(SearchSurface);
+		const box = screen.getByRole('textbox', { name: 'Search lines, stops and buses' });
+		expect(box.closest('[data-slot="listing-search-field"]')).not.toBeNull();
+		expect(box.parentElement?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+		expect(container.querySelector('label[for="surface-search-input"]')).toBeNull();
+	});
+
 	it('shows the instructional idle note before the rider types', () => {
 		setUrlQuery('');
 		render(SearchSurface);

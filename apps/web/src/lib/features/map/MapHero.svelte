@@ -7,6 +7,7 @@
 	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
+	import { Button } from '@yesid/ui/button';
 	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { getBasemap } from '#lib/v1/repositories/basemap.ts';
@@ -511,9 +512,9 @@
 
 {#snippet mapRetry()}
 	{#if mapFailure}
-		<button type="button" class="map-stage-retry" onclick={() => void mapFailure?.retry()}>
+		<Button type="button" size="sm" class="min-h-11" onclick={() => void mapFailure?.retry()}>
 			{t.mapRetry}
-		</button>
+		</Button>
 	{/if}
 {/snippet}
 
@@ -656,17 +657,5 @@
 
 	.map-stage-error :global(.state-notice) {
 		width: min(100%, 30rem);
-	}
-
-	.map-stage-retry {
-		min-height: 2.5rem;
-		padding: 0.5rem 0.875rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--primary);
-		color: var(--primary-foreground);
-		font: inherit;
-		font-weight: 700;
-		cursor: pointer;
 	}
 </style>

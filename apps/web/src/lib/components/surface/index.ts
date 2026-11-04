@@ -12,7 +12,6 @@ export { historyCopy, type HistoryCopyInput } from './historyCopy';
 export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
-export { default as SearchInput } from './SearchInput.svelte';
 export { default as SearchControls } from './SearchControls.svelte';
 export type { SearchScopeKey } from './SearchControls.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
@@ -36,7 +35,6 @@ export type { HistoryNavigatorLabels, HistoryNavigatorProps } from './HistoryNav
 export type { FreshnessStampProps } from './FreshnessStamp.svelte';
 export type { ConformanceBadgeProps } from './ConformanceBadge.svelte';
 export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';
-export type { SearchInputProps } from './SearchInput.svelte';
 export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
 
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';

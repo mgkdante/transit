@@ -29,6 +29,8 @@ describe('RefreshButton action and recovery', () => {
 			const initialEpoch = dataRefresh.epoch;
 			const { container } = render(RefreshButton, { locale });
 			const button = screen.getByRole('button', { name: label });
+			expect(button).toHaveAttribute('data-slot', 'button');
+			expect(button).toHaveClass('size-11');
 			expect(button).toHaveAttribute('title', label);
 			expect(container.querySelector('[data-slot="refresh-readout"]')).toBeNull();
 			await fireEvent.click(button);
