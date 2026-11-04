@@ -96,3 +96,58 @@ test('TOC opens only its collapsed content target at the quarter-viewport line',
 		)
 		.toBeLessThan(3);
 });
+
+test('mobile Metrics keeps its landing and active item when the TOC reopens during settlement', async ({
+	page,
+}, testInfo) => {
+	test.skip(testInfo.project.name !== 'phone', 'one real mobile Metrics settlement case');
+	await page.goto('/metrics');
+	const toggle = page.getByTestId('sections-toggle');
+	await expect(toggle).toHaveText('Collapse all');
+	await toggle.click();
+	await expect(toggle).toHaveText('Expand all');
+	const frozen = Date.now() + 1000;
+	await page.clock.install({ time: frozen });
+	await page.clock.pauseAt(frozen + 1000);
+	await page.evaluate(() => {
+		const original = Element.prototype.scrollIntoView;
+		Object.assign(window, { metricLandings: [] as string[] });
+		Element.prototype.scrollIntoView = function (options) {
+			const anchor = this.getAttribute('data-toc') ?? this.id;
+			if (anchor === 'otp')
+				(window as unknown as { metricLandings: string[] }).metricLandings.push(anchor);
+			return original.call(this, options);
+		};
+	});
+	const toc = page.getByTestId('toc-pill');
+	const pill = toc.locator('button.toc-pill');
+	await pill.click({ force: true });
+	await toc.getByRole('button', { name: 'On-time %', exact: true }).click({ force: true });
+	await expect(pill).toHaveAttribute('aria-expanded', 'false');
+	await pill.click({ force: true });
+	await expect(pill).toHaveAttribute('aria-expanded', 'true');
+	// The clock holds the settlement frames, proving the reopen happens before landing.
+	expect(
+		await page.evaluate(() => (window as unknown as { metricLandings: string[] }).metricLandings),
+	).toEqual([]);
+	await page.clock.runFor(800);
+	await expect(page.locator('#otp [data-section-trigger]')).toHaveAttribute(
+		'aria-expanded',
+		'true',
+	);
+	await expect(page.locator('#headway [data-section-trigger]')).toHaveAttribute(
+		'aria-expanded',
+		'false',
+	);
+	await expect(pill).toHaveAttribute('aria-label', /^On-time % 2\/17/);
+	await expect
+		.poll(() =>
+			page
+				.locator('#otp')
+				.evaluate((target) => Math.abs(target.getBoundingClientRect().top - innerHeight * 0.25)),
+		)
+		.toBeLessThan(3);
+	expect(
+		await page.evaluate(() => (window as unknown as { metricLandings: string[] }).metricLandings),
+	).toEqual(['otp']);
+});
