@@ -247,7 +247,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          TRANSIT_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          # checkout builds the PR merge ref, not the feature-branch head.
+          TRANSIT_COMMIT_SHA: ${{ github.sha }}
           TRANSIT_BRANCH: ${{ github.head_ref }}
           WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
         run: |
