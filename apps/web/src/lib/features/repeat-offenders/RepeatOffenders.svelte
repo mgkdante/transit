@@ -443,7 +443,7 @@
 	{/snippet}
 
 	{#if hasGrains || hasHistoryNavigator}
-		<CollapsibleSection title={t.rail.controls}>
+		<CollapsibleSection independent title={t.rail.controls}>
 			<ArticleControlStack
 				history={hasHistoryNavigator ? historyControls : undefined}
 				primary={hasGrains ? primaryControls : undefined}

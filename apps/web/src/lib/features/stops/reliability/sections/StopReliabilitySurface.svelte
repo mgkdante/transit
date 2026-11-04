@@ -246,7 +246,7 @@
 				</p>
 			{/snippet}
 
-			<CollapsibleSection title={copy.controlsLabel}>
+			<CollapsibleSection independent title={copy.controlsLabel}>
 				<ArticleControlStack
 					history={availableHistoryDates.length > 0 ? historyControls : undefined}
 					primary={primaryControls}

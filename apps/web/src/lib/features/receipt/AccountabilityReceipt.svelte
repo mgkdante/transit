@@ -314,7 +314,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.rail.controls}>
+	<CollapsibleSection independent title={t.rail.controls}>
 		<div class="receipt-controls" data-slot="receipt-controls">
 			{#key navigatorRevision}
 				<HistoryNavigator

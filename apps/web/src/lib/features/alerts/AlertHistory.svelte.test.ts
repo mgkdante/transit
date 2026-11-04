@@ -11,6 +11,7 @@ import type { PublicProvider } from '$lib/v1/providers';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
+import { sections } from '@yesid/ui/state';
 
 const copyEn = alertHistoryCopy.en;
 
@@ -327,6 +328,37 @@ it.each(['en', 'fr'] as const)(
 );
 
 describe('AlertHistory article shell', () => {
+	it.each(['en', 'fr'] as const)(
+		'%s: bulk actions count only content and preserve the real filter panel state',
+		async (locale) => {
+			currentLocale.value = locale;
+			const copy = alertHistoryCopy[locale];
+			const { container } = render(AlertHistoryScreen);
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			const panel = within(rail).getByRole('button', { name: copy.filters.railLabel });
+			const toc = within(rail).getByRole('button', { name: copy.rail.toc });
+			const content = [
+				...container.querySelectorAll('[data-slot="alert-sections"] [data-section-trigger]'),
+			];
+			const toggle = screen.getByTestId('sections-toggle');
+			expect(content).toHaveLength(3);
+			expect(sections.count).toBe(3);
+			await fireEvent.click(toggle);
+			for (const trigger of content) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+			expect(panel).toHaveAttribute('aria-expanded', 'true');
+			expect(toc).toHaveAttribute('aria-expanded', 'true');
+			expect(toggle).toHaveAttribute('data-collapsed', 'true');
+			await fireEvent.click(panel);
+			await fireEvent.click(toggle);
+			for (const trigger of content) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+			expect(panel).toHaveAttribute('aria-expanded', 'false');
+			await fireEvent.click(panel);
+			await fireEvent.click(toggle);
+			expect(panel).toHaveAttribute('aria-expanded', 'true');
+			expect(toggle).toHaveAttribute('data-collapsed', 'true');
+		},
+	);
+
 	it('renders one article heading, exact metadata copy, and only the single page action', () => {
 		const { container } = render(AlertHistoryScreen);
 

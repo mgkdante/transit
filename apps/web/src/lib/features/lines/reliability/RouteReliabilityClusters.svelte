@@ -174,7 +174,7 @@
 				</p>
 			{/snippet}
 
-			<CollapsibleSection title={copy.controls.viewLabel}>
+			<CollapsibleSection independent title={copy.controls.viewLabel}>
 				<ArticleControlStack
 					primary={primaryControls}
 					secondary={mode === 'range' ? rangeControls : undefined}

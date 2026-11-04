@@ -523,7 +523,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.filters.railLabel}>
+	<CollapsibleSection independent title={t.filters.railLabel}>
 		<AlertFilters
 			bind:affects
 			bind:severity

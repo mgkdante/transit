@@ -365,7 +365,7 @@
 		</p>
 	{/snippet}
 
-	<CollapsibleSection title={t.rail.controls}>
+	<CollapsibleSection independent title={t.rail.controls}>
 		<ArticleControlStack
 			history={hasHistoryNavigator ? historyControls : undefined}
 			primary={showGrainPicker ? primaryControls : undefined}

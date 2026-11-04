@@ -565,7 +565,7 @@
 	{/snippet}
 
 	{#if hasViewControls}
-		<CollapsibleSection title={t.viewControlsLabel}>
+		<CollapsibleSection independent title={t.viewControlsLabel}>
 			<ArticleControlStack
 				history={view.history.discovered ? historyControls : undefined}
 				primary={showGrainPicker ? primaryControls : undefined}

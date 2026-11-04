@@ -172,6 +172,26 @@ afterAll(() => {
 });
 
 describe('HealthStatus — async reveal navigation', () => {
+	it('keeps a content jump through non-navigating TOC disclosure clicks while layout settles', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const target = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.lanes.section }),
+		);
+		await fireEvent.click(target);
+		const toc = await openHealthToc(left);
+		await fireEvent.click(within(left).getByRole('button', { name: copy.en.lanes.section }));
+		await fireEvent.click(toc);
+		await fireEvent.click(toc);
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		expect(target).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+	});
+
 	it('mounts the history card and ToC together after discovery, with declared defaults and an independent ToC', async () => {
 		const { container } = render(HealthStatus);
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
