@@ -130,6 +130,98 @@ def _load(connection, snap_id: int, alerts: list) -> object:
     return load_i3_snapshot_to_silver(connection, snapshot=snapshot)
 
 
+@pytest.mark.parametrize('initial', [[], [ALERT_A]])
+def test_failed_load_after_successful_download_keeps_loaded_alert_capture(conn, initial, capsys):
+    from transit_ops.snapshots.builders.live import build_alerts
+
+    _load(conn, SNAP_IDS[0], initial)
+    # Raw success persists; the Silver transaction, including its empty-feed receipt, fails.
+    conn.execute(text('UPDATE raw.ingestion_runs SET completed_at_utc=:at, started_at_utc=:at '
+                      'WHERE ingestion_run_id=:id'), {'at': T2, 'id': RUN_IDS[1]})
+    broken = [{**ALERT_A, 'publishedAt': 'invalid-date'}]
+    conn.execute(text('UPDATE raw.i3_alert_snapshots SET raw_payload_json=CAST(:body AS jsonb) '
+                      'WHERE i3_alert_snapshot_id=:id'),
+                 {'body': json.dumps(broken), 'id': SNAP_IDS[1]})
+    with pytest.raises(ValueError), conn.begin_nested():
+        _load(conn, SNAP_IDS[1], broken)
+    payload = build_alerts(conn, provider_id=PROVIDER, generated_utc=T2.isoformat())
+    assert payload.feed_captured_utc == T1.strftime('%Y-%m-%dT%H:%M:%SZ')
+    assert bool(payload.alerts) == bool(initial)
+    _load(conn, SNAP_IDS[2], [])
+    after_empty = build_alerts(conn, provider_id=PROVIDER, generated_utc=T3.isoformat())
+    assert after_empty.feed_captured_utc == T3.strftime('%Y-%m-%dT%H:%M:%SZ')
+    if initial:
+        _report_freshness_query_cost(conn, capsys)
+
+
+def _report_freshness_query_cost(conn, capsys):
+    """Emit synthetic, warm-buffer PostgreSQL timings without changing production."""
+    from statistics import median
+
+    from transit_ops.snapshots.builders.live import (
+        _DATA_HEALTH_FEEDS_SQL,
+        _FEED_CAPTURE_SQL,
+        _NETWORK_FRESHNESS_SQL,
+    )
+
+    # Two serving lanes and two years of daily alert receipts. No production sample.
+    conn.execute(text("""
+        INSERT INTO raw.alert_feed_observations
+            (provider_id, observation_date, alert_count, observed_at_utc)
+        SELECT :p, day::date, 0, day
+        FROM generate_series(CAST(:at AS timestamptz) - interval '729 days',
+                             CAST(:at AS timestamptz), interval '1 day') day
+        ON CONFLICT (provider_id, observation_date) DO NOTHING
+    """), {'p': PROVIDER, 'at': T1})
+    conn.execute(text("""
+        INSERT INTO core.feed_endpoints (provider_id, endpoint_key, feed_kind, source_format)
+        VALUES (:p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates'),
+               (:p, 'vehicle_positions', 'vehicle_positions', 'gtfs_rt_vehicle_positions')
+    """), {'p': PROVIDER})
+    conn.execute(text("""
+        INSERT INTO gold.realtime_serving_state
+            (provider_id, endpoint_key, realtime_snapshot_id, captured_at_utc)
+        VALUES (:p, 'trip_updates', 1, :at), (:p, 'vehicle_positions', 2, :at)
+    """), {'p': PROVIDER, 'at': T3})
+    conn.execute(text("""
+        INSERT INTO raw.ingestion_runs
+            (provider_id, feed_endpoint_id, run_kind, status, started_at_utc, completed_at_utc)
+        SELECT provider_id, feed_endpoint_id, endpoint_key, 'succeeded', :at, :at
+        FROM core.feed_endpoints
+        WHERE provider_id = :p AND endpoint_key IN ('trip_updates', 'vehicle_positions')
+    """), {'p': PROVIDER, 'at': T3})
+    results = {}
+    def nodes(plan):
+        children = [kind for child in plan.get('Plans', []) for kind in nodes(child)]
+        return [plan['Node Type']] + children
+
+    for label, query, endpoint in (
+        ('predictions', _FEED_CAPTURE_SQL, 'trip_updates'),
+        ('alerts', _FEED_CAPTURE_SQL, 'i3_alerts'),
+        ('network', _NETWORK_FRESHNESS_SQL, None),
+        ('data_health', _DATA_HEALTH_FEEDS_SQL, None),
+    ):
+        timings = []
+        planning = []
+        for _ in range(10):
+            plan = conn.execute(
+                text('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + str(query)),
+                {'provider_id': PROVIDER, 'endpoint_key': endpoint},
+            ).scalar_one()[0]
+            timings.append(plan['Execution Time'])
+            planning.append(plan['Planning Time'])
+        results[label] = {'execution_ms_median': median(timings),
+                          'execution_ms_max': max(timings),
+                          'planning_ms_median': median(planning),
+                          'plan_nodes': nodes(plan['Plan'])}
+    with capsys.disabled():
+        print('LIVE_SERVING_FRESHNESS_QUERY_COST ' + json.dumps({
+            'scope': 'disposable Postgres, 730 daily alert receipts, two serving lanes, '
+                     '10 warm-buffer EXPLAIN ANALYZE samples; not production or round-trip timing',
+            'queries': results,
+        }))
+
+
 def _active_rows(connection) -> list[dict]:
     return [
         dict(row)

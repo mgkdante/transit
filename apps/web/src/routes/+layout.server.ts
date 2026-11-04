@@ -10,6 +10,7 @@ export const load: LayoutServerLoad = async (event) => {
 
 	const selection = await bootProvider(event.url, lang, serverV1Context(event));
 	if (selection.redirectHref) redirect(307, selection.redirectHref);
+	if (selection.discoveryError) event.setHeaders({ 'cache-control': 'no-store' });
 	return {
 		lang,
 		...selection,

@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { kpiSampleState } from "../../contracts/kpis-v1.js";
 
-/** @typedef {{ name: string, url: string, kind: 'health' } | { name: string, url: string, kind: 'html', marker: string }} SiteCheck */
+/** @typedef {{ name: string, url: string, kind: 'health' } | { name: string, url: string, kind: 'kpis' } | { name: string, url: string, kind: 'html', marker: string }} SiteCheck */
 
 // Fixed public targets only. No credentials, visitor input, analytics or database access.
 /** @type {SiteCheck[]} */
@@ -24,10 +25,15 @@ export const SITE_CHECKS = [
     kind: "html",
     marker: "Yesid",
   },
+  {
+    name: "transit-kpis",
+    url: "https://transit.yesid.dev/api/v1/kpis",
+    kind: "kpis",
+  },
 ];
 
-/** @param {SiteCheck} check @param {typeof fetch} fetchFn */
-async function checkSite(check, fetchFn) {
+/** @param {SiteCheck} check @param {typeof fetch} fetchFn @param {(state: 'live' | 'demo' | null) => void} sample */
+async function checkSite(check, fetchFn, sample) {
   try {
     const response = await fetchFn(check.url, {
       redirect: "manual",
@@ -37,6 +43,15 @@ async function checkSite(check, fetchFn) {
       },
       signal: AbortSignal.timeout(10_000),
     });
+    if (check.kind === "kpis") {
+      const state = kpiSampleState(
+        await response.json(),
+        response.status,
+        response.headers.get("retry-after"),
+      );
+      sample(state);
+      return state === null ? "invalid KPI v1 response" : null;
+    }
     if (response.status !== 200) return `HTTP ${response.status}`;
     if (check.kind === "health") {
       const health = await response.json();
@@ -56,32 +71,41 @@ async function checkSite(check, fetchFn) {
       ? null
       : "missing page content";
   } catch {
+    if (check.kind === "kpis") sample(null);
     // Never copy a response body or exception into a public issue.
     return "request failed, timed out, or returned invalid JSON";
   }
 }
 
 /**
- * @param {{ checks?: SiteCheck[], fetchFn?: typeof fetch, alert: (...args: string[]) => unknown, pause?: (ms: number) => Promise<unknown> }} options
+ * @param {{ checks?: SiteCheck[], fetchFn?: typeof fetch, alert: (...args: string[]) => unknown, pause?: (ms: number) => Promise<unknown>, log?: (value: unknown) => void }} options
  */
 export async function probeSites({
   checks = SITE_CHECKS,
   fetchFn = fetch,
   alert,
   pause = sleep,
+  log = (value) => console.log(JSON.stringify(value)),
 }) {
+  const kpis = { samples: 0, live: 0, demo: 0, invalid: 0 };
+  /** @param {'live' | 'demo' | null} state */
+  function sample(state) {
+    kpis.samples++;
+    kpis[state ?? "invalid"]++;
+  }
   const failures = (
     await Promise.all(
       checks.map(async (check) => {
-        let failure = await checkSite(check, fetchFn);
+        let failure = await checkSite(check, fetchFn, sample);
         if (failure) {
           await pause(5_000);
-          failure = await checkSite(check, fetchFn);
+          failure = await checkSite(check, fetchFn, sample);
         }
         return failure ? `${check.name} (${check.url}): ${failure}` : null;
       }),
     )
   ).filter(Boolean);
+  if (kpis.samples) log({ kpis });
   if (failures.length) {
     await alert(
       "fire",

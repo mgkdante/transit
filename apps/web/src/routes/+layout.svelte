@@ -414,6 +414,7 @@
 		url={currentMirrorUrl(new URL(page.url.href))}
 		providerId={data.providerId}
 		providers={data.providers}
+		discoveryError={data.discoveryError}
 		bind:search={topSearch}
 		searchResults={topSearchResults}
 		{searchScope}

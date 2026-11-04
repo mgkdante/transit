@@ -9,13 +9,21 @@
 
 	interface Props {
 		alerts: readonly Alert[] | null;
+		alertsStale?: boolean;
 		locale: Locale;
 		t: MapSelectionDetailCopy;
 		onalertselect?: (alert: Alert) => void;
 		presentation?: 'detail' | 'peek-passive';
 	}
 
-	let { alerts, locale, t, onalertselect, presentation = 'detail' }: Props = $props();
+	let {
+		alerts,
+		alertsStale = false,
+		locale,
+		t,
+		onalertselect,
+		presentation = 'detail',
+	}: Props = $props();
 	const uid = $props.id();
 	const PEEK_ALERT_CAP = 1;
 
@@ -105,7 +113,12 @@
 			<p class="map-peek-alerts-more">+{alerts.length - PEEK_ALERT_CAP} {t.more}</p>
 		{/if}
 	{:else}
-		<StateNotice title={t.noAlerts} glyph="●" tone="positive" presentation="silo" />
+		<StateNotice
+			title={t.noAlerts}
+			glyph="●"
+			tone={alertsStale ? 'neutral' : 'positive'}
+			presentation="silo"
+		/>
 	{/if}
 </section>
 

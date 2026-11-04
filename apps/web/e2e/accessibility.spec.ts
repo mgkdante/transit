@@ -9,6 +9,7 @@ import {
 import { navPillCopy } from '../src/lib/i18n/messages';
 import { AUDIT_NAV, LEGAL_NAV, SURFACE_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
+import { tripCopy } from '../src/lib/features/trips/trips.copy';
 
 const fixture = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
@@ -28,6 +29,7 @@ const pages = [
 	`/stop/${Object.keys(departures.stops)[0]}`,
 	`/lines/${lineId}`,
 	`/trip/${tripId}`,
+	'/trip/TEmpty',
 	`/search?q=${encodeURIComponent(fixture('stops-index.json').stops[0].name)}`,
 ];
 const localized = (href: string, locale: Locale) =>
@@ -52,11 +54,33 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 				if (path === `/lines/${line.id}`) {
 					await expect(page.locator('.line-stop-link')).toHaveCount(lineStopCount);
 					// Axe's label-in-name check needs the text on screen, not merely in the DOM.
-					await page.locator('.line-stop-link').first().scrollIntoViewIfNeeded();
+					for (const [index, link] of (await page.locator('.line-stop-link').all()).entries()) {
+						await link.scrollIntoViewIfNeeded();
+						await link.evaluate(
+							(element, index) => element.setAttribute('data-axe-stop', String(index)),
+							index,
+						);
+						await expectAccessible(page, { include: `[data-axe-stop="${index}"]` });
+					}
 				}
 				if (path === `/trip/${tripId}`) {
 					await expect(page.locator('.trip-stop-link')).toHaveCount(trips[tripId].stops.length);
-					await page.locator('.trip-stop-link').first().scrollIntoViewIfNeeded();
+					for (const [index, link] of (await page.locator('.trip-stop-link').all()).entries()) {
+						await link.scrollIntoViewIfNeeded();
+						await link.evaluate(
+							(element, index) => element.setAttribute('data-axe-stop', String(index)),
+							index,
+						);
+						await expectAccessible(page, { include: `[data-axe-stop="${index}"]` });
+					}
+				}
+				if (path === '/trip/TEmpty') {
+					await expect(
+						page
+							.getByTestId('trip-no-stops')
+							.getByText(tripCopy[locale].noPredictions, { exact: true }),
+					).toBeVisible();
+					await expect(page.locator('.trip-stop-link')).toHaveCount(0);
 				}
 				await expectAccessible(page);
 			});

@@ -37,6 +37,7 @@ export const navPillCopy = defineCopy({
 		names: { en: 'English', fr: 'Français' },
 		network: 'Réseau de transport',
 		defaultNetwork: 'Réseau par défaut',
+		otherNetworksUnavailable: 'Autres réseaux indisponibles',
 		newTab: '(nouvel onglet)',
 	},
 	en: {
@@ -71,6 +72,7 @@ export const navPillCopy = defineCopy({
 		names: { en: 'English', fr: 'Français' },
 		network: 'Transit network',
 		defaultNetwork: 'Default network',
+		otherNetworksUnavailable: 'Other networks unavailable',
 		newTab: '(opens in a new tab)',
 	},
 });

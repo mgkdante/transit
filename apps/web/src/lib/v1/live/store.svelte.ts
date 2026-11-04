@@ -15,6 +15,7 @@ import type {
 import { buildLiveIndex, type LiveIndex } from './index';
 
 const STALE_TTL_MULTIPLIER = 3;
+const CAPTURE_STALE_SECONDS = { alerts: 900, trips: 300, departures: 300 } as const;
 
 export const LIVE_FAMILIES = ['vehicles', 'trips', 'departures', 'alerts', 'network'] as const;
 
@@ -70,6 +71,7 @@ export interface LiveStore {
 	readonly generatedUtc: string | null;
 	readonly ageSeconds: number | null;
 	readonly isStale: boolean;
+	readonly isPartialStale: boolean;
 	readonly vehiclesGeneratedUtc: string | null;
 	readonly vehiclesAgeSeconds: number | null;
 	readonly vehiclesIsStale: boolean;
@@ -136,12 +138,27 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		for (const family of LIVE_FAMILIES) {
 			const { consecutiveFailures, ...state } = familyStatesValue[family];
 			const payload = currentFamilyPayload(family);
-			const age = freshnessAgeSeconds(
+			const publicationAge = freshnessAgeSeconds(
 				payload?.generated_utc,
 				runtime.clock.serverNow,
 				ttlMs / 1000,
 			);
-			const ageIsStale = age == null || age >= staleThresholdS;
+			// Missing means the old publisher is still running. Explicit null is unknown.
+			const captureEnabled =
+				payload != null && 'feed_captured_utc' in payload && family in CAPTURE_STALE_SECONDS;
+			const captureAge = captureEnabled
+				? freshnessAgeSeconds(payload.feed_captured_utc, runtime.clock.serverNow, ttlMs / 1000)
+				: null;
+			const age = captureEnabled
+				? publicationAge == null || captureAge == null
+					? null
+					: Math.max(publicationAge, captureAge)
+				: publicationAge;
+			const captureLimit = CAPTURE_STALE_SECONDS[family as keyof typeof CAPTURE_STALE_SECONDS];
+			const ageIsStale =
+				publicationAge == null ||
+				publicationAge >= staleThresholdS ||
+				(captureEnabled && (captureAge == null || captureAge >= captureLimit));
 			const retained = payload != null;
 			const retrying = state.phase === 'loading' && consecutiveFailures > 0;
 			const failed = state.phase === 'failed' || consecutiveFailures > 0;
@@ -197,6 +214,10 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return oldestAge;
 	});
 	const isStale = $derived(activeFamilies().some((family) => familyStates[family].health.isStale));
+	const isPartialStale = $derived(
+		// A family that has never loaded cannot certify a whole-feed outage either.
+		isStale && activeFamilies().some((family) => !familyStates[family].health.isStale),
+	);
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);
 	const vehiclesIsStale = $derived(familyStates.vehicles.health.isStale);
@@ -223,6 +244,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	});
 
 	type LiveFamilyPayload = VehiclesFile | TripsFile | StopDeparturesFile | AlertsFile | NetworkFile;
+	function captureTimestamp(payload: LiveFamilyPayload | null): string | null | undefined {
+		return payload && 'feed_captured_utc' in payload ? payload.feed_captured_utc : undefined;
+	}
 
 	function initialFamilyState(
 		active: boolean,
@@ -355,7 +379,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			const changed =
 				retained == null ||
 				payloadGeneration == null ||
-				retained.generated_utc !== payloadGeneration;
+				retained.generated_utc !== payloadGeneration ||
+				captureTimestamp(retained) !== captureTimestamp(payload);
 			if (changed) replaceFamilyPayload(family, payload);
 
 			const state = familyStatesValue[family];
@@ -612,6 +637,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		},
 		get isStale() {
 			return isStale;
+		},
+		get isPartialStale() {
+			return isPartialStale;
 		},
 		get vehiclesGeneratedUtc() {
 			return vehiclesGeneratedUtc;

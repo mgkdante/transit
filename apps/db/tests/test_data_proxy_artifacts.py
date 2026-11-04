@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import textwrap
@@ -18,6 +19,19 @@ WRANGLER_TOML = PROXY_DIR / "wrangler.toml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-data-proxy.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "daily-warm-rollups.yml"
 WEB_WRANGLER_TOML = REPO_ROOT / "apps" / "web" / "wrangler.toml"
+
+
+def test_kpi_freshness_budget_matches_three_manifest_live_ttls() -> None:
+    from transit_ops.snapshots.contract import ManifestLiveFiles
+
+    source = (PROXY_DIR / "src" / "kpis.js").read_text(encoding="utf-8")
+    cutoff = re.search(r"const SNAPSHOT_STALE_S = (\d+);", source)
+    cadence = re.search(r"const LIVE_CADENCE_MS = ([\d_]+);", source)
+    assert cutoff is not None
+    assert cadence is not None
+    ttl = ManifestLiveFiles.model_fields["ttl_s"].default
+    assert int(cutoff.group(1)) == ttl * 3 == 90
+    assert int(cadence.group(1).replace("_", "")) == ttl * 1000 == 30_000
 
 
 def _wrangler_config() -> dict:

@@ -59,6 +59,31 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from transit_ops.settings import Settings
 
 
+# Only committed serving provenance certifies the payload, never download success.
+# GTFS serving state survives empty feeds and source pruning. Alert observations
+# commit in the Silver load transaction, including successful empty alert loads.
+_FEED_CAPTURE_SQL = named_query(
+    "live.feed_capture",
+    """
+    SELECT captured_at_utc AS captured_utc
+    FROM gold.realtime_serving_state
+    WHERE provider_id = :provider_id AND endpoint_key = :endpoint_key
+    UNION ALL
+    SELECT MAX(observed_at_utc) AS captured_utc
+    FROM raw.alert_feed_observations
+    WHERE provider_id = :provider_id AND :endpoint_key IN ('i3_alerts', 'service_alerts')
+    GROUP BY provider_id
+    """,
+)
+
+
+def _feed_captured_utc(conn: Connection, provider_id: str, endpoint_key: str) -> str | None:
+    row = conn.execute(
+        _FEED_CAPTURE_SQL, {"provider_id": provider_id, "endpoint_key": endpoint_key}
+    ).mappings().fetchone()
+    return _opt_iso(row["captured_utc"]) if row else None
+
+
 _VEHICLES_SQL = named_query(
     "live.vehicles",
     """
@@ -164,7 +189,10 @@ def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: st
             )
         )
 
-    return TripsFile(generated_utc=generated_utc, trips=trips)
+    return TripsFile(
+        generated_utc=generated_utc, trips=trips,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 # Cap departures per route so frequent routes cannot crowd out corridor neighbors.
@@ -220,7 +248,10 @@ def build_stop_departures(
                 delay_min=_delay_min(r["avg_delay_seconds"]),
             )
         )
-    return StopDeparturesFile(generated_utc=generated_utc, stops=stops)
+    return StopDeparturesFile(
+        generated_utc=generated_utc, stops=stops,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 _ALERTS_SQL = named_query(
@@ -290,7 +321,10 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 ),
             )
         )
-    return AlertsFile(generated_utc=generated_utc, alerts=alerts)
+    return AlertsFile(
+        generated_utc=generated_utc, alerts=alerts,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "i3_alerts"),
+    )
 
 
 _NETWORK_VEHICLES_SQL = named_query(
@@ -360,10 +394,14 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
 _NETWORK_FRESHNESS_SQL = named_query(
     "network.live.freshness",
     """
-    SELECT MAX(completed_age_seconds) AS feed_freshness_s
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-      AND endpoint_key IN ('vehicle_positions', 'trip_updates')
+    SELECT CASE WHEN count(*) FILTER (WHERE capture.captured_at_utc IS NULL) > 0 THEN NULL
+                ELSE MAX(EXTRACT(EPOCH FROM (now() - capture.captured_at_utc)))::integer
+           END AS feed_freshness_s
+    FROM core.feed_endpoints fe
+    LEFT JOIN gold.realtime_serving_state capture
+      ON capture.provider_id = fe.provider_id AND capture.endpoint_key = fe.endpoint_key
+    WHERE fe.provider_id = :provider_id AND fe.is_enabled
+      AND fe.endpoint_key IN ('vehicle_positions', 'trip_updates')
     """
 )
 
@@ -597,10 +635,36 @@ _DATA_HEALTH_LANES_SQL = named_query(
 _DATA_HEALTH_FEEDS_SQL = named_query(
     "data_health.feeds",
     """
-    SELECT endpoint_key, status, completed_age_seconds
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-    ORDER BY endpoint_key
+    WITH alert_capture AS (
+        SELECT MAX(observed_at_utc) AS captured_at_utc
+        FROM raw.alert_feed_observations WHERE provider_id = :provider_id
+    )
+    SELECT f.endpoint_key, f.status,
+           EXTRACT(EPOCH FROM (now() - CASE
+               WHEN f.endpoint_key IN ('trip_updates', 'vehicle_positions')
+                   THEN serving.captured_at_utc
+               WHEN f.endpoint_key IN ('i3_alerts', 'service_alerts')
+                   THEN alert_capture.captured_at_utc
+               ELSE capture.last_capture
+           END))::integer AS completed_age_seconds
+    FROM gold.feed_freshness_current f
+    LEFT JOIN gold.realtime_serving_state serving
+      ON serving.provider_id = f.provider_id AND serving.endpoint_key = f.endpoint_key
+    CROSS JOIN alert_capture
+    LEFT JOIN LATERAL (
+        SELECT ir.completed_at_utc AS last_capture
+        FROM raw.ingestion_runs ir
+        JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
+        WHERE ir.provider_id = f.provider_id AND fe.endpoint_key = f.endpoint_key
+          AND f.endpoint_key NOT IN (
+              'trip_updates', 'vehicle_positions', 'i3_alerts', 'service_alerts'
+          )
+          AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
+        ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
+        LIMIT 1
+    ) capture ON true
+    WHERE f.provider_id = :provider_id
+    ORDER BY f.endpoint_key
     """
 )
 

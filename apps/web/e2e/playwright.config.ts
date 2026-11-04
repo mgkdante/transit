@@ -38,6 +38,8 @@ export default defineConfig({
 	tsconfig: './tsconfig.json',
 	outputDir: '../test-results',
 	forbidOnly: Boolean(process.env.CI),
+	// Leave CI's shard sizing alone; keep local browser runs from saturating shared hosts.
+	workers: process.env.CI ? undefined : 2,
 	reporter: process.env.CI
 		? [['line'], ['html', { open: 'never', outputFolder: '../playwright-report' }]]
 		: 'list',

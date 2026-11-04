@@ -22,6 +22,9 @@ type Node = {
 	additionalProperties?: boolean | Node;
 };
 const families = [
+	['live_alerts', s.AlertsFileSchema],
+	['live_trips', s.TripsFileSchema],
+	['live_stop_departures', s.StopDeparturesFileSchema],
 	['providers', PublicProviderCatalogSchema],
 	['historic_availability_index', s.HistoricAvailabilityIndexSchema],
 	['historic_collection_index', s.HistoricCollectionIndexSchema],

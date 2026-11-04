@@ -15,6 +15,7 @@
 		url?: URL;
 		providerId?: string;
 		providers?: PublicProvider[];
+		discoveryError?: boolean;
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
@@ -33,6 +34,7 @@
 		url,
 		providerId,
 		providers,
+		discoveryError,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
@@ -61,6 +63,7 @@
 			{url}
 			{providerId}
 			{providers}
+			{discoveryError}
 			bind:search
 			{onsearch}
 			{searchResults}

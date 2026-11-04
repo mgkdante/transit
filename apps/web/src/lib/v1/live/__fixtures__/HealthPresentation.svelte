@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { ManifestSchema } from '#lib/v1/schemas/index.ts';
 	import { createLiveStore } from '../store.svelte';
 	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
 	import MapFeedStallBanner from '#lib/features/map/MapFeedStallBanner.svelte';
+	let { locale = 'en' }: { locale?: Locale } = $props();
 
 	const manifest = ManifestSchema.parse({
 		provider: 'stm',
@@ -26,11 +28,12 @@
 	generatedUtc={live.generatedUtc}
 	ageSeconds={live.ageSeconds}
 	isStale={live.isStale}
-	locale="en"
+	{locale}
 />
 <MapFeedStallBanner
+	isPartialStale={live.isPartialStale}
 	generatedUtc={live.generatedUtc}
 	ageSeconds={live.ageSeconds}
 	isStale={live.isStale}
-	locale="en"
+	{locale}
 />

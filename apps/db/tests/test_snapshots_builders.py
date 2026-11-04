@@ -25,6 +25,16 @@ from transit_ops.snapshots.contract import (
 from transit_ops.sql_registry import query_name
 
 
+@pytest.mark.parametrize('builder', [build_alerts, build_trips, build_stop_departures])
+@pytest.mark.parametrize('captured', ['2026-11-04T11:40:00Z', None])
+def test_live_family_publishes_successful_capture_separately_from_generation(builder, captured):
+    conn = FakeConn({'live.feed_capture': [{'captured_utc': captured}]})
+    result = builder(conn, provider_id='stm', generated_utc='2026-11-04T12:00:00Z')
+    assert result.generated_utc == '2026-11-04T12:00:00Z'
+    assert result.model_dump()['feed_captured_utc'] == captured
+
+
+
 class FakeResult:
 
     def __init__(self, rows):  # noqa: ANN001
@@ -483,7 +493,7 @@ def test_build_network_aggregates_kpis() -> None:
                 {"route_id": "51", "nr_count": 4},
                 {"route_id": "165", "nr_count": 3},
             ],
-            "feed_freshness_current": [{"feed_freshness_s": 12}],
+            "network.live.freshness": [{"feed_freshness_s": 12}],
         }
     )
 
@@ -531,7 +541,7 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
                 {"status_band": "Critique / Severe", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "feed_freshness_current": [{"feed_freshness_s": 0}],
+            "network.live.freshness": [{"feed_freshness_s": 0}],
         }
     )
 
@@ -548,7 +558,7 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": [],
-            "feed_freshness_current": [{"feed_freshness_s": None}],
+            "network.live.freshness": [{"feed_freshness_s": None}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -570,7 +580,7 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
                 {"status_band": "Inconnu / Unknown", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "feed_freshness_current": [{"feed_freshness_s": 4}],
+            "network.live.freshness": [{"feed_freshness_s": 4}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -588,7 +598,7 @@ def test_build_network_no_occupancy_telemetry_emits_none_not_all_zero() -> None:
                 {"status_band": "En retard / Late", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "feed_freshness_current": [{"feed_freshness_s": 5}],
+            "network.live.freshness": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -603,7 +613,7 @@ def test_build_network_delay_histogram_none_when_no_delay_observations() -> None
                 {"status_band": "À l'heure / On time", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "feed_freshness_current": [{"feed_freshness_s": 5}],
+            "network.live.freshness": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -619,7 +629,7 @@ def test_build_network_delay_histogram_signed_bucket_edges() -> None:
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": trip_rows,
-            "feed_freshness_current": [{"feed_freshness_s": 5}],
+            "network.live.freshness": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -643,7 +653,7 @@ def test_build_network_non_responding_by_route_none_when_no_routes() -> None:
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": [],
             "network.live.non_responding_by_route": [],
-            "feed_freshness_current": [{"feed_freshness_s": 5}],
+            "network.live.freshness": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
@@ -1753,7 +1763,7 @@ def test_build_alerts_stamps_generated_utc() -> None:
 def test_build_network_stamps_generated_utc() -> None:
     conn = FakeConn(
         {
-            "feed_freshness_current": [{"feed_freshness_s": 0}],
+            "network.live.freshness": [{"feed_freshness_s": 0}],
         }
     )
     out = build_network(conn, provider_id="stm", generated_utc="2026-06-13T00:00:00Z")

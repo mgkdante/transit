@@ -15,6 +15,18 @@ const frenchMessage = AlertMessageProvenanceSchema.parse({
 });
 
 describe('MapDetailAlerts', () => {
+	it.each(['en', 'fr'] as const)(
+		'keeps an out-of-date empty alert list neutral in %s',
+		(locale) => {
+			const { container } = render(MapDetailAlerts, {
+				props: { alerts: [], alertsStale: true, locale, t: MAP_SELECTION_DETAIL_COPY[locale] },
+			});
+			expect(container.querySelector('[data-slot="state-notice"]')).toHaveAttribute(
+				'data-tone',
+				'neutral',
+			);
+		},
+	);
 	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
 		const { container } = render(MapDetailAlerts, {
 			props: {

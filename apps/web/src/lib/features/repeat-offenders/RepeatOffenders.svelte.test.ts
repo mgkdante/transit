@@ -15,6 +15,7 @@ import type {
 } from '#lib/components/dataviz/chart/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
@@ -326,6 +327,11 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(sessionStorage.getItem('persisted:repeat-offenders-controls')).toBeNull();
 		await fireEvent.click(toc);
 		expect(sessionStorage.getItem('persisted:repeat-offenders-toc')).toBeNull();
+		await assertRailIndependence({
+			container,
+			panelNames: [repeatCopy.en.rail.controls, repeatCopy.en.rail.toc],
+			contentCount: 2,
+		});
 	});
 
 	it('keeps both week and month visible while disabling and describing the unavailable grain', () => {

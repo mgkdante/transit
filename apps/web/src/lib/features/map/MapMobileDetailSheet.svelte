@@ -21,6 +21,7 @@
 		canGoBack: boolean;
 		onback: () => void;
 		selectedDetail: MapSelectionDetailModel | null;
+		alertsStale?: boolean;
 		notReporting: { ageS: number } | null;
 		selectionPresence?: SelectionPresence | null;
 		selectionSourceHealth?: SelectionSourceHealth | null;
@@ -42,6 +43,7 @@
 		canGoBack,
 		onback,
 		selectedDetail,
+		alertsStale = false,
 		notReporting,
 		selectionPresence = null,
 		selectionSourceHealth = null,
@@ -85,6 +87,7 @@
 	{#if selectedDetail}
 		<div class="mobile-detail-body" data-mobile-detail-body>
 			<MapSelectionDetail
+				{alertsStale}
 				detail={selectedDetail}
 				{locale}
 				{timeZone}

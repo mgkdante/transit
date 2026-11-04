@@ -81,6 +81,8 @@ export const stopReliabilityCopy = defineCopy({
 				`Dans ce résumé ${window}, ${otp} % de ${n} prévisions connues sont sans retard grave. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les relevés peuvent être dépendants.`,
 			unknownCount: () =>
 				'Relevés insuffisants pour juger la fiabilité : nombre d’observations inconnu.',
+			unavailableInterval: (window, n) =>
+				`Ce résumé ${window} contient ${n} prévisions connues, mais aucune plage d’incertitude exploitable pour juger la fiabilité.`,
 			tooFew: (window: string, n: number) =>
 				`Ce résumé ${window} contient seulement ${n} prévisions connues admissibles.`,
 			absent: 'Aucune prévision de retard admissible dans ce résumé.',
@@ -235,6 +237,8 @@ export const stopReliabilityCopy = defineCopy({
 				`In this ${window}, ${otp}% of ${n} known predictions are not severely late. Nominal 95% Wilson bounds: ${lo}–${hi}%; readings may be dependent.`,
 			unknownCount: () =>
 				'Not enough delay observations to judge reliability: observation count unknown.',
+			unavailableInterval: (window, n) =>
+				`This ${window} contains ${n} known predictions, but no usable uncertainty range to judge reliability.`,
 			tooFew: (window, n) => `This ${window} contains only ${n} eligible known predictions.`,
 			absent: 'No eligible predicted-delay readings in this summary.',
 			hedgeCI: (otp, lo, hi) =>
