@@ -1,7 +1,8 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
+import { sections } from '@yesid/ui/state';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { METRICS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
@@ -33,25 +34,12 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 const en = metricsCopy.en;
 
-const CARD_ANCHORS = [
-	'metrics-provenance',
-	...METRICS.map((m) => m.anchor),
-	'live-positions',
-	'structural-gaps',
-];
-function resetMetricsStorage(): void {
+function resetMetricsState(): void {
 	provState.data = null;
-	for (const anchor of CARD_ANCHORS) {
-		sessionStorage.removeItem(`persisted:metrics-card-${anchor}`);
-	}
-	for (const rail of ['provenance', 'coverage', 'freshness']) {
-		sessionStorage.removeItem(`persisted:metrics-rail-${rail}`);
-	}
-	sessionStorage.removeItem('persisted:metrics-toc');
 	if (window.location.hash) window.location.hash = '';
 }
-beforeEach(resetMetricsStorage);
-afterEach(resetMetricsStorage);
+beforeEach(resetMetricsState);
+afterEach(resetMetricsState);
 
 describe('MetricsExplainer', () => {
 	it('reveals interval assumptions on a fresh visit without live provenance', async () => {
@@ -429,18 +417,21 @@ describe('MetricsExplainer', () => {
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('opens the hash-named card on mount even when a declared defaults leave the page open', async () => {
+	it('opens the hash-named card from a closed state during mount', async () => {
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
-		await tick();
-		await tick();
-
+		// Close synchronously before the pending mount-fragment jump resumes.
+		sections.collapseAll();
+		flushSync();
+		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'false');
+		await vi.waitFor(() =>
+			expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true'),
+		);
 		const sectionsToggle = screen.getByTestId('sections-toggle');
 		expect(sectionsToggle).toHaveAttribute('data-collapsed', 'false');
 		expect(sectionsToggle).toHaveTextContent('Collapse all');
-		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 		for (const entry of METRICS.filter((m) => m.anchor !== 'otp')) {
-			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'true');
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
 		}
 	});
 
@@ -537,15 +528,17 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('opens the provenance card on mount when a declared defaults leave the page open', async () => {
+	it('opens the provenance card from a closed state during mount', async () => {
 		window.location.hash = '#metrics-provenance';
 		const { container } = render(MetricsExplainer);
-		await tick();
-		await tick();
-
-		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true');
+		sections.collapseAll();
+		flushSync();
+		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'false');
+		await vi.waitFor(() =>
+			expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true'),
+		);
 		for (const entry of METRICS) {
-			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'true');
+			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
 		}
 	});
 

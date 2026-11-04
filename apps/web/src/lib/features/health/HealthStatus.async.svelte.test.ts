@@ -111,14 +111,6 @@ let historyGate: ReturnType<typeof deferred<HistoricAvailabilityIndex | null>>;
 const scrollIntoView = vi.fn();
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 
-function resetStatusStorage(): void {
-	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
-		const key = sessionStorage.key(index);
-		if (key?.startsWith('persisted:status-')) sessionStorage.removeItem(key);
-	}
-	sessionStorage.removeItem('persisted:health-conformance-members');
-}
-
 async function openHealthToc(left: HTMLElement): Promise<HTMLElement> {
 	const trigger = await waitFor(() =>
 		within(left).getByRole('button', { name: copy.en.toc.label }),
@@ -134,8 +126,6 @@ async function replaceHash(hash: string): Promise<void> {
 
 beforeEach(() => {
 	cleanup();
-	resetStatusStorage();
-	sessionStorage.setItem('persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
 	navigation.page.url = new URL('http://localhost/status');
 	navigation.replaceState.mockClear();
@@ -170,7 +160,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	resetStatusStorage();
 	window.location.hash = '';
 });
 
@@ -184,7 +173,6 @@ afterAll(() => {
 
 describe('HealthStatus — async reveal navigation', () => {
 	it('mounts the history card and ToC together after discovery, with declared defaults and an independent ToC', async () => {
-		sessionStorage.removeItem('persisted:status-card-health-history-coverage');
 		const { container } = render(HealthStatus);
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;

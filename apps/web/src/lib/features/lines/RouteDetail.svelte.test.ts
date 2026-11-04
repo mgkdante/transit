@@ -288,12 +288,6 @@ const routeSurface = createSurfaceHarness({
 			window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 		},
 	},
-	storage: [
-		{
-			port: sessionStorage,
-			keys: ['persisted:reliability-controls', 'persisted:reliability-toc'],
-		},
-	],
 	resetters: [resetRouteSurfaceState],
 	mount: renderSvelte,
 });

@@ -2,7 +2,7 @@ import { sectionsToggleCopy } from '$lib/components/shared/sectionsToggle.copy';
 import { copy } from './hotspots.copy';
 import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
@@ -215,14 +215,6 @@ function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
 	) as HTMLButtonElement;
 }
 
-function resetHotspotsState(): void {
-	for (const key of ['hotspots-card-top', 'hotspots-card-lines', 'hotspots-card-stops']) {
-		sessionStorage.removeItem(`persisted:${key}`);
-	}
-	sessionStorage.removeItem('persisted:hotspots-controls');
-	sessionStorage.removeItem('persisted:hotspots-toc');
-}
-
 type CapturedMagnitudeDatum = MagnitudeDatum & {
 	readonly tapPopover?: ChartDatumPopoverModel;
 };
@@ -247,11 +239,8 @@ describe('HotspotsBoard article', () => {
 		currentLocale.value = 'en';
 		capturedLadders.current = [];
 		payload.current = seed();
-		resetHotspotsState();
 		Element.prototype.scrollIntoView = vi.fn();
 	});
-
-	afterEach(resetHotspotsState);
 
 	it('renders one article h1 and SectionsToggle controls', () => {
 		render(HotspotsBoard);
