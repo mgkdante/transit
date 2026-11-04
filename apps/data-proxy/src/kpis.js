@@ -47,6 +47,15 @@ function snapshotAgeS(core, nowMs) {
   return Number.isFinite(ms) ? Math.floor((nowMs - ms) / 1000) : Infinity;
 }
 
+function cacheWouldNullLane(core, nowMs) {
+  return (
+    (!stampUsable(core.tripsStampMs, nowMs) &&
+      (core.avgDelayS !== null ||
+        core.topRoutes.some((route) => route.avgDelayS !== null))) ||
+    (core.coverage !== null && !stampUsable(core.networkStampMs, nowMs))
+  );
+}
+
 function meanDelaySeconds(sum, count) {
   if (count === 0) return null;
   const mean = sum / count;
@@ -218,7 +227,6 @@ function refreshCore(env) {
 }
 
 async function getCore(env, waitUntil) {
-  const nowMs = Date.now();
   let entry = coreMemo;
   if (entry === null) {
     const fromEdge = await edgeCacheRead();
@@ -230,7 +238,21 @@ async function getCore(env, waitUntil) {
     }
     entry = coreMemo;
   }
+  const nowMs = Date.now();
   if (entry !== null && snapshotAgeS(entry.core, nowMs) < SNAPSHOT_STALE_S) {
+    // A cached family's age is not evidence that storage has no fresh value.
+    // Join the existing single-flight build before returning any newly null lane.
+    if (cacheWouldNullLane(entry.core, nowMs)) {
+      if (nowMs - lastBuildFailureAtMs >= FAILURE_TTL_MS) {
+        const rebuild = refreshCore(env);
+        waitUntil(rebuild.catch(() => {}));
+        const core = await rebuild.catch(() => null);
+        if (core !== null) return { core, cacheState: "miss" };
+      }
+      // A failed read cannot justify fresh values. Keep the usable anchor and
+      // let serveKpis null only expired families; the failure cooldown bounds reads.
+      return { core: entry.core, cacheState: "stale" };
+    }
     if (nowMs - entry.fetchedAtMs < LIVE_CADENCE_MS) {
       return { core: entry.core, cacheState: "hit" };
     }
@@ -272,10 +294,21 @@ export async function serveKpis(request, env, ctx) {
     : (promise) => {
         Promise.resolve(promise).catch(() => {});
       };
-  const result = await getCore(env, waitUntil);
+  let result = await getCore(env, waitUntil);
   if (result === null) return unavailable();
+  let nowMs = Date.now();
+  // Cache lookup can itself take time. Recheck at the instant used for the
+  // response so crossing a family cutoff never manufactures an unverified null.
+  if (
+    result.cacheState !== "miss" &&
+    (!stampUsable(parseUtcMs(result.core.snapshotAt), nowMs) ||
+      cacheWouldNullLane(result.core, nowMs))
+  ) {
+    result = await getCore(env, waitUntil);
+    if (result === null) return unavailable();
+    nowMs = Date.now();
+  }
   const { core } = result;
-  const nowMs = Date.now();
   const freshnessS = snapshotAgeS(core, nowMs);
   if (!stampUsable(parseUtcMs(core.snapshotAt), nowMs)) return unavailable();
   const tripsFresh = stampUsable(core.tripsStampMs, nowMs);
