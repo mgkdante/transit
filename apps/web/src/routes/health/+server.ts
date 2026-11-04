@@ -8,9 +8,11 @@ interface SnapshotBucket {
 	get(key: string): Promise<{ text(): Promise<string> } | null>;
 }
 
-// Bound public probes to one read per 30 seconds per isolate, including failures.
+// Healthy probes share a 30-second memo. Failures expire before the site's
+// five-second retry, so recovery is checked against storage rather than a cached 503.
 const READ_TIMEOUT_MS = 3_000;
 const MEMO_MS = 30_000;
+const FAILURE_MEMO_MS = 4_000;
 let memo: { bucket: SnapshotBucket; until: number; result: Promise<boolean> } | undefined;
 
 function canReadSnapshot(bucket: SnapshotBucket | undefined): Promise<boolean> {
@@ -42,6 +44,10 @@ function canReadSnapshot(bucket: SnapshotBucket | undefined): Promise<boolean> {
 		}
 	})();
 	memo = { bucket, until: Date.now() + MEMO_MS, result };
+	const pendingMemo = memo;
+	void result.then((readable) => {
+		if (!readable) pendingMemo.until = Date.now() + FAILURE_MEMO_MS;
+	});
 	return result;
 }
 
