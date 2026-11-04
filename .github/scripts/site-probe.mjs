@@ -2,7 +2,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
+/** @typedef {{ name: string, url: string, kind: 'health' } | { name: string, url: string, kind: 'html', marker: string }} SiteCheck */
+
 // Fixed public targets only. No credentials, visitor input, analytics or database access.
+/** @type {SiteCheck[]} */
 export const SITE_CHECKS = [
   {
     name: "transit-health",
@@ -23,6 +26,7 @@ export const SITE_CHECKS = [
   },
 ];
 
+/** @param {SiteCheck} check @param {typeof fetch} fetchFn */
 async function checkSite(check, fetchFn) {
   try {
     const response = await fetchFn(check.url, {
@@ -57,6 +61,9 @@ async function checkSite(check, fetchFn) {
   }
 }
 
+/**
+ * @param {{ checks?: SiteCheck[], fetchFn?: typeof fetch, alert: (...args: string[]) => unknown, pause?: (ms: number) => Promise<unknown> }} options
+ */
 export async function probeSites({
   checks = SITE_CHECKS,
   fetchFn = fetch,
@@ -96,6 +103,7 @@ function runUrl() {
   return `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY ?? "mgkdante/transit"}/actions/runs/${process.env.GITHUB_RUN_ID ?? "local"}`;
 }
 
+/** @param {string[]} args */
 function issueAlert(...args) {
   const result = spawnSync(
     "bash",
