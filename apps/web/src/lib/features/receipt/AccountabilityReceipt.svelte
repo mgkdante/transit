@@ -383,9 +383,6 @@
 		navigation: navigation.navigation,
 		landFragments: true,
 		entries: navigation.registeredEntries,
-		pillEntries: [],
-		openAria: '',
-		closeAria: '',
 	}}
 >
 	{#snippet header()}
