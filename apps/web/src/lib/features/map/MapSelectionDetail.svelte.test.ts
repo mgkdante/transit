@@ -841,31 +841,37 @@ describe('MapSelectionDetail', () => {
 		);
 	});
 
-	it('shows failed retained detail visually and forwards the retry affordance without a live region', async () => {
-		const detail = resolveMapSelection(
-			{ kind: 'vehicle', id: 'veh-1' },
-			{ index, stops, alerts, routes },
-		);
-		const onrefresh = vi.fn();
-		const { container, getByRole, getByText, queryByRole } = render(MapSelectionDetail, {
-			props: {
-				detail,
-				locale: 'en',
-				selectionPresence: 'missing-grace',
-				selectionSourceHealth: 'failed',
-				onrefresh,
-			},
-		});
+	it.each([
+		{ locale: 'en', message: 'Live detail is unavailable', retryLabel: 'Retry' },
+		{ locale: 'fr', message: 'Détail en direct indisponible', retryLabel: 'Réessayer' },
+	] as const)(
+		'shows failed retained detail and forwards retry without a live region ($locale)',
+		async ({ locale, message, retryLabel }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const onrefresh = vi.fn();
+			const { container, getByRole, getByText, queryByRole } = render(MapSelectionDetail, {
+				props: {
+					detail,
+					locale,
+					selectionPresence: 'missing-grace',
+					selectionSourceHealth: 'failed',
+					onrefresh,
+				},
+			});
 
-		expect(getByText('Live detail is unavailable')).toBeInTheDocument();
-		expect(queryByRole('status')).not.toBeInTheDocument();
-		const retry = getByRole('button', { name: 'Retry' });
-		expect(retry).toHaveAttribute('data-slot', 'button');
-		expect(retry).toHaveClass('min-h-11');
-		await fireEvent.click(retry);
-		expect(onrefresh).toHaveBeenCalledTimes(1);
-		expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();
-	});
+			expect(getByText(message)).toBeInTheDocument();
+			expect(queryByRole('status')).not.toBeInTheDocument();
+			const retry = getByRole('button', { name: retryLabel });
+			expect(retry).toHaveAttribute('data-slot', 'button');
+			expect(retry).toHaveClass('min-h-11');
+			await fireEvent.click(retry);
+			expect(onrefresh).toHaveBeenCalledTimes(1);
+			expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();
+		},
+	);
 
 	it('marks missing-grace with a healthy source as stale without offering retry', () => {
 		const detail = resolveMapSelection(
@@ -885,26 +891,32 @@ describe('MapSelectionDetail', () => {
 		expect(queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
 	});
 
-	it('allows a retry while missing-grace is refreshing', async () => {
-		const detail = resolveMapSelection(
-			{ kind: 'vehicle', id: 'veh-1' },
-			{ index, stops, alerts, routes },
-		);
-		const onrefresh = vi.fn();
-		const { getByRole, getByText } = render(MapSelectionDetail, {
-			props: {
-				detail,
-				locale: 'en',
-				selectionPresence: 'missing-grace',
-				selectionSourceHealth: 'retrying',
-				onrefresh,
-			},
-		});
+	it.each([
+		{ locale: 'en', message: 'Refreshing live detail', retryLabel: 'Retry' },
+		{ locale: 'fr', message: 'Actualisation des données en direct', retryLabel: 'Réessayer' },
+	] as const)(
+		'shows retrying retained detail and forwards retry ($locale)',
+		async ({ locale, message, retryLabel }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const onrefresh = vi.fn();
+			const { getByRole, getByText } = render(MapSelectionDetail, {
+				props: {
+					detail,
+					locale,
+					selectionPresence: 'missing-grace',
+					selectionSourceHealth: 'retrying',
+					onrefresh,
+				},
+			});
 
-		expect(getByText('Refreshing live detail')).toBeInTheDocument();
-		await fireEvent.click(getByRole('button', { name: 'Retry' }));
-		expect(onrefresh).toHaveBeenCalledTimes(1);
-	});
+			expect(getByText(message)).toBeInTheDocument();
+			await fireEvent.click(getByRole('button', { name: retryLabel }));
+			expect(onrefresh).toHaveBeenCalledTimes(1);
+		},
+	);
 
 	it('renders a vehicle detail with status, crowding, next stop, and alerts', async () => {
 		const detail = resolveMapSelection(
