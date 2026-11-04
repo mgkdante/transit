@@ -101,9 +101,12 @@ for (const colorScheme of ['dark', 'light'] as const) {
 }
 
 // The fixture server stands in for https://data.yesid.dev on another origin, which connect-src blocks.
-const fixtureData = new URL(
-	JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars.PUBLIC_V1_BASE,
-).origin;
+const fixtureData = process.env.TRANSIT_E2E_DATA_PORT
+	? `http://127.0.0.1:${process.env.TRANSIT_E2E_DATA_PORT}`
+	: new URL(
+			JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars
+				.PUBLIC_V1_BASE,
+		).origin;
 
 test('every destination runs under the real policy without a violation', async ({ page }) => {
 	const violations: string[] = [];
