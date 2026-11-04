@@ -34,11 +34,31 @@ test("sitemap discovers new CMS pages, decodes URLs and rejects an incomplete cr
 
 test("lychee reads live source pages and checks only the opposite product, with low concurrency and no retry", () => {
   const args = linkArguments(["https://yesid.dev/new"], "transit.yesid.dev");
-  assert.ok(args.includes("https://yesid.dev/new"));
+  assert.deepEqual(args.slice(-1), ["https://yesid.dev/new"]);
   assert.ok(args.includes("^https://transit\\.yesid\\.dev(?:/|$)"));
   assert.equal(args[args.indexOf("--max-concurrency") + 1], "2");
   assert.equal(args[args.indexOf("--max-retries") + 1], "0");
   assert.ok(args.includes("--exclude-all-private"));
+});
+
+test("probe host boundaries reject lookalike hosts, userinfo and URLs embedded in paths or queries", () => {
+  for (const host of ["yesid.dev", "transit.yesid.dev"]) {
+    const args = linkArguments([], host);
+    const include = new RegExp(args[args.indexOf("--include") + 1]);
+    assert.equal(include.test(`https://${host}/new`), true);
+    for (const deceptive of [
+      `https://${host}.evil.example/new`,
+      `https://${host}@evil.example/new`,
+      `https://evil.example/https://${host}/new`,
+      `https://evil.example/?next=https://${host}/new`,
+    ]) {
+      assert.equal(include.test(deceptive), false);
+      assert.throws(() =>
+        sitemapPages(`<urlset><loc>${deceptive}</loc></urlset>`),
+      );
+      assert.equal(contactPolicy(deceptive, "GET"), "block");
+    }
+  }
 });
 
 test("analytics and unexpected egress fail closed while static assets and a normal browser submission work", () => {
