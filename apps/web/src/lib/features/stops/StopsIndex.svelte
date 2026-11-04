@@ -468,7 +468,6 @@
 	.stops-load-more:focus-visible {
 		border-color: var(--primary);
 		color: var(--primary);
-		outline: none;
 	}
 	.stops-browse-more,
 	.stops-batch-controls {
