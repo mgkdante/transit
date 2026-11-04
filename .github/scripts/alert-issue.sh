@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
-# alert-issue.sh — the shared alert CHANNEL for the transit pipeline.
+# alert-issue.sh: the shared alert CHANNEL for the transit pipeline.
 # Zero new SaaS, zero new secrets: a labeled GitHub issue IS
-# the alert, and GitHub emails admin@yesid.dev on create/close. An open issue
-# is the "alerting" state; closing it is the "recovered" state.
+# the alert. New issues mention mgkdante, then attempt assignment to mgkdante.
+# GitHub routes these notifications (and recovery updates) using the recipient's
+# notification settings; email delivery and destination are not guaranteed here.
+# Assignment is best-effort after creation, so failure cannot discard the alert.
+# An open issue is the "alerting" state; closing it is the "recovered" state.
 #
 # Usage:
 #   alert-issue.sh fire    <slug> <title> <body>
@@ -15,7 +18,7 @@
 #          nothing is open.
 #
 # Requires GH_TOKEN (gh auth) and GH_REPO (owner/name) in the environment; the
-# workflows pass ${{ github.token }} and ${{ github.repository }}.
+# workflows pass ${{ github.token }} (issues: write) and ${{ github.repository }}.
 set -euo pipefail
 
 : "${GH_TOKEN:?GH_TOKEN must be set}"
@@ -56,11 +59,17 @@ case "$action" in
       echo "alert-issue: issue #${existing} already open for ${slug_label}; leaving as-is."
       exit 0
     fi
-    gh issue create \
+    # Keep the mention in the initial body, independent of assignment success.
+    body="@mgkdante"$'\n\n'"${body}"
+    created="$(gh issue create \
       --repo "$GH_REPO" \
       --title "$title" \
-      --body "$body" \
-      --label "${ALERT_LABEL},${slug_label}"
+      --label "${ALERT_LABEL},${slug_label}" \
+      --body "$body")"
+    printf '%s\n' "$created"
+    if ! gh issue edit "$created" --repo "$GH_REPO" --add-assignee mgkdante; then
+      echo "alert-issue: could not assign ${created} to mgkdante; alert exists with owner mention." >&2
+    fi
     ;;
   resolve)
     body="${3:-recovered}"
