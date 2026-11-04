@@ -41,6 +41,10 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         '  printf \'%s\' "${GH_ISSUE_LIST_OUTPUT:-}"\n'
         "  exit 0\n"
         "fi\n"
+        'if [[ "$1" == "issue" && "$2" == "create" ]]; then\n'
+        '  echo "https://github.com/mgkdante/transit/issues/456"\n'
+        "  exit 0\n"
+        "fi\n"
         'printf \'gh %s\\n\' "$*"\n',
     )
     _make_executable(
@@ -213,6 +217,46 @@ def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None
     assert "alert:freshness" in create[0]
 
 
+@pytest.mark.parametrize("body", ["details", "", "details\nwith a second line"])
+def test_alert_issue_notifies_owner_before_attempting_assignment(tmp_path, body) -> None:
+    env, _bin = _stubbed_env(tmp_path)
+    log = tmp_path / "cmd.log"
+    log.write_text("", encoding="utf-8")
+    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="mgkdante/transit",
+               GH_ISSUE_LIST_OUTPUT="")
+
+    result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stale", body], env)
+
+    assert result.returncode == 0, result.stderr
+    lines = _read_log(log)
+    create = next(line for line in lines if line.startswith("gh|issue create"))
+    assert "--body @mgkdante" in create
+    assert body in log.read_text(encoding="utf-8")
+    assignment = next(line for line in lines if line.startswith("gh|issue edit"))
+    assert "https://github.com/mgkdante/transit/issues/456" in assignment
+    assert "--add-assignee mgkdante" in assignment
+    assert lines.index(create) < lines.index(assignment)
+    assert "https://github.com/mgkdante/transit/issues/456" in result.stdout
+
+
+def test_alert_issue_assignment_failure_preserves_created_alert_and_mention(tmp_path) -> None:
+    env, _bin = _stubbed_env(tmp_path)
+    log = tmp_path / "cmd.log"
+    log.write_text("", encoding="utf-8")
+    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="mgkdante/transit",
+               GH_ISSUE_LIST_OUTPUT="", GH_FAIL_PATTERN="issue edit")
+
+    result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stale", "details"], env)
+
+    assert result.returncode == 0, result.stderr
+    lines = _read_log(log)
+    assert sum(line.startswith("gh|issue create") for line in lines) == 1
+    assert "--body @mgkdante" in log.read_text(encoding="utf-8")
+    assert "could not assign" in result.stderr
+    assert "https://github.com/mgkdante/transit/issues/456" in result.stdout
+    assert not any(line.startswith("gh|issue close") for line in lines)
+
+
 def test_alert_issue_fire_is_noop_when_issue_already_open(tmp_path) -> None:
     env, _bin = _stubbed_env(tmp_path)
     log = tmp_path / "cmd.log"
@@ -229,6 +273,7 @@ def test_alert_issue_fire_is_noop_when_issue_already_open(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
     lines = _read_log(log)
     assert not any(ln.startswith("gh|issue create") for ln in lines)
+    assert not any(ln.startswith("gh|issue edit") for ln in lines)
 
 
 def test_alert_issue_resolve_comments_and_closes(tmp_path) -> None:
@@ -284,6 +329,7 @@ def test_alert_issue_propagates_gh_failure(tmp_path) -> None:
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stm stale", "details"], env)
 
     assert result.returncode != 0
+    assert not any(ln.startswith("gh|issue edit") for ln in _read_log(log))
 
 
 def _manifest_json(live_generated_utc: datetime) -> str:
