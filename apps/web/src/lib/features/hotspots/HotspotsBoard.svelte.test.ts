@@ -9,6 +9,7 @@ import type {
 	MagnitudeDatum,
 } from '#lib/components/dataviz/chart/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
 let mockUrl = new URL('http://localhost/hotspots');
 const replaceState = vi.hoisted(() =>
@@ -253,6 +254,15 @@ describe('HotspotsBoard article', () => {
 			within(controls).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
 		).toBeInTheDocument();
 		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
+	});
+
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(HotspotsBoard);
+		await assertRailIndependence({
+			container,
+			panelNames: [hotspotsCopy.en.rail.controls, hotspotsCopy.en.rail.toc],
+			contentCount: 3,
+		});
 	});
 
 	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {

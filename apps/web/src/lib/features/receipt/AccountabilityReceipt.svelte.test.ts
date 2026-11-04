@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
@@ -218,6 +219,11 @@ describe('AccountabilityReceipt article shell', () => {
 				card(container, id).querySelector('[data-slot="badge"]')?.textContent?.trim(),
 			),
 		).toEqual(['01', '02', '03', '04']);
+		await assertRailIndependence({
+			container,
+			panelNames: [receiptCopy.en.rail.controls, receiptCopy.en.rail.toc],
+			contentCount: 4,
+		});
 	});
 
 	it('stands optional cards and TOC entries down together while retaining fixed numbers', async () => {

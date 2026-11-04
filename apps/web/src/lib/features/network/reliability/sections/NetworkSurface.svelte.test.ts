@@ -12,6 +12,7 @@ import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
+import { assertRailIndependence } from '../../../../../tests/railIndependence';
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
@@ -241,6 +242,15 @@ beforeEach(() => networkSurface.reset());
 afterEach(() => {});
 
 describe('NetworkSurface article shell', () => {
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(NetworkSurface);
+		await assertRailIndependence({
+			container,
+			panelNames: [copy.viewControlsLabel, copy.rail.toc],
+			contentCount: 10,
+		});
+	});
+
 	it('requests only the network live family', () => {
 		const foreignKey = 'persisted:stop-reliability-toc';
 		sessionStorage.setItem(foreignKey, 'keep');
