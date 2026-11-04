@@ -1,5 +1,5 @@
 import { waitUntil } from 'cloudflare:workers';
-import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { pathLocale } from '#lib/i18n/index.ts';
 import { readPublicSiteConfig } from '#lib/site/config.ts';
 import { DOCUMENT_SECURITY_HEADERS } from '#lib/site/securityHeaders.ts';
@@ -8,6 +8,13 @@ import { preloadFont } from '@yesid/tokens/fonts';
 import { injectThemeBoot } from '@yesid/ui/head';
 
 export const init: ServerInit = configureTransitUi;
+
+export const handleError: HandleServerError = ({ kind, error, event }) => {
+	if (kind === 'validation' || (kind !== 'unknown' && error.status < 500)) return;
+	// Route templates are code-owned. URLs, headers, messages and stacks may
+	// contain address searches or other personal input and must not be persisted.
+	console.error({ event: 'server_error', route: event.route.id });
+};
 
 const HTML_EDGE_TTL_S = 30;
 const HTML_EDGE_CACHE_NAME = 'transit-html-v1';

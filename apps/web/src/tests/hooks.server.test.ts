@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handle } from '../hooks.server';
+import { handle, handleError } from '../hooks.server';
 
 const workers = vi.hoisted(() => ({ waitUntil: vi.fn() }));
 vi.mock('cloudflare:workers', () => workers);
@@ -12,8 +12,43 @@ vi.mock('$app/env/public', async () => ({
 	},
 }));
 afterEach(() => {
+	vi.restoreAllMocks();
 	publicEnv.PUBLIC_INDEXING = 'true';
 	vi.unstubAllGlobals();
+});
+
+it('logs unexpected server failures without personal request or error details', () => {
+	const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+	handleError({
+		kind: 'unknown',
+		error: new Error('address=123 private street'),
+		event: {
+			...event('https://transit.yesid.dev/api/geocode?q=123+private+street'),
+			route: { id: '/api/geocode' },
+		},
+	});
+	expect(log.mock.calls).toEqual([[{ event: 'server_error', route: '/api/geocode' }]]);
+});
+
+it('keeps expected client errors quiet but reports deliberate server failures', () => {
+	const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+	const requestEvent: Parameters<typeof handle>[0]['event'] = {
+		...event(),
+		route: { id: '/[[lang=locale]]' },
+	};
+	handleError({
+		kind: 'framework',
+		error: { status: 404, message: 'Not found' },
+		event: requestEvent,
+	});
+	handleError({ kind: 'app', error: { status: 400, message: 'Bad request' }, event: requestEvent });
+	expect(log).not.toHaveBeenCalled();
+	handleError({
+		kind: 'app',
+		error: { status: 503, message: 'private detail' },
+		event: requestEvent,
+	});
+	expect(log.mock.calls).toEqual([[{ event: 'server_error', route: '/[[lang=locale]]' }]]);
 });
 
 interface CacheHarness {

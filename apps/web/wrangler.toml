@@ -57,3 +57,17 @@ PUBLIC_PROVIDER_CITY = "Montréal"
 PUBLIC_SITE_AUTHOR = "Yesid"
 PUBLIC_TWITTER_SITE = ""
 PUBLIC_TWITTER_CREATOR = ""
+
+# Persist errors without request invocation records or query-string metadata.
+[observability]
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false
+
+[observability.issues]
+enabled = false
