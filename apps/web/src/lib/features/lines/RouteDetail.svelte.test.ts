@@ -661,6 +661,12 @@ describe('RouteDetail article cover and focus scope', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => expect(profile).toHaveAttribute('aria-expanded', 'false'));
+		await view.rerender({ id: 'A/B', seed: routeSeed('A/B') });
+		await waitFor(() =>
+			expect(
+				view.container.querySelector('[data-toc="line-detail-profile"] [data-section-trigger]'),
+			).toHaveAttribute('aria-expanded', 'true'),
+		);
 	});
 });
 

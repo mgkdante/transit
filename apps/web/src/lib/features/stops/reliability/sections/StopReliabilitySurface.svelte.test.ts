@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { StopReliability, IsoUtc } from '#lib/v1/index.ts';
+import { assertRailIndependence } from '../../../../../tests/railIndependence';
+import { stopReliabilityCopy } from '../stops-reliability.copy';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -185,6 +187,17 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 	beforeEach(() => {
 		mockUrl = new URL('http://localhost/stop/57191');
 		replaceState.mockClear();
+	});
+
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		const copy = stopReliabilityCopy.en;
+		await assertRailIndependence({
+			container,
+			panelNames: [copy.controlsLabel, copy.nav.toc],
+			contentCount: 5,
+			bulkAction: 'store',
+		});
 	});
 
 	it('uses instant ToC navigation when reduced motion is requested', async () => {

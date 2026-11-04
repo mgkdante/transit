@@ -229,6 +229,30 @@ describe('HealthStatus — async reveal navigation', () => {
 		).toBeInTheDocument();
 	});
 
+	it('preserves TOC disclosure clicks made while the data is still pending', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		historyGate.resolve(historyFixture);
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const toc = await openHealthToc(left);
+		await fireEvent.click(toc);
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		expect(container.querySelector('[data-toc="health-lanes"]')).toBeNull();
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+		await waitFor(() =>
+			expect(container.querySelector('[data-toc="health-lanes"]')).not.toBeNull(),
+		);
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(toc);
+		await fireEvent.click(within(left).getByRole('button', { name: copy.en.lanes.section }));
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		expect(scrollIntoView).toHaveBeenCalledTimes(1);
+	});
+
 	it('opens and scrolls a retained-history hash only after the async card and ToC exist', async () => {
 		window.location.hash = '#health-history-coverage';
 		const targets: Array<string | null> = [];
