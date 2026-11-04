@@ -14,6 +14,8 @@ export interface VerdictHeadline {
 	readonly otpPct: number | null;
 	readonly observationCount: number | null;
 	readonly onTime: number | null;
+	readonly wilsonLo?: number | null;
+	readonly wilsonHi?: number | null;
 }
 
 export interface ReliabilityWindow {
@@ -22,6 +24,8 @@ export interface ReliabilityWindow {
 	readonly otp_pct?: number | null;
 	readonly observation_count?: number | null;
 	readonly on_time?: number | null;
+	readonly wilson_lo?: number | null;
+	readonly wilson_hi?: number | null;
 }
 
 export interface ReliabilityVerdictFile {
@@ -109,12 +113,14 @@ export function reliabilityVerdict(
 		otpPct: headlineWindow?.otp_pct ?? null,
 		observationCount: headlineWindow?.observation_count ?? null,
 		onTime: headlineWindow?.on_time ?? null,
+		wilsonLo: headlineWindow?.wilson_lo ?? null,
+		wilsonHi: headlineWindow?.wilson_hi ?? null,
 	};
 	if (window.from && window.to) {
 		headline = { otpPct: null, observationCount: null, onTime: null };
 		const from = window.from < window.to ? window.from : window.to;
 		const to = window.from < window.to ? window.to : window.from;
-		const dailyWindows =
+		const dailyWindows: readonly ReliabilityWindow[] =
 			file?.daily == null
 				? windows
 				: file.daily.map((day) => ({
@@ -145,6 +151,8 @@ export function reliabilityVerdict(
 							otpPct: days[0].otp_pct ?? null,
 							observationCount: days[0].observation_count ?? null,
 							onTime: days[0].on_time ?? null,
+							wilsonLo: days[0].wilson_lo ?? null,
+							wilsonHi: days[0].wilson_hi ?? null,
 						}
 					: {
 							otpPct:
@@ -202,6 +210,7 @@ export interface VerdictCopy {
 	}) => string;
 	readonly tooFew: (window: string, n: number) => string;
 	readonly unknownCount: (window: string) => string;
+	readonly unavailableInterval: (window: string, n: number) => string;
 	readonly absent: string;
 	readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
 }
@@ -224,18 +233,36 @@ function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' 
 	if (otp == null || !Number.isFinite(otp)) return { status: 'absent', interval: null };
 	if (n == null || !Number.isFinite(n) || n < VERDICT_MIN_N)
 		return { status: 'tentative', interval: null };
-	const { lo, hi } = wilsonInterval(headline.onTime ?? Math.round((otp / 100) * n), n);
+	// Published bounds are percentages rounded to one decimal. Compare them as supplied:
+	// an 80.0 lower bound qualifies, even when its unrounded value could be 79.95.
+	let lo = headline.wilsonLo;
+	let hi = headline.wilsonHi;
+	if (headline.onTime != null) {
+		const bounds = wilsonInterval(headline.onTime, n);
+		lo = bounds.lo * 100;
+		hi = bounds.hi * 100;
+	} else if (
+		lo == null ||
+		hi == null ||
+		!Number.isFinite(lo) ||
+		!Number.isFinite(hi) ||
+		lo < 0 ||
+		lo > hi ||
+		hi > 100
+	) {
+		return { status: 'tentative', interval: null };
+	}
 	const shownPct = Math.round(otp);
 	return {
 		status:
-			lo * 100 >= VERDICT_RELIABLE_FLOOR && shownPct >= VERDICT_RELIABLE_FLOOR
+			lo >= VERDICT_RELIABLE_FLOOR && shownPct >= VERDICT_RELIABLE_FLOOR
 				? 'reliable'
-				: hi * 100 < VERDICT_RELIABLE_FLOOR
+				: hi < VERDICT_RELIABLE_FLOOR
 					? shownPct >= VERDICT_PATCHY_FLOOR
 						? 'patchy'
 						: 'unreliable'
 					: 'tentative',
-		interval: { lo: Math.round(lo * 100), hi: Math.round(hi * 100) },
+		interval: { lo: Math.round(lo), hi: Math.round(hi) },
 	};
 }
 
@@ -284,7 +311,14 @@ export function selectVerdict(
 	// Keep the source interval when a shared verdict already rounded the displayed percentage.
 	const result = 'status' in headline ? headline : classify(headline);
 	if (result.status === 'absent') return { status: 'absent', ban: null, sentence: v.absent };
-	const { lo: loPct, hi: hiPct } = result.interval!;
+	if (result.interval == null) {
+		return {
+			status: 'tentative',
+			ban: `${otpInt}%`,
+			sentence: v.unavailableInterval(window, n),
+		};
+	}
+	const { lo: loPct, hi: hiPct } = result.interval;
 
 	if (result.status === 'tentative') {
 		return {

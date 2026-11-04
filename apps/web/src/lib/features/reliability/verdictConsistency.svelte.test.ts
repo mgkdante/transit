@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RouteReliability, StopReliability, NetworkTrend } from '#lib/v1/index.ts';
 import { isoUtc } from '#lib/v1/schemas/types.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
+import type { ReliabilityWindow } from '#lib/v1/verdict.ts';
 import LinesIndex from '../lines/LinesIndex.svelte';
 import RouteDetail from '../lines/RouteDetail.svelte';
 import RouteReliabilityClusters from '../lines/reliability/RouteReliabilityClusters.svelte';
@@ -88,8 +90,20 @@ afterEach(() => {
 	harness.page.url = new URL('http://localhost/lines/24');
 });
 
+function publishedPoint(window: ReliabilityWindow) {
+	return {
+		date: window.date,
+		otp_pct: window.otp_pct,
+		observation_count: window.observation_count,
+		wilson_lo: window.wilson_lo,
+		wilson_hi: window.wilson_hi,
+	};
+}
+
 describe('the same reliability evidence across every surface', () => {
 	it.each([
+		[85, 230, 'tentative', [], 85, { on_time: 195, wilson_lo: 79.6, wilson_hi: 88.9 }],
+		[80, 1_000_000, 'patchy', [], 80, { on_time: 797_000, wilson_lo: 79.6, wilson_hi: 79.8 }],
 		[85, 4000, 'reliable', [], 85],
 		[79.6, 1_000_000, 'patchy', [], 80],
 		[59.6, 1_000_000, 'patchy', [], 60],
@@ -135,8 +149,27 @@ describe('the same reliability evidence across every surface', () => {
 		],
 	] as const)(
 		'%s percent with n=%s produces %s everywhere',
-		async (otp_pct, observation_count, status, otherWindows, headlinePct) => {
-			const point = { date: '2026-11-02', otp_pct, observation_count };
+		async (
+			otp_pct,
+			observation_count,
+			status,
+			otherWindows,
+			headlinePct,
+			published = undefined,
+		) => {
+			const onTime =
+				published?.on_time ??
+				(otp_pct == null || observation_count == null
+					? null
+					: Math.round((otp_pct / 100) * observation_count));
+			const bounds = wilsonBounds(onTime, observation_count);
+			const point = {
+				date: '2026-11-02',
+				otp_pct,
+				observation_count,
+				wilson_lo: published?.wilson_lo ?? bounds?.[0],
+				wilson_hi: published?.wilson_hi ?? bounds?.[1],
+			};
 			harness.route = {
 				id: '24',
 				generated_utc: '2026-11-02T00:00:00Z',
@@ -147,13 +180,14 @@ describe('the same reliability evidence across every surface', () => {
 								{
 									...point,
 									grain: 'day',
-									on_time:
-										observation_count == null
-											? null
-											: Math.round((otp_pct / 100) * observation_count),
+									on_time: onTime,
 								},
 							]),
-					...otherWindows,
+					...otherWindows.map((window) => {
+						const on_time = Math.round((window.otp_pct / 100) * window.observation_count);
+						const bounds = wilsonBounds(on_time, window.observation_count);
+						return { ...window, on_time, wilson_lo: bounds?.[0], wilson_hi: bounds?.[1] };
+					}),
 				],
 			} as RouteReliability;
 			harness.stop = {
@@ -162,13 +196,15 @@ describe('the same reliability evidence across every surface', () => {
 					grain: window.grain,
 					otp_pct: window.otp_pct,
 					observation_count: window.observation_count,
+					wilson_lo: window.wilson_lo,
+					wilson_hi: window.wilson_hi,
 				})),
 			} as StopReliability;
 			harness.network = {
 				generated_utc: harness.route.generated_utc,
 				series: otp_pct == null ? [] : [point],
-				weekly: otherWindows.filter((w) => w.grain === 'week'),
-				monthly: otherWindows.filter((w) => w.grain === 'month'),
+				weekly: harness.route.periods?.filter((w) => w.grain === 'week').map(publishedPoint),
+				monthly: harness.route.periods?.filter((w) => w.grain === 'month').map(publishedPoint),
 			} as NetworkTrend;
 			for (const mount of [
 				() => render(RouteDetail, { props: { id: '24', seed: { id: '24', name: '24' } } }),
@@ -237,14 +273,31 @@ it.each(['line', 'stop', 'network'] as const)(
 	async (entity) => {
 		const generated_utc = isoUtc().parse('2026-11-02T00:00:00Z');
 		const day = { date: '2026-11-02', grain: 'day', otp_pct: 20, observation_count: 12 };
-		const week = { date: '2026-10-27', grain: 'week', otp_pct: 85, observation_count: 4000 };
+		const week = {
+			date: '2026-10-27',
+			grain: 'week',
+			otp_pct: 85,
+			observation_count: 4000,
+			on_time: 3400,
+			wilson_lo: 84,
+			wilson_hi: 86,
+		};
 		const month = { date: '2026-10-01', grain: 'month', otp_pct: 40, observation_count: 12 };
 		harness.route = { id: '24', generated_utc, periods: [day, week, month] } as RouteReliability;
-		harness.stop = { ...harness.route } as StopReliability;
+		harness.stop = {
+			...harness.route,
+			periods: harness.route.periods?.map((window) => ({
+				grain: window.grain,
+				otp_pct: window.otp_pct,
+				observation_count: window.observation_count,
+				wilson_lo: window.wilson_lo,
+				wilson_hi: window.wilson_hi,
+			})),
+		} as StopReliability;
 		harness.network = {
 			generated_utc,
 			series: [day],
-			weekly: [week],
+			weekly: [publishedPoint(week)],
 			monthly: [month],
 		} as NetworkTrend;
 		harness.page.url = new URL('http://localhost/lines/24?grain=week');
