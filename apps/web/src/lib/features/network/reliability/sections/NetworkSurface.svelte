@@ -606,9 +606,6 @@
 		navigation,
 		landFragments: true,
 		entries: tocEntries,
-		pillEntries: [],
-		openAria: '',
-		closeAria: '',
 	}}
 >
 	{#snippet header()}

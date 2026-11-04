@@ -2,6 +2,7 @@
 
 @import 'tailwindcss';
 @import '@yesid/ui/base.css';
+@import '@yesid/ui/station-tabs.css';
 @source '../node_modules/@yesid/ui/src';
 
 html {
@@ -25,8 +26,6 @@ html {
 	--layout-article-main-min: 40rem;
 	--layout-article-top-space: var(--space-card-gap);
 }
-
-@import 'tw-animate-css';
 
 @media (prefers-reduced-motion: reduce) {
 	[data-slot='bottom-sheet'] {
