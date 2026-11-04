@@ -14,7 +14,7 @@
 
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { createNavigationLifecycle } from '@yesid/ui/brand';
+	import { createNavigationLifecycle, resetFocusAfterNavigation } from '@yesid/ui/brand';
 	import { updated } from '$app/state';
 
 	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
@@ -350,6 +350,7 @@
 
 	async function selectSearchResult(result: ChromeSearchResult): Promise<void> {
 		topSearch = '';
+		const resetFocus = resetFocusAfterNavigation();
 		await goto(
 			localizeHref(
 				chromeSearchResultHref(result, searchScope, new URLSearchParams(page.url.search)),
@@ -358,12 +359,7 @@
 			),
 			{ reset: false },
 		);
-		const target = document.querySelector<HTMLElement>('[autofocus]') ?? document.body;
-		const tabindex = target.getAttribute('tabindex');
-		target.tabIndex = -1;
-		target.focus({ preventScroll: true });
-		if (tabindex === null) target.removeAttribute('tabindex');
-		else target.setAttribute('tabindex', tabindex);
+		resetFocus();
 	}
 
 	async function submitSearch(value: string): Promise<void> {
