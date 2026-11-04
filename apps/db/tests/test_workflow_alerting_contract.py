@@ -137,6 +137,28 @@ def test_cron_workflows_carry_issues_write_permission() -> None:
         assert perms["issues"] == "write", filename
 
 
+def test_every_alert_channel_caller_has_issue_write_and_workflow_token() -> None:
+    # Include wrappers as well as direct calls; inventory new callers automatically.
+    entrypoints = ("alert-issue.sh", "freshness-probe.sh", "daily-warm-notify.py", "site-probe.mjs")
+    callers = set()
+    for path in WORKFLOWS.glob("*.yml"):
+        doc = _load(path)
+        for job in doc.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if not any(name in step.get("run", "") for name in entrypoints):
+                    continue
+                callers.add(path.name)
+                permissions = job.get("permissions", doc.get("permissions", {}))
+                assert permissions.get("issues") == "write", path.name
+                env = {**doc.get("env", {}), **job.get("env", {}), **step.get("env", {})}
+                assert env.get("GH_TOKEN") == "${{ github.token }}", path.name
+                assert env.get("GH_REPO") == "${{ github.repository }}", path.name
+    assert callers == {
+        "freshness-probe.yml", "site-probe.yml", "daily-static-pipeline.yml",
+        "daily-warm-rollups.yml", "weekly-pg-repack.yml",
+    }
+
+
 def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
     for filename, expected_needs in DAILY_NOTIFY_JOBS.items():
         path = WORKFLOWS / filename
