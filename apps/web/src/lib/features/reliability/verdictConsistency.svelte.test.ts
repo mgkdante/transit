@@ -137,7 +137,14 @@ describe('the same reliability evidence across every surface', () => {
 		],
 	] as const)(
 		'%s percent with n=%s produces %s everywhere',
-		async (otp_pct, observation_count, status, otherWindows, headlinePct, published = undefined) => {
+		async (
+			otp_pct,
+			observation_count,
+			status,
+			otherWindows,
+			headlinePct,
+			published = undefined,
+		) => {
 			const point = {
 				date: '2026-11-02',
 				otp_pct,
