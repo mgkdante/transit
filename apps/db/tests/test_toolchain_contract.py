@@ -383,7 +383,7 @@ def test_node_and_bun_have_one_executable_workspace_contract() -> None:
     assert root_package["packageManager"] == f"bun@{BUN_VERSION}"
     assert root_package["engines"] == {
         "bun": BUN_VERSION,
-        "node": ">=22.12.0 <23",
+        "node": ">=22.17.0 <23",
     }
 
     setup = _yaml(REPO_ROOT / ".github/actions/setup/action.yml")
