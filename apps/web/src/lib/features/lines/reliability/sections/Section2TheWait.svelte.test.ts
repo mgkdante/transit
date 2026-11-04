@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import Section2TheWait from './Section2TheWait.svelte';
 import { reliabilityCopy } from '../reliability.copy';
 import type { WaitRegularityVM } from '../clusters';
-import type { HeadwayPeriod } from '$lib/v1';
+import type { HeadwayPeriod } from '#lib/v1/index.ts';
 
 const hw = (
 	shift: string,

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { createSubscriber } from 'svelte/reactivity';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureV1Runtime } from '$lib/v1/runtime';
+import { configureV1Runtime } from '#lib/v1/runtime.ts';
 import TripDetail from './TripDetail.svelte';
 
 const fixture = vi.hoisted(() => ({
@@ -19,8 +19,8 @@ const fixture = vi.hoisted(() => ({
 	stopNames: vi.fn(),
 	clockDispose: vi.fn(),
 }));
-vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('$app/env', () => ({ browser: true }));
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: {
 			short_name: 'STM',
@@ -29,8 +29,8 @@ vi.mock('$lib/v1/boot', () => ({
 		},
 	}),
 }));
-vi.mock('$lib/v1/adapter', () => ({ adapter: { live: fixture } }));
-vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: fixture.stopNames }));
+vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { live: fixture } }));
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: fixture.stopNames }));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
 	clock: {

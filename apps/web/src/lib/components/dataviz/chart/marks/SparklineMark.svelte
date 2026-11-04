@@ -2,7 +2,7 @@
 	import { Chart as LcChart, Svg, Spline, Points, Highlight, Tooltip } from 'layerchart';
 	import { scaleLinear, scalePoint } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import type { SparklineSpec } from '../ChartSpec';
 
 	export interface SparklineMarkProps {

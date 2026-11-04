@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import type { Chip } from '$lib/filters';
-	import type { Alert } from '$lib/v1/schemas';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import type { Chip } from '#lib/filters/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import {
 		STATUS_GLYPH,
 		occupancyGlyph,
 		occupancyVar,
 		statusVar,
-	} from '$lib/components/dataviz/tokens';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
-	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
+	} from '#lib/components/dataviz/tokens.ts';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
 	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';

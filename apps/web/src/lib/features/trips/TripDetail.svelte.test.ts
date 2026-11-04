@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TripsFile } from '$lib/v1';
+import type { TripsFile } from '#lib/v1/index.ts';
 import TripDetail from './TripDetail.svelte';
 import { tripCopy } from './trips.copy';
 const TRIPS_FILE = {
@@ -32,7 +32,7 @@ const TRIPS_FILE = {
 let tripsData: TripsFile | null = TRIPS_FILE;
 let reportStale = false;
 let reportNotice: 'stale' | 'refresh-unavailable' | null = null;
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: () => ({
 		get trips() {
 			return tripsData;
@@ -65,13 +65,13 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		refresh: vi.fn(),
 	}),
 }));
-vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: vi.fn() }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: vi.fn() }));
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		get data() {
 			return tripsData;

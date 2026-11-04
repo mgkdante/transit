@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick, type ComponentProps } from 'svelte';
 import Harness from './__fixtures__/DismissibleLayerTouchHarness.svelte';
+import SheetHarness from './__fixtures__/SheetTouchHarness.svelte';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(async () => {
@@ -47,6 +48,18 @@ async function advance(ms = 15) {
 }
 
 describe('tracked Bits touch outside-interaction patch', () => {
+	it.each([0, 15])('clears an unfinished touch before the next touch after %ims', async (delay) => {
+		const onOuterOutside = vi.fn();
+		await mounted({ onOuterOutside });
+		const outside = screen.getByTestId('outside');
+		await down(outside);
+		await advance(delay);
+		await down(outside);
+		const originalClick = click(outside);
+		await advance();
+		expect(onOuterOutside).toHaveBeenCalledExactlyOnceWith(originalClick);
+	});
+
 	it.each([0, 15])(
 		'delivers the same original outside click exactly once when click arrives after %ims',
 		async (delay) => {
@@ -177,5 +190,22 @@ describe('tracked Bits touch outside-interaction patch', () => {
 		expect(onOuterOutside).toHaveBeenCalledOnce();
 		expect(onOuterOutside.mock.calls[0][0].type).toBe('pointerdown');
 		expect(screen.queryByRole('dialog', { name: 'Outer' })).not.toBeInTheDocument();
+	});
+});
+
+describe('production shared Sheet touch dismissal', () => {
+	it.each([0, 15])('uses the patched layer for a click after %ims', async (delay) => {
+		const onOutside = vi.fn();
+		render(SheetHarness, { props: { onOutside } });
+		await tick();
+		await advance(5);
+		const outside = screen.getByTestId('outside');
+		await down(outside);
+		await advance(delay);
+		const originalClick = click(outside);
+		if (delay === 0) expect(onOutside).not.toHaveBeenCalled();
+		await advance();
+		expect(onOutside).toHaveBeenCalledExactlyOnceWith(originalClick);
+		expect(screen.queryByRole('dialog', { name: 'Production sheet' })).not.toBeInTheDocument();
 	});
 });

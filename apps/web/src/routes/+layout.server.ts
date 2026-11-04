@@ -1,8 +1,8 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-import { bootProvider } from '$lib/v1/boot';
-import { serverV1Context } from '$lib/v1/serverContext';
+import { DEFAULT_LOCALE, type Locale } from '#lib/i18n/index.ts';
+import { bootProvider } from '#lib/v1/boot.ts';
+import { serverV1Context } from '#lib/v1/serverContext.ts';
 
 export const load: LayoutServerLoad = async (event) => {
 	const { params, locals } = event;

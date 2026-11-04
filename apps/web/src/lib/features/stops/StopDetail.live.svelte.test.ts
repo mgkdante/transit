@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/sve
 import { flushSync } from 'svelte';
 import { createSubscriber } from 'svelte/reactivity';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureV1Runtime } from '$lib/v1/runtime';
+import { configureV1Runtime } from '#lib/v1/runtime.ts';
 import StopDetail from './StopDetail.svelte';
 
 const fixture = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ const fixture = vi.hoisted(() => ({
 	historyIndex: vi.fn(),
 	historyRange: vi.fn(),
 }));
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 vi.mock('$app/state', () => ({ page: fixture.page }));
 vi.mock('$app/navigation', () => ({
 	afterNavigate: () => {},
@@ -29,14 +29,14 @@ vi.mock('$app/navigation', () => ({
 		fixture.page.url = new URL(url, 'http://localhost');
 	},
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', files: { live: { ttl_s: 30 } } },
 	}),
 }));
-vi.mock('$lib/v1/adapter', () => ({ adapter: { live: fixture } }));
-vi.mock('$lib/v1/repositories/static', () => ({ getStop: fixture.stop }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { live: fixture } }));
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getStop: fixture.stop }));
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getStopReliability: fixture.reliability,
 	getStopHistoryIndex: fixture.historyIndex,
 	loadStopHistoryRange: fixture.historyRange,

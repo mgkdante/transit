@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { canonicalDetailTabLocation } from '$lib/site/detailTabs';
-import { getStop } from '$lib/v1/repositories/static';
-import { serverV1Context, type IdentitySeed } from '$lib/v1/serverContext';
+import { canonicalDetailTabLocation } from '#lib/site/detailTabs.ts';
+import { getStop } from '#lib/v1/repositories/static.ts';
+import { serverV1Context, type IdentitySeed } from '#lib/v1/serverContext.ts';
 
 export const load: PageServerLoad = async (event) => {
 	const canonicalLocation = canonicalDetailTabLocation(event.url);

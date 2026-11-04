@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { normalizeSnapshotPointer, normalizeV1BaseUrl, resolveUrl } from './config';
 
-vi.mock('$env/dynamic/public', () => ({
-	env: {
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{
 		PUBLIC_V1_BASE: 'https://r2.example.test/v1',
 		PUBLIC_V1_PROVIDER: 'stm',
 	},

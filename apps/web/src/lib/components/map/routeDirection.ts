@@ -1,5 +1,5 @@
-import type { Locale } from '$lib/i18n';
-import type { RouteDirection, RouteFile, RouteStop } from '$lib/v1/schemas';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { RouteDirection, RouteFile, RouteStop } from '#lib/v1/schemas/index.ts';
 
 const CARDINAL_HEADSIGN_LABELS = new Map([
 	['east', { en: 'East', fr: 'Est' }],

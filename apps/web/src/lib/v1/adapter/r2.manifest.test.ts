@@ -5,7 +5,7 @@ import {
 	installBrowserAdapterManifest,
 } from './browserManifest';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const ISO = '2026-07-15T12:00:00Z';
 

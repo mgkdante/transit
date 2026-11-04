@@ -5,10 +5,10 @@ const harness = vi.hoisted(() => ({
 	formatUtc: vi.fn((iso: string, locale: string) => `${locale}:${iso}`),
 }));
 
-vi.mock('$lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
+vi.mock('#lib/features/lines/reliability/RouteReliabilityClusters.svelte', () => ({
 	default: harness.Clusters,
 }));
-vi.mock('$lib/utils/time', () => ({ formatUtc: harness.formatUtc }));
+vi.mock('#lib/utils/time.ts', () => ({ formatUtc: harness.formatUtc }));
 
 const reliabilityIso = '2026-08-29T15:04:00Z';
 const routeIso = '2026-08-28T15:04:00Z';
@@ -21,7 +21,7 @@ const data = {
 
 async function loadWithBrowser(browser: boolean) {
 	vi.resetModules();
-	vi.doMock('$app/environment', () => ({ browser }));
+	vi.doMock('$app/env', () => ({ browser }));
 	return (await import('./+page')).load;
 }
 

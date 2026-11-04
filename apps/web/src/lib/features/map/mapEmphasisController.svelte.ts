@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import { STOPS_SOURCE } from '$lib/components/map';
+import { STOPS_SOURCE } from '#lib/components/map/index.ts';
 import type { MapSelection } from './mapSelectionSession.svelte';
 import type { MapSelectionSession } from './mapSelectionSession.svelte';
 

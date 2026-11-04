@@ -2,8 +2,8 @@ import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import MapDetailAlerts from './MapDetailAlerts.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-import type { Alert } from '$lib/v1/schemas';
-import { AlertMessageProvenanceSchema } from '$lib/v1/schemas/alert_history';
+import type { Alert } from '#lib/v1/schemas/index.ts';
+import { AlertMessageProvenanceSchema } from '#lib/v1/schemas/alert_history.ts';
 
 const frenchMessage = AlertMessageProvenanceSchema.parse({
 	snapshot_id: '1',

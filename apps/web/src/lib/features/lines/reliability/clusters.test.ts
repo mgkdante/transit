@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RouteReliability, IsoUtc, LineHistoryRange } from '$lib/v1';
+import type { RouteReliability, IsoUtc, LineHistoryRange } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from './clusters';
 
 const utc = (value: string): IsoUtc => value as IsoUtc;

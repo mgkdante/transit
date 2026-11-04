@@ -1,7 +1,11 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, DotStripDatum, DotStripSpec } from '$lib/components/dataviz/chart';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import { SHIFT_GRAIN_ORDER, severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	DotStripDatum,
+	DotStripSpec,
+} from '#lib/components/dataviz/chart/index.ts';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { SHIFT_GRAIN_ORDER, severeShareToSeverity } from '#lib/features/reliability/shiftGrains.ts';
 import type { PunctualityVM } from '../clusters';
 
 export interface TimeOfDayLabels {

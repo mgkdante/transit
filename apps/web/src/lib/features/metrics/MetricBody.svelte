@@ -5,8 +5,8 @@
 </script>
 
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { TypedInformationCard } from '$lib/components/shared';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
 	import type { MetricEntry } from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
 	import EasterProse from './EasterProse.svelte';

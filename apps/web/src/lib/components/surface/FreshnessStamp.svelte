@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
-	import { cn } from '$lib/utils';
-	import { type Locale } from '$lib/i18n';
-	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
-	import { freshnessAgeSeconds } from '$lib/v1/freshness';
+	import { cn } from '#lib/utils/index.ts';
+	import { type Locale } from '#lib/i18n/index.ts';
+	import { formatRelativeSeconds, formatUtc } from '#lib/utils/time.ts';
+	import { freshnessAgeSeconds } from '#lib/v1/freshness.ts';
 
 	import { StatusDot } from '@yesid/ui/brand';
 

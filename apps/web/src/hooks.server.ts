@@ -1,8 +1,9 @@
-import type { Handle, ServerInit } from '@sveltejs/kit';
-import { pathLocale } from '$lib/i18n';
-import { readPublicSiteConfig } from '$lib/site/config';
-import { DOCUMENT_SECURITY_HEADERS } from '$lib/site/securityHeaders';
-import { configureTransitUi } from '$lib/ui/configure';
+import { waitUntil } from 'cloudflare:workers';
+import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
+import { pathLocale } from '#lib/i18n/index.ts';
+import { readPublicSiteConfig } from '#lib/site/config.ts';
+import { DOCUMENT_SECURITY_HEADERS } from '#lib/site/securityHeaders.ts';
+import { configureTransitUi } from '#lib/ui/configure.ts';
 import { preloadFont } from '@yesid/tokens/fonts';
 import { injectThemeBoot } from '@yesid/ui/head';
 
@@ -19,9 +20,9 @@ interface EdgeCache {
 	put(request: RequestInfo | URL, response: Response): Promise<void>;
 }
 
-async function edgeCache(platform: App.Platform | undefined): Promise<EdgeCache | undefined> {
+async function edgeCache(): Promise<EdgeCache | undefined> {
 	try {
-		return (await platform?.caches?.open(HTML_EDGE_CACHE_NAME)) as EdgeCache | undefined;
+		return (await globalThis.caches?.open(HTML_EDGE_CACHE_NAME)) as EdgeCache | undefined;
 	} catch {
 		return undefined;
 	}
@@ -80,7 +81,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
-	const cache = await edgeCache(event.platform);
+	const cache = await edgeCache();
 	const cacheBypassed =
 		event.isDataRequest || cache == null || requestBypassesHtmlCache(event.request);
 	const key = cacheBypassed ? null : cacheKey(event.url);
@@ -115,9 +116,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			stored.headers.set('cache-control', HTML_EDGE_CACHE_CONTROL);
 			stored.headers.delete(EDGE_CACHE_STATUS);
 			const write = cache.put(key, stored).catch(() => undefined);
-			const context = event.platform?.ctx ?? event.platform?.context;
-			if (context != null) context.waitUntil(write);
-			else await write;
+			waitUntil(write);
 			response.headers.set('cache-control', HTML_PUBLIC_CACHE_CONTROL);
 			response.headers.set(EDGE_CACHE_STATUS, 'MISS');
 		} else {

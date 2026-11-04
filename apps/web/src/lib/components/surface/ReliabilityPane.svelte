@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
-	import type { Locale } from '$lib/i18n';
+	import { cn, fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { SeverityBar } from '$lib/components/dataviz';
-	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';
-	import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
+	import { SeverityBar } from '#lib/components/dataviz/index.ts';
+	import { Chart, type SparklineSpec } from '#lib/components/dataviz/chart/index.ts';
+	import { sparkZoomDomain } from '#lib/components/dataviz/chart/sparkDomain.ts';
 
 	export interface ReliabilityPeriodVM {
 		grain: string;

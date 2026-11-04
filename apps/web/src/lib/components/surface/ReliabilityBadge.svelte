@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { intl } from '$lib/i18n';
-	import type { Locale } from '$lib/i18n';
-	import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
+	import { intl } from '#lib/i18n/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 
 	export interface ReliabilityBadgeProps {
 		snapshot: ReliabilitySnapshot;

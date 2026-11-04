@@ -8,19 +8,19 @@ const harness = vi.hoisted(() => ({
 	serverV1Context: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/live', () => ({
+vi.mock('#lib/v1/repositories/live.ts', () => ({
 	getNetwork: (...args: unknown[]) => harness.getNetwork(...args),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: (...args: unknown[]) => harness.getNetworkTrend(...args),
 }));
 
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: (...args: unknown[]) => harness.getProvenance(...args),
 }));
 
-vi.mock('$lib/v1/serverContext', () => ({
+vi.mock('#lib/v1/serverContext.ts', () => ({
 	serverV1Context: (...args: unknown[]) => harness.serverV1Context(...args),
 }));
 

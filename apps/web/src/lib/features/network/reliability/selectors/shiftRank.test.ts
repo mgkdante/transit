@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectShiftRank } from './shiftRank';
-import type { NetworkShift } from '$lib/v1';
+import type { NetworkShift } from '#lib/v1/index.ts';
 
 const labels = {
 	grainLabel: (g: string) => g,

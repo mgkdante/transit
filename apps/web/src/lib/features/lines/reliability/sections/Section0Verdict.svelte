@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { fmtDelayMin, fmtPct } from '$lib/utils';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
 	import { TerminalPanel, SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import Detail from '$lib/components/shared/Detail.svelte';
-	import { VerdictBanner } from '$lib/components/brand';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
+	import Detail from '#lib/components/shared/Detail.svelte';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import MetricBullet from './MetricBullet.svelte';
-	import { metricInfoCopy } from '$lib/metrics';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoCopy } from '#lib/metrics.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -17,12 +17,15 @@
 		OTP_DOMAIN,
 		DELAY_STOP_DOMAIN,
 		DELAY_DIST_DOMAIN,
-	} from '$lib/features/reliability/shiftGrains';
+	} from '#lib/features/reliability/shiftGrains.ts';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict, VERDICT_RELIABLE_FLOOR } from '$lib/v1/verdict';
+	import { selectVerdict, VERDICT_RELIABLE_FLOOR } from '#lib/v1/verdict.ts';
 	import { selectBullet, verdictTone } from '../selectors/bullet';
-	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
+	import {
+		dailyPercentileCaption,
+		type selectDailyPercentiles,
+	} from '#lib/site/dailyPercentiles.ts';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 

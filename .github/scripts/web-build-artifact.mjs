@@ -31,7 +31,7 @@ export const BUILD_INPUTS = [
   "apps/data-proxy/src/snapshot-response.js",
   "apps/data-proxy/src/snapshot-response.d.ts",
   "apps/web/package.json",
-  "apps/web/svelte.config.js",
+  "apps/web/kit.config.js",
   "apps/web/vite.config.ts",
   "apps/web/tsconfig.json",
   "apps/web/wrangler.toml",

@@ -1,12 +1,12 @@
 import { SvelteSet } from 'svelte/reactivity';
-import type { Locale } from '$lib/i18n';
-import type { RouteFile, StopFile } from '$lib/v1';
-import type { Alert } from '$lib/v1/schemas';
-import type { LiveStore } from '$lib/v1/live/store.svelte';
-import type { FilterStore, Chip } from '$lib/filters';
-import type * as StaticRepositories from '$lib/v1/repositories/static';
-import type { MapFocus } from '$lib/search/mapFocus';
-import { createResource } from '$lib/v1/resource.svelte';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { RouteFile, StopFile } from '#lib/v1/index.ts';
+import type { Alert } from '#lib/v1/schemas/index.ts';
+import type { LiveStore } from '#lib/v1/live/store.svelte.ts';
+import type { FilterStore, Chip } from '#lib/filters/index.ts';
+import type * as StaticRepositories from '#lib/v1/repositories/static.ts';
+import type { MapFocus } from '#lib/search/mapFocus.ts';
+import { createResource } from '#lib/v1/resource.svelte.ts';
 import { createMapSelectionController } from './selectionSession/mapSelectionController.svelte';
 import {
 	resolveMapSelection,

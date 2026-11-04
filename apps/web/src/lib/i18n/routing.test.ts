@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { match } from '../../params/locale';
+import { params } from '../../params';
+const match = (value: string) => {
+	const result = params.locale['~standard'].validate(value);
+	if (result instanceof Promise) throw new Error('Locale matcher must be synchronous');
+	return !result.issues;
+};
 import { isPrefixLocale } from './index';
 import { localizeHref } from './routing';
 

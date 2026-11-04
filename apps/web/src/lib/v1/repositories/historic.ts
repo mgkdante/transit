@@ -1,5 +1,5 @@
-import { adapter } from '$lib/v1/adapter';
-import type { AdapterCtx } from '$lib/v1/adapter';
+import { adapter } from '#lib/v1/adapter/index.ts';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
 import type { DateWindow } from '../history/window';
 import {
 	HistoryArtifactContractError,
@@ -9,10 +9,10 @@ import {
 	mergeAlertArchivePages,
 	selectAlertEntriesForWindow,
 	selectAlertPageRefs,
-} from '$lib/v1/history/partitions';
-import { alertArchivePageMemo } from '$lib/v1/history/alertPageMemo';
-import { encodeHistoryEntityId } from '$lib/v1/history/entity';
-import { isHistoryEntityIndexPath, isHistoryFamilyIndexPath } from '$lib/v1/history/pointers';
+} from '#lib/v1/history/partitions.ts';
+import { alertArchivePageMemo } from '#lib/v1/history/alertPageMemo.ts';
+import { encodeHistoryEntityId } from '#lib/v1/history/entity.ts';
+import { isHistoryEntityIndexPath, isHistoryFamilyIndexPath } from '#lib/v1/history/pointers.ts';
 import {
 	selectLineHistoryPartitionRefs,
 	selectNetworkHistoryPartitionRefs,
@@ -20,8 +20,8 @@ import {
 	validateLineHistoryPartition,
 	validateNetworkHistoryPartition,
 	validateStopHistoryPartition,
-} from '$lib/v1/history/families';
-import { strictIsoDate } from '$lib/v1/history/selection';
+} from '#lib/v1/history/families.ts';
+import { strictIsoDate } from '#lib/v1/history/selection.ts';
 import type {
 	AlertArchiveEntry,
 	AlertArchiveIndex,
@@ -40,7 +40,7 @@ import type {
 	RouteReliability,
 	StopReliability,
 	StopHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	SHA256_PATTERN as SHA256,
 	abortError,

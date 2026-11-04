@@ -1,4 +1,4 @@
-import { intl } from '$lib/i18n';
+import { intl } from '#lib/i18n/index.ts';
 import { roundHalfAwayFromZero } from './rounding';
 
 export type FormatLang = 'en' | 'fr';

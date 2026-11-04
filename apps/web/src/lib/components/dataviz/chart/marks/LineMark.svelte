@@ -13,7 +13,7 @@
 	} from 'layerchart';
 	import { scaleLinear, scalePoint } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { structuralLabels } from '../structuralLabels';
 	import ChartLegend from '../../ChartLegend.svelte';

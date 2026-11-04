@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { navPillCopy } from '$lib/i18n/messages';
-	import { cn } from '$lib/utils';
-	import { dataRefresh } from '$lib/stores';
-	import type { Locale } from '$lib/i18n';
+	import { navPillCopy } from '#lib/i18n/messages.ts';
+	import { cn } from '#lib/utils/index.ts';
+	import { dataRefresh } from '#lib/stores/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	interface Props {
 		locale: Locale;

@@ -1,6 +1,6 @@
-import type { Locale } from '$lib/i18n';
-import type { HeatmapSpec } from '$lib/components/dataviz/chart';
-import { HABITS_DOMAIN } from '$lib/features/reliability/domains';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { HeatmapSpec } from '#lib/components/dataviz/chart/index.ts';
+import { HABITS_DOMAIN } from '#lib/features/reliability/domains.ts';
 
 export interface HabitsHeatmapOptions {
 	readonly title: string;

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { MaybeValue } from '$lib/components/edge';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import { SectionHeading } from '@yesid/ui/brand';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import type { AffectedCountVM } from '../selectors/affectedCounts';
 
 	interface SectionAffectedProps {

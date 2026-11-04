@@ -33,12 +33,12 @@ function setUrl(path: string): void {
 	state.url = new URL(path, 'http://localhost');
 }
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getStopsIndex: (...args: unknown[]) => getStopsIndex(...args),
 	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
 	getRoute: (...args: unknown[]) => getRoute(...args),
 }));
-vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
+vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', async () => {
 	const { SvelteMap } = await import('svelte/reactivity');
 	function reliabilityVerdict(pct: number): string {
 		return pct >= 80 ? 'reliable' : pct >= 60 ? 'patchy' : 'unreliable';
@@ -78,7 +78,7 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
 	}
 	return { createReliabilityLoader };
 });
-vi.mock('$lib/v1/repositories/historic', () => historyCalls);
+vi.mock('#lib/v1/repositories/historic.ts', () => historyCalls);
 
 const STOPS = {
 	generated_utc: '2026-06-16T02:00:00Z',
@@ -120,7 +120,7 @@ const ROUTES = {
 	],
 };
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (fetcher: () => Promise<unknown>) => {
 		const state = $state<{ data: unknown; error: unknown; loading: boolean; settled: boolean }>({
 			data: null,

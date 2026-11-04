@@ -2,7 +2,7 @@ import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { StopReliability, IsoUtc } from '$lib/v1';
+import type { StopReliability, IsoUtc } from '#lib/v1/index.ts';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -21,9 +21,9 @@ vi.mock('$app/state', () => ({
 	},
 }));
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/index.ts')),
+	wilsonBounds: (await import('#lib/v1/stats.ts')).wilsonBounds,
 }));
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {

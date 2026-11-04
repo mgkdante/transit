@@ -2,13 +2,13 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import LocateFixedIcon from '@lucide/svelte/icons/locate-fixed';
 	import XIcon from '@lucide/svelte/icons/x';
-	import type { Locale } from '$lib/i18n';
-	import type { LatLon, WithDistance } from '$lib/components/map';
-	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import type { StopIndexEntry } from '$lib/v1/schemas';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { LatLon, WithDistance } from '#lib/components/map/index.ts';
+	import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
+	import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
 	import type { MapCopy } from './map.copy';
-	import { getV1Context } from '$lib/v1/boot';
-	import { trackEvent } from '$lib/site/analytics';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { trackEvent } from '#lib/site/analytics.ts';
 	const { manifest } = getV1Context();
 
 	interface Props {

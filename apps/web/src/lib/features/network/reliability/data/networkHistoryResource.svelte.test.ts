@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import type { HistoricCollectionIndex, IsoUtc, NetworkHistoryPartition } from '$lib/v1/schemas';
-import type { RawHistoryRangeRequest } from '$lib/v1/history/rangeResource.svelte';
+import type {
+	HistoricCollectionIndex,
+	IsoUtc,
+	NetworkHistoryPartition,
+} from '#lib/v1/schemas/index.ts';
+import type { RawHistoryRangeRequest } from '#lib/v1/history/rangeResource.svelte.ts';
 import {
 	createNetworkHistoryResource,
 	type NetworkHistoryResource,
@@ -12,7 +16,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T;
 type _NetworkSignature = Expect<
 	Equal<
-		typeof import('$lib/features/network/reliability/data/networkHistoryResource.svelte').createNetworkHistoryResource,
+		typeof import('#lib/features/network/reliability/data/networkHistoryResource.svelte.ts').createNetworkHistoryResource,
 		(request: RawHistoryRangeRequest) => NetworkHistoryResource
 	>
 >;
@@ -22,7 +26,7 @@ const repositories = vi.hoisted(() => ({
 	loadNetworkHistoryRange: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => repositories);
+vi.mock('#lib/v1/repositories/historic.ts', () => repositories);
 
 const sha = 'a'.repeat(64);
 const index = {

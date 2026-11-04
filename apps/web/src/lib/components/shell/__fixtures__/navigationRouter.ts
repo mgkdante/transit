@@ -7,7 +7,6 @@ export function createNavigationRouter() {
 	const before = new Set<Parameters<Router['beforeNavigate']>[0]>();
 	const during = new Set<Parameters<Router['onNavigate']>[0]>();
 	const after = new Set<Parameters<Router['afterNavigate']>[0]>();
-	const subscribers = new Set<Parameters<NonNullable<Router['subscribeNavigation']>>[0]>();
 	const router: Router = {
 		beforeNavigate: (callback) => {
 			before.add(callback);
@@ -18,22 +17,13 @@ export function createNavigationRouter() {
 		afterNavigate: (callback) => {
 			after.add(callback);
 		},
-		subscribeNavigation: (callback) => {
-			subscribers.add(callback);
-			callback(null);
-			return () => {
-				subscribers.delete(callback);
-			};
-		},
 	};
 	return {
 		router,
 		async navigate(start: Navigation, commit = start) {
 			for (const callback of before) callback(start);
-			for (const callback of subscribers) callback(start);
 			for (const callback of during) await callback(commit);
 			for (const callback of after) callback(commit);
-			for (const callback of subscribers) callback(null);
 		},
 	};
 }

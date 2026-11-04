@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ browser: true }));
-vi.mock('$app/environment', () => ({
+vi.mock('$app/env', () => ({
 	get browser() {
 		return mocks.browser;
 	},

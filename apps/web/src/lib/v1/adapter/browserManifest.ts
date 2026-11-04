@@ -1,4 +1,4 @@
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 
 let manifestReader: (() => Manifest | null | undefined) | null = null;
 

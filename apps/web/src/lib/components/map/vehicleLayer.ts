@@ -1,5 +1,5 @@
-import type { Vehicle } from '$lib/v1/schemas';
-import type { EntityKind, FilterState } from '$lib/filters';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
+import type { EntityKind, FilterState } from '#lib/filters/index.ts';
 import { bodyIconId, BUS_ICON, stateBadgeIconId } from './vehicleSprites';
 import { fixAgeS, isVehicleStale } from './vehicleProjection';
 

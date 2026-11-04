@@ -1,6 +1,6 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { historyCopy } from '$lib/components/surface/historyCopy';
-import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { historyCopy } from '#lib/components/surface/historyCopy.ts';
+import type { VerdictCopy, VerdictSentenceArgs } from '#lib/v1/verdict.ts';
 
 const predictionShare = {
 	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>

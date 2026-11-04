@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import type { IsoUtc } from '$lib/v1/schemas';
+import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 import type { MapSelectionDetail } from './selectionSession/mapSelection';
 import * as detailLogic from './mapSelectionDetail.logic';
 

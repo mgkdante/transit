@@ -1,5 +1,5 @@
-import { env } from '$env/dynamic/public';
-import { DEFAULT_SITE_ORIGIN } from '$lib/site/config';
+import * as env from '$app/env/public';
+import { DEFAULT_SITE_ORIGIN } from '#lib/site/config.ts';
 
 const DEFAULT_BASE = '/data/v1';
 

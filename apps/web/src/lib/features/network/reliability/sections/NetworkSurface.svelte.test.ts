@@ -7,8 +7,8 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
-import type { IsoUtc } from '$lib/v1/schemas';
+import type { NetworkFile, NetworkShift, TrendPoint } from '#lib/v1/index.ts';
+import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
@@ -145,7 +145,7 @@ function renderPicker(name: 'Trend window' | 'Delay series' | 'Trend grain') {
 	return screen.getByRole('radiogroup', { name });
 }
 
-vi.mock('$lib/nav', async () => {
+vi.mock('#lib/nav/index.ts', async () => {
 	return {
 		layout: { isDesktop: true },
 		openSurface,
@@ -166,10 +166,10 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
@@ -206,14 +206,14 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
 	getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
 	loadNetworkHistoryRange: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: vi.fn() }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown, options?: unknown) => {
 		createResourceSpy(loader, options);
 		const src = loader.toString();

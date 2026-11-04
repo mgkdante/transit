@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { IsoUtc, ReliabilityPeriod, RouteReliability } from '$lib/v1';
+import type { IsoUtc, ReliabilityPeriod, RouteReliability } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from '../clusters';
 import { selectDayVerdictHeadline } from './dayVerdictHeadline';
 

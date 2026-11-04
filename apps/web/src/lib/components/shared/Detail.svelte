@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Collapsible from '@yesid/ui/collapsible';
 

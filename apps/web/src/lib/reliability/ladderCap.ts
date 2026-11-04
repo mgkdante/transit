@@ -1,5 +1,5 @@
-import { WORST_N_LADDER, type WorstN } from '$lib/filters';
-import type { GrainSegment } from '$lib/components/surface';
+import { WORST_N_LADDER, type WorstN } from '#lib/filters/index.ts';
+import type { GrainSegment } from '#lib/components/surface/index.ts';
 
 export const DEFAULT_WORST_N: WorstN = '10';
 export const SMALLEST_WORST_N = Number(WORST_N_LADDER[0]);

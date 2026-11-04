@@ -1,7 +1,7 @@
-import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { ChartSpec, TrendDatum } from '$lib/components/dataviz/chart';
-import type { Locale } from '$lib/i18n/config';
-import type { TrendPoint } from '$lib/v1';
+import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { ChartSpec, TrendDatum } from '#lib/components/dataviz/chart/index.ts';
+import type { Locale } from '#lib/i18n/config.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 export interface CancelTrendOptions {
 	readonly locale: Locale;

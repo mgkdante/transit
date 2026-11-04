@@ -1,4 +1,4 @@
-import type { Receipt } from '$lib/v1/schemas';
+import type { Receipt } from '#lib/v1/schemas/index.ts';
 
 export interface WorstRowVM {
 	readonly id: string;

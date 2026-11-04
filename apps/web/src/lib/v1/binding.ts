@@ -1,4 +1,4 @@
-import type { FetchFn } from '$lib/v1/http';
+import type { FetchFn } from '#lib/v1/http.ts';
 import {
 	serveSnapshot,
 	type R2BucketBinding,

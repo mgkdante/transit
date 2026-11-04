@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { intl } from '$lib/i18n';
-	import type { Locale } from '$lib/i18n';
+	import { intl } from '#lib/i18n/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { SectionHeading } from '@yesid/ui/brand';
 	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import type { HotspotLadderResult } from '../selectors/hotspotLadder';
 	import type { HotspotsCopy } from '../hotspots.copy';
 

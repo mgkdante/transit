@@ -1,16 +1,16 @@
-import { adapter, type AdapterCtx } from '$lib/v1/adapter';
+import { adapter, type AdapterCtx } from '#lib/v1/adapter/index.ts';
 import {
 	HistoryArtifactContractError,
 	HistoryTransientPublicationError,
 	canonicalHistoryJson,
-} from '$lib/v1/history/partitions';
+} from '#lib/v1/history/partitions.ts';
 import {
 	isHistoryFamilyIndexPath,
 	isHistoryPointArtifactPath,
 	type RetainedPointHistoryFamily,
-} from '$lib/v1/history/pointers';
-import { addIsoDays, strictIsoDate } from '$lib/v1/history/selection';
-import { sha256Hex, type RawJsonEntity } from '$lib/v1/http';
+} from '#lib/v1/history/pointers.ts';
+import { addIsoDays, strictIsoDate } from '#lib/v1/history/selection.ts';
+import { sha256Hex, type RawJsonEntity } from '#lib/v1/http.ts';
 import type {
 	HistoricAvailabilityIndex,
 	HistoricCollectionIndex,
@@ -18,7 +18,7 @@ import type {
 	HistoricHotspotsDay,
 	HistoricPartitionRef,
 	HistoricRepeatOffendersDay,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	SHA256_PATTERN,
 	abortError,

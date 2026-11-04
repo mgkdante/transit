@@ -1,8 +1,8 @@
-import { OCCUPANCY_CODES } from '$lib/v1/schemas/types';
-import type { OccupancyCode, OccupancyMix } from '$lib/v1/schemas';
-import type { StackedShareSpec } from '$lib/components/dataviz/chart';
-import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
-import type { Locale } from '$lib/i18n/config';
+import { OCCUPANCY_CODES } from '#lib/v1/schemas/types.ts';
+import type { OccupancyCode, OccupancyMix } from '#lib/v1/schemas/index.ts';
+import type { StackedShareSpec } from '#lib/components/dataviz/chart/index.ts';
+import { stackedShareSpec } from '#lib/components/dataviz/chart/share.ts';
+import type { Locale } from '#lib/i18n/config.ts';
 
 export interface CrowdingSegment {
 	readonly code: OccupancyCode;

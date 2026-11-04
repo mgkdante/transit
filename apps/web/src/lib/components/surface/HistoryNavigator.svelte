@@ -1,7 +1,7 @@
 <script module lang="ts">
-	import type { DateWindow } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
-	import type { AbsenceReasonKey } from '$lib/site/absence';
+	import type { DateWindow } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 	import type { DateRangePickerLabels, SingleDateOption } from './DateRangePicker.svelte';
 
 	export interface HistoryNavigatorLabels {

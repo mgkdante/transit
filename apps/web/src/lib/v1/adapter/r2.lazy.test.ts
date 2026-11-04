@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import type { r2Adapter } from './r2';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const evaluated = vi.hoisted(() => ({
 	live: 0,
@@ -11,24 +11,24 @@ const evaluated = vi.hoisted(() => ({
 	provenance: 0,
 }));
 
-vi.mock('$lib/v1/schemas/data_health', async (importOriginal) => {
+vi.mock('#lib/v1/schemas/data_health.ts', async (importOriginal) => {
 	evaluated.live += 1;
-	return importOriginal<typeof import('$lib/v1/schemas/data_health')>();
+	return importOriginal<typeof import('#lib/v1/schemas/data_health.ts')>();
 });
 
-vi.mock('$lib/v1/schemas/routes_index', async (importOriginal) => {
+vi.mock('#lib/v1/schemas/routes_index.ts', async (importOriginal) => {
 	evaluated.static += 1;
-	return importOriginal<typeof import('$lib/v1/schemas/routes_index')>();
+	return importOriginal<typeof import('#lib/v1/schemas/routes_index.ts')>();
 });
 
-vi.mock('$lib/v1/schemas/history', async (importOriginal) => {
+vi.mock('#lib/v1/schemas/history.ts', async (importOriginal) => {
 	evaluated.historic += 1;
-	return importOriginal<typeof import('$lib/v1/schemas/history')>();
+	return importOriginal<typeof import('#lib/v1/schemas/history.ts')>();
 });
 
-vi.mock('$lib/v1/schemas/provenance', async (importOriginal) => {
+vi.mock('#lib/v1/schemas/provenance.ts', async (importOriginal) => {
 	evaluated.provenance += 1;
-	return importOriginal<typeof import('$lib/v1/schemas/provenance')>();
+	return importOriginal<typeof import('#lib/v1/schemas/provenance.ts')>();
 });
 
 const PORT_METHODS = {

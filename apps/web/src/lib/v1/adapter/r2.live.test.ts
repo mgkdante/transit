@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import { r2Adapter } from './r2';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const ISO = '2026-07-15T12:00:00Z';
 

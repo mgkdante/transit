@@ -7,7 +7,7 @@ const navigation = vi.hoisted(() => {
 	return {
 		page,
 		replaceState: vi.fn((url: string | URL) => {
-			page.url = new URL(url, 'http://localhost');
+			Object.assign(page, { url: new URL(url, 'http://localhost') });
 			window.history.replaceState({}, '', `${page.url.pathname}${page.url.search}${page.url.hash}`);
 		}),
 	};

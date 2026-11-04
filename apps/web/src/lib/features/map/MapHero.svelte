@@ -1,35 +1,35 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
-	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import type { MapStageFailure } from '#lib/components/map/MapStage.svelte';
+	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { getV1Context } from '$lib/v1/boot';
-	import { getBasemap } from '$lib/v1/repositories/basemap';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { getBasemap } from '#lib/v1/repositories/basemap.ts';
 	import {
 		getRoute,
 		getRoutesIndex,
 		getStop,
 		getStopsIndexSlim,
-	} from '$lib/v1/repositories/static';
-	import type { SlimStopEntry } from '$lib/v1';
-	import { createFilterStore, fromSearchParams } from '$lib/filters';
-	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import { parseMapFocus } from '$lib/search/mapFocus';
-	import { RightPanel } from '$lib/components/shell';
+	} from '#lib/v1/repositories/static.ts';
+	import type { SlimStopEntry } from '#lib/v1/index.ts';
+	import { createFilterStore, fromSearchParams } from '#lib/filters/index.ts';
+	import { nearTargetFromSearchParams } from '#lib/search/mapNear.ts';
+	import { parseMapFocus } from '#lib/search/mapFocus.ts';
+	import { RightPanel } from '#lib/components/shell/index.ts';
 	import {
 		MapStage,
 		nearestStops,
 		liveTtlS,
 		type WithDistance,
 		type FixResolver,
-	} from '$lib/components/map';
+	} from '#lib/components/map/index.ts';
 	import { createShapeCacheManager } from './mapShapeCache';
-	import { motionMode } from '$lib/stores';
+	import { motionMode } from '#lib/stores/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
@@ -87,12 +87,12 @@
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
 	const mapFitPadding = $derived(deriveMapFitPadding(desktop.current, mapWidthPx));
-
-	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
+	const urlCoordinator = createMapUrlCoordinator(new URL(page.url.href), goto);
 	const filters = createFilterStore(
-		readMapFilters($page.url.searchParams),
+		readMapFilters(new URLSearchParams(page.url.search)),
 		urlCoordinator.writeFilters,
 	);
+
 	const nearMeController = createMapNearMeController({
 		providerId: manifest.provider,
 		bbox: manifest.bbox,
@@ -129,7 +129,7 @@
 
 	let ingestedUrlIdentity = '';
 	$effect(() => {
-		const url = $page.url;
+		const url = new URL(page.url.href);
 		const urlIdentity = `${url.pathname}${url.search}`;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
@@ -440,15 +440,28 @@
 {/snippet}
 
 {#snippet detailPanel()}
-	<!-- prettier-ignore --><RightPanel {locale} identity={detailIdentity} footer={detailFooter} surfaceKey={detailSurfaceKey} canGoBack={selectionStack.length > 0} onback={goBackDetail} onclose={closeDetail} collapsed={detailCollapsed} ontogglecollapse={toggleDetailCollapsed} resizable>
+	<!-- prettier-ignore -->
+
+	<RightPanel
+		locale={locale}
+		identity={detailIdentity}
+		footer={detailFooter}
+		surfaceKey={detailSurfaceKey}
+		canGoBack={selectionStack.length > 0}
+		onback={goBackDetail}
+		onclose={closeDetail}
+		collapsed={detailCollapsed}
+		ontogglecollapse={toggleDetailCollapsed}
+		resizable
+	>
 		{#if selectedDetail}
 			<MapSelectionDetail
 				detail={selectedDetail}
-				{locale}
+				locale={locale}
 				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
-				{selectionPresence}
-				{selectionSourceHealth}
+				selectionPresence={selectionPresence}
+				selectionSourceHealth={selectionSourceHealth}
 				onrefresh={live.refresh}
 				onselect={selectFromDetail}
 				onpreview={(next) => void session.setHovered(next)}
@@ -459,8 +472,26 @@
 	</RightPanel>
 {/snippet}
 
-{#snippet detailIdentity()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="identity" />{/snippet}
-{#snippet detailFooter()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="action" onfilter={applyDetailFilter} />{/snippet}
+{#snippet detailIdentity()}
+	<!-- prettier-ignore -->
+
+	<MapSelectionDetail
+		detail={selectedDetail}
+		locale={locale}
+		presentation="identity"
+	/>
+{/snippet}
+
+{#snippet detailFooter()}
+	<!-- prettier-ignore -->
+
+	<MapSelectionDetail
+		detail={selectedDetail}
+		locale={locale}
+		presentation="action"
+		onfilter={applyDetailFilter}
+	/>
+{/snippet}
 
 {#snippet motionHeader(collapsed: boolean)}
 	<MapMotionControl {locale} copy={t} {collapsed} />

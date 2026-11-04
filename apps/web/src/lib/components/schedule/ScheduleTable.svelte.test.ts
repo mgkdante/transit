@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import type { DelayLabelCopy } from '$lib/site/delayPresentation';
-import { detailCopy } from '$lib/features/stops/stops.copy';
+import type { DelayLabelCopy } from '#lib/site/delayPresentation.ts';
+import { detailCopy } from '#lib/features/stops/stops.copy.ts';
 import ScheduleTable, { type ScheduleRow, type ScheduleTableProps } from './ScheduleTable.svelte';
 
 const GRID_LABELS = {

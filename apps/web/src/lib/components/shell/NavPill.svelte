@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Component } from 'svelte';
-	import { trackEvent } from '$lib/site/analytics';
+	import { trackEvent } from '#lib/site/analytics.ts';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
@@ -22,13 +22,13 @@
 		getLocale,
 		localizeHref,
 		localizeUrl,
-	} from '$lib/i18n';
-	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
-	import type { TransitModeKey } from '$lib/search/stopMode';
+	} from '#lib/i18n/index.ts';
+	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/chromeSearch.ts';
+	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import SearchControls, {
 		type SearchScopeKey,
-	} from '$lib/components/surface/SearchControls.svelte';
+	} from '#lib/components/surface/SearchControls.svelte';
 	import {
 		type SurfaceNavItem,
 		type AuditNavItem,
@@ -36,12 +36,12 @@
 		AUDIT_NAV,
 		YESID_HOUSE_LINK,
 		isSurfaceActive,
-	} from '$lib/content/nav';
-	import { navPillCopy } from '$lib/i18n/messages';
+	} from '#lib/content/nav.ts';
+	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import { SiteHeader } from '@yesid/ui/layout';
 	import RefreshButton from './RefreshButton.svelte';
-	import { providerHref, type PublicProvider } from '$lib/v1/providers';
-	import { v1Provider } from '$lib/v1/config';
+	import { providerHref, type PublicProvider } from '#lib/v1/providers.ts';
+	import { v1Provider } from '#lib/v1/config.ts';
 
 	interface NavPillProps {
 		navigation: NavigationLifecycle;

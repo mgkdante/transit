@@ -1,4 +1,4 @@
-import type { TrendPoint } from '$lib/v1';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 export interface CompletenessVM {
 	readonly hasData: boolean;

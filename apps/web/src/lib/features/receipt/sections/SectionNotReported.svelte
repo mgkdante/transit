@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { RankedRow } from '$lib/components/dataviz';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
 	import { SectionHeading } from '@yesid/ui/brand';
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { NOT_REPORTED_DOMAIN, type NotReportedVM } from '../selectors/notReportedLines';
 
 	interface SectionNotReportedProps {

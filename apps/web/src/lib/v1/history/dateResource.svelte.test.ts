@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '#lib/stores/index.ts';
 import {
 	createHistoryDateResource,
 	historyDateRequestFromSearchParams,

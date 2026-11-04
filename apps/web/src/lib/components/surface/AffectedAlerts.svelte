@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import type { Alert, SeverityCode } from '$lib/v1/schemas';
-	import { formatUtc } from '$lib/utils/time';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Alert, SeverityCode } from '#lib/v1/schemas/index.ts';
+	import { formatUtc } from '#lib/utils/time.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
+	import { causeLabel, effectLabel } from '#lib/v1/gtfsAlertLabels.ts';
+	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
 
 	export interface AffectedAlertsCopy {
 		readonly heading: string;

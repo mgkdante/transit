@@ -6,7 +6,10 @@ import {
 	providerHref,
 } from './providers';
 
-vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_V1_BASE: '/data/v1' } }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{ PUBLIC_V1_BASE: '/data/v1' },
+}));
 
 const provider = {
 	id: 'test',

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ getFresh: vi.fn() }));
-vi.mock('$lib/v1/adapter', () => ({
+vi.mock('#lib/v1/adapter/index.ts', () => ({
 	adapter: { manifest: { get: vi.fn(), getFresh: mocks.getFresh } },
 }));
 
 import { getManifestFresh } from './manifest';
-import type { AdapterCtx } from '$lib/v1/adapter';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
 
 const ISO = '2026-07-15T12:00:00Z';
 

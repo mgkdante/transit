@@ -1,5 +1,5 @@
-import type { RouteFile } from '$lib/v1';
-import type { GeocodePrecision } from '$lib/geocode/types';
+import type { RouteFile } from '#lib/v1/index.ts';
+import type { GeocodePrecision } from '#lib/geocode/types.ts';
 
 export type MapBounds = [[number, number], [number, number]];
 

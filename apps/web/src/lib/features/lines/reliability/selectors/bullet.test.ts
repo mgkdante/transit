@@ -1,4 +1,4 @@
-import { reliabilityVerdict } from '$lib/v1/verdict';
+import { reliabilityVerdict } from '#lib/v1/verdict.ts';
 import { describe, it, expect } from 'vitest';
 import { selectBullet, verdictTone } from './bullet';
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { LEGAL_EFFECTIVE_DATES, legalDocument, type LegalPageKind } from './legal.copy';
 
 	interface Props {

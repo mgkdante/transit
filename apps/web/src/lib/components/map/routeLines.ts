@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
-import type { RouteDirection, RouteFile } from '$lib/v1/schemas';
+import type { RouteDirection, RouteFile } from '#lib/v1/schemas/index.ts';
 import { routeDirectionVariants, type RouteDirectionVariant } from './routeDirection';
 import { resolveColor } from './vehicleSprites';
 

@@ -1,61 +1,66 @@
 <script lang="ts">
-	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, type SurfaceKind } from '$lib/nav';
-	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
-	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor, type SurfaceKind } from '#lib/nav/index.ts';
+	import {
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		type WorstN,
+	} from '#lib/filters/index.ts';
+	import { availabilityFromPointCollectionIndex } from '#lib/v1/history/selection.ts';
+	import { createHistoryCorrectionPresentation } from '#lib/v1/history/datePresentation.svelte.ts';
 	import {
 		createHistoryDateResource,
 		historyDateRequestFromSearchParams,
-	} from '$lib/v1/history/dateResource.svelte';
+	} from '#lib/v1/history/dateResource.svelte.ts';
 	import {
 		getHotspots,
 		getHotspotsHistoryDay,
 		getHotspotsHistoryIndex,
-	} from '$lib/v1/repositories/historic';
-	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
-	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '#lib/v1/schemas/index.ts';
+	import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 	import {
 		ArticleControlStack,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		ArticleHeader,
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,
 	} from '@yesid/ui/layout';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '$lib/components/shared';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import { fmtCount, fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
 
 	import {
 		ladderGrains,
 		HOTSPOT_GRAINS,
 		type HotspotGrainKey,
-	} from '$lib/reliability/ladderGrains';
+	} from '#lib/reliability/ladderGrains.ts';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from '$lib/reliability/ladderCap';
+	} from '#lib/reliability/ladderCap.ts';
 	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
@@ -73,7 +78,7 @@
 			loadDate: (date, index, signal) => getHotspotsHistoryDay(date, index, { signal }),
 		},
 		{
-			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			initialRequest: historyDateRequestFromSearchParams(new URLSearchParams(page.url.search)),
 		},
 	);
 	onDestroy(() => hotspots.destroy());
@@ -132,7 +137,9 @@
 	const grainKey = $derived<HotspotGrainKey>(view.grain);
 	const showGrainPicker = $derived(present.size > 1);
 
-	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
+	let worstN = $state<WorstN>(
+		fromSearchParams(new URLSearchParams(page.url.search)).worstN ?? DEFAULT_WORST_N,
+	);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 

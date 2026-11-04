@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
-import { readPublicSiteConfig } from '$lib/site/config';
-import { buildRobotsTxt } from '$lib/site/seoFiles';
+import { readPublicSiteConfig } from '#lib/site/config.ts';
+import { buildRobotsTxt } from '#lib/site/seoFiles.ts';
 
 export const prerender = true;
 

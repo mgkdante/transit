@@ -1,11 +1,11 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
-import { historyViewContract } from '$lib/features/reliability/__fixtures__/historyViewContract';
+import { historyViewContract } from '#lib/features/reliability/__fixtures__/historyViewContract.ts';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Locale } from '$lib/i18n';
-import type { StopReliability } from '$lib/v1';
-import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-import { encodeHistoryEntityId } from '$lib/v1/history/entity';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { StopReliability } from '#lib/v1/index.ts';
+import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+import { encodeHistoryEntityId } from '#lib/v1/history/entity.ts';
 import {
 	HistoricCollectionIndexSchema,
 	StopHistoryPartitionSchema,
@@ -14,7 +14,7 @@ import {
 	type HistoricPartitionRef,
 	type IsoUtc,
 	type StopHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	createStopHistoryResource,
 	type StopHistoryResource,
@@ -44,11 +44,11 @@ const harness = vi.hoisted(() => {
 });
 
 vi.mock('$app/state', () => ({ page: harness.page }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getStopHistoryIndex: harness.getStopHistoryIndex,
 	loadStopHistoryRange: harness.loadStopHistoryRange,
 }));

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { EntityList } from '$lib/components/surface';
+	import { EntityList } from '#lib/components/surface/index.ts';
 	import { StatusDot } from '@yesid/ui/brand';
-	import type { ProvenanceFreshness } from '$lib/v1/schemas';
+	import type { ProvenanceFreshness } from '#lib/v1/schemas/index.ts';
 	import type { FreshnessVerdict } from '../selectors/provenanceViews';
 	import type { HealthCopy } from '../health.copy';
 

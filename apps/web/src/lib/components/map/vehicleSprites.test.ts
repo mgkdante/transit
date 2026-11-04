@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas';
-import { occupancyVar, statusVar } from '$lib/components/dataviz';
+import { OCCUPANCY_CODES, STATUS_CODES } from '#lib/v1/schemas/index.ts';
+import { occupancyVar, statusVar } from '#lib/components/dataviz/index.ts';
 
 import {
 	BUS_FILL_TOKEN,

@@ -32,7 +32,7 @@
     },
     {
       "path": "src/lib/components/map/basemap.ts",
-      "sha256": "3d0f658aaabc0eed0787bbd367949f9bd2b8b3fa32a4b24e29ad30ccbffff7b1"
+      "sha256": "573b618c0b34dd3d604e8865cbe003ff9031d830ff1cdd95eb3d94fb98a433d9"
     },
     {
       "path": "src/lib/components/map/viewport.ts",
@@ -40,7 +40,7 @@
     },
     {
       "path": "src/lib/features/map/mapCameraFraming.ts",
-      "sha256": "5f9b5cddc75fa5b4de8382e1f91f1041d5373d1e5a483d59343551b71feed211"
+      "sha256": "40833c15230b86be0948f88f9eb85d701ca363336ee1beee649e0fd570145745"
     },
     {
       "path": "../db/config/providers/stm.yaml",

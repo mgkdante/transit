@@ -3,9 +3,9 @@
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { Button } from '@yesid/ui/button';
-	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
+	import { type Locale, DEFAULT_LOCALE, getLocale } from '#lib/i18n/index.ts';
 	import * as Sheet from '@yesid/ui/sheet';
 	import { SectionLabel } from '@yesid/ui/brand';
 

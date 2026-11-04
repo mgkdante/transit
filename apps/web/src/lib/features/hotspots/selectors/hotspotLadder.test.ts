@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { selectHotspotLadder, type HotspotLadderLabels } from './hotspotLadder';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import type { HotspotEntry } from '$lib/v1/schemas';
-import type { MagnitudeBarsSpec, AbsenceSpec } from '$lib/components/dataviz/chart';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { HotspotEntry } from '#lib/v1/schemas/index.ts';
+import type { MagnitudeBarsSpec, AbsenceSpec } from '#lib/components/dataviz/chart/index.ts';
 
 const labels: HotspotLadderLabels = {
 	title: 'Worst spots',

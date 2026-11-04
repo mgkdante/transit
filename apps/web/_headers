@@ -52,7 +52,7 @@
 # Baseline security headers for static ASSET responses (favicon, fonts,
 # /_app/immutable). In Worker mode `_headers` only decorates assets — SSR
 # documents get the same headers from hooks.server.ts and the CSP, plus inline
-# script hashes, from kit.csp in svelte.config.js. securityHeaders.test.ts keeps
+# script hashes, from csp in kit.config.js. securityHeaders.test.ts keeps
 # them in lockstep.
 # NOTE: img-src is narrowed off the old `https:` wildcard to 'self' data: blob:
 # + the basemap host (defense-in-depth) + the OG-image origin. Cross-Origin-

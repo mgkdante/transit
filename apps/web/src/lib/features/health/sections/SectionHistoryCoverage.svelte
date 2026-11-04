@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Badge } from '@yesid/ui/badge';
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { absenceShort, describeAbsence } from '$lib/site/absence';
-	import { formatDateKey } from '$lib/utils/time';
+	import { absenceShort, describeAbsence } from '#lib/site/absence.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import type { HealthCopy } from '../health.copy';
 	import type {
 		HistoryCoverageFamilyView,

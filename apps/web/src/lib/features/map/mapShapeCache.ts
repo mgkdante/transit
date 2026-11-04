@@ -1,12 +1,12 @@
-import type { RouteFile } from '$lib/v1';
-import type { Vehicle } from '$lib/v1/schemas';
+import type { RouteFile } from '#lib/v1/index.ts';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import {
 	bestShapeForPoint,
 	routeShapes,
 	type Coord,
 	type RouteShapes,
 	type ShapeResolver,
-} from '$lib/components/map';
+} from '#lib/components/map/index.ts';
 
 export const MAX_CACHED_ROUTE_SHAPES = 200;
 

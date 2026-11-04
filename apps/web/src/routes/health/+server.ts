@@ -1,10 +1,11 @@
+import { env as cloudflareEnv } from 'cloudflare:workers';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 export const prerender = false;
 
-export const GET: RequestHandler = ({ platform }) => {
-	const env = (platform?.env ?? {}) as unknown as Record<string, string | undefined>;
+export const GET: RequestHandler = () => {
+	const env = (cloudflareEnv ?? {}) as unknown as Record<string, string | undefined>;
 	return json(
 		{
 			status: 'ok',

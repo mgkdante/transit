@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Alert } from '$lib/v1/schemas';
+import type { Alert } from '#lib/v1/schemas/index.ts';
 import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
-import type { Vehicle } from '$lib/v1/schemas';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 
 const stopAlert: Alert = {
 	id: 'stop-alert',

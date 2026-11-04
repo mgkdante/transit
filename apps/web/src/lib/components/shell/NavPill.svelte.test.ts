@@ -2,13 +2,16 @@ import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chromeSearchResults } from '$lib/search/chromeSearch';
-import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
-import type { RouteIndexEntry } from '$lib/v1/schemas';
+import { chromeSearchResults } from '#lib/search/chromeSearch.ts';
+import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.ts';
+import type { RouteIndexEntry } from '#lib/v1/schemas/index.ts';
 import NavPill from './__fixtures__/NavPillHarness.svelte';
 import { createNavigationRouter } from './__fixtures__/navigationRouter';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 vi.mock('$app/navigation', () => ({
 	beforeNavigate: vi.fn(),
 	onNavigate: vi.fn(),
@@ -18,27 +21,35 @@ vi.mock('$app/navigation', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('NavPill navigation lifecycle integration', () => {
-	it.each([true, false])('handles a locale redirect with subscription=%s', async (subscription) => {
+	it.each([false, true])('uses the Kit 3 fallback with redirect=%s', async (redirected) => {
 		const adapter = createNavigationRouter();
-		const view = render(NavPill, { props: { adapter, subscription, locale: 'en' } });
+		const view = render(NavPill, { props: { adapter, locale: 'en' } });
 		await fireEvent.click(view.getByRole('button', { name: 'Open menu' }));
 		const language = view.getByTestId('language-toggle');
 		expect(language).toHaveAttribute('data-sveltekit-reload', 'true');
 		// Model a router-accepted native start. Real reload links depart the document instead.
 		const event = new MouseEvent('click', { bubbles: true });
 		Object.defineProperty(event, 'target', { value: language });
+		const start = {
+			type: 'link' as const,
+			to: { url: new URL('https://transit.local/fr/old') },
+			event,
+		};
 		await adapter.navigate(
-			{ type: 'link', to: { url: new URL('https://transit.local/fr/old') }, event },
-			{ type: 'link', to: { url: new URL('https://transit.local/fr/metrics') } },
+			start,
+			redirected
+				? { type: 'link', to: { url: new URL('https://transit.local/fr/metrics') } }
+				: start,
 		);
 		await tick();
-		if (subscription) {
+		if (!redirected) {
 			expect(view.getByRole('dialog')).toBeInTheDocument();
 			expect(language).toHaveFocus();
 			await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
 		} else {
 			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+			expect(language).not.toHaveFocus();
 		}
 	});
 });

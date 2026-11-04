@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { mapViewportOptions, type MapFitPadding } from '$lib/components/map/viewport';
+import { mapViewportOptions, type MapFitPadding } from '#lib/components/map/viewport.ts';
 import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
 
 const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectTimeOfDay } from './timeOfDay';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { StopReliabilityPeriod } from '$lib/v1/schemas';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { StopReliabilityPeriod } from '#lib/v1/schemas/index.ts';
 
 const labels = {
 	shiftLabel: (g: string) => `S:${g}`,

@@ -27,7 +27,10 @@ const executablePath = process.env.TRANSIT_BROWSER_ROOT
 	? (await verifyInstalledBrowserArtifact()).paths.executablePath
 	: undefined;
 
-const baseURL = 'http://127.0.0.1:4317';
+const port = process.env.TRANSIT_E2E_PORT ?? '4317';
+const dataPort = process.env.TRANSIT_E2E_DATA_PORT ?? '4318';
+const baseURL = `http://127.0.0.1:${port}`;
+const dataURL = `http://127.0.0.1:${dataPort}`;
 
 export default defineConfig({
 	testDir: '.',
@@ -49,12 +52,13 @@ export default defineConfig({
 	webServer: [
 		{
 			command: 'node data.mjs',
-			url: 'http://127.0.0.1:4318/v1/providers.json',
+			url: `${dataURL}/v1/providers.json`,
+			env: { TRANSIT_E2E_DATA_PORT: dataPort, TRANSIT_E2E_ORIGIN: baseURL },
 			reuseExistingServer: !process.env.CI,
 		},
 		// The built worker without bindings, so server-side data comes from the fixture server.
 		{
-			command: 'bun x wrangler dev --config wrangler.json --ip 127.0.0.1 --port 4317',
+			command: `bun x wrangler dev --config wrangler.json --ip 127.0.0.1 --port ${port} --var PUBLIC_V1_BASE:${dataURL}/v1`,
 			url: baseURL,
 			reuseExistingServer: !process.env.CI,
 		},

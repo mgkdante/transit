@@ -1,6 +1,6 @@
-import type { Locale } from '$lib/i18n';
-import type { StackedShareSpec, ShareSegment } from '$lib/components/dataviz/chart/ChartSpec';
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { StackedShareSpec, ShareSegment } from '#lib/components/dataviz/chart/ChartSpec.ts';
+import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
 
 export interface OccupancyShareOpts {
 	readonly title: string;

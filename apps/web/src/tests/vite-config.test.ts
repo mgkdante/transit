@@ -7,6 +7,7 @@ import config, {
 	previewManifestForIslandCenteredBasemap,
 } from '../../vite.config';
 import type { UserConfig, ViteDevServer } from 'vite';
+import type { Rolldown } from 'vite';
 
 type PreviewMiddleware = (
 	req: { method?: string },
@@ -76,22 +77,28 @@ describe('vite production chunk contract', () => {
 		const build = Array.isArray(client) ? client[0]?.build : client.build;
 		const output = build?.rollupOptions?.output;
 		const firstOutput = Array.isArray(output) ? output[0] : output;
-		const manualChunks = firstOutput?.manualChunks;
 		const clientOutput = client.environments?.client?.build?.rollupOptions?.output;
 		const firstClientOutput = Array.isArray(clientOutput) ? clientOutput[0] : clientOutput;
+		const splitting = firstClientOutput?.codeSplitting;
+		const groups = typeof splitting === 'object' ? splitting.groups : undefined;
+		const mapGroup = groups?.find(
+			(group: Rolldown.CodeSplittingGroup) => group.name === 'vendor-maplibre',
+		);
+		const chunkNameFor = (id: string) =>
+			typeof mapGroup?.test === 'function' && mapGroup.test(id) ? mapGroup.name : undefined;
 
 		expect(build?.chunkSizeWarningLimit).toBe(1100);
-		expect(typeof manualChunks).toBe('function');
-		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
-		expect(firstClientOutput?.experimentalMinChunkSize).toBe(1_500);
-		if (typeof manualChunks !== 'function') return;
+		expect(typeof mapGroup?.test).toBe('function');
+		expect(firstOutput?.codeSplitting).toBeUndefined();
+		expect(firstClientOutput?.codeSplitting).toMatchObject({ minSize: 1_500 });
+		if (typeof chunkNameFor !== 'function') return;
 
-		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.mjs')).toBe(
+		expect(chunkNameFor('/repo/node_modules/maplibre-gl/dist/maplibre-gl.mjs')).toBe(
 			'vendor-maplibre',
 		);
-		expect(manualChunks('/repo/node_modules/pmtiles/dist/index.js')).toBe('vendor-maplibre');
-		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.css')).toBeUndefined();
-		expect(manualChunks('/repo/src/lib/features/map/MapHero.svelte')).toBeUndefined();
+		expect(chunkNameFor('/repo/node_modules/pmtiles/dist/index.js')).toBe('vendor-maplibre');
+		expect(chunkNameFor('/repo/node_modules/maplibre-gl/dist/maplibre-gl.css')).toBeUndefined();
+		expect(chunkNameFor('/repo/src/lib/features/map/MapHero.svelte')).toBeUndefined();
 	});
 
 	it('does not emit the map vendor chunk for the SSR build', async () => {
@@ -101,7 +108,7 @@ describe('vite production chunk contract', () => {
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
 		expect(firstOutput?.manualChunks).toBeUndefined();
-		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
+		expect(firstOutput?.codeSplitting).toBeUndefined();
 	});
 
 	it('keeps production chunk merging out of the Vitest environment', async () => {
@@ -109,7 +116,7 @@ describe('vite production chunk contract', () => {
 		const output = testConfig.build?.rollupOptions?.output;
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
-		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
+		expect(firstOutput?.codeSplitting).toBeUndefined();
 		expect(testConfig.environments?.client).toBeUndefined();
 	});
 });

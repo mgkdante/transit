@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectVerdict, wilsonInterval, reliabilityVerdict, isProblemVerdict } from './verdict';
-import { routeVerdictCopy } from '$lib/features/lines/reliability/routeVerdict.copy';
+import { routeVerdictCopy } from '#lib/features/lines/reliability/routeVerdict.copy.ts';
 
 const en = routeVerdictCopy.en.verdict;
 const fr = routeVerdictCopy.fr.verdict;

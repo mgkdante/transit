@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import MapFreshness from './MapFreshness.svelte';
 
 	interface Props {

@@ -2,7 +2,7 @@
 	import { Chart as LcChart, Svg, Bars, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
 	import { goto } from '$app/navigation';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartDatumPopover from '../ChartDatumPopover.svelte';
 	import ChartFrame from '../ChartFrame.svelte';
 	import {
@@ -13,7 +13,7 @@
 	import MagnitudeCiWhiskers from './MagnitudeCiWhiskers.svelte';
 	import { activateMagnitudeRow } from './magnitudeRowActivation';
 	import type { MagnitudeBarsSpec, MagnitudeDatum } from '../ChartSpec';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 	export interface MagnitudeBarsMarkProps {
 		spec: MagnitudeBarsSpec;

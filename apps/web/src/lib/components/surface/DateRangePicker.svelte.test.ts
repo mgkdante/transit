@@ -1,7 +1,7 @@
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import DateRangePicker from './DateRangePicker.svelte';
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '#lib/filters/index.ts';
 
 const DATES = ['2026-06-01', '2026-06-02', '2026-06-03'] as const;
 const LABELS = {

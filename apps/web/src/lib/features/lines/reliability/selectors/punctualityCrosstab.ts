@@ -1,8 +1,8 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, LineSpec, LineSeries } from '$lib/components/dataviz/chart';
-import { OTP_DOMAIN } from '$lib/features/reliability/domains';
-import { SHIFT_GRAIN_ORDER } from '$lib/features/reliability/shiftGrains';
-import type { CrosstabCell } from '$lib/v1';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { AbsenceSpec, LineSpec, LineSeries } from '#lib/components/dataviz/chart/index.ts';
+import { OTP_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { SHIFT_GRAIN_ORDER } from '#lib/features/reliability/shiftGrains.ts';
+import type { CrosstabCell } from '#lib/v1/index.ts';
 
 export const MIN_TRUSTED_OBS = 30;
 

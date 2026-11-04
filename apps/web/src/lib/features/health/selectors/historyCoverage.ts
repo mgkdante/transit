@@ -6,12 +6,12 @@ import type {
 	HistoryMetricAggregation,
 	HistoryMetricName,
 	HistorySelectionMode,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	LINE_CURRENT_ONLY_SECTIONS,
 	NETWORK_CURRENT_ONLY_SECTIONS,
 	STOP_CURRENT_ONLY_SECTIONS,
-} from '$lib/v1/history/families';
+} from '#lib/v1/history/families.ts';
 
 const HISTORY_COVERAGE_FAMILIES = [
 	'alerts',

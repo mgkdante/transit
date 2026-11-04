@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WINDOWS, bestFitWindow, windowedSeries } from './trendWindow';
-import type { TrendPoint } from '$lib/v1';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 const day = (n: number): TrendPoint[] =>
 	Array.from({ length: n }, (_, i) => ({ date: `2026-05-${String(i + 1).padStart(2, '0')}` }));

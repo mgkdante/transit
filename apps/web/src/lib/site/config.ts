@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/public';
+import * as env from '$app/env/public';
 
 export const DEFAULT_SITE_ORIGIN = 'https://transit.yesid.dev';
 

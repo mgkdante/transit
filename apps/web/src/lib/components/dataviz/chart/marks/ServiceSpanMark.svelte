@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Axis, Tooltip } from 'layerchart';
 	import { scaleLinear, scaleBand } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import ServiceSpanBar from './ServiceSpanBar.svelte';
 	import type { ServiceSpanSpec } from '../ChartSpec';

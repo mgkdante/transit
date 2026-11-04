@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StopsIndex } from '$lib/v1/schemas';
+import type { StopsIndex } from '#lib/v1/schemas/index.ts';
 import { isSlimStopsIndex, toSlimStop, toSlimStopsIndex } from './stopsSlim';
 
 const FULL = {
@@ -71,7 +71,7 @@ describe('isSlimStopsIndex — runtime guard for the endpoint payload', () => {
 });
 
 const stopsIndex = vi.hoisted(() => vi.fn(async () => ({ generated_utc: 'x', stops: [] })));
-vi.mock('$lib/v1/adapter', () => ({ adapter: { static: { stopsIndex } } }));
+vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { static: { stopsIndex } } }));
 
 describe('getStopsIndexSlim — abort is not a fallback trigger', () => {
 	beforeEach(() => stopsIndex.mockClear());

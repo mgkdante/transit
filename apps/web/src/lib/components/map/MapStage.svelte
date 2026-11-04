@@ -66,10 +66,10 @@
 </script>
 
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { onMount, tick } from 'svelte';
-	import { cn } from '$lib/utils';
-	import type { BasemapFile } from '$lib/v1/schemas';
+	import { cn } from '#lib/utils/index.ts';
+	import type { BasemapFile } from '#lib/v1/schemas/index.ts';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
 	import { constructRecoverableMap } from './maplibreConstructorCleanup';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
@@ -529,11 +529,13 @@
 			consumerReleasePromise: null,
 		};
 		activeAttempt = attempt;
+
 		const basemapPromise = Promise.resolve()
 			.then(() =>
 				basemapLoader ? basemapLoader({ signal: attempt.controller.signal }) : (basemap ?? null),
 			)
 			.catch(() => null);
+
 		let failureKind: MapStageFailureKind = 'importer';
 		try {
 			const [maplibreModule] = await Promise.all([importers.maplibre(), importers.css()]);

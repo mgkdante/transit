@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 
 import AbsentValue from './AbsentValue.svelte';
-import type { Locale } from '$lib/i18n';
-import type { AbsenceReasonKey } from '$lib/site/absence';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 
 const LOCALES: Locale[] = ['en', 'fr'];
 

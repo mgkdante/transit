@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { GeocodedLocation } from '$lib/geocode/types';
+import type { GeocodedLocation } from '#lib/geocode/types.ts';
 import MapNearMeControllerHarness from './__fixtures__/MapNearMeControllerHarness.svelte';
 import {
 	createMapNearMeController,
@@ -153,9 +153,8 @@ describe('map near-me controller', () => {
 			target,
 		);
 		expect(first.goto).toHaveBeenCalledWith('?route=24&near=45.501000%2C-73.601000', {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
+			replace: true,
+			reset: false,
 		});
 		expect(first.focusOrigin).toHaveBeenCalledWith(target);
 
@@ -244,9 +243,8 @@ describe('map near-me controller', () => {
 		expect(harness.controller.urlKey).toBe('');
 		expect(harness.clearTargetSearch).toHaveBeenCalledWith(new URLSearchParams('route=24'), '/map');
 		expect(harness.goto).toHaveBeenCalledWith('?route=24', {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
+			replace: true,
+			reset: false,
 		});
 	});
 

@@ -24,7 +24,7 @@ const harness = vi.hoisted(() => {
 	};
 });
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { provider: harness.provider, city: harness.city },
 		provider: {
@@ -34,8 +34,8 @@ vi.mock('$lib/v1/boot', () => ({
 	}),
 }));
 
-vi.mock('$lib/i18n', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/i18n')>()),
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/i18n/index.ts')>()),
 	getLocale: () => harness.locale,
 }));
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({

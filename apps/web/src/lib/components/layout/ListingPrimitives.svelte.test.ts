@@ -1,7 +1,7 @@
 import { createRawSnippet } from 'svelte';
 import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import EntityResultRow from '$lib/components/surface/EntityResultRow.svelte';
+import EntityResultRow from '#lib/components/surface/EntityResultRow.svelte';
 
 const main = createRawSnippet(() => ({
 	render: () => '<a href="/lines/24">24 Sherbrooke</a>',

@@ -1,4 +1,4 @@
-import type { RepeatOffenderEntry } from '$lib/v1/schemas';
+import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
 
 export interface OffenderEvidenceRow {
 	readonly key: string;

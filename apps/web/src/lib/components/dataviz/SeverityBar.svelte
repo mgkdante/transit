@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { cn, type WithElementRef } from '$lib/utils';
+	import { cn, type WithElementRef } from '#lib/utils/index.ts';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 	import { severityVar } from './tokens';
 	import ChartTooltip from './ChartTooltip.svelte';
 	import { createChartTooltip } from './useChartTooltip.svelte';
-	import type { Locale } from '$lib/i18n';
-	import { absenceShort } from '$lib/site/absence';
-	import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
+	import { SEVERITY_LABELS } from '#lib/v1/enumLabels.ts';
 
 	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		severity: SeverityCode;

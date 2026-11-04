@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectWeakStops, type WeakStopsLabels } from './weakStops';
-import { DELAY_POS_DOMAIN, SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import type { WeakStop } from '$lib/v1';
+import { DELAY_POS_DOMAIN, SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { WeakStop } from '#lib/v1/index.ts';
 
 const labels: WeakStopsLabels = {
 	title: 'Weakest stops',

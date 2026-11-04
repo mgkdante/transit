@@ -1,7 +1,7 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { z } from 'zod';
-import { parsePort } from '$lib/v1/schemas/parse';
-import { getV1Runtime } from '$lib/v1/runtime';
+import { parsePort } from '#lib/v1/schemas/parse.ts';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 
 const MAX_SERVER_TIME_CALIBRATION_AGE_S = 30;
 

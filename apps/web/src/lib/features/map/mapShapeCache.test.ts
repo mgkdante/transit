@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RouteFile } from '$lib/v1';
-import { RouteFileSchema } from '$lib/v1/schemas/route';
-import type { Vehicle } from '$lib/v1/schemas';
-import type { VehicleFeature } from '$lib/components/map';
+import type { RouteFile } from '#lib/v1/index.ts';
+import { RouteFileSchema } from '#lib/v1/schemas/route.ts';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
+import type { VehicleFeature } from '#lib/components/map/index.ts';
 import { createShapeCacheManager, MAX_CACHED_ROUTE_SHAPES } from './mapShapeCache';
 
 const EAST_LEG: [number, number][] = [

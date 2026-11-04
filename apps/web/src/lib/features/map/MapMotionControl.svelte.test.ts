@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 import MapMotionControl from './MapMotionControl.svelte';
 import { copy } from './map.copy';
-import { motionMode } from '$lib/stores';
+import { motionMode } from '#lib/stores/index.ts';
 
 afterEach(() => {
 	cleanup();

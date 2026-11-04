@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ROUTE_LINE_HIT_LAYER, STOPS_LAYER, VEHICLE_BODY_LAYER } from '$lib/components/map';
+import {
+	ROUTE_LINE_HIT_LAYER,
+	STOPS_LAYER,
+	VEHICLE_BODY_LAYER,
+} from '#lib/components/map/index.ts';
 import { pickMapSelection } from './mapPicking';
 
 interface FakeFeature {

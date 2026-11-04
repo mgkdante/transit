@@ -1,5 +1,5 @@
-import { intl } from '$lib/i18n';
-import type { AlertHistoryEntry } from '$lib/v1/schemas';
+import { intl } from '#lib/i18n/index.ts';
+import type { AlertHistoryEntry } from '#lib/v1/schemas/index.ts';
 import type { ComboboxOption } from '@yesid/ui/combobox';
 
 type EntityField = 'routes' | 'stops';

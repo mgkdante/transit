@@ -1,4 +1,4 @@
-import type { OccupancyCode, SeverityCode, StatusCode } from '$lib/v1/schemas';
+import type { OccupancyCode, SeverityCode, StatusCode } from '#lib/v1/schemas/index.ts';
 
 export function tokenSuffix(code: string): string {
 	return code.replace(/_/g, '-');

@@ -1,4 +1,4 @@
-import type { StopIndexEntry, StopsIndex } from '$lib/v1/schemas';
+import type { StopIndexEntry, StopsIndex } from '#lib/v1/schemas/index.ts';
 
 export interface SlimStopEntry {
 	readonly id: string;

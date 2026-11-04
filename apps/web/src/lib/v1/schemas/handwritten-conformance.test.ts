@@ -4,7 +4,10 @@ import type { z } from 'zod';
 import { PublicProviderCatalogSchema } from '../providers';
 import * as s from './index';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 type Node = {
 	$ref?: string;

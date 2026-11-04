@@ -2,8 +2,8 @@ import {
 	clearNearTargetSearchParams,
 	setNearTargetSearchParams,
 	type MapNearTarget,
-} from '$lib/search/mapNear';
-import { clearMapFocusSearchParams } from '$lib/search/mapFocus';
+} from '#lib/search/mapNear.ts';
+import { clearMapFocusSearchParams } from '#lib/search/mapFocus.ts';
 
 function toGotoPath(searchParams: URLSearchParams, pathname: string): string {
 	const next = searchParams.toString();

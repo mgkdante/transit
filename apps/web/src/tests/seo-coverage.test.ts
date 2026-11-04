@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sitemapCoverage } from '@yesid/gates';
-import { PATHS, buildSitemapXml } from '$lib/site/seoFiles';
+import { PATHS, buildSitemapXml } from '#lib/site/seoFiles.ts';
 
 describe('Transit-owned SEO coverage policy', () => {
 	it('covers every configured static, route, and stop sitemap URL in both locales', () => {

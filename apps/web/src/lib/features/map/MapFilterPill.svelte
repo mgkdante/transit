@@ -3,8 +3,8 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
 	import { desktop } from '@yesid/ui/state';
-	import type { FilterStore } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {

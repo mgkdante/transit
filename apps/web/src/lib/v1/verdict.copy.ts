@@ -1,4 +1,4 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import type { VerdictCopy, VerdictSentenceArgs } from './verdict';
 export const verdictCopy = defineCopy({
 	fr: {

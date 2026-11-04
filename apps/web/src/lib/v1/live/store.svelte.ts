@@ -1,7 +1,7 @@
-import { browser } from '$app/environment';
-import { DEFAULT_LIVE_TTL_S, freshnessAgeSeconds } from '$lib/v1/freshness';
-import { adapter, type AdapterCtx } from '$lib/v1/adapter';
-import { getV1Runtime } from '$lib/v1/runtime';
+import { browser } from '$app/env';
+import { DEFAULT_LIVE_TTL_S, freshnessAgeSeconds } from '#lib/v1/freshness.ts';
+import { adapter, type AdapterCtx } from '#lib/v1/adapter/index.ts';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
@@ -11,7 +11,7 @@ import type {
 	StopDeparturesFile,
 	TripsFile,
 	VehiclesFile,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { buildLiveIndex, type LiveIndex } from './index';
 
 const STALE_TTL_MULTIPLIER = 3;

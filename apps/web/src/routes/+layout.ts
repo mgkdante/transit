@@ -1,6 +1,6 @@
 import type { LayoutLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { DEFAULT_LOCALE } from '$lib/i18n';
+import { DEFAULT_LOCALE } from '#lib/i18n/index.ts';
 
 export const load: LayoutLoad = ({ data }) => {
 	const lang = data?.lang ?? DEFAULT_LOCALE;

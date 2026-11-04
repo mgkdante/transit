@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { RankedRow } from '$lib/components/dataviz';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
 	import type { WeekdayRow } from '../selectors/weekdaySeasonality';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';

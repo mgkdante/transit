@@ -1,9 +1,9 @@
-import { intl, defineCopy, type Locale } from '$lib/i18n/copy';
-import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import { historyCopy } from '$lib/components/surface/historyCopy';
-import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import { intl, defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { SEVERITY_LABELS } from '#lib/v1/enumLabels.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import { historyCopy } from '#lib/components/surface/historyCopy.ts';
+import { alertUnavailableCopy } from '#lib/components/surface/alertAvailabilityCopy.ts';
+import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 const alertCount = (count: number) =>
 	`${intl.number('en').format(count)} ${count === 1 ? 'alert' : 'alerts'}`;

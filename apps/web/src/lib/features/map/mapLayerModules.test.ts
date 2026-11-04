@@ -1,8 +1,8 @@
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FilterState } from '$lib/filters';
-import { minimalDarkStyle } from '$lib/components/map/basemap';
-import { STOP_HIGHLIGHT_LAYER, STOPS_LAYER, STOPS_SOURCE } from '$lib/components/map/stopsLayer';
+import type { FilterState } from '#lib/filters/index.ts';
+import { minimalDarkStyle } from '#lib/components/map/basemap.ts';
+import { STOP_HIGHLIGHT_LAYER, STOPS_LAYER, STOPS_SOURCE } from '#lib/components/map/stopsLayer.ts';
 import {
 	createMapLayerFeedController,
 	firstSymbolLayerId,

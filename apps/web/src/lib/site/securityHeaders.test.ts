@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import boot from '@yesid/ui/boot.json';
 import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
-import config, { cspDirectives } from '../../../svelte.config.js';
+
+import config, { cspDirectives } from '../../../kit.config.js';
 import { DOCUMENT_SECURITY_HEADERS } from './securityHeaders';
 
 function parseHeadersFileGlobBlock(): Record<string, string> {
@@ -53,7 +54,7 @@ describe('document security headers', () => {
 
 describe('content security policy', () => {
 	it('allows inline scripts only by hash and lists the data, map and analytics origins', () => {
-		const csp = config.kit?.csp;
+		const csp = config.csp;
 		expect(csp?.mode).toBe('hash');
 		expect(csp?.directives?.['script-src']).toEqual([
 			'self',
@@ -78,7 +79,7 @@ describe('content security policy', () => {
 	});
 });
 
-describe('drift gate — _headers /* block matches svelte.config.js and the document headers', () => {
+describe('drift gate / _headers /* block matches kit.config.js and the document headers', () => {
 	const fileHeaders = parseHeadersFileGlobBlock();
 
 	it('asset CSP is the document policy without inline-script hashes', () => {

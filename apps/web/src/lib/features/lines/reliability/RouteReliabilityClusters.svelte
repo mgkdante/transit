@@ -1,16 +1,20 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
-	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
-	import { selectVerdictWindow } from '$lib/v1/verdict';
+	import { cn } from '#lib/utils/index.ts';
+	import { selectDailyPercentiles } from '#lib/site/dailyPercentiles.ts';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { selectVerdictWindow } from '#lib/v1/verdict.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import type { Locale } from '$lib/i18n';
-	import { absenceSentence, describeAbsence } from '$lib/site/absence';
-	import type { RouteReliability } from '$lib/v1';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceSentence, describeAbsence } from '#lib/site/absence.ts';
+	import type { RouteReliability } from '#lib/v1/index.ts';
 	import type { Snippet } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { ArticleControlStack, GrainPicker, HistoryNavigator } from '$lib/components/surface';
-	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
+	import {
+		ArticleControlStack,
+		GrainPicker,
+		HistoryNavigator,
+	} from '#lib/components/surface/index.ts';
+	import { ArticleSectionStack, ReliabilityRailLayout } from '#lib/components/layout/index.ts';
 	import { type SurfaceRailContext } from '@yesid/ui/layout';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import { Button } from '@yesid/ui/button';

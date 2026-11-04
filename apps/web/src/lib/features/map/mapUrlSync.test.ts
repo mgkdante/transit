@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { MapNearTarget } from '$lib/search/mapNear';
+import type { MapNearTarget } from '#lib/search/mapNear.ts';
 import { buildFocusClearSearch, buildNearTargetSearch, clearNearTargetSearch } from './mapUrlSync';
 
 const target: MapNearTarget = {

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ManifestSchema } from '$lib/v1/schemas';
+	import { ManifestSchema } from '#lib/v1/schemas/index.ts';
 	import { createLiveStore } from '../store.svelte';
-	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
-	import MapFeedStallBanner from '$lib/features/map/MapFeedStallBanner.svelte';
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
+	import MapFeedStallBanner from '#lib/features/map/MapFeedStallBanner.svelte';
 
 	const manifest = ManifestSchema.parse({
 		provider: 'stm',

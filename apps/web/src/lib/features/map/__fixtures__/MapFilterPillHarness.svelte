@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { FilterStore } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
-	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { RouteIndexEntry, StopIndexEntry } from '#lib/v1/index.ts';
 	import MapFilters from '../MapFilters.svelte';
 	import MapFilterPill from '../MapFilterPill.svelte';
 	import MapMotionControl from '../MapMotionControl.svelte';

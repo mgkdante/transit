@@ -4,13 +4,13 @@ import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
-import type { RouteReliability, IsoUtc } from '$lib/v1';
+import type { RouteReliability, IsoUtc } from '#lib/v1/index.ts';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/index.ts')),
+	wilsonBounds: (await import('#lib/v1/stats.ts')).wilsonBounds,
 }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({

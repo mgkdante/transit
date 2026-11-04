@@ -1,9 +1,13 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, MagnitudeBarsSpec, MagnitudeDatum } from '$lib/components/dataviz/chart';
-import { DELAY_POS_DOMAIN } from '$lib/features/reliability/domains';
-import { delayMinToSeverity } from '$lib/features/reliability/shiftGrains';
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
-import type { CrowdingDelayCell } from '$lib/v1';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	MagnitudeBarsSpec,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
+import { DELAY_POS_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { delayMinToSeverity } from '#lib/features/reliability/shiftGrains.ts';
+import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
+import type { CrowdingDelayCell } from '#lib/v1/index.ts';
 
 export interface CrowdingDelayLabels {
 	title: string;

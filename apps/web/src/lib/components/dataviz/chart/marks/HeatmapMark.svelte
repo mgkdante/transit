@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Axis, Tooltip } from 'layerchart';
 	import { scaleBand } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import ScrollFrame from '../ScrollFrame.svelte';
 	import HeatmapCells from './HeatmapCells.svelte';
 	import { heatmapTier, HEATMAP_WORST_TIER } from '../heatmapTiers';
 	import type { HeatmapSpec } from '../ChartSpec';
-	import { absenceShort } from '$lib/site/absence';
+	import { absenceShort } from '#lib/site/absence.ts';
 
 	export interface HeatmapMarkProps {
 		spec: HeatmapSpec;

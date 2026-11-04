@@ -16,7 +16,7 @@ import {
 	type FixResolver,
 	type ShapeResolver,
 	type VehicleMotionController,
-} from '$lib/components/map';
+} from '#lib/components/map/index.ts';
 
 export type MapLayerFeedContext = Readonly<{
 	routes: Readonly<{

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { AbsentValue } from '$lib/components/edge';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { GrainPicker, type GrainSegment } from '#lib/components/surface/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import { selectWeakStops } from '../selectors/weakStops';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';

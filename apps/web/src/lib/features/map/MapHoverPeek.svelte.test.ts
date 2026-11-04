@@ -1,7 +1,7 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
-import { STATUS_LABELS } from '$lib/v1/enumLabels';
-import type { Alert } from '$lib/v1/schemas';
+import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import type { Alert } from '#lib/v1/schemas/index.ts';
 import MapHoverPeek from './MapHoverPeek.svelte';
 import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 

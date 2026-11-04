@@ -6,10 +6,10 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
-import type { IdentitySeed } from '$lib/v1/serverContext';
-import type { PublicProvider } from '$lib/v1/providers';
-import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
+import type { StopFile, StopReliability, StopDeparture } from '#lib/v1/index.ts';
+import type { IdentitySeed } from '#lib/v1/serverContext.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
+import { alertUnavailableCopy } from '#lib/components/surface/alertAvailabilityCopy.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
 
@@ -22,7 +22,7 @@ const stopDetailNav = vi.hoisted(() => {
 		data: {} as { provider?: Partial<PublicProvider> },
 	};
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -334,25 +334,25 @@ const stopSurface = createSurfaceHarness({
 	mount: renderSvelte,
 });
 
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale };
 });
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getStop: (id: string) => getStopSpy(id),
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getStopReliability: (id: string) => getStopReliabilitySpy(id),
 	getStopHistoryDirectory: stopHistoryHarness.getStopHistoryDirectory,
 	getStopHistoryIndex: stopHistoryHarness.getStopHistoryIndex,
 	loadStopHistoryRange: stopHistoryHarness.loadStopHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => provenanceData }));
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: stopHistoryHarness.createLiveStore,
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: {
 			short_name: 'STM',
@@ -364,7 +364,7 @@ vi.mock('$lib/v1/boot', () => ({
 	}),
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const data = loader();
 		if (data === reliabilityData && reliabilityResourceState != null) {

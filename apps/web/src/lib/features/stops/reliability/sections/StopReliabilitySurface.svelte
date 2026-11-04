@@ -1,44 +1,44 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { fmtDelayMin } from '$lib/utils';
-	import type { DateWindow } from '$lib/filters';
-	import { absenceSentence, absenceShort, describeAbsence } from '$lib/site/absence';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import { fmtDelayMin } from '#lib/utils/index.ts';
+	import type { DateWindow } from '#lib/filters/index.ts';
+	import { absenceSentence, absenceShort, describeAbsence } from '#lib/site/absence.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import type { StopReliability } from '$lib/v1';
-	import type { OccupancyCode } from '$lib/v1/schemas';
+	import type { StopReliability } from '#lib/v1/index.ts';
+	import type { OccupancyCode } from '#lib/v1/schemas/index.ts';
 	import {
 		ArticleControlStack,
 		ReliabilityPane,
 		GrainPicker,
 		HistoryNavigator,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import type { Snippet } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
+	import { ArticleSectionStack, ReliabilityRailLayout } from '#lib/components/layout/index.ts';
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
-	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
-	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { selectVerdict, reliabilityVerdict } from '#lib/v1/verdict.ts';
+	import type { MetricKey, SupplementalMetricKey } from '#lib/metrics.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { weekdayLabel, shiftLabel, dayTypeLabel } from '#lib/features/reliability/shiftGrains.ts';
+	import { detailCopy as linesDetailCopy } from '#lib/features/lines/lines.copy.ts';
 
 	import {
 		RELIABILITY_GRAINS as STOP_GRAINS,
 		type ReliabilityGrain as StopGrain,
-	} from '$lib/reliability/grains';
-	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
+	} from '#lib/reliability/grains.ts';
+	import { selectDailyPercentiles } from '#lib/site/dailyPercentiles.ts';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';
 	import { selectRankedRoutes } from '../selectors/rankedRoutes';
 	import { selectWeekdaySeasonality } from '../selectors/weekdaySeasonality';
 	import { selectTimeOfDay } from '../selectors/timeOfDay';
-	import { hasHabits } from '$lib/reliability/habitsHeatmap';
+	import { hasHabits } from '#lib/reliability/habitsHeatmap.ts';
 	import { selectCrowdingMix } from '../selectors/crowdingMix';
 	import type { ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import { stopReliabilityCopy } from '../stops-reliability.copy';

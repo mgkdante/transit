@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
+import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '#lib/v1/schemas/index.ts';
 
 const ports = vi.hoisted(() => ({
 	getAlertHistory: vi.fn(),
@@ -14,7 +14,7 @@ const replaceState = vi.hoisted(() =>
 	}),
 );
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getAlertHistory: ports.getAlertHistory,
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,
 	getAlertArchiveRange: ports.getAlertArchiveRange,
@@ -28,8 +28,8 @@ vi.mock('$app/state', () => ({
 	},
 }));
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => 'en' as const };
 });
 

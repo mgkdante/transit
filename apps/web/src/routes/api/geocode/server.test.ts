@@ -1,3 +1,5 @@
+const workers = vi.hoisted(() => ({ env: {} as Record<string, unknown> }));
+vi.mock('cloudflare:workers', () => workers);
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providers = vi.hoisted(() => ({
@@ -5,16 +7,16 @@ const providers = vi.hoisted(() => ({
 	geocodeSuggestions: vi.fn(),
 }));
 
-vi.mock('$lib/geocode/geoCa', () => ({
+vi.mock('#lib/geocode/geoCa.ts', () => ({
 	geocode: providers.geocode,
 	geocodeSuggestions: providers.geocodeSuggestions,
 }));
 
 import { GET } from './+server';
-import { loadProviderCatalog } from '$lib/v1/providers';
-import { getManifest } from '$lib/v1/repositories/manifest';
-vi.mock('$lib/v1/providers', () => ({ loadProviderCatalog: vi.fn() }));
-vi.mock('$lib/v1/repositories/manifest', () => ({ getManifest: vi.fn() }));
+import { loadProviderCatalog } from '#lib/v1/providers.ts';
+import { getManifest } from '#lib/v1/repositories/manifest.ts';
+vi.mock('#lib/v1/providers.ts', () => ({ loadProviderCatalog: vi.fn() }));
+vi.mock('#lib/v1/repositories/manifest.ts', () => ({ getManifest: vi.fn() }));
 const AREA = { bbox: [-74.1, 45.25, -73.2, 45.75], context: 'Montréal, Québec', lang: 'en' };
 
 type Handler = typeof GET;
@@ -31,6 +33,7 @@ function event(
 		platformEnv?: Record<string, unknown>;
 	} = {},
 ): Parameters<Handler>[0] {
+	workers.env = options.platformEnv ?? {};
 	clientSequence += 1;
 	const url = new URL(`/api/geocode${query}`, ORIGIN);
 	if (!url.searchParams.has('provider')) url.searchParams.set('provider', 'stm');
@@ -47,7 +50,6 @@ function event(
 		url,
 		request: { headers },
 		fetch: vi.fn(),
-		platform: options.platformEnv ? { env: options.platformEnv } : undefined,
 	} as unknown as Parameters<Handler>[0];
 }
 

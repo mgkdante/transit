@@ -1,6 +1,10 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, ServiceSpanSpec, ServiceSpanTick } from '$lib/components/dataviz/chart';
-import { elapsedUtcMinutes, formatUtc } from '$lib/utils/time';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	ServiceSpanSpec,
+	ServiceSpanTick,
+} from '#lib/components/dataviz/chart/index.ts';
+import { elapsedUtcMinutes, formatUtc } from '#lib/utils/time.ts';
 
 const DAY_MIN = 1440;
 const SIX_HOURS_MIN = 360;

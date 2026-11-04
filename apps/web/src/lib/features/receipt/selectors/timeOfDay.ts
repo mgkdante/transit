@@ -2,8 +2,8 @@ import {
 	SHIFT_GRAIN_ORDER,
 	severeShareToSeverity,
 	SEVERE_DOMAIN,
-} from '$lib/features/reliability/shiftGrains';
-import type { SeverityCode, ReceiptShiftCut } from '$lib/v1/schemas';
+} from '#lib/features/reliability/shiftGrains.ts';
+import type { SeverityCode, ReceiptShiftCut } from '#lib/v1/schemas/index.ts';
 
 export interface ReceiptShiftRow {
 	readonly key: string;

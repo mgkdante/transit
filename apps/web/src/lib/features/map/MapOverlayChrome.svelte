@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Locale } from '$lib/i18n';
-	import type { FilterStore } from '$lib/filters';
-	import type { LatLon, WithDistance } from '$lib/components/map';
-	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import type { StopIndexEntry } from '$lib/v1/schemas';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { LatLon, WithDistance } from '#lib/components/map/index.ts';
+	import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
+	import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
 	import type { MapCopy } from './map.copy';
 	import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 	import MapHeadTitle from './MapHeadTitle.svelte';

@@ -16,7 +16,7 @@ Live at [transit.yesid.dev](https://transit.yesid.dev).
 | --- | --- | --- |
 | `apps/db` | Captures feeds, normalizes them, computes daily rollups and publishes snapshots | Python, PostgreSQL, SQLAlchemy, Alembic, uv |
 | `apps/data-proxy` | Serves the published snapshots from R2 | Cloudflare Workers |
-| `apps/web` | The public dashboard; it reads snapshots and never touches the database | SvelteKit 2, Svelte 5, Tailwind CSS 4, MapLibre GL, LayerChart, Cloudflare Workers |
+| `apps/web` | The public dashboard; it reads snapshots and never touches the database | SvelteKit 3, Svelte 5, Tailwind CSS 4, MapLibre GL, LayerChart, Cloudflare Workers |
 
 Bun workspaces and Turborepo run the JavaScript apps. Design tokens, motion and
 shared UI come from pinned

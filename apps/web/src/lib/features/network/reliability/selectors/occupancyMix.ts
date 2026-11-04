@@ -1,8 +1,8 @@
-import type { OccupancyMix } from '$lib/v1/schemas/network';
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
-import type { ChartSpec } from '$lib/components/dataviz/chart';
-import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
-import type { Locale } from '$lib/i18n/config';
+import type { OccupancyMix } from '#lib/v1/schemas/network.ts';
+import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
+import type { ChartSpec } from '#lib/components/dataviz/chart/index.ts';
+import { stackedShareSpec } from '#lib/components/dataviz/chart/share.ts';
+import type { Locale } from '#lib/i18n/config.ts';
 
 export interface OccupancyMixOptions {
 	readonly title: string;

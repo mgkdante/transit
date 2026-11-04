@@ -1,6 +1,6 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const copy = defineCopy({
 	en: {

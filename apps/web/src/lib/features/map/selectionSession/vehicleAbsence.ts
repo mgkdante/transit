@@ -1,4 +1,4 @@
-import { fixAgeS, isVehicleStale } from '$lib/components/map';
+import { fixAgeS, isVehicleStale } from '#lib/components/map/index.ts';
 import type { MapSelectionDetail } from './mapSelection';
 
 export function vehicleAbsence(

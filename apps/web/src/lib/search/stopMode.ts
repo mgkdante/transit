@@ -1,4 +1,4 @@
-import type { StopIndexEntry } from '$lib/v1/schemas/stops_index';
+import type { StopIndexEntry } from '#lib/v1/schemas/stops_index.ts';
 import { foldDiacritics, foldSearchText } from './normalize';
 
 export interface StopModeHint {

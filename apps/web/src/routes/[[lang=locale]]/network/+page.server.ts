@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { getNetworkTrend } from '$lib/v1/repositories/historic';
-import { getNetwork } from '$lib/v1/repositories/live';
-import { getProvenance } from '$lib/v1/repositories/provenance';
-import { serverV1Context } from '$lib/v1/serverContext';
+import { getNetworkTrend } from '#lib/v1/repositories/historic.ts';
+import { getNetwork } from '#lib/v1/repositories/live.ts';
+import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+import { serverV1Context } from '#lib/v1/serverContext.ts';
 
 export const load: PageServerLoad = async (event) => {
 	const { v1 } = await event.parent();

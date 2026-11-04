@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectSilentByRoute, NON_RESPONDING_DOMAIN } from './silentByRoute';
-import type { NonRespondingRoute } from '$lib/v1/schemas';
+import type { NonRespondingRoute } from '#lib/v1/schemas/index.ts';
 
 const labels = {
 	routeName: (r: string) => `Route ${r}`,

@@ -1,4 +1,4 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 
 type LocaleMap = Record<Locale, string>;
 

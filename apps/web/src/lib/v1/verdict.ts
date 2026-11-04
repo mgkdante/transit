@@ -1,6 +1,6 @@
 import { verdictCopy } from './verdict.copy';
-import type { Locale } from '$lib/i18n';
-import { wilsonBoundsProportion } from '$lib/v1/stats';
+import type { Locale } from '#lib/i18n/index.ts';
+import { wilsonBoundsProportion } from '#lib/v1/stats.ts';
 
 export type VerdictStatus = 'reliable' | 'patchy' | 'unreliable' | 'tentative' | 'absent';
 

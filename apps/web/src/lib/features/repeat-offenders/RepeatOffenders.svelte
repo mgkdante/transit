@@ -1,42 +1,52 @@
 <script lang="ts">
-	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
-	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
-	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor, type SurfaceKind, type SurfaceTarget } from '#lib/nav/index.ts';
+	import {
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		type WorstN,
+	} from '#lib/filters/index.ts';
+	import {
+		fmtCount,
+		fmtDelayMin,
+		fmtDelayMin as sharedFmtDelayMin,
+		fmtPct,
+	} from '#lib/utils/index.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { availabilityFromPointCollectionIndex } from '#lib/v1/history/selection.ts';
+	import { createHistoryCorrectionPresentation } from '#lib/v1/history/datePresentation.svelte.ts';
 	import {
 		createHistoryDateResource,
 		historyDateRequestFromSearchParams,
-	} from '$lib/v1/history/dateResource.svelte';
+	} from '#lib/v1/history/dateResource.svelte.ts';
 	import {
 		getRepeatOffenders,
 		getRepeatOffendersHistoryDay,
 		getRepeatOffendersHistoryIndex,
-	} from '$lib/v1/repositories/historic';
-	import type { RepeatOffenderEntry, Offender } from '$lib/v1/schemas';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { RepeatOffenderEntry, Offender } from '#lib/v1/schemas/index.ts';
 	import type {
 		HistoricCollectionIndex,
 		RepeatOffenders as RepeatOffendersData,
-	} from '$lib/v1/schemas';
-	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+	} from '#lib/v1/schemas/index.ts';
+	import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 	import {
 		ArticleControlStack,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		DashboardGrid,
 		ArticleHeader,
@@ -44,26 +54,26 @@
 		SurfaceRail,
 		type SurfaceRailContext,
 	} from '@yesid/ui/layout';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '$lib/components/shared';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { RankedRow } from '$lib/components/dataviz';
-	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
+	import { DELAY_DIST_DOMAIN } from '#lib/features/reliability/domains.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 
 	import {
 		ladderGrains,
 		OFFENDER_GRAINS,
 		type OffenderGrainKey,
-	} from '$lib/reliability/ladderGrains';
+	} from '#lib/reliability/ladderGrains.ts';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from '$lib/reliability/ladderCap';
+	} from '#lib/reliability/ladderCap.ts';
 	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
 	import { buildOffenderEvidenceRows } from './selectors/offenderEvidence';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
@@ -83,7 +93,7 @@
 			loadDate: (date, index, signal) => getRepeatOffendersHistoryDay(date, index, { signal }),
 		},
 		{
-			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			initialRequest: historyDateRequestFromSearchParams(new URLSearchParams(page.url.search)),
 		},
 	);
 	onDestroy(() => offenders.destroy());
@@ -137,7 +147,9 @@
 	});
 	const grainKey = $derived<OffenderGrainKey>(view.grain);
 
-	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
+	let worstN = $state<WorstN>(
+		fromSearchParams(new URLSearchParams(page.url.search)).worstN ?? DEFAULT_WORST_N,
+	);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 

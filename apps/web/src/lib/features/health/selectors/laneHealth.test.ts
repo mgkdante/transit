@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectLaneRows, type LaneLabels } from './laneHealth';
-import type { DataHealth, IsoUtc } from '$lib/v1/schemas';
+import type { DataHealth, IsoUtc } from '#lib/v1/schemas/index.ts';
 
 const iso = (s: string) => s as unknown as IsoUtc;
 

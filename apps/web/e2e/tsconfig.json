@@ -1,8 +1,9 @@
 {
 	"compilerOptions": {
-		"baseUrl": "..",
-		"paths": {
-			"$lib/*": ["src/lib/*"]
-		}
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"resolveJsonModule": true
 	}
 }

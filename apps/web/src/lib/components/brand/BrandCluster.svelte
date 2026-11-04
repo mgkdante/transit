@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Wordmark } from '@yesid/ui/brand';
-	import { YESID_HOUSE_LINK } from '$lib/content/nav';
+	import { YESID_HOUSE_LINK } from '#lib/content/nav.ts';
 
 	let { productHref }: { productHref: string } = $props();
 </script>

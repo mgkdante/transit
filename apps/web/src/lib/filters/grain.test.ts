@@ -7,7 +7,7 @@ import {
 	availableGrains,
 	resolveWindow,
 } from './grain';
-import type { Grain } from '$lib/v1/schemas';
+import type { Grain } from '#lib/v1/schemas/index.ts';
 import type { DateWindow } from './state';
 
 describe('usableGrains — data-depth gating (the flat-trend fix)', () => {

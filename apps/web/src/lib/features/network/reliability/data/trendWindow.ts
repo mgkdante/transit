@@ -1,4 +1,4 @@
-import type { TrendPoint } from '$lib/v1';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 export const WINDOWS = [7, 30, 90] as const;
 export type WindowDays = (typeof WINDOWS)[number];

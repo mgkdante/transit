@@ -20,11 +20,11 @@
 
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { intl, getLocale } from '$lib/i18n';
+	import { intl, getLocale } from '#lib/i18n/index.ts';
 	import { theme } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { mapCopy } from './map.copy';
-	import { getV1Context } from '$lib/v1/boot';
+	import { getV1Context } from '#lib/v1/boot.ts';
 
 	interface Props {
 		importHero?: () => Promise<ProgressiveMapHeroModule>;

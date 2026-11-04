@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { describeAbsence, type AbsenceReasonKey } from '$lib/site/absence';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { describeAbsence, type AbsenceReasonKey } from '#lib/site/absence.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 
 	type Variant = 'inline' | 'row' | 'block';

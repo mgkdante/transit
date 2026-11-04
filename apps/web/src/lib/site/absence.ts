@@ -1,4 +1,4 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
 
 export type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';

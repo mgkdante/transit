@@ -1,13 +1,13 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { routeModeHint } from '$lib/search/stopMode';
-	import { stopNameFallback } from '$lib/site/absence';
-	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
-	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
+	import { routeModeHint } from '#lib/search/stopMode.ts';
+	import { stopNameFallback } from '#lib/site/absence.ts';
+	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapHoverPeek } from './mapHoverPeek';
-	import StatusBadge from '$lib/components/dataviz/StatusBadge.svelte';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
+	import StatusBadge from '#lib/components/dataviz/StatusBadge.svelte';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import { formatAge, vehicleFieldAbsence } from './mapSelectionDetail.logic';

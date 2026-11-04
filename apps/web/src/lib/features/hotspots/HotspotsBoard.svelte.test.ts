@@ -1,10 +1,13 @@
-import { sectionsToggleCopy } from '$lib/components/shared/sectionsToggle.copy';
+import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
 import { copy } from './hotspots.copy';
-import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
+import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
-import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import type { Hotspots, IsoUtc } from '#lib/v1/schemas/index.ts';
+import type {
+	ChartDatumPopoverModel,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
 let mockUrl = new URL('http://localhost/hotspots');
@@ -25,23 +28,23 @@ vi.mock('$app/state', () => ({
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, goto: navigate, replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHotspots: vi.fn(),
 	getHotspotsHistoryIndex: vi.fn(),
 	getHotspotsHistoryDay: vi.fn(),
 }));
-vi.mock('$lib/v1/history/selection', () => ({
+vi.mock('#lib/v1/history/selection.ts', () => ({
 	availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
 }));
-vi.mock('$lib/v1/history/dateResource.svelte', () => ({
+vi.mock('#lib/v1/history/dateResource.svelte.ts', () => ({
 	historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
 	createHistoryDateResource: vi.fn(() => ({
 		request: { hasDate: false, rawDate: null },
@@ -66,7 +69,7 @@ vi.mock('$lib/v1/history/dateResource.svelte', () => ({
 		destroy: vi.fn(),
 	})),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		data: payload.current,
 		error: null,

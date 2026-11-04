@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getChartContext } from 'layerchart';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { heatmapTierClass } from '../heatmapTiers';
 
 	export interface HeatmapCellDatum {

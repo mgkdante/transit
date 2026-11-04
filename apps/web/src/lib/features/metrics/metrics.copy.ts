@@ -1,7 +1,7 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { metricInfoCopy } from '$lib/metrics';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { metricInfoCopy } from '#lib/metrics.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const metricsCopy = defineCopy({
 	fr: {

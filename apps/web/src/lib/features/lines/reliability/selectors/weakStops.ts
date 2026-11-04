@@ -1,9 +1,16 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, MagnitudeBarsSpec, MagnitudeDatum } from '$lib/components/dataviz/chart';
-import { DELAY_POS_DOMAIN, SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import { delayMinToSeverity, severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
-import { stopNameFallback } from '$lib/site/absence';
-import type { WeakStop } from '$lib/v1';
+import type { Locale } from '#lib/i18n/index.ts';
+import type {
+	AbsenceSpec,
+	MagnitudeBarsSpec,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
+import { DELAY_POS_DOMAIN, SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import {
+	delayMinToSeverity,
+	severeShareToSeverity,
+} from '#lib/features/reliability/shiftGrains.ts';
+import { stopNameFallback } from '#lib/site/absence.ts';
+import type { WeakStop } from '#lib/v1/index.ts';
 
 export interface WeakStopsLabels {
 	title: string;

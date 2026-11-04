@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { verdictCopy } from '$lib/v1/verdict.copy';
-	import { intl, getLocalizeHref, getLocale } from '$lib/i18n';
-	import { mapHrefFor } from '$lib/nav';
-	import { getRoutesIndex } from '$lib/v1/repositories/static';
-	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
-	import { isProblemVerdict, verdictRank } from '$lib/v1/verdict';
-	import type { RouteIndexEntry } from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
+	import { intl, getLocalizeHref, getLocale } from '#lib/i18n/index.ts';
+	import { mapHrefFor } from '#lib/nav/index.ts';
+	import { getRoutesIndex } from '#lib/v1/repositories/static.ts';
+	import { createReliabilityLoader } from '#lib/v1/reliabilitySnapshot.svelte.ts';
+	import { isProblemVerdict, verdictRank } from '#lib/v1/verdict.ts';
+	import type { RouteIndexEntry } from '#lib/v1/index.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import {
 		ResourceBoundary,
 		EntityList,
@@ -16,13 +16,13 @@
 		ReliabilityBadge,
 		createReliabilityListingController,
 		isReliabilitySnapshotPending,
-	} from '$lib/components/surface';
-	import { ListingHeaderStats } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { ListingHeaderStats } from '#lib/components/layout/index.ts';
 	import { ListingFrame } from '@yesid/ui/layout';
 	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
 	import { blueprintScrub } from '@yesid/motion/utils/blueprintScrub';
-	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-	import { routeModeHint, routeModeKey } from '$lib/search/stopMode';
+	import { foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
+	import { routeModeHint, routeModeKey } from '#lib/search/stopMode.ts';
 	import { indexCopy } from './lines.copy';
 	import LinesBlueprint from './LinesBlueprint.svelte';
 

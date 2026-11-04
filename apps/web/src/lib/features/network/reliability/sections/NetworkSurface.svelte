@@ -2,34 +2,34 @@
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import {
 		absenceSentence,
 		absenceShort,
 		describeAbsence,
 		routeNameFallback,
-	} from '$lib/site/absence';
-	import { routeFor } from '$lib/nav';
+	} from '#lib/site/absence.ts';
+	import { routeFor } from '#lib/nav/index.ts';
 	import { desktop } from '@yesid/ui/state';
-	import { mapSearchFor } from '$lib/filters';
+	import { mapSearchFor } from '#lib/filters/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
+	import { formatDateKey, formatRelativeSeconds } from '#lib/utils/time.ts';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtNumber as sharedFmtNumber,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
-	} from '$lib/utils';
-	import { getV1Context } from '$lib/v1/boot';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { getNetworkTrend } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import type { NetworkFile } from '$lib/v1/schemas/network';
-	import type { NetworkTrend, TrendPoint } from '$lib/v1/schemas/network_trend';
-	import type { Provenance } from '$lib/v1/schemas/provenance';
-	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas/types';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
+	} from '#lib/utils/index.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { getNetworkTrend } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import type { NetworkFile } from '#lib/v1/schemas/network.ts';
+	import type { NetworkTrend, TrendPoint } from '#lib/v1/schemas/network_trend.ts';
+	import type { Provenance } from '#lib/v1/schemas/provenance.ts';
+	import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/types.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import { shiftLabel, dayTypeLabel } from '#lib/features/reliability/shiftGrains.ts';
 	import {
 		ArticleControlStack,
 		FreshnessStamp,
@@ -38,29 +38,29 @@
 		GrainPicker,
 		HistoryNavigator,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		SurfaceRail,
 		type SurfaceRailContext,
 		ArticleHeader,
 		DetailFrame,
 	} from '@yesid/ui/layout';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
+	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
-	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
-	import { EdgeState } from '$lib/components/edge';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
+	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { createReliabilityViewState } from '$lib/reliability/viewState.svelte';
-	import { selectVerdict, reliabilityVerdict } from '$lib/v1/verdict';
-	import type { MetricKey } from '$lib/metrics';
-	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { selectVerdict, reliabilityVerdict } from '#lib/v1/verdict.ts';
+	import type { MetricKey } from '#lib/metrics.ts';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 
 	import {
 		RELIABILITY_GRAINS as NETWORK_GRAINS,
 		type ReliabilityGrain as NetworkGrain,
-	} from '$lib/reliability/grains';
+	} from '#lib/reliability/grains.ts';
 	import { WINDOWS, bestFitWindow, windowedSeries, type WindowDays } from '../data/trendWindow';
 	import { createNetworkHistoryResource } from '../data/networkHistoryResource.svelte';
 	import { selectHeadlineKpis } from '../selectors/headlineKpis';
@@ -114,7 +114,7 @@
 		seed: () => trendSeed,
 	});
 	const history = createNetworkHistoryResource(
-		historyRangeRequestFromSearchParams(page.url.searchParams),
+		historyRangeRequestFromSearchParams(new URLSearchParams(page.url.search)),
 	);
 	onMount(() => () => history.destroy());
 	const provenance = createResource(() => getProvenance(), {

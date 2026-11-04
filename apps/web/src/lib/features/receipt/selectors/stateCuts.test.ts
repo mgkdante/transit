@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectStateCuts } from './stateCuts';
-import { CANCEL_RATE_DOMAIN } from '$lib/features/reliability/domains';
+import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/domains.ts';
 
 const labels = {
 	delivered: 'Delivered',

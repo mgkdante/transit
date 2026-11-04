@@ -1,5 +1,5 @@
 import { cn as uiCn, configureUi, createCn } from '@yesid/ui/cn';
-import { TRANSIT_VOCAB } from '$lib/utils/cn-vocab';
+import { TRANSIT_VOCAB } from '#lib/utils/cn-vocab.ts';
 
 let configuredForTransit = false;
 let standaloneCn: typeof uiCn | undefined;

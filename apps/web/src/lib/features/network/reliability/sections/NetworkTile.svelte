@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { CollapsibleSection } from '@yesid/ui/brand';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 
 	interface NetworkTileProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
 		title: string;

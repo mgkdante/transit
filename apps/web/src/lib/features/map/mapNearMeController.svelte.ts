@@ -1,7 +1,7 @@
-import type { GeocodedLocation, GeocodeSuggestion } from '$lib/geocode/types';
-import { isInsideBounds } from '$lib/geocode/types';
-import type { Locale } from '$lib/i18n';
-import type { MapNearTarget } from '$lib/search/mapNear';
+import type { GeocodedLocation, GeocodeSuggestion } from '#lib/geocode/types.ts';
+import { isInsideBounds } from '#lib/geocode/types.ts';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { MapNearTarget } from '#lib/search/mapNear.ts';
 import { parseCoordinateQuery } from './mapNearMe';
 
 export type NearMeOrigin = MapNearTarget;
@@ -19,10 +19,7 @@ export interface MapNearMeControllerDependencies {
 	readonly providerId: string;
 	readonly bbox: readonly number[];
 	readonly locale: Locale;
-	readonly goto: (
-		target: string,
-		options: { replaceState: true; keepFocus: true; noScroll: true },
-	) => unknown;
+	readonly goto: (target: string, options: { replace: true; reset: false }) => unknown;
 	readonly currentUrl: () => URL;
 	readonly readTarget: (searchParams: URLSearchParams) => NearMeOrigin | null;
 	readonly targetKey: (origin: NearMeOrigin) => string;
@@ -59,9 +56,8 @@ export interface MapNearMeController {
 }
 
 const NAVIGATION_OPTIONS = {
-	replaceState: true,
-	keepFocus: true,
-	noScroll: true,
+	replace: true,
+	reset: false,
 } as const;
 
 export function createMapNearMeController(

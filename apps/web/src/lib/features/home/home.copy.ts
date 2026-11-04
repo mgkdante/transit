@@ -1,5 +1,5 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import type { SurfaceTarget } from '$lib/nav';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import type { SurfaceTarget } from '#lib/nav/index.ts';
 
 type CopyKey =
 	| 'auditBody'

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, settled } from 'svelte';
-import { buildLiveIndex } from '$lib/v1/live';
-import type { LiveFamily, LiveFamilyState } from '$lib/v1/live/store.svelte';
-import { createFilterStore, emptyFilterState, fromSearchParams } from '$lib/filters';
-import { RouteFileSchema, StopFileSchema, VehicleSchema } from '$lib/v1/schemas';
+import { buildLiveIndex } from '#lib/v1/live/index.ts';
+import type { LiveFamily, LiveFamilyState } from '#lib/v1/live/store.svelte.ts';
+import { createFilterStore, emptyFilterState, fromSearchParams } from '#lib/filters/index.ts';
+import { RouteFileSchema, StopFileSchema, VehicleSchema } from '#lib/v1/schemas/index.ts';
 import { createMapSelectionSession } from './mapSelectionSession.svelte';
-import type { SlimStopsIndex } from '$lib/v1/repositories/stopsSlim';
+import type { SlimStopsIndex } from '#lib/v1/repositories/stopsSlim.ts';
 
 const generation = '2026-06-20T12:00:00Z';
 const vehicle = VehicleSchema.parse({

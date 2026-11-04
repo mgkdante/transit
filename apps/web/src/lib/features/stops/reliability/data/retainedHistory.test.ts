@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DateWindow } from '$lib/filters';
-import { encodeHistoryEntityId } from '$lib/v1/history/entity';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { encodeHistoryEntityId } from '#lib/v1/history/entity.ts';
 import {
 	HistoricCollectionIndexSchema,
 	StopHistoryPartitionSchema,
@@ -10,15 +10,15 @@ import {
 	type IsoUtc,
 	type StopHistoryPartition,
 	type StopReliability,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import {
 	applyRetainedStopHistory,
 	buildRetainedStopHistory,
 	clearRetainedStopHistory,
 } from './retainedHistory';
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history/families')),
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/families.ts')),
 }));
 
 const GENERATED = '2026-07-13T12:00:00Z' as IsoUtc;

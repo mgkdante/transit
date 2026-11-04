@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Bar, Points, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { categoryGutter } from '../axisGutter';
 	import { structuralLabels } from '../structuralLabels';
 	import type { DumbbellSpec, DumbbellDatum } from '../ChartSpec';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 	export interface DumbbellMarkProps {
 		spec: DumbbellSpec;

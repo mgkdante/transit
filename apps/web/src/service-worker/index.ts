@@ -1,7 +1,8 @@
 /// <reference types="@sveltejs/kit" />
 /// <reference lib="webworker" />
 
-import { build, files, version } from '$service-worker';
+import { version } from '$app/env';
+import { assets, immutable } from '$app/manifest';
 import {
 	KILL_FLAG_PATH,
 	cacheNameFor,
@@ -11,7 +12,7 @@ import {
 	shouldIntercept,
 	shouldKill,
 	type KillFlag,
-} from '$lib/pwa/swPolicy';
+} from '#lib/pwa/swPolicy.ts';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -22,12 +23,16 @@ const CACHE = cacheNameFor(version);
 const OFFLINE_PATH = '/offline';
 
 const MAP_POSTER_PATH_PREFIX = '/map/basemap-';
-const STATIC_FILES = files.filter((file) => {
-	const path = new URL(file, ORIGIN).pathname;
-	return path !== '/offline.html' && !path.startsWith(MAP_POSTER_PATH_PREFIX);
-});
+const STATIC_FILES = assets
+	.map(({ path }) => `/${path}`)
+	.filter((file) => {
+		const path = new URL(file, ORIGIN).pathname;
+		return path !== '/offline.html' && !path.startsWith(MAP_POSTER_PATH_PREFIX);
+	});
 
-const FONT_FILES = build.filter((path) => path.endsWith('.woff2'));
+const FONT_FILES = immutable
+	.map(({ path }) => `/${path}`)
+	.filter((path) => path.endsWith('.woff2'));
 
 const PRECACHE = precachePathnames([...STATIC_FILES, ...FONT_FILES], ORIGIN, OFFLINE_PATH);
 

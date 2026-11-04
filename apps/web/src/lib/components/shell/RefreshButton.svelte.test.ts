@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataRefresh } from '$lib/stores/refresh.svelte';
+import { dataRefresh } from '#lib/stores/refresh.svelte.ts';
 import RefreshButton from './RefreshButton.svelte';
 
 const mocks = vi.hoisted(() => ({ invalidateAll: vi.fn<() => Promise<void>>() }));
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ invalidateAll: mocks.invalidateAll }));
 
 beforeEach(() => {

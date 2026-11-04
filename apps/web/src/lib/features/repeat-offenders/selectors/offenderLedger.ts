@@ -1,4 +1,4 @@
-import type { SeverityCode, Offender } from '$lib/v1/schemas';
+import type { SeverityCode, Offender } from '#lib/v1/schemas/index.ts';
 
 const SEVERITY_MAP: Readonly<Record<string, SeverityCode>> = {
 	critical: 'critical',

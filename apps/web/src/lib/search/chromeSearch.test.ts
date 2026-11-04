@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
+import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '#lib/v1/schemas/index.ts';
 
 vi.mock('$app/navigation', () => ({ goto: () => Promise.resolve() }));
 

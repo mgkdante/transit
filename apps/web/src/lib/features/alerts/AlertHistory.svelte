@@ -1,32 +1,32 @@
 <script lang="ts">
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import {
 		getAlertArchiveIndex,
 		getAlertArchiveRange,
 		getAlertHistory,
-	} from '$lib/v1/repositories/historic';
-	import type { AlertArchiveEntry } from '$lib/v1/schemas/alert_archive';
-	import type { AlertHistory, AlertHistoryEntry } from '$lib/v1/schemas/alert_history';
-	import type { SeverityCode } from '$lib/v1/schemas/types';
-	import { createResource, type Resource } from '$lib/v1/resource.svelte';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { AlertArchiveEntry } from '#lib/v1/schemas/alert_archive.ts';
+	import type { AlertHistory, AlertHistoryEntry } from '#lib/v1/schemas/alert_history.ts';
+	import type { SeverityCode } from '#lib/v1/schemas/types.ts';
+	import { createResource, type Resource } from '#lib/v1/resource.svelte.ts';
 	import {
 		availabilityFromAlertIndex,
 		datesForAvailability,
 		type HistoryAvailability,
 		type HistoryCorrection,
-	} from '$lib/v1/history/selection';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary } from '$lib/components/surface';
+	} from '#lib/v1/history/selection.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { fromSearchParams, type AlertAffects, type DateWindow } from '#lib/filters/index.ts';
+	import { mirrorSearchParams } from '#lib/site/urlMirror.ts';
+	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		ArticleHeader,
 		DetailFrame,
@@ -35,13 +35,13 @@
 	} from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
-	import SectionsToggle from '$lib/components/shared/SectionsToggle.svelte';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { alertDisplayText } from '$lib/v1/alertDisplay';
-	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { foldSearchText } from '$lib/search/normalize';
+	import { ExplainedMetricCard } from '#lib/components/dataviz/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { alertDisplayText } from '#lib/v1/alertDisplay.ts';
+	import { causeLabel, effectLabel } from '#lib/v1/gtfsAlertLabels.ts';
+	import { foldSearchText } from '#lib/search/normalize.ts';
 
 	import {
 		sortNewestFirst,
@@ -84,10 +84,10 @@
 	const VISIBLE_CAP = 25;
 	let expanded = $state(false);
 
-	const rawHistoryFrom = page.url.searchParams.get('from');
-	const rawHistoryTo = page.url.searchParams.get('to');
+	const rawHistoryFrom = new URLSearchParams(page.url.search).get('from');
+	const rawHistoryTo = new URLSearchParams(page.url.search).get('to');
 	const hasExplicitHistoryWindow = rawHistoryFrom !== null || rawHistoryTo !== null;
-	const seed = fromSearchParams(page.url.searchParams);
+	const seed = fromSearchParams(new URLSearchParams(page.url.search));
 	let affects = $state<'all' | AlertAffects>(seed.alertAffects ?? 'all');
 	let severity = $state<'all' | SeverityCode>(seed.alertSeverity ?? 'all');
 	let route = $state<string | null>([...seed.routes][0] ?? null);

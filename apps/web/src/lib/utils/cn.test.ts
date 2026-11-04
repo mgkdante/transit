@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cn as uiCn } from '@yesid/ui/cn';
-import { configureTransitUi } from '$lib/ui/configure';
-import { cn } from '$lib/ui/configure';
+import { configureTransitUi } from '#lib/ui/configure.ts';
+import { cn } from '#lib/ui/configure.ts';
 import { TRANSIT_VOCAB } from './cn-vocab';
 
 const LEGACY_TRANSIT_DATAVIZ_COLORS = [
@@ -57,9 +57,9 @@ describe('configureTransitUi', () => {
 describe('app cn configuration ownership', () => {
 	async function freshMergers() {
 		vi.resetModules();
-		const app = await import('$lib/ui/configure');
+		const app = await import('#lib/ui/configure.ts');
 		const ui = await import('@yesid/ui/cn');
-		const { configureTransitUi: configure } = await import('$lib/ui/configure');
+		const { configureTransitUi: configure } = await import('#lib/ui/configure.ts');
 		return { app, ui, configure };
 	}
 

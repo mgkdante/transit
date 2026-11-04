@@ -1,4 +1,4 @@
-import { MAP_FOCUS_PARAM, type MapFocus } from '$lib/search/mapFocus';
+import { MAP_FOCUS_PARAM, type MapFocus } from '#lib/search/mapFocus.ts';
 
 export interface MapFocusControllerDependencies {
 	readonly readFocus: (searchParams: URLSearchParams) => MapFocus | null;

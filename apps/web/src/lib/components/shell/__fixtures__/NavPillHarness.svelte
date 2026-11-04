@@ -5,16 +5,13 @@
 	import { createNavigationRouter } from './navigationRouter';
 	let {
 		adapter = createNavigationRouter(),
-		subscription = true,
 		...props
 	}: Omit<ComponentProps<typeof NavPill>, 'navigation'> & {
 		adapter?: ReturnType<typeof createNavigationRouter>;
-		subscription?: boolean;
 	} = $props();
 	const navigation = untrack(() =>
 		createNavigationLifecycle({
 			...adapter.router,
-			subscribeNavigation: subscription ? adapter.router.subscribeNavigation : undefined,
 		}),
 	);
 </script>

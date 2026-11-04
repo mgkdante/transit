@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, type SurfaceTarget } from '$lib/nav';
+	import { cn } from '#lib/utils/index.ts';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor, type SurfaceTarget } from '#lib/nav/index.ts';
 
 	const localizeHref = getLocalizeHref();
 

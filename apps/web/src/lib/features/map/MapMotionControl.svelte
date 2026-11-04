@@ -1,7 +1,7 @@
 <script lang="ts">
 	import WavesIcon from '@lucide/svelte/icons/waves';
-	import { motionMode } from '$lib/stores';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
+	import { motionMode } from '#lib/stores/index.ts';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import type { MapCopy } from './map.copy';
 
 	const localizeHref = getLocalizeHref();

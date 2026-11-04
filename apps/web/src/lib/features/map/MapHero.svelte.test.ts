@@ -1,12 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { settled, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toStopFeatures } from '$lib/components/map/stopsLayer';
-import { RouteFileSchema, type RouteFile } from '$lib/v1/schemas/route';
+import { toStopFeatures } from '#lib/components/map/stopsLayer.ts';
+import { RouteFileSchema, type RouteFile } from '#lib/v1/schemas/route.ts';
 import MapHero from './MapHero.svelte';
 import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
-import type { PublicProvider } from '$lib/v1/providers';
+import type { PublicProvider } from '#lib/v1/providers.ts';
 
 const providerContext = vi.hoisted(() => ({ value: undefined as PublicProvider | undefined }));
 
@@ -309,10 +309,10 @@ const harness = vi.hoisted(() => {
 	type NavigationCallback =
 		import('./__fixtures__/KitNavigationSimulator').SimulatedNavigationCallback;
 	let publishPage: (href: string, state: Readonly<Record<string, unknown>>) => void = () => {
-		throw new Error('page publisher used before the $app/stores mock factory ran');
+		throw new Error('page publisher used before the $app/state mock factory ran');
 	};
 	let publishNavigating: (navigation: HarnessNavigation | null) => void = () => {
-		throw new Error('navigation publisher used before the $app/stores mock factory ran');
+		throw new Error('navigation publisher used before the $app/state mock factory ran');
 	};
 	let settleDom = async (): Promise<void> => {
 		throw new Error('DOM settlement used before the test harness was initialized');
@@ -348,7 +348,7 @@ const harness = vi.hoisted(() => {
 		const started = simulator.startNavigation(
 			new URL(target, simulator.currentPageHref).href,
 			simulator.currentPageHref,
-			{ type: 'goto', keepFocus: options.keepFocus === true },
+			{ type: 'goto', keepFocus: options.reset === false },
 		);
 		return started.navigation.complete;
 	});
@@ -490,8 +490,9 @@ const harness = vi.hoisted(() => {
 const originalSecureContext = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
 const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
 
-vi.mock('$app/stores', async () => {
+vi.mock('$app/state', async () => {
 	const { writable } = await import('svelte/store');
+	const { createPageState } = await import('../../../tests/pageState.svelte.ts');
 	const { KitNavigationSimulator } = await import('./__fixtures__/KitNavigationSimulator');
 	const pageValue = (url: URL, state: Readonly<Record<string, unknown>> = {}) => ({
 		url,
@@ -503,14 +504,14 @@ vi.mock('$app/stores', async () => {
 		form: null,
 		state,
 	});
-	const page = writable(pageValue(new URL('http://localhost/map')));
+	const page = createPageState(pageValue(new URL('http://localhost/map')));
 	const navigating = writable<unknown>(null);
 	harness.installStorePublishers(
 		(href, state) => page.set(pageValue(new URL(href), state)),
 		(navigation) => navigating.set(navigation),
 	);
 	harness.installNavigationRouter(KitNavigationSimulator);
-	return { page, navigating };
+	return { page: page.page, navigating };
 });
 
 vi.mock('$app/navigation', () => ({
@@ -532,10 +533,13 @@ vi.mock('./mapUrlCoordinator', async (importOriginal) => {
 	};
 });
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => harness.locale };
 });
 
@@ -550,7 +554,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	theme: { current: 'dark' },
 }));
 
-vi.mock('$lib/nav', () => ({
+vi.mock('#lib/nav/index.ts', () => ({
 	routeFor: (target: { kind: string; id: string }) => {
 		if (target.kind === 'stop') return `/stop/${target.id}`;
 		if (target.kind === 'line') return `/lines/${target.id}`;
@@ -559,7 +563,7 @@ vi.mock('$lib/nav', () => ({
 	},
 }));
 
-vi.mock('$lib/stores', async () => {
+vi.mock('#lib/stores/index.ts', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
 	return {
@@ -575,7 +579,7 @@ vi.mock('$lib/stores', async () => {
 	};
 });
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		provider: providerContext.value,
 		manifest: {
@@ -588,16 +592,16 @@ vi.mock('$lib/v1/boot', () => ({
 		lang: 'en',
 	}),
 }));
-vi.mock('$lib/v1/repositories/basemap', () => ({
+vi.mock('#lib/v1/repositories/basemap.ts', () => ({
 	getBasemap: () => null,
 }));
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoutesIndex: () => ({ generated_utc: '2026-06-20T12:00:00Z', routes: [] }),
 	getStopsIndexSlim: harness.getStopsIndexSlim,
 	getRoute: harness.getRoute,
 	getStop: harness.getStop,
 }));
-vi.mock('$lib/v1/live/store.svelte', async () => {
+vi.mock('#lib/v1/live/store.svelte.ts', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
 	const liveIndex = harness.liveStore.index;
@@ -636,7 +640,7 @@ vi.mock('$lib/v1/live/store.svelte', async () => {
 	return { createLiveStore: harness.createLiveStore };
 });
 
-vi.mock('$lib/v1/resource.svelte', async () => {
+vi.mock('#lib/v1/resource.svelte.ts', async () => {
 	const { createMapHeroResourceStub } = await import('./__fixtures__/MapHeroResourceStub.svelte');
 	return { createResource: createMapHeroResourceStub };
 });
@@ -654,7 +658,7 @@ vi.mock('./MapSelectionDetail.svelte', async (importOriginal) => {
 	};
 });
 
-vi.mock('$lib/components/map', async () => {
+vi.mock('#lib/components/map/index.ts', async () => {
 	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
 	return {
 		MapStage,
@@ -1108,7 +1112,7 @@ describe('MapHero one-shot focus readiness', () => {
 		await waitFor(() => expect(harness.focusCoordinate).toHaveBeenCalledOnce());
 		expect(harness.goto).toHaveBeenCalledOnce();
 		expect(new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost').search).toBe('');
-		expect(harness.goto.mock.lastCall?.[1]).toMatchObject({ replaceState: true });
+		expect(harness.goto.mock.lastCall?.[1]).toMatchObject({ replace: true });
 
 		await tick();
 		expect(harness.focusCoordinate).toHaveBeenCalledOnce();
@@ -2471,7 +2475,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 		for (const [target, options] of alertNavigationCalls) {
 			expect(target).toMatch(/^\/map(?:\?|$)/);
 			expect(new URL(String(target), 'http://localhost/map').pathname).toBe('/map');
-			expect(options).toMatchObject({ replaceState: true, keepFocus: true, noScroll: true });
+			expect(options).toMatchObject({ replace: true, reset: false });
 		}
 		expect(window.location.pathname).toBe(documentPathBefore);
 		expect(document.querySelectorAll('[data-slot="bottom-sheet"]')).toHaveLength(1);

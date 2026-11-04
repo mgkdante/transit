@@ -1230,8 +1230,27 @@ async function verifyControls(page, cell) {
 			'[data-slot="surface-rail"] [data-slot="date-range"] input[type="date"]',
 		);
 		invariant((await dates.count()) === 2, `${cell.path} date-range controls did not mount`);
+		const rangeResponse = page.waitForResponse((response) => {
+			const path = new URL(response.url()).pathname;
+			return (
+				response.status() === 200 &&
+				path.includes('/historic/history/lines/') &&
+				/\/\d{4}-\d{2}\.json$/u.test(path)
+			);
+		});
 		await dates.nth(0).fill('2026-08-28');
 		await dates.nth(1).fill('2026-08-29');
+		await (await rangeResponse).finished();
+		// Kit 3 may schedule the retained read after the input event. Do not let
+		// the next grain click abort it while an empty/loading KPI looks absent.
+		await page.waitForFunction(() => {
+			const caption = document.querySelector('[data-slot="active-window"]')?.textContent ?? '';
+			return (
+				!document.querySelector('[data-slot="history-loading"]') &&
+				caption.includes('2026-08-28') &&
+				caption.includes('2026-08-29')
+			);
+		});
 		const rangeKpis = await readValues(
 			page,
 			'[data-section="verdict"] [data-slot="verdict-kpis"] > [data-slot="metric-bullet"]',

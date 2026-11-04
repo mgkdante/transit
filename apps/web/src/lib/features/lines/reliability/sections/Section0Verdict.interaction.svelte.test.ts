@@ -1,6 +1,6 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { expect, it } from 'vitest';
-import { isoUtc } from '$lib/v1/schemas/types';
+import { isoUtc } from '#lib/v1/schemas/types.ts';
 import { toReliabilityClusters } from '../clusters';
 import { reliabilityCopy } from '../reliability.copy';
 import Section0Verdict from './Section0Verdict.svelte';

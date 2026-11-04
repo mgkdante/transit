@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 	noteServerEpochMs: vi.fn<(ms: number) => void>(),
 }));
 
-vi.mock('$app/environment', () => ({
+vi.mock('$app/env', () => ({
 	get browser() {
 		return mocks.browser;
 	},

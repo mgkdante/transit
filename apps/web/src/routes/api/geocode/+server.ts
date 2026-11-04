@@ -1,14 +1,15 @@
+import { env as cloudflareEnv } from 'cloudflare:workers';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { geocode, geocodeSuggestions } from '$lib/geocode/geoCa';
-import { loadProviderCatalog } from '$lib/v1/providers';
-import { getManifest } from '$lib/v1/repositories/manifest';
-import type { GeocodeArea } from '$lib/geocode/types';
+import { geocode, geocodeSuggestions } from '#lib/geocode/geoCa.ts';
+import { loadProviderCatalog } from '#lib/v1/providers.ts';
+import { getManifest } from '#lib/v1/repositories/manifest.ts';
+import type { GeocodeArea } from '#lib/geocode/types.ts';
 import {
 	GEOCODE_RATE_LIMIT,
 	TokenBucketLimiter,
 	type TokenBucketDecision,
-} from '$lib/geocode/rateLimit.server';
+} from '#lib/geocode/rateLimit.server.ts';
 
 export const prerender = false;
 
@@ -35,7 +36,7 @@ type ParseResult =
 	| { readonly ok: true; readonly value: ParsedGeocodeRequest }
 	| { readonly ok: false; readonly error: string };
 
-export const GET: RequestHandler = async ({ url, request, fetch, platform }) => {
+export const GET: RequestHandler = async ({ url, request, fetch }) => {
 	if (!hasSameOriginProvenance(request.headers, url.origin)) {
 		return json({ error: 'forbidden' }, { status: 403, headers: { 'cache-control': 'no-store' } });
 	}
@@ -45,7 +46,7 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 		return json({ error: parsed.error }, { status: 400, headers: { 'cache-control': 'no-store' } });
 	}
 
-	const rate = await decideRate(request.headers, platform?.env);
+	const rate = await decideRate(request.headers, cloudflareEnv);
 	if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 	const ids = url.searchParams.getAll('provider');
 	if (ids.length !== 1)
@@ -163,7 +164,7 @@ function refererOrigin(raw: string): string | null {
 
 async function decideRate(
 	headers: Headers,
-	platformEnv: App.Platform['env'] | undefined,
+	platformEnv: typeof cloudflareEnv | undefined,
 ): Promise<TokenBucketDecision> {
 	const trustedIp = headers.get('cf-connecting-ip')?.trim() || null;
 	const key = trustedIp ?? MISSING_IP_KEY;
