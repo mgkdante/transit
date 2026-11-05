@@ -40,7 +40,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		await expect(page.getByText(ago(5))).toBeVisible();
 	});
 
-	test(`${locale}: page actions affect content only and reload restores declared defaults`, async ({
+	test(`${locale}: page actions affect content only and reload restores the bulk choice`, async ({
 		page,
 	}) => {
 		const main = page.getByRole('main');
@@ -62,7 +62,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		await expect(triggers.first()).toHaveAttribute('aria-expanded', 'false');
 		await page.reload();
 		for (let i = 0; i < count; i++)
-			await expect(triggers.nth(i)).toHaveAttribute('aria-expanded', 'true');
-		await expect(toggle).toHaveText(copy.collapse);
+			await expect(triggers.nth(i)).toHaveAttribute('aria-expanded', 'false');
+		await expect(toggle).toHaveText(copy.expand);
 	});
 }

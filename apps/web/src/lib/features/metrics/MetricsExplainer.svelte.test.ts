@@ -36,6 +36,8 @@ const en = metricsCopy.en;
 
 function resetMetricsState(): void {
 	provState.data = null;
+	localStorage.removeItem('sections-choice');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
 	if (window.location.hash) window.location.hash = '';
 }
 beforeEach(resetMetricsState);
@@ -401,18 +403,19 @@ describe('MetricsExplainer', () => {
 		return block?.querySelector('[data-slot="collapsible-trigger"]') ?? null;
 	}
 
-	it('renders every metric card OPEN on a fresh visit (default-open article)', () => {
+	it('starts content cards collapsed on a boot-prepared fresh visit and keeps the TOC open', () => {
+		document.documentElement.dataset.sectionsChoice = 'collapsed';
 		const { container } = render(MetricsExplainer);
 
 		const triggers = metricTriggers(container);
 		expect(triggers.length).toBeGreaterThan(0);
 		for (const trigger of triggers) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 		const firstBody = container.querySelector(
 			`#${CSS.escape(METRICS[0].anchor)} [data-slot="collapsible-content"]`,
 		);
-		expect(firstBody).toHaveAttribute('data-state', 'open');
+		expect(firstBody).toHaveAttribute('data-state', 'closed');
 
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 	});

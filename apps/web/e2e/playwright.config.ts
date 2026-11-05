@@ -45,6 +45,16 @@ export default defineConfig({
 		: 'list',
 	use: {
 		baseURL,
+		// Content-interaction specs use a returning expanded visitor; fresh-storage specs override this.
+		storageState: {
+			cookies: [],
+			origins: [
+				{
+					origin: new URL(baseURL).origin,
+					localStorage: [{ name: 'sections-choice', value: 'expanded' }],
+				},
+			],
+		},
 		contextOptions: { reducedMotion: 'reduce' },
 		serviceWorkers: 'block',
 		trace: 'retain-on-failure',

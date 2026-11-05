@@ -1,6 +1,6 @@
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
 import type {
 	DataHealth,
@@ -276,7 +276,16 @@ const healthSurface = createSurfaceHarness({
 });
 const render = healthSurface.mount;
 
-beforeEach(() => healthSurface.reset());
+beforeEach(() => {
+	// These content/report interactions use a returning reader's expanded choice.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	healthSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 afterAll(() => {
 	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(39);

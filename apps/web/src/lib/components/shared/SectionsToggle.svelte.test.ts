@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import Harness from './__fixtures__/SectionsToggleHarness.svelte';
+
+afterEach(() => {
+	localStorage.clear();
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 const localeContext = (locale: 'en' | 'fr') =>
 	new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
@@ -8,7 +13,7 @@ const localeContext = (locale: 'en' | 'fr') =>
 describe('SectionsToggle consumer integration', () => {
 	it.each([0, 1])('hides below two content sections (%s), excluding filters and TOC', (count) => {
 		render(Harness, { props: { count }, context: localeContext('en') });
-		expect(screen.queryByTestId('sections-controls')).not.toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls')).toHaveAttribute('data-sections-hidden');
 	});
 	it.each([
 		['en', 'Collapse all', 'Expand all'],
