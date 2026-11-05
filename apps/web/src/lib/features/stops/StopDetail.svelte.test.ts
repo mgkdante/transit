@@ -5,7 +5,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '#lib/v1/index.ts';
 import type { IdentitySeed } from '#lib/v1/serverContext.ts';
 import type { PublicProvider } from '#lib/v1/providers.ts';
@@ -422,7 +422,16 @@ function resetStopSurfaceState() {
 	liveStore.index.byStopId.set('99999', DEPARTURES_B);
 }
 
-beforeEach(() => stopSurface.reset());
+beforeEach(() => {
+	// Content interactions use a returning expanded reader; boot is outside this unit harness.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	stopSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 type StopDetailTestProps = { id: string; seed?: IdentitySeed };
 
@@ -652,7 +661,7 @@ describe('StopDetail article contract', () => {
 		}
 	});
 
-	it('keeps the default Detail URL clean and preserves mounted panes while new panes use declared defaults', async () => {
+	it('keeps the default Detail URL clean and preserves mounted panes while new panes use the bulk choice', async () => {
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -689,7 +698,7 @@ describe('StopDetail article contract', () => {
 		) as HTMLElement;
 		expect(scheduleCard.querySelector('[data-section-trigger]')).toHaveAttribute(
 			'aria-expanded',
-			'true',
+			'false',
 		);
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
@@ -773,7 +782,7 @@ describe('StopDetail article contract', () => {
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('remounts the persisted facts-card state when the stop id changes in place', async () => {
+	it('applies the bulk choice when the stop id changes in place', async () => {
 		const view = render(StopDetail, { props: { id: '57191' } });
 		const firstCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
 

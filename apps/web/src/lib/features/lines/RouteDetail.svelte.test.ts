@@ -6,7 +6,7 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '#lib/v1/index.ts';
 import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 import type { IdentitySeed } from '#lib/v1/serverContext.ts';
@@ -373,7 +373,16 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	},
 }));
 
-beforeEach(() => routeSurface.reset());
+beforeEach(() => {
+	// Content interactions use a returning expanded reader; boot is outside this unit harness.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	routeSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 afterAll(() => {
 	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(53);
@@ -539,7 +548,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(routeDetailNav.page.url.searchParams.get('window')).toBe('am');
 	});
 
-	it('keeps the tabs fixed above a cohesive disclosure sequence and preserves mounted panes while new panes start at declared defaults', async () => {
+	it('keeps the tabs fixed above a cohesive disclosure sequence and preserves mounted panes while new panes use the bulk choice', async () => {
 		const view = renderRoute();
 		const toolbar = view.container.querySelector('[data-slot="detail-shell-toolbar"]');
 		const tabs = view.container.querySelector<HTMLElement>('[data-slot="entity-detail-tabs"]');
@@ -571,7 +580,10 @@ describe('RouteDetail article cover and focus scope', () => {
 		);
 		expect(scheduleCards).toHaveLength(2);
 		for (const card of scheduleCards) {
-			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
+			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
 		}
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -665,7 +677,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		await waitFor(() =>
 			expect(
 				view.container.querySelector('[data-toc="line-detail-profile"] [data-section-trigger]'),
-			).toHaveAttribute('aria-expanded', 'true'),
+			).toHaveAttribute('aria-expanded', 'false'),
 		);
 	});
 });
