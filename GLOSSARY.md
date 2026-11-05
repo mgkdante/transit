@@ -32,5 +32,29 @@ One kind of live data from a provider, such as vehicle positions, trip updates o
 _Avoid_: feed, tier, source
 
 **Feed health**:
-What a rider can trust about a feed family right now: never loaded, live, stale, retrying, or failed with no data. Unknown age counts as stale for a retained snapshot; a family that has never loaded is not stale.
+What a rider can trust about a feed family right now: never loaded, live, stale, retrying, or failed with no data. Unknown age counts as stale for a retained snapshot; a family that has never loaded is not stale. Retrying means another attempt after a failure, even when retained data has an unknown age.
 _Avoid_: degraded, freshness
+
+**Publication age**:
+How old a published report is. A newly prepared report can still contain old agency data.
+_Avoid_: feed age, capture age
+
+**Serving capture age**:
+How old the feed capture accepted into the report's serving data is. A newer download that could not be processed does not make that data current.
+_Avoid_: latest download age, publication age
+
+**Partial stall**:
+One active feed family is stale while another is current or has not loaded yet. It cannot establish that the whole feed has stopped responding.
+_Avoid_: outage, whole-feed stall
+
+**Published uncertainty range**:
+The lower and upper percentage bounds supplied with a reliability reading. They express uncertainty in that reading and do not supply a missing exact on-time count.
+_Avoid_: reconstructed count, guaranteed range
+
+**Live-eligible KPI sample**:
+A valid current KPI reading with the delay, coverage, route total and at least one route delay needed for the live summary. A valid but incomplete reading is a demo sample; an invalid response is a failure.
+_Avoid_: healthy feed, live guarantee
+
+**Demo sample**:
+A valid KPI response that cannot supply the live summary, including an expected cold response. It does not establish a service failure; the consumer decides when to display demo values after holding a previous reading.
+_Avoid_: outage, invalid response
