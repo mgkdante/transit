@@ -1940,6 +1940,27 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					);
 				}
 				await verifySsr(page, cell, fixture, ssrHtml);
+				// B9 measures the rendered data. Reveal content through its bulk control
+				// before interacting with detail controls inside the collapsed sections.
+				await page.waitForFunction(
+					() =>
+						document.querySelector('[data-sections-control][data-sections-ready]') &&
+						[...document.querySelectorAll('[data-section-bulk]')].every((card) =>
+							card.hasAttribute('data-section-ready'),
+						),
+				);
+				const bulk = page.locator('[data-sections-control]:not([data-sections-hidden]) button');
+				if ((await bulk.count()) > 0) {
+					await bulk.waitFor({ state: 'visible' });
+					if ((await bulk.getAttribute('data-collapsed')) === 'true') await bulk.click();
+					await page.waitForFunction(() =>
+						[...document.querySelectorAll('[data-section-bulk]')].every(
+							(card) =>
+								card.querySelector('[data-section-trigger]')?.getAttribute('aria-expanded') ===
+								'true',
+						),
+					);
+				}
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					const control = await toggle.elementHandle();
 					invariant(control != null, `${cell.path} detail control disappeared`);
@@ -1962,6 +1983,9 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						await control.dispose();
 					}
 				}
+				// Geometry checks scroll the page. Park the pointer outside its links
+				// so scrolling cannot start a hover preload for an unrelated fixture route.
+				await page.mouse.move(0, 0);
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;

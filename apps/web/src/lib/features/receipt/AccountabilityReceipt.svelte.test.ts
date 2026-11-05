@@ -185,7 +185,7 @@ describe('AccountabilityReceipt article shell', () => {
 			await screen.findAllByRole('heading', { level: 1, name: 'Accountability receipt' }),
 		).toHaveLength(1);
 		expect(container.querySelectorAll('[data-toc^="receipt-"]')).toHaveLength(1);
-		expect(screen.queryByTestId('sections-controls')).toBeNull();
+		expect(screen.getByTestId('sections-controls')).toHaveAttribute('data-sections-hidden');
 		expect(container.querySelector('[data-slot="surface-rail"]')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 	});

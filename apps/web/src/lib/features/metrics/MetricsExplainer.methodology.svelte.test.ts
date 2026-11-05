@@ -39,10 +39,14 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 const viewport = window as typeof window & { happyDOM: { setInnerWidth(width: number): void } };
 
 beforeEach(() => {
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
 	viewport.happyDOM.setInnerWidth(1280);
 });
 
 afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
 	viewport.happyDOM.setInnerWidth(1280);
 	for (const key of ['provenance', 'coverage', 'freshness']) {
 		sessionStorage.removeItem(`persisted:metrics-rail-${key}`);
@@ -116,7 +120,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
 	});
 
-	it('starts newly mounted desktop cards at declared defaults and keeps independent card state across later resizes', async () => {
+	it('starts newly mounted desktop cards at the bulk choice and keeps individual state across later resizes', async () => {
 		viewport.happyDOM.setInnerWidth(390);
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);
@@ -128,11 +132,11 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		);
 		const provenance = within(rail).getByRole('button', { name: 'Provenance' });
 		const freshness = within(rail).getByRole('button', { name: 'Freshness' });
-		expect(provenance).toHaveAttribute('aria-expanded', 'true');
-		expect(freshness).toHaveAttribute('aria-expanded', 'true');
-		await fireEvent.click(provenance);
 		expect(provenance).toHaveAttribute('aria-expanded', 'false');
-		expect(freshness).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(provenance);
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
 		const originalBody = rail.querySelector('[data-slot="stat-provenance"]');
 
 		viewport.happyDOM.setInnerWidth(390);
@@ -141,8 +145,8 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		viewport.happyDOM.setInnerWidth(1280);
 		await tick();
 		expect(within(rail).getByRole('button', { name: 'Provenance' })).toBe(provenance);
-		expect(provenance).toHaveAttribute('aria-expanded', 'false');
-		expect(freshness).toHaveAttribute('aria-expanded', 'true');
+		expect(provenance).toHaveAttribute('aria-expanded', 'true');
+		expect(freshness).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('retains the ToC, Coverage and complete definitions in actual unseeded SSR', async () => {
