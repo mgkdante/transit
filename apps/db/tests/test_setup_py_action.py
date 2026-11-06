@@ -20,6 +20,7 @@ EXPECTED_CALLERS = {
     ("historic-publish-recovery.yml", "publish-historic-recovery"),
     ("historic-snapshot-gc.yml", "mark"),
     ("refresh-basemap.yml", "providers"),
+    ("worker-start-probe.yml", "probe"),
 }
 
 

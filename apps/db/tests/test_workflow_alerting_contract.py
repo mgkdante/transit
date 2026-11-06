@@ -139,7 +139,8 @@ def test_cron_workflows_carry_issues_write_permission() -> None:
 
 def test_every_alert_channel_caller_has_issue_write_and_workflow_token() -> None:
     # Include wrappers as well as direct calls; inventory new callers automatically.
-    entrypoints = ("alert-issue.sh", "freshness-probe.sh", "daily-warm-notify.py", "site-probe.mjs")
+    entrypoints = ("alert-issue.sh", "freshness-probe.sh", "daily-warm-notify.py", "site-probe.mjs",
+                   "transit_ops.worker_start_probe")
     callers = set()
     for path in WORKFLOWS.glob("*.yml"):
         doc = _load(path)
@@ -156,6 +157,7 @@ def test_every_alert_channel_caller_has_issue_write_and_workflow_token() -> None
     assert callers == {
         "freshness-probe.yml", "site-probe.yml", "daily-static-pipeline.yml",
         "daily-warm-rollups.yml", "weekly-pg-repack.yml",
+        "worker-start-probe.yml",
     }
 
 
