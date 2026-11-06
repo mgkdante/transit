@@ -85,6 +85,7 @@ from transit_ops.validation.historic_publish import (
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 from transit_ops.worker_starts import observe_start
+from transit_ops.worker_watchdog import worker_watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -1400,21 +1401,25 @@ def run_realtime_worker_command(
 
     should_shutdown = _install_worker_shutdown_handlers()
     settings = get_settings()
-    if should_shutdown():
-        return
-    observe_start(provider_id)
-    if should_shutdown():
-        return
-    try:
-        run_realtime_worker_loop(
-            provider_id,
-            settings=settings,
-            registry=_provider_registry(settings),
-            max_cycles=max_cycles,
-            should_shutdown=should_shutdown,
-        )
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    with worker_watchdog(
+        timeout=settings.REALTIME_WATCHDOG_SECONDS,
+        shutdown_grace=settings.REALTIME_SHUTDOWN_GRACE_SECONDS,
+    ):
+        if should_shutdown():
+            return
+        observe_start(provider_id)
+        if should_shutdown():
+            return
+        try:
+            run_realtime_worker_loop(
+                provider_id,
+                settings=settings,
+                registry=_provider_registry(settings),
+                max_cycles=max_cycles,
+                should_shutdown=should_shutdown,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command("run-pruner-loop")
