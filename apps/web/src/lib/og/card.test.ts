@@ -17,9 +17,9 @@ const pixels = (svg: string) =>
 	new Resvg(svg, {
 		font: { fontFiles: [...ogFontFiles], loadSystemFonts: false, defaultFontFamily: 'Inter' },
 	}).render();
-const rgbAt = (image: ReturnType<typeof pixels>, x: number, y: number) => {
-	const offset = (Math.round(y) * image.width + Math.round(x)) * 4;
-	return `#${[...image.pixels.subarray(offset, offset + 3)]
+const rgbAt = (rgba: Uint8Array, width: number, x: number, y: number) => {
+	const offset = (Math.round(y) * width + Math.round(x)) * 4;
+	return `#${[...rgba.subarray(offset, offset + 3)]
 		.map((v) => v.toString(16).padStart(2, '0'))
 		.join('')
 		.toUpperCase()}`;
@@ -40,7 +40,7 @@ describe('share card', () => {
 		expect(dots[0]![3]).toBe(ORANGE);
 		expect(svg).not.toContain('matrices.<');
 		const image = pixels(svg);
-		expect(rgbAt(image, Number(dots[0]![1]), Number(dots[0]![2]))).toBe(ORANGE);
+		expect(rgbAt(image.pixels, image.width, Number(dots[0]![1]), Number(dots[0]![2]))).toBe(ORANGE);
 	});
 
 	it('turns a closing question mark orange instead of adding a dot', () => {
@@ -104,10 +104,12 @@ describe('share card', () => {
 		);
 		const image = pixels(svg);
 		expect([image.width, image.height]).toEqual([1200, 630]);
+		// The native getter copies the full image; read it once for this scan.
+		const rgba = image.pixels;
 		// Everything but the faint grid stays dark in the side margins.
 		for (let y = 0; y < 630; y += 3) {
 			for (const x of [40, 60, 79, 1121, 1140, 1160]) {
-				const [r, g, b] = rgbAt(image, x, y)
+				const [r, g, b] = rgbAt(rgba, image.width, x, y)
 					.slice(1)
 					.match(/../g)!
 					.map((hex) => parseInt(hex, 16));
