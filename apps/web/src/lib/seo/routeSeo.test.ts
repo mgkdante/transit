@@ -79,7 +79,7 @@ describe('URL-scoped home sharing', () => {
 			/alerts/i,
 		);
 		expect(resolveRouteSeo('/map?provider=octranspo', 'en', ottawa).imagePath).toMatch(
-			/^\/og\/en\.png\?v=[a-f0-9]{16}$/,
+			/^\/og\/pages\/map\.en\.png\?v=[a-f0-9]{16}$/,
 		);
 	});
 

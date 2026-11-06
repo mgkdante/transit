@@ -47,9 +47,6 @@
 
 <svelte:head>
 	<title>{documentHead.title} · Transit</title>
-	{#if is404}
-		<meta name="robots" content="noindex,nofollow" />
-	{/if}
 </svelte:head>
 
 <ErrorPage {status} suggestionsLabel={copy.suggestionsLabel} {...view} />

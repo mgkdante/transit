@@ -32,10 +32,17 @@ for (const locale of ['en', 'fr'] as const) {
 				)?.[1];
 				expect(value, `${path}: ${field}`).toBe(title);
 			}
+			const robots = [...head.matchAll(/<meta name="robots" content="([^"]*)"/g)];
+			expect(robots).toHaveLength(1);
+			expect(robots[0]![1]).toBe('max-image-preview:large');
+			const description =
+				head.match(/<meta property="og:description" content="([^"]*)"/)?.[1] ?? '';
+			expect(description.length).toBeGreaterThanOrEqual(50);
+			expect(description.length).toBeLessThanOrEqual(110);
 			const image = head.match(/<meta property="og:image" content="([^"]*)"/)?.[1];
 			expect(image, path).toMatch(
 				new RegExp(
-					`/og/${provider ? `home/${provider === 'STM' ? 'stm' : 'octranspo'}.` : ''}${locale}\\.png\\?v=[a-f0-9]{16}$`,
+					`/og/${provider ? `home/${provider === 'STM' ? 'stm' : 'octranspo'}.` : path.includes('/map') ? 'pages/map.' : path.includes('/status') ? 'pages/status.' : ''}${locale}\\.png\\?v=[a-f0-9]{16}$`,
 				),
 			);
 			if (image && !checkedImages.has(image)) {
@@ -67,3 +74,14 @@ for (const locale of ['en', 'fr'] as const) {
 		}
 	});
 }
+
+test('ephemeral and error documents keep a single noindex tag', async ({ request }) => {
+	for (const path of ['/trip/example', '/fr/trip/example', '/missing-share-page']) {
+		const response = await request.get(path);
+		const html = await response.text();
+		const head = html.slice(0, html.indexOf('</head>'));
+		expect([...head.matchAll(/<meta name="robots"/g)], path).toHaveLength(1);
+		expect(head, path).toContain('content="noindex,nofollow"');
+		expect(head, path).not.toContain('max-image-preview:large');
+	}
+});
