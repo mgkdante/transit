@@ -18,7 +18,9 @@ def test_missing_table_is_green_and_sends_nothing():
     send.assert_not_called()
 
 
-def test_probe_names_role_and_denied_access_is_failure(capsys):
+def test_probe_hashes_role_and_denied_access_is_failure(capsys):
+    import hashlib
+
     engine = MagicMock()
     conn = engine.connect.return_value.__enter__.return_value
     conn.execute.return_value.mappings.return_value.one.return_value = {
@@ -27,10 +29,15 @@ def test_probe_names_role_and_denied_access_is_failure(capsys):
         "core_usage_grant": False, "new_table_grants": False,
     }
     send = Mock()
-    with pytest.raises(PermissionError, match="unexpected_reader"):
+    fingerprint = hashlib.sha256(b"unexpected_reader").hexdigest()[:12]
+    with pytest.raises(PermissionError, match=fingerprint) as error:
         starts.probe(engine, send)
     send.assert_not_called()
-    assert "read_access=no" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert f"role_sha256={fingerprint}" in output
+    assert "read_access=no" in output
+    assert "unexpected_reader" not in output
+    assert "unexpected_reader" not in str(error.value)
 
 
 def test_fifty_starts_one_issue_and_closed_count_deduplication():
@@ -117,6 +124,7 @@ def test_missing_table_logs_all_preflight_booleans_without_alerts(capsys):
     assert starts.probe(engine, notify) == 0
     notify.assert_not_called()
     output = capsys.readouterr().out
+    assert "transit-db" not in output
     assert '"core_usage": true' in output
     assert '"core_create": false' in output
     assert '"version_update": false' in output
@@ -127,7 +135,39 @@ def test_missing_table_logs_all_preflight_booleans_without_alerts(capsys):
 def test_real_db_preflight_runs_read_only_and_reports_capabilities(real_db_engine, capsys):
     assert starts.probe(real_db_engine, Mock()) == 0
     output = capsys.readouterr().out
-    assert "role=" in output
+    assert "role_sha256=" in output
     for capability in ("core_usage", "core_create", "version_update", "core_usage_grant",
                        "new_table_grants"):
         assert f'"{capability}": true' in output
+
+
+@pytest.mark.parametrize("kind", [ConnectionError, PermissionError])
+def test_main_reports_exception_class_without_private_message(kind, monkeypatch, capsys):
+    from transit_ops import settings
+
+    monkeypatch.setattr(settings, "Settings", Mock(return_value=Mock(
+        sqlalchemy_database_url="postgresql://fixture.invalid/test",
+    )))
+    private = "postgresql://fake_user:fake_password@private.example/db"
+    monkeypatch.setattr(starts, "create_engine", Mock(side_effect=kind(private)))
+    assert starts.main() == 1
+    output = capsys.readouterr()
+    assert kind.__name__ in output.err
+    assert private not in output.out + output.err
+    assert "fake_password" not in output.out + output.err
+
+
+def test_probe_has_tolerant_timeouts_separate_from_recorder(monkeypatch):
+    from transit_ops import settings
+
+    monkeypatch.setattr(settings, "Settings", Mock(return_value=Mock(
+        sqlalchemy_database_url="postgresql://fixture.invalid/test",
+    )))
+    factory = Mock()
+    monkeypatch.setattr(starts, "create_engine", factory)
+    monkeypatch.setattr(starts, "probe", Mock(return_value=0))
+    assert starts.main() == 0
+    assert factory.call_args.kwargs["connect_args"] == {
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=5000 -c lock_timeout=500",
+    }

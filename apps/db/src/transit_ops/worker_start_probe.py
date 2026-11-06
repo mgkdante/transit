@@ -1,6 +1,7 @@
 """Read-only worker-start probe and migration privilege preflight."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -40,7 +41,8 @@ def probe(engine, notify) -> int:
                  has_table_privilege(current_user, (SELECT oid FROM target), 'SELECT')) AS readable
         """)).mappings().one()
         readable = "yes" if access["readable"] else "no"
-        print(f"Worker start probe: role={json.dumps(access['role'])} read_access={readable}")
+        fingerprint = hashlib.sha256(access["role"].encode("utf-8")).hexdigest()[:12]
+        print(f"Worker start probe: role_sha256={fingerprint} read_access={readable}")
         # CREATE makes this role the new table owner, able to grant its privileges.
         # This is prospective capability evidence, not a DDL/grant execution test.
         keys = ("core_usage", "core_create", "version_update", "core_usage_grant",
@@ -50,7 +52,7 @@ def probe(engine, notify) -> int:
             print("Worker start probe: table absent; waiting for approved migration/rollout.")
             return 0
         if not access["readable"]:
-            raise PermissionError(f"Worker start read denied for role {json.dumps(access['role'])}")
+            raise PermissionError(f"Worker start read denied for role_sha256={fingerprint}")
         rows = conn.execute(text(f"SELECT * FROM {TABLE} ORDER BY provider_id")).mappings().all()
     for row in rows:
         notify(dict(row))
@@ -126,8 +128,8 @@ def main() -> int:
 
         settings = Settings(_env_file=None)
         engine = create_engine(settings.sqlalchemy_database_url, poolclass=NullPool,
-                               connect_args={"connect_timeout": 2, "options":
-                                             "-c statement_timeout=2000 -c lock_timeout=500"})
+                               connect_args={"connect_timeout": 10, "options":
+                                             "-c statement_timeout=5000 -c lock_timeout=500"})
         try:
             # Lazy construction: missing table must produce no issue/API call.
             channel = None
@@ -141,8 +143,8 @@ def main() -> int:
             return probe(engine, notify)
         finally:
             engine.dispose()
-    except Exception:  # noqa: BLE001 - sanitized operational error
-        print("Worker start probe/record failed; private diagnostics suppressed.", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - class only, never driver message/URL
+        print(f"Worker start probe failed: {type(exc).__name__}", file=sys.stderr)
         return 1
 
 
