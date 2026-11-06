@@ -25,7 +25,7 @@ set -euo pipefail
 : "${GH_REPO:?GH_REPO must be set}"
 export GH_TOKEN GH_REPO
 
-ALERT_LABEL="pipeline-alert"
+ALERT_LABEL="${ALERT_LABEL:-pipeline-alert}"
 
 action="${1:-}"
 slug="${2:-}"
