@@ -405,6 +405,12 @@
 	}
 </script>
 
+<svelte:head>
+	{#if !head.noIndex}
+		<meta name="robots" content="max-image-preview:large" />
+	{/if}
+</svelte:head>
+
 <SiteRoot scroller={{ wrapper: '#page-scroller', content: '#main-flow' }} lang={locale}>
 	<SeoHead {...head} />
 
