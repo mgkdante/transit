@@ -131,4 +131,3 @@ def test_real_db_preflight_runs_read_only_and_reports_capabilities(real_db_engin
     for capability in ("core_usage", "core_create", "version_update", "core_usage_grant",
                        "new_table_grants"):
         assert f'"{capability}": true' in output
-
