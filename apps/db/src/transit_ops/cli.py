@@ -55,6 +55,7 @@ from transit_ops.maintenance import (
     vacuum_storage,
 )
 from transit_ops.orchestration import (
+    _install_worker_shutdown_handlers,
     realtime_endpoints_for_manifest,
     run_pruner_loop,
     run_realtime_cycle,
@@ -83,6 +84,7 @@ from transit_ops.validation.historic_publish import (
 )
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
+from transit_ops.worker_starts import observe_start
 
 logger = logging.getLogger(__name__)
 
@@ -1396,13 +1398,20 @@ def run_realtime_worker_command(
 ) -> None:
     """Run the realtime cycle forever with configurable polling delays."""
 
+    should_shutdown = _install_worker_shutdown_handlers()
     settings = get_settings()
+    if should_shutdown():
+        return
+    observe_start(provider_id)
+    if should_shutdown():
+        return
     try:
         run_realtime_worker_loop(
             provider_id,
             settings=settings,
             registry=_provider_registry(settings),
             max_cycles=max_cycles,
+            should_shutdown=should_shutdown,
         )
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc

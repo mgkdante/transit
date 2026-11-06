@@ -496,17 +496,24 @@ def test_run_realtime_worker_help() -> None:
 
 def test_run_realtime_worker_passes_max_cycles(monkeypatch) -> None:
     recorded: dict[str, object] = {}
+    def shutdown():
+        return False
 
-    def fake_run_realtime_worker_loop(provider_id, *, settings, registry, max_cycles):  # noqa: ANN001
+    monkeypatch.setattr(cli_module, "_install_worker_shutdown_handlers", lambda: shutdown)
+
+    def fake_run_realtime_worker_loop(
+        provider_id, *, settings, registry, max_cycles, should_shutdown,
+    ):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["max_cycles"] = max_cycles
+        recorded["should_shutdown"] = should_shutdown
 
     monkeypatch.setattr(cli_module, "run_realtime_worker_loop", fake_run_realtime_worker_loop)
 
     result = runner.invoke(app, ["run-realtime-worker", "stm", "--max-cycles", "2"])
 
     assert result.exit_code == 0
-    assert recorded == {"provider_id": "stm", "max_cycles": 2}
+    assert recorded == {"provider_id": "stm", "max_cycles": 2, "should_shutdown": shutdown}
 
 
 def test_run_pruner_loop_help() -> None:
