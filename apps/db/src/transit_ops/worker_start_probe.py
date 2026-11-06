@@ -32,6 +32,9 @@ def probe(engine, notify) -> int:
             SELECT current_user AS role, EXISTS (SELECT FROM target) AS present,
                 has_schema_privilege(current_user, 'core', 'USAGE') AS core_usage,
                 has_schema_privilege(current_user, 'core', 'CREATE') AS core_create,
+                has_schema_privilege(current_user, 'public', 'USAGE') AS public_usage,
+                has_table_privilege(current_user, (SELECT oid FROM version), 'SELECT')
+                    AS version_select,
                 has_table_privilege(current_user, (SELECT oid FROM version), 'UPDATE')
                     AS version_update,
                 has_schema_privilege(current_user, 'core', 'USAGE WITH GRANT OPTION')
@@ -45,11 +48,21 @@ def probe(engine, notify) -> int:
         print(f"Worker start probe: role_sha256={fingerprint} read_access={readable}")
         # CREATE makes this role the new table owner, able to grant its privileges.
         # This is prospective capability evidence, not a DDL/grant execution test.
-        keys = ("core_usage", "core_create", "version_update", "core_usage_grant",
-                "new_table_grants")
+        keys = ("core_usage", "core_create", "public_usage", "version_select", "version_update",
+                "core_usage_grant", "new_table_grants")
         print("Migration preflight: " + json.dumps({key: bool(access[key]) for key in keys}))
+        permissions_ok = all(access[key] for key in keys)
+        print(f"migration_permissions_ok={str(permissions_ok).lower()}")
+        if access["public_usage"] and access["version_select"]:
+            revisions = conn.execute(text(
+                "SELECT version_num FROM public.alembic_version ORDER BY version_num"
+            )).scalars().all()
+            print("current_revisions=" + json.dumps(revisions))
+        else:
+            print("current_revisions=unavailable")
         if not access["present"]:
-            print("Worker start probe: table absent; waiting for approved migration/rollout.")
+            print("Worker start probe: table absent; waiting for approved migration/rollout. "
+                  "Green probe status does not establish migration readiness or approval.")
             return 0
         if not access["readable"]:
             raise PermissionError(f"Worker start read denied for role_sha256={fingerprint}")

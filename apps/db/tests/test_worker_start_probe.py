@@ -11,8 +11,10 @@ def test_missing_table_is_green_and_sends_nothing():
     conn.execute.return_value.mappings.return_value.one.return_value = {
         "role": "transit-db", "present": False, "readable": None,
         "core_usage": True, "core_create": False, "version_update": False,
+        "public_usage": True, "version_select": True,
         "core_usage_grant": False, "new_table_grants": False,
     }
+    conn.execute.return_value.scalars.return_value.all.return_value = ["0093"]
     send = Mock()
     assert starts.probe(engine, send) == 0
     send.assert_not_called()
@@ -26,8 +28,10 @@ def test_probe_hashes_role_and_denied_access_is_failure(capsys):
     conn.execute.return_value.mappings.return_value.one.return_value = {
         "role": "unexpected_reader", "present": True, "readable": False,
         "core_usage": True, "core_create": False, "version_update": False,
+        "public_usage": True, "version_select": True,
         "core_usage_grant": False, "new_table_grants": False,
     }
+    conn.execute.return_value.scalars.return_value.all.return_value = ["0093"]
     send = Mock()
     fingerprint = hashlib.sha256(b"unexpected_reader").hexdigest()[:12]
     with pytest.raises(PermissionError, match=fingerprint) as error:
@@ -118,8 +122,10 @@ def test_missing_table_logs_all_preflight_booleans_without_alerts(capsys):
     conn.execute.return_value.mappings.return_value.one.return_value = {
         "role": "transit-db", "present": False, "readable": None,
         "core_usage": True, "core_create": False, "version_update": False,
+        "public_usage": True, "version_select": True,
         "core_usage_grant": False, "new_table_grants": True,
     }
+    conn.execute.return_value.scalars.return_value.all.return_value = ["0093"]
     notify = Mock()
     assert starts.probe(engine, notify) == 0
     notify.assert_not_called()
@@ -136,7 +142,8 @@ def test_real_db_preflight_runs_read_only_and_reports_capabilities(real_db_engin
     assert starts.probe(real_db_engine, Mock()) == 0
     output = capsys.readouterr().out
     assert "role_sha256=" in output
-    for capability in ("core_usage", "core_create", "version_update", "core_usage_grant",
+    for capability in ("core_usage", "core_create", "version_update", "public_usage",
+                       "version_select", "core_usage_grant",
                        "new_table_grants"):
         assert f'"{capability}": true' in output
 
@@ -171,3 +178,74 @@ def test_probe_has_tolerant_timeouts_separate_from_recorder(monkeypatch):
         "connect_timeout": 10,
         "options": "-c statement_timeout=5000 -c lock_timeout=500",
     }
+
+
+def test_preflight_cannot_call_update_only_role_migration_ready(capsys):
+    engine = MagicMock()
+    conn = engine.connect.return_value.__enter__.return_value
+    conn.execute.return_value.mappings.return_value.one.return_value = {
+        "role": "update_only", "present": False, "readable": False,
+        "core_usage": True, "core_create": True, "version_update": True,
+        "public_usage": True, "version_select": False,
+        "core_usage_grant": True, "new_table_grants": True,
+    }
+    assert starts.probe(engine, Mock()) == 0
+    output = capsys.readouterr().out
+    assert '"version_select": false' in output
+    assert "migration_permissions_ok=false" in output
+    assert "current_revisions=unavailable" in output
+    assert "update_only" not in output
+
+
+def test_preflight_reads_revision_when_public_usage_and_select_allow(capsys):
+    engine = MagicMock()
+    conn = engine.connect.return_value.__enter__.return_value
+    conn.execute.return_value.mappings.return_value.one.return_value = {
+        "role": "owner", "present": False, "readable": False,
+        "core_usage": True, "core_create": True, "version_update": True,
+        "public_usage": True, "version_select": True,
+        "core_usage_grant": True, "new_table_grants": True,
+    }
+    conn.execute.return_value.scalars.return_value.all.return_value = [
+        "0093_alert_publication_provenance",
+    ]
+    assert starts.probe(engine, Mock()) == 0
+    output = capsys.readouterr().out
+    assert 'current_revisions=["0093_alert_publication_provenance"]' in output
+    assert "migration_permissions_ok=true" in output
+
+
+def test_real_db_update_only_version_role_is_not_migration_ready(real_db_engine, capsys):
+    from contextlib import nullcontext
+    from uuid import uuid4
+
+    role = "probe_test_" + uuid4().hex[:12]
+    with real_db_engine.connect() as conn:
+        conn.exec_driver_sql(f'CREATE ROLE "{role}"')
+        conn.exec_driver_sql(f'GRANT USAGE, CREATE ON SCHEMA core TO "{role}" WITH GRANT OPTION')
+        conn.exec_driver_sql(f'GRANT USAGE ON SCHEMA public TO "{role}"')
+        conn.exec_driver_sql(f'GRANT UPDATE ON public.alembic_version TO "{role}"')
+        if conn.exec_driver_sql("SELECT to_regclass('core.worker_starts')").scalar():
+            conn.exec_driver_sql(f'GRANT SELECT ON core.worker_starts TO "{role}"')
+        conn.commit()
+        try:
+            with conn.begin():
+                conn.exec_driver_sql(f'SET LOCAL ROLE "{role}"')
+
+                class RoleConnection:
+                    def connect(self):
+                        return nullcontext(conn)
+
+                assert starts.probe(RoleConnection(), Mock()) == 0
+            output = capsys.readouterr().out
+            assert '"version_update": true' in output
+            assert '"public_usage": true' in output
+            assert '"version_select": false' in output
+            assert "current_revisions=unavailable" in output
+            assert "migration_permissions_ok=false" in output
+            assert role not in output
+        finally:
+            conn.rollback()
+            conn.exec_driver_sql(f'DROP OWNED BY "{role}"')
+            conn.exec_driver_sql(f'DROP ROLE "{role}"')
+            conn.commit()
