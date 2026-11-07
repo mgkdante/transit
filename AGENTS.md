@@ -9,7 +9,7 @@ Notion owns intent, decisions, standing rules and how to work with Yesito. Befor
 ## Recover scope before editing
 
 1. Verify the actual checkout, branch, full HEAD/tree and working-tree/index
-   status. A migrated main checkout may be ahead of the remote; use the approved
+   status. The main checkout may be ahead of the remote; use the approved
    checkpoint, not an assumed remote default. Preserve historical experiments
    and unrelated worktrees. Read any applicable nested agent instructions.
 2. Follow the project guide's current-state route, then read the selected slice's
@@ -35,9 +35,9 @@ Notion owns intent, decisions, standing rules and how to work with Yesito. Befor
   applicable cloud hosts. Contributor LLM clients, plugins and private settings
   are personal; they are not product build or runtime dependencies. Keep this
   repository's agent configuration here. Create no shared LLM files at brand level.
-- Execute on the selected host. Windows work uses native Windows tools; do not
-  switch it back to WSL. Historical WSL transcripts may supply context, never fresh
-  Windows execution proof. No local Docker on Windows or WSL.
+- Execute on the selected host. Windows work uses native Windows tools, never WSL.
+  WSL transcripts may supply context, never fresh Windows execution proof. No local
+  Docker on Windows or WSL.
 - Use repository-relative paths and standard path/URL conversion APIs. Isolate
   unavoidable OS-specific locking, process, archive or filesystem operations
   behind a small explicit boundary. Preserve behavior and fail closed when the
@@ -47,9 +47,8 @@ Notion owns intent, decisions, standing rules and how to work with Yesito. Befor
   lockfiles and relevant CI/deployment configuration. Do not duplicate version
   inventories here or upgrade pins just to match a machine's installed tools.
 - Recreate only needed dependencies from pins/lockfiles; virtual environments,
-  node_modules and generated caches are specific to their host. On this Windows
-  migration use uv-managed Python: the legacy system Python has an incomplete
-  standard library. Keep machine paths out of tracked configuration and preserve
+  node_modules and generated caches are specific to their host. On Windows, use
+  uv-managed Python: the system Python has an incomplete standard library. Keep machine paths out of tracked configuration and preserve
   .gitattributes LF rules.
 - Distinguish portable contributor commands from intentionally Linux-hosted
   operational scripts. Keep their platform requirements explicit. Windows tests,
@@ -77,5 +76,5 @@ Notion owns intent, decisions, standing rules and how to work with Yesito. Befor
   Treat skipped tests and mocked OS branches as limitations, not platform proof.
 - Plans, progress, evidence summaries and long-form guides belong in Notion.
   [Guide index and source archive](https://www.notion.so/3eb3e863069081beb5d3ed7c1cf7e68b)
-  identifies the migrated guides; do not recreate their deleted repository copies.
+  lists the guides; keep them out of this repository.
   Keep operational agent instructions and executable/runtime/license/vendor assets.
