@@ -49,7 +49,7 @@ manifests, which cover linux-x64 and win32-x64.
 
 CI also checks the social cards, icons, map posters and deploy dry runs. Shared
 design changes belong in
-[yesid.dev-design](https://github.com/mgkdante/yesid.dev-design); the `@yesid/*`
+[yesid.design](https://github.com/mgkdante/yesid.design); the `@yesid/*`
 URLs in `apps/web/package.json` pin the release in use.
 
 ## Python pipeline

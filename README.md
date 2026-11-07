@@ -20,7 +20,7 @@ Live at [transit.yesid.dev](https://transit.yesid.dev).
 
 Bun workspaces and Turborepo run the JavaScript apps. Design tokens, motion and
 shared UI come from pinned
-[yesid.dev-design](https://github.com/mgkdante/yesid.dev-design) releases.
+[yesid.design](https://github.com/mgkdante/yesid.design) releases.
 
 ## Quickstart
 
