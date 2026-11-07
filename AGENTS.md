@@ -116,7 +116,7 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
 
 - apps/db owns ingestion, normalization and publication; apps/data-proxy serves
   versioned snapshots; apps/web consumes that contract, never Postgres directly.
-- The `@yesid/*` packages come from one exact yesid.dev-design release; propose shared design fixes
+- The `@yesid/*` packages come from one exact yesid.design release; propose shared design fixes
   in that repository, never patch them under `node_modules`.
 - Preserve private configuration and unrelated files. Stage only named changes;
   never use git add -A, blanket resets, cleans or historical branch merges.

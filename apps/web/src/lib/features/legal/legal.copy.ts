@@ -261,7 +261,7 @@ const documents = {
 			effectiveLabel: 'Last updated',
 			effectiveDate: 'October 29, 2026',
 			summary:
-				'Transit aims to meet the Web Content Accessibility Guidelines (WCAG) 2.2, level AA. It is built on yesid.dev-design, the same shared packages as yesid.dev, so the header, menu, footer, colors, focus and motion are checked on every release.',
+				'Transit aims to meet the Web Content Accessibility Guidelines (WCAG) 2.2, level AA. It is built on yesid.design, the same shared packages as yesid.dev, so the header, menu, footer, colors, focus and motion are checked on every release.',
 			sections: [
 				{
 					id: 'works',
@@ -526,7 +526,7 @@ const documents = {
 			effectiveLabel: 'Dernière mise à jour',
 			effectiveDate: '29 octobre 2026',
 			summary:
-				'Transit vise les Règles pour l’accessibilité des contenus Web (WCAG) 2.2, niveau AA. Le site repose sur yesid.dev-design, les mêmes paquets partagés que yesid.dev : l’en-tête, le menu, le pied de page, les couleurs, le focus et les animations sont vérifiés à chaque version.',
+				'Transit vise les Règles pour l’accessibilité des contenus Web (WCAG) 2.2, niveau AA. Le site repose sur yesid.design, les mêmes paquets partagés que yesid.dev : l’en-tête, le menu, le pied de page, les couleurs, le focus et les animations sont vérifiés à chaque version.',
 			sections: [
 				{
 					id: 'works',
