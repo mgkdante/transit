@@ -1,61 +1,21 @@
----
-notion:
-  root_page_id: "3663e863-0690-8098-91ab-d71e03b57254"
-  workspace_url: "https://www.notion.so/"
-  databases:
-    slices:
-      database_id: "71633cd8-0568-47da-bc7a-b070524ee9ef"
-    sessions:
-      database_id: "c3c2d13f-d0fa-46cb-883a-8016fb009e5e"
-    transcript_chunks:
-      database_id: "f54f87d7-d967-443a-aa1f-c23bf48b46bc"
-  pages:
-    roadmap: "962edb61-2fe6-4966-9c22-93d4f10c446c"
-    architecture: "3663e863-0690-815b-927d-ea4888252234"
-    business: "3663e863-0690-819f-8f1f-ffd7313e39bd"
-  vocabulary_page_id: "3503e863-0690-8105-8dd7-fccd0d94699c"
----
-
 # Transit agent instructions
 
 Transit captures GTFS and GTFS-Realtime data, normalizes it in Postgres, and
 publishes versioned snapshots for the public citizen web app. It is a portfolio
-project. Workflow-overlord Canonical means Notion workflow state; the data model
-uses canonical to mean normalized transport data.
+project. In the data model, canonical means normalized transport data.
 
-## Project context (Notion)
-Profile: https://app.notion.com/p/4033e8630690813cba9afa4949d1c849
-Start page: https://app.notion.com/p/4083e863069080df9e63d165128a1522
-This project's guide: https://app.notion.com/p/4083e863069081f7b6edf66237f17f35
-Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/p/4003e8630690809b8045d8ad3a439995
-
-- At the start of each agentic coding or delegation session, fetch the current [model-selection Skill](https://app.notion.com/p/4083e86306908179b442da1e1a9a8156) once and follow it for every model, effort, reviewer, provider and fallback choice. It is the same for every project; this repo picks no models. Saved Notion pages are not loaded context; updates do not change active sessions.
-- Discover enabled Notion Skills through native host tooling when exposed. Otherwise fetch applicable procedures directly and report the discovery limitation. Do not reload the full personal archive.
-- Pass applicable routing constraints and each source revision or read timestamp in child briefs.
-- When Notion is connected, read the project guide before planning; re-read live records before relying on any status.
-- Save durable facts about me as Notion Memories (parent "memory"), not in this file.
-- Repository instructions own local commands and constraints; Notion owns plans, decisions and handoffs.
-- Without Notion access, say what you couldn't read and propose the Notion update instead of claiming it.
-- Never use em dashes in anything written for Yesito.
+Notion owns intent, decisions, standing rules and how to work with Yesito. Before agentic coding, read [LLMs](https://app.notion.com/p/4083e863069080df9e63d165128a1522), which routes to the rest, and this project's [guide](https://app.notion.com/p/4083e863069081f7b6edf66237f17f35). Don't add standing rules here: this file keeps local commands and constraints only. Write to Notion only when the current task authorizes it. Private workspace access is not needed to contribute.
 
 ## Recover scope before editing
 
 1. Verify the actual checkout, branch, full HEAD/tree and working-tree/index
-   status. A migrated main checkout may be ahead of the remote; use the approved
+   status. The main checkout may be ahead of the remote; use the approved
    checkpoint, not an assumed remote default. Preserve historical experiments
    and unrelated worktrees. Read any applicable nested agent instructions.
-2. Read [Current status and dependencies](https://www.notion.so/3eb3e8630690812b8f41c682e15ffb21).
-   Consult the [Phase 3.2 Plan](https://www.notion.so/3d93e863069081f686cecb4f20f784e1)
-   only for relevant original criteria or historical evidence. Read the selected
-   slice's Plan/Handoff and ancestor context before implementing it.
-3. Resolve workflow configuration using AGENTS.override.md > AGENTS.local.md >
-   AGENTS.md. Query Sessions with the exact runtime session ID: CODEX_THREAD_ID
-   for Codex, or the actual tool-provided ID for another client. Preserve existing
-   Slice relations and the correct Tool identity. Git does not establish attachment.
-4. Use hosted Notion MCP interactively; on failure use the installed
-   workflow-overlord REST helper. Resolve the installed helper on the current OS
-   without changing plugin source. If both paths fail, report the exact access
-   failure; continue only work whose approved scope is already available.
+2. Follow the project guide's current-state route, then read the selected slice's
+   Plan/Handoff and ancestor context before implementing it.
+3. If Notion can't be reached, report the exact access failure; continue only
+   work whose approved scope is already available.
 
 ## Continue in finite packets
 
@@ -68,22 +28,6 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
   goal per owner, no token budget unless explicitly requested. Complete it only
   after its outcome and canonical readback are verified, then start the next
   executable packet. Report unavailable goal tooling rather than inventing state.
-- Owner, successor and worker models and effort come from the model-selection
-  Skill linked above, not from this file. This does not require other
-  contributors to change their personal LLM setup. Never silently substitute a
-  required model; state the limitation instead.
-- Give each worker a narrow brief and file ownership. Verify its findings and code
-  before accepting them. Avoid full-history duplication when a bounded brief is
-  sufficient.
-- Keep one canonical writer and at most one prepared successor. A child may
-  research read-only while the owner works; concurrent code writers require
-  disjoint assigned files. Before succession, persist and read back the exact
-  source, completed result, remaining scope, verification, limitations, new owner
-  and finite objective. The matching succession marker releases the old writer
-  before the successor writes. Elapsed time alone grants no authority.
-- Create successors only for executable packets. Context management is a reason
-  to hand off a verified checkpoint, not to replay investigation or run empty loops.
-  Missing credentials, irreducible decisions and publishing gates remain real.
 
 ## Keep the product portable
 
@@ -91,9 +35,8 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
   applicable cloud hosts. Contributor LLM clients, plugins and private settings
   are personal; they are not product build or runtime dependencies. Keep this
   repository's agent configuration here. Create no shared LLM files at brand level.
-- Execute on the selected host. Windows work uses native Windows tools; do not
-  switch it back to WSL. Historical WSL transcripts may supply context, never fresh
-  Windows execution proof. No local Docker on Windows or WSL.
+- Execute on the selected host. Windows work uses native Windows tools, and
+  Windows execution proof comes only from Windows runs. No local Docker.
 - Use repository-relative paths and standard path/URL conversion APIs. Isolate
   unavoidable OS-specific locking, process, archive or filesystem operations
   behind a small explicit boundary. Preserve behavior and fail closed when the
@@ -103,9 +46,8 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
   lockfiles and relevant CI/deployment configuration. Do not duplicate version
   inventories here or upgrade pins just to match a machine's installed tools.
 - Recreate only needed dependencies from pins/lockfiles; virtual environments,
-  node_modules and generated caches are specific to their host. On this Windows
-  migration use uv-managed Python: the legacy system Python has an incomplete
-  standard library. Keep machine paths out of tracked configuration and preserve
+  node_modules and generated caches are specific to their host. On Windows, use
+  uv-managed Python: the system Python has an incomplete standard library. Keep machine paths out of tracked configuration and preserve
   .gitattributes LF rules.
 - Distinguish portable contributor commands from intentionally Linux-hosted
   operational scripts. Keep their platform requirements explicit. Windows tests,
@@ -131,18 +73,7 @@ Shared formats (roadmap, slice, spec, handoff, session): https://app.notion.com/
   changed behavior and run the affected checks. Broaden only for unresolved risk
   or failures; do not repeat large suites after unchanged successful results.
   Treat skipped tests and mocked OS branches as limitations, not platform proof.
-- Before declaring completion, inspect the final diff, check whitespace, confirm
-  the intended source and review material changes independently. Record exact
-  commands/results and distinguish local, hosted, deployed, physical-device/AT,
-  account and owner evidence. Preserve failed attempts and their original scope.
 - Plans, progress, evidence summaries and long-form guides belong in Notion.
   [Guide index and source archive](https://www.notion.so/3eb3e863069081beb5d3ed7c1cf7e68b)
-  identifies the migrated guides; do not recreate their deleted repository copies.
+  lists the guides; keep them out of this repository.
   Keep operational agent instructions and executable/runtime/license/vendor assets.
-- Make targeted canonical updates, preserve native files and child pages, and
-  fetch the result to verify readback. Keep one authoritative copy of each fact.
-- Full independent M3 acceptance precedes M4. Parent Roadmap acceptance is
-  independent of slice closure. Preserve current DOC budgets/capture allowances,
-  MAP latency tradeoff, settled motion behavior, AT/device and external-access
-  dispositions in the current-status page. Portability and instruction cleanup
-  alone add no M3 acceptance and reopen no exhausted capture allowance.
