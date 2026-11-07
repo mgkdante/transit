@@ -35,9 +35,8 @@ Notion owns intent, decisions, standing rules and how to work with Yesito. Befor
   applicable cloud hosts. Contributor LLM clients, plugins and private settings
   are personal; they are not product build or runtime dependencies. Keep this
   repository's agent configuration here. Create no shared LLM files at brand level.
-- Execute on the selected host. Windows work uses native Windows tools, never WSL.
-  WSL transcripts may supply context, never fresh Windows execution proof. No local
-  Docker on Windows or WSL.
+- Execute on the selected host. Windows work uses native Windows tools, and
+  Windows execution proof comes only from Windows runs. No local Docker.
 - Use repository-relative paths and standard path/URL conversion APIs. Isolate
   unavoidable OS-specific locking, process, archive or filesystem operations
   behind a small explicit boundary. Preserve behavior and fail closed when the
