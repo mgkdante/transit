@@ -43,12 +43,7 @@ Cloudflare account.
   pipeline.
 - The
   [Architecture wiki](https://yesid-dev.notion.site/3663e8630690815b927dea4888252234?v=4093e8630690803dbdba000c6dfd9439)
-  documents how the system is built, tested, deployed and operated. It is
-  public.
-- The
-  [Transit Deep Dive](https://app.notion.com/p/3ce3e86306908186a0cfc6567a98e7db)
-  training course teaches the codebase through guided source reading, with
-  lessons pinned to a reviewed commit. It is private and needs Notion access.
+  documents how the system is built, tested, deployed and operated.
 
 ## Analytics
 
