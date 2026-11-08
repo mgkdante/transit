@@ -13,28 +13,34 @@ const stop = JSON.parse(readFileSync(new URL('./stops-index.json', import.meta.u
 	.stops[0].id;
 const departures = JSON.parse(readFileSync(new URL('./departures.json', import.meta.url), 'utf8'));
 const action = (page: Page) => page.getByTestId('sections-toggle').filter({ visible: true });
+// Seeds a remembered Collapse all for tests that open closed content; a later bulk choice still wins.
+const startCollapsed = (page: Page) =>
+	page.addInitScript(() => {
+		if (localStorage.getItem('sections-choice') === null)
+			localStorage.setItem('sections-choice', 'collapsed');
+	});
 
 test.beforeEach(async ({ page }) => {
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 	await page.clock.setFixedTime(Date.parse(b9.frozen_utc) + 30_000);
 });
 
-test('metrics starts collapsed and remembers the bulk choice across pages and reload', async ({
+test('metrics starts expanded and remembers the bulk choice across pages and reload', async ({
 	page,
 }) => {
 	await page.goto('/metrics');
-	await expect(action(page)).toHaveAccessibleName('Expand all');
+	await expect(action(page)).toHaveAccessibleName('Collapse all');
 	const first = page.locator('[data-testid="metrics-sections"] [data-section-trigger]').first();
-	await expect(first).toHaveAttribute('aria-expanded', 'false');
+	await expect(first).toHaveAttribute('aria-expanded', 'true');
 	expect(await page.evaluate(() => localStorage.getItem('sections-choice'))).toBeNull();
 	await action(page).click();
-	await expect(first).toHaveAttribute('aria-expanded', 'true');
+	await expect(first).toHaveAttribute('aria-expanded', 'false');
 	await page.goto(`/lines/${line}?tab=reliability`);
-	await expect(action(page)).toHaveAccessibleName('Collapse all');
+	await expect(action(page)).toHaveAccessibleName('Expand all');
 	await action(page).click();
 	await page.reload();
-	await expect(action(page)).toHaveAccessibleName('Expand all');
-	expect(await page.evaluate(() => localStorage.getItem('sections-choice'))).toBe('collapsed');
+	await expect(action(page)).toHaveAccessibleName('Collapse all');
+	expect(await page.evaluate(() => localStorage.getItem('sections-choice'))).toBe('expanded');
 });
 
 test.describe('local data fixture rendering', () => {
@@ -43,6 +49,7 @@ test.describe('local data fixture rendering', () => {
 	test('real reliability charts and departure tables measure after content opens', async ({
 		page,
 	}) => {
+		await startCollapsed(page);
 		await page.goto(`/lines/${line}?tab=reliability`);
 		await expect(action(page)).toHaveAccessibleName('Expand all');
 		await action(page).click();
@@ -78,6 +85,7 @@ test.describe('local data fixture rendering', () => {
 	test('live departures update while collapsed and measure correctly when reopened', async ({
 		page,
 	}) => {
+		await startCollapsed(page);
 		const now = Date.parse(departures.generated_utc) + 30_000;
 		await page.clock.install({ time: now });
 		let changed = false;
