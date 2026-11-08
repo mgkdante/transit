@@ -35,6 +35,8 @@ export interface AnalyticsContext {
 }
 
 const BEACON_TOKEN = /^[0-9a-f]{32}$/i;
+/** Same-origin path the relay route serves; it forwards each event to Plausible once. */
+export const ANALYTICS_ENDPOINT = '/relay/e';
 
 let analytics: Analytics<AnalyticsEvent, Props> | undefined;
 // Child components mount before the root layout starts analytics, so early events wait here.
@@ -80,9 +82,9 @@ function onOutboundClick(event: MouseEvent): void {
 }
 
 /**
- * Starts Plausible (pageviews and the events above) and the Cloudflare Web Analytics beacon.
- * Both stay off unless the page is served from `domain`, so local, preview and fork hosts send
- * nothing. Call once per page load in the browser.
+ * Starts Plausible (pageviews and the events above, sent through Transit's own relay route) and
+ * the Cloudflare Web Analytics beacon. Both stay off unless the page is served from `domain`, so
+ * local, preview and fork hosts send nothing. Only the first call per page load starts anything.
  */
 export function startAnalytics({
 	domain,
@@ -93,8 +95,10 @@ export function startAnalytics({
 	beaconToken: string | undefined;
 	context: () => AnalyticsContext;
 }): void {
+	if (analytics) return;
 	const started = createAnalytics(preset, {
 		domain,
+		endpoint: ANALYTICS_ENDPOINT,
 		context: () => context() as AnalyticsPropValues<Props>,
 	});
 	analytics = started;

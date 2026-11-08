@@ -8,17 +8,19 @@ const { PUBLIC_PLAUSIBLE_DOMAIN: domain, PUBLIC_CF_BEACON_TOKEN: beaconToken } =
 ).vars;
 
 const port = process.env.TRANSIT_E2E_PORT ?? '4317';
-const ENDPOINT = 'https://plausible.io/api/event';
-type Payload = { n: string; d: string; u: string; p?: Record<string, string> };
+// Events go to Transit's own relay route, never straight to plausible.io.
+const RELAY_PATH = '/relay/e';
+type Payload = { n: string; d: string; u: string; p?: Record<string, string>; at?: string };
+let directSends: string[] = [];
 
 // The production CSP upgrades this synthetic HTTP hostname's assets to HTTPS.
 test.use({ bypassCSP: true });
 
 async function capturePlausible(page: Page): Promise<Payload[]> {
 	const payloads: Payload[] = [];
-	await page.route('**/api/event', async (route) => {
+	await page.route(`**${RELAY_PATH}`, async (route) => {
 		if (route.request().method() !== 'POST') return route.continue();
-		payloads.push(route.request().postDataJSON() as Payload);
+		payloads.push({ ...(route.request().postDataJSON() as Payload), at: route.request().url() });
 		await route.fulfill({ status: 202, contentType: 'text/plain', body: '' });
 	});
 	return payloads;
@@ -44,6 +46,11 @@ async function openMenu(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+	directSends = [];
+	await page.route('https://plausible.io/**', async (route) => {
+		directSends.push(route.request().url());
+		await route.abort();
+	});
 	await page.route(`http://${domain}:${port}/**`, async (route) => {
 		const url = new URL(route.request().url());
 		url.hostname = '127.0.0.1';
@@ -54,7 +61,22 @@ test.beforeEach(async ({ page }) => {
 	});
 });
 
-test('pageviews carry the configured domain and only the path', async ({ page }) => {
+test.afterEach(() => {
+	expect(directSends, 'no request may go straight to plausible.io').toEqual([]);
+});
+
+async function drain(page: Page, payloads: Payload[], marker: string): Promise<void> {
+	await page.evaluate(
+		([path, n]) =>
+			fetch(path, { method: 'POST', body: JSON.stringify({ n }) }).catch(() => undefined),
+		[RELAY_PATH, marker] as const,
+	);
+	await expect.poll(() => payloads.some(({ n }) => n === marker)).toBe(true);
+}
+
+test('one page load and one client-side navigation each send exactly one pageview to the relay', async ({
+	page,
+}) => {
 	const payloads = await capturePlausible(page);
 	const beacon = await captureBeacon(page);
 	await page.goto(`http://${domain}:${port}/?utm_source=e2e&q=12+Main+St`);
@@ -71,7 +93,13 @@ test('pageviews carry the configured domain and only the path', async ({ page })
 		.click();
 	await expect(page).toHaveURL((url) => url.pathname === '/lines');
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(2);
-	for (const payload of payloads) {
+	await drain(page, payloads, '__e2e-drain-navigation__');
+	const pageviews = payloads.filter(({ n }) => n === 'pageview');
+	expect(pageviews.map(({ at }) => at)).toEqual([
+		`http://${domain}:${port}${RELAY_PATH}`,
+		`http://${domain}:${port}${RELAY_PATH}`,
+	]);
+	for (const payload of payloads.filter(({ n }) => !n.startsWith('__e2e-drain'))) {
 		expect(payload.d).toBe(domain);
 		expect(payload.p).toEqual({ locale: 'en', provider: 'stm' });
 		const url = new URL(payload.u);
@@ -130,14 +158,7 @@ test('the local host sends nothing', async ({ page }) => {
 		})
 		.click();
 	await expect(page).toHaveURL((url) => url.pathname === '/lines');
-	await page.evaluate(
-		(endpoint) =>
-			fetch(endpoint, { method: 'POST', body: JSON.stringify({ n: '__e2e-drain__' }) }).catch(
-				() => undefined,
-			),
-		ENDPOINT,
-	);
-	await expect.poll(() => payloads.some(({ n }) => n === '__e2e-drain__')).toBe(true);
+	await drain(page, payloads, '__e2e-drain__');
 	expect(payloads.filter(({ n }) => n !== '__e2e-drain__')).toEqual([]);
 	expect(beacon).toEqual([]);
 });
