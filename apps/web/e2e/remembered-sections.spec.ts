@@ -16,7 +16,8 @@ const action = (page: Page) => page.getByTestId('sections-toggle').filter({ visi
 // Seeds a remembered Collapse all for tests that open closed content; a later bulk choice still wins.
 const startCollapsed = (page: Page) =>
 	page.addInitScript(() => {
-		if (localStorage.getItem('sections-choice') === null) localStorage.setItem('sections-choice', 'collapsed');
+		if (localStorage.getItem('sections-choice') === null)
+			localStorage.setItem('sections-choice', 'collapsed');
 	});
 
 test.beforeEach(async ({ page }) => {
