@@ -64,7 +64,6 @@ describe('content security policy', () => {
 		expect(csp?.directives?.['connect-src']).toEqual([
 			'self',
 			'https://data.yesid.dev',
-			'https://plausible.io',
 			'https://cloudflareinsights.com',
 			'https://protomaps.github.io',
 		]);
