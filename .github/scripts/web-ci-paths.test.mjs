@@ -40,18 +40,19 @@ test("non-PR events, event errors, empty diffs and git errors select everything"
 });
 
 function needs(selected = "true") {
-  return { classify: { result: "success", outputs: { run_e2e: selected } }, "ci-work": { result: "success" }, unit: { result: "success" }, e2e: { result: "success" } };
+  return { classify: { result: "success", outputs: { run_e2e: selected } }, "ci-work": { result: "success" }, unit: { result: "success" }, e2e: { result: "success" }, layout: { result: "success" } };
 }
 
-test("aggregate accepts success and only a deliberate e2e skip", () => {
+test("aggregate accepts success and only a deliberate e2e and layout skip", () => {
   assert.doesNotThrow(() => checkRequiredJobs(needs()));
   const deliberate = needs("false");
   deliberate.e2e.result = "skipped";
+  deliberate.layout.result = "skipped";
   assert.doesNotThrow(() => checkRequiredJobs(deliberate));
   for (const selected of ["true", "false"]) {
-    for (const job of ["classify", "ci-work", "unit", "e2e"]) {
+    for (const job of ["classify", "ci-work", "unit", "e2e", "layout"]) {
       for (const result of ["failure", "cancelled", "skipped", undefined]) {
-        if (selected === "false" && job === "e2e" && result === "skipped") continue;
+        if (selected === "false" && ["e2e", "layout"].includes(job) && result === "skipped") continue;
         const input = needs(selected);
         input[job].result = result;
         assert.throws(() => checkRequiredJobs(input), `${selected} ${job} ${result}`);
