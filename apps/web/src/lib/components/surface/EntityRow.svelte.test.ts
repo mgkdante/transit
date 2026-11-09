@@ -105,3 +105,20 @@ it.each(['en', 'fr'] as const)('preserves a full long name and hover title in %s
 	expect(screen.getByRole('link')).toHaveAccessibleName(name);
 	expect(screen.getByTitle(name)).toHaveTextContent(name);
 });
+
+describe.each(['stm', 'octranspo'])('EntityRow route display for %s', (provider) => {
+	it('formats route badges without changing the canonical stop destination', () => {
+		render(EntityRow, {
+			props: {
+				target: { kind: 'stop', id: 'stop-1' },
+				locale: 'en',
+				title: 'Rideau',
+				routes: ['1-373'],
+			},
+			context: new Map([[Symbol.for('transit.v1.context'), () => ({ manifest: { provider } })]]),
+		});
+		const link = screen.getByRole('link');
+		expect(link).toHaveAttribute('href', '/stop/stop-1');
+		expect(link).toHaveTextContent(provider === 'octranspo' ? /^Rideau 1$/ : /^Rideau 1-373$/);
+	});
+});

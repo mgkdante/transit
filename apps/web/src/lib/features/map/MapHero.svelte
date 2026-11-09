@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
+	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
@@ -145,6 +147,12 @@
 	const live = createLiveStore(manifest, liveReader, {
 		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
+	const occupancyAvailable = $derived(
+		hasOccupancy(manifest.provider, live.vehicles?.vehicles ?? []),
+	);
+	$effect(() => {
+		if (!occupancyAvailable && filters.occupancy.length) filters.setOccupancy([]);
+	});
 	function reportMapCleanupFailure(error: unknown): void {
 		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
 	}
@@ -208,6 +216,7 @@
 	const alertVehicleIds = $derived(session.alertVehicleIds);
 	provideLiveAbsenceContext(() => ({
 		familyStates: live.familyStates,
+		providerId: v1.manifest.provider,
 		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 	}));
 	const presentation = $derived(
@@ -453,7 +462,7 @@
 		onthemerepaint={runtime.repaint}
 		onerror={onMapFailure}
 		onbeforeremove={runtime.release}
-		customAttribution={manifest.attribution}
+		customAttribution={providerAttribution(manifest.provider, manifest.attribution, locale)}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,
@@ -478,7 +487,7 @@
 		resizable
 	>
 		{#if selectedDetail}
-			<MapSelectionDetail
+			<MapSelectionDetail {occupancyAvailable}
 				detail={selectedDetail}
 				alertsStale={live.familyStates.alerts.health.notice !== null}
 				alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
@@ -523,6 +532,7 @@
 {/snippet}
 {#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
+		{occupancyAvailable}
 		store={filters}
 		{alertsAvailable}
 		{locale}
@@ -609,6 +619,7 @@
 
 	{#if detailOpen && !desktop.current}
 		<MapMobileDetailSheet
+			{occupancyAvailable}
 			bind:open={
 				() => session.detailOpen,
 				(next) => {

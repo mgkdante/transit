@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
 	import { verdictRank } from '#lib/v1/verdict.ts';
 	import { page } from '$app/state';
@@ -427,7 +428,7 @@
 			{locale}
 			glyph={hint.glyph}
 			tag={stopModeTag(stop) ?? undefined}
-			title={stop.name}
+			title={stopDisplayName(stop.name)}
 			subtitle={stop.code ?? undefined}
 			routes={stop.routes}
 			status={stopSnapshot.otpPct == null ? undefined : stopStatus}

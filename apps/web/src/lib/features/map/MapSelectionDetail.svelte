@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	const absenceContext = readLiveAbsenceContext();
 	import { tick } from 'svelte';
@@ -15,7 +18,7 @@
 		statusVar,
 	} from '#lib/components/dataviz/tokens.ts';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
-	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { routeHasNoLiveData } from '#lib/v1/providers.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
 	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
@@ -40,6 +43,7 @@
 
 	interface Props {
 		detail: MapSelectionDetail | null;
+		occupancyAvailable?: boolean;
 		locale: Locale;
 		timeZone?: string;
 		onselect?: (selection: MapSelection) => void;
@@ -56,6 +60,7 @@
 	}
 
 	let {
+		occupancyAvailable = true,
 		detail,
 		locale,
 		timeZone,
@@ -74,7 +79,7 @@
 
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
 	const seqUnknownAria = $derived(t.sequenceUnknown);
-	const action = $derived(detail ? detailActions(detail, locale) : null);
+	const action = $derived(detail ? detailActions(detail, locale, line) : null);
 	let detailElement = $state<HTMLElement>();
 
 	$effect.pre(() => {
@@ -104,7 +109,9 @@
 </script>
 
 {#if presentation === 'identity'}
-	<span data-slot="detail-identity">{detail ? detailIdentity(detail, locale) : t.alertLink}</span>
+	<span data-slot="detail-identity"
+		>{detail ? detailIdentity(detail, locale, line) : t.alertLink}</span
+	>
 {:else if presentation === 'action' && action}
 	<DetailInlineAction href={localizeHref(action.href, locale)} label={action.label} />
 {:else if presentation === 'body' && detail}
@@ -138,7 +145,7 @@
 				{@const absence = liveAbsenceReason('vehicle-delay', {
 					...absenceContext(),
 					notReporting: notReporting != null,
-					unsupported: detail.routeType === ROUTE_TYPE_METRO,
+					unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 				})}
 				<DetailAttributeGrid>
 					<div>
@@ -186,17 +193,17 @@
 								reason={liveAbsenceReason('next-stop', {
 									...absenceContext(),
 									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 									scheduleMissing: detail.nextStopAbsence === 'not-in-schedule',
 								})}
-								{locale}>{detail.nextStop!.name}</MaybeValue
+								{locale}>{stopDisplayName(detail.nextStop!.name)}</MaybeValue
 							>
 						</dd>
 						{#if detail.nextStop}<dd class="detail-attribute-action">
 								<button
 									type="button"
 									class="detail-fact-action"
-									aria-label={t.selectStop(detail.nextStop.name)}
+									aria-label={t.selectStop(stopDisplayName(detail.nextStop.name))}
 									onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</button
 								>
 							</dd>{/if}
@@ -228,40 +235,42 @@
 								>{:else}<AbsentValue reason={absence} {locale} />{/if}
 						</dd>
 					</div>
-					<div>
-						<dt>{t.crowding}</dt>
-						<dd>
-							<span
-								class="detail-state-glyph"
-								data-m6d-glyph-kind="crowding"
-								data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
-								aria-hidden="true"
-								style={`--glyph: ${detail.vehicle.occupancy ? occupancyVar(detail.vehicle.occupancy) : 'var(--muted-foreground)'}`}
-								>{occupancyGlyph(detail.vehicle.occupancy)}</span
-							>
-							<MaybeValue
-								present={detail.vehicle.occupancy != null}
-								reason={liveAbsenceReason('occupancy', {
-									...absenceContext(),
-									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
-								})}
-								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
-							>
-						</dd>
-						{#if detail.vehicle.occupancy != null}<dd class="detail-attribute-action">
-								<button
-									type="button"
-									class="detail-fact-action"
-									aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][detail.vehicle.occupancy])}
-									onclick={() =>
-										detail.kind === 'vehicle' &&
-										detail.vehicle.occupancy != null &&
-										onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
-									>{t.filter}</button
+					{#if occupancyAvailable}<div>
+							<dt>{t.crowding}</dt>
+							<dd>
+								<span
+									class="detail-state-glyph"
+									data-m6d-glyph-kind="crowding"
+									data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
+									aria-hidden="true"
+									style={`--glyph: ${detail.vehicle.occupancy ? occupancyVar(detail.vehicle.occupancy) : 'var(--muted-foreground)'}`}
+									>{occupancyGlyph(detail.vehicle.occupancy)}</span
 								>
-							</dd>{/if}
-					</div>
+								<MaybeValue
+									present={detail.vehicle.occupancy != null}
+									reason={liveAbsenceReason('occupancy', {
+										...absenceContext(),
+										notReporting: notReporting != null,
+										unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
+									})}
+									{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
+								>
+							</dd>
+							{#if detail.vehicle.occupancy != null}<dd class="detail-attribute-action">
+									<button
+										type="button"
+										class="detail-fact-action"
+										aria-label={t.filterCrowding(
+											OCCUPANCY_LABELS[locale][detail.vehicle.occupancy],
+										)}
+										onclick={() =>
+											detail.kind === 'vehicle' &&
+											detail.vehicle.occupancy != null &&
+											onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
+										>{t.filter}</button
+									>
+								</dd>{/if}
+						</div>{/if}
 				</DetailAttributeGrid>
 			{:else if detail.kind === 'stop'}
 				<DetailAttributeGrid>
@@ -278,7 +287,11 @@
 				<DetailAttributeGrid
 					><div>
 						<dt>{t.liveBuses}</dt>
-						<dd>{t.visibleBuses(detail.vehicles.length)}</dd>
+						<dd>
+							{#if detail.vehicles.length === 0 && routeHasNoLiveData(absenceContext().providerId, detail.route.type)}
+								<AbsentValue reason="metro-no-realtime" {locale} />
+							{:else}{t.visibleBuses(detail.vehicles.length)}{/if}
+						</dd>
 					</div></DetailAttributeGrid
 				>
 			{/if}
@@ -298,9 +311,9 @@
 				{#if detail.vehicle.route}<button
 						type="button"
 						class="detail-pill"
-						aria-label={t.selectRoute(detail.vehicle.route)}
+						aria-label={t.selectRoute(line(detail.vehicle.route))}
 						onclick={() => selectRoute(detail.vehicle.route)}
-						>{t.route} {detail.vehicle.route}</button
+						>{t.route} {line(detail.vehicle.route)}</button
 					>{/if}
 			</DetailStatPills>
 			{#if notReporting}<AbsentValue
@@ -360,8 +373,9 @@
 								{#if departure.route}<button
 										type="button"
 										data-detail-focus-key={`departure:${departureKey}:route`}
-										aria-label={t.selectDepartureRoute(departure.route)}
-										onclick={() => selectRoute(departure.route)}>{t.route} {departure.route}</button
+										aria-label={t.selectDepartureRoute(line(departure.route))}
+										onclick={() => selectRoute(departure.route)}
+										>{t.route} {departure.route ? line(departure.route) : departure.route}</button
 									>{/if}{#if departure.trip}<button
 										type="button"
 										data-detail-focus-key={`departure:${departureKey}:trip`}
@@ -383,7 +397,7 @@
 					ladderMin={420}
 					>{#each detail.routeTimes as route (route.route)}<p>
 							{t.route}
-							{route.route}{route.headsign ? ` · ${route.headsign}` : ''}
+							{line(route.route)}{route.headsign ? ` · ${route.headsign}` : ''}
 						</p>
 						<details data-slot="detail-schedule-tail">
 							<summary>{t.nextTimes}</summary>
@@ -404,7 +418,7 @@
 					><ol>
 						{#each detail.departures.slice(3) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}<li
 							>
-								{departure.route}
+								{departure.route ? line(departure.route) : departure.route}
 								{timeLabel(departure.eta_utc, locale, timeZone)}
 							</li>{/each}
 					</ol></DetailSection
@@ -427,7 +441,7 @@
 				>{/if}
 		{:else}
 			<DetailStatPills
-				><span class="detail-pill">{detailIdentity(detail, locale)}</span
+				><span class="detail-pill">{detailIdentity(detail, locale, line)}</span
 				>{#if detail.route.long}<span class="detail-pill">{detail.route.long}</span
 					>{/if}{#if detail.direction}<span class="detail-pill"
 						>{directionLabel(detail, locale)}</span

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import type { Snippet } from 'svelte';
 	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { cn } from '#lib/utils/index.ts';
@@ -94,7 +96,7 @@
 			{#if routes && routes.length > 0}
 				<span class="entity-row-routes">
 					{#each routes as route (route)}
-						<span class="entity-row-route">{route}</span>
+						<span class="entity-row-route">{line(route)}</span>
 					{/each}
 				</span>
 			{/if}

@@ -1,3 +1,4 @@
+import { stopDisplayName as displayStop } from '#lib/site/transitDisplay.ts';
 import { absenceShort, stopNameFallback } from '#lib/site/absence.ts';
 import { delayLabel } from '#lib/site/delayPresentation.ts';
 import { formatUtc } from '#lib/utils/time.ts';
@@ -10,10 +11,14 @@ import { MAP_SELECTION_DETAIL_COPY, type MapSelectionDetailCopy } from './mapSel
 
 export type DetailAction = { readonly href: string; readonly label: string };
 
-export function detailIdentity(detail: MapSelectionDetail, locale: Locale): string {
+export function detailIdentity(
+	detail: MapSelectionDetail,
+	locale: Locale,
+	line = (id: string) => id,
+): string {
 	const t = MAP_SELECTION_DETAIL_COPY[locale];
 	if (detail.kind === 'vehicle') return `${t.bus} ${detail.vehicle.id}`;
-	if (detail.kind === 'route') return `${t.route} ${detail.id}`;
+	if (detail.kind === 'route') return `${t.route} ${line(detail.id)}`;
 	return stopDisplayName(
 		{
 			id: detail.stop.id,
@@ -25,12 +30,16 @@ export function detailIdentity(detail: MapSelectionDetail, locale: Locale): stri
 	);
 }
 
-export function detailActions(detail: MapSelectionDetail, locale: Locale): DetailAction | null {
+export function detailActions(
+	detail: MapSelectionDetail,
+	locale: Locale,
+	line = (id: string) => id,
+): DetailAction | null {
 	const t = MAP_SELECTION_DETAIL_COPY[locale];
 	if (detail.kind === 'route') {
 		return {
 			href: localizeHref(routeFor({ kind: 'line', id: detail.id }), locale),
-			label: t.openFullRoute(detail.id),
+			label: t.openFullRoute(line(detail.id)),
 		};
 	}
 	if (detail.kind === 'stop') {
@@ -48,7 +57,7 @@ export function detailActions(detail: MapSelectionDetail, locale: Locale): Detai
 	return detail.vehicle.route
 		? {
 				href: localizeHref(routeFor({ kind: 'line', id: detail.vehicle.route }), locale),
-				label: t.openFullRoute(detail.vehicle.route),
+				label: t.openFullRoute(line(detail.vehicle.route)),
 			}
 		: null;
 }
@@ -72,7 +81,7 @@ export function formatAge(seconds: number): string {
 }
 
 export function stopDisplayName(ref: MapStopRef, locale: Locale): string {
-	return ref.nameAbsent ? stopNameFallback(ref.id, locale) : ref.name;
+	return ref.nameAbsent ? stopNameFallback(ref.id, locale) : displayStop(ref.name);
 }
 
 export function directionLabel(item: RouteMapDetail, locale: Locale): string {

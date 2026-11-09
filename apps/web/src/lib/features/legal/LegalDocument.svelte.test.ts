@@ -48,7 +48,7 @@ describe('LegalDocument', () => {
 			expect(terms).toContain('MIT');
 			expect(terms).toContain('NOTICE');
 			expect(terms).toContain('ODbL');
-			expect(terms).toContain('City of Ottawa');
+			expect(terms).toContain(locale === 'fr' ? 'Ville d’Ottawa' : 'City of Ottawa');
 			expect(`${privacy}${terms}`.toLowerCase()).not.toContain('placeholder');
 		}
 		expect(JSON.stringify(legalDocument('en', 'privacy'))).toMatch(

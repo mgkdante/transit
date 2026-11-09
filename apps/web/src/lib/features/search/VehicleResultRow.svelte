@@ -1,5 +1,8 @@
 <script lang="ts">
 	import TransitEntityRow from '#lib/components/surface/TransitEntityRow.svelte';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
@@ -21,9 +24,18 @@
 		copy: VehicleResultCopy;
 		statusLabel: string;
 		occupancyLabel: string | null;
+		occupancyAvailable?: boolean;
 	}
 
-	let { vehicle, locale, nextStopName, copy, statusLabel, occupancyLabel }: Props = $props();
+	let {
+		occupancyAvailable = true,
+		vehicle,
+		locale,
+		nextStopName,
+		copy,
+		statusLabel,
+		occupancyLabel,
+	}: Props = $props();
 
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
@@ -36,7 +48,7 @@
 		notReporting(vehicle, runtime.clock.serverNow) ? 'not-reporting' : 'not-reported',
 	);
 
-	const nextStop = $derived(nextStopName);
+	const nextStop = $derived(nextStopName == null ? null : stopDisplayName(nextStopName));
 
 	const hasBearing = $derived(vehicle.bearing != null);
 
@@ -65,13 +77,14 @@
 			{:else}
 				<span class="vehicle-row-glyph" aria-hidden="true">▣</span>
 			{/if}
-		</span>{/snippet}
+		</span>
+	{/snippet}
 	{#snippet identity()}
 		<span class="vehicle-row-body">
 			<span class="vehicle-row-title">
 				<span class="vehicle-row-id">{vehicle.id}</span>
 				{#if vehicle.route}
-					<span class="vehicle-row-route">{copy.routeTag(vehicle.route)}</span>
+					<span class="vehicle-row-route">{copy.routeTag(line(vehicle.route))}</span>
 				{/if}
 			</span>
 			<span class="vehicle-row-sub">
@@ -87,14 +100,19 @@
 					size="sm"
 					label={statusLabel}
 				/>
-				<MaybeValue present={occupancyLabel != null} reason={absence} {locale}>
-					<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
-						<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
-						<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
-					</span>
-				</MaybeValue>
+				{#if occupancyAvailable}<MaybeValue
+						present={occupancyLabel != null}
+						reason={absence}
+						{locale}
+					>
+						<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
+							<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
+							<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
+						</span>
+					</MaybeValue>{/if}
 			</span>
-		</span>{/snippet}
+		</span>
+	{/snippet}
 	{#snippet metadata()}
 		<span class="vehicle-row-meta">
 			<MaybeValue
