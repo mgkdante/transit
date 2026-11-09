@@ -48,7 +48,6 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
-	import { selectVerdict } from '#lib/v1/verdict.ts';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
 	import LazyRouteReliabilityPane, {
@@ -147,13 +146,8 @@
 	});
 
 	const relCopy = $derived(routeVerdictCopy[locale]);
-	const verdictHeadline = $derived(
-		reliability.data ? selectDayVerdictHeadline(reliability.data) : null,
-	);
 	const routeVerdict = $derived(
-		verdictHeadline
-			? selectVerdict(verdictHeadline, verdictHeadline.grain, locale, relCopy.verdict)
-			: null,
+		reliability.data ? selectDayVerdictHeadline(reliability.data, locale) : null,
 	);
 	const hasHeaderVerdict = $derived(routeVerdict != null && routeVerdict.status !== 'absent');
 	const headerVerdictCurrentOnly = $derived(

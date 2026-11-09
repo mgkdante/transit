@@ -23,6 +23,13 @@ import {
 	type RawHistoryRangeRequest,
 } from '#lib/v1/history/rangeResource.svelte.ts';
 import { presentGrains, type ReliabilityGrainSnapshot } from './grains';
+import {
+	verdictForWindow,
+	type ReliabilityVerdictFile,
+	type VerdictHeadline,
+	type VerdictCopy,
+	type VerdictWindow,
+} from '#lib/v1/verdict.ts';
 
 interface Snapshot extends ReliabilityGrainSnapshot {
 	readonly by_grain?: readonly unknown[];
@@ -60,6 +67,11 @@ interface ViewOptions<
 		readonly present?: () => ReadonlySet<K>;
 	};
 	readonly apply?: (snapshot: S, retained: R | null) => D;
+	readonly verdict?: {
+		readonly file: (data: S | D) => ReliabilityVerdictFile | null | undefined;
+		readonly headline?: (retained: R) => VerdictHeadline | undefined;
+		readonly copy?: () => VerdictCopy;
+	};
 	readonly locale: () => Locale;
 	/** Additional owned parameters, or false when the caller disables URL synchronization. */
 	readonly url?: () => Readonly<Record<string, string | null>> | false;
@@ -324,6 +336,22 @@ export function createReliabilityViewState<
 		}
 	});
 
+	const verdictWindow = $derived<VerdictWindow>({
+		grain: selected ? grain : undefined,
+		...(window ? { from: window.from, to: window.to } : {}),
+		...(active && retainedValue != null && window
+			? { aggregate: options.verdict?.headline?.(retainedValue) }
+			: {}),
+	});
+	const verdict = $derived(
+		verdictForWindow(
+			options.verdict?.file(data),
+			verdictWindow,
+			options.locale(),
+			options.verdict?.copy?.(),
+		),
+	);
+
 	return {
 		get data() {
 			return data;
@@ -339,10 +367,10 @@ export function createReliabilityViewState<
 			return window;
 		},
 		get verdictWindow() {
-			return {
-				grain: selected ? grain : undefined,
-				...(window ? { from: window.from, to: window.to } : {}),
-			};
+			return verdictWindow;
+		},
+		get verdict() {
+			return verdict;
 		},
 		get history() {
 			return {
