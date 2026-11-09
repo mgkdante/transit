@@ -35,7 +35,9 @@ describe('EntityRow base', () => {
 			},
 		});
 
-		const choice = screen.getByRole('button', { name: 'Browse stops for line 80' });
+		const choice = screen.getByRole('button', {
+			name: 'Browse stops for line 80 80 Avenue du Parc',
+		});
 		expect(choice).toHaveAttribute('type', 'button');
 		expect(choice).toHaveAttribute('data-slot', 'entity-row');
 		expect(choice).toHaveClass('entity-row', 'tap-press');
@@ -95,4 +97,11 @@ describe('EntityRow meta slot', () => {
 		expect(screen.getByTestId('meta-content')).toBeInTheDocument();
 		expect(screen.queryByText('IGNORED')).toBeNull();
 	});
+});
+
+it.each(['en', 'fr'] as const)('preserves a full long name and hover title in %s', (locale) => {
+	const name = 'Boulevard Saint-Laurent et Avenue du Mont-Royal';
+	render(EntityRow, { props: { target: { kind: 'stop', id: 's1' }, locale, title: name } });
+	expect(screen.getByRole('link')).toHaveAccessibleName(name);
+	expect(screen.getByTitle(name)).toHaveTextContent(name);
 });

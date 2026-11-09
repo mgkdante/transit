@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
@@ -42,7 +43,7 @@
 	} from '#lib/components/surface/index.ts';
 	import { StatusBadge } from '#lib/components/dataviz/index.ts';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
-	import { ArticleHeader } from '@yesid/ui/layout';
+
 	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
