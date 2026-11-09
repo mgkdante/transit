@@ -749,9 +749,9 @@
 
 	.mf-chip-text {
 		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
+		word-break: normal;
+		overflow-wrap: normal;
 	}
 
 	.mf-swatch {

@@ -254,7 +254,7 @@ describe('map selection session', () => {
 		expect(h.session.detailOpen).toBe(true);
 	});
 
-	it('drills into details with LIFO back, dedupes the current identity, and starts a fresh stack on a pick', async () => {
+	it('drills into details with LIFO back, dedupes the current identity, and records new picks in history', async () => {
 		const h = setup();
 		await settled();
 		const first = { kind: 'stop', id: 'stop-1' } as const;
@@ -272,7 +272,11 @@ describe('map selection session', () => {
 		expect(h.session.selected).toEqual(first);
 		h.session.select(next, 'detail');
 		h.session.select(first, 'pick');
-		expect(h.session.stack).toEqual([]);
+		expect(h.session.stack).toEqual([first, next]);
+		h.session.back();
+		expect(h.session.canGoForward).toBe(true);
+		h.session.forward();
+		expect(h.session.selected).toEqual(first);
 		h.session.close();
 		expect(h.session.selected).toBeNull();
 		expect(h.session.stack).toEqual([]);

@@ -15,6 +15,7 @@
 		locale?: Locale;
 		title?: string;
 		identity?: Snippet;
+		navigation?: Snippet;
 		surfaceKey?: string;
 		canGoBack?: boolean;
 		onback?: () => void;
@@ -28,6 +29,7 @@
 		locale: localeProp,
 		title,
 		identity,
+		navigation,
 		surfaceKey = 'empty',
 		canGoBack = false,
 		onback,
@@ -72,7 +74,7 @@
 			style="padding-bottom: env(safe-area-inset-bottom);"
 			data-slot="bottom-sheet-safe-area"
 		>
-			<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 pb-3 pt-3">
+			<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 py-2">
 				<div class="flex min-w-0 items-center gap-2">
 					{#if canGoBack}
 						<Button
@@ -106,9 +108,13 @@
 						<XIcon size={18} strokeWidth={2.3} aria-hidden="true" />
 					</Button>
 				</div>
+				{#if navigation}{@render navigation()}{/if}
 			</Sheet.Header>
 
-			<div class="bottom-sheet-body min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
+			<div
+				class="bottom-sheet-body min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain"
+				data-slot="bottom-sheet-body"
+			>
 				{#key surfaceKey}
 					<div class="p-4">
 						{#if children}
@@ -120,21 +126,27 @@
 						{/if}
 					</div>
 				{/key}
+				{#if footer}
+					<div
+						class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
+						data-slot="bottom-sheet-footer"
+					>
+						{@render footer()}
+					</div>
+				{/if}
 			</div>
-
-			{#if footer}
-				<div
-					class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
-					data-slot="bottom-sheet-footer"
-				>
-					{@render footer()}
-				</div>
-			{/if}
 		</div>
 	</Sheet.Content>
 </Sheet.Root>
 
 <style>
+	:global([data-m6c2-detail-sheet][data-slot='bottom-sheet']) {
+		max-height: 100dvh;
+	}
+
+	:global(body:has([data-m6c2-detail-sheet][data-state='open']) [data-testid='nav-pill']) {
+		visibility: hidden;
+	}
 	.bottom-sheet-body {
 		container: right-panel / inline-size;
 	}

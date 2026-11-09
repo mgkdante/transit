@@ -78,6 +78,7 @@
 <style>
 	.freshness-stamp {
 		display: inline-flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem;
 		font-family: var(--font-mono);
@@ -101,6 +102,7 @@
 		color: var(--foreground);
 	}
 	.freshness-stamp-stale {
+		white-space: nowrap;
 		color: var(--dataviz-status-late);
 	}
 </style>

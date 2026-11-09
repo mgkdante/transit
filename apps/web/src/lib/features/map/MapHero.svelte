@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MapDetailNavigation from './MapDetailNavigation.svelte';
 	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
@@ -195,7 +196,7 @@
 		onpick: selectPickedFeature,
 	});
 	const map = $derived(runtime.map);
-	const selectionStack = $derived(session.stack);
+
 	const detailOpen = $derived(session.detailOpen);
 	$effect(() => {
 		if (!detailOpen) detailCollapsed = detailWidthPx === 56;
@@ -247,8 +248,11 @@
 		session.close();
 		detailCollapsed = detailWidthPx === 56;
 	}
-	const selectFromDetail = (next: MapSelection) => session.select(next, 'detail');
-	const goBackDetail = session.back;
+	const selectFromDetail = (next: MapSelection) => {
+		session.select(next, 'detail');
+		focusSelection(next);
+	};
+
 	const applyDetailFilter = session.applyFilter;
 	const selectAlertRelated = session.selectAlert;
 	const nearbyStops = $derived<WithDistance<SlimStopEntry>[]>(
@@ -485,9 +489,10 @@
 		locale={locale}
 		identity={detailIdentity}
 		footer={detailFooter}
+		navigation={detailNavigation}
 		surfaceKey={detailSurfaceKey}
-		canGoBack={selectionStack.length > 0}
-		onback={goBackDetail}
+		canGoBack={false}
+		onback={session.back}
 		onclose={closeDetail}
 		collapsed={detailCollapsed}
 		ontogglecollapse={toggleDetailCollapsed}
@@ -512,6 +517,17 @@
 			/>
 		{/if}
 	</RightPanel>
+{/snippet}
+
+{#snippet detailNavigation()}
+	<MapDetailNavigation
+		{locale}
+		{session}
+		desktop={desktop.current}
+		onfocus={() => {
+			if (session.selected) focusSelection(session.selected);
+		}}
+	/>
 {/snippet}
 
 {#snippet detailIdentity()}
@@ -640,9 +656,10 @@
 			identity={detailIdentity}
 			timeZone={v1.manifest.tz}
 			footer={detailFooter}
+			navigation={detailNavigation}
 			surfaceKey={detailSurfaceKey}
-			canGoBack={selectionStack.length > 0}
-			onback={goBackDetail}
+			canGoBack={false}
+			onback={session.back}
 			{selectedDetail}
 			alertsStale={live.familyStates.alerts.health.notice !== null}
 			alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}

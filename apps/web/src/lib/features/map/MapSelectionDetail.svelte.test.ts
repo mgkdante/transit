@@ -612,7 +612,7 @@ describe('MapSelectionDetail', () => {
 		const moreDepartures = container.querySelector<HTMLElement>(
 			'[data-slot="detail-more-departures"]',
 		)!;
-		expect(routeTimes).toHaveAttribute('data-ladder-min', '420');
+		expect(routeTimes.querySelector('button')).toHaveAccessibleName(/Select route/);
 		expect(moreDepartures).toHaveAttribute('data-ladder-expand', '560');
 		expect(routeTimes.compareDocumentPosition(moreDepartures)).toBe(
 			Node.DOCUMENT_POSITION_FOLLOWING,

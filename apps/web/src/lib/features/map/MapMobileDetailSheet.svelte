@@ -35,6 +35,7 @@
 		onfilter: (chip: Chip) => void;
 		onalertselect: (alert: Alert) => void;
 		identity?: Snippet;
+		navigation?: Snippet;
 		footer?: Snippet;
 	}
 
@@ -59,6 +60,7 @@
 		onfilter,
 		onalertselect,
 		identity,
+		navigation,
 		footer,
 	}: Props = $props();
 
@@ -93,11 +95,13 @@
 {/snippet}
 
 <BottomSheet
+	class="map-mobile-detail-sheet"
 	bind:open
 	{locale}
 	title={sheetTitle}
 	identity={identity ?? (selectedDetail ? resolvedIdentity : undefined)}
 	footer={footer ?? (hasAction ? resolvedFooter : undefined)}
+	{navigation}
 	{surfaceKey}
 	{canGoBack}
 	{onback}

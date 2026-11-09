@@ -17,14 +17,14 @@
 	}
 	.detail-attribute-grid > :global(div) {
 		display: grid;
-		grid-template-columns: 5.75rem minmax(0, 1fr);
+		grid-template-columns: 7rem minmax(0, 1fr);
 		gap: 0.75rem;
 		align-items: center;
 		padding-block: 0.75rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
 	.detail-attribute-grid > :global(div:has(> .detail-attribute-action)) {
-		grid-template-columns: 5.75rem minmax(0, 1fr) auto;
+		grid-template-columns: 7rem minmax(0, 1fr) auto;
 	}
 	.detail-attribute-grid > :global(div > .detail-attribute-action) {
 		display: grid;
@@ -34,6 +34,9 @@
 		justify-content: center;
 	}
 	.detail-attribute-grid :global(dt) {
+		overflow-wrap: normal;
+		word-break: normal;
+		hyphens: none;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
