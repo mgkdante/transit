@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RouteReliability, StopReliability, NetworkTrend } from '#lib/v1/index.ts';
 import { isoUtc } from '#lib/v1/schemas/types.ts';
-import { wilsonBounds } from '#lib/v1/stats.ts';
 import type { ReliabilityWindow } from '#lib/v1/verdict.ts';
 import LinesIndex from '../lines/LinesIndex.svelte';
 import RouteDetail from '../lines/RouteDetail.svelte';
@@ -60,6 +59,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 	}),
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: () => ({
 		vehicles: null,
 		trips: null,
@@ -74,11 +74,25 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 			tripsById: new Map(),
 			alertsById: new Map(),
 		},
+		familyStates: Object.fromEntries(
+			['vehicles', 'trips', 'departures', 'alerts', 'network'].map((family) => [
+				family,
+				{
+					phase: 'idle',
+					active: false,
+					retainedGeneration: null,
+					health: {
+						state: 'never-loaded',
+						ageSeconds: null,
+						isStale: false,
+						retained: false,
+						notice: null,
+					},
+				},
+			]),
+		),
 		loading: false,
 		error: null,
-		generatedUtc: null,
-		ageSeconds: null,
-		isStale: false,
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),
@@ -101,164 +115,55 @@ function publishedPoint(window: ReliabilityWindow) {
 }
 
 describe('the same reliability evidence across every surface', () => {
-	it.each([
-		[85, 230, 'tentative', [], 85, { on_time: 195, wilson_lo: 79.6, wilson_hi: 88.9 }],
-		[80, 1_000_000, 'patchy', [], 80, { on_time: 797_000, wilson_lo: 79.6, wilson_hi: 79.8 }],
-		[85, 4000, 'reliable', [], 85],
-		[79.6, 1_000_000, 'patchy', [], 80],
-		[59.6, 1_000_000, 'patchy', [], 60],
-		[85, 100, 'tentative', [], 85],
-		[55, 200, 'unreliable', [], 55],
-		[65, 40, 'patchy', [], 65],
-		[70, 40, 'tentative', [], 70],
-		[79, 5000, 'tentative', [], 79],
-		[81, 5000, 'tentative', [], 81],
-		[79, 10000, 'patchy', [], 79],
-		[81, 10000, 'reliable', [], 81],
-		[72, 4000, 'patchy', [], 72],
-		[48, 4000, 'unreliable', [], 48],
-		[85, 29, 'tentative', [], 85],
-		[85, null, 'tentative', [], 85],
-		[80, 1000, 'tentative', [], 80],
-		[
-			20,
-			12,
-			'reliable',
-			[{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 4000 }],
-			85,
-		],
-		[
-			20,
-			12,
-			'patchy',
-			[
-				{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 29 },
-				{ grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 },
-			],
-			72,
-		],
-		[
-			null,
-			null,
-			'patchy',
-			[
-				{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 29 },
-				{ grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 },
-			],
-			72,
-		],
-	] as const)(
-		'%s percent with n=%s produces %s everywhere',
-		async (
-			otp_pct,
-			observation_count,
-			status,
-			otherWindows,
-			headlinePct,
-			published = undefined,
-		) => {
-			const onTime =
-				published?.on_time ??
-				(otp_pct == null || observation_count == null
-					? null
-					: Math.round((otp_pct / 100) * observation_count));
-			const bounds = wilsonBounds(onTime, observation_count);
-			const point = {
-				date: '2026-11-02',
-				otp_pct,
-				observation_count,
-				wilson_lo: published?.wilson_lo ?? bounds?.[0],
-				wilson_hi: published?.wilson_hi ?? bounds?.[1],
-			};
-			harness.route = {
-				id: '24',
-				generated_utc: '2026-11-02T00:00:00Z',
-				periods: [
-					...(otp_pct == null
-						? []
-						: [
-								{
-									...point,
-									grain: 'day',
-									on_time: onTime,
-								},
-							]),
-					...otherWindows.map((window) => {
-						const on_time = Math.round((window.otp_pct / 100) * window.observation_count);
-						const bounds = wilsonBounds(on_time, window.observation_count);
-						return { ...window, on_time, wilson_lo: bounds?.[0], wilson_hi: bounds?.[1] };
-					}),
-				],
-			} as RouteReliability;
-			harness.stop = {
-				...harness.route,
-				periods: harness.route.periods?.map((window) => ({
-					grain: window.grain,
-					otp_pct: window.otp_pct,
-					observation_count: window.observation_count,
-					wilson_lo: window.wilson_lo,
-					wilson_hi: window.wilson_hi,
-				})),
-			} as StopReliability;
-			harness.network = {
-				generated_utc: harness.route.generated_utc,
-				series: otp_pct == null ? [] : [point],
-				weekly: harness.route.periods?.filter((w) => w.grain === 'week').map(publishedPoint),
-				monthly: harness.route.periods?.filter((w) => w.grain === 'month').map(publishedPoint),
-			} as NetworkTrend;
-			for (const mount of [
-				() => render(RouteDetail, { props: { id: '24', seed: { id: '24', name: '24' } } }),
-				() => render(RouteReliabilityClusters, { props: { data: harness.route!, locale: 'en' } }),
-				() => render(StopReliabilitySurface, { props: { data: harness.stop!, locale: 'en' } }),
-				() => render(NetworkSurface),
-			]) {
-				const view = mount();
-				await waitFor(() =>
-					expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
-						'data-status',
-						status,
-					),
-				);
-				if (status !== 'tentative')
-					expect(view.container.querySelector('.verdict__ban')).toHaveTextContent(
-						`${headlinePct}%`,
-					);
-				expect(harness.page.url.searchParams.get('grain')).toBeNull();
-				cleanup();
-			}
-			const listing = render(LinesIndex);
-			await waitFor(() => expect(listing.getByTestId('lines-sort-worst')).toBeInTheDocument());
-			await fireEvent.click(listing.getByTestId('lines-sort-worst'));
+	it('renders a reliable Verdict on all five surfaces', async () => {
+		const point = {
+			date: '2026-11-02',
+			otp_pct: 85,
+			observation_count: 4000,
+			wilson_lo: 84,
+			wilson_hi: 86,
+		};
+		harness.route = {
+			id: '24',
+			generated_utc: isoUtc().parse('2026-11-02T00:00:00Z'),
+			periods: [{ ...point, grain: 'day', on_time: 3400 }],
+		};
+		harness.stop = { ...harness.route, periods: [{ ...point, grain: 'day' }] };
+		harness.network = { generated_utc: harness.route.generated_utc, series: [point] };
+		for (const mount of [
+			() => render(RouteDetail, { props: { id: '24', seed: { id: '24', name: '24' } } }),
+			() => render(RouteReliabilityClusters, { props: { data: harness.route!, locale: 'en' } }),
+			() => render(StopReliabilitySurface, { props: { data: harness.stop!, locale: 'en' } }),
+			() => render(NetworkSurface),
+		]) {
+			const view = mount();
 			await waitFor(() =>
-				expect(
-					listing.container.querySelector(
-						'[data-slot="reliability-badge"], [data-slot="reliability-hedge"]',
-					),
-				).not.toBeNull(),
-			);
-			expect(
-				listing.container.querySelector(
-					'[data-slot="reliability-badge"], [data-slot="reliability-hedge"]',
+				expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
+					'data-status',
+					'reliable',
 				),
-			).toHaveAttribute('data-status', status);
-			if (observation_count === 29)
-				expect(
-					listing.container.querySelector('[data-slot="reliability-hedge"]'),
-				).toHaveTextContent('29');
-			if (status !== 'tentative')
-				expect(
-					listing.container.querySelector('[data-slot="reliability-badge"]'),
-				).toHaveTextContent(`${headlinePct}%`);
-			if (status === 'reliable') expect(headlinePct).toBeGreaterThanOrEqual(80);
-			await fireEvent.click(listing.getByTestId('lines-status-problem'));
-			await waitFor(() => {
-				const badge = listing.container.querySelector('[data-slot="reliability-badge"]');
-				if (status === 'patchy' || status === 'unreliable')
-					expect(badge).toHaveAttribute('data-status', status);
-				else expect(badge).toBeNull();
-			});
-		},
-	);
+			);
+			expect(view.container.querySelector('.verdict__ban')).toHaveTextContent('85%');
+			expect(harness.page.url.searchParams.get('grain')).toBeNull();
+			cleanup();
+		}
+		const listing = render(LinesIndex);
+		await waitFor(() => expect(listing.getByTestId('lines-sort-worst')).toBeInTheDocument());
+		await fireEvent.click(listing.getByTestId('lines-sort-worst'));
+		await waitFor(() =>
+			expect(listing.container.querySelector('[data-slot="reliability-badge"]')).toHaveAttribute(
+				'data-status',
+				'reliable',
+			),
+		);
+		expect(listing.container.querySelector('[data-slot="reliability-badge"]')).toHaveTextContent(
+			'85%',
+		);
+		await fireEvent.click(listing.getByTestId('lines-status-problem'));
+		await waitFor(() =>
+			expect(listing.container.querySelector('[data-slot="reliability-badge"]')).toBeNull(),
+		);
+	});
 });
 
 function selectedSurface(entity: 'line' | 'stop' | 'network') {

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -13,7 +15,7 @@
 	import { desktop } from '@yesid/ui/state';
 	import { mapSearchFor } from '#lib/filters/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { formatDateKey, formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtNumber as sharedFmtNumber,
@@ -53,7 +55,6 @@
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
-	import { selectVerdict, reliabilityVerdict } from '#lib/v1/verdict.ts';
 	import type { MetricKey } from '#lib/metrics.ts';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 
@@ -135,13 +136,6 @@
 	const fmtCancel = (v: number | null): string | null =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
 
-	const feedAge = $derived.by<string | null>(() => {
-		const s = live.network?.feed_freshness_s ?? null;
-		if (s == null) return null;
-		const snapshotAge = live.familyStates.network.health.ageSeconds;
-		return snapshotAge == null ? null : formatRelativeSeconds(s + snapshotAge, locale);
-	});
-
 	const kpis = $derived.by(() =>
 		live.network
 			? selectHeadlineKpis(live.network, {
@@ -219,6 +213,7 @@
 		},
 		grains: { keys: NETWORK_GRAINS, labels: () => grainLabels },
 		apply: (_current, retained) => retained,
+		verdict: { file: (data) => data, headline: (retained) => retained.headline },
 		locale: () => locale,
 	});
 	const explicitHistory = $derived(view.history.active);
@@ -254,22 +249,7 @@
 	const grain = $derived<NetworkGrain>(view.grain);
 	const grainKey = $derived(view.grain);
 	const historyAnnouncement = $derived(view.announcements.correction);
-	const networkHeadline = $derived(
-		reliabilityVerdict(selectedTrend, {
-			...view.verdictWindow,
-			...(explicitHistory && view.history.value?.headline
-				? { aggregate: view.history.value.headline }
-				: {}),
-		}),
-	);
-	const networkVerdict = $derived(
-		selectVerdict(
-			networkHeadline,
-			explicitHistory ? 'range' : networkHeadline.grain,
-			locale,
-			t.verdict,
-		),
-	);
+	const networkVerdict = $derived(view.verdict);
 	const isDailyGrain = $derived(grain === 'day');
 	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
 
@@ -443,6 +423,15 @@
 		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'network',
+			networkFeedAgeAtPublication: live.network?.feed_freshness_s ?? null,
+		}),
+	);
 </script>
 
 <p
@@ -624,23 +613,15 @@
 			{/snippet}
 			{#snippet actions()}
 				<div class="network-feed-health">
-					<FreshnessStamp
-						variant="live"
-						generatedUtc={live.generatedUtc}
-						ageSeconds={live.ageSeconds}
-						isStale={live.isStale}
-						degraded={live.error != null}
-						label={live.error ? t.snapshotRefreshFailed : undefined}
-						{locale}
-					/>
-					{#if feedAge != null}
+					<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
+					{#if presentation.networkFeedAgeText != null}
 						<span
 							class="network-feed-age"
 							data-slot="feed-age"
-							aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+							aria-label={`${t.feedAge.a11yPrefix} ${presentation.networkFeedAgeText}`}
 						>
 							<span class="network-feed-age-label">{t.feedAge.label}</span>
-							<span class="network-feed-age-value">{feedAge}</span>
+							<span class="network-feed-age-value">{presentation.networkFeedAgeText}</span>
 						</span>
 					{/if}
 					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />

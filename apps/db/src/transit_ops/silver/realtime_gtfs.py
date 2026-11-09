@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import math
 from collections.abc import Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
@@ -32,6 +34,7 @@ from transit_ops.silver._batch import execute_batched_insert
 
 CHUNK_SIZE = 10_000
 PARSER_VERSION = "transit_ops.silver.realtime_gtfs.v1"
+logger = logging.getLogger(__name__)
 
 RT_FEED_SNAPSHOTS_INSERT = text(
     """
@@ -723,6 +726,7 @@ def _normalize_rt_vehicle_positions(
     snapshot: BronzeRealtimeSnapshot,
     rt_feed_snapshot_id: int,
     provider_bounds: ProviderBounds | None = None,
+    max_vehicle_speed_kmh: float = 100,
 ) -> list[dict[str, object]]:
     vehicle_rows: list[dict[str, object]] = []
 
@@ -736,6 +740,11 @@ def _normalize_rt_vehicle_positions(
         position = vehicle.position
         latitude = position.latitude if _has_field(vehicle, "position") else None
         longitude = position.longitude if _has_field(vehicle, "position") else None
+        speed = position.speed if _has_field(position, "speed") else None
+        if speed is not None and (
+            not math.isfinite(speed) or speed < 0 or speed * 3.6 > max_vehicle_speed_kmh
+        ):
+            speed = None
         vehicle_rows.append(
             {
                 "rt_feed_snapshot_id": rt_feed_snapshot_id,
@@ -752,9 +761,7 @@ def _normalize_rt_vehicle_positions(
                 "bearing": position.bearing
                 if _has_field(vehicle, "position") and _has_field(position, "bearing")
                 else None,
-                "speed": position.speed
-                if _has_field(vehicle, "position") and _has_field(position, "speed")
-                else None,
+                "speed": speed,
                 "stop_id": _blank_to_none(vehicle.stop_id),
                 "current_stop_sequence": vehicle.current_stop_sequence
                 if _has_field(vehicle, "current_stop_sequence")
@@ -962,6 +969,7 @@ def _load_realtime_message_to_silver(
     snapshot: BronzeRealtimeSnapshot,
     message: gtfs_realtime_pb2.FeedMessage,
     provider_bounds: ProviderBounds | None = None,
+    max_vehicle_speed_kmh: float = 100,
 ) -> RealtimeSilverLoadResult:
     if snapshot.endpoint_key not in {"trip_updates", "vehicle_positions"}:
         raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
@@ -1014,6 +1022,7 @@ def _load_realtime_message_to_silver(
             snapshot=snapshot,
             rt_feed_snapshot_id=rt_feed_snapshot_id,
             provider_bounds=provider_bounds,
+            max_vehicle_speed_kmh=max_vehicle_speed_kmh,
         )
         row_counts.update(
             {
@@ -1025,6 +1034,19 @@ def _load_realtime_message_to_silver(
                 ),
             }
         )
+
+        rejected_speed_count = sum(
+            row["speed"] is None
+            and _has_field(message.entity[row["entity_index"]].vehicle.position, "speed")
+            for row in rt_vehicle_rows
+        )
+        if rejected_speed_count:
+            logger.info(
+                "realtime_silver provider_id=%s realtime_snapshot_id=%s rejected_speed_count=%d",
+                snapshot.provider_id,
+                snapshot.realtime_snapshot_id,
+                rejected_speed_count,
+            )
 
     return _realtime_load_result(snapshot, row_counts)
 
@@ -1053,6 +1075,7 @@ def load_realtime_snapshot_to_silver(
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
     provider_bounds: ProviderBounds | None = None,
+    max_vehicle_speed_kmh: float = 100,
 ) -> RealtimeSilverLoadResult:
     message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
     _lock_realtime_snapshot(connection, snapshot)
@@ -1065,6 +1088,7 @@ def load_realtime_snapshot_to_silver(
         snapshot=snapshot,
         message=message,
         provider_bounds=provider_bounds,
+        max_vehicle_speed_kmh=max_vehicle_speed_kmh,
     )
 
 
@@ -1076,6 +1100,7 @@ def load_realtime_snapshots_to_silver(
     bronze_storage_resolver: BronzeStorageResolver,
     skip_existing: bool = False,
     provider_bounds: ProviderBounds | None = None,
+    max_vehicle_speed_kmh: float = 100,
     repair_incomplete: bool = False,
 ) -> RealtimeSilverBatchLoadResult:
     results: list[RealtimeSilverLoadResult] = []
@@ -1111,6 +1136,7 @@ def load_realtime_snapshots_to_silver(
                 snapshot=snapshot,
                 bronze_storage=bronze_storage,
                 provider_bounds=provider_bounds,
+                max_vehicle_speed_kmh=max_vehicle_speed_kmh,
             )
         else:
             _ensure_snapshot_not_loaded(
@@ -1122,6 +1148,7 @@ def load_realtime_snapshots_to_silver(
                 snapshot=snapshot,
                 message=message,
                 provider_bounds=provider_bounds,
+                max_vehicle_speed_kmh=max_vehicle_speed_kmh,
             )
         results.append(result)
         verified_row_counts[snapshot.realtime_snapshot_id] = result.row_counts
@@ -1182,7 +1209,11 @@ def _load_realtime_to_silver(
             return _realtime_load_result(snapshot, verified_counts)
         _ensure_snapshot_not_loaded(connection, snapshot=snapshot)
         return _load_realtime_message_to_silver(
-            connection, snapshot=snapshot, message=message, provider_bounds=provider_bounds,
+            connection,
+            snapshot=snapshot,
+            message=message,
+            provider_bounds=provider_bounds,
+            max_vehicle_speed_kmh=manifest.provider.max_vehicle_speed_kmh,
         )
 
 
@@ -1298,4 +1329,5 @@ def replay_realtime_silver_window(
                 skip_existing=True,
                 repair_incomplete=True,
                 provider_bounds=provider_bounds,
+                max_vehicle_speed_kmh=manifest.provider.max_vehicle_speed_kmh,
             )

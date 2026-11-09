@@ -35,7 +35,6 @@ export function cspDirectives(...scriptHashes) {
 		'connect-src': [
 			'self',
 			'https://data.yesid.dev',
-			'https://plausible.io',
 			'https://cloudflareinsights.com',
 			'https://protomaps.github.io',
 			...(dev ? /** @type {const} */ (['ws:', 'wss:']) : []),

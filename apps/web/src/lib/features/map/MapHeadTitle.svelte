@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { StampPresentation } from '#lib/v1/live/livePresentation.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import MapFreshness from './MapFreshness.svelte';
 
@@ -6,37 +7,16 @@
 		locale: Locale;
 		kicker: string;
 		heading: string;
-		generatedUtc: string | null;
-		ageSeconds: number | null;
-		ageLabel?: string | null;
-		isStale: boolean;
-		degraded?: boolean;
+		presentation: StampPresentation;
 	}
 
-	let {
-		locale,
-		kicker,
-		heading,
-		generatedUtc,
-		ageSeconds,
-		ageLabel = null,
-		isStale,
-		degraded = false,
-	}: Props = $props();
+	let { locale, kicker, heading, presentation }: Props = $props();
 </script>
 
 <div class="map-overlay map-head">
 	<div class="map-kicker-row">
 		<p class="map-kicker">{kicker}</p>
-		<MapFreshness
-			placement="head"
-			{generatedUtc}
-			{ageSeconds}
-			{ageLabel}
-			{isStale}
-			{degraded}
-			{locale}
-		/>
+		<MapFreshness placement="head" {presentation} {locale} />
 	</div>
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>

@@ -20,7 +20,7 @@ Live at [transit.yesid.dev](https://transit.yesid.dev).
 
 Bun workspaces and Turborepo run the JavaScript apps. Design tokens, motion and
 shared UI come from pinned
-[yesid.dev-design](https://github.com/mgkdante/yesid.dev-design) releases.
+[yesid.design](https://github.com/mgkdante/yesid.design) releases.
 
 ## Quickstart
 
@@ -37,10 +37,13 @@ Open http://localhost:5173. The dev server reads the public snapshots through a
 proxy, so it needs an internet connection but no database, API keys or
 Cloudflare account.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers checks, browser tests and the Python
-pipeline. The
-[architecture wiki](https://yesid-dev.notion.site/3663e8630690815b927dea4888252234?v=4093e8630690803dbdba000c6dfd9439)
-documents how the system is built, tested, deployed and operated.
+## Documentation
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) covers checks, browser tests and the Python
+  pipeline.
+- The
+  [Architecture wiki](https://yesid-dev.notion.site/3663e8630690815b927dea4888252234?v=4093e8630690803dbdba000c6dfd9439)
+  documents how the system is built, tested, deployed and operated.
 
 ## Analytics
 

@@ -93,6 +93,7 @@ export const copy = defineCopy({
 		familyTrips: 'trip details',
 		familyDepartures: 'departures',
 		familyAlerts: 'service alerts',
+		alertsChecked: (age: string) => `Alerts checked ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
@@ -107,6 +108,8 @@ export const copy = defineCopy({
 			toRaw: 'Show reported positions only',
 			toSmooth: 'Animate estimated positions between reports',
 			hintSmooth: 'Between reports',
+			unavailableLabel: 'Estimated unavailable',
+			unavailable: 'Estimated positions are unavailable with reduced motion enabled.',
 			hintRaw: 'Latest reports',
 			explain: 'Method',
 		},
@@ -205,6 +208,7 @@ export const copy = defineCopy({
 		familyTrips: 'les détails des trajets',
 		familyDepartures: 'les départs',
 		familyAlerts: 'les alertes de service',
+		alertsChecked: (age: string) => `Alertes vérifiées ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Les données en direct pour ${family} sont indisponibles. La dernière mise à jour réussie reste affichée.`
@@ -220,6 +224,8 @@ export const copy = defineCopy({
 			toRaw: 'Afficher les positions signalées seulement',
 			toSmooth: 'Animer les positions estimées entre les relevés',
 			hintSmooth: 'Entre les relevés',
+			unavailableLabel: 'Estimation indisponible',
+			unavailable: 'Les positions estimées sont indisponibles avec les animations réduites.',
 			hintRaw: 'Derniers signalements',
 			explain: 'Méthode',
 		},

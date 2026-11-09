@@ -65,6 +65,7 @@ vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => new Map(),
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: () => ({
 		departures: { generated_utc: '2026-08-30T16:00:00Z' },
 		alerts: { alerts: [] },

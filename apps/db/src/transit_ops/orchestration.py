@@ -253,6 +253,15 @@ def _run_gis_steps_best_effort(
     engine: Engine,
 ) -> _GisStepsOutcome:
     try:
+        if registry.get_provider(provider_id).gis_feed() is None:
+            return _GisStepsOutcome(
+                gis_ingestion=None,
+                gis_silver_load=None,
+                gis_ingestion_duration_seconds=None,
+                gis_silver_load_duration_seconds=None,
+                gis_status="not-configured",
+                gis_error_message=None,
+            )
         gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
             "ingest-gis",
             lambda: ingest_gis_feed(
@@ -669,6 +678,10 @@ def _best_effort_publish_live(
         return 1
 
 
+# Loop start jitter should not turn a nominal 30s cadence into a 60s cadence.
+CAPTURE_CADENCE_TOLERANCE_SECONDS = 2.0
+
+
 def _run_realtime_cycle(
     provider_id: str,
     *,
@@ -711,7 +724,7 @@ def _run_realtime_cycle(
             last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
         if interval_seconds is not None and last_capture_at is not None:
             elapsed_seconds = (attempt_started_at_utc - last_capture_at).total_seconds()
-            if elapsed_seconds < interval_seconds:
+            if elapsed_seconds < max(0, interval_seconds - CAPTURE_CADENCE_TOLERANCE_SECONDS):
                 logger.info(
                     (
                         "Skipping realtime cycle endpoint '%s' for provider '%s' "

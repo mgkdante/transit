@@ -15,6 +15,21 @@ const frenchMessage = AlertMessageProvenanceSchema.parse({
 });
 
 describe('MapDetailAlerts', () => {
+	it.each([
+		['en', 'Alerts checked 5 minutes ago'],
+		['fr', 'Alertes vérifiées il y a 5 minutes'],
+	] as const)('shows the separate alert age in %s', (locale, note) => {
+		render(MapDetailAlerts, {
+			props: { alerts: [], alertsAgeSeconds: 300, locale, t: MAP_SELECTION_DETAIL_COPY[locale] },
+		});
+		expect(screen.getByText(note)).toBeInTheDocument();
+	});
+	it.each([null, undefined])('omits the alert age when it is %s', (alertsAgeSeconds) => {
+		render(MapDetailAlerts, {
+			props: { alerts: [], alertsAgeSeconds, locale: 'en', t: MAP_SELECTION_DETAIL_COPY.en },
+		});
+		expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+	});
 	it.each(['en', 'fr'] as const)(
 		'keeps an out-of-date empty alert list neutral in %s',
 		(locale) => {

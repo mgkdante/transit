@@ -1,3 +1,4 @@
+import { notReporting } from './vehicleMotion';
 import type { clock } from '@yesid/ui/state';
 import type { Locale } from '#lib/i18n/index.ts';
 import type { LiveIndex } from '#lib/v1/live/index.ts';
@@ -10,7 +11,7 @@ import type {
 } from '#lib/v1/schemas/index.ts';
 import type { SlimStopEntry } from '#lib/v1/index.ts';
 
-import { fixAgeS, isVehicleStale, routeDirectionVariants } from '#lib/components/map/index.ts';
+import { routeDirectionVariants } from '#lib/components/map/index.ts';
 import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 import {
 	alertMatchesRoute,
@@ -124,7 +125,6 @@ export function resolveMapHoverPeek(
 	if (selection.kind === 'vehicle') {
 		const vehicle = context.index.byVehicleId.get(selection.id);
 		if (!vehicle) return null;
-		const ageS = fixAgeS(vehicle.reported_utc, vehicle.updated_utc, context.clock.serverNow);
 		const hasNextStop = vehicle.next_stop != null && vehicle.next_stop !== '';
 		return {
 			kind: 'vehicle',
@@ -136,7 +136,7 @@ export function resolveMapHoverPeek(
 			occupancy: vehicle.occupancy ?? null,
 			nextStop: stopRef(vehicle.next_stop, context.stops),
 			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'not-reported',
-			notReportingAgeS: isVehicleStale(ageS) ? ageS : null,
+			notReportingAgeS: notReporting(vehicle, context.clock.serverNow)?.ageS ?? null,
 			tripId: vehicle.trip ?? null,
 			alerts:
 				context.alerts == null

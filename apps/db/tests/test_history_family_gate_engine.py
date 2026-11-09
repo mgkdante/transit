@@ -23,13 +23,12 @@ def _network_bundle():  # noqa: ANN202
         cancellation_rows=cancellation,
         occupancy_rows=occupancy,
         generated_utc=STAMP,
+        provider_id="stm",
     )
 
 
 def _line_bundle():  # noqa: ANN202
-    delay, percentiles, cancellation, occupancy, service_span, skipped_stops = (
-        _line_history_rows()
-    )
+    delay, percentiles, cancellation, occupancy, service_span, skipped_stops = _line_history_rows()
     return build_line_history_plan_from_rows(
         delay_rows=delay,
         percentile_rows=percentiles,
@@ -39,6 +38,7 @@ def _line_bundle():  # noqa: ANN202
         skipped_stop_rows=skipped_stops,
         generated_utc=STAMP,
         entity_batch_size=2,
+        provider_id="stm",
     ).materialize()
 
 
@@ -65,6 +65,7 @@ def _stop_bundle():  # noqa: ANN202
         percentile_rows=[],
         occupancy_rows=[],
         generated_utc=STAMP,
+        provider_id="stm",
     ).materialize()
 
 

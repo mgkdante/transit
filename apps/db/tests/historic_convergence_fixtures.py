@@ -1,4 +1,3 @@
-
 import hashlib
 import json
 from dataclasses import dataclass
@@ -95,16 +94,19 @@ def cleanup(engine):
             "raw.ingestion_runs",
         ):
             schema, _, table = qualified_table.partition(".")
-            if conn.execute(
-                text(
-                    "SELECT 1 FROM information_schema.columns "
-                    "WHERE table_schema = :schema "
-                    "AND table_name = :table "
-                    "AND column_name = 'provider_id' "
-                    "LIMIT 1"
-                ),
-                {"schema": schema, "table": table},
-            ).first() is None:
+            if (
+                conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_schema = :schema "
+                        "AND table_name = :table "
+                        "AND column_name = 'provider_id' "
+                        "LIMIT 1"
+                    ),
+                    {"schema": schema, "table": table},
+                ).first()
+                is None
+            ):
                 continue
             conn.execute(
                 text(
@@ -141,7 +143,10 @@ def seed_static(conn):
         {"p": PROVIDER},
     ).scalar_one()
     db_seed.replay_static_graph(
-        conn, {"p": PROVIDER, "v": version}, version=":v", route_short_name="'51'",
+        conn,
+        {"p": PROVIDER, "v": version},
+        version=":v",
+        route_short_name="'51'",
     )
 
 
@@ -325,7 +330,6 @@ class HistoryScenario:
         }
         return hashes
 
-
     def network_day(self):
         root = self.storage.get_json(ROOT_KEY)
         family = next(item for item in root["families"] if item["family"] == "network")
@@ -341,7 +345,9 @@ class HistoryScenario:
 @pytest.fixture
 def history(real_db_engine, seed_provider, tmp_path):
     cleanup(real_db_engine)
-    provider = SimpleNamespace(provider_id=PROVIDER, timezone=str(TZ), bounds=None)
+    provider = SimpleNamespace(
+        provider_id=PROVIDER, timezone=str(TZ), bounds=None, max_vehicle_speed_kmh=100
+    )
     manifest = SimpleNamespace(
         provider=provider, realtime_feed=lambda key: SimpleNamespace(endpoint_key=key)
     )

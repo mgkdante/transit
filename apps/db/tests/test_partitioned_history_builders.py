@@ -141,6 +141,7 @@ def _build_network_history_fixture(*, reverse: bool = False):
         cancellation_rows=rows[2],
         occupancy_rows=rows[3],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
 
@@ -152,6 +153,7 @@ def test_network_history_plan_retains_compact_inputs_not_all_month_day_payloads(
         cancellation_rows=cancellations,
         occupancy_rows=occupancy,
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     def retained_history_days(value):  # noqa: ANN001, ANN202
@@ -279,6 +281,7 @@ def test_network_history_builder_stable_bytes_refs_coverage_and_gaps():
         cancellation_rows=changed_rows[2],
         occupancy_rows=changed_rows[3],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
     assert changed.index.collection_generation_id != first.index.collection_generation_id
 
@@ -321,6 +324,7 @@ def test_network_history_builder_omits_denominator_free_and_empty_source_rows():
             }
         ],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     assert bundle.partitions == []
@@ -348,6 +352,7 @@ def test_network_history_builder_retains_all_ghost_delay_without_fabricating_ave
         cancellation_rows=[],
         occupancy_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     delay = bundle.partitions[0].days[0].delay
@@ -426,6 +431,7 @@ def test_network_history_builder_ignores_later_empty_rows_for_partition_provenan
             },
         ],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     assert bundle.partitions[0].generated_utc == "2026-07-01T03:00:00Z"
@@ -446,6 +452,7 @@ def test_network_history_builder_rejects_duplicate_noncomposable_fact_day_and_ba
             cancellation_rows=[],
             occupancy_rows=[],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
 
@@ -477,6 +484,7 @@ def test_network_history_builder_rejects_vehicle_counts_above_raw_observations(
             cancellation_rows=[],
             occupancy_rows=[],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
 
@@ -507,6 +515,7 @@ def test_network_history_cancellation_keeps_scheduled_numerators_in_known_univer
         ],
         occupancy_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     metric = bundle.partitions[0].days[0].cancellation
@@ -543,6 +552,7 @@ def test_network_history_cancellation_keeps_scheduled_numerators_in_known_univer
                 }
             ],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
 
@@ -738,6 +748,7 @@ def _build_line_history_fixture(*, reverse: bool = False):
         service_span_rows=rows[4],
         skipped_stop_rows=rows[5],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
 
@@ -821,6 +832,7 @@ def test_line_history_source_backed_bytes_ignore_publish_run_stamp():
         service_span_rows=rows[4],
         skipped_stop_rows=rows[5],
         generated_utc="2030-01-01T00:00:00Z",
+        provider_id="stm",
     )
 
     assert [snapshot_json_bytes(item) for item in first.partitions] == [
@@ -857,6 +869,7 @@ def test_line_history_entity_index_generation_includes_raw_entity_identity():
         service_span_rows=[],
         skipped_stop_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     assert len(bundle.indexes) == 2
@@ -881,6 +894,7 @@ def test_line_history_plan_retains_no_day_or_partition_models_between_batches():
         skipped_stop_rows=rows[5],
         generated_utc="2026-07-13T00:00:00Z",
         entity_batch_size=2,
+        provider_id="stm",
     )
 
     def retained_payloads(value):  # noqa: ANN001, ANN202
@@ -910,6 +924,7 @@ def test_line_history_builder_omits_empty_entities_and_rejects_duplicate_daily_o
         skipped_stop_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
         entity_ids=["empty"],
+        provider_id="stm",
     )
     assert empty.partitions == []
     assert empty.indexes == []
@@ -925,6 +940,7 @@ def test_line_history_builder_omits_empty_entities_and_rejects_duplicate_daily_o
             service_span_rows=[],
             skipped_stop_rows=[],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
     service_span = _line_history_rows()[4][0]
@@ -937,6 +953,7 @@ def test_line_history_builder_omits_empty_entities_and_rejects_duplicate_daily_o
             service_span_rows=[service_span, dict(service_span)],
             skipped_stop_rows=[],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
 
@@ -1017,6 +1034,7 @@ def test_line_history_builder_handles_honest_denominators_and_sparse_ramp_in():
             },
         ],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
     days = {day.date: day for day in bundle.partitions[0].days}
@@ -1095,8 +1113,7 @@ def test_line_history_builder_rejects_impossible_metric_relationships(source, ma
         ]
     with pytest.raises(ValueError, match=match):
         module.build_line_history_from_rows(
-            **rows,
-            generated_utc="2026-07-13T00:00:00Z",
+            **rows, generated_utc="2026-07-13T00:00:00Z", provider_id="stm"
         )
 
 
@@ -1105,9 +1122,9 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
 
     class RecordingConn(NamedQueryConn):
         def __init__(self):
-            super().__init__({
-                "history.lines.ids.inner": [{"route_id": f"R{i:02d}"} for i in range(26)]
-            })
+            super().__init__(
+                {"history.lines.ids.inner": [{"route_id": f"R{i:02d}"} for i in range(26)]}
+            )
             self.names: list[str | None] = []
             self.params: list[dict] = []
 
@@ -1301,6 +1318,7 @@ def _build_stop_history_fixture(*, reverse: bool = False):
         percentile_rows=rows[1],
         occupancy_rows=rows[2],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
 
 
@@ -1389,6 +1407,7 @@ def test_stop_history_builder_omits_empty_days_and_rejects_duplicate_daily_perce
         ],
         generated_utc="2026-07-13T00:00:00Z",
         entity_ids=["empty"],
+        provider_id="stm",
     )
     assert empty.partitions == []
     assert empty.indexes == []
@@ -1401,6 +1420,7 @@ def test_stop_history_builder_omits_empty_days_and_rejects_duplicate_daily_perce
             percentile_rows=[percentile, dict(percentile)],
             occupancy_rows=[],
             generated_utc="2026-07-13T00:00:00Z",
+            provider_id="stm",
         )
 
 
@@ -1409,9 +1429,9 @@ def test_stop_history_plan_batches_three_sources_and_retains_no_payload_models()
 
     class RecordingConn(NamedQueryConn):
         def __init__(self):
-            super().__init__({
-                "history.stops.ids.inner": [{"stop_id": f"S{i:03d}"} for i in range(101)]
-            })
+            super().__init__(
+                {"history.stops.ids.inner": [{"stop_id": f"S{i:03d}"} for i in range(101)]}
+            )
             self.names: list[str | None] = []
             self.params: list[dict] = []
 
@@ -1491,6 +1511,7 @@ def test_stop_history_stream_summary_retains_compact_date_masks_not_daily_string
         percentile_rows=[],
         occupancy_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
+        provider_id="stm",
     )
     summary = module.StopHistoryStreamSummary()
     for ref, partition in plan.iter_partition_items():
@@ -1645,10 +1666,7 @@ def test_line_and_stop_history_sql_text_is_frozen():
 
     assert {
         name: hashlib.sha256(
-            (
-                f"-- q:{public_query_names[name]}\n"
-                + str(statement).split("\n", 1)[1]
-            ).encode()
+            (f"-- q:{public_query_names[name]}\n" + str(statement).split("\n", 1)[1]).encode()
         ).hexdigest()
         for name, statement in statements.items()
     } == expected

@@ -70,8 +70,8 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "methodology.percentiles": (
         "Les p50/p90 du réseau en direct portent sur les retards moyens par trajet "
         "actuellement rapportés, avec le même poids par trajet. Le p90 de tendance "
-        'utilise la fenêtre détaillée configurée (14 derniers jours par défaut). Les '
-        'percentiles quotidiens '
+        "utilise la fenêtre détaillée configurée (14 derniers jours par défaut). Les "
+        "percentiles quotidiens "
         "par ligne et par arrêt portent sur les observations de leur jour de capture "
         "local; les mises à jour répétées ne sont pas des voyageurs distincts."
     ),
@@ -107,14 +107,14 @@ _STATIC_LABELS_EN: dict[str, str] = {
     ),
     "methodology.percentiles": (
         "Live network p50/p90 summarize current trip-average delays, with each "
-        'trip weighted equally. Trend p90 uses the configured detailed window (last 14 '
-        'days by default). '
+        "trip weighted equally. Trend p90 uses the configured detailed window (last 14 "
+        "days by default). "
         "Daily route and stop percentiles use observations from their local capture "
         "day; repeated updates are not distinct passengers."
     ),
     "methodology.retention": (
-        'Default retention is 14 days for detailed data and 730 days for daily '
-        'aggregates; provenance reports the configured policy.'
+        "Default retention is 14 days for detailed data and 730 days for daily "
+        "aggregates; provenance reports the configured policy."
     ),
 }
 
@@ -156,8 +156,7 @@ _PROVIDER_LABEL_COPY: dict[str, dict[str, dict[str, str]]] = {
 
 _PROVIDER_ATTRIBUTION_SQL = named_query(
     "static.provider_attribution",
-    "SELECT display_name, attribution_text FROM core.providers "
-    "WHERE provider_id = :provider_id"
+    "SELECT display_name, attribution_text FROM core.providers WHERE provider_id = :provider_id",
 )
 
 
@@ -166,15 +165,16 @@ def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[
     if curated is not None:
         return dict(curated[lang])
 
-    row = conn.execute(
-        _PROVIDER_ATTRIBUTION_SQL, {"provider_id": provider_id}
-    ).mappings().one_or_none()
+    row = (
+        conn.execute(_PROVIDER_ATTRIBUTION_SQL, {"provider_id": provider_id})
+        .mappings()
+        .one_or_none()
+    )
     display_name = (row["display_name"] if row else None) or provider_id
     attribution_text = (row["attribution_text"] if row else None) or ""
     if lang == "fr":
         disclaimer = (
-            f"Site indépendant, non affilié à {display_name} "
-            f"et non approuvé par {display_name}."
+            f"Site indépendant, non affilié à {display_name} et non approuvé par {display_name}."
         )
     else:
         disclaimer = f"Independent site, not affiliated with or endorsed by {display_name}."
@@ -183,20 +183,21 @@ def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[
         copy["attribution.data_source"] = attribution_text
     return copy
 
+
 _LABELS_SQL = named_query(
     "static.labels",
     """
     SELECT label_key, label_fr, label_en
     FROM gold.report_labels
     ORDER BY sort_order NULLS LAST, label_key
-    """
+    """,
 )
 
 
 def build_labels(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     lang: str = "fr",
     generated_utc: str,
 ) -> "LabelsFile":  # noqa: UP037
@@ -220,7 +221,7 @@ _ROUTES_INDEX_SQL = named_query(
     FROM gold.dim_route
     WHERE provider_id = :provider_id
     ORDER BY route_sort_order NULLS LAST, route_short_name
-    """
+    """,
 )
 
 # Reliability flags must match route_reliability_batch inventory.
@@ -229,7 +230,7 @@ _RELIABILITY_ROUTE_IDS_SQL = named_query(
     """
     SELECT DISTINCT route_id FROM gold.route_delay_spine
      WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 _ROUTE_NAME_TYPE_SQL = named_query(
@@ -246,18 +247,14 @@ _STOPS_INDEX_SQL = named_query(
     WHERE s.provider_id = :provider_id
       AND {_BOARDABLE_STOP.replace("location_type", "s.location_type")}
     ORDER BY s.stop_id
-    """
+    """,
 )
 
 
-def build_routes_index(
-    conn: Connection, *, provider_id: str = "stm", generated_utc: str
-) -> "RoutesIndex":  # noqa: UP037
+def build_routes_index(conn: Connection, *, provider_id: str, generated_utc: str) -> "RoutesIndex":  # noqa: UP037
     reliability_ids = {
         str(row["route_id"])
-        for row in conn.execute(
-            _RELIABILITY_ROUTE_IDS_SQL, {"provider_id": provider_id}
-        ).mappings()
+        for row in conn.execute(_RELIABILITY_ROUTE_IDS_SQL, {"provider_id": provider_id}).mappings()
     }
     routes = []
     for r in conn.execute(_ROUTES_INDEX_SQL, {"provider_id": provider_id}).mappings():
@@ -294,7 +291,7 @@ def _mode_from_route_types(route_types: list[int | None]) -> str | None:
 def build_stops_index(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     routes_served_by_stop: dict[str, list[str]] | None = None,
     route_type_by_id: dict[str, int] | None = None,
@@ -343,7 +340,7 @@ _ROUTE_SHAPES_SQL = named_query(
       AND mrl.route_id           = :route_id
     GROUP BY mrl.shape_id, mrl.geojson, t.direction_id, t.trip_headsign
     ORDER BY t.direction_id, count(*) DESC, mrl.shape_id
-    """
+    """,
 )
 
 _ROUTE_STOPS_SQL = named_query(
@@ -366,7 +363,7 @@ _ROUTE_STOPS_SQL = named_query(
       AND t.shape_id           = :shape_id
     ORDER BY st.stop_sequence, t.trip_id, st.stop_id
     LIMIT 400
-    """
+    """,
 )
 
 
@@ -581,7 +578,7 @@ def _assemble_route_file(
 def build_route(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     route_id: str,
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
@@ -635,7 +632,7 @@ def build_route(
 def build_all_routes_data(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
 ) -> dict[str, RouteFile]:
@@ -707,7 +704,7 @@ _ALL_STOPS_SQL = named_query(
     WHERE provider_id = :provider_id
       AND {_BOARDABLE_STOP}
     ORDER BY stop_id
-    """
+    """,
 )
 
 # Use one representative weekday, deduplicating simultaneous branch departures.
@@ -725,14 +722,14 @@ _ALL_STOP_SCHEDULES_SQL = named_query(
       AND st.departure_time IS NOT NULL
       AND t.service_id = ANY(:weekday_services)
     ORDER BY st.stop_id, t.route_id, st.departure_time
-    """
+    """,
 )
 
 
 def build_all_stops_data(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
 ) -> "dict[str, StopFile]":  # noqa: UP037

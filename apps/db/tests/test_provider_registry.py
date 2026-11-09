@@ -72,6 +72,30 @@ def _gtfs_only_manifest_payload() -> dict[str, object]:
     return _provider_manifest_payload(gis=False)
 
 
+@pytest.mark.parametrize("maximum", [None, 160])
+def test_manifest_vehicle_speed_maximum(tmp_path: Path, maximum: int | None) -> None:
+    payload = _provider_manifest_payload()
+    if maximum is not None:
+        payload["provider"]["max_vehicle_speed_kmh"] = maximum
+    path = tmp_path / "provider.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    manifest = load_provider_manifest(path)
+
+    assert manifest.provider.max_vehicle_speed_kmh == (100 if maximum is None else maximum)
+
+
+@pytest.mark.parametrize("maximum", [0, -1, float("nan"), float("inf"), -float("inf")])
+def test_manifest_rejects_invalid_vehicle_speed_maximum(tmp_path: Path, maximum: float) -> None:
+    payload = _provider_manifest_payload()
+    payload["provider"]["max_vehicle_speed_kmh"] = maximum
+    path = tmp_path / "provider.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="max_vehicle_speed_kmh"):
+        load_provider_manifest(path)
+
+
 def test_gtfs_only_manifest_validates_without_gis() -> None:
     manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
 

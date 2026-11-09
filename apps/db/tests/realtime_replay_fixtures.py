@@ -156,6 +156,7 @@ class _StubRegistry:
         provider_id = PROVIDER
         timezone = PROVIDER_TZ
         bounds = None
+        max_vehicle_speed_kmh = 100
 
     class _Manifest:
         provider = None

@@ -1,4 +1,3 @@
-
 import pytest
 from _sqlfakes import NamedQueryConn
 
@@ -27,6 +26,7 @@ def test_live_delay_rounding_quantiles_and_bin_boundaries(seconds, median, p90, 
             {"network.live.delays": [{"avg_delay_seconds": value} for value in seconds]}
         ),
         generated_utc="2026-09-12T12:00:00Z",
+        provider_id="stm",
     )
 
     assert result.delay_p50_min == median
@@ -34,5 +34,12 @@ def test_live_delay_rounding_quantiles_and_bin_boundaries(seconds, median, p90, 
     assert [bucket.count for bucket in result.delay_histogram] == counts
     assert sum(counts) == len(seconds)
     assert [(bucket.lo_min, bucket.hi_min) for bucket in result.delay_histogram] == [
-        (None, -5), (-5, -2), (-2, 0), (0, 2), (2, 5), (5, 10), (10, 15), (15, None)
+        (None, -5),
+        (-5, -2),
+        (-2, 0),
+        (0, 2),
+        (2, 5),
+        (5, 10),
+        (10, 15),
+        (15, None),
     ]

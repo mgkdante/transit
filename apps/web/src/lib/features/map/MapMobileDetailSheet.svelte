@@ -22,6 +22,7 @@
 		onback: () => void;
 		selectedDetail: MapSelectionDetailModel | null;
 		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		notReporting: { ageS: number } | null;
 		selectionPresence?: SelectionPresence | null;
 		selectionSourceHealth?: SelectionSourceHealth | null;
@@ -44,6 +45,7 @@
 		onback,
 		selectedDetail,
 		alertsStale = false,
+		alertsAgeSeconds = null,
 		notReporting,
 		selectionPresence = null,
 		selectionSourceHealth = null,
@@ -88,6 +90,7 @@
 		<div class="mobile-detail-body" data-mobile-detail-body>
 			<MapSelectionDetail
 				{alertsStale}
+				{alertsAgeSeconds}
 				detail={selectedDetail}
 				{locale}
 				{timeZone}

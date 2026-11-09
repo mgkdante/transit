@@ -1,120 +1,117 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
+import { flushSync } from 'svelte';
 import { adapter } from '#lib/v1/adapter/index.ts';
-import { AlertsFileSchema, VehiclesFileSchema } from '#lib/v1/schemas/index.ts';
-import type { AlertsFile, VehiclesFile } from '#lib/v1/schemas/index.ts';
-import HealthPresentation from './__fixtures__/HealthPresentation.svelte';
+import { ManifestSchema, AlertsFileSchema, VehiclesFileSchema } from '#lib/v1/schemas/index.ts';
+import { createLiveStore } from './store.svelte';
+import { livePresentation } from './livePresentation';
 
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
-	...{},
 }));
-
-afterEach(() => {
-	cleanup();
-	vi.restoreAllMocks();
+afterEach(() => vi.restoreAllMocks());
+const manifest = ManifestSchema.parse({
+	provider: 'stm',
+	display_name: 'STM',
+	dataset_version: 'health-test',
+	attribution: 'Test',
+	bbox: [-74, 45, -73, 46],
+	labels: {},
+	surfaces: [],
+	files: { live: { generated_utc: '2026-06-21T12:00:00Z', ttl_s: 30 } },
 });
 
-it.each([
-	['en', 'Data may be out of date.'],
-	['fr', 'Les données peuvent ne plus être à jour.'],
-] as const)(
-	'renders a partial alert capture stall honestly in %s through the real store',
-	async (locale, message) => {
-		const now = new Date();
-		vi.spyOn(adapter.live, 'vehicles').mockResolvedValue(
-			VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] }),
-		);
-		vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
-			AlertsFileSchema.parse({
-				generated_utc: now.toISOString(),
-				feed_captured_utc: new Date(+now - 901_000).toISOString(),
-				alerts: [],
-			}),
-		);
-		render(HealthPresentation, { props: { locale } });
-		await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(message));
-		expect(screen.getByRole('status')).not.toHaveTextContent(
-			/not responding|ne répond pas|Last update|Dernière mise à jour/,
-		);
-	},
-);
-
 it.each(['en', 'fr'] as const)(
-	'keeps whole-feed outage wording when all publications stall in %s',
+	'passes store Feed health through the presentation interface in %s',
 	async (locale) => {
-		const generated_utc = new Date(Date.now() - 901_000).toISOString();
-		vi.spyOn(adapter.live, 'vehicles').mockResolvedValue(
-			VehiclesFileSchema.parse({ generated_utc, vehicles: [] }),
-		);
-		vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
-			AlertsFileSchema.parse({ generated_utc, alerts: [] }),
-		);
-		render(HealthPresentation, { props: { locale } });
-		await waitFor(() =>
-			expect(screen.getByRole('status')).toHaveTextContent(
+		let live!: ReturnType<typeof createLiveStore>;
+		const dispose = $effect.root(() => {
+			live = createLiveStore(manifest, { families: ['vehicles', 'alerts'] });
+			return () => live.stop();
+		});
+		const present = () =>
+			livePresentation({
+				familyStates: live.familyStates,
+				families: ['vehicles', 'alerts'],
+				locale,
+				page: 'map',
+			});
+		try {
+			expect(present().notice.kind).toBe('none');
+			expect(present().stamp).toMatchObject({ ageSeconds: null, isStale: false });
+			const now = new Date();
+			vi.spyOn(adapter.live, 'vehicles').mockResolvedValue(
+				VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] }),
+			);
+			vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
+				AlertsFileSchema.parse({
+					generated_utc: now.toISOString(),
+					feed_captured_utc: new Date(+now - 901000).toISOString(),
+					alerts: [],
+				}),
+			);
+			await live.refresh();
+			flushSync();
+			expect(live.familyStates.alerts.health.isStale).toBe(true);
+			expect(present().notice.kind).toBe('none');
+			expect(present().stamp.isStale).toBe(false);
+			expect(present().stamp.ageSeconds).not.toBeNull();
+			const old = new Date(+now - 901000).toISOString();
+			vi.mocked(adapter.live.vehicles).mockResolvedValue(
+				VehiclesFileSchema.parse({ generated_utc: old, vehicles: [] }),
+			);
+			vi.mocked(adapter.live.alerts).mockResolvedValue(
+				AlertsFileSchema.parse({ generated_utc: old, alerts: [] }),
+			);
+			await live.refresh();
+			flushSync();
+			expect(present().notice.kind).toBe('whole-feed-stall');
+			expect(present().notice.message).toContain(
 				locale === 'en' ? 'Live feed not responding' : 'Le flux en direct ne répond pas',
-			),
-		);
+			);
+		} finally {
+			dispose();
+		}
 	},
 );
 
-it('does not call the whole feed unresponsive while another family has never loaded', async () => {
-	const now = new Date();
-	let finishVehicles!: (value: VehiclesFile) => void;
-	const pending = new Promise<VehiclesFile>((resolve) => {
-		finishVehicles = resolve;
+it('keeps the notice empty while vehicles are pending and alert capture is stale', async () => {
+	let live!: ReturnType<typeof createLiveStore>;
+	const dispose = $effect.root(() => {
+		live = createLiveStore(manifest, { families: ['vehicles', 'alerts'] });
+		return () => live.stop();
 	});
-	const vehicles = VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] });
-	vi.spyOn(adapter.live, 'vehicles').mockReturnValue(pending);
+	let finish!: (value: ReturnType<typeof VehiclesFileSchema.parse>) => void;
+	const now = new Date();
+	const vehicle = VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] });
+	vi.spyOn(adapter.live, 'vehicles').mockReturnValue(
+		new Promise((resolve) => {
+			finish = resolve;
+		}),
+	);
 	vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
 		AlertsFileSchema.parse({
 			generated_utc: now.toISOString(),
-			feed_captured_utc: new Date(+now - 901_000).toISOString(),
+			feed_captured_utc: new Date(+now - 901000).toISOString(),
 			alerts: [],
 		}),
 	);
+	const pending = live.refresh();
 	try {
-		render(HealthPresentation);
-		await waitFor(() =>
-			expect(screen.getByRole('status')).toHaveTextContent('Data may be out of date.'),
-		);
-		expect(screen.getByRole('status')).not.toHaveTextContent('not responding');
+		await Promise.resolve();
+		await Promise.resolve();
+		flushSync();
+		expect(live.familyStates.alerts.health.isStale).toBe(true);
+		expect(
+			livePresentation({
+				familyStates: live.familyStates,
+				families: ['vehicles', 'alerts'],
+				locale: 'en',
+				page: 'map',
+			}).notice.kind,
+		).toBe('none');
 	} finally {
-		finishVehicles(vehicles);
+		finish(vehicle);
 		await pending;
-	}
-});
-
-it('keeps the real banner idle before first loads resolve and while alerts are still never-loaded', async () => {
-	const generatedUtc = new Date().toISOString();
-	let finishVehicles!: () => void;
-	let finishAlerts!: () => void;
-	const vehicles = new Promise<VehiclesFile>((resolve) => {
-		finishVehicles = () =>
-			resolve(VehiclesFileSchema.parse({ generated_utc: generatedUtc, vehicles: [] }));
-	});
-	const alerts = new Promise<AlertsFile>((resolve) => {
-		finishAlerts = () =>
-			resolve(AlertsFileSchema.parse({ generated_utc: generatedUtc, alerts: [] }));
-	});
-	vi.spyOn(adapter.live, 'vehicles').mockReturnValue(vehicles);
-	vi.spyOn(adapter.live, 'alerts').mockReturnValue(alerts);
-	try {
-		const { container } = render(HealthPresentation);
-		const banner = screen.getByRole('status');
-		const stamp = container.querySelector('[data-slot="freshness-stamp"]');
-		expect(banner).toHaveAttribute('data-state', 'idle');
-		expect(banner.textContent?.trim()).toBe('');
-		expect(stamp).toHaveAttribute('data-stale', 'false');
-		finishVehicles();
-		await waitFor(() => expect(stamp).toHaveAttribute('data-age-seconds'));
-		expect(banner).toHaveAttribute('data-state', 'idle');
-		expect(banner.textContent?.trim()).toBe('');
-		expect(stamp).toHaveAttribute('data-stale', 'false');
-	} finally {
-		finishVehicles();
-		finishAlerts();
-		await Promise.all([vehicles, alerts]);
+		dispose();
 	}
 });

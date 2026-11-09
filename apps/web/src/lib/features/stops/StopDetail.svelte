@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
+	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { ToggleChip, SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import { onMount, untrack } from 'svelte';
@@ -289,6 +291,7 @@
 			return true;
 		});
 	});
+	$effect(() => clock.subscribe());
 </script>
 
 {#snippet liveStatus(source: LiveStore, family: LiveFamily, label: string)}
@@ -296,10 +299,7 @@
 	<div class="stop-report" data-source={family}>
 		<FreshnessStamp
 			variant="live"
-			generatedUtc={source.familyStates[family].retainedGeneration}
-			ageSeconds={health.ageSeconds}
-			isStale={health.isStale}
-			degraded={health.notice === 'refresh-unavailable'}
+			presentation={feedPresentation(source.familyStates[family], locale)}
 			{label}
 			{locale}
 			class="stop-report-stamp"
@@ -338,7 +338,11 @@
 		<div class="stop-report" data-source="historic">
 			<FreshnessStamp
 				variant="updated"
-				generatedUtc={reliability.data.generated_utc}
+				presentation={publicationPresentation(
+					reliability.data.generated_utc,
+					clock.serverNow,
+					locale,
+				)}
 				label={t.report.historic}
 				{locale}
 				class="stop-report-stamp"
@@ -418,10 +422,7 @@
 					{/snippet}
 				</StateNotice>
 			{:else}
-				{#if alertLive.generatedUtc == null}<SectionLabel
-						text={t.report.alerts}
-						variant="metric"
-					/>{/if}
+				<SectionLabel text={t.report.alerts} variant="metric" />
 				<ResourceBoundary resource={alertReport} lang={locale}>
 					{#snippet children(_report)}
 						{@render liveStatus(alertLive, 'alerts', t.report.alerts)}

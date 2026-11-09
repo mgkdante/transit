@@ -188,6 +188,14 @@ const liveStore = {
 	},
 	generatedUtc: '2026-06-15T12:00:00Z',
 	ageSeconds: 12,
+	familyStates: {
+		vehicles: {
+			active: true,
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', retained: true, ageSeconds: 12, isStale: false, notice: null },
+		},
+		alerts: { health: { ageSeconds: 300 as number | null } },
+	},
 	isStale: false,
 	start: vi.fn(),
 	stop: vi.fn(),
@@ -321,6 +329,7 @@ vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => prov
 vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
 	return {
+		LIVE_FAMILIES: actual.LIVE_FAMILIES,
 		createLiveStore: (
 			manifest: Parameters<typeof actual.createLiveStore>[0],
 			options?: Parameters<typeof actual.createLiveStore>[1],
@@ -385,7 +394,8 @@ afterEach(() => {
 });
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(53);
+	// Three additional mounts cover EN/FR alert age and unknown age.
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(56);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -1022,6 +1032,25 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 });
 
 describe('RouteDetail Detail tab: service alerts affecting this route', () => {
+	it.each([
+		['en', 'Alerts checked 5 minutes ago'],
+		['fr', 'Alertes vérifiées il y a 5 minutes'],
+	] as const)('shows the separate alerts age in %s', (locale, note) => {
+		routeSurface.mount(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+		});
+		expect(screen.getByText(note)).toBeInTheDocument();
+	});
+	it('omits an unknown alerts age', () => {
+		liveStore.familyStates.alerts.health.ageSeconds = null;
+		try {
+			renderRoute();
+			expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+		} finally {
+			liveStore.familyStates.alerts.health.ageSeconds = 300;
+		}
+	});
 	it('surfaces alerts whose routes[] lists this route and hides unrelated ones', () => {
 		renderRoute();
 

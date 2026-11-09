@@ -15,11 +15,12 @@ import type {
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '#lib/features/reliability/shiftGrains.ts';
 import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
 import type { RetainedLineHistory } from './data/retainedHistory';
+import type { Locale } from '#lib/i18n/index.ts';
 import {
 	selectVerdictWindow,
-	reliabilityVerdict,
+	verdictForWindow,
+	retainedDelayHeadline,
 	type VerdictStatus,
-	type VerdictHeadline,
 	type ReliabilityVerdict,
 } from '#lib/v1/verdict.ts';
 
@@ -63,7 +64,7 @@ export interface PeakOffPeakVM {
 }
 
 export interface PunctualityVM {
-	readonly headline: (VerdictHeadline | ReliabilityVerdict) & {
+	readonly headline: ReliabilityVerdict & {
 		readonly grain?: string;
 		readonly otpPct: number | null;
 		readonly avgDelayMin: number | null;
@@ -140,6 +141,8 @@ export interface ReliabilityClusters {
 }
 
 export interface ToReliabilityClustersOpts {
+	readonly verdict?: ReliabilityVerdict;
+	readonly locale?: Locale;
 	readonly grain?: string;
 	readonly automaticHeadline?: boolean;
 	readonly selectedDate?: string;
@@ -548,20 +551,18 @@ export function toReliabilityClusters(
 	}
 
 	const exactDelay = retained?.aggregate.delay.value;
-	const verdict = reliabilityVerdict(data, {
-		grain: headlineGrain,
-		selectedDate,
-		...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),
-		...(dateRange && exactDelay
-			? {
-					aggregate: {
-						otpPct: exactDelay.otpPct,
-						observationCount: exactDelay.observationCount,
-						onTime: exactDelay.onTimeCount,
-					},
-				}
-			: {}),
-	});
+	const verdict =
+		opts?.verdict ??
+		verdictForWindow(
+			data,
+			{
+				grain: headlineGrain,
+				selectedDate,
+				...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),
+				...(dateRange ? { aggregate: retainedDelayHeadline(exactDelay) } : {}),
+			},
+			opts?.locale,
+		);
 	const { otpPct } = verdict;
 
 	const strip: SnapshotStripVM = {

@@ -216,7 +216,6 @@ describe('toVehicleFeatures entity filtering', () => {
 });
 
 describe('toVehicleFeatures retired per-vehicle silence fade', () => {
-	const TTL = 30;
 	function fleet(freshUtc: string, silentUtc: string) {
 		return [
 			{ id: 'fresh', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: freshUtc, bearing: 90 },
@@ -237,7 +236,6 @@ describe('toVehicleFeatures retired per-vehicle silence fade', () => {
 		const silent = '2026-06-21T11:55:00Z';
 		const silence: VehicleSilenceContext = {
 			serverNow: now,
-			ttlS: TTL,
 		};
 		const features = toVehicleFeatures(
 			fleet(fresh, silent),

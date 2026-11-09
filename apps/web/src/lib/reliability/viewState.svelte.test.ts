@@ -9,6 +9,8 @@ import { windowedSeries } from '#lib/features/network/reliability/data/trendWind
 import { HistoricCollectionIndexSchema } from '#lib/v1/schemas/history.ts';
 import type { HistoricCollectionIndex } from '#lib/v1/schemas/history.ts';
 import type { TrendPoint } from '#lib/v1/index.ts';
+import type { ReliabilityWindow, VerdictHeadline } from '#lib/v1/verdict.ts';
+import { verdictCopy } from '#lib/v1/verdict.copy.ts';
 import {
 	historyRangeRequestFromSearchParams,
 	type HistoryRangeResource,
@@ -56,8 +58,8 @@ function mount<T>(create: () => T): T {
 	return root.value;
 }
 
-function history() {
-	const input = stateCell<HistoryRangeResource<HistoricCollectionIndex, Dataset>>({
+function history<T = Dataset>() {
+	const input = stateCell<HistoryRangeResource<HistoricCollectionIndex, T>>({
 		request: historyRangeRequestFromSearchParams(harness.page.url.searchParams),
 		state: 'current',
 		index: null,
@@ -334,4 +336,74 @@ describe('reliability view-state public contract', () => {
 				windowedSeries('day', { daily: view.data?.series ?? [], weekly: [], monthly: [] }, days),
 			).toHaveLength(days);
 	});
+});
+
+describe('view state owns the finished Verdict', () => {
+	it.each(['en', 'fr'] as const)(
+		'includes the retained total only for the active Window in %s',
+		(locale) => {
+			const current = {
+				periods: [
+					{
+						grain: 'week',
+						date: '2026-07-12',
+						otp_pct: 85,
+						observation_count: 4000,
+						on_time: 3400,
+					},
+				],
+			};
+			const input = history<{
+				periods: readonly (ReliabilityWindow & { grain: string })[];
+				headline: VerdictHeadline;
+			}>();
+			const language = stateCell<'en' | 'fr'>(locale);
+			const view = mount(() =>
+				createReliabilityViewState({
+					snapshot: () => current,
+					retained: { resource: () => input.value, copy: () => copy },
+					grains: { keys: RELIABILITY_GRAINS, labels },
+					apply: (_current, retained) => retained,
+					verdict: { file: (data) => data, headline: (retained) => retained.headline },
+					locale: () => language.value,
+				}),
+			);
+			expect(view.verdict.status).toBe('reliable');
+			expect(view.verdict.sentence).toContain(verdictCopy[locale].windowPhrase.week);
+			expect(view.verdict).toBe(view.verdict);
+			view.navigator?.onRangeChange?.({ from: '2026-01-31', to: '2026-01-31' });
+			flushSync();
+			expect(view.verdict.status).toBe('absent');
+			const headline = { otpPct: 55, observationCount: 1000, onTime: 550 };
+			input.value = {
+				...input.value,
+				state: 'ready',
+				value: { periods: [], headline },
+				resolved: {
+					selection: { from: '2026-01-31', to: '2026-01-31' },
+					canonicalWindow: { from: '2026-01-31', to: '2026-01-31' },
+					correction: null,
+					intersectingGaps: [],
+				},
+			};
+			flushSync();
+			expect(view.verdictWindow.aggregate).toEqual(headline);
+			expect(view.verdict).toMatchObject({
+				status: 'unreliable',
+				otpPct: 55,
+				observationCount: 1000,
+				onTime: 550,
+			});
+			expect(view.verdict.sentence).toContain(verdictCopy[locale].windowPhrase.range);
+			const nextLocale = locale === 'en' ? 'fr' : 'en';
+			language.value = nextLocale;
+			flushSync();
+			expect(view.verdict.sentence).toContain(verdictCopy[nextLocale].windowPhrase.range);
+			view.navigator?.onRangeChange?.(undefined);
+			flushSync();
+			expect(view.verdictWindow.aggregate).toBeUndefined();
+			expect(view.verdict.status).toBe('reliable');
+			expect(view.verdict.sentence).toContain(verdictCopy[nextLocale].windowPhrase.week);
+		},
+	);
 });

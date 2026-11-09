@@ -39,7 +39,7 @@ _TREND_DAILY_SQL = named_query(
     WHERE sp.provider_id = :provider_id
       AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 90
     GROUP BY sp.provider_local_date
-    """
+    """,
 )
 
 _TREND_FACT_SQL = named_query(
@@ -55,7 +55,7 @@ _TREND_FACT_SQL = named_query(
       AND ABS(fts.delay_seconds) <= 3600
       AND fts.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
     GROUP BY timezone(dp.timezone, fts.captured_at_utc)::date
-    """
+    """,
 )
 
 _TREND_CANCELLATION_SQL = named_query(
@@ -73,7 +73,7 @@ _TREND_CANCELLATION_SQL = named_query(
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY provider_local_date
-    """
+    """,
 )
 
 _TREND_OCCUPANCY_SQL = named_query(
@@ -88,7 +88,7 @@ _TREND_OCCUPANCY_SQL = named_query(
     FROM gold.route_occupancy_band_daily
     WHERE provider_id = :provider_id
     GROUP BY provider_local_date
-    """
+    """,
 )
 
 # Weekly/monthly buckets use local starts; percentiles and distinct vehicles cannot be summed.
@@ -107,7 +107,7 @@ _TREND_WEEKLY_SQL = named_query(
     WHERE sp.provider_id = :provider_id
       AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
     GROUP BY date_trunc('week', sp.provider_local_date)::date
-    """
+    """,
 )
 
 _TREND_MONTHLY_SQL = named_query(
@@ -123,7 +123,7 @@ _TREND_MONTHLY_SQL = named_query(
     WHERE sp.provider_id = :provider_id
       AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
     GROUP BY date_trunc('month', sp.provider_local_date)::date
-    """
+    """,
 )
 
 # Cancellation windows match the daily source; do not independently shorten coarse buckets.
@@ -141,7 +141,7 @@ _TREND_CANCELLATION_WEEKLY_SQL = named_query(
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('week', provider_local_date)::date
-    """
+    """,
 )
 
 _TREND_CANCELLATION_MONTHLY_SQL = named_query(
@@ -158,7 +158,7 @@ _TREND_CANCELLATION_MONTHLY_SQL = named_query(
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('month', provider_local_date)::date
-    """
+    """,
 )
 
 _TREND_OCCUPANCY_WEEKLY_SQL = named_query(
@@ -173,7 +173,7 @@ _TREND_OCCUPANCY_WEEKLY_SQL = named_query(
     FROM gold.route_occupancy_band_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('week', provider_local_date)::date
-    """
+    """,
 )
 
 _TREND_OCCUPANCY_MONTHLY_SQL = named_query(
@@ -188,7 +188,7 @@ _TREND_OCCUPANCY_MONTHLY_SQL = named_query(
     FROM gold.route_occupancy_band_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('month', provider_local_date)::date
-    """
+    """,
 )
 
 _NETWORK_SHIFT_ORDER = ("am_peak", "midday", "pm_peak", "evening", "night")
@@ -226,11 +226,7 @@ def _trend_points(
         # OTP uses known-delay counts; pooled means use the in-clamp histogram denominator.
         pooled = r["pooled_delay_sec"]
         inclamp = r["inclamp_obs"]
-        avg_delay_sec = (
-            (float(pooled) / float(inclamp))
-            if inclamp and pooled is not None
-            else None
-        )
+        avg_delay_sec = (float(pooled) / float(inclamp)) if inclamp and pooled is not None else None
         entry = _blank_trend_point()
         entry["otp_pct"] = _otp_pct(r["on_time"], known_obs)
         entry["avg_delay_min"] = _avg_delay_min(avg_delay_sec)
@@ -288,9 +284,7 @@ def _trend_points(
     ]
 
 
-def build_network_trend(
-    conn: Connection, *, provider_id: str = "stm", generated_utc: str
-) -> NetworkTrend:
+def build_network_trend(conn: Connection, *, provider_id: str, generated_utc: str) -> NetworkTrend:
     params = {
         "provider_id": provider_id,
         "fact_retention_days": get_settings().GOLD_FACT_RETENTION_DAYS,
@@ -319,9 +313,7 @@ def build_network_trend(
         occupancy_sql=_TREND_OCCUPANCY_MONTHLY_SQL,
     )
 
-    by_shift = _network_spine_rows(
-        conn, _NETWORK_SPINE_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER
-    )
+    by_shift = _network_spine_rows(conn, _NETWORK_SPINE_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
     by_daytype = _network_spine_rows(
         conn, _NETWORK_SPINE_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
     )

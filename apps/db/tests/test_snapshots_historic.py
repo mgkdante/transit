@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import datetime
@@ -62,7 +61,6 @@ from transit_ops.sql_registry import query_name
 
 
 class FakeConn(NamedQueryConn):
-
     def __init__(self, mapping=None):  # noqa: ANN001
         super().__init__(dict(mapping) if mapping is not None else {})
         self.executed_query_params: list[tuple[str | None, dict]] = []
@@ -320,7 +318,7 @@ def test_build_network_trend_service_completeness_clamped_at_100() -> None:
             "network.trend.daily_occupancy": [],
         }
     )
-    out = build_network_trend(conn, generated_utc="t")
+    out = build_network_trend(conn, generated_utc="t", provider_id="stm")
     assert len(out.series) == 1
     assert out.series[0].service_completeness_rate == 100.0
 
@@ -367,7 +365,7 @@ def test_build_network_trend_weekly_monthly_vary_not_flat() -> None:
         }
     )
 
-    out = build_network_trend(conn, generated_utc="t")
+    out = build_network_trend(conn, generated_utc="t", provider_id="stm")
 
     weekly_otp = [p.otp_pct for p in out.weekly]
     weekly_avg = [p.avg_delay_min for p in out.weekly]
@@ -391,7 +389,7 @@ def test_build_network_trend_fact_only_date() -> None:
             ("network.trend.daily_p90", [{"local_date": d, "p90_min": 4.0, "vehicles": 12}]),
         ]
     )
-    out = build_network_trend(conn, generated_utc="t")
+    out = build_network_trend(conn, generated_utc="t", provider_id="stm")
     assert len(out.series) == 1
     pt = out.series[0]
     assert pt.date == "2026-06-05"
@@ -471,7 +469,7 @@ def test_build_route_reliability_headway_excess() -> None:
         )
     )
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     by_shift = {h.shift: h for h in out.headway}
 
     assert by_shift["am_peak"].scheduled_min == 8.0
@@ -497,7 +495,7 @@ def test_build_route_reliability_excess_clamped_at_zero() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     am = next(h for h in out.headway if h.shift == "am_peak")
     assert am.scheduled_min == 10.0
     assert am.observed_min == 6.0
@@ -523,7 +521,7 @@ def test_build_route_reliability_directional_headway_is_typed_not_encoded() -> N
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     directional = [h for h in out.headway if h.direction_id is not None]
     assert len(directional) == 2
     for h in directional:
@@ -544,7 +542,7 @@ def test_build_route_reliability_habits_matrix_is_7x24() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     assert out.habits.scale == "repeat_problem_relative"
     assert len(out.habits.matrix) == 7
@@ -564,7 +562,7 @@ def test_build_route_reliability_habits_at_cap_normalizes_to_one() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="165", generated_utc="t")
+    out = build_route_reliability(conn, route_id="165", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     cap_cell = out.habits.matrix[4][17]
     assert cap_cell == 1.0
@@ -581,7 +579,7 @@ def test_build_route_reliability_habits_observed_zero_distinct_from_no_data() ->
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     assert out.habits.matrix[1][9] == 0.0
     assert out.habits.matrix[3][18] == 1.0
@@ -597,7 +595,7 @@ def test_build_route_reliability_habits_present_null_score_is_null_not_zero() ->
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     assert out.habits.matrix[1][9] is None
     assert out.habits.matrix[3][18] == 1.0
@@ -612,7 +610,7 @@ def test_build_route_reliability_habits_all_zero_route_no_div_by_zero() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     assert out.habits.matrix[0][0] == 0.0
     assert out.habits.matrix[1][5] == 0.0
@@ -621,7 +619,7 @@ def test_build_route_reliability_habits_all_zero_route_no_div_by_zero() -> None:
 
 def test_build_route_reliability_habits_empty_is_all_null() -> None:
     conn = FakeConn(_route_reliability_dispatch(habit=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.habits is not None
     assert out.habits.scale == "repeat_problem_relative"
     assert len(out.habits.matrix) == 7
@@ -637,7 +635,7 @@ def test_build_route_reliability_weak_stops_sorted_desc_default_serves_all() -> 
     names = [{"stop_id": f"S{i}", "stop_name": f"Stop {i}"} for i in range(6)]
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert len(out.weak_stops) == 6
     delays = [w.avg_delay_min for w in out.weak_stops]
     assert delays == sorted(delays, reverse=True)
@@ -664,11 +662,13 @@ def test_build_route_reliability_weak_stops_equal_averages_have_stable_bytes() -
         FakeConn(_route_reliability_dispatch(weak=weak, names=names)),
         route_id="51",
         generated_utc="t",
+        provider_id="stm",
     )
     reversed_input = build_route_reliability(
         FakeConn(_route_reliability_dispatch(weak=list(reversed(weak)), names=names)),
         route_id="51",
         generated_utc="t",
+        provider_id="stm",
     )
 
     assert [stop.id for stop in forward.weak_stops] == ["A1", "Z9"]
@@ -683,11 +683,15 @@ def test_build_route_reliability_weak_stops_respects_explicit_limit() -> None:
     names = [{"stop_id": f"S{i}", "stop_name": f"Stop {i}"} for i in range(6)]
 
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t", weak_stops_limit=3)
+    out = build_route_reliability(
+        conn, route_id="51", generated_utc="t", weak_stops_limit=3, provider_id="stm"
+    )
     assert [w.id for w in out.weak_stops] == ["S1", "S4", "S2"]
 
     conn2 = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
-    out_all = build_route_reliability(conn2, route_id="51", generated_utc="t", weak_stops_limit=100)
+    out_all = build_route_reliability(
+        conn2, route_id="51", generated_utc="t", weak_stops_limit=100, provider_id="stm"
+    )
     assert len(out_all.weak_stops) == 6
 
 
@@ -720,7 +724,7 @@ def test_build_route_reliability_delay_by_crowding_co_observes_all_bands() -> No
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
 
     by_band = {c.band: c for c in out.delay_by_crowding}
     assert [c.band for c in out.delay_by_crowding] == ["many_seats", "standing", "full"]
@@ -745,7 +749,7 @@ def test_build_route_reliability_delay_by_crowding_avg_and_p50() -> None:
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
 
     cell = {c.band: c for c in out.delay_by_crowding}["many_seats"]
     assert cell.avg_delay_min == 3.0
@@ -756,7 +760,7 @@ def test_build_route_reliability_delay_by_crowding_avg_and_p50() -> None:
 
 def test_build_route_reliability_delay_by_crowding_empty_when_no_telemetry() -> None:
     conn = FakeConn(_route_reliability_dispatch(crowding=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.delay_by_crowding == []
 
 
@@ -780,14 +784,14 @@ def test_build_route_reliability_delay_by_crowding_skips_null_band() -> None:
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert [c.band for c in out.delay_by_crowding] == ["standing"]
     assert out.delay_by_crowding[0].avg_delay_min == 4.0
 
 
 def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
     conn = FakeConn(_route_reliability_dispatch(crosstab=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.by_shift_daytype == []
 
 
@@ -835,7 +839,7 @@ def test_build_route_reliability_occupancy_by_dow_cells() -> None:
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     by = {c.day_of_week_iso: c for c in out.occupancy_by_dow}
     assert set(by) == {1, 6}
     assert by[1].mix is not None
@@ -858,7 +862,7 @@ def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() ->
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert len(out.occupancy_by_dow) == 1
     assert out.occupancy_by_dow[0].day_of_week_iso == 3
     assert out.occupancy_by_dow[0].mix is None
@@ -867,7 +871,7 @@ def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() ->
 
 def test_build_route_reliability_occupancy_by_dow_empty_when_absent() -> None:
     conn = FakeConn(_route_reliability_dispatch(occ_dow=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.occupancy_by_dow == []
 
 
@@ -891,7 +895,7 @@ def test_build_route_reliability_occupancy_by_hour_cells() -> None:
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     by = {c.hour_of_day_local: c for c in out.occupancy_by_hour}
     assert set(by) == {8, 12}
     assert by[8].mix is not None
@@ -914,7 +918,7 @@ def test_build_route_reliability_occupancy_by_hour_honest_none_when_no_bands() -
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert len(out.occupancy_by_hour) == 1
     assert out.occupancy_by_hour[0].hour_of_day_local == 3
     assert out.occupancy_by_hour[0].mix is None
@@ -923,7 +927,7 @@ def test_build_route_reliability_occupancy_by_hour_honest_none_when_no_bands() -
 
 def test_build_route_reliability_occupancy_by_hour_empty_when_absent() -> None:
     conn = FakeConn(_route_reliability_dispatch(occ_hour=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.occupancy_by_hour == []
 
 
@@ -955,7 +959,7 @@ def test_build_route_reliability_occupancy_by_grain_windows() -> None:
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     g = {c.grain: c for c in out.occupancy_by_grain}
     assert set(g) == {"day", "week", "month"}
     assert g["day"].mix.many_seats == 1.0
@@ -976,7 +980,7 @@ def test_build_route_reliability_occupancy_by_grain_honest_none_when_no_bands() 
         },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     g = {c.grain: c for c in out.occupancy_by_grain}
     assert set(g) == {"day", "week", "month"}
     assert all(c.mix is None for c in out.occupancy_by_grain)
@@ -984,7 +988,7 @@ def test_build_route_reliability_occupancy_by_grain_honest_none_when_no_bands() 
 
 def test_build_route_reliability_occupancy_by_grain_empty_when_absent() -> None:
     conn = FakeConn(_route_reliability_dispatch(occ_grain=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.occupancy_by_grain == []
 
 
@@ -1014,7 +1018,7 @@ def test_build_route_reliability_weak_stop_name_from_history() -> None:
     ]
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
 
     by_id = {w.id: w for w in out.weak_stops}
     assert by_id["S_RETIRED"].name == "Ancien arret"
@@ -1031,14 +1035,14 @@ def test_build_route_reliability_name_field() -> None:
         )
     )
 
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
 
     assert out.name == "Boulevard Saint-Laurent"
 
 
 def test_build_route_reliability_unknown_route_name_is_none() -> None:
     conn = FakeConn(_route_reliability_dispatch(route_names=[]))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert out.name is None
 
 
@@ -1066,9 +1070,7 @@ def test_build_route_reliability_injected_names_match_two_route_fallback_bytes()
     fallback_conn = FakeConn(dispatch)
     fallback = {
         route_id: build_route_reliability(
-            fallback_conn,
-            route_id=route_id,
-            generated_utc="t",
+            fallback_conn, route_id=route_id, generated_utc="t", provider_id="stm"
         )
         for route_id in ("51", "165")
     }
@@ -1081,6 +1083,7 @@ def test_build_route_reliability_injected_names_match_two_route_fallback_bytes()
             generated_utc="t",
             route_names={"51": "Boulevard Saint-Laurent", "165": "Cote-Vertu"},
             stop_names={"S1": "Station Berri"},
+            provider_id="stm",
         )
         for route_id in ("51", "165")
     }
@@ -1117,7 +1120,7 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
             ),
         ]
     )
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", provider_id="stm")
     assert any(p.grain == "day" for p in out.periods)
     am = next(h for h in out.headway if h.shift == "am_peak")
     assert am.observed_min == 7.0
@@ -1172,7 +1175,7 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
         weekly=[{"stop_id": "S2", "obs": 80, "weighted_delay_sec": 4800.0, "severe": 8}],
         monthly=[],
     )
-    out = build_stop_reliability(conn, generated_utc="t")
+    out = build_stop_reliability(conn, generated_utc="t", provider_id="stm")
     assert "S2" in out
     s2 = out["S2"]
     assert [p.grain for p in s2.periods] == ["week"]
@@ -1230,7 +1233,7 @@ def test_build_hotspots_ranks_and_top_20() -> None:
 
 def test_build_hotspots_empty_returns_empty() -> None:
     conn = FakeConn({"hotspots.list": []})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots == []
 
 
@@ -1240,7 +1243,7 @@ def test_build_hotspots_week_period_filter() -> None:
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "high"},
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].type == "route"
     assert out.hotspots[1].type == "stop"
     assert out.hotspots[0].rank == 1
@@ -1265,7 +1268,7 @@ def test_build_hotspots_excludes_sentinel_entities() -> None:
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 10, "severity_label": "watch"},
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     ids = [h.id for h in out.hotspots]
     assert "__unrouted__" not in ids
     assert "__unknown_stop__" not in ids
@@ -1297,7 +1300,7 @@ def test_build_hotspots_resolves_names() -> None:
         ]
     )
 
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
 
     assert out.hotspots[0].name == "Saint-Laurent"
     assert out.hotspots[1].name == "Ancien arret"
@@ -1320,7 +1323,7 @@ def test_build_hotspots_otp_delta_route_real_otp_signed_1dp() -> None:
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts == -7.5
 
 
@@ -1342,7 +1345,7 @@ def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts == -10.0
 
 
@@ -1362,7 +1365,7 @@ def test_build_hotspots_otp_delta_stop_problem_is_negative_vs_severe_baseline() 
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts == -3.0
 
 
@@ -1382,7 +1385,7 @@ def test_build_hotspots_otp_delta_stop_none_when_severe_baseline_missing() -> No
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts is None
 
 
@@ -1402,7 +1405,7 @@ def test_build_hotspots_otp_delta_cell_otp_unknown_is_none() -> None:
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts is None
 
 
@@ -1422,7 +1425,7 @@ def test_build_hotspots_otp_delta_network_baseline_null_is_none() -> None:
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
-    out = build_hotspots(conn, generated_utc="t")
+    out = build_hotspots(conn, generated_utc="t", provider_id="stm")
     assert out.hotspots[0].otp_delta_pts is None
 
 
@@ -1555,7 +1558,9 @@ def test_hotspots_by_grain_scalar_list_byte_identical() -> None:
         {"entity_kind": "route", "entity_id": "51", "issue_count": 9, "severity_label": "high"},
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "watch"},
     ]
-    a = build_hotspots(FakeConn({"hotspots.list": scalar_rows}), generated_utc="t")
+    a = build_hotspots(
+        FakeConn({"hotspots.list": scalar_rows}), generated_utc="t", provider_id="stm"
+    )
     mapping = {
         "hotspots.list": scalar_rows,
         "hotspots.route.anchor": [{"anchor": _dt.date(2026, 6, 20)}],
@@ -1569,7 +1574,7 @@ def test_hotspots_by_grain_scalar_list_byte_identical() -> None:
         ],
         "hotspots.stop.by_shift": [],
     }
-    b = build_hotspots(FakeConn(mapping), generated_utc="t")
+    b = build_hotspots(FakeConn(mapping), generated_utc="t", provider_id="stm")
     assert b.by_grain, "expected a populated by_grain in fixture (b)"
     dump_a = json.dumps([h.model_dump(mode="json") for h in a.hotspots], sort_keys=True)
     dump_b = json.dumps([h.model_dump(mode="json") for h in b.hotspots], sort_keys=True)
@@ -1589,7 +1594,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
         },
     ]
     conn = FakeConn({"repeat.offenders": rows})
-    out = build_repeat_offenders(conn, generated_utc="t")
+    out = build_repeat_offenders(conn, generated_utc="t", provider_id="stm")
     assert isinstance(out, RepeatOffenders)
     assert len(out.offenders) == 1
     o = out.offenders[0]
@@ -1622,7 +1627,7 @@ def test_build_repeat_offenders_ordering() -> None:
         },
     ]
     conn = FakeConn({"repeat.offenders": rows})
-    out = build_repeat_offenders(conn, generated_utc="t")
+    out = build_repeat_offenders(conn, generated_utc="t", provider_id="stm")
     assert out.offenders[0].id == "T9"
     assert out.offenders[1].id == "V2"
 
@@ -1641,7 +1646,7 @@ def test_build_repeat_offenders_top_50_cap() -> None:
         for i in range(50)
     ]
     conn = FakeConn({"repeat.offenders": rows})
-    out = build_repeat_offenders(conn, generated_utc="t")
+    out = build_repeat_offenders(conn, generated_utc="t", provider_id="stm")
     assert len(out.offenders) == 50
 
 
@@ -1688,7 +1693,7 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
         ]
     )
 
-    out = build_repeat_offenders(conn, generated_utc="t")
+    out = build_repeat_offenders(conn, generated_utc="t", provider_id="stm")
 
     assert out.offenders[0].route_name == "Boulevard Saint-Laurent"
     assert out.offenders[0].id == "281234567"
@@ -1718,7 +1723,7 @@ def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> Non
         },
     ]
     conn = FakeConn({"repeat.offenders": rows})
-    out = build_repeat_offenders(conn, generated_utc="t")
+    out = build_repeat_offenders(conn, generated_utc="t", provider_id="stm")
     assert [o.id for o in out.offenders] == ["T9", "V2"]
     o0 = out.offenders[0]
     assert o0.recurrence == "10/14d"
@@ -2157,7 +2162,7 @@ def test_build_receipts_date_driven_by_accountability() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     assert list(out.keys()) == ["2026-05-01"]
     assert "2026-05-02" not in out
 
@@ -2179,7 +2184,7 @@ def test_build_receipts_rider_impact_at_cap_is_nulled() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     assert out["2026-05-20"].rider_impact_score is None
 
 
@@ -2200,7 +2205,7 @@ def test_build_receipts_rider_impact_below_cap_passthrough() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     assert out["2026-05-21"].rider_impact_score == 9998.5
 
 
@@ -2221,7 +2226,7 @@ def test_build_receipts_join_miss_publishes_null_affected_counts() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-05-25"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-05-25"]
     assert r.affected_routes is None
     assert r.affected_stops is None
     assert r.rider_impact_score is None
@@ -2245,7 +2250,7 @@ def test_build_receipts_genuine_zero_affected_counts_preserved() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-05-26"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-05-26"]
     assert r.affected_routes == 0
     assert r.affected_stops == 0
     assert r.rider_impact_score == 0.0
@@ -2278,7 +2283,7 @@ def test_build_receipts_otp_from_network_hourly() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     r = out["2026-05-10"]
     assert r.otp_pct == 60
     assert r.avg_delay_min == 2.0
@@ -2333,7 +2338,7 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     r = out["2026-05-15"]
     assert r.worst_route is not None
     assert r.worst_route.id == "105"
@@ -2373,7 +2378,7 @@ def test_build_receipts_skips_sentinel_worst_entities() -> None:
             ],
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     r = out["2026-05-15"]
     assert r.worst_route is not None and r.worst_route.id == "105"
     assert r.worst_stop is not None and r.worst_stop.id == "9999"
@@ -2405,7 +2410,7 @@ def test_build_receipts_worst_route_otp_delta_none_when_baseline_missing() -> No
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-05-16"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-05-16"]
     assert r.otp_pct is None
     assert r.worst_route is not None and r.worst_route.id == "105"
     assert r.worst_route.otp_delta_pts is None
@@ -2450,7 +2455,7 @@ def test_build_receipts_worst_entity_names() -> None:
         )
     )
 
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     r = out["2026-05-15"]
 
     assert r.worst_route is not None and r.worst_route.name == "Ancienne ligne"
@@ -2474,7 +2479,7 @@ def test_build_receipts_missing_network_yields_none_otp() -> None:
             ]
         )
     )
-    out = build_receipts(conn, generated_utc="t")
+    out = build_receipts(conn, generated_utc="t", provider_id="stm")
     r = out["2026-05-20"]
     assert r.otp_pct is None
     assert r.avg_delay_min is None
@@ -2531,7 +2536,7 @@ def test_receipts_by_shift_ordered_by_canonical_shift_order() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-01"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-01"]
     assert [c.shift for c in r.by_shift] == ["am_peak", "evening", "night"]
 
 
@@ -2558,7 +2563,7 @@ def test_receipts_by_shift_pooled_avg_matches_day_scalar_methodology() -> None:
         }
     ]
     conn = FakeConn(_receipts_dispatch(acct=[_acct_row(d)], net=net, shift=shift))
-    r = build_receipts(conn, generated_utc="t")["2026-06-02"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-02"]
     assert len(r.by_shift) == 1
     assert r.by_shift[0].avg_delay_min == r.avg_delay_min
     assert r.by_shift[0].observation_count == 300
@@ -2581,7 +2586,7 @@ def test_receipts_by_shift_zero_inclamp_yields_none_avg() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-03"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-03"]
     assert r.by_shift[0].avg_delay_min is None
     assert r.by_shift[0].observation_count == 10
 
@@ -2608,7 +2613,7 @@ def test_receipts_service_states_silent_vs_cancelled_distinct() -> None:
             route_names=[{"route_id": "51", "route_name": "Édouard-Montpetit"}],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-04"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-04"]
     ss = r.service_states
     assert ss is not None
     assert ss.cancelled_trip_days == 5
@@ -2644,7 +2649,7 @@ def test_receipts_not_reported_cap_and_precap_count() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-05"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-05"]
     ss = r.service_states
     assert len(ss.not_reported_routes) == NOT_REPORTED_ROUTES_CAP
     assert ss.not_reported_route_count == n
@@ -2671,7 +2676,7 @@ def test_receipts_not_reported_excludes_sentinel() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-06"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-06"]
     ids = [nr.id for nr in r.service_states.not_reported_routes]
     assert "__unrouted__" not in ids
     assert ids == ["747"]
@@ -2695,7 +2700,7 @@ def test_receipts_service_states_honest_null_when_scheduled_unknown() -> None:
             ],
         )
     )
-    r = build_receipts(conn, generated_utc="t")["2026-06-07"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-07"]
     ss = r.service_states
     assert ss.scheduled_trip_days is None
     assert ss.service_completeness_pct is None
@@ -2706,7 +2711,7 @@ def test_receipts_service_states_honest_null_when_scheduled_unknown() -> None:
 def test_receipts_additive_only_parity_no_new_rows() -> None:
     d = datetime.date(2026, 6, 8)
     conn = FakeConn(_receipts_dispatch(acct=[_acct_row(d, alert_count=3)]))
-    r = build_receipts(conn, generated_utc="t")["2026-06-08"]
+    r = build_receipts(conn, generated_utc="t", provider_id="stm")["2026-06-08"]
     assert r.by_shift == []
     assert r.service_states is None
     dumped = r.model_dump()
@@ -2794,7 +2799,7 @@ def test_build_alert_history_aggregation() -> None:
             )
         ]
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     assert isinstance(out, AlertHistory)
     assert len(out.alerts) == 1
     e = out.alerts[0]
@@ -2841,7 +2846,7 @@ def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> Non
             )
         ]
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     assert out.breakdown is not None
     cause = {b.key: b for b in out.breakdown.by_cause}
     assert cause["MAINTENANCE"].count == 2
@@ -2874,7 +2879,7 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
             )
         ]
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     e = out.alerts[0]
     assert e.duration_min is None
     assert e.start_utc is None
@@ -2907,7 +2912,7 @@ def test_build_alert_history_negative_window_yields_none_duration() -> None:
             )
         ]
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     e = out.alerts[0]
     assert e.duration_min is None
     assert e.start_utc is not None
@@ -2916,7 +2921,7 @@ def test_build_alert_history_negative_window_yields_none_duration() -> None:
 
 def test_build_alert_history_empty() -> None:
     conn = FakeConn({"alerts.history": []})
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     assert out.alerts == []
 
 
@@ -2954,7 +2959,7 @@ def test_build_alert_history_window_fields_from_anchor() -> None:
             ],
         }
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
     assert out.window_end == "2026-07-01"
     assert out.window_start == (anchor - _dt.timedelta(days=days)).isoformat()
@@ -2996,7 +3001,7 @@ def test_build_alert_history_active_periods_from_child_json() -> None:
             ],
         }
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     e = out.alerts[0]
     assert e.cause == "CONSTRUCTION"
     assert e.effect == "DETOUR"
@@ -3029,7 +3034,7 @@ def test_build_alert_history_pre_0077_falls_back_to_scalar_period() -> None:
             ],
         }
     )
-    out = build_alert_history(conn, generated_utc="t")
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     e = out.alerts[0]
     assert e.url is None
     assert len(e.active_periods) == 1
@@ -3053,12 +3058,14 @@ def test_build_alert_history_count_cap_and_truncation(count, total) -> None:
         }
         for i in range(count)
     ]
-    conn = FakeConn({
-        "alerts.history.anchor": [{"anchor": datetime.date(2026, 7, 1)}],
-        "alerts.history.count": [{"total": total}] if total is not None else [],
-        "alerts.history": rows,
-    })
-    out = build_alert_history(conn, generated_utc="t")
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": datetime.date(2026, 7, 1)}],
+            "alerts.history.count": [{"total": total}] if total is not None else [],
+            "alerts.history": rows,
+        }
+    )
+    out = build_alert_history(conn, generated_utc="t", provider_id="stm")
     assert len(out.alerts) == count
     assert out.total_in_window == total
     assert out.truncated is (total is not None and total > count)
@@ -3074,34 +3081,52 @@ def test_alert_history_exact_stamped_byte_budget(count, total, overflow) -> None
 
     stamp, provider = "2026-10-13T00:00:00Z", "provider-with-a-long-id"
     start = datetime.datetime(2026, 10, 12, tzinfo=datetime.UTC)
-    rows = [{
-        "alert_id": f"alert-{i}", "alert_header_text": 'Détour "🚇"',
-        "header_text_en": "Detour", "description": "Avis\n", "description_en": "Notice",
-        "severity": "WARNING", "cause": "CONSTRUCTION", "effect": "DETOUR",
-        "routes": ["9", "51"], "stops": ["123"], "url": "https://agency.test/fr",
-        "url_en": "https://agency.test/en", "start_utc": start,
-        "end_utc": start + datetime.timedelta(minutes=10 + 20 * i),
-        "active_periods": [{"start_utc": stamp}, {"end_utc": stamp}],
-        "message_snapshot_id": 42, "message_alert_index": i, "message_captured_utc": start,
-        "raw_alert_json": {"header": {"fr": "Détour", "en": "Detour"}},
-    } for i in range(count)]
-    conn = FakeConn({
-        "alerts.history.anchor": [{"anchor": start.date()}], "alerts.history": rows,
-        "alerts.history.count": [{"total": total}] if total is not None else [],
-    })
-    expected = build_alert_history(conn, provider, generated_utc=stamp)
-    stamp_envelope([("historic/alert_history.json", expected, "historic")],
-                   provider_id=provider, stamp=stamp)
+    rows = [
+        {
+            "alert_id": f"alert-{i}",
+            "alert_header_text": 'Détour "🚇"',
+            "header_text_en": "Detour",
+            "description": "Avis\n",
+            "description_en": "Notice",
+            "severity": "WARNING",
+            "cause": "CONSTRUCTION",
+            "effect": "DETOUR",
+            "routes": ["9", "51"],
+            "stops": ["123"],
+            "url": "https://agency.test/fr",
+            "url_en": "https://agency.test/en",
+            "start_utc": start,
+            "end_utc": start + datetime.timedelta(minutes=10 + 20 * i),
+            "active_periods": [{"start_utc": stamp}, {"end_utc": stamp}],
+            "message_snapshot_id": 42,
+            "message_alert_index": i,
+            "message_captured_utc": start,
+            "raw_alert_json": {"header": {"fr": "Détour", "en": "Detour"}},
+        }
+        for i in range(count)
+    ]
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": start.date()}],
+            "alerts.history": rows,
+            "alerts.history.count": [{"total": total}] if total is not None else [],
+        }
+    )
+    expected = build_alert_history(conn, provider_id=provider, generated_utc=stamp)
+    stamp_envelope(
+        [("historic/alert_history.json", expected, "historic")], provider_id=provider, stamp=stamp
+    )
     padding = "x" * (ALERT_HISTORY_BYTE_CEILING - len(snapshot_json_bytes(expected)) + overflow)
     rows[-1]["description"] += padding
     expected.alerts[-1].description += padding
     assert len(snapshot_json_bytes(expected)) == ALERT_HISTORY_BYTE_CEILING + overflow
-    out = build_alert_history(conn, provider, generated_utc=stamp)
+    out = build_alert_history(conn, provider_id=provider, generated_utc=stamp)
     before_stamp = len(out.alerts)
-    stamp_envelope([("historic/alert_history.json", out, "historic")],
-                   provider_id=provider, stamp=stamp)
+    stamp_envelope(
+        [("historic/alert_history.json", out, "historic")], provider_id=provider, stamp=stamp
+    )
     assert len(out.alerts) == before_stamp == count - overflow
-    assert out.alerts == expected.alerts[:count - overflow]
+    assert out.alerts == expected.alerts[: count - overflow]
     assert (out.window_start, out.window_end) == (expected.window_start, expected.window_end)
     assert out.total_in_window == total
     assert out.truncated is (bool(overflow) or (total is not None and total > count))
@@ -3158,7 +3183,7 @@ def test_build_provenance_sources_and_freshness() -> None:
         ]
     )
 
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
     assert isinstance(out, Provenance)
 
     by_feed = {s.feed: s for s in out.sources}
@@ -3222,7 +3247,7 @@ def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
         ]
     )
 
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
 
     by_feed = {s.feed: s for s in out.sources}
     assert "gis_static" in by_feed
@@ -3240,7 +3265,7 @@ def test_provenance_methodology_documents_band() -> None:
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
     definition = out.methodology["otp_definition"]
     assert "-60s" in definition
     assert "+300s" in definition
@@ -3259,7 +3284,7 @@ def test_provenance_methodology_documents_closed_period_freeze() -> None:
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
 
     freeze_rule = out.methodology["history_freeze"]
     assert "closed" in freeze_rule
@@ -3274,7 +3299,7 @@ def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
 
     service_time = out.methodology["service_time_conversion"]
     assert "GTFS" in service_time
@@ -3312,7 +3337,7 @@ def test_build_provenance_empty_sources_still_valid() -> None:
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
     assert out.sources == []
     assert out.freshness == []
     assert out.gaps == ["metro_realtime"]
@@ -3328,7 +3353,7 @@ def test_provenance_methodology_keys_have_localized_labels() -> None:
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, generated_utc="t", provider_id="stm")
     for dimension in ("otp_definition", "delay_unit", "percentiles"):
         assert dimension in out.methodology
         label_key = f"methodology.{dimension}"
@@ -3377,7 +3402,6 @@ class _BatchResult:
 
 
 class _BatchPhysicalConn:
-
     def __init__(
         self,
         route_ids=("R1", "R2"),
@@ -3468,11 +3492,7 @@ class _BatchPhysicalConn:
                 }
             ]
         elif name == "static.active_services":
-            service = (
-                "svc_wd"
-                if params.get("repdate") == datetime.date(2026, 6, 3)
-                else "svc_we"
-            )
+            service = "svc_wd" if params.get("repdate") == datetime.date(2026, 6, 3) else "svc_we"
             rows = [(service,)]
         elif name == "route.reliability.batch.weekday_schedules":
             rows = [
@@ -3546,7 +3566,7 @@ def test_build_all_route_reliability_preserves_public_assembler_signature() -> N
     import inspect
 
     assert str(inspect.signature(build_route_reliability)) == (
-        "(conn: 'Connection', *, provider_id: 'str' = 'stm', route_id: 'str', "
+        "(conn: 'Connection', *, provider_id: 'str', route_id: 'str', "
         "generated_utc: 'str', weak_stops_limit: 'int' = 100, "
         "route_names: 'Mapping[str, str] | None' = None, "
         "stop_names: 'Mapping[str, str] | None' = None) -> 'RouteReliability'"
@@ -3619,25 +3639,31 @@ def test_historic_headway_schedule_ignores_weekend_and_unpublished_route_rows() 
         def _fixture_rows(self, name: str | None, params: dict) -> list:
             rows = super()._fixture_rows(name, params)
             if name in {"static.all_route_schedules", "route.reliability.batch.weekday_schedules"}:
-                rows.extend([
-                    {
-                        "route_id": "R1", "direction_id": 0,
-                        "is_weekday": False, "departure_time": "07:01:00",
-                    },
-                    {
-                        "route_id": "FOREIGN", "direction_id": 0,
-                        "is_weekday": True, "departure_time": "07:02:00",
-                    },
-                ])
+                rows.extend(
+                    [
+                        {
+                            "route_id": "R1",
+                            "direction_id": 0,
+                            "is_weekday": False,
+                            "departure_time": "07:01:00",
+                        },
+                        {
+                            "route_id": "FOREIGN",
+                            "direction_id": 0,
+                            "is_weekday": True,
+                            "departure_time": "07:02:00",
+                        },
+                    ]
+                )
             return rows
 
     kwargs = {"provider_id": "stm", "generated_utc": "2026-07-21T00:00:00Z"}
     baseline = _batch_builder()(_BatchPhysicalConn(), **kwargs)
     with_unused_rows = _batch_builder()(UnusedScheduleRowsConn(), **kwargs)
     assert list(with_unused_rows) == ["R1", "R2"]
-    assert {
-        key: snapshot_json_bytes(payload) for key, payload in with_unused_rows.items()
-    } == {key: snapshot_json_bytes(payload) for key, payload in baseline.items()}
+    assert {key: snapshot_json_bytes(payload) for key, payload in with_unused_rows.items()} == {
+        key: snapshot_json_bytes(payload) for key, payload in baseline.items()
+    }
 
 
 def test_historic_headway_schedule_request_excludes_unused_routes_and_weekend_services() -> None:
@@ -3654,14 +3680,18 @@ def test_historic_headway_schedule_request_excludes_unused_routes_and_weekend_se
             return super().execute(statement, params)
 
     built = _batch_builder()(
-        ScheduleRequestConn(("R2", "R1")), provider_id="stm", generated_utc="t",
+        ScheduleRequestConn(("R2", "R1")),
+        provider_id="stm",
+        generated_utc="t",
     )
     assert list(built) == ["R1", "R2"]
     assert len(schedule_requests) == 1
     sql, params = schedule_requests[0]
     assert params == {
-        "provider_id": "stm", "dataset_version_id": 1,
-        "weekday_services": ["svc_wd"], "route_ids": ["R1", "R2"],
+        "provider_id": "stm",
+        "dataset_version_id": 1,
+        "weekday_services": ["svc_wd"],
+        "route_ids": ["R1", "R2"],
     }
     normalized = " ".join(sql.split())
     assert "t.route_id = ANY(:route_ids)" in normalized
@@ -3800,14 +3830,21 @@ def test_route_batch_sql_is_set_based_partitioned_and_has_no_lateral_subplans() 
     )
 
     composite = "\n".join(
-        str(statement)
-        for statement in (_SPINE_SECTIONS_SQL, _HEADWAY_WINDOWS_SQL, _WEAK_STOPS_SQL)
+        str(statement) for statement in (_SPINE_SECTIONS_SQL, _HEADWAY_WINDOWS_SQL, _WEAK_STOPS_SQL)
     ).upper()
     assert "CROSS JOIN LATERAL" not in composite
-    assert "LIMIT 30" not in "\n".join(
-        str(statement)
-        for statement in (_DAILY_SQL, _CANCELLATIONS_SQL, _SERVICE_SPANS_SQL, _SKIPPED_STOPS_SQL)
-    ).upper()
+    assert (
+        "LIMIT 30"
+        not in "\n".join(
+            str(statement)
+            for statement in (
+                _DAILY_SQL,
+                _CANCELLATIONS_SQL,
+                _SERVICE_SPANS_SQL,
+                _SKIPPED_STOPS_SQL,
+            )
+        ).upper()
+    )
     for statement in (_DAILY_SQL, _CANCELLATIONS_SQL, _SERVICE_SPANS_SQL, _SKIPPED_STOPS_SQL):
         sql = str(statement).upper()
         assert "PARTITION BY ROUTE_ID" in sql
@@ -3817,29 +3854,44 @@ def test_route_batch_sql_is_set_based_partitioned_and_has_no_lateral_subplans() 
 
 @pytest.mark.parametrize("numerator, expected", [(49, 6.13), (0, 0.0), (None, None)])
 def test_network_trend_rate_midpoints_and_missing_counts(numerator, expected) -> None:
-    conn = FakeConn({
-        "network.trend.daily_cancel": [{
-            "local_date": "2026-09-11", "canceled": numerator, "total": 800,
-            "delivered": numerator, "scheduled": 800,
-        }],
-    })
-    point = build_network_trend(conn, generated_utc="t").series[0]
+    conn = FakeConn(
+        {
+            "network.trend.daily_cancel": [
+                {
+                    "local_date": "2026-09-11",
+                    "canceled": numerator,
+                    "total": 800,
+                    "delivered": numerator,
+                    "scheduled": 800,
+                }
+            ],
+        }
+    )
+    point = build_network_trend(conn, generated_utc="t", provider_id="stm").series[0]
     assert point.cancellation_rate == expected
     assert point.service_completeness_rate == expected
 
 
 def test_headway_bunching_midpoint_and_excess_subtraction_precision() -> None:
-    conn = FakeConn(_route_reliability_dispatch(
-        schedule=[
-            {"direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
-            {"direction_id": 0, "is_weekday": True, "departure_time": "07:01:00"},
-        ],
-        headway=[{
-            "shift": "am_peak", "observed_headway_min": 2.3,
-            "sample_count": 400, "bunched_count": 9,
-        }],
-    ))
-    period = build_route_reliability(conn, route_id="51", generated_utc="t").headway[0]
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            schedule=[
+                {"direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+                {"direction_id": 0, "is_weekday": True, "departure_time": "07:01:00"},
+            ],
+            headway=[
+                {
+                    "shift": "am_peak",
+                    "observed_headway_min": 2.3,
+                    "sample_count": 400,
+                    "bunched_count": 9,
+                }
+            ],
+        )
+    )
+    period = build_route_reliability(
+        conn, route_id="51", generated_utc="t", provider_id="stm"
+    ).headway[0]
     assert period.bunched_pct == 2.3
     assert period.scheduled_min == 1.0
     assert period.observed_min == 2.3

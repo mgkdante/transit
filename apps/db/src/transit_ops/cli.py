@@ -409,7 +409,7 @@ def show_provider(provider_id: str) -> None:
 
 @app.command("publish-providers")
 def publish_providers(
-    default_provider: str = typer.Option("stm", "--default-provider"),  # noqa: B008
+    default_provider: str = typer.Option(..., "--default-provider"),  # noqa: B008
 ) -> None:
     """Publish explicitly ready providers after validating their existing snapshots/assets."""
     settings = get_settings()

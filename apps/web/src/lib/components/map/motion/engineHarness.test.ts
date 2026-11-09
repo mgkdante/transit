@@ -430,7 +430,7 @@ function runStationarySkipFixture(): EngineMetrics {
 	engine.feed(second);
 	engine.driveFrames(Math.ceil((BLEND_MS / 1000) * RAF_HZ) + 6);
 	expect(engine.latestFeature(PINNED_ID).properties.stale).toBe(0);
-	expect(engine.hasPending()).toBe(true);
+	expect(engine.hasPending()).toBe(false);
 
 	engine.beginMeasurement(PINNED_ID, MEASURE_SECONDS);
 	engine.driveFrames(RAF_HZ * MEASURE_SECONDS);
@@ -475,16 +475,11 @@ describe('motion engine deterministic acceptance harness', () => {
 		expect(metrics.staleStates).toContain(1);
 	});
 
-	it('attributes every stationary evaluated-frame suppression to the dirty-check', () => {
+	it('stops evaluating stationary vehicles after blending', () => {
 		const metrics = runStationarySkipFixture();
 		reportMetrics('after-stationary', metrics);
 
-		expect(metrics.evaluations).toBe(EXPECTED_EVALUATIONS_PER_SECOND * MEASURE_SECONDS);
+		expect(metrics.evaluations).toBe(0);
 		expect(metrics.uploads).toBe(0);
-		expect(metrics.skips).toBe(metrics.evaluations);
-		expect(metrics.consecutiveDuplicates).toBe(metrics.evaluations - 1);
-		expect(metrics.positionsPerSecond).toEqual([1, 1, 1]);
-		expect(metrics.stepDistancesM.every((distance) => distance === 0)).toBe(true);
-		expect(new Set(metrics.staleStates)).toEqual(new Set([0]));
 	});
 });

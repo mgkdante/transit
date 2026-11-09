@@ -1,4 +1,4 @@
-import { fixAgeS, isVehicleStale } from '#lib/components/map/index.ts';
+import { notReporting } from '../vehicleMotion';
 import type { MapSelectionDetail } from './mapSelection';
 
 export function vehicleAbsence(
@@ -6,6 +6,5 @@ export function vehicleAbsence(
 	serverNow: number,
 ): { ageS: number } | null {
 	if (detail?.kind !== 'vehicle') return null;
-	const ageS = fixAgeS(detail.vehicle.reported_utc, detail.vehicle.updated_utc, serverNow);
-	return isVehicleStale(ageS) ? { ageS } : null;
+	return notReporting(detail.vehicle, serverNow);
 }

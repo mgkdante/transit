@@ -3,17 +3,16 @@ import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import {
 	bestShapeForPoint,
 	routeShapes,
-	type Coord,
 	type RouteShapes,
-	type ShapeResolver,
-} from '#lib/components/map/index.ts';
-
-export const MAX_CACHED_ROUTE_SHAPES = 200;
+} from '#lib/components/map/vehicleShapes.ts';
+import type { Coord } from '#lib/components/map/polyline.ts';
+import type { ShapeResolver } from '#lib/components/map/motion/projector.ts';
 
 export interface ShapeCacheManager {
 	remember(route: RouteFile): void;
 	prefetch(vehicles: readonly Vehicle[]): void;
 	shapeFor: ShapeResolver & { revision?: () => number };
+	subscribe(listener: () => void): () => void;
 }
 
 export function createShapeCacheManager(
@@ -23,6 +22,7 @@ export function createShapeCacheManager(
 	const routeShapeRequested = new Map<string, symbol>();
 	const rememberedRoutes = new WeakSet<RouteFile>();
 	let revision = 0;
+	const listeners = new Set<() => void>();
 
 	function cacheRoute(id: string, route: RouteFile): void {
 		const cached = routeShapeCache.get(id);
@@ -35,16 +35,9 @@ export function createShapeCacheManager(
 		const shapes = routeShapes(route);
 		rememberedRoutes.add(route);
 		routeShapeRequested.set(id, Symbol());
-		if (!cached && routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
-			const oldest = routeShapeCache.keys().next().value;
-			if (oldest != null) {
-				routeShapeCache.delete(oldest);
-				routeShapeRequested.delete(oldest);
-				revision += 1;
-			}
-		}
 		routeShapeCache.set(id, { generatedUtc: route.generated_utc, shapes });
 		if (shapes.length > 0 || (cached?.shapes.length ?? 0) > 0) revision += 1;
+		for (const listener of listeners) listener();
 	}
 
 	function prefetch(vehicles: readonly Vehicle[]): void {
@@ -72,9 +65,24 @@ export function createShapeCacheManager(
 		if (!routeId) return null;
 		const shapes = routeShapeCache.get(routeId)?.shapes;
 		if (!shapes || shapes.length === 0) return null;
-		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
+		return bestShapeForPoint(
+			shapes,
+			feature.geometry.coordinates as Coord,
+			60,
+			feature.properties.hasHeading ? feature.properties.bearing : null,
+		);
 	};
 	shapeFor.revision = () => revision;
 
-	return { prefetch, remember: (route) => cacheRoute(route.id, route), shapeFor };
+	return {
+		prefetch,
+		remember: (route) => cacheRoute(route.id, route),
+		shapeFor,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+	};
 }

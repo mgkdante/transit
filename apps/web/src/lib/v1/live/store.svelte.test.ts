@@ -76,12 +76,61 @@ vi.mock('#lib/v1/adapter/index.ts', () => ({
 }));
 
 import { createLiveStore, type LiveFamily } from './store.svelte';
+import { livePresentation } from './livePresentation';
+import { LIVE_FAMILIES, type LiveStore } from './store.svelte';
+const present = (store: Pick<LiveStore, 'familyStates'>) =>
+	livePresentation({
+		familyStates: store.familyStates,
+		families: LIVE_FAMILIES,
+		locale: 'en',
+		page: 'map',
+	});
 import { dataRefresh } from '#lib/stores/index.ts';
 import { configureV1Runtime } from '#lib/v1/runtime.ts';
 import type { NetworkFile } from '#lib/v1/schemas/index.ts';
 import { createSelectionGrace } from '#lib/features/map/selectionSession/selectionGrace.svelte.ts';
 
 configureV1Runtime({ clock, refresh: dataRefresh });
+
+describe('Live age excludes service alerts', () => {
+	it.each([
+		[40, 300, true],
+		[40, 901, true],
+		[120, 300, true],
+		[120, 901, true],
+		[40, 0, false],
+		[120, 0, false],
+	] as const)(
+		'vehicle age %s, alert age %s, alerts active %s',
+		async (vehicleAge, alertAge, hasAlerts) => {
+			mocks.browser = true;
+			mocks.nowMs = Date.parse('2026-06-21T12:00:00Z');
+			mocks.offsetMs = 0;
+			resetLiveFetches();
+			const vehicleGeneration = new Date(mocks.nowMs - vehicleAge * 1000).toISOString();
+			mocks.vehicles.mockResolvedValue({ generated_utc: vehicleGeneration, vehicles: [] });
+			mocks.alerts.mockResolvedValue({
+				generated_utc: new Date(mocks.nowMs - 60_000).toISOString(),
+				feed_captured_utc: new Date(mocks.nowMs - alertAge * 1000).toISOString(),
+				alerts: [],
+			});
+			const mounted = mountLiveStore(30, hasAlerts ? ['vehicles', 'alerts'] : ['vehicles']);
+			try {
+				await mounted.store.refresh();
+				flushSync();
+				const store = mounted.store;
+				expect(present(store).publicationUtc).toBe(vehicleGeneration);
+				expect(present(store).stamp.ageSeconds).toBe(vehicleAge);
+				expect(present(store).stamp.isStale).toBe(vehicleAge >= 90);
+				expect(present(store).isPartialStale).toBe(false);
+				if (hasAlerts) expect(store.familyStates.alerts.health.isStale).toBe(alertAge >= 900);
+				expect(present(store).bannerState).toBe(vehicleAge >= 90 ? 'global-stall' : 'idle');
+			} finally {
+				mounted.dispose();
+			}
+		},
+	);
+});
 
 describe('partial feed capture health', () => {
 	it.each([
@@ -100,7 +149,11 @@ describe('partial feed capture health', () => {
 			try {
 				// Legacy publisher: absence keeps publication-age health.
 				await mounted.store.refresh();
-				expect(mounted.store.familyStates[family].health.state).toBe('live');
+				expect(mounted.store.familyStates[family].health).toMatchObject({
+					state: 'live',
+					ageSource: 'publication',
+					ageTimestamp: mocks.generatedUtc,
+				});
 				for (const [capture, stale] of [
 					[new Date(mocks.nowMs - (limit - 1) * 1000).toISOString(), false],
 					[new Date(mocks.nowMs - limit * 1000).toISOString(), true],
@@ -115,6 +168,14 @@ describe('partial feed capture health', () => {
 					});
 					await mounted.store.refresh();
 					expect(mounted.store.familyStates[family].health.isStale).toBe(stale);
+					const knownCapture =
+						capture != null &&
+						Number.isFinite(Date.parse(capture)) &&
+						Date.parse(capture) <= mocks.nowMs;
+					expect(mounted.store.familyStates[family].health).toMatchObject({
+						ageSource: knownCapture ? 'serving-capture' : null,
+						ageTimestamp: knownCapture ? capture : null,
+					});
 					expect(mounted.store.familyStates[family].health.notice).toBe(stale ? 'stale' : null);
 					expect(mounted.store.familyStates.vehicles.health.state).toBe('live');
 				}
@@ -125,7 +186,11 @@ describe('partial feed capture health', () => {
 					feed_captured_utc: mocks.generatedUtc,
 				});
 				await mounted.store.refresh();
-				expect(mounted.store.familyStates[family].health.isStale).toBe(true);
+				expect(mounted.store.familyStates[family].health).toMatchObject({
+					isStale: true,
+					ageSource: 'publication',
+					ageTimestamp: new Date(mocks.nowMs - 90_000).toISOString(),
+				});
 			} finally {
 				mounted.dispose();
 			}
@@ -213,9 +278,9 @@ describe('createLiveStore — server-anchored ageSeconds (skew-immune)', () => {
 		try {
 			await vi.waitFor(() => {
 				flushSync();
-				expect(store.ageSeconds).toBe(30);
+				expect(present(store).stamp.ageSeconds).toBe(30);
 			});
-			expect(store.isStale).toBe(false);
+			expect(present(store).stamp.isStale).toBe(false);
 		} finally {
 			cleanup();
 		}
@@ -265,8 +330,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			retained: false,
 			notice: null,
 		});
-		expect(store.isStale).toBe(false);
-		expect(store.ageSeconds).toBeNull();
+		expect(present(store).stamp.isStale).toBe(false);
+		expect(present(store).stamp.ageSeconds).toBeNull();
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health).toMatchObject({
@@ -301,21 +366,21 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await settleLivePoll();
 		expect(store.familyStates.vehicles.health.state).toBe('never-loaded');
 		expect(store.familyStates.alerts.health.state).toBe('never-loaded');
-		expect(store.isStale).toBe(false);
+		expect(present(store).stamp.isStale).toBe(false);
 		finishVehicles();
 		await settleLivePoll();
 		expect(store.vehicles).not.toBeNull();
 		expect(store.familyStates.alerts.phase).toBe('loading');
-		expect(store.isStale).toBe(false);
-		expect(store.ageSeconds).toBe(10);
+		expect(present(store).stamp.isStale).toBe(false);
+		expect(present(store).stamp.ageSeconds).toBe(10);
 		finishAlerts();
 		await pending;
 	});
 
 	it('does not raise a stale warning when no feed family is active', () => {
 		const { store } = setup(30, []);
-		expect(store.isStale).toBe(false);
-		expect(store.ageSeconds).toBeNull();
+		expect(present(store).stamp.isStale).toBe(false);
+		expect(present(store).stamp.ageSeconds).toBeNull();
 	});
 
 	it.each([
@@ -332,14 +397,16 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health).toEqual({
+			ageSource: 'publication',
+			ageTimestamp: '2026-06-21T12:00:00Z',
 			state: stale ? 'retained-stale' : 'live',
 			ageSeconds: age,
 			isStale: stale,
 			retained: true,
 			notice: stale ? 'stale' : null,
 		});
-		expect(store.isStale).toBe(stale);
-		expect(store.vehiclesIsStale).toBe(stale);
+		expect(present(store).stamp.isStale).toBe(stale);
+		expect(store.familyStates.vehicles.health.isStale).toBe(stale);
 	});
 
 	it.each([null, undefined, 'not-a-date'])(
@@ -353,15 +420,17 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			await store.refresh();
 			flushSync();
 			expect(store.familyStates.vehicles.health).toEqual({
+				ageSource: null,
+				ageTimestamp: null,
 				state: 'retained-stale',
 				ageSeconds: null,
 				isStale: true,
 				retained: true,
 				notice: 'stale',
 			});
-			expect(store.ageSeconds).toBeNull();
-			expect(store.isStale).toBe(true);
-			expect(store.vehiclesIsStale).toBe(true);
+			expect(present(store).stamp.ageSeconds).toBeNull();
+			expect(present(store).stamp.isStale).toBe(true);
+			expect(store.familyStates.vehicles.health.isStale).toBe(true);
 		},
 	);
 
@@ -376,6 +445,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		flushSync();
 		expect(store.trips).toBe(retained);
 		expect(store.familyStates.trips.health).toEqual({
+			ageSource: 'publication',
+			ageTimestamp: '2026-06-21T12:00:00Z',
 			state: 'retained-stale',
 			ageSeconds: 10,
 			isStale: false,
@@ -419,6 +490,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.vehicles.health).toEqual({
+			ageSource: null,
+			ageTimestamp: null,
 			state: 'retained-stale',
 			ageSeconds: null,
 			isStale: true,
@@ -438,6 +511,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await settleLivePoll();
 		expect(store.familyStates.vehicles.phase).toBe('loading');
 		expect.soft(store.familyStates.vehicles.health).toEqual({
+			ageSource: null,
+			ageTimestamp: null,
 			state: 'retrying',
 			ageSeconds: null,
 			isStale: true,
@@ -451,6 +526,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		flushSync();
 		expect(store.familyStates.vehicles.phase).toBe('failed');
 		expect(store.familyStates.vehicles.health).toEqual({
+			ageSource: null,
+			ageTimestamp: null,
 			state: 'retained-stale',
 			ageSeconds: null,
 			isStale: true,
@@ -467,6 +544,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.alerts.health).toEqual({
+			ageSource: null,
+			ageTimestamp: null,
 			state: 'failed-no-data',
 			ageSeconds: null,
 			isStale: true,
@@ -484,7 +563,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await settleLivePoll();
 		expect(store.familyStates.alerts.health).toMatchObject({ state: 'retrying', retained: false });
 		expect(store.familyStates.alerts.health.isStale).toBe(false);
-		expect(store.isStale).toBe(false);
+		expect(present(store).stamp.isStale).toBe(false);
 		finish();
 		await pending;
 	});
@@ -512,8 +591,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 				ageSeconds: 90,
 				notice: 'stale',
 			});
-			expect(store.vehiclesIsStale).toBe(true);
-			expect(store.isStale).toBe(true);
+			expect(store.familyStates.vehicles.health.isStale).toBe(true);
+			expect(present(store).stamp.isStale).toBe(true);
 			expect(mocks.vehicles).toHaveBeenCalledOnce();
 		} finally {
 			restoreRuntime();
@@ -556,11 +635,11 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			isStale: true,
 			notice: 'stale',
 		});
-		expect(store.ageSeconds).toBeNull();
-		expect(store.isStale).toBe(true);
+		expect(present(store).stamp.ageSeconds).toBeNull();
+		expect(present(store).stamp.isStale).toBe(true);
 	});
 
-	it('keeps aggregate age unknown without making a fresh vehicle family stale', async () => {
+	it('keeps Live age current when alerts have unknown age', async () => {
 		mocks.nowMs = Date.parse('2026-06-21T12:00:10Z');
 		mocks.offsetMs = 0;
 		mocks.alerts.mockResolvedValueOnce({ generated_utc: null, alerts: [] });
@@ -573,9 +652,9 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			notice: 'stale',
 		});
 		expect(store.familyStates.vehicles.health).toMatchObject({ state: 'live', ageSeconds: 10 });
-		expect(store.vehiclesIsStale).toBe(false);
-		expect(store.ageSeconds).toBeNull();
-		expect(store.isStale).toBe(true);
+		expect(store.familyStates.vehicles.health.isStale).toBe(false);
+		expect(present(store).stamp.ageSeconds).toBe(10);
+		expect(present(store).stamp.isStale).toBe(false);
 	});
 
 	it('treats an unknown server clock as retained-stale even with a valid generation', async () => {
@@ -722,7 +801,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			expect(mocks.network).not.toHaveBeenCalled();
 			expect(store.network).toEqual(seed);
 			const retainedSeed = store.network;
-			expect(store.generatedUtc).toBe(seed.generated_utc);
+			expect(present(store).publicationUtc).toBe(seed.generated_utc);
 			expect(store.loading).toBe(false);
 			expect(store.error).toBeNull();
 			expect(store.familyStates.network).toMatchObject({
@@ -740,7 +819,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 			expect(mocks.network).toHaveBeenCalledOnce();
 			expect(store.network).toBe(retainedSeed);
-			expect(store.generatedUtc).toBe(seed.generated_utc);
+			expect(present(store).publicationUtc).toBe(seed.generated_utc);
 			expect(store.error).toBe(failure);
 			expect(store.familyStates.network).toMatchObject({
 				phase: 'failed',
@@ -791,8 +870,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		await store.refresh();
 		flushSync();
 
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
-		expect(store.ageSeconds).toBe(30);
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).stamp.ageSeconds).toBe(30);
 	});
 
 	it('deduplicates repeated family names within one poll', async () => {
@@ -817,7 +896,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		await store.refresh();
 		flushSync();
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 		expect(store.network?.on_time_pct).toBe(91);
 
 		await store.refresh();
@@ -826,9 +905,9 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.error?.message).toBe('network unavailable');
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect(store.network?.on_time_pct).toBe(91);
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
-		expect(store.ageSeconds).toBe(120);
-		expect(store.isStale).toBe(true);
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).stamp.ageSeconds).toBe(120);
+		expect(present(store).stamp.isStale).toBe(true);
 	});
 
 	it.each([
@@ -904,7 +983,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.vehicles.successRevision).toBe(2);
 		expect(store.familyStates.network.phase).toBe('loading');
 		expect(store.loading).toBe(true);
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 
 		const failure = new Error('network settled last');
 		rejectNetwork(failure);
@@ -914,7 +993,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.familyStates.network.phase).toBe('failed');
 		expect(store.familyStates.network.error).toBe(failure);
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 	});
 
 	it('recovers on an unchanged success without replacing data or advancing successRevision', async () => {
@@ -1080,16 +1159,16 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(mocks.trips).toHaveBeenCalledOnce();
 		expect(store.familyStates.vehicles.phase).toBe('loading');
 		expect(store.familyStates.trips.phase).toBe('ready');
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 
 		releaseVehicles();
 		await pendingCycle;
 		flushSync();
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 
 		disposeTrips();
 		expect(store.familyStates.trips.active).toBe(false);
-		expect(store.generatedUtc).toBe('2026-06-21T12:00:30Z');
+		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:30Z');
 	});
 
 	it('invalidates a leased family request when its refcount falls to zero', async () => {
@@ -1150,20 +1229,20 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		await store.refresh();
 		flushSync();
-		expect(store.generatedUtc).toBe('2026-06-21T11:58:00Z');
-		expect(store.isStale).toBe(true);
-		expect(store.vehiclesGeneratedUtc).toBe('2026-06-21T12:00:00Z');
-		expect(store.vehiclesAgeSeconds).toBe(60);
-		expect(store.vehiclesIsStale).toBe(false);
+		expect(present(store).publicationUtc).toBe(store.familyStates.vehicles.retainedGeneration);
+		expect(present(store).stamp.isStale).toBe(false);
+		expect(store.familyStates.vehicles.retainedGeneration).toBe('2026-06-21T12:00:00Z');
+		expect(store.familyStates.vehicles.health.ageSeconds).toBe(60);
+		expect(store.familyStates.vehicles.health.isStale).toBe(false);
 
 		await store.refresh();
 		flushSync();
 		expect(store.familyStates.alerts.phase).toBe('failed');
-		expect(store.generatedUtc).toBe('2026-06-21T11:58:00Z');
-		expect(store.isStale).toBe(true);
-		expect(store.vehiclesGeneratedUtc).toBe('2026-06-21T12:00:30Z');
-		expect(store.vehiclesAgeSeconds).toBe(30);
-		expect(store.vehiclesIsStale).toBe(false);
+		expect(present(store).publicationUtc).toBe(store.familyStates.vehicles.retainedGeneration);
+		expect(present(store).stamp.isStale).toBe(false);
+		expect(store.familyStates.vehicles.retainedGeneration).toBe('2026-06-21T12:00:30Z');
+		expect(store.familyStates.vehicles.health.ageSeconds).toBe(30);
+		expect(store.familyStates.vehicles.health.isStale).toBe(false);
 	});
 
 	it('preserves family and index identity when its generation is unchanged', async () => {
@@ -1200,8 +1279,10 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			await store.refresh();
 			flushSync();
 			expect(store[family]).not.toBe(firstPayload);
-			expect(store.generatedUtc).toBe('2026-06-21T12:00:30Z');
-			expect(store.familyStates[family].retainedGeneration).toBe(store.generatedUtc);
+			expect(present(store).publicationUtc).toBe(
+				family === 'alerts' ? null : '2026-06-21T12:00:30Z',
+			);
+			expect(store.familyStates[family].retainedGeneration).toBe('2026-06-21T12:00:30Z');
 			expect(store.familyStates[family].successRevision).toBe(2);
 			expect(store.index).toBe(firstIndex);
 		},
@@ -1246,7 +1327,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect.soft(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect.soft(store.network).toBe(firstNetwork);
 		expect.soft(store.index).not.toBe(firstIndex);
-		expect.soft(store.generatedUtc).toBe('2026-06-21T12:00:00Z');
+		expect.soft(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
 	});
 
 	it('does not start requests while hidden and starts exactly once when shown', async () => {
@@ -1357,7 +1438,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		flushSync();
 
 		expect(store.vehicles).toBeNull();
-		expect(store.generatedUtc).toBeNull();
+		expect(present(store).publicationUtc).toBeNull();
 		expect(store.error).toBeNull();
 		expect(store.loading).toBe(false);
 	});

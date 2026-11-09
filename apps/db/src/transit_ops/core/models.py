@@ -59,9 +59,7 @@ class AuthConfig(BaseModel):
             if not self.credential_env_var:
                 raise ValueError("API-key auth requires credential_env_var.")
             if not self.auth_header_name and not self.auth_query_param:
-                raise ValueError(
-                    "API-key auth requires auth_header_name or auth_query_param."
-                )
+                raise ValueError("API-key auth requires auth_header_name or auth_query_param.")
         if self.auth_type == AuthType.API_KEY_SIGNED:
             if not self.credential_env_var or not self.auth_query_param:
                 raise ValueError(
@@ -69,9 +67,7 @@ class AuthConfig(BaseModel):
                     "auth_query_param for the static key."
                 )
             if not (
-                self.signing_secret_env_var
-                and self.signature_query_param
-                and self.signature_scheme
+                self.signing_secret_env_var and self.signature_query_param and self.signature_scheme
             ):
                 raise ValueError(
                     "Signed API-key auth requires signing_secret_env_var, "
@@ -134,6 +130,7 @@ class ProviderConfig(BaseModel):
     default_language: str | None = None
     default_currency: str | None = None
     bounds: ProviderBoundsConfig | None = None
+    max_vehicle_speed_kmh: float = Field(default=100, gt=0, allow_inf_nan=False)
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True
@@ -293,9 +290,7 @@ class ProviderManifest(BaseModel):
         if feed is None:
             return None
         if not isinstance(feed, ServiceAlertsFeedConfig):
-            raise TypeError(
-                "Service alerts feed did not validate as ServiceAlertsFeedConfig."
-            )
+            raise TypeError("Service alerts feed did not validate as ServiceAlertsFeedConfig.")
         return feed
 
     def realtime_feed(self, endpoint_key: str) -> RealtimeFeedConfig:
@@ -361,7 +356,7 @@ class ProviderManifest(BaseModel):
     def to_display_dict(self, settings: Settings) -> dict[str, object]:
         manifest_dict = self.model_dump(mode="json")
         for feed_key, feed in self.feeds.items():
-            manifest_dict["feeds"][feed_key]["resolved_source_url"] = (
-                feed.resolved_source_url(settings)
+            manifest_dict["feeds"][feed_key]["resolved_source_url"] = feed.resolved_source_url(
+                settings
             )
         return manifest_dict

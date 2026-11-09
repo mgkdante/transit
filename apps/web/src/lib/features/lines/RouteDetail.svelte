@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
 	import { clock } from '@yesid/ui/state';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -48,7 +52,6 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
-	import { selectVerdict } from '#lib/v1/verdict.ts';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
 	import LazyRouteReliabilityPane, {
@@ -147,13 +150,8 @@
 	});
 
 	const relCopy = $derived(routeVerdictCopy[locale]);
-	const verdictHeadline = $derived(
-		reliability.data ? selectDayVerdictHeadline(reliability.data) : null,
-	);
 	const routeVerdict = $derived(
-		verdictHeadline
-			? selectVerdict(verdictHeadline, verdictHeadline.grain, locale, relCopy.verdict)
-			: null,
+		reliability.data ? selectDayVerdictHeadline(reliability.data, locale) : null,
 	);
 	const hasHeaderVerdict = $derived(routeVerdict != null && routeVerdict.status !== 'absent');
 	const headerVerdictCurrentOnly = $derived(
@@ -167,6 +165,9 @@
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],
 	});
+	const presentation = $derived(
+		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+	);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -175,8 +176,13 @@
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const articleGeneratedUtc = $derived(
 		detailTabController.active === 'reliability'
-			? (reliability.data?.generated_utc ?? route.data?.generated_utc ?? live.generatedUtc)
-			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
+			? (reliability.data?.generated_utc ??
+					route.data?.generated_utc ??
+					presentation.publicationUtc)
+			: (presentation.publicationUtc ??
+					route.data?.generated_utc ??
+					reliability.data?.generated_utc ??
+					null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
 	const articleTimeText = $derived(
@@ -302,7 +308,7 @@
 		closeAria: articleNav.closeAria,
 	});
 
-	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
+	const showAbsenceNote = $derived(presentation.stamp.generatedUtc != null && roster.length === 0);
 
 	const tripHref = (tripId: string): string =>
 		localizeHref(routeFor({ kind: 'trip', id: tripId }), locale);
@@ -414,15 +420,9 @@
 								anchor="line-detail-directions"
 							>
 								<div class="route-section">
-									{#if live.generatedUtc != null || live.ageSeconds != null}
+									{#if presentation.stamp.generatedUtc != null || presentation.stamp.ageSeconds != null}
 										<div class="route-section-head route-section-head--meta">
-											<FreshnessStamp
-												variant="live"
-												generatedUtc={live.generatedUtc}
-												ageSeconds={live.ageSeconds}
-												isStale={live.isStale}
-												{locale}
-											/>
+											<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 										</div>
 									{/if}
 									{#if showAbsenceNote}
@@ -453,6 +453,14 @@
 											copy={t.alerts}
 											testId="route-alerts"
 										/>
+
+										{#if providerHasAlerts(v1.provider) && routeAlerts.length > 0 && live.familyStates.alerts.health.ageSeconds != null}
+											<p class="route-alerts-age">
+												{MAP_COPY[locale].alertsChecked(
+													formatRelativeSeconds(live.familyStates.alerts.health.ageSeconds, locale),
+												)}
+											</p>
+										{/if}
 
 										{#if roster.length > 0}
 											<div class="route-roster" data-testid="route-roster">
@@ -635,6 +643,11 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 		gap: 1rem;
+	}
+	.route-alerts-age {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 	.route-aside {
 		display: flex;
