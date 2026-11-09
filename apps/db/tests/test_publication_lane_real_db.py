@@ -40,7 +40,7 @@ def test_overlapping_live_publish_stops_before_build_and_releases_lane(
     release = Event()
     builds = []
 
-    def build(connection, *, provider_id, **kwargs):
+    def build(connection, _storage, *, provider_id, **kwargs):
         builds.append(provider_id)
         value = connection.execute(
             text("SELECT display_name FROM core.providers WHERE provider_id=:provider"),
@@ -60,7 +60,7 @@ def test_overlapping_live_publish_stops_before_build_and_releases_lane(
                     raise RuntimeError("first upload failed")
             return super().put_json(rel_key, payload, tier=tier)
 
-    monkeypatch.setattr(publish, "_build_live_items", build)
+    monkeypatch.setattr(publish, "_build_live_publication", build)
     store = PausingStore()
 
     def run(provider=PROVIDER):
@@ -110,7 +110,7 @@ def test_overlapping_live_publish_stops_before_build_and_releases_lane(
 def test_live_builder_reads_one_snapshot_through_source_correction(engine, monkeypatch):
     reads = []
 
-    def build(connection, *, provider_id, **kwargs):
+    def build(connection, _storage, *, provider_id, **kwargs):
         statement = text("SELECT display_name FROM core.providers WHERE provider_id=:provider")
         reads.append(connection.execute(statement, {"provider": provider_id}).scalar_one())
         with engine.begin() as writer:
@@ -124,7 +124,7 @@ def test_live_builder_reads_one_snapshot_through_source_correction(engine, monke
             ("manifest.json", {"source": reads[1]}, "live"),
         ]
 
-    monkeypatch.setattr(publish, "_build_live_items", build)
+    monkeypatch.setattr(publish, "_build_live_publication", build)
     store = MemorySnapshotStore()
     publish.publish_snapshot(
         PROVIDER,

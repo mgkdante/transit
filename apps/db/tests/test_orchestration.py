@@ -360,6 +360,7 @@ def _patch_worker_startup(monkeypatch) -> None:
         "_validate_realtime_worker_startup",
         lambda provider_id, settings, registry: SimpleNamespace(
             provider=SimpleNamespace(provider_id=provider_id, display_name="STM"),
+            feeds={},
         ),
     )
 
@@ -2626,3 +2627,85 @@ def test_static_pipeline_without_gis_skips_both_gis_steps(monkeypatch, caplog, a
     assert result.gis_silver_load is None
     assert calls == []
     assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_phased_ticks_capture_only_due_endpoints_and_publish_only_changes(
+    realtime_cycle, monkeypatch
+):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+    registry = _fake_registry_with_intervals(vehicle_positions=20)
+    registry.get_provider("stm").feeds["vehicle_positions"].refresh_phase_seconds = 10
+    now = [datetime(2026, 11, 9, tzinfo=UTC)]
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now[0])
+    publications = []
+    monkeypatch.setattr(
+        orchestration,
+        "_best_effort_publish_live",
+        lambda *a, **kw: publications.append(now[0].second) or 0,
+    )
+    captures = {}
+    attempts = {}
+    observed = {}
+    for second in range(10, 61, 10):
+        now[0] = datetime(2026, 11, 9, tzinfo=UTC) + timedelta(seconds=second)
+        calls.clear()
+        result = orchestration._run_realtime_cycle(
+            "stm",
+            **(realtime_cycle.keywords | {"registry": registry}),
+            last_captures=captures,
+            last_attempts=attempts,
+            bronze_storage_resolver=lambda backend: object(),
+        )
+        observed[second] = [
+            r.endpoint_key for r in result.endpoint_results if r.status == "succeeded"
+        ]
+    assert observed == {
+        10: ["vehicle_positions", "trip_updates", "i3_alerts"],
+        20: [],
+        30: ["vehicle_positions"],
+        40: ["trip_updates"],
+        50: ["vehicle_positions"],
+        60: [],
+    }
+    assert publications == [10, 30, 40, 50]
+
+
+def test_phased_worker_realigns_after_cycle_work(monkeypatch):
+    from transit_ops.realtime_schedule import aligned_sleep_seconds
+
+    registry = _fake_registry_with_intervals(vehicle_positions=20)
+    manifest = registry.get_provider("stm")
+    manifest.feeds["vehicle_positions"].refresh_phase_seconds = 10
+    monkeypatch.setattr(
+        orchestration, "_validate_realtime_worker_startup", lambda *a, **kw: manifest
+    )
+    now = [datetime(2026, 11, 9, tzinfo=UTC) + timedelta(seconds=3)]
+    starts = []
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += timedelta(seconds=seconds)
+
+    def cycle(provider_id, **kwargs):
+        starts.append(now[0].second)
+        now[0] += timedelta(seconds=8)
+        return _worker_loop_cycle_result(provider_id)
+
+    monkeypatch.setattr(orchestration, "_run_realtime_cycle", cycle)
+    orchestration._run_realtime_worker_loop(
+        "stm",
+        settings=_pipeline_settings(),
+        registry=registry,
+        engine=_FakeEngine(),
+        sleep_fn=sleep,
+        max_cycles=3,
+        utc_now_fn=lambda: now[0],
+        perf_counter_fn=lambda: now[0].timestamp(),
+        should_shutdown=lambda: False,
+        bronze_storage_resolver=lambda backend: object(),
+    )
+    assert starts == [10, 20, 30]
+    assert sleeps == [7, 2, 2]
+    assert aligned_sleep_seconds(datetime(2026, 11, 9, 0, 0, 42, tzinfo=UTC), 10) == 8

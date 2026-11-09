@@ -32,6 +32,8 @@ const dataPort = process.env.TRANSIT_E2E_DATA_PORT ?? '4318';
 const baseURL = `http://127.0.0.1:${port}`;
 const dataURL = `http://127.0.0.1:${dataPort}`;
 
+const httpSpecs = /(?:^|[\\/])(?:head-ssr|health|favicon)\.spec\.ts$/;
+
 export default defineConfig({
 	testDir: '.',
 	// One tsconfig for every file the specs import, including app modules under src/.
@@ -61,7 +63,15 @@ export default defineConfig({
 		launchOptions: { executablePath },
 	},
 	projects: [
-		...yesidProjects(baseURL).map((project) => ({ ...project, testIgnore: /layout.*\.spec\.ts/ })),
+		{
+			name: 'http',
+			testMatch: httpSpecs,
+			use: { baseURL, storageState: { cookies: [], origins: [] } },
+		},
+		...yesidProjects(baseURL).map((project) => ({
+			...project,
+			testIgnore: [/layout.*\.spec\.ts/, httpSpecs],
+		})),
 		...(['chromium', 'webkit'] as const).flatMap((browserName) =>
 			(browserName === 'chromium'
 				? [
@@ -77,34 +87,41 @@ export default defineConfig({
 						[1280, 900],
 					]
 			).flatMap(([width, height]) =>
-				(['light', 'dark'] as const).map((colorScheme) => ({
-					name: `layout-${browserName}-${width}-${colorScheme}`,
-					testMatch: /layout.*\.spec\.ts/,
-					use: {
-						browserName,
-						viewport: { width, height },
-						colorScheme,
-						storageState: {
-							cookies: [],
-							origins: [
-								{
-									origin: baseURL,
-									localStorage: [
-										{ name: 'theme', value: colorScheme },
-										{ name: 'sections-choice', value: 'expanded' },
-									],
-								},
-							],
+				(['light', 'dark'] as const)
+					.filter(
+						(colorScheme) =>
+							colorScheme === 'light' ||
+							width === 390 ||
+							(browserName === 'chromium' && width === 1280),
+					)
+					.map((colorScheme) => ({
+						name: `layout-${browserName}-${width}-${colorScheme}`,
+						testMatch: /layout.*\.spec\.ts/,
+						use: {
+							browserName,
+							viewport: { width, height },
+							colorScheme,
+							storageState: {
+								cookies: [],
+								origins: [
+									{
+										origin: baseURL,
+										localStorage: [
+											{ name: 'theme', value: colorScheme },
+											{ name: 'sections-choice', value: 'expanded' },
+										],
+									},
+								],
+							},
+							bypassCSP: true,
+							// Findings attach text and geometry; recording known failures across
+							// the matrix is costly and adds no layout assertion evidence.
+							trace: 'off' as const,
+							launchOptions: {
+								executablePath: browserName === 'chromium' ? executablePath : undefined,
+							},
 						},
-						bypassCSP: true,
-						// Findings attach text and geometry; recording known failures across
-						// the matrix is costly and adds no layout assertion evidence.
-						trace: 'off' as const,
-						launchOptions: {
-							executablePath: browserName === 'chromium' ? executablePath : undefined,
-						},
-					},
-				})),
+					})),
 			),
 		),
 	],

@@ -14,7 +14,7 @@
 
 {#snippet absent()}
 	{#if absentReason && locale}
-		<AbsentValue variant="inline" reason={absentReason} {locale} params={absentParams} />
+		<AbsentValue variant="compact" reason={absentReason} {locale} params={absentParams} />
 	{/if}
 {/snippet}
 <MetricDisplay {...rest} {absent} />

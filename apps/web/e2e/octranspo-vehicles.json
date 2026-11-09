@@ -1,0 +1,17 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"vehicles": [
+		{
+			"id": "OC-fixture-bus",
+			"route": "85",
+			"trip": "OC-trip",
+			"lat": 45.42,
+			"lon": -75.69,
+			"status": "unknown",
+			"updated_utc": "2026-06-15T12:00:00Z",
+			"next_stop": "OC-stop",
+			"next_stop_lat": 45.42153,
+			"next_stop_lon": -75.69719
+		}
+	]
+}

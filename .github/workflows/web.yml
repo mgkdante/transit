@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       run_e2e: ${{ steps.classify.outputs.run_e2e }}
+      run_layout: ${{ steps.classify.outputs.run_layout }}
     defaults:
       run:
         working-directory: .
@@ -33,18 +34,55 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up pinned Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
+      # This standalone policy imports only Node built-ins, with no load-time assets.
+      # Extend the materialized closure for new imports/assets. Interface changes
+      # need a two-step migration: land compatible base support, then use it.
+      - name: Materialize trusted web policy
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $base = $env:GITHUB_SHA
+          }
+          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+          git merge-base --is-ancestor $base refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $policy | Out-Null
+          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+            $content = git show "${base}:$path"
+            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+          }
+          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Test web path selection and required jobs
-        run: node --test .github/scripts/web-ci-paths.test.mjs
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.WEB_CI_NODE }}
+          package-manager-cache: false
 
       - name: Classify web paths
         id: classify
-        run: node .github/scripts/web-ci-paths.mjs classify
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "run_e2e=true`nrun_layout=true`n")
+            exit 0
+          }
+          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" classify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   prerelease-guard:
     runs-on: ubuntu-24.04
@@ -57,13 +95,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up pinned Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
 
       - name: Test design prerelease guard
-        run: node --test .github/scripts/design-prerelease-guard.test.mjs
+        run: node .github/scripts/design-prerelease-guard.mjs --self-test
 
       - name: Require stable design dependencies
         run: node .github/scripts/design-prerelease-guard.mjs
@@ -94,6 +132,10 @@ jobs:
       - name: Data proxy Wrangler dry run
         working-directory: apps/data-proxy
         run: ../../node_modules/.bin/wrangler deploy --dry-run
+
+      - name: Web CI policy contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -187,7 +229,7 @@ jobs:
       - name: Upload verified deployment build
         if: ${{ steps.build_target.outputs.target != 'verification' }}
         id: upload_build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/transit-web-build/
@@ -239,7 +281,7 @@ jobs:
 
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: transit-e2e-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: apps/web/test-results/
@@ -248,13 +290,13 @@ jobs:
 
   layout:
     needs: [classify]
-    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_e2e != 'false') }}
+    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_layout != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -274,11 +316,11 @@ jobs:
         run: bun x playwright install --with-deps webkit
 
       - name: layout
-        run: bun run test:e2e:layout --shard=${{ matrix.shard }}/6
+        run: bun run test:e2e:layout --shard=${{ matrix.shard }}/4
 
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: transit-layout-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: apps/web/test-results/
@@ -294,18 +336,67 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
+      # This standalone policy imports only Node built-ins, with no load-time assets.
+      # Extend the materialized closure for new imports/assets. Interface changes
+      # need a two-step migration: land compatible base support, then use it.
+      - name: Materialize trusted web policy
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $base = $env:GITHUB_SHA
+          }
+          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+          git merge-base --is-ancestor $base refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $policy | Out-Null
+          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+            $content = git show "${base}:$path"
+            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+          }
+          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pinned Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ env.WEB_CI_NODE }}
           package-manager-cache: false
 
       - name: Require selected jobs to succeed
         working-directory: ${{ github.workspace }}
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: node .github/scripts/web-ci-paths.mjs required
+        shell: pwsh
+        run: |
+          $needs = $env:NEEDS_JSON | ConvertFrom-Json -AsHashtable
+          foreach ($job in $needs.Keys) {
+            if ($needs[$job].result -in @('failure', 'cancelled')) {
+              throw "${job}: $($needs[$job].result)"
+            }
+          }
+          # Older base policies have no run_layout output and permit docs-only skips.
+          # Require explicit base classification even when that policy predates layout gating.
+          if ($needs.layout.result -eq 'skipped' -and $needs.classify.outputs.run_layout -cne 'false') {
+            throw 'layout: skipped without explicit run_layout=false'
+          }
+          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" required
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   deploy_scope:
     if: ${{ github.event_name != 'pull_request' }}
@@ -320,7 +411,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up pinned Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -409,7 +500,7 @@ jobs:
           test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
 
       - name: Download the producer artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
           path: ${{ runner.temp }}/transit-web-build

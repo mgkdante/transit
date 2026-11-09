@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
+from pydantic import Field
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
@@ -129,6 +130,8 @@ class Settings(BaseSettings):
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
+    REALTIME_WATCHDOG_SECONDS: int = Field(default=600, gt=0)
+    REALTIME_SHUTDOWN_GRACE_SECONDS: int = Field(default=150, gt=0, lt=180)
     # Pruning cadence is independent of realtime capture cadence.
     PRUNER_SLEEP_SECONDS: int = 15
     HEALTH_DATABASE_TIMEOUT_SECONDS: float = 5.0
@@ -228,6 +231,8 @@ class Settings(BaseSettings):
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
+            "REALTIME_WATCHDOG_SECONDS": self.REALTIME_WATCHDOG_SECONDS,
+            "REALTIME_SHUTDOWN_GRACE_SECONDS": self.REALTIME_SHUTDOWN_GRACE_SECONDS,
             "PRUNER_SLEEP_SECONDS": self.PRUNER_SLEEP_SECONDS,
             "HEALTH_DATABASE_TIMEOUT_SECONDS": self.HEALTH_DATABASE_TIMEOUT_SECONDS,
             "HEALTH_FEED_TIMEOUT_SECONDS": self.HEALTH_FEED_TIMEOUT_SECONDS,
