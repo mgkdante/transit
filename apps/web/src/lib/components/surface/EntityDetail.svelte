@@ -5,12 +5,9 @@
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
 	import { SectionLabel, TocNav, useSectionJump, type TocEntry } from '@yesid/ui/brand';
 	import { ArticleSummaryLane } from '#lib/components/layout/index.ts';
-	import { Surface, DetailFrame, Breadcrumb, type DetailFrameToc } from '@yesid/ui/layout';
+	import { Surface, DetailFrame, type DetailFrameToc } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
-	import { breadcrumbCopy } from './breadcrumb.copy';
-	import { getLocale, getLocalizeHref } from '#lib/i18n/index.ts';
-	import { resolveBreadcrumbTrail } from '#lib/seo/routeSeo.ts';
 	import { cn } from '#lib/utils/index.ts';
 
 	interface EntityDetailSharedProps {
@@ -63,9 +60,6 @@
 		class: className,
 	}: EntityDetailProps = $props();
 
-	const locale = getLocale();
-	const localizeHref = getLocalizeHref();
-	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));
 	const articleTocEntries = $derived(articleToc?.entries[active] ?? []);
 	let mountedPanes = $state<{ pathname: string; keys: K[] }>(
@@ -316,15 +310,6 @@
 				<div class="surface-head" class:surface-head--cornered={cornerMeta}>
 					{#if cornerMeta}
 						{@render cornerMeta()}
-					{/if}
-					{#if trail.length > 1}
-						<Breadcrumb
-							items={trail.map((crumb) => ({
-								name: crumb.name,
-								href: localizeHref(crumb.path, locale),
-							}))}
-							label={breadcrumbCopy[locale].label}
-						/>
 					{/if}
 					{#if back}
 						<a class="surface-back" href={back.href}>
