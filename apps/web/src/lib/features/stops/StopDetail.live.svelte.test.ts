@@ -34,7 +34,20 @@ vi.mock('#lib/v1/boot.ts', () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', files: { live: { ttl_s: 30 } } },
 	}),
 }));
-vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { live: fixture } }));
+vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
+	const { createMemoryLiveReader } = await import('#lib/v1/live/__fixtures__/reader.ts');
+	const reader = createMemoryLiveReader();
+	Object.assign(fixture, reader);
+	return {
+		...actual,
+		createLiveStore: (
+			manifest: Parameters<typeof actual.createLiveStore>[0],
+			_reader: Parameters<typeof actual.createLiveStore>[1],
+			options: Parameters<typeof actual.createLiveStore>[2],
+		) => actual.createLiveStore(manifest, reader, options),
+	};
+});
 vi.mock('#lib/v1/repositories/static.ts', () => ({ getStop: fixture.stop }));
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getStopReliability: fixture.reliability,

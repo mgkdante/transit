@@ -409,7 +409,7 @@ const harness = vi.hoisted(() => {
 		reachLoadCheckpoint(navigation: HarnessNavigation): boolean {
 			return navigationRouter().reachLoadCheckpoint(navigation);
 		},
-		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
+		createLiveStore: vi.fn((_manifest: unknown, _reader: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
 		reportNavigationFailure,
@@ -848,7 +848,7 @@ describe('MapHero stage lifecycle', () => {
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			expect(await screen.findByText('Alert data unavailable')).toBeVisible();
 			expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();
-			expect(harness.createLiveStore).toHaveBeenCalledWith(expect.anything(), {
+			expect(harness.createLiveStore).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
 				families: ['vehicles'],
 			});
 		} finally {
@@ -2457,7 +2457,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);
-		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+		expect(harness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['vehicles', 'alerts'],
 		});
 
