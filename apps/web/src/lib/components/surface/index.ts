@@ -42,3 +42,6 @@ export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';
 export type { ReliabilityListingController } from './createReliabilityListingController.svelte';
 export type { SurfaceHeadCopy } from './copy';
+
+export { default as LineStopResult } from './LineStopResult.svelte';
+export { default as TransitEntityRow } from './TransitEntityRow.svelte';

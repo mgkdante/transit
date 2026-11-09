@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '#lib/components/surface/alert-item.css';
 	import { alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
@@ -140,71 +141,7 @@
 		list-style: none;
 		max-width: 52rem;
 	}
-	.alert-history-row {
-		--alert-tone: var(--dataviz-severity-watch);
-		position: relative;
-		margin: 0;
-		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.625rem 0.75rem;
-		overflow: hidden;
-	}
-	.alert-history-row[data-severity='critical'] {
-		--alert-tone: var(--dataviz-severity-critical);
-	}
-	.alert-history-row[data-severity='high'] {
-		--alert-tone: var(--dataviz-severity-high);
-	}
-	.alert-history-row[data-severity='watch'] {
-		--alert-tone: var(--dataviz-severity-watch);
-	}
-	.alert-history-row-head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0;
-	}
-	.alert-history-dot {
-		flex: none;
-		font-size: var(--text-small);
-		line-height: 1.2;
-		color: var(--alert-tone);
-		font-variant-emoji: text;
-	}
-	.alert-history-title {
-		min-width: 0;
-		font-size: var(--text-small);
-		font-weight: 500;
-		line-height: 1.35;
-		color: var(--foreground);
-	}
-	.alert-history-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem 0.75rem;
-		margin: 0.5rem 0 0;
-	}
-	.alert-history-meta > div {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.375rem;
-		min-width: 0;
-	}
-	.alert-history-meta dt {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
-	}
 	.alert-history-meta dd {
-		margin: 0;
-		min-width: 0;
-		font-size: var(--text-caption);
-		font-weight: 500;
-		color: var(--foreground);
 		font-variant-numeric: tabular-nums;
 	}
 	.alert-history-windows {
@@ -255,12 +192,5 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 		border-radius: var(--radius-sm);
-	}
-
-	.alert-language-marker {
-		margin-inline-start: 0.375rem;
-		color: var(--muted-foreground);
-		font-size: var(--text-caption);
-		font-weight: 400;
 	}
 </style>
