@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import pytest
+import real_db_seed as db_seed
 from sqlalchemy import text
 from test_departure_capture_order_real_db import _later_inserted_snapshot
 from test_snapshots_live_departures_real_db import (
+    ENDPOINT_ID,
     PROVIDER,
     RAW_SNAP_ID,
+    RUN_ID,
     _add_trip_update,
     _stop,
 )
@@ -15,7 +18,9 @@ from transit_ops.snapshots.builders import build_vehicles
 from transit_ops.snapshots.builders.live import _VEHICLES_SQL
 
 
-def _vehicle(connection, *, stop=None, trip="capture-order-trip", capture_minutes=0):
+def _vehicle(
+    connection, *, stop=None, trip="capture-order-trip", capture_minutes=0, provider=PROVIDER
+):
     connection.execute(
         text("""
         INSERT INTO gold.latest_vehicle_snapshot
@@ -25,7 +30,7 @@ def _vehicle(connection, *, stop=None, trip="capture-order-trip", capture_minute
         VALUES (:p, :s, 99, to_char(now(), 'YYYYMMDD')::int, now()::date, now(),
                 now()+make_interval(mins=>:capture), 'vehicle', :trip, '51', :stop, 45.5, -73.6)
         """),
-        {"p": PROVIDER, "s": RAW_SNAP_ID, "stop": stop, "trip": trip, "capture": capture_minutes},
+        {"p": provider, "s": RAW_SNAP_ID, "stop": stop, "trip": trip, "capture": capture_minutes},
     )
 
 
@@ -46,7 +51,22 @@ def test_vehicle_next_stop(conn, position_stop, trip, minutes, expected):
     _add_trip_update(conn, entity_index=0, trip_id="capture-order-trip", route_id="51")
     for i, mins in enumerate(minutes):
         _stop(conn, entity_index=0, stu_index=i, stop_id=f"stop-{i}", seq=i + 1, mins=mins)
+    db_seed.dataset_versions(
+        conn, {"d": 990501, "p": PROVIDER, "e": ENDPOINT_ID, "r": RUN_ID, "h": "next-stop"}
+    )
+    conn.execute(
+        text("""
+        INSERT INTO gold.dim_stop
+            (provider_id, dataset_version_id, stop_id, stop_name, stop_lat, stop_lon)
+        VALUES (:p, 990501, 'position-stop', 'Position stop', 45.5, -73.6),
+               (:p, 990501, 'stop-1', 'Trip update stop', 45.6, -73.7)
+    """),
+        {"p": PROVIDER},
+    )
     result = build_vehicles(conn, provider_id=PROVIDER, generated_utc="fixture")
+    coordinates = {"position-stop": (45.5, -73.6), "stop-1": (45.6, -73.7)}
+    v = result.vehicles[0]
+    assert (v.next_stop_lat, v.next_stop_lon) == coordinates.get(expected, (None, None))
     assert len(result.vehicles) == 1
     assert result.vehicles[0].next_stop == expected
 
@@ -132,3 +152,38 @@ def test_vehicle_next_stop_index_paths_are_available(conn, record_property):
     used = indexes(plan[0]["Plan"])
     assert used & {"ix_silver_rt_trip_updates_provider_trip", "pk_silver_rt_trip_updates"}
     assert "pk_silver_rt_trip_update_stop_times" in used
+    assert "pk_gold_dim_stop" in used
+
+
+@pytest.mark.parametrize("provider", ["stm_coords_test", "octranspo_coords_test"])
+@pytest.mark.parametrize(
+    "coords", [(45.501234, -73.601234), (None, None), (45.5, None), (None, -73.6)]
+)
+def test_next_stop_coordinates_join_only_provider_current_stops(
+    conn, seed_provider, provider, coords
+):
+    seed_provider(conn, provider, display_name=provider)
+    # A foreign provider with the same stop id must never supply coordinates.
+    for p, dataset, lat, lon in [
+        (PROVIDER, 990501, 10, 20),
+        (provider, 990502, coords[0], coords[1]),
+    ]:
+        db_seed.dataset_versions(
+            conn, {"d": dataset, "p": p, "e": ENDPOINT_ID, "r": RUN_ID, "h": "next-stop"}
+        )
+        conn.execute(
+            text("""
+            INSERT INTO gold.dim_stop
+                (provider_id, dataset_version_id, stop_id, stop_name, stop_lat, stop_lon)
+            VALUES (:p, :d, 'position-stop', 'Stop', :lat, :lon)
+        """),
+            {"p": p, "d": dataset, "lat": lat, "lon": lon},
+        )
+    _vehicle(conn, provider=provider, stop="position-stop", trip=None)
+    v = build_vehicles(conn, provider_id=provider, generated_utc="fixture").vehicles[0]
+    expected = tuple(round(c, 5) for c in coords) if None not in coords else (None, None)
+    assert (v.next_stop_lat, v.next_stop_lon) == expected
+    conn.execute(text("DELETE FROM gold.dim_stop WHERE provider_id=:p"), {"p": provider})
+    v = build_vehicles(conn, provider_id=provider, generated_utc="fixture").vehicles[0]
+    assert v.next_stop == "position-stop"
+    assert (v.next_stop_lat, v.next_stop_lon) == (None, None)
