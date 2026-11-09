@@ -1,3 +1,4 @@
+import { clock } from '@yesid/ui/state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
@@ -1448,7 +1449,12 @@ describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (loc
 		const t = MAP_SELECTION_DETAIL_COPY[locale];
 		const { container, getByRole } = render(DetailBusRow, {
 			props: {
-				vehicle: { ...vehicles[0], status, delay_min: delay },
+				vehicle: {
+					...vehicles[0],
+					updated_utc: utc(new Date(clock.serverNow).toISOString()),
+					status,
+					delay_min: delay,
+				},
 				locale,
 				t,
 				onselect: vi.fn(),
