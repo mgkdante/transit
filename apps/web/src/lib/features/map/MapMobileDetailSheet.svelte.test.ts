@@ -216,7 +216,8 @@ describe('MapMobileDetailSheet', () => {
 			const etaRow = [
 				...document.querySelectorAll<HTMLElement>('.detail-attribute-grid > div'),
 			].find((candidate) => candidate.querySelector('dt')?.textContent === 'ETA')!;
-			expect(etaRow.querySelector('button')).toBeNull();
+			expect(etaRow.querySelector('.detail-attribute-action')).toBeNull();
+			expect(etaRow.querySelector('button[popovertarget]')).toHaveAccessibleName(/No estimate/);
 			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe('5.75rem minmax(0, 1fr)');
 			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');
 			expect(
