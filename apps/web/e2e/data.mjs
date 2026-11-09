@@ -75,6 +75,25 @@ for (const key of [
 ])
 	layoutFiles[`/v1/stm/${key}`] = files[`/v1/stm/${key}`];
 const generated = JSON.parse(files['/v1/stm/live/trips.json']).generated_utc;
+// Isolated variant: a confidence interval crossing the reliable threshold.
+const hedgedReliability = structuredClone(b9['historic/route_reliability/24.json']);
+hedgedReliability.periods = [
+	{
+		...hedgedReliability.periods[0],
+		grain: 'day',
+		date: '2026-06-15',
+		otp_pct: 82,
+		observation_count: 368,
+		on_time: 302,
+		wilson_lo: 78,
+		wilson_hi: 86,
+	},
+];
+files['/__layout/hedged/v1/stm/historic/route_reliability/24.json'] =
+	JSON.stringify(hedgedReliability);
+const hedgedRoutes = JSON.parse(files['/v1/stm/static/routes_index.json']);
+hedgedRoutes.routes.push({ id: '25', short: '25', long: 'Ontario', type: 3 });
+files['/__layout/hedged/v1/stm/static/routes_index.json'] = JSON.stringify(hedgedRoutes);
 layoutFiles['/v1/stm/historic/receipts/2026-08-29.json'] = JSON.stringify({
 	generated_utc: generated,
 	date: '2026-08-29',
