@@ -82,6 +82,8 @@
 			landmarksSec,
 			(v) => ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * Math.max(0, plotWidth - 48),
 			40,
+			// Zero (on schedule) is the reference riders read the histogram against.
+			(v) => v === 0,
 		),
 	);
 

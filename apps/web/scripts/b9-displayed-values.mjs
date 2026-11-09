@@ -1339,7 +1339,8 @@ const MARK_SIGNATURES = Object.freeze({
 	histogram: {
 		domain: [-300, 1800],
 		unit: 's',
-		axis: ['Delay (min)', '-5', '-1', '0', '1', '5', '10', '30'],
+		// -1 and 1 min are thinned next to the pinned zero at this width.
+		axis: ['Delay (min)', '-5', '0', '5', '10', '30'],
 	},
 	'dot-strip': {
 		domain: [0, 100],
