@@ -1,12 +1,5 @@
 import { stopDisplayName as displayStop } from '#lib/site/transitDisplay.ts';
-import {
-	absent,
-	absenceShort,
-	known,
-	stopNameFallback,
-	type AbsenceReasonKey,
-	type Maybe,
-} from '#lib/site/absence.ts';
+import { absenceShort, stopNameFallback } from '#lib/site/absence.ts';
 import { delayLabel } from '#lib/site/delayPresentation.ts';
 import { formatUtc } from '#lib/utils/time.ts';
 import { localizeHref, type Locale } from '#lib/i18n/index.ts';
@@ -67,20 +60,6 @@ export function detailActions(
 				label: t.openFullRoute(line(detail.vehicle.route)),
 			}
 		: null;
-}
-
-export function vehicleFieldAbsence(
-	ctx: { stale?: boolean; metro?: boolean } = {},
-): AbsenceReasonKey {
-	return ctx.metro ? 'metro-no-realtime' : ctx.stale ? 'not-reporting' : 'not-reported';
-}
-
-export function delayMaybe(
-	delay: number | null | undefined,
-	ctx: { stale?: boolean; metro?: boolean } = {},
-): Maybe<number> {
-	if (delay != null) return known(delay);
-	return absent<number>(vehicleFieldAbsence(ctx));
 }
 
 export function delayKnownLabel(delay: number, t: MapSelectionDetailCopy): string {

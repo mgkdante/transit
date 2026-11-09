@@ -2,6 +2,7 @@
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
+	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { clock } from '@yesid/ui/state';
 	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -124,6 +125,7 @@
 
 	const manifest = getV1Context().manifest;
 	const { live, resource: departureReport } = createLiveResource(manifest, 'departures');
+	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
 	const { live: alertLive, resource: alertReport } = createLiveResource(manifest, 'alerts');
 
 	const shortName = manifest.short_name?.trim() || manifest.display_name;

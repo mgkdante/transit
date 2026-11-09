@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
+	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
+	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
@@ -170,6 +172,7 @@
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],
 	});
+	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
 	const presentation = $derived(
 		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
 	);
@@ -491,7 +494,10 @@
 																	<span class="route-roster-delay"
 																		><MaybeValue
 																			value={delayMeasurement(bus.delay_min)}
-																			reason="not-reported"
+																			reason={liveAbsenceReason('vehicle-delay', {
+																				familyStates: live.familyStates,
+																				notReporting: notReporting(bus, clock.serverNow) != null,
+																			})}
 																			variant="row"
 																			{locale}
 																		/></span
@@ -505,7 +511,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow) != null }), locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

@@ -2,6 +2,7 @@
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
+	import { liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { breadcrumbCopy } from '#lib/components/surface/breadcrumb.copy.ts';
@@ -176,7 +177,7 @@
 									<MaybeValue
 										value={delayMeasurement(trip.delay_min)}
 										variant={unknownStatusAndDelay ? 'row' : 'inline'}
-										reason="not-reported"
+										reason={liveAbsenceReason('trip-delay', { familyStates: live.familyStates })}
 										{locale}
 									/>
 								</span>
@@ -195,7 +196,11 @@
 
 						<div class="trip-summary-cell">
 							<SectionLabel text={t.route} variant="metric" />
-							<MaybeValue present={trip.route != null} reason="not-reported" {locale}>
+							<MaybeValue
+								present={trip.route != null}
+								reason={liveAbsenceReason('trip-route', { familyStates: live.familyStates })}
+								{locale}
+							>
 								<a
 									class="trip-route-link"
 									href={routeHref(trip.route!)}
@@ -223,7 +228,13 @@
 												</time>
 												<span class="trip-stop-prediction">{t.predictionLabel}</span>
 
-												<MaybeValue present={stop.delay_min != null} reason="not-reported" {locale}>
+												<MaybeValue
+													present={stop.delay_min != null}
+													reason={liveAbsenceReason('trip-delay', {
+														familyStates: live.familyStates,
+													})}
+													{locale}
+												>
 													<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
 														{delayLabel(stop.delay_min, t)}
 													</span>

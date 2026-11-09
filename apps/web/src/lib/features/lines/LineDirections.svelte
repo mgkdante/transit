@@ -13,6 +13,8 @@
 
 <script lang="ts">
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
+	const absenceContext = readLiveAbsenceContext();
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { stopNameFallback } from '#lib/site/absence.ts';
@@ -72,10 +74,18 @@
 														{delayLabel(prediction.delayMin, copy)}
 													</span>
 												{:else}
-													<AbsentValue reason="not-reported" variant="row" {locale} />
+													<AbsentValue
+														reason={liveAbsenceReason('trip-prediction-delay', absenceContext())}
+														variant="row"
+														{locale}
+													/>
 												{/if}
 											{:else}
-												<AbsentValue reason="no-prediction" variant="row" {locale} />
+												<AbsentValue
+													reason={liveAbsenceReason('trip-prediction', absenceContext())}
+													variant="row"
+													{locale}
+												/>
 											{/if}
 										</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
