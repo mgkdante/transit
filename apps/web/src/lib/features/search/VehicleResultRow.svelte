@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TransitEntityRow from '#lib/components/surface/TransitEntityRow.svelte';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
@@ -45,85 +46,68 @@
 	);
 </script>
 
-<a
+<TransitEntityRow
+	presentation="legacy-vehicle"
 	{href}
-	data-sveltekit-preload-data="hover"
-	class="vehicle-row"
-	data-slot="vehicle-result"
-	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(absence, locale)}`}
+	ariaLabel={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(absence, locale)}`}
 >
-	<span class="vehicle-row-lead">
-		{#if hasBearing}
-			<span
-				class="vehicle-row-arrow"
-				style="transform: rotate({vehicle.bearing}deg);"
-				role="img"
-				aria-label={copy.heading}
-			>
-				↑
-			</span>
-		{:else}
-			<span class="vehicle-row-glyph" aria-hidden="true">▣</span>
-		{/if}
-	</span>
-
-	<span class="vehicle-row-body">
-		<span class="vehicle-row-title">
-			<span class="vehicle-row-id">{vehicle.id}</span>
-			{#if vehicle.route}
-				<span class="vehicle-row-route">{copy.routeTag(vehicle.route)}</span>
-			{/if}
-		</span>
-		<span class="vehicle-row-sub">
-			<MaybeValue present={nextStop != null} reason={absence} {locale}>
-				{copy.next(nextStop ?? '')}
-			</MaybeValue>
-		</span>
-		<span class="vehicle-row-marks">
-			<StatusBadge
-				status={vehicle.status}
-				mode={unknownStatusAndDelay ? 'dot' : 'pill'}
-				aria-hidden={unknownStatusAndDelay || undefined}
-				size="sm"
-				label={statusLabel}
-			/>
-			<MaybeValue present={occupancyLabel != null} reason={absence} {locale}>
-				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
-					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
-					<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
+	{#snippet leading()}
+		<span class="vehicle-row-lead">
+			{#if hasBearing}
+				<span
+					class="vehicle-row-arrow"
+					style="transform: rotate({vehicle.bearing}deg);"
+					role="img"
+					aria-label={copy.heading}
+				>
+					↑
 				</span>
-			</MaybeValue>
+			{:else}
+				<span class="vehicle-row-glyph" aria-hidden="true">▣</span>
+			{/if}
+		</span>{/snippet}
+	{#snippet identity()}
+		<span class="vehicle-row-body">
+			<span class="vehicle-row-title">
+				<span class="vehicle-row-id">{vehicle.id}</span>
+				{#if vehicle.route}
+					<span class="vehicle-row-route">{copy.routeTag(vehicle.route)}</span>
+				{/if}
+			</span>
+			<span class="vehicle-row-sub">
+				<MaybeValue present={nextStop != null} reason={absence} {locale}>
+					{copy.next(nextStop ?? '')}
+				</MaybeValue>
+			</span>
+			<span class="vehicle-row-marks">
+				<StatusBadge
+					status={vehicle.status}
+					mode={unknownStatusAndDelay ? 'dot' : 'pill'}
+					aria-hidden={unknownStatusAndDelay || undefined}
+					size="sm"
+					label={statusLabel}
+				/>
+				<MaybeValue present={occupancyLabel != null} reason={absence} {locale}>
+					<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
+						<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
+						<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
+					</span>
+				</MaybeValue>
+			</span>
+		</span>{/snippet}
+	{#snippet metadata()}
+		<span class="vehicle-row-meta">
+			<MaybeValue
+				value={delayText}
+				reason={absence}
+				variant={unknownStatusAndDelay ? 'row' : 'inline'}
+				{locale}
+			/>
 		</span>
-	</span>
-
-	<span class="vehicle-row-meta">
-		<MaybeValue
-			value={delayText}
-			reason={absence}
-			variant={unknownStatusAndDelay ? 'row' : 'inline'}
-			{locale}
-		/>
-	</span>
-</a>
+	{/snippet}
+</TransitEntityRow>
 
 <style>
-	.vehicle-row {
-		display: flex;
-		align-items: center;
-		gap: 0.875rem;
-		padding: 0.75rem 0.875rem;
-		border-radius: var(--radius-md);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-default);
-	}
-	.vehicle-row:hover {
-		background-color: var(--muted);
-	}
-	.vehicle-row:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.vehicle-row-lead {
 		flex: none;
 		display: inline-grid;
@@ -205,7 +189,6 @@
 		white-space: nowrap;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.vehicle-row,
 		.vehicle-row-arrow {
 			transition: none;
 		}

@@ -23,7 +23,7 @@
 	import {
 		ResourceBoundary,
 		EntityList,
-		EntityRow,
+		LineStopResult,
 		ReliabilityBadge,
 		SearchControls,
 		type SearchScopeKey,
@@ -245,7 +245,8 @@
 								{#snippet row(r)}
 									{@const hint = routeModeHint(r.type)}
 									<div use:observeRouteReliability={{ id: r.id, known: r.reliability }}>
-										<EntityRow
+										<LineStopResult
+											presentation="legacy-search"
 											target={{ kind: 'line', id: r.id }}
 											{locale}
 											glyph={hint.glyph}
@@ -254,10 +255,10 @@
 											title={routeTitle(r)}
 											subtitle={r.long ?? undefined}
 										>
-											{#snippet metaSlot()}
+											{#snippet status()}
 												<ReliabilityBadge snapshot={routeReliability.get(r.id)} {locale} />
 											{/snippet}
-										</EntityRow>
+										</LineStopResult>
 									</div>
 								{/snippet}
 							</EntityList>
@@ -280,7 +281,8 @@
 									{@const hint = stopModeHint(s)}
 									{@const tag = stopModeTag(s)}
 									<div use:observeStopReliability={s.id}>
-										<EntityRow
+										<LineStopResult
+											presentation="legacy-search"
 											target={{ kind: 'stop', id: s.id }}
 											{locale}
 											glyph={hint.glyph}
@@ -289,10 +291,10 @@
 											subtitle={s.code ?? undefined}
 											routes={s.routes}
 										>
-											{#snippet metaSlot()}
+											{#snippet status()}
 												<ReliabilityBadge snapshot={stopReliability.get(s.id)} {locale} />
 											{/snippet}
-										</EntityRow>
+										</LineStopResult>
 									</div>
 								{/snippet}
 							</EntityList>

@@ -10,8 +10,7 @@
 	import {
 		ResourceBoundary,
 		EntityList,
-		EntityRow,
-		EntityResultRow,
+		LineStopResult,
 		MapDrilldownLink,
 		ReliabilityBadge,
 		createReliabilityListingController,
@@ -204,16 +203,6 @@
 			     route_reliability discovery index in the loader, NOT the lag-prone
 			     routes_index `reliability` flag — so a stale flag never drops a badge. -->
 				<div use:observeReliability={r.id}>
-					{#snippet lineMain()}
-						<EntityRow
-							target={{ kind: 'line', id: r.id }}
-							{locale}
-							glyph={routeModeHint(r.type).glyph}
-							tag={routeModeHint(r.type).tag ?? undefined}
-							title={r.short}
-							subtitle={r.long ? t.routeName(r.long) : undefined}
-						/>
-					{/snippet}
 					{#snippet lineStatus()}
 						<ReliabilityBadge snapshot={routeSnapshot} {locale} />
 					{/snippet}
@@ -224,8 +213,14 @@
 							label={t.mapAction}
 						/>
 					{/snippet}
-					<EntityResultRow
-						children={lineMain}
+					<LineStopResult
+						presentation="legacy-listing"
+						target={{ kind: 'line', id: r.id }}
+						{locale}
+						glyph={routeModeHint(r.type).glyph}
+						tag={routeModeHint(r.type).tag ?? undefined}
+						title={r.short}
+						subtitle={r.long ? t.routeName(r.long) : undefined}
 						status={routeSnapshot.otpPct == null ? undefined : lineStatus}
 						action={lineAction}
 					/>

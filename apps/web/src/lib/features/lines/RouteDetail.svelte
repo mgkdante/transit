@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '#lib/components/surface/compact-row.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
@@ -723,14 +724,6 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.375rem 0.5rem;
-		margin-inline: -0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.route-roster-link--static {
 		cursor: default;

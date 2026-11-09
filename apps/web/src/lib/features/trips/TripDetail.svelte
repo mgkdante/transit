@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '#lib/components/surface/compact-row.css';
 	import { liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
@@ -399,15 +400,7 @@
 	.trip-stop-link {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto auto;
-		align-items: center;
-		gap: 0.875rem;
 		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		padding: 0.625rem 0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.trip-stop-name {
 		font-family: var(--font-mono);

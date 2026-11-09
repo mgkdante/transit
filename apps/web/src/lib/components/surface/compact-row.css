@@ -1,0 +1,35 @@
+/* Existing selectors preserve the legacy direction, roster and trip densities. */
+.line-stop-link,
+.route-roster-link,
+.trip-stop-link {
+	align-items: center;
+	margin-inline: -0.5rem;
+	border-radius: var(--radius-sm);
+	color: var(--foreground);
+	text-decoration: none;
+	transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.line-stop-link {
+	padding: 0.5rem;
+}
+
+.line-stop-link {
+	gap: 0.875rem;
+}
+
+.route-roster-link {
+	padding: 0.375rem 0.5rem;
+}
+
+.route-roster-link {
+	gap: 0.5rem;
+}
+
+.trip-stop-link {
+	padding: 0.625rem 0.5rem;
+}
+
+.trip-stop-link {
+	gap: 0.875rem;
+}

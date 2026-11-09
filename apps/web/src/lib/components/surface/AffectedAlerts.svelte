@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '#lib/components/surface/alert-item.css';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Alert, SeverityCode } from '#lib/v1/schemas/index.ts';
 	import { formatUtc } from '#lib/utils/time.ts';
@@ -184,78 +185,5 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 		border-radius: var(--radius-sm);
-	}
-	.affected-alert {
-		--alert-tone: var(--dataviz-severity-high);
-		position: relative;
-		margin: 0;
-		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.625rem 0.75rem;
-		overflow: hidden;
-	}
-	.affected-alert[data-severity='critical'] {
-		--alert-tone: var(--dataviz-severity-critical);
-	}
-	.affected-alert[data-severity='high'] {
-		--alert-tone: var(--dataviz-severity-high);
-	}
-	.affected-alert[data-severity='watch'] {
-		--alert-tone: var(--dataviz-severity-watch);
-	}
-	.affected-alert-head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0;
-	}
-	.affected-alert-dot {
-		flex: none;
-		font-size: var(--text-small);
-		line-height: 1.2;
-		color: var(--alert-tone);
-		font-variant-emoji: text;
-	}
-	.affected-alert-title {
-		min-width: 0;
-		font-size: var(--text-small);
-		font-weight: 500;
-		line-height: 1.35;
-		color: var(--foreground);
-	}
-	.affected-alert-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem 0.75rem;
-		margin: 0.5rem 0 0;
-	}
-	.affected-alert-meta div {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.375rem;
-		min-width: 0;
-	}
-	.affected-alert-meta dt {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
-	}
-	.affected-alert-meta dd {
-		margin: 0;
-		min-width: 0;
-		font-size: var(--text-caption);
-		font-weight: 500;
-		color: var(--foreground);
-	}
-
-	.alert-language-marker {
-		margin-inline-start: 0.375rem;
-		color: var(--muted-foreground);
-		font-size: var(--text-caption);
-		font-weight: 400;
 	}
 </style>
