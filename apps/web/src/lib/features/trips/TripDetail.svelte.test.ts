@@ -53,7 +53,12 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 					retainedGeneration: tripsData?.generated_utc ?? null,
 					phase: 'ready',
 					health: {
-						state: reportNotice ? 'retained-stale' : 'live',
+						state:
+							reportNotice === 'refresh-unavailable'
+								? 'retrying'
+								: reportNotice
+									? 'retained-stale'
+									: 'live',
 						ageSeconds: 300,
 						isStale: reportStale,
 						retained: true,
@@ -312,4 +317,28 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		);
 		expect(document.querySelectorAll('.trip-stop-link')).toHaveLength(2);
 	});
+});
+
+describe.each(['en', 'fr'] as const)('missing trip fields follow health (%s)', (locale) => {
+	for (const notice of ['stale', 'refresh-unavailable'] as const)
+		it(notice, () => {
+			reportNotice = notice;
+			reportStale = notice === 'stale';
+			const { container } = render(TripDetail, {
+				props: { id: 'tBlank' },
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+			});
+			const missing = container.querySelector('[data-slot="absent-value"]');
+			expect(missing).toHaveAccessibleName(
+				expect.stringContaining(
+					locale === 'en'
+						? notice === 'stale'
+							? 'Report behind'
+							: 'Refresh unavailable'
+						: notice === 'stale'
+							? 'Rapport en retard'
+							: 'Indisponible',
+				),
+			);
+		});
 });
