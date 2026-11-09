@@ -97,6 +97,11 @@ export default defineConfig({
 					.map((colorScheme) => ({
 						name: `layout-${browserName}-${width}-${colorScheme}`,
 						testMatch: /layout.*\.spec\.ts/,
+						// This spec needs rich server-boot fixtures as well as browser routes.
+						testIgnore:
+							process.env.TRANSIT_E2E_PANEL_SIZES === '1'
+								? undefined
+								: /layout-panel-sizes\.spec\.ts/,
 						use: {
 							browserName,
 							viewport: { width, height },
@@ -129,7 +134,11 @@ export default defineConfig({
 		{
 			command: 'node data.mjs',
 			url: `${dataURL}/v1/providers.json`,
-			env: { TRANSIT_E2E_DATA_PORT: dataPort, TRANSIT_E2E_ORIGIN: baseURL },
+			env: {
+				TRANSIT_E2E_DATA_PORT: dataPort,
+				TRANSIT_E2E_ORIGIN: baseURL,
+				TRANSIT_E2E_PANEL_SIZES: process.env.TRANSIT_E2E_PANEL_SIZES ?? '',
+			},
 			reuseExistingServer: !process.env.CI,
 		},
 		// The built worker without bindings, so server-side data comes from the fixture server.
