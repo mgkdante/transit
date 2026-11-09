@@ -4,7 +4,7 @@ import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const copy = defineCopy({
 	en: {
-		kicker: 'DATA · HONESTY',
+		kicker: 'DATA STATUS',
 		article: articleCopy('en', {
 			watermark: 'Status',
 			tags: ['data', 'feeds', 'freshness', 'known gaps'],
@@ -12,8 +12,8 @@ export const copy = defineCopy({
 			dailyAsOf: 'DAILY RECORD AS OF',
 			liveAsOf: 'LIVE FEEDS AS OF',
 		}),
-		heading: 'Data health',
-		lede: 'How fresh each source is, where it came from, what is knowingly missing, how long we keep it, and how cleanly the latest schedule matched the model behind this dashboard. A missing signal shows as “no data”, never a fabricated value.',
+		heading: 'Is the data up to date?',
+		lede: 'How current each data source is, what is missing and why, and how long we keep history. When something is missing we show “no data” instead of guessing.',
 		overview: {
 			title: 'Overview',
 			dailyRecord: 'Daily record',
@@ -22,31 +22,31 @@ export const copy = defineCopy({
 		},
 		asOf: 'AS OF',
 		freshness: {
-			section: 'Feed freshness',
-			note: 'The status of each feed’s most recent ingestion run, whether the last load succeeded, failed, or is still running, and how long ago that run was.',
+			section: 'How current each feed is',
+			note: 'When each feed last updated, and whether that update worked.',
 			listLabel: 'Per-feed freshness',
 			noAge: 'no age signal',
 		},
 		sources: {
-			section: 'Source feeds',
-			note: 'Each feed we loaded, its storage lineage, and when it last landed.',
+			section: 'Where the data comes from',
+			note: 'Each feed we use and when we last received it.',
 			listLabel: 'Source-feed lineage',
-			chainPrefix: 'Storage chain',
+			chainPrefix: 'Stored in',
 			neverLoaded: 'not yet loaded',
-			noChain: 'no lineage recorded',
+			noChain: 'no storage record',
 		},
 		gaps: {
-			section: 'Known data gaps',
-			lede: 'These feeds knowingly carry no data on this tier. We name them rather than imply coverage we do not have:',
+			section: 'What we don’t have',
+			lede: 'Some services publish no live data. We list them so you don’t assume coverage we don’t have:',
 			listLabel: 'Declared data gaps',
 			tokens: {
-				metro_realtime: 'Metro: no realtime feed',
-				otrain_realtime: 'O-Train: no realtime feed',
+				metro_realtime: 'Metro: no live vehicle data',
+				otrain_realtime: 'O-Train: no live vehicle data',
 			},
 		},
 		pipelineNotes: {
-			section: 'Pipeline notes',
-			note: 'How the pipeline builds the things that have no single metric card of their own, published verbatim from the latest run.',
+			section: 'How we calculate',
+			note: 'Short notes on the rules behind numbers that have no card of their own.',
 			listLabel: 'Pipeline methodology notes',
 			labels: {
 				history_freeze: 'Closed-period freeze',
@@ -122,8 +122,8 @@ export const copy = defineCopy({
 			},
 		},
 		conformance: {
-			section: 'Feed conformance',
-			note: 'How cleanly the latest schedule payload matched the model the pipeline expects.',
+			section: 'Schedule format check',
+			note: 'Whether the latest schedule from the agency matched the format we expect.',
 			detailsTitle: 'Unmodelled fields (captured verbatim)',
 			extraRowsLabel: 'Extra rows kept',
 			membersLabel: 'Fields beyond the standard model',
@@ -136,15 +136,15 @@ export const copy = defineCopy({
 			unknown: 'unknown',
 		},
 		lanes: {
-			terminal: { title: 'pipeline-lanes', tag: 'BUILD' },
-			section: 'Pipeline lanes',
-			note: 'Each publishing lane, how long ago it last published, how many files it wrote, and how its last value check turned out. Times are the scheduled cadences, not guarantees.',
+			terminal: { title: 'updates', tag: 'SCHEDULE' },
+			section: 'When data is refreshed',
+			note: 'How often each kind of data is refreshed, when it last was, and whether its last check passed. Times are targets, not guarantees.',
 			listLabel: 'Publish lanes',
 			laneLabel: {
-				live: 'Live',
+				live: 'Live vehicles',
 				static: 'Schedule',
-				rollup: 'Rollups',
-				maintenance: 'Maintenance',
+				rollup: 'Weekly statistics',
+				maintenance: 'Cleanup',
 			},
 			cadence: {
 				live: '30-second operating target; delivery may take longer',
@@ -161,23 +161,23 @@ export const copy = defineCopy({
 				fail: 'blocked',
 				unknown: 'not checked',
 			},
-			gateLabel: 'Value check',
+			gateLabel: 'Quality check',
 			gateExplain:
-				'The value check runs before a rollup is published: it verifies the numbers against fixed rules and blocks a bad build from shipping. A warning is noted but does not block.',
-			maintenanceLabel: 'Maintenance',
+				'Before weekly statistics go out, we check the numbers against fixed rules. A failed check stops a bad update from being published; a warning is noted but doesn’t stop it.',
+			maintenanceLabel: 'Cleanup',
 			maintenanceCadence: 'weekly, Sunday 08:00 UTC',
 			maintenanceReason:
 				'Runs weekly in continuous integration and writes no public heartbeat, so there is nothing to report here.',
 			notApplicable: 'not applicable',
 		},
 		envelope: {
-			section: 'Build accountability',
+			section: 'Version details',
 			note: 'Every page carries the stamp of the exact publish run that produced it, plus the contract and methodology versions in force.',
-			generationIdLabel: 'Publish run',
+			generationIdLabel: 'Update ID',
 			generationIdExplain:
 				'The deterministic stamp of the single publish run that produced everything on this page. Two pages sharing this stamp were built from the same run.',
-			schemaVersionLabel: 'Contract version',
-			methodologyVersionLabel: 'Methodology version',
+			schemaVersionLabel: 'Data format version',
+			methodologyVersionLabel: 'Method version',
 		},
 		toc: {
 			label: 'Jump to a section',
@@ -187,8 +187,8 @@ export const copy = defineCopy({
 		statRail: {
 			label: 'At a glance',
 			lanes: {
-				title: 'Lanes',
-				passing: (pass, total) => `${pass} / ${total} passing`,
+				title: 'Updates',
+				passing: (pass, total) => `${pass} / ${total} on track`,
 				worst: (lane) => `worst: ${lane}`,
 				allClear: 'all lanes passing',
 			},
@@ -198,14 +198,14 @@ export const copy = defineCopy({
 			},
 		},
 		aggregate: {
-			title: 'PIPELINE GATE',
+			title: 'UPDATE CHECKS',
 			summary: (pass, total) => `${pass} of ${total} lanes passing`,
 			worst: (lane) => `worst: ${lane}`,
 			allClear: 'all lanes passing',
 		},
 	},
 	fr: {
-		kicker: 'DONNÉES · HONNÊTETÉ',
+		kicker: 'ÉTAT DES DONNÉES',
 		article: articleCopy('fr', {
 			watermark: 'État',
 			tags: ['données', 'flux', 'fraîcheur', 'lacunes connues'],
@@ -213,8 +213,8 @@ export const copy = defineCopy({
 			dailyAsOf: 'BILAN QUOTIDIEN À JOUR AU',
 			liveAsOf: 'FLUX EN DIRECT À JOUR AU',
 		}),
-		heading: 'Santé des données',
-		lede: 'À quel point chaque source est récente, d’où elle vient, ce qui manque sciemment, combien de temps on la garde et à quel point le dernier horaire correspondait au modèle derrière ce tableau de bord. Un signal absent s’affiche « aucune donnée », jamais une valeur fabriquée.',
+		heading: 'Les données sont-elles à jour?',
+		lede: 'À quel point chaque source est à jour, ce qui manque et pourquoi, et combien de temps on garde l’historique. Quand une donnée manque, on affiche « aucune donnée » plutôt que de deviner.',
 		overview: {
 			title: 'Vue d’ensemble',
 			dailyRecord: 'Bilan quotidien',
@@ -223,31 +223,31 @@ export const copy = defineCopy({
 		},
 		asOf: 'À JOUR AU',
 		freshness: {
-			section: 'Fraîcheur des flux',
-			note: 'Le statut de la dernière exécution d’ingestion de chaque flux : si le dernier chargement a réussi, échoué, ou est encore en cours, et il y a combien de temps.',
+			section: 'Fraîcheur de chaque flux',
+			note: 'Quand chaque flux a été mis à jour pour la dernière fois, et si cette mise à jour a fonctionné.',
 			listLabel: 'Fraîcheur par flux',
 			noAge: 'aucun signal d’âge',
 		},
 		sources: {
-			section: 'Flux sources',
-			note: 'Chaque flux chargé, sa lignée de stockage, et quand il a été chargé.',
+			section: 'D’où viennent les données',
+			note: 'Chaque flux utilisé et quand on l’a reçu pour la dernière fois.',
 			listLabel: 'Lignée des flux sources',
-			chainPrefix: 'Chaîne de stockage',
+			chainPrefix: 'Conservé dans',
 			neverLoaded: 'pas encore chargé',
-			noChain: 'aucune lignée enregistrée',
+			noChain: 'aucun stockage noté',
 		},
 		gaps: {
-			section: 'Lacunes de données connues',
-			lede: 'Ces flux ne portent sciemment aucune donnée sur ce palier. On les nomme plutôt que de laisser croire à une couverture qu’on n’a pas :',
+			section: 'Ce qui manque',
+			lede: 'Certains services ne publient aucune donnée en direct. On les nomme pour ne pas laisser croire à une couverture qu’on n’a pas :',
 			listLabel: 'Lacunes de données déclarées',
 			tokens: {
-				metro_realtime: 'Métro : aucun flux temps réel',
-				otrain_realtime: 'O-Train : aucun flux temps réel',
+				metro_realtime: 'Métro : aucune donnée en direct',
+				otrain_realtime: 'O-Train : aucune donnée en direct',
 			} as Readonly<Record<string, string>>,
 		},
 		pipelineNotes: {
-			section: 'Notes de la chaîne de traitement',
-			note: 'Comment la chaîne de traitement construit ce qui n’a pas de fiche-métrique propre, publié tel quel depuis la dernière exécution.',
+			section: 'Comment on calcule',
+			note: 'De courtes notes sur les règles derrière les chiffres qui n’ont pas leur propre fiche.',
 			listLabel: 'Notes de méthode de la chaîne de traitement',
 			labels: {
 				history_freeze: 'Gel des périodes closes',
@@ -324,8 +324,8 @@ export const copy = defineCopy({
 			} as Readonly<Record<string, string>>,
 		},
 		conformance: {
-			section: 'Conformité du flux',
-			note: 'À quel point le dernier horaire correspondait au modèle attendu par la chaîne de traitement.',
+			section: 'Vérification du format de l’horaire',
+			note: 'Si le dernier horaire de l’agence correspondait au format attendu.',
 			detailsTitle: 'Champs non modélisés (conservés tels quels)',
 			extraRowsLabel: 'Lignes supplémentaires conservées',
 			membersLabel: 'Champs hors du modèle standard',
@@ -338,15 +338,15 @@ export const copy = defineCopy({
 			unknown: 'inconnu',
 		},
 		lanes: {
-			terminal: { title: 'voies-de-traitement', tag: 'CONSTRUCTION' },
-			section: 'Voies de la chaîne de traitement',
-			note: 'Chaque voie de publication, il y a combien de temps elle a publié pour la dernière fois, combien de fichiers elle a écrits, et le résultat de sa dernière vérification des valeurs. Les heures sont les cadences prévues, pas des garanties.',
+			terminal: { title: 'mises-à-jour', tag: 'CALENDRIER' },
+			section: 'Quand les données sont rafraîchies',
+			note: 'À quelle fréquence chaque type de donnée est rafraîchi, quand il l’a été pour la dernière fois et si sa dernière vérification a réussi. Les heures sont des cibles, pas des garanties.',
 			listLabel: 'Voies de publication',
 			laneLabel: {
-				live: 'Temps réel',
+				live: 'Véhicules en direct',
 				static: 'Horaire',
-				rollup: 'Agrégats',
-				maintenance: 'Maintenance',
+				rollup: 'Statistiques hebdomadaires',
+				maintenance: 'Entretien',
 			} as Readonly<Record<string, string>>,
 			cadence: {
 				live: 'cible d’exploitation de 30 secondes; l’affichage peut prendre plus de temps',
@@ -363,22 +363,22 @@ export const copy = defineCopy({
 				fail: 'bloquée',
 				unknown: 'non vérifiée',
 			},
-			gateLabel: 'Vérification des valeurs',
+			gateLabel: 'Contrôle de qualité',
 			gateExplain:
-				'La vérification des valeurs s’exécute avant la publication d’un agrégat : elle contrôle les nombres selon des règles fixes et empêche une mauvaise version de partir. Un avertissement est noté mais ne bloque pas.',
-			maintenanceLabel: 'Maintenance',
+				'Avant de publier les statistiques hebdomadaires, on vérifie les chiffres selon des règles fixes. Un échec empêche la publication d’une mauvaise mise à jour; un avertissement est noté sans la bloquer.',
+			maintenanceLabel: 'Entretien',
 			maintenanceCadence: 'chaque semaine, dimanche 08:00 UTC',
 			maintenanceReason:
 				'S’exécute chaque semaine en intégration continue et n’écrit aucun battement public, il n’y a donc rien à rapporter ici.',
 			notApplicable: 'sans objet',
 		},
 		envelope: {
-			section: 'Traçabilité de la version',
+			section: 'Détails de version',
 			note: 'Chaque page porte l’empreinte de l’exécution de publication exacte qui l’a produite, ainsi que les versions du contrat et de la méthode en vigueur.',
-			generationIdLabel: 'Exécution de publication',
+			generationIdLabel: 'Identifiant de mise à jour',
 			generationIdExplain:
 				'L’empreinte déterministe de l’unique exécution de publication qui a produit tout ce qui figure sur cette page. Deux pages partageant cette empreinte proviennent de la même exécution.',
-			schemaVersionLabel: 'Version du contrat',
+			schemaVersionLabel: 'Version du format de données',
 			methodologyVersionLabel: 'Version de la méthode',
 		},
 		toc: {
@@ -389,8 +389,8 @@ export const copy = defineCopy({
 		statRail: {
 			label: 'En bref',
 			lanes: {
-				title: 'Lignes',
-				passing: (pass: string, total: string) => `${pass} / ${total} conformes`,
+				title: 'Mises à jour',
+				passing: (pass: string, total: string) => `${pass} / ${total} à jour`,
 				worst: (lane: string) => `pire : ${lane}`,
 				allClear: 'toutes les lignes conformes',
 			},
@@ -400,7 +400,7 @@ export const copy = defineCopy({
 			},
 		},
 		aggregate: {
-			title: 'VÉRIFICATION DES VALEURS',
+			title: 'CONTRÔLES DES MISES À JOUR',
 			summary: (pass: string, total: string) => `${pass} lignes conformes sur ${total}`,
 			worst: (lane: string) => `pire : ${lane}`,
 			allClear: 'toutes les lignes conformes',
