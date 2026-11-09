@@ -106,12 +106,18 @@ describe('stopServiceWindow — first/last from raw GTFS schedule times', () => 
 
 describe('inferAbsenceReason — metro has no realtime', () => {
 	it('route_type 1 + metro_realtime gap → metro-no-realtime', () => {
-		expect(inferAbsenceReason({ routeType: ROUTE_TYPE_METRO, gaps: [METRO_REALTIME_GAP] })).toEqual(
-			{ key: 'metro-no-realtime' },
-		);
+		expect(
+			inferAbsenceReason({
+				providerId: 'stm',
+				routeType: ROUTE_TYPE_METRO,
+				gaps: [METRO_REALTIME_GAP],
+			}),
+		).toEqual({ key: 'metro-no-realtime' });
 	});
 	it('metro route WITHOUT the gap → not metro (no over-claim)', () => {
-		expect(inferAbsenceReason({ routeType: ROUTE_TYPE_METRO, gaps: [] })).toBeNull();
+		expect(
+			inferAbsenceReason({ providerId: 'stm', routeType: ROUTE_TYPE_METRO, gaps: [] }),
+		).toBeNull();
 	});
 	it('the gap present but a BUS route → not metro', () => {
 		expect(inferAbsenceReason({ routeType: 3, gaps: [METRO_REALTIME_GAP] })).toBeNull();
@@ -119,6 +125,7 @@ describe('inferAbsenceReason — metro has no realtime', () => {
 	it('metro reason wins over a window signal', () => {
 		expect(
 			inferAbsenceReason({
+				providerId: 'stm',
 				routeType: ROUTE_TYPE_METRO,
 				gaps: [METRO_REALTIME_GAP],
 				firstDeparture: '05:30',
@@ -205,3 +212,16 @@ describe('inferAbsenceReason — no derivable signal falls back to null', () => 
 		).toBeNull();
 	});
 });
+
+it.each([
+	['stm', 1, 'metro_realtime'],
+	['octranspo', 0, 'otrain_realtime'],
+] as const)(
+	'explains a declared line for %s using its published gap',
+	(providerId, routeType, gap) => {
+		expect(inferAbsenceReason({ providerId, routeType, gaps: [gap] })).toEqual({
+			key: 'metro-no-realtime',
+		});
+		expect(inferAbsenceReason({ providerId, routeType, gaps: [] })).toBeNull();
+	},
+);

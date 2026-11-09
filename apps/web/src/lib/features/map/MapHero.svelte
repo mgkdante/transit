@@ -203,7 +203,10 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
+	provideLiveAbsenceContext(() => ({
+		familyStates: live.familyStates,
+		providerId: v1.manifest.provider,
+	}));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,

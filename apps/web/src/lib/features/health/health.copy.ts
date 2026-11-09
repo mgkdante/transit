@@ -41,6 +41,7 @@ export const copy = defineCopy({
 			listLabel: 'Declared data gaps',
 			tokens: {
 				metro_realtime: 'Metro: no realtime feed',
+				otrain_realtime: 'O-Train: no realtime feed',
 			},
 		},
 		pipelineNotes: {
@@ -241,6 +242,7 @@ export const copy = defineCopy({
 			listLabel: 'Lacunes de données déclarées',
 			tokens: {
 				metro_realtime: 'Métro : aucun flux temps réel',
+				otrain_realtime: 'O-Train : aucun flux temps réel',
 			} as Readonly<Record<string, string>>,
 		},
 		pipelineNotes: {
