@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
@@ -160,7 +161,7 @@
 
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: providerHasAlerts(v1.provider)
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],

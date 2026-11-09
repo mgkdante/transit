@@ -1,3 +1,4 @@
+import { createMemoryLiveReader } from '#lib/v1/live/__fixtures__/reader.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -6,10 +7,6 @@ const harness = vi.hoisted(() => ({
 	getNetworkTrend: vi.fn(),
 	getProvenance: vi.fn(),
 	serverV1Context: vi.fn(),
-}));
-
-vi.mock('#lib/v1/repositories/live.ts', () => ({
-	getNetwork: (...args: unknown[]) => harness.getNetwork(...args),
 }));
 
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
@@ -24,7 +21,10 @@ vi.mock('#lib/v1/serverContext.ts', () => ({
 	serverV1Context: (...args: unknown[]) => harness.serverV1Context(...args),
 }));
 
-import { load } from './+page.server';
+import { _loadWithReader } from './+page.server';
+const reader = createMemoryLiveReader();
+harness.getNetwork = reader.network;
+const load = (event: Parameters<typeof _loadWithReader>[0]) => _loadWithReader(event, reader);
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;

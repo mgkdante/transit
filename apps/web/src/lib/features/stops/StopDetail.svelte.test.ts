@@ -504,7 +504,7 @@ describe('StopDetail article contract', () => {
 		const { container, rerender } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
-		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['departures'],
 		});
 
