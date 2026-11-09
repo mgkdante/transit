@@ -1,3 +1,4 @@
+import { isInService } from '#lib/v1/live/vehicleService.ts';
 import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import type { EntityKind, FilterState } from '#lib/filters/index.ts';
 import { bodyIconId, BUS_ICON, stateBadgeIconId } from './vehicleSprites';
@@ -71,6 +72,7 @@ function iconFor(
 	matched: number;
 } {
 	const matched = matchesFilter(v, f, alertVehicleIds);
+	if (!isInService(v)) return { body: BUS_ICON, mark: '', matched: matched ? 1 : 0 };
 	if (matched && dim === 'status') {
 		return {
 			body: bodyIconId('status', v.status),
@@ -103,25 +105,27 @@ export function toVehicleFeatures(
 	const dim = colourDimension(filter);
 	return {
 		type: 'FeatureCollection',
-		features: vehicles.map((v) => {
-			const { body, mark, matched } = iconFor(v, filter, dim, alertVehicleIds);
-			const stale = silence && notReporting(v, silence.serverNow, silence.staleCutoffS) ? 1 : 0;
-			return {
-				type: 'Feature',
-				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
-				properties: {
-					id: v.id,
-					body,
-					mark,
-					bearing: v.bearing ?? 0,
-					hasHeading: v.bearing != null ? 1 : 0,
-					route: v.route ?? '',
-					selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
-					matched,
-					stale,
-				},
-			};
-		}),
+		features: vehicles
+			.filter((v) => isInService(v) || filter.showOutOfService)
+			.map((v) => {
+				const { body, mark, matched } = iconFor(v, filter, dim, alertVehicleIds);
+				const stale = silence && notReporting(v, silence.serverNow, silence.staleCutoffS) ? 1 : 0;
+				return {
+					type: 'Feature',
+					geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
+					properties: {
+						id: v.id,
+						body,
+						mark,
+						bearing: v.bearing ?? 0,
+						hasHeading: v.bearing != null ? 1 : 0,
+						route: v.route ?? '',
+						selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
+						matched,
+						stale,
+					},
+				};
+			}),
 	};
 }
 

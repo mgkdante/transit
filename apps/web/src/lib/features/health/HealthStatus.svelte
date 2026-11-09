@@ -1,4 +1,7 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import OutOfServiceVehicles from './OutOfServiceVehicles.svelte';
+	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { clock } from '@yesid/ui/state';
 	import './sections/health-sections.css';
 
@@ -19,7 +22,7 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '#lib/components/layout/index.ts';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import { DetailFrame } from '@yesid/ui/layout';
 	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		TerminalPanel,
@@ -56,12 +59,13 @@
 	const localizeHref = getLocalizeHref();
 
 	interface Props {
+		manifest?: Manifest;
 		provenanceSeed?: ResourceSeed<Provenance>;
 		dataHealthSeed?: ResourceSeed<DataHealth>;
 		historicAvailabilitySeed?: ResourceSeed<HistoricAvailabilityIndex>;
 	}
 
-	let { provenanceSeed, dataHealthSeed, historicAvailabilitySeed }: Props = $props();
+	let { manifest, provenanceSeed, dataHealthSeed, historicAvailabilitySeed }: Props = $props();
 
 	const PIPELINE_NOTE_KINDS = {
 		history_freeze: 'pipeline-note',
@@ -317,6 +321,10 @@
 		<CollapsibleSection title={t.overview.title} headerVariant="article-summary" open={true}>
 			<div class="health-overview">
 				<p class="health-lede">{t.lede}</p>
+				{#if manifest}{#key manifest.provider}<OutOfServiceVehicles
+							{manifest}
+							{locale}
+						/>{/key}{/if}
 				{#if !prov || provenanceIsEmpty(prov)}
 					<div class="health-resource-state" aria-label={t.overview.dailyRecord}>
 						<SectionLabel text={t.overview.dailyRecord} variant="metric" />
