@@ -7,7 +7,7 @@ export const cornerMetaLabels = defineCopy({
 		dataset: 'JEU DE DONNÉES',
 		line: 'LIGNE',
 		stop: 'ARRÊT',
-		trip: 'VOYAGE',
+		trip: 'TRAJET',
 		vehicles: 'VÉHICULES',
 		sources: 'SOURCES',
 	},

@@ -176,7 +176,7 @@ export const networkReliabilityCopy = defineCopy({
 		statusSection: 'Répartition des statuts',
 		occupancySection: 'Achalandage',
 		delayHistogramSection: 'Répartition des retards',
-		nonRespondingSection: 'Voyages silencieux par ligne',
+		nonRespondingSection: 'Trajets silencieux par ligne',
 		completeness: {
 			section: serviceComparisonCopy.fr.section,
 			metric: serviceComparisonCopy.fr.label,
@@ -196,7 +196,7 @@ export const networkReliabilityCopy = defineCopy({
 		reporting: {
 			heading: 'Signalement et couverture',
 			caveat:
-				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les voyages planifiés qui circulent actuellement sans véhicule en direct : un décompte de voyages silencieux par ligne, pas des véhicules identifiables. Les positions individuelles peuvent être plus anciennes que la mise à jour du flux. Le métro est exclu.',
+				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les trajets planifiés qui circulent actuellement sans véhicule en direct : un décompte de trajets silencieux par ligne, pas des véhicules identifiables. Les positions individuelles peuvent être plus anciennes que la mise à jour du flux. Le métro est exclu.',
 		},
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
@@ -217,8 +217,8 @@ export const networkReliabilityCopy = defineCopy({
 		},
 		cancel: {
 			metric: 'Annulé (dernier jour)',
-			seriesLabel: '% de jours-voyages annulés',
-			summary: 'Part quotidienne des jours-voyages annulés à l’échelle du réseau.',
+			seriesLabel: '% de jours-trajets annulés',
+			summary: 'Part quotidienne des jours-trajets annulés à l’échelle du réseau.',
 		},
 		occupancyTrend: {
 			summary: 'Répartition des bandes d’achalandage par jour sur la tendance récente du réseau.',
@@ -236,20 +236,20 @@ export const networkReliabilityCopy = defineCopy({
 		},
 		delayHistogram: {
 			summary:
-				'Répartition des retards moyens par voyage à l’échelle du réseau, du plus tôt au plus tard.',
+				'Répartition des retards moyens par trajet à l’échelle du réseau, du plus tôt au plus tard.',
 			caption:
-				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
+				'La répartition actuelle des retards moyens par trajet, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
 			xLabel: 'Retard (min)',
-			yLabel: 'Voyages',
+			yLabel: 'Trajets',
 		},
 		nonResponding: {
 			summary:
-				'Lignes dont des voyages planifiés circulent sans véhicule en direct, les plus nombreuses d’abord.',
+				'Lignes dont des trajets planifiés circulent sans véhicule en direct, les plus nombreuses d’abord.',
 			caption:
-				'Voyages planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un voyage silencieux n’a aucun véhicule à suivre : on compte donc les voyages par ligne, pas les véhicules. Le métro est exclu.',
+				'Trajets planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un trajet silencieux n’a aucun véhicule à suivre : on compte donc les trajets par ligne, pas les véhicules. Le métro est exclu.',
 			rowLabel: 'Ligne',
 			viewDetail: (route: string) => `Voir la ligne ${route}`,
-			tripsUnit: (count: number) => (count <= 1 ? 'voyage' : 'voyages'),
+			tripsUnit: (count: number) => (count <= 1 ? 'trajet' : 'trajets'),
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },

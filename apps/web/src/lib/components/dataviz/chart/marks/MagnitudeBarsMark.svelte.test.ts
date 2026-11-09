@@ -148,7 +148,7 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		['en', 'Vehicle', 'Severe-delay rate'],
 		['fr', 'Ligne', 'Taux de retard grave'],
 		['fr', 'Arrêt', 'Taux de retard grave'],
-		['fr', 'Voyage', 'Taux de retard grave'],
+		['fr', 'Trajet', 'Taux de retard grave'],
 		['fr', 'Véhicule', 'Taux de retard grave'],
 	] as const)(
 		'uses %s %s and the localized value label as column headings',

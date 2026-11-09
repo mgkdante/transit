@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
@@ -444,7 +445,7 @@
 		onthemerepaint={runtime.repaint}
 		onerror={onMapFailure}
 		onbeforeremove={runtime.release}
-		customAttribution={manifest.attribution}
+		customAttribution={providerAttribution(manifest.provider, manifest.attribution, locale)}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,
