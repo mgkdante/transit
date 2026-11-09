@@ -20,7 +20,7 @@ it('keeps known English labels and voyage out of French copy objects', () => {
 	for (const file of files) {
 		const raw = readFileSync(file, 'utf8');
 		const source = file.endsWith('.svelte')
-			? [...raw.matchAll(/<script[^>]*>([\s\S]*?)<\/script\s*>/gi)]
+			? [...raw.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)]
 					.map((match) => match[1])
 					.join('\n')
 			: raw;
