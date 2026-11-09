@@ -1,12 +1,6 @@
 import type { VehicleFeature } from '../vehicleLayer';
-import { walkAlong, type Coord } from '../polyline';
-import {
-	fixAgeS,
-	isVehicleStale,
-	projectedDistanceM,
-	projectVehicle,
-	type ProjectVehicleResult,
-} from '../vehicleProjection';
+import { type Coord } from '../polyline';
+import { fixAgeS, projectVehicle, type ProjectVehicleResult } from '../vehicleProjection';
 import { BLEND_MS } from './constants';
 import { blendBearing, normalizeBearing, power1Out, roundCoordinate } from './easing';
 
@@ -31,34 +25,8 @@ export interface VehicleEntry {
 	fix: VehicleFix | null;
 }
 
-export interface ProjectionInvariants {
-	fixEpochMs: number;
-	shape: readonly Coord[];
-	lengths: readonly number[];
-	s0: number;
-}
-
-function projectWithInvariants(
-	entry: VehicleEntry,
-	serverNow: number,
-	invariants: ProjectionInvariants,
-): ProjectVehicleResult {
-	const { feature, fix } = entry;
-	const coord = feature.geometry.coordinates as Coord;
-	const ageS =
-		fix && !Number.isNaN(invariants.fixEpochMs)
-			? Math.max(0, (serverNow - invariants.fixEpochMs) / 1000)
-			: Infinity;
-	const stale = isVehicleStale(ageS);
-	const speedMps = fix?.speedMps ?? null;
-	if (stale || speedMps == null || speedMps <= 0) {
-		return { coord, bearing: feature.properties.bearing, frozen: true, stale };
-	}
-	const distanceM = projectedDistanceM(speedMps, ageS);
-	const sample = walkAlong(invariants.shape, invariants.s0 + distanceM, invariants.lengths);
-	if (!sample) return { coord, bearing: feature.properties.bearing, frozen: true, stale };
-	return { coord: sample.coord, bearing: sample.bearing, frozen: false, stale: false };
-}
+export type { ProjectionInvariants } from '../vehicleProjection';
+import type { ProjectionInvariants } from '../vehicleProjection';
 
 export function projectEntry(
 	entry: VehicleEntry,
@@ -70,15 +38,20 @@ export function projectEntry(
 ): { feature: VehicleFeature; result: ProjectVehicleResult } {
 	const { feature, fix } = entry;
 	const coord = feature.geometry.coordinates as Coord;
-	const result = invariants
-		? projectWithInvariants(entry, serverNow, invariants)
-		: projectVehicle({
-				coord,
-				shape: shapeFor?.(feature) ?? null,
-				speedMps: fix?.speedMps ?? null,
-				ageS: fix ? fixAgeS(fix.reportedUtc, fix.updatedUtc, serverNow) : Infinity,
-				bearing: feature.properties.bearing,
-			});
+	const result = projectVehicle({
+		coord,
+		shape: invariants?.shape ?? shapeFor?.(feature) ?? null,
+		invariants,
+		speedMps: fix?.speedMps ?? null,
+		ageS: invariants
+			? fix && !Number.isNaN(invariants.fixEpochMs)
+				? Math.max(0, (serverNow - invariants.fixEpochMs) / 1000)
+				: Infinity
+			: fix
+				? fixAgeS(fix.reportedUtc, fix.updatedUtc, serverNow)
+				: Infinity,
+		bearing: feature.properties.bearing,
+	});
 
 	let lon = result.coord[0];
 	let lat = result.coord[1];
