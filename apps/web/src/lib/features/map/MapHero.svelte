@@ -215,6 +215,7 @@
 	const alertVehicleIds = $derived(session.alertVehicleIds);
 	provideLiveAbsenceContext(() => ({
 		familyStates: live.familyStates,
+		providerId: v1.manifest.provider,
 		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 	}));
 	const presentation = $derived(

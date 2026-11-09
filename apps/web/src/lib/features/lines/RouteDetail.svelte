@@ -235,6 +235,7 @@
 
 	const absenceReason = $derived(
 		inferAbsenceReason({
+			providerId: v1.manifest.provider,
 			routeType: route.data?.type ?? null,
 			gaps: provenance.data?.gaps ?? null,
 			firstDeparture: route.data?.first_departure ?? null,
