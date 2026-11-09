@@ -221,7 +221,8 @@ def test_archive_packing_serialization_work_is_linear(monkeypatch) -> None:
 
 @pytest.mark.parametrize("extra_bytes", [-1, 0, 1])
 def test_archive_packing_respects_exact_utf8_ceiling_and_latest_stamp(
-    monkeypatch, extra_bytes: int,
+    monkeypatch,
+    extra_bytes: int,
 ) -> None:
     from transit_ops.snapshots.builders.historic import alert_archive as archive_module
     from transit_ops.snapshots.serialization import snapshot_json_bytes
@@ -442,7 +443,7 @@ def test_legacy_window_and_truncation_keep_unknown_provenance() -> None:
 
     payload = build_alert_history(
         connection,
-        "stm",
+        provider_id="stm",
         generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -613,10 +614,25 @@ def test_alert_duration_rounding_matches_mutable_and_retained_windows(seconds, e
     start = datetime(2026, 7, 1, tzinfo=UTC)
     end = start + timedelta(seconds=seconds) if seconds is not None else None
     bundle, _ = _build([_row(1, start_utc=start, end_utc=end)])
-    current = build_alert_history(NamedQueryConn({"alerts.history": [{
-        "alert_header_text": "Alert", "header_text_en": "Alert", "severity": "WARNING",
-        "routes": [], "stops": [], "start_utc": start, "end_utc": end,
-    }]}), generated_utc="t")
+    current = build_alert_history(
+        NamedQueryConn(
+            {
+                "alerts.history": [
+                    {
+                        "alert_header_text": "Alert",
+                        "header_text_en": "Alert",
+                        "severity": "WARNING",
+                        "routes": [],
+                        "stops": [],
+                        "start_utc": start,
+                        "end_utc": end,
+                    }
+                ]
+            }
+        ),
+        generated_utc="t",
+        provider_id="stm",
+    )
     assert bundle.page_items[0][1].alerts[0].duration_min == expected
     assert current.alerts[0].duration_min == expected
 
@@ -625,10 +641,25 @@ def test_alert_breakdown_takes_median_of_published_whole_minutes() -> None:
     from transit_ops.snapshots.builders import build_alert_history
 
     start = datetime(2026, 7, 1, tzinfo=UTC)
-    current = build_alert_history(NamedQueryConn({"alerts.history": [{
-        "alert_header_text": f"Alert {seconds}", "header_text_en": None,
-        "severity": "WARNING", "routes": [], "stops": [],
-        "start_utc": start, "end_utc": start + timedelta(seconds=seconds),
-    } for seconds in (30, 150)]}), generated_utc="t")
+    current = build_alert_history(
+        NamedQueryConn(
+            {
+                "alerts.history": [
+                    {
+                        "alert_header_text": f"Alert {seconds}",
+                        "header_text_en": None,
+                        "severity": "WARNING",
+                        "routes": [],
+                        "stops": [],
+                        "start_utc": start,
+                        "end_utc": start + timedelta(seconds=seconds),
+                    }
+                    for seconds in (30, 150)
+                ]
+            }
+        ),
+        generated_utc="t",
+        provider_id="stm",
+    )
     assert [alert.duration_min for alert in current.alerts] == [1, 3]
     assert current.breakdown.by_severity[0].median_duration_min == 2

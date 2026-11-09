@@ -523,7 +523,7 @@ def _build_graph() -> tuple[MemorySnapshotStorage, dict[str, str]]:
 def test_gc_walks_all_seven_families_compatibility_roots_and_legacy_roots() -> None:
     storage, paths = _build_graph()
 
-    report = plan_historic_generation_gc(storage, now=NOW, mode="dry-run")
+    report = plan_historic_generation_gc(storage, now=NOW, mode="dry-run", provider_id=None)
 
     for name, path in paths.items():
         if name != "orphan":
@@ -623,7 +623,7 @@ def test_gc_fails_closed_before_marking_on_incomplete_or_invalid_graph(mutation:
         storage.objects[paths["network_partition"]] = b'{"wrong":true}'
 
     with pytest.raises(HistoricGcBlockedError):
-        plan_historic_generation_gc(storage, now=NOW, mode="mark")
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id=None)
 
 
 def test_gc_unknown_generation_shape_blocks_the_entire_mark_scan() -> None:
@@ -634,7 +634,7 @@ def test_gc_unknown_generation_shape_blocks_the_entire_mark_scan() -> None:
     )
 
     with pytest.raises(HistoricGcBlockedError, match="unknown_generation_shape"):
-        plan_historic_generation_gc(storage, now=NOW, mode="mark")
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id=None)
 
 
 def test_gc_invalid_calendar_generation_shape_blocks_the_entire_mark_scan() -> None:
@@ -645,7 +645,7 @@ def test_gc_invalid_calendar_generation_shape_blocks_the_entire_mark_scan() -> N
     )
 
     with pytest.raises(HistoricGcBlockedError, match="unknown_generation_shape"):
-        plan_historic_generation_gc(storage, now=NOW, mode="mark")
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id=None)
 
 
 def test_gc_preserves_marks_but_never_reports_eligibility_without_durable_activation() -> None:
@@ -660,10 +660,7 @@ def test_gc_preserves_marks_but_never_reports_eligibility_without_durable_activa
     )
 
     at_47h = plan_historic_generation_gc(
-        storage,
-        now=NOW,
-        mode="mark",
-        existing_marks={orphan.rel_key: prior},
+        storage, now=NOW, mode="mark", existing_marks={orphan.rel_key: prior}, provider_id=None
     )
     assert at_47h.eligible_keys == ()
     assert at_47h.next_marks[orphan.rel_key].first_unreachable_utc == first
@@ -673,6 +670,7 @@ def test_gc_preserves_marks_but_never_reports_eligibility_without_durable_activa
         now=NOW + timedelta(hours=1),
         mode="mark",
         existing_marks=at_47h.next_marks,
+        provider_id=None,
     )
     assert at_48h.eligible_keys == ()
     assert at_48h.display_dict()["eligibility_supported"] is False
@@ -684,6 +682,7 @@ def test_gc_preserves_marks_but_never_reports_eligibility_without_durable_activa
         now=NOW + timedelta(hours=2),
         mode="mark",
         existing_marks=at_48h.next_marks,
+        provider_id=None,
     )
     assert reset.eligible_keys == ()
     assert reset.next_marks[orphan.rel_key].first_unreachable_utc == NOW + timedelta(hours=2)
@@ -693,7 +692,7 @@ def test_gc_apply_is_hard_disabled_before_graph_or_inventory_access() -> None:
     storage = MemorySnapshotStorage()
 
     with pytest.raises(HistoricGcUnsupportedError, match="canary"):
-        plan_historic_generation_gc(storage, now=NOW, mode="apply")
+        plan_historic_generation_gc(storage, now=NOW, mode="apply", provider_id=None)
 
     assert storage.iter_calls == 0
 

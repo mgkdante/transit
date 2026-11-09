@@ -86,22 +86,22 @@ def _build_items(
         ),
         (
             "historic/hotspots.json",
-            builders.build_hotspots(conn, provider_id, generated_utc=stamp),
+            builders.build_hotspots(conn, provider_id=provider_id, generated_utc=stamp),
             "historic",
         ),
         (
             "historic/repeat_offenders.json",
-            builders.build_repeat_offenders(conn, provider_id, generated_utc=stamp),
+            builders.build_repeat_offenders(conn, provider_id=provider_id, generated_utc=stamp),
             "historic",
         ),
         (
             "historic/alert_history.json",
-            builders.build_alert_history(conn, provider_id, generated_utc=stamp),
+            builders.build_alert_history(conn, provider_id=provider_id, generated_utc=stamp),
             "historic",
         ),
         (
             "provenance.json",
-            builders.build_provenance(conn, provider_id, generated_utc=stamp),
+            builders.build_provenance(conn, provider_id=provider_id, generated_utc=stamp),
             "historic",
         ),
     ]
@@ -139,7 +139,7 @@ def _build_items(
         for stop_id, stop_rel in sorted(all_stops_rel.items())
     ]
 
-    all_receipts = builders.build_receipts(conn, provider_id, generated_utc=stamp)
+    all_receipts = builders.build_receipts(conn, provider_id=provider_id, generated_utc=stamp)
     receipt_items: list[PutItem] = [
         (f"historic/receipts/{date_str}.json", receipt, "historic")
         for date_str, receipt in sorted(all_receipts.items())

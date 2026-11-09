@@ -165,8 +165,6 @@ _STOP_HISTORY_OCCUPANCY_SQL = named_query(
 )
 
 
-
-
 def _entity_id(row: Mapping[str, Any]) -> str:
     value = row.get("stop_id")
     if not isinstance(value, str) or not value:
@@ -490,7 +488,6 @@ class StopHistoryPlan:
         )
 
 
-
 def build_stop_history_plan_from_rows(
     *,
     delay_rows: Iterable[Mapping[str, Any]],
@@ -499,7 +496,7 @@ def build_stop_history_plan_from_rows(
     generated_utc: str,
     entity_ids: Iterable[str] | None = None,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
-    provider_id: str = "stm",
+    provider_id: str,
 ) -> StopHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Stop history entity_batch_size must be positive")
@@ -528,7 +525,7 @@ def build_stop_history_from_rows(**kwargs: Any) -> StopHistoryBundle:
 def build_stop_history_plan(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
     phase_context: HistoryPhaseContext | None = None,
@@ -572,7 +569,7 @@ def build_stop_history_plan(
 def build_stop_history(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
 ) -> StopHistoryBundle:
