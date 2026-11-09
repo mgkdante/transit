@@ -37,7 +37,7 @@ for (const [key, body] of Object.entries(b9)) {
 		files[`/v1/stm/${key}`] ??= JSON.stringify(body);
 }
 
-createServer((request, response) => {
+const server = createServer((request, response) => {
 	// No Date header: the app anchors its clock to it, which would undo page.clock.
 	response.sendDate = false;
 	const body = files[request.url];
@@ -46,10 +46,16 @@ createServer((request, response) => {
 		'access-control-allow-origin': process.env.TRANSIT_E2E_ORIGIN ?? 'http://127.0.0.1:4317',
 	});
 	response.end(body ?? '{}');
-}).listen(Number(process.env.TRANSIT_E2E_DATA_PORT ?? 4318), '127.0.0.1');
+});
+// Playwright's route.fetch reuses keep-alive sockets. With Node's 5 s default the server
+// can close an idle socket just as the client reuses it, and the request fails with
+// "socket hang up". Idle sockets stay open instead; the client still closes its own.
+server.keepAliveTimeout = 0;
+server.listen(Number(process.env.TRANSIT_E2E_DATA_PORT ?? 4318), '127.0.0.1');
 
 // Opt-in layout variants leave the original fixtures unchanged for other specs.
 const layoutFiles = { ...files };
+layoutFiles['/v1/octranspo/live/vehicles.json'] = read('./octranspo-vehicles.json');
 for (const [key, body] of Object.entries(b9)) {
 	if (!['providers.json', 'manifest.json'].includes(key))
 		layoutFiles[`/v1/stm/${key}`] = JSON.stringify(body);
@@ -100,6 +106,8 @@ layoutFiles['/v1/stm/live/vehicles.json'] = JSON.stringify({
 			occupancy: 'many_seats',
 			delay_min: 0,
 			next_stop: 'S1',
+			next_stop_lat: 45.5,
+			next_stop_lon: -73.6,
 		},
 	],
 });
@@ -128,7 +136,15 @@ for (const state of ['fresh', 'stale', 'missing'])
 				parsed[key] = null;
 		if (state === 'missing' && path.endsWith('/live/vehicles.json'))
 			for (const vehicle of parsed.vehicles)
-				for (const key of ['occupancy', 'delay_min', 'speed_kmh', 'next_stop']) vehicle[key] = null;
+				for (const key of [
+					'occupancy',
+					'delay_min',
+					'speed_kmh',
+					'next_stop',
+					'next_stop_lat',
+					'next_stop_lon',
+				])
+					vehicle[key] = null;
 		if (state === 'missing' && path.endsWith('/live/network.json'))
 			for (const key of [
 				'on_time_pct',

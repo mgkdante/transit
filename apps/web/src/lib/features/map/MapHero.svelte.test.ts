@@ -409,7 +409,7 @@ const harness = vi.hoisted(() => {
 		reachLoadCheckpoint(navigation: HarnessNavigation): boolean {
 			return navigationRouter().reachLoadCheckpoint(navigation);
 		},
-		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
+		createLiveStore: vi.fn((_manifest: unknown, _reader: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
 		reportNavigationFailure,
@@ -848,7 +848,7 @@ describe('MapHero stage lifecycle', () => {
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			expect(await screen.findByText('Alert data unavailable')).toBeVisible();
 			expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();
-			expect(harness.createLiveStore).toHaveBeenCalledWith(expect.anything(), {
+			expect(harness.createLiveStore).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
 				families: ['vehicles'],
 			});
 		} finally {
@@ -1316,7 +1316,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			return {
 				url: new URL(committed),
 				filtersPreserved: false,
-				focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+				// Both detail surfaces are non-modal, so a committed navigation resets focus.
+				focus: 'body' as const,
 				publications: harness.acceptedPublications.slice(publicationStart),
 			};
 		}
@@ -1346,7 +1347,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		return {
 			url: winner,
 			filtersPreserved,
-			focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+			// Both detail surfaces are non-modal, so a committed navigation resets focus.
+			focus: 'body' as const,
 			publications: harness.acceptedPublications.slice(publicationStart),
 		};
 	}
@@ -2457,7 +2459,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);
-		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+		expect(harness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['vehicles', 'alerts'],
 		});
 

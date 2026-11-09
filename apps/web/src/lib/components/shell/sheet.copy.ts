@@ -9,6 +9,10 @@ export const sheetCopy = defineCopy({
 		closePanel: 'Fermer le volet',
 		collapsePanel: 'Réduire le volet',
 		expandPanel: 'Ouvrir le volet',
+		height: 'Hauteur des détails',
+		peek: 'Aperçu',
+		half: 'Mi-hauteur',
+		full: 'Pleine hauteur',
 	},
 	en: {
 		title: 'Details',
@@ -18,5 +22,9 @@ export const sheetCopy = defineCopy({
 		closePanel: 'Close panel',
 		collapsePanel: 'Collapse panel',
 		expandPanel: 'Expand panel',
+		height: 'Details height',
+		peek: 'Peek',
+		half: 'Half height',
+		full: 'Full height',
 	},
 });

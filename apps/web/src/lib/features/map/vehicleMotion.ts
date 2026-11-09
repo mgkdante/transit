@@ -65,7 +65,12 @@ export function createVehicleMotion(
 										updatedUtc: vehicle.updated_utc,
 										speedMps: vehicle.speed_kmh != null ? vehicle.speed_kmh / 3.6 : null,
 										horizon: projectionHorizon(intent.ttlS),
-										nextStop: vehicle.next_stop ? stops.get(vehicle.next_stop) : null,
+										nextStop:
+											vehicle.next_stop_lon != null && vehicle.next_stop_lat != null
+												? [vehicle.next_stop_lon, vehicle.next_stop_lat]
+												: vehicle.next_stop
+													? stops.get(vehicle.next_stop)
+													: null,
 									}
 								: null;
 						},

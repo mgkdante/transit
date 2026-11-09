@@ -29,7 +29,20 @@ vi.mock('#lib/v1/boot.ts', () => ({
 		},
 	}),
 }));
-vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { live: fixture } }));
+vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
+	const { createMemoryLiveReader } = await import('#lib/v1/live/__fixtures__/reader.ts');
+	const reader = createMemoryLiveReader();
+	Object.assign(fixture, reader);
+	return {
+		...actual,
+		createLiveStore: (
+			manifest: Parameters<typeof actual.createLiveStore>[0],
+			_reader: Parameters<typeof actual.createLiveStore>[1],
+			options: Parameters<typeof actual.createLiveStore>[2],
+		) => actual.createLiveStore(manifest, reader, options),
+	};
+});
 vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: fixture.stopNames }));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
