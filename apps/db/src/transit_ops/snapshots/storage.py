@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from transit_ops.snapshots.ttl import LIVE_TTL_SECONDS
+
 if sys.platform == "win32":
     import msvcrt
 else:
@@ -39,7 +41,7 @@ from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 # Mutable historic indexes use shorter TTLs than static files; hash state is private, no-store.
 CACHE_CONTROL: dict[str, str] = {
-    "live": "public, max-age=30",
+    "live": f"public, max-age={LIVE_TTL_SECONDS}",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
     "historic": "public, max-age=3600, stale-while-revalidate=86400",
     historic_tree.WRITE_ONCE_TIER: "public, max-age=31536000, immutable",

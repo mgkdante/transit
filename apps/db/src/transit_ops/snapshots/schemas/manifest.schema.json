@@ -149,7 +149,7 @@
           "type": "string"
         },
         "ttl_s": {
-          "default": 30,
+          "default": 20,
           "title": "Ttl S",
           "type": "integer"
         },

@@ -9,6 +9,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from transit_ops.core.models import ProviderLabel
+from transit_ops.snapshots.ttl import LIVE_TTL_SECONDS
 
 PAYLOAD_SCHEMA_VERSION = 1
 
@@ -234,7 +235,7 @@ class ManifestLiveFiles(BaseModel):
     network: str = "live/network.json"
     stop_departures: str = "live/stop_departures.json"
     data_health: str = "status/data_health.json"
-    ttl_s: int = 30
+    ttl_s: int = LIVE_TTL_SECONDS
     generated_utc: str
 
 
