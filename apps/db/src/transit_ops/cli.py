@@ -294,6 +294,10 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
         provider.as_params(),
     )
 
+    from transit_ops.providers.live_policy import sync_live_policy
+
+    sync_live_policy(connection, manifest)
+
 
 def _seed_feed_endpoints(connection, manifest: ProviderManifest, settings: Settings) -> None:
     feed_endpoints = manifest.to_feed_endpoint_seeds(settings)
