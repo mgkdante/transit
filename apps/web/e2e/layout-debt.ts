@@ -17,12 +17,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
 		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
 	if (
-		kind === 'clipped' &&
-		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&
-		/^(\d|Slowest|10 %|Daily|Jour|Recent|Récent)/.test(text)
-	)
-		return 'LAYOUT-CHART: network chart axis exceeds its clipped container';
-	if (
 		kind === 'inaccessible-ellipsis' &&
 		selector.startsWith('[data-slot="terminal-panel"]') &&
 		text === 'salle-de-contrôle'
@@ -54,7 +48,7 @@ export async function expectLayout(page: Page, info: TestInfo, overlaps: string[
 				.filter((reason): reason is NonNullable<typeof reason> => reason !== null),
 		),
 	];
-	if (overlaps.length) reasons.push('LAYOUT-AXES: network chart axis labels overlap');
+	expect(overlaps, 'chart axis labels overlap').toEqual([]);
 	for (const description of reasons)
 		info.annotations.push({ type: 'defect', description: description! });
 	if (reasons.length) test.fail(true, reasons.join('; '));
