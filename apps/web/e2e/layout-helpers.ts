@@ -1,5 +1,18 @@
 import type { Page } from '@playwright/test';
 
+// A request can outlive its page: navigation or teardown disposes the fetched
+// response before route.fulfill runs. That is not a layout finding, so drop it.
+const TEARDOWN =
+	/has been disposed|Target page, context or browser has been closed|Route is already handled/;
+export async function forwardRoute(handle: () => Promise<void>): Promise<void> {
+	try {
+		await handle();
+	} catch (error) {
+		if (TEARDOWN.test(String(error))) return;
+		throw error;
+	}
+}
+
 // Inspect text nodes rather than a hand-maintained list of component classes. This
 // includes bars, cards, panels, sheets and overlays, including content below fold.
 export async function textDefects(page: Page) {
