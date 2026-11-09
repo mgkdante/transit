@@ -32,7 +32,7 @@ const dataPort = process.env.TRANSIT_E2E_DATA_PORT ?? '4318';
 const baseURL = `http://127.0.0.1:${port}`;
 const dataURL = `http://127.0.0.1:${dataPort}`;
 
-const httpSpecs = /(?:head-ssr|health|favicon)\.spec\.ts/;
+const httpSpecs = /(?:^|[\\/])(?:head-ssr|health|favicon)\.spec\.ts$/;
 
 export default defineConfig({
 	testDir: '.',
