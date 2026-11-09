@@ -615,7 +615,13 @@ def build_manifest(
         tier_stamps[str(r["tier"])] = _opt_iso(r["generated_utc"])
 
     base_url = (getattr(settings, "SNAPSHOT_PUBLIC_BASE_URL", None) or "").rstrip("/")
-    public = ProviderRegistry.from_project_root(settings=settings).get_public_config(provider_id)
+    registry = ProviderRegistry.from_project_root(settings=settings)
+    public = registry.get_public_config(provider_id)
+    source_lag_s = (
+        registry.get_provider(provider_id).provider.live_source_lag_seconds
+        if provider_id in registry.list_provider_ids()
+        else 0
+    )
     if public.basemap_url:
         basemap: str | None = f"{base_url}/v1/{provider_id}/static/basemap.json"
         static_basemap: str | None = "static/basemap.json"
@@ -636,7 +642,7 @@ def build_manifest(
         dataset_version=str(dataset_version),
         labels={"fr": "labels/fr.json", "en": "labels/en.json"},
         files=ManifestFiles(
-            live=ManifestLiveFiles(generated_utc=generated_utc),
+            live=ManifestLiveFiles(generated_utc=generated_utc, source_lag_s=source_lag_s),
             static=ManifestStaticFiles(
                 basemap=static_basemap,
                 generated_utc=tier_stamps.get("static"),

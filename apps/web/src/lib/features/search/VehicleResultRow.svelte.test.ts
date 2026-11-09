@@ -1,5 +1,17 @@
 import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { configureV1Runtime } from '#lib/v1/runtime.ts';
+let restore: () => void;
+beforeEach(() => {
+	restore = configureV1Runtime({
+		clock: {
+			serverNow: Date.parse('2026-06-16T00:00:00Z'),
+			subscribe: () => () => {},
+			noteServerEpochMs: () => {},
+		},
+	});
+});
+afterEach(() => restore());
 import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 import { occupancyGlyph } from '#lib/components/dataviz/index.ts';
 import type { Vehicle } from '#lib/v1/schemas/index.ts';
@@ -158,4 +170,28 @@ describe.each(['en', 'fr'] as const)('VehicleResultRow published status in %s', 
 		expect(link).toHaveAccessibleName(new RegExp(statusLabel));
 		if (measurement) expect(link.getAttribute('aria-label')).toContain(measurement);
 	});
+});
+
+it.each([149, 150, 151])('uses the shared Not reporting rule at %s seconds', (age) => {
+	render(VehicleResultRow, {
+		props: {
+			vehicle: vehicle({
+				updated_utc: new Date(
+					Date.parse('2026-06-16T00:00:00Z') - age * 1000,
+				).toISOString() as Vehicle['updated_utc'],
+				occupancy: null,
+				delay_min: null,
+			}),
+			locale: 'en',
+			nextStopName: null,
+			copy: VEHICLE_COPY,
+			statusLabel: 'Late',
+			occupancyLabel: null,
+		},
+	});
+	expect(
+		screen.getAllByText(
+			age >= 150 ? 'this vehicle is not reporting' : 'not reported in the live feed',
+		),
+	).toHaveLength(3);
 });

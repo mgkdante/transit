@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { onMount, untrack } from 'svelte';
@@ -101,7 +102,7 @@
 	const t = $derived(networkReliabilityCopy[locale]);
 
 	const initialNetworkSeed = untrack(() => networkSeed);
-	const live = createLiveStore(getV1Context().manifest, {
+	const live = createLiveStore(getV1Context().manifest, liveReader, {
 		families: ['network'],
 		...(initialNetworkSeed === undefined ? {} : { seed: { network: initialNetworkSeed } }),
 	});

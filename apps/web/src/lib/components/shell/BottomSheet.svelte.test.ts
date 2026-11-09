@@ -61,7 +61,7 @@ describe('BottomSheet', () => {
 		{ locale: 'en' as const, closeLabel: 'Close details' },
 		{ locale: 'fr' as const, closeLabel: 'Fermer les détails' },
 	])(
-		'uses an app-side $locale close control and no false drag affordance',
+		'uses an app-side $locale close control beside the shared height handle',
 		async ({ locale, closeLabel }) => {
 			render(BottomSheet, { props: { open: true, locale, canGoBack: true } });
 
@@ -71,11 +71,7 @@ describe('BottomSheet', () => {
 				return element!;
 			});
 			expect(sheet.querySelector('[data-slot="bottom-sheet-grabber"]')).not.toBeInTheDocument();
-			expect(
-				Array.from(sheet.children).some((child) =>
-					child.matches('[data-vaul-drawer-handle], [data-drawer-handle], [aria-hidden="true"]'),
-				),
-			).toBe(false);
+			expect(sheet.querySelectorAll('[data-sheet-handle]')).toHaveLength(1);
 			for (const button of sheet.querySelectorAll<HTMLButtonElement>(
 				'button[data-slot^="bottom-sheet-"]',
 			)) {
@@ -88,6 +84,59 @@ describe('BottomSheet', () => {
 			});
 		},
 	);
+
+	it.each([
+		{
+			locale: 'en' as const,
+			name: 'Details height',
+			values: ['Half height', 'Full height', 'Peek'],
+		},
+		{
+			locale: 'fr' as const,
+			name: 'Hauteur des détails',
+			values: ['Mi-hauteur', 'Pleine hauteur', 'Aperçu'],
+		},
+	])(
+		'opens at half height without blocking the map and cycles $locale heights from the handle',
+		async ({ locale, name, values }) => {
+			render(BottomSheet, { props: { open: true, locale } });
+
+			const handle = await screen.findByRole('slider', { name });
+			const sheet = document.querySelector<HTMLElement>('[data-slot="bottom-sheet"]')!;
+			expect(sheet).toHaveAttribute('aria-modal', 'false');
+			expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeInTheDocument();
+			expect(sheet).toHaveAttribute('data-detent', 'half');
+			expect(handle).toHaveAttribute('aria-valuetext', values[0]);
+
+			await fireEvent.keyDown(handle, { key: 'ArrowUp' });
+			expect(sheet).toHaveAttribute('data-detent', 'full');
+			expect(handle).toHaveAttribute('aria-valuetext', values[1]);
+
+			await fireEvent.keyDown(handle, { key: 'Home' });
+			expect(sheet).toHaveAttribute('data-detent', 'peek');
+			expect(handle).toHaveAttribute('aria-valuetext', values[2]);
+		},
+	);
+
+	it('keeps the rider height when the sheet closes and reopens', async () => {
+		const { rerender } = render(BottomSheet, { props: { open: true, locale: 'en' } });
+
+		await fireEvent.keyDown(await screen.findByRole('slider', { name: 'Details height' }), {
+			key: 'End',
+		});
+		await rerender({ open: false, locale: 'en' });
+		await waitFor(() => {
+			expect(document.querySelector('[data-slot="bottom-sheet"]')).not.toBeInTheDocument();
+		});
+		await rerender({ open: true, locale: 'en' });
+
+		const sheet = await waitFor(() => {
+			const element = document.querySelector<HTMLElement>('[data-slot="bottom-sheet"]');
+			expect(element).toBeInTheDocument();
+			return element!;
+		});
+		expect(sheet).toHaveAttribute('data-detent', 'full');
+	});
 
 	it('keeps every sheet clear of the mobile safe-area inset without requiring a footer', async () => {
 		render(BottomSheet, { props: { open: true, locale: 'en' } });
