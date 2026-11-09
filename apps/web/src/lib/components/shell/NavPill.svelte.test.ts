@@ -11,6 +11,8 @@ import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.
 import type { RouteIndexEntry } from '#lib/v1/schemas/index.ts';
 import NavPill from './__fixtures__/NavPillHarness.svelte';
 import { createNavigationRouter } from './__fixtures__/navigationRouter';
+import catalog from '../../../../e2e/providers.json';
+import { PublicProviderCatalogSchema } from '#lib/v1/providers.ts';
 
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
@@ -23,6 +25,23 @@ vi.mock('$app/navigation', () => ({
 }));
 
 afterEach(() => vi.restoreAllMocks());
+
+for (const locale of ['en', 'fr'] as const)
+	for (const provider of PublicProviderCatalogSchema.parse(catalog).providers)
+		it(`keeps ${provider.id} phone label and full ${locale} identity available`, () => {
+			const { city, operator } = provider.labels[locale];
+			const fullName = `${city} · ${operator}`;
+			const view = render(NavPill, {
+				props: { locale, providerId: provider.id, providers: [provider] },
+			});
+			const picker = view.getByRole('combobox', { name: new RegExp(fullName) });
+			expect(picker).toHaveAttribute('title', fullName);
+			expect(within(picker).getByRole('option', { selected: true })).toHaveTextContent(fullName);
+			expect(within(picker.parentElement!).getByText(operator, { exact: true })).toHaveAttribute(
+				'title',
+				fullName,
+			);
+		});
 
 it.each([
 	['en', 'Other networks unavailable'],

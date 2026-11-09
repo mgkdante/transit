@@ -262,7 +262,7 @@ test("a detail page's back link sits midway between the chrome and the next line
 					const text = range.getBoundingClientRect();
 					const pill = document.querySelector('[data-testid="nav-pill"]')!.getBoundingClientRect();
 					const select = document
-						.querySelector(`select[aria-label="${network}"]`)!
+						.querySelector(`select[aria-label^="${network}"]`)!
 						.parentElement!.getBoundingClientRect();
 					const chrome = Math.max(pill.bottom, select.bottom);
 					return [
