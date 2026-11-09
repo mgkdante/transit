@@ -9,6 +9,7 @@ type Probe = {
 	moving: boolean;
 	loaded: boolean;
 };
+type Draw = { x: number; y: number; time: number; cameraMoving: boolean };
 async function framing(page: Page, bounds: number[]) {
 	return page.evaluate((bounds) => {
 		const probe = (window as unknown as { __transitMap: Probe }).__transitMap;
@@ -94,7 +95,7 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 	await page.clock.setSystemTime(epoch + 1000);
 	await page.addInitScript(() => {
 		localStorage.setItem('transit:motion-mode', 'smooth');
-		const draws: { x: number; y: number; time: number }[] = [];
+		const draws: Draw[] = [];
 		Object.assign(window, { layoutDraws: draws });
 		let first = true;
 		const clear = CanvasRenderingContext2D.prototype.clearRect;
@@ -108,7 +109,13 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 		) {
 			if (this.canvas.dataset.slot === 'vehicle-overlay' && first) {
 				first = false;
-				draws.push({ x: Number(args[1]), y: Number(args[2]), time: performance.now() });
+				draws.push({
+					x: Number(args[1]),
+					y: Number(args[2]),
+					time: performance.now(),
+					cameraMoving:
+						(window as unknown as { __transitMap?: Probe }).__transitMap?.moving ?? true,
+				});
 				if (draws.length > 2000) draws.shift();
 			}
 			return Reflect.apply(draw, this, args);
@@ -120,7 +127,14 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 		const url = new URL(route.request().url());
 		if (url.pathname.endsWith('/live/vehicles.json')) vehiclePolls++;
 		url.pathname = `/__layout/fresh${url.pathname}`;
-		await route.fulfill({ response: await route.fetch({ url: url.href }) });
+		const response = await route.fetch({ url: url.href });
+		if (url.pathname.endsWith('/live/vehicles.json')) {
+			const body = await response.json();
+			// S1 lies behind the eastbound vehicle. This case tests between-report
+			// motion without a known next stop; stop capping has its own unit tests.
+			for (const vehicle of body.vehicles) vehicle.next_stop = null;
+			await route.fulfill({ response, json: body });
+		} else await route.fulfill({ response });
 	});
 	await page.goto('/map', { waitUntil: 'networkidle' });
 	await expect
@@ -139,25 +153,43 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 		(window as unknown as { layoutDraws: unknown[] }).layoutDraws.length = 0;
 	});
 	const pollsBeforeSample = vehiclePolls;
-	const samples = await page.evaluate(
-		() =>
-			new Promise<{ x: number; y: number; time: number }[]>((resolve) =>
-				setTimeout(
-					() =>
-						resolve(
-							(window as unknown as { layoutDraws: { x: number; y: number; time: number }[] })
-								.layoutDraws,
-						),
-					1500,
-				),
-			),
+	expect(pollsBeforeSample, 'one fresh vehicle response loaded').toBe(1);
+	let samples: Draw[] = [];
+	await expect
+		.poll(
+			async () => {
+				samples = await page.evaluate(
+					() => (window as unknown as { layoutDraws: Draw[] }).layoutDraws,
+				);
+				return (
+					samples.length > 1 &&
+					Math.max(...samples.map((s) => s.x)) - Math.min(...samples.map((s) => s.x)) > 0.01
+				);
+			},
+			{ message: 'vehicle moves between settled camera frames', timeout: 5000 },
+		)
+		.toBe(true);
+	expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+		false,
 	);
+	expect(
+		await page.evaluate(() => Date.now()),
+		'sample remains within the fresh feed TTL',
+	).toBeLessThan(epoch + 60_000);
+	expect(
+		await page.evaluate(() => (window as unknown as { __transitMap: Probe }).__transitMap.moving),
+	).toBe(false);
 	await info.attach('drawn-positions', {
 		body: JSON.stringify(samples),
 		contentType: 'application/json',
 	});
 	expect(vehiclePolls, 'both frames belong to the same feed poll').toBe(pollsBeforeSample);
 	expect(samples.length).toBeGreaterThan(1);
+	expect(
+		samples.every((sample) => !sample.cameraMoving),
+		'camera stayed settled during sampling',
+	).toBe(true);
+	expect(samples.at(-1)!.time).toBeGreaterThan(samples[0].time);
 	expect(
 		Math.max(...samples.map((s) => s.x)) - Math.min(...samples.map((s) => s.x)),
 	).toBeGreaterThan(0.01);
