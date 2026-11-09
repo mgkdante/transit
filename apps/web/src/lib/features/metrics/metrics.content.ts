@@ -56,7 +56,7 @@ export const METRICS: readonly MetricEntry[] = [
 		confidence: 'proxy',
 		sciName: 'otp_pct',
 		definition: {
-			fr: 'Pour la sélection et la période affichées, ce pourcentage compte les relevés de retard prédit dans la bande à l’heure, de −60 secondes inclusivement à 300 secondes exclusivement. Chaque relevé à retard connu compte comme une observation; plusieurs relevés peuvent concerner le même voyage. Une valeur de 90 % signifie neuf observations sur dix dans cette bande. Les retards inconnus sont exclus du dénominateur. Cette mesure décrit les prédictions GTFS-RT, sans certifier les arrivées réelles ni compter les voyages ponctuels.',
+			fr: 'Pour la sélection et la période affichées, ce pourcentage compte les relevés de retard prédit dans la bande à l’heure, de −60 secondes inclusivement à 300 secondes exclusivement. Chaque relevé à retard connu compte comme une observation; plusieurs relevés peuvent concerner le même trajet. Une valeur de 90 % signifie neuf observations sur dix dans cette bande. Les retards inconnus sont exclus du dénominateur. Cette mesure décrit les prédictions GTFS-RT, sans certifier les arrivées réelles ni compter les trajets ponctuels.',
 			en: 'For the displayed selection and period, this percentage counts predicted-delay readings in the on-time band, from −60 seconds inclusive to 300 seconds exclusive. Each known-delay reading is one observation; multiple readings can describe the same trip. A value of 90% means nine observations in ten fall within that band. Unknown delays are excluded from the denominator. This measures GTFS-RT predictions, without certifying actual arrivals or counting punctual trips.',
 		},
 		math: {
@@ -80,14 +80,14 @@ def otp_pct(on_time, known):
     pct = 100.0 * float(on_time) / float(known)
     return int(Decimal(str(pct)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))`,
 		notReally: {
-			fr: 'Ce pourcentage décrit des prédictions observées. Il ne compte ni les voyages arrivés à l’heure ni les voyageurs concernés. Une ligne peu desservie ou qui saute des arrêts peut tout de même afficher une forte ponctualité.',
+			fr: 'Ce pourcentage décrit des prédictions observées. Il ne compte ni les trajets arrivés à l’heure ni les voyageurs concernés. Une ligne peu desservie ou qui saute des arrêts peut tout de même afficher une forte ponctualité.',
 			en: 'This percentage describes observed predictions. It counts neither trips that arrived on time nor affected passengers. A route with infrequent service or skipped stops can still have a high on-time percentage.',
 		},
 		caveats: {
 			fr: [
 				'−60 secondes est inclus; 300 secondes est exclu. Exactement cinq minutes de retard est aussi exclu du numérateur des retards graves, qui exige plus de 300 secondes. Ces deux parts ne se complètent donc pas à 100 %.',
 				'Pour les lignes et les bilans quotidiens, le dénominateur conserve tous les retards connus, même au-delà de ±3 600 secondes. Le retard moyen et les statistiques par arrêt utilisent une plage admissible différente.',
-				'Les mises à jour répétées d’un voyage comptent séparément. Cette pondération par observations ne représente pas le nombre de voyageurs.',
+				'Les mises à jour répétées d’un trajet comptent séparément. Cette pondération par observations ne représente pas le nombre de voyageurs.',
 				'Une cellule sans retard connu n’ajoute aucune observation au total. Un dénominateur entièrement vide donne une valeur indisponible, jamais une ponctualité de zéro.',
 				'Les périodes utilisent les dates locales du fournisseur. Les journées de 23 ou 25 heures peuvent changer le mélange d’observations; les seuils restent les mêmes.',
 				'La couleur d’un véhicule sur la carte suit des bandes de retard distinctes. Elle ne remplace pas ce pourcentage calculé sur plusieurs observations.',
@@ -236,7 +236,7 @@ def severe_pct(observations, severe):
     pct = 100.0 * float(severe or 0) / float(observations)
     return float(Decimal(str(pct)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))`,
 		notReally: {
-			fr: 'Un taux de 8 % ne signifie pas que 8 % des voyages ou des autobus étaient gravement en retard. Un même voyage peut produire plusieurs relevés. Cette mesure ne compte pas les voyageurs touchés et ne vérifie pas les arrivées physiques.',
+			fr: 'Un taux de 8 % ne signifie pas que 8 % des trajets ou des autobus étaient gravement en retard. Un même trajet peut produire plusieurs relevés. Cette mesure ne compte pas les voyageurs touchés et ne vérifie pas les arrivées physiques.',
 			en: 'An 8% share does not mean 8% of trips or buses were severely late. One trip can produce many readings. This measure does not count affected passengers or verify physical arrivals.',
 		},
 		caveats: {
@@ -245,7 +245,7 @@ def severe_pct(observations, severe):
 				'Les retards inconnus sont exclus. Pour les arrêts et les classements, les relevés hors de ±3 600 secondes sont aussi exclus du dénominateur; comparer ces populations demande donc de la prudence.',
 				'Les comptes bruts se composent entre périodes; les pourcentages quotidiens ne sont pas moyennés.',
 				'Zéro signifie aucun retard grave parmi les observations admissibles. Une valeur indisponible signifie que leur dénominateur est vide.',
-				'La fréquence de signalement influence le résultat : plusieurs prédictions d’un même voyage comptent séparément.',
+				'La fréquence de signalement influence le résultat : plusieurs prédictions d’un même trajet comptent séparément.',
 			],
 			en: [
 				'300 seconds is excluded from the numerator; 3,600 seconds is included. Beyond one hour, a reading remains in a route’s denominator but never counts as severe.',
@@ -291,12 +291,12 @@ mean_seconds = total_delay_seconds / observations
 # Sort by (-mean_seconds, stop_id); the default publication cap is 100.
 # Published minutes use gold.reader.rates.avg_delay_min (ties away from zero).`,
 		notReally: {
-			fr: 'Ce classement ne prédit pas votre prochain voyage et ne mesure pas les arrivées réelles. Une borne de Wilson basse peut aussi traduire un petit échantillon; elle ne prouve pas qu’un arrêt est systématiquement le pire.',
+			fr: 'Ce classement ne prédit pas votre prochain trajet et ne mesure pas les arrivées réelles. Une borne de Wilson basse peut aussi traduire un petit échantillon; elle ne prouve pas qu’un arrêt est systématiquement le pire.',
 			en: 'This ranking does not predict your next trip or measure actual arrivals. A low Wilson bound can also reflect a small sample; it does not prove a stop is consistently the worst.',
 		},
 		caveats: {
 			fr: [
-				'La moyenne est pondérée par observations, pas par voyages ou voyageurs. Un voyage signalé plus souvent pèse davantage.',
+				'La moyenne est pondérée par observations, pas par trajets ou voyageurs. Un trajet signalé plus souvent pèse davantage.',
 				'La fenêtre de 30 dates peut contenir des jours sans données. Elle se termine au dernier jour disponible, qui peut être ancien si le flux est interrompu.',
 				'Les retards hors de ±3 600 secondes sont exclus, même lorsqu’ils correspondent à un incident réel.',
 				'Un arrêt sans observation admissible est absent du classement. Une liste courte n’est pas complétée artificiellement.',
