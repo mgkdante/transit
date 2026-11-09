@@ -1,4 +1,3 @@
-import math
 import os
 import re
 import shutil
@@ -626,31 +625,26 @@ def test_daily_static_pipeline_keeps_schedule_concurrency_and_integrated_gis() -
     }
 
 
-def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:
+def test_refresh_basemap_workflow_uses_generous_provider_extracts() -> None:
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/refresh-basemap.yml").read_text(encoding="utf-8")
     )
     from transit_ops.providers.registry import ProviderRegistry
 
     assert workflow["jobs"]["refresh-basemap"]["env"]["BBOX"] == "${{ matrix.bbox }}"
-    bounds = ProviderRegistry.from_project_root().get_provider("stm").public.basemap_bounds
-    assert bounds is not None
-    bbox_raw = ",".join(map(str, (
-        bounds.min_longitude, bounds.min_latitude, bounds.max_longitude, bounds.max_latitude,
-    )))
-    min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
+    registry = ProviderRegistry.from_project_root()
+    for provider_id in registry.list_provider_ids():
+        public = registry.get_provider(provider_id).public
+        if public.max_bounds is None:
+            continue
+        assert public.basemap_bounds is not None
+        pan, extract = public.max_bounds, public.basemap_bounds
+        assert (
+            extract.min_longitude <= pan.min_longitude
+            < pan.max_longitude <= extract.max_longitude
+        )
+        assert extract.min_latitude <= pan.min_latitude < pan.max_latitude <= extract.max_latitude
 
-    assert bbox_raw == "-74.17628,45.23742,-73.27628,45.86764"
-    assert math.isclose((min_lon + max_lon) / 2, -73.72628)
-    assert math.isclose((min_lat + max_lat) / 2, 45.55253)
-
-    def mercator_y(lat: float) -> float:
-        radians = math.radians(lat)
-        return math.log(math.tan(math.pi / 4 + radians / 2))
-
-    width = math.radians(max_lon - min_lon)
-    height = mercator_y(max_lat) - mercator_y(min_lat)
-    assert abs(width / height - 1) <= 0.03
 
 
 def _environment_keys(service: dict) -> set[str]:
