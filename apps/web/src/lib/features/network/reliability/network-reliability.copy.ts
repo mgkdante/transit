@@ -59,7 +59,7 @@ export const networkReliabilityCopy = defineCopy({
 		reporting: {
 			heading: 'Reporting & coverage',
 			caveat:
-				'Coverage is the share of the fleet whose live status is known. “Not reporting” counts scheduled trips currently running with no live vehicle: a per-line silent-trip tally, not identifiable buses. Individual position reports can be older than the feed update. Metro is excluded.',
+				'Coverage is the share of the fleet whose live status is known. “Silent trips” counts scheduled trips currently running with no live vehicle: a per-line silent-trip tally, not identifiable buses. Individual position reports can be older than the feed update. {excluded}',
 		},
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
@@ -104,7 +104,7 @@ export const networkReliabilityCopy = defineCopy({
 		nonResponding: {
 			summary: 'Lines with scheduled trips currently running with no live vehicle, most first.',
 			caption:
-				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. Metro is excluded.',
+				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. {excluded}',
 			rowLabel: 'Line',
 			viewDetail: (route) => `View line ${route}`,
 			tripsUnit: (count) => (count === 1 ? 'trip' : 'trips'),
@@ -196,7 +196,7 @@ export const networkReliabilityCopy = defineCopy({
 		reporting: {
 			heading: 'Signalement et couverture',
 			caveat:
-				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les trajets planifiés qui circulent actuellement sans véhicule en direct : un décompte de trajets silencieux par ligne, pas des véhicules identifiables. Les positions individuelles peuvent être plus anciennes que la mise à jour du flux. Le métro est exclu.',
+				'La couverture est la part de la flotte dont le statut en direct est connu. « Trajets silencieux » compte les trajets planifiés qui circulent actuellement sans véhicule en direct : un décompte de trajets silencieux par ligne, pas des véhicules identifiables. Les positions individuelles peuvent être plus anciennes que la mise à jour du flux. {excluded}',
 		},
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
@@ -246,7 +246,7 @@ export const networkReliabilityCopy = defineCopy({
 			summary:
 				'Lignes dont des trajets planifiés circulent sans véhicule en direct, les plus nombreuses d’abord.',
 			caption:
-				'Trajets planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un trajet silencieux n’a aucun véhicule à suivre : on compte donc les trajets par ligne, pas les véhicules. Le métro est exclu.',
+				'Trajets planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un trajet silencieux n’a aucun véhicule à suivre : on compte donc les trajets par ligne, pas les véhicules. {excluded}',
 			rowLabel: 'Ligne',
 			viewDetail: (route: string) => `Voir la ligne ${route}`,
 			tripsUnit: (count: number) => (count <= 1 ? 'trajet' : 'trajets'),
@@ -292,3 +292,23 @@ export const networkReliabilityCopy = defineCopy({
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy & { readonly verdict: VerdictCopy }>>;
 
 export type NetworkReliabilityCopy = (typeof networkReliabilityCopy)[Locale];
+
+export function providerNetworkReliabilityCopy(locale: Locale, providerId: string | undefined) {
+	const copy = networkReliabilityCopy[locale];
+	const exclusions: Record<string, Record<Locale, string>> = {
+		stm: { en: 'Metro is excluded.', fr: 'Le métro est exclu.' },
+		octranspo: { en: 'O-Train is excluded.', fr: 'L’O-Train est exclu.' },
+	};
+	const excluded = (providerId && exclusions[providerId]?.[locale]) || '';
+	return {
+		...copy,
+		reporting: {
+			...copy.reporting,
+			caveat: copy.reporting.caveat.replace('{excluded}', excluded).trim(),
+		},
+		nonResponding: {
+			...copy.nonResponding,
+			caption: copy.nonResponding.caption.replace('{excluded}', excluded).trim(),
+		},
+	};
+}

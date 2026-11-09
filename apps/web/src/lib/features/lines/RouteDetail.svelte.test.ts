@@ -36,7 +36,7 @@ const routeDetailNav = vi.hoisted(() => {
 		replaceState: vi.fn(defaultReplaceState),
 	};
 });
-const routeManifest = vi.hoisted(() => ({}));
+const routeManifest = vi.hoisted(() => ({ provider: 'stm' }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const routeProvider = vi.hoisted(() => ({
 	value: undefined as import('#lib/v1/providers.ts').PublicProvider | undefined,
@@ -397,8 +397,8 @@ afterEach(() => {
 });
 
 afterAll(() => {
-	// Three additional mounts cover EN/FR alert age and unknown age.
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(56);
+	// Includes three extra mounts for provider/locale absence coverage, plus alert ages.
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(59);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -1145,13 +1145,32 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 });
 
 describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
-	it('states the metro reason for a route_type 1 route with the metro_realtime gap', () => {
-		routeFileData = { ...ROUTE_FILE, type: 1 };
-		liveIndex = buildIndex([]);
-		renderRoute('1');
-
-		expect(screen.getByText('live positions are not published here')).toBeInTheDocument();
-	});
+	it.each([
+		['stm', 1, 'metro_realtime', 'en'],
+		['stm', 1, 'metro_realtime', 'fr'],
+		['octranspo', 0, 'otrain_realtime', 'en'],
+		['octranspo', 0, 'otrain_realtime', 'fr'],
+	] as const)(
+		'explains a declared line for %s type %s in %s / %s',
+		(provider, type, gap, locale) => {
+			routeManifest.provider = provider;
+			routeFileData = { ...ROUTE_FILE, type };
+			provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: [gap] };
+			liveIndex = buildIndex([]);
+			routeSurface.mount(RouteDetail, {
+				props: { id: '1', seed: routeSeed() },
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+			});
+			expect(
+				screen.getByText(
+					locale === 'en'
+						? 'live positions are not published here'
+						: 'les positions en direct ne sont pas publiées ici',
+				),
+			).toBeInTheDocument();
+			routeManifest.provider = 'stm';
+		},
+	);
 
 	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
 		routeFileData = { ...ROUTE_FILE, first_departure: null, last_departure: null };
