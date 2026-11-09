@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
@@ -492,7 +493,12 @@
 																			value={delayMeasurement(bus.delay_min)}
 																			reason={liveAbsenceReason('vehicle-delay', {
 																				familyStates: live.familyStates,
-																				notReporting: notReporting(bus, clock.serverNow) != null,
+																				notReporting:
+																					notReporting(
+																						bus,
+																						clock.serverNow,
+																						liveTimingFor(manifest).staleCutoffS,
+																					) != null,
 																			})}
 																			variant="row"
 																			{locale}
@@ -507,7 +513,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow) != null }), locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow, liveTimingFor(manifest).staleCutoffS) != null }), locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

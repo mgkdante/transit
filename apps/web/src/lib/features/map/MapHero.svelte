@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
@@ -176,6 +177,7 @@
 		filters,
 		locale,
 		timeZone: manifest.tz,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 		serverNow: () => clock.serverNow,
 		alertsAvailable,
 	});
@@ -204,7 +206,10 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
+	provideLiveAbsenceContext(() => ({
+		familyStates: live.familyStates,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
+	}));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,
@@ -349,6 +354,7 @@
 			ready: hasFirstIdle,
 			stale: live.familyStates.vehicles.health.isStale,
 			ttlS: manifest.files.live.ttl_s,
+			sourceLagS: liveTimingFor(manifest).sourceLagS,
 			stops: stopList,
 		}),
 	);
