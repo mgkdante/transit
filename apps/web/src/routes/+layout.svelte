@@ -12,7 +12,7 @@
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
 
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { createNavigationLifecycle, resetFocusAfterNavigation } from '@yesid/ui/brand';
 	import { updated } from '$app/state';
@@ -48,7 +48,9 @@
 	import { errorDocumentHead } from '#lib/site/errorPage.ts';
 	import { setV1Context } from '#lib/v1/boot.ts';
 	import { v1Provider } from '#lib/v1/config.ts';
-	import { getVehicles } from '#lib/v1/repositories/live.ts';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
+	import { createLiveStore, type LiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { dataPulse } from '#lib/stores/index.ts';
@@ -220,16 +222,38 @@
 	const searchStops = createResource(() => getStopsIndex(), {
 		enabled: () => chromeSearchEnabled,
 	});
-	const searchVehicles = createResource(() => getVehicles(), {
-		enabled: () => chromeSearchEnabled,
+	let searchLive = $state<LiveStore | null>(null);
+	$effect(() => {
+		if (!chromeSearchEnabled || !v1) {
+			searchLive = null;
+			return;
+		}
+		const manifest = v1.manifest;
+		const live = untrack(() => {
+			const store = createLiveStore(manifest, liveReader, { families: ['vehicles'] });
+			store.start();
+			return store;
+		});
+		searchLive = live;
+		return () => live.stop();
 	});
+	const searchPresentation = $derived(
+		searchLive
+			? livePresentation({
+					familyStates: searchLive.familyStates,
+					families: ['vehicles'],
+					locale,
+					page: 'map',
+				})
+			: null,
+	);
 	const topSearchResults = $derived(
 		chromeSearchResults(
 			topSearch,
 			{
 				routes: searchRoutes.data?.routes ?? [],
 				stops: searchStops.data?.stops ?? [],
-				vehicles: searchVehicles.data?.vehicles ?? [],
+				vehicles: searchLive?.vehicles?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
 			{ scope: searchScope, modes: searchModes },
@@ -365,7 +389,7 @@
 			{
 				routes: searchRoutes.data?.routes ?? [],
 				stops: searchStops.data?.stops ?? [],
-				vehicles: searchVehicles.data?.vehicles ?? [],
+				vehicles: searchLive?.vehicles?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
 			{ scope: searchScope, modes: searchModes },
@@ -423,6 +447,7 @@
 		discoveryError={data.discoveryError}
 		bind:search={topSearch}
 		searchResults={topSearchResults}
+		{searchPresentation}
 		{searchScope}
 		{searchModes}
 		onsearch={submitSearch}

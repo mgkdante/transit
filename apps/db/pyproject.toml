@@ -32,12 +32,12 @@ Documentation = "https://github.com/mgkdante/transit#readme"
 
 [dependency-groups]
 dev = [
-  "boto3-stubs[s3]==1.43.118",
-  "botocore-stubs==1.43.118",
+  "boto3-stubs[s3]==1.43.123",
+  "botocore-stubs==1.43.123",
   "mypy-boto3-s3==1.43.106",
   "mypy>=2.3.0,<3.0",
   "pytest>=9.1.1,<10.0",
-  "ruff>=0.16.0,<0.17",
+  "ruff>=0.16.0,<0.18",
 ]
 health = [
     "uvicorn[standard]>=0.52.0",
@@ -74,6 +74,7 @@ files = [
     "src/transit_ops/snapshots/historic_compatibility.py",
     "src/transit_ops/snapshots/envelope.py",
     "src/transit_ops/snapshots/uploads.py",
+    "src/transit_ops/snapshots/live_scope.py",
     "src/transit_ops/snapshots/protocols.py",
     "src/transit_ops/snapshots/storage.py",
     "src/transit_ops/gold/reader",

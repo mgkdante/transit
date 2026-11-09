@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { known, absent, liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { AbsentValue } from '#lib/components/edge/index.ts';
-	import { delayKnownLabel, delayMaybe, delayTone } from './mapSelectionDetail.logic';
+	import { delayKnownLabel, delayTone } from './mapSelectionDetail.logic';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 	interface Props {
@@ -13,7 +14,18 @@
 
 	let { delay, locale, t, ctx = {} }: Props = $props();
 
-	const m = $derived(delayMaybe(delay, ctx));
+	const absenceContext = readLiveAbsenceContext();
+	const m = $derived(
+		delay != null
+			? known(delay)
+			: absent<number>(
+					liveAbsenceReason('prediction-delay', {
+						...absenceContext(),
+						notReporting: ctx.stale,
+						unsupported: ctx.metro,
+					}),
+				),
+	);
 </script>
 
 {#if m.known}

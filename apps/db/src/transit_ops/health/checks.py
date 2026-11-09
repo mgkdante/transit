@@ -105,11 +105,7 @@ def check_provider_feed_freshness(
     floor_seconds = int(resolved_settings.HEALTH_MAX_PIPELINE_AGE_SECONDS)
 
     if not resolved_settings.DATABASE_URL:
-        return [
-            _provider_feeds_unavailable(
-                "DATABASE_URL is not configured.", checked_at, started
-            )
-        ]
+        return [_provider_feeds_unavailable("DATABASE_URL is not configured.", checked_at, started)]
 
     try:
         engine = (engine_factory or _make_health_engine)(resolved_settings)
@@ -190,6 +186,60 @@ def _provider_feeds_unavailable(
         latency_ms=_latency_ms(started),
         checked_at_utc=checked_at,
     )
+
+
+def check_live_policy(
+    settings: Settings | None = None,
+    *,
+    engine_factory: EngineFactory | None = None,
+    now: datetime | None = None,
+) -> list[ComponentHealthResult]:
+    """Use the existing pipeline health channel for outdated provider declarations."""
+    settings = settings or get_settings()
+    checked_at = _checked_at(now)
+    started = time.perf_counter()
+    if not settings.DATABASE_URL:
+        return []
+    try:
+        engine = (engine_factory or _make_health_engine)(settings)
+        with engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    text("""
+                SELECT p.provider_id, d.route_id, live.last_seen_at
+                FROM core.providers p
+                CROSS JOIN LATERAL gold.routes_without_live_data(p.provider_id) d
+                JOIN core.route_live_observations live
+                  ON live.provider_id = p.provider_id AND live.route_id = d.route_id
+                WHERE p.is_active
+                ORDER BY p.provider_id, d.route_id
+            """)
+                )
+                .mappings()
+                .all()
+            )
+    except Exception as exc:
+        return [
+            ComponentHealthResult(
+                name="live_policy",
+                status="down",
+                checked_at_utc=checked_at,
+                message=f"Live-data policy check failed: {_safe_error(exc)}",
+                latency_ms=_latency_ms(started),
+            )
+        ]
+    return [
+        ComponentHealthResult(
+            name=f"{r['provider_id']}_live_policy_{r['route_id']}",
+            status="degraded",
+            checked_at_utc=checked_at,
+            latency_ms=_latency_ms(started),
+            details=dict(r),
+            message=f"{r['provider_id']}/{r['route_id']}: live data observed; "
+            "lines_without_live_data config is outdated.",
+        )
+        for r in rows
+    ]
 
 
 def check_bronze_storage(
@@ -428,6 +478,7 @@ def run_health_checks(
             engine_factory=engine_factory,
             now=checked_at,
         ),
+        *check_live_policy(resolved_settings, engine_factory=engine_factory, now=checked_at),
         check_feed_conformance(
             resolved_settings,
             engine_factory=engine_factory,
@@ -454,9 +505,7 @@ def _make_health_engine(settings: Settings) -> Any:
     return create_engine(
         settings.sqlalchemy_database_url,
         pool_pre_ping=True,
-        connect_args={
-            "connect_timeout": max(1, int(settings.HEALTH_DATABASE_TIMEOUT_SECONDS))
-        },
+        connect_args={"connect_timeout": max(1, int(settings.HEALTH_DATABASE_TIMEOUT_SECONDS))},
     )
 
 

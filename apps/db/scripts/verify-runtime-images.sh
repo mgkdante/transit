@@ -113,3 +113,6 @@ docker run --rm --entrypoint dpkg-query "${postgres_tag}" \
 printf '%s\n' '== Caddy runtime =='
 assert_version_prefix Caddy "v${expected_caddy}" \
   docker run --rm --entrypoint caddy "${caddy_image}" version
+
+docker run --rm --entrypoint python "${worker_tag}" \
+  -c 'import platform, ssl; print(platform.machine(), ssl.OPENSSL_VERSION)'

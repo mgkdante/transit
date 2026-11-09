@@ -135,7 +135,7 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
     assert "set -e" in scan["run"]
     upload = _step(job, "Upload provider GC receipts")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    assert upload["uses"] == "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
     assert upload["with"]["name"] == "historic-gc-${{ github.run_id }}"
     assert upload["with"]["path"] == "apps/db/reports/historic-gc-*.json"
     assert upload["with"]["if-no-files-found"] == "error"

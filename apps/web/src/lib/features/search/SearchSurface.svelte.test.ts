@@ -138,7 +138,7 @@ describe('SearchSurface idle state', () => {
 	it('shows the instructional idle note before the rider types', () => {
 		setUrlQuery('');
 		render(SearchSurface);
-		expect(liveHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+		expect(liveHarness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['vehicles'],
 		});
 		expect(screen.getByText('Search a line, stop or bus')).toBeInTheDocument();
