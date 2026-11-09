@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { cn, type WithElementRef } from '#lib/utils/index.ts';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
@@ -145,7 +146,9 @@
 
 	<div class="min-w-0">
 		<div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-			<span class="min-w-0 break-words font-medium text-foreground">{title}</span>
+			<span class="readable-name min-w-0 font-medium text-foreground" {title} use:readableName
+				>{title}</span
+			>
 			{#if showAbsent}
 				<span class="min-w-0 text-right">
 					<AbsentValue
@@ -182,11 +185,12 @@
 
 	<span
 		class="dv-delta inline-flex shrink-0 items-center gap-1 font-mono text-caption tabular-nums"
+		class:sr-only={!hasDelta}
 		style="color: {deltaVar};"
 		role="img"
 		aria-label={hasDelta ? `${t.change} ${deltaText}` : t.noChange}
 	>
-		<span aria-hidden="true">{deltaGlyph}</span>
+		{#if hasDelta}<span aria-hidden="true">{deltaGlyph}</span>{/if}
 		{#if hasDelta}<span aria-hidden="true">{deltaText}</span>{/if}
 	</span>
 {/snippet}

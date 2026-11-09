@@ -27,7 +27,7 @@
 	const absence = $derived(
 		liveAbsenceReason('vehicle-delay', {
 			...absenceContext(),
-			notReporting: notReporting(vehicle, clock.serverNow) != null,
+			notReporting: notReporting(vehicle, clock.serverNow, absenceContext().staleCutoffS) != null,
 		}),
 	);
 	let pointerPreview = $state(false);

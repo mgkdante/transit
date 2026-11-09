@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { SvelteMap } from 'svelte/reactivity';
 	import LocateFixedIcon from '@lucide/svelte/icons/locate-fixed';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -249,7 +250,7 @@
 									onstopselect(stop);
 								}}
 							>
-								<span>{stop.name}</span>
+								<span class="readable-name" title={stop.name} use:readableName>{stop.name}</span>
 								<small>{formatDistance(stop.distanceM)}</small>
 							</button>
 						{/each}
@@ -451,7 +452,7 @@
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 	}
 	.map-near-suggestion small {
 		font-size: var(--text-micro);

@@ -168,7 +168,7 @@ function loadedV1(lang: 'en' | 'fr'): V1Context {
 			attribution: 'Fixture attribution',
 			dataset_version: 'fixture-v1',
 			labels: {},
-			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc } },
+			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc, source_lag_s: 0 } },
 			surfaces: [],
 		},
 	};

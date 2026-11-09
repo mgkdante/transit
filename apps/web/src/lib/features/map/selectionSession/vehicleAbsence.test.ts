@@ -56,3 +56,8 @@ describe('vehicleAbsence', () => {
 		expect(vehicleAbsence(detail, NOW + 20_000)).not.toBeNull();
 	});
 });
+
+it('uses the provider cutoff for selected vehicle silence', () => {
+	expect(vehicleAbsence(vehicleDetail(170), NOW, 210)).toBeNull();
+	expect(vehicleAbsence(vehicleDetail(215), NOW, 210)).toEqual({ ageS: 215 });
+});

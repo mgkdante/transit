@@ -36,6 +36,7 @@ describe('LineDirections', () => {
 				screen.getByText(locale === 'en' ? '2 min late' : '2 min en retard'),
 			).toBeInTheDocument();
 			const action = locale === 'en' ? 'View stop' : 'Voir l’arrêt';
+			expect(screen.getByTitle('First stop')).toHaveTextContent('First stop');
 			const predicted = screen.getByRole('link', { name: /First stop/ });
 			expect(predicted).toHaveAccessibleName(
 				`${action} 1 First stop ${predicted.querySelector('time')!.textContent} ${locale === 'en' ? '2 min late' : '2 min en retard'}`,
