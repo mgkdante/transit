@@ -15,9 +15,10 @@ from transit_ops.gold.delay_hours import assert_historic_delay_means_current
 from transit_ops.ingestion.common import utc_now
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
-from transit_ops.snapshots import builders, envelope, gate, historic_tier, uploads
+from transit_ops.snapshots import builders, envelope, gate, historic_tier, live_publication, uploads
 from transit_ops.snapshots import historic_run as _historic
 from transit_ops.snapshots.builders._helpers import _iso, _static_schedule_context
+from transit_ops.snapshots.contract import Manifest
 from transit_ops.snapshots.historic_run import (
     _HistoricPhaseLedger,
     _HistoricPublishRun,
@@ -197,52 +198,55 @@ def _static_stamp(conn: Connection, provider_id: str) -> str:
 
 
 def _build_live_items(
-    conn: Connection, *, provider_id: str, settings: Settings, gen: str
+    conn: Connection,
+    *,
+    provider_id: str,
+    settings: Settings,
+    gen: str,
+    keys: list[str] | None = None,
 ) -> list[PutItem]:
-    return [
+    selected = keys if keys is not None else live_publication.FILES.keys()
+    items = [
         (
-            "live/vehicles.json",
-            builders.build_vehicles(conn, provider_id=provider_id, generated_utc=gen),
+            key,
+            getattr(builders, live_publication.FILES[key][0])(
+                conn, provider_id=provider_id, generated_utc=gen
+            ),
             "live",
-        ),
-        (
-            "live/trips.json",
-            builders.build_trips(conn, provider_id=provider_id, generated_utc=gen),
-            "live",
-        ),
-        (
-            "live/alerts.json",
-            builders.build_alerts(conn, provider_id=provider_id, generated_utc=gen),
-            "live",
-        ),
-        (
-            "live/network.json",
-            builders.build_network(conn, provider_id=provider_id, generated_utc=gen),
-            "live",
-        ),
-        (
-            "live/stop_departures.json",
-            builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),
-            "live",
-        ),
-        # Health reads the prior completed publication.
-        (
-            "status/data_health.json",
-            builders.build_data_health(conn, provider_id=provider_id, generated_utc=gen),
-            "live",
-        ),
-        # Upload the manifest after its referenced live files.
+        )
+        for key in selected
+    ]
+    items.append(
         (
             "manifest.json",
             builders.build_manifest(
-                conn,
-                provider_id=provider_id,
-                generated_utc=gen,
-                settings=settings,
+                conn, provider_id=provider_id, generated_utc=gen, settings=settings
             ),
             "live",
-        ),
-    ]
+        )
+    )
+    return items
+
+
+def _build_live_publication(
+    conn: Connection, storage: PayloadSink, *, provider_id: str, settings: Settings, gen: str
+) -> list[PutItem]:
+    captures = {
+        key: builders.live._feed_captured_utc(conn, provider_id, key)
+        for key in sorted(set().union(*(inputs for _, inputs in live_publication.FILES.values())))
+    }
+    captures["static_schedule"] = _static_stamp(conn, provider_id)
+    read = getattr(storage, "get_json", None)
+    prior = read("manifest.json") if callable(read) else None
+    keys, generations = live_publication.select(prior, captures)
+    items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen, keys=keys)
+    manifest = cast(Manifest, items[-1][1])
+    manifest.files.live.input_captures = captures
+    manifest.files.live.generations = {
+        **generations,
+        **{key: envelope.publish_generation_id(provider_id, gen) for key in keys},
+    }
+    return items
 
 
 def _publish_live(
@@ -256,7 +260,9 @@ def _publish_live(
 ) -> list[str]:
     if gen is None:
         gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
-    items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
+    items = _build_live_publication(
+        conn, storage, provider_id=provider_id, settings=settings, gen=gen
+    )
     envelope.stamp_envelope(items, provider_id=provider_id, stamp=gen)
     if gate_report is not None:
         # Live gate failures are recorded without blocking publication.
@@ -412,7 +418,7 @@ def publish_snapshot(
     if tier == "live":
         if not isinstance(storage, PayloadSink):
             raise TypeError("live publication requires a payload sink")
-        # Live payloads change every cycle, so hash-state lookup adds no reuse.
+        # Reuse is selected from accepted input stamps in the completed manifest.
         with engine.begin() as conn:
             conn.execute(_REPEATABLE_READ_SQL)
             acquire_publication_lane(conn, provider_id=provider_id, tier=tier)

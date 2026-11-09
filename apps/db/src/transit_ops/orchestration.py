@@ -54,6 +54,11 @@ from transit_ops.maintenance import (
     prune_silver_storage,
 )
 from transit_ops.providers import ProviderRegistry
+from transit_ops.realtime_schedule import (
+    aligned_sleep_seconds,
+    endpoint_due,
+    worker_tick_seconds,
+)
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     RealtimeSilverLoadResult,
@@ -679,10 +684,6 @@ def _best_effort_publish_live(
         return 1
 
 
-# Loop start jitter should not turn a nominal 30s cadence into a 60s cadence.
-CAPTURE_CADENCE_TOLERANCE_SECONDS = 2.0
-
-
 def _run_realtime_cycle(
     provider_id: str,
     *,
@@ -716,16 +717,27 @@ def _run_realtime_cycle(
 
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results: list[RealtimeEndpointCycleResult] = []
-    for endpoint_key in cycle_endpoints:
+    # Phase-sensitive feeds go first so other downloads cannot delay their capture.
+    ordered_endpoints = sorted(
+        cycle_endpoints,
+        key=lambda key: getattr(manifest.feeds[key], "refresh_phase_seconds", None) is None,
+    )
+    for endpoint_key in ordered_endpoints:
         attempt_started_at_utc = utc_now() if last_attempts is not None else started_at_utc
         interval_seconds = refresh_intervals.get(endpoint_key)
         last_capture_at = last_captures.get(endpoint_key) if last_captures is not None else None
         last_attempt_at = last_attempts.get(endpoint_key) if last_attempts is not None else None
         if last_attempt_at is not None:
             last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
-        if interval_seconds is not None and last_capture_at is not None:
-            elapsed_seconds = (attempt_started_at_utc - last_capture_at).total_seconds()
-            if elapsed_seconds < max(0, interval_seconds - CAPTURE_CADENCE_TOLERANCE_SECONDS):
+        if interval_seconds is not None:
+            elapsed_seconds = (
+                (attempt_started_at_utc - last_capture_at).total_seconds()
+                if last_capture_at is not None
+                else 0.0
+            )
+            if (last_captures is not None or last_attempts is not None) and not endpoint_due(
+                manifest.feeds[endpoint_key], attempt_started_at_utc, last_capture_at
+            ):
                 logger.info(
                     (
                         "Skipping realtime cycle endpoint '%s' for provider '%s' "
@@ -959,7 +971,10 @@ def _run_realtime_worker_loop(
         settings=settings,
         registry=registry,
     )
-    poll_seconds = settings.REALTIME_POLL_SECONDS
+    poll_seconds = worker_tick_seconds(manifest, settings.REALTIME_POLL_SECONDS)
+    aligned_ticks = any(
+        getattr(feed, "refresh_phase_seconds", None) is not None for feed in manifest.feeds.values()
+    )
     startup_delay_seconds = settings.REALTIME_STARTUP_DELAY_SECONDS
 
     logger.info(
@@ -979,6 +994,9 @@ def _run_realtime_worker_loop(
         )
         worker_progress(sleep_seconds=startup_delay_seconds)
         sleep_fn(startup_delay_seconds)
+
+    if aligned_ticks:
+        sleep_fn(aligned_sleep_seconds(utc_now_fn(), poll_seconds))
 
     cycle_number = 0
     previous_cycle_start_utc: datetime | None = None
@@ -1035,7 +1053,12 @@ def _run_realtime_worker_loop(
             if max_cycles is not None and cycle_number >= max_cycles:
                 break
             # Failure backoff preserves start-to-start cadence.
-            computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
+            computed_sleep_seconds = round(
+                aligned_sleep_seconds(utc_now_fn(), poll_seconds)
+                if aligned_ticks
+                else max(0.0, poll_seconds - cycle_duration_seconds),
+                3,
+            )
             logger.info(
                 (
                     "Sleeping %.3f seconds before realtime worker cycle %s for provider "
@@ -1053,7 +1076,12 @@ def _run_realtime_worker_loop(
             continue
         cycle_end_utc = utc_now_fn()
         cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
-        computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
+        computed_sleep_seconds = round(
+            aligned_sleep_seconds(utc_now_fn(), poll_seconds)
+            if aligned_ticks
+            else max(0.0, poll_seconds - cycle_duration_seconds),
+            3,
+        )
         effective_start_to_start_seconds = None
         if previous_cycle_start_utc is not None:
             effective_start_to_start_seconds = round(
