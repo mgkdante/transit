@@ -34,7 +34,7 @@ describe('MapFilterPill', () => {
 		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
 
 		for (const name of ['Stop', 'Has alert Show markers with alerts', 'Late', 'Standing']) {
-			await fireEvent.click(within(dialog).getByRole('button', { name }));
+			await fireEvent.click(within(dialog).getByRole('checkbox', { name }));
 			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 		}
 

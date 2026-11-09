@@ -91,7 +91,7 @@
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
 		align-items: center;
-		padding: 0.5rem;
+		padding: calc(var(--spacing) * 2) 0;
 		border: 0;
 		border-bottom: 1px solid var(--border-subtle);
 		background: transparent;

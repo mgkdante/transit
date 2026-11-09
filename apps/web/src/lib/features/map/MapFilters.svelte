@@ -301,7 +301,8 @@
 						type="button"
 						class="mf-chip"
 						data-on={!!store.state.showOutOfService}
-						aria-pressed={!!store.state.showOutOfService}
+						role="checkbox"
+						aria-checked={!!store.state.showOutOfService}
 						onclick={() => store.toggleOutOfService()}>{t.outOfServiceVehicles}</button
 					>
 					{#each entityOptions as item (item.kind)}
@@ -310,7 +311,8 @@
 							class="mf-chip mf-shape-chip"
 							data-on={store.entities.includes(item.kind)}
 							aria-label={item.label}
-							aria-pressed={store.entities.includes(item.kind)}
+							role="checkbox"
+							aria-checked={store.entities.includes(item.kind)}
 							onclick={() => toggleEntity(item.kind)}
 						>
 							<span class:mf-shape-stop={item.stop} class="mf-glyph">
@@ -336,7 +338,8 @@
 								type="button"
 								class="mf-chip mf-alert-chip"
 								data-on={store.alerts.includes(item.kind)}
-								aria-pressed={store.alerts.includes(item.kind)}
+								role="checkbox"
+								aria-checked={store.alerts.includes(item.kind)}
 								style="--chip:var(--dataviz-severity-high)"
 								onclick={() => toggleAlert(item.kind)}
 							>
@@ -461,7 +464,8 @@
 							class="mf-chip"
 							data-on={store.status.includes(code)}
 							aria-label={STATUS_LABELS[locale][code]}
-							aria-pressed={store.status.includes(code)}
+							role="checkbox"
+							aria-checked={store.status.includes(code)}
 							style="--chip:{statusVar(code)}"
 							onclick={() => toggleStatus(code)}
 						>
@@ -492,7 +496,8 @@
 							class="mf-chip"
 							data-on={store.occupancy.includes(code)}
 							aria-label={OCCUPANCY_LABELS[locale][code]}
-							aria-pressed={store.occupancy.includes(code)}
+							role="checkbox"
+							aria-checked={store.occupancy.includes(code)}
 							style="--chip:{occupancyVar(code)}"
 							onclick={() => toggleOccupancy(code)}
 						>
@@ -579,7 +584,7 @@
 	.mf-chips.mf-entity-chips {
 		padding-inline: 0;
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.375rem;
 	}
 
@@ -651,17 +656,17 @@
 		flex-shrink: 0;
 		white-space: nowrap;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
 		min-height: 44px;
 		gap: 0.25rem;
-		padding: 0.375rem 0.5rem;
+		padding: 0.375rem 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 700;
 		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-		border-radius: var(--radius-pill);
+		background: transparent;
+		border: 0;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 	}
 
@@ -700,7 +705,7 @@
 		min-width: 0;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0.375rem;
-		padding: 0 0.5rem 0.375rem 2.5rem;
+		padding: 0;
 	}
 
 	.mf-chip {
@@ -795,7 +800,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
-		padding-left: 2.5rem;
+		padding-left: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 600;
@@ -843,7 +848,7 @@
 
 	.map-filters[data-presentation='drawer'] .mf-body {
 		overflow: visible;
-		padding: 0.5rem 0.5rem 0.75rem;
+		padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
 		scrollbar-gutter: auto;
 	}
 
@@ -857,5 +862,52 @@
 		.mf-chip {
 			transition: none;
 		}
+	}
+
+	.mf-chip[role='checkbox'] {
+		padding-inline: 0;
+		border: 0;
+		border-bottom: 1px solid var(--border-subtle);
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+		color: var(--foreground);
+	}
+	.mf-chip[role='checkbox']::after {
+		content: '';
+		margin-inline-start: auto;
+		flex: none;
+		width: 1rem;
+		height: 1rem;
+		border: 1px solid var(--muted-foreground);
+		border-radius: var(--radius-sm);
+	}
+	.mf-chip[aria-checked='true']::after {
+		content: '';
+		box-shadow: inset 0 0 0 3px var(--card);
+		display: grid;
+		place-items: center;
+		color: var(--primary-foreground);
+		background: var(--primary);
+		border-color: var(--primary);
+	}
+	.mf-chip[role='checkbox'] .mf-swatch {
+		display: none;
+	}
+	.mf-active-set .mf-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: calc(var(--spacing) * 1.5);
+	}
+	.mf-active-set .mf-chip {
+		width: auto;
+		max-width: 100%;
+		padding-inline: calc(var(--spacing) * 2);
+	}
+	.mf-clear:focus-visible,
+	.mf-chip:focus-visible,
+	.mf-toggle:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
 	}
 </style>

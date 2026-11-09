@@ -67,7 +67,7 @@
 		width: 100%;
 		min-height: 44px;
 		gap: 0.5rem;
-		padding: 0.5rem;
+		padding: calc(var(--spacing) * 2) 0;
 		font: inherit;
 		color: var(--foreground);
 		text-align: left;
@@ -85,12 +85,12 @@
 	.mf-group-badge {
 		display: inline-grid;
 		place-items: center;
-		width: 1.5rem;
+		width: 1rem;
 		height: 1.5rem;
 		flex: none;
 		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+		background: transparent;
+		border: 0;
 		border-radius: var(--radius-sm);
 	}
 
@@ -112,10 +112,14 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--primary-foreground);
 		background: var(--primary);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 	}
 
 	.mf-group-content {
 		min-width: 0;
+	}
+	.mf-group-trigger:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
 	}
 </style>

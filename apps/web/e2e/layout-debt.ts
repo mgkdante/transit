@@ -34,8 +34,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 			'[data-slot="terminal-panel"] > div:nth-child(4) > div:nth-child(1) > span:nth-child(1)'
 	)
 		return 'LAYOUT-TERMINAL-SOURCE: network source label breaks inside a word on narrow screens';
-	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
-		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
 	if (
 		kind === 'inaccessible-ellipsis' &&
 		selector.startsWith('[data-slot="terminal-panel"]') &&

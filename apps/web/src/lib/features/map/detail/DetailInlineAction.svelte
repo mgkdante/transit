@@ -21,14 +21,21 @@
 		min-height: 2.75rem;
 		align-items: center;
 		gap: 0.5rem;
-		padding-inline: 0.875rem;
-		border: 1px solid var(--border-brand);
-		border-radius: var(--radius-pill);
-		background: color-mix(in srgb, var(--primary) 9%, transparent);
+		padding-inline: 0;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: transparent;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
 		color: var(--foreground);
 		text-decoration: none;
+	}
+	.detail-inline-action:hover {
+		text-decoration: underline;
+	}
+	.detail-inline-action:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 </style>

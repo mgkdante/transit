@@ -172,7 +172,7 @@
 		gap: 0.25rem;
 	}
 	.detail-navigation-actions {
-		justify-content: space-between;
+		justify-content: flex-start;
 	}
 	.detail-navigation button,
 	.detail-navigation a {
@@ -204,14 +204,20 @@
 		white-space: nowrap;
 	}
 	.detail-section-links button[aria-current] {
-		background: var(--secondary);
+		background: transparent;
 		color: var(--foreground);
 		box-shadow: inset 0 -2px var(--primary);
 	}
-	@media (max-width: 767px) {
-		.detail-section-links button {
-			border: 1px solid var(--border);
-			border-radius: var(--radius-pill);
-		}
+	.detail-section-links button {
+		border-radius: 0;
+		border: 0;
+		border-bottom: 2px solid transparent;
+		padding-inline: 0;
+		margin-inline-end: calc(var(--spacing) * 3);
+		justify-content: flex-start;
+	}
+	.detail-section-links button[aria-current] {
+		border-bottom-color: var(--primary);
+		box-shadow: none;
 	}
 </style>

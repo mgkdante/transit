@@ -7,6 +7,18 @@ import { type OccupancyCode, type StatusCode } from '#lib/v1/schemas/index.ts';
 import MapFilters from './MapFilters.svelte';
 
 describe('MapFilters', () => {
+	it('exposes marker and status settings as checked rows', async () => {
+		const store = createFilterStore(emptyFilterState(), () => {});
+		const view = render(MapFilters, { props: { store, locale: 'en' } });
+		store.setEntities(['bus', 'stop']);
+		const stop = view.getByRole('checkbox', { name: 'Stop' });
+		await fireEvent.click(stop);
+		expect(stop).toHaveAttribute('aria-checked', 'false');
+		const late = view.getByRole('checkbox', { name: 'Late' });
+		await fireEvent.click(late);
+		expect(late).toHaveAttribute('aria-checked', 'true');
+		expect(store.status).toContain('late');
+	});
 	beforeEach(() => localStorage.removeItem('transit:controls-rail'));
 	afterEach(() => localStorage.removeItem('transit:controls-rail'));
 
@@ -46,7 +58,7 @@ describe('MapFilters', () => {
 				kind === 'crowding'
 					? occupancyGlyph(mapping.code as OccupancyCode)
 					: STATUS_GLYPH[mapping.code as StatusCode];
-			const chip = within(group).getByRole('button', { name: label });
+			const chip = within(group).getByRole('checkbox', { name: label });
 			const glyph = chip.querySelector(
 				`[data-m6d-glyph-kind="${kind}"][data-m6d-glyph-code="${mapping.code}"]`,
 			);
@@ -98,7 +110,9 @@ describe('MapFilters', () => {
 		expect(getByText('Crowding')).toBeTruthy();
 		expect(getByText('Markers')).toBeTruthy();
 		expect(getAllByText('Alerts').length).toBeGreaterThan(0);
-		expect(getByRole('button', { name: 'Has alert Show markers with alerts' })).not.toBeDisabled();
+		expect(
+			getByRole('checkbox', { name: 'Has alert Show markers with alerts' }),
+		).not.toBeDisabled();
 		expect(container.querySelectorAll('.mf-group-badge[data-icon]').length).toBeGreaterThanOrEqual(
 			4,
 		);
@@ -114,7 +128,7 @@ describe('MapFilters', () => {
 		}
 		expect(getByRole('button', { name: /^Active/ })).toHaveAttribute('aria-expanded', 'false');
 
-		const stop = getByRole('button', { name: 'Stop' });
+		const stop = getByRole('checkbox', { name: 'Stop' });
 		await fireEvent.click(stop);
 
 		expect(pushed).toBe('entity=stop');
@@ -409,12 +423,12 @@ describe.each(['en', 'fr'] as const)('out-of-service filter %s', (locale) => {
 		const store = createFilterStore(emptyFilterState(), (value) => writes.push(value));
 		const view = render(MapFilters, { store, locale, collapsible: false });
 		const name = locale === 'en' ? 'Out-of-service vehicles' : 'Véhicules hors service';
-		const button = view.getByRole('button', { name });
-		expect(button).toHaveAttribute('aria-pressed', 'false');
+		const button = view.getByRole('checkbox', { name });
+		expect(button).toHaveAttribute('aria-checked', 'false');
 		await fireEvent.click(button);
-		expect(button).toHaveAttribute('aria-pressed', 'true');
+		expect(button).toHaveAttribute('aria-checked', 'true');
 		expect(writes.at(-1)).toContain('out_of_service=1');
 		store.clear();
-		await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
+		await waitFor(() => expect(button).toHaveAttribute('aria-checked', 'false'));
 	});
 });

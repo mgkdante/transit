@@ -177,7 +177,7 @@
 					{#if children}
 						{@render children()}
 					{:else}
-						<p class="px-1 py-8 text-center text-caption text-muted-foreground">
+						<p class="py-8 text-left text-caption text-muted-foreground">
 							{emptyLabel}
 						</p>
 					{/if}
@@ -215,13 +215,6 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
-	.right-panel-identity::before {
-		width: 0.125rem;
-		height: 0.75rem;
-		flex: none;
-		background: var(--primary);
-		content: '';
-	}
 
 	.right-panel[data-open='false'] {
 		width: 56px;
@@ -258,5 +251,15 @@
 		.swap-volet {
 			animation: none;
 		}
+	}
+	.right-panel[data-open='true'] :global([data-slot='right-panel-toggle']) {
+		order: 1;
+		margin-left: auto;
+	}
+	.right-panel[data-open='true'] :global([data-slot='right-panel-back']) {
+		order: 2;
+	}
+	.right-panel[data-open='true'] :global([data-slot='right-panel-close']) {
+		order: 3;
 	}
 </style>

@@ -4,6 +4,7 @@
 	const absenceContext = readLiveAbsenceContext();
 	import { tick } from 'svelte';
 	import { Button } from '@yesid/ui/button';
+	import { Badge } from '@yesid/ui/badge';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import type { Chip } from '#lib/filters/index.ts';
 	import type { Alert } from '#lib/v1/schemas/index.ts';
@@ -304,7 +305,9 @@
 						class="detail-pill"
 						aria-label={t.selectRoute(detail.vehicle.route)}
 						onclick={() => selectRoute(detail.vehicle.route)}
-						>{t.route} {detail.vehicle.route}</button
+						><Badge variant="tag" size="xs" class="rounded-sm"
+							>{t.route} {detail.vehicle.route}</Badge
+						></button
 					>{/if}
 			</DetailStatPills>
 			{#if notReporting}<AbsentValue
@@ -477,20 +480,21 @@
 <style>
 	.map-selection-detail {
 		display: grid;
-		gap: 1rem;
+		gap: calc(var(--spacing) * 4);
 		min-width: 0;
 		overflow-wrap: anywhere;
 		color: var(--foreground);
 	}
 	.detail-fact-action {
+		min-inline-size: 44px;
 		display: inline-flex;
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
 		align-items: center;
 		justify-content: flex-start;
-		padding-inline: 0.75rem;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-pill);
+		padding-inline: 0;
+		border: 0;
+		border-radius: var(--radius-sm);
 		color: var(--primary);
 		background: transparent;
 	}
@@ -537,9 +541,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-		padding: 0.5rem;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-sm);
+		padding: calc(var(--spacing) * 2) 0;
+		border-bottom: 1px solid var(--border-subtle);
 		min-width: 0;
 	}
 	.map-departures button {
@@ -569,5 +572,12 @@
 			visibility: visible;
 			block-size: auto;
 		}
+	}
+	.map-selection-detail button {
+		text-align: left;
+	}
+	.map-selection-detail button:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 </style>

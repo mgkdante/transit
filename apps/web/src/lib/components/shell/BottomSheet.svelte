@@ -74,14 +74,14 @@
 			style="padding-bottom: env(safe-area-inset-bottom);"
 			data-slot="bottom-sheet-safe-area"
 		>
-			<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 pb-3 pt-3">
+			<Sheet.Header class="shrink-0 gap-2 text-left border-b border-border-subtle px-4 pb-3 pt-3">
 				<div class="flex min-w-0 items-center gap-2">
 					{#if canGoBack}
 						<Button
 							variant="ghost"
 							size="icon-tap"
 							type="button"
-							class="-ml-1 text-muted-foreground"
+							class="order-last text-muted-foreground"
 							aria-label={backAria}
 							onclick={() => onback?.()}
 							data-slot="bottom-sheet-back"
@@ -100,7 +100,7 @@
 						variant="ghost"
 						size="icon-tap"
 						type="button"
-						class="-mr-1 text-muted-foreground"
+						class="order-last -mr-1 text-muted-foreground"
 						aria-label={closeAria}
 						onclick={() => (open = false)}
 						data-slot="bottom-sheet-close"

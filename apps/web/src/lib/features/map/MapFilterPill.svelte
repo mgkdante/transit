@@ -121,7 +121,7 @@
 		white-space: nowrap;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-card);
 		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
 		backdrop-filter: blur(var(--glass-blur-sm));
@@ -138,7 +138,7 @@
 		width: 0.5rem;
 		height: 0.5rem;
 		flex: none;
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		background: var(--primary);
 		transition: box-shadow var(--duration-fast) var(--ease-default);
 	}
@@ -160,7 +160,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--primary-foreground);
 		background: var(--primary);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		flex-shrink: 0;
 		transition:
 			color var(--duration-fast) var(--ease-default),
@@ -233,7 +233,7 @@
 	.map-filter-drawer-footer :global(.map-filter-done) {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
 		width: 100%;
 		min-height: 44px;
 		padding: 0.5rem 1rem;
@@ -242,10 +242,10 @@
 		font-weight: 700;
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border: 1px solid var(--primary);
-		border-radius: var(--radius-pill);
+		color: var(--primary);
+		background: transparent;
+		border: 0;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 	}
 

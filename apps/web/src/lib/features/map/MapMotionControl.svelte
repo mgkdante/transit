@@ -136,14 +136,14 @@
 		align-items: center;
 		gap: 0.375rem;
 		min-height: 44px;
-		padding: 0.25rem 0.5rem 0.25rem 0.375rem;
+		padding: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
 		color: var(--foreground);
-		background: var(--muted);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-pill);
+		background: transparent;
+		border: 0;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 		transition:
 			color var(--duration-fast) var(--ease-default),
@@ -157,7 +157,7 @@
 	.map-motion-switch[aria-checked='true'] {
 		color: var(--primary);
 		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
-		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
+		background: transparent;
 	}
 	.map-motion-track {
 		position: relative;
@@ -201,7 +201,7 @@
 		display: inline-flex;
 		min-width: 44px;
 		flex: none;
-		justify-content: center;
+		justify-content: flex-start;
 		align-items: center;
 		justify-self: start;
 		min-height: 44px;
@@ -253,5 +253,25 @@
 		.map-motion-explain {
 			transition: none;
 		}
+	}
+	.map-motion-switch:focus-visible,
+	.map-motion-explain:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	.map-motion-track {
+		order: 1;
+	}
+	.map-motion-heading {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+	.map-motion-switch {
+		justify-self: stretch;
+		justify-content: space-between;
+	}
+	.map-motion-state {
+		white-space: normal;
+		text-align: left;
 	}
 </style>
