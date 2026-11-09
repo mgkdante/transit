@@ -30,6 +30,7 @@ const TRIPS_FILE = {
 	},
 } as unknown as TripsFile;
 let tripsData: TripsFile | null = TRIPS_FILE;
+let stopNames: { id: string; name: string }[] = [];
 let reportStale = false;
 let reportNotice: 'stale' | 'refresh-unavailable' | null = null;
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
@@ -77,7 +78,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		get data() {
-			return tripsData;
+			return { stops: stopNames };
 		},
 		error: null,
 		loading: false,
@@ -101,6 +102,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
+	stopNames = [];
 	reportStale = false;
 	reportNotice = null;
 });
@@ -185,15 +187,12 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
 	});
 
-	it('renders the wayfinding breadcrumb (Home > Trip {id}) with the leaf as current', () => {
-		render(TripDetail, { props: { id: 't161' } });
-
-		const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
-		expect(nav).toBeInTheDocument();
-		expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
-		const leaf = within(nav).getByText('Trip t161');
-		expect(leaf).toHaveAttribute('aria-current', 'page');
-		expect(within(nav).queryByRole('link', { name: 'Trip t161' })).toBeNull();
+	it('shows the trip identifier once without breadcrumbs', () => {
+		const { container } = render(TripDetail, { props: { id: 't161' } });
+		expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
+		const visible = container.cloneNode(true) as HTMLElement;
+		visible.querySelectorAll('.sr-only,[aria-hidden="true"]').forEach((node) => node.remove());
+		expect(visible.textContent?.match(/t161/g)).toHaveLength(1);
 	});
 
 	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {
@@ -268,6 +267,15 @@ describe('TripDetail: stand-down honesty', () => {
 
 describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) => {
 	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
+	it('keeps the full long stop name available in either language', () => {
+		const name =
+			'Station Université de Montréal / Boulevard Édouard-Montpetit et chemin de la Côte-des-Neiges';
+		stopNames = [{ id: 'sA', name }];
+		render(TripDetail, { props: { id: 't161' }, context });
+		const link = screen.getByRole('link', { name: new RegExp(name) });
+		expect(link).toHaveAccessibleName(expect.stringContaining(name));
+		expect(within(link).getByTitle(name)).toHaveTextContent(name);
+	});
 	it('counts prediction rows and names the last reported stop without inferring a terminal', () => {
 		const { container } = render(TripDetail, { props: { id: 't161' }, context });
 		const stop = screen.getByRole('link', { name: /sA/ });
@@ -288,7 +296,8 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		reportNotice = stale ? 'stale' : null;
 		render(TripDetail, { props: { id: 'tGhost' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
-		expect(stamp).toHaveAttribute('data-stale', String(stale));
+		expect(stamp).toHaveAttribute('data-variant', stale ? 'updated' : 'live');
+		expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 		expect(stamp.querySelector('time')).toHaveAttribute('datetime', TRIPS_FILE.generated_utc);
 		expect(screen.queryByTestId('trip-report-notice') !== null).toBe(stale);
 	});
@@ -296,8 +305,8 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		reportNotice = 'refresh-unavailable';
 		render(TripDetail, { props: { id: 't161' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
-		expect(stamp).toHaveAttribute('data-degraded', 'true');
-		expect(stamp).toHaveAttribute('data-stale', 'false');
+		expect(stamp).toHaveAttribute('data-variant', 'updated');
+		expect(stamp).not.toHaveAttribute('data-stale');
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent(
 			locale === 'fr' ? 'Actualisation indisponible' : 'Refresh unavailable',
 		);
