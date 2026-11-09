@@ -6,10 +6,11 @@ describe('OC stop display names', () => {
 	it.each([
 		['RIDEAU / CUMBERLAND', 'Rideau / Cumberland'],
 		["TUNNEY'S PASTURE A", "Tunney's Pasture A"],
-		['ST-LAURENT A', 'ST-Laurent A'],
+		['ST-LAURENT A', 'St-Laurent A'],
 		['SUSSEX / AD. 100', 'Sussex / AD. 100'],
 		['RENAUD / DE LA MÉLODIE', 'Renaud / de la Mélodie'],
-		['OLD ST PATRICK / DE LA SALLE H.S.', 'Old ST Patrick / de la Salle H.S.'],
+		['OLD ST PATRICK / DE LA SALLE H.S.', 'Old St Patrick / de la Salle H.S.'],
+		['LA SALLE / BANK', 'La Salle / Bank'],
 		['UOTTAWA A', 'UOTTAWA A'],
 		['RIDEAU NB / O-TRAIN 1', 'Rideau NB / O-TRAIN 1'],
 		['Station Berri-UQAM', 'Station Berri-UQAM'],

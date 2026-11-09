@@ -11,19 +11,23 @@ export function lineLabel(
 	);
 }
 
-const abbreviations = new Set(['NB', 'SB', 'EB', 'WB', 'ST', 'O-TRAIN', 'UOTTAWA', 'H.S.', 'AD.']);
+const abbreviations = new Set(['NB', 'SB', 'EB', 'WB', 'O-TRAIN', 'UOTTAWA', 'H.S.', 'AD.']);
 const particles = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'au', 'aux', 'sur']);
 
 export function stopDisplayName(name: string): string {
 	if (name !== name.toLocaleUpperCase() || !/\p{L}/u.test(name)) return name;
-	return name.replace(/[\p{L}\p{N}]+(?:[.'’-][\p{L}\p{N}]+)*\.?/gu, (word) => {
+	return name.replace(/[\p{L}\p{N}]+(?:[.'’-][\p{L}\p{N}]+)*\.?/gu, (word, offset: number) => {
 		if (abbreviations.has(word) || /^[A-Z]$/.test(word) || /\d/.test(word)) return word;
 		return word
 			.split('-')
-			.map((part) => {
+			.map((part, index) => {
 				if (abbreviations.has(part)) return part;
 				const lower = part.toLocaleLowerCase();
-				return particles.has(lower) ? lower : lower[0]!.toLocaleUpperCase() + lower.slice(1);
+				// A particle stays lowercase except as the first word of the name.
+				const leading = offset === 0 && index === 0;
+				return particles.has(lower) && !leading
+					? lower
+					: lower[0]!.toLocaleUpperCase() + lower.slice(1);
 			})
 			.join('-');
 	});
