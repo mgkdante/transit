@@ -68,7 +68,7 @@ def build_s3_client(
 ) -> object:
     endpoint, bucket = validated_s3_target(settings, bucket_setting=bucket_setting)
     try:
-        client: object = boto3.client(
+        client: object = boto3.session.Session().client(
             "s3",
             endpoint_url=endpoint,
             aws_access_key_id=settings.BRONZE_S3_ACCESS_KEY,

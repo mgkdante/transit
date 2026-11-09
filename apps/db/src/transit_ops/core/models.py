@@ -130,6 +130,7 @@ class ProviderConfig(BaseModel):
     default_language: str | None = None
     default_currency: str | None = None
     bounds: ProviderBoundsConfig | None = None
+    live_source_lag_seconds: int = Field(default=0, ge=0)
     max_vehicle_speed_kmh: float = Field(default=100, gt=0, allow_inf_nan=False)
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None

@@ -14,6 +14,7 @@ import {
 } from './state';
 
 const KEY_ORDER = [
+	'out_of_service',
 	'route',
 	'stop',
 	'trip',
@@ -67,6 +68,7 @@ function dedupe(values: readonly string[]): string[] {
 
 export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const state = emptyFilterState();
+	if (sp.get('out_of_service') === '1') state.showOutOfService = true;
 
 	for (const [key, field] of Object.entries(SET_KEY_TO_FIELD) as [
 		'route' | 'stop' | 'trip' | 'vehicle',
@@ -114,6 +116,9 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 
 	for (const key of KEY_ORDER) {
 		switch (key) {
+			case 'out_of_service':
+				if (s.showOutOfService) sp.set(key, '1');
+				break;
 			case 'route':
 			case 'stop':
 			case 'trip':

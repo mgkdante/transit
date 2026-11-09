@@ -1,3 +1,4 @@
+import { createMemoryLiveReader } from './__fixtures__/reader';
 import { clock } from '@yesid/ui/state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
@@ -63,17 +64,8 @@ vi.mock('#lib/stores/index.ts', async () => {
 		},
 	};
 });
-vi.mock('#lib/v1/adapter/index.ts', () => ({
-	adapter: {
-		live: {
-			vehicles: mocks.vehicles,
-			trips: mocks.trips,
-			stopDepartures: mocks.stopDepartures,
-			alerts: mocks.alerts,
-			network: mocks.network,
-		},
-	},
-}));
+const reader = createMemoryLiveReader();
+Object.assign(mocks, reader);
 
 import { createLiveStore, type LiveFamily } from './store.svelte';
 import { livePresentation } from './livePresentation';
@@ -240,7 +232,7 @@ function mountLiveStore(
 	} as never;
 	let store!: ReturnType<typeof createLiveStore>;
 	const disposeRoot = $effect.root(() => {
-		store = createLiveStore(manifest, families ? { families } : undefined);
+		store = createLiveStore(manifest, reader, families ? { families } : undefined);
 		flushSync();
 	});
 	return {
@@ -269,9 +261,12 @@ describe('createLiveStore — server-anchored ageSeconds (skew-immune)', () => {
 
 		let store!: ReturnType<typeof createLiveStore>;
 		const cleanup = $effect.root(() => {
-			store = createLiveStore({
-				files: { live: { generated_utc: generated, ttl_s: 30 } },
-			} as never);
+			store = createLiveStore(
+				{
+					files: { live: { generated_utc: generated, ttl_s: 30 } },
+				} as never,
+				reader,
+			);
 			void store.refresh();
 			flushSync();
 		});
@@ -712,7 +707,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		const { store } = setup(30, ['vehicles', 'alerts']);
 		mocks.alerts.mockImplementation(() => new Promise(() => {}));
 		mocks.vehicles.mockImplementation(async (ctx) => {
-			ctx.onResponseHeaders(new Headers({ 'cache-control': 'max-age=30', age: '25' }));
+			ctx.onPollDelayMs(5500);
 			return { generated_utc: mocks.generatedUtc, vehicles: [] };
 		});
 		store.start();
@@ -728,7 +723,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		vi.spyOn(Math, 'random').mockReturnValue(0);
 		const { store } = setup(30, ['vehicles', 'trips']);
 		mocks.vehicles.mockImplementation(async (ctx) => {
-			ctx.onResponseHeaders(new Headers({ 'cache-control': 'public, max-age=30', age: '20' }));
+			ctx.onPollDelayMs(10500);
 			return { generated_utc: mocks.generatedUtc, vehicles: [] };
 		});
 		store.start();
@@ -777,7 +772,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		for (const context of contexts) {
 			expect(context?.manifest).toBe(manifest);
 			expect(context?.signal).toBe(contexts[0]?.signal);
-			expect(context?.onResponseHeaders).toEqual(expect.any(Function));
+			expect(context?.onPollDelayMs).toEqual(expect.any(Function));
 		}
 	});
 
@@ -846,7 +841,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		} as never;
 		let store!: ReturnType<typeof createLiveStore>;
 		const disposeRoot = $effect.root(() => {
-			store = createLiveStore(manifest, {
+			store = createLiveStore(manifest, reader, {
 				families: ['network'],
 				seed: { network: seed },
 			});
