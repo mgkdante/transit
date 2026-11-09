@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+	import '#lib/components/surface/compact-row.css';
 	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
@@ -170,15 +171,7 @@
 	.line-stop-link {
 		display: grid;
 		grid-template-columns: 2ch minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.875rem;
 		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		padding: 0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.line-stop-seq {
 		min-width: 2ch;
