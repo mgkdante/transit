@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
@@ -42,12 +43,7 @@
 		HistoryNavigator,
 		type GrainSegment,
 	} from '#lib/components/surface/index.ts';
-	import {
-		SurfaceRail,
-		type SurfaceRailContext,
-		ArticleHeader,
-		DetailFrame,
-	} from '@yesid/ui/layout';
+	import { SurfaceRail, type SurfaceRailContext, DetailFrame } from '@yesid/ui/layout';
 	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';

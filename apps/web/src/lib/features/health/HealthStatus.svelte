@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import OutOfServiceVehicles from './OutOfServiceVehicles.svelte';
 	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { clock } from '@yesid/ui/state';
@@ -21,7 +22,7 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '#lib/components/layout/index.ts';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import { DetailFrame } from '@yesid/ui/layout';
 	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		TerminalPanel,

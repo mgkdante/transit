@@ -12,5 +12,7 @@
 	<p class="font-mono text-caption tracking-wide text-[var(--muted-foreground)] uppercase">
 		{label}
 	</p>
-	<p class="mt-1 text-sm text-[var(--secondary-foreground)]">{keywords.join(' · ')}</p>
+	<p class="mt-1 text-sm text-[var(--secondary-foreground)]">
+		{keywords.filter((part) => part.trim()).join(' · ')}
+	</p>
 </div>

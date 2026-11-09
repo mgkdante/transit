@@ -24,7 +24,7 @@ export const indexCopy = defineCopy({
 		rankingPending: 'Calcul du classement de fiabilité des lignes filtrées…',
 		modeFilterLabel: 'Mode',
 		modeAll: 'Tous les modes',
-		routeName: (name: string) => `Nom du parcours · ${name}`,
+		routeName: (name: string) => name,
 		directionsNote:
 			'Ouvrez une ligne pour voir ensemble toutes les directions et destinations publiées.',
 		inventory: {
@@ -56,7 +56,7 @@ export const indexCopy = defineCopy({
 		rankingPending: 'Calculating reliability ranking for the filtered lines…',
 		modeFilterLabel: 'Mode',
 		modeAll: 'All modes',
-		routeName: (name) => `Route name · ${name}`,
+		routeName: (name) => name,
 		directionsNote: 'Open a line to see every published direction and destination together.',
 		inventory: {
 			label: 'Network inventory',
