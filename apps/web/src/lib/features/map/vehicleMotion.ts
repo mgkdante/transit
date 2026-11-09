@@ -3,6 +3,7 @@ import type { FilterState } from '#lib/filters/index.ts';
 import { toVehicleFeatures } from '#lib/components/map/index.ts';
 import type { VehicleMotionController } from '#lib/components/map/motion/controller.ts';
 import { createShapeCacheManager } from './mapShapeCache';
+import { projectionHorizon } from '#lib/components/map/vehicleProjection.ts';
 
 export { notReporting } from '#lib/components/map/vehicleProjection.ts';
 
@@ -11,6 +12,8 @@ export interface MotionIntent {
 	reducedMotion: boolean;
 	ready: boolean;
 	stale: boolean;
+	ttlS?: number;
+	stops?: readonly { id: string; lon: number; lat: number }[];
 }
 
 export interface VehicleMotionFrame {
@@ -39,6 +42,7 @@ export function createVehicleMotion(
 			if (intent.preference === 'smooth') shapes.prefetch(items);
 			const animate = intent.preference === 'smooth' && !intent.reducedMotion && intent.ready;
 			const byId = new Map(items.map((vehicle) => [vehicle.id, vehicle]));
+			const stops = new Map(intent.stops?.map((stop) => [stop.id, [stop.lon, stop.lat] as const]));
 			return {
 				items,
 				tickKey: snapshot?.generated_utc ?? null,
@@ -51,6 +55,7 @@ export function createVehicleMotion(
 						stale: intent.stale,
 						animate,
 						shapeFor: animate ? shapes.shapeFor : undefined,
+						subscribeShapes: animate ? shapes.subscribe : undefined,
 						serverNowFn: clock.continuous,
 						fixFor(id) {
 							const vehicle = byId.get(id);
@@ -59,6 +64,8 @@ export function createVehicleMotion(
 										reportedUtc: vehicle.reported_utc,
 										updatedUtc: vehicle.updated_utc,
 										speedMps: vehicle.speed_kmh != null ? vehicle.speed_kmh / 3.6 : null,
+										horizon: projectionHorizon(intent.ttlS),
+										nextStop: vehicle.next_stop ? stops.get(vehicle.next_stop) : null,
 									}
 								: null;
 						},

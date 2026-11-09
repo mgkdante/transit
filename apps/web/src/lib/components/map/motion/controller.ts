@@ -20,6 +20,7 @@ export interface VehicleMotionOptions {
 	fixFor?: FixResolver;
 	shapeFor?: ShapeResolver;
 	serverNowFn?: () => number;
+	subscribeShapes?: (listener: () => void) => () => void;
 }
 
 export interface VehicleMotionController {
@@ -32,12 +33,25 @@ export function createVehicleMotionController(
 	publishFrame: (features: VehicleFC) => void,
 ): VehicleMotionController {
 	const { requestFrame, cancelFrame, now } = resolveMotionRuntime(runtime);
+	const setTimer =
+		runtime.setTimer ??
+		((cb: () => void, ms: number) => globalThis.setTimeout(cb, ms) as unknown as number);
+	const clearTimer = runtime.clearTimer ?? ((handle: number) => globalThis.clearTimeout(handle));
 
 	let entries: VehicleEntry[] = [];
 	let tickKey: string | null = null;
 	let shapeFor: RevisionedShapeResolver | undefined;
 	let serverNowFn: () => number = () => Date.now();
 	let animating = false;
+	let enabled = false;
+	let unsubscribeShapes: (() => void) | undefined;
+	let wake: number | undefined;
+	const drawnShapes = new Map<string, readonly Coord[]>();
+	const heldFeatures = new WeakMap<
+		VehicleEntry,
+		{ feature: VehicleEntry['feature']; invariants: ProjectionInvariants | null; expires: number }
+	>();
+	let activating = false;
 	let frameHandle: number | null = null;
 	const blends = new Map<string, BlendState>();
 	let pendingBlendOrigins: Map<string, { coord: Coord; bearing: number }> | null = null;
@@ -78,6 +92,9 @@ export function createVehicleMotionController(
 			shape,
 			lengths,
 			s0: projection.s,
+			stopS: entry.fix.nextStop
+				? projectToPolyline(shape, entry.fix.nextStop, lengths)?.s
+				: undefined,
 		};
 		if (tickKey !== null) {
 			invariantMissCache.delete(id);
@@ -92,13 +109,17 @@ export function createVehicleMotionController(
 			if (!currentIds.has(id)) blends.delete(id);
 		}
 		for (const id of displayed.keys()) {
-			if (!currentIds.has(id)) displayed.delete(id);
+			if (!currentIds.has(id)) {
+				displayed.delete(id);
+				drawnShapes.delete(id);
+			}
 		}
 		invariantCache.clear();
 		invariantMissCache.clear();
 	}
 
 	function stopLoop(): void {
+		if (wake != null) clearTimer(wake);
 		if (frameHandle != null) cancelFrame(frameHandle);
 		frameHandle = null;
 		animating = false;
@@ -115,6 +136,7 @@ export function createVehicleMotionController(
 
 	function render(throttled: boolean): void {
 		if (entries.length === 0) {
+			animating = false;
 			if (!throttled) publishFrame({ type: 'FeatureCollection', features: [] });
 			return;
 		}
@@ -123,16 +145,75 @@ export function createVehicleMotionController(
 		const nowMs = now();
 		if (pendingBlendOrigins) {
 			for (const [id, origin] of pendingBlendOrigins) {
-				blends.set(id, { fromCoord: origin.coord, fromBearing: origin.bearing, startMs: nowMs });
+				blends.set(id, {
+					fromCoord: origin.coord,
+					fromBearing: origin.bearing,
+					startMs: nowMs,
+					activation: activating,
+				});
 			}
 			pendingBlendOrigins = null;
 		}
 		let dirty = false;
+		let moving = false;
+		let wakeIn = Infinity;
 		const features = entries.map((entry) => {
 			const id = entry.feature.properties.id;
-			const blend = blends.get(id);
 			const invariants = resolveInvariants(entry);
-			const { feature } = projectEntry(
+			const prior = displayed.get(id);
+			if (invariants && drawnShapes.get(id) !== invariants.shape) {
+				entry.drawnS = undefined;
+				const previousShape = drawnShapes.get(id);
+				drawnShapes.set(id, invariants.shape);
+				if (prior && !previousShape)
+					blends.set(id, {
+						fromCoord: prior.coord,
+						fromBearing: prior.bearing,
+						startMs: nowMs,
+						activation: true,
+					});
+				else if (previousShape) blends.delete(id);
+			}
+			let blend = blends.get(id);
+			if (!invariants) {
+				blends.delete(id);
+				blend = undefined;
+			}
+			const held = heldFeatures.get(entry);
+			if (throttled && !blend && held?.invariants === invariants && serverNow < held.expires) {
+				wakeIn = Math.min(wakeIn, held.expires - serverNow);
+				return held.feature;
+			}
+			if (blend && invariants && blend.fromS == null) {
+				const origin = projectToPolyline(invariants.shape, blend.fromCoord, invariants.lengths);
+				const target = projectEntry(
+					entry,
+					serverNow,
+					nowMs,
+					undefined,
+					undefined,
+					invariants,
+				).feature;
+				entry.drawnS = undefined;
+				const destination = projectToPolyline(
+					invariants.shape,
+					target.geometry.coordinates as Coord,
+					invariants.lengths,
+				);
+				if (
+					!origin ||
+					!destination ||
+					origin.distance > 60 ||
+					(!blend.activation && Math.abs(destination.s - origin.s) > 300)
+				) {
+					blends.delete(id);
+					blend = undefined;
+				} else {
+					blend.fromS = origin.s;
+					entry.drawnS = origin.s;
+				}
+			}
+			const { feature, result } = projectEntry(
 				entry,
 				serverNow,
 				nowMs,
@@ -140,10 +221,30 @@ export function createVehicleMotionController(
 				blend,
 				invariants ?? undefined,
 			);
+			if (result.stale && prior && drawnShapes.has(id)) {
+				feature.geometry.coordinates = [...prior.coord];
+				feature.properties.bearing = prior.bearing;
+			}
 			const coord = feature.geometry.coordinates as Coord;
 			const bearing = feature.properties.bearing;
 			const stale = feature.properties.stale;
-			const prior = displayed.get(id);
+			if (result.frozen && !blend)
+				heldFeatures.set(entry, {
+					feature,
+					invariants,
+					expires: result.stale
+						? Infinity
+						: (invariants?.fixEpochMs ??
+								Date.parse(entry.fix?.reportedUtc ?? entry.fix?.updatedUtc ?? '')) + 150000,
+				});
+			moving ||= !result.frozen || (!!blend && nowMs - blend.startMs < BLEND_MS);
+			if (entry.fix && !result.stale)
+				wakeIn = Math.min(
+					wakeIn,
+					(invariants?.fixEpochMs ?? Date.parse(entry.fix.reportedUtc ?? entry.fix.updatedUtc)) +
+						150000 -
+						serverNow,
+				);
 			if (
 				!prior ||
 				prior.coord[0] !== coord[0] ||
@@ -157,6 +258,12 @@ export function createVehicleMotionController(
 			if (blend && nowMs - blend.startMs >= BLEND_MS) blends.delete(id);
 			return feature;
 		});
+		animating = moving;
+		if (wake != null) clearTimer(wake);
+		if (!moving && Number.isFinite(wakeIn) && wakeIn > 0)
+			wake = setTimer(() => {
+				if (enabled) render(false);
+			}, wakeIn);
 		lastRenderMs = now();
 		if (throttled && !dirty) return;
 		publishFrame({ type: 'FeatureCollection', features });
@@ -169,6 +276,7 @@ export function createVehicleMotionController(
 		invariantMissCache.clear();
 		pendingBlendOrigins = null;
 		displayed.clear();
+		drawnShapes.clear();
 		for (const f of features.features) {
 			const coord = f.geometry.coordinates as Coord;
 			displayed.set(f.properties.id, {
@@ -182,14 +290,34 @@ export function createVehicleMotionController(
 	}
 
 	function adoptEntries(features: VehicleFC, fixFor: FixResolver | undefined): void {
-		entries = features.features.map((feature) => ({
-			feature,
-			fix: fixFor?.(feature.properties.id) ?? null,
-		}));
+		const previous = new Map(entries.map((entry) => [entry.feature.properties.id, entry]));
+		entries = features.features.map((feature) => {
+			const id = feature.properties.id;
+			const prior = displayed.get(id);
+			const shape = drawnShapes.get(id);
+			return {
+				feature,
+				fix: fixFor?.(id) ?? null,
+				drawnS:
+					previous.get(id)?.drawnS ??
+					(prior && shape ? projectToPolyline(shape, prior.coord)?.s : undefined),
+			};
+		});
 	}
 
 	return {
 		set(next: VehicleFC, options: VehicleMotionOptions = {}) {
+			const wasEnabled = enabled;
+			enabled = !!options.animate && !options.stale;
+			unsubscribeShapes?.();
+			unsubscribeShapes = options.subscribeShapes?.(() => {
+				if (!enabled) return;
+				invariantCache.clear();
+				invariantMissCache.clear();
+				animating = true;
+				render(false);
+				scheduleFrame();
+			});
 			const nextTickKey = options.tickKey ?? null;
 			const animate = options.animate ?? false;
 			const nextShapeFor = options.shapeFor;
@@ -208,10 +336,12 @@ export function createVehicleMotionController(
 			}
 
 			const sameTick = nextTickKey === tickKey && tickKey !== null;
+			activating = !wasEnabled;
 			adoptEntries(next, options.fixFor);
 			tickKey = nextTickKey;
 
-			if (!sameTick) {
+			if (!sameTick || !wasEnabled) {
+				for (const entry of entries) entry.drawnS = undefined;
 				pruneForNewTick();
 				const origins = new Map<string, { coord: Coord; bearing: number }>();
 				for (const entry of entries) {
@@ -228,6 +358,8 @@ export function createVehicleMotionController(
 			scheduleFrame();
 		},
 		destroy() {
+			enabled = false;
+			unsubscribeShapes?.();
 			stopLoop();
 		},
 	};
