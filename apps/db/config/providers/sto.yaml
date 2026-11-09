@@ -104,3 +104,6 @@ feeds:
       notes: Standard GTFS-RT Alert.pb. Same key+hash scheme. Ingested by the generic service_alerts ingester.
     refresh_interval_seconds: 300
     is_enabled: true
+
+realtime:
+  lines_without_live_data: []

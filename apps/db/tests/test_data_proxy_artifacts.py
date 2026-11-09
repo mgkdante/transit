@@ -1,9 +1,7 @@
-
 from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import textwrap
@@ -12,6 +10,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from transit_ops.snapshots.ttl import LIVE_TTL_SECONDS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROXY_DIR = REPO_ROOT / "apps" / "data-proxy"
@@ -24,14 +24,21 @@ WEB_WRANGLER_TOML = REPO_ROOT / "apps" / "web" / "wrangler.toml"
 def test_kpi_freshness_budget_matches_three_manifest_live_ttls() -> None:
     from transit_ops.snapshots.contract import ManifestLiveFiles
 
-    source = (PROXY_DIR / "src" / "kpis.js").read_text(encoding="utf-8")
-    cutoff = re.search(r"const SNAPSHOT_STALE_S = (\d+);", source)
-    cadence = re.search(r"const LIVE_CADENCE_MS = ([\d_]+);", source)
-    assert cutoff is not None
-    assert cadence is not None
+    result = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            "import * as k from './src/kpis.js'; console.log(JSON.stringify("
+            "[k.LIVE_TTL_SECONDS, k.SNAPSHOT_STALE_S, k.LIVE_CADENCE_MS, k.RETRY_AFTER_S]));",
+        ],
+        cwd=PROXY_DIR,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     ttl = ManifestLiveFiles.model_fields["ttl_s"].default
-    assert int(cutoff.group(1)) == ttl * 3 == 90
-    assert int(cadence.group(1).replace("_", "")) == ttl * 1000 == 30_000
+    assert json.loads(result.stdout) == [ttl, ttl * 3, ttl * 1000, str(ttl)]
 
 
 def _wrangler_config() -> dict:
@@ -63,8 +70,9 @@ def test_wrangler_config_disables_workers_dev_and_pins_account() -> None:
 
     assert config["workers_dev"] is False
     assert config["account_id"] == "eccfb9bedd87d413eaf4cac6ae2285d3"
-    assert tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))["account_id"] == (
-        config["account_id"]
+    assert (
+        tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))["account_id"]
+        == (config["account_id"])
     )
 
 
@@ -115,15 +123,13 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
 
 def test_production_workflow_uses_opaque_public_base_and_web_config_exposes_origin() -> None:
-    publish_env = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))["jobs"][
-        "publish"
-    ]["env"]
+    publish_env = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["publish"][
+        "env"
+    ]
     web_config = tomllib.loads(WEB_WRANGLER_TOML.read_text(encoding="utf-8"))
     base_url = web_config["vars"]["PUBLIC_V1_BASE"].removesuffix("/v1")
 
-    assert publish_env["SNAPSHOT_PUBLIC_BASE_URL"] == (
-        "${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}"
-    )
+    assert publish_env["SNAPSHOT_PUBLIC_BASE_URL"] == ("${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}")
     assert base_url == "https://data.yesid.dev"
 
     compatibility_route = next(
@@ -147,7 +153,8 @@ def test_smoke_script_asserts_direct_r2_and_compatibility_objects() -> None:
     text = smoke.read_text(encoding="utf-8")
     assert "transit.yesid.dev/data" in text
     assert "data.yesid.dev" in text
-    assert "max-age=30" in text
+    # Live objects carry the publisher TTL; the smoke must assert the same value.
+    assert f'"public, max-age={LIVE_TTL_SECONDS}"' in text
     assert "max-age=604800" in text
     assert "max-age=86400" in text
     assert "max-age=3600, stale-while-revalidate=86400" in text
@@ -244,7 +251,7 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               case "$url" in
                 */definitely-missing.json) cache_control='no-store' ;;
                 */api/v1/kpis) cache_control='no-store' ;;
-                */live/vehicles.json|*/manifest.json) cache_control='public, max-age=30' ;;
+                */live/vehicles.json|*/manifest.json) cache_control='public, max-age=20' ;;
                 */static/routes_index.json) cache_control='public, max-age=604800' ;;
                 *) cache_control='public, max-age=86400' ;;
               esac
@@ -270,7 +277,7 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               fi
               printf 'HTTP/2 200\r\n'
               printf 'content-type: application/json\r\n'
-              printf 'cache-control: public, max-age=30\r\n'
+              printf 'cache-control: public, max-age=20\r\n'
               printf 'cf-cache-status: HIT\r\n'
               printf 'age: 2\r\n'
               printf 'access-control-allow-origin: *\r\n\r\n'

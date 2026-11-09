@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
     MIN_N_RATE,
@@ -63,14 +64,15 @@ _PROVENANCE_CONFORMANCE_SQL = named_query(
 )
 
 
-_PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
-
-
 def build_provenance(conn: Connection, *, provider_id: str, generated_utc: str) -> Provenance:
     params = {"provider_id": provider_id}
 
-    # The unpublished metro-realtime gap applies only to STM.
-    gaps = list(_PROVIDER_GAPS.get(provider_id, []))
+    registry = ProviderRegistry.from_project_root()
+    gaps = (
+        [gap.gap_id for gap in registry.get_provider(provider_id).realtime.lines_without_live_data]
+        if provider_id in registry.list_provider_ids()
+        else []
+    )
 
     sources: list[ProvenanceSource] = []
     for r in conn.execute(_PROVENANCE_SOURCES_SQL, params).mappings():

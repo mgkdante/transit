@@ -150,11 +150,11 @@ assert_retired_provider() {
 
 # --- direct R2 custom domain: manifest + all three tiers + provenance (hard asserts;
 # --- historic went publicly live 2026-06-10, values from snapshots/storage.py) ---
-assert_object "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
+assert_object "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=20"
 curl -fsS --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/manifest.json" \
   | grep -q '"provider":"stm"' || fail "manifest body missing \"provider\":\"stm\""
 ok "manifest body carries provider stm"
-assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
+assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=20"
 assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
 assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
 assert_retired_provider "$CANONICAL_BASE/v1/sto/static/routes_index.json" 404
@@ -163,7 +163,7 @@ assert_retired_provider "$CANONICAL_BASE/%761%2Fsto/static/routes_index.json" 40
 assert_retired_provider "$CANONICAL_BASE/v1/sto%2Fstatic/routes_index.json" 404
 assert_retired_provider "$CANONICAL_BASE/v1/%73to/static/routes_index.json" 404
 
-assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
+assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=20"
 assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=86400, stale-while-revalidate=86400|public, max-age=604800"
 assert_object "$CANONICAL_BASE/v1/stm/historic/network_trend.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"
 assert_object "$CANONICAL_BASE/v1/stm/provenance.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"

@@ -54,6 +54,11 @@ from transit_ops.maintenance import (
     prune_silver_storage,
 )
 from transit_ops.providers import ProviderRegistry
+from transit_ops.realtime_schedule import (
+    aligned_sleep_seconds,
+    endpoint_due,
+    worker_tick_seconds,
+)
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     RealtimeSilverLoadResult,
@@ -62,7 +67,9 @@ from transit_ops.silver import (
     load_latest_static_to_silver,
 )
 from transit_ops.silver.static_gtfs import prepare_static_application
+from transit_ops.snapshots.live_scope import live_publish_scope
 from transit_ops.snapshots.publish import publish_snapshot
+from transit_ops.worker_watchdog import worker_progress, worker_stopping, worker_watchdog
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
 I3_ALERT_ENDPOINT = "i3_alerts"
@@ -677,10 +684,6 @@ def _best_effort_publish_live(
         return 1
 
 
-# Loop start jitter should not turn a nominal 30s cadence into a 60s cadence.
-CAPTURE_CADENCE_TOLERANCE_SECONDS = 2.0
-
-
 def _run_realtime_cycle(
     provider_id: str,
     *,
@@ -714,16 +717,27 @@ def _run_realtime_cycle(
 
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results: list[RealtimeEndpointCycleResult] = []
-    for endpoint_key in cycle_endpoints:
+    # Phase-sensitive feeds go first so other downloads cannot delay their capture.
+    ordered_endpoints = sorted(
+        cycle_endpoints,
+        key=lambda key: getattr(manifest.feeds[key], "refresh_phase_seconds", None) is None,
+    )
+    for endpoint_key in ordered_endpoints:
         attempt_started_at_utc = utc_now() if last_attempts is not None else started_at_utc
         interval_seconds = refresh_intervals.get(endpoint_key)
         last_capture_at = last_captures.get(endpoint_key) if last_captures is not None else None
         last_attempt_at = last_attempts.get(endpoint_key) if last_attempts is not None else None
         if last_attempt_at is not None:
             last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
-        if interval_seconds is not None and last_capture_at is not None:
-            elapsed_seconds = (attempt_started_at_utc - last_capture_at).total_seconds()
-            if elapsed_seconds < max(0, interval_seconds - CAPTURE_CADENCE_TOLERANCE_SECONDS):
+        if interval_seconds is not None:
+            elapsed_seconds = (
+                (attempt_started_at_utc - last_capture_at).total_seconds()
+                if last_capture_at is not None
+                else 0.0
+            )
+            if (last_captures is not None or last_attempts is not None) and not endpoint_due(
+                manifest.feeds[endpoint_key], attempt_started_at_utc, last_capture_at
+            ):
                 logger.info(
                     (
                         "Skipping realtime cycle endpoint '%s' for provider '%s' "
@@ -909,12 +923,13 @@ def _install_worker_shutdown_handlers() -> Callable[[], bool]:
     shutdown_requested = threading.Event()
 
     def _request_shutdown(signum: int, _frame: object) -> None:
+        worker_stopping()
+        shutdown_requested.set()
         logger.info(
             "Received signal %s — requesting clean realtime worker shutdown after "
             "the current cycle drains.",
             signum,
         )
-        shutdown_requested.set()
 
     if threading.current_thread() is not threading.main_thread():
         return shutdown_requested.is_set
@@ -943,7 +958,7 @@ def _run_realtime_worker_loop(
     bronze_storage_resolver: BronzeStorageResolver,
 ) -> None:
     registry = registry or _provider_registry(settings)
-    engine = _engine(settings, engine)
+    engine = engine or make_engine(settings, connect_timeout=10)
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("max_cycles must be greater than 0 when provided.")
 
@@ -956,7 +971,10 @@ def _run_realtime_worker_loop(
         settings=settings,
         registry=registry,
     )
-    poll_seconds = settings.REALTIME_POLL_SECONDS
+    poll_seconds = worker_tick_seconds(manifest, settings.REALTIME_POLL_SECONDS)
+    aligned_ticks = any(
+        getattr(feed, "refresh_phase_seconds", None) is not None for feed in manifest.feeds.values()
+    )
     startup_delay_seconds = settings.REALTIME_STARTUP_DELAY_SECONDS
 
     logger.info(
@@ -974,13 +992,18 @@ def _run_realtime_worker_loop(
             startup_delay_seconds,
             provider_id,
         )
+        worker_progress(sleep_seconds=startup_delay_seconds)
         sleep_fn(startup_delay_seconds)
+
+    if aligned_ticks:
+        sleep_fn(aligned_sleep_seconds(utc_now_fn(), poll_seconds))
 
     cycle_number = 0
     previous_cycle_start_utc: datetime | None = None
     last_captures: dict[str, datetime] = {}
     last_attempts: dict[str, datetime] = {}
     while max_cycles is None or cycle_number < max_cycles:
+        worker_progress()
         if should_shutdown():
             logger.info(
                 "Shutdown requested — realtime worker loop is stopping cleanly for "
@@ -996,6 +1019,7 @@ def _run_realtime_worker_loop(
                 provider_id,
                 poll_seconds,
             )
+            worker_progress(sleep_seconds=poll_seconds)
             sleep_fn(poll_seconds)
             continue
         cycle_number += 1
@@ -1029,7 +1053,12 @@ def _run_realtime_worker_loop(
             if max_cycles is not None and cycle_number >= max_cycles:
                 break
             # Failure backoff preserves start-to-start cadence.
-            computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
+            computed_sleep_seconds = round(
+                aligned_sleep_seconds(utc_now_fn(), poll_seconds)
+                if aligned_ticks
+                else max(0.0, poll_seconds - cycle_duration_seconds),
+                3,
+            )
             logger.info(
                 (
                     "Sleeping %.3f seconds before realtime worker cycle %s for provider "
@@ -1042,11 +1071,17 @@ def _run_realtime_worker_loop(
                 float(poll_seconds),
             )
             if computed_sleep_seconds:
+                worker_progress(sleep_seconds=computed_sleep_seconds)
                 sleep_fn(computed_sleep_seconds)
             continue
         cycle_end_utc = utc_now_fn()
         cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
-        computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
+        computed_sleep_seconds = round(
+            aligned_sleep_seconds(utc_now_fn(), poll_seconds)
+            if aligned_ticks
+            else max(0.0, poll_seconds - cycle_duration_seconds),
+            3,
+        )
         effective_start_to_start_seconds = None
         if previous_cycle_start_utc is not None:
             effective_start_to_start_seconds = round(
@@ -1111,6 +1146,7 @@ def _run_realtime_worker_loop(
             float(poll_seconds),
         )
         if computed_sleep_seconds:
+            worker_progress(sleep_seconds=computed_sleep_seconds)
             sleep_fn(computed_sleep_seconds)
 
 
@@ -1127,25 +1163,30 @@ def run_realtime_worker_loop(
     should_shutdown: Callable[[], bool] | None = None,
 ) -> None:
     settings = settings or get_settings()
-    bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
-    try:
-        return _run_realtime_worker_loop(
-            provider_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            sleep_fn=sleep_fn,
-            max_cycles=max_cycles,
-            perf_counter_fn=perf_counter_fn,
-            utc_now_fn=utc_now_fn,
-            should_shutdown=should_shutdown,
-            bronze_storage_resolver=bronze_storage_scope.resolve,
-        )
-    finally:
+    with worker_watchdog(
+        timeout=settings.REALTIME_WATCHDOG_SECONDS,
+        shutdown_grace=settings.REALTIME_SHUTDOWN_GRACE_SECONDS,
+    ):
+        bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
         try:
-            bronze_storage_scope.close()
-        except Exception:
-            logger.exception("Failed to close worker Bronze storage scope")
+            with live_publish_scope(provider_id, settings):
+                return _run_realtime_worker_loop(
+                    provider_id,
+                    settings=settings,
+                    registry=registry,
+                    engine=engine,
+                    sleep_fn=sleep_fn,
+                    max_cycles=max_cycles,
+                    perf_counter_fn=perf_counter_fn,
+                    utc_now_fn=utc_now_fn,
+                    should_shutdown=should_shutdown,
+                    bronze_storage_resolver=bronze_storage_scope.resolve,
+                )
+        finally:
+            try:
+                bronze_storage_scope.close()
+            except Exception:
+                logger.exception("Failed to close worker Bronze storage scope")
 
 
 def run_pruner_loop(

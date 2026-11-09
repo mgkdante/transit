@@ -133,6 +133,27 @@
           "title": "Generated Utc",
           "type": "string"
         },
+        "generations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Generations",
+          "type": "object"
+        },
+        "input_captures": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Input Captures",
+          "type": "object"
+        },
         "network": {
           "default": "live/network.json",
           "title": "Network",
@@ -149,7 +170,7 @@
           "type": "string"
         },
         "ttl_s": {
-          "default": 30,
+          "default": 20,
           "title": "Ttl S",
           "type": "integer"
         },
