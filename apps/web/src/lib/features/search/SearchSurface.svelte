@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
-	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+
 	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
 	import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 	import { onMount } from 'svelte';
@@ -157,7 +157,12 @@
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
 	const numberFmt = $derived(intl.number(locale));
 	const presentation = $derived(
-		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+		livePresentation({
+			familyStates: live.familyStates,
+			families: ['vehicles'],
+			locale,
+			page: 'map',
+		}),
 	);
 </script>
 
@@ -176,6 +181,10 @@
 		/>
 	</Masthead>
 
+	{#if presentation.notice.kind !== 'none'}
+		<p role="status">{presentation.notice.message}</p>
+	{/if}
+	{#if hasQuery}<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />{/if}
 	<ResourceBoundary resource={routes} lang={locale}>
 		<ResourceBoundary resource={stops} lang={locale}>
 			{#if !hasQuery}

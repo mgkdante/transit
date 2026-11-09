@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { LivePresentation } from '#lib/v1/live/livePresentation.ts';
 	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Snippet } from 'svelte';
 	import { cn } from '#lib/utils/index.ts';
@@ -19,6 +20,7 @@
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
+		searchPresentation?: LivePresentation | null;
 		onresultselect?: (result: ChromeSearchResult) => void;
 		searchScope?: ChromeSearchScope;
 		searchModes?: SvelteSet<TransitModeKey>;
@@ -38,6 +40,7 @@
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
+		searchPresentation,
 		onresultselect,
 		searchScope = 'all',
 		searchModes,
@@ -67,6 +70,7 @@
 			bind:search
 			{onsearch}
 			{searchResults}
+			{searchPresentation}
 			{onresultselect}
 			{searchScope}
 			{searchModes}
