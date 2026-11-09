@@ -187,12 +187,12 @@ const TABLE_COPY = Object.freeze({
 		cov: 'Régularité (CV)',
 		bunched: 'Apparitions rapprochées',
 		bin: 'intervalle (min)',
-		trips: 'voyages',
+		trips: 'trajets',
 		observations: 'relevés',
 		crowdingBand: "Niveau d'occupation",
 		networkOtp: 'Ponctualité %',
 		networkDelay: '10 % les plus lents (min)',
-		canceled: '% de jours-voyages annulés',
+		canceled: '% de jours-trajets annulés',
 	},
 });
 
@@ -451,7 +451,7 @@ function conformanceDisplay(conformance, locale) {
 				? `Le flux contient des champs hors du modèle standard (${members.join(', ')}) : ${countText(conformance.extra_row_count ?? 0, locale)} ligne(s) conservée(s) telles quelles, jamais supprimées.`
 				: `The feed carries fields beyond the standard model (${members.join(', ')}): ${countText(conformance.extra_row_count ?? 0, locale)} row(s) captured verbatim, never dropped.`
 			: locale === 'fr'
-				? 'Le flux GTFS le plus récent ne contient que des champs que le pipeline modélise.'
+				? 'Le flux GTFS le plus récent ne contient que des champs que la chaîne de traitement modélise.'
 				: 'The latest GTFS feed only carries fields the pipeline models.';
 	return {
 		verdict,
