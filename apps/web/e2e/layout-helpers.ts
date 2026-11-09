@@ -4,21 +4,12 @@ import type { Page } from '@playwright/test';
 // response before route.fulfill runs. That is not a layout finding, so drop it.
 const TEARDOWN =
 	/has been disposed|Target page, context or browser has been closed|Route is already handled/;
-// The local preview server can drop a pooled connection under parallel load. The
-// route is still unhandled then, so fetching again is safe; anything else still throws.
-const TRANSIENT = /socket hang up|ECONNRESET/;
-export const FORWARD_ATTEMPTS = 3;
-
 export async function forwardRoute(handle: () => Promise<void>): Promise<void> {
-	for (let attempt = 1; ; attempt++) {
-		try {
-			await handle();
-			return;
-		} catch (error) {
-			if (TEARDOWN.test(String(error))) return;
-			if (attempt < FORWARD_ATTEMPTS && TRANSIENT.test(String(error))) continue;
-			throw error;
-		}
+	try {
+		await handle();
+	} catch (error) {
+		if (TEARDOWN.test(String(error))) return;
+		throw error;
 	}
 }
 
