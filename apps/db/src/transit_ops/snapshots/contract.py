@@ -92,9 +92,17 @@ class Vehicle(BaseModel):
     delay_min: int | None = None
     occupancy: Occupancy | None = None
     next_stop: str | None = None
+    next_stop_lat: float | None = None
+    next_stop_lon: float | None = None
     updated_utc: str
     # reported_utc is vehicle report time; updated_utc is uniform snapshot capture time.
     reported_utc: str | None = None
+
+    @model_validator(mode="after")
+    def paired_next_stop_coordinates(self) -> Self:
+        if (self.next_stop_lat is None) != (self.next_stop_lon is None):
+            raise ValueError("next stop coordinates must be paired")
+        return self
 
 
 class VehiclesFile(PayloadEnvelope):
