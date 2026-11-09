@@ -1,3 +1,5 @@
+import { verdictForWindow } from '#lib/v1/verdict.ts';
+import { verdictCopy } from '#lib/v1/verdict.copy.ts';
 import { describe, expect, it } from 'vitest';
 import type { RouteReliability, IsoUtc, LineHistoryRange } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from './clusters';
@@ -996,4 +998,30 @@ describe('shared confidence for service metric tones', () => {
 			expect(result.serviceDelivered.verdictStatus).toBe('tentative');
 		},
 	);
+});
+
+describe('cluster Verdict entry point', () => {
+	const data: RouteReliability = {
+		...empty,
+		periods: [{ grain: 'week', otp_pct: 85, observation_count: 4000, on_time: 3400 }],
+	};
+	it.each(['en', 'fr'] as const)(
+		'returns a finished Verdict for standalone %s callers',
+		(locale) => {
+			const mapped = toReliabilityClusters(data, { locale });
+			expect(mapped.punctuality.headline).toMatchObject(verdictForWindow(data, {}, locale));
+			expect(mapped.punctuality.headline.sentence).toContain(verdictCopy[locale].windowPhrase.week);
+		},
+	);
+	it('uses the supplied view Verdict for the headline, strip and service summary', () => {
+		const verdict = verdictForWindow(
+			null,
+			{ aggregate: { otpPct: 55, observationCount: 1000, onTime: 550 } },
+			'fr',
+		);
+		const mapped = toReliabilityClusters(data, { verdict });
+		expect(mapped.punctuality.headline).toMatchObject(verdict);
+		expect(mapped.strip.otpPct).toBe(55);
+		expect(mapped.serviceDelivered.verdictStatus).toBe('unreliable');
+	});
 });
