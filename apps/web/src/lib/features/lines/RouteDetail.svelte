@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
@@ -163,7 +164,7 @@
 
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: providerHasAlerts(v1.provider)
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],

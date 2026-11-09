@@ -36,8 +36,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 		return 'LAYOUT-TERMINAL-SOURCE: network source label breaks inside a word on narrow screens';
 	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
 		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
-	if (kind === 'broken-word' && finding.owner === 'absent-value')
-		return 'LAYOUT-ABSENCE: missing-value notice breaks inside a word';
 	if (
 		kind === 'clipped' &&
 		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&

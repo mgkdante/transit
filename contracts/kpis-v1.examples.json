@@ -108,10 +108,10 @@
     {
       "name": "pipeline-cold",
       "status": 503,
-      "headers": { "retry-after": "30" },
+      "headers": { "retry-after": "20" },
       "body": {
         "error": "pipeline_cold",
-        "detail": "live snapshot missing or older than 90s"
+        "detail": "live snapshot missing or older than 60s"
       },
       "hero": { "mode": "demo", "routes": [] }
     }

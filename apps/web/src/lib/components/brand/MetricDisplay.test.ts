@@ -7,7 +7,7 @@ const valueEl = (c: HTMLElement) => c.querySelector('.metric-value') as HTMLElem
 describe('MetricDisplay — absent value (honest no-data, never "·")', () => {
 	for (const empty of [null, undefined, ''] as const) {
 		it(`renders the typed shared absence for value=${JSON.stringify(empty)}`, () => {
-			const { container, getByText } = render(MetricDisplay, {
+			const { container, getByRole } = render(MetricDisplay, {
 				props: {
 					value: empty,
 					absentReason: 'no-observations',
@@ -17,10 +17,12 @@ describe('MetricDisplay — absent value (honest no-data, never "·")', () => {
 			});
 			const absence = container.querySelector('[data-slot="absent-value"]');
 			expect(absence).toBeInTheDocument();
-			expect(getByText('No data')).toBeInTheDocument();
-			expect(getByText('not enough readings yet')).toBeInTheDocument();
+			const trigger = getByRole('button', { name: 'No data, not enough readings yet' });
+			expect(trigger).toHaveTextContent('No data');
+			expect(trigger).not.toHaveTextContent('not enough readings yet');
+			expect(trigger).toHaveAccessibleDescription('not enough readings yet');
 			expect(valueEl(container)).toBeNull();
-			expect(absence).toHaveAttribute('data-density', 'chip');
+			expect(absence).toHaveAttribute('data-density', 'compact');
 		});
 	}
 

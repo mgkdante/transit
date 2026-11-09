@@ -504,7 +504,7 @@ describe('StopDetail article contract', () => {
 		const { container, rerender } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
-		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['departures'],
 		});
 
@@ -767,7 +767,7 @@ describe('StopDetail article contract', () => {
 		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
 		const controlRow = container.querySelector('[data-slot="article-header-controls"]');
 		const factsCard = container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
-		const trigger = within(factsCard).getByRole('button');
+		const trigger = within(factsCard).getByRole('button', { name: /Stop information/ });
 
 		expect(actionRow).not.toBeNull();
 		expect(actionRow?.querySelector('a')).not.toBeNull();
@@ -786,13 +786,19 @@ describe('StopDetail article contract', () => {
 		const view = render(StopDetail, { props: { id: '57191' } });
 		const firstCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
 
-		await fireEvent.click(within(firstCard).getByRole('button'));
-		expect(within(firstCard).getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(within(firstCard).getByRole('button', { name: /Stop information/ }));
+		expect(within(firstCard).getByRole('button', { name: /Stop information/ })).toHaveAttribute(
+			'aria-expanded',
+			'false',
+		);
 		await view.rerender({ id: 'NEW', seed: { id: 'NEW', name: 'New stop' } });
 
 		const nextCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
 		expect(nextCard).not.toBe(firstCard);
-		expect(within(nextCard).getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+		expect(within(nextCard).getByRole('button', { name: /Stop information/ })).toHaveAttribute(
+			'aria-expanded',
+			'true',
+		);
 	});
 });
 
