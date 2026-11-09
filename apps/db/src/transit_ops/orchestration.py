@@ -668,6 +668,10 @@ def _best_effort_publish_live(
         return 1
 
 
+# Loop start jitter should not turn a nominal 30s cadence into a 60s cadence.
+CAPTURE_CADENCE_TOLERANCE_SECONDS = 2.0
+
+
 def _run_realtime_cycle(
     provider_id: str,
     *,
@@ -710,7 +714,7 @@ def _run_realtime_cycle(
             last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
         if interval_seconds is not None and last_capture_at is not None:
             elapsed_seconds = (attempt_started_at_utc - last_capture_at).total_seconds()
-            if elapsed_seconds < interval_seconds:
+            if elapsed_seconds < max(0, interval_seconds - CAPTURE_CADENCE_TOLERANCE_SECONDS):
                 logger.info(
                     (
                         "Skipping realtime cycle endpoint '%s' for provider '%s' "

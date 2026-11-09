@@ -1570,7 +1570,7 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
         "_capture_i3_alerts",
         lambda provider_id, settings, registry, engine, bronze_storage_resolver: (
             call_order.append("capture:i3_alerts"),
-            _i3_ingestion_result(),
+            replace(_i3_ingestion_result(), provider_id=provider_id),
         )[1],
         raising=False,
     )
@@ -1579,7 +1579,7 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
         "load_i3_to_silver",
         lambda provider_id, settings, engine, snapshot_id, endpoint_key: (
             call_order.append("load:i3_alerts"),
-            _i3_silver_result(),
+            replace(_i3_silver_result(), provider_id=provider_id),
         )[1],
         raising=False,
     )
@@ -2570,3 +2570,28 @@ def test_one_shot_scope_reuses_storage_and_closes_without_masking_outcome(
     assert len(storages) == (1 if fault in {"capture", "capture_identity"} else 2)
     assert "private-" not in caplog.text
     assert "private-" not in json.dumps(result.display_dict())
+
+
+@pytest.mark.parametrize("provider_id", ["stm", "oc_transpo"])
+@pytest.mark.parametrize("use_attempts", [False, True])
+@pytest.mark.parametrize("endpoint,elapsed,captured", [
+    ("vehicle_positions", 29.9, True), ("vehicle_positions", 15, False),
+    ("i3_alerts", 299, True), ("i3_alerts", 200, False),
+])
+def test_capture_cadence_tolerates_loop_jitter(
+    realtime_cycle, monkeypatch, provider_id, use_attempts, endpoint, elapsed, captured
+):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+    now = datetime(2026, 5, 26, 22, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now)
+    history = {endpoint: now - timedelta(seconds=elapsed)}
+    result = orchestration._run_realtime_cycle(
+        provider_id, **realtime_cycle.keywords,
+        bronze_storage_resolver=lambda backend: object(),
+        last_captures={} if use_attempts else history,
+        last_attempts=history if use_attempts else None,
+    )
+    assert (f"capture:{endpoint}" in calls) == captured
+    state = next(r.status for r in result.endpoint_results if r.endpoint_key == endpoint)
+    assert state == ("succeeded" if captured else "skipped")
