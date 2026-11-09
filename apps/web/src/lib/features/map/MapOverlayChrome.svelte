@@ -72,7 +72,7 @@
 	data-active-placement={isDesktop ? 'floating' : 'head'}
 	data-not-responding={presentation.stamp.ageLabel ? 'true' : 'false'}
 >
-	<MapHeadTitle {locale} kicker={t.kicker} heading={t.heading} presentation={presentation.stamp} />
+	<MapHeadTitle {locale} heading={t.heading} presentation={presentation.stamp} />
 	<MapFreshness placement="floating" presentation={presentation.stamp} {locale} />
 </div>
 

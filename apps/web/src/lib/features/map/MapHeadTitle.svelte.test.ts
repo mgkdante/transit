@@ -1,40 +1,18 @@
-import { render } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { copy as MAP_COPY } from './map.copy';
 import { stampFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
 import MapHeadTitle from './MapHeadTitle.svelte';
 
-const baseProps = {
-	locale: 'en' as const,
-	kicker: MAP_COPY.en.kicker,
-	heading: MAP_COPY.en.heading,
-	presentation: stampFixture(),
-};
-
 describe('MapHeadTitle', () => {
-	it('renders the mono kicker overline and the heading with the brand dot', () => {
-		const { container } = render(MapHeadTitle, { props: baseProps });
-
-		const head = container.querySelector('.map-head')!;
-		expect(head).toBeInTheDocument();
-		expect(head.querySelector('.map-kicker')).toHaveTextContent(MAP_COPY.en.kicker);
-		const heading = head.querySelector('.map-heading')!;
-		expect(heading).toHaveTextContent(MAP_COPY.en.heading);
-		expect(heading.querySelector('.map-dot')).toHaveTextContent('.');
-		expect(container.querySelector('h1.map-heading')).toBeInTheDocument();
-	});
-
-	it('places the head-placement freshness chip inside the kicker row', () => {
-		const { container } = render(MapHeadTitle, { props: baseProps });
-
-		const kickerRow = container.querySelector('.map-kicker-row')!;
-		const chip = kickerRow.querySelector('[data-placement="head"]');
-		expect(chip).toBeInTheDocument();
-	});
-
-	it('positions the block as an absolute overlay anchored to the canvas edge', () => {
-		const { container } = render(MapHeadTitle, { props: baseProps });
-
-		expect(container.querySelector('.map-overlay.map-head')).toBeInTheDocument();
+	it.each(['en', 'fr'] as const)('renders the %s title without an eyebrow', (locale) => {
+		const { container } = render(MapHeadTitle, {
+			props: { locale, heading: MAP_COPY[locale].heading, presentation: stampFixture() },
+		});
+		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+			`${MAP_COPY[locale].heading}.`,
+		);
+		expect(container.querySelector('.map-kicker')).not.toBeInTheDocument();
+		expect(container.querySelector('[data-placement="head"]')).toBeInTheDocument();
 	});
 });
