@@ -177,7 +177,7 @@ END $$;
 UPDATE core.providers SET lines_without_live_data =
  '[{"gap_id":"metro_realtime","route_types":[1],"route_ids":[]}]' WHERE provider_id = 'stm';
 UPDATE core.providers SET lines_without_live_data =
- '[{"gap_id":"otrain_realtime","route_types":[],"route_ids":["1-373","2-354","4-354"]}]'
+ '[{"gap_id":"otrain_realtime","route_types":[0],"route_ids":[]}]'
  WHERE provider_id = 'octranspo';
 """
 

@@ -1,4 +1,9 @@
-"""Persist provider policy and compact, timestamped route reporting evidence."""
+"""Persist provider policy and live-data evidence for routes declared without it.
+
+Only declared routes are recorded: they are the only ones whose evidence changes
+anything (auto-promotion and the outdated-config signal), and this keeps the
+per-publish write to a handful of rows instead of every route in the network.
+"""
 
 import json
 
@@ -42,7 +47,8 @@ def record_route_live_observations(
             AND t.provider_id = r.provider_id
             AND t.dataset_version_id = d.dataset_version_id AND t.trip_id = r.trip_id
         WHERE r.provider_id = :provider_id AND r.rt_feed_snapshot_id = :snapshot_id
-          AND COALESCE(NULLIF(r.route_id, ''), t.route_id) IS NOT NULL
+          AND COALESCE(NULLIF(r.route_id, ''), t.route_id) IN (
+              SELECT declared.route_id FROM gold.routes_without_live_data(:provider_id) declared)
           AND COALESCE(r.{timestamp}, r.feed_timestamp_utc, r.captured_at_utc)
               <= r.captured_at_utc
         GROUP BY r.provider_id, COALESCE(NULLIF(r.route_id, ''), t.route_id)

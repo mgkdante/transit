@@ -10,7 +10,7 @@ from transit_ops.snapshots.builders.historic.provenance import build_provenance
     "provider,gap,ids,types",
     [
         ("stm", "metro_realtime", [], [1]),
-        ("octranspo", "otrain_realtime", ["1-373", "2-354", "4-354"], []),
+        ("octranspo", "otrain_realtime", [], [0]),
     ],
 )
 def test_manifest_and_provenance_share_policy(provider, gap, ids, types):

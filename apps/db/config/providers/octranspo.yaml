@@ -112,6 +112,7 @@ feeds:
 
 realtime:
   lines_without_live_data:
-    # route_ids from the OC static GTFS routes.txt; suffixes identify schedule editions.
+    # O-Train lines 1, 2 and 4 are the only light-rail (route_type 0) routes in
+    # routes.txt. Selecting by type survives the edition suffixes in route_ids.
     - gap_id: otrain_realtime
-      route_ids: ["1-373", "2-354", "4-354"]
+      route_types: [0]
