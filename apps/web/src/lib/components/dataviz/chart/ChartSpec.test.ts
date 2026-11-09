@@ -11,18 +11,19 @@ const base = { title: 't', locale: 'en' } as const;
 
 describe('chart viewport policy', () => {
 	it('keeps simple families fluid, dense families readable, and heatmaps self-managed', () => {
-		for (const kind of ['sparkline', 'bullet', 'stacked-share', 'service-span'] as const) {
+		for (const kind of [
+			'sparkline',
+			'bullet',
+			'stacked-share',
+			'service-span',
+			'trend',
+			'histogram',
+			'magnitude-bars',
+		] as const) {
 			expect(chartViewportPolicy(kind)).toEqual({ layout: 'fluid' });
 		}
 
-		for (const kind of [
-			'trend',
-			'histogram',
-			'dot-strip',
-			'magnitude-bars',
-			'dumbbell',
-			'line',
-		] as const) {
+		for (const kind of ['dot-strip', 'dumbbell', 'line'] as const) {
 			expect(chartViewportPolicy(kind)).toEqual({ layout: 'dense', mobileMinWidth: '48rem' });
 		}
 
