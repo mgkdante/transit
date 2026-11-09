@@ -190,3 +190,78 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 		Math.max(...samples.map((s) => s.x)) - Math.min(...samples.map((s) => s.x)),
 	).toBeGreaterThan(0.01);
 });
+
+// iPhone home-indicator inset. Chromium and WebKit report env(safe-area-inset-bottom) as 0
+// here, so the check reserves the worst case explicitly.
+const HOME_INDICATOR_PX = 34;
+test('mobile detail sheet keeps its header controls above the home indicator at peek @layout', async ({
+	page,
+}, info) => {
+	test.skip(page.viewportSize()!.width >= 1024, 'desktop shows the detail panel, not the sheet');
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.clock.setFixedTime(epoch + 30_000);
+	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+	await page.route('**/v1/**', (route) =>
+		forwardRoute(async () => {
+			const url = new URL(route.request().url());
+			url.pathname = `/__layout/fresh${url.pathname}`;
+			await route.fulfill({ response: await route.fetch({ url: url.href }) });
+		}),
+	);
+	await page.goto('/map?vehicle=layout-bus', { waitUntil: 'networkidle' });
+	const canvas = page.locator('[data-slot="vehicle-overlay"]');
+	await expect
+		.poll(() =>
+			canvas.evaluate(
+				(el) =>
+					Reflect.get(el, Symbol.for('transit.map.vehicleOverlayReceipt'))?.paintedBodyCount ?? 0,
+			),
+		)
+		.toBeGreaterThan(0);
+	const point = await page.evaluate(() =>
+		(window as unknown as { __transitMap: Probe }).__transitMap.project([-73.59, 45.51]),
+	);
+	await page.locator('.maplibregl-canvas').click({ position: point });
+	const sheet = page.locator('[data-slot="bottom-sheet"]');
+	await expect(sheet).toBeVisible();
+	// The handle can take a key before the opening sheet settles; retry until peek is reached.
+	await expect(async () => {
+		await page.locator('[data-sheet-handle]').press('Home');
+		await expect(sheet).toHaveAttribute('data-detent', 'peek', { timeout: 1000 });
+	}).toPass();
+
+	const clearance = () =>
+		page.evaluate((inset) => {
+			const limit = innerHeight - inset;
+			const controls = [
+				...document.querySelectorAll<HTMLElement>(
+					'[data-slot="bottom-sheet"] [data-sheet-handle], [data-slot="bottom-sheet"] button[data-slot^="bottom-sheet-"]',
+				),
+			].filter((el) => el.checkVisibility());
+			return {
+				limit,
+				controls: controls.map((el) => ({
+					name: el.getAttribute('aria-label') ?? el.dataset.slot ?? el.tagName,
+					bottom: el.getBoundingClientRect().bottom,
+				})),
+			};
+		}, HOME_INDICATOR_PX);
+
+	const single = await clearance();
+	// Force a two-line identity, the tallest header the sheet budgets for at peek.
+	await page.locator('[data-slot="bottom-sheet"] [data-slot="sheet-title"]').evaluate((title) => {
+		title.textContent = 'Route 747 YUL Aéroport–Centre-ville';
+	});
+	const wrapped = await clearance();
+	await info.attach('sheet-peek-clearance', {
+		body: JSON.stringify({ single, wrapped }),
+		contentType: 'application/json',
+	});
+	for (const sample of [single, wrapped]) {
+		expect(sample.controls.length, 'handle and close are measured').toBeGreaterThanOrEqual(2);
+		for (const control of sample.controls)
+			expect(control.bottom, `${control.name} clears the home indicator`).toBeLessThanOrEqual(
+				sample.limit,
+			);
+	}
+});

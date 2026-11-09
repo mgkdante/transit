@@ -349,3 +349,20 @@ describe.each(['stm', 'octranspo'])('%s next stop coordinates', () => {
 		h.controller.destroy();
 	});
 });
+
+describe('provider lag through the motion controller', () => {
+	it('glides an OC fix and uses the extended stale cutoff in raw mode', () => {
+		const h = harness();
+		h.motion.remember(route);
+		h.feed(110, { ...intent, ttlS: 20, sourceLagS: 60 }, -73.6);
+		const start = h.last().geometry.coordinates[0];
+		h.frame(1000);
+		expect(h.last().geometry.coordinates[0]).toBeGreaterThan(start);
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(170, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(215, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(1);
+		h.controller.destroy();
+	});
+});

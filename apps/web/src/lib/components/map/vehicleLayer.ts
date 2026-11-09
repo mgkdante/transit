@@ -91,6 +91,7 @@ function iconFor(
 }
 
 export interface VehicleSilenceContext {
+	staleCutoffS?: number;
 	serverNow: number;
 }
 
@@ -108,7 +109,7 @@ export function toVehicleFeatures(
 			.filter((v) => isInService(v) || filter.showOutOfService)
 			.map((v) => {
 				const { body, mark, matched } = iconFor(v, filter, dim, alertVehicleIds);
-				const stale = silence && notReporting(v, silence.serverNow) ? 1 : 0;
+				const stale = silence && notReporting(v, silence.serverNow, silence.staleCutoffS) ? 1 : 0;
 				return {
 					type: 'Feature',
 					geometry: { type: 'Point', coordinates: [v.lon, v.lat] },

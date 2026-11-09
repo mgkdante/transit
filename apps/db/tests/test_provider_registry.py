@@ -606,3 +606,22 @@ def test_catalog_accepts_owned_basemap_pointers(public_provider, prefix) -> None
     manifest_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     result = runner.invoke(app, ["publish-providers", "--default-provider", "test"])
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("provider_id, expected", [("stm", 0), ("octranspo", 60)])
+def test_provider_live_source_lag(provider_id, expected):
+    registry = ProviderRegistry.from_project_root()
+    assert registry.get_provider(provider_id).provider.live_source_lag_seconds == expected
+
+
+def test_source_lag_defaults_to_zero():
+    manifest = ProviderManifest.model_validate(_provider_manifest_payload())
+    assert manifest.provider.live_source_lag_seconds == 0
+
+
+@pytest.mark.parametrize("lag", [-1, 1.5, float("nan"), float("inf"), -float("inf")])
+def test_provider_rejects_invalid_live_source_lag(lag):
+    payload = _provider_manifest_payload()
+    payload["provider"]["live_source_lag_seconds"] = lag
+    with pytest.raises(ValidationError, match="live_source_lag_seconds"):
+        ProviderManifest.model_validate(payload)

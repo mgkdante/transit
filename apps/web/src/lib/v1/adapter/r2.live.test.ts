@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import { r2Adapter } from './r2';
+import { liveReader } from './index';
 
 vi.mock('$app/env', () => ({ browser: true }));
 
@@ -137,3 +138,31 @@ describe('r2 live ports', () => {
 		}
 	});
 });
+
+it.each(['stm', 'octranspo'])(
+	'reads %s through the transport-free reader with polling and cancellation',
+	async (provider) => {
+		const manifest = { ...bootManifest(), provider };
+		manifest.files.live.ttl_s = 30;
+		const response = json({ generated_utc: ISO, vehicles: [] });
+		response.headers.set('cache-control', 'public, max-age=30');
+		response.headers.set('age', '21');
+		const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response);
+		vi.stubGlobal('fetch', request);
+		const onPollDelayMs = vi.fn();
+		const controller = new AbortController();
+		try {
+			await expect(
+				liveReader.vehicles({ manifest, signal: controller.signal, onPollDelayMs }),
+			).resolves.toMatchObject({ vehicles: [] });
+			expect(request).toHaveBeenCalledWith(
+				'/data/v1/' + provider + '/live/current-vehicles.json',
+				expect.objectContaining({ signal: controller.signal }),
+			);
+			expect(onPollDelayMs.mock.calls[0][0]).toBeGreaterThanOrEqual(9500);
+			expect(onPollDelayMs.mock.calls[0][0]).toBeLessThanOrEqual(11000);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	},
+);
