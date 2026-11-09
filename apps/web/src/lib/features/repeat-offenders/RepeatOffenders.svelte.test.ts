@@ -507,7 +507,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 			watermark: 'Récidive',
 			back: '← Retour au tableau de bord',
 			tagsAria: 'Mots-clés de la page',
-			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
+			tags: ['récidivistes', 'trajets', 'véhicules', 'récurrence'],
 			sections: expect.any(Function),
 		});
 		expect(repeatCopy.en.rail).toEqual({
@@ -546,8 +546,8 @@ describe('RepeatOffenders — approved analytical article', () => {
 				subtitle: 'Taux de retards graves et récurrence',
 			},
 			trips: {
-				title: 'Voyages',
-				subtitle: 'Voyages classés selon la répétition des retards graves sur les jours observés',
+				title: 'Trajets',
+				subtitle: 'Trajets classés selon la répétition des retards graves sur les jours observés',
 			},
 			vehicles: {
 				title: 'Véhicules',
