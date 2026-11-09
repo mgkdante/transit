@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { clock } from '@yesid/ui/state';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -44,7 +46,7 @@
 	const accessibleName = $derived(
 		!isInService(vehicle)
 			? `${t.selectBus(vehicle.id)}, ${vehicleServiceCopy[locale].status}`
-			: `${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence(absence, locale)}`,
+			: `${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${line(vehicle.route)}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence(absence, locale)}`,
 	);
 </script>
 
@@ -60,7 +62,7 @@
 	onblur={() => preview(pointerPreview, false)}
 >
 	<strong>{vehicle.id}</strong>
-	<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
+	<span>{vehicle.route ? `${t.route} ${line(vehicle.route)}` : t.bus}</span>
 	<small>
 		{#if !isInService(vehicle)}{vehicleServiceCopy[locale].status}{:else}
 			<StatusBadge
