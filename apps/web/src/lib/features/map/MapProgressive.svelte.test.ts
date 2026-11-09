@@ -76,8 +76,8 @@ describe('MapProgressive automatic live boot', () => {
 			const { default: MapProgressive } = await import('./MapProgressive.svelte');
 			harness.locale = locale;
 			for (const [id, city, stem, sourceDate] of [
-				['stm', 'Montréal', 'montreal', '2026-08-30'],
-				['octranspo', 'Ottawa', 'ottawa', '2026-10-02'],
+				['stm', 'Montréal', 'montreal', '2026-11-08'],
+				['octranspo', 'Ottawa', 'ottawa', '2026-11-08'],
 			]) {
 				harness.provider = id;
 				harness.city = city;

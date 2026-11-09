@@ -10,6 +10,10 @@ on:
         description: "Provider id; blank refreshes publicly ready providers"
         type: string
         required: false
+      planet_build:
+        description: "Protomaps build YYYYMMDD; blank uses yesterday (pin to reproduce poster receipts)"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -94,8 +98,11 @@ jobs:
           pmtiles version
 
       - name: Extract provider area from the latest Protomaps daily build
+        env:
+          PLANET_BUILD: ${{ inputs.planet_build }}
         run: |
-          DATE="$(date -u -d 'yesterday' +%Y%m%d)"
+          DATE="${PLANET_BUILD:-$(date -u -d 'yesterday' +%Y%m%d)}"
+          [[ "${DATE}" =~ ^[0-9]{8}$ ]] || { echo "Invalid planet build" >&2; exit 1; }
           SRC="https://build.protomaps.com/${DATE}.pmtiles"
           echo "Extracting bbox=${BBOX} maxzoom=${MAXZOOM} from ${SRC}"
           timeout 5m pmtiles extract "${SRC}" "${EXTRACT_FILE}" --bbox="${BBOX}" --maxzoom="${MAXZOOM}"

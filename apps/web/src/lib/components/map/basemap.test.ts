@@ -22,6 +22,15 @@ const FILE = BasemapFileSchema.parse({
 	max_zoom: 15,
 });
 
+it.each(['light', 'dark'] as const)('blends missing tiles into %s earth', (theme) => {
+	const layers = vectorStyleFromBasemap(FILE, theme).layers;
+	const background = layers.find((layer) => layer.type === 'background');
+	const earth = layers.find((layer) => layer.id === 'earth');
+	expect(background?.paint?.['background-color']).toBe(
+		earth?.type === 'fill' ? earth.paint?.['fill-color'] : undefined,
+	);
+});
+
 describe('toPmtilesUrl', () => {
 	it('prefixes a bare https archive url with the pmtiles:// scheme', () => {
 		expect(toPmtilesUrl(FILE.url)).toBe(`pmtiles://${FILE.url}`);
@@ -49,7 +58,7 @@ describe('minimalDarkStyle (no-basemap honesty state)', () => {
 		expect(light.name).toBe('transit-minimal-light');
 		expect(light.layers[0]).toMatchObject({
 			id: 'background',
-			paint: { 'background-color': '#F3F6FB' },
+			paint: { 'background-color': '#F9FAFD' },
 		});
 		expect(light.layers[1]).toMatchObject({
 			id: 'graticule',
@@ -577,7 +586,7 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect(light.name).toBe('transit-basemap-light');
 		expect(light.layers[0]).toMatchObject({
 			id: 'background',
-			paint: { 'background-color': '#F3F6FB' },
+			paint: { 'background-color': '#F9FAFD' },
 		});
 		expect(light.layers.find((l) => l.id === 'earth')).toMatchObject({
 			paint: { 'fill-color': '#F9FAFD' },
@@ -665,7 +674,7 @@ describe('applyBasemapTheme', () => {
 
 		applyBasemapTheme(map, 'light');
 
-		expect(calls).toContainEqual(['background', 'background-color', '#F3F6FB']);
+		expect(calls).toContainEqual(['background', 'background-color', '#F9FAFD']);
 		expect(calls).toContainEqual(['earth', 'fill-color', '#F9FAFD']);
 		expect(calls).toContainEqual(['water', 'line-color', '#CFE1E6']);
 		expect(calls).not.toContainEqual(['water', 'fill-color', '#CFE1E6']);
@@ -702,7 +711,7 @@ describe('applyBasemapTheme', () => {
 
 		applyBasemapTheme(map, 'dark');
 
-		expect(calls).toEqual([['background', 'background-color', '#141414']]);
+		expect(calls).toEqual([['background', 'background-color', '#0f0d0a']]);
 	});
 });
 
