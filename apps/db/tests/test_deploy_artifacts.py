@@ -21,19 +21,19 @@ EXPECTED_PINNED_ACTION_LINES = {
     "actions/cache": ("uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0"),
     "actions/checkout": ("uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7"),
     "actions/download-artifact": (
-        "uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"
+        "uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8"
     ),
     "actions/setup-node": (
-        "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7"
+        "uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7"
     ),
     "actions/setup-python": (
-        "uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
+        "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0"
     ),
     "actions/upload-artifact": (
-        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
+        "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7"
     ),
     "astral-sh/setup-uv": (
-        "uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0"
+        "uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3"
     ),
     "cloudflare/wrangler-action": (
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
@@ -459,7 +459,7 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     assert "GITHUB_ENV" not in workflow
     assert "postgresql-16-repack" in workflow
     assert "postgresql-client-16" in workflow
-    assert "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" in workflow
+    assert "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7" in workflow
     assert "pg-repack-size-report" in workflow
     assert "timeout-minutes: 30" in workflow
     assert "bash scripts/run-pg-repack.sh" in workflow
