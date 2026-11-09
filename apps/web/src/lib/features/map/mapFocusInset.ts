@@ -6,7 +6,7 @@ export const MIN_VISIBLE_SPAN_PX = 240;
 
 export interface MapFocusMeasurementAdapter {
 	containerRect(container: HTMLElement): DOMRect;
-	chromeInsets?(container: HTMLElement): { left: number; bottom: number };
+	chromeInsets?(container: HTMLElement): { left: number; bottom: number; fitLeft?: number };
 	headingRect(hero: Element): DOMRect | null;
 	detailOffset(hero: Element): string;
 	rootFontSize(): number;
@@ -42,6 +42,9 @@ const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
 		);
 		return {
 			left: panel ? panel.right - box.left : 0,
+			// The narrow controls rail leaves the provider framing viewport-centered.
+			// Point and route focus still clear its actual covered edge.
+			fitLeft: panel && panel.width > 56 ? panel.right - box.left : 0,
 			bottom: Math.max(0, ...controls.map((r) => box.bottom - r.top)),
 		};
 	},
@@ -117,7 +120,7 @@ export function measureMapFocusInset(
 				top: Math.max(0, heading ? heading.bottom - containerRect.top : 0),
 				right: Math.max(0, rawRight),
 				bottom: Math.max(0, rawBottom, chrome.bottom),
-				left: Math.max(0, chrome.left),
+				left: Math.max(0, chrome.fitLeft ?? chrome.left),
 			},
 			16,
 		).routePadding,

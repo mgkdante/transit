@@ -35,7 +35,7 @@ exports[`camera interface through the transform adapter > OC Transpo preserves f
 exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1280x900' 1`] = `
 [
   9.880619224330074,
-  -75.78845634485049,
+  -75.69000000000001,
   45.3983199687504,
 ]
 `;
@@ -43,7 +43,7 @@ exports[`camera interface through the transform adapter > OC Transpo preserves f
 exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1920x1080' 1`] = `
 [
   10.22483538641922,
-  -75.76755759240581,
+  -75.69000000000001,
   45.39342823730709,
 ]
 `;
@@ -83,7 +83,7 @@ exports[`camera interface through the transform adapter > STM preserves fit, use
 exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1280x900' 1`] = `
 [
   10.095588530994895,
-  -73.81087649046947,
+  -73.74435502599235,
   45.57249748701503,
 ]
 `;
@@ -91,7 +91,7 @@ exports[`camera interface through the transform adapter > STM preserves fit, use
 exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1920x1080' 1`] = `
 [
   10.439804693084042,
-  -73.79287086749245,
+  -73.72605,
   45.568295980547845,
 ]
 `;

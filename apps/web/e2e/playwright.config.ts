@@ -99,10 +99,17 @@ export default defineConfig({
 						name: `layout-${browserName}-${width}-${colorScheme}`,
 						testMatch: /layout.*\.spec\.ts/,
 						// This spec needs rich server-boot fixtures as well as browser routes.
-						testIgnore:
-							process.env.TRANSIT_E2E_PANEL_SIZES === '1'
-								? undefined
-								: /layout-panel-sizes\.spec\.ts/,
+						testIgnore: [
+							...(process.env.TRANSIT_E2E_PANEL_SIZES === '1'
+								? []
+								: [/layout-panel-sizes\.spec\.ts/]),
+							// The framing spec owns its laptop viewport matrix; run it once per theme.
+							...(browserName === 'chromium' &&
+							((width === 1920 && colorScheme === 'light') ||
+								(width === 1280 && colorScheme === 'dark'))
+								? []
+								: [/layout-map-center\.spec\.ts/]),
+						],
 						use: {
 							browserName,
 							viewport: { width, height },

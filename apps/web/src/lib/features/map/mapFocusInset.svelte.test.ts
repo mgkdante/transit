@@ -80,6 +80,45 @@ afterEach(() => {
 });
 
 describe('map focus inset arithmetic', () => {
+	it.each(
+		[1280, 1440, 1536, 1600, 1920, 2560].flatMap((width) =>
+			[0, 320, 400, 560].map((right) => ({ width, right })),
+		),
+	)('balances expanded controls and detail at $width/$right', ({ width, right }) => {
+		const { hero, container, map } = mountedMap();
+		hero.style.setProperty('--map-detail-offset', `${right}px`);
+		vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect(width, 900));
+		const panel = document.createElement('div');
+		panel.className = 'map-filter-panel';
+		vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+			...rect(300, 600),
+			left: 16,
+			right: 316,
+		});
+		hero.append(panel);
+		const inset = measureMapFocusInset(map);
+		const visibleCenter = (width + 316 - right) / 2;
+		expect((width + inset.fitPadding.left - inset.fitPadding.right) / 2).toBe(visibleCenter);
+	});
+	it.each([1280, 1440, 1536, 1600, 1920, 2560])(
+		'centers the provider in a %spx viewport when controls are a rail',
+		(width) => {
+			const { hero, container, map } = mountedMap();
+			vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect(width, 864));
+			const panel = document.createElement('div');
+			panel.className = 'map-filter-panel';
+			vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+				...rect(56, 600),
+				left: 16,
+				right: 72,
+			});
+			hero.append(panel);
+			const inset = measureMapFocusInset(map);
+			expect(inset.fitPadding.left).toBe(inset.fitPadding.right);
+			// Point focus still avoids the rail so a selected vehicle remains reachable.
+			expect(inset.pointOffset[0]).toBe(36);
+		},
+	);
 	it.each([0, 200])('keeps a mobile focus below its heading with container top %s', (top) => {
 		const { hero, container, map } = mountedMap();
 		hero.style.setProperty('--map-detail-offset', '0px');
