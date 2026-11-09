@@ -50,12 +50,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 		return 'LAYOUT-ABSENCE: missing-value notice breaks inside a word';
 	if (
 		kind === 'clipped' &&
-		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&
-		/^(\d|Slowest|10 %|Daily|Jour|Recent|Récent)/.test(text)
-	)
-		return 'LAYOUT-CHART: network chart axis exceeds its clipped container';
-	if (
-		kind === 'clipped' &&
 		selector === '[data-slot="blueprint-listing-header"]' &&
 		/^(\d+\.\d m|PLAN DE VOIE|ÉCH\.|DWG |CATÉNAIRE)/.test(text)
 	)
@@ -92,7 +86,7 @@ export async function expectLayout(page: Page, info: TestInfo, overlaps: string[
 				.filter((reason): reason is NonNullable<typeof reason> => reason !== null),
 		),
 	];
-	if (overlaps.length) reasons.push('LAYOUT-AXES: network chart axis labels overlap');
+	expect(overlaps, 'chart axis labels overlap').toEqual([]);
 	for (const description of reasons)
 		info.annotations.push({ type: 'defect', description: description! });
 	if (reasons.length) test.fail(true, reasons.join('; '));
