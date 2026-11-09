@@ -274,7 +274,7 @@ for (const provider of read('providers').providers) {
 			await page.goto(`${locale === 'fr' ? '/fr' : ''}/map?provider=${provider.id}`, {
 				waitUntil: 'networkidle',
 			});
-			const heading = page.getByRole('heading', { level: 1 });
+			const heading = page.locator('.map-head').getByRole('heading', { level: 1 });
 			await expect(heading).toBeVisible();
 			await expect(page.getByText(/NETWORK · LIVE|RÉSEAU · EN DIRECT/)).toHaveCount(0);
 			const geometry = await heading.evaluate((el) => {
