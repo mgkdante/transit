@@ -89,10 +89,21 @@ test('homepage ground follows window scrolling and reverses without moving the t
 	).toContain('linear-gradient');
 	const root = page.locator('#main');
 	await root.focus();
-	await root.press('End');
+	// Focus scrolls the main into view and hides the ground again.
+	await expect(props).toHaveAttribute('data-state', 'hidden');
+	await Promise.all([
+		page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					window.addEventListener('scrollend', () => resolve(), { once: true }),
+				),
+		),
+		root.press('End'),
+	]);
 	await expect(props).toHaveAttribute('data-state', 'visible');
 	await expect(props).toHaveAttribute('data-progress', '1');
-	// Revealing the ground adds document height after the first End key.
+	// Revealing the ground adds document height. Wait for the first native scroll
+	// to finish before End targets the new bottom; progress reaches 1 mid-scroll.
 	await root.press('End');
 	await expect
 		.poll(() =>
