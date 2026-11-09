@@ -214,7 +214,15 @@ const harness = vi.hoisted(() => {
 				active: true,
 				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
 				retainedGeneration: '2026-06-20T12:00:00Z',
-				health: { state: 'live', ageSeconds: 30, isStale: false, retained: true, notice: null },
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 30,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -224,6 +232,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -239,6 +249,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -253,7 +265,15 @@ const harness = vi.hoisted(() => {
 				active: true,
 				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
 				retainedGeneration: '2026-06-20T12:00:00Z',
-				health: { state: 'live', ageSeconds: 30, isStale: false, retained: true, notice: null },
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 30,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -263,6 +283,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -616,7 +638,10 @@ vi.mock('#lib/v1/live/store.svelte.ts', async () => {
 		configurable: true,
 		get: () => Number(signals.vehiclesGeneration.slice(17, 19)),
 	});
-	return { createLiveStore: harness.createLiveStore };
+	return {
+		LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
+		createLiveStore: harness.createLiveStore,
+	};
 });
 
 vi.mock('#lib/v1/resource.svelte.ts', async () => {

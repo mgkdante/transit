@@ -1,26 +1,27 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
+import { presentationFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
 import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 import { copy as MAP_COPY } from './map.copy';
 
-const generatedUtc = '2026-07-30T12:00:00Z';
-
 describe('map live announcement priority', () => {
-	it('prefers a selected-family failure over a simultaneous global stall and live edge', () => {
+	it('renders a selected-family failure without adding a global stall or live edge', () => {
 		const selectedFamilyFailureMessage = MAP_COPY.en.selectedFamilyFailure(
 			MAP_COPY.en.familyTrips,
 			true,
 		);
 		render(MapFeedStallBanner, {
 			props: {
-				generatedUtc,
-				ageSeconds: 300,
-				isStale: true,
-				locale: 'en',
-				selectedFamilyFailureMessage,
-				liveEdgeState: 'unavailable',
-				liveEdgeMessage: MAP_COPY.en.liveUnavailable,
+				presentation: presentationFixture({
+					bannerState: 'selected-family-failure',
+					notice: {
+						kind: 'refresh-unavailable',
+						message: selectedFamilyFailureMessage,
+						body: '',
+						tone: 'warning',
+					},
+				}),
 			},
 		});
 
@@ -31,15 +32,18 @@ describe('map live announcement priority', () => {
 		expect(region).not.toHaveTextContent(MAP_COPY.en.liveUnavailable);
 	});
 
-	it('prefers the global stall over a lower-priority live edge', () => {
+	it('renders the supplied global stall without adding a live edge', () => {
 		render(MapFeedStallBanner, {
 			props: {
-				generatedUtc,
-				ageSeconds: 300,
-				isStale: true,
-				locale: 'en',
-				liveEdgeState: 'unavailable',
-				liveEdgeMessage: MAP_COPY.en.liveUnavailable,
+				presentation: presentationFixture({
+					bannerState: 'global-stall',
+					notice: {
+						kind: 'whole-feed-stall',
+						message: 'Live feed not responding',
+						body: '',
+						tone: 'warning',
+					},
+				}),
 			},
 		});
 
