@@ -3,10 +3,10 @@ import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import {
 	bestShapeForPoint,
 	routeShapes,
-	type Coord,
 	type RouteShapes,
-	type ShapeResolver,
-} from '#lib/components/map/index.ts';
+} from '#lib/components/map/vehicleShapes.ts';
+import type { Coord } from '#lib/components/map/polyline.ts';
+import type { ShapeResolver } from '#lib/components/map/motion/projector.ts';
 
 export const MAX_CACHED_ROUTE_SHAPES = 200;
 
