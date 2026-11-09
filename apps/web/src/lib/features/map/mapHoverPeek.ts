@@ -23,6 +23,7 @@ import {
 type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>;
 
 export interface MapHoverPeekContext {
+	readonly staleCutoffS?: number;
 	readonly locale?: Locale;
 	readonly index: PeekLiveIndex;
 	readonly stops: readonly SlimStopEntry[];
@@ -136,7 +137,8 @@ export function resolveMapHoverPeek(
 			occupancy: vehicle.occupancy ?? null,
 			nextStop: stopRef(vehicle.next_stop, context.stops),
 			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'not-reported',
-			notReportingAgeS: notReporting(vehicle, context.clock.serverNow)?.ageS ?? null,
+			notReportingAgeS:
+				notReporting(vehicle, context.clock.serverNow, context.staleCutoffS)?.ageS ?? null,
 			tripId: vehicle.trip ?? null,
 			alerts:
 				context.alerts == null

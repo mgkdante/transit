@@ -2362,3 +2362,12 @@ def test_build_vehicles_publishes_only_paired_stop_coordinates(provider_id, coor
     )
     expected = tuple(round(c, 5) for c in coords) if None not in coords else (None, None)
     assert (result.vehicles[0].next_stop_lat, result.vehicles[0].next_stop_lon) == expected
+
+
+@pytest.mark.parametrize("provider_id, expected", [("stm", 0), ("octranspo", 60), ("unknown", 0)])
+def test_build_manifest_live_source_lag(provider_id, expected):
+    out = build_manifest(
+        FakeConn({}), provider_id=provider_id, generated_utc="t", settings=_FakeSettings()
+    )
+    assert out.files.live.source_lag_s == expected
+    assert out.model_dump()["files"]["live"]["source_lag_s"] == expected

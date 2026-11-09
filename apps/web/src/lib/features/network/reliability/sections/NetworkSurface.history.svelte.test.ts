@@ -228,7 +228,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
-	createLiveStore: (manifest: unknown, options?: unknown) => {
+	createLiveStore: (manifest: unknown, _reader: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
 			vehicles: null,

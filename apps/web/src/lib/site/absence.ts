@@ -219,6 +219,7 @@ const LIVE_FIELD_FAMILY = {
 } as const satisfies Record<string, LiveFamily>;
 export interface LiveAbsenceContext {
 	readonly providerId?: string;
+	readonly staleCutoffS?: number;
 	readonly familyStates?: Readonly<
 		Partial<Record<LiveFamily, { readonly health: { readonly state: FeedHealthState } }>>
 	>;

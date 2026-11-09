@@ -32,6 +32,7 @@ export interface MapSelectionSessionOptions {
 	readonly filters: FilterStore;
 	readonly locale: Locale;
 	readonly timeZone?: string;
+	readonly staleCutoffS?: number;
 	readonly serverNow: () => number;
 	readonly alertsAvailable?: boolean;
 }
@@ -195,6 +196,7 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 	);
 	const hoverPeek = $derived(
 		resolveMapHoverPeek(hovered, {
+			staleCutoffS: options.staleCutoffS,
 			locale,
 			index: live.index,
 			stops: stopList,
@@ -231,7 +233,9 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 	const selectionSourceHealth = $derived(
 		selected?.kind === 'vehicle' ? vehicleGraceState.sourceHealth : 'ok',
 	);
-	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, clock.serverNow));
+	const selectedVehicleAbsence = $derived(
+		vehicleAbsence(selectedDetail, clock.serverNow, options.staleCutoffS),
+	);
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);

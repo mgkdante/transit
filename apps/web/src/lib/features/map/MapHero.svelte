@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -140,7 +142,7 @@
 		}
 	});
 
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
 	function reportMapCleanupFailure(error: unknown): void {
@@ -175,6 +177,7 @@
 		filters,
 		locale,
 		timeZone: manifest.tz,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 		serverNow: () => clock.serverNow,
 		alertsAvailable,
 	});
@@ -206,6 +209,7 @@
 	provideLiveAbsenceContext(() => ({
 		familyStates: live.familyStates,
 		providerId: v1.manifest.provider,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 	}));
 	const presentation = $derived(
 		livePresentation({
@@ -351,6 +355,7 @@
 			ready: hasFirstIdle,
 			stale: live.familyStates.vehicles.health.isStale,
 			ttlS: manifest.files.live.ttl_s,
+			sourceLagS: liveTimingFor(manifest).sourceLagS,
 			stops: stopList,
 		}),
 	);

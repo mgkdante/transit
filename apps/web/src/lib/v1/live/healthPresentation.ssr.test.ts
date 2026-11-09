@@ -1,3 +1,5 @@
+import { createMemoryLiveReader } from './__fixtures__/reader';
+const reader = createMemoryLiveReader();
 import { expect, it } from 'vitest';
 import { createServer } from 'vite';
 
@@ -21,10 +23,9 @@ it('server-renders an unloaded live label without a stale label or map warning',
 			'/src/lib/features/map/MapFeedStallBanner.svelte',
 		);
 		const { render } = await server.ssrLoadModule('svelte/server');
-		const store = createLiveStore(
-			{ files: { live: { ttl_s: 30 } } },
-			{ families: ['vehicles', 'alerts'] },
-		);
+		const store = createLiveStore({ files: { live: { ttl_s: 30 } } }, reader, {
+			families: ['vehicles', 'alerts'],
+		});
 		const presentation = livePresentation({
 			familyStates: store.familyStates,
 			families: ['vehicles', 'alerts'],
