@@ -112,9 +112,11 @@ CASE
 END
 """.strip()
 
-_DELAY_HISTOGRAM_ARRAY = "ARRAY[\n" + ",\n".join(
-    f"        SUM(delay_histogram[{index}])::bigint" for index in range(1, 22)
-) + "\n    ]::bigint[]"
+_DELAY_HISTOGRAM_ARRAY = (
+    "ARRAY[\n"
+    + ",\n".join(f"        SUM(delay_histogram[{index}])::bigint" for index in range(1, 22))
+    + "\n    ]::bigint[]"
+)
 
 _SPINE_METRICS = f"""
         SUM(observation_count)::bigint AS obs,
@@ -340,9 +342,11 @@ _HEADWAY_DIRECTION_SQL = named_query(
     """,
 )
 
-_GAP_HISTOGRAM_ARRAY = "ARRAY[\n" + ",\n".join(
-    f"        SUM(gap_histogram[{index}])::bigint" for index in range(1, 21)
-) + "\n    ]::bigint[]"
+_GAP_HISTOGRAM_ARRAY = (
+    "ARRAY[\n"
+    + ",\n".join(f"        SUM(gap_histogram[{index}])::bigint" for index in range(1, 21))
+    + "\n    ]::bigint[]"
+)
 
 _HEADWAY_COV = cov_case_sql(
     n="SUM(gap_count)",
@@ -977,22 +981,18 @@ def _load_occupancy(
 def build_all_route_reliability(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
 ) -> dict[str, RouteReliability]:
 
-    inventory = _inventory_rows(
-        conn.execute(_ROUTE_INVENTORY_SQL, {"provider_id": provider_id})
-    )
+    inventory = _inventory_rows(conn.execute(_ROUTE_INVENTORY_SQL, {"provider_id": provider_id}))
     route_ids_ordered = sorted(
         {str(row["route_id"]) for row in inventory if row.get("route_id") is not None}
     )
     if not route_ids_ordered:
         return {}
     route_ids = frozenset(route_ids_ordered)
-    stores: _RowStore = {
-        route_id: {} for route_id in route_ids_ordered
-    }
+    stores: _RowStore = {route_id: {} for route_id in route_ids_ordered}
     for row in inventory:
         route_id = str(row["route_id"])
         if route_id in route_ids:

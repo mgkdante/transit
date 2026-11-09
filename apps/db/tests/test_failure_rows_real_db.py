@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -31,18 +30,23 @@ CAPTURE_AT = NOW - timedelta(minutes=1)
 
 def test_failed_capture_does_not_reset_rider_feed_age(conn):
     insert_failed_ingestion_run(
-        conn, provider_id=PROVIDER, feed_endpoint_id=TU_ENDPOINT_ID,
-        run_kind='trip_updates', started_at_utc=NOW, completed_at_utc=NOW,
-        error_message='capture failed',
+        conn,
+        provider_id=PROVIDER,
+        feed_endpoint_id=TU_ENDPOINT_ID,
+        run_kind="trip_updates",
+        started_at_utc=NOW,
+        completed_at_utc=NOW,
+        error_message="capture failed",
     )
-    captured = _feed_captured_utc(conn, PROVIDER, 'trip_updates')
-    assert captured == CAPTURE_AT.strftime('%Y-%m-%dT%H:%M:%SZ')
-    assert _feed_captured_utc(conn, PROVIDER, 'i3_alerts') is None
-    health = build_data_health(conn, PROVIDER, generated_utc=NOW.isoformat())
-    trip = next(feed for feed in health.feeds if feed.feed == 'trip_updates')
-    assert trip.status == 'failed'
+    captured = _feed_captured_utc(conn, PROVIDER, "trip_updates")
+    assert captured == CAPTURE_AT.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert _feed_captured_utc(conn, PROVIDER, "i3_alerts") is None
+    health = build_data_health(conn, provider_id=PROVIDER, generated_utc=NOW.isoformat())
+    trip = next(feed for feed in health.feeds if feed.feed == "trip_updates")
+    assert trip.status == "failed"
     assert trip.age_s >= 60
     assert conn.execute(_NETWORK_FRESHNESS_SQL, {"provider_id": PROVIDER}).scalar_one() >= 60
+
 
 FRESH_FAILED_RUN_ID = 990142
 AGED_FAILED_RUN_ID = 990143
@@ -88,19 +92,27 @@ def _seed(connection, seed_provider) -> None:
                 "kind": feed_kind,
                 "fmt": source_format,
             },
-            endpoint_key=':key', feed_kind=':kind', source_format=':fmt',
+            endpoint_key=":key",
+            feed_kind=":kind",
+            source_format=":fmt",
         )
     db_seed.ingestion_runs(
-        connection, {'r': CAPTURE_RUN_ID, 'p': PROVIDER, 'e': TU_ENDPOINT_ID, 'at': CAPTURE_AT},
-        started_at_utc=':at', completed_at_utc=':at',
+        connection,
+        {"r": CAPTURE_RUN_ID, "p": PROVIDER, "e": TU_ENDPOINT_ID, "at": CAPTURE_AT},
+        started_at_utc=":at",
+        completed_at_utc=":at",
     )
-    connection.execute(text('INSERT INTO gold.realtime_serving_state '
-                            '(provider_id, endpoint_key, realtime_snapshot_id, captured_at_utc) '
-                            'VALUES (:p, :key, :id, :at)'),
-                       {'p': PROVIDER, 'key': 'trip_updates', 'id': CAPTURE_SNAPSHOT_ID,
-                        'at': CAPTURE_AT})
+    connection.execute(
+        text(
+            "INSERT INTO gold.realtime_serving_state "
+            "(provider_id, endpoint_key, realtime_snapshot_id, captured_at_utc) "
+            "VALUES (:p, :key, :id, :at)"
+        ),
+        {"p": PROVIDER, "key": "trip_updates", "id": CAPTURE_SNAPSHOT_ID, "at": CAPTURE_AT},
+    )
     db_seed.ingestion_objects(
-        connection, {'o': CAPTURE_OBJECT_ID, 'r': CAPTURE_RUN_ID, 'p': PROVIDER},
+        connection,
+        {"o": CAPTURE_OBJECT_ID, "r": CAPTURE_RUN_ID, "p": PROVIDER},
         storage_path="'silver-load-test/tu/capture.pb'",
     )
     db_seed.realtime_snapshot_index(
@@ -113,8 +125,10 @@ def _seed(connection, seed_provider) -> None:
             "e": TU_ENDPOINT_ID,
             "at": CAPTURE_AT,
         },
-        ingestion_object_id=':o', feed_timestamp_utc=':at', entity_count=None,
-        captured_at_utc=':at',
+        ingestion_object_id=":o",
+        feed_timestamp_utc=":at",
+        entity_count=None,
+        captured_at_utc=":at",
     )
 
 

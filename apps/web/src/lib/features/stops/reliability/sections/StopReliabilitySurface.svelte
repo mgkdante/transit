@@ -21,7 +21,6 @@
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
-	import { selectVerdict, reliabilityVerdict } from '#lib/v1/verdict.ts';
 	import type { MetricKey, SupplementalMetricKey } from '#lib/metrics.ts';
 	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import { weekdayLabel, shiftLabel, dayTypeLabel } from '#lib/features/reliability/shiftGrains.ts';
@@ -91,6 +90,7 @@
 		apply: (current, retained) =>
 			retained ? applyRetainedStopHistory(current, retained) : clearRetainedStopHistory(current),
 		locale: () => locale,
+		verdict: { file: (data) => data, copy: () => copy.verdict },
 		url: () => (syncUrl ? {} : false),
 	});
 	const grain = $derived<StopGrain>(view.grain);
@@ -132,15 +132,7 @@
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	const stopVerdictHeadline = $derived(reliabilityVerdict(selectedData, view.verdictWindow));
-	const stopVerdict = $derived(
-		selectVerdict(
-			stopVerdictHeadline,
-			effectiveWindow ? 'range' : stopVerdictHeadline.grain,
-			locale,
-			copy.verdict,
-		),
-	);
+	const stopVerdict = $derived(view.verdict);
 
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });

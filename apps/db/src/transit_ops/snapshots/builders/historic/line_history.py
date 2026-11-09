@@ -274,8 +274,6 @@ _LINE_HISTORY_SKIPPED_STOPS_SQL = named_query(
 )
 
 
-
-
 def _entity_id(row: Mapping[str, Any]) -> str:
     value = row.get("route_id")
     if not isinstance(value, str) or not value or value == "__unrouted__":
@@ -601,7 +599,6 @@ class LineHistoryPlan:
         )
 
 
-
 def build_line_history_plan_from_rows(
     *,
     delay_rows: Iterable[Mapping[str, Any]],
@@ -613,7 +610,7 @@ def build_line_history_plan_from_rows(
     generated_utc: str,
     entity_ids: Iterable[str] | None = None,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
-    provider_id: str = "stm",
+    provider_id: str,
 ) -> LineHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Line history entity_batch_size must be positive")
@@ -653,7 +650,7 @@ def build_line_history_from_rows(**kwargs: Any) -> LineHistoryBundle:
 def build_line_history_plan(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
     phase_context: HistoryPhaseContext | None = None,
@@ -700,7 +697,7 @@ def build_line_history_plan(
 def build_line_history(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
 ) -> LineHistoryBundle:

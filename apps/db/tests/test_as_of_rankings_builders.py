@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -21,16 +20,22 @@ def test_point_windows_own_totals_without_mutating_shared_expiration_inputs(fami
     first = date(2026, 3, 7)
     key = ("stop", "S1", "R1")
     original = module._Counts(
-        present=1, observation_count=5, severe_count=1, sum_delay_seconds=-13,
+        present=1,
+        observation_count=5,
+        severe_count=1,
+        sum_delay_seconds=-13,
     )
     daily = {key: original}
     day_window = module._CountsWindow(1)
     week_window = module._CountsWindow(7)
     for window in (day_window, week_window):
         window.add_day(first, daily)
-        window.add_day(first + timedelta(days=1), {
-            key: module._Counts(present=1, observation_count=7, sum_delay_seconds=3),
-        })
+        window.add_day(
+            first + timedelta(days=1),
+            {
+                key: module._Counts(present=1, observation_count=7, sum_delay_seconds=3),
+            },
+        )
 
     assert (original.present, original.observation_count, original.sum_delay_seconds) == (1, 5, -13)
     assert day_window.totals[key].observation_count == 7
@@ -53,7 +58,9 @@ def test_history_names_revisit_dates_and_keep_returned_maps_independent() -> Non
         provider_timezone="America/Toronto",
     )
     for local_date, expected in (
-        ("2026-03-07", "Before"), ("2026-03-08", "After"), ("2026-03-07", "Before"),
+        ("2026-03-07", "Before"),
+        ("2026-03-08", "After"),
+        ("2026-03-07", "Before"),
     ):
         resolved = names.names_at("route", ["same", "missing", "same"], local_date)
         assert list(resolved) == ["missing", "same"]
@@ -757,7 +764,7 @@ def test_current_hotspots_fixed_builder_bytes_and_dispatch_are_unchanged() -> No
         }
     )
 
-    payload = build_hotspots(conn, generated_utc="2026-07-01T00:00:00Z")
+    payload = build_hotspots(conn, generated_utc="2026-07-01T00:00:00Z", provider_id="stm")
 
     assert snapshot_json_bytes(payload) == (
         b'{"schema_version":1,"methodology_version":null,"publish_generation_id":null,'
@@ -827,6 +834,7 @@ def test_hotspots_as_of_newest_scalar_fields_match_current_builder_doctrine() ->
             }
         ),
         generated_utc="2026-07-06T23:30:00Z",
+        provider_id="stm",
     )
 
     assert [item.model_dump(mode="json") for item in historical.hotspots] == [
@@ -1454,7 +1462,7 @@ def test_current_repeat_offenders_fixed_builder_bytes_and_dispatch_are_unchanged
         strict=True,
     )
 
-    payload = build_repeat_offenders(conn, generated_utc="2026-07-01T00:00:00Z")
+    payload = build_repeat_offenders(conn, generated_utc="2026-07-01T00:00:00Z", provider_id="stm")
 
     assert snapshot_json_bytes(payload) == (
         b'{"schema_version":1,"methodology_version":null,"publish_generation_id":null,'
@@ -1497,16 +1505,30 @@ def test_repeat_offenders_as_of_closed_scalar_matches_equivalent_closed_spine_wi
 
 
 def test_scalar_offender_midpoint_matches_retained_history() -> None:
-    rows = [_offender_row(f"2026-09-{day:02d}", "T1", obs=2, severe=1,
-                          sum_delay_sec=270) for day in range(8, 11)]
+    rows = [
+        _offender_row(f"2026-09-{day:02d}", "T1", obs=2, severe=1, sum_delay_sec=270)
+        for day in range(8, 11)
+    ]
     retained = _offender_days(rows=rows)[-1].offenders[0]
-    current = build_repeat_offenders(NamedQueryConn({
-        "repeat.offenders": [{
-            "entity_kind": "trip", "entity_id": "T1", "route_id": "R1",
-            "recurrence_days": 3, "window_days": 14, "avg_delay_seconds": 135,
-            "severity_label": "watch",
-        }],
-    }), generated_utc="t").offenders[0]
+    current = build_repeat_offenders(
+        NamedQueryConn(
+            {
+                "repeat.offenders": [
+                    {
+                        "entity_kind": "trip",
+                        "entity_id": "T1",
+                        "route_id": "R1",
+                        "recurrence_days": 3,
+                        "window_days": 14,
+                        "avg_delay_seconds": 135,
+                        "severity_label": "watch",
+                    }
+                ],
+            }
+        ),
+        generated_utc="t",
+        provider_id="stm",
+    ).offenders[0]
     assert current == retained
     assert current.avg_delay_min == 2.3
     assert current.severity == "watch"
