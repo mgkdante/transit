@@ -33,6 +33,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
       # This standalone policy imports only Node built-ins, with no load-time assets.
       # Extend the materialized closure for new imports/assets. Interface changes
       # need a two-step migration: land compatible base support, then use it.
@@ -337,6 +338,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
       # This standalone policy imports only Node built-ins, with no load-time assets.
       # Extend the materialized closure for new imports/assets. Interface changes
       # need a two-step migration: land compatible base support, then use it.

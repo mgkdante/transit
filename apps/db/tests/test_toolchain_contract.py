@@ -428,6 +428,121 @@ def test_wrangler_has_one_installed_owner_and_no_ad_hoc_versions() -> None:
     assert root_package["devDependencies"]["wrangler"] == WRANGLER_VERSION
 
 
+# setup-node cannot read an absolute node-version-file outside the checkout.
+# Accept only this reviewed materializer immediately before setup-node: its exact
+# body binds the exported pin to .nvmrc from an ancestry-verified base, and prevents
+# a matching variable name or an unchecked source from satisfying the contract.
+TRUSTED_WEB_NODE_MATERIALIZER = r"""$ErrorActionPreference = 'Stop'
+git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+$base = (git rev-parse refs/remotes/origin/main).Trim()
+if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+  $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+  $base = $event.pull_request.base.sha
+} elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+  $base = $env:GITHUB_SHA
+}
+if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+git merge-base --is-ancestor $base refs/remotes/origin/main
+if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+$policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $policy | Out-Null
+foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+  $content = git show "${base}:$path"
+  if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+  [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+}
+$pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+"WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"""  # noqa: E501 - preserve the exact reviewed workflow body
+
+
+def _node_setup_uses_selected_pin(steps: list[dict[str, object]], index: int) -> bool:
+    with_values = steps[index].get("with", {})
+    if "node-version" not in with_values:
+        return with_values.get("node-version-file") == ".nvmrc"
+    if (
+        with_values.get("node-version") != "${{ env.WEB_CI_NODE }}"
+        or "node-version-file" in with_values
+        or index == 0
+    ):
+        return False
+    materializer = steps[index - 1]
+    return (
+        materializer.get("name") == "Materialize trusted web policy"
+        and materializer.get("shell") == "pwsh"
+        and materializer.get("working-directory") == "${{ github.workspace }}"
+        and materializer.get("run", "").strip() == TRUSTED_WEB_NODE_MATERIALIZER.strip()
+        and "if" not in materializer
+        and not materializer.get("continue-on-error")
+    )
+
+
+@pytest.mark.parametrize("job_name", ["classify", "ci"])
+def test_node_setup_accepts_verified_base_pin(job_name: str) -> None:
+    steps = _yaml(WORKFLOWS / "web.yml")["jobs"][job_name]["steps"]
+    index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    assert _node_setup_uses_selected_pin(steps, index)
+
+
+@pytest.mark.parametrize("version", ["${{ env.OTHER_NODE }}", NODE_VERSION])
+@pytest.mark.parametrize("include_version_file", [False, True])
+def test_node_setup_rejects_other_env_or_literal_versions(
+    version: str, include_version_file: bool
+) -> None:
+    steps = _yaml(WORKFLOWS / "web.yml")["jobs"]["classify"]["steps"]
+    index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    steps[index]["with"]["node-version"] = version
+    if include_version_file:
+        steps[index]["with"]["node-version-file"] = ".nvmrc"
+    assert not _node_setup_uses_selected_pin(steps, index)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("git merge-base --is-ancestor", "git merge-base"),
+        ("if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }", ""),
+        ('git show "${base}:$path"', 'git show "HEAD:$path"'),
+        ("(Join-Path $policy '.nvmrc')", "(Join-Path $policy '.bun-version')"),
+        ('"WEB_CI_NODE=$pin"', '"WEB_CI_NODE=22"'),
+    ],
+)
+def test_node_setup_rejects_unverified_pin_materialization(old: str, new: str) -> None:
+    steps = _yaml(WORKFLOWS / "web.yml")["jobs"]["classify"]["steps"]
+    index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    assert old in steps[index - 1]["run"]
+    steps[index - 1]["run"] = steps[index - 1]["run"].replace(old, new)
+    assert not _node_setup_uses_selected_pin(steps, index)
+
+
+def test_node_setup_rejects_materializer_after_setup_or_in_another_job() -> None:
+    steps = _yaml(WORKFLOWS / "web.yml")["jobs"]["classify"]["steps"]
+    index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    setup, materializer = steps[index], steps[index - 1]
+    assert not _node_setup_uses_selected_pin([setup, materializer], 0)
+    assert not _node_setup_uses_selected_pin([setup], 0)
+    assert not _node_setup_uses_selected_pin([materializer, {"run": '"WEB_CI_NODE=22"'}, setup], 2)
+
+
 def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
     consumers: list[str] = []
     missing_setup: list[str] = []
@@ -448,13 +563,13 @@ def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
             has_node_setup = any(value.startswith("actions/setup-node@") for value in uses)
             if not (has_shared_setup or has_node_setup):
                 missing_setup.append(label)
-            for step in job.get("steps", []):
+            steps = job.get("steps", [])
+            for index, step in enumerate(steps):
                 if not isinstance(step, dict) or not str(step.get("uses", "")).startswith(
                     "actions/setup-node@"
                 ):
                     continue
-                with_values = step.get("with", {})
-                if with_values.get("node-version-file") != ".nvmrc":
+                if not _node_setup_uses_selected_pin(steps, index):
                     literal_node_versions.append(label)
 
     assert consumers
