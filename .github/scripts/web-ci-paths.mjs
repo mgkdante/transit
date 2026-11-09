@@ -6,8 +6,33 @@ import { pathToFileURL } from "node:url";
 const DOCUMENTATION = new Set(["README.md", "AGENTS.md", "GLOSSARY.md"]);
 
 export function classifyPaths(paths) {
-  return !Array.isArray(paths) || paths.length === 0 ||
-    paths.some((path) => !DOCUMENTATION.has(path));
+  return (
+    !Array.isArray(paths) ||
+    paths.length === 0 ||
+    paths.some((path) => !DOCUMENTATION.has(path))
+  );
+}
+
+const LAYOUT_PATH =
+  /^(?:apps\/web\/(?:src\/|static\/|e2e\/(?:layout[^/]*|data\.mjs$|playwright\.config\.ts$)|(?:package\.json|svelte\.config\.[^/]+|vite\.config\.[^/]+|tailwind[^/]*|postcss[^/]*)$)|(?:package\.json|bun\.lock)$|contracts\/|\.github\/(?:workflows\/web\.yml$|scripts\/(?:web-ci-[^/]*|fixtures\/web-ci-[^/]*)))/;
+
+// Only known non-UI scopes can opt out; unrecognized paths fail closed.
+export function classifyLayoutPaths(paths) {
+  return (
+    !Array.isArray(paths) ||
+    paths.length === 0 ||
+    paths.some(
+      (path) =>
+        typeof path !== "string" ||
+        LAYOUT_PATH.test(path) ||
+        !(
+          DOCUMENTATION.has(path) ||
+          /^(?:apps\/(?:db|data-proxy)\/|apps\/web\/(?:e2e|scripts|tools)\/)/.test(
+            path,
+          )
+        ),
+    )
+  );
 }
 
 export function checkRequiredJobs(needs) {
@@ -17,14 +42,24 @@ export function checkRequiredJobs(needs) {
     }
   }
   const selected = needs?.classify?.outputs?.run_e2e;
-  if (needs?.classify?.result !== "success" ||
-      !["true", "false"].includes(selected)) {
+  if (
+    needs?.classify?.result !== "success" ||
+    !["true", "false"].includes(selected)
+  ) {
     throw new Error("Web path classification did not succeed");
   }
   for (const job of ["prerelease-guard", "ci-work", "unit", "e2e", "layout"]) {
     const result = needs[job]?.result;
-    if (result !== "success" &&
-        !(["e2e", "layout"].includes(job) && selected === "false" && result === "skipped")) {
+    const selection =
+      job === "layout" ? needs.classify.outputs.run_layout : selected;
+    if (
+      result !== "success" &&
+      !(
+        ["e2e", "layout"].includes(job) &&
+        selection === "false" &&
+        result === "skipped"
+      )
+    ) {
       throw new Error(`${job}: unexpected result ${result}`);
     }
   }
@@ -56,10 +91,18 @@ export function changedPaths(environment) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   if (process.argv[2] === "classify") {
-    const runE2e = classifyPaths(changedPaths(process.env));
-    appendFileSync(process.env.GITHUB_OUTPUT, `run_e2e=${runE2e}\n`);
+    const paths = changedPaths(process.env);
+    const runE2e = classifyPaths(paths);
+    const runLayout = classifyLayoutPaths(paths);
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `run_e2e=${runE2e}\nrun_layout=${runLayout}\n`,
+    );
     console.log(`Run e2e: ${runE2e}`);
   } else if (process.argv[2] === "required") {
     checkRequiredJobs(JSON.parse(process.env.NEEDS_JSON));
