@@ -43,7 +43,7 @@
 		{#if valueText != null}
 			{valueText}
 		{:else}
-			<MaybeValue value={null} reason="no-observations" {locale} />
+			<MaybeValue variant="compact" value={null} reason="no-observations" {locale} />
 		{/if}
 	</div>
 	{#if spec.value != null}

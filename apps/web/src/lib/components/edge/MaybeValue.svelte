@@ -11,7 +11,8 @@
 		reason: AbsenceReasonKey;
 		locale: Locale;
 		params?: Readonly<Record<string, string | number>>;
-		variant?: 'inline' | 'row' | 'block';
+		variant?: 'inline' | 'row' | 'block' | 'compact';
+		disclosure?: boolean;
 	}
 
 	let {
@@ -22,6 +23,7 @@
 		locale,
 		params,
 		variant = 'inline',
+		disclosure = true,
 	}: MaybeValueProps = $props();
 
 	const show = $derived(present ?? (value != null && value !== ''));
@@ -32,4 +34,5 @@
 		{locale}
 		{params}
 		{variant}
+		{disclosure}
 	/>{/if}
