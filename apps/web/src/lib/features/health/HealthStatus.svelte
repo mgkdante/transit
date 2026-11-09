@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { clock } from '@yesid/ui/state';
 	import './sections/health-sections.css';
 
@@ -19,7 +20,7 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '#lib/components/layout/index.ts';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import { DetailFrame } from '@yesid/ui/layout';
 	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		TerminalPanel,

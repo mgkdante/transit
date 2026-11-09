@@ -28,7 +28,7 @@
 >
 	{#each stats as stat (stat.label)}
 		<div class="listing-header-stat" data-slot="listing-header-stat">
-			<dt>{stat.label}</dt>
+			<dt class="readable-name" title={stat.label}>{stat.label}</dt>
 			<dd data-unknown={stat.value === null ? 'true' : undefined}>
 				{#if stat.value === null}
 					<span class="sr-only">{unknownLabel}</span><span aria-hidden="true">&mdash;</span>
@@ -71,7 +71,7 @@
 		line-height: 1.25;
 		text-overflow: ellipsis;
 		text-transform: uppercase;
-		white-space: nowrap;
+		white-space: normal;
 	}
 
 	dd {
@@ -82,7 +82,7 @@
 		font-weight: 900;
 		color: var(--foreground);
 		line-height: 1;
-		overflow-wrap: anywhere;
+		overflow-wrap: normal;
 	}
 
 	dd[data-unknown='true'] {

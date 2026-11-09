@@ -159,6 +159,12 @@
           "title": "Network",
           "type": "string"
         },
+        "source_lag_s": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Source Lag S",
+          "type": "integer"
+        },
         "stop_departures": {
           "default": "live/stop_departures.json",
           "title": "Stop Departures",
