@@ -9,26 +9,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 	const { kind, selector, text } = finding;
 	if (
 		kind === 'broken-word' &&
-		text === 'Positions' &&
-		selector ===
-			'#map-filter-controls-desktop > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > span:nth-child(1)'
-	)
-		return 'LAYOUT-MOTION-LABEL: desktop Positions heading shrinks to a single-character column';
-	if (
-		[
-			'Estimated positions are unavailable with reduced motion enabled.',
-			'Les positions estimées sont indisponibles avec les animations réduites.',
-		].includes(text) &&
-		((kind === 'inaccessible-ellipsis' &&
-			selector ===
-				'#map-filter-controls-desktop > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1)') ||
-			(kind === 'clipped' &&
-				selector ===
-					'#main > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(5) > div:nth-child(1)'))
-	)
-		return 'LAYOUT-MOTION-HINT: reduced-motion explanation truncates in desktop map controls';
-	if (
-		kind === 'broken-word' &&
 		text === 'SOURCE' &&
 		selector ===
 			'[data-slot="terminal-panel"] > div:nth-child(4) > div:nth-child(1) > span:nth-child(1)'

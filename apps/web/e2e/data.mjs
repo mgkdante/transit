@@ -40,7 +40,10 @@ for (const [key, body] of Object.entries(b9)) {
 createServer((request, response) => {
 	// No Date header: the app anchors its clock to it, which would undo page.clock.
 	response.sendDate = false;
-	const body = files[request.url];
+	const body =
+		process.env.TRANSIT_E2E_PANEL_SIZES === '1' && request.url.startsWith('/v1/')
+			? files['/__layout/stale' + request.url]
+			: files[request.url];
 	response.writeHead(body ? 200 : 404, {
 		'content-type': 'application/json',
 		'access-control-allow-origin': process.env.TRANSIT_E2E_ORIGIN ?? 'http://127.0.0.1:4317',
@@ -140,3 +143,20 @@ for (const state of ['fresh', 'stale', 'missing'])
 				parsed[key] = null;
 		files[`/__layout/${state}${path}`] = JSON.stringify(parsed);
 	}
+
+// Rich provider fixtures for desktop panel interaction tests, including server boot.
+for (const [key, body] of Object.entries(files)) {
+	if (!key.startsWith('/__layout/') || !key.includes('/stm/')) continue;
+	const value = JSON.parse(body);
+	if (key.endsWith('/manifest.json')) {
+		value.provider = 'octranspo';
+		value.display_name = 'OC Transpo';
+		value.bbox = ottawa.fit_bounds;
+	}
+	if (key.endsWith('/live/vehicles.json'))
+		for (const vehicle of value.vehicles) {
+			vehicle.lon = -75.69;
+			vehicle.lat = 45.41;
+		}
+	files[key.replace('/stm/', '/octranspo/')] = JSON.stringify(value);
+}

@@ -116,6 +116,10 @@
 </div>
 
 <style>
+	.mf-rail-abbr,
+	.mf-rail-clear span {
+		display: none;
+	}
 	.mf-rail-layer {
 		position: relative;
 		display: grid;

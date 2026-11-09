@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PanelSizeHandle from './PanelSizeHandle.svelte';
 	import { intl } from '#lib/i18n/index.ts';
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
 	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
@@ -246,6 +247,12 @@
 	role="group"
 	aria-label={panelTitle}
 >
+	{#if collapsible}<PanelSizeHandle
+			{locale}
+			side="left"
+			width={panelOpen ? 300 : 56}
+			onchange={(width) => void togglePanel(width === 300)}
+		/>{/if}
 	<div id={controlsId} class="mf-expanded" aria-hidden={!panelOpen} inert={!panelOpen}>
 		<div class="mf-controls">
 			<div class="mf-head">
@@ -519,7 +526,7 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		width: 16rem;
+		width: 300px;
 		max-width: calc(100vw - 2rem);
 		max-height: min(72dvh, calc(100dvh - 7rem));
 		background: color-mix(in srgb, var(--card) 90%, transparent);
@@ -535,13 +542,13 @@
 	}
 
 	.map-filters[data-open='false'] {
-		width: 5.75rem;
+		width: 56px;
 		transition-duration: var(--duration-normal);
 	}
 
 	.mf-expanded {
 		display: flex;
-		width: 16rem;
+		width: 300px;
 		max-height: inherit;
 		min-height: 0;
 		flex: none;

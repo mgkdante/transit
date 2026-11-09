@@ -76,7 +76,7 @@
 	let mapWidthPx = $state(1280);
 
 	let detailWidthPx = $state(readStoredDetailPanelWidth());
-	let detailCollapsed = $state(false);
+	let detailCollapsed = $state(readStoredDetailPanelWidth() === 56);
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
@@ -186,7 +186,7 @@
 	const selectionStack = $derived(session.stack);
 	const detailOpen = $derived(session.detailOpen);
 	$effect(() => {
-		if (!detailOpen) detailCollapsed = false;
+		if (!detailOpen) detailCollapsed = detailWidthPx === 56;
 	});
 
 	const stopList = $derived(session.stops);
@@ -223,12 +223,12 @@
 	}
 	function selectPickedFeature(next: MapSelection) {
 		commitPickedSelection(next);
-		detailCollapsed = false;
+		detailCollapsed = detailWidthPx === 56;
 		focusSelection(next);
 	}
 	function closeDetail() {
 		session.close();
-		detailCollapsed = false;
+		detailCollapsed = detailWidthPx === 56;
 	}
 	const selectFromDetail = (next: MapSelection) => session.select(next, 'detail');
 	const goBackDetail = session.back;
@@ -282,7 +282,7 @@
 
 	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
 		commitPickedSelection({ kind: 'stop', id: stop.id });
-		detailCollapsed = false;
+		detailCollapsed = detailWidthPx === 56;
 		if (recovering)
 			cameraIntents.state({ kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 });
 		else focusCoordinate(map, [stop.lon, stop.lat], 15);
@@ -401,7 +401,12 @@
 			if (disposed) return;
 			if (!heroEl) return;
 			const inset = measureMapFocusInset({ getContainer: () => heroEl! });
+			const controlsWidth =
+				heroEl.querySelector('.map-filter-panel')?.getBoundingClientRect().width ?? 0;
+			heroEl.style.setProperty('--map-controls-width', controlsWidth + 'px');
 			if (!inset.containerWidth || !inset.containerHeight) return;
+			if (import.meta.env.MODE === 'e2e')
+				heroEl.dataset.cameraPadding = JSON.stringify(inset.fitPadding);
 			camera.update(instance, {
 				...framing,
 				size: { width: inset.containerWidth, height: inset.containerHeight },
@@ -412,7 +417,7 @@
 		void tick().then(() => {
 			if (disposed) return;
 			for (const el of document.querySelectorAll(
-				'.map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
+				'[data-slot="map-detail-overlay"], .map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
 			))
 				observer.observe(el);
 			update();
@@ -423,7 +428,9 @@
 		};
 	});
 	function toggleDetailCollapsed(): void {
+		if (detailCollapsed && detailWidthPx === 56) detailWidthPx = 400;
 		detailCollapsed = !detailCollapsed;
+		if (detailCollapsed) detailWidthPx = 56;
 	}
 </script>
 
@@ -467,6 +474,7 @@
 		collapsed={detailCollapsed}
 		ontogglecollapse={toggleDetailCollapsed}
 		resizable
+ selectionKind={session.selected?.kind}
 	>
 		{#if selectedDetail}
 			<MapSelectionDetail
@@ -590,6 +598,7 @@
 
 	{#if desktop.current && detailOpen}
 		<MapDetailOverlay
+			{locale}
 			bind:widthPx={detailWidthPx}
 			bind:collapsed={detailCollapsed}
 			bind:dragging={detailDragging}
