@@ -246,6 +246,7 @@ class ManifestLiveFiles(BaseModel):
     network: str = "live/network.json"
     stop_departures: str = "live/stop_departures.json"
     data_health: str = "status/data_health.json"
+    source_lag_s: int = Field(default=0, ge=0)
     ttl_s: int = LIVE_TTL_SECONDS
     generated_utc: str
 

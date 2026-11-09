@@ -218,6 +218,7 @@ const LIVE_FIELD_FAMILY = {
 	'prediction-delay': 'departures',
 } as const satisfies Record<string, LiveFamily>;
 export interface LiveAbsenceContext {
+	readonly staleCutoffS?: number;
 	readonly familyStates?: Readonly<
 		Partial<Record<LiveFamily, { readonly health: { readonly state: FeedHealthState } }>>
 	>;

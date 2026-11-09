@@ -998,3 +998,16 @@ def test_vehicle_next_stop_coordinates_are_additive(coordinates):
 def test_vehicle_rejects_partial_next_stop_coordinates(coordinates):
     with pytest.raises(ValidationError, match="next stop coordinates must be paired"):
         Vehicle(id="1", lat=0, lon=0, status="unknown", updated_utc="x", **coordinates)
+
+
+def test_manifest_source_lag_defaults_and_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from transit_ops.snapshots.contract import ManifestLiveFiles
+
+    assert ManifestLiveFiles(generated_utc="t").source_lag_s == 0
+    assert ManifestLiveFiles(generated_utc="t", source_lag_s=60).source_lag_s == 60
+    for lag in (-1, 1.5, float("inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            ManifestLiveFiles(generated_utc="t", source_lag_s=lag)

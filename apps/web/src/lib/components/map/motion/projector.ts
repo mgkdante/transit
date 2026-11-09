@@ -9,6 +9,7 @@ export interface VehicleFix {
 	updatedUtc: string;
 	speedMps: number | null;
 	horizon?: number;
+	cutoff?: number;
 	nextStop?: Coord | null;
 }
 
@@ -48,6 +49,7 @@ export function projectEntry(
 		shape: invariants?.shape ?? shapeFor?.(feature) ?? null,
 		invariants,
 		horizon: fix?.horizon,
+		cutoff: fix?.cutoff,
 		nextStop: fix?.nextStop,
 		speedMps: fix?.speedMps ?? null,
 		ageS: invariants

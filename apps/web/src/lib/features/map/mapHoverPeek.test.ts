@@ -272,3 +272,11 @@ describe('resolveMapHoverPeek', () => {
 		expect(empty).toMatchObject({ departureCount: 0 });
 	});
 });
+
+it('uses the provider cutoff for vehicle hover silence', () => {
+	const selection = { kind: 'vehicle', id: 'bus-24' } as const;
+	expect(resolveMapHoverPeek(selection, context)).toMatchObject({ notReportingAgeS: 180 });
+	expect(resolveMapHoverPeek(selection, { ...context, staleCutoffS: 210 })).toMatchObject({
+		notReportingAgeS: null,
+	});
+});

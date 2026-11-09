@@ -26,6 +26,8 @@ provider:
   display_name: OC Transpo
   short_name: OC Transpo
   city: Ottawa
+  # Measured 2026-11-09: 60 s rebuilds arrive 30–45 s late, with fixes 15 s older.
+  live_source_lag_seconds: 60
   timezone: America/Toronto
   default_language: en
   default_currency: CAD
