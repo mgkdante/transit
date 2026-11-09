@@ -140,6 +140,9 @@
 		const provider = providers.find((candidate) => candidate.id === providerId);
 		return provider ? providerText(provider) : providerId;
 	});
+	const providerShortLabel = $derived(
+		providers.find((provider) => provider.id === providerId)?.labels[locale].operator ?? providerId,
+	);
 
 	let searchResultsOpen = $state(true);
 	let searchForm = $state<HTMLFormElement>();
@@ -321,10 +324,16 @@
 {#snippet actions()}
 	<!-- The visible label is its own element, centred in the control; the native select sits on top, transparent. -->
 	<label bind:this={providerControl} class="nav-provider">
-		<span class="nav-provider-label" aria-hidden="true">{providerLabel}</span>
+		<span class="nav-provider-label nav-provider-full" aria-hidden="true" title={providerLabel}
+			>{providerLabel}</span
+		>
+		<span class="nav-provider-label nav-provider-short" aria-hidden="true" title={providerLabel}
+			>{providerShortLabel}</span
+		>
 		<select
 			class="nav-provider-select"
-			aria-label={navCopy.network}
+			aria-label={`${navCopy.network}: ${providerLabel}`}
+			title={providerLabel}
 			value={providerId}
 			onchange={(event) => {
 				const href = providerHref(url, event.currentTarget.value, locale);
@@ -416,6 +425,9 @@
 		font: inherit;
 		cursor: pointer;
 	}
+	.nav-provider-short {
+		display: none;
+	}
 	.nav-provider-select option {
 		background: var(--background);
 		color: var(--foreground);
@@ -425,6 +437,12 @@
 		outline-offset: 2px;
 	}
 	@container site-header (width < 600px) {
+		.nav-provider-full {
+			display: none;
+		}
+		.nav-provider-short {
+			display: block;
+		}
 		.nav-provider {
 			--size-provider-select: calc(100cqi - 2rem);
 			position: absolute;

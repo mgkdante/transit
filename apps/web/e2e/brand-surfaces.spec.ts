@@ -35,7 +35,7 @@ test.beforeEach(async ({ page }) => {
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 });
 
-test('homepage ground follows its own scroller and reverses without moving the trigger', async ({
+test('homepage ground follows window scrolling and reverses without moving the trigger', async ({
 	page,
 }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -47,12 +47,8 @@ test('homepage ground follows its own scroller and reverses without moving the t
 	let previousScroll = 0;
 	for (const fraction of [0.98, 0.825, 0.7, 0.825, 0.98, 0.7]) {
 		const requested = await page.locator('.construction-anchor').evaluate((anchor, fraction) => {
-			const root = document.querySelector<HTMLElement>('#page-scroller')!;
-			root.scrollTop +=
-				anchor.getBoundingClientRect().top -
-				root.getBoundingClientRect().top -
-				root.clientHeight * fraction;
-			return { scroll: root.scrollTop, top: anchor.getBoundingClientRect().top };
+			window.scrollBy(0, anchor.getBoundingClientRect().top - innerHeight * fraction);
+			return { scroll: window.scrollY, top: anchor.getBoundingClientRect().top };
 		}, fraction);
 		await expect
 			.poll(async () => {
@@ -67,7 +63,7 @@ test('homepage ground follows its own scroller and reverses without moving the t
 		previousScroll = requested.scroll;
 		const sample = await page.locator('.construction-anchor').evaluate((anchor) => ({
 			top: anchor.getBoundingClientRect().top,
-			scroll: document.querySelector('#page-scroller')!.scrollTop,
+			scroll: window.scrollY,
 			height: document.querySelector('.home-construction-floor')!.getBoundingClientRect().height,
 		}));
 		expect(Math.abs(sample.top - requested.top)).toBeLessThanOrEqual(1);
@@ -91,14 +87,27 @@ test('homepage ground follows its own scroller and reverses without moving the t
 			return 'none';
 		}),
 	).toContain('linear-gradient');
-	const root = page.locator('#page-scroller');
+	const root = page.locator('#main');
 	await root.focus();
-	await root.press('End');
+	// Focus scrolls the main into view and hides the ground again.
+	await expect(props).toHaveAttribute('data-state', 'hidden');
+	await Promise.all([
+		page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					window.addEventListener('scrollend', () => resolve(), { once: true }),
+				),
+		),
+		root.press('End'),
+	]);
 	await expect(props).toHaveAttribute('data-state', 'visible');
 	await expect(props).toHaveAttribute('data-progress', '1');
+	// Revealing the ground adds document height. Wait for the first native scroll
+	// to finish before End targets the new bottom; progress reaches 1 mid-scroll.
+	await root.press('End');
 	await expect
 		.poll(() =>
-			root.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+			page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight - scrollY),
 		)
 		.toBeLessThanOrEqual(1);
 	const art = await props
@@ -161,8 +170,8 @@ test('homepage props remain static without JavaScript and switch instantly with 
 	await page.goto('/');
 	const props = page.locator('[data-slot="construction-props"]');
 	await expect(props).toHaveAttribute('data-state', 'hidden');
-	await page.locator('#page-scroller').focus();
-	await page.locator('#page-scroller').press('End');
+	await page.locator('#main').focus();
+	await page.locator('#main').press('End');
 	await expect(props).toHaveAttribute('data-state', 'visible');
 	expect(
 		await props
@@ -253,7 +262,7 @@ test("a detail page's back link sits midway between the chrome and the next line
 					const text = range.getBoundingClientRect();
 					const pill = document.querySelector('[data-testid="nav-pill"]')!.getBoundingClientRect();
 					const select = document
-						.querySelector(`select[aria-label="${network}"]`)!
+						.querySelector(`select[aria-label^="${network}"]`)!
 						.parentElement!.getBoundingClientRect();
 					const chrome = Math.max(pill.bottom, select.bottom);
 					return [
