@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import TransitEntityRow from '#lib/components/surface/TransitEntityRow.svelte';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
@@ -47,7 +48,7 @@
 </script>
 
 <TransitEntityRow
-	presentation="legacy-vehicle"
+	presentation="card"
 	{href}
 	ariaLabel={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(absence, locale)}`}
 >
@@ -74,7 +75,7 @@
 					<span class="vehicle-row-route">{copy.routeTag(vehicle.route)}</span>
 				{/if}
 			</span>
-			<span class="vehicle-row-sub">
+			<span class="vehicle-row-sub readable-name" title={nextStop ?? undefined} use:readableName>
 				<MaybeValue present={nextStop != null} reason={absence} {locale}>
 					{copy.next(nextStop ?? '')}
 				</MaybeValue>
@@ -95,7 +96,7 @@
 				</MaybeValue>
 			</span>
 		</span>{/snippet}
-	{#snippet metadata()}
+	{#snippet status()}
 		<span class="vehicle-row-meta">
 			<MaybeValue
 				value={delayText}
@@ -118,14 +119,14 @@
 	.vehicle-row-arrow {
 		font-size: var(--text-subheading);
 		line-height: 1;
-		color: var(--primary);
+		color: var(--foreground);
 		transition: transform var(--duration-fast) var(--ease-out);
 	}
 	.vehicle-row-glyph {
 		font-family: var(--font-mono);
 		font-size: var(--text-subheading);
 		line-height: 1;
-		color: var(--primary);
+		color: var(--foreground);
 	}
 	.vehicle-row-body {
 		display: flex;
@@ -143,19 +144,19 @@
 	.vehicle-row-id {
 		font-family: var(--font-heading);
 		font-weight: 600;
-		font-size: var(--text-body);
+		font-size: var(--text-card-title);
 	}
 	.vehicle-row-route {
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--text-card-meta);
 		color: var(--muted-foreground);
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 	}
 	.vehicle-row-sub {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
+		font-size: var(--text-card-body);
 		line-height: 1.4;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -173,7 +174,7 @@
 		align-items: center;
 		gap: 0.375rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--text-card-meta);
 		color: var(--muted-foreground);
 	}
 	.vehicle-row-crowd-glyph {
@@ -183,7 +184,7 @@
 	.vehicle-row-meta {
 		flex-shrink: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--text-card-meta);
 		font-weight: 600;
 		color: var(--muted-foreground);
 		white-space: nowrap;

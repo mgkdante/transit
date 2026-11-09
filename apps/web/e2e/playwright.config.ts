@@ -79,10 +79,12 @@ export default defineConfig({
 						[390, 844],
 						[768, 1024],
 						[1280, 900],
+						[1440, 900],
 						[1920, 1080],
 						[844, 390],
 					]
 				: [
+						[1440, 900],
 						[390, 844],
 						[1280, 900],
 					]
@@ -92,6 +94,7 @@ export default defineConfig({
 						(colorScheme) =>
 							colorScheme === 'light' ||
 							width === 390 ||
+							width === 1440 ||
 							(browserName === 'chromium' && width === 1280),
 					)
 					.map((colorScheme) => ({

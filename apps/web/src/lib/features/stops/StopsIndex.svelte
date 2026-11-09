@@ -327,7 +327,7 @@
 					{#each pagedGroups as group (group.key)}
 						<section class="stops-line-group" aria-label={t.direction(group.dir, group.headsign)}>
 							<h3 class="stops-line-dir">{t.direction(group.dir, group.headsign)}</h3>
-							<EntityList items={group.stops} key={(s) => s.id} cards>
+							<EntityList grid cards items={group.stops} key={(s) => s.id}>
 								{#snippet row(stop)}
 									{@render stopRow(stop)}
 								{/snippet}
@@ -355,13 +355,7 @@
 						<h2 id="stops-browse-heading">{t.browse.heading}</h2>
 						<p>{t.browse.lede}</p>
 					</div>
-					<EntityList
-						items={visibleBrowseLines}
-						key={(route) => route.id}
-						grid
-						cards
-						minTile="360px"
-					>
+					<EntityList grid cards items={visibleBrowseLines} key={(route) => route.id}>
 						{#snippet row(route)}
 							{@const modeHint = routeModeHint(route.type)}
 							{@const accessibleLineName = [modeHint.tag, route.long].filter(Boolean).join(' ')}
@@ -392,10 +386,11 @@
 				<StateNotice title={t.noMatches} presentation="silo" role="status" aria-live="polite" />
 			{:else}
 				<EntityList
+					grid
+					cards
 					items={sortedMatches}
 					key={(s) => s.id}
 					max={SEARCH_CAP}
-					cards
 					truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
 				>
 					{#snippet row(stop)}
