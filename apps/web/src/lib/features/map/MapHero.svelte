@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -141,7 +143,7 @@
 		}
 	});
 
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
 	const occupancyAvailable = $derived(
@@ -182,6 +184,7 @@
 		filters,
 		locale,
 		timeZone: manifest.tz,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
 		serverNow: () => clock.serverNow,
 		alertsAvailable,
 	});
@@ -210,7 +213,10 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
+	provideLiveAbsenceContext(() => ({
+		familyStates: live.familyStates,
+		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
+	}));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,
@@ -355,6 +361,7 @@
 			ready: hasFirstIdle,
 			stale: live.familyStates.vehicles.health.isStale,
 			ttlS: manifest.files.live.ttl_s,
+			sourceLagS: liveTimingFor(manifest).sourceLagS,
 			stops: stopList,
 		}),
 	);

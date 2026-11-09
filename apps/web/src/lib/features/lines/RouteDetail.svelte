@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
@@ -167,7 +169,7 @@
 
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: providerHasAlerts(v1.provider)
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],
@@ -496,7 +498,12 @@
 																			value={delayMeasurement(bus.delay_min)}
 																			reason={liveAbsenceReason('vehicle-delay', {
 																				familyStates: live.familyStates,
-																				notReporting: notReporting(bus, clock.serverNow) != null,
+																				notReporting:
+																					notReporting(
+																						bus,
+																						clock.serverNow,
+																						liveTimingFor(manifest).staleCutoffS,
+																					) != null,
 																			})}
 																			variant="row"
 																			{locale}
@@ -511,7 +518,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow) != null }), locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow, liveTimingFor(manifest).staleCutoffS) != null }), locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

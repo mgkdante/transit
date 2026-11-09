@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
-	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+
 	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
 	import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 	import { onMount } from 'svelte';
@@ -59,7 +60,7 @@
 	const routes = createResource(() => getRoutesIndex());
 	const stops = createResource(() => getStopsIndex());
 
-	const live = createLiveStore(v1.manifest, { families: ['vehicles'] });
+	const live = createLiveStore(v1.manifest, liveReader, { families: ['vehicles'] });
 	const occupancyAvailable = $derived(
 		hasOccupancy(v1.manifest.provider, live.vehicles?.vehicles ?? []),
 	);
@@ -162,7 +163,12 @@
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
 	const numberFmt = $derived(intl.number(locale));
 	const presentation = $derived(
-		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+		livePresentation({
+			familyStates: live.familyStates,
+			families: ['vehicles'],
+			locale,
+			page: 'map',
+		}),
 	);
 </script>
 
@@ -181,6 +187,10 @@
 		/>
 	</Masthead>
 
+	{#if presentation.notice.kind !== 'none'}
+		<p role="status">{presentation.notice.message}</p>
+	{/if}
+	{#if hasQuery}<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />{/if}
 	<ResourceBoundary resource={routes} lang={locale}>
 		<ResourceBoundary resource={stops} lang={locale}>
 			{#if !hasQuery}
