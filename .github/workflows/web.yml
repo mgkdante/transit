@@ -100,7 +100,7 @@ jobs:
           package-manager-cache: false
 
       - name: Test design prerelease guard
-        run: node --test .github/scripts/design-prerelease-guard.test.mjs
+        run: node .github/scripts/design-prerelease-guard.mjs --self-test
 
       - name: Require stable design dependencies
         run: node .github/scripts/design-prerelease-guard.mjs
