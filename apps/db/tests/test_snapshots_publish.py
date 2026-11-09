@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -16,7 +15,6 @@ from transit_ops.sql_registry import query_name
 
 
 class FakeResult:
-
     def mappings(self) -> FakeResult:
         return self
 
@@ -37,7 +35,6 @@ class FakeResult:
 
 
 class FakeConn:
-
     def execute(self, statement, params=None):  # noqa: ANN001
         if query_name(statement) == "publish.lock.try_acquire":
             return NamedRowsResult([True])
@@ -45,7 +42,6 @@ class FakeConn:
 
 
 class FakeEngine:
-
     def begin(self):  # noqa: ANN201
         @contextmanager
         def _cm():
@@ -95,7 +91,6 @@ class CloseTrackingStore(MemorySnapshotStore):
 
 
 class FakeSettings:
-
     SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
     GOLD_REPORTING_OPEN_WINDOW_DAYS = 10
     GOLD_FACT_RETENTION_DAYS = 14
@@ -342,7 +337,6 @@ def test_historic_phase_ledger_is_exclusive_and_populates_publish_state(monkeypa
                 state_params.append(dict(params))
             return Result()
 
-
     connection = Connection()
 
     class Engine:
@@ -540,9 +534,12 @@ def test_publish_static_writes_expected_keys() -> None:
 
     class FC:
         def execute(self, statement, params=None):
-            return _FakeResult(history_count_rows(
-                statement, dispatch.get(query_name(statement), []),
-            ))
+            return _FakeResult(
+                history_count_rows(
+                    statement,
+                    dispatch.get(query_name(statement), []),
+                )
+            )
 
     class FakeEngine2:
         def begin(self):
@@ -1175,9 +1172,12 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
 
     class FakeConnHistoric:
         def execute(self, statement, params=None):
-            return _FakeResult(history_count_rows(
-                statement, dispatch.get(query_name(statement), []),
-            ))
+            return _FakeResult(
+                history_count_rows(
+                    statement,
+                    dispatch.get(query_name(statement), []),
+                )
+            )
 
     class FakeEngineHistoric:
         def begin(self):
@@ -1274,7 +1274,6 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
 
 
 class _RecordingConn:
-
     def __init__(self):
         self.sql: list[str] = []
 
@@ -1398,7 +1397,6 @@ def test_gate_summary_verdict_pass_warn_fail() -> None:
 
 
 class _ParamRecordingConn(FakeConn):
-
     def __init__(self) -> None:
         self.state_params: list[dict] = []
 
@@ -1484,8 +1482,9 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
 def test_publish_live_is_not_hash_gated() -> None:
 
     class GuardStore(MemorySnapshotStore):
-        def get_json(self, rel_key):  # pragma: no cover - must not be reached
-            raise AssertionError("live tier must not be hash-gated")
+        def get_json(self, rel_key):
+            assert rel_key == "manifest.json", "live reads only its completed manifest"
+            return super().get_json(rel_key)
 
     store = GuardStore()
     res = publish_snapshot(
@@ -1736,3 +1735,34 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
         "historic/route_reliability/R2.json",
         "historic/route_reliability/index.json",
     }
+
+
+def test_partial_live_publish_retains_unmodified_generations(monkeypatch):
+    from transit_ops.snapshots import publish
+
+    captures = {key: "old" for key in ("vehicle_positions", "trip_updates", "i3_alerts")}
+    monkeypatch.setattr(
+        publish.builders.live,
+        "_feed_captured_utc",
+        lambda conn, provider_id, key: captures.get(key),
+    )
+    store = MemorySnapshotStore()
+    kwargs = dict(provider_id="stm", settings=FakeSettings(), gen="2026-11-09T00:00:00Z")
+    publish._publish_live(FakeConn(), store, **kwargs)
+    old = dict(store.objects)
+    captures["vehicle_positions"] = "new"
+    store.keys.clear()
+    kwargs["gen"] = "2026-11-09T00:00:20Z"
+    publish._publish_live(FakeConn(), store, **kwargs)
+    assert set(store.keys) == {
+        "live/vehicles.json",
+        "live/network.json",
+        "status/data_health.json",
+        "manifest.json",
+    }
+    manifest = store.get_json("manifest.json")
+    for key in old.keys() - {"manifest.json"}:
+        payload = store.get_json(key)
+        assert manifest["files"]["live"]["generations"][key] == payload["publish_generation_id"]
+        if key not in store.keys:
+            assert store.objects[key] == old[key]
