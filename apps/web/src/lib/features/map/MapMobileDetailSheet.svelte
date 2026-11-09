@@ -111,9 +111,3 @@
 		</div>
 	{/if}
 </BottomSheet>
-
-<style>
-	:global(.map-mobile-detail-sheet) {
-		max-height: 50svh;
-	}
-</style>
