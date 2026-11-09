@@ -14,21 +14,12 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 			'[data-slot="terminal-panel"] > div:nth-child(4) > div:nth-child(1) > span:nth-child(1)'
 	)
 		return 'LAYOUT-TERMINAL-SOURCE: network source label breaks inside a word on narrow screens';
-	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
-		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
 	if (
 		kind === 'inaccessible-ellipsis' &&
 		selector.startsWith('[data-slot="terminal-panel"]') &&
 		text === 'salle-de-contrôle'
 	)
 		return 'LAYOUT-TERMINAL: French control-room title truncates without an accessible full title';
-	if (
-		(kind === 'broken-word' &&
-			selector.startsWith('[data-slot="freshness-stamp"]') &&
-			text === 'obsolète') ||
-		(kind === 'clipped' && selector.startsWith('#main >') && text === '· obsolète')
-	)
-		return 'LAYOUT-STALE: French stale stamp breaks or clips in narrow live surfaces';
 	return null;
 }
 export async function expectLayout(page: Page, info: TestInfo, overlaps: string[]) {

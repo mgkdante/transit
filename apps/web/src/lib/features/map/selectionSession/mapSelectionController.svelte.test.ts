@@ -3,10 +3,31 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import MapSelectionControllerHarness from '../__fixtures__/MapSelectionControllerHarness.svelte';
 import { createMapSelectionController } from './mapSelectionController.svelte';
+import { acceptsItemArrow } from './detailNavigation';
 
 afterEach(() => cleanup());
 
 describe('map selection controller', () => {
+	it('leaves editing, resizing, sliders and modified arrows with their owning controls', () => {
+		for (const html of [
+			'<input>',
+			'<textarea></textarea>',
+			'<select></select>',
+			'<div contenteditable></div>',
+			'<div role="separator"></div>',
+			'<div role="slider"></div>',
+		]) {
+			const host = document.createElement('div');
+			host.innerHTML = html;
+			const event = new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true });
+			host.firstElementChild!.dispatchEvent(event);
+			expect(acceptsItemArrow(event)).toBe(false);
+		}
+		expect(
+			acceptsItemArrow(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true })),
+		).toBe(false);
+		expect(acceptsItemArrow(new KeyboardEvent('keydown', { key: 'ArrowRight' }))).toBe(true);
+	});
 	it('retires the transition mirror by testing fresh-pick, drill-in, LIFO back, and close', () => {
 		const controller = createMapSelectionController();
 		const stop = { kind: 'stop', id: 'stop-1' } as const;

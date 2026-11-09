@@ -236,7 +236,7 @@
 						</dd>
 					</div>
 					{#if occupancyAvailable}<div>
-							<dt>{t.crowding}</dt>
+							<dt title={t.crowding}>{t.crowding}</dt>
 							<dd>
 								<span
 									class="detail-state-glyph"
@@ -391,13 +391,14 @@
 					</ol></DetailSection
 				>
 			{/if}
-			{#if detail.routeTimes.length > 0}<DetailSection
-					title={t.routes}
-					slot="detail-route-times"
-					ladderMin={420}
+			{#if detail.routeTimes.length > 0}<DetailSection title={t.routes} slot="detail-route-times"
 					>{#each detail.routeTimes as route (route.route)}<p>
-							{t.route}
-							{line(route.route)}{route.headsign ? ` · ${route.headsign}` : ''}
+							<button
+								type="button"
+								onclick={() => selectRoute(route.route)}
+								aria-label={t.selectRoute(line(route.route))}
+								>{t.route} {line(route.route)}{route.headsign ? ` · ${route.headsign}` : ''}</button
+							>
 						</p>
 						<details data-slot="detail-schedule-tail">
 							<summary>{t.nextTimes}</summary>
@@ -566,7 +567,7 @@
 		cursor: pointer;
 	}
 	@container right-panel (width < 26.25rem) {
-		.map-selection-detail :global([data-slot='detail-meta'].detail-stat-pills) {
+		.map-selection-detail :global([data-slot='detail-meta'].detail-stat-pills:not(:has(button))) {
 			display: none;
 		}
 		.map-selection-detail :global([data-ladder-min='420']) {

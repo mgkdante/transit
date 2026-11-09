@@ -86,6 +86,7 @@ export default defineConfig({
 				: [
 						[1440, 900],
 						[390, 844],
+						[844, 390],
 						[1280, 900],
 					]
 			).flatMap(([width, height]) =>
