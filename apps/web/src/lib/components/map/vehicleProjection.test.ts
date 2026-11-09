@@ -141,6 +141,48 @@ describe('projectVehicle', () => {
 		expect(back.s).toBeCloseTo(expected, 0);
 	});
 
+	it('stops at a next stop ahead, but ignores a reported stop at or behind the vehicle', () => {
+		const start = [-73.6, 45.5] as Coord;
+		const ahead = [-73.599, 45.5] as Coord; // ~78 m east
+		const behind = [-73.62, 45.5] as Coord; // ~1.6 km west
+		const free = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+		});
+		const clamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: ahead,
+		});
+		const notClamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: behind,
+		});
+		const atStop = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: start,
+		});
+		expect(clamped.coord[0]).toBeCloseTo(ahead[0], 5);
+		expect(clamped.frozen).toBe(true);
+		expect(notClamped.coord[0]).toBeCloseTo(free.coord[0], 9);
+		expect(notClamped.frozen).toBe(false);
+		expect(atStop.coord[0]).toBeCloseTo(free.coord[0], 9);
+	});
+
 	it('advances further for a larger age (up to the saturation cap)', () => {
 		const near = projectVehicle({ coord: W, shape: STRAIGHT, speedMps: 10, ageS: 5, bearing: 0 });
 		const far = projectVehicle({ coord: W, shape: STRAIGHT, speedMps: 10, ageS: 40, bearing: 0 });
