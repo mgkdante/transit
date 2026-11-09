@@ -48,7 +48,7 @@ _STOP_REL_WEEKLY_SQL = named_query(
     WHERE provider_id = :provider_id
       AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
-    """
+    """,
 )
 
 _STOP_REL_MONTHLY_SQL = named_query(
@@ -62,7 +62,7 @@ _STOP_REL_MONTHLY_SQL = named_query(
     WHERE provider_id = :provider_id
       AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
-    """
+    """,
 )
 
 # Exclude the unrouted sentinel from named route breakdowns.
@@ -77,13 +77,13 @@ _STOP_REL_BY_ROUTE_SQL = named_query(
       AND route_id <> '__unrouted__'
       AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id, route_id
-    """
+    """,
 )
 
 _STOP_REL_ANCHOR_SQL = named_query(
     "stop.reliability.anchor",
     "SELECT MAX(provider_local_date) AS anchor FROM gold.stop_delay_spine "
-    "WHERE provider_id = :provider_id"
+    "WHERE provider_id = :provider_id",
 )
 
 
@@ -102,7 +102,7 @@ _STOP_HABIT_SQL = named_query(
     WHERE sd.provider_id = :provider_id
     GROUP BY sd.stop_id, 2, 3
     ORDER BY sd.stop_id
-    """
+    """,
 )
 
 # Emit additive counts for observed days; do not zero-fill absent dates.
@@ -120,7 +120,7 @@ _STOP_DAILY_SQL = named_query(
       AND {current_date_trailing_clause("sds.provider_local_date", days=90)}
     GROUP BY sds.stop_id, sds.provider_local_date
     ORDER BY sds.stop_id, sds.provider_local_date
-    """
+    """,
 )
 
 
@@ -132,7 +132,7 @@ _STOP_PERCENTILE_DAILY_SQL = named_query(
     FROM gold.stop_delay_percentile_daily
     WHERE provider_id = :provider_id
     ORDER BY stop_id, provider_local_date DESC
-    """
+    """,
 )
 
 
@@ -150,7 +150,7 @@ _STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     WHERE sob.provider_id = :provider_id
       AND {current_date_trailing_clause("sob.provider_local_date")}
     GROUP BY sob.stop_id
-    """
+    """,
 )
 
 
@@ -180,7 +180,7 @@ _STOP_BY_GRAIN_SQL = named_query(
         WHERE sd.provider_id = :provider_id
     ) AS banded
     GROUP BY stop_id, grain
-    """
+    """,
 )
 
 
@@ -197,12 +197,12 @@ _STOP_DOW_SQL = named_query(
     WHERE sd.provider_id = :provider_id
     GROUP BY sd.stop_id, 2
     ORDER BY sd.stop_id, 2
-    """
+    """,
 )
 
 
 def build_stop_reliability(
-    conn: Connection, *, provider_id: str = "stm", generated_utc: str
+    conn: Connection, *, provider_id: str, generated_utc: str
 ) -> dict[str, StopReliability]:
     params = {"provider_id": provider_id}
 
@@ -267,16 +267,14 @@ def build_stop_reliability(
         )
 
     names = {
-        str(r["stop_id"]): r["stop_name"]
-        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+        str(r["stop_id"]): r["stop_name"] for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
     }
 
     habit_rows: dict[str, list] = {}
     for r in conn.execute(_STOP_HABIT_SQL, params).mappings():
         habit_rows.setdefault(str(r["stop_id"]), []).append(r)
     habits = {
-        sid: _build_habits_matrix(rows, scale="severe_relative")
-        for sid, rows in habit_rows.items()
+        sid: _build_habits_matrix(rows, scale="severe_relative") for sid, rows in habit_rows.items()
     }
 
     day_of_week: dict[str, list[RouteDayOfWeek]] = {}

@@ -35,7 +35,9 @@ def test_live_network_rates_round_half_ties_away(
         for _ in range(count)
     ]
     payload = build_network(
-        NamedQueryConn({"network.live.vehicles": rows}), generated_utc="2026-07-01T00:00:00Z"
+        NamedQueryConn({"network.live.vehicles": rows}),
+        generated_utc="2026-07-01T00:00:00Z",
+        provider_id="stm",
     )
     assert payload.on_time_pct == expected_otp
     assert payload.coverage_pct == expected_coverage
@@ -66,6 +68,7 @@ def test_scalar_hotspot_delta_uses_counts_before_rounding() -> None:
             }
         ),
         generated_utc="2026-07-01T00:00:00Z",
+        provider_id="stm",
     )
     assert payload.hotspots[0].otp_delta_pts == -12.5
 
@@ -155,7 +158,9 @@ def test_current_and_replayed_hotspots_exclude_outliers_from_every_grain(
             current = build_hotspots(
                 connection, provider_id=provider_id, generated_utc="2026-07-02T00:00:00Z"
             )
-            replayed = next(build_hotspots_history_plan(connection, provider_id).iter_days())
+            replayed = next(
+                build_hotspots_history_plan(connection, provider_id=provider_id).iter_days()
+            )
             for payload in (current, replayed):
                 assert {grain.grain for grain in payload.by_grain} == {
                     "day",
@@ -233,6 +238,8 @@ def test_receipt_route_delta_uses_unrounded_network_counts() -> None:
             ],
         }
     )
-    receipt = build_receipts(connection, generated_utc="2026-07-02T00:00:00Z")[day.isoformat()]
+    receipt = build_receipts(connection, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")[
+        day.isoformat()
+    ]
     assert receipt.otp_pct == 75
     assert receipt.worst_route.otp_delta_pts == -12.5
