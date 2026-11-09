@@ -431,7 +431,6 @@ def _occupancy_upsert(entity: str, *, hourly: bool = False):
         {provider_join}
         WHERE f.provider_id = :provider_id
           AND f.snapshot_date_key = :date_key
-          AND NULLIF(f.trip_id, '') IS NOT NULL
           {stop_filter}
         GROUP BY {", ".join(groups)}
         ON CONFLICT ({", ".join(keys)}) DO UPDATE SET {updates}

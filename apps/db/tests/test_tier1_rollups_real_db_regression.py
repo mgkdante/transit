@@ -89,7 +89,7 @@ def _seed(connection, seed: _Seed, seed_provider) -> None:  # noqa: ANN001
         _insert_trip_delay_rows(connection, snapshot_id, captured_at, rows)
 
     occ_captured = seed.closed_day_utc + timedelta(minutes=10)
-    occ_snapshot = _insert_snapshot(connection, seed, occ_captured, VP_ENDPOINT_ID, 9)
+    occ_snapshot = _insert_snapshot(connection, seed, occ_captured, VP_ENDPOINT_ID, 7)
     _insert_vehicle_rows(
         connection,
         occ_snapshot,
@@ -102,8 +102,6 @@ def _seed(connection, seed: _Seed, seed_provider) -> None:  # noqa: ANN001
             ("V5", "99C", 4),
             ("V6", "99C", 5),
             ("V7", "99C", 7),
-            ("parked-null", "99C", 0),
-            ("parked-empty", "99C", 0),
         ],
     )
 
@@ -191,7 +189,7 @@ def _insert_vehicle_rows(
                      snapshot_local_date, feed_timestamp_utc, captured_at_utc, entity_id,
                      vehicle_id, trip_id, route_id, stop_id, current_stop_sequence,
                      current_status, occupancy_status, latitude, longitude, bearing, speed)
-                VALUES (:p, :sid, :ei, :dk, :sld, :ts, :ts, :entity_id, :vehicle_id, :trip_id,
+                VALUES (:p, :sid, :ei, :dk, :sld, :ts, :ts, :entity_id, :vehicle_id, NULL,
                         :route_id, NULL, NULL, NULL, :occ, NULL, NULL, NULL, NULL)
                 """
             ),
@@ -204,9 +202,6 @@ def _insert_vehicle_rows(
                 "ts": captured_at,
                 "entity_id": f"{vehicle_id}-{snapshot_id}",
                 "vehicle_id": vehicle_id,
-                "trip_id": None if vehicle_id == "parked-null" else (
-                    "" if vehicle_id == "parked-empty" else f"trip-{vehicle_id}"
-                ),
                 "route_id": route_id,
                 "occ": occupancy_status,
             },
