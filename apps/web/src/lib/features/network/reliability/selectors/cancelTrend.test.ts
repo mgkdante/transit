@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { selectCancelTrend } from './cancelTrend';
-import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
 import type { TrendPoint } from '#lib/v1/index.ts';
 
 const opts = {
@@ -11,7 +10,7 @@ const opts = {
 } as const;
 
 describe('selectCancelTrend', () => {
-	it('emits a single-series trend spec + the latest non-null reading on the absolute [0,100] domain', () => {
+	it('emits a zero-based domain rounded just above the largest reading', () => {
 		const points: TrendPoint[] = [
 			{ date: 'a', cancellation_rate: 1.2 },
 			{ date: 'b', cancellation_rate: 2.6 },
@@ -22,9 +21,21 @@ describe('selectCancelTrend', () => {
 		expect(vm.spec.kind).toBe('trend');
 		if (vm.spec.kind !== 'trend') throw new Error('unreachable');
 		expect(vm.spec.points.map((p) => p.y)).toEqual([1.2, 2.6]);
-		expect(vm.spec.domain).toEqual([CANCEL_RATE_DOMAIN[0], CANCEL_RATE_DOMAIN[1]]);
-		expect(vm.spec.domain).toEqual([0, 100]);
+		expect(vm.spec.domain).toEqual([0, 3]);
 		expect(vm.spec.secondary).toBeUndefined();
+	});
+	it.each([0, 0.04, 1, 10, 99, 100])('keeps headroom above a maximum of %s', (max) => {
+		const vm = selectCancelTrend(
+			[
+				{ date: 'a', cancellation_rate: max },
+				{ date: 'b', cancellation_rate: 0 },
+			],
+			opts,
+		);
+		if (vm.spec.kind !== 'trend') throw new Error('Expected trend');
+		expect(vm.spec.domain[0]).toBe(0);
+		expect(vm.spec.domain[1]).toBeGreaterThan(max);
+		if (max > 0) expect(vm.spec.domain[1]).toBeLessThanOrEqual(max * 1.5);
 	});
 
 	it('finds the latest non-null reading past a trailing gap', () => {

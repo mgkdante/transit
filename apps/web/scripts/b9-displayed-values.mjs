@@ -1332,12 +1332,15 @@ const MARK_SIGNATURES = Object.freeze({
 			[0, 8],
 		],
 		unit: ['%', 'min'],
-		axis: ['On-time', '0', '20', '40', '60', '80', '100', 'Avg delay', '0', '2', '4', '6', '8'],
+		axis: ['0', '20', '40', '60', '80', '100', '0', '2', '4', '6', '8'],
+		// Axis titles sit in HTML above the plot so long EN/FR labels never clip.
+		titles: ['On-time (%)', 'Avg delay (min)'],
 	},
 	histogram: {
 		domain: [-300, 1800],
 		unit: 's',
-		axis: ['Delay (min)', '-5', '-1', '0', '1', '5', '10', '30'],
+		// -1 and 1 min are thinned next to the pinned zero at this width.
+		axis: ['Delay (min)', '-5', '0', '5', '10', '30'],
 	},
 	'dot-strip': {
 		domain: [0, 100],
@@ -1454,6 +1457,15 @@ async function verifyGeometry(page, seen) {
 			JSON.stringify(axis) === JSON.stringify(signature.axis),
 			`${kind} domain/unit signature drift: ${JSON.stringify(axis)}`,
 		);
+		if (signature.titles) {
+			const titles = (await root.locator('.axis-titles span').allTextContents()).map((value) =>
+				value.trim(),
+			);
+			invariant(
+				JSON.stringify(titles) === JSON.stringify(signature.titles),
+				`${kind} axis title drift: ${JSON.stringify(titles)}`,
+			);
+		}
 		if (kind === 'stacked-share') {
 			const frameBox = await frame.boundingBox();
 			const widths = await root

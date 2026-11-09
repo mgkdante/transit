@@ -66,6 +66,8 @@
 	.chart-frame {
 		position: relative;
 		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		min-height: var(--chart-frame-h);
 	}
 </style>

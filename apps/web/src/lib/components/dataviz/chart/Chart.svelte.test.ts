@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Chart from './Chart.svelte';
 import ChartFrame from './ChartFrame.svelte';
 import ChartViewport from './ChartViewport.svelte';
-import type { ChartSpec, HeatmapSpec, MagnitudeBarsSpec, StackedShareSpec } from './ChartSpec';
+import type { ChartSpec, HeatmapSpec, DotStripSpec, StackedShareSpec } from './ChartSpec';
 
 const fluidSpec: StackedShareSpec = {
 	kind: 'stacked-share',
@@ -14,16 +14,13 @@ const fluidSpec: StackedShareSpec = {
 	segments: [{ key: 'on-time', label: 'On time', share: 100, status: 'on_time' }],
 };
 
-const denseSpec: MagnitudeBarsSpec = {
-	kind: 'magnitude-bars',
-	mark: 'bar',
+const denseSpec: DotStripSpec = {
+	kind: 'dot-strip',
 	title: 'Worst stops',
 	locale: 'en',
 	domain: [0, 100],
 	unit: '%',
-	rowLabel: 'Stop',
-	rows: [],
-	sort: 'given',
+	points: [],
 	scale: 'severity',
 };
 
