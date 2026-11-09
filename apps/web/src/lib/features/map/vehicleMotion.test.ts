@@ -11,6 +11,7 @@ const EPOCH = Date.parse('2026-06-21T12:00:00Z');
 const vehicle = (age = 10, lon = -73.59) =>
 	VehicleSchema.parse({
 		id: 'bus',
+		trip: 'assigned-trip',
 		route: '24',
 		lat: 45.5,
 		lon,

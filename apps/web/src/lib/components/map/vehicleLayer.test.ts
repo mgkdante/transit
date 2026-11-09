@@ -30,7 +30,7 @@ const vehicles = [
 		updated_utc: '2026-06-15T00:00:00Z',
 		bearing: null,
 	},
-].map((vehicle) => VehicleSchema.parse(vehicle));
+].map((vehicle) => VehicleSchema.parse({ trip: 'assigned-trip', ...vehicle }));
 
 describe('toVehicleFeatures entity filtering', () => {
 	it('serializes the exact state badge mark for every filter mode with status precedence', () => {
@@ -43,7 +43,7 @@ describe('toVehicleFeatures entity filtering', () => {
 				occupancy: 'full',
 				updated_utc: '2026-06-15T00:00:00Z',
 			},
-		].map((candidate) => VehicleSchema.parse(candidate));
+		].map((candidate) => VehicleSchema.parse({ trip: 'assigned-trip', ...candidate }));
 		const cases = [
 			['default', EMPTY_FILTER, '', 1, BUS_ICON],
 			['entity-only', { ...EMPTY_FILTER, entities: ['bus'] } as FilterState, '', 1, BUS_ICON],
@@ -227,7 +227,7 @@ describe('toVehicleFeatures retired per-vehicle silence fade', () => {
 				updated_utc: silentUtc,
 				bearing: 90,
 			},
-		].map((v) => VehicleSchema.parse(v));
+		].map((v) => VehicleSchema.parse({ trip: 'assigned-trip', ...v }));
 	}
 
 	it('keeps VehicleSilenceContext only for the per-bus stale calculation', () => {
@@ -276,7 +276,7 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 				reported_utc: staleReported,
 				bearing: 90,
 			},
-		].map((v) => VehicleSchema.parse(v));
+		].map((v) => VehicleSchema.parse({ trip: 'assigned-trip', ...v }));
 	}
 
 	it('flags a bus whose OWN reported_utc is past the cutoff as stale:1, a fresh one stale:0', () => {
@@ -294,7 +294,7 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		const oldSnapshot = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
 		const [v] = [
 			{ id: 'fallback', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: oldSnapshot },
-		].map((x) => VehicleSchema.parse(x));
+		].map((x) => VehicleSchema.parse({ trip: 'assigned-trip', ...x }));
 		const features = toVehicleFeatures([v], EMPTY_FILTER, new Set(), null, {
 			serverNow: now,
 		}).features;

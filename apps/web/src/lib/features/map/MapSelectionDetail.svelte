@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import { tick } from 'svelte';
 	import { Button } from '@yesid/ui/button';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
@@ -140,38 +141,40 @@
 				<DetailAttributeGrid>
 					<div>
 						<dt>{t.status}</dt>
-						<dd>
-							<span
-								class="detail-state-glyph"
-								data-m6d-glyph-kind="status"
-								data-m6d-glyph-code={detail.vehicle.status}
-								aria-hidden="true"
-								style={`--glyph: ${statusVar(detail.vehicle.status)}`}
-								>{STATUS_GLYPH[detail.vehicle.status]}</span
-							>
-							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-								{STATUS_LABELS[locale][detail.vehicle.status]}
-							{/if}
-							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-								<span aria-hidden="true">·</span>
-							{/if}
-							<span class="detail-delay-measurement">
-								<MaybeValue
-									value={delayMeasurement(detail.vehicle.delay_min)}
-									reason={absence}
-									{locale}
-								/>
-							</span>
-						</dd>
-						<dd class="detail-attribute-action">
-							<button
-								type="button"
-								class="detail-fact-action"
-								aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
-								onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
-								>{t.filter}</button
-							>
-						</dd>
+						{#if !isInService(detail.vehicle)}<dd>{vehicleServiceCopy[locale].status}</dd>{:else}
+							<dd>
+								<span
+									class="detail-state-glyph"
+									data-m6d-glyph-kind="status"
+									data-m6d-glyph-code={detail.vehicle.status}
+									aria-hidden="true"
+									style={`--glyph: ${statusVar(detail.vehicle.status)}`}
+									>{STATUS_GLYPH[detail.vehicle.status]}</span
+								>
+								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+									{STATUS_LABELS[locale][detail.vehicle.status]}
+								{/if}
+								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+									<span aria-hidden="true">·</span>
+								{/if}
+								<span class="detail-delay-measurement">
+									<MaybeValue
+										value={delayMeasurement(detail.vehicle.delay_min)}
+										reason={absence}
+										{locale}
+									/>
+								</span>
+							</dd>
+							<dd class="detail-attribute-action">
+								<button
+									type="button"
+									class="detail-fact-action"
+									aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
+									onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
+									>{t.filter}</button
+								>
+							</dd>
+						{/if}
 					</div>
 					<div>
 						<dt>{t.nextStop}</dt>
