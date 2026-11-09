@@ -71,7 +71,7 @@
 	import { selectCompleteness } from '../selectors/completeness';
 	import { selectOccupancyTrend } from '../selectors/occupancyTrend';
 	import { selectShiftRank } from '../selectors/shiftRank';
-	import { networkReliabilityCopy } from '../network-reliability.copy';
+	import { providerNetworkReliabilityCopy } from '../network-reliability.copy';
 
 	import SectionLiveHeadline from './SectionLiveHeadline.svelte';
 	import SectionReporting from './SectionReporting.svelte';
@@ -95,10 +95,11 @@
 	let { networkSeed, trendSeed, provenanceSeed }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const t = $derived(networkReliabilityCopy[locale]);
+	const v1 = getV1Context();
+	const t = $derived(providerNetworkReliabilityCopy(locale, v1.manifest.provider));
 
 	const initialNetworkSeed = untrack(() => networkSeed);
-	const live = createLiveStore(getV1Context().manifest, liveReader, {
+	const live = createLiveStore(v1.manifest, liveReader, {
 		families: ['network'],
 		...(initialNetworkSeed === undefined ? {} : { seed: { network: initialNetworkSeed } }),
 	});

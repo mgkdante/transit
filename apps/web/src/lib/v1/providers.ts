@@ -4,6 +4,32 @@ import { PublicProviderCatalogSchema, type PublicProviderCatalog } from './schem
 export { PublicProviderSchema, PublicProviderCatalogSchema } from './schemas/providers';
 export type { PublicProvider, PublicProviderCatalog } from './schemas/providers';
 
+// Mirrors lines_without_live_data in apps/db/config/providers/{stm,octranspo}.yaml
+// (stored in core.providers by seed-core, migration 0096).
+// providers.json does not publish route-type declarations; provenance gaps can override
+// the fallback on surfaces that already load provenance.
+const LINES_WITHOUT_LIVE_DATA: Record<string, { routeTypes: readonly number[]; gap: string }> = {
+	stm: { routeTypes: [1], gap: 'metro_realtime' },
+	octranspo: { routeTypes: [0], gap: 'otrain_realtime' },
+};
+
+export function routeHasNoLiveData(
+	providerId: string | undefined,
+	routeType: number | null | undefined,
+	gaps?: readonly string[] | null,
+): boolean {
+	const declaration =
+		providerId && Object.hasOwn(LINES_WITHOUT_LIVE_DATA, providerId)
+			? LINES_WITHOUT_LIVE_DATA[providerId]
+			: undefined;
+	return (
+		!!declaration &&
+		routeType != null &&
+		declaration.routeTypes.includes(routeType) &&
+		(gaps == null || gaps.includes(declaration.gap))
+	);
+}
+
 export function providerHasAlerts(
 	provider: import('./schemas/providers').PublicProvider | null | undefined,
 ): boolean {
