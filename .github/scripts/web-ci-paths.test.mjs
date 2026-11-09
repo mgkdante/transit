@@ -72,3 +72,10 @@ test("aggregate rejects a missing guard", () => {
   delete input["prerelease-guard"];
   assert.throws(() => checkRequiredJobs(input));
 });
+
+test("aggregate rejects failure or cancellation in any extra need", () => {
+  for (const result of ["failure", "cancelled"]) {
+    assert.throws(() => checkRequiredJobs({ ...needs(), extra: { result } }));
+  }
+  assert.doesNotThrow(() => checkRequiredJobs({ ...needs(), extra: { result: "success" } }));
+});
