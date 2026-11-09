@@ -24,8 +24,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 		return 'LAYOUT-HEADER: detail headline exceeds its clipped header stage';
 	if (kind === 'inaccessible-ellipsis' && selector.startsWith('[data-slot="entity-row"]'))
 		return 'LAYOUT-LINES: route names truncate without an accessible full name';
-	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
-		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
 	if (
 		kind === 'clipped' &&
 		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&
@@ -44,13 +42,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 		text === 'salle-de-contrôle'
 	)
 		return 'LAYOUT-TERMINAL: French control-room title truncates without an accessible full title';
-	if (
-		(kind === 'broken-word' &&
-			selector.startsWith('[data-slot="freshness-stamp"]') &&
-			text === 'obsolète') ||
-		(kind === 'clipped' && selector.startsWith('#main >') && text === '· obsolète')
-	)
-		return 'LAYOUT-STALE: French stale stamp breaks or clips in narrow live surfaces';
 	return null;
 }
 export async function expectLayout(page: Page, info: TestInfo, overlaps: string[]) {

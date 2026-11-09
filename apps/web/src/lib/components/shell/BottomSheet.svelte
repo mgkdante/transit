@@ -14,6 +14,7 @@
 		locale?: Locale;
 		title?: string;
 		identity?: Snippet;
+		navigation?: Snippet;
 		surfaceKey?: string;
 		canGoBack?: boolean;
 		onback?: () => void;
@@ -27,6 +28,7 @@
 		locale: localeProp,
 		title,
 		identity,
+		navigation,
 		surfaceKey = 'empty',
 		canGoBack = false,
 		onback,
@@ -91,6 +93,7 @@
 						<XIcon size={18} strokeWidth={2.3} aria-hidden="true" />
 					</Button>
 				</div>
+				{#if navigation}{@render navigation()}{/if}
 			</Sheet.Header>
 
 			<div class="bottom-sheet-body min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
@@ -120,6 +123,9 @@
 </Sheet.Root>
 
 <style>
+	:global(body:has([data-m6c2-detail-sheet][data-state='open']) [data-testid='nav-pill']) {
+		visibility: hidden;
+	}
 	.bottom-sheet-body {
 		container: right-panel / inline-size;
 	}

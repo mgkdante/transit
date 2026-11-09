@@ -86,13 +86,15 @@
 		.map-freshness[data-placement='head'] {
 			display: inline-flex;
 			align-items: center;
-			flex: none;
+			flex: 0 1 auto;
+			min-width: 0;
+			max-width: 100%;
 			gap: 0.25rem;
 			margin-left: auto;
 			padding: 0.25rem 0.5rem;
 			font-size: var(--text-micro);
 			line-height: 1;
-			white-space: nowrap;
+			white-space: normal;
 			background: color-mix(in srgb, var(--card) 90%, transparent);
 			border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 			border-radius: var(--radius-pill);

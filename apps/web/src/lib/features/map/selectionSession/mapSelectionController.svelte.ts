@@ -1,4 +1,5 @@
-import { sameNullableSelection, sameSelection, type MapSelection } from './mapSelection';
+import { emptyHistory, visit, travel } from './detailNavigation';
+import { sameNullableSelection, type MapSelection } from './mapSelection';
 
 export interface MapSelectionController {
 	get selected(): MapSelection | null;
@@ -10,23 +11,26 @@ export interface MapSelectionController {
 	selectFromDetail(next: MapSelection): void;
 	setHovered(next: MapSelection | null): boolean;
 	goBack(): boolean;
+	goForward(): boolean;
+	get canGoForward(): boolean;
 	close(): void;
 }
 
 export function createMapSelectionController(): MapSelectionController {
 	let selected = $state<MapSelection | null>(null);
 	let hovered = $state<MapSelection | null>(null);
-	let stack = $state<MapSelection[]>([]);
+	let history = $state(emptyHistory());
+	const stack = $derived(history.entries.slice(0, history.cursor));
 	let detailOpen = $state(false);
 
 	function selectPicked(next: MapSelection): void {
-		stack = [];
+		history = visit(history, next);
 		selected = next;
 		detailOpen = true;
 	}
 
 	function selectFromDetail(next: MapSelection): void {
-		if (selected && !sameSelection(selected, next)) stack = [...stack, selected];
+		history = visit(history, next);
 		selected = next;
 		detailOpen = true;
 	}
@@ -38,10 +42,19 @@ export function createMapSelectionController(): MapSelectionController {
 	}
 
 	function goBack(): boolean {
-		const previous = stack.at(-1);
-		if (!previous) return false;
-		stack = stack.slice(0, -1);
-		selected = previous;
+		const next = travel(history, -1);
+		if (next === history) return false;
+		history = next;
+		selected = history.entries[history.cursor];
+		detailOpen = true;
+		return true;
+	}
+
+	function goForward(): boolean {
+		const next = travel(history, 1);
+		if (next === history) return false;
+		history = next;
+		selected = history.entries[history.cursor];
 		detailOpen = true;
 		return true;
 	}
@@ -49,7 +62,7 @@ export function createMapSelectionController(): MapSelectionController {
 	function close(): void {
 		detailOpen = false;
 		selected = null;
-		stack = [];
+		history = emptyHistory();
 	}
 
 	return {
@@ -73,6 +86,10 @@ export function createMapSelectionController(): MapSelectionController {
 		selectFromDetail,
 		setHovered,
 		goBack,
+		goForward,
+		get canGoForward() {
+			return history.cursor < history.entries.length - 1;
+		},
 		close,
 	};
 }

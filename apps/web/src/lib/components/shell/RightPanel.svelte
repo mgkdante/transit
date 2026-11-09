@@ -20,6 +20,7 @@
 		title?: string;
 		headingId?: string;
 		identity?: Snippet;
+		navigation?: Snippet;
 		surfaceKey?: string;
 		dismissible?: boolean;
 		canGoBack?: boolean;
@@ -39,6 +40,7 @@
 		title,
 		headingId,
 		identity,
+		navigation,
 		surfaceKey = 'empty',
 		dismissible = true,
 		canGoBack = false,
@@ -158,6 +160,9 @@
 		{/if}
 	</div>
 
+	{#if navigation && !collapsed}<div class="shrink-0 border-b border-border-subtle px-4 py-2">
+			{@render navigation()}
+		</div>{/if}
 	{#if collapsed}<div class="flex justify-center py-4" aria-hidden="true">
 			{#if selectionKind === 'vehicle'}<BusFrontIcon
 					size={20}

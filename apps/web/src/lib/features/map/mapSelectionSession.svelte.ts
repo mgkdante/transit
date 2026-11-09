@@ -1,3 +1,4 @@
+import { neighbors } from './selectionSession/detailNavigation';
 import { SvelteSet } from 'svelte/reactivity';
 import type { Locale } from '#lib/i18n/index.ts';
 import type { RouteFile, StopFile } from '#lib/v1/index.ts';
@@ -255,7 +256,20 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 		selectionController.close();
 	}
 
+	let stopContext = $state<readonly MapSelection[]>([]);
 	function selectFromDetail(next: MapSelection): void {
+		if (next.kind === 'stop') {
+			if (selectedDetail?.kind === 'route')
+				stopContext =
+					selectedDetail.directions
+						.find((d) => d.stops.some((s) => s.id === next.id))
+						?.stops.map((s) => ({ kind: 'stop' as const, id: s.id })) ?? [];
+			else if (selectedDetail?.kind === 'vehicle')
+				stopContext = [...selectedDetail.pastStops, ...selectedDetail.nextStops].map((s) => ({
+					kind: 'stop' as const,
+					id: s.id,
+				}));
+		}
 		selectionController.selectFromDetail(next);
 	}
 
@@ -412,6 +426,20 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 			else selectFromDetail(next);
 		},
 		back: goBackDetail,
+		forward: selectionController.goForward,
+		get canGoForward() {
+			return selectionController.canGoForward;
+		},
+		get adjacent() {
+			const vehicle = selected?.kind === 'vehicle' ? live.index.byVehicleId.get(selected.id) : null;
+			const items: MapSelection[] = vehicle?.route
+				? (live.vehicles?.vehicles ?? [])
+						.filter((v) => v.route === vehicle.route)
+						.sort((a, b) => a.id.localeCompare(b.id))
+						.map((v) => ({ kind: 'vehicle', id: v.id }))
+				: [...stopContext];
+			return neighbors(selected, items);
+		},
 		close: closeDetail,
 		setHovered: selectionController.setHovered,
 		applyFilter: applyDetailFilter,

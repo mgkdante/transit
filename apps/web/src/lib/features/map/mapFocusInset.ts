@@ -55,7 +55,7 @@ const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
 	},
 	rootFontSize: () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
 	bottomSheetHeight: () => {
-		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
+		const sheet = document.querySelector('[data-slot="bottom-sheet"][data-state="open"]');
 		return sheet ? sheet.getBoundingClientRect().height : null;
 	},
 	requestFrame: (callback) => requestAnimationFrame(callback),

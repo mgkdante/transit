@@ -98,6 +98,7 @@ describe('map focus inset arithmetic', () => {
 		hero.append(head);
 		const sheet = document.createElement('div');
 		sheet.dataset.slot = 'bottom-sheet';
+		sheet.dataset.state = 'open';
 		vi.spyOn(sheet, 'getBoundingClientRect').mockReturnValue(rect(390, 717));
 		document.body.append(sheet);
 
@@ -187,6 +188,7 @@ describe('map focus inset arithmetic', () => {
 		vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect(1040, 800));
 		const sheet = document.createElement('div');
 		sheet.dataset.slot = 'bottom-sheet';
+		sheet.dataset.state = 'open';
 		vi.spyOn(sheet, 'getBoundingClientRect').mockReturnValue(rect(420, 320));
 		document.body.append(sheet);
 
@@ -195,6 +197,8 @@ describe('map focus inset arithmetic', () => {
 			bottomOcclusion: 320,
 			pointOffset: [-37, -160],
 		});
+		sheet.dataset.state = 'closed';
+		expect(measureMapFocusInset(map).bottomOcclusion).toBe(0);
 	});
 });
 
