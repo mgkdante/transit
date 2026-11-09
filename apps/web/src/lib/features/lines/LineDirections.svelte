@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { stopNameFallback } from '#lib/site/absence.ts';
@@ -53,7 +54,9 @@
 										<span class="sr-only">{copy.viewStop} </span>
 										<span class="line-stop-seq">{stop.seq}</span>
 										<span class="line-stop-name"
-											>{stop.name ?? stopNameFallback(stop.id, locale)}</span
+											>{stop.name
+												? stopDisplayName(stop.name)
+												: stopNameFallback(stop.id, locale)}</span
 										>
 										<span class="line-stop-live">
 											{#if prediction}

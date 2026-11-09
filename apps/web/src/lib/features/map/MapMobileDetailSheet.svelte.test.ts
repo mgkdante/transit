@@ -1,3 +1,4 @@
+import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
@@ -305,4 +306,20 @@ describe('MapMobileDetailSheet', () => {
 
 		expect(document.querySelector('[data-slot="bottom-sheet-body"]')).not.toBeInTheDocument();
 	});
+});
+
+it.each(['en', 'fr'] as const)('gates mobile crowding for both providers in %s', async (locale) => {
+	for (const provider of ['octranspo', 'stm']) {
+		const view = render(MapMobileDetailSheet, {
+			props: baseProps({
+				locale,
+				selectedDetail: noTargetVehicle,
+				occupancyAvailable: provider === 'stm',
+			}),
+		});
+		await waitFor(() => expect(document.querySelector('[data-slot="detail-body"]')).not.toBeNull());
+		const labels = [...document.querySelectorAll('dt')].map((node) => node.textContent);
+		expect(labels.includes(MAP_SELECTION_DETAIL_COPY[locale].crowding)).toBe(provider === 'stm');
+		view.unmount();
+	}
 });

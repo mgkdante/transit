@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { formatUtc } from '#lib/utils/time.ts';
 	import {
@@ -78,7 +80,7 @@
 </script>
 
 {#snippet gridRouteCell(entry: ScheduleGridRow)}
-	<span class="schedule-route">{entry.route}</span>
+	<span class="schedule-route">{line(entry.route)}</span>
 {/snippet}
 
 {#snippet gridDestinationCell(entry: ScheduleGridRow)}
@@ -110,7 +112,8 @@
 {/snippet}
 
 {#snippet boardRouteCell(departure: ScheduleBoardRow)}
-	<span class="stop-departure-route">{departure.route ?? routeFallback}</span>
+	<span class="stop-departure-route">{departure.route ? line(departure.route) : routeFallback}</span
+	>
 {/snippet}
 
 {#snippet boardDepartureCell(departure: ScheduleBoardRow)}

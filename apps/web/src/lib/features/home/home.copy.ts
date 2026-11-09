@@ -84,8 +84,8 @@ export interface HomeGroup {
 	readonly entries: readonly HomeEntry[];
 }
 
-export function homeGroups(t: HomeCopy): readonly HomeGroup[] {
-	return [
+export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGroup[] {
+	const groups: readonly HomeGroup[] = [
 		{
 			key: 'where-bus',
 			question: () => t.qWhere,
@@ -96,8 +96,12 @@ export function homeGroups(t: HomeCopy): readonly HomeGroup[] {
 					tempo: 'now',
 					title: { fr: 'Carte du réseau', en: 'Network map' },
 					desc: {
-						fr: 'Consultez les positions reçues et les avis de service. Sélectionnez un marqueur pour voir ses détails.',
-						en: 'Explore reported vehicle positions and service alerts. Select a marker to inspect its details.',
+						fr: alertsAvailable
+							? 'Consultez les positions reçues et les avis de service. Sélectionnez un marqueur pour voir ses détails.'
+							: 'Consultez les positions reçues. Sélectionnez un marqueur pour voir ses détails.',
+						en: alertsAvailable
+							? 'Explore reported vehicle positions and service alerts. Select a marker to inspect its details.'
+							: 'Explore reported vehicle positions. Select a marker to inspect its details.',
 					},
 				},
 				{
@@ -221,6 +225,12 @@ export function homeGroups(t: HomeCopy): readonly HomeGroup[] {
 			],
 		},
 	];
+	return groups.map((group) => ({
+		...group,
+		entries: group.entries.filter(
+			(entry) => alertsAvailable || !(entry.kind === 'link' && entry.href === '/alerts'),
+		),
+	}));
 }
 
 export const HOME_FILTER_COUNT_LABEL: Readonly<

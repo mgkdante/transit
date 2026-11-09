@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { clock } from '@yesid/ui/state';
 	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -133,9 +136,11 @@
 		seed: () => stopSeed,
 	});
 	const articleTitle = $derived(
-		seed.name.trim() === id && stop.data?.id === id
-			? stop.data.name?.trim() || seed.name
-			: seed.name,
+		stopDisplayName(
+			seed.name.trim() === id && stop.data?.id === id
+				? stop.data.name?.trim() || seed.name
+				: seed.name,
+		),
 	);
 
 	const stopAlerts = $derived(
@@ -397,7 +402,7 @@
 									<SectionLabel text={t.info.routesServed} variant="metric" />
 									<ul class="stop-info-route-chips">
 										{#each s.routes_served ?? [] as route (route)}
-											<li><Badge variant="tag" size="sm">{route}</Badge></li>
+											<li><Badge variant="tag" size="sm">{line(route)}</Badge></li>
 										{/each}
 									</ul>
 								</div>
@@ -567,7 +572,7 @@
 															pressed={routeFilter === route}
 															onclick={() => (routeFilter = routeFilter === route ? null : route)}
 														>
-															{route}
+															{line(route)}
 														</ToggleChip>
 													{/each}
 												</div>

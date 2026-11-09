@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
@@ -141,6 +142,12 @@
 
 	const live = createLiveStore(manifest, {
 		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
+	});
+	const occupancyAvailable = $derived(
+		hasOccupancy(manifest.provider, live.vehicles?.vehicles ?? []),
+	);
+	$effect(() => {
+		if (!occupancyAvailable && filters.occupancy.length) filters.setOccupancy([]);
 	});
 	function reportMapCleanupFailure(error: unknown): void {
 		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
@@ -469,7 +476,7 @@
 		resizable
 	>
 		{#if selectedDetail}
-			<MapSelectionDetail
+			<MapSelectionDetail {occupancyAvailable}
 				detail={selectedDetail}
 				alertsStale={live.familyStates.alerts.health.notice !== null}
 				alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
@@ -514,6 +521,7 @@
 {/snippet}
 {#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
+		{occupancyAvailable}
 		store={filters}
 		{alertsAvailable}
 		{locale}
@@ -600,6 +608,7 @@
 
 	{#if detailOpen && !desktop.current}
 		<MapMobileDetailSheet
+			{occupancyAvailable}
 			bind:open={
 				() => session.detailOpen,
 				(next) => {

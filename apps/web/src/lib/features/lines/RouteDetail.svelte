@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
@@ -113,7 +115,10 @@
 	});
 	const articleTitle = $derived.by(() => {
 		const longName = route.data?.id === id ? route.data.long?.trim() : null;
-		return seed.name.trim() === id && longName ? `${id} ${longName}` : seed.name;
+		if (seed.name.trim() === id && longName) return `${line(id)} ${longName}`;
+		return line(id) !== id && seed.name.startsWith(id)
+			? line(id) + seed.name.slice(id.length)
+			: seed.name;
 	});
 	const reliability = createResource<RouteReliability | null>(
 		() => {

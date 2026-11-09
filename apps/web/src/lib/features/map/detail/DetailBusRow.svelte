@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
@@ -32,7 +34,7 @@
 	}
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${line(vehicle.route)}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
 	);
 </script>
 
@@ -48,7 +50,7 @@
 	onblur={() => preview(pointerPreview, false)}
 >
 	<strong>{vehicle.id}</strong>
-	<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
+	<span>{vehicle.route ? `${t.route} ${line(vehicle.route)}` : t.bus}</span>
 	<small>
 		<StatusBadge
 			status={vehicle.status}

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { breadcrumbCopy } from '#lib/components/surface/breadcrumb.copy.ts';
@@ -59,7 +62,7 @@
 		return m;
 	});
 
-	const stopNameFor = (stopId: string): string => stopNameById[stopId] ?? stopId;
+	const stopNameFor = (stopId: string): string => stopDisplayName(stopNameById[stopId] ?? stopId);
 	const reportedPredictions = $derived(trip?.stops ?? []);
 	const predictionCount = $derived(reportedPredictions.length);
 	const lastReportedStopName = $derived.by<string | null>(() => {
@@ -196,9 +199,9 @@
 								<a
 									class="trip-route-link"
 									href={routeHref(trip.route!)}
-									aria-label={t.viewRoute(trip.route!)}
+									aria-label={t.viewRoute(line(trip.route!))}
 								>
-									<span class="trip-route-code">{trip.route}</span>
+									<span class="trip-route-code">{line(trip.route ?? '')}</span>
 									<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 								</a>
 							</MaybeValue>

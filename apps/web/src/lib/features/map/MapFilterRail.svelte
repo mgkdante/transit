@@ -15,6 +15,7 @@
 	interface Props {
 		copy: MapCopy;
 		alertsAvailable?: boolean;
+		occupancyAvailable?: boolean;
 		activeCount: number;
 		hasFilters: boolean;
 		controlsId: string;
@@ -25,6 +26,7 @@
 
 	let {
 		alertsAvailable = true,
+		occupancyAvailable = true,
 		copy,
 		activeCount,
 		hasFilters,
@@ -97,15 +99,15 @@
 		<GaugeIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.status}</span>
 	</button>
-	<button
-		type="button"
-		class="mf-rail-glyph"
-		aria-label={copy.modeOccupancy}
-		onclick={() => onactivate('crowding')}
-	>
-		<UsersRoundIcon size={16} strokeWidth={2.25} aria-hidden="true" />
-		<span class="mf-rail-abbr">{copy.rail.crowding}</span>
-	</button>
+	{#if occupancyAvailable}<button
+			type="button"
+			class="mf-rail-glyph"
+			aria-label={copy.modeOccupancy}
+			onclick={() => onactivate('crowding')}
+		>
+			<UsersRoundIcon size={16} strokeWidth={2.25} aria-hidden="true" />
+			<span class="mf-rail-abbr">{copy.rail.crowding}</span>
+		</button>{/if}
 
 	{#if hasFilters}
 		<button type="button" class="mf-rail-clear" aria-label={copy.filterClear} onclick={onclear}>

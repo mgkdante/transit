@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { SvelteMap } from 'svelte/reactivity';
 	import LocateFixedIcon from '@lucide/svelte/icons/locate-fixed';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -249,7 +250,7 @@
 									onstopselect(stop);
 								}}
 							>
-								<span>{stop.name}</span>
+								<span>{stopDisplayName(stop.name)}</span>
 								<small>{formatDistance(stop.distanceM)}</small>
 							</button>
 						{/each}
