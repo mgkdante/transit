@@ -12,21 +12,15 @@
 	let { children, status, action, class: className }: EntityResultRowProps = $props();
 </script>
 
-<div class="entity-result-container">
-	<div class={cn('entity-result-row', className)} data-slot="entity-result-row">
-		<div class="entity-result-main" data-slot="entity-result-main">{@render children()}</div>
-		{#if status}
-			<div class="entity-result-status" data-slot="entity-result-status">{@render status()}</div>
-		{/if}
-		<div class="entity-result-action" data-slot="entity-result-action">{@render action()}</div>
-	</div>
+<div class={cn('entity-result-row', className)} data-slot="entity-result-row">
+	<div class="entity-result-main" data-slot="entity-result-main">{@render children()}</div>
+	{#if status}
+		<div class="entity-result-status" data-slot="entity-result-status">{@render status()}</div>
+	{/if}
+	<div class="entity-result-action" data-slot="entity-result-action">{@render action()}</div>
 </div>
 
 <style>
-	.entity-result-container {
-		container-type: inline-size;
-		min-inline-size: 0;
-	}
 	.entity-result-row {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto auto;
@@ -51,7 +45,7 @@
 		flex: none;
 	}
 
-	@container (max-width: 32rem) {
+	@media (max-width: 32rem) {
 		.entity-result-row {
 			grid-template-columns: minmax(0, 1fr) auto;
 			grid-template-areas:

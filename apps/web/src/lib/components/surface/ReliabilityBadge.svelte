@@ -34,7 +34,7 @@
 	const hedgeLabel = $derived(snapshot.hedge ?? hedges[locale]);
 </script>
 
-{#if hedged}
+{#if show && hedged}
 	<span
 		data-slot="reliability-hedge"
 		data-status={snapshot.verdict}

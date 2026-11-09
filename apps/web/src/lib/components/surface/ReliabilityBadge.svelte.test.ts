@@ -55,12 +55,7 @@ for (const locale of ['en', 'fr'] as const)
 					: undefined;
 				const { container } = render(ReliabilityBadge, {
 					props: {
-						snapshot: snap({
-							phase: verdict === 'absent' ? 'empty' : 'ready',
-							otpPct: verdict === 'absent' ? null : 82,
-							verdict,
-							hedge,
-						}),
+						snapshot: snap({ phase: 'ready', otpPct: 82, verdict, hedge }),
 						locale,
 					},
 				});
@@ -80,3 +75,14 @@ for (const locale of ['en', 'fr'] as const)
 				expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
 			},
 		);
+
+it('renders nothing for an absent verdict without a percentage', () => {
+	const { container } = render(ReliabilityBadge, {
+		props: {
+			snapshot: snap({ phase: 'empty', otpPct: null, verdict: 'absent' }),
+			locale: 'en',
+		},
+	});
+	expect(container.querySelector('[data-slot="reliability-hedge"]')).toBeNull();
+	expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
+});
