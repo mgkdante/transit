@@ -3,9 +3,11 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 export const tripCopy = defineCopy({
 	fr: {
 		kicker: 'TRAJET',
-		crumbHome: 'Accueil',
+		back: 'Retour à l’accueil',
+		keywordsLabel: 'Mots-clés',
+		keywords: ['Trajet', 'Prédictions', 'Arrêts'],
 		heading: (id: string) => `Trajet ${id}`,
-		subheading: '// PRÉDICTIONS',
+		subheading: 'Prédictions communiquées pour ce trajet',
 		route: 'Ligne',
 		viewRoute: (route: string) => `Voir la ligne ${route}`,
 		verdictHeading: 'Verdict',
@@ -42,9 +44,11 @@ export const tripCopy = defineCopy({
 	},
 	en: {
 		kicker: 'TRIP',
-		crumbHome: 'Home',
+		back: 'Back to home',
+		keywordsLabel: 'Keywords',
+		keywords: ['Trip', 'Predictions', 'Stops'],
 		heading: (id) => `Trip ${id}`,
-		subheading: '// PREDICTIONS',
+		subheading: 'Reported predictions for this trip',
 		route: 'Line',
 		viewRoute: (route) => `View line ${route}`,
 		verdictHeading: 'Verdict',

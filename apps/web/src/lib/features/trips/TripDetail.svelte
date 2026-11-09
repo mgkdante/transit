@@ -3,7 +3,6 @@
 	import { liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
-	import { breadcrumbCopy } from '#lib/components/surface/breadcrumb.copy.ts';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
 	import { createLiveResource } from '#lib/v1/live/resource.ts';
@@ -11,11 +10,10 @@
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import type { Trip, StopsIndex } from '#lib/v1/index.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
-	import { Surface, Breadcrumb, Masthead } from '@yesid/ui/layout';
+	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import { ArticleSectionStack, ArticleKeywords } from '#lib/components/layout/index.ts';
 	import { ResourceBoundary, FreshnessStamp } from '#lib/components/surface/index.ts';
-	import type { BreadcrumbTrailItem } from '#lib/seo/routeSeo.ts';
-	import { SectionLabel, SectionHeading, CornerMeta } from '@yesid/ui/brand';
-	import { cornerMetaLabels } from '#lib/components/brand/index.ts';
+	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
 	import { StatusBadge } from '#lib/components/dataviz/index.ts';
 	import MapDrilldownLink from '#lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue } from '#lib/components/edge/index.ts';
@@ -37,10 +35,6 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
-	const trail = $derived<BreadcrumbTrailItem[]>([
-		{ name: t.crumbHome, path: '/' },
-		{ name: t.heading(id), path: `/trip/${encodeURIComponent(id)}` },
-	]);
 	const manifest = getV1Context().manifest;
 	const { live, resource: trips } = createLiveResource(manifest, 'trips');
 
@@ -78,11 +72,7 @@
 	const timeLabel = (iso: string): string =>
 		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
 	const generatedUtc = $derived(presentation.publicationUtc);
-	const cm = cornerMetaLabels[locale];
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const cornerGeneratedStamp = $derived(
-		generatedUtc != null ? formatUtc(generatedUtc, locale) : null,
-	);
 </script>
 
 {#snippet etaInfo()}
@@ -91,7 +81,7 @@
 
 {#snippet reportFreshness()}
 	<FreshnessStamp
-		variant="live"
+		variant={presentation.notice.kind === 'none' ? 'live' : 'updated'}
 		presentation={presentation.stamp}
 		class="trip-report-stamp"
 		label={t.latestReport}
@@ -99,171 +89,164 @@
 	/>
 {/snippet}
 
-<Surface as="div" data-slot="trip-detail">
-	<ResourceBoundary resource={trips} lang={locale}>
-		{#snippet children(_file)}
-			<Breadcrumb
-				items={trail.map((crumb) => ({ name: crumb.name, href: localizeHref(crumb.path, locale) }))}
-				label={breadcrumbCopy[locale].label}
-			/>
-			{#if presentation.notice.kind !== 'none'}
-				<StateNotice
-					title={presentation.notice.message}
-					body={presentation.notice.body}
-					tone={presentation.notice.tone}
-					presentation="silo"
-					role="status"
-					aria-live="polite"
-					data-testid="trip-report-notice"
-				/>
-			{/if}
-			{#if trip == null}
-				<div class="trip-standdown" data-testid="trip-standdown">
-					<SectionLabel text={t.kicker} variant="station" />
-
-					<SectionHeading heading={t.standDownHeading} level={1} dot />
-					<p class="trip-standdown-body">{t.standDownBody}</p>
-					{@render reportFreshness()}
-				</div>
-			{:else}
-				<Masthead kicker={t.kicker} heading={t.heading(id)} subheading={t.subheading}>
-					{#snippet cornerMeta()}
-						<CornerMeta>
-							{#snippet topLeft()}<span class="trip-corner">{cm.trip} · {id}</span>{/snippet}
-							{#snippet topRight()}{#if cornerGeneratedStamp}<span class="trip-corner"
-										>{cm.generated} · {cornerGeneratedStamp}</span
-									>{/if}{/snippet}
-							{#snippet bottomLeft()}<span class="trip-corner">{cm.provider} · {shortName}</span
-								>{/snippet}
-						</CornerMeta>
-					{/snippet}
-					{#snippet meta()}
+<ResourceBoundary resource={trips} lang={locale}>
+	{#snippet children(_file)}
+		<DetailFrame data-slot="trip-detail" measure="46rem">
+			{#snippet header()}
+				<ArticleHeader
+					category={t.kicker}
+					title={trip ? t.heading(id) : t.standDownHeading}
+					subtitle={t.subheading}
+					backHref={localizeHref('/', locale)}
+					backLabel={t.back}
+					meta={[shortName]}
+					titleId="trip-title"
+				>
+					{#snippet actions()}
 						<div class="trip-head-actions">
-							{#if generatedUtc != null}
-								{@render reportFreshness()}
-							{/if}
-							<MapDrilldownLink
-								href={localizeHref(mapHrefFor({ trip: id }, locale), locale)}
-								context={t.viewTripOnMap(id)}
-								label={t.viewOnMap}
-							/>
+							{#if generatedUtc != null}{@render reportFreshness()}{/if}
+							{#if trip}<MapDrilldownLink
+									href={localizeHref(mapHrefFor({ trip: id }, locale), locale)}
+									context={t.viewTripOnMap(id)}
+									label={t.viewOnMap}
+								/>{/if}
 						</div>
 					{/snippet}
-				</Masthead>
-
-				<div class="trip-body">
-					<div class="trip-summary">
-						<div class="trip-summary-cell">
-							<span class="trip-cell-head">
-								<SectionLabel text={t.verdictHeading} variant="metric" />
-								<MetricInfo
-									metricKey="avgDelay"
-									{locale}
-									name={metricName('avgDelay', locale)}
-									side="bottom"
-								/>
-							</span>
-
-							<span class="trip-verdict">
-								<StatusBadge
-									status={trip.status}
-									label={t.status[trip.status]}
-									mode={unknownStatusAndDelay ? 'dot' : 'legend'}
-									aria-hidden={unknownStatusAndDelay || undefined}
-								/>
-								<span class="trip-verdict-delay">
-									<MaybeValue
-										value={delayMeasurement(trip.delay_min)}
-										variant={unknownStatusAndDelay ? 'row' : 'inline'}
-										reason={liveAbsenceReason('trip-delay', { familyStates: live.familyStates })}
+				</ArticleHeader>
+			{/snippet}
+			{#snippet left()}<ArticleKeywords label={t.keywordsLabel} keywords={t.keywords} />{/snippet}
+			<ArticleSectionStack>
+				{#if presentation.notice.kind !== 'none'}
+					<StateNotice
+						title={presentation.notice.message}
+						body={presentation.notice.body}
+						tone={presentation.notice.tone}
+						presentation="silo"
+						role="status"
+						aria-live="polite"
+						data-testid="trip-report-notice"
+					/>
+				{/if}
+				{#if trip == null}
+					<div class="trip-standdown" data-testid="trip-standdown">
+						<p class="trip-standdown-body">{t.standDownBody}</p>
+					</div>
+				{:else}
+					<div class="trip-body">
+						<div class="trip-summary">
+							<div class="trip-summary-cell">
+								<span class="trip-cell-head">
+									<SectionLabel text={t.verdictHeading} variant="metric" />
+									<MetricInfo
+										metricKey="avgDelay"
 										{locale}
+										name={metricName('avgDelay', locale)}
+										side="bottom"
 									/>
 								</span>
-							</span>
-						</div>
 
-						{#if lastReportedStopName != null}
-							<div class="trip-summary-cell">
-								<SectionLabel text={t.lastReportedStop} variant="metric" />
-								<span class="trip-last-stop">
-									<span class="trip-last-stop-name">{lastReportedStopName}</span>
-									<span class="trip-prediction-count">{t.predictionCount(predictionCount)}</span>
+								<span class="trip-verdict">
+									<StatusBadge
+										status={trip.status}
+										label={t.status[trip.status]}
+										mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+										aria-hidden={unknownStatusAndDelay || undefined}
+									/>
+									<span class="trip-verdict-delay">
+										<MaybeValue
+											value={delayMeasurement(trip.delay_min)}
+											variant={unknownStatusAndDelay ? 'row' : 'inline'}
+											reason={liveAbsenceReason('trip-delay', { familyStates: live.familyStates })}
+											{locale}
+										/>
+									</span>
 								</span>
 							</div>
-						{/if}
 
-						<div class="trip-summary-cell">
-							<SectionLabel text={t.route} variant="metric" />
-							<MaybeValue
-								present={trip.route != null}
-								reason={liveAbsenceReason('trip-route', { familyStates: live.familyStates })}
-								{locale}
-							>
-								<a
-									class="trip-route-link"
-									href={routeHref(trip.route!)}
-									aria-label={t.viewRoute(trip.route!)}
+							{#if lastReportedStopName != null}
+								<div class="trip-summary-cell">
+									<SectionLabel text={t.lastReportedStop} variant="metric" />
+									<span class="trip-last-stop">
+										<span class="trip-last-stop-name" title={lastReportedStopName}
+											>{lastReportedStopName}</span
+										>
+										<span class="trip-prediction-count">{t.predictionCount(predictionCount)}</span>
+									</span>
+								</div>
+							{/if}
+
+							<div class="trip-summary-cell">
+								<SectionLabel text={t.route} variant="metric" />
+								<MaybeValue
+									present={trip.route != null}
+									reason={liveAbsenceReason('trip-route', { familyStates: live.familyStates })}
+									{locale}
 								>
-									<span class="trip-route-code">{trip.route}</span>
-									<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-								</a>
-							</MaybeValue>
+									<a
+										class="trip-route-link"
+										href={routeHref(trip.route!)}
+										aria-label={t.viewRoute(trip.route!)}
+									>
+										<span class="trip-route-code">{trip.route}</span>
+										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+									</a>
+								</MaybeValue>
+							</div>
 						</div>
-					</div>
 
-					<div class="trip-stops-section">
-						<SectionHeading level={2} overline={t.reportedPredictions} explainer={etaInfo} />
-						{#if reportedPredictions.length > 0}
-							<ol class="trip-stops" aria-label={t.stopsListLabel}>
-								{#each reportedPredictions as stop, si (stop.stop + '-' + si)}
-									<li class="trip-stop">
-										<a class="trip-stop-link" href={stopHref(stop.stop)}>
-											<span class="sr-only">{t.viewStop} </span>
-											<span class="trip-stop-name">{stopNameFor(stop.stop)}</span>
-											<span class="trip-stop-meta">
-												<time class="trip-stop-eta" datetime={stop.eta_utc}>
-													{timeLabel(stop.eta_utc)}
-												</time>
-												<span class="trip-stop-prediction">{t.predictionLabel}</span>
-
-												<MaybeValue
-													present={stop.delay_min != null}
-													reason={liveAbsenceReason('trip-delay', {
-														familyStates: live.familyStates,
-													})}
-													{locale}
+						<section class="trip-stops-section" aria-label={t.reportedPredictions}>
+							<SectionHeading level={2} overline={t.reportedPredictions} explainer={etaInfo} />
+							{#if reportedPredictions.length > 0}
+								<ol class="trip-stops" aria-label={t.stopsListLabel}>
+									{#each reportedPredictions as stop, si (stop.stop + '-' + si)}
+										<li class="trip-stop">
+											<a class="trip-stop-link" href={stopHref(stop.stop)}>
+												<span class="sr-only">{t.viewStop} </span>
+												<span class="trip-stop-name" title={stopNameFor(stop.stop)}
+													>{stopNameFor(stop.stop)}</span
 												>
-													<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
-														{delayLabel(stop.delay_min, t)}
-													</span>
-												</MaybeValue>
-											</span>
-											<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-										</a>
-									</li>
-								{/each}
-							</ol>
-						{:else}
-							<StateNotice
-								title={t.noPredictions}
-								presentation="silo"
-								role="status"
-								aria-live="polite"
-								data-testid="trip-no-stops"
-							/>
-						{/if}
-						<p class="trip-prediction-caveat">{t.predictionCaveat}</p>
+												<span class="trip-stop-meta">
+													<time class="trip-stop-eta" datetime={stop.eta_utc}>
+														{timeLabel(stop.eta_utc)}
+													</time>
+													<span class="trip-stop-prediction">{t.predictionLabel}</span>
+
+													<MaybeValue
+														present={stop.delay_min != null}
+														reason={liveAbsenceReason('trip-delay', {
+															familyStates: live.familyStates,
+														})}
+														{locale}
+													>
+														<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
+															{delayLabel(stop.delay_min, t)}
+														</span>
+													</MaybeValue>
+												</span>
+												<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+											</a>
+										</li>
+									{/each}
+								</ol>
+							{:else}
+								<StateNotice
+									title={t.noPredictions}
+									presentation="silo"
+									role="status"
+									aria-live="polite"
+									data-testid="trip-no-stops"
+								/>
+							{/if}
+							<p class="trip-prediction-caveat">{t.predictionCaveat}</p>
+						</section>
 					</div>
-				</div>
-			{/if}
-		{/snippet}
-	</ResourceBoundary>
-</Surface>
+				{/if}
+			</ArticleSectionStack>
+		</DetailFrame>
+	{/snippet}
+</ResourceBoundary>
 
 <style>
-	.trip-corner {
-		white-space: nowrap;
-	}
 	.trip-standdown {
 		display: flex;
 		flex-direction: column;
@@ -303,6 +286,8 @@
 		gap: 1.5rem 2.5rem;
 	}
 	.trip-summary-cell {
+		min-width: 0;
+		max-width: 100%;
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
@@ -367,6 +352,7 @@
 		gap: 0.125rem;
 	}
 	.trip-last-stop-name {
+		min-width: 0;
 		font-size: var(--text-body);
 		font-weight: 600;
 		color: var(--foreground);
@@ -399,16 +385,24 @@
 	}
 	.trip-stop-link {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto auto;
+		grid-template-columns: minmax(0, max-content) auto auto;
+		justify-content: start;
 		width: calc(100% + 1rem);
+	}
+	.trip-stop-name,
+	.trip-last-stop-name {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		overflow-wrap: anywhere;
 	}
 	.trip-stop-name {
 		font-family: var(--font-mono);
 		font-size: var(--text-body);
 		color: var(--foreground);
 		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 		transition: color var(--duration-fast) var(--ease-out);
 	}
 	.trip-stop-meta {

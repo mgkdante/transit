@@ -282,10 +282,10 @@ describe('EntityDetail — signage-active tab pattern', () => {
 });
 
 describe('EntityDetail — optional article cover', () => {
-	it('preserves breadcrumb, back, kicker, header, banner, tabs, and separator in classic mode', () => {
+	it('preserves back, kicker, header, banner, tabs, and separator in classic mode', () => {
 		const { container } = render(EntityDetailHarness);
 
-		expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument();
+		expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Back to lines' })).toHaveAttribute('href', '/lines');
 		expect(screen.getByText('LINE')).toBeInTheDocument();
 		expect(screen.getByTestId('classic-header')).toBeInTheDocument();

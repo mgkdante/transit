@@ -5,6 +5,7 @@ import {
 	resolveProvider,
 	providerHref,
 	providerHasAlerts,
+	routeHasNoLiveData,
 } from './providers';
 
 vi.mock('$app/env/public', async () => ({
@@ -88,4 +89,31 @@ it('reports unavailable discovery without fetching default-provider data', async
 	const fetcher = vi.fn(async () => new Response(null, { status: 503 }));
 	await expect(loadProviderCatalog(fetcher)).rejects.toThrow('Provider catalog unavailable');
 	expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+	['stm', 1, true],
+	['stm', 0, false],
+	['stm', 3, false],
+	['octranspo', 0, true],
+	['octranspo', 1, false],
+	['octranspo', 3, false],
+	['unknown', 0, false],
+	['constructor', 0, false],
+	['__proto__', 1, false],
+	[undefined, 1, false],
+	['stm', null, false],
+] as const)(
+	'classifies provider %s route type %s without crossing providers',
+	(provider, type, expected) => {
+		expect(routeHasNoLiveData(provider, type)).toBe(expected);
+	},
+);
+it.each([
+	['stm', 1, 'metro_realtime'],
+	['octranspo', 0, 'otrain_realtime'],
+] as const)('uses published gaps when available for %s', (provider, type, gap) => {
+	expect(routeHasNoLiveData(provider, type, [gap])).toBe(true);
+	expect(routeHasNoLiveData(provider, type, [])).toBe(false);
+	expect(routeHasNoLiveData(provider, type, ['unrelated'])).toBe(false);
 });
