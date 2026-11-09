@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -49,7 +50,6 @@
 	} from '#lib/components/layout/index.ts';
 	import {
 		DashboardGrid,
-		ArticleHeader,
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,

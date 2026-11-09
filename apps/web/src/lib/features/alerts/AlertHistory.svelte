@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
@@ -28,12 +29,7 @@
 		ArticleSectionStack,
 		type ArticleMetaEntry,
 	} from '#lib/components/layout/index.ts';
-	import {
-		ArticleHeader,
-		DetailFrame,
-		SurfaceRail,
-		type SurfaceRailContext,
-	} from '@yesid/ui/layout';
+	import { DetailFrame, SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
