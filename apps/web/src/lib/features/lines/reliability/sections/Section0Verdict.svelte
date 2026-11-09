@@ -20,7 +20,7 @@
 	} from '#lib/features/reliability/shiftGrains.ts';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict, VERDICT_RELIABLE_FLOOR } from '#lib/v1/verdict.ts';
+	import { VERDICT_RELIABLE_FLOOR } from '#lib/v1/verdict.ts';
 	import { selectBullet, verdictTone } from '../selectors/bullet';
 	import {
 		dailyPercentileCaption,
@@ -45,14 +45,7 @@
 	const estimatedPercentiles = $derived(
 		(headline.grain ?? mode) === 'week' || (headline.grain ?? mode) === 'month',
 	);
-	const verdict = $derived(
-		selectVerdict(
-			headline,
-			mode === 'range' ? mode : (headline.grain ?? mode),
-			locale,
-			copy.verdict,
-		),
-	);
+	const verdict = $derived(headline);
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });

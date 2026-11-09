@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { copy as MAP_COPY } from './map.copy';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Alert } from '#lib/v1/schemas/index.ts';
@@ -10,6 +12,7 @@
 	interface Props {
 		alerts: readonly Alert[] | null;
 		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		locale: Locale;
 		t: MapSelectionDetailCopy;
 		onalertselect?: (alert: Alert) => void;
@@ -19,6 +22,7 @@
 	let {
 		alerts,
 		alertsStale = false,
+		alertsAgeSeconds = null,
 		locale,
 		t,
 		onalertselect,
@@ -34,6 +38,11 @@
 
 <section class="map-alerts" aria-label={t.alerts}>
 	<h3>{t.alerts}</h3>
+	{#if alertsAgeSeconds != null}
+		<p class="map-alerts-age">
+			{MAP_COPY[locale].alertsChecked(formatRelativeSeconds(alertsAgeSeconds, locale))}
+		</p>
+	{/if}
 	{#if alerts == null}
 		<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
 	{:else if alerts.length > 0}
@@ -127,6 +136,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.map-alerts-age {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 	.map-alerts h3 {
 		display: flex;

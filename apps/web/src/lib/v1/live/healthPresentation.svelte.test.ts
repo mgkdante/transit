@@ -15,12 +15,11 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-it.each([
-	['en', 'Data may be out of date.'],
-	['fr', 'Les données peuvent ne plus être à jour.'],
-] as const)(
-	'renders a partial alert capture stall honestly in %s through the real store',
-	async (locale, message) => {
+// Glossary: Live age and the page banner never include service alerts; a stale
+// alert capture is reported beside the alerts, not as a page-level stall.
+it.each(['en', 'fr'] as const)(
+	'keeps the page banner idle when only the alert capture is stale in %s',
+	async (locale) => {
 		const now = new Date();
 		vi.spyOn(adapter.live, 'vehicles').mockResolvedValue(
 			VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] }),
@@ -32,11 +31,13 @@ it.each([
 				alerts: [],
 			}),
 		);
-		render(HealthPresentation, { props: { locale } });
-		await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(message));
-		expect(screen.getByRole('status')).not.toHaveTextContent(
-			/not responding|ne répond pas|Last update|Dernière mise à jour/,
-		);
+		const { container } = render(HealthPresentation, { props: { locale } });
+		const stamp = container.querySelector('[data-slot="freshness-stamp"]');
+		await waitFor(() => expect(stamp).toHaveAttribute('data-age-seconds'));
+		const banner = screen.getByRole('status');
+		expect(banner).toHaveAttribute('data-state', 'idle');
+		expect(banner.textContent?.trim()).toBe('');
+		expect(stamp).toHaveAttribute('data-stale', 'false');
 	},
 );
 
@@ -59,7 +60,7 @@ it.each(['en', 'fr'] as const)(
 	},
 );
 
-it('does not call the whole feed unresponsive while another family has never loaded', async () => {
+it('does not report a stall from stale alerts while vehicles have never loaded', async () => {
 	const now = new Date();
 	let finishVehicles!: (value: VehiclesFile) => void;
 	const pending = new Promise<VehiclesFile>((resolve) => {
@@ -76,10 +77,11 @@ it('does not call the whole feed unresponsive while another family has never loa
 	);
 	try {
 		render(HealthPresentation);
-		await waitFor(() =>
-			expect(screen.getByRole('status')).toHaveTextContent('Data may be out of date.'),
-		);
-		expect(screen.getByRole('status')).not.toHaveTextContent('not responding');
+		const banner = screen.getByRole('status');
+		await waitFor(() => expect(adapter.live.alerts).toHaveBeenCalled());
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(banner).toHaveAttribute('data-state', 'idle');
+		expect(banner).not.toHaveTextContent(/not responding|out of date/);
 	} finally {
 		finishVehicles(vehicles);
 		await pending;

@@ -1,3 +1,4 @@
+import { verdictForWindow } from '#lib/v1/verdict.ts';
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Section1WhenToRide from './Section1WhenToRide.svelte';
@@ -29,6 +30,7 @@ const vm = (
 	windowed: boolean,
 ): PunctualityVM => ({
 	headline: {
+		...verdictForWindow(null),
 		otpPct: null,
 		avgDelayMin: null,
 		p50Min: null,

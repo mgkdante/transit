@@ -43,6 +43,38 @@ _Avoid_: feed age, capture age
 How old the feed capture accepted into the report's serving data is. A newer download that could not be processed does not make that data current.
 _Avoid_: latest download age, publication age
 
+**Live age**:
+How old the live vehicle data on a page is: vehicle positions and the live metrics drawn from trip updates. It never includes service alerts, which carry their own age because they are checked less often.
+_Avoid_: latest data, headline age, freshness
+
+**Trip** (FR _trajet_):
+One scheduled run of a vehicle along a line, from its first stop to its last.
+_Avoid_: run, journey; in French, _voyage_
+
+**Reported position**:
+Where a vehicle said it was in its latest report.
+_Avoid_: raw position, actual position
+
+**Estimated position**:
+Where a vehicle probably is now, projected along its route from its reported position and corrected when the next report arrives. Shown only when the rider asks for it.
+_Avoid_: motion emulation, smooth mode, dead reckoning, interpolated position
+
+**Live notice**:
+The one message that tells a rider how far to trust the live data on a page, chosen from the feed health of the feed families that page shows: nothing to report, report behind, refresh unavailable, partial stall, whole-feed stall, unavailable, or no vehicles.
+_Avoid_: banner, banner state, edge state, alert (alerts are service messages from the agency)
+
+**Silent trip**:
+A trip the schedule says should be running now that has no vehicle reporting for it.
+_Avoid_: non-responding trip, ghost bus, missing vehicle
+
+**Not reporting**:
+A vehicle that has sent no report for more than 150 seconds. It concerns one vehicle; a silent trip concerns a scheduled trip.
+_Avoid_: silent vehicle, stale vehicle, offline
+
+**Out-of-service vehicle**:
+A vehicle that reports a position but is not assigned to any trip, usually parked or returning to the garage. It does not count toward coverage or the fleet in service.
+_Avoid_: unknown vehicle, idle bus, ghost
+
 **Partial stall**:
 One active feed family is stale while another is current or has not loaded yet. It cannot establish that the whole feed has stopped responding.
 _Avoid_: outage, whole-feed stall
