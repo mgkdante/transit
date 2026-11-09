@@ -5,6 +5,7 @@ import OutOfServiceVehicles from './OutOfServiceVehicles.svelte';
 const state = vi.hoisted(() => ({ vehicles: null as unknown, start: vi.fn(), stop: vi.fn() }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({ createLiveStore: vi.fn(() => state) }));
 import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+import { liveReader } from '#lib/v1/adapter/index.ts';
 afterEach(cleanup);
 const manifest = ManifestSchema.parse({
 	attribution: 'test',
@@ -38,9 +39,11 @@ describe.each(['stm', 'octranspo'])('%s status count', (provider) => {
 				locale === 'en' ? 'Out-of-service vehicles: 2' : /Véhicules hors service\s: 2/,
 			),
 		).toBeInTheDocument();
-		expect(createLiveStore).toHaveBeenLastCalledWith(expect.objectContaining({ provider }), {
-			families: ['vehicles'],
-		});
+		expect(createLiveStore).toHaveBeenLastCalledWith(
+			expect.objectContaining({ provider }),
+			liveReader,
+			{ families: ['vehicles'] },
+		);
 		view.unmount();
 		expect(state.stop).toHaveBeenCalled();
 	});
