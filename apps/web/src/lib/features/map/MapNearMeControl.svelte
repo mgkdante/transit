@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { readableName } from '#lib/components/surface/readableName.ts';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { SvelteMap } from 'svelte/reactivity';
 	import LocateFixedIcon from '@lucide/svelte/icons/locate-fixed';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -250,7 +251,9 @@
 									onstopselect(stop);
 								}}
 							>
-								<span class="readable-name" title={stop.name} use:readableName>{stop.name}</span>
+								<span class="readable-name" title={stopDisplayName(stop.name)} use:readableName
+									>{stopDisplayName(stop.name)}</span
+								>
 								<small>{formatDistance(stop.distanceM)}</small>
 							</button>
 						{/each}

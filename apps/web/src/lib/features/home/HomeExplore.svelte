@@ -18,17 +18,18 @@
 
 	interface Props {
 		readonly locale: Locale;
+		readonly alertsAvailable?: boolean;
 		readonly copy: HomeCopy;
 	}
 
-	let { locale, copy: t }: Props = $props();
+	let { locale, copy: t, alertsAvailable = true }: Props = $props();
 
 	function entryHref(entry: HomeEntry): string {
 		const href = entry.kind === 'surface' ? routeFor(entry.target) : entry.href;
 		return localizeHref(href, locale);
 	}
 
-	const groups = $derived(homeGroups(t));
+	const groups = $derived(homeGroups(t, alertsAvailable));
 
 	let activeQuestion = $state<HomeGroup['key'] | null>(null);
 	let activeTempo = $state<HomeTempo | null>(null);

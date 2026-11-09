@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { readableName } from '#lib/components/surface/readableName.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { cn } from '#lib/utils/index.ts';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor, type SurfaceTarget } from '#lib/nav/index.ts';
@@ -76,7 +78,7 @@
 		{#if routes && routes.length > 0}
 			<span class="entity-row-routes">
 				{#each routes as route (route)}
-					<span class="entity-row-route">{route}</span>
+					<span class="entity-row-route">{line(route)}</span>
 				{/each}
 			</span>
 		{/if}
