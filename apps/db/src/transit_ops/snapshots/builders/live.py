@@ -86,9 +86,20 @@ def _feed_captured_utc(conn: Connection, provider_id: str, endpoint_key: str) ->
     return _opt_iso(row["captured_utc"]) if row else None
 
 
+# Use the departure view's Silver source, but compare predictions to each
+# vehicle's capture clock. Resolve the latest feed once for the whole fleet.
 _VEHICLES_SQL = named_query(
     "live.vehicles",
     """
+    WITH latest_trip_feed AS MATERIALIZED (
+        SELECT rt_feed_snapshot_id
+        FROM silver.rt_feed_snapshots
+        WHERE provider_id = :provider_id
+          AND endpoint_key = 'trip_updates'
+          AND source_realtime_snapshot_id IS NOT NULL
+        ORDER BY captured_at_utc DESC, source_realtime_snapshot_id DESC
+        LIMIT 1
+    )
     SELECT cvm.vehicle_id                AS id,
            cvm.route_id                  AS route,
            cvm.trip_id                   AS trip,
@@ -98,7 +109,7 @@ _VEHICLES_SQL = named_query(
            lvs.speed                     AS speed_ms,
            cvm.status_band               AS status_band,
            lvs.occupancy_status          AS occupancy_status,
-           cvm.stop_id                   AS next_stop,
+           COALESCE(cvm.stop_id, upcoming.stop_id) AS next_stop,
            cvm.captured_at_utc           AS updated_utc,
            lvs.position_timestamp_utc    AS reported_utc,
            cvm.trip_avg_delay_seconds    AS delay_seconds
@@ -107,6 +118,24 @@ _VEHICLES_SQL = named_query(
         ON  lvs.provider_id          = cvm.provider_id
         AND lvs.realtime_snapshot_id = cvm.realtime_snapshot_id
         AND lvs.entity_index         = cvm.entity_index
+    LEFT JOIN LATERAL (
+        SELECT stu.stop_id
+        FROM latest_trip_feed AS latest
+        JOIN silver.rt_trip_updates AS rtu
+          ON rtu.rt_feed_snapshot_id = latest.rt_feed_snapshot_id
+         AND rtu.provider_id = cvm.provider_id
+         AND rtu.trip_id = cvm.trip_id
+        JOIN silver.rt_trip_update_stop_times AS stu
+          ON stu.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+         AND stu.entity_index = rtu.entity_index
+         AND stu.provider_id = rtu.provider_id
+        WHERE cvm.stop_id IS NULL
+          AND cvm.trip_id IS NOT NULL
+          AND stu.stop_id IS NOT NULL
+          AND COALESCE(stu.departure_time_utc, stu.arrival_time_utc) >= cvm.captured_at_utc
+        ORDER BY stu.stop_sequence, stu.stop_time_update_index, rtu.entity_index
+        LIMIT 1
+    ) AS upcoming ON true
     WHERE cvm.provider_id = :provider_id
     """,
 )

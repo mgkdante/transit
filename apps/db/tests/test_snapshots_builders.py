@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from transit_ops.core.models import ProviderPublicConfig
@@ -158,6 +161,27 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
     assert v.bearing is None
     assert v.speed_kmh is None
     assert v.reported_utc is None
+
+
+def test_build_vehicles_octranspo_with_and_without_trip() -> None:
+    # SQL-result fixture: the first vehicle's missing position stop was resolved
+    # from its trip update; the out-of-service vehicle has neither trip nor stop.
+    rows = json.loads(
+        (Path(__file__).parent / "fixtures" / "octranspo_live_vehicles.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    result = build_vehicles(
+        FakeConn({"live.vehicles": rows}),
+        provider_id="octranspo",
+        generated_utc="2026-05-31T12:00:05Z",
+    )
+    assigned, unassigned = result.vehicles
+    assert assigned.trip == "OC-trip"
+    assert assigned.next_stop == "OC-upcoming-stop"
+    assert unassigned.trip is None
+    assert unassigned.next_stop is None
+    assert all(vehicle.occupancy is None for vehicle in result.vehicles)
 
 
 def test_build_vehicles_all_status_bands_map() -> None:
