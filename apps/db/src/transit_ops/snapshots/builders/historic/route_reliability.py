@@ -72,7 +72,7 @@ _ROUTE_REL_DAILY_SQL = named_query(
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
     LIMIT 30
-    """
+    """,
 )
 
 _ROUTE_HEADWAY_OBSERVED_SQL = named_query(
@@ -81,7 +81,7 @@ _ROUTE_HEADWAY_OBSERVED_SQL = named_query(
     SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
     FROM gold.route_headway_by_shift
     WHERE provider_id = :provider_id AND route_id = :route_id
-    """
+    """,
 )
 
 # Scalar habits use the shared reader with an all-time window.
@@ -98,7 +98,7 @@ _ROUTE_WEAK_STOPS_SQL = named_query(
     WHERE provider_id = :provider_id AND route_id = :route_id
       AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
-    """
+    """,
 )
 
 
@@ -108,7 +108,7 @@ _ROUTE_PERCENTILE_DAILY_SQL = named_query(
     SELECT provider_local_date, p50_delay_seconds, p90_delay_seconds
     FROM gold.route_delay_percentile_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
-    """
+    """,
 )
 
 
@@ -119,7 +119,7 @@ _ROUTE_HEADWAY_DIRECTION_SQL = named_query(
     FROM gold.route_headway_by_direction_shift
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY direction_id, service_day_kind, shift
-    """
+    """,
 )
 
 # Cancellation uses RT-reported trips; completeness uses schedule counts capped at 100.
@@ -140,7 +140,7 @@ _ROUTE_CANCELLATION_DAILY_SQL = named_query(
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
     LIMIT 30
-    """
+    """,
 )
 
 _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
@@ -155,7 +155,7 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
       AND {current_date_trailing_clause("rob.provider_local_date")}
-    """
+    """,
 )
 
 # Provider-local dates must not be timezone-converted again.
@@ -174,7 +174,7 @@ _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
       AND {current_date_trailing_clause("rob.provider_local_date")}
     GROUP BY EXTRACT(ISODOW FROM rob.provider_local_date)
     ORDER BY day_of_week_iso
-    """
+    """,
 )
 
 _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
@@ -191,7 +191,7 @@ _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
       AND {current_date_trailing_clause("rob.provider_local_date")}
     ORDER BY rob.provider_local_date DESC
-    """
+    """,
 )
 
 _ROUTE_OCCUPANCY_BY_HOUR_SQL = named_query(
@@ -209,7 +209,7 @@ _ROUTE_OCCUPANCY_BY_HOUR_SQL = named_query(
       AND {current_date_trailing_clause("rob.provider_local_date")}
     GROUP BY rob.hour_of_day_local
     ORDER BY rob.hour_of_day_local
-    """
+    """,
 )
 
 _ROUTE_SERVICE_SPAN_SQL = named_query(
@@ -222,7 +222,7 @@ _ROUTE_SERVICE_SPAN_SQL = named_query(
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
     LIMIT 30
-    """
+    """,
 )
 
 _ROUTE_SKIPPED_STOP_SQL = named_query(
@@ -234,7 +234,7 @@ _ROUTE_SKIPPED_STOP_SQL = named_query(
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
     LIMIT 30
-    """
+    """,
 )
 
 _ROUTE_CROWDING_DELAY_SQL = named_query(
@@ -253,7 +253,7 @@ _ROUTE_CROWDING_DELAY_SQL = named_query(
     WHERE rdc.provider_id = :provider_id AND rdc.route_id = :route_id
       AND {current_date_trailing_clause("rdc.provider_local_date")}
     GROUP BY rdc.band
-    """
+    """,
 )
 
 
@@ -474,7 +474,7 @@ def _route_skipped_stops(conn: Connection, params: dict) -> list[SkippedStopPeri
 def build_route_reliability(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     route_id: str,
     generated_utc: str,
     weak_stops_limit: int = 100,
@@ -485,9 +485,7 @@ def build_route_reliability(
 
     periods = _route_periods(conn, params)
 
-    headway, scheduled = _route_headway(
-        conn, params, provider_id=provider_id, route_id=route_id
-    )
+    headway, scheduled = _route_headway(conn, params, provider_id=provider_id, route_id=route_id)
 
     spine_anchor = _spine_anchor(conn, params)
 

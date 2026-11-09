@@ -20,6 +20,7 @@
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { toReliabilityClusters } from './clusters';
+	import { retainedDelayHeadline } from '#lib/v1/verdict.ts';
 	import { reliabilityCopy } from './reliability.copy';
 	import { applyRetainedLineHistory, clearRetainedLineHistory } from './data/retainedHistory';
 	import type { LineHistoryResource } from './data/lineHistoryResource.svelte';
@@ -67,6 +68,10 @@
 		apply: (current, retained) =>
 			retained ? applyRetainedLineHistory(current, retained) : clearRetainedLineHistory(current),
 		locale: () => locale,
+		verdict: {
+			file: (data) => data,
+			headline: (retained) => retainedDelayHeadline(retained.aggregate.delay.value),
+		},
 	});
 	const mode = $derived(view.grain);
 	const rangeWindow = $derived(view.navigator?.value);
@@ -88,7 +93,9 @@
 			: { grain: mode, automaticHeadline: view.verdictWindow.grain == null },
 	);
 
-	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
+	const clusters = $derived(
+		toReliabilityClusters(selectedData, { ...mapperOpts, verdict: view.verdict }),
+	);
 	const dailyPercentiles = $derived(
 		explicitHistory && retainedReady && mode === 'range'
 			? selectDailyPercentiles(view.history.value?.aggregate ?? null)

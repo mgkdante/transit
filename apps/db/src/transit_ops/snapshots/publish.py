@@ -109,9 +109,7 @@ _RECORD_STATE_SQL = named_query(
     "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, "
     " :stable_total, "
     " :gate_checks_run, :gate_errors, :gate_warnings, :gate_verdict, "
-    " CAST(:gate_generated_utc AS timestamptz), "
-    + _historic._HISTORIC_STATE_VALUES_SQL
-    + "now()) "
+    " CAST(:gate_generated_utc AS timestamptz), " + _historic._HISTORIC_STATE_VALUES_SQL + "now()) "
     "ON CONFLICT (provider_id, tier) DO UPDATE SET "
     "generated_utc = EXCLUDED.generated_utc, "
     "files_written = EXCLUDED.files_written, "
@@ -188,22 +186,18 @@ _STATIC_STAMP_SQL = named_query(
     "AND is_current = true ORDER BY loaded_at_utc DESC LIMIT 1",
 )
 
+
 def _static_stamp(conn: Connection, provider_id: str) -> str:
 
-    row = (
-        conn.execute(
-            _STATIC_STAMP_SQL, {"provider_id": provider_id}
-        )
-        .mappings()
-        .fetchone()
-    )
+    row = conn.execute(_STATIC_STAMP_SQL, {"provider_id": provider_id}).mappings().fetchone()
     if row is not None and row["loaded_at_utc"] is not None:
         return _iso(row["loaded_at_utc"])
     return utc_now().strftime("%Y-%m-%dT00:00:00Z")
 
 
 def _build_live_items(
-    conn: Connection, *, provider_id: str, settings: Settings, gen: str) -> list[PutItem]:
+    conn: Connection, *, provider_id: str, settings: Settings, gen: str
+) -> list[PutItem]:
     return [
         (
             "live/vehicles.json",
@@ -283,8 +277,12 @@ def _publish_live(
 
 
 def _publish_static(
-    conn: Connection, storage: PayloadSink, *,
-    provider_id: str, settings: Settings, stamp: str | None = None,
+    conn: Connection,
+    storage: PayloadSink,
+    *,
+    provider_id: str,
+    settings: Settings,
+    stamp: str | None = None,
 ) -> list[str]:
 
     if stamp is None:
@@ -292,13 +290,9 @@ def _publish_static(
 
     concurrency = uploads.concurrency(settings)
     written: list[str] = []
-    static_context = _static_schedule_context(
-        conn, provider_id=provider_id
-    )
+    static_context = _static_schedule_context(conn, provider_id=provider_id)
 
-    routes_idx = builders.build_routes_index(
-        conn, provider_id=provider_id, generated_utc=stamp
-    )
+    routes_idx = builders.build_routes_index(conn, provider_id=provider_id, generated_utc=stamp)
     all_stops = builders.build_all_stops_data(
         conn,
         provider_id=provider_id,
@@ -456,7 +450,6 @@ def publish_snapshot(
     else:
         raise ValueError(f"unknown tier {tier!r} (expected live, static, historic)")
 
-
     if not isinstance(storage, SnapshotObjectStore):
         raise TypeError("static publication requires a snapshot object store")
     historic_ledger = _HistoricPhaseLedger() if tier == "historic" else None
@@ -469,11 +462,16 @@ def publish_snapshot(
             assert_historic_delay_means_current(conn, provider_id)
         stamp = (
             stamp_fn(conn, provider_id)
-            if stamp_fn is not None else historic_tier.publication_stamp()
+            if stamp_fn is not None
+            else historic_tier.publication_stamp()
         )
         historic_run = _historic._new_historic_publish_run(
-            historic_ledger, settings, stamp, full_historic_rebuild,
+            historic_ledger,
+            settings,
+            stamp,
+            full_historic_rebuild,
             historic_tier.HISTORY_PARTITION_UPLOAD_BATCH_SIZE,
+            provider_id=provider_id,
         )
         historic_gated = None
         gated: HashGatedStorage
@@ -627,18 +625,24 @@ def collect_payloads(
         if tier == "historic":
             include: set[historic_tier.HistoricInclude] = set()
             for family, enabled in (
-                ("archive", include_archive_bundle), ("network", include_network_bundle),
-                ("lines", include_line_bundle), ("stops", include_stop_bundle),
+                ("archive", include_archive_bundle),
+                ("network", include_network_bundle),
+                ("lines", include_line_bundle),
+                ("stops", include_stop_bundle),
                 ("points", include_point_bundle),
             ):
                 if enabled:
                     include.add(cast(historic_tier.HistoricInclude, family))
             result = historic_tier.collect(
-                conn, provider_id=provider_id, settings=settings,
-                stamp=historic_tier.publication_stamp(), include=include,
+                conn,
+                provider_id=provider_id,
+                settings=settings,
+                stamp=historic_tier.publication_stamp(),
+                include=include,
             )
             result = replace(
-                result, prior_total=_prior_files_total(conn, provider_id=provider_id, tier=tier),
+                result,
+                prior_total=_prior_files_total(conn, provider_id=provider_id, tier=tier),
             )
             if _historic_consumer is not None:
                 return _historic_consumer(result)
@@ -693,7 +697,8 @@ def validate_snapshots(
     )
     if tier == "historic":
         return historic_tier.validate(
-            provider_id, cast(HistoricValidationInputs | _LegacyCollected, collected),
+            provider_id,
+            cast(HistoricValidationInputs | _LegacyCollected, collected),
         )
     if isinstance(collected, HistoricValidationInputs):
         all_items, stamp = collected.all_items, collected.stamp
