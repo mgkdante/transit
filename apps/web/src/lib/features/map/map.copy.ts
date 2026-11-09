@@ -93,6 +93,7 @@ export const copy = defineCopy({
 		familyTrips: 'trip details',
 		familyDepartures: 'departures',
 		familyAlerts: 'service alerts',
+		alertsChecked: (age: string) => `Alerts checked ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
@@ -205,6 +206,7 @@ export const copy = defineCopy({
 		familyTrips: 'les détails des trajets',
 		familyDepartures: 'les départs',
 		familyAlerts: 'les alertes de service',
+		alertsChecked: (age: string) => `Alertes vérifiées ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Les données en direct pour ${family} sont indisponibles. La dernière mise à jour réussie reste affichée.`
