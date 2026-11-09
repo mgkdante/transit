@@ -229,6 +229,9 @@ class NetworkFile(PayloadEnvelope):
 
 
 class ManifestLiveFiles(BaseModel):
+    # Stable paths keep their last generation until the corresponding inputs change.
+    generations: dict[str, str] = Field(default_factory=dict)
+    input_captures: dict[str, str | None] = Field(default_factory=dict)
     vehicles: str = "live/vehicles.json"
     trips: str = "live/trips.json"
     alerts: str = "live/alerts.json"
