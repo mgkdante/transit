@@ -245,9 +245,37 @@ class FeedEndpointSeed:
         return asdict(self)
 
 
+class LinesWithoutLiveData(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    gap_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    route_ids: list[Annotated[str, Field(strict=True, min_length=1, pattern=r"^\S+$")]] = Field(
+        default_factory=list
+    )
+    route_types: list[Annotated[int, Field(strict=True, ge=0, le=1702)]] = Field(
+        default_factory=list
+    )
+
+    @model_validator(mode="after")
+    def validate_selectors(self) -> LinesWithoutLiveData:
+        if not self.route_ids and not self.route_types:
+            raise ValueError("A live-data gap requires route_ids or route_types")
+        if len(set(self.route_ids)) != len(self.route_ids) or len(set(self.route_types)) != len(
+            self.route_types
+        ):
+            raise ValueError("Live-data selectors must be unique")
+        return self
+
+
+class ProviderRealtimeConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    lines_without_live_data: list[LinesWithoutLiveData] = Field(default_factory=list)
+
+
 class ProviderManifest(BaseModel):
     provider: ProviderConfig
     feeds: dict[str, FeedConfig]
+    realtime: ProviderRealtimeConfig = Field(default_factory=ProviderRealtimeConfig)
     public: ProviderPublicConfig = Field(default_factory=ProviderPublicConfig)
 
     @model_validator(mode="after")
