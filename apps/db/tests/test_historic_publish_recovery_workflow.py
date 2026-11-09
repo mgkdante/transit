@@ -943,7 +943,7 @@ def test_recovery_workflow_always_uploads_the_complete_evidence_directory() -> N
         "name": "Upload historic recovery evidence",
         "if": "always()",
         "continue-on-error": True,
-        "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
         "with": {
             "name": "historic-publish-recovery-${{ github.run_id }}",
             "path": "apps/db/artifacts/historic-publish-recovery/",

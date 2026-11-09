@@ -1,0 +1,36 @@
+[
+  {
+    "id": "OC-6401",
+    "route": "85",
+    "trip": "OC-trip",
+    "lat": 45.42,
+    "lon": -75.69,
+    "bearing": null,
+    "speed_ms": null,
+    "status_band": "Inconnu / Unknown",
+    "occupancy_status": null,
+    "next_stop": "OC-upcoming-stop",
+    "updated_utc": "2026-05-31T12:00:00Z",
+    "reported_utc": null,
+    "delay_seconds": null,
+    "next_stop_lat": 45.42153,
+    "next_stop_lon": -75.69719
+  },
+  {
+    "id": "OC-6402",
+    "route": null,
+    "trip": null,
+    "lat": 45.42,
+    "lon": -75.69,
+    "bearing": null,
+    "speed_ms": null,
+    "status_band": "Inconnu / Unknown",
+    "occupancy_status": null,
+    "next_stop": null,
+    "updated_utc": "2026-05-31T12:00:00Z",
+    "reported_utc": null,
+    "delay_seconds": null,
+    "next_stop_lat": null,
+    "next_stop_lon": null
+  }
+]

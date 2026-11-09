@@ -44,6 +44,16 @@ class FakeConnection:
         self.queries.append(query)
         if self.exc:
             raise self.exc
+        if "gold.routes_without_live_data" in str(query):
+
+            class Result:
+                def mappings(self):
+                    return self
+
+                def all(self):
+                    return []
+
+            return Result()
         if "gtfs_extra_rows" in str(query):
             return self.conformance_rows
         return self.rows

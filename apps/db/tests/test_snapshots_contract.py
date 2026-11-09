@@ -967,3 +967,47 @@ def test_shared_history_families_and_manifest_pointer_are_registered():
     historic = ManifestHistoricFiles()
     assert historic.history_index == "historic/history/index.json"
     assert "history_index" not in ManifestHistoricFiles.model_json_schema().get("required", [])
+
+
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        {},
+        {"next_stop_lat": None, "next_stop_lon": None},
+        {"next_stop_lat": 45.5, "next_stop_lon": -73.6},
+    ],
+)
+def test_vehicle_next_stop_coordinates_are_additive(coordinates):
+    v = Vehicle(id="1", lat=0, lon=0, status="unknown", updated_utc="x", **coordinates)
+    assert (v.next_stop_lat, v.next_stop_lon) == (
+        coordinates.get("next_stop_lat"),
+        coordinates.get("next_stop_lon"),
+    )
+    assert not {"next_stop_lat", "next_stop_lon"} & set(Vehicle.model_json_schema()["required"])
+
+
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        {"next_stop_lat": 45.5},
+        {"next_stop_lon": -73.6},
+        {"next_stop_lat": 45.5, "next_stop_lon": None},
+        {"next_stop_lat": None, "next_stop_lon": -73.6},
+    ],
+)
+def test_vehicle_rejects_partial_next_stop_coordinates(coordinates):
+    with pytest.raises(ValidationError, match="next stop coordinates must be paired"):
+        Vehicle(id="1", lat=0, lon=0, status="unknown", updated_utc="x", **coordinates)
+
+
+def test_manifest_source_lag_defaults_and_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from transit_ops.snapshots.contract import ManifestLiveFiles
+
+    assert ManifestLiveFiles(generated_utc="t").source_lag_s == 0
+    assert ManifestLiveFiles(generated_utc="t", source_lag_s=60).source_lag_s == 60
+    for lag in (-1, 1.5, float("inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            ManifestLiveFiles(generated_utc="t", source_lag_s=lag)

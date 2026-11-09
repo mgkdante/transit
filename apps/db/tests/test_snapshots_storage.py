@@ -105,7 +105,6 @@ class _VersionInventoryClient(FakeS3Client):
 
 
 class _ConditionalCreateRaceClient(FakeS3Client):
-
     def __init__(self) -> None:
         super().__init__()
         self._state_lock = threading.Lock()
@@ -155,7 +154,6 @@ class _ConditionalCreateRaceClient(FakeS3Client):
 
 
 class _PreconditionRaceWinnerClient(FakeS3Client):
-
     def __init__(self, *, winner_body: bytes, winner_metadata: dict[str, str]) -> None:
         super().__init__()
         self._winner_body = winner_body
@@ -180,7 +178,6 @@ class _PreconditionRaceWinnerClient(FakeS3Client):
 
 
 class _StableCasClient(FakeS3Client):
-
     def __init__(self) -> None:
         super().__init__()
         self._state_lock = threading.Lock()
@@ -369,7 +366,7 @@ def test_put_json_returns_full_key():
 
 
 def test_cache_control_values():
-    assert CACHE_CONTROL["live"] == "public, max-age=30"
+    assert CACHE_CONTROL["live"] == "public, max-age=20"
     assert CACHE_CONTROL["static"] == "public, max-age=86400, stale-while-revalidate=86400"
     assert CACHE_CONTROL["historic"] == "public, max-age=3600, stale-while-revalidate=86400"
     assert CACHE_CONTROL["internal"] == "private, no-store"
@@ -471,7 +468,7 @@ def test_s3_backend_uses_injected_client():
     assert "v1/stm/live/vehicles.json" in c.objects
 
 
-def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
+def test_s3_provider_publish_reuses_thread_clients_for_immutable_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class LifecycleProbe:
@@ -533,7 +530,9 @@ def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
         probe.configs.append(kwargs["config"])
         return client
 
-    monkeypatch.setattr(boto3, "client", build_client)
+    monkeypatch.setattr(
+        boto3.session.Session, "client", lambda self, *a, **kw: build_client(*a, **kw)
+    )
     settings = Settings(
         _env_file=None,
         DATABASE_URL="postgresql://u:p@example.com/transit",
@@ -552,22 +551,24 @@ def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
         for index in range(1_000)
     ]
     returned: list[str] = []
-    for offset in range(0, len(items), 32):
-        returned.extend(
-            _parallel_put(
-                store,
-                items[offset : offset + 32],
-                concurrency=23,
-                write_mode="immutable",
+    from transit_ops.snapshots.uploads import provider_executor
+
+    with provider_executor(23):
+        for offset in range(0, len(items), 32):
+            returned.extend(
+                _parallel_put(
+                    store,
+                    items[offset : offset + 32],
+                    concurrency=23,
+                    write_mode="immutable",
+                )
             )
-        )
     expected_rel_keys = [item[0] for item in items]
     expected_full_keys = [f"v1/stm/{key}" for key in expected_rel_keys]
     head_calls = [key for client in probe.clients for key in client.head_calls]
     put_calls = [call for client in probe.clients for call in client.put_calls]
-    assert len(probe.clients) == 1
-    assert len(probe.configs) == 1
-    assert probe.configs[0].max_pool_connections == 23
+    assert 1 < len(probe.clients) <= 24
+    assert all(config.max_pool_connections == 1 for config in probe.configs)
     assert 1 < probe.peak <= 23
     assert returned == expected_full_keys
     assert sorted(head_calls) == expected_full_keys
@@ -578,7 +579,7 @@ def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
         for call in put_calls
     )
     store.close()
-    assert probe.clients[0].close_calls == 1
+    assert all(client.close_calls == 1 for client in probe.clients)
 
 
 def test_full_key_joins_prefix():
@@ -751,7 +752,6 @@ def test_put_json_delegates_to_put_bytes():
 
 
 class StatefulFakeStore:
-
     def __init__(self):
         self.store: dict[str, bytes] = {}
         self.put_bytes_calls: list[str] = []

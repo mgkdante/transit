@@ -314,3 +314,54 @@ describe('vehicle motion snapshot interface', () => {
 		h.controller.destroy();
 	});
 });
+
+describe.each(['stm', 'octranspo'])('%s next stop coordinates', () => {
+	it.each([
+		{
+			title: 'published coordinates without a stops list',
+			coordinates: { next_stop_lat: 45.5, next_stop_lon: -73.5895 },
+			stops: undefined,
+		},
+		{
+			title: 'published coordinates ahead of a conflicting lookup',
+			coordinates: { next_stop_lat: 45.5, next_stop_lon: -73.5895 },
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.588 }],
+		},
+		{
+			title: 'legacy stops lookup',
+			coordinates: {},
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.5895 }],
+		},
+		{
+			title: 'lookup with partial published coordinates',
+			coordinates: { next_stop_lat: 45.4 },
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.5895 }],
+		},
+	])('clamps Estimated position using $title', ({ coordinates, stops }) => {
+		const h = harness();
+		h.motion.remember(route);
+		h.feed(60, { ...intent, stops }, -73.59, 'tick', { next_stop: 'stop', ...coordinates });
+		h.frame(1500);
+		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
+		h.frame(10000);
+		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
+		h.controller.destroy();
+	});
+});
+
+describe('provider lag through the motion controller', () => {
+	it('glides an OC fix and uses the extended stale cutoff in raw mode', () => {
+		const h = harness();
+		h.motion.remember(route);
+		h.feed(110, { ...intent, ttlS: 20, sourceLagS: 60 }, -73.6);
+		const start = h.last().geometry.coordinates[0];
+		h.frame(1000);
+		expect(h.last().geometry.coordinates[0]).toBeGreaterThan(start);
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(170, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(215, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(1);
+		h.controller.destroy();
+	});
+});
