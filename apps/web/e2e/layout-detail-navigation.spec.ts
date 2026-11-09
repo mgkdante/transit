@@ -12,9 +12,13 @@ const epoch = Date.parse(
 type Probe = { loaded: boolean; project(c: number[]): { x: number; y: number } };
 for (const provider of ['stm', 'octranspo'])
 	for (const locale of ['en', 'fr'])
-		for (const width of [390, 1280]) {
+		for (const { width, height } of [
+			{ width: 390, height: 844 },
+			{ width: 844, height: 390 },
+			{ width: 1280, height: 900 },
+		]) {
 			test(`${provider} ${locale} ${width} detail navigation @layout`, async ({ page }) => {
-				await page.setViewportSize({ width, height: 900 });
+				await page.setViewportSize({ width, height });
 				await page.clock.setFixedTime(epoch + 30000);
 				await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 				await page.route('**/v1/**', async (route) => {
@@ -50,7 +54,7 @@ for (const provider of ['stm', 'octranspo'])
 					provider,
 				);
 				await page.locator('.maplibregl-canvas').click({ position: point });
-				const selector = width === 390 ? '[data-slot="bottom-sheet"]' : '[data-slot="right-panel"]';
+				const selector = width < 1024 ? '[data-slot="bottom-sheet"]' : '[data-slot="right-panel"]';
 				const panel = page.locator(selector);
 				await expect(panel).toBeVisible();
 				const nav = panel.getByRole('navigation');
@@ -93,7 +97,7 @@ for (const provider of ['stm', 'octranspo'])
 						.press('ArrowLeft');
 				else await back.click();
 				await expect(panel.locator('[data-slot="detail-identity"]')).toHaveText(/layout-bus$/);
-				if (width === 390) {
+				if (width < 1024) {
 					const stops = nav.getByRole('button', {
 						name: locale === 'fr' ? 'Arrêts' : 'Stops',
 						exact: true,

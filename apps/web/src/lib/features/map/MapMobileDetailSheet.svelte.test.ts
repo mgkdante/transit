@@ -132,7 +132,7 @@ describe('MapMobileDetailSheet', () => {
 		);
 	});
 
-	it('builds the honest default footer action outside the body when the selected detail has a target', async () => {
+	it('keeps the default footer action reachable in the scroll body when detail has a target', async () => {
 		render(MapMobileDetailSheet, { props: baseProps() });
 
 		const action = await waitFor(() => {
@@ -146,7 +146,7 @@ describe('MapMobileDetailSheet', () => {
 		expect(action).toHaveAccessibleName('Open the full analysis for stop stop-1');
 		expect(
 			document.querySelector('[data-slot="bottom-sheet-body"] [data-slot="detail-footer-action"]'),
-		).not.toBeInTheDocument();
+		).toBe(action);
 	});
 
 	it('renders no footer slot or action for an open vehicle with neither trip nor route', async () => {

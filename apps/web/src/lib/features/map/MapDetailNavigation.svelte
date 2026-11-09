@@ -109,7 +109,13 @@
 	});
 </script>
 
-<nav bind:this={root} bind:clientWidth={width} aria-label={t.navigation} class="detail-navigation">
+<nav
+	bind:this={root}
+	bind:clientWidth={width}
+	aria-label={t.navigation}
+	class="detail-navigation"
+	class:mobile={!desktop}
+>
 	<div class="detail-navigation-actions">
 		<button
 			type="button"
@@ -164,6 +170,17 @@
 
 <style>
 	.detail-navigation {
+		min-width: 0;
+	}
+	/* Keep navigation in the fixed header even at the 168 px peek detent. */
+	.detail-navigation.mobile {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.mobile .detail-navigation-actions {
+		flex: none;
+	}
+	.mobile .detail-section-links {
 		min-width: 0;
 	}
 	.detail-navigation-actions,
