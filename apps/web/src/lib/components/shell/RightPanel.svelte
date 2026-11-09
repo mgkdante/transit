@@ -4,6 +4,9 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
+	import RouteIcon from '@lucide/svelte/icons/route';
+	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '#lib/utils/index.ts';
 	import { Button } from '@yesid/ui/button';
@@ -12,6 +15,7 @@
 	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface RightPanelProps {
+		selectionKind?: string;
 		locale?: Locale;
 		title?: string;
 		headingId?: string;
@@ -30,6 +34,7 @@
 	}
 
 	let {
+		selectionKind,
 		locale: localeProp,
 		title,
 		headingId,
@@ -87,7 +92,12 @@
 	data-resizable={resizable ? 'true' : undefined}
 	data-surface-key={surfaceKey}
 >
-	<div class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
+	<div
+		class={cn(
+			'flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle',
+			collapsed ? 'justify-center px-0' : 'px-4',
+		)}
+	>
 		<Button
 			variant="ghost"
 			size="icon-tap"
@@ -148,6 +158,13 @@
 		{/if}
 	</div>
 
+	{#if collapsed}<div class="flex justify-center py-4" aria-hidden="true">
+			{#if selectionKind === 'vehicle'}<BusFrontIcon
+					size={20}
+				/>{:else if selectionKind === 'stop'}<MapPinIcon size={20} />{:else}<RouteIcon
+					size={20}
+				/>{/if}
+		</div>{/if}
 	{#if !collapsed}
 		<ScrollArea id={panelBodyId} class="min-h-0 flex-1" data-slot="right-panel-body">
 			{#key surfaceKey}
@@ -202,7 +219,7 @@
 	}
 
 	.right-panel[data-open='false'] {
-		width: var(--size-detail-rail);
+		width: 56px;
 	}
 
 	.right-panel[data-resizable='true'] {
@@ -210,8 +227,8 @@
 		min-width: 0;
 	}
 	.right-panel[data-resizable='true'][data-open='false'] {
-		width: var(--size-detail-rail);
-		min-width: var(--size-detail-rail);
+		width: 56px;
+		min-width: 56px;
 	}
 
 	.right-panel-body-inner {

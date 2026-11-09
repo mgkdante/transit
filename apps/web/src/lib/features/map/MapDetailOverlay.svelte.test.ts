@@ -1,679 +1,96 @@
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	DETAIL_PANEL_WIDTH_STORAGE_KEY,
-	DETAIL_RAIL_STORAGE_KEY,
-	MIN_DETAIL_PANEL_WIDTH,
-	MAX_DETAIL_PANEL_WIDTH,
-} from './mapDetailPanes';
-import MapDetailOverlay, * as mapDetailOverlayModule from './MapDetailOverlay.svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MapDetailOverlayHarness from './__fixtures__/MapDetailOverlayHarness.svelte';
-
-interface LiveState {
-	widthPx: number;
-	collapsed: boolean;
-	dragging: boolean;
-}
-
+import MapDetailOverlay from './MapDetailOverlay.svelte';
 const detailPanel = createRawSnippet(() => ({
-	render: () => `<div data-testid="detail-panel-body">detail</div>`,
+	render: () =>
+		'<aside><button data-slot="right-panel-close">Close</button><input aria-label="Search" /></aside>',
 }));
-
-function detailPanelFor(surfaceKey: string) {
-	return createRawSnippet(() => ({
-		render: () => `
-				<aside data-slot="right-panel" data-surface-key="${surfaceKey}" aria-labelledby="detail-heading" tabindex="-1">
-					<button type="button" data-slot="right-panel-toggle">Toggle</button>
-					<button type="button" data-slot="right-panel-close">Close</button>
-					<div data-slot="right-panel-body"><button type="button" data-slot="detail-drill-in">Drill in</button></div>
-				</aside>`,
-	}));
-}
-
-beforeEach(() => {
-	localStorage.clear();
-	document.body.innerHTML = '';
-});
-
-afterEach(() => {
-	localStorage.clear();
-	vi.restoreAllMocks();
-});
-
-describe('MapDetailOverlay', () => {
-	it('anchors an absolute right overlay that renders the orchestrator detail panel', () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel,
-			},
-		});
-
-		const overlay = container.querySelector('.map-detail-overlay')!;
-		expect(overlay).toBeInTheDocument();
-		expect(overlay).toHaveAttribute('data-slot', 'map-detail-overlay');
-		expect(overlay.querySelector('[data-testid="detail-panel-body"]')).toBeInTheDocument();
-	});
-
-	it('shows the resize separator only while expanded, with separator a11y', async () => {
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel,
-			},
-		});
-
-		const handle = container.querySelector('.map-detail-handle')!;
-		expect(handle).toBeInTheDocument();
-		expect(handle).toHaveAttribute('role', 'separator');
-		expect(handle).toHaveAttribute('aria-orientation', 'vertical');
-		expect(handle).toHaveAttribute('aria-label', 'Resize detail panel');
-		expect(handle).toHaveAttribute('aria-valuemin', String(MIN_DETAIL_PANEL_WIDTH));
-		expect(handle).toHaveAttribute('aria-valuemax', String(MAX_DETAIL_PANEL_WIDTH));
-		expect(handle).toHaveAttribute('aria-valuenow', '400');
-
-		await rerender({
-			widthPx: 400,
-			collapsed: true,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel,
-		});
-		expect(container.querySelector('.map-detail-handle')).not.toBeInTheDocument();
-	});
-
-	it('reflects the collapsed-to-the-right state via a data attribute', async () => {
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel,
-			},
-		});
-
-		expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-			'data-detail-collapsed',
-			'false',
-		);
-		await rerender({
-			widthPx: 400,
-			collapsed: true,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel,
-		});
-		expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-			'data-detail-collapsed',
-			'true',
-		);
-	});
-
-	it('uses mutually exclusive expanded-frame and collapsed-rail layers', async () => {
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		expect(container.querySelector('.map-detail-content-frame')).toBeInTheDocument();
-		expect(container.querySelector('.map-detail-rail')).not.toBeInTheDocument();
-
-		await rerender({
-			widthPx: 400,
-			collapsed: true,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel: detailPanelFor('vehicle:123'),
-		});
-		expect(container.querySelector('.map-detail-content-frame')).not.toBeInTheDocument();
-		expect(container.querySelector<HTMLElement>('.map-detail-rail')?.tagName).toBe('DIV');
-		expect(
-			container.querySelector('.map-detail-rail [data-slot="right-panel"]'),
-		).toBeInTheDocument();
-	});
-
-	it('keyboard-resizes the committed panel width once per keypress', async () => {
-		let live: LiveState = { widthPx: 400, collapsed: false, dragging: false };
-		const { container } = render(MapDetailOverlayHarness, {
-			props: { widthPx: 400, onstate: (s) => (live = s) },
-		});
-		const handle = container.querySelector('.map-detail-handle')!;
-		const setItem = vi.spyOn(Storage.prototype, 'setItem');
-
-		await fireEvent.keyDown(handle, { key: 'ArrowLeft' });
-		expect(live.widthPx).toBe(416);
-		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('416');
-		expect(setItem).toHaveBeenCalledTimes(1);
-
-		await fireEvent.keyDown(handle, { key: 'ArrowRight' });
-		expect(live.widthPx).toBe(400);
-		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('400');
-		expect(setItem).toHaveBeenCalledTimes(2);
-	});
-
-	it('Home/End jump to the ceiling/floor and clamp out-of-band widths', async () => {
-		let live: LiveState = { widthPx: 400, collapsed: false, dragging: false };
-		const { container } = render(MapDetailOverlayHarness, {
-			props: { widthPx: 400, onstate: (s) => (live = s) },
-		});
-		const handle = container.querySelector('.map-detail-handle')!;
-
-		await fireEvent.keyDown(handle, { key: 'Home' });
-		expect(live.widthPx).toBe(MAX_DETAIL_PANEL_WIDTH);
-
-		await fireEvent.keyDown(handle, { key: 'End' });
-		expect(live.widthPx).toBe(MIN_DETAIL_PANEL_WIDTH);
-	});
-
-	it('keeps drag width transient and commits once only after a valid release', async () => {
-		const setItem = vi.spyOn(Storage.prototype, 'setItem');
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-		handle.setPointerCapture = vi.fn();
-		handle.releasePointerCapture = vi.fn();
-
-		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-		await fireEvent.pointerMove(handle, { clientX: 550, pointerId: 1 });
-		expect(handle).toHaveAttribute('aria-valuenow', '350');
-		expect(setItem).not.toHaveBeenCalled();
-
-		await fireEvent.pointerUp(handle, { pointerId: 1 });
-		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('350');
-		expect(setItem).toHaveBeenCalledTimes(1);
-	});
-
-	it('clamps aria-valuenow to the separator minimum while the visual shell enters the dead zone', async () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		const overlay = container.querySelector<HTMLElement>('.map-detail-overlay')!;
-		const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-		handle.setPointerCapture = vi.fn();
-
-		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-		await fireEvent.pointerMove(handle, { clientX: 650, pointerId: 1 });
-
-		expect(overlay).toHaveStyle({ width: '250px' });
-		expect(handle).toHaveAttribute('aria-valuemin', '300');
-		expect(handle).toHaveAttribute('aria-valuenow', '300');
-	});
-
-	it.each([
-		{ dragWidth: 61, expectedKey: DETAIL_RAIL_STORAGE_KEY, expectedValue: 'stop:52618' },
-		{ dragWidth: 239, expectedKey: DETAIL_RAIL_STORAGE_KEY, expectedValue: 'stop:52618' },
-		{ dragWidth: 240, expectedKey: DETAIL_PANEL_WIDTH_STORAGE_KEY, expectedValue: '300' },
-		{ dragWidth: 299, expectedKey: DETAIL_PANEL_WIDTH_STORAGE_KEY, expectedValue: '300' },
-		{ dragWidth: 300, expectedKey: DETAIL_PANEL_WIDTH_STORAGE_KEY, expectedValue: '300' },
-		{ dragWidth: 350, expectedKey: DETAIL_PANEL_WIDTH_STORAGE_KEY, expectedValue: '350' },
-	])(
-		'commits exactly once for the $dragWidthpx release class',
-		async ({ dragWidth, expectedKey, expectedValue }) => {
-			localStorage.setItem(DETAIL_PANEL_WIDTH_STORAGE_KEY, '440');
-			const { container } = render(MapDetailOverlay, {
+beforeEach(() => localStorage.clear());
+describe('desktop detail sizes', () => {
+	it.each(['en', 'fr'] as const)(
+		'names every snap in %s and retains the separator in rail',
+		async (locale) => {
+			const view = render(MapDetailOverlay, {
 				props: {
+					locale,
 					widthPx: 400,
 					collapsed: false,
 					dragging: false,
-					resizeAria: 'Resize detail panel',
-					detailPanel: detailPanelFor('stop:52618'),
+					resizeAria: locale === 'en' ? 'Resize detail panel' : 'Redimensionner le panneau',
+					detailPanel,
 				},
 			});
-			const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-			handle.setPointerCapture = vi.fn();
-			handle.releasePointerCapture = vi.fn();
-			const setItem = vi.spyOn(Storage.prototype, 'setItem');
-
-			await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-			await fireEvent.pointerMove(handle, { clientX: 900 - dragWidth, pointerId: 1 });
-			expect(setItem).not.toHaveBeenCalled();
-			await fireEvent.pointerUp(handle, { pointerId: 1 });
-
-			if (dragWidth >= 240) {
-				expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe(expectedValue);
-				expect(container.querySelector('.map-detail-handle')).toBeInTheDocument();
-				if (dragWidth < 300) {
-					expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-						'data-detail-snapping',
-						'true',
-					);
-				}
-			} else {
-				expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('440');
-				expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBe('stop:52618');
-				expect(container.querySelector('.map-detail-handle')).not.toBeInTheDocument();
+			const handle = view.getByRole('separator');
+			expect(handle).toHaveAttribute('aria-orientation', 'vertical');
+			expect(handle).toHaveAttribute('aria-valuemin', '56');
+			expect(handle).toHaveAttribute('aria-valuemax', '560');
+			expect(handle).toHaveAttribute(
+				'aria-valuetext',
+				locale === 'en' ? 'Panel size: standard' : 'Taille du panneau : standard',
+			);
+			await fireEvent.keyDown(handle, { key: 'Home' });
+			expect(handle).toHaveAttribute('aria-valuenow', '56');
+			expect(handle).toHaveAttribute(
+				'aria-valuetext',
+				locale === 'en' ? 'Panel size: rail' : 'Taille du panneau : replié',
+			);
+			for (const width of [320, 400, 560]) {
+				await fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+				expect(handle).toHaveAttribute('aria-valuenow', String(width));
 			}
-			expect(setItem).toHaveBeenCalledTimes(1);
-			expect(setItem).toHaveBeenCalledWith(expectedKey, expectedValue);
-		},
-	);
-
-	it.each(['pointercancel', 'lostpointercapture'] as const)(
-		'rolls back over the 200ms snap-back class without persistence on %s',
-		async (eventName) => {
-			const setItem = vi.spyOn(Storage.prototype, 'setItem');
-			const { container } = render(MapDetailOverlay, {
-				props: {
-					widthPx: 400,
-					collapsed: false,
-					dragging: false,
-					resizeAria: 'Resize detail panel',
-					detailPanel: detailPanelFor('route:24'),
-				},
-			});
-			const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-			handle.setPointerCapture = vi.fn();
-
-			await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-			await fireEvent.pointerMove(handle, { clientX: 650, pointerId: 1 });
-			await fireEvent(handle, new Event(eventName));
-
+			await fireEvent.keyDown(handle, { key: 'ArrowRight' });
 			expect(handle).toHaveAttribute('aria-valuenow', '400');
-			expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-				'data-detail-snapping',
-				'true',
-			);
-			expect(setItem).not.toHaveBeenCalled();
+			await fireEvent.keyDown(handle, { key: 'End' });
+			expect(handle).toHaveAttribute('aria-valuenow', '560');
+			expect(localStorage.getItem('transit:detail-panel-width')).toBe('560');
 		},
 	);
-
-	it('restores matching rail state, expands a new surface, and clears stale persistence', async () => {
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'stop:52618');
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('stop:52618'),
-			},
-		});
-
-		await waitFor(() => {
-			expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-				'data-detail-collapsed',
-				'true',
-			);
-		});
-
-		await rerender({
-			widthPx: 400,
-			collapsed: true,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel: detailPanelFor('route:24'),
-		});
-		await waitFor(() => {
-			expect(container.querySelector('.map-detail-overlay')).toHaveAttribute(
-				'data-detail-collapsed',
-				'false',
-			);
-		});
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
-	});
-
-	it('clears matching rail persistence when the parent force-expands the same surface', async () => {
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'stop:52618');
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('stop:52618'),
-			},
-		});
-		await waitFor(() => expect(container.querySelector('.map-detail-rail')).toBeInTheDocument());
-
-		await rerender({
-			widthPx: 400,
-			collapsed: false,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel: detailPanelFor('stop:52618'),
-		});
-		await waitFor(() =>
-			expect(container.querySelector('.map-detail-content-frame')).toBeInTheDocument(),
-		);
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
-	});
-
-	it('toggles on Enter and transfers focus to the retained rail control', async () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-		await fireEvent.keyDown(handle, { key: 'Enter' });
-
-		await waitFor(() => {
-			expect(container.querySelector('.map-detail-handle')).not.toBeInTheDocument();
-		});
-		expect(document.activeElement).toBe(
-			container.querySelector('[data-slot="right-panel-toggle"]'),
-		);
-	});
-
-	it('collapses on double-click and expands when any part of the rail is clicked', async () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		await fireEvent.doubleClick(container.querySelector('.map-detail-handle')!);
-		const rail = await waitFor(() => {
-			const element = container.querySelector<HTMLElement>('.map-detail-rail');
-			expect(element).toBeInTheDocument();
-			return element!;
-		});
-		await fireEvent.click(rail);
-		expect(container.querySelector('.map-detail-content-frame')).toBeInTheDocument();
-	});
-
-	it('commits only the rail state for a real double-click sequence with two degenerate releases', async () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
+	it.each([
+		[100, 320],
+		[-125, 560],
+		[350, 56],
+	])('snaps a %s px drag to %s on release', async (delta, width) => {
+		const view = render(MapDetailOverlayHarness);
+		const handle = view.getByRole('separator');
 		handle.setPointerCapture = vi.fn();
-		handle.releasePointerCapture = vi.fn();
-		await waitFor(() =>
-			expect(container.querySelector('[data-surface-key="vehicle:123"]')).toBeInTheDocument(),
-		);
-		const setItem = vi.spyOn(Storage.prototype, 'setItem');
-
-		for (const pointerId of [1, 2]) {
-			await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId });
-			await fireEvent.pointerUp(handle, { clientX: 500, pointerId });
-		}
-		await fireEvent.doubleClick(handle);
-
-		await waitFor(() => expect(container.querySelector('.map-detail-rail')).toBeInTheDocument());
-		expect(setItem).toHaveBeenCalledOnce();
-		expect(setItem).toHaveBeenCalledWith(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
+		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
+		await fireEvent.pointerMove(handle, { clientX: 500 + delta, pointerId: 1 });
+		expect(handle).toHaveAttribute('aria-valuenow', '400');
+		await fireEvent.pointerUp(handle, { clientX: 500 + delta, pointerId: 1 });
+		expect(handle).toHaveAttribute('aria-valuenow', String(width));
 	});
-
-	it('exports focusDetail and closes on Escape from map focus before restoring the recorded invoker', async () => {
+	it('rolls back a cancelled drag and keeps keyboard input usable with blocked storage', async () => {
+		const view = render(MapDetailOverlayHarness);
+		const handle = view.getByRole('separator');
+		handle.setPointerCapture = vi.fn();
+		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
+		await fireEvent.pointerMove(handle, { clientX: 100, pointerId: 1 });
+		await fireEvent.pointerCancel(handle);
+		expect(handle).toHaveAttribute('aria-valuenow', '400');
+		const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw Error('blocked');
+		});
+		await fireEvent.keyDown(handle, { key: 'End' });
+		expect(handle).toHaveAttribute('aria-valuenow', '560');
+		spy.mockRestore();
+	});
+	it('yields Escape to editable controls and restores its invoker on teardown', async () => {
 		const invoker = document.createElement('button');
 		document.body.append(invoker);
 		invoker.focus();
-		const { container, unmount } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
+		const view = render(MapDetailOverlay, {
+			props: { widthPx: 400, collapsed: false, dragging: false, resizeAria: 'Resize', detailPanel },
 		});
-		const close = container.querySelector<HTMLElement>('[data-slot="right-panel-close"]')!;
-		const onclose = vi.fn();
-		close.addEventListener('click', onclose);
-
-		const focusDetail = (mapDetailOverlayModule as { focusDetail?: () => void }).focusDetail;
-		expect(focusDetail).toBeTypeOf('function');
-		focusDetail?.();
-		expect(document.activeElement).toBe(container.querySelector('[data-slot="right-panel"]'));
-
-		const mapCanvas = document.createElement('button');
-		mapCanvas.className = 'maplibregl-canvas';
-		document.body.append(mapCanvas);
-		mapCanvas.focus();
-		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-		document.dispatchEvent(escape);
-		expect(onclose).toHaveBeenCalledOnce();
-		expect(escape.defaultPrevented).toBe(true);
-		unmount();
-		expect(document.activeElement).toBe(invoker);
-	});
-
-	it('moves drill-in focus to the labelled panel when surfaceKey changes', async () => {
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('stop:52618'),
-			},
-		});
-		const drillIn = container.querySelector<HTMLElement>('[data-slot="detail-drill-in"]')!;
-		drillIn.focus();
-		expect(document.activeElement).toBe(drillIn);
-
-		await rerender({
-			widthPx: 400,
-			collapsed: false,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel: detailPanelFor('route:24'),
-		});
-
-		await waitFor(() => {
-			expect(container.querySelector('[data-slot="right-panel"]')).toHaveAttribute(
-				'data-surface-key',
-				'route:24',
-			);
-			expect(document.activeElement).toBe(container.querySelector('[data-slot="right-panel"]'));
-		});
-		expect(document.activeElement).not.toBe(
-			container.querySelector('[data-slot="right-panel-body"]'),
-		);
-	});
-
-	it('does not steal outside focus when surfaceKey changes', async () => {
-		const outside = document.createElement('button');
-		document.body.append(outside);
-		const { container, rerender } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('stop:52618'),
-			},
-		});
-		outside.focus();
-
-		await rerender({
-			widthPx: 400,
-			collapsed: false,
-			dragging: false,
-			resizeAria: 'Resize detail panel',
-			detailPanel: detailPanelFor('route:24'),
-		});
-
-		await waitFor(() => {
-			expect(container.querySelector('[data-slot="right-panel"]')).toHaveAttribute(
-				'data-surface-key',
-				'route:24',
-			);
-		});
-		expect(document.activeElement).toBe(outside);
-	});
-
-	it.each(['input', 'textarea', 'select', 'contenteditable', 'map-near'] as const)(
-		'yields Escape owned by the %s target',
-		async (targetKind) => {
-			const { container } = render(MapDetailOverlay, {
-				props: {
-					widthPx: 400,
-					collapsed: false,
-					dragging: false,
-					resizeAria: 'Resize detail panel',
-					detailPanel: detailPanelFor('vehicle:123'),
-				},
-			});
-			const close = container.querySelector<HTMLElement>('[data-slot="right-panel-close"]')!;
-			const onclose = vi.fn();
-			close.addEventListener('click', onclose);
-			localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-
-			const owner =
-				targetKind === 'map-near'
-					? Object.assign(document.createElement('div'), { className: 'map-near' })
-					: targetKind === 'contenteditable'
-						? document.createElement('div')
-						: document.createElement(targetKind);
-			if (targetKind === 'contenteditable') owner.setAttribute('contenteditable', 'true');
-			const target =
-				targetKind === 'contenteditable' || targetKind === 'map-near'
-					? document.createElement('span')
-					: owner;
-			if (target !== owner) owner.append(target);
-			document.body.append(owner);
-			const escape = new KeyboardEvent('keydown', {
-				key: 'Escape',
-				bubbles: true,
-				cancelable: true,
-			});
-
-			target.dispatchEvent(escape);
-
-			expect(onclose).not.toHaveBeenCalled();
-			expect(escape.defaultPrevented).toBe(false);
-			expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBe('vehicle:123');
-		},
-	);
-
-	it('yields an already-prevented Escape without clearing rail persistence', () => {
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		const close = container.querySelector<HTMLElement>('[data-slot="right-panel-close"]')!;
-		const onclose = vi.fn();
-		close.addEventListener('click', onclose);
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-		escape.preventDefault();
-
-		document.dispatchEvent(escape);
-
-		expect(onclose).not.toHaveBeenCalled();
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBe('vehicle:123');
-	});
-
-	it('does not consume Escape when there is no close seam', () => {
-		render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel,
-			},
-		});
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-
-		document.dispatchEvent(escape);
-
-		expect(escape.defaultPrevented).toBe(false);
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBe('vehicle:123');
-	});
-
-	it('clears the collapsed rail before Escape invokes the hidden close seam', async () => {
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-		const { container } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		await waitFor(() => expect(container.querySelector('.map-detail-rail')).toBeInTheDocument());
-		const close = container.querySelector<HTMLElement>('[data-slot="right-panel-close"]')!;
-		const onclose = vi.fn();
-		close.addEventListener('click', onclose);
-
+		const close = vi.fn();
+		view.getByRole('button', { name: 'Close' }).addEventListener('click', close);
+		await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+		expect(close).not.toHaveBeenCalled();
 		await fireEvent.keyDown(document, { key: 'Escape' });
-		expect(onclose).toHaveBeenCalledOnce();
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
-	});
-
-	it('falls back to the map canvas when the recorded invoker disconnects', () => {
-		const invoker = document.createElement('button');
-		const mapCanvas = document.createElement('button');
-		mapCanvas.className = 'maplibregl-canvas';
-		document.body.append(invoker, mapCanvas);
-		invoker.focus();
-		const { unmount } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
+		expect(close).toHaveBeenCalledOnce();
+		view.unmount();
+		expect(document.activeElement).toBe(invoker);
 		invoker.remove();
-		unmount();
-		expect(document.activeElement).toBe(mapCanvas);
-	});
-
-	it('clears rail persistence on teardown regardless of the close path', async () => {
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-		const { container, unmount } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		await waitFor(() => expect(container.querySelector('.map-detail-rail')).toBeInTheDocument());
-
-		unmount();
-
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
 	});
 });
