@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { Surface } from '@yesid/ui/layout';
 	import HomeExplore from '#lib/features/home/HomeExplore.svelte';
@@ -20,5 +21,5 @@
 </script>
 
 <Surface>
-	<HomeExplore {locale} {copy} />
+	<HomeExplore {locale} {copy} alertsAvailable={providerHasAlerts(data.provider)} />
 </Surface>

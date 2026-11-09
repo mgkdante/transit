@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import { routeModeHint } from '#lib/search/stopMode.ts';
@@ -64,7 +66,7 @@
 				<dt>{t.route}</dt>
 				<dd>
 					{#if peek.route}
-						<span>{peek.route.id}</span>
+						<span>{line(peek.route.id)}</span>
 						<span>{peek.route.longName}</span>
 						{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 						{#if peek.route.type != null}
@@ -146,7 +148,7 @@
 	{:else if peek.kind === 'route'}
 		<div class="map-peek-id">
 			<span>{t.route}</span>
-			<strong>{peek.id}</strong>
+			<strong>{line(peek.id)}</strong>
 		</div>
 		<dl>
 			<div>
