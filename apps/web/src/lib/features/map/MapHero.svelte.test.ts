@@ -763,6 +763,7 @@ afterEach(async () => {
 	mapHeroReceiptSignals.reset();
 	harness.setReducedMotion(false);
 	localStorage.removeItem('transit:detail-rail');
+	localStorage.removeItem('transit:detail-panel-width');
 	vi.unstubAllGlobals();
 	if (originalSecureContext) {
 		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
