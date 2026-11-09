@@ -212,6 +212,7 @@
 								value={detail.nextStops[0]?.etaUtc
 									? timeLabel(detail.nextStops[0].etaUtc, locale, timeZone)
 									: null}
+								variant="compact"
 								reason={liveAbsenceReason('trip-prediction', {
 									...absenceContext(),
 									notReporting: notReporting != null,

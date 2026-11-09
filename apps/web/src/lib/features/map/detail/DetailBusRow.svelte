@@ -71,7 +71,8 @@
 		<MaybeValue
 			value={delayMeasurement(vehicle.delay_min)}
 			reason={absence}
-			variant={unknownStatusAndDelay ? 'row' : 'inline'}
+			variant="compact"
+			disclosure={false}
 			{locale}
 		/>
 	</small>
