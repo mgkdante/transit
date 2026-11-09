@@ -1769,6 +1769,9 @@ def load_latest_static_to_silver(
     effective_strict = provider_strict if provider_strict is not None else settings.STRICT_GTFS
 
     with engine.begin() as connection:
+        from transit_ops.providers.live_policy import sync_live_policy
+
+        sync_live_policy(connection, manifest)
         result = load_static_zip_to_silver(
             connection,
             archive=archive,
