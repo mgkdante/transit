@@ -16,7 +16,7 @@
 
 	let { store, locale, hidden = false, controls }: Props = $props();
 	const t = $derived(MAP_COPY[locale]);
-	const activeCount = $derived(store.chips.length);
+	const activeCount = $derived(store.chips.length + (store.state.showOutOfService ? 1 : 0));
 
 	let drawerOpen = $state(false);
 	let desktopHandoff = false;

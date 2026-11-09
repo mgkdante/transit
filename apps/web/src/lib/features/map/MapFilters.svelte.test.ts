@@ -402,3 +402,19 @@ describe('MapFilters', () => {
 		await waitFor(() => expect(getByRole('button', { name: 'Collapse controls' })).toHaveFocus());
 	});
 });
+
+describe.each(['en', 'fr'] as const)('out-of-service filter %s', (locale) => {
+	it('starts off, persists its toggle, and clears', async () => {
+		const writes: string[] = [];
+		const store = createFilterStore(emptyFilterState(), (value) => writes.push(value));
+		const view = render(MapFilters, { store, locale, collapsible: false });
+		const name = locale === 'en' ? 'Out-of-service vehicles' : 'Véhicules hors service';
+		const button = view.getByRole('button', { name });
+		expect(button).toHaveAttribute('aria-pressed', 'false');
+		await fireEvent.click(button);
+		expect(button).toHaveAttribute('aria-pressed', 'true');
+		expect(writes.at(-1)).toContain('out_of_service=1');
+		store.clear();
+		await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
+	});
+});
