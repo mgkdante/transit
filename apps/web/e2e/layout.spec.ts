@@ -80,3 +80,47 @@ for (const locale of ['en', 'fr'] as const)
 				await expectLayout(page, info, overlaps);
 			});
 	}
+
+for (const locale of ['en', 'fr'] as const)
+	for (const provider of ['stm', 'octranspo'])
+		test(`${locale} ${provider} trip long names stay readable @layout`, async ({ page }) => {
+			const name =
+				'Station Université de Montréal / Boulevard Édouard-Montpetit et chemin de la Côte-des-Neiges / Terminus des voyageurs';
+			await page.clock.setFixedTime(epoch + 30_000);
+			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+			await page.route('**/v1/**', async (route) => {
+				const url = new URL(route.request().url());
+				url.pathname = `/__layout/fresh${url.pathname.replace('/octranspo/', '/stm/')}`;
+				const response = await route.fetch({ url: url.href });
+				if (url.pathname.endsWith('/stops_index.json')) {
+					const body = await response.json();
+					for (const stop of body.stops) stop.name = name;
+					await route.fulfill({ response, json: body });
+				} else await route.fulfill({ response });
+			});
+			await page.goto(localizeHref(`/trip/${trip}?provider=${provider}`, locale), {
+				waitUntil: 'networkidle',
+			});
+			const link = page.locator('.trip-stop-link').first();
+			await expect(link).toHaveAccessibleName(new RegExp(name.split(' / ')[0]));
+			await expect(link.locator('[title]')).toHaveAttribute('title', name);
+			const geometry = await link.evaluate((el) => {
+				const name = el.querySelector('.trip-stop-name')!;
+				const time = el.querySelector('time')!;
+				const nr = name.getBoundingClientRect(),
+					tr = time.getBoundingClientRect();
+				return {
+					height: nr.height,
+					lineHeight: parseFloat(getComputedStyle(name).lineHeight),
+					nameTop: nr.top,
+					nameBottom: nr.bottom,
+					timeTop: tr.top,
+					timeBottom: tr.bottom,
+				};
+			});
+			expect(geometry.height).toBeLessThanOrEqual(geometry.lineHeight * 2 + 1);
+			if (page.viewportSize()!.width >= 1280) {
+				expect(geometry.timeTop).toBeLessThan(geometry.nameBottom);
+				expect(geometry.timeBottom).toBeGreaterThan(geometry.nameTop);
+			}
+		});
