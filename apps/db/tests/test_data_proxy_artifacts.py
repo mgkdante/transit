@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from transit_ops.snapshots.ttl import LIVE_TTL_SECONDS
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROXY_DIR = REPO_ROOT / "apps" / "data-proxy"
 WRANGLER_TOML = PROXY_DIR / "wrangler.toml"
@@ -151,7 +153,8 @@ def test_smoke_script_asserts_direct_r2_and_compatibility_objects() -> None:
     text = smoke.read_text(encoding="utf-8")
     assert "transit.yesid.dev/data" in text
     assert "data.yesid.dev" in text
-    assert "max-age=30" in text
+    # Live objects carry the publisher TTL; the smoke must assert the same value.
+    assert f'"public, max-age={LIVE_TTL_SECONDS}"' in text
     assert "max-age=604800" in text
     assert "max-age=86400" in text
     assert "max-age=3600, stale-while-revalidate=86400" in text
@@ -248,7 +251,7 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               case "$url" in
                 */definitely-missing.json) cache_control='no-store' ;;
                 */api/v1/kpis) cache_control='no-store' ;;
-                */live/vehicles.json|*/manifest.json) cache_control='public, max-age=30' ;;
+                */live/vehicles.json|*/manifest.json) cache_control='public, max-age=20' ;;
                 */static/routes_index.json) cache_control='public, max-age=604800' ;;
                 *) cache_control='public, max-age=86400' ;;
               esac
@@ -274,7 +277,7 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               fi
               printf 'HTTP/2 200\r\n'
               printf 'content-type: application/json\r\n'
-              printf 'cache-control: public, max-age=30\r\n'
+              printf 'cache-control: public, max-age=20\r\n'
               printf 'cf-cache-status: HIT\r\n'
               printf 'age: 2\r\n'
               printf 'access-control-allow-origin: *\r\n\r\n'

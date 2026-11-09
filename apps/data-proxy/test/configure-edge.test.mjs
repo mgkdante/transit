@@ -7,6 +7,7 @@ import {
   CACHE_RULE_REF,
   configureDataEdge,
 } from "../scripts/configure-data-edge.mjs";
+import { LIVE_TTL_SECONDS } from "../src/kpis.js";
 
 const ZONE_ID = "zone-123";
 const API_TOKEN = "test-token";
@@ -425,7 +426,10 @@ test("production deploys and the manual edge lane use the same owned configurati
 test("the production smoke pins browser freshness and rejects edge-cached 404s", () => {
   assert.match(
     smokeScript,
-    /assert_edge_hit "\$CANONICAL_BASE\/v1\/stm\/manifest\.json" "public, max-age=30"/,
+    new RegExp(
+      String.raw`assert_edge_hit "\$CANONICAL_BASE/v1/stm/manifest\.json" "public, max-age=` +
+        `${LIVE_TTL_SECONDS}"`,
+    ),
   );
   assert.match(smokeScript, /expected_cache_control/);
   assert.match(smokeScript, /cache-control.*expected_cache_control/i);
