@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -611,6 +612,91 @@ def test_normalize_rt_trip_updates_maps_minimum_fields(tmp_path: Path) -> None:
     assert "departure_delay_seconds" not in stop_time_updates[0]
 
 
+@pytest.mark.parametrize(
+    ("speed", "maximum", "expected"),
+    [
+        (10, 100, 10),
+        (0, 100, 0),
+        (-1, 100, None),
+        (float("nan"), 100, None),
+        (float("inf"), 100, None),
+        (-float("inf"), 100, None),
+        (86, 100, None),
+        (27.7, 100, 27.7),
+        (28, 100, None),
+        (40, 160, 40),
+        (None, 100, None),
+    ],
+)
+def test_vehicle_speed_validation_at_silver_load(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    speed: float | None,
+    maximum: float,
+    expected: float | None,
+) -> None:
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(_build_vehicle_positions_bytes())
+    position = message.entity[0].vehicle.position
+    if speed is None:
+        position.ClearField("speed")
+    else:
+        position.speed = speed
+    payload = message.SerializeToString()
+    archive_path = tmp_path / "vehicle_positions.pb"
+    _write_bytes(archive_path, payload)
+    snapshot = _build_snapshot(archive_path, "vehicle_positions")
+    connection = RecordingConnection()
+    with caplog.at_level(logging.INFO, logger=realtime_silver_module.__name__):
+        load_realtime_snapshot_to_silver(
+            connection,
+            snapshot=snapshot,
+            bronze_storage=FakeBronzeStorage(payload),
+            **({"max_vehicle_speed_kmh": maximum} if maximum != 100 else {}),
+        )
+    inserts = [
+        params
+        for statement, params in connection.calls
+        if "INSERT INTO silver.rt_vehicle_positions" in str(statement)
+    ]
+    actual = inserts[0][0]["speed"]
+    assert actual == (pytest.approx(expected) if expected is not None else None)
+    assert archive_path.read_bytes() == payload
+    rejected = speed is not None and expected is None
+    records = [
+        record for record in caplog.records if record.name == realtime_silver_module.__name__
+    ]
+    assert len(records) == int(rejected)
+    if rejected:
+        assert "rejected_speed_count=1" in records[0].getMessage()
+
+
+def test_rejected_vehicle_speeds_logged_once_per_snapshot(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(_build_vehicle_positions_bytes())
+    message.entity[0].vehicle.position.speed = 86
+    second = message.entity.add()
+    second.CopyFrom(message.entity[0])
+    second.id = "second"
+    second.vehicle.position.speed = -1
+    payload = message.SerializeToString()
+    archive_path = tmp_path / "vehicle_positions.pb"
+    _write_bytes(archive_path, payload)
+    with caplog.at_level(logging.INFO, logger=realtime_silver_module.__name__):
+        result = load_realtime_snapshot_to_silver(
+            RecordingConnection(),
+            snapshot=_build_snapshot(archive_path, "vehicle_positions"),
+            bronze_storage=FakeBronzeStorage(payload),
+        )
+    records = [r for r in caplog.records if r.name == realtime_silver_module.__name__]
+    assert len(records) == 1
+    assert "rejected_speed_count=2" in records[0].getMessage()
+    assert result.row_counts["rt_vehicle_positions"] == 2
+
+
 def test_normalize_rt_vehicle_positions_maps_minimum_fields(tmp_path: Path) -> None:
     archive_path = tmp_path / "vehicle_positions.pb"
     _write_bytes(archive_path, _build_vehicle_positions_bytes())
@@ -632,6 +718,68 @@ def test_normalize_rt_vehicle_positions_maps_minimum_fields(tmp_path: Path) -> N
     assert vehicle_positions[0]["stop_id"] == "stop-9"
     assert vehicle_positions[0]["latitude"] == pytest.approx(45.501)
     assert vehicle_positions[0]["longitude"] == pytest.approx(-73.567)
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_manifest_speed_maximum_reaches_live_and_replay_loads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replay: bool,
+) -> None:
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(_build_vehicle_positions_bytes())
+    message.entity[0].vehicle.position.speed = 40
+    payload = message.SerializeToString()
+    archive_path = tmp_path / "vehicle_positions.pb"
+    _write_bytes(archive_path, payload)
+    snapshot = _build_snapshot(archive_path, "vehicle_positions")
+    connection = RecordingConnection()
+    engine = FakeEngine(connection, connection)
+    manifest = _build_manifest()
+    manifest.provider.max_vehicle_speed_kmh = 160
+    storage = FakeBronzeStorage(payload)
+    monkeypatch.setattr(
+        realtime_silver_module, "_find_realtime_bronze_snapshot", lambda *args, **kwargs: snapshot
+    )
+    monkeypatch.setattr(
+        realtime_silver_module, "find_realtime_bronze_snapshots", lambda *args, **kwargs: [snapshot]
+    )
+    settings = Settings(_env_file=None)
+    if replay:
+
+        class StorageScope:
+            def resolve(self, backend):
+                return storage
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            realtime_silver_module, "BronzeStorageScope", lambda *args, **kwargs: StorageScope()
+        )
+        realtime_silver_module.replay_realtime_silver_window(
+            "stm",
+            start_utc=snapshot.captured_at_utc,
+            end_utc=snapshot.captured_at_utc,
+            settings=settings,
+            registry=FakeRegistry(manifest),
+            engine=engine,
+        )
+    else:
+        realtime_silver_module._load_realtime_to_silver(
+            "stm",
+            "vehicle_positions",
+            settings=settings,
+            registry=FakeRegistry(manifest),
+            engine=engine,
+            bronze_storage_resolver=lambda backend: storage,
+        )
+    rows = [
+        params
+        for sql, params in connection.calls
+        if "INSERT INTO silver.rt_vehicle_positions" in sql
+    ][0]
+    assert rows[0]["speed"] == 40
 
 
 def test_load_realtime_snapshot_to_silver_trip_updates_inserts_parent_and_child_rows(
