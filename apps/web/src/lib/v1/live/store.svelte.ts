@@ -12,6 +12,7 @@ import type {
 	TripsFile,
 	VehiclesFile,
 } from '#lib/v1/schemas/index.ts';
+import { livePollDelayMs } from './polling';
 import { buildLiveIndex, type LiveIndex } from './index';
 
 const STALE_TTL_MULTIPLIER = 3;
@@ -118,7 +119,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		network: initialFamilyState(familyRefCounts.network > 0, initialNetwork?.generated_utc ?? null),
 	});
 
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	const nextPollAt = new SvelteMap<LiveFamily, number>();
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let refreshInFlight: Promise<void> | null = null;
 	const activeControllers = new SvelteSet<AbortController>();
@@ -338,11 +340,24 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	): Promise<void> {
 		if (!requestIsCurrent(family, token, generation, controller)) {
 			pendingFamilies.delete(family);
+			if (requestIsCurrent(family, token, generation, controller) && !nextPollAt.has(family)) {
+				nextPollAt.set(family, Date.now() + ttlMs);
+			}
+			schedulePolling();
 			return;
 		}
 
 		try {
-			const payload = await readFamily(family, context);
+			let delayMs = ttlMs;
+			const payload = await readFamily(family, {
+				...context,
+				onResponseHeaders: (headers) => {
+					delayMs = livePollDelayMs(headers, ttlMs);
+				},
+			});
+			if (requestIsCurrent(family, token, generation, controller)) {
+				nextPollAt.set(family, Date.now() + delayMs);
+			}
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 
 			const retained = currentFamilyPayload(family);
@@ -378,12 +393,21 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			failFamily(family, asError(value));
 		} finally {
 			pendingFamilies.delete(family);
+			if (requestIsCurrent(family, token, generation, controller) && !nextPollAt.has(family)) {
+				nextPollAt.set(family, Date.now() + ttlMs);
+			}
+			schedulePolling();
 		}
 	}
 
 	async function runBatch(requestedFamilies: readonly LiveFamily[]): Promise<void> {
 		const selectedFamilies = [
-			...new SvelteSet(requestedFamilies.filter((family) => familyStatesValue[family].active)),
+			...new SvelteSet(
+				requestedFamilies.filter(
+					(family) =>
+						familyStatesValue[family].active && familyStatesValue[family].phase !== 'loading',
+				),
+			),
 		];
 		if (selectedFamilies.length === 0) return;
 
@@ -394,6 +418,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		const batchTokens = new SvelteMap<LiveFamily, number>();
 		let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 		for (const family of selectedFamilies) {
+			nextPollAt.delete(family);
 			const token = familyRequestTokens[family] + 1;
 			familyRequestTokens[family] = token;
 			batchTokens.set(family, token);
@@ -429,6 +454,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 							continue;
 						}
 						familyRequestTokens[family] += 1;
+						nextPollAt.set(family, Date.now() + ttlMs);
 						failFamily(family, timeout);
 					}
 					controller.abort();
@@ -440,6 +466,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		} finally {
 			if (deadlineTimer != null) clearTimeout(deadlineTimer);
 			activeControllers.delete(controller);
+			schedulePolling();
 		}
 	}
 
@@ -505,16 +532,36 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 	function pausePolling(): void {
 		if (pollTimer) {
-			clearInterval(pollTimer);
+			clearTimeout(pollTimer);
 			pollTimer = null;
 		}
 	}
 
+	function schedulePolling(): void {
+		pausePolling();
+		if (!started || !canPoll()) return;
+		const due = activeFamilies()
+			.filter((family) => familyStatesValue[family].phase !== 'loading')
+			.map((family) => nextPollAt.get(family) ?? Date.now() + ttlMs);
+		if (due.length === 0) return;
+		pollTimer = setTimeout(
+			() => {
+				pollTimer = null;
+				void runBatch(
+					activeFamilies().filter(
+						(family) =>
+							familyStatesValue[family].phase !== 'loading' &&
+							(nextPollAt.get(family) ?? 0) <= Date.now(),
+					),
+				).then(schedulePolling);
+			},
+			Math.max(0, Math.min(...due) - Date.now()),
+		);
+	}
+
 	function resumePolling(): void {
 		if (!started || pollTimer || !canPoll()) return;
-		pollTimer = setInterval(() => {
-			void refresh();
-		}, ttlMs);
+		schedulePolling();
 		void refresh();
 	}
 
