@@ -265,3 +265,33 @@ test('mobile detail sheet keeps its header controls above the home indicator at 
 			);
 	}
 });
+
+for (const provider of read('providers').providers) {
+	for (const locale of ['en', 'fr']) {
+		test(`${provider.id} ${locale} map title without eyebrow @layout`, async ({ page }) => {
+			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+			await page.clock.setFixedTime(epoch + 30_000);
+			await page.goto(`${locale === 'fr' ? '/fr' : ''}/map?provider=${provider.id}`, {
+				waitUntil: 'networkidle',
+			});
+			const heading = page.getByRole('heading', { level: 1 });
+			await expect(heading).toBeVisible();
+			await expect(page.getByText(/NETWORK · LIVE|RÉSEAU · EN DIRECT/)).toHaveCount(0);
+			const geometry = await heading.evaluate((el) => {
+				const title = el.getBoundingClientRect();
+				const head = el.closest('.map-head')!.getBoundingClientRect();
+				return {
+					top: title.top - head.top,
+					left: title.left - head.left,
+					right: title.right,
+					width: innerWidth,
+				};
+			});
+			expect(geometry.top).toBeGreaterThanOrEqual(0);
+			expect(geometry.top).toBeLessThan(8);
+			expect(geometry.left).toBeGreaterThanOrEqual(0);
+			expect(geometry.left).toBeLessThan(12);
+			expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+		});
+	}
+}
