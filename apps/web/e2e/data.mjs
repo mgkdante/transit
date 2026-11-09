@@ -37,7 +37,7 @@ for (const [key, body] of Object.entries(b9)) {
 		files[`/v1/stm/${key}`] ??= JSON.stringify(body);
 }
 
-createServer((request, response) => {
+const server = createServer((request, response) => {
 	// No Date header: the app anchors its clock to it, which would undo page.clock.
 	response.sendDate = false;
 	const body =
@@ -49,7 +49,12 @@ createServer((request, response) => {
 		'access-control-allow-origin': process.env.TRANSIT_E2E_ORIGIN ?? 'http://127.0.0.1:4317',
 	});
 	response.end(body ?? '{}');
-}).listen(Number(process.env.TRANSIT_E2E_DATA_PORT ?? 4318), '127.0.0.1');
+});
+// Playwright's route.fetch reuses keep-alive sockets. With Node's 5 s default the server
+// can close an idle socket just as the client reuses it, and the request fails with
+// "socket hang up". Idle sockets stay open instead; the client still closes its own.
+server.keepAliveTimeout = 0;
+server.listen(Number(process.env.TRANSIT_E2E_DATA_PORT ?? 4318), '127.0.0.1');
 
 // Opt-in layout variants leave the original fixtures unchanged for other specs.
 const layoutFiles = { ...files };

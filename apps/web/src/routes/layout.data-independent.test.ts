@@ -106,7 +106,6 @@ vi.mock('#lib/v1/boot.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/v1/boot.ts')>()),
 	bootV1: vi.fn(),
 }));
-vi.mock('#lib/v1/repositories/live.ts', () => ({ getVehicles: vi.fn() }));
 vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: vi.fn(),
 	getRoutesIndex: vi.fn(),

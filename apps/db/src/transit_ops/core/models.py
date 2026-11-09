@@ -146,6 +146,7 @@ class FeedConfigBase(BaseModel):
     source_url_env_var: str | None = None
     documentation_url: AnyHttpUrl | None = None
     auth: AuthConfig
+    refresh_phase_seconds: int | None = Field(default=None, ge=0)
     refresh_interval_seconds: PositiveInt
     is_enabled: bool = True
 

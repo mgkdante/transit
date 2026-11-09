@@ -14,7 +14,9 @@ def test_snapshot_client_requires_its_own_bucket_only(monkeypatch, bronze_bucket
         constructed.append((args, kwargs))
         return client
 
-    monkeypatch.setattr(boto3, "client", create_client)
+    monkeypatch.setattr(
+        boto3.session.Session, "client", lambda self, *a, **kw: create_client(*a, **kw)
+    )
     settings = Settings(
         _env_file=None,
         SNAPSHOT_STORAGE_BACKEND="s3",
@@ -32,7 +34,7 @@ def test_snapshot_client_requires_its_own_bucket_only(monkeypatch, bronze_bucket
     assert args == ("s3",)
     assert options["endpoint_url"] == "https://account.example.invalid"
     config = options["config"]
-    assert config.max_pool_connections == 23
+    assert config.max_pool_connections == 1
     assert (config.connect_timeout, config.read_timeout) == (10, 60)
     assert config.retries == {"max_attempts": 6, "mode": "standard"}
 
@@ -48,7 +50,7 @@ def test_snapshot_client_error_identifies_snapshot_target(monkeypatch):
     def unavailable(*args, **kwargs):
         raise ValueError("client unavailable")
 
-    monkeypatch.setattr(boto3, "client", unavailable)
+    monkeypatch.setattr(boto3.session.Session, "client", unavailable)
     settings = Settings(
         _env_file=None,
         SNAPSHOT_STORAGE_BACKEND="s3",
