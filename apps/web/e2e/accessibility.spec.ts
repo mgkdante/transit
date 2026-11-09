@@ -83,6 +83,18 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 					await expect(page.locator('.trip-stop-link')).toHaveCount(0);
 				}
 				await expectAccessible(page);
+				if (path === '/metrics') {
+					// The former inner scroller clipped these badges out of the initial axe scan.
+					for (const kind of ['not-really', 'caveat']) {
+						const badge = page
+							.locator(`[data-kind="${kind}"] [data-slot="typed-information-badge"]`)
+							.first();
+						await badge.scrollIntoViewIfNeeded();
+						await badge.evaluate((element) => element.setAttribute('data-axe-badge', ''));
+						await expectAccessible(page, { include: '[data-axe-badge]' });
+						await badge.evaluate((element) => element.removeAttribute('data-axe-badge'));
+					}
+				}
 			});
 		}
 
