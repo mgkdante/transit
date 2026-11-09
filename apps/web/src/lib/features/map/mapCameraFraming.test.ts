@@ -141,7 +141,11 @@ function transformCamera(viewport: Viewport, inputs: CameraInputs, padding?: Map
 			controller.claim(event ?? {});
 			const box = paddingObject(fit.padding ?? 0);
 			const camera = cameraForBoxAndBearing(
-				{ padding: box, offset: [0, 0], maxZoom: fit.maxZoom ?? options.maxZoom! },
+				{
+					padding: box,
+					offset: (fit.offset ?? [0, 0]) as [number, number],
+					maxZoom: fit.maxZoom ?? options.maxZoom!,
+				},
 				box,
 				LngLatBounds.convert(bounds),
 				0,
@@ -172,6 +176,46 @@ describe('camera interface through the transform adapter', () => {
 	}));
 
 	for (const provider of providers) {
+		for (const width of [1280, 1440, 1536, 1600, 1920]) {
+			it.each(['none', 'rail', 'left', 'right', 'both'])(
+				`${provider.name} centres or clears %s at ${width}`,
+				(state) => {
+					const viewport = { label: state, width, height: width === 1920 ? 1080 : 864 };
+					const pad = {
+						top: 160,
+						bottom: 72,
+						left: state === 'left' || state === 'both' ? 332 : 16,
+						right: state === 'right' || state === 'both' ? 332 : 16,
+					};
+					const inputs = initialCamera({ manifest: { bbox: provider.bbox }, provider }, width);
+					const screen = transformCamera(viewport, inputs, { ...pad, left: 16, right: 16 });
+					const corner = (transform: MapLibreTransform, east: boolean) =>
+						transform.locationToScreenPoint(
+							new LngLat(provider.fit_bounds[east ? 2 : 0], provider.fit_bounds[3]),
+						);
+					const fullWidth = corner(screen.transform, true).x - corner(screen.transform, false).x;
+					const fitted = transformCamera(viewport, inputs, pad);
+					const west = corner(fitted.transform, false).x;
+					const east = corner(fitted.transform, true).x;
+					const fits = fullWidth <= width - pad.left - pad.right;
+					const expected = fits
+						? Math.max(
+								pad.left + fullWidth / 2,
+								Math.min(width / 2, width - pad.right - fullWidth / 2),
+							)
+						: (width + pad.left - pad.right) / 2;
+					expect((west + east) / 2).toBeCloseTo(expected, 6);
+					expect(west).toBeGreaterThanOrEqual(pad.left - 1e-6);
+					expect(east).toBeLessThanOrEqual(width - pad.right + 1e-6);
+					expect(fitted.map.getZoom()).toBeCloseTo(
+						fits
+							? screen.map.getZoom()
+							: Math.log2((width - pad.left - pad.right) / fullWidth) + screen.map.getZoom(),
+						6,
+					);
+				},
+			);
+		}
 		it.each([
 			{ label: '360x800', width: 360, height: 800 },
 			{ label: '844x390', width: 844, height: 390 },
@@ -198,7 +242,12 @@ describe('camera interface through the transform adapter', () => {
 			const se = transform.locationToScreenPoint(
 				new LngLat(provider.fit_bounds[2], provider.fit_bounds[1]),
 			);
-			expect((nw.x + se.x) / 2).toBeCloseTo((pad.left + viewport.width - pad.right) / 2, 6);
+			const halfWidth = (se.x - nw.x) / 2;
+			const expectedX = Math.max(
+				pad.left + halfWidth,
+				Math.min(viewport.width / 2, viewport.width - pad.right - halfWidth),
+			);
+			expect((nw.x + se.x) / 2).toBeCloseTo(expectedX, 6);
 			expect((nw.y + se.y) / 2).toBeCloseTo((pad.top + viewport.height - pad.bottom) / 2, 6);
 			const fitZoom = map.getZoom();
 			transform.setZoom(0);
