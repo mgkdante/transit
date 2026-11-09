@@ -41,13 +41,42 @@ describe('ReliabilityBadge', () => {
 	});
 });
 
-it.each(['absent', 'tentative'] as const)(
-	'hedges a %s snapshot without a confident percentage badge',
-	(verdict) => {
-		render(ReliabilityBadge, {
-			props: { snapshot: snap({ phase: 'ready', otpPct: 85, verdict }), locale: 'en' },
-		});
-		expect(screen.queryByRole('img')).toBeNull();
-		expect(screen.getByText('Not enough data to judge reliability')).toBeInTheDocument();
-	},
-);
+for (const locale of ['en', 'fr'] as const)
+	for (const verdict of ['absent', 'tentative'] as const)
+		it.each([true, false])(
+			`keeps ${locale} ${verdict} compact with supplied hedge %s`,
+			(supplied) => {
+				const fallback =
+					locale === 'en'
+						? 'Not enough data to judge reliability'
+						: 'Données insuffisantes pour juger la fiabilité';
+				const hedge = supplied
+					? `${fallback}: 82% of 368 delay observations (95% CI: 78–86%).`
+					: undefined;
+				const { container } = render(ReliabilityBadge, {
+					props: {
+						snapshot: snap({
+							phase: verdict === 'absent' ? 'empty' : 'ready',
+							otpPct: verdict === 'absent' ? null : 82,
+							verdict,
+							hedge,
+						}),
+						locale,
+					},
+				});
+				const badge = screen.getByRole('img', { name: hedge ?? fallback });
+				expect(badge).toHaveAttribute('title', hedge ?? fallback);
+				expect(badge).toHaveAttribute('data-slot', 'reliability-hedge');
+				expect(badge).toHaveAttribute('data-status', verdict);
+				expect(badge.textContent?.trim()).toBe(
+					verdict === 'tentative'
+						? locale === 'en'
+							? 'Uncertain'
+							: 'Incertaine'
+						: locale === 'en'
+							? 'Not enough data'
+							: 'Données insuffisantes',
+				);
+				expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
+			},
+		);
