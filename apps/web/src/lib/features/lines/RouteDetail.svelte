@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
 	import { clock } from '@yesid/ui/state';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -448,6 +450,14 @@
 											testId="route-alerts"
 										/>
 
+										{#if providerHasAlerts(v1.provider) && routeAlerts.length > 0 && live.familyStates.alerts.health.ageSeconds != null}
+											<p class="route-alerts-age">
+												{MAP_COPY[locale].alertsChecked(
+													formatRelativeSeconds(live.familyStates.alerts.health.ageSeconds, locale),
+												)}
+											</p>
+										{/if}
+
 										{#if roster.length > 0}
 											<div class="route-roster" data-testid="route-roster">
 												<div class="route-section-head">
@@ -629,6 +639,11 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 		gap: 1rem;
+	}
+	.route-alerts-age {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 	.route-aside {
 		display: flex;

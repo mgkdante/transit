@@ -45,6 +45,7 @@
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
 		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		notReporting?: { ageS: number } | null;
 		selectionPresence?: SelectionPresence | null;
 		selectionSourceHealth?: SelectionSourceHealth | null;
@@ -61,6 +62,7 @@
 		onfilter,
 		onalertselect,
 		alertsStale = false,
+		alertsAgeSeconds = null,
 		notReporting = null,
 		selectionPresence = null,
 		selectionSourceHealth = null,
@@ -260,7 +262,14 @@
 			{/if}
 		</div>
 
-		<MapDetailAlerts alerts={detail.alerts} {alertsStale} {locale} {t} {onalertselect} />
+		<MapDetailAlerts
+			alerts={detail.alerts}
+			{alertsStale}
+			{alertsAgeSeconds}
+			{locale}
+			{t}
+			{onalertselect}
+		/>
 		{#if detail.kind === 'vehicle'}
 			<DetailStatPills>
 				<span class="detail-pill">{t.bus} {detail.vehicle.id}</span>
