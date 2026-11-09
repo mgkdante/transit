@@ -4,6 +4,9 @@
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '#lib/components/dataviz/index.ts';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { notReporting } from '#lib/features/map/vehicleMotion.ts';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	import { onMount } from 'svelte';
 	import { absenceSentence } from '#lib/site/absence.ts';
 	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import type { VehicleResultCopy } from './search.copy';
@@ -26,7 +29,11 @@
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
-	const NOT_REPORTED = 'not-reported' as const;
+	const runtime = getV1Runtime();
+	onMount(() => runtime.clock.subscribe());
+	const absence = $derived(
+		notReporting(vehicle, runtime.clock.serverNow) ? 'not-reporting' : 'not-reported',
+	);
 
 	const nextStop = $derived(nextStopName);
 
@@ -43,7 +50,7 @@
 	data-sveltekit-preload-data="hover"
 	class="vehicle-row"
 	data-slot="vehicle-result"
-	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(NOT_REPORTED, locale)}`}
+	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(absence, locale)}`}
 >
 	<span class="vehicle-row-lead">
 		{#if hasBearing}
@@ -68,7 +75,7 @@
 			{/if}
 		</span>
 		<span class="vehicle-row-sub">
-			<MaybeValue present={nextStop != null} reason={NOT_REPORTED} {locale}>
+			<MaybeValue present={nextStop != null} reason={absence} {locale}>
 				{copy.next(nextStop ?? '')}
 			</MaybeValue>
 		</span>
@@ -80,7 +87,7 @@
 				size="sm"
 				label={statusLabel}
 			/>
-			<MaybeValue present={occupancyLabel != null} reason={NOT_REPORTED} {locale}>
+			<MaybeValue present={occupancyLabel != null} reason={absence} {locale}>
 				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
 					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
 					<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
@@ -92,7 +99,7 @@
 	<span class="vehicle-row-meta">
 		<MaybeValue
 			value={delayText}
-			reason={NOT_REPORTED}
+			reason={absence}
 			variant={unknownStatusAndDelay ? 'row' : 'inline'}
 			{locale}
 		/>
