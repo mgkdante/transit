@@ -1,0 +1,65 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '390x844' 1`] = `
+[
+  9.56592736081211,
+  -75.69,
+  45.37566865879242,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '768x1024' 1`] = `
+[
+  9.861534322665435,
+  -75.69000000000001,
+  45.37527077668122,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1280x800' 1`] = `
+[
+  9.94984274079312,
+  -75.69499999999994,
+  45.37527077668122,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1920x1080' 1`] = `
+[
+  10.534805241514126,
+  -75.695,
+  45.37527077668122,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '390x844' 1`] = `
+[
+  9.642114106841854,
+  -73.72604999999999,
+  45.56060157546119,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '768x1024' 1`] = `
+[
+  9.921014918134693,
+  -73.72604999999999,
+  45.56060157546119,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1280x800' 1`] = `
+[
+  9.650282458934178,
+  -73.72605,
+  45.552700975736514,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1920x1080' 1`] = `
+[
+  10.235244959655226,
+  -73.72605,
+  45.552700975736514,
+]
+`;
