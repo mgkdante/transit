@@ -106,8 +106,8 @@
 
 <figure class={cn('dv-trendmark m-0', className)} aria-label={spec.title} data-slot="trend-mark">
 	<div class="axis-titles">
-		<span>{spec.label} ({spec.unit})</span>{#if spec.secondary}<span
-				>{spec.secondary.label} ({spec.secondary.unit})</span
+		<span>{spec.label} ({spec.unit.trim()})</span>{#if spec.secondary}<span
+				>{spec.secondary.label} ({spec.secondary.unit.trim()})</span
 			>{/if}
 	</div>
 	<div bind:clientWidth={plotWidth}>
