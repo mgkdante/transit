@@ -23,6 +23,7 @@ from transit_ops.snapshots.historic_run import (
     _HistoricPublishRun,
 )
 from transit_ops.snapshots.historic_tier import HistoricValidationInputs
+from transit_ops.snapshots.live_scope import worker_live_storage
 from transit_ops.snapshots.protocols import (
     CollectedItem,
     HistoricObjectStore,
@@ -387,6 +388,8 @@ def publish_snapshot(
     settings = settings or get_settings()
 
     engine = engine or make_engine(settings)
+    if storage is None and tier == "live":
+        storage = worker_live_storage(provider_id, settings)
     if storage is None:
         owned_storage = build_snapshot_storage(settings, provider_id=provider_id)
         try:

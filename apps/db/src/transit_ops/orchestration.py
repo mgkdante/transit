@@ -62,6 +62,7 @@ from transit_ops.silver import (
     load_latest_static_to_silver,
 )
 from transit_ops.silver.static_gtfs import prepare_static_application
+from transit_ops.snapshots.live_scope import live_publish_scope
 from transit_ops.snapshots.publish import publish_snapshot
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
@@ -1129,18 +1130,19 @@ def run_realtime_worker_loop(
     settings = settings or get_settings()
     bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
     try:
-        return _run_realtime_worker_loop(
-            provider_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            sleep_fn=sleep_fn,
-            max_cycles=max_cycles,
-            perf_counter_fn=perf_counter_fn,
-            utc_now_fn=utc_now_fn,
-            should_shutdown=should_shutdown,
-            bronze_storage_resolver=bronze_storage_scope.resolve,
-        )
+        with live_publish_scope(provider_id, settings):
+            return _run_realtime_worker_loop(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                sleep_fn=sleep_fn,
+                max_cycles=max_cycles,
+                perf_counter_fn=perf_counter_fn,
+                utc_now_fn=utc_now_fn,
+                should_shutdown=should_shutdown,
+                bronze_storage_resolver=bronze_storage_scope.resolve,
+            )
     finally:
         try:
             bronze_storage_scope.close()

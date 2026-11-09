@@ -10,8 +10,8 @@ import stat
 import sys
 import threading
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -139,9 +139,9 @@ class SnapshotStorage:
 
     Thread-safety
     -------------
-    Boto3 low-level clients may be shared between threads. A provider publish
-    therefore owns one client whose connection pool is sized for the bounded
-    publisher executor.
+    Production clients and their TLS contexts belong to one thread. Each thread
+    reuses its client for the provider publish; close runs after workers drain.
+    Explicitly injected clients retain caller-managed thread safety.
     """
 
     def __init__(
@@ -150,8 +150,13 @@ class SnapshotStorage:
         *,
         bucket: str,
         base_prefix: str,
+        client_factory: Callable[[], object] | None = None,
     ) -> None:
-        self._client = client
+        self._client_factory = client_factory
+        self._thread_client = threading.local()
+        self._thread_client.value = client
+        self._clients = [client]
+        self._injected_client = client
         self._bucket = bucket
         self._prefix = base_prefix.strip("/")
         self._close_lock = threading.Lock()
@@ -159,16 +164,34 @@ class SnapshotStorage:
         self._immutable_registry_lock = threading.Lock()
         self._immutable_locks: dict[str, threading.Lock] = {}
 
+    @property
+    def _client(self) -> object:
+        with self._close_lock:
+            if self._closed:
+                raise RuntimeError("Snapshot storage is closed")
+            if self._client_factory is None:
+                return self._injected_client
+            client = getattr(self._thread_client, "value", None)
+            if client is None:
+                # A fresh session avoids boto3's shared default session as well.
+                client = self._client_factory()
+                self._thread_client.value = client
+                self._clients.append(client)
+            return client
+
     def close(self) -> None:
-        """Close the owned low-level client once all publisher workers have drained."""
+        """Close owned clients once all publisher workers have drained."""
 
         with self._close_lock:
             if self._closed:
                 return
-            close = getattr(self._client, "close", None)
-            if callable(close):
-                close()
             self._closed = True
+            with ExitStack() as cleanup:
+                for client in self._clients:
+                    close = getattr(client, "close", None)
+                    if callable(close):
+                        cleanup.callback(close)
+                self._clients.clear()
 
     def full_key(self, rel_key: str) -> str:
         """Return the full bucket key for *rel_key* (``{base_prefix}/{rel_key}``)."""
@@ -1029,14 +1052,6 @@ class HistoricHashGatedStorage(HashGatedStorage):
         return outcome.key
 
 
-def _snapshot_publish_pool_size(settings: Settings) -> int:
-    try:
-        concurrency = int(settings.SNAPSHOT_PUBLISH_CONCURRENCY)
-    except (TypeError, ValueError):
-        concurrency = 16
-    return max(16, concurrency)
-
-
 def build_snapshot_storage(
     settings: Settings,
     *,
@@ -1052,14 +1067,17 @@ def build_snapshot_storage(
         return LocalSnapshotStorage(settings.SNAPSHOT_LOCAL_ROOT, base_prefix)
 
     bucket = validate_s3_bucket_name(settings.SNAPSHOT_R2_BUCKET, setting="SNAPSHOT_R2_BUCKET")
-    return SnapshotStorage(
-        client
-        if client is not None
-        else build_s3_client(
+
+    def create_client() -> object:
+        return build_s3_client(
             settings,
             bucket_setting="SNAPSHOT_R2_BUCKET",
-            max_pool_connections=_snapshot_publish_pool_size(settings),
-        ),
+            max_pool_connections=1,
+        )
+
+    return SnapshotStorage(
+        client if client is not None else create_client(),
         bucket=bucket,
         base_prefix=base_prefix,
+        client_factory=create_client if client is None else None,
     )
