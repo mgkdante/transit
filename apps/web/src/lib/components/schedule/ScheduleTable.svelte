@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
+	const absenceContext = readLiveAbsenceContext();
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { formatUtc } from '#lib/utils/time.ts';
 	import {
@@ -121,7 +123,11 @@
 
 {#snippet boardStatusCell(departure: ScheduleBoardRow)}
 	{#if departure.delay_min == null}
-		<AbsentValue variant="row" reason="not-reported" {locale} />
+		<AbsentValue
+			variant="row"
+			reason={liveAbsenceReason('prediction-delay', absenceContext())}
+			{locale}
+		/>
 	{:else}
 		{@const tone = delayTone(departure.delay_min)}
 		<span class="stop-departure-delay" style:color={rowColorVar(tone)} data-tone={tone}>

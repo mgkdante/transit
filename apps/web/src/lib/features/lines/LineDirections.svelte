@@ -12,6 +12,9 @@
 </script>
 
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
+	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
+	const absenceContext = readLiveAbsenceContext();
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { stopNameFallback } from '#lib/site/absence.ts';
@@ -37,7 +40,11 @@
 			{#each directions ?? [] as dir, di (di)}
 				<li class="line-direction">
 					<span class="line-direction-head">
-						<span class="line-direction-name">
+						<span
+							class="line-direction-name readable-name"
+							title={dir.headsign ?? copy.direction(dir.dir)}
+							use:readableName
+						>
 							{dir.headsign ?? copy.direction(dir.dir)}
 						</span>
 						<span class="line-direction-meta">
@@ -52,8 +59,10 @@
 									<a class="line-stop-link" href={stopHref(stop.id)}>
 										<span class="sr-only">{copy.viewStop} </span>
 										<span class="line-stop-seq">{stop.seq}</span>
-										<span class="line-stop-name"
-											>{stop.name ?? stopNameFallback(stop.id, locale)}</span
+										<span
+											class="line-stop-name readable-name"
+											title={stop.name ?? stopNameFallback(stop.id, locale)}
+											use:readableName>{stop.name ?? stopNameFallback(stop.id, locale)}</span
 										>
 										<span class="line-stop-live">
 											{#if prediction}
@@ -69,10 +78,18 @@
 														{delayLabel(prediction.delayMin, copy)}
 													</span>
 												{:else}
-													<AbsentValue reason="not-reported" variant="row" {locale} />
+													<AbsentValue
+														reason={liveAbsenceReason('trip-prediction-delay', absenceContext())}
+														variant="row"
+														{locale}
+													/>
 												{/if}
 											{:else}
-												<AbsentValue reason="no-prediction" variant="row" {locale} />
+												<AbsentValue
+													reason={liveAbsenceReason('trip-prediction', absenceContext())}
+													variant="row"
+													{locale}
+												/>
 											{/if}
 										</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
@@ -169,7 +186,7 @@
 		color: var(--foreground);
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 		transition: color var(--duration-fast) var(--ease-out);
 	}
 	.line-stop-live {

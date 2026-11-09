@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import worker from "../src/worker.js";
-import { __resetKpisCachesForTests } from "../src/kpis.js";
+import {
+  __resetKpisCachesForTests,
+  LIVE_TTL_SECONDS,
+  RETRY_AFTER_S,
+  SNAPSHOT_STALE_S,
+} from "../src/kpis.js";
+import {
+  KPI_COLD_RETRY_AFTER,
+  KPI_FRESHNESS_LIMIT_S,
+  KPI_LIVE_TTL_S,
+} from "../../../contracts/kpis-v1.js";
 
 // Byte-identical examples are the handoff to yesid.dev's consumer suite.
 const { examples } = JSON.parse(
@@ -84,3 +94,9 @@ for (const example of examples) {
     assert.deepEqual(await response.json(), body);
   });
 }
+
+test("KPI v1 contract timing matches the endpoint's live TTL", () => {
+  assert.equal(KPI_LIVE_TTL_S, LIVE_TTL_SECONDS);
+  assert.equal(KPI_COLD_RETRY_AFTER, RETRY_AFTER_S);
+  assert.equal(KPI_FRESHNESS_LIMIT_S, SNAPSHOT_STALE_S);
+});

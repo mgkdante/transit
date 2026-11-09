@@ -1,3 +1,4 @@
+import { clock } from '@yesid/ui/state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
@@ -1212,7 +1213,7 @@ describe('MapSelectionDetail', () => {
 						status: 'unknown',
 						updated_utc: utc('2026-06-15T00:00:00Z'),
 						route: '24',
-						trip: null,
+						trip: 'trip-without-delay',
 						next_stop: 'stop-2',
 						bearing: null,
 						delay_min: null,
@@ -1448,7 +1449,12 @@ describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (loc
 		const t = MAP_SELECTION_DETAIL_COPY[locale];
 		const { container, getByRole } = render(DetailBusRow, {
 			props: {
-				vehicle: { ...vehicles[0], status, delay_min: delay },
+				vehicle: {
+					...vehicles[0],
+					updated_utc: utc(new Date(clock.serverNow).toISOString()),
+					status,
+					delay_min: delay,
+				},
 				locale,
 				t,
 				onselect: vi.fn(),
@@ -1520,3 +1526,22 @@ describe('vehicle attribute definition groups', () => {
 		},
 	);
 });
+
+it.each(['en', 'fr'] as const)(
+	'shows out-of-service detail without punctuality in %s',
+	(locale) => {
+		const changedIndex = {
+			...index,
+			byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], trip: null }),
+		};
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index: changedIndex, stops, alerts, routes },
+		);
+		const view = render(MapSelectionDetail, { detail, locale });
+		const status = detailValue(view.container, MAP_SELECTION_DETAIL_COPY[locale].status);
+		expect(status).toHaveTextContent(locale === 'en' ? 'Out of service' : 'Hors service');
+		expect(status.querySelector('[data-m6d-glyph-kind="status"]')).toBeNull();
+		expect(status).not.toHaveTextContent(STATUS_LABELS[locale].late);
+	},
+);

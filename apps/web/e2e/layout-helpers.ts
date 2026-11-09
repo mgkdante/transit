@@ -1,5 +1,18 @@
 import type { Page } from '@playwright/test';
 
+// A request can outlive its page: navigation or teardown disposes the fetched
+// response before route.fulfill runs. That is not a layout finding, so drop it.
+const TEARDOWN =
+	/has been disposed|Target page, context or browser has been closed|Route is already handled/;
+export async function forwardRoute(handle: () => Promise<void>): Promise<void> {
+	try {
+		await handle();
+	} catch (error) {
+		if (TEARDOWN.test(String(error))) return;
+		throw error;
+	}
+}
+
 // Inspect text nodes rather than a hand-maintained list of component classes. This
 // includes bars, cards, panels, sheets and overlays, including content below fold.
 export async function textDefects(page: Page) {
@@ -86,6 +99,13 @@ export async function textDefects(page: Page) {
 			const el = node.parentElement as HTMLElement;
 			const text = node.textContent?.trim();
 			if (!text || !el || el.closest('script,style,[data-allow-clip]')) continue;
+			// Blueprint drawing annotations are decorative and intentionally bleed past the frame.
+			// This allowance is limited to the aria-hidden drawing layer, never rider content.
+			if (
+				el.closest('[data-slot="blueprint-listing-header"]') &&
+				el.closest('[aria-hidden="true"]')
+			)
+				continue;
 			let invisible = false;
 			for (let p: Element | null = el; p && p !== document.body; p = p.parentElement) {
 				if (hidden(p)) {
@@ -105,7 +125,7 @@ export async function textDefects(page: Page) {
 				if (/auto|scroll/.test(css.overflowY) && p.scrollHeight > p.clientHeight + 1) break;
 				const x = p.scrollWidth > p.clientWidth + 1,
 					y = p.scrollHeight > p.clientHeight + 1;
-				if (css.textOverflow === 'ellipsis' && x) {
+				if (css.textOverflow === 'ellipsis' && (x || (y && Number(css.webkitLineClamp) > 0))) {
 					if (!readable(p, p.textContent?.trim() ?? full))
 						report('inaccessible-ellipsis', p, p.textContent?.trim() ?? full);
 				} else if (

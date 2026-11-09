@@ -6,7 +6,10 @@ import {
 	isVehicleStale,
 	projectedDistanceM,
 	projectVehicle,
+	projectionHorizon,
+	notReporting,
 } from './vehicleProjection';
+import { VehicleSchema } from '#lib/v1/schemas/index.ts';
 import { cumulativeLengths, projectToPolyline, type Coord } from './polyline';
 
 const W = [-73.7, 45.5] as Coord;
@@ -14,6 +17,35 @@ const E = [-73.4, 45.5] as Coord;
 const STRAIGHT: Coord[] = [W, E];
 
 const NOW_MS = Date.parse('2026-06-22T12:00:00Z');
+
+describe('provider source lag', () => {
+	it('extends the horizon and its stale cap', () => {
+		expect(projectionHorizon(20, 60)).toBe(130);
+		expect(projectionHorizon(100, 60)).toBe(210);
+		expect(projectionHorizon(20, 0)).toBe(70);
+	});
+	it('keeps an OC-like fix moving only with its allowance', () => {
+		const input = { coord: W, shape: STRAIGHT, speedMps: 10, ageS: 110, bearing: 90 };
+		const projected = projectVehicle({ ...input, horizon: projectionHorizon(20, 60), cutoff: 210 });
+		expect(projected.frozen).toBe(false);
+		expect(projected.coord[0]).toBeGreaterThan(W[0]);
+		expect(projectVehicle({ ...input, horizon: projectionHorizon(20) }).frozen).toBe(true);
+	});
+	it('allows expected source lag before declaring a vehicle silent', () => {
+		const vehicle = (age: number) =>
+			VehicleSchema.parse({
+				id: 'oc',
+				lat: 45.5,
+				lon: -75.7,
+				status: 'unknown',
+				reported_utc: isoAgo(age),
+				updated_utc: isoAgo(0),
+			});
+		expect(notReporting(vehicle(170), NOW_MS, 210)).toBeNull();
+		expect(notReporting(vehicle(170), NOW_MS)).toEqual({ ageS: 170 });
+		expect(notReporting(vehicle(215), NOW_MS, 210)).toEqual({ ageS: 215 });
+	});
+});
 function isoAgo(seconds: number): string {
 	return new Date(NOW_MS - seconds * 1000).toISOString();
 }
@@ -139,6 +171,48 @@ describe('projectVehicle', () => {
 		const back = projectToPolyline(STRAIGHT, res.coord, lengths)!;
 		const expected = projectedDistanceM(speedMps, ageS);
 		expect(back.s).toBeCloseTo(expected, 0);
+	});
+
+	it('stops at a next stop ahead, but ignores a reported stop at or behind the vehicle', () => {
+		const start = [-73.6, 45.5] as Coord;
+		const ahead = [-73.599, 45.5] as Coord; // ~78 m east
+		const behind = [-73.62, 45.5] as Coord; // ~1.6 km west
+		const free = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+		});
+		const clamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: ahead,
+		});
+		const notClamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: behind,
+		});
+		const atStop = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: start,
+		});
+		expect(clamped.coord[0]).toBeCloseTo(ahead[0], 5);
+		expect(clamped.frozen).toBe(true);
+		expect(notClamped.coord[0]).toBeCloseTo(free.coord[0], 9);
+		expect(notClamped.frozen).toBe(false);
+		expect(atStop.coord[0]).toBeCloseTo(free.coord[0], 9);
 	});
 
 	it('advances further for a larger age (up to the saturation cap)', () => {

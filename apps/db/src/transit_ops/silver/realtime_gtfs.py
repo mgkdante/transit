@@ -1048,6 +1048,14 @@ def _load_realtime_message_to_silver(
                 rejected_speed_count,
             )
 
+    from transit_ops.providers.live_policy import record_route_live_observations
+
+    record_route_live_observations(
+        connection,
+        provider_id=snapshot.provider_id,
+        snapshot_id=rt_feed_snapshot_id,
+        endpoint_key=snapshot.endpoint_key,
+    )
     return _realtime_load_result(snapshot, row_counts)
 
 

@@ -111,7 +111,6 @@ vi.mock('#lib/v1/boot.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/v1/boot.ts')>()),
 	bootV1: vi.fn(),
 }));
-vi.mock('#lib/v1/repositories/live.ts', () => ({ getVehicles: vi.fn() }));
 vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: vi.fn(),
 	getRoutesIndex: vi.fn(),
@@ -174,7 +173,7 @@ function loadedV1(lang: 'en' | 'fr'): V1Context {
 			attribution: 'Fixture attribution',
 			dataset_version: 'fixture-v1',
 			labels: {},
-			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc } },
+			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc, source_lag_s: 0 } },
 			surfaces: [],
 		},
 	};

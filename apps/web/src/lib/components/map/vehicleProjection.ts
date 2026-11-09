@@ -4,18 +4,25 @@ import { type Coord, projectToPolyline, walkAlong, cumulativeLengths } from './p
 export function notReporting(
 	vehicle: Pick<Vehicle, 'reported_utc' | 'updated_utc'>,
 	serverNow: number,
+	cutoff: number = STALE_CUTOFF_S,
 ): { ageS: number } | null {
 	const ageS = fixAgeS(vehicle.reported_utc, vehicle.updated_utc, serverNow);
-	return isVehicleStale(ageS) ? { ageS } : null;
+	return isVehicleStale(ageS, cutoff) ? { ageS } : null;
 }
 
 export const PROJECTION_HORIZON_S = 90;
 
-export function projectionHorizon(ttlS = 30): number {
-	return Math.min(STALE_CUTOFF_S, 2 * (Number.isFinite(ttlS) && ttlS > 0 ? ttlS : 30) + 30);
+export function projectionHorizon(ttlS = 30, lagS = 0): number {
+	return Math.min(
+		STALE_CUTOFF_S + lagS,
+		2 * (Number.isFinite(ttlS) && ttlS > 0 ? ttlS : 30) + 30 + lagS,
+	);
 }
 
 export const STALE_CUTOFF_S = 150;
+
+/** A reported next stop counts as ahead only beyond this distance along the shape. */
+export const NEXT_STOP_AHEAD_TOLERANCE_M = 5;
 
 export function fixAgeS(
 	reportedUtc: string | null | undefined,
@@ -99,10 +106,11 @@ export function projectVehicle(input: ProjectVehicleInput): ProjectVehicleResult
 	const stopS =
 		input.invariants?.stopS ??
 		(input.nextStop ? projectToPolyline(shape, input.nextStop, lengths)?.s : undefined);
-	const end = Math.min(
-		lengths[lengths.length - 1],
-		stopS == null ? Infinity : Math.max(proj.s, stopS),
-	);
+	// Only a stop ahead of the vehicle bounds the estimate. A reported stop at or
+	// behind it (the stop just served, or GPS jitter while dwelling) must not freeze
+	// it; a dwelling vehicle already holds still because its reported speed is ~0.
+	const stopAhead = stopS != null && stopS > proj.s + NEXT_STOP_AHEAD_TOLERANCE_M;
+	const end = Math.min(lengths[lengths.length - 1], stopAhead ? stopS : Infinity);
 	const sample = walkAlong(shape, Math.min(proj.s + d, end), lengths);
 	if (!sample) {
 		return { coord, bearing, frozen: true, stale };

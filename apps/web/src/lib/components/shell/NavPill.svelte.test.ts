@@ -1,5 +1,9 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { createMemoryLiveReader } from '#lib/v1/live/__fixtures__/reader.ts';
+import { createLiveStore, type LiveStore } from '#lib/v1/live/store.svelte.ts';
+import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+import { ManifestSchema } from '#lib/v1/schemas/index.ts';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chromeSearchResults } from '#lib/search/chromeSearch.ts';
@@ -355,3 +359,42 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		expect(panel!.querySelector('[data-slot="search-controls"]')).toBeNull();
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'shows search Feed health in %s even when vehicles could not load',
+	async (locale) => {
+		const reader = createMemoryLiveReader();
+		const manifest = ManifestSchema.parse({
+			provider: 'octranspo',
+			display_name: 'OC Transpo',
+			attribution: 'Test',
+			dataset_version: 'test',
+			bbox: [-76, 45, -75, 46],
+			labels: {},
+			surfaces: [],
+			files: { live: { ttl_s: 30, generated_utc: '2026-06-16T00:00:00Z' } },
+		});
+		let live!: LiveStore;
+		const dispose = $effect.root(() => {
+			live = createLiveStore(manifest, reader, { families: ['vehicles'] });
+		});
+		try {
+			await live.refresh();
+			const presentation = livePresentation({
+				familyStates: live.familyStates,
+				families: ['vehicles'],
+				locale,
+				page: 'map',
+			});
+			expect(presentation.notice.kind).toBe('unavailable');
+			const view = render(NavPill, {
+				props: { locale, search: '40061', searchPresentation: presentation },
+			});
+			expect(view.getByRole('status')).toHaveTextContent(presentation.notice.message);
+			expect(view.getByText(presentation.stamp.ageText)).toBeInTheDocument();
+		} finally {
+			live.stop();
+			dispose();
+		}
+	},
+);

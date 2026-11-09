@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
+	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
+	import { clock } from '@yesid/ui/state';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
-	import { absenceSentence } from '#lib/site/absence.ts';
+	import { absenceSentence, liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { timeLabel } from '../mapSelectionDetail.logic';
@@ -21,6 +24,13 @@
 	}
 
 	let { vehicle, locale, timeZone, etaUtc = null, t, onselect, onpreview }: Props = $props();
+	const absenceContext = readLiveAbsenceContext();
+	const absence = $derived(
+		liveAbsenceReason('vehicle-delay', {
+			...absenceContext(),
+			notReporting: notReporting(vehicle, clock.serverNow, absenceContext().staleCutoffS) != null,
+		}),
+	);
 	let pointerPreview = $state(false);
 	let focusPreview = $state(false);
 	const previewing = $derived(pointerPreview || focusPreview);
@@ -32,7 +42,9 @@
 	}
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
+		!isInService(vehicle)
+			? `${t.selectBus(vehicle.id)}, ${vehicleServiceCopy[locale].status}`
+			: `${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence(absence, locale)}`,
 	);
 </script>
 
@@ -50,20 +62,23 @@
 	<strong>{vehicle.id}</strong>
 	<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 	<small>
-		<StatusBadge
-			status={vehicle.status}
-			label={STATUS_LABELS[locale][vehicle.status]}
-			mode={unknownStatusAndDelay ? 'dot' : 'legend'}
-			aria-hidden={unknownStatusAndDelay || undefined}
-			size="sm"
-		/>
-		<MaybeValue
-			value={delayMeasurement(vehicle.delay_min)}
-			reason="not-reported"
-			variant={unknownStatusAndDelay ? 'row' : 'inline'}
-			{locale}
-		/>
-	</small>
+		{#if !isInService(vehicle)}{vehicleServiceCopy[locale].status}{:else}
+			<StatusBadge
+				status={vehicle.status}
+				label={STATUS_LABELS[locale][vehicle.status]}
+				mode={unknownStatusAndDelay ? 'dot' : 'legend'}
+				aria-hidden={unknownStatusAndDelay || undefined}
+				size="sm"
+			/>
+			<MaybeValue
+				value={delayMeasurement(vehicle.delay_min)}
+				reason={absence}
+				variant="compact"
+				disclosure={false}
+				{locale}
+			/>
+		{/if}</small
+	>
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 </button>
 

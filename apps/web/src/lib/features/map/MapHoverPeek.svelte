@@ -1,8 +1,13 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import { routeModeHint } from '#lib/search/stopMode.ts';
-	import { stopNameFallback } from '#lib/site/absence.ts';
+	import {
+		stopNameFallback,
+		liveAbsenceReason,
+		readLiveAbsenceContext,
+	} from '#lib/site/absence.ts';
 	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapHoverPeek } from './mapHoverPeek';
@@ -10,7 +15,7 @@
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-	import { formatAge, vehicleFieldAbsence } from './mapSelectionDetail.logic';
+	import { formatAge } from './mapSelectionDetail.logic';
 
 	interface Props {
 		peek: MapHoverPeek;
@@ -18,11 +23,13 @@
 	}
 
 	let { peek, locale }: Props = $props();
+	const absenceContext = readLiveAbsenceContext();
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
 	const vehicleAbsence = $derived(
-		vehicleFieldAbsence({
-			stale: peek.kind === 'vehicle' && peek.notReportingAgeS != null,
-			metro: peek.kind === 'vehicle' && peek.route?.type === ROUTE_TYPE_METRO,
+		liveAbsenceReason('vehicle-delay', {
+			...absenceContext(),
+			notReporting: peek.kind === 'vehicle' && peek.notReportingAgeS != null,
+			unsupported: peek.kind === 'vehicle' && peek.route?.type === ROUTE_TYPE_METRO,
 		}),
 	);
 </script>
@@ -69,18 +76,24 @@
 			<div>
 				<dt>{t.status}</dt>
 				<dd class="map-peek-status">
-					{#if peek.delayMin != null || peek.status !== 'unknown'}
-						<StatusBadge
-							status={peek.status}
-							label={STATUS_LABELS[locale][peek.status]}
-							mode="legend"
-							size="sm"
-						/>
-						<span aria-hidden="true">·</span>
+					{#if !isInService({ trip: peek.tripId })}{vehicleServiceCopy[locale].status}{:else}
+						{#if peek.delayMin != null || peek.status !== 'unknown'}
+							<StatusBadge
+								status={peek.status}
+								label={STATUS_LABELS[locale][peek.status]}
+								mode="legend"
+								size="sm"
+							/>
+							<span aria-hidden="true">·</span>
+						{/if}
+						<span class="map-peek-delay">
+							<MaybeValue
+								value={delayMeasurement(peek.delayMin)}
+								reason={vehicleAbsence}
+								{locale}
+							/>
+						</span>
 					{/if}
-					<span class="map-peek-delay">
-						<MaybeValue value={delayMeasurement(peek.delayMin)} reason={vehicleAbsence} {locale} />
-					</span>
 				</dd>
 			</div>
 			<div>
@@ -103,7 +116,15 @@
 							{peek.nextStop.name}
 						{/if}
 					{:else}
-						<AbsentValue reason={peek.nextStopAbsence} {locale} />
+						<AbsentValue
+							reason={liveAbsenceReason('next-stop', {
+								...absenceContext(),
+								notReporting: peek.notReportingAgeS != null,
+								scheduleMissing: peek.nextStopAbsence === 'not-in-schedule',
+								unsupported: peek.route?.type === ROUTE_TYPE_METRO,
+							})}
+							{locale}
+						/>
 					{/if}
 				</dd>
 			</div>

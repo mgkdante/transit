@@ -40,3 +40,18 @@ describe('generated snapshot contract', () => {
 		expect(() => generateModule(root)).toThrow('Unsupported keyword: futureKeyword');
 	});
 });
+
+it('accepts legacy vehicles and preserves the OC Transpo e2e next stop coordinates', () => {
+	const fixture = JSON.parse(
+		readFileSync(new URL('../../../../e2e/octranspo-vehicles.json', import.meta.url), 'utf8'),
+	);
+	const parsed = generated.VehiclesFileSchema.parse(fixture);
+	expect(parsed.vehicles[0].next_stop_lat).toBe(45.42153);
+	expect(parsed.vehicles[0].next_stop_lon).toBe(-75.69719);
+	const { next_stop_lat, next_stop_lon, ...legacy } = fixture.vehicles[0];
+	expect(next_stop_lat).toBeTypeOf('number');
+	expect(next_stop_lon).toBeTypeOf('number');
+	expect(generated.VehiclesFileSchema.safeParse({ ...fixture, vehicles: [legacy] }).success).toBe(
+		true,
+	);
+});

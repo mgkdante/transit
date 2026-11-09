@@ -14,14 +14,20 @@ test('text detector distinguishes clipping, accessible truncation and broken wor
 		<div><div id="not-accessible" class="ellipsis">Hidden full name</div><span hidden>Hidden full name</span></div>
 		<div id="word" style="width:20px;overflow-wrap:anywhere">Achalandage</div>
 		<div data-allow-clip style="width:10px;overflow:hidden;white-space:nowrap">Explicit decorative clipping</div>
-	</main>`);
+	<div data-slot="blueprint-listing-header"><div aria-hidden="true" style="width:10px;overflow:hidden;white-space:nowrap">Decorative drawing label</div><div id="blueprint-content" style="width:10px;overflow:hidden;white-space:nowrap">Rider content</div></div>
+ <div id="clamp" title="Accessible clamped name" style="width:80px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-overflow:ellipsis">Accessible clamped name</div>
+ </main>`);
 	const findings = await textDefects(page);
 	for (const [selector, kind] of [
 		['#clip', 'clipped'],
 		['#ellipsis', 'inaccessible-ellipsis'],
 		['#not-accessible', 'inaccessible-ellipsis'],
 		['#word', 'broken-word'],
+		['#blueprint-content', 'clipped'],
 	])
 		expect(findings).toEqual(expect.arrayContaining([expect.objectContaining({ selector, kind })]));
-	expect(findings.filter((f) => ['#title', '#duplicate'].includes(f.selector))).toEqual([]);
+	expect(findings.some((f) => f.text === 'Decorative drawing label')).toBe(false);
+	expect(findings.filter((f) => ['#title', '#duplicate', '#clamp'].includes(f.selector))).toEqual(
+		[],
+	);
 });

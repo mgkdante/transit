@@ -1,3 +1,4 @@
+import { clock } from '@yesid/ui/state';
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -13,7 +14,8 @@ import type { IdentitySeed } from '#lib/v1/serverContext.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
-import { adapter } from '#lib/v1/adapter/index.ts';
+import { createMemoryLiveReader } from '#lib/v1/live/__fixtures__/reader.ts';
+const reader = createMemoryLiveReader();
 import {
 	AlertsFileSchema,
 	VehiclesFileSchema,
@@ -124,7 +126,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'early',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tEarly',
 		next_stop: 'sB',
@@ -135,7 +137,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'severe',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tLate',
 		next_stop: 'sA',
@@ -146,7 +148,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'unknown',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tNone',
 		delay_min: null,
@@ -156,7 +158,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'on_time',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '999',
 		trip: 'tOther',
 		delay_min: 0,
@@ -332,10 +334,11 @@ vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
 		LIVE_FAMILIES: actual.LIVE_FAMILIES,
 		createLiveStore: (
 			manifest: Parameters<typeof actual.createLiveStore>[0],
-			options?: Parameters<typeof actual.createLiveStore>[1],
+			_reader: Parameters<typeof actual.createLiveStore>[1],
+			options?: Parameters<typeof actual.createLiveStore>[2],
 		) => {
 			createLiveStoreSpy(manifest, options);
-			if (routeProvider.realLive) return actual.createLiveStore(manifest, options);
+			if (routeProvider.realLive) return actual.createLiveStore(manifest, reader, options);
 			return liveStore;
 		},
 	};
@@ -413,19 +416,19 @@ describe('RouteDetail article cover and focus scope', () => {
 		const generated_utc = new Date().toISOString();
 		const spies = [
 			vi
-				.spyOn(adapter.live, 'vehicles')
+				.spyOn(reader, 'vehicles')
 				.mockResolvedValue(VehiclesFileSchema.parse({ generated_utc, vehicles: [] })),
 			vi
-				.spyOn(adapter.live, 'trips')
+				.spyOn(reader, 'trips')
 				.mockResolvedValue(
 					TripsFileSchema.parse({ generated_utc, feed_captured_utc: generated_utc, trips: {} }),
 				),
 			vi
-				.spyOn(adapter.live, 'alerts')
+				.spyOn(reader, 'alerts')
 				.mockResolvedValue(
 					AlertsFileSchema.parse({ generated_utc, feed_captured_utc: null, alerts: [] }),
 				),
-			vi.spyOn(adapter.live, 'network').mockResolvedValue(
+			vi.spyOn(reader, 'network').mockResolvedValue(
 				NetworkFileSchema.parse({
 					generated_utc,
 					vehicles_in_service: 0,
