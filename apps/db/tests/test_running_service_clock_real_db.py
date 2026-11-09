@@ -199,9 +199,11 @@ def _trip(conn, edition, start="12:00:05", end="12:30:05", trip="T"):
 def _assert_equivalent(conn, as_of, provider=PROVIDER):
     params = {"p": provider, "as_of": as_of, "at": as_of}
     expected = set(conn.execute(text(ORIGINAL_RUNNING_QUERY), params).all())
-    actual = set(conn.execute(text(
-        "SELECT route_id, trip_id FROM gold.scheduled_running_trips_at(:p,:as_of)"
-    ), params).all())
+    actual = set(
+        conn.execute(
+            text("SELECT route_id, trip_id FROM gold.scheduled_running_trips_at(:p,:as_of)"), params
+        ).all()
+    )
     assert actual == expected
 
 
@@ -460,13 +462,16 @@ def test_span_rebuild_replaces_changed_and_removed_times(conn, seed_provider):
     _trip(conn, edition, "49:00:00", "50:00:00", "long")
     query = text("""
         SELECT trip_id, first_seconds, last_seconds FROM gold.trip_service_span
-        WHERE dataset_version_id=:d ORDER BY trip_id
+        WHERE dataset_version_id=:d ORDER BY trip_id COLLATE "C"
     """)
     assert conn.execute(query, edition).all() == [("T", 43205, 45005), ("long", 176400, 180000)]
-    conn.execute(text("""
+    conn.execute(
+        text("""
         UPDATE silver.stop_times SET departure_time=NULL, arrival_time=NULL
         WHERE dataset_version_id=:d AND trip_id='T'
-    """), edition)
+    """),
+        edition,
+    )
     for _ in range(2):
         refresh_trip_service_spans(conn, provider_id=edition["p"], dataset_version_id=edition["d"])
         assert conn.execute(query, edition).all() == [("long", 176400, 180000)]
@@ -492,23 +497,43 @@ def test_span_migration_downgrade_upgrade_backfill_and_cascade(conn, seed_provid
         migration.upgrade()
         assert conn.exec_driver_sql("SHOW lock_timeout").scalar() == "2s"
         assert conn.exec_driver_sql("SHOW statement_timeout").scalar() == "10min"
-        assert conn.execute(text("""
+        assert conn.execute(
+            text("""
             SELECT dataset_version_id FROM gold.trip_service_span WHERE provider_id=:p
-        """), current).all() == [(current["d"],)]
+        """),
+            current,
+        ).all() == [(current["d"],)]
         _assert_equivalent(conn, _instant(DAY, "12:15:00"))
-        for role, privileges in (("transit_app", ["SELECT", "INSERT", "DELETE"]),
-                                 ("transit-db", ["SELECT"])):
+        for role, privileges in (
+            ("transit_app", ["SELECT", "INSERT", "DELETE"]),
+            ("transit-db", ["SELECT"]),
+        ):
             if conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname=:r"), {"r": role}).scalar():
                 for privilege in privileges:
-                    assert conn.execute(text("SELECT has_table_privilege(:r, "
-                        "'gold.trip_service_span', :privilege)"),
-                        {"r": role, "privilege": privilege}).scalar()
+                    assert conn.execute(
+                        text(
+                            "SELECT has_table_privilege(:r, 'gold.trip_service_span', :privilege)"
+                        ),
+                        {"r": role, "privilege": privilege},
+                    ).scalar()
         # Remove the fixture's other FK holders, then let the new FK prune spans.
-        for table in ("gold.dim_route", "silver.stop_times", "silver.trips", "silver.stops",
-                      "silver.routes", "silver.calendar"):
+        for table in (
+            "gold.dim_route",
+            "silver.stop_times",
+            "silver.trips",
+            "silver.stops",
+            "silver.routes",
+            "silver.calendar",
+        ):
             conn.execute(text(f"DELETE FROM {table} WHERE dataset_version_id=:d"), current)
         conn.execute(text("DELETE FROM core.dataset_versions WHERE dataset_version_id=:d"), current)
-        assert conn.execute(text("""
+        assert (
+            conn.execute(
+                text("""
             SELECT count(*) FROM gold.trip_service_span WHERE dataset_version_id=:d
-        """), current).scalar() == 0
+        """),
+                current,
+            ).scalar()
+            == 0
+        )
         checkpoint.rollback()
