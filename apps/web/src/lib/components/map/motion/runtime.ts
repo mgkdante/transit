@@ -2,6 +2,8 @@ export interface MotionRuntime {
 	requestFrame?: (cb: () => void) => number;
 	cancelFrame?: (handle: number) => void;
 	now?: () => number;
+	setTimer?: (cb: () => void, ms: number) => number;
+	clearTimer?: (handle: number) => void;
 }
 
 export interface ResolvedMotionRuntime {
