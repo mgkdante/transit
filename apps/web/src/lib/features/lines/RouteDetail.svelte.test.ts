@@ -188,7 +188,14 @@ const liveStore = {
 	},
 	generatedUtc: '2026-06-15T12:00:00Z',
 	ageSeconds: 12,
-	familyStates: { alerts: { health: { ageSeconds: 300 as number | null } } },
+	familyStates: {
+		vehicles: {
+			active: true,
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', retained: true, ageSeconds: 12, isStale: false, notice: null },
+		},
+		alerts: { health: { ageSeconds: 300 as number | null } },
+	},
 	isStale: false,
 	start: vi.fn(),
 	stop: vi.fn(),
@@ -322,6 +329,7 @@ vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => prov
 vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
 	return {
+		LIVE_FAMILIES: actual.LIVE_FAMILIES,
 		createLiveStore: (
 			manifest: Parameters<typeof actual.createLiveStore>[0],
 			options?: Parameters<typeof actual.createLiveStore>[1],

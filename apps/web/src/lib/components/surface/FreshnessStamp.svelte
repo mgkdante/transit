@@ -1,20 +1,14 @@
 <script lang="ts">
-	import { clock } from '@yesid/ui/state';
 	import { cn } from '#lib/utils/index.ts';
 	import { type Locale } from '#lib/i18n/index.ts';
-	import { formatRelativeSeconds, formatUtc } from '#lib/utils/time.ts';
-	import { freshnessAgeSeconds } from '#lib/v1/freshness.ts';
+	import type { StampPresentation } from '#lib/v1/live/livePresentation.ts';
 
 	import { StatusDot } from '@yesid/ui/brand';
 
 	type Variant = 'live' | 'updated';
 
 	export interface FreshnessStampProps {
-		generatedUtc: string | null;
-		ageSeconds?: number | null;
-		ageLabel?: string | null;
-		isStale?: boolean;
-		degraded?: boolean;
+		presentation: StampPresentation;
 		variant?: Variant;
 		locale: Locale;
 		label?: string;
@@ -22,51 +16,26 @@
 	}
 
 	let {
-		generatedUtc,
-		ageSeconds = undefined,
-		ageLabel = null,
-		isStale = false,
-		degraded = false,
+		presentation,
 		variant = 'live',
 		locale,
 		label,
 		class: className,
 	}: FreshnessStampProps = $props();
 
-	$effect(() => clock.subscribe());
-
 	type Labels = {
 		readonly live: string;
 		readonly updated: string;
 		readonly stale: string;
-		readonly unknown: string;
 	};
 	const L: Record<Locale, Labels> = {
-		fr: { live: 'EN DIRECT', updated: 'Mis à jour', stale: 'obsolète', unknown: 'inconnu' },
-		en: { live: 'LIVE', updated: 'Updated', stale: 'stale', unknown: 'unknown' },
+		fr: { live: 'EN DIRECT', updated: 'Mis à jour', stale: 'obsolète' },
+		en: { live: 'LIVE', updated: 'Updated', stale: 'stale' },
 	};
 	const t = $derived(L[locale]);
-	const displayLabel = $derived(label ?? (variant === 'live' ? t.live : t.updated));
-
-	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc, clock.serverNow),
+	const displayLabel = $derived(
+		label ?? presentation.label ?? (variant === 'live' ? t.live : t.updated),
 	);
-
-	const ABSOLUTE_AFTER_S = 86_400;
-	const relative = $derived.by(() => {
-		if (ageLabel != null) return ageLabel;
-		if (effectiveAge == null) return t.unknown;
-		if (effectiveAge >= ABSOLUTE_AFTER_S && generatedUtc) {
-			return formatUtc(generatedUtc, locale, {
-				month: 'short',
-				day: 'numeric',
-				hour: '2-digit',
-				minute: '2-digit',
-				timeZoneName: 'short',
-			});
-		}
-		return formatRelativeSeconds(effectiveAge, locale);
-	});
 </script>
 
 {#if variant === 'live'}
@@ -74,14 +43,19 @@
 		class={cn('freshness-stamp freshness-stamp--live', className)}
 		data-slot="freshness-stamp"
 		data-variant="live"
-		data-stale={isStale}
-		data-degraded={degraded ? 'true' : undefined}
-		data-age-seconds={effectiveAge ?? undefined}
+		data-stale={presentation.isStale}
+		data-degraded={presentation.degraded ? 'true' : undefined}
+		data-age-seconds={presentation.ageSeconds ?? undefined}
 	>
-		<StatusDot color={isStale || degraded ? 'caution' : 'on_time'} label={displayLabel} />
+		<StatusDot
+			color={presentation.isStale || presentation.degraded ? 'caution' : 'on_time'}
+			label={displayLabel}
+		/>
 		<span class="freshness-stamp-label">{displayLabel}</span>
-		<time class="freshness-stamp-age" datetime={generatedUtc ?? undefined}>{relative}</time>
-		{#if isStale}
+		<time class="freshness-stamp-age" datetime={presentation.generatedUtc ?? undefined}
+			>{presentation.ageText}</time
+		>
+		{#if presentation.isStale}
 			<span class="freshness-stamp-stale">· {t.stale}</span>
 		{/if}
 	</span>
@@ -90,12 +64,14 @@
 		class={cn('freshness-stamp freshness-stamp--updated', className)}
 		data-slot="freshness-stamp"
 		data-variant="updated"
-		data-age-seconds={effectiveAge ?? undefined}
+		data-age-seconds={presentation.ageSeconds ?? undefined}
 		aria-live="polite"
 	>
 		<StatusDot color="unknown" aria-hidden="true" />
 		<span class="freshness-stamp-label">{displayLabel}</span>
-		<time class="freshness-stamp-age" datetime={generatedUtc ?? undefined}>{relative}</time>
+		<time class="freshness-stamp-age" datetime={presentation.generatedUtc ?? undefined}
+			>{presentation.ageText}</time
+		>
 	</span>
 {/if}
 

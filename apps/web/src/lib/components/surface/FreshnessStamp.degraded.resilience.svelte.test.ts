@@ -1,6 +1,7 @@
 import { render, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
+import { stampFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
 import FreshnessStamp from './FreshnessStamp.svelte';
 
 describe('FreshnessStamp degraded live truth', () => {
@@ -8,10 +9,7 @@ describe('FreshnessStamp degraded live truth', () => {
 		render(FreshnessStamp, {
 			props: {
 				variant: 'live',
-				generatedUtc: '2026-07-30T12:00:00Z',
-				ageSeconds: 12,
-				isStale: false,
-				degraded: true,
+				presentation: stampFixture({ degraded: true }),
 				locale: 'en',
 			},
 		});

@@ -71,6 +71,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: liveHarness.createLiveStore,
 }));
 vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', () => ({
@@ -111,6 +112,13 @@ beforeEach(() => {
 	liveHarness.createLiveStore.mockReset().mockReturnValue({
 		vehicles: { generated_utc: '2026-06-16T00:00:00Z', vehicles: VEHICLES },
 		generatedUtc: '2026-06-16T00:00:00Z',
+		familyStates: {
+			vehicles: {
+				active: true,
+				retainedGeneration: '2026-06-16T00:00:00Z',
+				health: { retained: true, state: 'live', ageSeconds: 0, isStale: false, notice: null },
+			},
+		},
 		ageSeconds: 0,
 		isStale: false,
 		start: vi.fn(),
