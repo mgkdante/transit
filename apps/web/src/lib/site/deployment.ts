@@ -1,4 +1,1 @@
-export const DEPLOYMENT_IDENTITY = {
-	providerShortName: 'STM',
-	providerCity: 'Montréal',
-} as const;
+export const DEPLOYMENT_IDENTITY = { name: 'Transit', shortName: 'Transit' } as const;
