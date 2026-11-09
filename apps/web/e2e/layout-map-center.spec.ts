@@ -25,6 +25,8 @@ async function sample(page: Page, bounds: number[]) {
 			window as unknown as { __transitMap: { project(c: number[]): { x: number; y: number } } }
 		).__transitMap;
 		const center = probe.project([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]);
+		const west = probe.project([b[0], b[3]]).x;
+		const east = probe.project([b[2], b[3]]).x;
 		const left = panel.width > 56 ? panel.right - map.left : 0;
 		const right = detail?.width ?? 0;
 		const padding = JSON.parse(
@@ -32,12 +34,18 @@ async function sample(page: Page, bounds: number[]) {
 		);
 		return {
 			center,
+			west,
+			east,
+			expectedX: Math.max(
+				left ? left + 16 + (east - west) / 2 : 16 + (east - west) / 2,
+				Math.min(map.width / 2, map.width - right - 16 - (east - west) / 2),
+			),
 			viewportCenter: { x: map.width / 2, y: map.height / 2 },
 			visibleCenter: {
 				x: (map.width + left - right) / 2,
 				y: (map.height + padding.top - padding.bottom) / 2,
 			},
-			panel: { left: panel.left, width: panel.width },
+			panel: { left: panel.left, width: panel.width, right: panel.right - map.left },
 			padding,
 		};
 	}, bounds);
@@ -129,7 +137,7 @@ for (const provider of providers.providers)
 						await expect
 							.poll(async () => {
 								const m = await sample(page, provider.fit_bounds);
-								return Math.abs(m.center.x - m.visibleCenter.x);
+								return Math.abs(m.center.x - m.expectedX);
 							})
 							.toBeLessThan(3);
 					const name = `${provider.id}-${width}x${height}-${state}`;
@@ -143,7 +151,8 @@ for (const provider of providers.providers)
 				if (phase === 'after')
 					for (const state of ['default', 'rail']) {
 						const m = measurements[state] as Awaited<ReturnType<typeof sample>>;
-						expect(Math.abs(m.center.x - m.visibleCenter.x), state).toBeLessThan(3);
+						expect(Math.abs(m.center.x - m.expectedX), state).toBeLessThan(3);
+						if (state === 'default') expect(m.west).toBeGreaterThanOrEqual(m.panel.right + 15);
 						expect(Math.abs(m.center.y - m.visibleCenter.y), state).toBeLessThan(3);
 					}
 			});
