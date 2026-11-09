@@ -94,6 +94,7 @@ export type CameraMap = Pick<
 	| 'jumpTo'
 	| 'fitBounds'
 	| 'setMaxBounds'
+	| 'setMinZoom'
 	| 'getCenter'
 	| 'getZoom'
 	| 'getBearing'
@@ -102,6 +103,7 @@ export type CameraMap = Pick<
 	| 'getPadding'
 >;
 export interface CameraInputs {
+	size?: { width: number; height: number };
 	center?: [number, number];
 	zoom?: number;
 	bounds?: readonly number[];
@@ -173,7 +175,7 @@ export function createMapCamera<Selection = unknown>() {
 		intents: createCameraIntents<Selection>(),
 		initial(value: CameraInputs) {
 			const { center, zoom, bounds, maxBounds, fitPadding } = inputs(value);
-			return { center, zoom, ...mapViewportOptions(bounds, fitPadding, maxBounds) };
+			return { center, zoom, ...mapViewportOptions(bounds, fitPadding, maxBounds, value.size) };
 		},
 		capture(instance: CameraMap, value: CameraInputs): CameraRecoveryView {
 			const { center, zoom, bounds, maxBounds, fitPadding } = inputs(value);
@@ -202,6 +204,16 @@ export function createMapCamera<Selection = unknown>() {
 				(recoveryView.fitInputsKey !== currentFitKey ||
 					recoveryView.cameraInputsKey !== currentCameraKey);
 			if (recoveryView && !fitInputsChanged) {
+				if (value.size) {
+					const viewport = mapViewportOptions(bounds, fitPadding, maxBounds, value.size, {
+						center: { lng: recoveryView.center[0], lat: recoveryView.center[1] },
+						zoom: recoveryView.zoom,
+					});
+					instance.setMaxBounds(null);
+					instance.setMinZoom(viewport.minZoom!);
+					instance.setMaxBounds(viewport.maxBounds);
+				}
+
 				instance.jumpTo({
 					center: recoveryView.center,
 					zoom: recoveryView.zoom,
@@ -237,19 +249,29 @@ export function createMapCamera<Selection = unknown>() {
 			cameraOwner = 'user';
 		},
 		update(m: CameraMap, value: CameraInputs) {
-			const { center, zoom, bounds, maxBounds, fitPadding } = inputs(value);
-			const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
+			const { center, zoom, bounds, maxBounds, fitPadding, size } = inputs(value);
+			const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}|${size?.width},${size?.height}`;
 			if (activeFitKey !== nextFitKey) {
 				activeFitKey = nextFitKey;
 				const nextLayoutSig = fitPaddingKey(fitPadding);
 				const nextBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
-				const layoutChanged = activeLayoutSig !== nextLayoutSig;
+				const layoutChanged = activeLayoutSig !== nextLayoutSig || size !== undefined;
 				const boundsChanged = activeBoundsSig !== nextBoundsSig;
 				if (layoutChanged || boundsChanged) {
 					activeLayoutSig = nextLayoutSig;
 					activeBoundsSig = nextBoundsSig;
-					const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
-					if (boundsChanged) m.setMaxBounds(viewport.maxBounds);
+					const viewport = mapViewportOptions(
+						bounds,
+						fitPadding,
+						maxBounds,
+						size,
+						cameraOwner === 'fit' ? undefined : { center: m.getCenter(), zoom: m.getZoom() },
+					);
+					if (size) {
+						m.setMaxBounds(null);
+						m.setMinZoom(viewport.minZoom!);
+						m.setMaxBounds(viewport.maxBounds);
+					} else if (boundsChanged) m.setMaxBounds(viewport.maxBounds);
 					if (cameraOwner === 'fit') {
 						m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
 					}

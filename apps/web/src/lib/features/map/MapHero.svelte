@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -387,6 +388,40 @@
 		return () => releaseMapOwner(dispose);
 	});
 
+	// Opening/resizing detail surfaces refits only while the camera is fit-owned.
+	$effect(() => {
+		const instance = map;
+		void detailOpen;
+		void detailWidthPx;
+		void detailCollapsed;
+		void desktop.current;
+		if (!instance) return;
+		let disposed = false;
+		const update = () => {
+			if (disposed) return;
+			if (!heroEl) return;
+			const inset = measureMapFocusInset({ getContainer: () => heroEl! });
+			if (!inset.containerWidth || !inset.containerHeight) return;
+			camera.update(instance, {
+				...framing,
+				size: { width: inset.containerWidth, height: inset.containerHeight },
+				fitPadding: inset.fitPadding,
+			});
+		};
+		const observer = new ResizeObserver(update);
+		void tick().then(() => {
+			if (disposed) return;
+			for (const el of document.querySelectorAll(
+				'.map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
+			))
+				observer.observe(el);
+			update();
+		});
+		return () => {
+			disposed = true;
+			observer.disconnect();
+		};
+	});
 	function toggleDetailCollapsed(): void {
 		detailCollapsed = !detailCollapsed;
 	}

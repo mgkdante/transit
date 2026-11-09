@@ -115,6 +115,7 @@ describe('map focus inset arithmetic', () => {
 
 		expect(MIN_VISIBLE_SPAN_PX).toBe(240);
 		expect(inset).toEqual({
+			fitPadding: { top: 16, right: 576, bottom: 16, left: 16 },
 			containerWidth: 1040,
 			containerHeight: 800,
 			topOcclusion: 0,
