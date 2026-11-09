@@ -15,6 +15,7 @@
 
 	let { locale, copy: t, collapsed = false }: Props = $props();
 
+	const hintId = $props.id();
 	const smooth = $derived(motionMode.isSmooth && !$prefersReducedMotion);
 	const explainHref = $derived(`${localizeHref('/metrics', locale)}#live-positions`);
 </script>
@@ -38,10 +39,11 @@
 		{#if $prefersReducedMotion}<span class="map-motion-hint">{t.motion.unavailable}</span>{/if}
 	{:else}
 		<div class="map-motion-heading">
-			<span class="map-motion-label">{t.motion.label}</span>
+			<h2 class="map-motion-label"><WavesIcon size={14} aria-hidden="true" />{t.motion.label}</h2>
 			<button
 				type="button"
 				class="map-motion-switch"
+				aria-describedby={hintId}
 				role="switch"
 				aria-checked={smooth}
 				disabled={$prefersReducedMotion}
@@ -51,18 +53,11 @@
 				<span class="map-motion-track" aria-hidden="true"
 					><span class="map-motion-thumb"></span></span
 				>
-				<span class="map-motion-state"
-					>{$prefersReducedMotion
-						? t.motion.unavailableLabel
-						: smooth
-							? t.motion.smooth
-							: t.motion.raw}</span
-				>
-				<span class="sr-only"> {t.motion.toSmooth}</span>
+				<span class="map-motion-state">{t.motion.setting}</span>
 			</button>
 		</div>
 		<div class="map-motion-caption">
-			<span class="map-motion-hint"
+			<span id={hintId} class="map-motion-hint"
 				>{$prefersReducedMotion
 					? t.motion.unavailable
 					: smooth
@@ -81,7 +76,7 @@
 		gap: 0.375rem;
 		width: 100%;
 		min-width: 0;
-		max-height: 160px;
+
 		justify-self: start;
 	}
 	.map-motion-heading,
@@ -108,12 +103,13 @@
 		white-space: nowrap;
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
+		gap: 0.5rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		font-weight: 600;
+		margin: 0;
+		min-height: 44px;
+		color: var(--foreground);
 	}
 	.map-motion-badge {
 		display: inline-grid;
@@ -264,14 +260,14 @@
 	}
 	.map-motion-heading {
 		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr);
 	}
 	.map-motion-switch {
 		justify-self: stretch;
 		justify-content: space-between;
 	}
 	.map-motion-state {
-		white-space: normal;
+		white-space: nowrap;
 		text-align: left;
 	}
 </style>

@@ -207,22 +207,19 @@ describe('MapFilters', () => {
 
 		expect(queryByRole('searchbox', { name: 'Search routes' })).not.toBeInTheDocument();
 		expect(queryByText('Drilldown')).not.toBeInTheDocument();
-		expect(getByRole('button', { name: 'Remove route 161' })).toHaveAttribute(
-			'aria-pressed',
-			'true',
-		);
-		expect(getByRole('button', { name: 'Remove stop 53355' })).toHaveTextContent(
-			'Van Horne / Rockland',
-		);
-		expect(getByRole('button', { name: 'Remove vehicle 40061' })).toHaveTextContent(
+		expect(getByRole('button', { name: 'Remove filter: 161 Van Horne' })).toBeVisible();
+		expect(
+			getByRole('button', { name: 'Remove filter: Van Horne / Rockland · 53355' }),
+		).toHaveTextContent('Van Horne / Rockland');
+		expect(getByRole('button', { name: 'Remove filter: Vehicle 40061' })).toHaveTextContent(
 			'Vehicle 40061',
 		);
 
-		await fireEvent.click(getByRole('button', { name: 'Remove route 161' }));
+		await fireEvent.click(getByRole('button', { name: 'Remove filter: 161 Van Horne' }));
 
 		expect(pushed).toBe('stop=53355&vehicle=40061');
 		expect([...store.routes]).toEqual([]);
-		expect(queryByRole('button', { name: 'Remove route 161' })).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Remove filter: 161 Van Horne' })).not.toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Clear' }));
 
@@ -293,9 +290,9 @@ describe('MapFilters', () => {
 
 		expect(queryByText('Drilldown')).not.toBeInTheDocument();
 		expect(getByText('Trips')).toBeInTheDocument();
-		expect(getByRole('button', { name: 'Remove trip 296851600' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Remove filter: Trip 296851600' })).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('button', { name: 'Remove trip 296851600' }));
+		await fireEvent.click(getByRole('button', { name: 'Remove filter: Trip 296851600' }));
 
 		expect([...store.trips]).toEqual([]);
 		expect(pushed).toBe('');
@@ -313,16 +310,10 @@ describe('MapFilters', () => {
 			props: { store, locale: 'en', routes: routeFixtures },
 		});
 
-		expect(getByRole('button', { name: 'Remove route 161' })).toHaveAttribute(
-			'aria-pressed',
-			'true',
-		);
-		expect(getByRole('button', { name: 'Remove route 24' })).toHaveAttribute(
-			'aria-pressed',
-			'true',
-		);
+		expect(getByRole('button', { name: 'Remove filter: 161 Van Horne' })).toBeVisible();
+		expect(getByRole('button', { name: 'Remove filter: 24 Sherbrooke' })).toBeVisible();
 
-		await fireEvent.click(getByRole('button', { name: 'Remove route 161' }));
+		await fireEvent.click(getByRole('button', { name: 'Remove filter: 161 Van Horne' }));
 
 		expect(pushed).toBe('route=24');
 		expect([...store.routes]).toEqual(['24']);

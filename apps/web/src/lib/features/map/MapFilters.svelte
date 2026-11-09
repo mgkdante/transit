@@ -372,13 +372,13 @@
 										type="button"
 										class="mf-chip"
 										data-on="true"
-										aria-label="{t.routeRemove} {route.short}"
-										aria-pressed="true"
+										aria-label="{t.filterRemove} {routeDisplay(route)}"
 										style="--chip:var(--accent-text)"
 										onclick={() => void removeRoute(route)}
 									>
-										<span class="mf-swatch"></span>
-										<span class="mf-chip-text">{routeDisplay(route)}</span>
+										<span class="mf-chip-text">{routeDisplay(route)}</span><span aria-hidden="true"
+											>×</span
+										>
 									</button>
 								{/each}
 							</div>
@@ -393,13 +393,13 @@
 										type="button"
 										class="mf-chip"
 										data-on="true"
-										aria-label="{t.stopRemove} {stop.code ?? stop.id}"
-										aria-pressed="true"
+										aria-label="{t.filterRemove} {stopDisplay(stop)}"
 										style="--chip:var(--accent)"
 										onclick={() => void removeStop(stop)}
 									>
-										<span class="mf-swatch"></span>
-										<span class="mf-chip-text">{stopDisplay(stop)}</span>
+										<span class="mf-chip-text">{stopDisplay(stop)}</span><span aria-hidden="true"
+											>×</span
+										>
 									</button>
 								{/each}
 							</div>
@@ -414,13 +414,13 @@
 										type="button"
 										class="mf-chip"
 										data-on="true"
-										aria-label="{t.vehicleRemove} {vehicleId}"
-										aria-pressed="true"
+										aria-label="{t.filterRemove} {t.vehicleLabel} {vehicleId}"
 										style="--chip:var(--primary)"
 										onclick={() => void removeVehicle(vehicleId)}
 									>
-										<span class="mf-swatch"></span>
-										<span class="mf-chip-text">{t.vehicleLabel} {vehicleId}</span>
+										<span class="mf-chip-text">{t.vehicleLabel} {vehicleId}</span><span
+											aria-hidden="true">×</span
+										>
 									</button>
 								{/each}
 							</div>
@@ -435,13 +435,13 @@
 										type="button"
 										class="mf-chip"
 										data-on="true"
-										aria-label="{t.tripRemove} {tripId}"
-										aria-pressed="true"
+										aria-label="{t.filterRemove} {t.tripLabel} {tripId}"
 										style="--chip:var(--primary)"
 										onclick={() => void removeTrip(tripId)}
 									>
-										<span class="mf-swatch"></span>
-										<span class="mf-chip-text">{t.tripLabel} {tripId}</span>
+										<span class="mf-chip-text">{t.tripLabel} {tripId}</span><span aria-hidden="true"
+											>×</span
+										>
 									</button>
 								{/each}
 							</div>
@@ -852,7 +852,7 @@
 		scrollbar-gutter: auto;
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-chip {
+	.map-filters[data-presentation='drawer'] .mf-chip[role='checkbox'] {
 		min-height: 44px;
 	}
 
@@ -897,12 +897,27 @@
 	.mf-active-set .mf-chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: calc(var(--spacing) * 1.5);
+		gap: 1rem 0.375rem;
+		padding-block: 0.5rem;
 	}
 	.mf-active-set .mf-chip {
 		width: auto;
 		max-width: 100%;
-		padding-inline: calc(var(--spacing) * 2);
+		position: relative;
+		box-shadow: none;
+		min-block-size: 28px;
+		padding: 0.125rem 0.5rem;
+		overflow: visible;
+		font-size: var(--text-caption);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		background: var(--muted);
+		color: var(--foreground);
+	}
+	.mf-active-set .mf-chip::after {
+		content: '';
+		position: absolute;
+		inset: -8px 0;
 	}
 	.mf-clear:focus-visible,
 	.mf-chip:focus-visible,
