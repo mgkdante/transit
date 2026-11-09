@@ -289,3 +289,14 @@ describe.each(['en', 'fr'] as const)('MapHoverPeek published status in %s', (loc
 		expectInert(container);
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'labels an untripped vehicle without punctuality in %s',
+	(locale) => {
+		const view = render(MapHoverPeek, { peek: { ...vehicleFresh, tripId: null }, locale });
+		const status = definitionValue(view.container, locale === 'en' ? 'Status' : 'Statut');
+		expect(status).toHaveTextContent(locale === 'en' ? 'Out of service' : 'Hors service');
+		expect(status).not.toHaveTextContent(STATUS_LABELS[locale].late);
+		expect(status.querySelector('.map-peek-delay')).toBeNull();
+	},
+);

@@ -180,6 +180,7 @@ const harness = vi.hoisted(() => {
 	});
 	const vehicle = {
 		id: 'bus-1',
+		trip: 'assigned-trip',
 		lat: 45.51,
 		lon: -73.57,
 		status: 'on_time' as const,

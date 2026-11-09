@@ -41,11 +41,12 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		expect(deltaEl(container)!.getAttribute('style')).toContain('var(--dataviz-status-on-time)');
 	});
 
-	it('a null delta is honest no-data: neutral glyph + unknown token + "no change data"', () => {
+	it('a missing delta has no stray separator and preserves the no-data announcement', () => {
 		const { container } = render(RankedRow, { props: { ...base, delta: null } });
 		const el = deltaEl(container)!;
 		expect(el.getAttribute('aria-label')).toBe('no change data');
-		expect(el.textContent).toContain('·');
+		expect(el.textContent).not.toContain('·');
+		expect(el).toHaveClass('sr-only');
 		expect(el.getAttribute('style')).toContain('var(--dataviz-status-unknown)');
 		expect(el.textContent).not.toMatch(/\d/);
 	});
@@ -109,4 +110,11 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		const fill = container.querySelector('.dv-severity-fill') as HTMLElement;
 		expect(parseFloat(fill.style.width)).toBeCloseTo(60, 1);
 	});
+});
+
+it('keeps the full ranked name available on hover and to screen readers', () => {
+	const title = 'Boulevard Saint-Laurent et Avenue du Mont-Royal';
+	render(RankedRow, { props: { ...base, title, onSelect: () => {} } });
+	expect(screen.getByRole('button')).toHaveAccessibleName(new RegExp(title));
+	expect(screen.getByTitle(title)).toHaveTextContent(title);
 });
