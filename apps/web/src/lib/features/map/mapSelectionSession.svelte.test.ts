@@ -44,6 +44,8 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 				lastGoodAt: null,
 				retainedGeneration: name === 'vehicles' || name === 'alerts' ? generation : null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: name === 'vehicles' || name === 'alerts' ? 'live' : 'never-loaded',
 					ageSeconds: name === 'vehicles' || name === 'alerts' ? 0 : null,
 					isStale: false,
@@ -68,7 +70,6 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 		},
 		alerts: { generated_utc: vehicle.updated_utc, alerts: [] },
 		familyStates,
-		vehiclesIsStale: false,
 		subscribeFamilies: vi.fn(() => release),
 	};
 	const repositories = {
@@ -139,7 +140,15 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 			familyStates.vehicles = {
 				...familyStates.vehicles,
 				phase: 'ready',
-				health: { state: 'live', ageSeconds: 0, isStale: false, retained: true, notice: null },
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 0,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: familyStates.vehicles.successRevision + 1,
 			};
@@ -237,11 +246,9 @@ describe('map selection session', () => {
 		h.fail();
 		expect(h.session.sourceHealth).toBe('failed');
 		expect(h.session.detail?.id).toBe('bus-1');
-		expect(h.session.failureMessage).toContain('vehicle positions');
 		h.recover();
 		expect(h.session.presence).toBe('present');
 		expect(h.session.sourceHealth).toBe('ok');
-		expect(h.session.failureMessage).toBeNull();
 		h.omit();
 		h.omit();
 		expect(h.session.detailOpen).toBe(true);

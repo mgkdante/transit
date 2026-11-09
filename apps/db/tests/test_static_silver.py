@@ -552,6 +552,13 @@ def test_load_static_zip_to_silver_records_row_counts(tmp_path: Path) -> None:
         "calendar_dates": 1,
     }
     sql_calls = [sql for sql, _ in connection.calls]
+    span_calls = [(sql, params) for sql, params in connection.calls
+                  if "gold.trip_service_span" in sql]
+    assert len(span_calls) == 2
+    assert "DELETE FROM gold.trip_service_span" in span_calls[0][0]
+    assert "INSERT INTO gold.trip_service_span" in span_calls[1][0]
+    assert all(params == {"provider_id": archive.provider_id, "dataset_version_id": 700}
+               for _, params in span_calls)
     assert any("INSERT INTO silver.routes" in sql for sql in sql_calls)
     assert any("INSERT INTO silver.calendar" in sql for sql in sql_calls)
     assert any("INSERT INTO silver.calendar_dates" in sql for sql in sql_calls)

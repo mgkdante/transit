@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { LivePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { presentationFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
 	import type { FilterStore } from '#lib/filters/index.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { RouteIndexEntry, StopIndexEntry } from '#lib/v1/index.ts';
@@ -19,17 +21,11 @@
 		locale: Locale;
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
-		generatedUtc?: string | null;
-		ageSeconds?: number | null;
-		isStale?: boolean;
-		degraded?: boolean;
-		selectedFamilyFailureMessage?: string | null;
+		presentation?: LivePresentation;
 		nearMeOrigin?: NearMeOrigin | null;
 		nearbyStops?: readonly WithDistance<StopIndexEntry>[];
 		isDesktop?: boolean;
 		detailOpen?: boolean;
-		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
-		liveEdgeMessage?: string | null;
 		hoverPeek?: MapHoverPeek | null;
 		onstopselect?: (stop: WithDistance<StopIndexEntry>) => void;
 	}
@@ -39,17 +35,11 @@
 		locale,
 		routes = [],
 		stops = [],
-		generatedUtc = '2026-06-15T00:00:00Z',
-		ageSeconds = 12,
-		isStale = false,
-		degraded = false,
-		selectedFamilyFailureMessage = null,
+		presentation = presentationFixture(),
 		nearMeOrigin = null,
 		nearbyStops = [],
 		isDesktop = true,
 		detailOpen = false,
-		liveEdgeState = null,
-		liveEdgeMessage = null,
 		hoverPeek = null,
 		onstopselect = () => {},
 	}: Props = $props();
@@ -91,11 +81,7 @@
 <MapOverlayChrome
 	{locale}
 	{t}
-	{generatedUtc}
-	{ageSeconds}
-	{isStale}
-	{degraded}
-	{selectedFamilyFailureMessage}
+	{presentation}
 	bind:nearMeOpen
 	bind:nearMeQuery
 	nearMeLoading={false}
@@ -110,8 +96,6 @@
 	{isDesktop}
 	filtersStore={store}
 	{detailOpen}
-	{liveEdgeState}
-	{liveEdgeMessage}
 	{hoverPeek}
 	controls={mapControls}
 />

@@ -1,124 +1,54 @@
-import { render, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/svelte';
+import { expect, it } from 'vitest';
+import { stampFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
 import FreshnessStamp from './FreshnessStamp.svelte';
 
-const clockStub = vi.hoisted(() => ({
-	get now() {
-		return Date.parse('2026-06-20T12:05:00Z');
-	},
-	get serverNow() {
-		return Date.parse('2026-06-20T12:05:00Z');
-	},
-	subscribe: () => () => {},
-}));
-vi.mock('@yesid/ui/state', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@yesid/ui/state')>()),
-	clock: clockStub,
-}));
+it.each(['en', 'fr'] as const)('renders the supplied stamp text and timestamp in %s', (locale) => {
+	const presentation = stampFixture({ ageText: 'Prepared age text', ageSeconds: 300 });
+	const { container } = render(FreshnessStamp, { props: { presentation, locale } });
+	const stamp = container.querySelector('[data-slot="freshness-stamp"]')!;
+	expect(stamp).toHaveAttribute('data-age-seconds', '300');
+	expect(stamp.querySelector('time')).toHaveTextContent('Prepared age text');
+	expect(stamp.querySelector('time')).toHaveAttribute('datetime', presentation.generatedUtc);
+	expect(stamp).not.toHaveAttribute('aria-live');
+	expect(stamp).toHaveTextContent(locale === 'en' ? 'LIVE' : 'EN DIRECT');
+});
 
-const GEN = '2026-06-20T12:00:00Z';
-
-it.each(['live', 'updated'] as const)(
-	'uses the caller timestamp label in the %s variant without changing age or announcements',
-	(variant) => {
-		const { container } = render(FreshnessStamp, {
-			props: { variant, generatedUtc: GEN, locale: 'en', label: 'Latest report' },
+it.each(['en', 'fr'] as const)(
+	'renders stale and unknown text without inventing an age in %s',
+	(locale) => {
+		const presentation = stampFixture({
+			generatedUtc: null,
+			ageSeconds: null,
+			ageText: locale === 'en' ? 'unknown' : 'inconnu',
+			isStale: true,
 		});
-		const chip = container.querySelector('[data-slot="freshness-stamp"]')!;
-		expect(chip.querySelector('.freshness-stamp-label')).toHaveTextContent('Latest report');
-		expect(chip.querySelector('time')).toHaveTextContent('5 minutes ago');
-		expect(chip.querySelector('time')).toHaveAttribute('datetime', GEN);
-		expect(chip).not.toHaveTextContent('LIVE');
-		expect(chip.getAttribute('aria-live')).toBe(variant === 'live' ? null : 'polite');
+		const { container } = render(FreshnessStamp, { props: { presentation, locale } });
+		const stamp = container.querySelector('[data-slot="freshness-stamp"]')!;
+		expect(stamp).toHaveAttribute('data-stale', 'true');
+		expect(stamp).not.toHaveAttribute('data-age-seconds');
+		expect(stamp.querySelector('time')).not.toHaveAttribute('datetime');
+		expect(stamp).toHaveTextContent(presentation.ageText);
+		expect(stamp).toHaveTextContent(locale === 'en' ? 'stale' : 'obsolète');
 	},
 );
 
-describe('FreshnessStamp — live variant', () => {
-	it('renders the pulsing LIVE chip with a server-anchored relative age', () => {
-		render(FreshnessStamp, { props: { variant: 'live', generatedUtc: GEN, locale: 'en' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(chip).not.toBeNull();
-		expect(chip.getAttribute('data-variant')).toBe('live');
-		expect(within(chip).getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
-		expect(chip.querySelector('.freshness-stamp-label')?.textContent).toBe('LIVE');
-		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
-		expect(chip.querySelector('time')).toHaveAttribute('datetime', GEN);
+it.each(['live', 'updated'] as const)('renders a caller label in the %s variant', (variant) => {
+	const { container } = render(FreshnessStamp, {
+		props: { presentation: stampFixture(), variant, locale: 'en', label: 'Latest report' },
 	});
-
-	it('shows the stale note when isStale', () => {
-		render(FreshnessStamp, {
-			props: { variant: 'live', generatedUtc: GEN, isStale: true, locale: 'en' },
-		});
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(chip.getAttribute('data-stale')).toBe('true');
-		expect(within(chip).getByText(/stale/)).toBeInTheDocument();
-	});
-
-	it('lets a caller-supplied ticking ageSeconds drive the readout', () => {
-		render(FreshnessStamp, {
-			props: { variant: 'live', generatedUtc: GEN, ageSeconds: 120, locale: 'en' },
-		});
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(within(chip).getByText('2 minutes ago')).toBeInTheDocument();
-	});
+	const stamp = container.querySelector('[data-slot="freshness-stamp"]')!;
+	expect(stamp.querySelector('.freshness-stamp-label')).toHaveTextContent('Latest report');
+	expect(stamp.getAttribute('aria-live')).toBe(variant === 'updated' ? 'polite' : null);
 });
 
-describe('FreshnessStamp — updated variant', () => {
-	it('renders the calm neutral "Updated" stamp, never the LIVE label', () => {
-		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: GEN, locale: 'en' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(chip.getAttribute('data-variant')).toBe('updated');
-		expect(within(chip).getByText('Updated')).toBeInTheDocument();
-		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
-		expect(within(chip).queryByText('LIVE')).toBeNull();
+it('renders a prepared absolute timestamp without reformatting it', () => {
+	const { container } = render(FreshnessStamp, {
+		props: {
+			presentation: stampFixture({ ageSeconds: 90000, ageText: 'Jun 14, 08:00 EDT' }),
+			variant: 'updated',
+			locale: 'en',
+		},
 	});
-
-	it('localizes to FR', () => {
-		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: GEN, locale: 'fr' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(within(chip).getByText('Mis à jour')).toBeInTheDocument();
-		expect(within(chip).getByText('il y a 5 minutes')).toBeInTheDocument();
-	});
-});
-
-describe('FreshnessStamp — honesty (no timestamp)', () => {
-	it('reads the localized "unknown" when there is no resolvable timestamp', () => {
-		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: null, locale: 'en' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(within(chip).getByText('unknown')).toBeInTheDocument();
-		expect(chip.querySelector('time')).not.toHaveAttribute('datetime');
-	});
-
-	it('reads "inconnu" in FR with no timestamp', () => {
-		render(FreshnessStamp, { props: { variant: 'live', generatedUtc: null, locale: 'fr' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(within(chip).getByText('inconnu')).toBeInTheDocument();
-	});
-});
-
-describe('FreshnessStamp — ≥24h absolute switch + aria-live (doctrine §3.5)', () => {
-	it('shows an absolute America/Toronto timestamp at/above 24h, not "ago"', () => {
-		render(FreshnessStamp, {
-			props: { variant: 'updated', generatedUtc: GEN, ageSeconds: 90_000, locale: 'en' },
-		});
-		const time = document.querySelector('[data-slot="freshness-stamp"] time') as HTMLElement;
-		const text = time.textContent ?? '';
-		expect(text).not.toMatch(/ago/);
-		expect(text).toMatch(/Jun/);
-		expect(text).toMatch(/\d{1,2}:\d{2}/);
-	});
-
-	it('still shows a relative age under 24h', () => {
-		render(FreshnessStamp, {
-			props: { variant: 'updated', generatedUtc: GEN, ageSeconds: 3600, locale: 'en' },
-		});
-		const time = document.querySelector('[data-slot="freshness-stamp"] time') as HTMLElement;
-		expect(time.textContent ?? '').toMatch(/ago/);
-	});
-
-	it('the calm updated stamp is an aria-live polite region', () => {
-		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: GEN, locale: 'en' } });
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(chip.getAttribute('aria-live')).toBe('polite');
-	});
+	expect(container.querySelector('time')).toHaveTextContent('Jun 14, 08:00 EDT');
 });

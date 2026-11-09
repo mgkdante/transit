@@ -9,7 +9,8 @@
 	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { Button } from '@yesid/ui/button';
-	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES, createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { getBasemap } from '#lib/v1/repositories/basemap.ts';
 	import {
@@ -200,10 +201,16 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	const liveEdgeState = $derived(session.liveEdgeState);
-	const liveEdgeMessage = $derived(session.liveEdgeMessage);
-	const liveDegraded = $derived(session.liveDegraded);
-	const selectedFamilyFailureMessage = $derived(session.failureMessage);
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'map',
+			selection: session.selected,
+			vehicleCount: live.vehicles?.vehicles.length ?? null,
+		}),
+	);
 	$effect(() => {
 		const routes = session.loadedRoutes;
 		untrack(() => {
@@ -336,7 +343,7 @@
 			preference: motionMode.current,
 			reducedMotion: $prefersReducedMotion,
 			ready: hasFirstIdle,
-			stale: live.vehiclesIsStale,
+			stale: live.familyStates.vehicles.health.isStale,
 			ttlS: manifest.files.live.ttl_s,
 			stops: stopList,
 		}),
@@ -512,12 +519,7 @@
 			<MapOverlayChrome
 				{locale}
 				{t}
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				isPartialStale={live.isPartialStale}
-				degraded={liveDegraded}
-				{selectedFamilyFailureMessage}
+				{presentation}
 				bind:nearMeOpen={nearMeController.open}
 				bind:nearMeQuery={nearMeController.query}
 				nearMeLoading={nearMeController.loading}
@@ -532,8 +534,6 @@
 				isDesktop={desktop.current}
 				filtersStore={filters}
 				{detailOpen}
-				{liveEdgeState}
-				{liveEdgeMessage}
 				{hoverPeek}
 				controls={mapControls}
 			/>
@@ -545,7 +545,7 @@
 	class="map-hero"
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
-	data-motion-stale={live.vehiclesIsStale}
+	data-motion-stale={live.familyStates.vehicles.health.isStale}
 	data-motion-tick-key={runtime.processedMotion?.tickKey}
 	data-motion-vehicle-count={runtime.processedMotion?.vehicleCount}
 	bind:this={heroEl}

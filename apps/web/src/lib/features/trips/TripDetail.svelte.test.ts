@@ -33,6 +33,7 @@ let tripsData: TripsFile | null = TRIPS_FILE;
 let reportStale = false;
 let reportNotice: 'stale' | 'refresh-unavailable' | null = null;
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: () => ({
 		get trips() {
 			return tripsData;
@@ -47,6 +48,8 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 		get familyStates() {
 			return {
 				trips: {
+					active: true,
+					retainedGeneration: tripsData?.generated_utc ?? null,
 					phase: 'ready',
 					health: {
 						state: reportNotice ? 'retained-stale' : 'live',

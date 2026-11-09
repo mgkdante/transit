@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
 	import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 	import { onMount } from 'svelte';
@@ -153,6 +155,9 @@
 	const lineCount = $derived(routes.data?.routes?.length ?? null);
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
 	const numberFmt = $derived(intl.number(locale));
+	const presentation = $derived(
+		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+	);
 </script>
 
 <Surface class="surface">
@@ -192,13 +197,7 @@
 								>
 							{/if}
 						</p>
-						<FreshnessStamp
-							variant="live"
-							generatedUtc={live.generatedUtc}
-							ageSeconds={live.ageSeconds}
-							isStale={live.isStale}
-							{locale}
-						/>
+						<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 						<div class="search-census__examples">
 							<span class="search-census__examples-label">{t.census.examplesLabel}</span>
 							<div class="search-census__chips">
