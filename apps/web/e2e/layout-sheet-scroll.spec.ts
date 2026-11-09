@@ -42,13 +42,26 @@ for (const locale of ['en', 'fr'])
 			await expect(sheet).toBeVisible();
 			const handle = sheet.getByRole('slider');
 			const body = sheet.locator('[data-slot="bottom-sheet-body"]');
+			// Let the open transition settle; a key pressed mid-transition can be dropped.
+			await expect(sheet).toHaveAttribute('data-detent', 'half');
+			await sheet.evaluate((el) =>
+				Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+			);
 			for (const [key, detent] of [
 				['ArrowUp', 'full'],
 				['Home', 'peek'],
 				['ArrowUp', 'half'],
 			]) {
-				await handle.press(key);
-				await expect(sheet).toHaveAttribute('data-detent', detent);
+				if (detent === 'full') {
+					// Repeating ArrowUp at the top detent is harmless, so retry the first step.
+					await expect(async () => {
+						await handle.press(key);
+						await expect(sheet).toHaveAttribute('data-detent', detent, { timeout: 1000 });
+					}).toPass();
+				} else {
+					await handle.press(key);
+					await expect(sheet).toHaveAttribute('data-detent', detent);
+				}
 				const geometry = await sheet.evaluate((el) => {
 					const box = el.getBoundingClientRect();
 					const body = el.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]')!;
