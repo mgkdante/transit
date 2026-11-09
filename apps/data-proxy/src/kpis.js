@@ -1,9 +1,10 @@
 import { CORS_HEADERS } from "./cors.js";
 
 const PROVIDER = "stm";
-const LIVE_CADENCE_MS = 30_000;
-const SNAPSHOT_STALE_S = 90;
-const RETRY_AFTER_S = "30";
+export const LIVE_TTL_SECONDS = 20;
+export const LIVE_CADENCE_MS = LIVE_TTL_SECONDS * 1000;
+export const SNAPSHOT_STALE_S = LIVE_TTL_SECONDS * 3;
+export const RETRY_AFTER_S = String(LIVE_TTL_SECONDS);
 const ROUTES_INDEX_TTL_MS = 3_600_000;
 const FAILURE_TTL_MS = 10_000;
 const EDGE_CACHE_KEY = "https://transit.yesid.dev/__kpis/core-v3";
