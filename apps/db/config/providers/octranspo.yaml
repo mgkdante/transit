@@ -59,10 +59,10 @@ public:
   geocode_context: Ottawa, Ontario
   basemap_url: /data/v1/octranspo/static/basemap/ottawa.pmtiles
   basemap_bounds:
-    min_longitude: -76.15
-    min_latitude: 45.0
-    max_longitude: -75.24
-    max_latitude: 45.65
+    min_longitude: -77.2
+    min_latitude: 44.5
+    max_longitude: -74.2
+    max_latitude: 46.3
   posters_url: /map/basemap-ottawa-posters.json
   alert_links:
     en: https://www.octranspo.com/en/alerts/

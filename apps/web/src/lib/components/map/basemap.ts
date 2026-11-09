@@ -127,7 +127,7 @@ const BASEMAP_PALETTES: Record<BasemapTheme, BasemapPalette> = {
 function paintsForTheme(theme: BasemapTheme): BasemapPaintMap {
 	const palette = BASEMAP_PALETTES[theme];
 	return {
-		background: { 'background-color': palette.background },
+		background: { 'background-color': palette.land },
 		graticule: {
 			'line-color': palette.roadMajor,
 			'line-width': 0.5,
