@@ -350,6 +350,8 @@
 			reducedMotion: $prefersReducedMotion,
 			ready: hasFirstIdle,
 			stale: live.familyStates.vehicles.health.isStale,
+			ttlS: manifest.files.live.ttl_s,
+			stops: stopList,
 		}),
 	);
 
