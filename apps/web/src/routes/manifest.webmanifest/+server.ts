@@ -1,15 +1,14 @@
 import type { RequestHandler } from './$types';
-import { readPublicSiteConfig } from '#lib/site/config.ts';
 import { DEPLOYMENT_IDENTITY } from '#lib/site/deployment.ts';
 
 export const prerender = true;
 
 export const GET: RequestHandler = () => {
-	const short = readPublicSiteConfig().providerShortName ?? DEPLOYMENT_IDENTITY.providerShortName;
 	const manifest = {
-		name: `Transit · ${short} Analytics`,
-		short_name: 'Transit',
-		description: `Independent real-time ${short} network reliability, on-time performance and accountability dashboard.`,
+		name: DEPLOYMENT_IDENTITY.name,
+		short_name: DEPLOYMENT_IDENTITY.shortName,
+		description:
+			'Independent real-time transit network reliability, on-time performance and accountability dashboard.',
 		start_url: '/',
 		scope: '/',
 		display: 'standalone',

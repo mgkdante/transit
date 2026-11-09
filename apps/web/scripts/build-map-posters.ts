@@ -143,7 +143,7 @@ async function verifyPosterReceipt(receipt: PosterReceipt, filename: string): Pr
 		if (
 			basename(poster.filename) !== poster.filename ||
 			!poster.filename.startsWith(`${prefix}-`) ||
-			!/-(dark|light)-(mobile|desktop)-\d{8}\.avif$/u.test(poster.filename)
+			!/-(dark|light)-(mobile|desktop)-(?:\d{8}|[a-f0-9]{12})\.avif$/u.test(poster.filename)
 		)
 			throw new Error('Invalid poster filename');
 		const bytes = await readFile(resolve(outputDir, poster.filename));
@@ -339,7 +339,6 @@ async function buildPosters(providerId: string, archivePath: string): Promise<vo
 		},
 	});
 	const renderedUtc = new Date().toISOString();
-	const date = renderedUtc.slice(0, 10).replaceAll('-', '');
 	const source: PosterReceipt['source'] = {
 		pmtiles_url: config.public.basemap_url,
 		sha256: sha256(archiveBytes),
@@ -374,7 +373,7 @@ async function buildPosters(providerId: string, archivePath: string): Promise<vo
 				['desktop', 1280, 720],
 			] as const) {
 				const spec = {
-					filename: `${receiptName.replace('-posters.json', '')}-${theme}-${size}-${date}.avif`,
+					filename: `${receiptName.replace('-posters.json', '')}-${theme}-${size}-${source.sha256.slice(0, 12)}.avif`,
 					theme,
 					width,
 					height,

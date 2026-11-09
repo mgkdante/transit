@@ -23,6 +23,8 @@ for (const locale of ['en', 'fr'] as const)
 		await page.goto(localizeHref('/lines', locale), { waitUntil: 'networkidle' });
 		const row = page.locator('[data-slot="entity-result-row"]').first();
 		const hedge = row.locator('[data-slot="reliability-hedge"]');
+		// Reliability loads when a row enters the viewport; short landscape screens start it below the fold.
+		await row.scrollIntoViewIfNeeded();
 		await expect(hedge).toHaveAttribute('data-status', 'tentative');
 		await expect(hedge).toHaveAttribute('title', /368/);
 		await page.evaluate(() => document.fonts.ready);

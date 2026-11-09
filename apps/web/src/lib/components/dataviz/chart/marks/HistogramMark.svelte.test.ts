@@ -49,7 +49,7 @@ describe('HistogramMark structural labels', () => {
 
 		const { container } = render(HistogramMark, { props: { spec } });
 		expect(container.querySelector('table.sr-only')).toHaveTextContent(
-			'intervalle (min)voyages-1,5 à -1 min20 à 1 min3',
+			'intervalle (min)trajets-1,5 à -1 min20 à 1 min3',
 		);
 	});
 });

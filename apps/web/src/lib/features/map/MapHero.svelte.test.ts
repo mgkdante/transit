@@ -763,6 +763,7 @@ afterEach(async () => {
 	mapHeroReceiptSignals.reset();
 	harness.setReducedMotion(false);
 	localStorage.removeItem('transit:detail-rail');
+	localStorage.removeItem('transit:detail-panel-width');
 	vi.unstubAllGlobals();
 	if (originalSecureContext) {
 		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
@@ -1452,9 +1453,9 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				}
 
 				await commitLines(exitUrl);
-				const main = document.querySelector<HTMLElement>('#page-scroller');
+				const main = document.querySelector<HTMLElement>('#main-flow');
 				expect(pageErrors.values).toEqual([]);
-				expect(main).toHaveClass('overflow-y-auto');
+				expect(main).toHaveClass('min-h-dvh');
 				expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
 				expect(document.querySelector('[data-slot="listing-frame"]')).toBeInTheDocument();
 				expect(document.querySelector('.map-hero')).not.toBeInTheDocument();
@@ -1631,9 +1632,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				}
 				await commitLines(before.currentUrl);
 				expect(pageErrors.values).toEqual([]);
-				expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass(
-					'overflow-y-auto',
-				);
+				expect(document.querySelector<HTMLElement>('#main-flow')).toHaveClass('min-h-dvh');
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 				expect(
@@ -1684,7 +1683,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			await commitLines(before.currentUrl);
 
 			expect(pageErrors.values).toEqual([]);
-			expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass('overflow-y-auto');
+			expect(document.querySelector<HTMLElement>('#main-flow')).toHaveClass('min-h-dvh');
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
@@ -1745,9 +1744,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 				expect(harness.activeLeaseCount()).toBe(0);
-				expect(document.querySelector<HTMLElement>('#page-scroller')).toHaveClass(
-					'overflow-y-auto',
-				);
+				expect(document.querySelector<HTMLElement>('#main-flow')).toHaveClass('min-h-dvh');
 			}
 			expect(pageErrors.values).toEqual([]);
 			expect(harness.liveStore.start).toHaveBeenCalledTimes(3);

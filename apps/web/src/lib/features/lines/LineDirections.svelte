@@ -14,6 +14,7 @@
 <script lang="ts">
 	import '#lib/components/surface/compact-row.css';
 	import { readableName } from '#lib/components/surface/readableName.ts';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	const absenceContext = readLiveAbsenceContext();
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
@@ -62,8 +63,13 @@
 										<span class="line-stop-seq">{stop.seq}</span>
 										<span
 											class="line-stop-name readable-name"
-											title={stop.name ?? stopNameFallback(stop.id, locale)}
-											use:readableName>{stop.name ?? stopNameFallback(stop.id, locale)}</span
+											title={stop.name
+												? stopDisplayName(stop.name)
+												: stopNameFallback(stop.id, locale)}
+											use:readableName
+											>{stop.name
+												? stopDisplayName(stop.name)
+												: stopNameFallback(stop.id, locale)}</span
 										>
 										<span class="line-stop-live">
 											{#if prediction}

@@ -257,7 +257,7 @@ describe('Chart shared viewport', () => {
 				const frame = terminal.querySelector<HTMLElement>('[data-slot="chart-frame"]')!;
 				expect(frame).not.toBeNull();
 				const intersection = intersectionObserverFor(frame)!;
-				expect(intersection.root).toBe(insideMain ? main : null);
+				expect(intersection.root).toBeNull();
 				expect(intersection.rootMargin).toBe('200px 0px');
 				observerFor(frame)?.trigger(210, 44);
 				intersection.trigger(frame, false);

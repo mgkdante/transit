@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
@@ -102,7 +103,6 @@
 	const seoPath = $derived(delocalizePath(page.url.pathname));
 	let constructionEdge = $state<HTMLElement>();
 	let constructionProgress = $state(1);
-	let mainScroller = $state<HTMLElement>();
 
 	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath(page.url.pathname));
 
@@ -116,7 +116,11 @@
 	const v1 = $derived(data.v1);
 	setV1Context(() => v1 ?? undefined);
 	const footerAttribution = $derived(
-		dataIndependentRoute ? legalCopy[locale].footerAttribution : v1?.manifest.attribution,
+		dataIndependentRoute
+			? legalCopy[locale].footerAttribution
+			: v1
+				? providerAttribution(v1.manifest.provider, v1.manifest.attribution, locale)
+				: undefined,
 	);
 	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
 	const footer = $derived(footerCopy[locale]);
@@ -287,7 +291,7 @@
 		};
 	});
 
-	// The page scrolls inside #page-scroller, which SvelteKit's own scroll reset does not reach.
+	// Keep smooth-scroll state aligned on new paths; SvelteKit restores history entries.
 	function resetMainScroll(hash: string): void {
 		const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
 		const lenis = getLenis();
@@ -297,7 +301,7 @@
 		} else if (target) {
 			target.scrollIntoView();
 		} else {
-			document.getElementById('page-scroller')?.scrollTo({ top: 0 });
+			window.scrollTo({ top: 0 });
 		}
 	}
 
@@ -435,11 +439,12 @@
 	{/if}
 </svelte:head>
 
-<SiteRoot scroller={{ wrapper: '#page-scroller', content: '#main-flow' }} lang={locale}>
+<SiteRoot lang={locale}>
 	<SeoHead {...head} />
 
 	<AppShell
 		{navigation}
+		fullViewport={isFullBleed}
 		{locale}
 		url={currentMirrorUrl(new URL(page.url.href))}
 		providerId={data.providerId}
@@ -454,12 +459,7 @@
 		onresultselect={selectSearchResult}
 	>
 		{#snippet main()}
-			<div
-				id="page-scroller"
-				bind:this={mainScroller}
-				class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
-				tabindex="-1"
-			>
+			<div class="flex w-full flex-col {isFullBleed ? 'h-full overflow-hidden' : ''}">
 				<div
 					id="main-flow"
 					style:overflow-anchor={seoPath === '/' ? 'none' : undefined}
@@ -507,7 +507,6 @@
 										layout="spread"
 										floodlight
 										revealAt={constructionEdge}
-										revealRoot={mainScroller}
 										bind:progress={constructionProgress}
 									/>
 								</div>
