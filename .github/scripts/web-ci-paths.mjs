@@ -11,6 +11,11 @@ export function classifyPaths(paths) {
 }
 
 export function checkRequiredJobs(needs) {
+  for (const [job, need] of Object.entries(needs ?? {})) {
+    if (["failure", "cancelled"].includes(need?.result)) {
+      throw new Error(`${job}: unexpected result ${need.result}`);
+    }
+  }
   const selected = needs?.classify?.outputs?.run_e2e;
   if (needs?.classify?.result !== "success" ||
       !["true", "false"].includes(selected)) {
