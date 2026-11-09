@@ -147,11 +147,25 @@ test("layout selects UI and unknown paths but skips known non-UI scopes", () => 
     "apps/data-proxy/src/index.js",
     "README.md",
     "apps/web/e2e/search.spec.ts",
-    "apps/web/scripts/example.mjs",
+    "apps/web/scripts/b9-display-oracle.mjs",
+    "apps/web/scripts/__fixtures__/b9/example.json",
+    "apps/web/scripts/install-browser-toolchain.test.mjs",
   ]) {
     assert.equal(classifyLayoutPaths([path]), false, path);
   }
   for (const path of [
+    "apps/web/e2e/alerts.json",
+    "apps/web/e2e/stops-index.json",
+    "apps/web/e2e/layout-helpers.ts",
+    "apps/web/e2e/tsconfig.json",
+    "apps/web/e2e/wrangler.json",
+    "apps/web/e2e/new-helper.ts",
+    "apps/web/scripts/gen-contract.mjs",
+    "apps/web/scripts/browser-toolchain.mjs",
+    "apps/web/scripts/install-browser-toolchain.mjs",
+    "apps/web/scripts/build-icons.ts",
+    "apps/web/scripts/example.mjs",
+    "apps/web/tools/design-gates.ts",
     "apps/web/src/routes/+page.svelte",
     "apps/web/static/icon.svg",
     "apps/web/e2e/layout.spec.ts",

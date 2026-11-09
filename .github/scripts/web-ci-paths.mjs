@@ -16,6 +16,12 @@ export function classifyPaths(paths) {
 const LAYOUT_PATH =
   /^(?:apps\/web\/(?:src\/|static\/|e2e\/(?:layout[^/]*|data\.mjs$|playwright\.config\.ts$)|(?:package\.json|svelte\.config\.[^/]+|vite\.config\.[^/]+|tailwind[^/]*|postcss[^/]*)$)|(?:package\.json|bun\.lock)$|contracts\/|\.github\/(?:workflows\/web\.yml$|scripts\/(?:web-ci-[^/]*|fixtures\/web-ci-[^/]*)))/;
 
+// Known non-UI paths that may skip layout. Inside apps/web only non-layout
+// specs and test-only scripts opt out: e2e fixtures and helpers, build and
+// browser-toolchain scripts, and tools/ all feed the layout run.
+const LAYOUT_OPT_OUT =
+  /^(?:apps\/(?:db|data-proxy)\/|apps\/web\/(?:e2e\/[^/]+\.spec\.ts$|scripts\/(?:b9-[^/]+\.mjs$|__fixtures__\/|[^/]+\.test\.mjs$)))/;
+
 // Only known non-UI scopes can opt out; unrecognized paths fail closed.
 export function classifyLayoutPaths(paths) {
   return (
@@ -25,12 +31,7 @@ export function classifyLayoutPaths(paths) {
       (path) =>
         typeof path !== "string" ||
         LAYOUT_PATH.test(path) ||
-        !(
-          DOCUMENTATION.has(path) ||
-          /^(?:apps\/(?:db|data-proxy)\/|apps\/web\/(?:e2e|scripts|tools)\/)/.test(
-            path,
-          )
-        ),
+        !(DOCUMENTATION.has(path) || LAYOUT_OPT_OUT.test(path)),
     )
   );
 }
