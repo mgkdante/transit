@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { untrack, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
@@ -55,14 +56,16 @@
 			<Sheet.Trigger
 				bind:ref={pillBtn}
 				type="button"
-				class="tap-press map-filter-pill"
+				class="map-filter-pill"
 				aria-expanded={drawerOpen}
+				>{#snippet child({ props })}<Button {...props} variant="ghost" size="sm">
+						<span class="map-filter-pill-dot" data-active={activeCount > 0}></span>
+						<span class="map-filter-pill-name">{t.controlsTitle}</span>
+						<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span
+						>
+						<ChevronToggle open={drawerOpen} size="sm" direction="down" />
+					</Button>{/snippet}</Sheet.Trigger
 			>
-				<span class="map-filter-pill-dot" data-active={activeCount > 0}></span>
-				<span class="map-filter-pill-name">{t.controlsTitle}</span>
-				<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span>
-				<ChevronToggle open={drawerOpen} size="sm" direction="down" />
-			</Sheet.Trigger>
 		</div>
 	{/if}
 
@@ -89,9 +92,11 @@
 		</div>
 
 		<footer class="map-filter-drawer-footer">
-			<Sheet.Close type="button" class="map-filter-done" data-testid="map-filter-done">
-				{t.controlsDone}
-			</Sheet.Close>
+			<Sheet.Close type="button" class="map-filter-done" data-testid="map-filter-done"
+				>{#snippet child({ props })}<Button {...props} variant="ghost" size="sm">
+						{t.controlsDone}
+					</Button>{/snippet}</Sheet.Close
+			>
 		</footer>
 	</Sheet.Content>
 </Sheet.Root>

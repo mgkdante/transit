@@ -7,7 +7,9 @@
 	import { cn } from '#lib/utils/index.ts';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.ts';
-	import GrainPicker, { type GrainSegment } from './GrainPicker.svelte';
+	import { Tabs, TabsContent } from '@yesid/ui/tabs';
+	import TransitTabList from '../shared/TransitTabList.svelte';
+	import { type GrainSegment } from './GrainPicker.svelte';
 
 	interface SearchControlsProps {
 		notice?: string | null;
@@ -60,7 +62,16 @@
 			<div class="search-controls__filters" data-slot="search-filters">
 				<div class="search-control">
 					<span class="search-control__label">{scopeLabel}</span>
-					<GrainPicker segments={scopeSegments} bind:value={scope} label={scopeLabel} />
+					<Tabs bind:value={scope}
+						><TransitTabList
+							tabs={scopeSegments}
+							label={scopeLabel}
+							compact
+						/>{#each scopeSegments as segment (segment.key)}<TabsContent
+								value={segment.key}
+								class="sr-only">{segment.label}</TabsContent
+							>{/each}</Tabs
+					>
 				</div>
 				<div class="search-control">
 					<span class="search-control__label" id={modeLabelId}>{modeLabel}</span>

@@ -176,12 +176,14 @@
 								</span>
 							</dd>
 							<dd class="detail-attribute-action">
-								<button
+								<Button
+									variant="ghost"
+									size="sm"
 									type="button"
 									class="detail-fact-action"
 									aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
 									onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
-									>{t.filter}</button
+									>{t.filter}</Button
 								>
 							</dd>
 						{/if}
@@ -201,11 +203,13 @@
 							>
 						</dd>
 						{#if detail.nextStop}<dd class="detail-attribute-action">
-								<button
+								<Button
+									variant="ghost"
+									size="sm"
 									type="button"
 									class="detail-fact-action"
 									aria-label={t.selectStop(stopDisplayName(detail.nextStop.name))}
-									onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</button
+									onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</Button
 								>
 							</dd>{/if}
 					</div>
@@ -228,11 +232,13 @@
 					<div>
 						<dt>{t.trip}</dt>
 						<dd>
-							{#if detail.vehicle.trip}<button
+							{#if detail.vehicle.trip}<Button
+									variant="ghost"
+									size="sm"
 									type="button"
 									class="detail-fact-action"
 									aria-label={t.filterTrip(detail.vehicle.trip)}
-									onclick={() => filterTrip(detail.vehicle.trip)}>{detail.vehicle.trip}</button
+									onclick={() => filterTrip(detail.vehicle.trip)}>{detail.vehicle.trip}</Button
 								>{:else}<AbsentValue reason={absence} {locale} />{/if}
 						</dd>
 					</div>
@@ -258,7 +264,9 @@
 								>
 							</dd>
 							{#if detail.vehicle.occupancy != null}<dd class="detail-attribute-action">
-									<button
+									<Button
+										variant="ghost"
+										size="sm"
 										type="button"
 										class="detail-fact-action"
 										aria-label={t.filterCrowding(
@@ -268,7 +276,7 @@
 											detail.kind === 'vehicle' &&
 											detail.vehicle.occupancy != null &&
 											onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
-										>{t.filter}</button
+										>{t.filter}</Button
 									>
 								</dd>{/if}
 						</div>{/if}
@@ -309,14 +317,16 @@
 		{#if detail.kind === 'vehicle'}
 			<DetailStatPills>
 				<span class="detail-pill">{t.bus} {detail.vehicle.id}</span>
-				{#if detail.vehicle.route}<button
+				{#if detail.vehicle.route}<Button
+						variant="ghost"
+						size="sm"
 						type="button"
 						class="detail-pill"
 						aria-label={t.selectRoute(line(detail.vehicle.route))}
 						onclick={() => selectRoute(detail.vehicle.route)}
 						><Badge variant="tag" size="xs" class="rounded-sm"
 							>{t.route} {line(detail.vehicle.route)}</Badge
-						></button
+						></Button
 					>{/if}
 			</DetailStatPills>
 			{#if notReporting}<AbsentValue
@@ -373,17 +383,21 @@
 						{#each detail.departures.slice(0, 3) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}
 							{@const departureKey = departure.trip ?? `${departure.route}:${departure.eta_utc}`}
 							<li data-departure-key={departureKey}>
-								{#if departure.route}<button
+								{#if departure.route}<Button
+										variant="ghost"
+										size="sm"
 										type="button"
 										data-detail-focus-key={`departure:${departureKey}:route`}
 										aria-label={t.selectDepartureRoute(line(departure.route))}
 										onclick={() => selectRoute(departure.route)}
-										>{t.route} {departure.route ? line(departure.route) : departure.route}</button
-									>{/if}{#if departure.trip}<button
+										>{t.route} {departure.route ? line(departure.route) : departure.route}</Button
+									>{/if}{#if departure.trip}<Button
+										variant="ghost"
+										size="sm"
 										type="button"
 										data-detail-focus-key={`departure:${departureKey}:trip`}
 										aria-label={t.filterTrip(departure.trip)}
-										onclick={() => filterTrip(departure.trip)}>{t.trip} {departure.trip}</button
+										onclick={() => filterTrip(departure.trip)}>{t.trip} {departure.trip}</Button
 									>{/if}<time>{timeLabel(departure.eta_utc, locale, timeZone)}</time><MapDelayTag
 									delay={departure.delay_min}
 									{locale}
@@ -396,11 +410,13 @@
 			{/if}
 			{#if detail.routeTimes.length > 0}<DetailSection title={t.routes} slot="detail-route-times"
 					>{#each detail.routeTimes as route (route.route)}<p>
-							<button
+							<Button
+								variant="ghost"
+								size="sm"
 								type="button"
 								onclick={() => selectRoute(route.route)}
 								aria-label={t.selectRoute(line(route.route))}
-								>{t.route} {line(route.route)}{route.headsign ? ` · ${route.headsign}` : ''}</button
+								>{t.route} {line(route.route)}{route.headsign ? ` · ${route.headsign}` : ''}</Button
 							>
 						</p>
 						<details data-slot="detail-schedule-tail">
@@ -488,14 +504,14 @@
 {/if}
 
 <style>
-	.map-selection-detail {
+	:global(.map-selection-detail) {
 		display: grid;
 		gap: calc(var(--spacing) * 4);
 		min-width: 0;
 		overflow-wrap: anywhere;
 		color: var(--foreground);
 	}
-	.detail-fact-action {
+	:global(.detail-fact-action) {
 		min-inline-size: 44px;
 		display: inline-flex;
 		min-height: 2.75rem;
@@ -508,46 +524,46 @@
 		color: var(--primary);
 		background: transparent;
 	}
-	.detail-fact-action:hover {
+	:global(.detail-fact-action:hover) {
 		background: var(--muted);
 	}
-	.detail-fact-action:focus-visible {
+	:global(.detail-fact-action:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.detail-state-glyph {
+	:global(.detail-state-glyph) {
 		margin-inline-end: 0.25rem;
 		font-family: var(--font-mono);
 		font-weight: 800;
 		color: var(--glyph);
 	}
-	.detail-delay-measurement {
+	:global(.detail-delay-measurement) {
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 	}
-	.detail-status-band {
+	:global(.detail-status-band) {
 		display: grid;
 		gap: 0.5rem;
 	}
-	.detail-source-state {
+	:global(.detail-source-state) {
 		margin: 0;
 		padding: 0.5rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
 		color: var(--muted-foreground);
 	}
-	.detail-source-state[data-source-health] {
+	:global(.detail-source-state[data-source-health]) {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
 	}
-	.map-selection-detail ol {
+	:global(.map-selection-detail ol) {
 		display: grid;
 		gap: 0.25rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
-	.map-departures li {
+	:global(.map-departures li) {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
@@ -555,7 +571,7 @@
 		border-bottom: 1px solid var(--border-subtle);
 		min-width: 0;
 	}
-	.map-departures button {
+	:global(.map-departures button) {
 		display: inline-flex;
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
@@ -563,30 +579,30 @@
 		padding-block: 0.5rem;
 		padding-inline: 0.75rem;
 	}
-	.map-selection-detail :global([data-slot='detail-schedule-tail'] > summary) {
+	:global(.map-selection-detail [data-slot='detail-schedule-tail'] > summary) {
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
 		padding-block: 0.5rem;
 		cursor: pointer;
 	}
 	@container right-panel (width < 26.25rem) {
-		.map-selection-detail :global([data-slot='detail-meta'].detail-stat-pills:not(:has(button))) {
+		:global(.map-selection-detail [data-slot='detail-meta'].detail-stat-pills:not(:has(button))) {
 			display: none;
 		}
-		.map-selection-detail :global([data-ladder-min='420']) {
+		:global(.map-selection-detail [data-ladder-min='420']) {
 			display: none;
 		}
 	}
 	@container right-panel (min-width: 34rem) {
-		.map-selection-detail :global([data-ladder-expand='560'] [data-ladder-content]) {
+		:global(.map-selection-detail [data-ladder-expand='560'] [data-ladder-content]) {
 			visibility: visible;
 			block-size: auto;
 		}
 	}
-	.map-selection-detail button {
+	:global(.map-selection-detail button) {
 		text-align: left;
 	}
-	.map-selection-detail button:focus-visible {
+	:global(.map-selection-detail button:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}

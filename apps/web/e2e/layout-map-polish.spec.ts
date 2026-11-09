@@ -116,7 +116,10 @@ for (const provider of ['stm', 'octranspo'])
 							exact: true,
 						});
 						await expect(remove).toBeVisible();
-						expect((await remove.boundingBox())!.height).toBeLessThanOrEqual(30);
+						expect((await remove.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+						expect(
+							(await remove.locator('[data-slot="badge"]').boundingBox())!.height,
+						).toBeLessThanOrEqual(30);
 						await expect(remove).toContainText('×');
 					}
 					expect(
@@ -130,7 +133,7 @@ for (const provider of ['stm', 'octranspo'])
 					await stable(page);
 					if (process.env.TRANSIT_POLISH_SHOTS) {
 						const dir = fileURLToPath(
-							new URL('../../../.cache/r319c-shots/after2', import.meta.url),
+							new URL('../../../.cache/cohesion/after/controls', import.meta.url),
 						);
 						mkdirSync(dir, { recursive: true });
 						await page.screenshot({

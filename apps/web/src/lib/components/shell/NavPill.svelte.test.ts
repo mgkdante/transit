@@ -248,7 +248,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		const { getByRole } = renderWithResults();
 		const panel = getByRole('search').querySelector<HTMLElement>('[data-slot="nav-search-panel"]');
 		expect(panel).not.toBeNull();
-		expect(within(panel!).getByRole('radiogroup', { name: 'Show' })).toBeInTheDocument();
+		expect(within(panel!).getByRole('tablist', { name: 'Show' })).toBeInTheDocument();
 		for (const mode of ['Métro', 'Tram', 'Bus', 'Train', 'Ferry']) {
 			expect(within(panel!).getByRole('button', { name: mode })).toBeInTheDocument();
 		}
@@ -270,7 +270,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('radio', { name: /Lines \(1\)/ }));
+		await fireEvent.click(getByRole('tab', { name: /Lines \(1\)/ }));
 
 		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeNull();
@@ -293,7 +293,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 				searchResults: [route161, stop57191],
 			},
 		});
-		await fireEvent.click(getByRole('radio', { name: /Stops \(1\)/ }));
+		await fireEvent.click(getByRole('tab', { name: /Stops \(1\)/ }));
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Route 161 Van Horne' })).toBeNull();
 
@@ -305,7 +305,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		});
 
 		expect(container.querySelector('[data-slot="search-controls"]')).toBeNull();
-		expect(queryByRole('radiogroup', { name: 'Show' })).toBeNull();
+		expect(queryByRole('tablist', { name: 'Show' })).toBeNull();
 		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
 
 		await rerender({
@@ -314,7 +314,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 			searchScope: 'all',
 			searchResults: [route161, stop57191],
 		});
-		expect(getByRole('radio', { name: 'All' })).toBeChecked();
+		expect(getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
 		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
 	});
@@ -373,7 +373,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		});
 		const panel = getByRole('search').querySelector<HTMLElement>('[data-slot="nav-search-panel"]');
 		expect(panel).not.toBeNull();
-		expect(within(panel!).queryByRole('radiogroup', { name: 'Show' })).toBeNull();
+		expect(within(panel!).queryByRole('tablist', { name: 'Show' })).toBeNull();
 		expect(within(panel!).queryByRole('button', { name: 'Métro' })).toBeNull();
 		expect(panel!.querySelector('[data-slot="search-controls"]')).toBeNull();
 	});

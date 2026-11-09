@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Badge } from '@yesid/ui/badge';
 	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
@@ -66,11 +67,13 @@
 				<dt>{t.route}</dt>
 				<dd>
 					{#if peek.route}
-						<span>{line(peek.route.id)}</span>
+						<Badge variant="tag" size="xs">{line(peek.route.id)}</Badge>
 						<span>{peek.route.longName}</span>
 						{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 						{#if peek.route.type != null}
-							<span>{routeModeHint(peek.route.type).tag ?? peek.route.type}</span>
+							<Badge variant="tag" size="xs"
+								>{routeModeHint(peek.route.type).tag ?? peek.route.type}</Badge
+							>
 						{/if}
 					{:else}
 						<AbsentValue reason={vehicleAbsence} {locale} />

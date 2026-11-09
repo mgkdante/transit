@@ -1,18 +1,50 @@
 import { test } from './layout-test';
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-const shots = fileURLToPath(new URL('../../../.cache/r319a2-shots/', import.meta.url));
+const shots = fileURLToPath(new URL('../../../.cache/cohesion/after/', import.meta.url));
 mkdirSync(shots, { recursive: true });
 test.describe.configure({ mode: 'parallel' });
 const epoch = Date.parse(
 	JSON.parse(readFileSync(new URL('./departures.json', import.meta.url), 'utf8')).generated_utc,
 );
+async function captureDetail(
+	page: Page,
+	provider: string,
+	locale: string,
+	width: number,
+	kind: string,
+) {
+	const prefix =
+		shots +
+		'/' +
+		provider +
+		'-' +
+		locale +
+		'-' +
+		width +
+		'-' +
+		kind +
+		'-' +
+		(test.info().project.use.colorScheme ?? 'light');
+	await page.screenshot({ animations: 'disabled', path: prefix + '.png' });
+	if (width === 390) {
+		const handle = page.locator('[data-sheet-handle]');
+		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'half');
+		await handle.press('End');
+		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'full');
+		await page.screenshot({ animations: 'disabled', path: prefix + '-full.png' });
+		await handle.press('Home');
+		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'peek');
+		await page.screenshot({ animations: 'disabled', path: prefix + '-peek.png' });
+		await handle.press('ArrowUp');
+	}
+}
 type Probe = { loaded: boolean; project(c: number[]): { x: number; y: number } };
 for (const provider of ['stm', 'octranspo'])
 	for (const locale of ['en', 'fr'])
-		for (const width of [390, 1280]) {
+		for (const width of [390, 1440]) {
 			test(`${provider} ${locale} ${width} detail navigation @layout`, async ({ page }) => {
 				await page.setViewportSize({ width, height: 900 });
 				await page.clock.setFixedTime(epoch + 30000);
@@ -73,7 +105,7 @@ for (const provider of ['stm', 'octranspo'])
 						exact: true,
 					}),
 				).toBeVisible();
-				await page.screenshot({ path: `${shots}/${provider}-${locale}-${width}-vehicle.png` });
+				await captureDetail(page, provider, locale, width, 'vehicle');
 				const nextVehicle = nav.getByRole('button', {
 					name: locale === 'fr' ? 'Véhicule suivant sur cette ligne' : 'Next vehicle on this line',
 					exact: true,
@@ -81,7 +113,7 @@ for (const provider of ['stm', 'octranspo'])
 				await expect(nextVehicle).toBeEnabled();
 				await nextVehicle.click();
 				await expect(panel.locator('[data-slot="detail-identity"]')).toContainText('layout-bus-2');
-				if (width === 1280)
+				if (width === 1440)
 					await nav
 						.getByRole('button', {
 							name:
@@ -94,12 +126,12 @@ for (const provider of ['stm', 'octranspo'])
 				else await back.click();
 				await expect(panel.locator('[data-slot="detail-identity"]')).toHaveText(/layout-bus$/);
 				if (width === 390) {
-					const stops = nav.getByRole('button', {
+					const stops = nav.getByRole('tab', {
 						name: locale === 'fr' ? 'Arrêts' : 'Stops',
 						exact: true,
 					});
 					await stops.click();
-					await expect(stops).toHaveAttribute('aria-current', 'location');
+					await expect(stops).toHaveAttribute('aria-selected', 'true');
 				}
 
 				await panel
@@ -112,7 +144,7 @@ for (const provider of ['stm', 'octranspo'])
 					'data-kind',
 					'route',
 				);
-				await page.screenshot({ path: `${shots}/${provider}-${locale}-${width}-line.png` });
+				await captureDetail(page, provider, locale, width, 'line');
 				await back.click();
 				await expect(forward).toBeEnabled();
 				await forward.click();
@@ -126,14 +158,17 @@ for (const provider of ['stm', 'octranspo'])
 					'stop',
 				);
 				await expect(forward).toBeDisabled();
-				await page.screenshot({ path: `${shots}/${provider}-${locale}-${width}-stop.png` });
+				await captureDetail(page, provider, locale, width, 'stop');
 				expect((await new AxeBuilder({ page }).include(selector).analyze()).violations).toEqual([]);
 				if (provider === 'stm' && locale === 'fr' && width === 390) {
 					await page.evaluate(() => {
 						document.documentElement.classList.add('dark');
 						document.documentElement.dataset.theme = 'dark';
 					});
-					await page.screenshot({ path: `${shots}/stm-fr-390-stop-dark.png` });
+					await page.screenshot({
+						animations: 'disabled',
+						path: `${shots}/stm-fr-390-stop-dark.png`,
+					});
 				}
 			});
 		}

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
+	import { Tabs, TabsContent } from '@yesid/ui/tabs';
+	import TransitTabList from '#lib/components/shared/TransitTabList.svelte';
 	import { onMount } from 'svelte';
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
@@ -111,7 +114,9 @@
 
 <nav bind:this={root} bind:clientWidth={width} aria-label={t.navigation} class="detail-navigation">
 	<div class="detail-navigation-actions">
-		<button
+		<Button
+			variant="ghost"
+			size="sm"
 			type="button"
 			aria-label={t.back}
 			title={t.back}
@@ -119,9 +124,11 @@
 			onclick={() => {
 				session.back();
 				onfocus?.();
-			}}>←</button
+			}}>←</Button
 		>
-		<button
+		<Button
+			variant="ghost"
+			size="sm"
 			type="button"
 			aria-label={t.forward}
 			title={t.forward}
@@ -129,53 +136,73 @@
 			onclick={() => {
 				session.forward();
 				onfocus?.();
-			}}>→</button
+			}}>→</Button
 		>
 		{#if session.selected?.kind !== 'route'}
-			<button
+			<Button
+				variant="ghost"
+				size="sm"
 				type="button"
 				aria-label={session.selected?.kind === 'vehicle' ? t.previousVehicle : t.previousStop}
 				disabled={!session.adjacent.previous}
-				onclick={() => step(-1)}>‹</button
+				onclick={() => step(-1)}>‹</Button
 			>
-			<button
+			<Button
+				variant="ghost"
+				size="sm"
 				type="button"
 				aria-label={session.selected?.kind === 'vehicle' ? t.nextVehicle : t.nextStopItem}
 				disabled={!session.adjacent.next}
-				onclick={() => step(1)}>›</button
+				onclick={() => step(1)}>›</Button
 			>
 		{/if}
-		{#if action}<a
+		{#if action}<Button
+				variant="ghost"
+				size="sm"
 				href={localizeHref(action.href, locale)}
 				aria-label={action.label}
-				title={action.label}>↗</a
+				title={action.label}>↗</Button
 			>{/if}
 	</div>
-	<div class="detail-section-links" aria-label={t.navigation}>
-		{#each sections as section (section.key)}
-			<button
-				type="button"
-				aria-current={active === section.key ? 'location' : undefined}
-				onclick={() => scrollToSection(section.element)}>{section.label}</button
-			>
-		{/each}
+	<div class="detail-section-links">
+		<Tabs
+			value={active}
+			onValueChange={(key) => {
+				active = key;
+				const section = sections.find((s) => s.key === key);
+				if (section) scrollToSection(section.element);
+			}}
+		>
+			<TransitTabList
+				tabs={sections}
+				compact
+				label={t.navigation}
+				onselect={(key) => {
+					const section = sections.find((s) => s.key === key);
+					if (section) scrollToSection(section.element);
+				}}
+			/>
+			{#each sections as section (section.key)}<TabsContent value={section.key} class="sr-only"
+					>{section.label}</TabsContent
+				>{/each}
+		</Tabs>
 	</div>
 </nav>
 
 <style>
-	.detail-navigation {
+	:global(.detail-navigation) {
 		min-width: 0;
 	}
-	.detail-navigation-actions,
-	.detail-section-links {
+	:global(.detail-navigation-actions),
+	:global(.detail-section-links) {
 		display: flex;
 		gap: 0.25rem;
 	}
-	.detail-navigation-actions {
+	:global(.detail-navigation-actions) {
 		justify-content: flex-start;
 	}
-	.detail-navigation button,
-	.detail-navigation a {
+	:global(.detail-navigation-actions button),
+	:global(.detail-navigation-actions a) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -184,40 +211,19 @@
 		padding: 0.5rem;
 		border-radius: var(--radius-sm);
 	}
-	.detail-navigation a {
+	:global(.detail-navigation-actions a) {
 		margin-left: auto;
 	}
-	.detail-navigation button:disabled {
+	:global(.detail-navigation button:disabled) {
 		opacity: 0.4;
 	}
-	.detail-navigation button:focus-visible,
-	.detail-navigation a:focus-visible {
+	:global(.detail-navigation button:focus-visible),
+	:global(.detail-navigation a:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: -2px;
 	}
-	.detail-section-links {
+	:global(.detail-section-links) {
 		overflow-x: auto;
 		font-size: var(--text-caption);
-	}
-	.detail-section-links button {
-		flex: none;
-		white-space: nowrap;
-	}
-	.detail-section-links button[aria-current] {
-		background: transparent;
-		color: var(--foreground);
-		box-shadow: inset 0 -2px var(--primary);
-	}
-	.detail-section-links button {
-		border-radius: 0;
-		border: 0;
-		border-bottom: 2px solid transparent;
-		padding-inline: 0;
-		margin-inline-end: calc(var(--spacing) * 3);
-		justify-content: flex-start;
-	}
-	.detail-section-links button[aria-current] {
-		border-bottom-color: var(--primary);
-		box-shadow: none;
 	}
 </style>

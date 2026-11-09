@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { Card } from '@yesid/ui/card';
+	import CheckboxRow from '#lib/components/shared/CheckboxRow.svelte';
+	import FilterChip from '#lib/components/shared/FilterChip.svelte';
+	import { Separator } from '@yesid/ui/separator';
+	import { Button } from '@yesid/ui/button';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
@@ -57,7 +62,7 @@
 		class: className = '',
 	}: Props = $props();
 
-	let rootEl = $state<HTMLElement | null>(null);
+	let rootEl = $state<HTMLDivElement | null>(null);
 	let filterOpen = $state(true);
 	let markersOpen = $state(true);
 	let alertsOpen = $state(true);
@@ -242,8 +247,8 @@
 	}
 </script>
 
-<div
-	bind:this={rootEl}
+<Card
+	bind:ref={rootEl}
 	class="map-filters {className}"
 	data-open={panelOpen}
 	data-collapsible={collapsible}
@@ -262,7 +267,9 @@
 		<div class="mf-controls">
 			<div class="mf-head">
 				{#if collapsible}
-					<button
+					<Button
+						variant="ghost"
+						size="sm"
 						type="button"
 						class="mf-toggle"
 						aria-expanded={filterOpen}
@@ -272,7 +279,7 @@
 					>
 						<PanelLeftCloseIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 						<span class="mf-title">{panelTitle}</span>
-					</button>
+					</Button>
 				{:else}
 					<span class="mf-title">{panelTitle}</span>
 				{/if}
@@ -280,10 +287,16 @@
 					<span class="mf-head-count">{filterCount}</span>
 				{/if}
 				{#if !store.isEmpty}
-					<button type="button" class="mf-clear" onclick={() => void clearFilters()}>
+					<Button
+						variant="ghost"
+						size="sm"
+						type="button"
+						class="mf-clear"
+						onclick={() => void clearFilters()}
+					>
 						<XIcon size={15} strokeWidth={2.35} aria-hidden="true" />
 						<span>{t.filterClear}</span>
-					</button>
+					</Button>
 				{/if}
 			</div>
 			{#if header}
@@ -293,6 +306,7 @@
 			{/if}
 		</div>
 
+		<Separator decorative />
 		<div class="mf-body">
 			<MapFilterGroup
 				kind="markers"
@@ -302,29 +316,27 @@
 				ontoggle={() => toggleGroup('markers')}
 			>
 				<div class="mf-chips mf-entity-chips">
-					<button
+					<CheckboxRow
 						type="button"
 						class="mf-chip"
 						data-on={!!store.state.showOutOfService}
-						role="checkbox"
-						aria-checked={!!store.state.showOutOfService}
-						onclick={() => store.toggleOutOfService()}>{t.outOfServiceVehicles}</button
+						checked={!!store.state.showOutOfService}
+						onclick={() => store.toggleOutOfService()}>{t.outOfServiceVehicles}</CheckboxRow
 					>
 					{#each entityOptions as item (item.kind)}
-						<button
+						<CheckboxRow
 							type="button"
 							class="mf-chip mf-shape-chip"
 							data-on={store.entities.includes(item.kind)}
 							aria-label={item.label}
-							role="checkbox"
-							aria-checked={store.entities.includes(item.kind)}
+							checked={store.entities.includes(item.kind)}
 							onclick={() => toggleEntity(item.kind)}
 						>
 							<span class:mf-shape-stop={item.stop} class="mf-glyph">
 								<MarkerGlyph kind={item.kind} />
 							</span>
 							<span class="mf-chip-text">{item.label}</span>
-						</button>
+						</CheckboxRow>
 					{/each}
 				</div>
 			</MapFilterGroup>
@@ -339,19 +351,18 @@
 				>
 					<div class="mf-chips">
 						{#each alertOptions as item (item.kind)}
-							<button
+							<CheckboxRow
 								type="button"
 								class="mf-chip mf-alert-chip"
 								data-on={store.alerts.includes(item.kind)}
-								role="checkbox"
-								aria-checked={store.alerts.includes(item.kind)}
+								checked={store.alerts.includes(item.kind)}
 								style="--chip:var(--dataviz-severity-high)"
 								onclick={() => toggleAlert(item.kind)}
 							>
 								<span class="mf-swatch"></span>
 								<span class="mf-chip-text">{item.label}</span>
 								<span class="sr-only"> {item.aria}</span>
-							</button>
+							</CheckboxRow>
 						{/each}
 					</div>
 				</MapFilterGroup>
@@ -373,7 +384,7 @@
 							<span class="mf-active-label"><RouteIcon size={13} />{t.modeRoutes}</span>
 							<div class="mf-chips">
 								{#each selectedRoutes as route (route.id)}
-									<button
+									<FilterChip
 										type="button"
 										class="mf-chip"
 										data-on="true"
@@ -384,7 +395,7 @@
 										<span class="mf-chip-text">{routeDisplay(route)}</span><span aria-hidden="true"
 											>×</span
 										>
-									</button>
+									</FilterChip>
 								{/each}
 							</div>
 						</div>
@@ -394,7 +405,7 @@
 							<span class="mf-active-label">{t.modeStops}</span>
 							<div class="mf-chips">
 								{#each selectedStops as stop (stop.id)}
-									<button
+									<FilterChip
 										type="button"
 										class="mf-chip"
 										data-on="true"
@@ -405,7 +416,7 @@
 										<span class="mf-chip-text">{stopDisplay(stop)}</span><span aria-hidden="true"
 											>×</span
 										>
-									</button>
+									</FilterChip>
 								{/each}
 							</div>
 						</div>
@@ -415,7 +426,7 @@
 							<span class="mf-active-label"><BusFrontIcon size={13} />{t.modeVehicles}</span>
 							<div class="mf-chips">
 								{#each selectedVehicleIds as vehicleId (vehicleId)}
-									<button
+									<FilterChip
 										type="button"
 										class="mf-chip"
 										data-on="true"
@@ -426,7 +437,7 @@
 										<span class="mf-chip-text">{t.vehicleLabel} {vehicleId}</span><span
 											aria-hidden="true">×</span
 										>
-									</button>
+									</FilterChip>
 								{/each}
 							</div>
 						</div>
@@ -436,7 +447,7 @@
 							<span class="mf-active-label"><TicketIcon size={13} />{t.modeTrips}</span>
 							<div class="mf-chips">
 								{#each selectedTripIds as tripId (tripId)}
-									<button
+									<FilterChip
 										type="button"
 										class="mf-chip"
 										data-on="true"
@@ -447,7 +458,7 @@
 										<span class="mf-chip-text">{t.tripLabel} {tripId}</span><span aria-hidden="true"
 											>×</span
 										>
-									</button>
+									</FilterChip>
 								{/each}
 							</div>
 						</div>
@@ -464,13 +475,12 @@
 			>
 				<div class="mf-chips">
 					{#each STATUS_CODES as code (code)}
-						<button
+						<CheckboxRow
 							type="button"
 							class="mf-chip"
 							data-on={store.status.includes(code)}
 							aria-label={STATUS_LABELS[locale][code]}
-							role="checkbox"
-							aria-checked={store.status.includes(code)}
+							checked={store.status.includes(code)}
 							style="--chip:{statusVar(code)}"
 							onclick={() => toggleStatus(code)}
 						>
@@ -482,36 +492,28 @@
 								aria-hidden="true">{STATUS_GLYPH[code]}</span
 							>
 							<span class="mf-chip-text">{STATUS_LABELS[locale][code]}</span>
-						</button>
+						</CheckboxRow>
 					{/each}
 				</div>
 			</MapFilterGroup>
 
 			{#if occupancyAvailable}<MapFilterGroup
-				kind="crowding"
-				label={t.modeOccupancy}
-				open={crowdingOpen}
-				{presentation}
-				ontoggle={() => toggleGroup('crowding')}
-			>
-				<div class="mf-chips">
-					{#each OCCUPANCY_CODES as code (code)}
-						<button
-							type="button"
-							class="mf-chip"
-							data-on={store.occupancy.includes(code)}
-							aria-label={OCCUPANCY_LABELS[locale][code]}
-							role="checkbox"
-							aria-checked={store.occupancy.includes(code)}
-							style="--chip:{occupancyVar(code)}"
-							onclick={() => toggleOccupancy(code)}
-						>
-							<span class="mf-swatch"></span>
-							<span
-								class="mf-state-glyph"
-								data-m6d-glyph-kind="crowding"
-								data-m6d-glyph-code={code}
-								aria-hidden="true">{occupancyGlyph(code)}</span
+					kind="crowding"
+					label={t.modeOccupancy}
+					open={crowdingOpen}
+					{presentation}
+					ontoggle={() => toggleGroup('crowding')}
+				>
+					<div class="mf-chips">
+						{#each OCCUPANCY_CODES as code (code)}
+							<CheckboxRow
+								type="button"
+								class="mf-chip"
+								data-on={store.occupancy.includes(code)}
+								aria-label={OCCUPANCY_LABELS[locale][code]}
+								checked={store.occupancy.includes(code)}
+								style="--chip:{occupancyVar(code)}"
+								onclick={() => toggleOccupancy(code)}
 							>
 								<span class="mf-swatch"></span>
 								<span
@@ -521,7 +523,7 @@
 									aria-hidden="true">{occupancyGlyph(code)}</span
 								>
 								<span class="mf-chip-text">{OCCUPANCY_LABELS[locale][code]}</span>
-							</button>
+							</CheckboxRow>
 						{/each}
 					</div>
 				</MapFilterGroup>{/if}
@@ -541,10 +543,12 @@
 			onclear={() => void clearFilters()}
 		/>
 	{/if}
-</div>
+</Card>
 
 <style>
-	.map-filters {
+	:global(.map-filters) {
+		padding: 0;
+		gap: 0;
 		--mf-control-size: 2rem;
 		--mf-swatch-size: 0.7rem;
 		--mf-edge: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
@@ -566,12 +570,12 @@
 		transition-timing-function: var(--ease-out);
 	}
 
-	.map-filters[data-open='false'] {
+	:global(.map-filters[data-open='false']) {
 		width: 56px;
 		transition-duration: var(--duration-normal);
 	}
 
-	.mf-expanded {
+	:global(.mf-expanded) {
 		display: flex;
 		width: 300px;
 		max-height: inherit;
@@ -587,38 +591,37 @@
 		transition-timing-function: var(--ease-out);
 	}
 
-	.map-filters[data-open='false'] .mf-expanded {
+	:global(.map-filters[data-open='false'] .mf-expanded) {
 		position: absolute;
 		pointer-events: none;
 		opacity: 0;
 		transition: none;
 	}
 
-	.mf-chips.mf-entity-chips {
+	:global(.mf-chips.mf-entity-chips) {
 		padding-inline: 0;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0.375rem;
 	}
 
-	.mf-controls {
+	:global(.mf-controls) {
 		display: flex;
 		flex: none;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
 		padding-bottom: 0.5rem;
-		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 
-	.mf-head {
+	:global(.mf-head) {
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
 		min-width: 0;
 	}
 
-	.mf-toggle {
+	:global(.mf-toggle) {
 		display: flex;
 		align-items: center;
 		min-width: 0;
@@ -632,12 +635,12 @@
 		cursor: pointer;
 	}
 
-	.mf-toggle:hover,
-	.mf-toggle:focus-visible {
+	:global(.mf-toggle:hover),
+	:global(.mf-toggle:focus-visible) {
 		background: var(--muted);
 	}
 
-	.mf-title {
+	:global(.mf-title) {
 		min-width: 0;
 		overflow: hidden;
 		font-family: var(--font-mono);
@@ -649,7 +652,7 @@
 		white-space: nowrap;
 	}
 
-	.mf-head-count {
+	:global(.mf-head-count) {
 		display: inline-grid;
 		min-width: 1.4rem;
 		height: 1.4rem;
@@ -664,7 +667,7 @@
 		border-radius: var(--radius-pill);
 	}
 
-	.mf-clear {
+	:global(.mf-clear) {
 		display: inline-flex;
 		flex-shrink: 0;
 		white-space: nowrap;
@@ -683,14 +686,14 @@
 		cursor: pointer;
 	}
 
-	.mf-header {
+	:global(.mf-header) {
 		display: flex;
 		min-width: 0;
 		flex-direction: column;
 		padding-top: 0.125rem;
 	}
 
-	.mf-body {
+	:global(.mf-body) {
 		display: flex;
 		min-width: 0;
 		min-height: 0;
@@ -704,16 +707,16 @@
 		scrollbar-width: thin;
 	}
 
-	.mf-body::-webkit-scrollbar {
+	:global(.mf-body::-webkit-scrollbar) {
 		width: 0.375rem;
 	}
 
-	.mf-body::-webkit-scrollbar-thumb {
+	:global(.mf-body::-webkit-scrollbar-thumb) {
 		background: color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
 		border-radius: var(--radius-pill);
 	}
 
-	.mf-chips {
+	:global(.mf-chips) {
 		display: grid;
 		min-width: 0;
 		grid-template-columns: minmax(0, 1fr);
@@ -721,7 +724,7 @@
 		padding: 0;
 	}
 
-	.mf-chip {
+	:global(.mf-chip) {
 		display: flex;
 		align-items: center;
 		justify-content: flex-start;
@@ -745,13 +748,13 @@
 			box-shadow var(--duration-fast) var(--ease-default);
 	}
 
-	.mf-chip:hover {
+	:global(.mf-chip:hover) {
 		color: var(--foreground);
 		background: color-mix(in srgb, var(--chip, var(--primary)) 12%, var(--muted) 88%);
 		border-color: color-mix(in srgb, var(--chip, var(--primary)) 48%, var(--border) 52%);
 	}
 
-	.mf-chip[data-on='true'] {
+	:global(.mf-chip[data-on='true']) {
 		color: var(--foreground);
 		font-weight: 600;
 		background: color-mix(in srgb, var(--chip, var(--primary)) 20%, var(--card));
@@ -759,14 +762,14 @@
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip, var(--primary)) 28%, transparent);
 	}
 
-	.mf-chip-text {
+	:global(.mf-chip-text) {
 		min-width: 0;
 		white-space: normal;
 		word-break: normal;
 		overflow-wrap: normal;
 	}
 
-	.mf-swatch {
+	:global(.mf-swatch) {
 		width: var(--mf-swatch-size);
 		height: var(--mf-swatch-size);
 		flex: none;
@@ -775,7 +778,7 @@
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip, var(--primary)) 55%, transparent);
 	}
 
-	.mf-glyph {
+	:global(.mf-glyph) {
 		display: inline-grid;
 		width: 1.4rem;
 		height: 1.4rem;
@@ -789,27 +792,27 @@
 		border-radius: var(--radius-sm);
 	}
 
-	.mf-shape-stop {
+	:global(.mf-shape-stop) {
 		color: var(--map-stop-fill);
 		background: color-mix(in srgb, var(--map-stop-fill) 16%, transparent);
 		border-color: color-mix(in srgb, var(--map-stop-fill) 36%, transparent);
 	}
 
-	.mf-alert-chip {
+	:global(.mf-alert-chip) {
 		--chip: var(--dataviz-severity-high);
 	}
 
-	.mf-active-groups {
+	:global(.mf-active-groups) {
 		display: grid;
 		gap: 0.625rem;
 	}
 
-	.mf-active-set {
+	:global(.mf-active-set) {
 		display: grid;
 		gap: 0.25rem;
 	}
 
-	.mf-active-label {
+	:global(.mf-active-label) {
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
@@ -821,7 +824,7 @@
 		text-transform: uppercase;
 	}
 
-	.map-filters[data-presentation='drawer'] {
+	:global(.map-filters[data-presentation='drawer']) {
 		width: 100%;
 		max-width: none;
 		max-height: none;
@@ -834,18 +837,18 @@
 		overflow: visible;
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-expanded {
+	:global(.map-filters[data-presentation='drawer'] .mf-expanded) {
 		width: 100%;
 		max-width: none;
 		max-height: none;
 		padding: 0;
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-controls {
+	:global(.map-filters[data-presentation='drawer'] .mf-controls) {
 		display: contents;
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-head {
+	:global(.map-filters[data-presentation='drawer'] .mf-head) {
 		position: sticky;
 		top: 0;
 		z-index: 1;
@@ -854,88 +857,59 @@
 		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-header {
+	:global(.map-filters[data-presentation='drawer'] .mf-header) {
 		padding: 0.5rem 1rem 0.625rem;
 		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-body {
+	:global(.map-filters[data-presentation='drawer'] .mf-body) {
 		overflow: visible;
 		padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
 		scrollbar-gutter: auto;
 	}
 
-	.map-filters[data-presentation='drawer'] .mf-chip[role='checkbox'] {
+	:global(.map-filters[data-presentation='drawer'] .mf-chip[role='checkbox']) {
 		min-height: 44px;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-filters,
-		.mf-expanded,
-		.mf-chip {
+		:global(.map-filters),
+		:global(.mf-expanded),
+		:global(.mf-chip) {
 			transition: none;
 		}
 	}
 
-	.mf-chip[role='checkbox'] {
-		padding-inline: 0;
-		border: 0;
-		border-bottom: 1px solid var(--border-subtle);
-		border-radius: 0;
-		background: transparent;
-		box-shadow: none;
-		color: var(--foreground);
-	}
-	.mf-chip[role='checkbox']::after {
-		content: '';
-		margin-inline-start: auto;
-		flex: none;
-		width: 1rem;
-		height: 1rem;
-		border: 1px solid var(--muted-foreground);
-		border-radius: var(--radius-sm);
-	}
-	.mf-chip[aria-checked='true']::after {
-		content: '';
-		box-shadow: inset 0 0 0 3px var(--card);
-		display: grid;
-		place-items: center;
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border-color: var(--primary);
-	}
-	.mf-chip[role='checkbox'] .mf-swatch {
+	:global(.mf-chip[role='checkbox'] .mf-swatch) {
 		display: none;
 	}
-	.mf-active-set .mf-chips {
+	:global(.mf-active-set .mf-chips) {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1rem 0.375rem;
 		padding-block: 0.5rem;
 	}
-	.mf-active-set .mf-chip {
-		width: auto;
-		max-width: 100%;
-		position: relative;
-		box-shadow: none;
-		min-block-size: 28px;
-		padding: 0.125rem 0.5rem;
-		overflow: visible;
-		font-size: var(--text-caption);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-sm);
-		background: var(--muted);
-		color: var(--foreground);
-	}
-	.mf-active-set .mf-chip::after {
-		content: '';
-		position: absolute;
-		inset: -8px 0;
-	}
-	.mf-clear:focus-visible,
-	.mf-chip:focus-visible,
-	.mf-toggle:focus-visible {
+
+	:global(.mf-clear:focus-visible),
+	:global(.mf-chip:focus-visible),
+	:global(.mf-toggle:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: -2px;
+	}
+	:global(.map-filters [data-slot='button']) {
+		height: auto;
+	}
+	:global(.map-filters .transit-filter-chip) {
+		min-block-size: var(--size-tap-min);
+		width: auto;
+		border: 0;
+		padding: 0;
+		background: transparent;
+		box-shadow: none;
+		overflow: visible;
+	}
+	:global(.map-filters .mf-group-trigger) {
+		justify-content: flex-start;
+		width: 100%;
 	}
 </style>
