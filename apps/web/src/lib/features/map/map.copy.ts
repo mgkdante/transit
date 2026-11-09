@@ -2,6 +2,7 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 export const copy = defineCopy({
 	en: {
+		outOfServiceVehicles: 'Out-of-service vehicles',
 		precision: {
 			address: 'Address',
 			street: 'Street',
@@ -115,6 +116,7 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		outOfServiceVehicles: 'Véhicules hors service',
 		precision: {
 			address: 'Adresse',
 			street: 'Rue',
