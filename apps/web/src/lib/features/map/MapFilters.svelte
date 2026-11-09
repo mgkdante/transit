@@ -91,7 +91,7 @@
 			selectedVehicleIds.length +
 			selectedTripIds.length,
 	);
-	const filterCount = $derived(store.chips.length);
+	const filterCount = $derived(store.chips.length + (store.state.showOutOfService ? 1 : 0));
 	const entityOptions = $derived([
 		{ kind: 'bus', label: t.entityBus },
 		{ kind: 'stop', label: t.entityStop, stop: true },
@@ -295,6 +295,13 @@
 				ontoggle={() => toggleGroup('markers')}
 			>
 				<div class="mf-chips mf-entity-chips">
+					<button
+						type="button"
+						class="mf-chip"
+						data-on={!!store.state.showOutOfService}
+						aria-pressed={!!store.state.showOutOfService}
+						onclick={() => store.toggleOutOfService()}>{t.outOfServiceVehicles}</button
+					>
 					{#each entityOptions as item (item.kind)}
 						<button
 							type="button"

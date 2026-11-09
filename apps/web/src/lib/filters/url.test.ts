@@ -9,6 +9,7 @@ const round = (q: string) => toSearchParams(fromSearchParams(sp(q))).toString();
 describe('filter URL key inventory', () => {
 	it('exports every canonical filter key in an immutable order', () => {
 		expect(FILTER_SEARCH_PARAM_KEYS).toEqual([
+			'out_of_service',
 			'route',
 			'stop',
 			'trip',

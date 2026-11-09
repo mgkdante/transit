@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -48,7 +49,7 @@
 	} from '#lib/components/surface/index.ts';
 	import { StatusBadge } from '#lib/components/dataviz/index.ts';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
-	import { ArticleHeader } from '@yesid/ui/layout';
+
 	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '#lib/components/shared/index.ts';

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import { cn } from '#lib/utils/index.ts';
@@ -64,13 +65,15 @@
 	{/if}
 	<span class="entity-row-body">
 		<span class="entity-row-title">
-			<span class="entity-row-title-text">{title}</span>
+			<span class="entity-row-title-text readable-name" {title} use:readableName>{title}</span>
 			{#if tag}
 				<span class="entity-row-tag">{tag}</span>
 			{/if}
 		</span>
 		{#if subtitle}
-			<span class="entity-row-subtitle">{subtitle}</span>
+			<span class="entity-row-subtitle readable-name" title={subtitle} use:readableName
+				>{subtitle}</span
+			>
 		{/if}
 		{#if routes && routes.length > 0}
 			<span class="entity-row-routes">
@@ -94,7 +97,7 @@
 {:else if onSelect}
 	<button
 		type="button"
-		aria-label={ariaLabel}
+		aria-label={[ariaLabel, title, subtitle].filter(Boolean).join(' ')}
 		onclick={onSelect}
 		class={rowClass}
 		data-slot="entity-row"
@@ -162,7 +165,7 @@
 		font-size: var(--text-body);
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 	}
 	.entity-row-tag {
 		flex-shrink: 0;
@@ -181,7 +184,7 @@
 		line-height: 1.4;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 	}
 	.entity-row-routes {
 		display: flex;

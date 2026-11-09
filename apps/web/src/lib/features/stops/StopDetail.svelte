@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
@@ -41,7 +42,7 @@
 	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
-	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
+	import { ControlsRail } from '@yesid/ui/layout';
 	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { Separator } from '@yesid/ui/separator';

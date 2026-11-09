@@ -144,3 +144,38 @@ body {
 		transform: translateY(0.5rem) scale(0.99);
 	}
 }
+
+/* Q25: preserve words and expose the complete name through text, title and touch. */
+.readable-name {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: normal;
+	overflow-wrap: normal;
+	word-break: normal;
+}
+.readable-name[data-expanded='true'] {
+	-webkit-line-clamp: unset;
+}
+/* Transit adaptation of the shared header's viewport-sized headline stage. */
+.transit-article-header {
+	min-width: 0;
+	container-type: inline-size;
+}
+.transit-article-header [data-slot='article-header'] .header__content {
+	min-width: 0;
+}
+.transit-article-header [data-slot='article-header'] h1 {
+	max-width: 100%;
+	font-size: clamp(1.25rem, 6cqi, 4rem);
+	line-height: 1.1;
+	padding-block: 0.08em;
+}
+.transit-article-header [data-slot='article-header'] .header__meta-pair {
+	white-space: normal;
+	flex-wrap: wrap;
+}
