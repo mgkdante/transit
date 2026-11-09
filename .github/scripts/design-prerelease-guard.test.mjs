@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import { checkManifests } from "./design-prerelease-guard.mjs";
 
 function repository(t, manifests) {
   const root = mkdtempSync(join(tmpdir(), "transit-design-guard-"));
   t.after(() => {
-    assert.ok(resolve(root).startsWith(resolve(tmpdir()) + (process.platform === "win32" ? "\\" : "/")));
+    assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
     rmSync(root, { recursive: true, force: true });
   });
   execFileSync("git", ["init", "--quiet", root]);
@@ -19,28 +19,65 @@ function repository(t, manifests) {
   }
   return root;
 }
-const url = (tag, version = tag) => `https://github.com/mgkdante/yesid.design/releases/download/v${tag}/yesid-ui-${version}.tgz`;
+const url = (tag = "0.38.1", pkg = "ui", version = tag) => `https://github.com/mgkdante/yesid.design/releases/download/v${tag}/yesid-${pkg}-${version}.tgz`;
 
-test("stable releases and manifests without design packages pass", (t) => {
+function rejects(t, manifest, field, key, value) {
+  const root = repository(t, { "package.json": {}, "apps/new/package.json": manifest });
+  assert.throws(() => checkManifests(root), (error) => {
+    for (const text of ["apps/new/package.json", field, key, JSON.stringify(value), "stable release"]) {
+      assert.ok(error.message.includes(text), `Missing ${text} in ${error.message}`);
+    }
+    return true;
+  });
+}
+
+test("exact stable tarballs pass across manifests and dependency fields", (t) => {
   const root = repository(t, {
-    "package.json": { devDependencies: { "@yesid/config": url("1.2.3") } },
-    "apps/web/package.json": { dependencies: { "@yesid/ui": "^1.2.3" } },
-    "apps/other/package.json": { dependencies: { other: "1.2.3-rc.1" } },
+    "package.json": { devDependencies: { "@yesid/config": url("0.38.1", "config") } },
+    "apps/web/package.json": {
+      dependencies: { "@yesid/ui": url() }, peerDependencies: { "@yesid/tokens": url("0.38.1", "tokens") },
+      optionalDependencies: { "@yesid/motion": url("0.38.1", "motion") },
+      overrides: { parent: { "@yesid/ui": url() } }, resolutions: { "parent>@yesid/ui": url() },
+    },
+    "apps/other/package.json": { dependencies: { other: "0.38.1+build.1.2.3-deadbeef" } },
   });
   assert.doesNotThrow(() => checkManifests(root));
 });
 
-for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-  for (const candidate of [url("1.2.3-rc.1"), url("1.2.3-beta.2", "1.2.3"), url("1.2.3", "1.2.3-preview.4"), "^1.2.3-alpha.1", "1.2.3-0", "1.2.3--preview"]) {
-    test(`${section} rejects ${candidate} in a nested manifest`, (t) => {
-      const root = repository(t, { "package.json": {}, "new/app/package.json": { [section]: { "@yesid/ui": candidate } } });
-      assert.throws(() => checkManifests(root), (error) => {
-        for (const value of ["new/app/package.json", "@yesid/ui", candidate, "stable release"]) assert.ok(error.message.includes(value));
-        return true;
-      });
+for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]) {
+  for (const value of [url("0.39.0-rc.1"), url("0.38.1", "ui", "0.39.0-rc.1"), "^0.38.1", "catalog:", "workspace:*", "file:../ui", "link:../ui", "git+https://github.com/mgkdante/yesid.design.git", "0.38.1+build.1.2.3-deadbeef", url() + "?text=1.2.3-foo", url() + "#stable", url() + "\n", url("0.38.1+build"), url("0.38.1", "ui", "0.38.2"), url("0.38.1", "tokens"), url().replace("github.com", "example.com")]) {
+    test(`${field} rejects non-exact reference ${value}`, (t) => {
+      rejects(t, { [field]: { "@yesid/ui": value } }, field, "@yesid/ui", value);
     });
   }
 }
+
+for (const [field, entries, key, value] of [
+  ["overrides", { "@yesid/ui@^0.38": "catalog:" }, "@yesid/ui@^0.38", "catalog:"],
+  ["overrides", { parent: { "@yesid/ui@*": "workspace:*" } }, "@yesid/ui@*", "workspace:*"],
+  ["resolutions", { "parent>@yesid/ui": "0.39.0-rc.1" }, "parent>@yesid/ui", "0.39.0-rc.1"],
+  ["dependencies", { design: "npm:@yesid/ui@0.39.0-rc.1" }, "design", "npm:@yesid/ui@0.39.0-rc.1"],
+  ["dependencies", { design: url("0.39.0-rc.1") }, "design", url("0.39.0-rc.1")],
+]) {
+  test(`detects design targets through ${field} ${key}`, (t) => rejects(t, { [field]: entries }, field, key, value));
+}
+
+test("mixed stable versions fail with both reference locations", (t) => {
+  const root = repository(t, {
+    "package.json": { dependencies: { "@yesid/ui": url() } },
+    "apps/web/package.json": { dependencies: { "@yesid/tokens": url("0.38.2", "tokens") } },
+  });
+  assert.throws(() => checkManifests(root), (error) => {
+    for (const text of ["package.json", "apps/web/package.json", "0.38.1", "0.38.2", "lockstep"]) assert.ok(error.message.includes(text));
+    return true;
+  });
+});
+
+test("ignored workspace manifests are scanned", (t) => {
+  const root = repository(t, { "package.json": {}, "ignored/package.json": { dependencies: { "@yesid/ui": "catalog:" } } });
+  writeFileSync(join(root, ".gitignore"), "ignored/\n");
+  assert.throws(() => checkManifests(root), /ignored\/package.json/);
+});
 
 test("invalid JSON and unreadable tracked manifests fail closed", (t) => {
   const root = repository(t, { "package.json": "{invalid" });
@@ -48,4 +85,17 @@ test("invalid JSON and unreadable tracked manifests fail closed", (t) => {
   execFileSync("git", ["add", "package.json"], { cwd: root });
   rmSync(join(root, "package.json"));
   assert.throws(() => checkManifests(root), /package.json.*cannot read or parse/);
+});
+
+test("a manifest directory and a missing walk root fail closed", (t) => {
+  const root = repository(t, {});
+  mkdirSync(join(root, "package.json"));
+  assert.throws(() => checkManifests(root), /package.json/);
+  assert.throws(() => checkManifests(join(root, "missing")));
+});
+
+test("directory walk cycles fail closed", (t) => {
+  const root = repository(t, {});
+  symlinkSync(root, join(root, "loop"), "junction");
+  assert.throws(() => checkManifests(root), /cannot walk manifests.*Directory cycle/);
 });
