@@ -44,9 +44,11 @@
 	const backAria = $derived(sheetCopy[locale].back);
 	const closeAria = $derived(sheetCopy[locale].closeDetails);
 
-	// Peek keeps the header controls visible; the rider's last height survives reopening.
+	// Peek holds the 44 px handle, the header (44 px controls, 24 px padding, a border,
+	// with room for a two-line identity) and a 34 px home-indicator inset, so the
+	// back and close controls stay clear of it. The rider's last height survives reopening.
 	const detents = $derived<SheetDetent[]>([
-		{ id: 'peek', size: '120px', label: sheetCopy[locale].peek },
+		{ id: 'peek', size: '168px', label: sheetCopy[locale].peek },
 		{ id: 'half', size: '50%', label: sheetCopy[locale].half },
 		{ id: 'full', size: '90%', label: sheetCopy[locale].full },
 	]);
