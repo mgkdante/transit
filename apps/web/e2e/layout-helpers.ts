@@ -99,6 +99,13 @@ export async function textDefects(page: Page) {
 			const el = node.parentElement as HTMLElement;
 			const text = node.textContent?.trim();
 			if (!text || !el || el.closest('script,style,[data-allow-clip]')) continue;
+			// Blueprint drawing annotations are decorative and intentionally bleed past the frame.
+			// This allowance is limited to the aria-hidden drawing layer, never rider content.
+			if (
+				el.closest('[data-slot="blueprint-listing-header"]') &&
+				el.closest('[aria-hidden="true"]')
+			)
+				continue;
 			let invisible = false;
 			for (let p: Element | null = el; p && p !== document.body; p = p.parentElement) {
 				if (hidden(p)) {
@@ -118,7 +125,7 @@ export async function textDefects(page: Page) {
 				if (/auto|scroll/.test(css.overflowY) && p.scrollHeight > p.clientHeight + 1) break;
 				const x = p.scrollWidth > p.clientWidth + 1,
 					y = p.scrollHeight > p.clientHeight + 1;
-				if (css.textOverflow === 'ellipsis' && x) {
+				if (css.textOverflow === 'ellipsis' && (x || (y && Number(css.webkitLineClamp) > 0))) {
 					if (!readable(p, p.textContent?.trim() ?? full))
 						report('inaccessible-ellipsis', p, p.textContent?.trim() ?? full);
 				} else if (
