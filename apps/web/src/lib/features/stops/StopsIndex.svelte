@@ -15,7 +15,7 @@
 		ResourceBoundary,
 		EntityList,
 		EntityRow,
-		EntityResultRow,
+		LineStopResult,
 		ReliabilityBadge,
 		MapDrilldownLink,
 		createReliabilityListingController,
@@ -412,17 +412,6 @@
 	{@const hint = stopModeHint(stop)}
 	{@const stopSnapshot = reliability.get(stop.id)}
 	<div use:observeReliability={stop.id}>
-		{#snippet stopMain()}
-			<EntityRow
-				target={{ kind: 'stop', id: stop.id }}
-				{locale}
-				glyph={hint.glyph}
-				tag={stopModeTag(stop) ?? undefined}
-				title={stopDisplayName(stop.name)}
-				subtitle={stop.code ?? undefined}
-				routes={stop.routes}
-			/>
-		{/snippet}
 		{#snippet stopStatus()}
 			<ReliabilityBadge snapshot={stopSnapshot} {locale} />
 		{/snippet}
@@ -433,8 +422,15 @@
 				label={t.mapAction}
 			/>
 		{/snippet}
-		<EntityResultRow
-			children={stopMain}
+		<LineStopResult
+			presentation="legacy-listing"
+			target={{ kind: 'stop', id: stop.id }}
+			{locale}
+			glyph={hint.glyph}
+			tag={stopModeTag(stop) ?? undefined}
+			title={stopDisplayName(stop.name)}
+			subtitle={stop.code ?? undefined}
+			routes={stop.routes}
 			status={stopSnapshot.otpPct == null ? undefined : stopStatus}
 			action={stopAction}
 		/>

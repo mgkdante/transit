@@ -5,22 +5,18 @@
 
 	interface Props {
 		locale: Locale;
-		kicker: string;
 		heading: string;
 		presentation: StampPresentation;
 	}
 
-	let { locale, kicker, heading, presentation }: Props = $props();
+	let { locale, heading, presentation }: Props = $props();
 </script>
 
 <div class="map-overlay map-head">
-	<div class="map-kicker-row">
-		<p class="map-kicker">{kicker}</p>
-		<MapFreshness placement="head" {presentation} {locale} />
-	</div>
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>
 	</div>
+	<MapFreshness placement="head" {presentation} {locale} />
 </div>
 
 <style>
@@ -37,20 +33,6 @@
 		max-width: calc(
 			100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem
 		);
-	}
-	.map-kicker-row {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-	.map-kicker {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
 	}
 	.map-title-row {
 		display: flex;
@@ -84,14 +66,6 @@
 		}
 		.map-heading {
 			font-size: var(--text-subheading);
-		}
-	}
-	@media (--desktop-max) {
-		.map-title-row {
-			order: -1;
-		}
-		.map-kicker {
-			display: none;
 		}
 	}
 </style>
