@@ -67,7 +67,7 @@
 
 <script lang="ts">
 	import { measureMapFocusInset } from '#lib/features/map/mapFocusInset.ts';
-	import { browser } from '$app/env';
+	import { browser, dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
 	import { cn } from '#lib/utils/index.ts';
 	import type { BasemapFile } from '#lib/v1/schemas/index.ts';
@@ -566,6 +566,22 @@
 				throw error;
 			}
 			attempt.map = instance;
+			// Read-only geometry inspection, omitted from production builds.
+			if (dev || import.meta.env.MODE === 'e2e') {
+				const inspectMap = () => ({
+					project: (coord: [number, number]) => instance.project(coord),
+					moving: instance.isMoving(),
+					loaded: instance.loaded(),
+				});
+				Object.defineProperty(window, '__transitMap', {
+					configurable: true,
+					get: inspectMap,
+				});
+				attempt.disposers.push(() => {
+					if (Object.getOwnPropertyDescriptor(window, '__transitMap')?.get === inspectMap)
+						Reflect.deleteProperty(window, '__transitMap');
+				});
+			}
 			camera.attach(instance, cameraInputs(), recoveryView);
 			ownMapControl(
 				attempt,
