@@ -199,22 +199,22 @@ test("second request within the cadence serves the memo — no extra R2 reads", 
 
 test("freshnessS is recomputed at serve time on cache hits", async () => {
   const env = {
-    SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 40_000 })),
+    SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 20_000 })),
   };
   const first = await (await fetchKpis(env)).json();
   assert.ok(
-    first.freshnessS >= 39 && first.freshnessS <= 43,
+    first.freshnessS >= 19 && first.freshnessS <= 23,
     `freshnessS=${first.freshnessS}`,
   );
 
   const realNow = Date.now;
-  Date.now = () => realNow() + 20_000;
+  Date.now = () => realNow() + 10_000;
   try {
     const response = await fetchKpis(env);
     assert.equal(response.headers.get("x-kpis-cache"), "hit");
     const body = await response.json();
     assert.ok(
-      body.freshnessS >= 59 && body.freshnessS <= 63,
+      body.freshnessS >= 29 && body.freshnessS <= 33,
       `freshnessS=${body.freshnessS}`,
     );
   } finally {
@@ -245,7 +245,7 @@ for (const cacheLayer of ["memo", "edge", "revalidating"]) {
         const key = `v1/stm/live/${expiredSource}.json`;
         const source = JSON.parse(docs[key]);
         const elapsedMs = cacheLayer === "revalidating" ? 31_000 : 2_000;
-        source.generated_utc = iso(90_000 - elapsedMs);
+        source.generated_utc = iso(60_000 - elapsedMs);
         docs[key] = JSON.stringify(source);
         const bucket = new FakeKpisBucket(docs);
         const env = { SNAPSHOTS: bucket };
@@ -361,7 +361,7 @@ test("failed SWR rebuilds are throttled while the stale core remains usable", as
   }
 });
 
-test("snapshot older than 90 s returns 503 with Retry-After, even from cache", async () => {
+test("snapshot older than 60 s returns 503 with Retry-After, even from cache", async () => {
   const env = {
     SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: 3_000 })),
   };
@@ -372,7 +372,7 @@ test("snapshot older than 90 s returns 503 with Retry-After, even from cache", a
   try {
     const response = await fetchKpis(env);
     assert.equal(response.status, 503);
-    assert.equal(response.headers.get("retry-after"), "30");
+    assert.equal(response.headers.get("retry-after"), "20");
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.equal((await response.json()).error, "pipeline_cold");
@@ -387,7 +387,7 @@ test("missing live vehicles snapshot returns 503 pipeline_cold", async () => {
   const env = { SNAPSHOTS: new FakeKpisBucket(docs) };
   const response = await fetchKpis(env);
   assert.equal(response.status, 503);
-  assert.equal(response.headers.get("retry-after"), "30");
+  assert.equal(response.headers.get("retry-after"), "20");
   assert.equal((await response.json()).error, "pipeline_cold");
 });
 
@@ -549,7 +549,7 @@ for (const outcome of ["recovered", "stalled", "read-failure"]) {
     t.mock.method(Date, "now", () => now);
     const docs = liveDocs({ snapshotMsAgo: 0 });
     const trips = JSON.parse(docs["v1/stm/live/trips.json"]);
-    trips.generated_utc = iso(89_000);
+    trips.generated_utc = iso(59_000);
     docs["v1/stm/live/trips.json"] = JSON.stringify(trips);
     const bucket = new FakeKpisBucket(docs);
     const env = { SNAPSHOTS: bucket };
@@ -593,7 +593,7 @@ for (const outcome of ["recovered", "stalled", "read-failure"]) {
   });
 }
 
-test("one busy hour at the observed 35s publication / 27s upload lag stays within the read budget", async (t) => {
+test("one busy hour at the 20s vehicle / 30s trip publication with 4s upload lag stays within the read budget", async (t) => {
   const start = Date.parse("2026-11-04T12:00:00Z");
   let now = start;
   t.mock.method(Date, "now", () => now);
@@ -606,9 +606,10 @@ test("one busy hour at the observed 35s publication / 27s upload lag stays withi
     for (const [key, value] of Object.entries(base)) {
       const doc = JSON.parse(value);
       if (key.includes("/live/")) {
-        const lag = key.endsWith("trips.json") ? 31_000 : 27_000;
+        const lag = 4_000;
+        const period = key.endsWith("trips.json") ? 30_000 : 20_000;
         doc.generated_utc = new Date(
-          start + Math.floor((now - start - lag) / 35_000) * 35_000,
+          start + Math.floor((now - start - lag) / period) * period,
         ).toISOString();
       }
       bucket.objects.set(key, JSON.stringify(doc));
@@ -629,9 +630,9 @@ test("one busy hour at the observed 35s publication / 27s upload lag stays withi
     if (response.headers.get("x-kpis-cache") === "miss") misses++;
     await ctx.settle();
   }
-  // Even three builds per 30-second window would consume <8% of 10m free reads
+  // Even three builds per 20-second window would consume <12% of 10m free reads
   // in one 30-day month per continuously active isolate; measured below is lower.
-  assert.ok(bucket.reads.length <= 1081, `reads=${bucket.reads.length}`);
+  assert.ok(bucket.reads.length <= 1621, `reads=${bucket.reads.length}`);
   t.diagnostic(
     JSON.stringify({
       requests: 3600,
@@ -642,27 +643,27 @@ test("one busy hour at the observed 35s publication / 27s upload lag stays withi
   );
 });
 
-for (const age of [89, 90]) {
-  test(`vehicles at ${age}s enforce the exact 90s cutoff`, async (t) => {
+for (const age of [59, 60]) {
+  test(`vehicles at ${age}s enforce the exact 60s cutoff`, async (t) => {
     t.mock.method(Date, "now", () => Date.parse("2026-11-04T12:00:00Z"));
     const response = await fetchKpis({
       SNAPSHOTS: new FakeKpisBucket(liveDocs({ snapshotMsAgo: age * 1000 })),
     });
-    assert.equal(response.status, age === 89 ? 200 : 503);
-    if (age === 90) {
+    assert.equal(response.status, age === 59 ? 200 : 503);
+    if (age === 60) {
       assert.equal((await response.json()).error, "pipeline_cold");
-      assert.equal(response.headers.get("retry-after"), "30");
+      assert.equal(response.headers.get("retry-after"), "20");
     }
   });
 }
 
-test("a lane crossing 90s between cache lookup and serving rebuilds before nulling", async (t) => {
+test("a lane crossing 60s between cache lookup and serving rebuilds before nulling", async (t) => {
   const start = Date.parse("2026-11-04T12:00:00Z");
   let now = start;
   t.mock.method(Date, "now", () => now);
   const docs = liveDocs({ snapshotMsAgo: 0 });
   const trips = JSON.parse(docs["v1/stm/live/trips.json"]);
-  trips.generated_utc = iso(89_000);
+  trips.generated_utc = iso(59_000);
   docs["v1/stm/live/trips.json"] = JSON.stringify(trips);
   const bucket = new FakeKpisBucket(docs);
   const env = { SNAPSHOTS: bucket };
@@ -676,10 +677,10 @@ test("a lane crossing 90s between cache lookup and serving rebuilds before nulli
   assert.equal(bucket.reads.length, 7);
 });
 
-test("an anchor crossing 90s while serving rebuilds before declaring pipeline_cold", async (t) => {
+test("an anchor crossing 60s while serving rebuilds before declaring pipeline_cold", async (t) => {
   const start = Date.parse("2026-11-04T12:00:00Z");
   t.mock.method(Date, "now", () => start);
-  const bucket = new FakeKpisBucket(liveDocs({ snapshotMsAgo: 89_000 }));
+  const bucket = new FakeKpisBucket(liveDocs({ snapshotMsAgo: 59_000 }));
   const env = { SNAPSHOTS: bucket };
   await fetchKpis(env);
   bucket.objects = new Map(Object.entries(liveDocs({ snapshotMsAgo: 0 })));

@@ -123,7 +123,11 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 				const body = await response.json();
 				// S1 lies behind the eastbound vehicle. This case tests between-report
 				// motion without a known next stop; stop capping has its own unit tests.
-				for (const vehicle of body.vehicles) vehicle.next_stop = null;
+				for (const vehicle of body.vehicles) {
+					vehicle.next_stop = null;
+					vehicle.next_stop_lat = null;
+					vehicle.next_stop_lon = null;
+				}
 				await route.fulfill({ response, json: body });
 			} else await route.fulfill({ response });
 		}),

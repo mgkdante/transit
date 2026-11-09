@@ -408,6 +408,13 @@ def test_duplicate_live_vehicles_exclude_one_trip_and_metro_is_excluded(conn, se
     _vehicles(conn, edition)
     now = _instant(DAY, "12:15:00")
     assert _missing(conn, now) == [("R", 1, ["other-trip"])]
+    conn.execute(
+        text(
+            "UPDATE core.providers SET lines_without_live_data = "
+            "'[{\"route_types\":[1]}]' WHERE provider_id=:p"
+        ),
+        edition,
+    )
     conn.execute(text("UPDATE gold.dim_route SET route_type=1 WHERE provider_id=:p"), edition)
     assert _missing(conn, now) == []
 
