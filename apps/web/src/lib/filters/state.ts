@@ -29,6 +29,7 @@ export interface FilterState {
 	stops: Set<string>;
 	trips: Set<string>;
 	vehicles: Set<string>;
+	showOutOfService?: boolean;
 	status?: StatusCode[];
 	occupancy?: OccupancyCode[];
 	entities?: EntityKind[];
@@ -178,6 +179,7 @@ export function cloneFilterState(s: FilterState): FilterState {
 		...(s.occupancy ? { occupancy: s.occupancy.slice() } : {}),
 		...(s.entities ? { entities: s.entities.slice() } : {}),
 		...(s.alerts ? { alerts: s.alerts.slice() } : {}),
+		...(s.showOutOfService ? { showOutOfService: true } : {}),
 		...(s.grain !== undefined ? { grain: s.grain } : {}),
 		...(s.window !== undefined ? { window: { from: s.window.from, to: s.window.to } } : {}),
 		...(s.date !== undefined ? { date: s.date } : {}),
@@ -191,6 +193,7 @@ export type IdSetKey = 'routes' | 'stops' | 'trips' | 'vehicles';
 
 export function isEmptyFilterState(s: FilterState): boolean {
 	return (
+		!s.showOutOfService &&
 		s.routes.size === 0 &&
 		s.stops.size === 0 &&
 		s.trips.size === 0 &&
