@@ -76,17 +76,6 @@ for (const provider of read('providers').providers)
 			body: JSON.stringify({ loaded, settled }),
 			contentType: 'application/json',
 		});
-		const width = page.viewportSize()!.width;
-		const defect =
-			width === 360 || width === 390 || width === 844
-				? 'LAYOUT-ISLAND: initial camera cuts off provider fit bounds on phones'
-				: provider.id === 'octranspo' && width === 1920
-					? 'LAYOUT-OTTAWA-CHROME: provider fit bounds intersect desktop map chrome'
-					: null;
-		if (defect) {
-			info.annotations.push({ type: 'defect', description: defect });
-			test.fail(true, defect);
-		}
 		expect(loaded.outside || loaded.covered.length > 0).toBe(false);
 		expect(settled.outside || settled.covered.length > 0).toBe(false);
 	});

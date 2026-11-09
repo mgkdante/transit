@@ -237,6 +237,7 @@ async function capturePoster(
 			framing.bounds,
 			deriveMapFitPadding(spec.width >= 1024, spec.width),
 			framing.maxBounds,
+			{ width: spec.width, height: spec.height },
 		);
 		const renderResult = await page.evaluate(
 			async ({ style, viewport, center, maplibreUrl }) => {
