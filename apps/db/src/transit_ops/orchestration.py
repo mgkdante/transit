@@ -64,6 +64,7 @@ from transit_ops.silver import (
 from transit_ops.silver.static_gtfs import prepare_static_application
 from transit_ops.snapshots.live_scope import live_publish_scope
 from transit_ops.snapshots.publish import publish_snapshot
+from transit_ops.worker_watchdog import worker_progress, worker_stopping, worker_watchdog
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
 I3_ALERT_ENDPOINT = "i3_alerts"
@@ -910,12 +911,13 @@ def _install_worker_shutdown_handlers() -> Callable[[], bool]:
     shutdown_requested = threading.Event()
 
     def _request_shutdown(signum: int, _frame: object) -> None:
+        worker_stopping()
+        shutdown_requested.set()
         logger.info(
             "Received signal %s — requesting clean realtime worker shutdown after "
             "the current cycle drains.",
             signum,
         )
-        shutdown_requested.set()
 
     if threading.current_thread() is not threading.main_thread():
         return shutdown_requested.is_set
@@ -944,7 +946,7 @@ def _run_realtime_worker_loop(
     bronze_storage_resolver: BronzeStorageResolver,
 ) -> None:
     registry = registry or _provider_registry(settings)
-    engine = _engine(settings, engine)
+    engine = engine or make_engine(settings, connect_timeout=10)
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("max_cycles must be greater than 0 when provided.")
 
@@ -975,6 +977,7 @@ def _run_realtime_worker_loop(
             startup_delay_seconds,
             provider_id,
         )
+        worker_progress(sleep_seconds=startup_delay_seconds)
         sleep_fn(startup_delay_seconds)
 
     cycle_number = 0
@@ -982,6 +985,7 @@ def _run_realtime_worker_loop(
     last_captures: dict[str, datetime] = {}
     last_attempts: dict[str, datetime] = {}
     while max_cycles is None or cycle_number < max_cycles:
+        worker_progress()
         if should_shutdown():
             logger.info(
                 "Shutdown requested — realtime worker loop is stopping cleanly for "
@@ -997,6 +1001,7 @@ def _run_realtime_worker_loop(
                 provider_id,
                 poll_seconds,
             )
+            worker_progress(sleep_seconds=poll_seconds)
             sleep_fn(poll_seconds)
             continue
         cycle_number += 1
@@ -1043,6 +1048,7 @@ def _run_realtime_worker_loop(
                 float(poll_seconds),
             )
             if computed_sleep_seconds:
+                worker_progress(sleep_seconds=computed_sleep_seconds)
                 sleep_fn(computed_sleep_seconds)
             continue
         cycle_end_utc = utc_now_fn()
@@ -1112,6 +1118,7 @@ def _run_realtime_worker_loop(
             float(poll_seconds),
         )
         if computed_sleep_seconds:
+            worker_progress(sleep_seconds=computed_sleep_seconds)
             sleep_fn(computed_sleep_seconds)
 
 
@@ -1128,26 +1135,30 @@ def run_realtime_worker_loop(
     should_shutdown: Callable[[], bool] | None = None,
 ) -> None:
     settings = settings or get_settings()
-    bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
-    try:
-        with live_publish_scope(provider_id, settings):
-            return _run_realtime_worker_loop(
-                provider_id,
-                settings=settings,
-                registry=registry,
-                engine=engine,
-                sleep_fn=sleep_fn,
-                max_cycles=max_cycles,
-                perf_counter_fn=perf_counter_fn,
-                utc_now_fn=utc_now_fn,
-                should_shutdown=should_shutdown,
-                bronze_storage_resolver=bronze_storage_scope.resolve,
-            )
-    finally:
+    with worker_watchdog(
+        timeout=settings.REALTIME_WATCHDOG_SECONDS,
+        shutdown_grace=settings.REALTIME_SHUTDOWN_GRACE_SECONDS,
+    ):
+        bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
         try:
-            bronze_storage_scope.close()
-        except Exception:
-            logger.exception("Failed to close worker Bronze storage scope")
+            with live_publish_scope(provider_id, settings):
+                return _run_realtime_worker_loop(
+                    provider_id,
+                    settings=settings,
+                    registry=registry,
+                    engine=engine,
+                    sleep_fn=sleep_fn,
+                    max_cycles=max_cycles,
+                    perf_counter_fn=perf_counter_fn,
+                    utc_now_fn=utc_now_fn,
+                    should_shutdown=should_shutdown,
+                    bronze_storage_resolver=bronze_storage_scope.resolve,
+                )
+        finally:
+            try:
+                bronze_storage_scope.close()
+            except Exception:
+                logger.exception("Failed to close worker Bronze storage scope")
 
 
 def run_pruner_loop(
