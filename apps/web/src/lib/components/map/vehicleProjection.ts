@@ -1,4 +1,13 @@
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import { type Coord, projectToPolyline, walkAlong, cumulativeLengths } from './polyline';
+
+export function notReporting(
+	vehicle: Pick<Vehicle, 'reported_utc' | 'updated_utc'>,
+	serverNow: number,
+): { ageS: number } | null {
+	const ageS = fixAgeS(vehicle.reported_utc, vehicle.updated_utc, serverNow);
+	return isVehicleStale(ageS) ? { ageS } : null;
+}
 
 export const PROJECTION_HORIZON_S = 50;
 
@@ -31,7 +40,15 @@ export function projectedDistanceM(
 	return speedMps * (a - (a * a) / (2 * horizon));
 }
 
+export interface ProjectionInvariants {
+	fixEpochMs: number;
+	shape: readonly Coord[];
+	lengths: readonly number[];
+	s0: number;
+}
+
 export interface ProjectVehicleInput {
+	invariants?: ProjectionInvariants;
 	coord: Coord;
 	shape: readonly Coord[] | null;
 	speedMps: number | null;
@@ -59,12 +76,14 @@ export function projectVehicle(input: ProjectVehicleInput): ProjectVehicleResult
 		return { coord, bearing, frozen: true, stale };
 	}
 
-	const lengths = cumulativeLengths(shape);
+	const lengths = input.invariants?.lengths ?? cumulativeLengths(shape);
 	if (lengths[lengths.length - 1] <= 0) {
 		return { coord, bearing, frozen: true, stale };
 	}
 
-	const proj = projectToPolyline(shape, coord, lengths);
+	const proj = input.invariants
+		? { s: input.invariants.s0 }
+		: projectToPolyline(shape, coord, lengths);
 	if (!proj) {
 		return { coord, bearing, frozen: true, stale };
 	}

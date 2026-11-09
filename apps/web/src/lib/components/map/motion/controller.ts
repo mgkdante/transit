@@ -1,4 +1,3 @@
-import { shouldAnimate } from '@yesid/motion/policy';
 import type { VehicleFC } from '../vehicleLayer';
 import { cumulativeLengths, projectToPolyline, type Coord } from '../polyline';
 import { BLEND_MS, MIN_RENDER_INTERVAL_MS } from './constants';
@@ -192,7 +191,7 @@ export function createVehicleMotionController(
 	return {
 		set(next: VehicleFC, options: VehicleMotionOptions = {}) {
 			const nextTickKey = options.tickKey ?? null;
-			const animate = options.animate ?? shouldAnimate('motion-gated');
+			const animate = options.animate ?? false;
 			const nextShapeFor = options.shapeFor;
 			if (nextShapeFor !== shapeFor) {
 				invariantCache.clear();

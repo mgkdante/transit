@@ -23,14 +23,8 @@
 	import { nearTargetFromSearchParams } from '#lib/search/mapNear.ts';
 	import { parseMapFocus } from '#lib/search/mapFocus.ts';
 	import { RightPanel } from '#lib/components/shell/index.ts';
-	import {
-		MapStage,
-		nearestStops,
-		liveTtlS,
-		type WithDistance,
-		type FixResolver,
-	} from '#lib/components/map/index.ts';
-	import { createShapeCacheManager } from './mapShapeCache';
+	import { MapStage, nearestStops, type WithDistance } from '#lib/components/map/index.ts';
+	import { createVehicleMotion } from './vehicleMotion';
 	import { motionMode } from '#lib/stores/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
@@ -47,7 +41,6 @@
 		clearNearTargetSearch,
 		buildFocusClearSearch,
 	} from './mapUrlSync';
-	import { motionFeedAnimate } from './motionFeed';
 	import { nearTargetKey } from './mapNearMe';
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
@@ -171,11 +164,12 @@
 		return () => releaseMapOwner(unsubscribe);
 	});
 
-	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
-
 	let mapFailure = $state<MapStageFailure | null>(null);
 	let hasFirstIdle = $state(false);
-	const shapeCache = createShapeCacheManager(getRoute);
+	const vehicleMotion = createVehicleMotion(getRoute, {
+		now: () => untrack(() => clock.serverNow),
+		continuous: () => untrack(() => clock.serverNowContinuousMs()),
+	});
 	const session = createMapSelectionSession({
 		live,
 		repositories: { getRoute, getStop, getStopsIndexSlim, getRoutesIndex },
@@ -217,7 +211,7 @@
 	$effect(() => {
 		const routes = session.loadedRoutes;
 		untrack(() => {
-			for (const route of routes) if (route) shapeCache.remember(route);
+			for (const route of routes) if (route) vehicleMotion.remember(route);
 		});
 	});
 	function commitPickedSelection(next: MapSelection) {
@@ -343,51 +337,32 @@
 		onfailure?.(failure);
 	}
 
+	const motionFrame = $derived(
+		vehicleMotion.read(live.vehicles, {
+			preference: motionMode.current,
+			reducedMotion: $prefersReducedMotion,
+			ready: hasFirstIdle,
+			stale: live.vehiclesIsStale,
+		}),
+	);
+
+	// Read intent before the map exists so Estimated position can prefetch shapes.
 	$effect(() => {
-		const vehicles = live.vehicles?.vehicles ?? [];
-		if (motionMode.current !== 'smooth' || vehicles.length === 0) return;
-		untrack(() => shapeCache.prefetch(vehicles));
+		void motionFrame;
 	});
 
-	const shapeFor = shapeCache.shapeFor;
-
-	const fixFor: FixResolver = (id) => {
-		const v = live.index.byVehicleId.get(id);
-		if (!v) return null;
-		return {
-			reportedUtc: v.reported_utc,
-			updatedUtc: v.updated_utc,
-			speedMps: v.speed_kmh != null ? v.speed_kmh / 3.6 : null,
-		};
-	};
-
 	function readMapFeed(): MapRuntimeFeed {
-		const reduceMotion = $prefersReducedMotion;
-		const smoothMotion = motionMode.current === 'smooth';
-		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
-		const serverNow = untrack(() => clock.serverNow);
 		const filter = filters.state;
-		const stale = live.vehiclesIsStale;
-		const vehicleItems = live.vehicles?.vehicles ?? [];
-		const vehicleTickKey = live.vehiclesGeneratedUtc;
 		return {
 			routes: {
 				items: routeLineRoutes,
 				selected: selectedRouteLine,
 			},
 			vehicles: {
-				items: vehicleItems,
+				...motionFrame,
 				filter,
 				alertIds: alertVehicleIds,
 				selectedId: selectedVehicleId,
-				serverNow,
-				ttlS: liveTtl,
-				tickKey: vehicleTickKey,
-				stale,
-				fixFor,
-				shapeFor: animate ? shapeFor : undefined,
-				serverNowFn: () => untrack(() => clock.serverNowContinuousMs()),
-				animate,
 			},
 			stops: {
 				items: stopList,
