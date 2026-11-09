@@ -13,15 +13,15 @@ async function loadModule() {
 }
 
 describe('mapDetailPanes clamp', () => {
-	it('keeps an in-range width unchanged', async () => {
+	it('snaps a legacy continuous width to the nearest size', async () => {
 		const { clampDetailPanelWidth } = await loadModule();
-		expect(clampDetailPanelWidth(360)).toBe(360);
-		expect(clampDetailPanelWidth(440)).toBe(440);
+		expect(clampDetailPanelWidth(360)).toBe(320);
+		expect(clampDetailPanelWidth(440)).toBe(400);
 	});
 
 	it('raises a width below the floor up to the minimum', async () => {
 		const { clampDetailPanelWidth, MIN_DETAIL_PANEL_WIDTH } = await loadModule();
-		expect(MIN_DETAIL_PANEL_WIDTH).toBe(300);
+		expect(MIN_DETAIL_PANEL_WIDTH).toBe(56);
 		expect(clampDetailPanelWidth(120)).toBe(MIN_DETAIL_PANEL_WIDTH);
 	});
 
@@ -31,10 +31,10 @@ describe('mapDetailPanes clamp', () => {
 		expect(clampDetailPanelWidth(9000)).toBe(MAX_DETAIL_PANEL_WIDTH);
 	});
 
-	it('rounds to an integer px width', async () => {
+	it('snaps a fractional width', async () => {
 		const { clampDetailPanelWidth } = await loadModule();
 		expect(Number.isInteger(clampDetailPanelWidth(360.6))).toBe(true);
-		expect(clampDetailPanelWidth(360.6)).toBe(361);
+		expect(clampDetailPanelWidth(360.6)).toBe(400);
 	});
 
 	it('falls back to the default for non-finite input', async () => {
@@ -55,10 +55,10 @@ describe('mapDetailPanes persistence', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('defaults to the 360px design width with no stored choice', async () => {
+	it('defaults to the standard design width with no stored choice', async () => {
 		const { readStoredDetailPanelWidth, DEFAULT_DETAIL_PANEL_WIDTH } = await loadModule();
 		expect(readStoredDetailPanelWidth()).toBe(DEFAULT_DETAIL_PANEL_WIDTH);
-		expect(DEFAULT_DETAIL_PANEL_WIDTH).toBe(360);
+		expect(DEFAULT_DETAIL_PANEL_WIDTH).toBe(400);
 	});
 
 	it('persists a chosen width and reads it back across a reload', async () => {
@@ -66,14 +66,14 @@ describe('mapDetailPanes persistence', () => {
 		expect(DETAIL_PANEL_WIDTH_STORAGE_KEY).toBe('transit:detail-panel-width');
 
 		writeStoredDetailPanelWidth(440);
-		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('440');
+		expect(localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY)).toBe('400');
 
 		const reloaded = await loadModule();
-		expect(reloaded.readStoredDetailPanelWidth()).toBe(440);
+		expect(reloaded.readStoredDetailPanelWidth()).toBe(400);
 	});
 
 	it.each([
-		['80', 300],
+		['80', 56],
 		['9000', 560],
 	] as const)('clamps stored %s to %s on read', async (stored, expected) => {
 		const { readStoredDetailPanelWidth } = await loadModule();
@@ -119,22 +119,12 @@ describe('mapDetailPanes persistence', () => {
 		expect(() => writeStoredDetailPanelWidth(440)).not.toThrow();
 	});
 
-	it('persists a collapsed rail by surface key and clears it on expansion', async () => {
-		const {
-			DETAIL_RAIL_STORAGE_KEY,
-			readStoredDetailRail,
-			writeStoredDetailRail,
-			clearStoredDetailRail,
-		} = await loadModule();
-
-		writeStoredDetailRail('stop:52618');
-		expect(DETAIL_RAIL_STORAGE_KEY).toBe('transit:detail-rail');
-		expect(readStoredDetailRail()).toBe('stop:52618');
-
-		clearStoredDetailRail();
-		expect(readStoredDetailRail()).toBeNull();
+	it('remembers rail as a device size across a reload', async () => {
+		const { writeStoredDetailPanelWidth } = await loadModule();
+		writeStoredDetailPanelWidth(56);
+		const reloaded = await loadModule();
+		expect(reloaded.readStoredDetailPanelWidth()).toBe(56);
 	});
-
 	it('on the server returns the default and does not touch storage', async () => {
 		mocks.browser = false;
 		const getItem = vi.spyOn(Storage.prototype, 'getItem');
@@ -174,7 +164,7 @@ describe('mapDetailPanes rail-offset publication', () => {
 			state: 'collapsed',
 			open: true,
 			collapsed: true,
-			expectedOffset: 'var(--size-detail-rail)',
+			expectedOffset: '56px',
 		},
 		{
 			state: 'closed or mobile',

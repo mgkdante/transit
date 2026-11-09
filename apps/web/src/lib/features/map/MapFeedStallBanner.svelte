@@ -24,14 +24,17 @@
 	}
 	.map-live-edge {
 		top: calc(var(--chrome-offset) + 2.5rem);
-		left: calc(var(--app-left-rail-offset, 0rem) + 18rem);
+		left: calc(var(--app-left-rail-offset, 0rem) + var(--map-controls-width, 300px) + 2rem);
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		margin-inline: auto;
 		z-index: var(--z-map-banner-content);
 		width: max-content;
 		max-width: min(
 			26rem,
-			calc(100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 19rem)
+			calc(
+				100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) -
+					var(--map-controls-width, 300px) - 3rem
+			)
 		);
 		padding: 0.375rem 0.875rem;
 		text-align: center;

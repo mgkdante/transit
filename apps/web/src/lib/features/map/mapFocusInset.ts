@@ -47,7 +47,12 @@ const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
 	},
 	containerRect: (container) => container.getBoundingClientRect(),
 	headingRect: (hero) => hero.querySelector('.map-head')?.getBoundingClientRect() ?? null,
-	detailOffset: (hero) => getComputedStyle(hero).getPropertyValue('--map-detail-offset'),
+	detailOffset: (hero) => {
+		const panel = hero.querySelector('[data-slot="map-detail-overlay"]');
+		return panel
+			? panel.getBoundingClientRect().width + 'px'
+			: getComputedStyle(hero).getPropertyValue('--map-detail-offset');
+	},
 	rootFontSize: () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
 	bottomSheetHeight: () => {
 		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
@@ -102,7 +107,7 @@ export function measureMapFocusInset(
 			top: topOcclusion,
 			right: rightOcclusion,
 			bottom: bottomOcclusion,
-			left: 0,
+			left: clampOcclusion(chrome.left, containerWidth - rightOcclusion),
 		},
 		64,
 	);

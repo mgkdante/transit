@@ -93,13 +93,19 @@
 		min-width: 0;
 	}
 	.map-motion-caption {
-		align-items: center;
+		flex-direction: column;
+		align-items: flex-start;
 	}
 	.map-motion[data-collapsed='true'] {
 		gap: 0.375rem;
 		justify-items: center;
 	}
+	.map-motion-heading {
+		flex-wrap: wrap;
+	}
 	.map-motion-label {
+		flex: none;
+		white-space: nowrap;
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
@@ -189,9 +195,7 @@
 		font-size: var(--text-micro);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 	}
 	.map-motion-explain {
 		display: inline-flex;
