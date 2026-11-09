@@ -107,6 +107,7 @@ export async function readWhole<T>(
 		cache,
 		providerId: providerOf(ctx),
 		signal: ctx?.signal,
+		onResponseHeaders: ctx?.onResponseHeaders,
 	});
 	if (value === undefined) {
 		throw new Error(`[v1.${label}] expected file not found at ${url}`);

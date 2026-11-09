@@ -696,6 +696,58 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		});
 	});
 
+	it('does not duplicate a family when manual refresh overlaps an automatic poll', async () => {
+		const { store } = setup(30, ['vehicles']);
+		store.start();
+		await settleLivePoll();
+		mocks.vehicles.mockImplementation(() => new Promise(() => {}));
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
+		await store.refresh();
+		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
+	});
+
+	it('refreshes an expired family while another family is still pending', async () => {
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+		const { store } = setup(30, ['vehicles', 'alerts']);
+		mocks.alerts.mockImplementation(() => new Promise(() => {}));
+		mocks.vehicles.mockImplementation(async (ctx) => {
+			ctx.onResponseHeaders(new Headers({ 'cache-control': 'max-age=30', age: '25' }));
+			return { generated_utc: mocks.generatedUtc, vehicles: [] };
+		});
+		store.start();
+		await settleLivePoll();
+		await vi.advanceTimersByTimeAsync(5500);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
+		expect(mocks.alerts).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(54500);
+		expect(mocks.alerts).toHaveBeenCalledTimes(2);
+	});
+
+	it('schedules each family from its own cache expiry and retains failure cadence', async () => {
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+		const { store } = setup(30, ['vehicles', 'trips']);
+		mocks.vehicles.mockImplementation(async (ctx) => {
+			ctx.onResponseHeaders(new Headers({ 'cache-control': 'public, max-age=30', age: '20' }));
+			return { generated_utc: mocks.generatedUtc, vehicles: [] };
+		});
+		store.start();
+		await settleLivePoll();
+		await vi.advanceTimersByTimeAsync(10499);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(2);
+		expect(mocks.trips).toHaveBeenCalledTimes(1);
+		mocks.vehicles.mockRejectedValue(new Error('offline'));
+		await vi.advanceTimersByTimeAsync(10500);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(9000);
+		expect(mocks.trips).toHaveBeenCalledTimes(2);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(21000);
+		expect(mocks.vehicles).toHaveBeenCalledTimes(4);
+	});
+
 	it('keeps the 30-second cadence while the page is visible and online', async () => {
 		const { store } = setup();
 		store.start();
@@ -720,9 +772,13 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 
 		const reads = [mocks.vehicles, mocks.trips, mocks.stopDepartures, mocks.alerts, mocks.network];
 		const contexts = reads.map((read) => read.mock.calls[0]?.[0]);
-		expect(contexts[0]).toEqual({ manifest, signal: expect.any(AbortSignal) });
+		expect(contexts[0]).toMatchObject({ manifest, signal: expect.any(AbortSignal) });
 		expect(contexts[0]?.signal.aborted).toBe(false);
-		for (const context of contexts) expect(context).toBe(contexts[0]);
+		for (const context of contexts) {
+			expect(context?.manifest).toBe(manifest);
+			expect(context?.signal).toBe(contexts[0]?.signal);
+			expect(context?.onResponseHeaders).toEqual(expect.any(Function));
+		}
 	});
 
 	it('keeps the five-family poll as the backward-compatible default', async () => {
@@ -764,8 +820,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(mocks.trips).not.toHaveBeenCalled();
 		expect(mocks.stopDepartures).not.toHaveBeenCalled();
 		expect(mocks.alerts).not.toHaveBeenCalled();
-		expect(mocks.vehicles.mock.calls[0]?.[0]).toBe(mocks.network.mock.calls[0]?.[0]);
-		expect(mocks.vehicles.mock.calls[0]?.[0]).toEqual({
+		expect(mocks.vehicles.mock.calls[0]?.[0].signal).toBe(mocks.network.mock.calls[0]?.[0].signal);
+		expect(mocks.vehicles.mock.calls[0]?.[0]).toMatchObject({
 			manifest,
 			signal: expect.any(AbortSignal),
 		});

@@ -29,6 +29,7 @@ type JsonRequestInit = {
 	cache?: RequestCache;
 	signal?: AbortSignal;
 	serverErrorRetries?: number;
+	onResponseHeaders?: (headers: Headers) => void;
 };
 
 function isAbortError(error: unknown): boolean {
@@ -60,6 +61,7 @@ async function requestJsonResponse(
 			}
 			throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
 		}
+		init?.onResponseHeaders?.(res.headers);
 		return res;
 	}
 }
