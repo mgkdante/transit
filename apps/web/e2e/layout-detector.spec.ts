@@ -1,6 +1,6 @@
 import { test } from './layout-test';
 import { expect } from '@playwright/test';
-import { textDefects } from './layout-helpers';
+import { FORWARD_ATTEMPTS, forwardRoute, textDefects } from './layout-helpers';
 
 test('text detector distinguishes clipping, accessible truncation and broken words @layout', async ({
 	page,
@@ -24,4 +24,35 @@ test('text detector distinguishes clipping, accessible truncation and broken wor
 	])
 		expect(findings).toEqual(expect.arrayContaining([expect.objectContaining({ selector, kind })]));
 	expect(findings.filter((f) => ['#title', '#duplicate'].includes(f.selector))).toEqual([]);
+});
+
+test('route forwarding retries a dropped local connection but not other failures @layout', async () => {
+	let calls = 0;
+	await forwardRoute(async () => {
+		calls++;
+		if (calls === 1) throw new Error('route.fetch: socket hang up');
+	});
+	expect(calls).toBe(2);
+
+	calls = 0;
+	await expect(
+		forwardRoute(async () => {
+			calls++;
+			throw new Error('route.fetch: read ECONNRESET');
+		}),
+	).rejects.toThrow('ECONNRESET');
+	expect(calls).toBe(FORWARD_ATTEMPTS);
+
+	calls = 0;
+	await expect(
+		forwardRoute(async () => {
+			calls++;
+			throw new Error('route.fetch: 500 Internal Server Error');
+		}),
+	).rejects.toThrow('500');
+	expect(calls).toBe(1);
+
+	await forwardRoute(async () => {
+		throw new Error('Target page, context or browser has been closed');
+	});
 });
